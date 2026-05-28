@@ -5,7 +5,7 @@ use php_compiler::error::Phase;
 use php_compiler::interpreter::{run_program_with_options, RunOptions};
 use php_compiler::{emit_asm_source, emit_ir_source, parse, run_source};
 
-const LLVM_STREAM_RESOURCE_REJECTION: &str = "LLVM stream-resource lowering rejects fopen(), stream_context_create(), stream_context_get_options(), stream_context_get_params(), stream_context_get_default(), stream_context_set_default(), stream_context_set_option(), stream_context_set_params(), fwrite(), fread(), rewind(), stream_get_contents(), feof(), ftell(), fseek(), fstat(), stream_get_meta_data(), stream_get_wrappers(), fclose(), opendir(), readdir(), rewinddir(), closedir(), is_uploaded_file(), and move_uploaded_file() until native PHP resource handles, stream wrapper state, stream context state, stream wrapper registry state, upload provenance state, binary string byte fidelity, warning plus false recovery, references/copy-on-write, and exact native stream diagnostics exist; phpc run handles current bounded php://memory, php://temp, php://input, local file stream resources, stream wrapper capability metadata, stream context resources, local directory handles, and PHPC_FILES upload provenance";
+const LLVM_STREAM_RESOURCE_REJECTION: &str = "LLVM stream-resource lowering rejects fopen(), stream_context_create(), stream_context_get_options(), stream_context_get_params(), stream_context_get_default(), stream_context_set_default(), stream_context_set_option(), stream_context_set_params(), fwrite(), fread(), rewind(), stream_get_contents(), feof(), ftell(), fseek(), fstat(), stream_get_meta_data(), stream_get_wrappers(), stream_wrapper_register(), stream_wrapper_unregister(), stream_wrapper_restore(), fclose(), opendir(), readdir(), rewinddir(), closedir(), is_uploaded_file(), and move_uploaded_file() until native PHP resource handles, stream wrapper state, stream context state, stream wrapper registry state, upload provenance state, binary string byte fidelity, warning plus false recovery, references/copy-on-write, and exact native stream diagnostics exist; phpc run handles current bounded php://memory, php://temp, php://input, local file stream resources, stream wrapper capability metadata, stream context resources, local directory handles, and PHPC_FILES upload provenance";
 
 #[test]
 fn php_memory_and_temp_stream_resources_round_trip_buffer_contents() {
@@ -181,6 +181,139 @@ echo count($wrappers);
         "exists|callable|array|file|php|no-ftp|no-glob|no-phar|2"
     );
     assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn stream_wrapper_registry_mutations_are_request_local_and_visible() {
+    let execution = run_source(
+        r#"<?php
+class UserStreamWrapper {}
+echo defined("STREAM_IS_URL") ? STREAM_IS_URL : "missing";
+echo "|";
+echo function_exists("stream_wrapper_register") ? "register" : "missing";
+echo "|";
+echo stream_wrapper_register("user+demo", "UserStreamWrapper", STREAM_IS_URL) ? "added" : "failed";
+echo "|";
+echo in_array("user+demo", stream_get_wrappers(), true) ? "listed" : "not-listed";
+echo "|";
+echo stream_wrapper_unregister("file") ? "file-off" : "file-on";
+echo "|";
+echo in_array("file", stream_get_wrappers(), true) ? "file" : "no-file";
+echo "|";
+echo stream_wrapper_restore("file") ? "file-restored" : "file-missing";
+echo "|";
+echo in_array("file", stream_get_wrappers(), true) ? "file" : "no-file";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "1|register|added|listed|file-off|no-file|file-restored|file"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn stream_wrapper_unregister_disables_builtin_file_opening_until_restore() {
+    let path = temp_stream_path("stream-wrapper-enabled.tmp");
+    let source = format!(
+        r#"<?php
+stream_wrapper_unregister("file");
+$disabled = fopen("{}", "w");
+echo $disabled === false ? "disabled" : "opened";
+echo "|";
+stream_wrapper_restore("file");
+$enabled = fopen("{}", "w");
+echo gettype($enabled);
+fclose($enabled);
+"#,
+        path.display(),
+        path.display()
+    );
+    let execution = run_source(&source).unwrap();
+
+    assert_eq!(execution.stdout, "disabled|resource");
+    assert_eq!(execution.exit_code, 0);
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn stream_wrapper_registry_tracks_user_origin_for_builtin_protocol_replacement() {
+    let path = temp_stream_path("stream-wrapper-user-file-origin.tmp");
+    let source = format!(
+        r#"<?php
+class UserStreamWrapper {{}}
+stream_wrapper_unregister("file");
+echo stream_wrapper_register("file", "UserStreamWrapper", STREAM_IS_URL) ? "user-file" : "failed";
+echo "|";
+echo in_array("file", stream_get_wrappers(), true) ? "listed" : "missing";
+echo "|";
+fopen("{}", "w");
+"#,
+        path.display()
+    );
+    let error = run_source(&source).unwrap_err();
+
+    assert_eq!(error.phase, Phase::Runtime);
+    assert_eq!(error.line, 8);
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "unsupported call fopen(): user stream wrapper file:// handled by UserStreamWrapper is not supported in the current subset"
+    );
+    let _ = fs::remove_file(&path);
+
+    let restore_source = format!(
+        r#"<?php
+class UserStreamWrapper {{}}
+stream_wrapper_unregister("file");
+stream_wrapper_register("file", "UserStreamWrapper", STREAM_IS_URL);
+echo stream_wrapper_restore("file") ? "restored" : "not-restored";
+echo "|";
+$stream = fopen("{}", "w");
+echo gettype($stream);
+fclose($stream);
+"#,
+        path.display()
+    );
+    let execution = run_source(&restore_source).unwrap();
+
+    assert_eq!(execution.stdout, "restored|resource");
+    assert_eq!(execution.exit_code, 0);
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn stream_wrapper_metadata_folds_include_registry_functions_and_constant() {
+    let execution = run_source(
+        r#"<?php
+foreach (["stream_get_wrappers", "stream_wrapper_register", "stream_wrapper_unregister", "stream_wrapper_restore"] as $fn) {
+    echo function_exists($fn) ? "1" : "0";
+    echo is_callable($fn) ? "1" : "0";
+}
+echo "|";
+echo defined("STREAM_IS_URL") ? STREAM_IS_URL : "missing";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "11111111|1");
+    assert_eq!(execution.exit_code, 0);
+
+    let ir = emit_ir_source(
+        r#"<?php
+echo function_exists("stream_wrapper_register") ? "1" : "0";
+echo function_exists("stream_wrapper_unregister") ? "1" : "0";
+echo defined("STREAM_IS_URL") ? "1" : "0";
+"#,
+    )
+    .unwrap();
+
+    assert!(ir.matches("c\"1\\00\"").count() >= 3, "{ir}");
+    assert!(!ir.contains("function_exists"), "{ir}");
+    assert!(!ir.contains("STREAM_IS_URL"), "{ir}");
 }
 
 #[test]

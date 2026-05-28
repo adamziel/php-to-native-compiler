@@ -187,6 +187,7 @@ struct Interpreter {
     streams: HashMap<i64, StreamResource>,
     stream_contexts: HashMap<i64, StreamContextResource>,
     default_stream_context_id: Option<i64>,
+    stream_wrappers: Vec<StreamWrapperRegistration>,
     directories: HashMap<i64, DirectoryResource>,
     uploaded_file_paths: HashSet<PathBuf>,
     stat_cache: HashMap<PathBuf, fs::Metadata>,
@@ -211,6 +212,56 @@ struct Interpreter {
     stdout: String,
     stderr: String,
     exit_signal: Option<i32>,
+}
+
+#[derive(Debug, Clone)]
+struct StreamWrapperRegistration {
+    protocol: String,
+    origin: StreamWrapperOrigin,
+}
+
+impl StreamWrapperRegistration {
+    fn builtin(protocol: &str) -> Self {
+        Self {
+            protocol: protocol.to_string(),
+            origin: StreamWrapperOrigin::Builtin,
+        }
+    }
+
+    fn user(protocol: String, class_id: ClassId, class_name: String, flags: i64) -> Self {
+        Self {
+            protocol,
+            origin: StreamWrapperOrigin::User(UserStreamWrapperMetadata {
+                class_id,
+                class_name,
+                flags,
+            }),
+        }
+    }
+
+    fn is_builtin(&self) -> bool {
+        matches!(self.origin, StreamWrapperOrigin::Builtin)
+    }
+
+    fn user_metadata(&self) -> Option<&UserStreamWrapperMetadata> {
+        match &self.origin {
+            StreamWrapperOrigin::User(metadata) => Some(metadata),
+            StreamWrapperOrigin::Builtin => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+enum StreamWrapperOrigin {
+    Builtin,
+    User(UserStreamWrapperMetadata),
+}
+
+#[derive(Debug, Clone)]
+struct UserStreamWrapperMetadata {
+    class_id: ClassId,
+    class_name: String,
+    flags: i64,
 }
 
 enum ConstantResolution {
@@ -788,6 +839,40 @@ fn decode_hex_digit(byte: u8) -> Option<u8> {
 }
 
 const INCLUDE_PATH_SEPARATOR: char = if cfg!(windows) { ';' } else { ':' };
+const DEFAULT_STREAM_WRAPPERS: &[&str] = &["file", "php"];
+
+fn default_stream_wrappers() -> Vec<StreamWrapperRegistration> {
+    DEFAULT_STREAM_WRAPPERS
+        .iter()
+        .map(|wrapper| StreamWrapperRegistration::builtin(wrapper))
+        .collect()
+}
+
+fn builtin_stream_wrapper_name(protocol: &str) -> Option<&'static str> {
+    DEFAULT_STREAM_WRAPPERS
+        .iter()
+        .copied()
+        .find(|wrapper| wrapper.eq_ignore_ascii_case(protocol))
+}
+
+fn builtin_stream_wrapper_default_index(protocol: &str) -> Option<usize> {
+    DEFAULT_STREAM_WRAPPERS
+        .iter()
+        .position(|wrapper| wrapper.eq_ignore_ascii_case(protocol))
+}
+
+fn stream_path_protocol(path: &str) -> &str {
+    path.split_once("://")
+        .map(|(protocol, _)| protocol)
+        .unwrap_or("file")
+}
+
+fn is_valid_stream_wrapper_protocol(protocol: &str) -> bool {
+    !protocol.is_empty()
+        && protocol
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'+' | b'-'))
+}
 
 fn include_path_candidates(
     source_relative_path: &Path,
@@ -8725,6 +8810,7 @@ impl Interpreter {
             streams: HashMap::new(),
             stream_contexts: HashMap::new(),
             default_stream_context_id: None,
+            stream_wrappers: default_stream_wrappers(),
             directories: HashMap::new(),
             uploaded_file_paths: HashSet::new(),
             stat_cache: HashMap::new(),
@@ -59843,6 +59929,10 @@ impl Interpreter {
             self.expect_optional_stream_context_resource("fopen", context, span)?;
         }
 
+        if !self.ensure_stream_wrapper_can_open_path("fopen()", path, span)? {
+            return Ok(Value::Bool(false));
+        }
+
         let file_url_path = match bounded_local_file_url_path(path) {
             Some(Ok(path)) => Some(path),
             Some(Err(message)) => {
@@ -61602,17 +61692,310 @@ impl Interpreter {
         }
     }
 
+    fn stream_wrapper_index(&self, protocol: &str) -> Option<usize> {
+        self.stream_wrappers
+            .iter()
+            .position(|wrapper| wrapper.protocol.eq_ignore_ascii_case(protocol))
+    }
+
+    fn stream_wrapper_registration(&self, protocol: &str) -> Option<&StreamWrapperRegistration> {
+        self.stream_wrapper_index(protocol)
+            .and_then(|index| self.stream_wrappers.get(index))
+    }
+
+    fn restore_builtin_stream_wrapper(
+        &mut self,
+        canonical_builtin: &str,
+        current_index: Option<usize>,
+    ) {
+        if let Some(index) = current_index {
+            self.stream_wrappers.remove(index);
+        }
+        let default_index = builtin_stream_wrapper_default_index(canonical_builtin)
+            .expect("canonical builtin wrapper has default index");
+        let insertion_index = self
+            .stream_wrappers
+            .iter()
+            .position(|wrapper| {
+                builtin_stream_wrapper_default_index(&wrapper.protocol)
+                    .is_some_and(|index| index > default_index)
+            })
+            .unwrap_or(self.stream_wrappers.len());
+        self.stream_wrappers.insert(
+            insertion_index,
+            StreamWrapperRegistration::builtin(canonical_builtin),
+        );
+    }
+
+    fn emit_disabled_stream_wrapper_warnings(
+        &mut self,
+        function_name: &str,
+        protocol: &str,
+        path: &str,
+        span: Span,
+    ) -> CompileResult<()> {
+        self.emit_warning(
+            function_name,
+            format!(
+                "Unable to find the wrapper \"{protocol}\" - did you forget to enable it when you configured PHP?"
+            ),
+            span,
+        )?;
+        self.emit_warning(
+            function_name,
+            format!("{protocol}:// wrapper is disabled in the server configuration"),
+            span,
+        )?;
+        self.emit_warning(
+            function_name,
+            format!("{path}: Failed to open stream: no suitable wrapper could be found"),
+            span,
+        )
+    }
+
+    fn ensure_stream_wrapper_can_open_path(
+        &mut self,
+        function_name: &str,
+        path: &str,
+        span: Span,
+    ) -> CompileResult<bool> {
+        let protocol = stream_path_protocol(path);
+        let Some(registration) = self.stream_wrapper_registration(protocol) else {
+            self.emit_disabled_stream_wrapper_warnings(function_name, protocol, path, span)?;
+            return Ok(false);
+        };
+        if let Some(metadata) = registration.user_metadata() {
+            let _ = metadata.class_id;
+            let _ = metadata.flags;
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function_name,
+                    format!(
+                        "user stream wrapper {protocol}:// handled by {} is not supported in the current subset",
+                        metadata.class_name
+                    ),
+                ),
+            ));
+        }
+        if !registration.is_builtin()
+            || builtin_stream_wrapper_name(&registration.protocol).is_none()
+        {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function_name,
+                    format!(
+                        "stream wrapper {protocol}:// has unsupported registry metadata in the current subset"
+                    ),
+                ),
+            ));
+        }
+        Ok(true)
+    }
+
     fn call_stream_get_wrappers(&self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("stream_get_wrappers", args, 0, span)?;
 
         let mut wrappers = PhpArray::new();
-        for wrapper in ["file", "php"] {
+        for wrapper in &self.stream_wrappers {
             wrappers
-                .append(Value::String(wrapper.to_string()))
+                .append(Value::String(wrapper.protocol.clone()))
                 .map_err(|error| runtime_error(span, error))?;
         }
 
         Ok(Value::Array(wrappers))
+    }
+
+    fn call_stream_wrapper_register(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(2..=3).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "stream_wrapper_register()",
+                    ArityExpectation::Between { min: 2, max: 3 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let protocol = match &args[0] {
+            Value::String(protocol) => protocol,
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "stream_wrapper_register()",
+                        format!(
+                            "protocol argument must be string in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+        };
+        let class_name = match &args[1] {
+            Value::String(class_name) => class_name,
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "stream_wrapper_register()",
+                        format!(
+                            "class argument must be string in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+        };
+        let flags = match args.get(2) {
+            Some(Value::Int(flags)) => *flags,
+            Some(other) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "stream_wrapper_register()",
+                        format!(
+                            "flags argument must be int in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+            None => 0,
+        };
+
+        if !is_valid_stream_wrapper_protocol(protocol) {
+            self.emit_warning(
+                "stream_wrapper_register()",
+                format!(
+                    "Invalid protocol scheme specified. Unable to register wrapper class {class_name} to {protocol}://"
+                ),
+                span,
+            )?;
+            return Ok(Value::Bool(false));
+        }
+
+        if self.stream_wrapper_index(protocol).is_some() {
+            self.emit_warning(
+                "stream_wrapper_register()",
+                format!("Protocol {protocol}:// is already defined."),
+                span,
+            )?;
+            return Ok(Value::Bool(false));
+        }
+
+        if !self.class_like_exists_with_autoload(class_name, AutoloadKind::Class, true, span)? {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "stream_wrapper_register()",
+                    format!(
+                        "class argument must name a declared class in the current subset, got {class_name}"
+                    ),
+                ),
+            ));
+        }
+        let (class_id, declared_class_name) = {
+            let class = self.classes.lookup_class(class_name).ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "stream_wrapper_register()",
+                        format!(
+                            "class argument must name a declared class in the current subset, got {class_name}"
+                        ),
+                    ),
+                )
+            })?;
+            (class.id(), class.name().to_string())
+        };
+
+        self.stream_wrappers.push(StreamWrapperRegistration::user(
+            protocol.clone(),
+            class_id,
+            declared_class_name,
+            flags,
+        ));
+        Ok(Value::Bool(true))
+    }
+
+    fn call_stream_wrapper_unregister(
+        &mut self,
+        args: &[Value],
+        span: Span,
+    ) -> CompileResult<Value> {
+        expect_arity("stream_wrapper_unregister", args, 1, span)?;
+        let protocol = match &args[0] {
+            Value::String(protocol) => protocol,
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "stream_wrapper_unregister()",
+                        format!(
+                            "protocol argument must be string in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+        };
+
+        let Some(index) = self.stream_wrapper_index(protocol) else {
+            self.emit_warning(
+                "stream_wrapper_unregister()",
+                format!("{protocol}:// never existed, nothing to unregister"),
+                span,
+            )?;
+            return Ok(Value::Bool(false));
+        };
+        self.stream_wrappers.remove(index);
+        Ok(Value::Bool(true))
+    }
+
+    fn call_stream_wrapper_restore(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("stream_wrapper_restore", args, 1, span)?;
+        let protocol = match &args[0] {
+            Value::String(protocol) => protocol,
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "stream_wrapper_restore()",
+                        format!(
+                            "protocol argument must be string in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+        };
+
+        let Some(canonical_builtin) = builtin_stream_wrapper_name(protocol) else {
+            self.emit_warning(
+                "stream_wrapper_restore()",
+                format!("{protocol}:// never existed, nothing to restore"),
+                span,
+            )?;
+            return Ok(Value::Bool(false));
+        };
+
+        match self.stream_wrapper_index(protocol) {
+            Some(index) if self.stream_wrappers[index].is_builtin() => {
+                self.emit_notice(
+                    "stream_wrapper_restore()",
+                    format!("{protocol}:// was never changed, nothing to restore"),
+                    span,
+                )?;
+                Ok(Value::Bool(true))
+            }
+            current_index => {
+                self.restore_builtin_stream_wrapper(canonical_builtin, current_index);
+                Ok(Value::Bool(true))
+            }
+        }
     }
 
     fn call_stream_get_meta_data(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -64680,20 +65063,30 @@ impl Interpreter {
                     None => None,
                 };
                 match &args[0] {
-                    Value::String(path) if path == "php://input" => {
-                        match bounded_file_get_contents_slice(
-                            &self.request_body,
-                            offset,
-                            max_length,
-                        ) {
-                            FileGetContentsRead::Contents(contents) => Ok(Value::String(contents)),
-                            FileGetContentsRead::WarningFalse(message) => {
-                                self.emit_warning("file_get_contents()", message, span)?;
-                                Ok(Value::Bool(false))
-                            }
-                        }
-                    }
                     Value::String(path) => {
+                        if !self.ensure_stream_wrapper_can_open_path(
+                            "file_get_contents()",
+                            path,
+                            span,
+                        )? {
+                            return Ok(Value::Bool(false));
+                        }
+                        if path == "php://input" {
+                            return match bounded_file_get_contents_slice(
+                                &self.request_body,
+                                offset,
+                                max_length,
+                            ) {
+                                FileGetContentsRead::Contents(contents) => {
+                                    Ok(Value::String(contents))
+                                }
+                                FileGetContentsRead::WarningFalse(message) => {
+                                    self.emit_warning("file_get_contents()", message, span)?;
+                                    Ok(Value::Bool(false))
+                                }
+                            };
+                        }
+
                         let filesystem_path = if let Some(file_url_path) =
                             bounded_local_file_url_path(path)
                         {
@@ -64772,6 +65165,9 @@ impl Interpreter {
             "fstat" => self.call_fstat(&args, span),
             "stream_get_meta_data" => self.call_stream_get_meta_data(&args, span),
             "stream_get_wrappers" => self.call_stream_get_wrappers(&args, span),
+            "stream_wrapper_register" => self.call_stream_wrapper_register(&args, span),
+            "stream_wrapper_unregister" => self.call_stream_wrapper_unregister(&args, span),
+            "stream_wrapper_restore" => self.call_stream_wrapper_restore(&args, span),
             "fclose" => self.call_fclose(&args, span),
             "opendir" => self.call_opendir(&args, span),
             "readdir" => self.call_readdir(&args, span),
@@ -72744,6 +73140,18 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
             ],
         ),
         "stream_get_wrappers" => ("array", vec![]),
+        "stream_wrapper_register" => (
+            "bool",
+            vec![
+                reflection_internal_param("protocol", "string"),
+                reflection_internal_param("class", "string"),
+                reflection_internal_optional_int_param("flags", 0),
+            ],
+        ),
+        "stream_wrapper_unregister" | "stream_wrapper_restore" => (
+            "bool",
+            vec![reflection_internal_param("protocol", "string")],
+        ),
         "is_array" | "is_object" | "is_string" | "is_scalar" => {
             ("bool", vec![reflection_internal_param("value", "mixed")])
         }
@@ -74668,6 +75076,9 @@ fn is_builtin(name: &str) -> bool {
             | "fstat"
             | "stream_get_meta_data"
             | "stream_get_wrappers"
+            | "stream_wrapper_register"
+            | "stream_wrapper_unregister"
+            | "stream_wrapper_restore"
             | "fclose"
             | "opendir"
             | "readdir"
@@ -74948,6 +75359,7 @@ fn builtin_global_constant_value(name: &str) -> Option<Value> {
         "SORT_REGULAR" => Some(Value::Int(0)),
         "SORT_NUMERIC" => Some(Value::Int(1)),
         "SORT_STRING" => Some(Value::Int(2)),
+        "STREAM_IS_URL" => Some(Value::Int(1)),
         "SEEK_SET" => Some(Value::Int(0)),
         "SEEK_CUR" => Some(Value::Int(1)),
         "SEEK_END" => Some(Value::Int(2)),
