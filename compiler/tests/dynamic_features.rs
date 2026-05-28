@@ -860,6 +860,44 @@ $callback();
 }
 
 #[test]
+fn array_object_callables_use_calling_scope_visibility() {
+    let execution = run_source(
+        r#"<?php
+class ScopedCallableBase {
+    private function selected() {
+        echo "base:", get_class($this), "\n";
+    }
+
+    public function callSelected($method) {
+        $this->$method();
+        call_user_func([$this, $method]);
+        call_user_func_array([$this, $method], []);
+    }
+}
+
+class ScopedCallableChild extends ScopedCallableBase {
+    protected function selected() {
+        echo "child\n";
+    }
+}
+
+$base = new ScopedCallableBase;
+$base->callSelected("selected");
+
+$child = new ScopedCallableChild;
+$child->callSelected("selected");
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "base:ScopedCallableBase\nbase:ScopedCallableBase\nbase:ScopedCallableBase\nbase:ScopedCallableChild\nbase:ScopedCallableChild\nbase:ScopedCallableChild\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn dynamic_static_method_string_calls_are_dispatched() {
     let execution = run_source(
         r#"<?php

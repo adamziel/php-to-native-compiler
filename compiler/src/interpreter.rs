@@ -37966,7 +37966,9 @@ impl Interpreter {
                 .expect("object class id should resolve to class metadata")
                 .name()
                 .to_string();
-            let Some(method) = self.resolve_instance_method(object.class_id(), method_name) else {
+            let Some(method) = self
+                .resolve_instance_method_for_current_object_scope(object.class_id(), method_name)
+            else {
                 if let Some(result) = self
                     .call_missing_instance_method_via_magic_with_array_copy_source(
                         object.clone(),
@@ -43049,6 +43051,38 @@ impl Interpreter {
         None
     }
 
+    fn resolve_instance_method_for_current_object_scope(
+        &self,
+        receiver_class_id: ClassId,
+        method_name: &str,
+    ) -> Option<(ClassId, String, String, Visibility, bool)> {
+        if let Some(current_class_id) = self.class_context.last().copied() {
+            let receiver_is_current_scope_object = receiver_class_id == current_class_id
+                || self
+                    .classes
+                    .is_subclass_of(receiver_class_id, current_class_id);
+            if receiver_is_current_scope_object {
+                let current_class = self
+                    .classes
+                    .get(current_class_id)
+                    .expect("current class id should resolve to class metadata");
+                if let Some(method) = current_class.method(method_name) {
+                    if method.visibility() == Visibility::Private {
+                        return Some((
+                            current_class.id(),
+                            current_class.name().to_string(),
+                            method.name().to_string(),
+                            method.visibility(),
+                            method.is_static(),
+                        ));
+                    }
+                }
+            }
+        }
+
+        self.resolve_instance_method(receiver_class_id, method_name)
+    }
+
     fn method_function(
         &self,
         class_id: ClassId,
@@ -44332,7 +44366,10 @@ impl Interpreter {
                     .name()
                     .to_string();
                 let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
-                    self.resolve_instance_method(object.class_id(), method_name)
+                    self.resolve_instance_method_for_current_object_scope(
+                        object.class_id(),
+                        method_name,
+                    )
                 else {
                     return Err(runtime_error(
                         span,
@@ -44341,15 +44378,13 @@ impl Interpreter {
                         )),
                     ));
                 };
-                if visibility != Visibility::Public {
-                    return Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            format!("{class_name}::{method_name}()"),
-                            "array callable method dispatch is only implemented for public methods",
-                        ),
-                    ));
-                }
+                self.ensure_instance_method_visible(
+                    class_id,
+                    &class_name,
+                    method_name,
+                    visibility,
+                    span,
+                )?;
 
                 let function =
                     self.method_function(class_id, &class_name, &resolved_method_name, span)?;
@@ -44519,7 +44554,10 @@ impl Interpreter {
                     .name()
                     .to_string();
                 let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
-                    self.resolve_instance_method(object.class_id(), method_name)
+                    self.resolve_instance_method_for_current_object_scope(
+                        object.class_id(),
+                        method_name,
+                    )
                 else {
                     return Err(runtime_error(
                         span,
@@ -44528,15 +44566,13 @@ impl Interpreter {
                         )),
                     ));
                 };
-                if visibility != Visibility::Public {
-                    return Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            format!("{class_name}::{method_name}()"),
-                            "array callable method dispatch is only implemented for public methods",
-                        ),
-                    ));
-                }
+                self.ensure_instance_method_visible(
+                    class_id,
+                    &class_name,
+                    method_name,
+                    visibility,
+                    span,
+                )?;
 
                 let function =
                     self.method_function(class_id, &class_name, &resolved_method_name, span)?;
@@ -46853,7 +46889,10 @@ impl Interpreter {
                     .name()
                     .to_string();
                 let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
-                    self.resolve_instance_method(object.class_id(), method_name)
+                    self.resolve_instance_method_for_current_object_scope(
+                        object.class_id(),
+                        method_name,
+                    )
                 else {
                     return match self.call_missing_instance_method_reference_return_via_magic(
                         object.clone(),
@@ -46880,15 +46919,13 @@ impl Interpreter {
                         ),
                     ));
                 }
-                if visibility != Visibility::Public {
-                    return Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            format!("{class_name}::{method_name}()"),
-                            format!("{context} array callable method dispatch is only implemented for public methods"),
-                        ),
-                    ));
-                }
+                self.ensure_instance_method_visible(
+                    class_id,
+                    &class_name,
+                    method_name,
+                    visibility,
+                    span,
+                )?;
 
                 let function =
                     self.method_function(class_id, &class_name, &resolved_method_name, span)?;
@@ -47066,7 +47103,10 @@ impl Interpreter {
                     .get(object.class_id())
                     .expect("object class id should resolve to class metadata");
                 let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
-                    self.resolve_instance_method(object.class_id(), method_name)
+                    self.resolve_instance_method_for_current_object_scope(
+                        object.class_id(),
+                        method_name,
+                    )
                 else {
                     return Err(runtime_error(
                         span,
@@ -47076,15 +47116,13 @@ impl Interpreter {
                         )),
                     ));
                 };
-                if visibility != Visibility::Public {
-                    return Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            format!("{class_name}::{method_name}()"),
-                            "array callable method dispatch is only implemented for public methods",
-                        ),
-                    ));
-                }
+                self.ensure_instance_method_visible(
+                    class_id,
+                    &class_name,
+                    method_name,
+                    visibility,
+                    span,
+                )?;
 
                 let this_object = if is_static {
                     None
@@ -64790,7 +64828,10 @@ impl Interpreter {
                     .get(object.class_id())
                     .expect("object class id should resolve to class metadata");
                 let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
-                    self.resolve_instance_method(object.class_id(), method_name)
+                    self.resolve_instance_method_for_current_object_scope(
+                        object.class_id(),
+                        method_name,
+                    )
                 else {
                     return Err(runtime_error(
                         span,
@@ -64800,15 +64841,13 @@ impl Interpreter {
                         )),
                     ));
                 };
-                if visibility != Visibility::Public {
-                    return Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            format!("{class_name}::{method_name}()"),
-                            "array callable method dispatch is only implemented for public methods",
-                        ),
-                    ));
-                }
+                self.ensure_instance_method_visible(
+                    class_id,
+                    &class_name,
+                    method_name,
+                    visibility,
+                    span,
+                )?;
 
                 let this_object = if is_static {
                     None
@@ -64983,7 +65022,10 @@ impl Interpreter {
                     .get(object.class_id())
                     .expect("object class id should resolve to class metadata");
                 let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
-                    self.resolve_instance_method(object.class_id(), method_name)
+                    self.resolve_instance_method_for_current_object_scope(
+                        object.class_id(),
+                        method_name,
+                    )
                 else {
                     return Err(runtime_error(
                         span,
@@ -64993,15 +65035,13 @@ impl Interpreter {
                         )),
                     ));
                 };
-                if visibility != Visibility::Public {
-                    return Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            format!("{class_name}::{method_name}()"),
-                            "array callable method dispatch is only implemented for public methods",
-                        ),
-                    ));
-                }
+                self.ensure_instance_method_visible(
+                    class_id,
+                    &class_name,
+                    method_name,
+                    visibility,
+                    span,
+                )?;
 
                 let this_object = if is_static {
                     None
@@ -65147,15 +65187,13 @@ impl Interpreter {
                         )),
                     ));
                 };
-                if visibility != Visibility::Public {
-                    return Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            format!("{class_name}::{method_name}()"),
-                            "array callable method dispatch is only implemented for public methods",
-                        ),
-                    ));
-                }
+                self.ensure_instance_method_visible(
+                    class_id,
+                    &class_name,
+                    method_name,
+                    visibility,
+                    span,
+                )?;
 
                 let function =
                     self.method_function(class_id, &class_name, &resolved_method_name, span)?;
