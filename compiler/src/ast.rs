@@ -782,6 +782,7 @@ pub struct InterfaceDecl {
 pub struct InterfaceMethodDecl {
     pub function: FunctionDecl,
     pub is_static: bool,
+    pub attributes: Vec<String>,
     pub span: Span,
 }
 
@@ -878,6 +879,7 @@ pub struct ClassMethodDecl {
     pub is_static: bool,
     pub is_abstract: bool,
     pub is_final: bool,
+    pub attributes: Vec<String>,
     pub span: Span,
 }
 

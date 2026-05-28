@@ -831,6 +831,7 @@ impl Parser {
         }
 
         let modifiers = self.parse_class_member_modifiers()?;
+        let attributes = self.take_pending_attributes();
         let span = self
             .consume_keyword(TokenKind::Function, "expected trait method declaration")?
             .span;
@@ -848,6 +849,7 @@ impl Parser {
             is_static: modifiers.is_static,
             is_abstract: false,
             is_final: false,
+            attributes,
             span,
         })
     }
@@ -1249,6 +1251,7 @@ impl Parser {
                 "unsupported interface method declaration: abstract/final interface methods are not implemented",
             ));
         }
+        let attributes = self.take_pending_attributes();
         let span = self
             .consume_keyword(TokenKind::Function, "expected interface method declaration")?
             .span;
@@ -1264,6 +1267,7 @@ impl Parser {
         Ok(InterfaceMethodDecl {
             function,
             is_static: modifiers.is_static,
+            attributes,
             span,
         })
     }
@@ -1396,7 +1400,6 @@ impl Parser {
 
         if self.match_token(|kind| matches!(kind, TokenKind::Function)) {
             let span = self.previous().span;
-            self.pending_attributes.clear();
             if modifiers.is_abstract && modifiers.is_final {
                 return Err(self.error_at(
                     modifiers.abstract_final_conflict_span().unwrap_or(span),
@@ -1419,6 +1422,7 @@ impl Parser {
                 is_static: modifiers.is_static,
                 is_abstract: modifiers.is_abstract,
                 is_final: modifiers.is_final,
+                attributes,
                 span,
             }));
         }

@@ -2539,6 +2539,130 @@ new Service("value");
 }
 
 #[test]
+fn method_override_attribute_validates_class_interface_trait_and_constructor_methods() {
+    let parent_method = run_source(
+        r#"<?php
+class Base {
+    public function run(): void {}
+}
+class Child extends Base {
+    #[\Override]
+    public function run(): void {}
+}
+echo "Done";
+"#,
+    )
+    .unwrap();
+    assert_eq!(parent_method.stdout, "Done");
+    assert_eq!(parent_method.exit_code, 0);
+
+    let interface_method = run_source(
+        r#"<?php
+interface Contract {
+    public function run(): void;
+}
+class Service implements Contract {
+    #[\Override]
+    public function run(): void {}
+}
+echo "Done";
+"#,
+    )
+    .unwrap();
+    assert_eq!(interface_method.stdout, "Done");
+    assert_eq!(interface_method.exit_code, 0);
+
+    let trait_method = run_source(
+        r#"<?php
+trait ProvidesRun {
+    #[\Override]
+    public function run(): void {}
+}
+interface Contract {
+    public function run(): void;
+}
+class Service implements Contract {
+    use ProvidesRun;
+}
+echo "Done";
+"#,
+    )
+    .unwrap();
+    assert_eq!(trait_method.stdout, "Done");
+    assert_eq!(trait_method.exit_code, 0);
+
+    let abstract_constructor = run_source(
+        r#"<?php
+abstract class Base {
+    public abstract function __construct();
+}
+class Child extends Base {
+    #[\Override]
+    public function __construct() {}
+}
+echo "Done";
+"#,
+    )
+    .unwrap();
+    assert_eq!(abstract_constructor.stdout, "Done");
+    assert_eq!(abstract_constructor.exit_code, 0);
+
+    assert_php_startup_fatal(
+        r#"<?php
+class Standalone {
+    #[\Override]
+    public static function c(): void {}
+}
+"#,
+        "tests/classes/method_override_missing_parent.php",
+        4,
+        "Standalone::c() has #[\\Override] attribute, but no matching parent method exists",
+    );
+
+    assert_php_startup_fatal(
+        r#"<?php
+interface Contract {
+    #[\Override]
+    public function run(): void;
+}
+"#,
+        "tests/classes/method_override_interface_missing_parent.php",
+        4,
+        "Contract::run() has #[\\Override] attribute, but no matching parent method exists",
+    );
+
+    assert_php_startup_fatal(
+        r#"<?php
+trait ProvidesRun {
+    #[\Override]
+    public function run(): void {}
+}
+class Service {
+    use ProvidesRun;
+}
+"#,
+        "tests/classes/method_override_trait_missing_parent.php",
+        4,
+        "Service::run() has #[\\Override] attribute, but no matching parent method exists",
+    );
+
+    assert_php_startup_fatal(
+        r#"<?php
+class Base {
+    public function __construct() {}
+}
+class Child extends Base {
+    #[\Override]
+    public function __construct() {}
+}
+"#,
+        "tests/classes/method_override_concrete_parent_constructor.php",
+        7,
+        "Child::__construct() has #[\\Override] attribute, but no matching parent method exists",
+    );
+}
+
+#[test]
 fn static_interface_methods_are_declared_validated_and_callable() {
     let execution = run_source(
         r#"<?php

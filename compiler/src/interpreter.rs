@@ -67239,6 +67239,10 @@ fn magic_method_startup_diagnostics(
     }
 
     if !diagnostics.has_fatal() {
+        collect_method_override_startup_diagnostics(&mut diagnostics, program, source_file);
+    }
+
+    if !diagnostics.has_fatal() {
         collect_parameter_default_startup_diagnostics(&mut diagnostics, program, source_file);
     }
 
@@ -67448,6 +67452,312 @@ fn collect_property_override_startup_diagnostics(
             return;
         }
     }
+}
+
+fn collect_method_override_startup_diagnostics(
+    diagnostics: &mut MagicMethodStartupDiagnostics,
+    program: &Program,
+    source_file: Option<&str>,
+) {
+    let classes = top_level_class_startup_lookup(program);
+    let interfaces = top_level_interface_startup_lookup(program);
+    let traits = top_level_trait_startup_lookup(program);
+
+    for stmt in &program.statements {
+        let Stmt::Interface(interface) = stmt else {
+            continue;
+        };
+        for method in &interface.methods {
+            if !interface_method_has_override_attribute(method) {
+                continue;
+            }
+            let Some(has_parent_method) =
+                startup_parent_interface_has_method(&interfaces, interface, &method.function.name)
+            else {
+                continue;
+            };
+            if has_parent_method {
+                continue;
+            }
+            diagnostics.set_fatal(
+                attribute_override_missing_method_message(&interface.name, &method.function.name),
+                source_file,
+                method.span.line,
+            );
+            return;
+        }
+    }
+
+    for stmt in &program.statements {
+        let Stmt::Class(class) = stmt else {
+            continue;
+        };
+        if class.is_nested {
+            continue;
+        }
+        if let Some((message, line)) =
+            class_method_override_startup_diagnostic(&classes, &interfaces, &traits, class)
+        {
+            diagnostics.set_fatal(message, source_file, line);
+            return;
+        }
+    }
+}
+
+fn class_method_override_startup_diagnostic(
+    classes: &HashMap<String, &ClassDecl>,
+    interfaces: &HashMap<String, &InterfaceDecl>,
+    traits: &HashMap<String, Rc<TraitDecl>>,
+    class: &ClassDecl,
+) -> Option<(String, usize)> {
+    for method in class.members.iter().filter_map(|member| match member {
+        ClassMember::Method(method) => Some(method),
+        _ => None,
+    }) {
+        if let Some(diagnostic) =
+            class_method_override_diagnostic(classes, interfaces, traits, class, method)
+        {
+            return Some(diagnostic);
+        }
+    }
+
+    if let Ok(trait_methods) = composed_trait_methods(class, traits) {
+        for method in trait_methods {
+            if let Some(diagnostic) =
+                class_method_override_diagnostic(classes, interfaces, traits, class, &method)
+            {
+                return Some(diagnostic);
+            }
+        }
+    }
+
+    None
+}
+
+fn class_method_override_diagnostic(
+    classes: &HashMap<String, &ClassDecl>,
+    interfaces: &HashMap<String, &InterfaceDecl>,
+    traits: &HashMap<String, Rc<TraitDecl>>,
+    class: &ClassDecl,
+    method: &ClassMethodDecl,
+) -> Option<(String, usize)> {
+    if !class_method_has_override_attribute(method) {
+        return None;
+    }
+    let Some(has_match) =
+        startup_class_method_override_has_match(classes, interfaces, traits, class, method)
+    else {
+        return None;
+    };
+    if has_match {
+        return None;
+    }
+    Some((
+        attribute_override_missing_method_message(&class.name, &method.function.name),
+        method.span.line,
+    ))
+}
+
+fn startup_class_method_override_has_match(
+    classes: &HashMap<String, &ClassDecl>,
+    interfaces: &HashMap<String, &InterfaceDecl>,
+    traits: &HashMap<String, Rc<TraitDecl>>,
+    class: &ClassDecl,
+    method: &ClassMethodDecl,
+) -> Option<bool> {
+    if method.function.name.eq_ignore_ascii_case("__construct") {
+        return startup_class_has_abstract_parent_constructor(classes, traits, class);
+    }
+
+    if startup_class_has_non_private_parent_method(classes, traits, class, &method.function.name)? {
+        return Some(true);
+    }
+    startup_class_implements_interface_method(classes, interfaces, class, &method.function.name)
+}
+
+fn startup_class_has_abstract_parent_constructor(
+    classes: &HashMap<String, &ClassDecl>,
+    traits: &HashMap<String, Rc<TraitDecl>>,
+    class: &ClassDecl,
+) -> Option<bool> {
+    let mut parent_name = match class.parent.as_deref() {
+        Some(parent_name) => parent_name,
+        None => return Some(false),
+    };
+    let mut visited = HashSet::new();
+
+    loop {
+        let key = startup_class_lookup_key(parent_name);
+        if !visited.insert(key.clone()) {
+            return None;
+        }
+        let parent = classes.get(&key).copied()?;
+        if let Some(method) = class_startup_method(parent, traits, "__construct")? {
+            if method.visibility != ClassVisibility::Private {
+                return Some(method.is_abstract);
+            }
+        }
+        parent_name = match parent.parent.as_deref() {
+            Some(parent_name) => parent_name,
+            None => return Some(false),
+        };
+    }
+}
+
+fn startup_class_has_non_private_parent_method(
+    classes: &HashMap<String, &ClassDecl>,
+    traits: &HashMap<String, Rc<TraitDecl>>,
+    class: &ClassDecl,
+    method_name: &str,
+) -> Option<bool> {
+    let mut parent_name = match class.parent.as_deref() {
+        Some(parent_name) => parent_name,
+        None => return Some(false),
+    };
+    let mut visited = HashSet::new();
+
+    loop {
+        let key = startup_class_lookup_key(parent_name);
+        if !visited.insert(key.clone()) {
+            return None;
+        }
+        let parent = classes.get(&key).copied()?;
+        if let Some(method) = class_startup_method(parent, traits, method_name)? {
+            if method.visibility != ClassVisibility::Private {
+                return Some(true);
+            }
+        }
+        parent_name = match parent.parent.as_deref() {
+            Some(parent_name) => parent_name,
+            None => return Some(false),
+        };
+    }
+}
+
+fn startup_class_implements_interface_method(
+    classes: &HashMap<String, &ClassDecl>,
+    interfaces: &HashMap<String, &InterfaceDecl>,
+    class: &ClassDecl,
+    method_name: &str,
+) -> Option<bool> {
+    let mut current = Some(class);
+    let mut visited_classes = HashSet::new();
+
+    while let Some(class_decl) = current {
+        let class_key = startup_class_lookup_key(&class_decl.name);
+        if !visited_classes.insert(class_key) {
+            return None;
+        }
+        for interface_name in &class_decl.interfaces {
+            let Some(has_method) =
+                startup_interface_has_method_by_name(interfaces, interface_name, method_name)
+            else {
+                continue;
+            };
+            if has_method {
+                return Some(true);
+            }
+        }
+        current = class_decl
+            .parent
+            .as_deref()
+            .map(startup_class_lookup_key)
+            .and_then(|key| classes.get(&key).copied());
+    }
+
+    Some(false)
+}
+
+fn startup_parent_interface_has_method(
+    interfaces: &HashMap<String, &InterfaceDecl>,
+    interface: &InterfaceDecl,
+    method_name: &str,
+) -> Option<bool> {
+    let mut visited = HashSet::new();
+    let mut saw_resolved_parent = false;
+    for parent_name in &interface.parents {
+        let parent = interfaces
+            .get(&startup_class_lookup_key(parent_name))
+            .copied()?;
+        saw_resolved_parent = true;
+        let has_method =
+            startup_interface_has_method(interfaces, parent, method_name, &mut visited)?;
+        if has_method {
+            return Some(true);
+        }
+    }
+    if interface.parents.is_empty() || saw_resolved_parent {
+        Some(false)
+    } else {
+        None
+    }
+}
+
+fn startup_interface_has_method_by_name(
+    interfaces: &HashMap<String, &InterfaceDecl>,
+    interface_name: &str,
+    method_name: &str,
+) -> Option<bool> {
+    let interface = interfaces
+        .get(&startup_class_lookup_key(interface_name))
+        .copied()?;
+    startup_interface_has_method(interfaces, interface, method_name, &mut HashSet::new())
+}
+
+fn startup_interface_has_method(
+    interfaces: &HashMap<String, &InterfaceDecl>,
+    interface: &InterfaceDecl,
+    method_name: &str,
+    visited: &mut HashSet<String>,
+) -> Option<bool> {
+    let key = startup_class_lookup_key(&interface.name);
+    if !visited.insert(key) {
+        return None;
+    }
+    if interface
+        .methods
+        .iter()
+        .any(|method| method.function.name.eq_ignore_ascii_case(method_name))
+    {
+        return Some(true);
+    }
+    for parent_name in &interface.parents {
+        let parent = interfaces
+            .get(&startup_class_lookup_key(parent_name))
+            .copied()?;
+        if startup_interface_has_method(interfaces, parent, method_name, visited)? {
+            return Some(true);
+        }
+    }
+    Some(false)
+}
+
+fn class_startup_method(
+    class: &ClassDecl,
+    traits: &HashMap<String, Rc<TraitDecl>>,
+    method_name: &str,
+) -> Option<Option<ClassMethodDecl>> {
+    if let Some(method) = class.members.iter().find_map(|member| match member {
+        ClassMember::Method(method) if method.function.name.eq_ignore_ascii_case(method_name) => {
+            Some(method.clone())
+        }
+        _ => None,
+    }) {
+        return Some(Some(method));
+    }
+
+    let trait_methods = composed_trait_methods(class, traits).ok()?;
+    Some(
+        trait_methods
+            .into_iter()
+            .find(|method| method.function.name.eq_ignore_ascii_case(method_name)),
+    )
+}
+
+fn attribute_override_missing_method_message(class_name: &str, method_name: &str) -> String {
+    format!(
+        "{class_name}::{method_name}() has #[\\Override] attribute, but no matching parent method exists"
+    )
 }
 
 fn top_level_interface_startup_lookup(program: &Program) -> HashMap<String, &InterfaceDecl> {
@@ -69378,6 +69688,20 @@ fn default_exprs_are_compatible(left: &Expr, right: &Expr) -> bool {
 
 fn property_has_override_attribute(property: &ClassPropertyDecl) -> bool {
     property
+        .attributes
+        .iter()
+        .any(|attribute| attribute_name_is_override(attribute))
+}
+
+fn class_method_has_override_attribute(method: &ClassMethodDecl) -> bool {
+    method
+        .attributes
+        .iter()
+        .any(|attribute| attribute_name_is_override(attribute))
+}
+
+fn interface_method_has_override_attribute(method: &InterfaceMethodDecl) -> bool {
+    method
         .attributes
         .iter()
         .any(|attribute| attribute_name_is_override(attribute))
