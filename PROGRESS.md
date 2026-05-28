@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-28 14:58 CEST
+Updated: 2026-05-28 15:03 CEST
 Primary branch: `master`
-Latest source head: `279f066b fix: validate scalar default parameter types`
+Latest source head: `55b2bea2 fix: preserve try array-offset reference returns`
 
 ## Progress Score
 
@@ -51,10 +51,37 @@ Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
 
-Post-Batch002 source checkpoint 9 is now primary-integrated under AO. This is a
+Post-Batch002 source checkpoint 10 is now primary-integrated under AO. This is a
 source checkpoint with focused proof, not a percentage change. The public score
 remains **1193 / 20294 runnable PHPTs = 5.88%** until another pinned full-suite
 run is completed, parsed, regression-checked, and published here.
+
+- primary source head:
+  `55b2bea2 fix: preserve try array-offset reference returns`
+- p28 final handoff head:
+  `5c35b2d1a8f35b021df7855745bd4c80553c1fd0 fix: preserve try array-offset reference returns`
+- exported integration patch:
+  `/home/claude/supervised-php-compiler/state/patches/ao-integration-p18-try-bug72216-array-offset-ref-source-20260528.patch`
+- exported integration patch SHA256:
+  `adab76c5a6c958398fadc2031589b78270ed2e6fc83b28ea9926cb9f515f13a7`
+- source candidate patch SHA256:
+  `4b2ec8e2eaefd47e5300d0b0ae63b8db7d49e145a9aaf02e1b47b8b293c55913`
+- reviewer gate: p7 recorded `FINAL GO-CANDIDATE /
+  FOCUSED-GATES-PASS` with `FINAL_FAIL=0`
+- critic gate: phpc-26 recorded `SAFE-FOR-INTEGRATION /
+  P18-TRY-BUG72216-ARRAY-OFFSET-REF-SOURCE`
+- focused gates: PASS for `git diff --check`, `cargo fmt --all --
+  --check`, `cargo build -p phpc`, and wrapper PHPT
+  `Zend/tests/try/bug72216.phpt`
+- full PHPT suite: not run for this single source checkpoint
+
+This checkpoint generalizes array-offset reference-return preservation across
+try/finally frame cleanup by falling back to the existing
+`reference_return_alias_cell` path when a local static array-offset alias cell
+is not present. It is not keyed to `bug72216`, exact output, variable names, or
+fixture shape.
+
+Previous post-Batch002 source checkpoint 9 was p15 scalar default validation:
 
 - primary source head:
   `279f066b fix: validate scalar default parameter types`
