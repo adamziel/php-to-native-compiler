@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-28 17:13 CEST
+Updated: 2026-05-28 17:26 CEST
 Primary branch: `master`
-Latest source head: `dfd7ff09 fix: return coerced typed property assignment values`
+Latest source head: `32b8b637 fix: validate dynamic array callback shape`
 
 ## Progress Score
 
@@ -50,6 +50,47 @@ Focused PHPT history is tracked separately in
 Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
+
+Post-Batch002 source checkpoint 20 is now primary-integrated under AO
+supervision. This is a source checkpoint with focused proof, not a percentage
+change. The public score remains **1193 / 20294 runnable PHPTs = 5.88%** until
+another pinned full-suite run is completed, parsed, regression-checked, and
+published here.
+
+- primary source head:
+  `32b8b637 fix: validate dynamic array callback shape`
+- p28 final handoff head:
+  `9c1c5f1ccc54fce7ffd67e467ff8177d2bbb484f`
+- exported integration patch:
+  `/home/claude/supervised-php-compiler/state/patches/ao-integration-p19-bug63173-successor2-source-20260528.patch`
+- exported integration patch SHA256:
+  `fe7cf9e2657475ea7f457f14fff2bb94ace298d3cef3f92c3ea7010eb038427c`
+- source candidate patch SHA256:
+  `e47baaa9976949160728edf8d1e0650104926911c1cda3360175a4a73ed4d03b`
+- reviewer gate: p7 recorded `FINAL GO-CANDIDATE /
+  FOCUSED-GATES-PASS` with `FINAL_FAIL=0`
+- critic gate: phpc-26 recorded `SAFE-FOR-INTEGRATION /
+  P19-DYNAMIC-CALL-BUG63173-SUCCESSOR2`
+- focused gates: PASS for `git diff --check`, docs/PROGRESS exclusion,
+  production exact-shape audit, `cargo fmt --all -- --check`, `cargo test -p
+  phpc --test dynamic_features
+  invalid_array_callbacks_with_missing_zero_one_indices_emit_uncaught_error --
+  --exact --test-threads=1`, `cargo build -p phpc`, and wrapper PHPTs
+  `Zend/tests/dynamic_call/bug63173.phpt`,
+  `Zend/tests/dynamic_call/dynamic_call_freeing.phpt`,
+  `Zend/tests/dynamic_call/bug77877.phpt`, and
+  `Zend/tests/dynamic_call/dynamic_fully_qualified_call.phpt`
+- full PHPT suite: not run for this single source checkpoint
+
+This checkpoint generalizes dynamic array callback shape validation and
+uncaught PHP `Error` fatal emission. Array callbacks that do not contain
+integer indices `0` and `1` now use PHP's array-callback diagnostic, while
+escaped catchable runtime errors are emitted through the generic uncaught
+PHP-error fatal path with exit code 255. It is not keyed to PHPT filenames,
+fixture callback values, Rust test names, expected output rows, or one exact
+source shape.
+
+Previous post-Batch002 source checkpoint 19 was p15 assignment expression:
 
 Post-Batch002 source checkpoint 19 is now primary-integrated under AO
 supervision. This is a source checkpoint with focused proof, not a percentage
