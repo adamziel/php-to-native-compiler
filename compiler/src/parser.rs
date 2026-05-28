@@ -238,7 +238,7 @@ impl Parser {
             .consume_keyword(TokenKind::Function, "expected 'function'")?
             .span;
         Ok(Stmt::Function(
-            self.parse_function_after_keyword(start, true)?,
+            self.parse_function_after_keyword(start, true, false)?,
         ))
     }
 
@@ -246,6 +246,7 @@ impl Parser {
         &mut self,
         start: Span,
         resolve_namespace: bool,
+        allow_constructor_property_promotion: bool,
     ) -> CompileResult<FunctionDecl> {
         let is_nested = self.nested_statement_depth > 0 || self.function_body_depth > 0;
         let returns_by_reference = self.match_token(|kind| matches!(kind, TokenKind::Ampersand));
@@ -275,7 +276,9 @@ impl Parser {
         let doc_comment = self.pending_doc_comment.take();
         self.pending_attributes.clear();
         self.consume_keyword(TokenKind::LParen, "expected '(' after function name")?;
-        let params = self.parse_function_params_after_open()?;
+        let allow_promoted_properties =
+            allow_constructor_property_promotion && name.eq_ignore_ascii_case("__construct");
+        let params = self.parse_function_params_after_open(allow_promoted_properties)?;
 
         let return_type = if self.match_token(|kind| matches!(kind, TokenKind::Colon)) {
             Some(self.parse_type_decl(unsupported_return_type_message())?)
@@ -301,21 +304,34 @@ impl Parser {
         })
     }
 
-    fn parse_function_params_after_open(&mut self) -> CompileResult<Vec<FunctionParam>> {
+    fn parse_function_params_after_open(
+        &mut self,
+        allow_promoted_properties: bool,
+    ) -> CompileResult<Vec<FunctionParam>> {
         let mut params = Vec::new();
         let mut saw_default = false;
         if !self.check(|kind| matches!(kind, TokenKind::RParen)) {
             loop {
                 self.consume_doc_comments_and_attributes();
                 self.pending_doc_comment = None;
+                let attributes = self.take_pending_attributes();
+                let promotion = if self.check(is_promoted_property_parameter_start) {
+                    if !allow_promoted_properties {
+                        return Err(self.error_at(
+                            self.peek().span,
+                            unsupported_promoted_property_parameter_message(),
+                        ));
+                    }
+                    Some(self.parse_promoted_property_visibility()?)
+                } else {
+                    None
+                };
                 if self.check(is_promoted_property_parameter_start) {
-                    self.pending_attributes.clear();
                     return Err(self.error_at(
                         self.peek().span,
                         unsupported_promoted_property_parameter_message(),
                     ));
                 }
-                self.pending_attributes.clear();
                 let type_decl = if self.check(is_parameter_type_start) {
                     Some(self.parse_type_decl(unsupported_parameter_type_message())?)
                 } else {
@@ -351,6 +367,8 @@ impl Parser {
                     by_reference,
                     is_variadic,
                     default,
+                    promotion,
+                    attributes,
                     span,
                 });
                 if !self.match_token(|kind| matches!(kind, TokenKind::Comma)) {
@@ -370,6 +388,34 @@ impl Parser {
 
         self.consume_keyword(TokenKind::RParen, "expected ')' after parameter list")?;
         Ok(params)
+    }
+
+    fn parse_promoted_property_visibility(&mut self) -> CompileResult<ClassVisibility> {
+        let visibility = match self.peek().kind {
+            TokenKind::Public => ClassVisibility::Public,
+            TokenKind::Protected => ClassVisibility::Protected,
+            TokenKind::Private => ClassVisibility::Private,
+            TokenKind::Readonly => {
+                return Err(self.error_at(
+                    self.peek().span,
+                    "unsupported promoted property parameter: readonly promoted properties are not implemented",
+                ));
+            }
+            _ => {
+                return Err(self.error_at(
+                    self.peek().span,
+                    unsupported_promoted_property_parameter_message(),
+                ));
+            }
+        };
+        self.advance();
+        if self.match_token(|kind| matches!(kind, TokenKind::Readonly)) {
+            return Err(self.error_at(
+                self.previous().span,
+                "unsupported promoted property parameter: readonly promoted properties are not implemented",
+            ));
+        }
+        Ok(visibility)
     }
 
     fn parse_type_decl(&mut self, message: &'static str) -> CompileResult<TypeDecl> {
@@ -795,7 +841,7 @@ impl Parser {
             return Err(self.error_at(span, unsupported_trait_method_message()));
         }
 
-        let function = self.parse_function_after_keyword(span, false)?;
+        let function = self.parse_function_after_keyword(span, false, false)?;
         Ok(ClassMethodDecl {
             function,
             visibility: ClassVisibility::Public,
@@ -1231,7 +1277,7 @@ impl Parser {
         let doc_comment = self.pending_doc_comment.take();
         self.pending_attributes.clear();
         self.consume_keyword(TokenKind::LParen, "expected '(' after function name")?;
-        let params = self.parse_function_params_after_open()?;
+        let params = self.parse_function_params_after_open(false)?;
         let return_type = if self.match_token(|kind| matches!(kind, TokenKind::Colon)) {
             Some(self.parse_type_decl(unsupported_return_type_message())?)
         } else {
@@ -1365,7 +1411,7 @@ impl Parser {
                 )?;
                 function
             } else {
-                self.parse_function_after_keyword(span, false)?
+                self.parse_function_after_keyword(span, false, true)?
             };
             return Ok(ClassMember::Method(ClassMethodDecl {
                 function,
@@ -6338,7 +6384,7 @@ impl Parser {
         let returns_by_reference = self.match_token(|kind| matches!(kind, TokenKind::Ampersand));
 
         self.consume_keyword(TokenKind::LParen, "expected '(' after function")?;
-        let params = self.parse_function_params_after_open()?;
+        let params = self.parse_function_params_after_open(false)?;
 
         let mut captures = Vec::new();
         if self.match_token(|kind| matches!(kind, TokenKind::Use)) {
@@ -6403,7 +6449,7 @@ impl Parser {
         }
 
         self.consume_keyword(TokenKind::LParen, "expected '(' after fn")?;
-        let params = self.parse_function_params_after_open()?;
+        let params = self.parse_function_params_after_open(false)?;
         let return_type = if self.match_token(|kind| matches!(kind, TokenKind::Colon)) {
             Some(self.parse_type_decl(unsupported_return_type_message())?)
         } else {

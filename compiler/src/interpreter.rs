@@ -15777,6 +15777,15 @@ impl Interpreter {
             span,
         )?;
         let function = function.as_ref();
+        if function_has_promoted_properties(function) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_object_instantiation(
+                    declared_class_name,
+                    "constructor property promotion initialization is not implemented",
+                ),
+            ));
+        }
         ensure_user_function_arity(function, args.len(), span)?;
         ensure_supported_function_metadata(function, span)?;
         self.ensure_user_function_call_depth(function, span)?;
@@ -67129,10 +67138,7 @@ fn collect_class_property_inheritance_startup_diagnostics(
             continue;
         }
 
-        for member in &class.members {
-            let ClassMember::Property(property) = member else {
-                continue;
-            };
+        for property in declared_class_properties_in_source_order(class) {
             let Some((parent, parent_property)) =
                 inherited_startup_property(&classes, class, &property.name)
             else {
@@ -67140,9 +67146,9 @@ fn collect_class_property_inheritance_startup_diagnostics(
             };
             let Some(message) = inherited_property_startup_diagnostic_message(
                 &class.name,
-                property,
+                &property,
                 &parent.name,
-                parent_property,
+                &parent_property,
             ) else {
                 continue;
             };
@@ -67278,11 +67284,8 @@ fn class_property_override_startup_diagnostic(
         }
     }
 
-    for member in &class.members {
-        let ClassMember::Property(property) = member else {
-            continue;
-        };
-        if !property_has_override_attribute(property) {
+    for property in declared_class_properties_in_source_order(class) {
+        if !property_has_override_attribute(&property) {
             continue;
         }
         let Some(has_match) =
@@ -67448,7 +67451,7 @@ fn inherited_startup_property<'a>(
     classes: &HashMap<String, &'a ClassDecl>,
     class: &ClassDecl,
     property_name: &str,
-) -> Option<(&'a ClassDecl, &'a ClassPropertyDecl)> {
+) -> Option<(&'a ClassDecl, ClassPropertyDecl)> {
     let mut parent_name = class.parent.as_deref()?;
     let mut visited = HashSet::new();
 
@@ -67469,14 +67472,21 @@ fn inherited_startup_property<'a>(
     }
 }
 
-fn class_startup_property<'a>(
-    class: &'a ClassDecl,
-    property_name: &str,
-) -> Option<&'a ClassPropertyDecl> {
-    class.members.iter().find_map(|member| match member {
-        ClassMember::Property(property) if property.name == property_name => Some(property),
-        _ => None,
-    })
+fn class_startup_property(class: &ClassDecl, property_name: &str) -> Option<ClassPropertyDecl> {
+    class
+        .members
+        .iter()
+        .find_map(|member| match member {
+            ClassMember::Property(property) if property.name == property_name => {
+                Some(property.clone())
+            }
+            _ => None,
+        })
+        .or_else(|| {
+            promoted_constructor_properties(class)
+                .into_iter()
+                .find(|property| property.name == property_name)
+        })
 }
 
 fn inherited_property_startup_diagnostic_message(
@@ -68470,6 +68480,12 @@ fn register_class_member_runtime_tables(
                 }
             }
             ClassMember::Method(method) => {
+                for property in promoted_properties_from_method(method) {
+                    property_source_metadata.insert(
+                        (class_id, property.name.clone()),
+                        property_source_metadata_from_decl(&property),
+                    );
+                }
                 let key = (class_id, method.function.name.to_ascii_lowercase());
                 method_signatures.insert(
                     key.clone(),
@@ -68765,6 +68781,29 @@ fn register_class_members(
                     .map_err(|error| runtime_error(constant.span, error))?;
             }
             ClassMember::Method(method) => {
+                for property in promoted_properties_from_method(method) {
+                    let visibility = runtime_visibility(property.visibility);
+                    validate_inherited_property_compatibility(classes, id, &class.name, &property)
+                        .map_err(|error| runtime_error(property.span, error))?;
+                    validate_property_override_attribute(
+                        classes,
+                        interface_lookup,
+                        id,
+                        &class.name,
+                        &property,
+                    )
+                    .map_err(|error| runtime_error(property.span, error))?;
+
+                    let metadata_property =
+                        PhpPropertyMetadata::instance(&property.name, visibility).with_type_decl(
+                            property.type_decl.as_ref().map(|decl| decl.text.clone()),
+                        );
+                    classes
+                        .get_mut(id)
+                        .expect("declared class id should resolve to class metadata")
+                        .add_property(metadata_property)
+                        .map_err(|error| runtime_error(property.span, error))?;
+                }
                 let visibility = runtime_visibility(method.visibility);
                 validate_destructor_method_shape(&class.name, method, visibility)
                     .map_err(|error| runtime_error(method.span, error))?;
@@ -68984,16 +69023,79 @@ fn resolve_trait_use_decl<'a>(
 }
 
 fn declared_class_properties(class: &ClassDecl) -> HashMap<String, ClassPropertyDecl> {
+    declared_class_properties_in_source_order(class)
+        .into_iter()
+        .map(|property| (property.name.clone(), property))
+        .collect()
+}
+
+fn declared_class_properties_in_source_order(class: &ClassDecl) -> Vec<ClassPropertyDecl> {
+    let mut seen = HashSet::new();
+    let mut properties = Vec::new();
+    for member in &class.members {
+        match member {
+            ClassMember::Property(property) => {
+                if seen.insert(property.name.clone()) {
+                    properties.push(property.clone());
+                }
+            }
+            ClassMember::Method(method) => {
+                for property in promoted_properties_from_method(method) {
+                    if seen.insert(property.name.clone()) {
+                        properties.push(property);
+                    }
+                }
+            }
+            ClassMember::Constant(_) => {}
+        }
+    }
+    properties
+}
+
+fn promoted_constructor_properties(class: &ClassDecl) -> Vec<ClassPropertyDecl> {
     class
         .members
         .iter()
         .filter_map(|member| {
-            let ClassMember::Property(property) = member else {
+            let ClassMember::Method(method) = member else {
                 return None;
             };
-            Some((property.name.clone(), property.clone()))
+            Some(promoted_properties_from_method(method))
         })
+        .flatten()
         .collect()
+}
+
+fn promoted_properties_from_method(method: &ClassMethodDecl) -> Vec<ClassPropertyDecl> {
+    if !method.function.name.eq_ignore_ascii_case("__construct") {
+        return Vec::new();
+    }
+    method
+        .function
+        .params
+        .iter()
+        .filter_map(|param| promoted_property_from_param(param))
+        .collect()
+}
+
+fn promoted_property_from_param(param: &FunctionParam) -> Option<ClassPropertyDecl> {
+    Some(ClassPropertyDecl {
+        name: param.name.clone(),
+        visibility: param.promotion?,
+        is_static: false,
+        type_decl: param.type_decl.clone(),
+        default: None,
+        attributes: param.attributes.clone(),
+        doc_comment: None,
+        span: param.span,
+    })
+}
+
+fn function_has_promoted_properties(function: &FunctionDecl) -> bool {
+    function
+        .params
+        .iter()
+        .any(|param| param.promotion.is_some())
 }
 
 fn declared_trait_properties(trait_decl: &TraitDecl) -> HashMap<String, ClassPropertyDecl> {
@@ -83597,6 +83699,8 @@ echo $items["shared"]["leaf"] . "|" . $shared . "|" . $items["plain"]["leaf"] . 
                 by_reference: true,
                 is_variadic: false,
                 default: None,
+                promotion: None,
+                attributes: Vec::new(),
                 span,
             }],
             return_type: None,
@@ -84940,6 +85044,8 @@ echo $items["shared"]["leaf"] . "|" . $shared . "|" . $items["plain"]["leaf"] . 
                 by_reference: true,
                 is_variadic: false,
                 default: None,
+                promotion: None,
+                attributes: Vec::new(),
                 span,
             }],
             return_type: None,

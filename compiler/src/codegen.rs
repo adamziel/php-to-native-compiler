@@ -1796,6 +1796,8 @@ fn native_value_print_r_params(span: Span) -> [FunctionParam; 2] {
             by_reference: false,
             is_variadic: false,
             default: None,
+            promotion: None,
+            attributes: Vec::new(),
             span,
         },
         FunctionParam {
@@ -1804,6 +1806,8 @@ fn native_value_print_r_params(span: Span) -> [FunctionParam; 2] {
             by_reference: false,
             is_variadic: false,
             default: Some(Expr::Bool(false, span)),
+            promotion: None,
+            attributes: Vec::new(),
             span,
         },
     ]
@@ -18994,6 +18998,8 @@ impl CNativeBuiltinSignature {
                 by_reference: self.fixed_param_by_reference[index],
                 is_variadic: false,
                 default: self.fixed_param_defaults[index].map(|default| default.to_expr(span)),
+                promotion: None,
+                attributes: Vec::new(),
                 span,
             })
             .collect::<Vec<_>>();
@@ -19004,6 +19010,8 @@ impl CNativeBuiltinSignature {
                 by_reference: self.variadic_param_by_reference,
                 is_variadic: true,
                 default: None,
+                promotion: None,
+                attributes: Vec::new(),
                 span,
             });
         }
@@ -21501,7 +21509,8 @@ impl CGenerator {
                         .as_ref()
                         .is_some_and(|decl| !native_function_type_decl_is_supported(decl))
                     || method.function.params.iter().any(|param| {
-                        native_user_function_param_has_unsupported_by_reference_shape(param)
+                        param.promotion.is_some()
+                            || native_user_function_param_has_unsupported_by_reference_shape(param)
                             || param
                                 .type_decl
                                 .as_ref()
@@ -22190,7 +22199,8 @@ impl CGenerator {
             || method.function.return_type.is_some()
             || native_user_function_has_malformed_variadic_params(&method.function)
             || method.function.params.iter().any(|param| {
-                native_user_function_param_has_unsupported_by_reference_shape(param)
+                param.promotion.is_some()
+                    || native_user_function_param_has_unsupported_by_reference_shape(param)
                     || param
                         .type_decl
                         .as_ref()
@@ -22221,7 +22231,8 @@ impl CGenerator {
                 .as_ref()
                 .is_some_and(|decl| !native_function_type_decl_is_supported(decl))
             || method.function.params.iter().any(|param| {
-                native_user_function_param_has_unsupported_by_reference_shape(param)
+                param.promotion.is_some()
+                    || native_user_function_param_has_unsupported_by_reference_shape(param)
                     || param
                         .type_decl
                         .as_ref()
@@ -22461,7 +22472,8 @@ impl CGenerator {
                 .as_ref()
                 .is_some_and(|decl| !native_function_type_decl_is_supported(decl))
             || function.params.iter().any(|param| {
-                native_user_function_param_has_unsupported_by_reference_shape(param)
+                param.promotion.is_some()
+                    || native_user_function_param_has_unsupported_by_reference_shape(param)
                     || param
                         .type_decl
                         .as_ref()
@@ -22511,7 +22523,8 @@ impl CGenerator {
             || calls_root_symbol_frame
             || return_type.is_some_and(|decl| !native_function_type_decl_is_supported(decl))
             || params.iter().any(|param| {
-                native_closure_param_has_unsupported_by_reference_shape(param)
+                param.promotion.is_some()
+                    || native_closure_param_has_unsupported_by_reference_shape(param)
                     || param
                         .type_decl
                         .as_ref()
@@ -71961,6 +71974,8 @@ echo " 10" < "zeta";
             by_reference,
             is_variadic,
             default: None,
+            promotion: None,
+            attributes: Vec::new(),
             span: test_span(),
         }
     }
@@ -71975,6 +71990,8 @@ echo " 10" < "zeta";
             by_reference,
             is_variadic: false,
             default: None,
+            promotion: None,
+            attributes: Vec::new(),
             span: test_span(),
         }
     }
@@ -74650,6 +74667,8 @@ echo $call("Ada");
             by_reference: false,
             is_variadic: false,
             default: None,
+            promotion: None,
+            attributes: Vec::new(),
             span: test_span(),
         };
         generator.native_descriptor_closure_return_summaries.insert(

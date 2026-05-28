@@ -842,23 +842,15 @@ fn emit_ir_rejects_parenthesized_dynamic_new_class_expression_at_parse_boundary(
 }
 
 #[test]
-fn unsupported_promoted_property_parameters_have_stable_parse_errors() {
+fn promoted_property_parameters_are_limited_to_constructor_contexts() {
     let cases = [
+        ("<?php\nfunction make(public string $name) {}\n", 2, 15),
         (
-            "<?php\nclass User {\n    public function __construct(public string $name) {}\n}\n",
+            "<?php\nclass User {\n    public function set(public string $name) {}\n}\n",
             3,
-            33,
+            25,
         ),
-        (
-            "<?php\nclass User {\n    public function __construct(private $id) {}\n}\n",
-            3,
-            33,
-        ),
-        (
-            "<?php\nclass User {\n    public function __construct(protected readonly string $name) {}\n}\n",
-            3,
-            33,
-        ),
+        ("<?php\n$fn = function (public string $name) {};\n", 2, 17),
     ];
 
     for (source, line, column) in cases {
@@ -873,11 +865,22 @@ fn unsupported_promoted_property_parameters_have_stable_parse_errors() {
 }
 
 #[test]
+fn readonly_promoted_property_parameters_have_stable_parse_errors() {
+    let error = parse_error(
+        "<?php\nclass User {\n    public function __construct(protected readonly string $name) {}\n}\n",
+    );
+    assert_eq!(error.line, 3);
+    assert_eq!(error.column, 43);
+    assert_eq!(
+        error.message,
+        "unsupported promoted property parameter: readonly promoted properties are not implemented"
+    );
+}
+
+#[test]
 fn emit_ir_rejects_promoted_property_parameters_at_parse_boundary() {
-    let error = php_compiler::emit_ir_source(
-        "<?php\nclass User {\n    public function __construct(public string $name) {}\n}\n",
-    )
-    .unwrap_err();
+    let error =
+        php_compiler::emit_ir_source("<?php\nfunction make(public string $name) {}\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Parse);
     assert_eq!(

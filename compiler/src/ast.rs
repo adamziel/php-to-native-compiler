@@ -908,6 +908,8 @@ pub struct FunctionParam {
     pub by_reference: bool,
     pub is_variadic: bool,
     pub default: Option<Expr>,
+    pub promotion: Option<ClassVisibility>,
+    pub attributes: Vec<String>,
     pub span: Span,
 }
 

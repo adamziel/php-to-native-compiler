@@ -2488,6 +2488,57 @@ class Service {
 }
 
 #[test]
+fn property_override_attribute_validates_promoted_constructor_properties() {
+    let interface_property = run_source(
+        r#"<?php
+interface Contract {
+    public mixed $value { get; }
+}
+class Service implements Contract {
+    public function __construct(
+        #[\Override]
+        public mixed $value,
+    ) {}
+}
+echo "Done";
+"#,
+    )
+    .unwrap();
+    assert_eq!(interface_property.stdout, "Done");
+    assert_eq!(interface_property.exit_code, 0);
+
+    assert_php_startup_fatal(
+        r#"<?php
+class Service {
+    public function __construct(
+        #[\Override]
+        public mixed $value,
+    ) {}
+}
+echo "Done";
+"#,
+        "tests/classes/property_override_promoted_missing_parent.php",
+        5,
+        "Service::$value has #[\\Override] attribute, but no matching parent property exists",
+    );
+
+    let runtime_error = runtime_error(
+        r#"<?php
+class Service {
+    public function __construct(
+        public mixed $value,
+    ) {}
+}
+new Service("value");
+"#,
+    );
+    assert_eq!(
+        runtime_error.message,
+        "unsupported object instantiation for Service: constructor property promotion initialization is not implemented"
+    );
+}
+
+#[test]
 fn static_interface_methods_are_declared_validated_and_callable() {
     let execution = run_source(
         r#"<?php
