@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-28 21:09 CEST
+Updated: 2026-05-28 21:31 CEST
 Primary branch: `master`
 Latest source head: `b75047df fix: preserve fatal output separator after inline output`
 
@@ -13,7 +13,7 @@ Progress is the pinned php-src PHPT full-suite pass rate:
 
 `passed runnable PHPTs / total runnable PHPTs`
 
-Current score: **1311 / 20294 pinned runnable PHPTs = 6.46%**.
+Current score: **1369 / 20294 pinned runnable PHPTs = 6.75%**.
 
 No other percentage is public project progress. Focused PHPT passes, source
 checkpoints, PRs, and docs/status edits are evidence for the next batch, but
@@ -34,7 +34,7 @@ Counts: 1193 passed, 19081 failed, 964 skipped, 20 xfailed, 0 borked;
 lives under
 `/home/claude/supervised-php-compiler/state/logs/phpt-full-batch002-20260528T100640Z-php-src-f97ff59-public-bc0ed214-source-e72efe27-stack11`.
 
-The latest full-suite result is Batch003 on the same php-src pin, run
+The Batch003 full-suite result was on the same php-src pin, run
 `phpt-full-batch003-20260528T154907Z-php-src-f97ff59-public-20f3be4c-source-202dd1ec-stack21`.
 Counts: 1311 passed, 17129 failed, 967 skipped, 12 xfailed, 1839 borked;
 `run-tests.php` exited 1. Regressions from the Batch002 PASS set: 0. Evidence
@@ -44,6 +44,18 @@ lives under
 Batch003 produced BORKED rows from PHPT harness/setup paths, so the public
 score uses the stable pinned denominator and does not use the raw runner
 `1311 / 18452 = 7.10%` calculation that excludes borked rows.
+
+The latest full-suite result is the Batch004 checkpoint8 regression-repair
+sharded gate on the same php-src pin, run
+`phpt-full-batch004-regression-repair-sharded-20260528T192018Z-php-src-f97ff59-public-3c86fc6a-source-b75047df-stack8`.
+Counts: 1369 passed, 17815 failed, 2109 skipped, 16 xfailed, 1022 borked;
+all 12 shards exited nonzero because failing PHPTs remain. Regressions from the
+Batch003 PASS set: 0. Evidence lives under
+`/home/claude/supervised-php-compiler/state/logs/phpt-full-batch004-regression-repair-sharded-20260528T192018Z-php-src-f97ff59-public-3c86fc6a-source-b75047df-stack8`.
+
+Batch004 checkpoint8 also has BORKED rows, so the public score uses the stable
+pinned denominator and does not use the raw runner `1369 / 19200 = 7.13%`
+calculation.
 
 ## PHPT Harness
 
@@ -56,6 +68,7 @@ score uses the stable pinned denominator and does not use the raw runner
 | First full-suite baseline | Done | 1118 / 20294 runnable PHPTs passed (5.51%); run id `phpt-full-batch001-20260528T010422Z-php-src-f97ff59-base-3e702be4-stack10` |
 | Batch002 full-suite gate | Done | 1193 / 20294 runnable PHPTs passed (5.88%); 0 regressions from Batch001 PASS set; run id `phpt-full-batch002-20260528T100640Z-php-src-f97ff59-public-bc0ed214-source-e72efe27-stack11` |
 | Batch003 full-suite gate | Done | 1311 / 20294 pinned runnable PHPTs passed (6.46%); 0 regressions from Batch002 PASS set; run id `phpt-full-batch003-20260528T154907Z-php-src-f97ff59-public-20f3be4c-source-202dd1ec-stack21` |
+| Batch004 checkpoint8 regression-repair sharded gate | Done | 1369 / 20294 pinned runnable PHPTs passed (6.75%); 0 regressions from Batch003 PASS set; run id `phpt-full-batch004-regression-repair-sharded-20260528T192018Z-php-src-f97ff59-public-3c86fc6a-source-b75047df-stack8` |
 | Next source batch | Open | Batch004 source checkpoints accepted: 8 / 10; route remaining checkpoints toward broad PHPT failures with focused PHPT proof; run the next full suite after 10 accepted source checkpoints or an explicit sharded/regression-repair publication gate |
 
 Focused PHPT history is tracked separately in
@@ -65,11 +78,9 @@ Focused passes prove candidate direction; they do not define project percent.
 ## Current Integration
 
 Batch004 source checkpoint 8 is primary-integrated under AO supervision as a
-regression repair for the checkpoint7 sharded gate. This is a source checkpoint
-with focused proof, not a percentage change. The public PHPT score remains
-**1311 / 20294 pinned runnable PHPTs = 6.46%** until a pinned full-suite or
-supervisor-approved sharded regression-repair gate completes, shows zero
-Batch003 PASS regressions, and is published here.
+regression repair for the checkpoint7 sharded gate. The checkpoint8
+regression-repair sharded gate is now published with **1369 / 20294 pinned
+runnable PHPTs = 6.75%** and zero regressions from the Batch003 PASS set.
 
 - primary source head:
   `b75047df fix: preserve fatal output separator after inline output`
@@ -91,8 +102,11 @@ Batch003 PASS regressions, and is published here.
   wrapper PHPT `Zend/tests/type_declarations/typed_properties_055.phpt`
 - supervisor primary gate log:
   `/home/claude/supervised-php-compiler/state/workers/supervisor-primary-lsb-bug47699-regression-fix-20260528.gates.log`
-- full PHPT suite: not yet run after this regression repair; due as a
-  supervisor-approved regression-repair gate before any public score increase
+- full PHPT suite: supervisor-approved regression-repair sharded gate completed
+  as
+  `phpt-full-batch004-regression-repair-sharded-20260528T192018Z-php-src-f97ff59-public-3c86fc6a-source-b75047df-stack8`;
+  counts were 1369 passed, 17815 failed, 2109 skipped, 16 xfailed, 1022 borked;
+  Batch003 PASS regressions were 0
 
 This checkpoint fixes a general fatal-output separator rule. Fatal output after
 inline output without a trailing newline now receives exactly one separator
