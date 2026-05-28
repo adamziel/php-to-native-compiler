@@ -1834,7 +1834,7 @@ impl SymbolTable {
         }
 
         let source_cell = self
-            .read_cell(source)
+            .direct_reference_cell_for_static_source(source)
             .ok_or_else(|| runtime_error(span, RuntimeError::undefined_variable(source)))?;
         self.clear_public_object_property_array_copy_source(target);
         self.clear_array_literal_copy_source_paths_for_root(target);
@@ -1889,7 +1889,7 @@ impl SymbolTable {
         }
 
         let source_cell = self
-            .read_cell(source)
+            .direct_reference_cell_for_static_source(source)
             .ok_or_else(|| runtime_error(span, RuntimeError::undefined_variable(source)))?;
         self.global_storage()
             .borrow_mut()
@@ -54000,7 +54000,7 @@ impl Interpreter {
                     }
                 }
                 scope
-                    .read_cell(name)
+                    .direct_reference_cell_for_static_source(name)
                     .map(ReferenceReturnLocalBinding::Cell)
                     .ok_or_else(|| runtime_error(*variable_span, RuntimeError::undefined_variable(name)))
             }
@@ -80355,6 +80355,26 @@ mod tests {
             source_cell.value_cloned(),
             Value::String("changed".to_string())
         );
+    }
+
+    #[test]
+    fn symbol_table_reference_aliases_materialize_undefined_source() {
+        let mut symbols = SymbolTable::new();
+        let span = Span::new(7, 3);
+
+        symbols
+            .bind_static_to_static("alias", "source", span)
+            .unwrap();
+
+        let source_cell = symbols.read_cell("source").unwrap();
+        let alias_cell = symbols.read_cell("alias").unwrap();
+
+        assert_eq!(source_cell.value_cloned(), Value::Null);
+        assert!(source_cell.shares_reference_with(&alias_cell));
+
+        symbols.write_static("alias", Value::Int(2));
+
+        assert_eq!(symbols.read_static("source", span).unwrap(), Value::Int(2));
     }
 
     #[test]
