@@ -951,6 +951,7 @@ impl Parser {
 
         self.consume_keyword(TokenKind::LBrace, "expected interface body")?;
         let mut constants = Vec::new();
+        let mut properties = Vec::new();
         let mut methods = Vec::new();
         while !self.check(|kind| matches!(kind, TokenKind::RBrace | TokenKind::Eof)) {
             self.trace_parse("interface member");
@@ -961,6 +962,8 @@ impl Parser {
             }
             if self.check_interface_constant_declaration() {
                 constants.push(self.parse_interface_constant()?);
+            } else if self.check_interface_property_declaration() {
+                properties.push(self.parse_interface_property()?);
             } else {
                 methods.push(self.parse_interface_method()?);
             }
@@ -972,6 +975,7 @@ impl Parser {
             name,
             parents,
             constants,
+            properties,
             methods,
             end_line,
             doc_comment,
@@ -1034,6 +1038,108 @@ impl Parser {
             value,
             span: name_span,
         })
+    }
+
+    fn parse_interface_property(&mut self) -> CompileResult<ClassPropertyDecl> {
+        let modifiers = self.parse_class_member_modifiers()?;
+        let doc_comment = self.pending_doc_comment.take();
+        if modifiers.is_static {
+            return Err(self.error_at(
+                self.previous().span,
+                "unsupported interface property declaration: static interface properties are not implemented",
+            ));
+        }
+        if modifiers.is_abstract || modifiers.is_final {
+            return Err(self.error_at(
+                modifiers
+                    .abstract_or_final_span()
+                    .unwrap_or_else(|| self.peek().span),
+                unsupported_abstract_final_property_message(),
+            ));
+        }
+        if !matches!(modifiers.visibility, ClassVisibility::Public) {
+            return Err(self.error_at(
+                self.previous().span,
+                "unsupported interface property declaration: only public interface properties are implemented",
+            ));
+        }
+
+        let type_decl = if self.check_unsupported_property_type_declaration() {
+            let type_decl = self.parse_type_decl(unsupported_property_type_message())?;
+            if type_decl.text.contains('|') && type_decl.text.contains('&') {
+                return Err(self.error_at(type_decl.span, unsupported_dnf_type_message()));
+            }
+            Some(type_decl)
+        } else {
+            None
+        };
+        let (name, span) = self.consume_variable_with_span("expected interface property name")?;
+        if self.match_token(|kind| matches!(kind, TokenKind::Equal)) {
+            return Err(self.error_at(
+                self.previous().span,
+                "unsupported interface property declaration: interface property defaults are not implemented",
+            ));
+        }
+        if self.match_token(|kind| matches!(kind, TokenKind::Comma)) {
+            return Err(self.error_at(
+                self.previous().span,
+                unsupported_multiple_properties_message(),
+            ));
+        }
+        self.parse_interface_property_hook_block()?;
+
+        Ok(ClassPropertyDecl {
+            name,
+            visibility: ClassVisibility::Public,
+            is_static: false,
+            type_decl,
+            default: None,
+            doc_comment,
+            span,
+        })
+    }
+
+    fn parse_interface_property_hook_block(&mut self) -> CompileResult<()> {
+        self.consume_keyword(
+            TokenKind::LBrace,
+            "expected '{' before interface property hook block",
+        )?;
+        while !self.check(|kind| matches!(kind, TokenKind::RBrace | TokenKind::Eof)) {
+            if let TokenKind::DocComment(comment) = &self.peek().kind {
+                self.pending_doc_comment = Some(comment.clone());
+                self.advance();
+                continue;
+            }
+            self.parse_interface_property_hook_declaration()?;
+        }
+        self.pending_doc_comment = None;
+        self.consume_keyword(
+            TokenKind::RBrace,
+            "expected '}' after interface property hook block",
+        )?;
+        Ok(())
+    }
+
+    fn parse_interface_property_hook_declaration(&mut self) -> CompileResult<()> {
+        let hook_span = self.peek().span;
+        let hook_name = self.consume_identifier("expected interface property hook name")?;
+        if !hook_name.eq_ignore_ascii_case("get") && !hook_name.eq_ignore_ascii_case("set") {
+            return Err(self.error_at(
+                hook_span,
+                "unsupported interface property hook declaration: only get/set interface property hooks are implemented",
+            ));
+        }
+        if self.check(|kind| matches!(kind, TokenKind::LBrace)) {
+            return Err(self.error_at(
+                self.peek().span,
+                "unsupported interface property hook declaration: hook bodies are not implemented",
+            ));
+        }
+        self.consume_keyword(
+            TokenKind::Semicolon,
+            "expected ';' after interface property hook declaration",
+        )?;
+        Ok(())
     }
 
     fn parse_interface_method(&mut self) -> CompileResult<InterfaceMethodDecl> {
@@ -8714,6 +8820,10 @@ impl Parser {
 
     fn check_interface_constant_declaration(&self) -> bool {
         self.check_class_like_constant_declaration()
+    }
+
+    fn check_interface_property_declaration(&self) -> bool {
+        self.check_trait_property_declaration()
     }
 
     fn check_class_like_constant_declaration(&self) -> bool {

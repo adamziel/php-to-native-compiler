@@ -1369,6 +1369,17 @@ fn unsupported_property_hook_declarations_have_stable_parse_errors() {
 }
 
 #[test]
+fn interface_property_hook_declarations_parse_as_interface_metadata() {
+    let execution = run_source(
+        "<?php\ninterface Contract {\n    public mixed $value { get; }\n}\necho \"Done\";\n",
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "Done");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn emit_ir_rejects_property_hook_declarations_at_parse_boundary() {
     let error = php_compiler::emit_ir_source(
         "<?php\nclass Post {\n    public string $title { get => $this->title; }\n}\n",
