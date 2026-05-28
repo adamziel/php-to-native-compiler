@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-28 12:21 CEST
+Updated: 2026-05-28 12:34 CEST
 Primary branch: `master`
 Latest source head: `e72efe27 fix: reject reserved scalar special class names`
 
@@ -13,7 +13,7 @@ Progress is the pinned php-src PHPT full-suite pass rate:
 
 `passed runnable PHPTs / total runnable PHPTs`
 
-Current score: **1118 / 20294 runnable PHPTs = 5.51%**.
+Current score: **1193 / 20294 runnable PHPTs = 5.88%**.
 
 No other percentage is public project progress. Focused PHPT passes, source
 checkpoints, PRs, and docs/status edits are evidence for the next batch, but
@@ -27,6 +27,13 @@ Counts: 1118 passed, 19156 failed, 964 skipped, 20 xfailed, 0 borked;
 `run-tests.php` exited 1. Evidence lives under
 `/home/claude/supervised-php-compiler/state/logs/phpt-full-batch001-20260528T010422Z-php-src-f97ff59-base-3e702be4-stack10`.
 
+The latest full-suite result is Batch002 on the same php-src pin, run
+`phpt-full-batch002-20260528T100640Z-php-src-f97ff59-public-bc0ed214-source-e72efe27-stack11`.
+Counts: 1193 passed, 19081 failed, 964 skipped, 20 xfailed, 0 borked;
+`run-tests.php` exited 1. Regressions from the Batch001 PASS set: 0. Evidence
+lives under
+`/home/claude/supervised-php-compiler/state/logs/phpt-full-batch002-20260528T100640Z-php-src-f97ff59-public-bc0ed214-source-e72efe27-stack11`.
+
 ## PHPT Harness
 
 | Item | State | Evidence |
@@ -36,7 +43,7 @@ Counts: 1118 passed, 19156 failed, 964 skipped, 20 xfailed, 0 borked;
 | `phpc` PHPT wrapper | Done | `/home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper` |
 | Skip/xfail ledger | Started | `/home/claude/supervised-php-compiler/state/php-core-suite-skip-ledger.tsv` |
 | First full-suite baseline | Done | 1118 / 20294 runnable PHPTs passed (5.51%); run id `phpt-full-batch001-20260528T010422Z-php-src-f97ff59-base-3e702be4-stack10` |
-| Batch002 full-suite gate | Running | run id `phpt-full-batch002-20260528T100640Z-php-src-f97ff59-public-bc0ed214-source-e72efe27-stack11`; score unchanged until counts and regressions are verified |
+| Batch002 full-suite gate | Done | 1193 / 20294 runnable PHPTs passed (5.88%); 0 regressions from Batch001 PASS set; run id `phpt-full-batch002-20260528T100640Z-php-src-f97ff59-public-bc0ed214-source-e72efe27-stack11` |
 
 Focused PHPT history is tracked separately in
 `/home/claude/supervised-php-compiler/state/php-core-suite-focused-history.tsv`.
@@ -67,20 +74,22 @@ from the p28 internal integration stack head `ff8961a3`.
   candidate and matching patch SHA
 - critic gate: phpc-26 recorded `SAFE-FOR-PROGRESS /
   STACK-CLEAN-11-SCALAR-RESERVED-GATED` with `FINAL_FAIL=0`
-- full PHPT suite: Batch002 run is in progress under run id
+- full PHPT suite: Batch002 completed under run id
   `phpt-full-batch002-20260528T100640Z-php-src-f97ff59-public-bc0ed214-source-e72efe27-stack11`;
-  public score remains 1118 / 20294 runnable PHPTs (5.51%) until counts and
-  regressions are verified
+  public score is now 1193 / 20294 runnable PHPTs (5.88%) with 0 regressions
+  from the Batch001 PASS set
 
 Candidate 11 adds generalized startup diagnostics for reserved scalar/special
 class names via a reusable reserved-name predicate. It is not keyed to PHPT
 file names or expected output transcripts; expected-message literals remain
 confined to focused tests.
 
-Next source integration remains gated on fresh FINAL GO plus phpc-26 SAFE and a
-clean p28 apply/gate cycle. Current watches are p19 dynamic-call repair, p7
-candidate11 follow-up, and the next p28 stack checkpoint. Public PASS-NO-PATCH
-probe rows remain frozen while source integration is active.
+Next source integration resumes from the queued generalized source candidates
+after fresh reviewer/critic gates and a clean p28 apply/gate cycle. Current
+watches include p15 typed-property reference coercion, p18 byref undefined
+variables, p19 dynamic-call repair, p17 property-hooks parser work, and p16
+generator-yield blocker work. Public PASS-NO-PATCH probe rows remain lower
+priority than source integration.
 
 ## Batch 001
 
