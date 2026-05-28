@@ -137,6 +137,24 @@ $closure(...[1, 2, 3]);
 }
 
 #[test]
+fn closure_argument_unpacking_accepts_string_keys_as_named_arguments() {
+    let execution = run_source(
+        r#"<?php
+$join = function($left, $middle = "M", $right = "R") {
+    echo $left, ":", $middle, ":", $right;
+};
+
+$args = ["right" => "C", "middle" => "B"];
+$join("A", ...$args);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "A:B:C");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn forbidden_scope_introspection_builtins_report_dynamic_call_error() {
     let execution = run_source(
         r#"<?php

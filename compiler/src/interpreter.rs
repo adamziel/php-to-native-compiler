@@ -8347,6 +8347,7 @@ type ArrayCopySourceAliasWriteback = (
 #[derive(Debug, Clone, Default)]
 struct CallFrameArgumentBindings {
     values: Vec<Value>,
+    argument_keys: Vec<Option<ArrayKey>>,
     reference_bindings: Vec<ReferenceBinding>,
     array_copy_source_bindings: Vec<ArrayCopySourceBinding>,
     by_value_array_copy_bindings: Vec<(String, String, Vec<ArrayKey>)>,
@@ -37343,6 +37344,7 @@ impl Interpreter {
         self.call_user_function_with_checked_values_and_locals_with_array_copy_source_and_arg_sources(
             function,
             args,
+            Vec::new(),
             Some(object),
             Some(class_id),
             Some(called_class_id),
@@ -40439,6 +40441,7 @@ impl Interpreter {
                 Value::String(method_name.to_string()),
                 Value::Array(argument_array),
             ],
+            Vec::new(),
             Some(object),
             Some(class_id),
             Some(called_class_id),
@@ -44579,6 +44582,7 @@ impl Interpreter {
         self.call_user_function_with_checked_values_and_locals_with_array_copy_source_and_arg_sources(
             function,
             frame.values,
+            frame.argument_keys,
             this_object,
             class_context,
             called_class_context,
@@ -44633,6 +44637,7 @@ impl Interpreter {
 
         Ok(CallFrameArgumentBindings {
             values,
+            argument_keys: Vec::new(),
             reference_bindings,
             array_copy_source_bindings,
             by_value_array_copy_bindings,
@@ -46111,6 +46116,7 @@ impl Interpreter {
 
         CallFrameArgumentBindings {
             values,
+            argument_keys: Vec::new(),
             reference_bindings,
             array_copy_source_bindings,
             by_value_array_copy_bindings,
@@ -50834,12 +50840,39 @@ impl Interpreter {
 
     fn evaluate_positional_array_spread_call_values(
         &mut self,
+        function: &FunctionDecl,
         callable: &str,
         args: &[Expr],
+        span: Span,
         caller_scope: &mut SymbolTable,
-    ) -> CompileResult<Vec<Value>> {
-        let mut values = Vec::with_capacity(args.len());
+    ) -> CompileResult<(Vec<Value>, Vec<Option<ArrayKey>>)> {
+        let mut named_before_spread = false;
+        for arg in args {
+            match arg {
+                Expr::NamedArgument { .. } => named_before_spread = true,
+                Expr::SpreadArgument { span, .. } if named_before_spread => {
+                    return Err(runtime_error(
+                        *span,
+                        RuntimeError::unsupported_call(
+                            callable,
+                            "argument unpacking after named arguments is not implemented in the current subset",
+                        ),
+                    ));
+                }
+                Expr::SpreadArgument { .. } => {}
+                _ => {}
+            }
+        }
+
+        let variadic_param_index = function.params.iter().position(|param| param.is_variadic);
+        let mut positional_values = Vec::with_capacity(args.len());
+        let mut named_values: Vec<Option<Value>> =
+            (0..function.params.len()).map(|_| None).collect();
+        let mut variadic_values: Vec<(Value, ArrayKey)> = Vec::new();
+        let mut variadic_named_keys = HashSet::new();
         let mut saw_spread = false;
+        let mut saw_named = false;
+        let mut highest_named_index = None;
 
         for arg in args {
             match arg {
@@ -50869,26 +50902,132 @@ impl Interpreter {
                     };
 
                     for entry in array.entries() {
-                        if matches!(entry.key, ArrayKey::String(_)) {
-                            return Err(runtime_error(
-                                *span,
-                                RuntimeError::unsupported_call(
-                                    callable,
-                                    "string-keyed argument unpacking is not implemented in the current subset",
-                                ),
-                            ));
+                        match &entry.key {
+                            ArrayKey::Int(_) => {
+                                if saw_named {
+                                    return Err(runtime_error(
+                                        *span,
+                                        RuntimeError::unsupported_call(
+                                            callable,
+                                            "positional argument unpacking after named arguments is not implemented in the current subset",
+                                        ),
+                                    ));
+                                }
+                                positional_values.push(entry.value_cloned());
+                            }
+                            ArrayKey::String(name) => {
+                                saw_named = true;
+                                match function.params.iter().position(|param| param.name.eq(name)) {
+                                    Some(param_index)
+                                        if !function.params[param_index].is_variadic =>
+                                    {
+                                        if param_index < positional_values.len()
+                                            || named_values[param_index].is_some()
+                                        {
+                                            return Err(runtime_error(
+                                                *span,
+                                                RuntimeError::unsupported_call(
+                                                    callable,
+                                                    format!(
+                                                        "Named parameter ${name} overwrites previous argument"
+                                                    ),
+                                                ),
+                                            ));
+                                        }
+                                        named_values[param_index] = Some(entry.value_cloned());
+                                        highest_named_index = Some(
+                                            highest_named_index
+                                                .map(|current: usize| current.max(param_index))
+                                                .unwrap_or(param_index),
+                                        );
+                                    }
+                                    Some(_) | None => {
+                                        if variadic_param_index.is_none() {
+                                            return Err(runtime_error(
+                                                *span,
+                                                RuntimeError::unsupported_call(
+                                                    callable,
+                                                    format!(
+                                                        "string-keyed unpacked argument ${name} does not match a declared parameter in the current subset"
+                                                    ),
+                                                ),
+                                            ));
+                                        }
+                                        if !variadic_named_keys.insert(name.clone()) {
+                                            return Err(runtime_error(
+                                                *span,
+                                                RuntimeError::unsupported_call(
+                                                    callable,
+                                                    format!(
+                                                        "Named parameter ${name} overwrites previous argument"
+                                                    ),
+                                                ),
+                                            ));
+                                        }
+                                        variadic_values.push((
+                                            entry.value_cloned(),
+                                            ArrayKey::String(name.clone()),
+                                        ));
+                                    }
+                                }
+                            }
                         }
-                        values.push(entry.value_cloned());
                     }
                 }
-                Expr::NamedArgument { span, .. } => {
-                    return Err(runtime_error(
-                        *span,
-                        RuntimeError::unsupported_call(
-                            callable,
-                            "named arguments mixed with argument unpacking are not implemented in the current subset",
-                        ),
-                    ));
+                Expr::NamedArgument { name, expr, span } => {
+                    saw_named = true;
+                    match function.params.iter().position(|param| param.name.eq(name)) {
+                        Some(param_index) if !function.params[param_index].is_variadic => {
+                            if param_index < positional_values.len()
+                                || named_values[param_index].is_some()
+                            {
+                                return Err(runtime_error(
+                                    *span,
+                                    RuntimeError::unsupported_call(
+                                        callable,
+                                        format!(
+                                            "Named parameter ${name} overwrites previous argument"
+                                        ),
+                                    ),
+                                ));
+                            }
+                            let value = self
+                                .evaluate_by_value_argument_with_cow_source(expr, caller_scope)?;
+                            named_values[param_index] = Some(value);
+                            highest_named_index = Some(
+                                highest_named_index
+                                    .map(|current: usize| current.max(param_index))
+                                    .unwrap_or(param_index),
+                            );
+                        }
+                        Some(_) | None => {
+                            if variadic_param_index.is_none() {
+                                return Err(runtime_error(
+                                    *span,
+                                    RuntimeError::unsupported_call(
+                                        callable,
+                                        format!(
+                                            "named argument ${name} does not match a declared parameter in the current subset"
+                                        ),
+                                    ),
+                                ));
+                            }
+                            if !variadic_named_keys.insert(name.clone()) {
+                                return Err(runtime_error(
+                                    *span,
+                                    RuntimeError::unsupported_call(
+                                        callable,
+                                        format!(
+                                            "Named parameter ${name} overwrites previous argument"
+                                        ),
+                                    ),
+                                ));
+                            }
+                            let value = self
+                                .evaluate_by_value_argument_with_cow_source(expr, caller_scope)?;
+                            variadic_values.push((value, ArrayKey::String(name.clone())));
+                        }
+                    }
                 }
                 expr => {
                     if saw_spread {
@@ -50900,13 +51039,70 @@ impl Interpreter {
                             ),
                         ));
                     }
-                    values
+                    if saw_named {
+                        return Err(runtime_error(
+                            expr.span(),
+                            RuntimeError::unsupported_call(
+                                callable,
+                                "positional arguments after named arguments are not implemented in the current subset",
+                            ),
+                        ));
+                    }
+                    positional_values
                         .push(self.evaluate_by_value_argument_with_cow_source(expr, caller_scope)?);
                 }
             }
         }
 
-        Ok(values)
+        let mut highest_index = highest_named_index
+            .map(|index| index.max(positional_values.len().saturating_sub(1)))
+            .or_else(|| positional_values.len().checked_sub(1));
+        if !variadic_values.is_empty() {
+            if let Some(param_index) = variadic_param_index.and_then(|index| index.checked_sub(1)) {
+                highest_index = Some(
+                    highest_index
+                        .map(|current| current.max(param_index))
+                        .unwrap_or(param_index),
+                );
+            }
+        }
+
+        let mut values = positional_values;
+        let mut argument_keys = vec![None; values.len()];
+        if let Some(highest_index) = highest_index {
+            for param_index in values.len()..=highest_index {
+                if let Some(value) = named_values[param_index].take() {
+                    values.push(value);
+                    argument_keys.push(None);
+                    continue;
+                }
+
+                let Some(default) = function.params[param_index].default.as_ref() else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::arity_mismatch(
+                            callable,
+                            arity_expectation(
+                                required_param_count(function),
+                                function.params.len(),
+                                false,
+                            ),
+                            values.len(),
+                        ),
+                    ));
+                };
+                let mut default_scope = SymbolTable::new();
+                values.push(self.evaluate(default, &mut default_scope)?);
+                argument_keys.push(None);
+            }
+        }
+
+        for (value, key) in variadic_values {
+            values.push(value);
+            argument_keys.push(Some(key));
+        }
+
+        Ok((values, argument_keys))
     }
 
     fn evaluate_array_spread_call_frame_bindings(
@@ -50926,15 +51122,18 @@ impl Interpreter {
             ));
         }
 
-        let values = self.evaluate_positional_array_spread_call_values(
+        let (values, argument_keys) = self.evaluate_positional_array_spread_call_values(
+            function,
             &callable_name(&function.name),
             args,
+            span,
             caller_scope,
         )?;
         ensure_user_function_arity(function, values.len(), span)?;
 
         Ok(CallFrameArgumentBindings {
             values,
+            argument_keys,
             reference_bindings: Vec::new(),
             array_copy_source_bindings: Vec::new(),
             by_value_array_copy_bindings: Vec::new(),
@@ -50965,6 +51164,7 @@ impl Interpreter {
         self.call_user_function_with_checked_values_and_locals_with_array_copy_source_and_arg_sources(
             function,
             frame.values,
+            frame.argument_keys,
             this_object,
             class_context,
             called_class_context,
@@ -51000,6 +51200,7 @@ impl Interpreter {
         self.call_reference_return_function_value_with_checked_values_and_locals_and_return_source(
             function,
             frame.values,
+            frame.argument_keys,
             this_object,
             class_context,
             called_class_context,
@@ -51067,6 +51268,7 @@ impl Interpreter {
         self.call_user_function_with_checked_values_and_locals_with_array_copy_source_and_arg_sources(
             function,
             frame.values,
+            frame.argument_keys,
             this_object,
             class_context,
             called_class_context,
@@ -52455,6 +52657,7 @@ impl Interpreter {
         self.call_reference_return_function_with_checked_values_and_locals_for_reference_assignment(
             function,
             args,
+            Vec::new(),
             this_object,
             class_context,
             called_class_context,
@@ -52469,6 +52672,7 @@ impl Interpreter {
         &mut self,
         function: &FunctionDecl,
         args: Vec<Value>,
+        argument_keys: Vec<Option<ArrayKey>>,
         this_object: Option<PhpObject>,
         class_context: Option<ClassId>,
         called_class_context: Option<ClassId>,
@@ -52575,9 +52779,19 @@ impl Interpreter {
         for (index, param) in function.params.iter().enumerate() {
             if param.is_variadic {
                 let mut rest = PhpArray::new();
-                for arg in args.iter().skip(index) {
-                    rest.append(arg.clone())
-                        .map_err(|error| runtime_error(param.span, error))?;
+                for (rest_index, arg) in args.iter().skip(index).enumerate() {
+                    match argument_keys
+                        .get(index + rest_index)
+                        .and_then(|key| key.as_ref())
+                    {
+                        Some(ArrayKey::String(name)) => {
+                            rest.insert(ArrayKey::String(name.clone()), arg.clone());
+                        }
+                        Some(ArrayKey::Int(_)) | None => {
+                            rest.append(arg.clone())
+                                .map_err(|error| runtime_error(param.span, error))?;
+                        }
+                    }
                 }
                 local_scope.write_static(&param.name, Value::Array(rest));
                 let mut imported_value_copy = false;
@@ -53193,6 +53407,7 @@ impl Interpreter {
         self.call_reference_return_function_value_with_checked_values_and_locals_and_return_source(
             function,
             args,
+            Vec::new(),
             this_object,
             class_context,
             called_class_context,
@@ -53237,6 +53452,7 @@ impl Interpreter {
         self.call_reference_return_function_value_with_checked_values_and_locals_and_return_source(
             function,
             frame.values,
+            frame.argument_keys,
             this_object,
             class_context,
             called_class_context,
@@ -53260,6 +53476,7 @@ impl Interpreter {
         self.call_reference_return_function_with_checked_values_and_locals_for_reference_assignment(
             function,
             frame.values,
+            frame.argument_keys,
             this_object,
             class_context,
             called_class_context,
@@ -53285,6 +53502,7 @@ impl Interpreter {
         self.call_reference_return_function_value_with_checked_values_and_locals_and_return_source(
             function,
             args,
+            Vec::new(),
             this_object,
             class_context,
             called_class_context,
@@ -53300,6 +53518,7 @@ impl Interpreter {
         &mut self,
         function: &FunctionDecl,
         args: Vec<Value>,
+        argument_keys: Vec<Option<ArrayKey>>,
         this_object: Option<PhpObject>,
         class_context: Option<ClassId>,
         called_class_context: Option<ClassId>,
@@ -53312,6 +53531,7 @@ impl Interpreter {
             .call_reference_return_function_with_checked_values_and_locals_for_reference_assignment(
                 function,
                 args,
+                argument_keys,
                 this_object,
                 class_context,
                 called_class_context,
@@ -55223,6 +55443,7 @@ impl Interpreter {
 
         Ok(CallFrameArgumentBindings {
             values,
+            argument_keys: Vec::new(),
             reference_bindings,
             array_copy_source_bindings,
             by_value_array_copy_bindings,
@@ -57360,6 +57581,7 @@ impl Interpreter {
         self.call_user_function_with_checked_values_and_locals_with_array_copy_source_and_arg_sources(
             function,
             args,
+            Vec::new(),
             this_object,
             class_context,
             called_class_context,
@@ -57406,6 +57628,7 @@ impl Interpreter {
         self.call_user_function_with_checked_values_and_locals_with_array_copy_source_and_arg_sources(
             function,
             frame.values,
+            frame.argument_keys,
             this_object,
             class_context,
             called_class_context,
@@ -57421,6 +57644,7 @@ impl Interpreter {
         &mut self,
         function: &FunctionDecl,
         args: Vec<Value>,
+        argument_keys: Vec<Option<ArrayKey>>,
         this_object: Option<PhpObject>,
         class_context: Option<ClassId>,
         called_class_context: Option<ClassId>,
@@ -57535,9 +57759,19 @@ impl Interpreter {
         for (index, param) in function.params.iter().enumerate() {
             if param.is_variadic {
                 let mut rest = PhpArray::new();
-                for arg in args.iter().skip(index) {
-                    rest.append(arg.clone())
-                        .map_err(|error| runtime_error(param.span, error))?;
+                for (rest_index, arg) in args.iter().skip(index).enumerate() {
+                    match argument_keys
+                        .get(index + rest_index)
+                        .and_then(|key| key.as_ref())
+                    {
+                        Some(ArrayKey::String(name)) => {
+                            rest.insert(ArrayKey::String(name.clone()), arg.clone());
+                        }
+                        Some(ArrayKey::Int(_)) | None => {
+                            rest.append(arg.clone())
+                                .map_err(|error| runtime_error(param.span, error))?;
+                        }
+                    }
                 }
                 local_scope.write_static(&param.name, Value::Array(rest));
                 if let Some(source_scope) = reference_scope.as_deref() {
@@ -57545,7 +57779,11 @@ impl Interpreter {
                         if !matches!(arg, Value::Array(_)) {
                             continue;
                         }
-                        let target_keys = vec![ArrayKey::Int(rest_index as i64)];
+                        let target_keys = vec![argument_keys
+                            .get(index + rest_index)
+                            .and_then(|key| key.as_ref())
+                            .cloned()
+                            .unwrap_or(ArrayKey::Int(rest_index as i64))];
                         let Some((_, _, source)) = by_value_array_copy_source_bindings.iter().find(
                             |(param_name, candidate_keys, _)| {
                                 param_name == &param.name && candidate_keys == &target_keys
@@ -71912,11 +72150,40 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
         return Some(("Error", capitalize_initial_ascii(&error.message)));
     }
 
+    if let Some(message) = named_parameter_overwrite_error_message(error) {
+        return Some(("Error", message));
+    }
+
     if let Some(message) = call_argument_type_error_message(error) {
         return Some(("TypeError", message));
     }
 
     None
+}
+
+fn named_parameter_overwrite_error_message(error: &Diagnostic) -> Option<String> {
+    if error.phase != Phase::Runtime {
+        return None;
+    }
+
+    if is_named_parameter_overwrite_message(&error.message) {
+        return Some(error.message.clone());
+    }
+
+    let reason = error
+        .message
+        .strip_prefix("unsupported call ")?
+        .split_once(": ")
+        .map(|(_, reason)| reason)?;
+    if is_named_parameter_overwrite_message(reason) {
+        return Some(reason.to_string());
+    }
+
+    None
+}
+
+fn is_named_parameter_overwrite_message(message: &str) -> bool {
+    message.starts_with("Named parameter $") && message.ends_with(" overwrites previous argument")
 }
 
 fn call_argument_type_error_message(error: &Diagnostic) -> Option<String> {

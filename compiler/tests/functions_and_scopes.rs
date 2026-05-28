@@ -9075,6 +9075,70 @@ join_values(...["X"]);
 }
 
 #[test]
+fn string_keyed_argument_unpacking_binds_declared_parameter_names() {
+    let execution = run_source(
+        r#"<?php
+function describe_unpack($first, $second = "D", $third = "T") {
+    echo $first, "|", $second, "|", $third, "\n";
+}
+
+$args = ["third" => "C", "first" => "A"];
+describe_unpack(...$args, second: "B");
+
+$more = ["second" => "Y"];
+describe_unpack("X", ...$more);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "A|B|C\nX|Y|T\n");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn named_arguments_after_unpack_feed_variadic_rest_with_string_keys() {
+    let execution = run_source(
+        r#"<?php
+function collect_unpack_first(...$args) {
+    echo count($args), ":", $args[0], ":", $args[1], ":", $args["a"], "\n";
+}
+function collect_unpack_second(...$args) {
+    echo count($args), ":", $args[0], ":", $args["a"], ":", $args["b"], "\n";
+}
+
+collect_unpack_first(...[1, 2], a: 3);
+collect_unpack_second(...[1, "a" => 2], b: 3);
+
+function bind_unpack($a, $b, $c = 3, $d = 4) {
+    echo $a, ":", $b, ":", $c, ":", $d, "\n";
+}
+
+bind_unpack(...[1, 2], d: 40);
+bind_unpack(...["b" => 2, "a" => 1], d: 40);
+
+try {
+    bind_unpack(...[1, 2], b: 20);
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+
+try {
+    bind_unpack(...[1, "b" => 2], b: 20);
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "3:1:2:3\n3:1:2:3\n1:2:3:40\n1:2:3:40\nNamed parameter $b overwrites previous argument\nNamed parameter $b overwrites previous argument\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn named_arguments_bind_to_declared_parameter_order() {
     let execution = run_source(
         r#"<?php
