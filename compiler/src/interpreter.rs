@@ -67564,7 +67564,109 @@ fn magic_method_startup_diagnostics(
         collect_parameter_default_startup_diagnostics(&mut diagnostics, program, source_file);
     }
 
+    if !diagnostics.has_fatal() {
+        collect_disallowed_property_type_startup_diagnostics(
+            &mut diagnostics,
+            program,
+            source_file,
+        );
+    }
+
     diagnostics
+}
+
+fn collect_disallowed_property_type_startup_diagnostics(
+    diagnostics: &mut MagicMethodStartupDiagnostics,
+    program: &Program,
+    source_file: Option<&str>,
+) {
+    for stmt in &program.statements {
+        match stmt {
+            Stmt::Class(class) if !class.is_nested => {
+                if let Some((message, line)) =
+                    class_disallowed_property_type_startup_diagnostic(&class.name, &class.members)
+                {
+                    diagnostics.set_fatal(message, source_file, line);
+                    return;
+                }
+            }
+            Stmt::Trait(trait_decl) => {
+                if let Some((message, line)) = class_properties_disallowed_type_startup_diagnostic(
+                    &trait_decl.name,
+                    &trait_decl.properties,
+                ) {
+                    diagnostics.set_fatal(message, source_file, line);
+                    return;
+                }
+            }
+            Stmt::Interface(interface) => {
+                if let Some((message, line)) = class_properties_disallowed_type_startup_diagnostic(
+                    &interface.name,
+                    &interface.properties,
+                ) {
+                    diagnostics.set_fatal(message, source_file, line);
+                    return;
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn class_disallowed_property_type_startup_diagnostic(
+    class_name: &str,
+    members: &[ClassMember],
+) -> Option<(String, usize)> {
+    members.iter().find_map(|member| match member {
+        ClassMember::Property(property) => {
+            disallowed_property_type_startup_diagnostic(class_name, property)
+        }
+        ClassMember::Method(method) => promoted_properties_from_method(method)
+            .into_iter()
+            .find_map(|property| {
+                disallowed_property_type_startup_diagnostic(class_name, &property)
+            }),
+        ClassMember::Constant(_) => None,
+    })
+}
+
+fn class_properties_disallowed_type_startup_diagnostic(
+    class_name: &str,
+    properties: &[ClassPropertyDecl],
+) -> Option<(String, usize)> {
+    properties
+        .iter()
+        .find_map(|property| disallowed_property_type_startup_diagnostic(class_name, property))
+}
+
+fn disallowed_property_type_startup_diagnostic(
+    class_name: &str,
+    property: &ClassPropertyDecl,
+) -> Option<(String, usize)> {
+    let type_decl = property.type_decl.as_ref()?;
+    if !property_type_decl_contains_disallowed_name(&type_decl.text) {
+        return None;
+    }
+    Some((
+        format!(
+            "Property {class_name}::${} cannot have type {}",
+            property.name, type_decl.text
+        ),
+        property.span.line,
+    ))
+}
+
+fn property_type_decl_contains_disallowed_name(type_decl: &str) -> bool {
+    type_decl
+        .split(['|', '&'])
+        .any(|part| property_type_name_is_disallowed(part.trim()))
+}
+
+fn property_type_name_is_disallowed(type_name: &str) -> bool {
+    let mut name = type_name.trim();
+    name = name.strip_prefix('?').unwrap_or(name);
+    name = name.strip_prefix('\\').unwrap_or(name);
+    matches!(name.to_ascii_lowercase().as_str(), "callable" | "void")
 }
 
 fn collect_parameter_default_startup_diagnostics(
