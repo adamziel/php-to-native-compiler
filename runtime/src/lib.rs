@@ -35176,6 +35176,27 @@ impl PhpObject {
     where
         F: Fn(&PhpObject, &str) -> bool,
     {
+        self.write_property_from_context_with_object_type_resolver_returning_value(
+            name,
+            value,
+            current_class_id,
+            protected_class_ids,
+            object_type_resolver,
+        )
+        .map(|_| ())
+    }
+
+    pub fn write_property_from_context_with_object_type_resolver_returning_value<F>(
+        &self,
+        name: &str,
+        value: Value,
+        current_class_id: Option<ClassId>,
+        protected_class_ids: &[ClassId],
+        object_type_resolver: F,
+    ) -> RuntimeResult<Value>
+    where
+        F: Fn(&PhpObject, &str) -> bool,
+    {
         let mut properties = self.properties.borrow_mut();
         let Some(property) = self.context_property_mut_or_none(
             &mut properties,
@@ -35185,7 +35206,8 @@ impl PhpObject {
         )?
         else {
             drop(properties);
-            return self.write_dynamic_public_property(name, value);
+            self.write_dynamic_public_property(name, value.clone())?;
+            return Ok(value);
         };
 
         let value = coerce_typed_property_value_with_object_type_resolver(
@@ -35193,9 +35215,9 @@ impl PhpObject {
             value,
             &object_type_resolver,
         )?;
-        property.set_value(value);
+        property.set_value(value.clone());
         property.initialized = true;
-        Ok(())
+        Ok(value)
     }
 
     pub fn unset_property_from_context(

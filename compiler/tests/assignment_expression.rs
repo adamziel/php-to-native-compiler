@@ -589,3 +589,50 @@ fn emit_ir_rejects_object_property_assignment_expressions_until_native_lowering_
     assert_eq!(error.column, 7);
     assert_eq!(error.message, LLVM_MUTATION_REJECTION);
 }
+
+#[test]
+fn typed_object_property_assignment_expression_returns_stored_coerced_value() {
+    let execution = run_source(
+        r#"<?php
+class TypedAssignmentBox {
+    public int $count;
+    public string $label;
+}
+
+$box = new TypedAssignmentBox;
+var_dump($box->count = "42");
+var_dump($box->label = 42);
+var_dump($box->count);
+var_dump($box->label);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "int(42)\nstring(2) \"42\"\nint(42)\nstring(2) \"42\"\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn dynamic_typed_object_property_assignment_expression_returns_stored_coerced_value() {
+    let execution = run_source(
+        r#"<?php
+class DynamicTypedAssignmentBox {
+    public int $count;
+}
+
+$box = new DynamicTypedAssignmentBox;
+$name = "count";
+var_dump($box->{$name} = "42");
+var_dump($box->count);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "int(42)\nint(42)\n");
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}

@@ -24879,16 +24879,17 @@ impl Interpreter {
                             }
                         }
 
-                        match object_value.write_property_from_context_with_object_type_resolver(
-                            property,
-                            value.clone(),
-                            current_class_id,
-                            &protected_class_ids,
-                            |object, type_name| {
-                                self.object_satisfies_live_property_type(object, type_name)
-                            },
-                        ) {
-                            Ok(()) => {
+                        match object_value
+                            .write_property_from_context_with_object_type_resolver_returning_value(
+                                property,
+                                value.clone(),
+                                current_class_id,
+                                &protected_class_ids,
+                                |object, type_name| {
+                                    self.object_satisfies_live_property_type(object, type_name)
+                                },
+                            ) {
+                            Ok(stored_value) => {
                                 scope.post_replace_holder_storage(&boundary);
                                 scope.remove_public_object_property_root_from_array_offset_aliases(
                                     object,
@@ -24936,7 +24937,7 @@ impl Interpreter {
                                         property,
                                     );
                                 }
-                                Ok(value)
+                                Ok(stored_value)
                             }
                             Err(error) if Self::is_undefined_property_error(&error) => {
                                 let method_value = self.value_with_assignment_reference_cells(
@@ -25861,16 +25862,17 @@ impl Interpreter {
                             }
                         }
 
-                        match object_value.write_property_from_context_with_object_type_resolver(
-                            &property,
-                            value.clone(),
-                            current_class_id,
-                            &protected_class_ids,
-                            |object, type_name| {
-                                self.object_satisfies_live_property_type(object, type_name)
-                            },
-                        ) {
-                            Ok(()) => {}
+                        let stored_value = match object_value
+                            .write_property_from_context_with_object_type_resolver_returning_value(
+                                &property,
+                                value.clone(),
+                                current_class_id,
+                                &protected_class_ids,
+                                |object, type_name| {
+                                    self.object_satisfies_live_property_type(object, type_name)
+                                },
+                            ) {
+                            Ok(stored_value) => stored_value,
                             Err(error) if Self::is_undefined_property_error(&error) => {
                                 let method_value = self.value_with_assignment_reference_cells(
                                     value.clone(),
@@ -25901,9 +25903,10 @@ impl Interpreter {
                                 object_value
                                     .write_dynamic_public_property(&property, value.clone())
                                     .map_err(|error| runtime_error(*span, error))?;
+                                value.clone()
                             }
                             Err(error) => return Err(runtime_error(*span, error)),
-                        }
+                        };
                         scope.post_replace_holder_storage(&boundary);
                         scope.remove_public_object_property_root_from_array_offset_aliases(
                             object,
@@ -25944,7 +25947,7 @@ impl Interpreter {
                                 &property,
                             );
                         }
-                        Ok(value)
+                        Ok(stored_value)
                     }
                     other => Err(runtime_error(
                         *span,
