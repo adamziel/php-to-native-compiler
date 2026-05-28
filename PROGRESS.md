@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-28 11:25 CEST
+Updated: 2026-05-28 11:34 CEST
 Primary branch: `master`
-Latest source head: `6f4e36a0 fix: dispatch static magic callbacks`
+Latest source head: `4fa93bd2 fix: dispatch static magic callbacks`
 
 ## Progress Score
 
@@ -38,12 +38,14 @@ Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
 
-Batch002 source integration is active under AO. The integration worker
-`phpc-28` built the reviewed stack on the accepted Batch001 base and gated ten
-source candidates, with independent p7 review and phpc-26 critic approval for
-the public checkpoint.
+Batch002 `STACK-CLEAN-10` source integration is primary-integrated on
+`master`. The public primary commit `4fa93bd2 fix: dispatch static magic
+callbacks` is the cherry-picked equivalent of the internal p28 reviewed stack
+head `6f4e36a0`; independent p7 review and phpc-26 critic approval made the
+checkpoint safe to publish.
 
-- stack head: `6f4e36a0 fix: dispatch static magic callbacks`
+- primary-integrated head: `4fa93bd2 fix: dispatch static magic callbacks`
+- internal reviewed stack head: `6f4e36a0 fix: dispatch static magic callbacks`
 - exported patch:
   `/home/claude/supervised-php-compiler/state/patches/ao-integration-batch002-stack-20260528.patch`
 - exported patch SHA256:
@@ -70,10 +72,10 @@ class/method literal. The nearby `call_static_002.phpt` anchor remains a known
 baseline `PRE_EXISTING_FAIL`, not a candidate regression.
 
 Next source integration remains gated on fresh FINAL GO plus phpc-26 SAFE and a
-clean p28 apply/gate cycle. Current likely watch is the p17 property-hooks parser
-review after auxiliary checks; older p15, p18, and p19 patches require
-rebase/repair for the current stack. Public PASS-NO-PATCH probe rows remain
-frozen while source integration is active.
+clean primary/p28 apply-gate cycle. Current watches include the p30 dynamic-call
+source candidate behind the primary `STACK-CLEAN-10` integration, plus the p17
+property-hooks parser review after auxiliary checks. Public PASS-NO-PATCH probe
+rows remain frozen while source integration is active.
 
 ## Batch 001
 
