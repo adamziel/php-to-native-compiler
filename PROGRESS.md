@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-28 06:46 CEST
+Updated: 2026-05-28 06:57 CEST
 Primary branch: `master`
 Latest source head: `0fa7b666 runtime: autoload enum_exists misses`
 
@@ -107,6 +107,7 @@ Gate status and parked candidates:
 | `Zend/tests/foreach/foreach_reference.phpt` by-reference foreach lingering alias PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and p14 `SAFE-FOR-PROGRESS`; existing foreach/reference behavior preserves the last-element alias through `array_values()` and `array_reverse()` and passes wrapper PHPT `Zend/tests/foreach/foreach_reference.phpt` 1/1 using the pass005 repair2 reviewed binary; no source patch, no cargo gate, no full-suite run, and no percent change |
 | `Zend/tests/foreach/foreach_temp_array_expr_with_refs.phpt` temporary array references foreach PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and p14 `SAFE-FOR-PROGRESS`; existing foreach/reference behavior iterates temporary arrays containing references by reference and mutates the original variables, passing wrapper PHPT `Zend/tests/foreach/foreach_temp_array_expr_with_refs.phpt` 1/1 using the pass005 repair2 reviewed binary; no source patch, no cargo gate, no full-suite run, and no percent change |
 | `Zend/tests/foreach/foreach_by_ref_repacking_insert.phpt` by-reference foreach packed-to-hash repacking PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and p14 `SAFE-FOR-PROGRESS`; existing foreach/reference behavior handles packed-to-hash insert/repacking at the end of by-reference iteration and passes wrapper PHPT `Zend/tests/foreach/foreach_by_ref_repacking_insert.phpt` 1/1 using the pass005 repair2 reviewed binary; no source patch, no cargo gate, no full-suite run, and no percent change |
+| `Zend/tests/foreach/goto_in_foreach.phpt` goto into foreach body PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and p14 `SAFE-FOR-PROGRESS`; existing foreach/goto control flow enters the foreach body and continues after the loop, passing wrapper PHPT `Zend/tests/foreach/goto_in_foreach.phpt` 1/1 using the rebuilt reviewed public binary `/tmp/phpc-reviewed-public-687fcc41-20260528-target2/debug/phpc`; no source patch, no cargo gate beyond the authorized binary recovery, no full-suite run, and no percent change |
 | `Zend/tests/foreach/foreach_005.phpt` nested by-reference foreach PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and p14 `SAFE-FOR-PROGRESS`; existing foreach/reference behavior passes wrapper PHPT `Zend/tests/foreach/foreach_005.phpt` 1/1 using the pass005 repair2 reviewed binary; no source patch, no cargo gate, no full-suite run, and no percent change |
 | `Zend/tests/foreach/foreach_006.phpt` repeated by-reference foreach constant-array PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and p14 `SAFE-FOR-PROGRESS`; existing foreach/reference behavior passes wrapper PHPT `Zend/tests/foreach/foreach_006.phpt` 1/1 using the pass005 repair2 reviewed binary; no source patch, no cargo gate, no full-suite run, and no percent change |
 | `Zend/tests/foreach/foreach_007.phpt` by-reference foreach append-at-end PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and p14 `SAFE-FOR-PROGRESS`; existing foreach/reference behavior visits the newly inserted element and passes wrapper PHPT `Zend/tests/foreach/foreach_007.phpt` 1/1 using the pass005 repair2 reviewed binary; no source patch, no cargo gate, no full-suite run, and no percent change |
@@ -135,14 +136,15 @@ Required live roles:
 Current AO snapshot: `phpc-orchestrator` supervising; `phpc-14` critic;
 `phpc-7` reviewer; `phpc-8` progress reporter; active coder/support lanes
 `phpc-15`, `phpc-16`, `phpc-17`, `phpc-18`, and `phpc-19`. Current
-public-progress watch targets are variadic `by_ref`, typed-properties
-`typed_properties_013`, magic `bug52361`/`bug52484`, foreach `foreach_undefined`,
-list `list_011`, the next p7-reviewed candidate plus p14
-`SAFE-FOR-PROGRESS` audit, current coder lane artifacts, and any new full-suite
-PHPT row. Known no-go/not-safe items, including unsuffixed `bug44899`,
-`bug46238`, `bug48248`, `foreach_010`, `foreach_016`, and `foreach_list_001`,
-remain excluded. Extra sessions
-`phpc-22` and stale `phpc-2` are killed/not active roster capacity.
+public-progress watch targets are typed-properties `typed_properties_016`/`017`,
+magic `bug53826`/`bug54372`, variadic by-ref or closure successors, foreach
+`this_in_foreach`/next successors, list `bug27598`/`bug39304`, the next
+p7-reviewed candidate plus p14 `SAFE-FOR-PROGRESS` audit, current coder lane
+artifacts, and any new full-suite PHPT row. Known no-go/not-safe items,
+including unsuffixed `bug44899`, `bug46238`, `bug48248`, `foreach_010`,
+`foreach_016`, `foreach_list_001`, and `foreach_unset_globals` without p14
+SAFE, remain excluded. Extra sessions `phpc-22` and stale `phpc-2` are
+killed/not active roster capacity.
 
 ## Current Rules
 
