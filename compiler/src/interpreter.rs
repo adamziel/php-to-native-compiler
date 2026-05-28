@@ -66648,7 +66648,184 @@ fn magic_method_startup_diagnostics(
             break;
         }
     }
+
+    if !diagnostics.has_fatal() {
+        collect_class_property_inheritance_startup_diagnostics(
+            &mut diagnostics,
+            program,
+            source_file,
+        );
+    }
+
     diagnostics
+}
+
+fn collect_class_property_inheritance_startup_diagnostics(
+    diagnostics: &mut MagicMethodStartupDiagnostics,
+    program: &Program,
+    source_file: Option<&str>,
+) {
+    let classes = top_level_class_startup_lookup(program);
+    for stmt in &program.statements {
+        let Stmt::Class(class) = stmt else {
+            continue;
+        };
+        if class.is_nested {
+            continue;
+        }
+
+        for member in &class.members {
+            let ClassMember::Property(property) = member else {
+                continue;
+            };
+            let Some((parent, parent_property)) =
+                inherited_startup_property(&classes, class, &property.name)
+            else {
+                continue;
+            };
+            let Some(message) = inherited_property_startup_diagnostic_message(
+                &class.name,
+                property,
+                &parent.name,
+                parent_property,
+            ) else {
+                continue;
+            };
+
+            diagnostics.set_fatal(message, source_file, property.span.line);
+            return;
+        }
+    }
+}
+
+fn top_level_class_startup_lookup(program: &Program) -> HashMap<String, &ClassDecl> {
+    let mut classes = HashMap::new();
+    for stmt in &program.statements {
+        let Stmt::Class(class) = stmt else {
+            continue;
+        };
+        if class.is_nested {
+            continue;
+        }
+        classes.insert(startup_class_lookup_key(&class.name), class);
+    }
+    classes
+}
+
+fn inherited_startup_property<'a>(
+    classes: &HashMap<String, &'a ClassDecl>,
+    class: &ClassDecl,
+    property_name: &str,
+) -> Option<(&'a ClassDecl, &'a ClassPropertyDecl)> {
+    let mut parent_name = class.parent.as_deref()?;
+    let mut visited = HashSet::new();
+
+    loop {
+        let key = startup_class_lookup_key(parent_name);
+        if !visited.insert(key.clone()) {
+            return None;
+        }
+
+        let parent = classes.get(&key).copied()?;
+        if let Some(property) = class_startup_property(parent, property_name) {
+            if property.visibility != ClassVisibility::Private {
+                return Some((parent, property));
+            }
+        }
+
+        parent_name = parent.parent.as_deref()?;
+    }
+}
+
+fn class_startup_property<'a>(
+    class: &'a ClassDecl,
+    property_name: &str,
+) -> Option<&'a ClassPropertyDecl> {
+    class.members.iter().find_map(|member| match member {
+        ClassMember::Property(property) if property.name == property_name => Some(property),
+        _ => None,
+    })
+}
+
+fn inherited_property_startup_diagnostic_message(
+    class_name: &str,
+    property: &ClassPropertyDecl,
+    parent_name: &str,
+    parent_property: &ClassPropertyDecl,
+) -> Option<String> {
+    if parent_property.is_static != property.is_static {
+        return Some(format!(
+            "Cannot redeclare {} {}::${} as {} {}::${}",
+            property_static_name(parent_property.is_static),
+            parent_name,
+            property.name,
+            property_static_name(property.is_static),
+            class_name,
+            property.name
+        ));
+    }
+
+    let parent_type = class_property_type_text(parent_property);
+    let child_type = class_property_type_text(property);
+    if parent_type != child_type {
+        let type_requirement = match parent_type {
+            Some(type_text) => format!("must be {type_text}"),
+            None => "must not be defined".to_string(),
+        };
+        return Some(format!(
+            "Type of {}::${} {} (as in class {})",
+            class_name, property.name, type_requirement, parent_name
+        ));
+    }
+
+    if class_property_visibility_rank(property.visibility)
+        > class_property_visibility_rank(parent_property.visibility)
+    {
+        return Some(format!(
+            "Access level to {}::${} must be {} (as in class {})",
+            class_name,
+            property.name,
+            class_property_visibility_name(parent_property.visibility),
+            parent_name
+        ));
+    }
+
+    None
+}
+
+fn class_property_type_text(property: &ClassPropertyDecl) -> Option<&str> {
+    property
+        .type_decl
+        .as_ref()
+        .map(|type_decl| type_decl.text.as_str())
+}
+
+fn startup_class_lookup_key(name: &str) -> String {
+    name.trim_start_matches('\\').to_ascii_lowercase()
+}
+
+fn property_static_name(is_static: bool) -> &'static str {
+    if is_static {
+        "static"
+    } else {
+        "non static"
+    }
+}
+
+fn class_property_visibility_rank(visibility: ClassVisibility) -> u8 {
+    match visibility {
+        ClassVisibility::Public => 0,
+        ClassVisibility::Protected => 1,
+        ClassVisibility::Private => 2,
+    }
+}
+
+fn class_property_visibility_name(visibility: ClassVisibility) -> &'static str {
+    match visibility {
+        ClassVisibility::Public => "public",
+        ClassVisibility::Protected => "protected",
+        ClassVisibility::Private => "private",
+    }
 }
 
 fn class_alias_literal_reserved_alias(expr: &Expr) -> Option<&str> {
