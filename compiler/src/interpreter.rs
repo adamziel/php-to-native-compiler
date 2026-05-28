@@ -52524,7 +52524,17 @@ impl Interpreter {
                     },
                     keys: keys.clone(),
                 };
-                local_scope.read_array_offset_alias_reference_cell(&alias)
+                local_scope
+                    .read_array_offset_alias_reference_cell(&alias)
+                    .or_else(|| {
+                        self.reference_return_alias_cell(
+                            function,
+                            alias,
+                            function.span,
+                            &mut local_scope,
+                        )
+                        .ok()
+                    })
             }
             _ => None,
         };
