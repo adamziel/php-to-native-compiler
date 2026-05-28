@@ -45285,20 +45285,24 @@ impl Interpreter {
         bind_value_copy_reference_params: bool,
     ) -> CompileResult<CallFrameArgumentBindings> {
         let has_spread = call_arguments_have_spread(args);
-        let (values, array_copy_source_bindings) = if has_spread {
-            self.evaluate_call_user_func_spread_arguments_with_array_copy_sources(
+        let (values, argument_keys, array_copy_source_bindings) = if has_spread {
+            let (values, argument_keys) = self.evaluate_positional_array_spread_call_values(
                 function,
+                "call_user_func()",
                 args,
                 span,
                 caller_scope,
-            )?
+            )?;
+            (values, argument_keys, Vec::new())
         } else {
-            self.evaluate_by_value_call_arguments_with_array_copy_sources(
-                function,
-                args,
-                span,
-                caller_scope,
-            )?
+            let (values, array_copy_source_bindings) = self
+                .evaluate_by_value_call_arguments_with_array_copy_sources(
+                    function,
+                    args,
+                    span,
+                    caller_scope,
+                )?;
+            (values, Vec::new(), array_copy_source_bindings)
         };
         ensure_user_function_arity(function, values.len(), span)?;
         self.emit_call_user_func_reference_parameter_warnings(function, values.len(), span)?;
@@ -45319,94 +45323,11 @@ impl Interpreter {
 
         Ok(CallFrameArgumentBindings {
             values,
-            argument_keys: Vec::new(),
+            argument_keys,
             reference_bindings,
             array_copy_source_bindings,
             by_value_array_copy_bindings,
         })
-    }
-
-    fn evaluate_call_user_func_spread_arguments_with_array_copy_sources(
-        &mut self,
-        function: &FunctionDecl,
-        args: &[Expr],
-        _span: Span,
-        caller_scope: &mut SymbolTable,
-    ) -> CompileResult<(Vec<Value>, Vec<ArrayCopySourceBinding>)> {
-        let mut values = Vec::new();
-        let mut copy_source_bindings = Vec::new();
-
-        for arg in args {
-            match arg {
-                Expr::NamedArgument { span, .. } => {
-                    return Err(runtime_error(
-                        *span,
-                        RuntimeError::unsupported_call(
-                            "source-order call argument",
-                            "named arguments mixed with spread arguments are not implemented in the current subset",
-                        ),
-                    ));
-                }
-                Expr::SpreadArgument {
-                    expr,
-                    span: spread_span,
-                } => {
-                    let value = self.evaluate(expr, caller_scope)?;
-                    let Value::Array(array) = value else {
-                        return Err(runtime_error(
-                            *spread_span,
-                            RuntimeError::unsupported_call(
-                                "source-order call argument",
-                                format!(
-                                    "spread argument must evaluate to array in the current subset, got {}",
-                                    value.type_name()
-                                ),
-                            ),
-                        ));
-                    };
-
-                    for entry in array.entries() {
-                        if matches!(entry.key, ArrayKey::String(_)) {
-                            return Err(runtime_error(
-                                *spread_span,
-                                RuntimeError::unsupported_call(
-                                    "source-order call argument",
-                                    "string-keyed spread arguments are not implemented in the current subset",
-                                ),
-                            ));
-                        }
-                        values.push(entry.value_cloned());
-                    }
-                }
-                expr => {
-                    let value_index = values.len();
-                    let (value, array_copy_source) = self
-                        .evaluate_by_value_call_argument_with_array_copy_source(
-                            expr,
-                            caller_scope,
-                        )?;
-                    let value = caller_scope.value_with_object_property_aliases_from_array_copy(
-                        value,
-                        array_copy_source.clone(),
-                        true,
-                    );
-                    if matches!(value, Value::Array(_)) {
-                        if let (Some(source), Some((param, variadic_offset))) = (
-                            array_copy_source,
-                            Self::positional_argument_param_for_index(function, value_index),
-                        ) {
-                            let target_keys = variadic_offset
-                                .map(|offset| vec![ArrayKey::Int(offset as i64)])
-                                .unwrap_or_default();
-                            copy_source_bindings.push((param.name.clone(), target_keys, source));
-                        }
-                    }
-                    values.push(value);
-                }
-            }
-        }
-
-        Ok((values, copy_source_bindings))
     }
 
     fn emit_reference_argument_fatal(

@@ -155,6 +155,30 @@ $join("A", ...$args);
 }
 
 #[test]
+fn call_user_func_argument_unpacking_reuses_source_order_named_binding() {
+    let execution = run_source(
+        r#"<?php
+function describe_call_unpack($first, $second = "D", $third = "T") {
+    echo $first, "|", $second, "|", $third, "\n";
+}
+
+$args = ["third" => "C", "first" => "A"];
+call_user_func("describe_call_unpack", ...$args, second: "B");
+
+function collect_call_unpack(...$args) {
+    echo count($args), ":", $args[0], ":", $args["a"], ":", $args["b"];
+}
+
+call_user_func("collect_call_unpack", ...[1, "a" => 2], b: 3);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "A|B|C\n3:1:2:3");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn forbidden_scope_introspection_builtins_report_dynamic_call_error() {
     let execution = run_source(
         r#"<?php
