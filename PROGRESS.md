@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-28 03:23 CEST
+Updated: 2026-05-28 03:34 CEST
 Primary branch: `master`
 Latest source head: `0fa7b666 runtime: autoload enum_exists misses`
 
@@ -13,11 +13,14 @@ Progress is the pinned php-src PHPT full-suite pass rate:
 
 `passed runnable PHPTs / total runnable PHPTs`
 
-Current score: **unmeasured; 0% claimed**.
+Current score: **1118 / 20294 runnable PHPTs = 5.51%**.
 
-No baseline full-suite run has been recorded yet. The harness is bootstrapped,
-but the project percent does not move until a full-suite result is written to
-`/home/claude/supervised-php-compiler/state/php-core-suite-history.tsv`.
+The first full-suite baseline was recorded for Batch 001 stack10 on php-src
+`f97ff597429a2fe633665a7e02d97c8077f9f90f`, run
+`phpt-full-batch001-20260528T010422Z-php-src-f97ff59-base-3e702be4-stack10`.
+Counts: 1118 passed, 19156 failed, 964 skipped, 20 xfailed, 0 borked;
+`run-tests.php` exited 1. Evidence lives under
+`/home/claude/supervised-php-compiler/state/logs/phpt-full-batch001-20260528T010422Z-php-src-f97ff59-base-3e702be4-stack10`.
 
 ## PHPT Harness
 
@@ -27,7 +30,7 @@ but the project percent does not move until a full-suite result is written to
 | Static inventory | Done | 21,827 PHPT files; 12,777 static runnable candidates |
 | `phpc` PHPT wrapper | Done | `/home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper` |
 | Skip/xfail ledger | Started | `/home/claude/supervised-php-compiler/state/php-core-suite-skip-ledger.tsv` |
-| First full-suite baseline | Running | AO `phpc-11`, run id `phpt-full-batch001-20260528T010422Z-php-src-f97ff59-base-3e702be4-stack10`; no final history row yet |
+| First full-suite baseline | Done | 1118 / 20294 runnable PHPTs passed (5.51%); run id `phpt-full-batch001-20260528T010422Z-php-src-f97ff59-base-3e702be4-stack10` |
 
 Focused PHPT history is tracked separately in
 `/home/claude/supervised-php-compiler/state/php-core-suite-focused-history.tsv`.
@@ -39,7 +42,7 @@ Policy: stage 10 accepted generalized source PRs, run focused gates per PR, run
 the full PHPT suite once after PR 10, repair regressions, then merge the whole
 batch.
 
-Current batch status: **10/10 accepted, not merged; full PHPT gate running**.
+Current batch status: **10/10 accepted, not merged; full PHPT baseline recorded; regression/failure repair next**.
 Independent reviewer `phpc-7` accepted r81 / PR #1 as Batch 001 PR 10
 at 2026-05-28 02:59 CEST after accepted-stack apply, exact-shape audit,
 focused Rust/compiler gates, and focused wrapper PHPT `Zend/tests/namespaces/ns_065.phpt`
@@ -64,8 +67,8 @@ Gate status and parked candidates:
 
 | Item | State |
 | --- | --- |
-| Batch 001 full PHPT gate | Running in AO session `phpc-11` using the r86 clean `/tmp` gate plan; this is the single authorized full-suite run before merge |
-| Full-suite count guard | Active; `all-results.txt` uses `PASSED/FAILED/SKIPPED/XFAILED`, so the parser was patched and history is temporarily read-only until verified final counts |
+| Batch 001 full PHPT gate | Done in AO session `phpc-11`; first baseline recorded at 1118 / 20294 runnable PHPTs (5.51%) |
+| Full-suite count guard | Done; `all-results.txt` used `PASSED/FAILED/SKIPPED/XFAILED`, the parser counted those statuses, and the verified row is in `state/php-core-suite-history.tsv` |
 | `Zend/tests/bug39944.phpt` reference invocation | PR #2/r82 is `REBASE-NEEDED` for Batch 002 after r81/stack10 due docs conflict; production/test hunks replay |
 | Magic visibility warnings | PR #3 is `REBASE-NEEDED` for Batch 002 after r81/stack10 due docs conflict; production/test hunks replay |
 | Foreach `$GLOBALS` lane | PASS-NO-PATCH accepted by reviewer; accepted stack10 passes `foreach_unset_globals`, `foreach_reference`, and `foreach_temp_array_expr_with_refs` |
@@ -88,11 +91,11 @@ Required live roles:
 | Progress reporter | Keeps this `PROGRESS.md` file and durable supervisor state current after material AO events |
 | Coders | Work disjoint focused PHPT lanes from the queue; each lane must produce a patch, PASS-NO-PATCH, or NO-GO artifact |
 
-Current AO snapshot: `phpc-orchestrator` supervising; `phpc-11` full-suite gate
-running `run-tests.php`; `phpc-4` critic; `phpc-7` reviewer auditing the
-full-suite count guard after accepting the foreach/GLOBALS PASS-NO-PATCH proof;
-`phpc-8` progress reporter; `phpc-10` by-reference coder; `phpc-12` foreach
-object-property coder; `phpc-13` Batch002 rebase worker for PR #2 and PR #3.
+Current AO snapshot: `phpc-orchestrator` supervising; `phpc-11` full-suite
+gate finalized the baseline; `phpc-14` critic; `phpc-7` reviewer; `phpc-8`
+progress reporter; coder lanes `phpc-12` foreach object-property, `phpc-13`
+magic `__call` positive path, and `phpc-15` by-reference named-parameter
+follow-up.
 
 ## Current Rules
 
