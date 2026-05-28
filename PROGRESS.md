@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-28 12:34 CEST
+Updated: 2026-05-28 12:46 CEST
 Primary branch: `master`
-Latest source head: `e72efe27 fix: reject reserved scalar special class names`
+Latest source head: `0a18d1c5 fix: materialize undefined byref sources`
 
 ## Progress Score
 
@@ -51,45 +51,46 @@ Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
 
-Batch002 `STACK-CLEAN-11` is the latest reviewed source-integration checkpoint
-under AO. This is a source checkpoint with focused proof, not a PASS-NO-PATCH
-row. Primary/public `master` now contains the scalar-reserved source integration
-at `e72efe27 fix: reject reserved scalar special class names`, cherry-picked
-from the p28 internal integration stack head `ff8961a3`.
+Post-Batch002 source checkpoint 1 is now primary-integrated under AO. This is a
+source checkpoint with focused proof, not a percentage change. The public score
+remains **1193 / 20294 runnable PHPTs = 5.88%** until another pinned full-suite
+run is completed, parsed, regression-checked, and published here.
 
-- primary source head: `e72efe27 fix: reject reserved scalar special class names`
-- internal p28 stack head: `ff8961a3 fix: reject reserved scalar special class names`
-- exported patch:
-  `/home/claude/supervised-php-compiler/state/patches/ao-integration-batch002-stack-20260528.patch`
-- exported patch SHA256:
-  `7d34af1693435b902951e6650eb57666f4176cbdc36e3b9d3e36548d9e9c143e`
-- applied/gated stack: r81 plus Batch002 candidates 1-11
-- focused gates: PASS for apply/diff/fmt checks, `cargo test -p phpc --test
-  scalar_reserved_names`, `cargo build -p phpc`, and corrected scalar-reserved
-  PHPT proof 6/6:
-  `scalar_reserved2_class_alias.phpt`, `scalar_reserved2_use.phpt`,
-  `scalar_reserved3.phpt`, `scalar_reserved3_class_alias.phpt`,
-  `scalar_reserved3_use.phpt`, and `scalar_reserved4.phpt`
-- independent review: p29 stack10 refresh recorded PASS for the scalar-reserved
-  candidate and matching patch SHA
-- critic gate: phpc-26 recorded `SAFE-FOR-PROGRESS /
-  STACK-CLEAN-11-SCALAR-RESERVED-GATED` with `FINAL_FAIL=0`
-- full PHPT suite: Batch002 completed under run id
-  `phpt-full-batch002-20260528T100640Z-php-src-f97ff59-public-bc0ed214-source-e72efe27-stack11`;
-  public score is now 1193 / 20294 runnable PHPTs (5.88%) with 0 regressions
-  from the Batch001 PASS set
+- primary source head: `0a18d1c5 fix: materialize undefined byref sources`
+- p28 integration handoff head:
+  `fe994c7c1dbe29fb131cc768070680558bfd56f2 fix: materialize undefined byref sources`
+- exported integration patch:
+  `/home/claude/supervised-php-compiler/state/patches/ao-integration-p18-byref-undefined-20260528.patch`
+- exported integration patch SHA256:
+  `457e1b8e927f3667ec5383f9d4a137e7923bed7b313437ccbc4a902129fe5c3c`
+- source candidate patch SHA256:
+  `f35486eb1e43340cf1bf1841c4933ddeb1df55badafc841a221bddcc477d6387`
+- reviewer gate: p7 recorded `FINAL GO-CANDIDATE /
+  EXACT-SOURCE-GATE-PASS` with `FINAL_FAIL=0`
+- critic gate: phpc-26 recorded `SAFE-FOR-INTEGRATION /
+  P18-BYREF-UNDEFINED-SOURCE-FINAL` with `FINAL_FAIL=0`
+- focused gates: PASS for `git diff --check`, `cargo fmt --all -- --check`,
+  Rust unit
+  `interpreter::tests::symbol_table_reference_aliases_materialize_undefined_source`,
+  `cargo build -p phpc`, and wrapper PHPTs
+  `Zend/tests/try/bug72215_2.phpt` and `Zend/tests/try/bug72215_3.phpt`
+- full PHPT suite: not run for this single source checkpoint
 
-Candidate 11 adds generalized startup diagnostics for reserved scalar/special
-class names via a reusable reserved-name predicate. It is not keyed to PHPT
-file names or expected output transcripts; expected-message literals remain
-confined to focused tests.
+This checkpoint generalizes by-reference static/global binding and local
+reference-return direct-variable sources so missing direct-variable sources
+materialize as shared null reference cells through the interpreter symbol-table
+path. It is not keyed to `bug72215`, PHPT filenames, expected output text, line
+numbers, or a single try/finally source shape.
 
-Next source integration resumes from the queued generalized source candidates
-after fresh reviewer/critic gates and a clean p28 apply/gate cycle. Current
-watches include p15 typed-property reference coercion, p18 byref undefined
-variables, p19 dynamic-call repair, p17 property-hooks parser work, and p16
-generator-yield blocker work. Public PASS-NO-PATCH probe rows remain lower
-priority than source integration.
+The previous full-suite checkpoint remains Batch002 `STACK-CLEAN-11` at
+`e72efe27 fix: reject reserved scalar special class names`, run id
+`phpt-full-batch002-20260528T100640Z-php-src-f97ff59-public-bc0ed214-source-e72efe27-stack11`.
+
+Next source integration resumes from queued generalized candidates after fresh
+reviewer/critic gates and a clean p28 apply/gate cycle. Current watches include
+p19 dynamic-call repair, p17 property-hooks parser work, p15 typed-property
+reference coercion, and p16 generator-yield blocker work. Public PASS-NO-PATCH
+probe rows remain lower priority than source integration.
 
 ## Batch 001
 
