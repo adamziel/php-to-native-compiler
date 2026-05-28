@@ -22550,6 +22550,43 @@ impl Interpreter {
         self.emit_display_notice(message, span)
     }
 
+    fn emit_reference_return_value_fallback_notice(&mut self, span: Span) -> CompileResult<()> {
+        self.emit_display_notice(
+            "Only variable references should be returned by reference",
+            span,
+        )
+    }
+
+    fn can_return_reference_fallback_as_detached_value(expr: &Expr) -> bool {
+        !matches!(
+            expr,
+            Expr::Variable(_, _)
+                | Expr::Index { .. }
+                | Expr::AppendIndex { .. }
+                | Expr::Property { .. }
+                | Expr::DynamicProperty { .. }
+                | Expr::StaticProperty { .. }
+                | Expr::DynamicStaticProperty { .. }
+                | Expr::ObjectStaticProperty { .. }
+                | Expr::DynamicObjectStaticProperty { .. }
+                | Expr::SelfStaticProperty { .. }
+                | Expr::DynamicSelfStaticProperty { .. }
+                | Expr::ParentStaticProperty { .. }
+                | Expr::DynamicParentStaticProperty { .. }
+                | Expr::LateStaticProperty { .. }
+                | Expr::DynamicLateStaticProperty { .. }
+                | Expr::Call { .. }
+                | Expr::DynamicCall { .. }
+                | Expr::MethodCall { .. }
+                | Expr::DynamicMethodCall { .. }
+                | Expr::StaticMethodCall { .. }
+                | Expr::ObjectStaticMethodCall { .. }
+                | Expr::SelfMethodCall { .. }
+                | Expr::ParentMethodCall { .. }
+                | Expr::LateStaticMethodCall { .. }
+        )
+    }
+
     fn is_reference_call_argument_expr(arg: &Expr) -> bool {
         matches!(
             arg,
@@ -51884,8 +51921,17 @@ impl Interpreter {
                     ),
                 ));
             };
-            let binding =
-                self.reference_return_local_binding_from_expr(function, value, *span, scope)?;
+            let binding = match self
+                .reference_return_local_binding_from_expr(function, value, *span, scope)
+            {
+                Ok(binding) => binding,
+                Err(_) if Self::can_return_reference_fallback_as_detached_value(value) => {
+                    let value = self.evaluate(value, scope)?;
+                    self.emit_reference_return_value_fallback_notice(*span)?;
+                    ReferenceReturnLocalBinding::Cell(PhpReferenceCell::new(value))
+                }
+                Err(error) => return Err(error),
+            };
             return Ok(ReferenceReturnBodyFlow::Return(binding));
         }
 

@@ -397,6 +397,10 @@
   target name to a detached temporary value so later writes to that target do
   not mutate the original return source. Broader dynamic, callback, and
   side-effecting receiver forms for that by-value fallback remain unsupported.
+  Reference-returning function and method bodies that execute a return of a
+  known non-referenceable value expression, such as a scalar literal, emit the
+  PHP-shaped "Only variable references should be returned by reference" notice
+  and return a detached temporary value rather than aborting the call.
   Normal invocation of
   direct free-function, direct visible object-method, direct named static
   method, `self::` static method, `parent::` static method, `static::`
