@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-28 12:50 CEST
+Updated: 2026-05-28 13:06 CEST
 Primary branch: `master`
-Latest source head: `0a18d1c5 fix: materialize undefined byref sources`
+Latest source head: `57b32f28 fix: reject forbidden builtins in dynamic calls`
 
 ## Progress Score
 
@@ -51,10 +51,40 @@ Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
 
-Post-Batch002 source checkpoint 1 is now primary-integrated under AO. This is a
+Post-Batch002 source checkpoint 2 is now primary-integrated under AO. This is a
 source checkpoint with focused proof, not a percentage change. The public score
 remains **1193 / 20294 runnable PHPTs = 5.88%** until another pinned full-suite
 run is completed, parsed, regression-checked, and published here.
+
+- primary source head: `57b32f28 fix: reject forbidden builtins in dynamic calls`
+- p28 final handoff head:
+  `c2796a1723ca7d199477018715914360db5f25e3 fix: reject forbidden builtins in dynamic calls`
+- exported integration patch:
+  `/home/claude/supervised-php-compiler/state/patches/ao-integration-p19-dynamic-call-forbidden-builtins-20260528.patch`
+- exported integration patch SHA256:
+  `8ba971193f06fb8430f994ba84cf5399aaf584bce3108b9366b6fc9aa127380e`
+- source candidate patch SHA256:
+  `0294c0e62b7858ed92999c4a9b35f2b15a4b215a0172a0c2789112c1555896e9`
+- reviewer gate: p7 recorded `FINAL GO-CANDIDATE /
+  FOCUSED-GATES-PASS` with `FINAL_FAIL=0`
+- critic gate: phpc-26 recorded p19 `SAFE-FOR-INTEGRATION` for exact source
+  patch SHA256
+- focused gates: PASS for `git diff --check`, `cargo fmt --all -- --check`,
+  Rust units
+  `forbidden_scope_introspection_builtins_report_dynamic_call_error` and
+  `forbidden_dynamic_builtins_are_rejected_through_callback_dispatchers`,
+  `cargo build -p phpc`, and wrapper PHPTs
+  `Zend/tests/dynamic_call/dynamic_call_005.phpt` through
+  `Zend/tests/dynamic_call/dynamic_call_008.phpt`
+- full PHPT suite: not run for this single source checkpoint
+
+This checkpoint generalizes rejection of forbidden dynamic introspection
+builtins through the shared dynamic callback dispatcher paths, including
+`call_user_func` variants, before ordinary dynamic function lookup. It is not
+keyed to dynamic-call PHPT filenames, expected output text, line numbers, or a
+single source shape.
+
+Previous post-Batch002 source checkpoint 1 was p18:
 
 - primary source head: `0a18d1c5 fix: materialize undefined byref sources`
 - p28 final handoff head:
@@ -76,7 +106,7 @@ run is completed, parsed, regression-checked, and published here.
   `Zend/tests/try/bug72215_2.phpt` and `Zend/tests/try/bug72215_3.phpt`
 - full PHPT suite: not run for this single source checkpoint
 
-This checkpoint generalizes by-reference static/global binding and local
+That checkpoint generalizes by-reference static/global binding and local
 reference-return direct-variable sources so missing direct-variable sources
 materialize as shared null reference cells through the interpreter symbol-table
 path. It is not keyed to `bug72215`, PHPT filenames, expected output text, line
@@ -88,9 +118,9 @@ The previous full-suite checkpoint remains Batch002 `STACK-CLEAN-11` at
 
 Next source integration resumes from queued generalized candidates after fresh
 reviewer/critic gates and a clean p28 apply/gate cycle. Current watches include
-p19 dynamic-call repair, p17 property-hooks parser work, p15 typed-property
-reference coercion, and p16 generator-yield blocker work. Public PASS-NO-PATCH
-probe rows remain lower priority than source integration.
+p17 property-hooks parser work, p15 typed-property reference coercion, and p16
+generator-yield blocker work. Public PASS-NO-PATCH probe rows remain lower
+priority than source integration.
 
 ## Batch 001
 
