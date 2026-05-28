@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-28 03:34 CEST
+Updated: 2026-05-28 03:38 CEST
 Primary branch: `master`
 Latest source head: `0fa7b666 runtime: autoload enum_exists misses`
 
@@ -91,11 +91,13 @@ Required live roles:
 | Progress reporter | Keeps this `PROGRESS.md` file and durable supervisor state current after material AO events |
 | Coders | Work disjoint focused PHPT lanes from the queue; each lane must produce a patch, PASS-NO-PATCH, or NO-GO artifact |
 
-Current AO snapshot: `phpc-orchestrator` supervising; `phpc-11` full-suite
-gate finalized the baseline; `phpc-14` critic; `phpc-7` reviewer; `phpc-8`
-progress reporter; coder lanes `phpc-12` foreach object-property, `phpc-13`
-magic `__call` positive path, and `phpc-15` by-reference named-parameter
-follow-up.
+Current AO snapshot: `phpc-orchestrator` supervising; `phpc-14` critic;
+`phpc-7` reviewer; `phpc-8` progress reporter; coder lanes `phpc-15`
+by-reference named-parameter follow-up, `phpc-16` magic `__call_003`
+by-reference lane, and `phpc-17` foreach by-reference repacking/insert lane.
+The completed full-suite gate (`phpc-11`), foreach object-property coder
+(`phpc-12`), and magic `__call_001` PASS-NO-PATCH coder (`phpc-13`) were
+killed after their durable artifacts were recorded.
 
 ## Current Rules
 
