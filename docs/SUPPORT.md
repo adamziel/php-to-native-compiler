@@ -6328,7 +6328,11 @@
   `ksort` with `SORT_NUMERIC` and mutate the referenced array. Keys and
   values are preserved. Other sort flags, natural/locale sorts, broad key
   comparison, broad by-reference argument handling, exact diagnostics, and
-  native lowering remain unsupported.
+  native lowering remain unsupported. User-function calls with a supported
+  by-reference parameter and a definite value expression such as a scalar,
+  constant, or array literal now report the bounded PHP fatal `Error` shape
+  and stop call evaluation instead of falling through to the unsupported
+  reference-binding diagnostic.
   `foreach ($array as $value)` iterates array values in
   insertion order over a snapshot of the current entries and writes the current
   value to the direct loop variable in the active scope. `foreach ($array as

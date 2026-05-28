@@ -689,22 +689,30 @@ echo "caller=", $value;
 }
 
 #[test]
-fn reference_parameter_invocation_rejects_non_variable_arguments() {
-    let error = runtime_error(
+fn reference_parameter_literal_argument_reports_php_fatal_without_calling_body() {
+    let execution = run_source_with_source_file(
         r#"<?php
-function mutate(&$value) {
-    $value = 2;
+function side() {
+    echo "side";
+    return 2;
 }
-mutate(1);
+function mutate(&$value, $second) {
+    echo "unreached";
+    $value = $second;
+}
+mutate(1, side());
+echo "after";
 "#,
-    );
+        "/tmp/passByReference_002.php",
+    )
+    .unwrap();
 
-    assert_eq!(error.line, 5);
-    assert_eq!(error.column, 8);
     assert_eq!(
-        error.message,
-        "unsupported call mutate(): reference parameter invocation is only implemented for direct variable, direct array-offset, direct public object-property array-offset, and bounded magic __get reference arguments in the current subset"
+        execution.stdout,
+        "Fatal error: Uncaught Error: mutate(): Argument #1 ($value) could not be passed by reference in /tmp/passByReference_002.php:10\nStack trace:\n#0 {main}\n  thrown in /tmp/passByReference_002.php on line 10"
     );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 255);
 }
 
 #[test]
