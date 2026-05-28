@@ -76,6 +76,33 @@ echo $call("strlen", "four");
 }
 
 #[test]
+fn call_user_func_dispatches_missing_static_methods_through_callstatic() {
+    let execution = run_source(
+        r#"<?php
+class StaticMagicCallback {
+    public static function __callStatic($name, $args) {
+        echo $name, ":", count($args), "\n";
+        return $name . "-" . count($args);
+    }
+}
+
+echo call_user_func("StaticMagicCallback::Two", "A", "B"), "\n";
+echo call_user_func(array("StaticMagicCallback", "Three"), NULL, 0, false), "\n";
+echo call_user_func_array("StaticMagicCallback::Arrayed", array("X", "Y")), "\n";
+echo call_user_func_array(array("StaticMagicCallback", "Pair"), array("L", "R")), "\n";
+echo StaticMagicCallback::Direct(1, 2, 3);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "Two:2\nTwo-2\nThree:3\nThree-3\nArrayed:2\nArrayed-2\nPair:2\nPair-2\nDirect:3\nDirect-3"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn call_user_func_array_invokes_current_string_callable_and_positional_array_subset() {
     let execution = run_source(
         r#"<?php
