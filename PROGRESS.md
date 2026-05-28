@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-28 17:26 CEST
+Updated: 2026-05-28 17:49 CEST
 Primary branch: `master`
-Latest source head: `32b8b637 fix: validate dynamic array callback shape`
+Latest source head: `202dd1ec fix: reject disallowed property types`
 
 ## Progress Score
 
@@ -44,12 +44,50 @@ lives under
 | Skip/xfail ledger | Started | `/home/claude/supervised-php-compiler/state/php-core-suite-skip-ledger.tsv` |
 | First full-suite baseline | Done | 1118 / 20294 runnable PHPTs passed (5.51%); run id `phpt-full-batch001-20260528T010422Z-php-src-f97ff59-base-3e702be4-stack10` |
 | Batch002 full-suite gate | Done | 1193 / 20294 runnable PHPTs passed (5.88%); 0 regressions from Batch001 PASS set; run id `phpt-full-batch002-20260528T100640Z-php-src-f97ff59-public-bc0ed214-source-e72efe27-stack11` |
+| Next full-suite gate | Due now | Post-Batch002 source checkpoints have exceeded the 10-checkpoint target; no further source checkpoint should be publicly routed before a pinned full-suite run and regression check |
 
 Focused PHPT history is tracked separately in
 `/home/claude/supervised-php-compiler/state/php-core-suite-focused-history.tsv`.
 Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
+
+Post-Batch002 source checkpoint 21 is now primary-integrated under AO
+supervision. This is a source checkpoint with focused proof, not a percentage
+change. The public score remains **1193 / 20294 runnable PHPTs = 5.88%** until
+another pinned full-suite run is completed, parsed, regression-checked, and
+published here.
+
+- primary source head:
+  `202dd1ec fix: reject disallowed property types`
+- p28 final handoff head:
+  `fa71d4d44524b5e7e13f6b46e0f3fdd247d6ed50`
+- exported integration patch:
+  `/home/claude/supervised-php-compiler/state/patches/ao-integration-p15-typed-properties-disallowed-callable-type-successor3-20260528.patch`
+- exported integration patch SHA256:
+  `8f72a01d654d181282fd1de333f7c9f13ae85918f8b91da0e9bea41f2cdb2eec`
+- source candidate patch SHA256:
+  `3350b25c52d096c62441bd3b797c6c5578b050a1c05a89b3d08d80906a143fd8`
+- reviewer gate: p7 recorded `FINAL GO-CANDIDATE /
+  FOCUSED-GATES-PASS` with `FINAL_FAIL=0`
+- critic gate: phpc-26 recorded `SAFE-FOR-INTEGRATION`
+- focused gates: PASS for `git diff --check`, docs/PROGRESS exclusion,
+  production exact-shape audit, `cargo fmt --all -- --check`, `cargo test -p
+  phpc --test typed_properties_disallowed_property_types -- --test-threads=1`,
+  `cargo build -p phpc`, and wrapper PHPTs
+  `Zend/tests/type_declarations/typed_properties_053.phpt` and
+  `Zend/tests/type_declarations/typed_properties_054.phpt`
+- full PHPT suite: **due next**; post-Batch002 source checkpoints have exceeded
+  the 10-checkpoint target and further source checkpoint routing is held until
+  a pinned full-suite run is completed and regressions are repaired
+
+This checkpoint generalizes startup validation for disallowed property type
+names. Class, trait, interface, and promoted-property declarations now reject
+`callable` and nullable `?callable` property types through the existing fatal
+startup diagnostic path. It is not keyed to PHPT filenames, fixture class names,
+property names, expected output rows, or one exact source shape.
+
+Previous post-Batch002 source checkpoint 20 was p19 dynamic-call bug63173:
 
 Post-Batch002 source checkpoint 20 is now primary-integrated under AO
 supervision. This is a source checkpoint with focused proof, not a percentage
