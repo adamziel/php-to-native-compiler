@@ -507,9 +507,14 @@
   `handler($_REQUEST["payload"]["slot"])` are supported on those same dispatch
   paths as a bounded output-parameter bridge: the selected slot is
   materialized when needed, copied into the callee parameter, and written back
-  to the same slot when the callee returns normally or with `return`. If the
-  callee executes `unset($param)`, mutations made before the unset are written
-  back, while later writes to the detached local name are not.
+  to the same slot when the callee returns normally or with `return`. Missing
+  direct roots and leaves are materialized as array/null slots for this
+  by-reference argument path. When materialization introduced the caller slot
+  solely for the call, the temporary reference container is demoted back to a
+  plain value slot after writeback so later `var_dump()` output is not marked as
+  a reference; pre-existing caller references remain reference-backed and stay
+  aliased. If the callee executes `unset($param)`, mutations made before the
+  unset are written back, while later writes to the detached local name are not.
   Direct public
   object-property array-offset arguments such as
   `handler($object->items[$group][$key])` are supported for user functions,
@@ -529,6 +534,16 @@
   alias metadata reuse the promoted reference cell when the alias group allows
   it, so references stored by the callee remain connected to the original
   array/property reference slot after return. Direct
+  by-value call arguments have a separate bounded warning/null recovery for
+  direct variable and direct array-offset reads: missing direct variables emit
+  a display `Warning: Undefined variable` and pass `null`, missing direct
+  array keys emit `Warning: Undefined array key` and pass `null`, and direct
+  null/scalar offset reads emit `Warning: Trying to access array offset on ...`
+  and pass `null` without materializing the by-value root. This recovery
+  applies at user-function, method, ordinary builtin, and supported
+  callback-helper call boundaries; it does not turn general expression reads,
+  `$GLOBALS` offsets, or native lowering into warning/null fallback paths.
+  Direct
   user-function by-reference
   calls also accept non-direct holder plain object-property array-offset
   arguments such as `handler($holders["bag"]->items["outer"]["slot"])` and

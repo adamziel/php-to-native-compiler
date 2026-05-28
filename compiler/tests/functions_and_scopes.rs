@@ -716,6 +716,87 @@ echo "after";
 }
 
 #[test]
+fn by_value_call_argument_undefined_array_offset_warns_and_passes_null() {
+    let execution = run_source_with_source_file(
+        r#"<?php
+function take_value($value) {
+    var_dump($value);
+}
+take_value($missing[0]);
+var_dump($missing);
+"#,
+        "virtual/pass003.php",
+    )
+    .unwrap();
+
+    assert!(execution
+        .stdout
+        .contains("Warning: Undefined variable $missing in virtual/pass003.php on line 5"));
+    assert!(execution.stdout.contains(
+        "Warning: Trying to access array offset on null in virtual/pass003.php on line 5"
+    ));
+    assert!(execution
+        .stdout
+        .contains("Warning: Undefined variable $missing in virtual/pass003.php on line 6"));
+    let semantic_lines = execution
+        .stdout
+        .lines()
+        .filter(|line| !line.is_empty() && !line.starts_with("Warning:"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert_eq!(semantic_lines, "NULL\nNULL");
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn by_reference_call_argument_undefined_array_offset_materializes_slot() {
+    let execution = run_source(
+        r#"<?php
+function touch_reference(&$value) {
+    var_dump($value);
+    $value = "filled";
+}
+touch_reference($missing[0]);
+var_dump($missing);
+"#,
+    )
+    .unwrap();
+
+    assert!(!execution.stdout.contains("Warning: Undefined variable"));
+    assert!(execution.stdout.starts_with("NULL\n"));
+    assert!(execution.stdout.contains("array(1) {"));
+    assert!(execution.stdout.contains("  [0]=>"));
+    assert!(execution.stdout.contains("  string(6) \"filled\""));
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn by_reference_call_argument_preserves_existing_array_slot_reference() {
+    let execution = run_source(
+        r#"<?php
+function touch_reference(&$value) {
+    $value = "changed";
+}
+$items = [0 => "start"];
+$alias =& $items[0];
+touch_reference($items[0]);
+echo $alias, "\n";
+$alias = "again";
+echo $items[0], "\n";
+var_dump($items);
+"#,
+    )
+    .unwrap();
+
+    assert!(execution.stdout.starts_with("changed\nagain\n"));
+    assert!(execution.stdout.contains("  &string(5) \"again\""));
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reference_assignment_from_value_return_call_uses_detached_value() {
     let execution = run_source(
         r#"<?php
