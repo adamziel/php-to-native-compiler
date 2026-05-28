@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-28 02:49 CEST
+Updated: 2026-05-28 02:56 CEST
 Primary source head: `3e702be4 docs: account enum autoload lookup`
 Latest source head: `0fa7b666 runtime: autoload enum_exists misses`
 
@@ -39,7 +39,8 @@ Policy: stage 10 accepted generalized source PRs, run focused gates per PR, run
 the full PHPT suite once after PR 10, repair regressions, then merge the whole
 batch.
 
-Current batch status: **9/10 accepted, not merged**.
+Current batch status: **9/10 accepted, not merged** unless and until an
+independent reviewer accepts one live PR 10 candidate.
 
 Accepted for staging:
 
@@ -79,6 +80,11 @@ Required live roles:
 | Reviewer | Independent candidate apply/review/focused-gate proof before Batch 001 acceptance |
 | Progress reporter | Keeps this `PROGRESS.md` file and durable supervisor state current after material AO events |
 | Coders | Work disjoint focused PHPT lanes from the queue; each lane must produce a patch, PASS-NO-PATCH, or NO-GO artifact |
+
+Current AO snapshot: `phpc-orchestrator` working; `phpc-4` critic audit;
+`phpc-7` independent reviewer; `phpc-8` progress reporter; `phpc-9`
+focused coder; PR #1/r81 and PR #2/r82 are open PR 10 candidates pending
+independent acceptance.
 
 ## Current Rules
 
