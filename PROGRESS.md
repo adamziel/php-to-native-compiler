@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-28 21:31 CEST
+Updated: 2026-05-28 21:46 CEST
 Primary branch: `master`
-Latest source head: `b75047df fix: preserve fatal output separator after inline output`
+Latest source head: `7ae57dc2 fix: expand unpacked arguments for builtin callbacks`
 
 ## Progress Score
 
@@ -69,13 +69,54 @@ calculation.
 | Batch002 full-suite gate | Done | 1193 / 20294 runnable PHPTs passed (5.88%); 0 regressions from Batch001 PASS set; run id `phpt-full-batch002-20260528T100640Z-php-src-f97ff59-public-bc0ed214-source-e72efe27-stack11` |
 | Batch003 full-suite gate | Done | 1311 / 20294 pinned runnable PHPTs passed (6.46%); 0 regressions from Batch002 PASS set; run id `phpt-full-batch003-20260528T154907Z-php-src-f97ff59-public-20f3be4c-source-202dd1ec-stack21` |
 | Batch004 checkpoint8 regression-repair sharded gate | Done | 1369 / 20294 pinned runnable PHPTs passed (6.75%); 0 regressions from Batch003 PASS set; run id `phpt-full-batch004-regression-repair-sharded-20260528T192018Z-php-src-f97ff59-public-3c86fc6a-source-b75047df-stack8` |
-| Next source batch | Open | Batch004 source checkpoints accepted: 8 / 10; route remaining checkpoints toward broad PHPT failures with focused PHPT proof; run the next full suite after 10 accepted source checkpoints or an explicit sharded/regression-repair publication gate |
+| Next source batch | Open | Batch004 source checkpoints accepted: 9 / 10; route checkpoint10 toward broad PHPT failures with focused PHPT proof; run the next full suite after checkpoint10 or an explicit sharded/regression-repair publication gate |
 
 Focused PHPT history is tracked separately in
 `/home/claude/supervised-php-compiler/state/php-core-suite-focused-history.tsv`.
 Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
+
+Batch004 source checkpoint 9 is primary-integrated under AO supervision. This
+is a source checkpoint with focused proof, not a percentage change. The public
+PHPT score remains **1369 / 20294 pinned runnable PHPTs = 6.75%** until the
+next pinned full-suite or supervisor-approved sharded full-suite gate is
+completed, regression-checked, and published here.
+
+- primary source head:
+  `7ae57dc2 fix: expand unpacked arguments for builtin callbacks`
+- exported integration patch:
+  `/home/claude/supervised-php-compiler/state/patches/ao-integration-p31-builtin-callback-successor2-8dafddc4-20260528.patch`
+- exported integration patch SHA256:
+  `1e879023185ee515ceca688999bfb91b9b172cb8c1caba68e3f510811fcffa77`
+- reviewer gate: p7 recorded `FINAL GO-CANDIDATE / FOCUSED-GATES-PASS /
+  PHPT-PASS` with `FINAL_FAIL=0` on public `8dafddc4`; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/batch004-review-call-argument-unpack-builtin-callback-successor2-current-8dafddc4-20260528.{status.md,report.md,gates.log}`
+- critic gate: phpc-33 recorded `SAFE-FOR-INTEGRATION /
+  P7-FINAL-GO-VERIFIED / READ-ONLY`; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/batch004-critic-call-argument-unpack-builtin-callback-successor2-current-8dafddc4-20260528.{status.md,report.md}`
+- integration gate: phpc-28 recorded `FINAL-HANDOFF /
+  READY-FOR-SUPERVISOR-APPLY`; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/ao-integration-p31-builtin-callback-successor2-8dafddc4-20260528.{status.md,report.md,gates.log}`
+- supervisor focused gates: PASS for `git diff --check`,
+  docs/PROGRESS/examples exclusion, production exact-shape audit,
+  `cargo fmt --all -- --check`, focused Rust
+  `call_user_func_builtin_callback_expands_integer_unpacked_arguments`,
+  `cargo build -p phpc`, and focused wrapper PHPT
+  `/home/claude/supervised-php-compiler/state/workers/ao-coder-call-argument-unpack-builtin-callback-current-3c86fc6a-20260528.phpt`
+- supervisor primary gate log:
+  `/home/claude/supervised-php-compiler/state/workers/supervisor-primary-p31-builtin-callback-successor2-checkpoint9-20260528.gates.log`
+- full PHPT suite: not run for this single source checkpoint; due after
+  Batch004 reaches checkpoint10 or an explicit sharded/regression-repair
+  publication gate
+
+This checkpoint generalizes builtin callback argument evaluation. Builtin
+callbacks invoked through `call_user_func()` now reuse the same builtin
+value-call argument evaluator as direct builtin calls, so integer-keyed
+unpacked arguments expand consistently. Production code is not keyed to a PHPT
+filename, expected-output fixture, batch marker, or test-name branch.
+
+Previous Batch004 source checkpoint 8 was the fatal-output regression repair:
 
 Batch004 source checkpoint 8 is primary-integrated under AO supervision as a
 regression repair for the checkpoint7 sharded gate. The checkpoint8
