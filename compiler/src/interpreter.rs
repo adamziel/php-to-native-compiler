@@ -539,6 +539,7 @@ struct StreamMode {
     append: bool,
     truncate: bool,
     create: bool,
+    create_new: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -59929,6 +59930,7 @@ impl Interpreter {
                 .read(stream_mode.readable)
                 .write(stream_mode.writable)
                 .create(stream_mode.create)
+                .create_new(stream_mode.create_new)
                 .truncate(stream_mode.truncate)
                 .open(&filesystem_path)
             {
@@ -59968,6 +59970,725 @@ impl Interpreter {
             self.streams.insert(id, StreamResource::File(stream));
         }
         Ok(Value::Resource(id))
+    }
+
+    fn filesystem_path_argument(
+        &mut self,
+        function: &str,
+        label: &str,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<String> {
+        match value {
+            Value::String(path) => Ok(path.clone()),
+            other => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{function}()"),
+                    format!(
+                        "{label} argument must be string in the current subset, got {}",
+                        other.type_name()
+                    ),
+                ),
+            )),
+        }
+    }
+
+    fn filesystem_flags_argument(
+        &self,
+        function: &str,
+        label: &str,
+        value: Option<&Value>,
+        span: Span,
+    ) -> CompileResult<i64> {
+        match value {
+            Some(Value::Int(flags)) => Ok(*flags),
+            Some(Value::Null) | None => Ok(0),
+            Some(other) => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{function}()"),
+                    format!(
+                        "{label} argument must be int in the current subset, got {}",
+                        other.type_name()
+                    ),
+                ),
+            )),
+        }
+    }
+
+    fn resolve_local_filesystem_operation_path(
+        &self,
+        function: &str,
+        path: &str,
+        use_include_path: bool,
+        span: Span,
+    ) -> CompileResult<PathBuf> {
+        if let Some(file_url_path) = bounded_local_file_url_path(path) {
+            return file_url_path.map_err(|message| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(format!("{function}()"), message),
+                )
+            });
+        }
+        if path.contains("://") {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{function}()"),
+                    "only local file:// URLs and local filesystem paths are supported in the current filesystem subset",
+                ),
+            ));
+        }
+        if use_include_path {
+            Ok(self.resolve_file_get_contents_path(path, true))
+        } else {
+            Ok(PathBuf::from(path))
+        }
+    }
+
+    fn clear_stat_cache_filesystem_path(&mut self, path: &Path) {
+        self.stat_cache.remove(path);
+    }
+
+    fn cached_filesystem_metadata(
+        &mut self,
+        path: &Path,
+        follow_links: bool,
+    ) -> Option<fs::Metadata> {
+        if !follow_links {
+            return fs::symlink_metadata(path).ok();
+        }
+        if let Some(metadata) = self.stat_cache.get(path) {
+            return Some(metadata.clone());
+        }
+
+        let metadata = fs::metadata(path).ok()?;
+        self.stat_cache.insert(path.to_path_buf(), metadata.clone());
+        Some(metadata)
+    }
+
+    fn filesystem_metadata_for_path_builtin(
+        &mut self,
+        function: &str,
+        path: &str,
+        follow_links: bool,
+        span: Span,
+    ) -> CompileResult<Option<(PathBuf, fs::Metadata)>> {
+        let filesystem_path =
+            self.resolve_local_filesystem_operation_path(function, path, false, span)?;
+        if !self.enforce_bounded_open_basedir(
+            &format!("{function}()"),
+            path,
+            &filesystem_path,
+            span,
+        )? {
+            return Ok(None);
+        }
+
+        Ok(self
+            .cached_filesystem_metadata(&filesystem_path, follow_links)
+            .map(|metadata| (filesystem_path, metadata)))
+    }
+
+    fn call_stat_path_builtin(
+        &mut self,
+        args: &[Value],
+        function: &str,
+        follow_links: bool,
+        span: Span,
+    ) -> CompileResult<Value> {
+        expect_arity(function, args, 1, span)?;
+        let path = self.filesystem_path_argument(function, "path", &args[0], span)?;
+        let Some((filesystem_path, metadata)) =
+            self.filesystem_metadata_for_path_builtin(function, &path, follow_links, span)?
+        else {
+            return Ok(Value::Bool(false));
+        };
+        self.cache_bounded_realpath_entry_for_local_path(&filesystem_path);
+        Ok(Value::Array(local_file_stream_stat_array(&metadata)))
+    }
+
+    fn call_fileperms(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("fileperms", args, 1, span)?;
+        let path = self.filesystem_path_argument("fileperms", "path", &args[0], span)?;
+        let Some((_filesystem_path, metadata)) =
+            self.filesystem_metadata_for_path_builtin("fileperms", &path, true, span)?
+        else {
+            return Ok(Value::Bool(false));
+        };
+        Ok(Value::Int(filesystem_mode_bits(&metadata)))
+    }
+
+    fn call_chmod(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("chmod", args, 2, span)?;
+        let path = self.filesystem_path_argument("chmod", "path", &args[0], span)?;
+        let mode = match &args[1] {
+            Value::Int(mode) => *mode,
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "chmod()",
+                        format!(
+                            "permissions argument must be int in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+        };
+        let filesystem_path =
+            self.resolve_local_filesystem_operation_path("chmod", &path, false, span)?;
+        if !self.enforce_bounded_open_basedir("chmod()", &path, &filesystem_path, span)? {
+            return Ok(Value::Bool(false));
+        }
+        match self.set_bounded_unix_permissions(&filesystem_path, mode, "chmod", span) {
+            Ok(()) => {
+                self.clear_stat_cache_filesystem_path(&filesystem_path);
+                Ok(Value::Bool(true))
+            }
+            Err(error) => {
+                self.emit_warning("chmod()", format!("{path}: {}", error.message), span)?;
+                Ok(Value::Bool(false))
+            }
+        }
+    }
+
+    fn file_put_contents_data_bytes(
+        &mut self,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<Option<Vec<u8>>> {
+        match value {
+            Value::Array(array) => {
+                let mut bytes = Vec::new();
+                for entry in array.entries() {
+                    match entry.value() {
+                        Value::Array(_) => {
+                            self.emit_warning(
+                                "file_put_contents()",
+                                "Array to string conversion",
+                                span,
+                            )?;
+                            bytes.extend_from_slice(b"Array");
+                        }
+                        value => bytes.extend(self.value_to_echo_bytes(value.clone(), span)?),
+                    }
+                }
+                Ok(Some(bytes))
+            }
+            Value::Object(object) => {
+                if let Some(output) =
+                    self.object_to_string_with_magic(object.clone(), "file_put_contents()", span)?
+                {
+                    Ok(Some(output.into_bytes()))
+                } else {
+                    Ok(None)
+                }
+            }
+            Value::Resource(_) => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "file_put_contents()",
+                    "file_put_contents(): supplied resource is not a valid stream resource",
+                ),
+            )),
+            value => self.value_to_echo_bytes(value.clone(), span).map(Some),
+        }
+    }
+
+    fn call_file_put_contents(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if args.len() < 2 || args.len() > 4 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "file_put_contents()",
+                    ArityExpectation::Between { min: 2, max: 4 },
+                    args.len(),
+                ),
+            ));
+        }
+        let path = self.filesystem_path_argument("file_put_contents", "path", &args[0], span)?;
+        let Some(data) = self.file_put_contents_data_bytes(&args[1], span)? else {
+            return Ok(Value::Bool(false));
+        };
+        let flags =
+            self.filesystem_flags_argument("file_put_contents", "flags", args.get(2), span)?;
+        let allowed_flags = PHP_FILE_USE_INCLUDE_PATH | PHP_LOCK_EX | PHP_FILE_APPEND;
+        if flags & !allowed_flags != 0 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "file_put_contents()",
+                    format!("flags value {flags} contains unsupported bits in the current subset"),
+                ),
+            ));
+        }
+        if let Some(context) = args.get(3) {
+            self.expect_optional_stream_context_resource("file_put_contents", context, span)?;
+        }
+
+        let filesystem_path = self.resolve_local_filesystem_operation_path(
+            "file_put_contents",
+            &path,
+            flags & PHP_FILE_USE_INCLUDE_PATH != 0,
+            span,
+        )?;
+        if !self.enforce_bounded_open_basedir(
+            "file_put_contents()",
+            &path,
+            &filesystem_path,
+            span,
+        )? {
+            return Ok(Value::Bool(false));
+        }
+
+        let mut options = fs::OpenOptions::new();
+        options.write(true).create(true);
+        if flags & PHP_FILE_APPEND != 0 {
+            options.append(true);
+        } else {
+            options.truncate(true);
+        }
+        let mut file = match options.open(&filesystem_path) {
+            Ok(file) => file,
+            Err(error) => {
+                self.emit_warning(
+                    "file_put_contents()",
+                    format!("{path}: Failed to open stream: {error}"),
+                    span,
+                )?;
+                return Ok(Value::Bool(false));
+            }
+        };
+        if let Err(error) = file.write_all(&data) {
+            self.emit_warning(
+                "file_put_contents()",
+                format!("{path}: Failed to write stream: {error}"),
+                span,
+            )?;
+            return Ok(Value::Bool(false));
+        }
+        self.clear_stat_cache_filesystem_path(&filesystem_path);
+        self.cache_bounded_realpath_entry_for_local_path(&filesystem_path);
+        Ok(Value::Int(data.len() as i64))
+    }
+
+    fn call_readfile(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if args.is_empty() || args.len() > 3 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "readfile()",
+                    ArityExpectation::Between { min: 1, max: 3 },
+                    args.len(),
+                ),
+            ));
+        }
+        let path = self.filesystem_path_argument("readfile", "path", &args[0], span)?;
+        let use_include_path = match args.get(1) {
+            Some(Value::Bool(flag)) => *flag,
+            Some(Value::Null) | None => false,
+            Some(other) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "readfile()",
+                        format!(
+                            "use_include_path argument must be bool in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+        };
+        if let Some(context) = args.get(2) {
+            self.expect_optional_stream_context_resource("readfile", context, span)?;
+        }
+        let filesystem_path = self.resolve_local_filesystem_operation_path(
+            "readfile",
+            &path,
+            use_include_path,
+            span,
+        )?;
+        if !self.enforce_bounded_open_basedir("readfile()", &path, &filesystem_path, span)? {
+            return Ok(Value::Bool(false));
+        }
+        let bytes = match fs::read(&filesystem_path) {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                self.emit_warning(
+                    "readfile()",
+                    format!("{path}: Failed to open stream: {error}"),
+                    span,
+                )?;
+                return Ok(Value::Bool(false));
+            }
+        };
+        let output = tree_walk_binary_string_utf8(&bytes, "readfile()", span)?;
+        self.append_output_at(output, span);
+        self.cache_bounded_realpath_entry_for_local_path(&filesystem_path);
+        Ok(Value::Int(bytes.len() as i64))
+    }
+
+    fn call_unlink(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(1..=2).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "unlink()",
+                    ArityExpectation::Between { min: 1, max: 2 },
+                    args.len(),
+                ),
+            ));
+        }
+        let path = self.filesystem_path_argument("unlink", "path", &args[0], span)?;
+        if let Some(context) = args.get(1) {
+            self.expect_optional_stream_context_resource("unlink", context, span)?;
+        }
+        let filesystem_path =
+            self.resolve_local_filesystem_operation_path("unlink", &path, false, span)?;
+        if !self.enforce_bounded_open_basedir("unlink()", &path, &filesystem_path, span)? {
+            return Ok(Value::Bool(false));
+        }
+        match fs::remove_file(&filesystem_path) {
+            Ok(()) => {
+                self.clear_stat_cache_filesystem_path(&filesystem_path);
+                Ok(Value::Bool(true))
+            }
+            Err(error) => {
+                self.emit_warning("unlink()", format!("{path}: {error}"), span)?;
+                Ok(Value::Bool(false))
+            }
+        }
+    }
+
+    fn call_mkdir(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if args.is_empty() || args.len() > 4 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "mkdir()",
+                    ArityExpectation::Between { min: 1, max: 4 },
+                    args.len(),
+                ),
+            ));
+        }
+        let path = self.filesystem_path_argument("mkdir", "path", &args[0], span)?;
+        let mode = match args.get(1) {
+            Some(Value::Int(mode)) => *mode,
+            Some(Value::Null) | None => 0o777,
+            Some(other) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "mkdir()",
+                        format!(
+                            "mode argument must be int in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+        };
+        let recursive = match args.get(2) {
+            Some(Value::Bool(flag)) => *flag,
+            Some(Value::Null) | None => false,
+            Some(other) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "mkdir()",
+                        format!(
+                            "recursive argument must be bool in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+        };
+        if let Some(context) = args.get(3) {
+            self.expect_optional_stream_context_resource("mkdir", context, span)?;
+        }
+        let filesystem_path =
+            self.resolve_local_filesystem_operation_path("mkdir", &path, false, span)?;
+        if !self.enforce_bounded_open_basedir("mkdir()", &path, &filesystem_path, span)? {
+            return Ok(Value::Bool(false));
+        }
+        let result = if recursive {
+            fs::create_dir_all(&filesystem_path)
+        } else {
+            fs::create_dir(&filesystem_path)
+        };
+        match result {
+            Ok(()) => {
+                self.set_bounded_unix_permissions(&filesystem_path, mode, "mkdir", span)?;
+                self.clear_stat_cache_filesystem_path(&filesystem_path);
+                self.cache_bounded_realpath_entry_for_local_path(&filesystem_path);
+                Ok(Value::Bool(true))
+            }
+            Err(error) => {
+                self.emit_warning("mkdir()", format!("{path}: {error}"), span)?;
+                Ok(Value::Bool(false))
+            }
+        }
+    }
+
+    fn set_bounded_unix_permissions(
+        &mut self,
+        path: &Path,
+        mode: i64,
+        function: &str,
+        span: Span,
+    ) -> CompileResult<()> {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = (mode as u32) & 0o7777;
+            let permissions = fs::Permissions::from_mode(mode);
+            fs::set_permissions(path, permissions).map_err(|error| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        format!("{function}()"),
+                        format!("setting filesystem permissions failed: {error}"),
+                    ),
+                )
+            })?;
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = (path, mode, function, span);
+        }
+        Ok(())
+    }
+
+    fn call_rmdir(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(1..=2).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "rmdir()",
+                    ArityExpectation::Between { min: 1, max: 2 },
+                    args.len(),
+                ),
+            ));
+        }
+        let path = self.filesystem_path_argument("rmdir", "path", &args[0], span)?;
+        if let Some(context) = args.get(1) {
+            self.expect_optional_stream_context_resource("rmdir", context, span)?;
+        }
+        let filesystem_path =
+            self.resolve_local_filesystem_operation_path("rmdir", &path, false, span)?;
+        if !self.enforce_bounded_open_basedir("rmdir()", &path, &filesystem_path, span)? {
+            return Ok(Value::Bool(false));
+        }
+        match fs::remove_dir(&filesystem_path) {
+            Ok(()) => {
+                self.clear_stat_cache_filesystem_path(&filesystem_path);
+                Ok(Value::Bool(true))
+            }
+            Err(error) => {
+                self.emit_warning("rmdir()", format!("{path}: {error}"), span)?;
+                Ok(Value::Bool(false))
+            }
+        }
+    }
+
+    fn call_copy(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(2..=3).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "copy()",
+                    ArityExpectation::Between { min: 2, max: 3 },
+                    args.len(),
+                ),
+            ));
+        }
+        let from = self.filesystem_path_argument("copy", "from", &args[0], span)?;
+        let to = self.filesystem_path_argument("copy", "to", &args[1], span)?;
+        if let Some(context) = args.get(2) {
+            self.expect_optional_stream_context_resource("copy", context, span)?;
+        }
+        let from_path = self.resolve_local_filesystem_operation_path("copy", &from, false, span)?;
+        let to_path = self.resolve_local_filesystem_operation_path("copy", &to, false, span)?;
+        if !self.enforce_bounded_open_basedir("copy()", &from, &from_path, span)?
+            || !self.enforce_bounded_open_basedir("copy()", &to, &to_path, span)?
+        {
+            return Ok(Value::Bool(false));
+        }
+        match fs::copy(&from_path, &to_path) {
+            Ok(_) => {
+                self.clear_stat_cache_filesystem_path(&to_path);
+                self.cache_bounded_realpath_entry_for_local_path(&to_path);
+                Ok(Value::Bool(true))
+            }
+            Err(error) => {
+                self.emit_warning("copy()", format!("{from}: {error}"), span)?;
+                Ok(Value::Bool(false))
+            }
+        }
+    }
+
+    fn call_rename(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(2..=3).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "rename()",
+                    ArityExpectation::Between { min: 2, max: 3 },
+                    args.len(),
+                ),
+            ));
+        }
+        let from = self.filesystem_path_argument("rename", "from", &args[0], span)?;
+        let to = self.filesystem_path_argument("rename", "to", &args[1], span)?;
+        if let Some(context) = args.get(2) {
+            self.expect_optional_stream_context_resource("rename", context, span)?;
+        }
+        let from_path =
+            self.resolve_local_filesystem_operation_path("rename", &from, false, span)?;
+        let to_path = self.resolve_local_filesystem_operation_path("rename", &to, false, span)?;
+        if !self.enforce_bounded_open_basedir("rename()", &from, &from_path, span)?
+            || !self.enforce_bounded_open_basedir("rename()", &to, &to_path, span)?
+        {
+            return Ok(Value::Bool(false));
+        }
+        match fs::rename(&from_path, &to_path) {
+            Ok(()) => {
+                self.clear_stat_cache_filesystem_path(&from_path);
+                self.clear_stat_cache_filesystem_path(&to_path);
+                self.cache_bounded_realpath_entry_for_local_path(&to_path);
+                Ok(Value::Bool(true))
+            }
+            Err(error) => {
+                self.emit_warning("rename()", format!("{from}: {error}"), span)?;
+                Ok(Value::Bool(false))
+            }
+        }
+    }
+
+    fn call_chdir(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("chdir", args, 1, span)?;
+        let path = self.filesystem_path_argument("chdir", "path", &args[0], span)?;
+        let filesystem_path =
+            self.resolve_local_filesystem_operation_path("chdir", &path, false, span)?;
+        if !self.enforce_bounded_open_basedir("chdir()", &path, &filesystem_path, span)? {
+            return Ok(Value::Bool(false));
+        }
+        match std::env::set_current_dir(&filesystem_path) {
+            Ok(()) => Ok(Value::Bool(true)),
+            Err(error) => {
+                self.emit_warning("chdir()", format!("{path}: {error}"), span)?;
+                Ok(Value::Bool(false))
+            }
+        }
+    }
+
+    fn call_scandir(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if args.is_empty() || args.len() > 3 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "scandir()",
+                    ArityExpectation::Between { min: 1, max: 3 },
+                    args.len(),
+                ),
+            ));
+        }
+        let path = self.filesystem_path_argument("scandir", "path", &args[0], span)?;
+        let sorting_order = match args.get(1) {
+            Some(Value::Int(order)) => *order,
+            Some(Value::Null) | None => PHP_SCANDIR_SORT_ASCENDING,
+            Some(other) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "scandir()",
+                        format!(
+                            "sorting_order argument must be int in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+        };
+        if !matches!(
+            sorting_order,
+            PHP_SCANDIR_SORT_ASCENDING | PHP_SCANDIR_SORT_DESCENDING | PHP_SCANDIR_SORT_NONE
+        ) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "scandir()",
+                    "sorting_order must be SCANDIR_SORT_ASCENDING, SCANDIR_SORT_DESCENDING, or SCANDIR_SORT_NONE in the current subset",
+                ),
+            ));
+        }
+        if let Some(context) = args.get(2) {
+            self.expect_optional_stream_context_resource("scandir", context, span)?;
+        }
+        let directory_path =
+            self.resolve_local_filesystem_operation_path("scandir", &path, false, span)?;
+        if !self.enforce_bounded_open_basedir("scandir()", &path, &directory_path, span)? {
+            return Ok(Value::Bool(false));
+        }
+        let Ok(metadata) = fs::metadata(&directory_path) else {
+            self.emit_warning(
+                "scandir()",
+                format!("{path}: No such file or directory"),
+                span,
+            )?;
+            return Ok(Value::Bool(false));
+        };
+        if !metadata.is_dir() {
+            self.emit_warning("scandir()", format!("{path}: Not a directory"), span)?;
+            return Ok(Value::Bool(false));
+        }
+        let mut entries = vec![".".to_string(), "..".to_string()];
+        for entry in fs::read_dir(&directory_path).map_err(|error| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "scandir()",
+                    format!("local directory read failed: {error}"),
+                ),
+            )
+        })? {
+            let entry = entry.map_err(|error| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "scandir()",
+                        format!("local directory entry read failed: {error}"),
+                    ),
+                )
+            })?;
+            let Some(name) = entry.file_name().to_str().map(str::to_string) else {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "scandir()",
+                        "non-UTF-8 directory entries are not supported in the current subset",
+                    ),
+                ));
+            };
+            entries.push(name);
+        }
+        match sorting_order {
+            PHP_SCANDIR_SORT_ASCENDING => entries.sort(),
+            PHP_SCANDIR_SORT_DESCENDING => entries.sort_by(|left, right| right.cmp(left)),
+            PHP_SCANDIR_SORT_NONE => {}
+            _ => unreachable!(),
+        }
+        let mut result = PhpArray::new();
+        for entry in entries {
+            let _ = result.append(Value::String(entry));
+        }
+        Ok(Value::Array(result))
     }
 
     fn call_stream_context_create(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -60396,7 +61117,9 @@ impl Interpreter {
                 span,
                 RuntimeError::unsupported_call(
                     format!("{function}()"),
-                    "context argument must be stream context resource in the current subset",
+                    format!(
+                        "{function}(): supplied resource is not a valid Stream-Context resource"
+                    ),
                 ),
             )
         })
@@ -62380,6 +63103,9 @@ impl Interpreter {
             "str_starts_with" => call_str_starts_with(&args, span),
             "str_ends_with" => call_str_ends_with(&args, span),
             "strpos" => call_strpos(&args, span),
+            "strstr" => call_strstr(&args, "strstr()", false, span),
+            "strchr" => call_strstr(&args, "strchr()", false, span),
+            "stristr" => call_strstr(&args, "stristr()", true, span),
             "substr" => call_substr(&args, span),
             "substr_count" => call_substr_count(&args, span),
             "str_replace" => call_str_replace(&args, span),
@@ -63828,6 +64554,19 @@ impl Interpreter {
             }
             "is_uploaded_file" => self.call_is_uploaded_file(&args, span),
             "move_uploaded_file" => self.call_move_uploaded_file(&args, span),
+            "file_put_contents" => self.call_file_put_contents(&args, span),
+            "readfile" => self.call_readfile(&args, span),
+            "unlink" => self.call_unlink(&args, span),
+            "mkdir" => self.call_mkdir(&args, span),
+            "rmdir" => self.call_rmdir(&args, span),
+            "copy" => self.call_copy(&args, span),
+            "rename" => self.call_rename(&args, span),
+            "chdir" => self.call_chdir(&args, span),
+            "scandir" => self.call_scandir(&args, span),
+            "stat" => self.call_stat_path_builtin(&args, "stat", true, span),
+            "lstat" => self.call_stat_path_builtin(&args, "lstat", false, span),
+            "fileperms" => self.call_fileperms(&args, span),
+            "chmod" => self.call_chmod(&args, span),
             "file_exists" => {
                 expect_arity(name, &args, 1, span)?;
                 match &args[0] {
@@ -71938,6 +72677,14 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_optional_int_param("offset", 0),
             ],
         ),
+        "strstr" | "strchr" | "stristr" => (
+            "string|false",
+            vec![
+                reflection_internal_param("haystack", "string"),
+                reflection_internal_param("needle", "string"),
+                reflection_internal_optional_bool_param("before_needle", false),
+            ],
+        ),
         "substr" => (
             "string",
             vec![
@@ -73440,6 +74187,10 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
         return Some(("TypeError", message));
     }
 
+    if let Some(message) = builtin_resource_type_error_message(error) {
+        return Some(("TypeError", message));
+    }
+
     if let Some(message) = call_argument_type_error_message(error) {
         return Some(("TypeError", message));
     }
@@ -73482,6 +74233,23 @@ fn typed_property_reference_type_error_message(error: &Diagnostic) -> Option<Str
         && message.contains(" of type ")
     {
         return Some(message.to_string());
+    }
+    None
+}
+
+fn builtin_resource_type_error_message(error: &Diagnostic) -> Option<String> {
+    if error.phase != Phase::Runtime {
+        return None;
+    }
+    let reason = error
+        .message
+        .strip_prefix("unsupported call ")?
+        .split_once(": ")
+        .map(|(_, reason)| reason)?;
+    if reason == "file_put_contents(): supplied resource is not a valid stream resource"
+        || reason.ends_with("(): supplied resource is not a valid Stream-Context resource")
+    {
+        return Some(reason.to_string());
     }
     None
 }
@@ -73665,6 +74433,9 @@ fn is_builtin(name: &str) -> bool {
             | "str_starts_with"
             | "str_ends_with"
             | "strpos"
+            | "strstr"
+            | "strchr"
+            | "stristr"
             | "substr"
             | "substr_count"
             | "str_replace"
@@ -73864,6 +74635,19 @@ fn is_builtin(name: &str) -> bool {
             | "mysqli_init"
             | "is_uploaded_file"
             | "move_uploaded_file"
+            | "file_put_contents"
+            | "readfile"
+            | "unlink"
+            | "mkdir"
+            | "rmdir"
+            | "copy"
+            | "rename"
+            | "chdir"
+            | "scandir"
+            | "stat"
+            | "lstat"
+            | "fileperms"
+            | "chmod"
             | "file_exists"
             | "file_get_contents"
             | "fopen"
@@ -74116,6 +74900,12 @@ const PHP_MYSQLI_REFRESH_ALL_SUPPORTED: i64 = PHP_MYSQLI_REFRESH_GRANT
 const PHP_SESSION_DISABLED: i64 = 0;
 const PHP_SESSION_NONE: i64 = 1;
 const PHP_SESSION_ACTIVE: i64 = 2;
+const PHP_FILE_USE_INCLUDE_PATH: i64 = 1;
+const PHP_LOCK_EX: i64 = 2;
+const PHP_FILE_APPEND: i64 = 8;
+const PHP_SCANDIR_SORT_ASCENDING: i64 = 0;
+const PHP_SCANDIR_SORT_DESCENDING: i64 = 1;
+const PHP_SCANDIR_SORT_NONE: i64 = 2;
 
 fn builtin_global_constant_value(name: &str) -> Option<Value> {
     match name {
@@ -74125,6 +74915,12 @@ fn builtin_global_constant_value(name: &str) -> Option<Value> {
         "PHP_SAPI" => Some(Value::String("cli".to_string())),
         "PHP_EOL" => Some(Value::String("\n".to_string())),
         "PATH_SEPARATOR" => Some(Value::String(INCLUDE_PATH_SEPARATOR.to_string())),
+        "FILE_USE_INCLUDE_PATH" => Some(Value::Int(PHP_FILE_USE_INCLUDE_PATH)),
+        "FILE_APPEND" => Some(Value::Int(PHP_FILE_APPEND)),
+        "LOCK_EX" => Some(Value::Int(PHP_LOCK_EX)),
+        "SCANDIR_SORT_ASCENDING" => Some(Value::Int(PHP_SCANDIR_SORT_ASCENDING)),
+        "SCANDIR_SORT_DESCENDING" => Some(Value::Int(PHP_SCANDIR_SORT_DESCENDING)),
+        "SCANDIR_SORT_NONE" => Some(Value::Int(PHP_SCANDIR_SORT_NONE)),
         "PHP_SESSION_DISABLED" => Some(Value::Int(PHP_SESSION_DISABLED)),
         "PHP_SESSION_NONE" => Some(Value::Int(PHP_SESSION_NONE)),
         "PHP_SESSION_ACTIVE" => Some(Value::Int(PHP_SESSION_ACTIVE)),
@@ -79776,6 +80572,71 @@ fn call_strpos(args: &[Value], span: Span) -> CompileResult<Value> {
         .unwrap_or(Value::Bool(false)))
 }
 
+fn call_strstr(
+    args: &[Value],
+    function: &'static str,
+    case_insensitive: bool,
+    span: Span,
+) -> CompileResult<Value> {
+    if !(2..=3).contains(&args.len()) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                function,
+                ArityExpectation::Between { min: 2, max: 3 },
+                args.len(),
+            ),
+        ));
+    }
+
+    let haystack = string_contains_argument(function, "haystack", &args[0], span)?;
+    let needle = string_contains_argument(function, "needle", &args[1], span)?;
+    if needle.is_empty() {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                "empty needles are not supported in the current subset",
+            ),
+        ));
+    }
+    let before_needle = match args.get(2) {
+        Some(Value::Bool(value)) => *value,
+        Some(Value::Null) | None => false,
+        Some(other) => {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function,
+                    format!(
+                        "before_needle argument must be bool in the current subset, got {}",
+                        other.type_name()
+                    ),
+                ),
+            ));
+        }
+    };
+
+    let haystack_search = if case_insensitive {
+        haystack.to_ascii_lowercase()
+    } else {
+        haystack.clone()
+    };
+    let needle_search = if case_insensitive {
+        needle.to_ascii_lowercase()
+    } else {
+        needle
+    };
+    let Some(index) = haystack_search.find(&needle_search) else {
+        return Ok(Value::Bool(false));
+    };
+    if before_needle {
+        Ok(Value::String(haystack[..index].to_string()))
+    } else {
+        Ok(Value::String(haystack[index..].to_string()))
+    }
+}
+
 fn call_substr(args: &[Value], span: Span) -> CompileResult<Value> {
     if !(2..=3).contains(&args.len()) {
         return Err(runtime_error(
@@ -81997,6 +82858,7 @@ struct SprintfPlaceholder {
 enum SprintfPlaceholderKind {
     String,
     Int,
+    Octal,
     Float,
 }
 
@@ -82145,7 +83007,7 @@ fn parse_sprintf_placeholder(
                 }
                 precision = format[precision_start..index].parse::<usize>().ok();
             }
-            b's' | b'd' | b'f' | b'F' => break,
+            b's' | b'd' | b'o' | b'f' | b'F' => break,
             _ => return None,
         }
     }
@@ -82153,6 +83015,7 @@ fn parse_sprintf_placeholder(
     let kind = match bytes.get(index)? {
         b's' => SprintfPlaceholderKind::String,
         b'd' => SprintfPlaceholderKind::Int,
+        b'o' => SprintfPlaceholderKind::Octal,
         b'f' | b'F' => SprintfPlaceholderKind::Float,
         _ => return None,
     };
@@ -82196,6 +83059,10 @@ fn format_sprintf_value(
             } else {
                 value.to_string()
             }
+        }
+        SprintfPlaceholderKind::Octal => {
+            let value = sprintf_int_argument(function, value, span)?;
+            format!("{value:o}")
         }
         SprintfPlaceholderKind::Float => {
             let value = sprintf_float_argument(function, value, span)?;
@@ -83115,7 +83982,7 @@ fn set_stream_context_option(target: &mut PhpArray, wrapper: &str, option: &str,
 fn parse_stream_mode(mode: &str) -> Option<StreamMode> {
     let mut chars = mode.chars();
     let primary = chars.next()?;
-    if !matches!(primary, 'r' | 'w' | 'a' | 'c') {
+    if !matches!(primary, 'r' | 'w' | 'a' | 'c' | 'x') {
         return None;
     }
 
@@ -83130,13 +83997,14 @@ fn parse_stream_mode(mode: &str) -> Option<StreamMode> {
     }
 
     let readable = primary == 'r' || plus;
-    let writable = matches!(primary, 'w' | 'a' | 'c') || plus;
+    let writable = matches!(primary, 'w' | 'a' | 'c' | 'x') || plus;
     Some(StreamMode {
         readable,
         writable,
         append: primary == 'a',
         truncate: primary == 'w',
         create: matches!(primary, 'w' | 'a' | 'c'),
+        create_new: primary == 'x',
     })
 }
 
@@ -83195,6 +84063,22 @@ fn stream_stat_array(values: [i64; 13]) -> PhpArray {
 
 fn memory_stream_stat_array(size: i64) -> PhpArray {
     stream_stat_array([12, 0, 33206, 1, 0, 0, -1, size, 0, 0, 0, -1, -1])
+}
+
+#[cfg(unix)]
+fn filesystem_mode_bits(metadata: &fs::Metadata) -> i64 {
+    use std::os::unix::fs::PermissionsExt;
+
+    metadata.permissions().mode() as i64
+}
+
+#[cfg(not(unix))]
+fn filesystem_mode_bits(metadata: &fs::Metadata) -> i64 {
+    if metadata.permissions().readonly() {
+        0o444
+    } else {
+        0o666
+    }
 }
 
 #[cfg(unix)]

@@ -993,6 +993,21 @@ impl<'a> Lexer<'a> {
             return Ok(TokenKind::Int(value));
         }
 
+        if first == '0' && matches!(self.peek(), Some('0'..='9')) {
+            let mut digits = String::from("0");
+            while matches!(self.peek(), Some('0'..='9')) {
+                let ch = self.advance();
+                text.push(ch);
+                digits.push(ch);
+            }
+            if digits.bytes().any(|byte| !matches!(byte, b'0'..=b'7')) {
+                return Err(self.error_at(span, format!("invalid integer literal '{text}'")));
+            }
+            let value = i64::from_str_radix(&digits, 8)
+                .map_err(|_| self.error_at(span, format!("invalid integer literal '{text}'")))?;
+            return Ok(TokenKind::Int(value));
+        }
+
         while matches!(self.peek(), Some('0'..='9')) {
             text.push(self.advance());
         }

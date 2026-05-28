@@ -36678,6 +36678,15 @@ impl Value {
                     "object comparisons with non-object values are not implemented",
                 ))
             }
+            (Value::Bool(_), Value::Resource(_)) | (Value::Resource(_), Value::Bool(_)) => match op
+            {
+                Comparison::Eq | Comparison::Ne => Ok(self.php_cmp(other, op)),
+                Comparison::Lt | Comparison::Le | Comparison::Gt | Comparison::Ge => {
+                    Err(RuntimeError::unsupported_comparison(
+                        "resource ordering comparisons are not implemented",
+                    ))
+                }
+            },
             (Value::Resource(left), Value::Resource(right)) => match op {
                 Comparison::Eq => Ok(left == right),
                 Comparison::Ne => Ok(left != right),
