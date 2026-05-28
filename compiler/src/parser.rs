@@ -125,6 +125,12 @@ impl Parser {
             TokenKind::Trait => self.parse_trait(),
             TokenKind::Enum => self.parse_enum(),
             TokenKind::Abstract | TokenKind::Final | TokenKind::Readonly => self.parse_class(),
+            TokenKind::Identifier(name)
+                if name.eq_ignore_ascii_case("class")
+                    && matches!(self.peek_next().kind, TokenKind::Identifier(_)) =>
+            {
+                self.parse_class()
+            }
             TokenKind::Namespace if matches!(self.peek_next().kind, TokenKind::Backslash) => {
                 self.parse_assignment_or_expression_statement()
             }
@@ -429,6 +435,17 @@ impl Parser {
                     modifier_span.get_or_insert(self.peek().span);
                     self.advance();
                 }
+                TokenKind::Identifier(ref name) if name.eq_ignore_ascii_case("abstract") => {
+                    if is_abstract {
+                        return Err(self.error_at(
+                            self.peek().span,
+                            "duplicate abstract modifier in class declaration",
+                        ));
+                    }
+                    is_abstract = true;
+                    modifier_span.get_or_insert(self.peek().span);
+                    self.advance();
+                }
                 TokenKind::Final => {
                     if is_final {
                         return Err(self.error_at(
@@ -440,7 +457,30 @@ impl Parser {
                     modifier_span.get_or_insert(self.peek().span);
                     self.advance();
                 }
+                TokenKind::Identifier(ref name) if name.eq_ignore_ascii_case("final") => {
+                    if is_final {
+                        return Err(self.error_at(
+                            self.peek().span,
+                            "duplicate final modifier in class declaration",
+                        ));
+                    }
+                    is_final = true;
+                    modifier_span.get_or_insert(self.peek().span);
+                    self.advance();
+                }
                 TokenKind::Readonly => {
+                    if is_readonly {
+                        return Err(self.error_at(
+                            self.peek().span,
+                            "duplicate readonly modifier in class declaration",
+                        ));
+                    }
+                    is_readonly = true;
+                    readonly_span = Some(self.peek().span);
+                    modifier_span.get_or_insert(self.peek().span);
+                    self.advance();
+                }
+                TokenKind::Identifier(ref name) if name.eq_ignore_ascii_case("readonly") => {
                     if is_readonly {
                         return Err(self.error_at(
                             self.peek().span,
@@ -467,9 +507,7 @@ impl Parser {
             return Err(self.error_at(readonly_span, unsupported_readonly_class_message()));
         }
 
-        let class_span = self
-            .consume_keyword(TokenKind::Class, "expected 'class'")?
-            .span;
+        let class_span = self.consume_class_keyword("expected 'class'")?;
         let span = modifier_span.unwrap_or(class_span);
         let doc_comment = self.pending_doc_comment.take();
         let is_nested = self.nested_statement_depth > 0;
@@ -7792,6 +7830,15 @@ impl Parser {
                 token.span,
                 "expected 'insteadof' in trait method precedence adaptation",
             )),
+        }
+    }
+
+    fn consume_class_keyword(&mut self, message: &str) -> CompileResult<Span> {
+        let token = self.advance().clone();
+        match token.kind {
+            TokenKind::Class => Ok(token.span),
+            TokenKind::Identifier(name) if name.eq_ignore_ascii_case("class") => Ok(token.span),
+            _ => Err(self.error_at(token.span, message)),
         }
     }
 

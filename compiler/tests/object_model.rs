@@ -80,6 +80,25 @@ echo "ready\n";
 }
 
 #[test]
+fn uppercase_class_keyword_declares_class() {
+    let execution = run_source(
+        r#"<?php
+Class UppercaseClassKeywordBox {
+    static function value() {
+        return "ok";
+    }
+}
+
+echo UppercaseClassKeywordBox::value();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "ok");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn class_declarations_record_single_parent_metadata() {
     let source = r#"<?php
 class Base {}
