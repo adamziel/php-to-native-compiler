@@ -898,6 +898,51 @@ $child->callSelected("selected");
 }
 
 #[test]
+fn dynamic_static_method_call_names_validate_receiver_then_method_name() {
+    let object_method_execution = run_source(
+        r#"<?php
+$a = new stdClass;
+$a::$a();
+"#,
+    )
+    .unwrap();
+    assert_eq!(object_method_execution.exit_code, 255);
+    assert!(object_method_execution
+        .stdout
+        .contains("Fatal error: Uncaught Error: Method name must be a string"));
+
+    let int_method_execution = run_source(
+        r#"<?php
+$a = new stdClass;
+$b = 1;
+$a::$b();
+"#,
+    )
+    .unwrap();
+    assert_eq!(int_method_execution.exit_code, 255);
+    assert!(int_method_execution
+        .stdout
+        .contains("Fatal error: Uncaught Error: Method name must be a string"));
+
+    let execution = run_source_with_source_file(
+        r#"<?php
+$a::$b();
+"#,
+        "dynamic_call_004.php".to_string(),
+    )
+    .unwrap();
+    assert_eq!(execution.exit_code, 255);
+    assert_eq!(
+        execution.stdout,
+        "Warning: Undefined variable $a in dynamic_call_004.php on line 2
+
+Fatal error: Uncaught Error: Class name must be a valid object or a string in dynamic_call_004.php:2
+Stack trace:
+#0 {main}
+  thrown in dynamic_call_004.php on line 2"
+    );
+}
+#[test]
 fn dynamic_static_method_string_calls_are_dispatched() {
     let execution = run_source(
         r#"<?php

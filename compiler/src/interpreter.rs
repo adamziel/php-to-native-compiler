@@ -43752,6 +43752,12 @@ impl Interpreter {
         span: Span,
         caller_scope: &mut SymbolTable,
     ) -> CompileResult<Value> {
+        if let Some(value) =
+            self.call_dynamic_static_method_callee(callee, args, span, caller_scope)?
+        {
+            return Ok(value);
+        }
+
         let callee_value = self.evaluate(callee, caller_scope)?;
         let name = match callee_value {
             Value::String(name) => name,
@@ -43808,6 +43814,12 @@ impl Interpreter {
         span: Span,
         caller_scope: &mut SymbolTable,
     ) -> CompileResult<(Value, Option<ArrayCopySource>)> {
+        if let Some(value) =
+            self.call_dynamic_static_method_callee(callee, args, span, caller_scope)?
+        {
+            return Ok((value, None));
+        }
+
         let callee_value = self.evaluate(callee, caller_scope)?;
         match callee_value {
             Value::String(name) => {
@@ -43851,6 +43863,181 @@ impl Interpreter {
                     ),
                 ),
             )),
+        }
+    }
+
+    fn call_dynamic_static_method_callee(
+        &mut self,
+        callee: &Expr,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Option<Value>> {
+        match callee {
+            Expr::StaticProperty {
+                class_name,
+                property,
+                span: name_span,
+            } => {
+                let method_name =
+                    self.dynamic_static_method_variable_name(property, *name_span, caller_scope)?;
+                self.call_named_static_method(class_name, &method_name, args, span, caller_scope)
+                    .map(Some)
+            }
+            Expr::DynamicStaticProperty {
+                class_name,
+                property,
+                span: name_span,
+            } => {
+                let method_name =
+                    self.dynamic_static_method_expr_name(property, *name_span, caller_scope)?;
+                self.call_named_static_method(class_name, &method_name, args, span, caller_scope)
+                    .map(Some)
+            }
+            Expr::ObjectStaticProperty {
+                target,
+                property,
+                span: name_span,
+            } => {
+                let receiver = self.evaluate(target, caller_scope)?;
+                if !matches!(receiver, Value::Object(_) | Value::String(_)) {
+                    return Err(class_name_must_be_valid_object_or_string_error(span));
+                }
+                let method_name =
+                    self.dynamic_static_method_variable_name(property, *name_span, caller_scope)?;
+                self.call_dynamic_static_method_receiver_value(
+                    receiver,
+                    &method_name,
+                    args,
+                    span,
+                    caller_scope,
+                )
+                .map(Some)
+            }
+            Expr::DynamicObjectStaticProperty {
+                target,
+                property,
+                span: name_span,
+            } => {
+                let receiver = self.evaluate(target, caller_scope)?;
+                if !matches!(receiver, Value::Object(_) | Value::String(_)) {
+                    return Err(class_name_must_be_valid_object_or_string_error(span));
+                }
+                let method_name =
+                    self.dynamic_static_method_expr_name(property, *name_span, caller_scope)?;
+                self.call_dynamic_static_method_receiver_value(
+                    receiver,
+                    &method_name,
+                    args,
+                    span,
+                    caller_scope,
+                )
+                .map(Some)
+            }
+            Expr::SelfStaticProperty {
+                property,
+                span: name_span,
+            } => {
+                let method_name =
+                    self.dynamic_static_method_variable_name(property, *name_span, caller_scope)?;
+                self.call_self_method(&method_name, args, span, caller_scope)
+                    .map(Some)
+            }
+            Expr::DynamicSelfStaticProperty {
+                property,
+                span: name_span,
+            } => {
+                let method_name =
+                    self.dynamic_static_method_expr_name(property, *name_span, caller_scope)?;
+                self.call_self_method(&method_name, args, span, caller_scope)
+                    .map(Some)
+            }
+            Expr::ParentStaticProperty {
+                property,
+                span: name_span,
+            } => {
+                let method_name =
+                    self.dynamic_static_method_variable_name(property, *name_span, caller_scope)?;
+                self.call_parent_method(&method_name, args, span, caller_scope)
+                    .map(Some)
+            }
+            Expr::DynamicParentStaticProperty {
+                property,
+                span: name_span,
+            } => {
+                let method_name =
+                    self.dynamic_static_method_expr_name(property, *name_span, caller_scope)?;
+                self.call_parent_method(&method_name, args, span, caller_scope)
+                    .map(Some)
+            }
+            Expr::LateStaticProperty {
+                property,
+                span: name_span,
+            } => {
+                let method_name =
+                    self.dynamic_static_method_variable_name(property, *name_span, caller_scope)?;
+                self.call_late_static_method(&method_name, args, span, caller_scope)
+                    .map(Some)
+            }
+            Expr::DynamicLateStaticProperty {
+                property,
+                span: name_span,
+            } => {
+                let method_name =
+                    self.dynamic_static_method_expr_name(property, *name_span, caller_scope)?;
+                self.call_late_static_method(&method_name, args, span, caller_scope)
+                    .map(Some)
+            }
+            _ => Ok(None),
+        }
+    }
+
+    fn dynamic_static_method_variable_name(
+        &mut self,
+        variable: &str,
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<String> {
+        let variable_expr = Expr::Variable(variable.to_string(), span);
+        let value = self.evaluate(&variable_expr, caller_scope)?;
+        Self::dynamic_static_method_name_from_value(value, span)
+    }
+
+    fn dynamic_static_method_expr_name(
+        &mut self,
+        expr: &Expr,
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<String> {
+        let value = self.evaluate(expr, caller_scope)?;
+        Self::dynamic_static_method_name_from_value(value, span)
+    }
+
+    fn dynamic_static_method_name_from_value(value: Value, span: Span) -> CompileResult<String> {
+        match value {
+            Value::String(name) => Ok(name),
+            _ => Err(method_name_must_be_string_error(span)),
+        }
+    }
+
+    fn call_dynamic_static_method_receiver_value(
+        &mut self,
+        receiver: Value,
+        method_name: &str,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        match receiver {
+            Value::Object(object) => {
+                let class_name = object.class_name().to_string();
+                let target = Expr::String(class_name, span);
+                self.call_object_static_method(&target, method_name, args, span, caller_scope)
+            }
+            Value::String(class_name) => {
+                self.call_named_static_method(&class_name, method_name, args, span, caller_scope)
+            }
+            _ => Err(class_name_must_be_valid_object_or_string_error(span)),
         }
     }
 
@@ -72548,6 +72735,24 @@ fn object_not_callable_error(class_name: &str, span: Span) -> Diagnostic {
     )
 }
 
+fn method_name_must_be_string_error(span: Span) -> Diagnostic {
+    Diagnostic::new(
+        Phase::Runtime,
+        span.line,
+        span.column,
+        "Method name must be a string",
+    )
+}
+
+fn class_name_must_be_valid_object_or_string_error(span: Span) -> Diagnostic {
+    Diagnostic::new(
+        Phase::Runtime,
+        span.line,
+        span.column,
+        "Class name must be a valid object or a string",
+    )
+}
+
 fn non_static_method_called_statically_error(
     class_name: &str,
     method_name: &str,
@@ -72775,6 +72980,12 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
         }
 
         if error.message == "Using $this when not in object context" {
+            return Some(("Error", error.message.clone()));
+        }
+
+        if error.message == "Method name must be a string"
+            || error.message == "Class name must be a valid object or a string"
+        {
             return Some(("Error", error.message.clone()));
         }
 
