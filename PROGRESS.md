@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-28 19:14 CEST
+Updated: 2026-05-28 19:26 CEST
 Primary branch: `master`
-Latest source head: `0f98ed84 fix: preserve uncaught throwing finally state`
+Latest source head: `84bb8c5b fix: honor scoped array callable visibility`
 
 ## Progress Score
 
@@ -56,7 +56,7 @@ score uses the stable pinned denominator and does not use the raw runner
 | First full-suite baseline | Done | 1118 / 20294 runnable PHPTs passed (5.51%); run id `phpt-full-batch001-20260528T010422Z-php-src-f97ff59-base-3e702be4-stack10` |
 | Batch002 full-suite gate | Done | 1193 / 20294 runnable PHPTs passed (5.88%); 0 regressions from Batch001 PASS set; run id `phpt-full-batch002-20260528T100640Z-php-src-f97ff59-public-bc0ed214-source-e72efe27-stack11` |
 | Batch003 full-suite gate | Done | 1311 / 20294 pinned runnable PHPTs passed (6.46%); 0 regressions from Batch002 PASS set; run id `phpt-full-batch003-20260528T154907Z-php-src-f97ff59-public-20f3be4c-source-202dd1ec-stack21` |
-| Next source batch | Open | Batch004 source checkpoints accepted: 3 / 10; route remaining checkpoints toward broad PHPT failures with focused PHPT proof; run the next full suite after 10 accepted source checkpoints |
+| Next source batch | Open | Batch004 source checkpoints accepted: 4 / 10; route remaining checkpoints toward broad PHPT failures with focused PHPT proof; run the next full suite after 10 accepted source checkpoints |
 
 Focused PHPT history is tracked separately in
 `/home/claude/supervised-php-compiler/state/php-core-suite-focused-history.tsv`.
@@ -64,7 +64,48 @@ Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
 
-Batch004 source checkpoint 3 is now primary-integrated under AO supervision.
+Batch004 source checkpoint 4 is now primary-integrated under AO supervision.
+This is a source checkpoint with focused proof, not a percentage change. The
+public PHPT score remains **1311 / 20294 pinned runnable PHPTs = 6.46%** until
+the next pinned full-suite run after 10 accepted Batch004 source checkpoints.
+
+- primary source head:
+  `84bb8c5b fix: honor scoped array callable visibility`
+- p28 final handoff head:
+  `e3dd25571e6da646e7e72569396e3198c2338b66`
+- exported integration patch:
+  `/home/claude/supervised-php-compiler/state/patches/ao-integration-p19-bug46246-array-callable-visibility-successor3-32acd4d3-20260528.patch`
+- exported integration patch SHA256:
+  `78e02efef625846949864234d953f435330fe01784a101f5414af6ba1dbdb616`
+- source candidate patch SHA256:
+  `55adf7387aa05d82ec100c436a5d9ace2ead7b683a9b378eb2bfebbcdb3205b1`
+- reviewer gate: p7 recorded `FINAL GO-CANDIDATE /
+  FOCUSED-GATES-PASS / PHPT-PASS` with `FINAL_FAIL=0` on `32acd4d3`
+- critic gate: phpc-26 recorded `SAFE-FOR-INTEGRATION` for the exact
+  successor3 patch on `32acd4d3`
+- integration gate: p28 recorded `FINAL-HANDOFF / FOCUSED-GATES-PASS /
+  READY-FOR-SUPERVISOR-APPLY`
+- focused gates: PASS for `git diff --check`, docs/PROGRESS exclusion,
+  production exact-shape audit, `cargo fmt --all -- --check`, `cargo test -p
+  phpc --test dynamic_features array_object_callables_use_calling_scope_visibility
+  -- --exact --test-threads=1`, `cargo build -p phpc`, and wrapper PHPT
+  `Zend/tests/dynamic_call/bug46246.phpt`
+- supervisor primary gate log:
+  `/home/claude/supervised-php-compiler/state/workers/supervisor-primary-p19-bug46246-checkpoint4-20260528.gates.log`
+- full PHPT suite: not run for this single source checkpoint; due after
+  Batch004 reaches 10 accepted source checkpoints
+
+This checkpoint generalizes dynamic object-call and object array-callable
+method resolution so current-scope private methods are honored before receiver
+hierarchy fallback. Direct `$this->$method()`, `call_user_func([$this,
+$method])`, and `call_user_func_array([$this, $method], [])` now share the
+scoped resolver for object callbacks. It is not keyed to PHPT filenames,
+fixture names, expected output rows, or one exact source shape.
+
+Previous Batch004 source checkpoint 3 was try/finally recursive_previous
+uncaught-fatal handling:
+
+Batch004 source checkpoint 3 is primary-integrated under AO supervision.
 This is a source checkpoint with focused proof, not a percentage change. The
 public PHPT score remains **1311 / 20294 pinned runnable PHPTs = 6.46%** until
 the next pinned full-suite run after 10 accepted Batch004 source checkpoints.
