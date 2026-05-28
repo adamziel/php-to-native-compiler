@@ -708,6 +708,76 @@ mutate(1);
 }
 
 #[test]
+fn reference_parameter_invocation_accepts_reference_return_call_arguments() {
+    let execution = run_source(
+        r#"<?php
+$scalar = 0;
+function &scalar_ref() {
+    global $scalar;
+    return $scalar;
+}
+
+function set_ref(&$target, $value) {
+    $target = $value;
+}
+
+set_ref(scalar_ref(), 7);
+echo "scalar=", $scalar, "\n";
+
+$items = array();
+function &items_ref() {
+    global $items;
+    return $items;
+}
+
+function append_ref(&$target, $value) {
+    $target[] = $value;
+}
+
+append_ref(items_ref(), "direct");
+echo "items=", implode(",", $items), "\n";
+
+class RefArgBox {
+    private $items;
+
+    function __construct() {
+        $this->items = array();
+    }
+
+    function &items() {
+        return $this->items;
+    }
+
+    private function append(&$target, $value) {
+        $target[] = $value;
+    }
+
+    function add($value) {
+        append_ref($this->items(), "global:" . $value);
+        $this->append($this->items(), "method:" . $value);
+    }
+
+    function dump() {
+        return implode(",", $this->items);
+    }
+}
+
+$box = new RefArgBox();
+$box->add("one");
+$box->add("two");
+echo "box=", $box->dump();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "scalar=7\nitems=direct\nbox=global:one,method:one,global:two,method:two"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reference_parameters_share_direct_alias_and_array_slot_container_identity() {
     let execution = run_source(
         r#"<?php

@@ -473,7 +473,18 @@
   calls in active child class context, and late-bound `static::` static method
   dispatch paths: the callee local parameter shares the caller's
   variable cell during execution, so writes through the parameter are visible
-  to other reads of the caller variable before the call returns. Direct
+  to other reads of the caller variable before the call returns.
+  Proven reference-return call expressions are also accepted as
+  by-reference arguments on the same interpreter dispatch boundary, including
+  direct user functions, direct and dynamic object methods, named static
+  methods, `self::`, `parent::`, late-bound `static::`, dynamic static
+  receiver calls, dynamic string/closure calls, `call_user_func()`, and
+  covered `call_user_func_array()` reference-return sources. The receiving
+  parameter binds to the cell returned by that source call, so helper writes
+  flow through references returned from globals, object properties, static
+  dispatch, and the other documented reference-return source shapes; call
+  expressions that do not return by reference remain outside this parameter
+  binding slice. Direct
   array-offset arguments such as `handler($items[$key])`,
   `handler($items[$outer][$key])`, and
   `handler($_REQUEST["payload"]["slot"])` are supported on those same dispatch
