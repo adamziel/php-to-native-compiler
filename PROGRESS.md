@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-28 13:45 CEST
+Updated: 2026-05-28 13:58 CEST
 Primary branch: `master`
-Latest source head: `a69386f5 fix: diagnose protected typed property inheritance`
+Latest source head: `219d2c41 fix: route unset typed properties through __set`
 
 ## Progress Score
 
@@ -51,10 +51,39 @@ Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
 
-Post-Batch002 source checkpoint 5 is now primary-integrated under AO. This is a
+Post-Batch002 source checkpoint 6 is now primary-integrated under AO. This is a
 source checkpoint with focused proof, not a percentage change. The public score
 remains **1193 / 20294 runnable PHPTs = 5.88%** until another pinned full-suite
 run is completed, parsed, regression-checked, and published here.
+
+- primary source head: `219d2c41 fix: route unset typed properties through __set`
+- p28 final handoff head:
+  `cb2f342edc2f414e6f7094bbd03acb3a34832ef1 fix: route unset typed properties through __set`
+- exported integration patch:
+  `/home/claude/supervised-php-compiler/state/patches/ao-integration-p15-typed-properties-magic-set-source-20260528.patch`
+- exported integration patch SHA256:
+  `20fecfbf3d1e490a8571e5977581aa3225c31144aadcd2a889505bf81670cdc4`
+- source candidate patch SHA256:
+  `66b73b0bcb546f5188b5c0eaa2ccd7138c98299c3f6abe48fad1ada8d1f1ee3e`
+- reviewer gate: p7 recorded `FINAL GO-CANDIDATE /
+  FOCUSED-GATES-PASS` with `FINAL_FAIL=0`
+- critic gate: phpc-26 recorded `SAFE-FOR-INTEGRATION /
+  P15-TYPED-PROPERTIES-MAGIC-SET-SOURCE`
+- focused gates: PASS for `git diff --check`, `cargo fmt --all --
+  --check`, `cargo test -p phpc --test typed_properties_magic_set --
+  --test-threads=1`, `cargo build -p phpc`, and wrapper PHPT
+  `Zend/tests/type_declarations/typed_properties_magic_set.phpt`
+- full PHPT suite: not run for this single source checkpoint
+
+This checkpoint generalizes typed-property unset-state and magic property
+semantics. It adds explicit declared-property unset tracking, routes assignment
+to explicitly unset declared properties through `__set` when available, keeps
+fresh uninitialized `isset()`/`empty()` behavior distinct, and turns
+uninitialized typed-property read diagnostics into catchable PHP `Error` flow.
+It is not keyed to a PHPT filename, exact output, class name, or property name.
+
+Previous post-Batch002 source checkpoint 5 was p15 typed-properties
+protected-inheritance diagnostic:
 
 - primary source head: `a69386f5 fix: diagnose protected typed property inheritance`
 - p28 final handoff head:
@@ -75,7 +104,7 @@ run is completed, parsed, regression-checked, and published here.
   `Zend/tests/type_declarations/typed_properties_protected_inheritance_mismatch.phpt`
 - full PHPT suite: not run for this single source checkpoint
 
-This checkpoint generalizes typed-property inheritance startup diagnostics by
+That checkpoint generalizes typed-property inheritance startup diagnostics by
 walking declared class metadata and ancestor chains for inherited non-private
 properties, checking staticness, declared type invariance, and visibility
 compatibility. It is not keyed to a PHPT filename, exact output, class name, or
@@ -198,9 +227,10 @@ The previous full-suite checkpoint remains Batch002 `STACK-CLEAN-11` at
 
 Next source integration resumes from queued generalized candidates after fresh
 reviewer/critic gates and a clean p28 apply/gate cycle. Current watches include
-p17 property-hooks parser work, p15 typed-property reference coercion, and p16
-generator-yield blocker work. Public PASS-NO-PATCH probe rows remain lower
-priority than source integration.
+p19 dynamic-call catchable-errors focused review, p17 property-override
+validation repair after a `cargo fmt` NO-GO, p16 generator-yield blocker work,
+and broader try/finally/Throwable source blockers. Public PASS-NO-PATCH probe
+rows remain lower priority than source integration.
 
 ## Batch 001
 
