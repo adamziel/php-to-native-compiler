@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-28 15:03 CEST
+Updated: 2026-05-28 15:10 CEST
 Primary branch: `master`
-Latest source head: `55b2bea2 fix: preserve try array-offset reference returns`
+Latest source head: `fbeed70d fix: dispatch dynamic static method strings`
 
 ## Progress Score
 
@@ -51,10 +51,43 @@ Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
 
-Post-Batch002 source checkpoint 10 is now primary-integrated under AO. This is a
+Post-Batch002 source checkpoint 11 is now primary-integrated under AO. This is a
 source checkpoint with focused proof, not a percentage change. The public score
 remains **1193 / 20294 runnable PHPTs = 5.88%** until another pinned full-suite
 run is completed, parsed, regression-checked, and published here.
+
+- primary source head:
+  `fbeed70d fix: dispatch dynamic static method strings`
+- p28 final handoff head:
+  `1766700ef3445894d8fe16e3efbaa8c1b503b683 fix: dispatch dynamic static method strings`
+- exported integration patch:
+  `/home/claude/supervised-php-compiler/state/patches/ao-integration-p19-dynamic-call-static-method-strings-20260528.patch`
+- exported integration patch SHA256:
+  `d0cd0e814924babc1287b3cdb254ca939a27f715d5f97d3e748649f6bdf0c16a`
+- source candidate patch SHA256:
+  `54b416fcffd52bfd82834185fe0c10734c09844c72d565282652e32f19980613`
+- reviewer gate: p7 recorded `FINAL GO-CANDIDATE /
+  FOCUSED-GATES-PASS` with `FINAL_FAIL=0`
+- critic gate: phpc-26 recorded `SAFE-FOR-INTEGRATION /
+  P19-DYNAMIC-STATIC-METHOD-STRINGS-REPAIR2`
+- focused gates: PASS for `git diff --check`, `cargo fmt --all --
+  --check`, `cargo test -p phpc --test dynamic_features
+  dynamic_static_method_string_calls_are_dispatched -- --exact
+  --test-threads=1`, `cargo build -p phpc`, and wrapper PHPTs
+  `Zend/tests/dynamic_call/bug68475.phpt`,
+  `Zend/tests/dynamic_call/dynamic_call_non_static.phpt`, and
+  `Zend/tests/dynamic_call/dynamic_call_freeing.phpt`
+- full PHPT suite: not run for this single source checkpoint
+
+This checkpoint generalizes dynamic string callables of the `Class::method`
+shape through the existing static callable dispatch path, adds PHP-shaped
+dynamic-call diagnostics for non-static static calls and malformed callbacks,
+and adds compact `printf` builtin support through the existing bounded `sprintf`
+formatting path. It is not keyed to PHPT filenames, fixture class names, method
+names, or exact output strings.
+
+Previous post-Batch002 source checkpoint 10 was p18 bug72216 array-offset
+reference return:
 
 - primary source head:
   `55b2bea2 fix: preserve try array-offset reference returns`
