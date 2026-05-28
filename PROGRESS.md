@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-28 21:46 CEST
+Updated: 2026-05-28 21:58 CEST
 Primary branch: `master`
-Latest source head: `7ae57dc2 fix: expand unpacked arguments for builtin callbacks`
+Latest source head: `241b8411 fix: preserve byte strings in standard builtins`
 
 ## Progress Score
 
@@ -69,13 +69,55 @@ calculation.
 | Batch002 full-suite gate | Done | 1193 / 20294 runnable PHPTs passed (5.88%); 0 regressions from Batch001 PASS set; run id `phpt-full-batch002-20260528T100640Z-php-src-f97ff59-public-bc0ed214-source-e72efe27-stack11` |
 | Batch003 full-suite gate | Done | 1311 / 20294 pinned runnable PHPTs passed (6.46%); 0 regressions from Batch002 PASS set; run id `phpt-full-batch003-20260528T154907Z-php-src-f97ff59-public-20f3be4c-source-202dd1ec-stack21` |
 | Batch004 checkpoint8 regression-repair sharded gate | Done | 1369 / 20294 pinned runnable PHPTs passed (6.75%); 0 regressions from Batch003 PASS set; run id `phpt-full-batch004-regression-repair-sharded-20260528T192018Z-php-src-f97ff59-public-3c86fc6a-source-b75047df-stack8` |
-| Next source batch | Open | Batch004 source checkpoints accepted: 9 / 10; route checkpoint10 toward broad PHPT failures with focused PHPT proof; run the next full suite after checkpoint10 or an explicit sharded/regression-repair publication gate |
+| Batch004 source batch | Complete | Batch004 source checkpoints accepted: 10 / 10; run the checkpoint10 pinned full-suite or supervisor-approved sharded publication gate before changing the public percentage |
 
 Focused PHPT history is tracked separately in
 `/home/claude/supervised-php-compiler/state/php-core-suite-focused-history.tsv`.
 Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
+
+Batch004 source checkpoint 10 is primary-integrated under AO supervision. This
+is a source checkpoint with focused proof, not a percentage change. The public
+PHPT score remains **1369 / 20294 pinned runnable PHPTs = 6.75%** until the
+checkpoint10 pinned full-suite or supervisor-approved sharded publication gate
+is completed, regression-checked, and published here.
+
+- primary source head:
+  `241b8411 fix: preserve byte strings in standard builtins`
+- exported integration patch:
+  `/home/claude/supervised-php-compiler/state/patches/ao-integration-p34-standard-string-byte-builtins-successor4-a12390b9-20260528.patch`
+- exported integration patch SHA256:
+  `03f7e13d4544de670f012035ff48f2f7caa9d0d62d882245f82a946d70b720b1`
+- reviewer gate: p7 recorded `FINAL GO-CANDIDATE / FOCUSED-GATES-PASS /
+  PHPT-PASS / SOURCE-EQUIVALENT-CHECKPOINT9` with `FINAL_FAIL=0`; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/batch004-review-standard-string-byte-builtins-successor4-stack-after-p31-8dafddc4-20260528.{status.md,report.md,gates.log}`
+- critic gate: phpc-33 recorded `SAFE-FOR-INTEGRATION /
+  P7-FINAL-GO-VERIFIED / SOURCE-EQUIVALENT-CHECKPOINT9 / READ-ONLY`;
+  artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/batch004-critic-standard-string-byte-builtins-successor4-stack-after-p31-8dafddc4-20260528.{status.md,report.md}`
+- integration gate: phpc-28 recorded `FINAL-HANDOFF /
+  READY-FOR-SUPERVISOR-APPLY`; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/ao-integration-p34-standard-string-byte-builtins-successor4-a12390b9-20260528.{status.md,report.md,gates.log}`
+- supervisor focused gates: PASS after restoring the reviewed
+  `compiler/tests/str_repeat_builtin.rs` file that the p28 exported patch had
+  omitted; PASS for `git diff --check`, docs/PROGRESS/examples exclusion,
+  production exact-shape audit, `cargo fmt --all -- --check`, focused Rust
+  `cargo test -p phpc --test str_repeat_builtin -- --test-threads=1` (6/6),
+  `cargo build -p phpc`, and the focused wrapper PHPT strings cluster (4/4)
+- supervisor primary gate log:
+  `/home/claude/supervised-php-compiler/state/workers/supervisor-primary-p34-standard-string-byte-successor4-checkpoint10-20260528.gates.log`
+- full PHPT suite: due now for Batch004 checkpoint10; public percentage does
+  not move until that gate completes and clears regressions
+
+This checkpoint generalizes byte-string handling for standard builtins. It
+adds shared `chr`, `bin2hex`, and `str_repeat` builtin metadata and runtime
+semantics, preserves binary bytes through echo/concat/string helper paths, and
+adds `ValueError` metadata used by negative `str_repeat()` behavior. Production
+code is not keyed to a PHPT filename, expected-output fixture, batch marker, or
+test-name branch.
+
+Previous Batch004 source checkpoint 9 was builtin callback unpacking:
 
 Batch004 source checkpoint 9 is primary-integrated under AO supervision. This
 is a source checkpoint with focused proof, not a percentage change. The public
