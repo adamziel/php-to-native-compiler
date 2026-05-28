@@ -8151,6 +8151,7 @@ enum ReferenceReturnBinding {
 enum ReferenceCallValueFallback {
     Assignment,
     Parameter,
+    Return,
 }
 
 #[derive(Debug, Clone)]
@@ -22546,15 +22547,15 @@ impl Interpreter {
                 "Only variables should be assigned by reference"
             }
             ReferenceCallValueFallback::Parameter => "Only variables should be passed by reference",
+            ReferenceCallValueFallback::Return => {
+                "Only variable references should be returned by reference"
+            }
         };
         self.emit_display_notice(message, span)
     }
 
     fn emit_reference_return_value_fallback_notice(&mut self, span: Span) -> CompileResult<()> {
-        self.emit_display_notice(
-            "Only variable references should be returned by reference",
-            span,
-        )
+        self.emit_reference_call_value_fallback_notice(ReferenceCallValueFallback::Return, span)
     }
 
     fn can_return_reference_fallback_as_detached_value(expr: &Expr) -> bool {
@@ -22662,6 +22663,22 @@ impl Interpreter {
                     return Ok(None);
                 };
                 self.class_method_known_returns_by_reference(object.class_id(), method, expr.span())
+            }
+            Expr::DynamicCall { callee, .. } => {
+                let callable = match callee.as_ref() {
+                    Expr::String(name, _) => self.lookup_function_exact(name),
+                    Expr::Variable(callee_name, _) => {
+                        let Some(Value::String(name)) = scope.read_named(callee_name) else {
+                            return Ok(None);
+                        };
+                        self.lookup_function_exact(&name)
+                    }
+                    _ => return Ok(None),
+                };
+                Ok(callable.map(|callable| match callable {
+                    Callable::User(function) => function.returns_by_reference,
+                    Callable::Builtin(_) => false,
+                }))
             }
             _ => Ok(None),
         }
@@ -52816,7 +52833,12 @@ impl Interpreter {
             | Expr::LateStaticMethodCall { .. }
             | Expr::ObjectStaticMethodCall { .. }
             | Expr::DynamicCall { .. } => {
-                let binding = self.evaluate_reference_return_call_binding(value, span, scope)?;
+                let binding = self.evaluate_reference_or_value_return_call_binding(
+                    value,
+                    span,
+                    scope,
+                    ReferenceCallValueFallback::Return,
+                )?;
                 match binding {
                     ReferenceReturnBinding::Cell(cell) => Ok(ReferenceReturnLocalBinding::Cell(cell)),
                     ReferenceReturnBinding::ArrayOffset(alias) => {

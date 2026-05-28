@@ -398,9 +398,11 @@
   not mutate the original return source. Broader dynamic, callback, and
   side-effecting receiver forms for that by-value fallback remain unsupported.
   Reference-returning function and method bodies that execute a return of a
-  known non-referenceable value expression, such as a scalar literal, emit the
-  PHP-shaped "Only variable references should be returned by reference" notice
-  and return a detached temporary value rather than aborting the call.
+  known non-referenceable value expression, such as a scalar literal or a
+  string-valued dynamic call to a known by-value function, emit the PHP-shaped
+  "Only variable references should be returned by reference" notice and return
+  a detached temporary value rather than aborting the call. String-valued
+  dynamic calls to known reference-returning functions keep the returned cell.
   Normal invocation of
   direct free-function, direct visible object-method, direct named static
   method, `self::` static method, `parent::` static method, `static::`

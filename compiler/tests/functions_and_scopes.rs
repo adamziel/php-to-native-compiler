@@ -798,6 +798,62 @@ echo "static=", $a, "/", $b;
 }
 
 #[test]
+fn reference_returning_dynamic_call_values_warn_and_detach() {
+    let execution = run_source(
+        r#"<?php
+function return_value() {
+    return 100;
+}
+function &return_constant_ref() {
+    return 200;
+}
+function &return_global_ref() {
+    return $GLOBALS["value"];
+}
+function &return_call_ref($function_name) {
+    return $function_name();
+}
+
+$value = 4;
+$alias =& return_call_ref("return_value");
+$value++;
+$alias = 101;
+echo "value=", $value, "/", $alias, "\n";
+
+$value = 4;
+$alias =& return_call_ref("return_constant_ref");
+$value++;
+$alias = 201;
+echo "constant=", $value, "/", $alias, "\n";
+
+$value = 4;
+$alias =& return_call_ref("return_global_ref");
+$value++;
+echo "global=", $value, "/", $alias;
+"#,
+    )
+    .unwrap();
+
+    let notices = execution
+        .stdout
+        .lines()
+        .filter(|line| {
+            line.starts_with("Notice: Only variable references should be returned by reference")
+        })
+        .count();
+    assert_eq!(notices, 2);
+    let semantic_lines = execution
+        .stdout
+        .lines()
+        .filter(|line| !line.is_empty() && !line.starts_with("Notice:"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert_eq!(semantic_lines, "value=5/101\nconstant=5/201\nglobal=5/5");
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reference_parameter_call_arguments_accept_reference_returns_and_value_temporaries() {
     let execution = run_source(
         r#"<?php
