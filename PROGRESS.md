@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-28 16:57 CEST
+Updated: 2026-05-28 17:13 CEST
 Primary branch: `master`
-Latest source head: `97e80bcc fix: support string-keyed argument unpacking`
+Latest source head: `dfd7ff09 fix: return coerced typed property assignment values`
 
 ## Progress Score
 
@@ -50,6 +50,46 @@ Focused PHPT history is tracked separately in
 Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
+
+Post-Batch002 source checkpoint 19 is now primary-integrated under AO
+supervision. This is a source checkpoint with focused proof, not a percentage
+change. The public score remains **1193 / 20294 runnable PHPTs = 5.88%** until
+another pinned full-suite run is completed, parsed, regression-checked, and
+published here.
+
+- primary source head:
+  `dfd7ff09 fix: return coerced typed property assignment values`
+- p28 final handoff head:
+  `6cd6cf358a82e1bf4282f12797bb81e8d2364fe8`
+- exported integration patch:
+  `/home/claude/supervised-php-compiler/state/patches/ao-integration-p15-typed-properties-assignment-expression-result-20260528.patch`
+- exported integration patch SHA256:
+  `6c34485e6c6fadf93ff61e2c8866e3adcd47c0b4db6315dfebc5c8a60591cf02`
+- source candidate patch SHA256:
+  `38f0ef54da9f0df773b6c4d4bdd3508bec98ca9db7db1d756031c90c8d2f77db`
+- reviewer gate: p7 recorded `FINAL GO-CANDIDATE /
+  FOCUSED-GATES-PASS` with `FINAL_FAIL=0`
+- critic gate: phpc-26 recorded `SAFE-FOR-INTEGRATION /
+  P15-ASSIGNMENT-EXPRESSION`
+- focused gates: PASS for `git diff --check`, docs/PROGRESS exclusion,
+  production exact-shape audit, `cargo fmt --all -- --check`, `cargo test -p
+  phpc --test assignment_expression
+  typed_object_property_assignment_expression_returns_stored_coerced_value --
+  --exact --test-threads=1`, `cargo test -p phpc --test
+  assignment_expression
+  dynamic_typed_object_property_assignment_expression_returns_stored_coerced_value
+  -- --exact --test-threads=1`, `cargo build -p phpc`, and wrapper PHPT
+  `Zend/tests/type_declarations/typed_properties_077.phpt`
+- full PHPT suite: not run for this single source checkpoint
+
+This checkpoint generalizes typed object property assignment-expression
+results. Static and dynamic typed-property writes now return the stored/coerced
+value from the runtime typed-property storage boundary, while fallback dynamic
+public-property writes preserve the original assignment value. It is not keyed
+to PHPT filenames, Rust test names, fixture class names, expected output rows,
+or one exact source shape.
+
+Previous post-Batch002 source checkpoint 18 was p31 argument unpack successor:
 
 Post-Batch002 source checkpoint 18 is now primary-integrated under AO
 supervision. This is a source checkpoint with focused proof, not a percentage
