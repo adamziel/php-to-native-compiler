@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-28 16:08 CEST
+Updated: 2026-05-28 16:33 CEST
 Primary branch: `master`
-Latest source head: `8d4f1971 fix: validate method override attributes`
+Latest source head: `8f4e7996 fix: support static object array callbacks`
 
 ## Progress Score
 
@@ -50,6 +50,46 @@ Focused PHPT history is tracked separately in
 Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
+
+Post-Batch002 source checkpoint 16 is now primary-integrated under AO
+supervision. This is a source checkpoint with focused proof, not a percentage
+change. The public score remains **1193 / 20294 runnable PHPTs = 5.88%** until
+another pinned full-suite run is completed, parsed, regression-checked, and
+published here.
+
+- primary source head:
+  `8f4e7996 fix: support static object array callbacks`
+- p28 final handoff head:
+  `9cd7a209ff7f46bbc219438a42d7db13ecf8622a`
+- exported integration patch:
+  `/home/claude/supervised-php-compiler/state/patches/ao-integration-p19-bug77877-successor3-source-20260528.patch`
+- exported integration patch SHA256:
+  `14ae3ba2706f7a13964952437258c1a535f7fa3dbbc62dcbe07073a81811ca67`
+- source candidate patch SHA256:
+  `597847ef8f27e7f77a91c36cd784935c516eca2cee7b89c422035316b814af98`
+- reviewer gate: p7 recorded `FINAL GO-CANDIDATE /
+  FOCUSED-GATES-PASS` with `FINAL_FAIL=0`
+- critic gate: phpc-26 recorded `SAFE-FOR-INTEGRATION /
+  P19-DYNAMIC-CALL-BUG77877-SUCCESSOR3`
+- focused gates: PASS for `git diff --check`, production exact-shape audit,
+  `cargo fmt --all -- --check`, `cargo test -p phpc --test dynamic_features
+  static_object_array_callbacks_do_not_bind_this -- --exact --test-threads=1`,
+  `cargo build -p phpc`, and wrapper PHPTs
+  `Zend/tests/dynamic_call/bug77877.phpt`,
+  `Zend/tests/dynamic_call/bug68475.phpt`,
+  `Zend/tests/dynamic_call/dynamic_call_non_static.phpt`, and
+  `Zend/tests/dynamic_call/dynamic_call_freeing.phpt`
+- full PHPT suite: not run for this single source checkpoint
+
+This checkpoint generalizes dynamic object-array callback dispatch and
+`array_map()` userland callback arity handling. Object-array callables that
+resolve to public static methods invoke without binding `$this`, ordinary
+`call_user_func()` and `call_user_func_array()` keep strict userland arity, and
+`array_map()` enforces required parameters while allowing extra mapped values.
+It is not keyed to PHPT filenames, fixture class names, method names, callback
+values, or exact output rows.
+
+Previous post-Batch002 source checkpoint 15 was p17 method override:
 
 Post-Batch002 source checkpoint 15 is now primary-integrated under AO
 supervision. This is a source checkpoint with focused proof, not a percentage
