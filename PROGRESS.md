@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-28 13:18 CEST
+Updated: 2026-05-28 13:25 CEST
 Primary branch: `master`
-Latest source head: `0c23019b fix: parse interface property hooks`
+Latest source head: `fba6bd86 fix: coerce typed property reference assignments`
 
 ## Progress Score
 
@@ -51,10 +51,37 @@ Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
 
-Post-Batch002 source checkpoint 3 is now primary-integrated under AO. This is a
+Post-Batch002 source checkpoint 4 is now primary-integrated under AO. This is a
 source checkpoint with focused proof, not a percentage change. The public score
 remains **1193 / 20294 runnable PHPTs = 5.88%** until another pinned full-suite
 run is completed, parsed, regression-checked, and published here.
+
+- primary source head: `fba6bd86 fix: coerce typed property reference assignments`
+- p28 final handoff head:
+  `0b35a182bc237e7ef98ab12ccec3f792f6d15802 fix: coerce typed property reference assignments`
+- exported integration patch:
+  `/home/claude/supervised-php-compiler/state/patches/ao-integration-p15-typed-property-reference-coercion-20260528.patch`
+- exported integration patch SHA256:
+  `f6a7f82f4344a837e91c0bc4f66f64f6f6abf7dd09e30fe766a3a15989f940a9`
+- source candidate patch SHA256:
+  `7d7ceef7949a8d6fcb87a80ca2725e22455e0e1fe61d9f2ed452b9a28fb64275`
+- reviewer gate: p7 recorded `FINAL GO-CANDIDATE /
+  FOCUSED-GATES-PASS` with `FINAL_FAIL=0`
+- critic gate: phpc-26 recorded `SAFE-FOR-INTEGRATION /
+  P15-TYPED-PROPERTY-REFERENCE-COERCION-FINAL`
+- focused gates: PASS for `git diff --check`, `cargo fmt --all -- --check`,
+  `cargo test -p phpc --test typed_property_reference_coercion --
+  --test-threads=1`, `cargo build -p phpc`, and wrapper PHPTs
+  `Zend/tests/type_declarations/typed_properties_reference_coercion_leak.phpt`,
+  `Zend/tests/type_declarations/typed_properties_011.phpt`, and
+  `Zend/tests/type_declarations/typed_properties_023.phpt`
+- full PHPT suite: not run for this single source checkpoint
+
+This checkpoint generalizes typed-property reference assignment/coercion
+through interpreter object-property reference semantics. It is not keyed to a
+PHPT filename, exact output, or one fixture shape.
+
+Previous post-Batch002 source checkpoint 3 was p17:
 
 - primary source head: `0c23019b fix: parse interface property hooks`
 - p28 final handoff head:
@@ -75,7 +102,7 @@ run is completed, parsed, regression-checked, and published here.
   `Zend/tests/attributes/override/properties_01.phpt`
 - full PHPT suite: not run for this single source checkpoint
 
-This checkpoint adds parser and AST support for public interface property
+That checkpoint adds parser and AST support for public interface property
 hooks. It is not claiming `properties_02.phpt`: p7 recorded that downstream
 override-validation failure as pre-existing against the reviewed public binary.
 
