@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-28 14:29 CEST
+Updated: 2026-05-28 14:58 CEST
 Primary branch: `master`
-Latest source head: `785f0147 fix: validate property override attributes`
+Latest source head: `279f066b fix: validate scalar default parameter types`
 
 ## Progress Score
 
@@ -51,10 +51,43 @@ Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
 
-Post-Batch002 source checkpoint 8 is now primary-integrated under AO. This is a
+Post-Batch002 source checkpoint 9 is now primary-integrated under AO. This is a
 source checkpoint with focused proof, not a percentage change. The public score
 remains **1193 / 20294 runnable PHPTs = 5.88%** until another pinned full-suite
 run is completed, parsed, regression-checked, and published here.
+
+- primary source head:
+  `279f066b fix: validate scalar default parameter types`
+- p28 final handoff head:
+  `afc8eda4070ad2d17c1d0f38d7b036911284a216 fix: validate scalar default parameter types`
+- exported integration patch:
+  `/home/claude/supervised-php-compiler/state/patches/ao-integration-p15-scalar-invalid-default-type-validation-20260528.patch`
+- exported integration patch SHA256:
+  `e6cb3cdb31bf20569e7b7dfe157342e8355519f81d890906576b0d1fffdbe389`
+- source candidate patch SHA256:
+  `55665d095241fd77c3962897ad465d25e038f4ba85a6077ebd2d931ecfe74046`
+- reviewer gate: p7 recorded `FINAL GO-CANDIDATE /
+  FOCUSED-GATES-PASS` with `FINAL_FAIL=0`
+- critic gate: phpc-26 recorded `SAFE-FOR-INTEGRATION /
+  P15-SCALAR-INVALID-DEFAULT-TYPE-VALIDATION`
+- focused gates: PASS for `git diff --check`, `cargo fmt --all --
+  --check`, `cargo test -p phpc --test scalar_default_type_validation --
+  --test-threads=1`, `cargo build -p phpc`, and wrapper PHPTs
+  `Zend/tests/type_declarations/scalar_float_with_invalid_default.phpt`,
+  `Zend/tests/type_declarations/scalar_float_with_integer_default_weak.phpt`,
+  and `Zend/tests/type_declarations/default_boolean_hint_values.phpt`
+- full PHPT suite: not run for this single source checkpoint
+
+This checkpoint generalizes startup/default-parameter validation for scalar
+literal defaults across function and method declarations. It normalizes scalar
+aliases, preserves PHP's weak-mode `int` default acceptance for `float`, and
+routes invalid defaults through PHP/Zend fatal startup diagnostics. It is not
+keyed to a PHPT filename, exact output, function name, argument name, or fixture
+shape. `strict_types` remains split out because the compiler still rejects the
+`declare(strict_types=1)` statement before this validator runs.
+
+Previous post-Batch002 source checkpoint 8 was p17 property-override
+validation:
 
 - primary source head:
   `785f0147 fix: validate property override attributes`
