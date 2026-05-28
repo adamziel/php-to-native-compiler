@@ -63938,6 +63938,7 @@ impl Interpreter {
             "ltrim" => call_ltrim(&args, span),
             "rtrim" => call_rtrim(&args, span),
             "strcasecmp" => call_strcasecmp(&args, span),
+            "strcoll" => call_strcoll(&args, span),
             "str_contains" => call_str_contains(&args, span),
             "str_starts_with" => call_str_starts_with(&args, span),
             "str_ends_with" => call_str_ends_with(&args, span),
@@ -64089,6 +64090,7 @@ impl Interpreter {
                 Ok(Value::String(self.default_timezone.clone()))
             }
             "date_default_timezone_set" => self.call_date_default_timezone_set(&args, span),
+            "setlocale" => self.call_setlocale(&args, span),
             "getenv" => self.call_getenv(&args, span),
             "ini_get" => self.call_ini_get(&args, span),
             "ini_set" => self.call_ini_set(&args, span),
@@ -73533,7 +73535,7 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_optional_string_param("characters", " \n\r\t\u{000B}\0"),
             ],
         ),
-        "strcasecmp" => (
+        "strcasecmp" | "strcoll" => (
             "int",
             vec![
                 reflection_internal_param("string1", "string"),
@@ -73613,6 +73615,13 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
         "function_exists" => (
             "bool",
             vec![reflection_internal_param("function", "string")],
+        ),
+        "setlocale" => (
+            "string|false",
+            vec![
+                reflection_internal_param("category", "int"),
+                reflection_internal_variadic_param("locales", "array|string|int|null"),
+            ],
         ),
         "getenv" => (
             "array|string|false",
@@ -75319,6 +75328,7 @@ fn is_builtin(name: &str) -> bool {
             | "ltrim"
             | "rtrim"
             | "strcasecmp"
+            | "strcoll"
             | "str_contains"
             | "str_starts_with"
             | "str_ends_with"
@@ -75360,6 +75370,7 @@ fn is_builtin(name: &str) -> bool {
             | "localtime"
             | "date_default_timezone_get"
             | "date_default_timezone_set"
+            | "setlocale"
             | "getenv"
             | "ini_get"
             | "ini_set"
@@ -75822,6 +75833,13 @@ const PHP_FILE_APPEND: i64 = 8;
 const PHP_SCANDIR_SORT_ASCENDING: i64 = 0;
 const PHP_SCANDIR_SORT_DESCENDING: i64 = 1;
 const PHP_SCANDIR_SORT_NONE: i64 = 2;
+const PHP_LC_CTYPE: i64 = 0;
+const PHP_LC_NUMERIC: i64 = 1;
+const PHP_LC_TIME: i64 = 2;
+const PHP_LC_COLLATE: i64 = 3;
+const PHP_LC_MONETARY: i64 = 4;
+const PHP_LC_MESSAGES: i64 = 5;
+const PHP_LC_ALL: i64 = 6;
 
 fn builtin_global_constant_value(name: &str) -> Option<Value> {
     match name {
@@ -75839,6 +75857,13 @@ fn builtin_global_constant_value(name: &str) -> Option<Value> {
         "SCANDIR_SORT_ASCENDING" => Some(Value::Int(PHP_SCANDIR_SORT_ASCENDING)),
         "SCANDIR_SORT_DESCENDING" => Some(Value::Int(PHP_SCANDIR_SORT_DESCENDING)),
         "SCANDIR_SORT_NONE" => Some(Value::Int(PHP_SCANDIR_SORT_NONE)),
+        "LC_CTYPE" => Some(Value::Int(PHP_LC_CTYPE)),
+        "LC_NUMERIC" => Some(Value::Int(PHP_LC_NUMERIC)),
+        "LC_TIME" => Some(Value::Int(PHP_LC_TIME)),
+        "LC_COLLATE" => Some(Value::Int(PHP_LC_COLLATE)),
+        "LC_MONETARY" => Some(Value::Int(PHP_LC_MONETARY)),
+        "LC_MESSAGES" => Some(Value::Int(PHP_LC_MESSAGES)),
+        "LC_ALL" => Some(Value::Int(PHP_LC_ALL)),
         "PHP_SESSION_DISABLED" => Some(Value::Int(PHP_SESSION_DISABLED)),
         "PHP_SESSION_NONE" => Some(Value::Int(PHP_SESSION_NONE)),
         "PHP_SESSION_ACTIVE" => Some(Value::Int(PHP_SESSION_ACTIVE)),
@@ -81408,6 +81433,19 @@ fn call_strcasecmp(args: &[Value], span: Span) -> CompileResult<Value> {
     Ok(Value::Int(ascii_case_insensitive_compare(&left, &right)))
 }
 
+fn call_strcoll(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("strcoll", args, 2, span)?;
+
+    let left = string_compare_argument("strcoll()", "string1", &args[0], span)?;
+    let right = string_compare_argument("strcoll()", "string2", &args[1], span)?;
+
+    Ok(Value::Int(match left.as_bytes().cmp(right.as_bytes()) {
+        std::cmp::Ordering::Less => -1,
+        std::cmp::Ordering::Equal => 0,
+        std::cmp::Ordering::Greater => 1,
+    }))
+}
+
 fn call_str_contains(args: &[Value], span: Span) -> CompileResult<Value> {
     expect_arity("str_contains", args, 2, span)?;
 
@@ -85571,6 +85609,120 @@ impl Interpreter {
                 ),
             )),
         }
+    }
+
+    fn php_locale_category_is_supported(category: i64) -> bool {
+        matches!(
+            category,
+            PHP_LC_CTYPE
+                | PHP_LC_NUMERIC
+                | PHP_LC_TIME
+                | PHP_LC_COLLATE
+                | PHP_LC_MONETARY
+                | PHP_LC_MESSAGES
+                | PHP_LC_ALL
+        )
+    }
+
+    fn normalized_supported_c_locale(locale: &str) -> Option<&'static str> {
+        match locale {
+            "" | "0" | "C" | "POSIX" => Some("C"),
+            other if other.eq_ignore_ascii_case("c") || other.eq_ignore_ascii_case("posix") => {
+                Some("C")
+            }
+            _ => None,
+        }
+    }
+
+    fn append_setlocale_candidates<'a>(
+        value: &'a Value,
+        candidates: &mut Vec<&'a str>,
+        span: Span,
+    ) -> CompileResult<bool> {
+        match value {
+            Value::String(locale) => {
+                candidates.push(locale.as_str());
+                Ok(true)
+            }
+            Value::Int(0) | Value::Null => Ok(false),
+            Value::Array(locales) => {
+                for entry in locales.entries() {
+                    match entry.value() {
+                        Value::String(locale) => candidates.push(locale.as_str()),
+                        Value::Int(0) | Value::Null => return Ok(false),
+                        other => {
+                            return Err(runtime_error(
+                                span,
+                                RuntimeError::unsupported_call(
+                                    "setlocale()",
+                                    format!(
+                                        "locale array values must be string, int 0, or null in the current subset, got {}",
+                                        other.type_name()
+                                    ),
+                                ),
+                            ));
+                        }
+                    }
+                }
+                Ok(true)
+            }
+            other => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "setlocale()",
+                    format!(
+                        "locale argument must be string, array, int 0, or null in the current subset, got {}",
+                        other.type_name()
+                    ),
+                ),
+            )),
+        }
+    }
+
+    fn call_setlocale(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if args.len() < 2 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "setlocale()",
+                    ArityExpectation::AtLeast(2),
+                    args.len(),
+                ),
+            ));
+        }
+
+        let category = match &args[0] {
+            Value::Int(category) if Self::php_locale_category_is_supported(*category) => *category,
+            Value::Int(_) => return Ok(Value::Bool(false)),
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "setlocale()",
+                        format!(
+                            "category argument must be int in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+        };
+
+        let mut candidates = Vec::new();
+        for locale in &args[1..] {
+            if !Self::append_setlocale_candidates(locale, &mut candidates, span)? {
+                return Ok(Value::String("C".to_string()));
+            }
+        }
+
+        let _ = category;
+        for candidate in candidates {
+            if let Some(locale) = Self::normalized_supported_c_locale(candidate) {
+                return Ok(Value::String(locale.to_string()));
+            }
+        }
+
+        Ok(Value::Bool(false))
     }
 
     fn call_getenv(&self, args: &[Value], span: Span) -> CompileResult<Value> {
