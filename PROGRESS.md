@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-28 04:56 CEST
+Updated: 2026-05-28 04:57 CEST
 Primary branch: `master`
 Latest source head: `0fa7b666 runtime: autoload enum_exists misses`
 
@@ -74,6 +74,7 @@ Gate status and parked candidates:
 | PR #6 foreach reference-backed `print_r()` | GO-CANDIDATE after independent review on accepted stack10; focused Rust/build gates passed and wrapper PHPT `tests/lang/foreach_with_references_001.phpt` plus foreach anchors passed after a generalized reference-backed array formatting fix |
 | PR #7 magic `__call()` by-reference array args | GO-CANDIDATE after refreshed stack-safe independent review and p14 `SAFE-FOR-PROGRESS`; focused Rust/build/fixture gates passed and wrapper PHPTs `tests/classes/__call_003.phpt` plus `tests/classes/__call_001.phpt` passed 2/2; no full-suite run and no percent change |
 | PR #7 follow-up: `__call_004` static-syntax fallback to current `__call()` | GO-CANDIDATE after independent review on accepted stack10 plus reviewed Batch002 through refreshed PR #7 and p14 `SAFE-FOR-PROGRESS`; focused Rust/build/fixture gates passed and wrapper PHPTs `tests/classes/__call_004.phpt`, `tests/classes/__call_003.phpt`, and `tests/classes/__call_001.phpt` passed 3/3; no full-suite run and no percent change |
+| PR #8 `passByReference_002` real-stack refresh | GO-CANDIDATE after independent review on accepted stack10 plus reviewed Batch002 through refreshed PR #7 and p14 `SAFE-FOR-PROGRESS`; focused Rust/build gates passed and wrapper PHPTs `tests/lang/passByReference_002.phpt` plus `tests/lang/passByReference_004.phpt` passed 2/2; no full-suite run and no percent change |
 | `Zend/tests/bug39944.phpt` reference invocation | PR #2/r82 is parked/superseded for Batch002; do not stack it with PR #4 because both conflict in `compiler/src/interpreter.rs` and `compiler/tests/functions_and_scopes.rs` |
 | Magic visibility warnings | PR #3 is `REBASE-NEEDED` for Batch 002 after r81/stack10 due docs conflict; production/test hunks replay |
 | Foreach `$GLOBALS` lane | PASS-NO-PATCH accepted by reviewer; accepted stack10 passes `foreach_unset_globals`, `foreach_reference`, and `foreach_temp_array_expr_with_refs` |
@@ -100,11 +101,11 @@ Required live roles:
 Current AO snapshot: `phpc-orchestrator` supervising; `phpc-14` critic;
 `phpc-7` reviewer; `phpc-8` progress reporter; active coder/support lanes
 `phpc-15`, `phpc-16`, `phpc-17`, `phpc-18`, and `phpc-19`. Current
-public-progress watch targets are PR #13 /
-`passByReference_012` review artifacts, PR #8 / `passByReference_002`
-real-stack review artifacts, PR #15 / `returnByReference.003` review
-artifacts, and any new full-suite PHPT row. Old idle session `phpc-2` was
-killed after being rediscovered outside the active roster.
+public-progress watch targets are PR #13 / `passByReference_012` review
+artifacts, PR #16 / `returnByReference.004` review artifacts, PR #15 /
+`returnByReference.003` review artifacts, and any new full-suite PHPT row. Old
+idle session `phpc-2` was killed after being rediscovered outside the active
+roster.
 
 ## Current Rules
 
