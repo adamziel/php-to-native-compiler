@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-28 21:58 CEST
+Updated: 2026-05-28 22:14 CEST
 Primary branch: `master`
 Latest source head: `241b8411 fix: preserve byte strings in standard builtins`
 
@@ -13,7 +13,7 @@ Progress is the pinned php-src PHPT full-suite pass rate:
 
 `passed runnable PHPTs / total runnable PHPTs`
 
-Current score: **1369 / 20294 pinned runnable PHPTs = 6.75%**.
+Current score: **1413 / 20294 pinned runnable PHPTs = 6.96%**.
 
 No other percentage is public project progress. Focused PHPT passes, source
 checkpoints, PRs, and docs/status edits are evidence for the next batch, but
@@ -45,17 +45,22 @@ Batch003 produced BORKED rows from PHPT harness/setup paths, so the public
 score uses the stable pinned denominator and does not use the raw runner
 `1311 / 18452 = 7.10%` calculation that excludes borked rows.
 
-The latest full-suite result is the Batch004 checkpoint8 regression-repair
-sharded gate on the same php-src pin, run
-`phpt-full-batch004-regression-repair-sharded-20260528T192018Z-php-src-f97ff59-public-3c86fc6a-source-b75047df-stack8`.
-Counts: 1369 passed, 17815 failed, 2109 skipped, 16 xfailed, 1022 borked;
-all 12 shards exited nonzero because failing PHPTs remain. Regressions from the
-Batch003 PASS set: 0. Evidence lives under
+The Batch004 checkpoint8 regression-repair sharded gate on the same php-src pin
+recorded 1369 / 20294 pinned runnable PHPTs = 6.75% with zero regressions from
+the Batch003 PASS set. Evidence lives under
 `/home/claude/supervised-php-compiler/state/logs/phpt-full-batch004-regression-repair-sharded-20260528T192018Z-php-src-f97ff59-public-3c86fc6a-source-b75047df-stack8`.
 
-Batch004 checkpoint8 also has BORKED rows, so the public score uses the stable
-pinned denominator and does not use the raw runner `1369 / 19200 = 7.13%`
-calculation.
+The latest full-suite result is the Batch004 checkpoint10 sharded publication
+gate on the same php-src pin, run
+`phpt-full-batch004-checkpoint10-sharded-20260528T195852Z-php-src-f97ff59-public-37941f23-source-241b8411-stack10`.
+Counts: 1413 passed, 17771 failed, 2109 skipped, 16 xfailed, 1022 borked;
+all 12 shards exited nonzero because failing PHPTs remain. Regressions from the
+checkpoint8 PASS set: 0. Evidence lives under
+`/home/claude/supervised-php-compiler/state/logs/phpt-full-batch004-checkpoint10-sharded-20260528T195852Z-php-src-f97ff59-public-37941f23-source-241b8411-stack10`.
+
+Batch004 checkpoint10 still has BORKED rows, so the public score uses the
+stable pinned denominator and does not use the raw runner
+`1413 / 19200 = 7.36%` calculation.
 
 ## PHPT Harness
 
@@ -69,7 +74,8 @@ calculation.
 | Batch002 full-suite gate | Done | 1193 / 20294 runnable PHPTs passed (5.88%); 0 regressions from Batch001 PASS set; run id `phpt-full-batch002-20260528T100640Z-php-src-f97ff59-public-bc0ed214-source-e72efe27-stack11` |
 | Batch003 full-suite gate | Done | 1311 / 20294 pinned runnable PHPTs passed (6.46%); 0 regressions from Batch002 PASS set; run id `phpt-full-batch003-20260528T154907Z-php-src-f97ff59-public-20f3be4c-source-202dd1ec-stack21` |
 | Batch004 checkpoint8 regression-repair sharded gate | Done | 1369 / 20294 pinned runnable PHPTs passed (6.75%); 0 regressions from Batch003 PASS set; run id `phpt-full-batch004-regression-repair-sharded-20260528T192018Z-php-src-f97ff59-public-3c86fc6a-source-b75047df-stack8` |
-| Batch004 source batch | Complete | Batch004 source checkpoints accepted: 10 / 10; run the checkpoint10 pinned full-suite or supervisor-approved sharded publication gate before changing the public percentage |
+| Batch004 checkpoint10 sharded gate | Done | 1413 / 20294 pinned runnable PHPTs passed (6.96%); 0 regressions from checkpoint8 PASS set; run id `phpt-full-batch004-checkpoint10-sharded-20260528T195852Z-php-src-f97ff59-public-37941f23-source-241b8411-stack10` |
+| Batch004 source batch | Complete | Batch004 source checkpoints accepted: 10 / 10; checkpoint10 sharded gate published |
 
 Focused PHPT history is tracked separately in
 `/home/claude/supervised-php-compiler/state/php-core-suite-focused-history.tsv`.
@@ -77,11 +83,10 @@ Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
 
-Batch004 source checkpoint 10 is primary-integrated under AO supervision. This
-is a source checkpoint with focused proof, not a percentage change. The public
-PHPT score remains **1369 / 20294 pinned runnable PHPTs = 6.75%** until the
-checkpoint10 pinned full-suite or supervisor-approved sharded publication gate
-is completed, regression-checked, and published here.
+Batch004 source checkpoint 10 is primary-integrated under AO supervision. The
+checkpoint10 sharded publication gate is now published with **1413 / 20294
+pinned runnable PHPTs = 6.96%** and zero regressions from the checkpoint8 PASS
+set.
 
 - primary source head:
   `241b8411 fix: preserve byte strings in standard builtins`
@@ -107,8 +112,11 @@ is completed, regression-checked, and published here.
   `cargo build -p phpc`, and the focused wrapper PHPT strings cluster (4/4)
 - supervisor primary gate log:
   `/home/claude/supervised-php-compiler/state/workers/supervisor-primary-p34-standard-string-byte-successor4-checkpoint10-20260528.gates.log`
-- full PHPT suite: due now for Batch004 checkpoint10; public percentage does
-  not move until that gate completes and clears regressions
+- full PHPT suite: supervisor-approved checkpoint10 sharded publication gate
+  completed as
+  `phpt-full-batch004-checkpoint10-sharded-20260528T195852Z-php-src-f97ff59-public-37941f23-source-241b8411-stack10`;
+  counts were 1413 passed, 17771 failed, 2109 skipped, 16 xfailed, 1022
+  borked; checkpoint8 PASS regressions were 0
 
 This checkpoint generalizes byte-string handling for standard builtins. It
 adds shared `chr`, `bin2hex`, and `str_repeat` builtin metadata and runtime
