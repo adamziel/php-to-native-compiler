@@ -66784,6 +66784,10 @@ fn magic_method_startup_diagnostics(
         );
     }
 
+    if !diagnostics.has_fatal() {
+        collect_property_override_startup_diagnostics(&mut diagnostics, program, source_file);
+    }
+
     diagnostics
 }
 
@@ -66837,6 +66841,283 @@ fn top_level_class_startup_lookup(program: &Program) -> HashMap<String, &ClassDe
         classes.insert(startup_class_lookup_key(&class.name), class);
     }
     classes
+}
+
+fn collect_property_override_startup_diagnostics(
+    diagnostics: &mut MagicMethodStartupDiagnostics,
+    program: &Program,
+    source_file: Option<&str>,
+) {
+    let classes = top_level_class_startup_lookup(program);
+    let interfaces = top_level_interface_startup_lookup(program);
+    let traits = top_level_trait_startup_lookup(program);
+
+    for stmt in &program.statements {
+        let Stmt::Interface(interface) = stmt else {
+            continue;
+        };
+        for property in &interface.properties {
+            if !property_has_override_attribute(property) {
+                continue;
+            }
+            let Some(has_parent_property) =
+                startup_parent_interface_has_property(&interfaces, interface, &property.name)
+            else {
+                continue;
+            };
+            if has_parent_property {
+                continue;
+            }
+            diagnostics.set_fatal(
+                RuntimeError::attribute_override_missing_property(&interface.name, &property.name)
+                    .message()
+                    .to_string(),
+                source_file,
+                property.span.line,
+            );
+            return;
+        }
+    }
+
+    for stmt in &program.statements {
+        let Stmt::Class(class) = stmt else {
+            continue;
+        };
+        if class.is_nested {
+            continue;
+        }
+        if let Some((message, line)) =
+            class_property_override_startup_diagnostic(&classes, &interfaces, &traits, class)
+        {
+            diagnostics.set_fatal(message, source_file, line);
+            return;
+        }
+    }
+}
+
+fn top_level_interface_startup_lookup(program: &Program) -> HashMap<String, &InterfaceDecl> {
+    let mut interfaces = HashMap::new();
+    for stmt in &program.statements {
+        let Stmt::Interface(interface) = stmt else {
+            continue;
+        };
+        interfaces.insert(startup_class_lookup_key(&interface.name), interface);
+    }
+    interfaces
+}
+
+fn top_level_trait_startup_lookup(program: &Program) -> HashMap<String, Rc<TraitDecl>> {
+    let mut traits = HashMap::new();
+    for stmt in &program.statements {
+        let Stmt::Trait(trait_decl) = stmt else {
+            continue;
+        };
+        traits.insert(
+            startup_class_lookup_key(&trait_decl.name),
+            Rc::new(trait_decl.clone()),
+        );
+    }
+    traits
+}
+
+fn class_property_override_startup_diagnostic(
+    classes: &HashMap<String, &ClassDecl>,
+    interfaces: &HashMap<String, &InterfaceDecl>,
+    traits: &HashMap<String, Rc<TraitDecl>>,
+    class: &ClassDecl,
+) -> Option<(String, usize)> {
+    let class_properties = declared_class_properties(class);
+    if let Ok(trait_properties) = composed_trait_properties(class, traits) {
+        for property in trait_properties {
+            if let Some(class_property) = class_properties.get(&property.name) {
+                if trait_properties_are_compatible(&property, class_property) {
+                    continue;
+                }
+                continue;
+            }
+            let Some(has_match) = startup_class_property_override_has_match(
+                classes,
+                interfaces,
+                class,
+                &property.name,
+            ) else {
+                continue;
+            };
+            if property_has_override_attribute(&property) && !has_match {
+                return Some((
+                    RuntimeError::attribute_override_missing_property(&class.name, &property.name)
+                        .message()
+                        .to_string(),
+                    property.span.line,
+                ));
+            }
+        }
+    }
+
+    for member in &class.members {
+        let ClassMember::Property(property) = member else {
+            continue;
+        };
+        if !property_has_override_attribute(property) {
+            continue;
+        }
+        let Some(has_match) =
+            startup_class_property_override_has_match(classes, interfaces, class, &property.name)
+        else {
+            continue;
+        };
+        if !has_match {
+            return Some((
+                RuntimeError::attribute_override_missing_property(&class.name, &property.name)
+                    .message()
+                    .to_string(),
+                property.span.line,
+            ));
+        }
+    }
+
+    None
+}
+
+fn startup_class_property_override_has_match(
+    classes: &HashMap<String, &ClassDecl>,
+    interfaces: &HashMap<String, &InterfaceDecl>,
+    class: &ClassDecl,
+    property_name: &str,
+) -> Option<bool> {
+    let parent_property =
+        startup_class_has_non_private_parent_property(classes, class, property_name)?;
+    if parent_property {
+        return Some(true);
+    }
+    startup_class_implements_interface_property(classes, interfaces, class, property_name)
+}
+
+fn startup_class_has_non_private_parent_property(
+    classes: &HashMap<String, &ClassDecl>,
+    class: &ClassDecl,
+    property_name: &str,
+) -> Option<bool> {
+    let mut parent_name = match class.parent.as_deref() {
+        Some(parent_name) => parent_name,
+        None => return Some(false),
+    };
+    let mut visited = HashSet::new();
+
+    loop {
+        let key = startup_class_lookup_key(parent_name);
+        if !visited.insert(key.clone()) {
+            return None;
+        }
+        let parent = classes.get(&key).copied()?;
+        if let Some(property) = class_startup_property(parent, property_name) {
+            if property.visibility != ClassVisibility::Private {
+                return Some(true);
+            }
+        }
+        parent_name = match parent.parent.as_deref() {
+            Some(parent_name) => parent_name,
+            None => return Some(false),
+        };
+    }
+}
+
+fn startup_class_implements_interface_property(
+    classes: &HashMap<String, &ClassDecl>,
+    interfaces: &HashMap<String, &InterfaceDecl>,
+    class: &ClassDecl,
+    property_name: &str,
+) -> Option<bool> {
+    let mut current = Some(class);
+    let mut visited_classes = HashSet::new();
+
+    while let Some(class_decl) = current {
+        let class_key = startup_class_lookup_key(&class_decl.name);
+        if !visited_classes.insert(class_key) {
+            return None;
+        }
+        for interface_name in &class_decl.interfaces {
+            let Some(has_property) =
+                startup_interface_has_property_by_name(interfaces, interface_name, property_name)
+            else {
+                continue;
+            };
+            if has_property {
+                return Some(true);
+            }
+        }
+        current = class_decl
+            .parent
+            .as_deref()
+            .map(startup_class_lookup_key)
+            .and_then(|key| classes.get(&key).copied());
+    }
+
+    Some(false)
+}
+
+fn startup_parent_interface_has_property(
+    interfaces: &HashMap<String, &InterfaceDecl>,
+    interface: &InterfaceDecl,
+    property_name: &str,
+) -> Option<bool> {
+    let mut visited = HashSet::new();
+    let mut saw_resolved_parent = false;
+    for parent_name in &interface.parents {
+        let parent = interfaces
+            .get(&startup_class_lookup_key(parent_name))
+            .copied()?;
+        saw_resolved_parent = true;
+        let has_property =
+            startup_interface_has_property(interfaces, parent, property_name, &mut visited)?;
+        if has_property {
+            return Some(true);
+        }
+    }
+    if interface.parents.is_empty() || saw_resolved_parent {
+        Some(false)
+    } else {
+        None
+    }
+}
+
+fn startup_interface_has_property_by_name(
+    interfaces: &HashMap<String, &InterfaceDecl>,
+    interface_name: &str,
+    property_name: &str,
+) -> Option<bool> {
+    let interface = interfaces
+        .get(&startup_class_lookup_key(interface_name))
+        .copied()?;
+    startup_interface_has_property(interfaces, interface, property_name, &mut HashSet::new())
+}
+
+fn startup_interface_has_property(
+    interfaces: &HashMap<String, &InterfaceDecl>,
+    interface: &InterfaceDecl,
+    property_name: &str,
+    visited: &mut HashSet<String>,
+) -> Option<bool> {
+    let key = startup_class_lookup_key(&interface.name);
+    if !visited.insert(key) {
+        return None;
+    }
+    if interface
+        .properties
+        .iter()
+        .any(|property| property.name == property_name)
+    {
+        return Some(true);
+    }
+    for parent_name in &interface.parents {
+        let parent = interfaces
+            .get(&startup_class_lookup_key(parent_name))
+            .copied()?;
+        if startup_interface_has_property(interfaces, parent, property_name, visited)? {
+            return Some(true);
+        }
+    }
+    Some(false)
 }
 
 fn inherited_startup_property<'a>(
@@ -67285,6 +67566,7 @@ fn validate_interface_parent_relationships(
     for interface in interfaces {
         let mut path = HashSet::new();
         validate_interface_parent_relationship(interface_lookup, interface, &mut path)?;
+        validate_interface_property_override_attributes(interface_lookup, interface)?;
         validate_interface_method_inheritance(classes, interface_lookup, interface)?;
     }
     Ok(())
@@ -67328,6 +67610,70 @@ fn validate_interface_parent_relationship(
 
     path.remove(&key);
     Ok(())
+}
+
+fn validate_interface_property_override_attributes(
+    interface_lookup: &HashMap<String, Rc<InterfaceDecl>>,
+    interface: &InterfaceDecl,
+) -> CompileResult<()> {
+    for property in &interface.properties {
+        if !property_has_override_attribute(property) {
+            continue;
+        }
+        if parent_interface_has_property(interface_lookup, interface, &property.name) {
+            continue;
+        }
+        return Err(runtime_error(
+            property.span,
+            RuntimeError::attribute_override_missing_property(&interface.name, &property.name),
+        ));
+    }
+    Ok(())
+}
+
+fn parent_interface_has_property(
+    interface_lookup: &HashMap<String, Rc<InterfaceDecl>>,
+    interface: &InterfaceDecl,
+    property_name: &str,
+) -> bool {
+    let mut visited = HashSet::new();
+    for parent_name in &interface.parents {
+        let Some(parent) = interface_lookup.get(&parent_name.to_ascii_lowercase()) else {
+            continue;
+        };
+        if interface_has_property(interface_lookup, parent, property_name, &mut visited) {
+            return true;
+        }
+    }
+    false
+}
+
+fn interface_has_property(
+    interface_lookup: &HashMap<String, Rc<InterfaceDecl>>,
+    interface: &InterfaceDecl,
+    property_name: &str,
+    visited: &mut HashSet<String>,
+) -> bool {
+    let key = interface.name.to_ascii_lowercase();
+    if !visited.insert(key) {
+        return false;
+    }
+    if interface
+        .properties
+        .iter()
+        .any(|property| property.name == property_name)
+    {
+        return true;
+    }
+    for parent_name in &interface.parents {
+        let Some(parent) = interface_lookup.get(&parent_name.to_ascii_lowercase()) else {
+            continue;
+        };
+        if interface_has_property(interface_lookup, parent, property_name, visited) {
+            return true;
+        }
+    }
+    false
 }
 
 fn validate_interface_method_inheritance(
@@ -68001,6 +68347,8 @@ fn register_class_members(
         let visibility = runtime_visibility(property.visibility);
         validate_inherited_property_compatibility(classes, id, &class.name, &property)
             .map_err(|error| runtime_error(property.span, error))?;
+        validate_property_override_attribute(classes, interface_lookup, id, &class.name, &property)
+            .map_err(|error| runtime_error(property.span, error))?;
 
         let metadata_property = if property.is_static {
             PhpPropertyMetadata::static_property(&property.name, visibility)
@@ -68062,6 +68410,14 @@ fn register_class_members(
                 let visibility = runtime_visibility(property.visibility);
                 validate_inherited_property_compatibility(classes, id, &class.name, property)
                     .map_err(|error| runtime_error(property.span, error))?;
+                validate_property_override_attribute(
+                    classes,
+                    interface_lookup,
+                    id,
+                    &class.name,
+                    property,
+                )
+                .map_err(|error| runtime_error(property.span, error))?;
 
                 let metadata_property = if property.is_static {
                     PhpPropertyMetadata::static_property(&property.name, visibility)
@@ -68367,6 +68723,17 @@ fn default_exprs_are_compatible(left: &Expr, right: &Expr) -> bool {
         }
         _ => left == right,
     }
+}
+
+fn property_has_override_attribute(property: &ClassPropertyDecl) -> bool {
+    property
+        .attributes
+        .iter()
+        .any(|attribute| attribute_name_is_override(attribute))
+}
+
+fn attribute_name_is_override(attribute: &str) -> bool {
+    attribute.eq_ignore_ascii_case("Override") || attribute.eq_ignore_ascii_case("\\Override")
 }
 
 fn direct_class_trait_names(
@@ -70150,6 +70517,70 @@ fn validate_inherited_property_compatibility(
     }
 
     Ok(())
+}
+
+fn validate_property_override_attribute(
+    classes: &PhpClassTable,
+    interface_lookup: &HashMap<String, Rc<InterfaceDecl>>,
+    class_id: ClassId,
+    class_name: &str,
+    property: &ClassPropertyDecl,
+) -> RuntimeResult<()> {
+    if !property_has_override_attribute(property) {
+        return Ok(());
+    }
+    if class_has_non_private_parent_property(classes, class_id, &property.name)
+        || class_implements_interface_property(classes, interface_lookup, class_id, &property.name)
+    {
+        return Ok(());
+    }
+    Err(RuntimeError::attribute_override_missing_property(
+        class_name,
+        &property.name,
+    ))
+}
+
+fn class_has_non_private_parent_property(
+    classes: &PhpClassTable,
+    class_id: ClassId,
+    property_name: &str,
+) -> bool {
+    let mut current = classes
+        .get(class_id)
+        .expect("class id should resolve to class metadata")
+        .parent_id();
+
+    while let Some(parent_id) = current {
+        let parent = classes
+            .get(parent_id)
+            .expect("parent class id should resolve to class metadata");
+        if let Some(parent_property) = parent.property(property_name) {
+            if parent_property.visibility() != Visibility::Private {
+                return true;
+            }
+        }
+        current = parent.parent_id();
+    }
+
+    false
+}
+
+fn class_implements_interface_property(
+    classes: &PhpClassTable,
+    interface_lookup: &HashMap<String, Rc<InterfaceDecl>>,
+    class_id: ClassId,
+    property_name: &str,
+) -> bool {
+    let mut visited = HashSet::new();
+    for interface_name in implemented_interface_names(classes, class_id) {
+        let Some(interface) = interface_lookup.get(&interface_name.to_ascii_lowercase()) else {
+            continue;
+        };
+        if interface_has_property(interface_lookup, interface, property_name, &mut visited) {
+            return true;
+        }
+    }
+    false
 }
 
 fn visibility_is_more_restrictive(child: Visibility, parent: Visibility) -> bool {

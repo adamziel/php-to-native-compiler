@@ -10,6 +10,7 @@ pub struct Token {
 #[derive(Debug, Clone, PartialEq)]
 pub enum TokenKind {
     Eof,
+    Attribute(Vec<String>),
     Dollar,
     Variable(String),
     Identifier(String),
@@ -175,6 +176,13 @@ impl<'a> Lexer<'a> {
                 continue;
             }
 
+            if self.starts_with("#[") {
+                let span = self.span();
+                let kind = self.lex_attribute_block()?;
+                tokens.push(Token { kind, span });
+                continue;
+            }
+
             let span = self.span();
             let ch = self.advance();
             let kind = match ch {
@@ -333,8 +341,7 @@ impl<'a> Lexer<'a> {
 
             if self.peek() == Some('#') {
                 if self.peek_next() == Some('[') {
-                    self.skip_attribute_block()?;
-                    continue;
+                    break;
                 }
                 while !matches!(self.peek(), None | Some('\n')) {
                     self.advance();
@@ -384,10 +391,15 @@ impl<'a> Lexer<'a> {
     }
 
     fn skip_attribute_block(&mut self) -> CompileResult<()> {
+        self.lex_attribute_block().map(|_| ())
+    }
+
+    fn lex_attribute_block(&mut self) -> CompileResult<TokenKind> {
         let start = self.span();
         self.advance();
         self.advance();
         let mut depth = 1usize;
+        let mut content = String::new();
 
         while !self.is_at_end() {
             match self.advance() {
@@ -395,14 +407,21 @@ impl<'a> Lexer<'a> {
                 '(' => {
                     return Err(self.error_at(start, unsupported_attribute_arguments_message()));
                 }
-                '[' => depth += 1,
+                '[' => {
+                    depth += 1;
+                    content.push('[');
+                }
                 ']' => {
                     depth -= 1;
                     if depth == 0 {
-                        return Ok(());
+                        let names = parse_simple_attribute_names(&content).ok_or_else(|| {
+                            self.error_at(start, unsupported_attribute_syntax_message())
+                        })?;
+                        return Ok(TokenKind::Attribute(names));
                     }
+                    content.push(']');
                 }
-                _ => {}
+                ch => content.push(ch),
             }
         }
 
@@ -1109,6 +1128,60 @@ fn unsupported_backtick_operator_message() -> &'static str {
 
 fn unsupported_attribute_arguments_message() -> &'static str {
     "unsupported PHP attribute arguments: constructor argument evaluation, target validation, reflection visibility, namespace-aware attribute names, repeatability rules, references/copy-on-write, and native lowering are not implemented"
+}
+
+fn unsupported_attribute_syntax_message() -> &'static str {
+    "unsupported PHP attribute syntax: only simple comma-separated attribute names without arguments are implemented"
+}
+
+fn parse_simple_attribute_names(content: &str) -> Option<Vec<String>> {
+    let mut names = Vec::new();
+    for raw_part in content.split(',') {
+        let part = raw_part.trim();
+        if part.is_empty() || !is_simple_attribute_name(part) {
+            return None;
+        }
+        names.push(part.to_string());
+    }
+    (!names.is_empty()).then_some(names)
+}
+
+fn is_simple_attribute_name(name: &str) -> bool {
+    let mut saw_identifier_part = false;
+    let mut expect_identifier_start = true;
+    let mut previous_was_separator = true;
+    let mut chars = name.chars().peekable();
+    if matches!(chars.peek(), Some('\\')) {
+        chars.next();
+        previous_was_separator = true;
+        expect_identifier_start = true;
+    }
+    for ch in chars {
+        if ch == '\\' {
+            if previous_was_separator || expect_identifier_start {
+                return false;
+            }
+            previous_was_separator = true;
+            expect_identifier_start = true;
+            continue;
+        }
+        if expect_identifier_start {
+            if ch == '_' || ch.is_ascii_alphabetic() {
+                saw_identifier_part = true;
+                previous_was_separator = false;
+                expect_identifier_start = false;
+                continue;
+            }
+            return false;
+        }
+        if ch == '_' || ch.is_ascii_alphanumeric() {
+            saw_identifier_part = true;
+            previous_was_separator = false;
+            continue;
+        }
+        return false;
+    }
+    saw_identifier_part && !previous_was_separator
 }
 
 fn trim_heredoc_final_newline(value: &mut String, parts: &mut [InterpolatedStringPart]) {

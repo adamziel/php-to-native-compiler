@@ -27727,6 +27727,16 @@ impl RuntimeError {
         })
     }
 
+    pub fn attribute_override_missing_property(
+        class_name: impl Into<String>,
+        property_name: impl Into<String>,
+    ) -> Self {
+        Self::from_kind(RuntimeErrorKind::AttributeOverrideMissingProperty {
+            class_name: class_name.into(),
+            property_name: property_name.into(),
+        })
+    }
+
     pub fn duplicate_class_member(
         class_name: impl Into<String>,
         member_kind: ClassMemberKind,
@@ -27900,6 +27910,10 @@ pub enum RuntimeErrorKind {
     },
     UnsupportedTraitUse {
         reason: String,
+    },
+    AttributeOverrideMissingProperty {
+        class_name: String,
+        property_name: String,
     },
     DuplicateClassMember {
         class_name: String,
@@ -28096,6 +28110,12 @@ fn format_runtime_error(kind: &RuntimeErrorKind) -> String {
         }
         RuntimeErrorKind::UnsupportedTraitUse { reason } => {
             format!("unsupported trait use: {reason}")
+        }
+        RuntimeErrorKind::AttributeOverrideMissingProperty {
+            class_name,
+            property_name,
+        } => {
+            format!("{class_name}::${property_name} has #[\\Override] attribute, but no matching parent property exists")
         }
         RuntimeErrorKind::DuplicateClassMember {
             class_name,

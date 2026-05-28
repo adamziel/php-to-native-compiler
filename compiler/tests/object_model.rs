@@ -18,6 +18,16 @@ fn runtime_error(source: &str) -> Diagnostic {
     error
 }
 
+fn assert_php_startup_fatal(source: &str, source_file: &str, line: usize, message: &str) {
+    let execution = run_source_with_source_file(source, source_file).unwrap();
+    assert_eq!(execution.stdout, "");
+    assert_eq!(
+        execution.stderr,
+        format!("Fatal error: {message} in {source_file} on line {line}")
+    );
+    assert_eq!(execution.exit_code, 255);
+}
+
 #[test]
 fn class_declarations_register_metadata_without_object_execution() {
     let source = r#"<?php
@@ -2366,6 +2376,114 @@ class Child extends Base {}
     assert_eq!(
         inherited_static_method_error.message,
         "unsupported class inheritance for Child: concrete class Child must implement interface method Logger::log() as non static method; found static Base::log()"
+    );
+}
+
+#[test]
+fn property_override_attribute_validates_parent_interface_and_trait_properties() {
+    let parent_property = run_source(
+        r#"<?php
+class Base {
+    protected mixed $value;
+}
+class Child extends Base {
+    #[\Override]
+    public mixed $value;
+}
+echo "Done";
+"#,
+    )
+    .unwrap();
+    assert_eq!(parent_property.stdout, "Done");
+    assert_eq!(parent_property.exit_code, 0);
+
+    let interface_property = run_source(
+        r#"<?php
+interface Contract {
+    public mixed $value { get; }
+}
+class Service implements Contract {
+    #[\Override]
+    public mixed $value;
+}
+echo "Done";
+"#,
+    )
+    .unwrap();
+    assert_eq!(interface_property.stdout, "Done");
+    assert_eq!(interface_property.exit_code, 0);
+
+    let trait_property = run_source(
+        r#"<?php
+trait ProvidesValue {
+    #[\Override]
+    public mixed $value;
+}
+interface Contract {
+    public mixed $value { get; }
+}
+class Service implements Contract {
+    use ProvidesValue;
+}
+echo "Done";
+"#,
+    )
+    .unwrap();
+    assert_eq!(trait_property.stdout, "Done");
+    assert_eq!(trait_property.exit_code, 0);
+
+    assert_php_startup_fatal(
+        r#"<?php
+class Standalone {
+    #[\Override]
+    public mixed $value;
+}
+"#,
+        "tests/classes/property_override_missing_parent.php",
+        4,
+        "Standalone::$value has #[\\Override] attribute, but no matching parent property exists",
+    );
+
+    assert_php_startup_fatal(
+        r#"<?php
+class Base {
+    private mixed $value;
+}
+class Child extends Base {
+    #[\Override]
+    public mixed $value;
+}
+"#,
+        "tests/classes/property_override_private_parent.php",
+        7,
+        "Child::$value has #[\\Override] attribute, but no matching parent property exists",
+    );
+
+    assert_php_startup_fatal(
+        r#"<?php
+interface Contract {
+    #[\Override]
+    public mixed $value { get; }
+}
+"#,
+        "tests/classes/property_override_interface_missing_parent.php",
+        4,
+        "Contract::$value has #[\\Override] attribute, but no matching parent property exists",
+    );
+
+    assert_php_startup_fatal(
+        r#"<?php
+trait ProvidesValue {
+    #[\Override]
+    public mixed $value;
+}
+class Service {
+    use ProvidesValue;
+}
+"#,
+        "tests/classes/property_override_trait_missing_parent.php",
+        4,
+        "Service::$value has #[\\Override] attribute, but no matching parent property exists",
     );
 }
 

@@ -32,6 +32,7 @@ struct Parser {
     namespace_function_declarations: HashMap<String, Vec<String>>,
     namespace_constant_declarations: HashMap<String, Vec<String>>,
     pending_doc_comment: Option<String>,
+    pending_attributes: Vec<String>,
     trace_parse: bool,
 }
 
@@ -85,6 +86,7 @@ impl Parser {
             namespace_function_declarations: HashMap::new(),
             namespace_constant_declarations: HashMap::new(),
             pending_doc_comment: None,
+            pending_attributes: Vec::new(),
             trace_parse: std::env::var_os("PHPC_TRACE_PARSE").is_some(),
         }
     }
@@ -101,11 +103,28 @@ impl Parser {
         Ok(Program { statements })
     }
 
-    fn parse_statement(&mut self) -> CompileResult<Stmt> {
-        while let TokenKind::DocComment(comment) = &self.peek().kind {
-            self.pending_doc_comment = Some(comment.clone());
-            self.advance();
+    fn consume_doc_comments_and_attributes(&mut self) {
+        loop {
+            match &self.peek().kind {
+                TokenKind::DocComment(comment) => {
+                    self.pending_doc_comment = Some(comment.clone());
+                    self.advance();
+                }
+                TokenKind::Attribute(names) => {
+                    self.pending_attributes.extend(names.clone());
+                    self.advance();
+                }
+                _ => break,
+            }
         }
+    }
+
+    fn take_pending_attributes(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.pending_attributes)
+    }
+
+    fn parse_statement(&mut self) -> CompileResult<Stmt> {
+        self.consume_doc_comments_and_attributes();
         if !matches!(
             self.peek().kind,
             TokenKind::Function
@@ -117,6 +136,7 @@ impl Parser {
                 | TokenKind::Readonly
         ) {
             self.pending_doc_comment = None;
+            self.pending_attributes.clear();
         }
         match &self.peek().kind {
             TokenKind::Function => self.parse_function(),
@@ -253,6 +273,7 @@ impl Parser {
             name
         };
         let doc_comment = self.pending_doc_comment.take();
+        self.pending_attributes.clear();
         self.consume_keyword(TokenKind::LParen, "expected '(' after function name")?;
         let params = self.parse_function_params_after_open()?;
 
@@ -285,12 +306,16 @@ impl Parser {
         let mut saw_default = false;
         if !self.check(|kind| matches!(kind, TokenKind::RParen)) {
             loop {
+                self.consume_doc_comments_and_attributes();
+                self.pending_doc_comment = None;
                 if self.check(is_promoted_property_parameter_start) {
+                    self.pending_attributes.clear();
                     return Err(self.error_at(
                         self.peek().span,
                         unsupported_promoted_property_parameter_message(),
                     ));
                 }
+                self.pending_attributes.clear();
                 let type_decl = if self.check(is_parameter_type_start) {
                     Some(self.parse_type_decl(unsupported_parameter_type_message())?)
                 } else {
@@ -472,6 +497,7 @@ impl Parser {
             .span;
         let span = modifier_span.unwrap_or(class_span);
         let doc_comment = self.pending_doc_comment.take();
+        self.pending_attributes.clear();
         let is_nested = self.nested_statement_depth > 0;
         let name = self.consume_identifier("expected class name")?;
         let name = self.resolve_declared_class_name(&name);
@@ -492,13 +518,10 @@ impl Parser {
         let mut trait_uses = Vec::new();
         while !self.check(|kind| matches!(kind, TokenKind::RBrace | TokenKind::Eof)) {
             self.trace_parse("class member");
-            if let TokenKind::DocComment(comment) = &self.peek().kind {
-                self.pending_doc_comment = Some(comment.clone());
-                self.advance();
-                continue;
-            }
-            if self.check(|kind| matches!(kind, TokenKind::Use)) {
+            self.consume_doc_comments_and_attributes();
+            if self.check_class_body_trait_use() {
                 self.pending_doc_comment = None;
+                self.pending_attributes.clear();
                 trait_uses.extend(self.parse_class_trait_use()?);
             } else {
                 members.push(self.parse_class_member()?);
@@ -521,6 +544,20 @@ impl Parser {
             doc_comment,
             span,
         }))
+    }
+
+    fn check_class_body_trait_use(&self) -> bool {
+        if !self.check(|kind| matches!(kind, TokenKind::Use)) {
+            return false;
+        }
+        matches!(
+            &self.peek_next().kind,
+            TokenKind::Identifier(_) | TokenKind::Backslash
+        )
+    }
+
+    fn check_trait_body_use_declaration(&self) -> bool {
+        self.check_class_body_trait_use()
     }
 
     fn parse_class_implements_list(&mut self) -> CompileResult<Vec<String>> {
@@ -546,6 +583,7 @@ impl Parser {
             .consume_keyword(TokenKind::Trait, "expected 'trait'")?
             .span;
         let doc_comment = self.pending_doc_comment.take();
+        self.pending_attributes.clear();
         if self.nested_statement_depth > 0 || self.function_body_depth > 0 {
             return Err(self.error_at(span, unsupported_nested_trait_declaration_message()));
         }
@@ -558,13 +596,10 @@ impl Parser {
         let mut methods = Vec::new();
         while !self.check(|kind| matches!(kind, TokenKind::RBrace | TokenKind::Eof)) {
             self.trace_parse("trait member");
-            if let TokenKind::DocComment(comment) = &self.peek().kind {
-                self.pending_doc_comment = Some(comment.clone());
-                self.advance();
-                continue;
-            }
-            if self.check(|kind| matches!(kind, TokenKind::Use)) {
+            self.consume_doc_comments_and_attributes();
+            if self.check_trait_body_use_declaration() {
                 self.pending_doc_comment = None;
+                self.pending_attributes.clear();
                 trait_uses.extend(self.parse_trait_body_use()?);
             } else if self.check_trait_constant_declaration() {
                 constants.push(self.parse_trait_constant()?);
@@ -625,6 +660,7 @@ impl Parser {
 
     fn parse_trait_constant(&mut self) -> CompileResult<ClassConstantDecl> {
         self.pending_doc_comment = None;
+        self.pending_attributes.clear();
         let modifiers = self.parse_class_member_modifiers()?;
         self.match_identifier("const");
         let const_span = self.previous().span;
@@ -679,6 +715,7 @@ impl Parser {
 
     fn parse_trait_property(&mut self) -> CompileResult<ClassPropertyDecl> {
         let modifiers = self.parse_class_member_modifiers()?;
+        let attributes = self.take_pending_attributes();
         let doc_comment = self.pending_doc_comment.take();
         if modifiers.is_abstract || modifiers.is_final {
             return Err(self.error_at(
@@ -733,6 +770,7 @@ impl Parser {
             is_static: modifiers.is_static,
             type_decl,
             default,
+            attributes,
             doc_comment,
             span,
         })
@@ -944,6 +982,7 @@ impl Parser {
             .consume_keyword(TokenKind::Interface, "expected 'interface'")?
             .span;
         let doc_comment = self.pending_doc_comment.take();
+        self.pending_attributes.clear();
         if self.nested_statement_depth > 0 || self.function_body_depth > 0 {
             return Err(self.error_at(span, unsupported_nested_interface_declaration_message()));
         }
@@ -963,11 +1002,7 @@ impl Parser {
         let mut methods = Vec::new();
         while !self.check(|kind| matches!(kind, TokenKind::RBrace | TokenKind::Eof)) {
             self.trace_parse("interface member");
-            if let TokenKind::DocComment(comment) = &self.peek().kind {
-                self.pending_doc_comment = Some(comment.clone());
-                self.advance();
-                continue;
-            }
+            self.consume_doc_comments_and_attributes();
             if self.check_interface_constant_declaration() {
                 constants.push(self.parse_interface_constant()?);
             } else if self.check_interface_property_declaration() {
@@ -993,6 +1028,7 @@ impl Parser {
 
     fn parse_interface_constant(&mut self) -> CompileResult<ClassConstantDecl> {
         self.pending_doc_comment = None;
+        self.pending_attributes.clear();
         let modifiers = self.parse_class_member_modifiers()?;
         self.match_identifier("const");
         let const_span = self.previous().span;
@@ -1050,6 +1086,7 @@ impl Parser {
 
     fn parse_interface_property(&mut self) -> CompileResult<ClassPropertyDecl> {
         let modifiers = self.parse_class_member_modifiers()?;
+        let attributes = self.take_pending_attributes();
         let doc_comment = self.pending_doc_comment.take();
         if modifiers.is_static {
             return Err(self.error_at(
@@ -1102,6 +1139,7 @@ impl Parser {
             is_static: false,
             type_decl,
             default: None,
+            attributes,
             doc_comment,
             span,
         })
@@ -1113,14 +1151,13 @@ impl Parser {
             "expected '{' before interface property hook block",
         )?;
         while !self.check(|kind| matches!(kind, TokenKind::RBrace | TokenKind::Eof)) {
-            if let TokenKind::DocComment(comment) = &self.peek().kind {
-                self.pending_doc_comment = Some(comment.clone());
-                self.advance();
-                continue;
-            }
+            self.consume_doc_comments_and_attributes();
+            self.pending_doc_comment = None;
+            self.pending_attributes.clear();
             self.parse_interface_property_hook_declaration()?;
         }
         self.pending_doc_comment = None;
+        self.pending_attributes.clear();
         self.consume_keyword(
             TokenKind::RBrace,
             "expected '}' after interface property hook block",
@@ -1192,6 +1229,7 @@ impl Parser {
         let returns_by_reference = self.match_token(|kind| matches!(kind, TokenKind::Ampersand));
         let name = self.consume_identifier("expected function name")?;
         let doc_comment = self.pending_doc_comment.take();
+        self.pending_attributes.clear();
         self.consume_keyword(TokenKind::LParen, "expected '(' after function name")?;
         let params = self.parse_function_params_after_open()?;
         let return_type = if self.match_token(|kind| matches!(kind, TokenKind::Colon)) {
@@ -1236,6 +1274,9 @@ impl Parser {
         let mut cases = Vec::new();
         while !self.check(|kind| matches!(kind, TokenKind::RBrace | TokenKind::Eof)) {
             self.trace_parse("enum member");
+            self.consume_doc_comments_and_attributes();
+            self.pending_doc_comment = None;
+            self.pending_attributes.clear();
             cases.push(self.parse_enum_case()?);
         }
         self.consume_keyword(TokenKind::RBrace, "expected '}' after enum body")?;
@@ -1259,6 +1300,7 @@ impl Parser {
 
     fn parse_class_member(&mut self) -> CompileResult<ClassMember> {
         let modifiers = self.parse_class_member_modifiers()?;
+        let attributes = self.take_pending_attributes();
 
         if self.match_identifier("const") {
             self.pending_doc_comment = None;
@@ -1308,6 +1350,7 @@ impl Parser {
 
         if self.match_token(|kind| matches!(kind, TokenKind::Function)) {
             let span = self.previous().span;
+            self.pending_attributes.clear();
             if modifiers.is_abstract && modifiers.is_final {
                 return Err(self.error_at(
                     modifiers.abstract_final_conflict_span().unwrap_or(span),
@@ -1384,6 +1427,7 @@ impl Parser {
                 is_static: modifiers.is_static,
                 type_decl: Some(type_decl),
                 default,
+                attributes: attributes.clone(),
                 doc_comment,
                 span,
             }));
@@ -1429,6 +1473,7 @@ impl Parser {
                 is_static: modifiers.is_static,
                 type_decl: None,
                 default,
+                attributes,
                 doc_comment,
                 span,
             }));
@@ -8248,6 +8293,7 @@ fn token_name(kind: &TokenKind) -> &'static str {
         TokenKind::StringLiteral(_) => "string literal",
         TokenKind::InterpolatedString(_) => "interpolated string literal",
         TokenKind::DocComment(_) => "doc comment",
+        TokenKind::Attribute(_) => "attribute",
         TokenKind::InlineHtml(_) => "inline HTML",
         TokenKind::Echo => "echo",
         TokenKind::Print => "print",
