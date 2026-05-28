@@ -34620,6 +34620,7 @@ impl PhpObject {
             type_decl: type_decl.clone(),
             storage: ObjectPropertyStorage::Value(PhpValueCell::new(Value::Null)),
             initialized: type_decl.is_none(),
+            unset: false,
         });
     }
 
@@ -34835,6 +34836,46 @@ impl PhpObject {
         Ok(Some(property.value_cloned()))
     }
 
+    pub fn is_unset_property_from_context(
+        &self,
+        name: &str,
+        current_class_id: Option<ClassId>,
+        protected_class_ids: &[ClassId],
+    ) -> RuntimeResult<bool> {
+        let properties = self.properties.borrow();
+        let Some(property) = self.context_property_or_none(
+            &properties,
+            name,
+            current_class_id,
+            protected_class_ids,
+        )?
+        else {
+            return Ok(false);
+        };
+
+        Ok(property.unset)
+    }
+
+    pub fn has_uninitialized_declared_property_from_context(
+        &self,
+        name: &str,
+        current_class_id: Option<ClassId>,
+        protected_class_ids: &[ClassId],
+    ) -> RuntimeResult<bool> {
+        let properties = self.properties.borrow();
+        let Some(property) = self.context_property_or_none(
+            &properties,
+            name,
+            current_class_id,
+            protected_class_ids,
+        )?
+        else {
+            return Ok(false);
+        };
+
+        Ok(!property.initialized && !property.unset)
+    }
+
     pub fn read_property_for_isset_from_context(
         &self,
         name: &str,
@@ -34966,6 +35007,7 @@ impl PhpObject {
             type_decl: None,
             storage: ObjectPropertyStorage::Reference(reference.clone()),
             initialized: true,
+            unset: false,
         });
         Ok(reference)
     }
@@ -35006,6 +35048,7 @@ impl PhpObject {
             type_decl: None,
             storage: ObjectPropertyStorage::Value(PhpValueCell::new(value)),
             initialized: true,
+            unset: false,
         });
         Ok(())
     }
@@ -35325,6 +35368,7 @@ pub struct ObjectProperty {
     type_decl: Option<String>,
     storage: ObjectPropertyStorage,
     initialized: bool,
+    unset: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -35435,6 +35479,7 @@ impl ObjectProperty {
             ObjectPropertyStorage::Value(cell) => cell.set_value(value),
             ObjectPropertyStorage::Reference(reference) => reference.set_value(value),
         }
+        self.unset = false;
     }
 
     fn set_reference_cell(&mut self, reference: PhpReferenceCell) {
@@ -35444,6 +35489,7 @@ impl ObjectProperty {
             &self.name,
         );
         self.storage = ObjectPropertyStorage::Reference(reference);
+        self.unset = false;
     }
 
     fn unset_value(&mut self) {
@@ -35456,6 +35502,7 @@ impl ObjectProperty {
         }
         self.storage = ObjectPropertyStorage::Value(PhpValueCell::new(Value::Null));
         self.initialized = self.type_decl.is_none();
+        self.unset = true;
     }
 
     fn reference_cell(&mut self) -> RuntimeResult<PhpReferenceCell> {

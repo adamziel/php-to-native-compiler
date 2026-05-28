@@ -10108,8 +10108,8 @@ impl Interpreter {
                 self.tick(stmt.span())?;
                 let try_flow = match self.execute_array_copy_return_statement_list(body, scope) {
                     Ok(flow) => flow,
-                    Err(error) if is_forbidden_dynamic_builtin_call_diagnostic(&error) => {
-                        match self.execute_forbidden_dynamic_builtin_array_copy_return_catch_flow(
+                    Err(error) if catchable_php_error_message(&error).is_some() => {
+                        match self.execute_catchable_php_error_array_copy_return_catch_flow(
                             &error, catches, scope,
                         )? {
                             Some(flow) => flow,
@@ -10188,16 +10188,19 @@ impl Interpreter {
         Ok(ArrayCopyReturnBodyFlow::Throw { object, span })
     }
 
-    fn execute_forbidden_dynamic_builtin_array_copy_return_catch_flow(
+    fn execute_catchable_php_error_array_copy_return_catch_flow(
         &mut self,
         error: &Diagnostic,
         catches: &[CatchClause],
         scope: &mut SymbolTable,
     ) -> CompileResult<Option<ArrayCopyReturnBodyFlow>> {
+        let Some(error_message) = catchable_php_error_message(error) else {
+            return Ok(None);
+        };
         let Some(error_class_id) = self.classes.lookup_class_id("Error") else {
             return Ok(None);
         };
-        let error_object = self.create_core_error_object(error.message.clone(), error_class_id)?;
+        let error_object = self.create_core_error_object(error_message, error_class_id)?;
         for catch in catches {
             if !self.catch_matches_class(error_class_id, catch)? {
                 continue;
@@ -13781,8 +13784,8 @@ impl Interpreter {
                 self.execute_catch_flow(object, span, catches, scope)?
             }
             Ok(flow) => flow,
-            Err(error) if is_forbidden_dynamic_builtin_call_diagnostic(&error) => {
-                match self.execute_forbidden_dynamic_builtin_catch_flow(&error, catches, scope)? {
+            Err(error) if catchable_php_error_message(&error).is_some() => {
+                match self.execute_catchable_php_error_catch_flow(&error, catches, scope)? {
                     Some(flow) => flow,
                     None => return Err(error),
                 }
@@ -13818,16 +13821,19 @@ impl Interpreter {
         Ok(Flow::Throw { object, span })
     }
 
-    fn execute_forbidden_dynamic_builtin_catch_flow(
+    fn execute_catchable_php_error_catch_flow(
         &mut self,
         error: &Diagnostic,
         catches: &[CatchClause],
         scope: &mut SymbolTable,
     ) -> CompileResult<Option<Flow>> {
+        let Some(error_message) = catchable_php_error_message(error) else {
+            return Ok(None);
+        };
         let Some(error_class_id) = self.classes.lookup_class_id("Error") else {
             return Ok(None);
         };
-        let error_object = self.create_core_error_object(error.message.clone(), error_class_id)?;
+        let error_object = self.create_core_error_object(error_message, error_class_id)?;
         for catch in catches {
             if !self.catch_matches_class(error_class_id, catch)? {
                 continue;
@@ -24767,6 +24773,45 @@ impl Interpreter {
                         scope.pre_replace_holder_storage(&boundary);
                         let alias_fallbacks =
                             scope.public_object_property_root_alias_fallbacks(object, property);
+                        if object_value
+                            .is_unset_property_from_context(
+                                property,
+                                current_class_id,
+                                &protected_class_ids,
+                            )
+                            .map_err(|error| runtime_error(*span, error))?
+                            && self
+                                .resolve_instance_method(object_value.class_id(), "__set")
+                                .is_some()
+                        {
+                            let method_value = self.value_with_assignment_reference_cells(
+                                value.clone(),
+                                expr,
+                                &array_literal_references,
+                                &array_copy_sources,
+                                scope,
+                                expr.span(),
+                            )?;
+                            let indexed_copy_source_bindings =
+                                Self::indexed_array_copy_source_bindings_for_argument(
+                                    1,
+                                    &array_copy_sources,
+                                );
+                            if self
+                                .call_magic_instance_method_with_values_and_caller_scope_and_arg_sources(
+                                    object_value.clone(),
+                                    "__set",
+                                    vec![Value::String(property.clone()), method_value],
+                                    *span,
+                                    scope,
+                                    indexed_copy_source_bindings,
+                                )?
+                                .is_some()
+                            {
+                                return Ok(value);
+                            }
+                        }
+
                         match object_value.write_property_from_context_with_object_type_resolver(
                             property,
                             value.clone(),
@@ -25710,6 +25755,45 @@ impl Interpreter {
                         scope.pre_replace_holder_storage(&boundary);
                         let alias_fallbacks =
                             scope.public_object_property_root_alias_fallbacks(object, &property);
+                        if object_value
+                            .is_unset_property_from_context(
+                                &property,
+                                current_class_id,
+                                &protected_class_ids,
+                            )
+                            .map_err(|error| runtime_error(*span, error))?
+                            && self
+                                .resolve_instance_method(object_value.class_id(), "__set")
+                                .is_some()
+                        {
+                            let method_value = self.value_with_assignment_reference_cells(
+                                value.clone(),
+                                expr,
+                                &array_literal_references,
+                                &array_copy_sources,
+                                scope,
+                                expr.span(),
+                            )?;
+                            let indexed_copy_source_bindings =
+                                Self::indexed_array_copy_source_bindings_for_argument(
+                                    1,
+                                    &array_copy_sources,
+                                );
+                            if self
+                                .call_magic_instance_method_with_values_and_caller_scope_and_arg_sources(
+                                    object_value.clone(),
+                                    "__set",
+                                    vec![Value::String(property.clone()), method_value],
+                                    *span,
+                                    scope,
+                                    indexed_copy_source_bindings,
+                                )?
+                                .is_some()
+                            {
+                                return Ok(value);
+                            }
+                        }
+
                         match object_value.write_property_from_context_with_object_type_resolver(
                             &property,
                             value.clone(),
@@ -53622,8 +53706,8 @@ impl Interpreter {
                 .execute_reference_return_assignment_statement_list(function, body, scope)
             {
                 Ok(flow) => flow,
-                Err(error) if is_forbidden_dynamic_builtin_call_diagnostic(&error) => {
-                    match self.execute_forbidden_dynamic_builtin_reference_return_catch_flow(
+                Err(error) if catchable_php_error_message(&error).is_some() => {
+                    match self.execute_catchable_php_error_reference_return_catch_flow(
                         function, &error, catches, scope,
                     )? {
                         Some(flow) => flow,
@@ -53704,17 +53788,20 @@ impl Interpreter {
         Ok(ReferenceReturnBodyFlow::Throw { object, span })
     }
 
-    fn execute_forbidden_dynamic_builtin_reference_return_catch_flow(
+    fn execute_catchable_php_error_reference_return_catch_flow(
         &mut self,
         function: &FunctionDecl,
         error: &Diagnostic,
         catches: &[CatchClause],
         scope: &mut SymbolTable,
     ) -> CompileResult<Option<ReferenceReturnBodyFlow>> {
+        let Some(error_message) = catchable_php_error_message(error) else {
+            return Ok(None);
+        };
         let Some(error_class_id) = self.classes.lookup_class_id("Error") else {
             return Ok(None);
         };
-        let error_object = self.create_core_error_object(error.message.clone(), error_class_id)?;
+        let error_object = self.create_core_error_object(error_message, error_class_id)?;
         for catch in catches {
             if !self.catch_matches_class(error_class_id, catch)? {
                 continue;
@@ -64905,6 +64992,16 @@ impl Interpreter {
                 self.array_access_path_isset(object, &keys, target.span(), caller_scope)
             }
             Some(value) => Ok(Self::array_path_isset(&value, &keys)),
+            None if object
+                .has_uninitialized_declared_property_from_context(
+                    &property,
+                    current_class_id,
+                    &protected_class_ids,
+                )
+                .map_err(|error| runtime_error(target.span(), error))? =>
+            {
+                Ok(false)
+            }
             None => self.is_magic_object_property_array_path_set(
                 object,
                 &property,
@@ -64989,6 +65086,16 @@ impl Interpreter {
                     .map_err(|error| runtime_error(span, error))?
                 {
                     Some(value) => Ok(!matches!(value, Value::Null)),
+                    None if object
+                        .has_uninitialized_declared_property_from_context(
+                            property,
+                            current_class_id,
+                            &protected_class_ids,
+                        )
+                        .map_err(|error| runtime_error(span, error))? =>
+                    {
+                        Ok(false)
+                    }
                     None => Ok(self
                         .call_magic_property_method_with_caller_scope(
                             object,
@@ -65429,6 +65536,16 @@ impl Interpreter {
                 self.array_access_path_empty(object, &keys, target.span(), caller_scope)
             }
             Some(value) => Ok(Self::array_path_empty(&value, &keys)),
+            None if object
+                .has_uninitialized_declared_property_from_context(
+                    &property,
+                    current_class_id,
+                    &protected_class_ids,
+                )
+                .map_err(|error| runtime_error(target.span(), error))? =>
+            {
+                Ok(true)
+            }
             None => self.is_magic_object_property_array_path_empty(
                 object,
                 &property,
@@ -65513,6 +65630,16 @@ impl Interpreter {
                     .map_err(|error| runtime_error(span, error))?
                 {
                     Some(value) => Ok(!value.is_truthy()),
+                    None if object
+                        .has_uninitialized_declared_property_from_context(
+                            property,
+                            current_class_id,
+                            &protected_class_ids,
+                        )
+                        .map_err(|error| runtime_error(span, error))? =>
+                    {
+                        Ok(true)
+                    }
                     None => {
                         let Some(isset_value) = self.call_magic_property_method_with_caller_scope(
                             object.clone(),
@@ -70200,6 +70327,37 @@ fn is_forbidden_dynamic_builtin_call_diagnostic(error: &Diagnostic) -> bool {
                 .unwrap_or(""),
         )
         .is_some()
+}
+
+fn catchable_php_error_message(error: &Diagnostic) -> Option<String> {
+    if is_forbidden_dynamic_builtin_call_diagnostic(error) {
+        return Some(error.message.clone());
+    }
+
+    if is_uninitialized_typed_property_diagnostic(error) {
+        return Some(capitalize_initial_ascii(&error.message));
+    }
+
+    None
+}
+
+fn is_uninitialized_typed_property_diagnostic(error: &Diagnostic) -> bool {
+    error.phase == Phase::Runtime
+        && error.message.starts_with("typed property ")
+        && error
+            .message
+            .ends_with(" must not be accessed before initialization")
+}
+
+fn capitalize_initial_ascii(message: &str) -> String {
+    let mut chars = message.chars();
+    let Some(first) = chars.next() else {
+        return String::new();
+    };
+
+    let mut capitalized = first.to_ascii_uppercase().to_string();
+    capitalized.push_str(chars.as_str());
+    capitalized
 }
 
 fn array_callable_parts(array: &PhpArray) -> Option<(&Value, &str)> {
