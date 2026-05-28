@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-28 07:35 CEST
+Updated: 2026-05-28 07:39 CEST
 Primary branch: `master`
 Latest source head: `0fa7b666 runtime: autoload enum_exists misses`
 
@@ -96,6 +96,7 @@ Gate status and parked candidates:
 | `Zend/tests/magic_methods/bug68652.phpt` destructor/static-singleton recursion PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and p14 `SAFE-FOR-PROGRESS`; existing destructor/static-singleton behavior handles the recursion target without a source patch, passing wrapper PHPT `Zend/tests/magic_methods/bug68652.phpt` 1/1 using the rebuilt reviewed public binary `/tmp/phpc-reviewed-public-687fcc41-20260528-target2/debug/phpc`; no source patch, no cargo gate beyond the authorized binary recovery, no full-suite run, and no percent change |
 | `Zend/tests/magic_methods/bug69025.phpt` `__callStatic` missing-static dispatch PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and p14 `SAFE-FOR-PROGRESS`; existing missing-static-method dispatch reaches public `__callStatic()` for this PHPT, passing wrapper PHPT `Zend/tests/magic_methods/bug69025.phpt` 1/1 using the rebuilt reviewed public binary `/tmp/phpc-reviewed-public-687fcc41-20260528-target2/debug/phpc`; no source patch, no cargo gate beyond the authorized binary recovery, no full-suite run, and no percent change |
 | `Zend/tests/magic_methods/bug71818.phpt` destructor array mutation PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and p14 `SAFE-FOR-PROGRESS`; existing destructor/array mutation handling passes wrapper PHPT `Zend/tests/magic_methods/bug71818.phpt` 1/1 using the replacement reviewed public binary `/tmp/phpc-reviewed-public-1b459adf-20260528-target/debug/phpc`; no source patch, no cargo gate beyond the reviewed binary recovery, no full-suite run, and no percent change |
+| `Zend/tests/magic_methods/bug72177_2.phpt` ReflectionProperty/destructor scope PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and p14 `SAFE-FOR-PROGRESS`; existing ReflectionProperty-set object/destructor scope behavior passes wrapper PHPT `Zend/tests/magic_methods/bug72177_2.phpt` 1/1 using the replacement reviewed public binary `/tmp/phpc-reviewed-public-1b459adf-20260528-target/debug/phpc`; no source patch, no cargo gate beyond the reviewed binary recovery, no full-suite run, and no percent change |
 | p15 `returnByReference.005` rebased object-receiver static reference-return dispatch | GO-CANDIDATE after independent p7 review and p14 `SAFE-FOR-PROGRESS`; patch SHA `9487557714a456f2b3f416af7db1ed9866c6428dd6072bd143afe6a86dd27895`; focused Rust gate, `cargo build -p phpc`, and wrapper PHPTs `tests/lang/returnByReference.005.phpt`, `tests/lang/returnByReference.004.phpt`, and `tests/lang/returnByReference.003.phpt` passed 3/3; no full-suite run and no percent change |
 | `Zend/tests/dereference/dereference_005.phpt` array dereference PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and p14 `SAFE-FOR-PROGRESS`; existing generalized ArrayAccess/object dereference handling passes wrapper PHPT `Zend/tests/dereference/dereference_005.phpt` 1/1; no source patch, no cargo gate, no full-suite run, and no percent change |
 | `Zend/tests/dereference/dereference_008.phpt` dynamic-method array dereference PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and p14 `SAFE-FOR-PROGRESS`; existing dynamic-method dereference/reference behavior passes wrapper PHPT `Zend/tests/dereference/dereference_008.phpt` 1/1; no source patch, no cargo gate, no full-suite run, and no percent change |
@@ -161,12 +162,11 @@ Required live roles:
 Current AO snapshot: `phpc-orchestrator` supervising; `phpc-14` critic;
 `phpc-7` reviewer; `phpc-8` progress reporter; active coder/support lanes
 `phpc-15`, `phpc-16`, `phpc-17`, `phpc-18`, and `phpc-19`. Current
-public-progress watch targets are typed-properties
-`typed_properties_036`/successors, magic `bug72177`/successors, attributes
-backtrace/successors, jump `jump12`/successors, restrict-globals
-`invalid_pass_by_ref`/successors, the next p7-reviewed candidate plus p14
-`SAFE-FOR-PROGRESS` audit, current coder lane artifacts, and any new full-suite
-PHPT row. Known no-go/not-safe items,
+public-progress watch targets are jump `jump15`, typed-properties
+`typed_properties_039`/successors, magic `bug72854`/successors, attributes
+target-values/successors, debugInfo/restrict-globals successors, the next
+p7-reviewed candidate plus p14 `SAFE-FOR-PROGRESS` audit, current coder lane
+artifacts, and any new full-suite PHPT row. Known no-go/not-safe items,
 including unsuffixed `bug44899`, `bug46238`, `bug48248`, `foreach_010`,
 `foreach_016` and `foreach_list_001`, remain excluded. Extra sessions `phpc-22` and stale `phpc-2` are
 killed/not active roster capacity.
