@@ -45761,9 +45761,9 @@ impl Interpreter {
         span: Span,
     ) -> CompileResult<Value> {
         if !Self::builtin_callback_has_first_reference_array_param(key) {
-            let positional_args =
-                Self::call_user_func_array_positional_values(argument_array, span)?;
-            return self.call_builtin(key, positional_args, span);
+            let values =
+                Self::call_user_func_array_builtin_callback_values(key, argument_array, span)?;
+            return self.call_builtin(key, values, span);
         }
 
         for entry in argument_array.entries() {
@@ -45797,6 +45797,198 @@ impl Interpreter {
             .map(|entry| entry.value_cloned())
             .collect::<Vec<_>>();
         self.call_builtin_callback_with_values(key, positional_args, span, true)
+    }
+
+    fn call_user_func_array_builtin_callback_values(
+        key: &str,
+        argument_array: &PhpArray,
+        span: Span,
+    ) -> CompileResult<Vec<Value>> {
+        if !Self::call_user_func_array_value_has_string_keys(argument_array) {
+            return Self::call_user_func_array_positional_values(argument_array, span);
+        }
+
+        let Some(function) = reflection_internal_function_state(key) else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{key}()"),
+                    "string-keyed call_user_func_array() arguments require builtin parameter metadata in the current subset",
+                ),
+            ));
+        };
+
+        if function.params.iter().any(|param| param.by_reference) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{key}()"),
+                    "string-keyed call_user_func_array() arguments for reference-taking builtin callbacks are not implemented in the current subset",
+                ),
+            ));
+        }
+
+        Self::call_user_func_array_values_from_reflection_params(
+            key,
+            &function.params,
+            argument_array,
+            span,
+        )
+    }
+
+    fn call_user_func_array_values_from_reflection_params(
+        key: &str,
+        params: &[ReflectionParameterMetadata],
+        argument_array: &PhpArray,
+        span: Span,
+    ) -> CompileResult<Vec<Value>> {
+        let variadic_index = params.iter().position(|param| param.is_variadic);
+        let mut positional_index = 0usize;
+        let mut saw_named = false;
+        let mut seen_names = HashSet::new();
+        let mut values_by_param = vec![None; params.len()];
+        let mut variadic_values = Vec::new();
+
+        for entry in argument_array.entries() {
+            match &entry.key {
+                ArrayKey::Int(_) => {
+                    if saw_named {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "call_user_func_array()",
+                                "positional arguments after string-keyed named arguments are not implemented in the current subset",
+                            ),
+                        ));
+                    }
+                    if variadic_index
+                        .map(|index| positional_index >= index)
+                        .unwrap_or(false)
+                    {
+                        variadic_values.push(entry.value_cloned());
+                        positional_index += 1;
+                        continue;
+                    }
+                    let Some(slot) = values_by_param.get_mut(positional_index) else {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::arity_mismatch(
+                                callable_name(key),
+                                Self::reflection_params_arity_expectation(params),
+                                argument_array.len(),
+                            ),
+                        ));
+                    };
+                    *slot = Some(entry.value_cloned());
+                    positional_index += 1;
+                }
+                ArrayKey::String(name) => {
+                    saw_named = true;
+                    if !seen_names.insert(name.clone()) {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "call_user_func_array()",
+                                format!("named argument ${name} overwrites previous argument in the current subset"),
+                            ),
+                        ));
+                    }
+                    let Some(param_index) = params.iter().position(|param| param.name == *name)
+                    else {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "call_user_func_array()",
+                                format!("named argument ${name} does not match a declared builtin parameter in the current subset"),
+                            ),
+                        ));
+                    };
+                    if params[param_index].is_variadic {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "call_user_func_array()",
+                                "string-keyed named arguments for variadic builtin parameters are not implemented in the current subset",
+                            ),
+                        ));
+                    }
+                    if param_index < positional_index || values_by_param[param_index].is_some() {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "call_user_func_array()",
+                                format!("named argument ${name} overwrites previous argument in the current subset"),
+                            ),
+                        ));
+                    }
+                    values_by_param[param_index] = Some(entry.value_cloned());
+                }
+            }
+        }
+
+        let highest_supplied_index = values_by_param.iter().rposition(|value| value.is_some());
+        let mut values = Vec::new();
+        for (index, param) in params.iter().enumerate() {
+            if param.is_variadic {
+                break;
+            }
+            if let Some(value) = values_by_param[index].take() {
+                values.push(value);
+                continue;
+            }
+            if param.default.is_none() {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::arity_mismatch(
+                        callable_name(key),
+                        Self::reflection_params_arity_expectation(params),
+                        argument_array.len(),
+                    ),
+                ));
+            }
+            if highest_supplied_index.is_some_and(|highest| index < highest) {
+                let Some(default) = param
+                    .default
+                    .as_ref()
+                    .and_then(Self::reflection_parameter_default_value)
+                else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{key}()"),
+                            "named call_user_func_array() builtin defaults are not representable in the current subset",
+                        ),
+                    ));
+                };
+                values.push(default);
+            }
+        }
+        values.extend(variadic_values);
+
+        Ok(values)
+    }
+
+    fn reflection_params_arity_expectation(
+        params: &[ReflectionParameterMetadata],
+    ) -> ArityExpectation {
+        let required = params
+            .iter()
+            .filter(|param| !param.is_variadic && param.default.is_none())
+            .count();
+        let variadic = params.iter().any(|param| param.is_variadic);
+        let total = params.iter().filter(|param| !param.is_variadic).count();
+        arity_expectation(required, total, variadic)
+    }
+
+    fn reflection_parameter_default_value(expr: &Expr) -> Option<Value> {
+        match expr {
+            Expr::Null(_) => Some(Value::Null),
+            Expr::Bool(value, _) => Some(Value::Bool(*value)),
+            Expr::Int(value, _) => Some(Value::Int(*value)),
+            Expr::Float(value, _) => Some(Value::Float(*value)),
+            Expr::String(value, _) => Some(Value::String(value.clone())),
+            _ => None,
+        }
     }
 
     fn builtin_callback_has_first_reference_array_param(key: &str) -> bool {
@@ -65080,20 +65272,6 @@ impl Interpreter {
             ));
         };
 
-        let mut positional_args = Vec::with_capacity(argument_array.len());
-        for entry in argument_array.entries() {
-            if matches!(entry.key, ArrayKey::String(_)) {
-                return Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "call_user_func_array()",
-                        "string-keyed named arguments are not implemented in the current subset",
-                    ),
-                ));
-            }
-            positional_args.push(entry.value_cloned());
-        }
-
         match &args[0] {
             Value::String(callback_name) => {
                 if let Some((class_name, method_name)) =
@@ -65101,6 +65279,8 @@ impl Interpreter {
                 {
                     let callback =
                         static_method_array_callable_value(class_name, method_name, span)?;
+                    let positional_args =
+                        Self::call_user_func_array_positional_values(argument_array, span)?;
                     return self.call_array_callable_with_values(&callback, positional_args, span);
                 }
 
@@ -65120,17 +65300,25 @@ impl Interpreter {
                         span,
                     );
                 }
+                let positional_args =
+                    Self::call_user_func_array_positional_values(argument_array, span)?;
                 self.call_callable_with_values(callable, positional_args, span)
             }
             Value::Array(callback) => {
+                let positional_args =
+                    Self::call_user_func_array_positional_values(argument_array, span)?;
                 self.call_array_callable_with_values(callback, positional_args, span)
             }
-            Value::Closure(closure) => self.invoke_closure_value(
-                closure.clone(),
-                positional_args,
-                span,
-                "call_user_func_array()",
-            ),
+            Value::Closure(closure) => {
+                let positional_args =
+                    Self::call_user_func_array_positional_values(argument_array, span)?;
+                self.invoke_closure_value(
+                    closure.clone(),
+                    positional_args,
+                    span,
+                    "call_user_func_array()",
+                )
+            }
             other => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(

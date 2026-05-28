@@ -177,6 +177,26 @@ call_user_func_array($variadic, array("A", "c" => "C"));
 }
 
 #[test]
+fn call_user_func_array_binds_named_arguments_for_metadata_backed_builtins() {
+    let execution = run_source(
+        r#"<?php
+$strlen = array("string" => "four");
+echo call_user_func_array("strlen", $strlen), "\n";
+
+$substr = array("string" => "abcdef", "length" => 3, "offset" => 1);
+echo call_user_func_array("substr", $substr), "\n";
+
+$count = array("value" => array("a" => 1, "b" => 2));
+echo call_user_func_array("count", $count);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "4\nbcd\n2");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn closure_values_invoke_directly_and_through_callback_dispatch() {
     let execution = run_source(
         r#"<?php
