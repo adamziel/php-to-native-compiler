@@ -43,7 +43,13 @@ object-property array roots such as `$object->items` and
 `$object->{$name}` and `$object->{$name}["child"]` when the evaluated property
 is visible in the current public/private/protected context, using the existing
 public/context property alias root instead of a general PHP reference
-container. By-reference `foreach` over an ordinary direct non-`Traversable`
+container. Direct object-property loop value targets, such as
+`foreach ($items as &$object->slot)` and
+`foreach ($items as &$object->{$name})`, bind the selected property storage to
+the same current foreach slot reference cell used for direct loop variables;
+the property can therefore write through to the active slot and remains a
+reference to the last visited slot after a non-empty loop. By-reference
+`foreach` over an ordinary direct non-`Traversable`
 object variable, such as `foreach ($object as $key => &$value)`, snapshots the
 object's currently initialized public properties into ordered foreach entries
 and binds each visited property through a public object-property alias root.

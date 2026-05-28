@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use crate::ast::{
     ArrayItem, AssignTarget, BinaryOp, CastKind, CatchClause, CatchType, ClassConstantDecl,
     ClassDecl, ClassMember, ClassMethodDecl, ClassPropertyDecl, ClassVisibility, ClosureCapture,
-    CompoundAssignOp, ConstDeclarator, EnumCaseDecl, EnumDecl, Expr, ForAction, FunctionDecl,
-    FunctionParam, IncrementDecrementOp, IncrementDecrementPosition, InterfaceDecl,
+    CompoundAssignOp, ConstDeclarator, EnumCaseDecl, EnumDecl, Expr, ForAction, ForeachValueTarget,
+    FunctionDecl, FunctionParam, IncrementDecrementOp, IncrementDecrementPosition, InterfaceDecl,
     InterfaceMethodDecl, NewClassName, Program, ReferenceSource, Span, StaticLocalDeclarator, Stmt,
     SwitchCase, TraitDecl, TraitMethodAliasDecl, TraitMethodPrecedenceDecl,
     TraitMethodVisibilityDecl, TraitUseDecl, TypeDecl, UnaryOp, UnsetTarget, UseImport,
@@ -2169,7 +2169,7 @@ impl Parser {
                 unsupported_foreach_destructuring_message(),
             ));
         }
-        let (first_variable, _) =
+        let (first_variable, first_variable_span) =
             self.consume_variable_with_span("expected foreach value variable")?;
         let (key, value, by_reference) = if self
             .match_token(|kind| matches!(kind, TokenKind::FatArrow))
@@ -2187,10 +2187,14 @@ impl Parser {
                     unsupported_foreach_destructuring_message(),
                 ));
             }
-            let (value, _) = self.consume_variable_with_span("expected foreach value variable")?;
+            let (value, value_span) =
+                self.consume_variable_with_span("expected foreach value variable")?;
+            let value = self.parse_foreach_value_target_tail(value, value_span)?;
             (Some(first_variable), value, value_by_reference)
         } else {
-            (None, first_variable, first_by_reference)
+            let value =
+                self.parse_foreach_value_target_tail(first_variable, first_variable_span)?;
+            (None, value, first_by_reference)
         };
         self.consume_keyword(
             TokenKind::RParen,
@@ -2204,6 +2208,33 @@ impl Parser {
             value,
             by_reference,
             body,
+            span,
+        })
+    }
+
+    fn parse_foreach_value_target_tail(
+        &mut self,
+        name: String,
+        span: Span,
+    ) -> CompileResult<ForeachValueTarget> {
+        if !self.match_token(|kind| matches!(kind, TokenKind::ObjectOperator)) {
+            return Ok(ForeachValueTarget::Variable { name, span });
+        }
+
+        let operator_span = self.previous().span;
+        if matches!(self.peek().kind, TokenKind::Variable(_) | TokenKind::LBrace) {
+            let property = self.parse_dynamic_property_name_expr(operator_span)?;
+            return Ok(ForeachValueTarget::DynamicProperty {
+                object: name,
+                property: Box::new(property),
+                span,
+            });
+        }
+
+        let (property, _) = self.consume_object_property_name(operator_span)?;
+        Ok(ForeachValueTarget::Property {
+            object: name,
+            property,
             span,
         })
     }

@@ -42089,14 +42089,19 @@ impl CGenerator {
                 by_reference,
                 body,
                 span,
-            } => self.emit_native_array_foreach_statement(
-                iterable,
-                key.as_deref(),
-                value,
-                *by_reference,
-                body,
-                *span,
-            ),
+            } => {
+                let Some(value) = value.variable_name() else {
+                    return Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION));
+                };
+                self.emit_native_array_foreach_statement(
+                    iterable,
+                    key.as_deref(),
+                    value,
+                    *by_reference,
+                    body,
+                    *span,
+                )
+            }
             Stmt::UnsetVariable { name, span } => {
                 if is_request_superglobal_name(name) {
                     return self.emit_request_superglobal_root_unset(name, "");

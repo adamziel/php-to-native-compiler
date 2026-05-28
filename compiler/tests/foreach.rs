@@ -311,6 +311,37 @@ echo $value;
 }
 
 #[test]
+fn foreach_by_reference_binds_object_property_value_target() {
+    let source = r#"<?php
+$obj = new stdClass();
+$items = ["a" => 1, "b" => 2];
+
+foreach ($items as $key => &$obj->slot) {
+    echo $key, ":", $obj->slot, "|";
+    if ($key === "a") {
+        $obj->slot = 10;
+    }
+}
+
+echo $items["a"], "|", $items["b"], "|";
+$items["b"] = 20;
+echo $obj->slot, "|";
+$obj->slot = 30;
+echo $items["b"], "|";
+
+$property = "dynamic";
+foreach (["x"] as &$obj->{$property}) {
+    $obj->{$property} = $obj->{$property} . "!";
+}
+echo $obj->dynamic;
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(execution.stdout, "a:1|b:2|10|2|20|30|x!");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn foreach_by_reference_mutates_string_keyed_globals_array_root() {
     let source = r#"<?php
 $GLOBALS["bag"] = ["one" => "a", "two" => "b"];

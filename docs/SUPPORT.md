@@ -2392,7 +2392,14 @@
   direct non-reference-returning function calls returning arrays; those route
   the loop value variable to an internal temporary array slot and preserve
   PHP's post-loop lingering reference behavior without mutating a source
-  variable. Direct array-offset paths such as
+  variable. The loop value target may also be a direct visible object property
+  lvalue, such as `foreach ($items as &$object->slot)`, or a direct dynamic
+  property spelling such as `foreach ($items as &$object->{$name})`; the
+  property is rebound to each current foreach slot, writes through that
+  property update the slot, and after a non-empty loop the property remains a
+  reference to the last visited slot. Missing dynamic public properties are
+  created only through the existing bounded dynamic-property rules, such as
+  `stdClass`. Direct array-offset paths such as
   `foreach ($items["child"] as &$value)`, auto-global/request-bag paths such as
   `foreach ($_REQUEST["payload"] as &$value)`, and string-keyed `$GLOBALS`
   paths such as `foreach ($GLOBALS["bag"]["child"] as $key => &$value)` also
@@ -2470,7 +2477,7 @@
   `$this->property` array and selected-bucket return expressions,
   `IteratorAggregate` returns outside the bounded userland `Iterator` object
   path or non-traversable diagnostic path, direct `Traversable`
-  implementations,
+  implementations, non-direct object-property loop value targets,
   ArrayAccess roots outside the exact direct/property-held/non-direct-holder
   `offsetGet()` bridge, non-direct property holder expressions outside
   the documented object-result named/dynamic property foreach slice and this

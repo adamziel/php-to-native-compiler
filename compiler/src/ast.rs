@@ -102,7 +102,7 @@ pub enum Stmt {
     Foreach {
         iterable: Expr,
         key: Option<String>,
-        value: String,
+        value: ForeachValueTarget,
         by_reference: bool,
         body: Vec<Stmt>,
         span: Span,
@@ -531,6 +531,41 @@ pub enum ReferenceSource {
         expr: Expr,
         span: Span,
     },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ForeachValueTarget {
+    Variable {
+        name: String,
+        span: Span,
+    },
+    Property {
+        object: String,
+        property: String,
+        span: Span,
+    },
+    DynamicProperty {
+        object: String,
+        property: Box<Expr>,
+        span: Span,
+    },
+}
+
+impl ForeachValueTarget {
+    pub fn variable_name(&self) -> Option<&str> {
+        match self {
+            Self::Variable { name, .. } => Some(name),
+            Self::Property { .. } | Self::DynamicProperty { .. } => None,
+        }
+    }
+
+    pub fn span(&self) -> Span {
+        match self {
+            Self::Variable { span, .. }
+            | Self::Property { span, .. }
+            | Self::DynamicProperty { span, .. } => *span,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

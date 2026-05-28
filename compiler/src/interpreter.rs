@@ -20,11 +20,11 @@ use sha2::Sha256;
 use crate::ast::{
     ArrayItem, AssignTarget, BinaryOp, CastKind, CatchClause, ClassConstantDecl, ClassDecl,
     ClassMember, ClassMethodDecl, ClassPropertyDecl, ClassVisibility, ClosureCapture,
-    CompoundAssignOp, EnumDecl, Expr, ForAction, FunctionDecl, FunctionParam, IncrementDecrementOp,
-    IncrementDecrementPosition, InterfaceDecl, InterfaceMethodDecl, InterpolatedAccessSegment,
-    InterpolatedArrayKey, InterpolatedStringPart, NewClassName, Program, ReferenceSource, Span,
-    StaticLocalDeclarator, Stmt, SwitchCase, TraitDecl, TraitUseDecl, TypeDecl, UnaryOp,
-    UnsetTarget,
+    CompoundAssignOp, EnumDecl, Expr, ForAction, ForeachValueTarget, FunctionDecl, FunctionParam,
+    IncrementDecrementOp, IncrementDecrementPosition, InterfaceDecl, InterfaceMethodDecl,
+    InterpolatedAccessSegment, InterpolatedArrayKey, InterpolatedStringPart, NewClassName, Program,
+    ReferenceSource, Span, StaticLocalDeclarator, Stmt, SwitchCase, TraitDecl, TraitUseDecl,
+    TypeDecl, UnaryOp, UnsetTarget,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 use crate::parser::parse_source;
@@ -7980,6 +7980,90 @@ fn foreach_root_slot_aliases(
     }
 }
 
+fn foreach_root_slot_aliases_for_binding(
+    scope: &SymbolTable,
+    root: &ForeachArrayRoot,
+    key: &ArrayKey,
+) -> Option<Vec<ArrayOffsetAlias>> {
+    if let Some(aliases) = foreach_root_slot_aliases(scope, root, key) {
+        return Some(aliases);
+    }
+
+    match root {
+        ForeachArrayRoot::Static { name, keys } => {
+            let mut alias_keys = keys.clone();
+            alias_keys.push(key.clone());
+            Some(vec![ArrayOffsetAlias {
+                root: ArrayOffsetAliasRoot::StaticArray { name: name.clone() },
+                keys: alias_keys,
+            }])
+        }
+        ForeachArrayRoot::Global { name, keys } => {
+            let mut alias_keys = keys.clone();
+            alias_keys.push(key.clone());
+            Some(vec![ArrayOffsetAlias {
+                root: ArrayOffsetAliasRoot::GlobalArray { name: name.clone() },
+                keys: alias_keys,
+            }])
+        }
+        ForeachArrayRoot::Alias { root, keys } => {
+            let mut alias_keys = keys.clone();
+            alias_keys.push(key.clone());
+            Some(vec![ArrayOffsetAlias {
+                root: root.clone(),
+                keys: alias_keys,
+            }])
+        }
+        ForeachArrayRoot::Aliases { aliases } => Some(
+            aliases
+                .iter()
+                .map(|alias| {
+                    let mut alias = alias.clone();
+                    alias.keys.push(key.clone());
+                    alias
+                })
+                .collect(),
+        ),
+        ForeachArrayRoot::ObjectProperties { .. } => None,
+    }
+}
+
+fn foreach_reference_cell_for_key(
+    scope: &mut SymbolTable,
+    root: &ForeachArrayRoot,
+    key: &ArrayKey,
+    span: Span,
+) -> CompileResult<VariableCell> {
+    let Some(aliases) = foreach_root_slot_aliases_for_binding(scope, root, key) else {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "foreach",
+                "by-reference object-property loop targets require an addressable array or object-property slot",
+            ),
+        ));
+    };
+
+    for alias in &aliases {
+        scope.materialize_array_offset_alias(alias, span)?;
+    }
+    let alias_group = aliases
+        .first()
+        .and_then(|alias| scope.array_offset_alias_group_for_stored_root_path(alias.clone(), None))
+        .unwrap_or_else(|| aliases.clone());
+    scope
+        .reference_cell_for_array_offset_alias_group_with_value_promotion(&alias_group)
+        .ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "foreach",
+                    "could not materialize a reference cell for the current foreach slot",
+                ),
+            )
+        })
+}
+
 fn bind_foreach_reference_to_key(
     scope: &mut SymbolTable,
     value: &str,
@@ -9239,11 +9323,165 @@ impl Interpreter {
         }
     }
 
+    fn write_foreach_value_target(
+        &mut self,
+        target: &ForeachValueTarget,
+        assigned_value: Value,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<()> {
+        match target {
+            ForeachValueTarget::Variable { name, .. } => {
+                scope.write_static(name, assigned_value);
+                Ok(())
+            }
+            ForeachValueTarget::Property {
+                object, property, ..
+            } => self.write_foreach_object_property_target(
+                object,
+                property,
+                assigned_value,
+                span,
+                scope,
+            ),
+            ForeachValueTarget::DynamicProperty {
+                object, property, ..
+            } => {
+                let property_name = self.evaluate_dynamic_property_name(property, span, scope)?;
+                self.write_foreach_object_property_target(
+                    object,
+                    &property_name,
+                    assigned_value,
+                    span,
+                    scope,
+                )
+            }
+        }
+    }
+
+    fn write_foreach_object_property_target(
+        &mut self,
+        object_name: &str,
+        property: &str,
+        assigned_value: Value,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<()> {
+        let object = match scope.read_static(object_name, span)? {
+            Value::Object(object) => object,
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::invalid_property_access(format!(
+                        "cannot write property ${property} on {}",
+                        other.type_name()
+                    )),
+                ));
+            }
+        };
+        let (current_class_id, protected_class_ids) = self.current_property_access_context();
+        object
+            .write_property_from_context(
+                property,
+                assigned_value,
+                current_class_id,
+                &protected_class_ids,
+            )
+            .map_err(|error| runtime_error(span, error))
+    }
+
+    fn bind_foreach_value_target_reference_to_key(
+        &mut self,
+        target: &ForeachValueTarget,
+        root: &ForeachArrayRoot,
+        key: &ArrayKey,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<()> {
+        match target {
+            ForeachValueTarget::Variable { name, .. } => {
+                bind_foreach_reference_to_key(scope, name, root, key, span)
+            }
+            ForeachValueTarget::Property {
+                object, property, ..
+            } => {
+                let reference = foreach_reference_cell_for_key(scope, root, key, span)?;
+                self.bind_foreach_object_property_reference_cell(
+                    object, property, reference, span, scope,
+                )
+            }
+            ForeachValueTarget::DynamicProperty {
+                object, property, ..
+            } => {
+                let property_name = self.evaluate_dynamic_property_name(property, span, scope)?;
+                let reference = foreach_reference_cell_for_key(scope, root, key, span)?;
+                self.bind_foreach_object_property_reference_cell(
+                    object,
+                    &property_name,
+                    reference,
+                    span,
+                    scope,
+                )
+            }
+        }
+    }
+
+    fn bind_foreach_object_property_reference_cell(
+        &mut self,
+        object_name: &str,
+        property: &str,
+        reference: VariableCell,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<()> {
+        let object = match scope.read_static(object_name, span)? {
+            Value::Object(object) => object,
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::invalid_property_access(format!(
+                        "cannot write property ${property} on {}",
+                        other.type_name()
+                    )),
+                ));
+            }
+        };
+
+        let (current_class_id, protected_class_ids) = self.current_property_access_context();
+        match object.bind_property_reference_cell_to_context(
+            property,
+            reference.clone(),
+            current_class_id,
+            &protected_class_ids,
+        ) {
+            Ok(()) => Ok(()),
+            Err(error) if matches!(error.kind(), RuntimeErrorKind::UndefinedProperty { .. }) => {
+                object
+                    .write_property_from_context(
+                        property,
+                        Value::Null,
+                        current_class_id,
+                        &protected_class_ids,
+                    )
+                    .map_err(|error| runtime_error(span, error))?;
+                object
+                    .bind_property_reference_cell_to_context(
+                        property,
+                        reference,
+                        current_class_id,
+                        &protected_class_ids,
+                    )
+                    .map_err(|error| runtime_error(span, error))
+            }
+            Err(error) => Err(runtime_error(span, error)),
+        }
+    }
+
     fn execute_foreach_by_value_iterable(
         &mut self,
         iterable: Value,
         key: &Option<String>,
-        value: &str,
+        value: &ForeachValueTarget,
         body: &[Stmt],
         span: Span,
         scope: &mut SymbolTable,
@@ -9302,7 +9540,7 @@ impl Interpreter {
         &mut self,
         array: PhpArray,
         key: &Option<String>,
-        value: &str,
+        value: &ForeachValueTarget,
         body: &[Stmt],
         span: Span,
         scope: &mut SymbolTable,
@@ -9312,7 +9550,7 @@ impl Interpreter {
             if let Some(key) = key {
                 scope.write_static(key, value_from_array_key(&entry.key));
             }
-            scope.write_static(value, entry.value_cloned());
+            self.write_foreach_value_target(value, entry.value_cloned(), span, scope)?;
             match self.execute_statements(body, scope)? {
                 Flow::Normal => {}
                 Flow::Continue { depth, .. } if depth <= 1 => {}
@@ -9345,7 +9583,7 @@ impl Interpreter {
         &mut self,
         object: PhpObject,
         key: &Option<String>,
-        value: &str,
+        value: &ForeachValueTarget,
         body: &[Stmt],
         span: Span,
         scope: &mut SymbolTable,
@@ -9364,7 +9602,12 @@ impl Interpreter {
             if let Some(key) = key {
                 scope.write_static(key, Value::String(property.clone()));
             }
-            scope.write_static(value, object.read_public_property(&property)?);
+            self.write_foreach_value_target(
+                value,
+                object.read_public_property(&property)?,
+                span,
+                scope,
+            )?;
             match self.execute_statements(body, scope)? {
                 Flow::Normal => {}
                 Flow::Continue { depth, .. } if depth <= 1 => {}
@@ -9875,7 +10118,7 @@ impl Interpreter {
         &mut self,
         iterable: &Expr,
         key: &Option<String>,
-        value: &str,
+        value: &ForeachValueTarget,
         body: &[Stmt],
         span: Span,
         scope: &mut SymbolTable,
@@ -9896,42 +10139,61 @@ impl Interpreter {
             if let Some(key) = key {
                 scope.write_static(key, value_from_array_key(&entry_key));
             }
-            bind_foreach_reference_to_key(scope, value, &root, &entry_key, span)?;
-            self.active_foreach_references.push(ActiveForeachReference {
-                root: root.clone(),
-                value_name: value.to_string(),
-                key: entry_key.clone(),
-            });
+            self.bind_foreach_value_target_reference_to_key(value, &root, &entry_key, span, scope)?;
+            if let Some(value_name) = value.variable_name() {
+                self.active_foreach_references.push(ActiveForeachReference {
+                    root: root.clone(),
+                    value_name: value_name.to_string(),
+                    key: entry_key.clone(),
+                });
+            }
             let flow_result = self.execute_array_copy_return_statement_list(body, scope);
-            self.active_foreach_references.pop();
+            if value.variable_name().is_some() {
+                self.active_foreach_references.pop();
+            }
             let flow = flow_result?;
 
-            let value_still_bound = if let Some(expected_aliases) =
-                foreach_root_slot_aliases(scope, &root, &entry_key)
-            {
-                scope
-                    .array_offset_aliases_for_name(value)
-                    .is_some_and(|bound_aliases| bound_aliases == expected_aliases)
-            } else {
-                match &root {
-                    ForeachArrayRoot::Static { name, keys } => {
-                        let mut alias_keys = keys.clone();
-                        alias_keys.push(entry_key.clone());
-                        scope.is_static_bound_to_array_offset_path(value, name, &alias_keys)
+            let value_still_bound = if let Some(value_name) = value.variable_name() {
+                if let Some(expected_aliases) = foreach_root_slot_aliases(scope, &root, &entry_key)
+                {
+                    scope
+                        .array_offset_aliases_for_name(value_name)
+                        .is_some_and(|bound_aliases| bound_aliases == expected_aliases)
+                } else {
+                    match &root {
+                        ForeachArrayRoot::Static { name, keys } => {
+                            let mut alias_keys = keys.clone();
+                            alias_keys.push(entry_key.clone());
+                            scope.is_static_bound_to_array_offset_path(
+                                value_name,
+                                name,
+                                &alias_keys,
+                            )
+                        }
+                        ForeachArrayRoot::Global { name, keys } => {
+                            let mut alias_keys = keys.clone();
+                            alias_keys.push(entry_key.clone());
+                            scope.is_static_bound_to_global_array_offset_path(
+                                value_name,
+                                name,
+                                &alias_keys,
+                            )
+                        }
+                        ForeachArrayRoot::Alias { root, keys } => {
+                            let mut alias_keys = keys.clone();
+                            alias_keys.push(entry_key.clone());
+                            scope.is_static_bound_to_array_offset_alias_root(
+                                value_name,
+                                root,
+                                &alias_keys,
+                            )
+                        }
+                        ForeachArrayRoot::Aliases { .. } => false,
+                        ForeachArrayRoot::ObjectProperties { .. } => false,
                     }
-                    ForeachArrayRoot::Global { name, keys } => {
-                        let mut alias_keys = keys.clone();
-                        alias_keys.push(entry_key.clone());
-                        scope.is_static_bound_to_global_array_offset_path(value, name, &alias_keys)
-                    }
-                    ForeachArrayRoot::Alias { root, keys } => {
-                        let mut alias_keys = keys.clone();
-                        alias_keys.push(entry_key.clone());
-                        scope.is_static_bound_to_array_offset_alias_root(value, root, &alias_keys)
-                    }
-                    ForeachArrayRoot::Aliases { .. } => false,
-                    ForeachArrayRoot::ObjectProperties { .. } => false,
                 }
+            } else {
+                false
             };
             let array = Self::read_foreach_root_array(&root, scope, span)?;
             let current_position = array
@@ -9960,13 +10222,15 @@ impl Interpreter {
                     depth,
                     span: flow_span,
                 } => {
-                    bind_foreach_lingering_reference(
-                        scope,
-                        value,
-                        &root,
-                        lingering_reference_key,
-                        span,
-                    )?;
+                    if let Some(value_name) = value.variable_name() {
+                        bind_foreach_lingering_reference(
+                            scope,
+                            value_name,
+                            &root,
+                            lingering_reference_key,
+                            span,
+                        )?;
+                    }
                     return Ok(ArrayCopyReturnBodyFlow::Continue {
                         depth: depth - 1,
                         span: flow_span,
@@ -9977,13 +10241,15 @@ impl Interpreter {
                     depth,
                     span: flow_span,
                 } => {
-                    bind_foreach_lingering_reference(
-                        scope,
-                        value,
-                        &root,
-                        lingering_reference_key,
-                        span,
-                    )?;
+                    if let Some(value_name) = value.variable_name() {
+                        bind_foreach_lingering_reference(
+                            scope,
+                            value_name,
+                            &root,
+                            lingering_reference_key,
+                            span,
+                        )?;
+                    }
                     return Ok(ArrayCopyReturnBodyFlow::Break {
                         depth: depth - 1,
                         span: flow_span,
@@ -9993,26 +10259,30 @@ impl Interpreter {
                     label,
                     span: flow_span,
                 } => {
-                    bind_foreach_lingering_reference(
-                        scope,
-                        value,
-                        &root,
-                        lingering_reference_key,
-                        span,
-                    )?;
+                    if let Some(value_name) = value.variable_name() {
+                        bind_foreach_lingering_reference(
+                            scope,
+                            value_name,
+                            &root,
+                            lingering_reference_key,
+                            span,
+                        )?;
+                    }
                     return Ok(ArrayCopyReturnBodyFlow::Goto {
                         label,
                         span: flow_span,
                     });
                 }
                 flow @ ArrayCopyReturnBodyFlow::Throw { .. } => {
-                    bind_foreach_lingering_reference(
-                        scope,
-                        value,
-                        &root,
-                        lingering_reference_key,
-                        span,
-                    )?;
+                    if let Some(value_name) = value.variable_name() {
+                        bind_foreach_lingering_reference(
+                            scope,
+                            value_name,
+                            &root,
+                            lingering_reference_key,
+                            span,
+                        )?;
+                    }
                     return Ok(flow);
                 }
                 flow @ (ArrayCopyReturnBodyFlow::Return { .. }
@@ -10022,7 +10292,15 @@ impl Interpreter {
             }
         }
 
-        bind_foreach_lingering_reference(scope, value, &root, lingering_reference_key, span)?;
+        if let Some(value_name) = value.variable_name() {
+            bind_foreach_lingering_reference(
+                scope,
+                value_name,
+                &root,
+                lingering_reference_key,
+                span,
+            )?;
+        }
         Ok(ArrayCopyReturnBodyFlow::Normal)
     }
 
@@ -10030,7 +10308,7 @@ impl Interpreter {
         &mut self,
         iterable: Value,
         key: &Option<String>,
-        value: &str,
+        value: &ForeachValueTarget,
         body: &[Stmt],
         span: Span,
         scope: &mut SymbolTable,
@@ -10092,7 +10370,7 @@ impl Interpreter {
         &mut self,
         array: PhpArray,
         key: &Option<String>,
-        value: &str,
+        value: &ForeachValueTarget,
         body: &[Stmt],
         span: Span,
         scope: &mut SymbolTable,
@@ -10102,7 +10380,7 @@ impl Interpreter {
             if let Some(key) = key {
                 scope.write_static(key, value_from_array_key(&entry.key));
             }
-            scope.write_static(value, entry.value_cloned());
+            self.write_foreach_value_target(value, entry.value_cloned(), span, scope)?;
             let flow = self.execute_array_copy_return_statement_list(body, scope)?;
             match flow {
                 ArrayCopyReturnBodyFlow::Normal => {}
@@ -10134,7 +10412,7 @@ impl Interpreter {
         &mut self,
         object: PhpObject,
         key: &Option<String>,
-        value: &str,
+        value: &ForeachValueTarget,
         body: &[Stmt],
         span: Span,
         scope: &mut SymbolTable,
@@ -10153,7 +10431,12 @@ impl Interpreter {
             if let Some(key) = key {
                 scope.write_static(key, Value::String(property.clone()));
             }
-            scope.write_static(value, object.read_public_property(&property)?);
+            self.write_foreach_value_target(
+                value,
+                object.read_public_property(&property)?,
+                span,
+                scope,
+            )?;
             let flow = self.execute_array_copy_return_statement_list(body, scope)?;
             match flow {
                 ArrayCopyReturnBodyFlow::Normal => {}
@@ -10185,7 +10468,7 @@ impl Interpreter {
         &mut self,
         object: PhpObject,
         key: &Option<String>,
-        value: &str,
+        value: &ForeachValueTarget,
         body: &[Stmt],
         span: Span,
         scope: &mut SymbolTable,
@@ -10212,13 +10495,17 @@ impl Interpreter {
                     self.call_required_iterator_method(object.clone(), "key", span)?;
                 scope.write_static(key, iterator_key);
             }
-            let target_is_alias = scope.is_array_offset_alias_name(value);
+            let target_is_alias = value
+                .variable_name()
+                .is_some_and(|name| scope.is_array_offset_alias_name(name));
             let current_is_array = matches!(current, Value::Array(_));
-            scope.write_static(value, current);
+            self.write_foreach_value_target(value, current, span, scope)?;
             if !target_is_alias && current_is_array {
                 if let Some(source) = array_copy_source {
-                    scope.mirror_array_copy_source_aliases_from_copy(value, &source);
-                    scope.record_public_object_property_array_copy_source(value, source);
+                    if let Some(name) = value.variable_name() {
+                        scope.mirror_array_copy_source_aliases_from_copy(name, &source);
+                        scope.record_public_object_property_array_copy_source(name, source);
+                    }
                 }
             }
 
@@ -11482,7 +11769,7 @@ impl Interpreter {
         &mut self,
         object: PhpObject,
         key: &Option<String>,
-        value: &str,
+        value: &ForeachValueTarget,
         body: &[Stmt],
         span: Span,
         scope: &mut SymbolTable,
@@ -11509,13 +11796,17 @@ impl Interpreter {
                     self.call_required_iterator_method(object.clone(), "key", span)?;
                 scope.write_static(key, iterator_key);
             }
-            let target_is_alias = scope.is_array_offset_alias_name(value);
+            let target_is_alias = value
+                .variable_name()
+                .is_some_and(|name| scope.is_array_offset_alias_name(name));
             let current_is_array = matches!(current, Value::Array(_));
-            scope.write_static(value, current);
+            self.write_foreach_value_target(value, current, span, scope)?;
             if !target_is_alias && current_is_array {
                 if let Some(source) = array_copy_source {
-                    scope.mirror_array_copy_source_aliases_from_copy(value, &source);
-                    scope.record_public_object_property_array_copy_source(value, source);
+                    if let Some(name) = value.variable_name() {
+                        scope.mirror_array_copy_source_aliases_from_copy(name, &source);
+                        scope.record_public_object_property_array_copy_source(name, source);
+                    }
                 }
             }
 
@@ -12832,54 +13123,64 @@ impl Interpreter {
                         if let Some(key) = key {
                             scope.write_static(key, value_from_array_key(&entry_key));
                         }
-                        bind_foreach_reference_to_key(scope, value, &root, &entry_key, *span)?;
-                        self.active_foreach_references.push(ActiveForeachReference {
-                            root: root.clone(),
-                            value_name: value.clone(),
-                            key: entry_key.clone(),
-                        });
+                        self.bind_foreach_value_target_reference_to_key(
+                            value, &root, &entry_key, *span, scope,
+                        )?;
+                        if let Some(value_name) = value.variable_name() {
+                            self.active_foreach_references.push(ActiveForeachReference {
+                                root: root.clone(),
+                                value_name: value_name.to_string(),
+                                key: entry_key.clone(),
+                            });
+                        }
                         let flow_result = self.execute_statements(body, scope);
-                        self.active_foreach_references.pop();
+                        if value.variable_name().is_some() {
+                            self.active_foreach_references.pop();
+                        }
                         let flow = flow_result?;
 
-                        let value_still_bound = if let Some(expected_aliases) =
-                            foreach_root_slot_aliases(scope, &root, &entry_key)
-                        {
-                            scope
-                                .array_offset_aliases_for_name(value)
-                                .is_some_and(|bound_aliases| bound_aliases == expected_aliases)
-                        } else {
-                            match &root {
-                                ForeachArrayRoot::Static { name, keys } => {
-                                    let mut alias_keys = keys.clone();
-                                    alias_keys.push(entry_key.clone());
-                                    scope.is_static_bound_to_array_offset_path(
-                                        value,
-                                        name,
-                                        &alias_keys,
-                                    )
+                        let value_still_bound = if let Some(value_name) = value.variable_name() {
+                            if let Some(expected_aliases) =
+                                foreach_root_slot_aliases(scope, &root, &entry_key)
+                            {
+                                scope
+                                    .array_offset_aliases_for_name(value_name)
+                                    .is_some_and(|bound_aliases| bound_aliases == expected_aliases)
+                            } else {
+                                match &root {
+                                    ForeachArrayRoot::Static { name, keys } => {
+                                        let mut alias_keys = keys.clone();
+                                        alias_keys.push(entry_key.clone());
+                                        scope.is_static_bound_to_array_offset_path(
+                                            value_name,
+                                            name,
+                                            &alias_keys,
+                                        )
+                                    }
+                                    ForeachArrayRoot::Global { name, keys } => {
+                                        let mut alias_keys = keys.clone();
+                                        alias_keys.push(entry_key.clone());
+                                        scope.is_static_bound_to_global_array_offset_path(
+                                            value_name,
+                                            name,
+                                            &alias_keys,
+                                        )
+                                    }
+                                    ForeachArrayRoot::Alias { root, keys } => {
+                                        let mut alias_keys = keys.clone();
+                                        alias_keys.push(entry_key.clone());
+                                        scope.is_static_bound_to_array_offset_alias_root(
+                                            value_name,
+                                            root,
+                                            &alias_keys,
+                                        )
+                                    }
+                                    ForeachArrayRoot::Aliases { .. } => false,
+                                    ForeachArrayRoot::ObjectProperties { .. } => false,
                                 }
-                                ForeachArrayRoot::Global { name, keys } => {
-                                    let mut alias_keys = keys.clone();
-                                    alias_keys.push(entry_key.clone());
-                                    scope.is_static_bound_to_global_array_offset_path(
-                                        value,
-                                        name,
-                                        &alias_keys,
-                                    )
-                                }
-                                ForeachArrayRoot::Alias { root, keys } => {
-                                    let mut alias_keys = keys.clone();
-                                    alias_keys.push(entry_key.clone());
-                                    scope.is_static_bound_to_array_offset_alias_root(
-                                        value,
-                                        root,
-                                        &alias_keys,
-                                    )
-                                }
-                                ForeachArrayRoot::Aliases { .. } => false,
-                                ForeachArrayRoot::ObjectProperties { .. } => false,
                             }
+                        } else {
+                            false
                         };
                         let array = Self::read_foreach_root_array(&root, scope, *span)?;
                         let current_position = array
@@ -12909,13 +13210,15 @@ impl Interpreter {
                                 depth,
                                 span: flow_span,
                             } => {
-                                bind_foreach_lingering_reference(
-                                    scope,
-                                    value,
-                                    &root,
-                                    lingering_reference_key,
-                                    *span,
-                                )?;
+                                if let Some(value_name) = value.variable_name() {
+                                    bind_foreach_lingering_reference(
+                                        scope,
+                                        value_name,
+                                        &root,
+                                        lingering_reference_key,
+                                        *span,
+                                    )?;
+                                }
                                 return Ok(Flow::Continue {
                                     depth: depth - 1,
                                     span: flow_span,
@@ -12926,13 +13229,15 @@ impl Interpreter {
                                 depth,
                                 span: flow_span,
                             } => {
-                                bind_foreach_lingering_reference(
-                                    scope,
-                                    value,
-                                    &root,
-                                    lingering_reference_key,
-                                    *span,
-                                )?;
+                                if let Some(value_name) = value.variable_name() {
+                                    bind_foreach_lingering_reference(
+                                        scope,
+                                        value_name,
+                                        &root,
+                                        lingering_reference_key,
+                                        *span,
+                                    )?;
+                                }
                                 return Ok(Flow::Break {
                                     depth: depth - 1,
                                     span: flow_span,
@@ -12942,13 +13247,15 @@ impl Interpreter {
                                 label,
                                 span: flow_span,
                             } => {
-                                bind_foreach_lingering_reference(
-                                    scope,
-                                    value,
-                                    &root,
-                                    lingering_reference_key,
-                                    *span,
-                                )?;
+                                if let Some(value_name) = value.variable_name() {
+                                    bind_foreach_lingering_reference(
+                                        scope,
+                                        value_name,
+                                        &root,
+                                        lingering_reference_key,
+                                        *span,
+                                    )?;
+                                }
                                 return Ok(Flow::Goto {
                                     label,
                                     span: flow_span,
@@ -12960,13 +13267,15 @@ impl Interpreter {
                         }
                     }
 
-                    bind_foreach_lingering_reference(
-                        scope,
-                        value,
-                        &root,
-                        lingering_reference_key,
-                        *span,
-                    )?;
+                    if let Some(value_name) = value.variable_name() {
+                        bind_foreach_lingering_reference(
+                            scope,
+                            value_name,
+                            &root,
+                            lingering_reference_key,
+                            *span,
+                        )?;
+                    }
                     return Ok(Flow::Normal);
                 }
                 let iterable = self.evaluate(iterable, scope)?;
@@ -52254,7 +52563,7 @@ impl Interpreter {
         function: &FunctionDecl,
         object: PhpObject,
         key: &Option<String>,
-        value: &str,
+        value: &ForeachValueTarget,
         body: &[Stmt],
         span: Span,
         scope: &mut SymbolTable,
@@ -52273,7 +52582,12 @@ impl Interpreter {
             if let Some(key) = key {
                 scope.write_static(key, Value::String(property.clone()));
             }
-            scope.write_static(value, object.read_public_property(&property)?);
+            self.write_foreach_value_target(
+                value,
+                object.read_public_property(&property)?,
+                span,
+                scope,
+            )?;
             if let Some(flow) =
                 self.execute_reference_return_assignment_foreach_flow(function, body, scope)?
             {
@@ -52289,7 +52603,7 @@ impl Interpreter {
         function: &FunctionDecl,
         object: PhpObject,
         key: &Option<String>,
-        value: &str,
+        value: &ForeachValueTarget,
         body: &[Stmt],
         span: Span,
         scope: &mut SymbolTable,
@@ -52316,12 +52630,16 @@ impl Interpreter {
                     self.call_required_iterator_method(object.clone(), "key", span)?;
                 scope.write_static(key, iterator_key);
             }
-            let target_is_alias = scope.is_array_offset_alias_name(value);
+            let target_is_alias = value
+                .variable_name()
+                .is_some_and(|name| scope.is_array_offset_alias_name(name));
             let current_is_array = matches!(current, Value::Array(_));
-            scope.write_static(value, current);
+            self.write_foreach_value_target(value, current, span, scope)?;
             if !target_is_alias && current_is_array {
                 if let Some(source) = array_copy_source {
-                    scope.mirror_array_copy_source_aliases_from_copy(value, &source);
+                    if let Some(name) = value.variable_name() {
+                        scope.mirror_array_copy_source_aliases_from_copy(name, &source);
+                    }
                 }
             }
 
@@ -52352,7 +52670,7 @@ impl Interpreter {
         function: &FunctionDecl,
         array: PhpArray,
         key: &Option<String>,
-        value: &str,
+        value: &ForeachValueTarget,
         body: &[Stmt],
         span: Span,
         scope: &mut SymbolTable,
@@ -52362,7 +52680,7 @@ impl Interpreter {
             if let Some(key) = key {
                 scope.write_static(key, value_from_array_key(&entry.key));
             }
-            scope.write_static(value, entry.value_cloned());
+            self.write_foreach_value_target(value, entry.value_cloned(), span, scope)?;
             match self.execute_reference_return_assignment_statement_list(function, body, scope)? {
                 ReferenceReturnBodyFlow::Normal => {}
                 ReferenceReturnBodyFlow::Continue { depth, .. } if depth <= 1 => {}
@@ -52395,7 +52713,7 @@ impl Interpreter {
         function: &FunctionDecl,
         iterable: &Expr,
         key: &Option<String>,
-        value: &str,
+        value: &ForeachValueTarget,
         body: &[Stmt],
         span: Span,
         scope: &mut SymbolTable,
@@ -52416,43 +52734,62 @@ impl Interpreter {
             if let Some(key) = key {
                 scope.write_static(key, value_from_array_key(&entry_key));
             }
-            bind_foreach_reference_to_key(scope, value, &root, &entry_key, span)?;
-            self.active_foreach_references.push(ActiveForeachReference {
-                root: root.clone(),
-                value_name: value.to_string(),
-                key: entry_key.clone(),
-            });
+            self.bind_foreach_value_target_reference_to_key(value, &root, &entry_key, span, scope)?;
+            if let Some(value_name) = value.variable_name() {
+                self.active_foreach_references.push(ActiveForeachReference {
+                    root: root.clone(),
+                    value_name: value_name.to_string(),
+                    key: entry_key.clone(),
+                });
+            }
             let flow_result =
                 self.execute_reference_return_assignment_statement_list(function, body, scope);
-            self.active_foreach_references.pop();
+            if value.variable_name().is_some() {
+                self.active_foreach_references.pop();
+            }
             let flow = flow_result?;
 
-            let value_still_bound = if let Some(expected_aliases) =
-                foreach_root_slot_aliases(scope, &root, &entry_key)
-            {
-                scope
-                    .array_offset_aliases_for_name(value)
-                    .is_some_and(|bound_aliases| bound_aliases == expected_aliases)
-            } else {
-                match &root {
-                    ForeachArrayRoot::Static { name, keys } => {
-                        let mut alias_keys = keys.clone();
-                        alias_keys.push(entry_key.clone());
-                        scope.is_static_bound_to_array_offset_path(value, name, &alias_keys)
+            let value_still_bound = if let Some(value_name) = value.variable_name() {
+                if let Some(expected_aliases) = foreach_root_slot_aliases(scope, &root, &entry_key)
+                {
+                    scope
+                        .array_offset_aliases_for_name(value_name)
+                        .is_some_and(|bound_aliases| bound_aliases == expected_aliases)
+                } else {
+                    match &root {
+                        ForeachArrayRoot::Static { name, keys } => {
+                            let mut alias_keys = keys.clone();
+                            alias_keys.push(entry_key.clone());
+                            scope.is_static_bound_to_array_offset_path(
+                                value_name,
+                                name,
+                                &alias_keys,
+                            )
+                        }
+                        ForeachArrayRoot::Global { name, keys } => {
+                            let mut alias_keys = keys.clone();
+                            alias_keys.push(entry_key.clone());
+                            scope.is_static_bound_to_global_array_offset_path(
+                                value_name,
+                                name,
+                                &alias_keys,
+                            )
+                        }
+                        ForeachArrayRoot::Alias { root, keys } => {
+                            let mut alias_keys = keys.clone();
+                            alias_keys.push(entry_key.clone());
+                            scope.is_static_bound_to_array_offset_alias_root(
+                                value_name,
+                                root,
+                                &alias_keys,
+                            )
+                        }
+                        ForeachArrayRoot::Aliases { .. } => false,
+                        ForeachArrayRoot::ObjectProperties { .. } => false,
                     }
-                    ForeachArrayRoot::Global { name, keys } => {
-                        let mut alias_keys = keys.clone();
-                        alias_keys.push(entry_key.clone());
-                        scope.is_static_bound_to_global_array_offset_path(value, name, &alias_keys)
-                    }
-                    ForeachArrayRoot::Alias { root, keys } => {
-                        let mut alias_keys = keys.clone();
-                        alias_keys.push(entry_key.clone());
-                        scope.is_static_bound_to_array_offset_alias_root(value, root, &alias_keys)
-                    }
-                    ForeachArrayRoot::Aliases { .. } => false,
-                    ForeachArrayRoot::ObjectProperties { .. } => false,
                 }
+            } else {
+                false
             };
             let array = Self::read_foreach_root_array(&root, scope, span)?;
             let current_position = array
@@ -52481,13 +52818,15 @@ impl Interpreter {
                     depth,
                     span: flow_span,
                 } => {
-                    bind_foreach_lingering_reference(
-                        scope,
-                        value,
-                        &root,
-                        lingering_reference_key,
-                        span,
-                    )?;
+                    if let Some(value_name) = value.variable_name() {
+                        bind_foreach_lingering_reference(
+                            scope,
+                            value_name,
+                            &root,
+                            lingering_reference_key,
+                            span,
+                        )?;
+                    }
                     return Ok(ReferenceReturnBodyFlow::Continue {
                         depth: depth - 1,
                         span: flow_span,
@@ -52498,43 +52837,57 @@ impl Interpreter {
                     depth,
                     span: flow_span,
                 } => {
-                    bind_foreach_lingering_reference(
-                        scope,
-                        value,
-                        &root,
-                        lingering_reference_key,
-                        span,
-                    )?;
+                    if let Some(value_name) = value.variable_name() {
+                        bind_foreach_lingering_reference(
+                            scope,
+                            value_name,
+                            &root,
+                            lingering_reference_key,
+                            span,
+                        )?;
+                    }
                     return Ok(ReferenceReturnBodyFlow::Break {
                         depth: depth - 1,
                         span: flow_span,
                     });
                 }
                 flow @ ReferenceReturnBodyFlow::Goto { .. } => {
-                    bind_foreach_lingering_reference(
-                        scope,
-                        value,
-                        &root,
-                        lingering_reference_key,
-                        span,
-                    )?;
+                    if let Some(value_name) = value.variable_name() {
+                        bind_foreach_lingering_reference(
+                            scope,
+                            value_name,
+                            &root,
+                            lingering_reference_key,
+                            span,
+                        )?;
+                    }
                     return Ok(flow);
                 }
                 flow @ ReferenceReturnBodyFlow::Throw { .. } => {
-                    bind_foreach_lingering_reference(
-                        scope,
-                        value,
-                        &root,
-                        lingering_reference_key,
-                        span,
-                    )?;
+                    if let Some(value_name) = value.variable_name() {
+                        bind_foreach_lingering_reference(
+                            scope,
+                            value_name,
+                            &root,
+                            lingering_reference_key,
+                            span,
+                        )?;
+                    }
                     return Ok(flow);
                 }
                 flow @ ReferenceReturnBodyFlow::Return(_) => return Ok(flow),
             }
         }
 
-        bind_foreach_lingering_reference(scope, value, &root, lingering_reference_key, span)?;
+        if let Some(value_name) = value.variable_name() {
+            bind_foreach_lingering_reference(
+                scope,
+                value_name,
+                &root,
+                lingering_reference_key,
+                span,
+            )?;
+        }
         Ok(ReferenceReturnBodyFlow::Normal)
     }
 
