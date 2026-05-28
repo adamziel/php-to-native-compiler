@@ -1,7 +1,7 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-28 02:56 CEST
-Primary source head: `3e702be4 docs: account enum autoload lookup`
+Updated: 2026-05-28 02:59 CEST
+Primary source head: `ef73936d docs: update AO coder roster`
 Latest source head: `0fa7b666 runtime: autoload enum_exists misses`
 
 ## Progress Score
@@ -39,8 +39,11 @@ Policy: stage 10 accepted generalized source PRs, run focused gates per PR, run
 the full PHPT suite once after PR 10, repair regressions, then merge the whole
 batch.
 
-Current batch status: **9/10 accepted, not merged** unless and until an
-independent reviewer accepts one live PR 10 candidate.
+Current batch status: **10/10 accepted, not merged; full PHPT gate pending**.
+Independent reviewer `phpc-7` accepted r81 / PR #1 as Batch 001 PR 10
+at 2026-05-28 02:59 CEST after accepted-stack apply, exact-shape audit,
+focused Rust/compiler gates, and focused wrapper PHPT `Zend/tests/namespaces/ns_065.phpt`
+passed (1/1).
 
 Accepted for staging:
 
@@ -55,18 +58,19 @@ Accepted for staging:
 | 7 | Grouped namespace class imports | Current-head review, accepted-stack compatibility, focused compiler gates, wrapper PHPT proof |
 | 8 | By-reference foreach lingering slots | Accepted-stack review, focused `Zend/tests/foreach/foreach_reference.phpt`, slot-preserving array-copy gates |
 | 9 | Magic method startup signature fatals | Accepted-stack review, focused `tests/classes/__call_002.phpt`, generalized magic contract gates |
+| 10 | Multiple unbracketed namespace declarations | Independent accepted-stack review, focused `Zend/tests/namespaces/ns_065.phpt`, namespace parser/import gates |
 
-Pending candidates:
+Gate status and parked candidates:
 
-| Candidate | State |
+| Item | State |
 | --- | --- |
-| Multiple namespace declarations | AO rebased the candidate on the 9/10 stack, opened PR #1, and passed focused `Zend/tests/namespaces/ns_065.phpt`; independent reviewer/critic acceptance still pending before this becomes PR 10 |
-| `Zend/tests/bug39944.phpt` reference invocation | AO produced PR #2 with focused PASS and patch/report artifacts; independent reviewer/critic acceptance still pending before this can become PR 10 |
+| Batch 001 full PHPT gate | Authorized now that Batch 001 is recorded as 10/10; AO orchestrator should start r84 and run the pinned full suite once before merge |
+| `Zend/tests/bug39944.phpt` reference invocation | PR #2/r82 has focused PASS and patch/report artifacts but is parked for post-Batch 001 / Batch 002 unless r81 is invalidated |
 | Anonymous-class dynamic-call blocker | AO scout classified this as NO-GO for Batch 001 PR 10; deferred as a broader parser/interpreter/native feature |
 | PHPT focused queue | `tests/classes/__set__get_002.phpt` passes on the 9/10 stack; r85 queue now feeds additional coder lanes |
 | Codex thread-store permissions | Fixed current session directory execute bit; smoke passed |
 | Disk/data cleanup | Reclaimed Codex SQLite WAL; `/home` free space is back above 290G |
-| Agent Orchestrator migration | AO is installed, configured, polling this project, and is being handed persistent critic/reviewer/progress-reporter/coder control |
+| Agent Orchestrator migration | AO is installed, configured, polling this project, and persistent critic/reviewer/progress-reporter/coder roles are active |
 
 ## AO Control Plane
 
@@ -81,10 +85,11 @@ Required live roles:
 | Progress reporter | Keeps this `PROGRESS.md` file and durable supervisor state current after material AO events |
 | Coders | Work disjoint focused PHPT lanes from the queue; each lane must produce a patch, PASS-NO-PATCH, or NO-GO artifact |
 
-Current AO snapshot: `phpc-orchestrator` working; `phpc-4` critic audit;
-`phpc-7` independent reviewer; `phpc-8` progress reporter; `phpc-9`
-magic-signature coder; `phpc-10` by-reference coder. PR #1/r81 and PR #2/r82
-are open PR 10 candidates pending independent acceptance.
+Current AO snapshot: `phpc-orchestrator` should start the r84 full PHPT gate; `phpc-4` critic audit;
+`phpc-7` independent reviewer has accepted r81 as PR 10 and handed off;
+`phpc-8` progress reporter; `phpc-9` magic-signature coder; `phpc-10`
+by-reference coder. PR #2/r82 remains parked unless Batch 001 PR 10 selection
+is reopened.
 
 ## Current Rules
 
