@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-28 15:14 CEST
+Updated: 2026-05-28 15:24 CEST
 Primary branch: `master`
-Latest source head: `229c38cf test: cover dynamic static method strings`
+Latest source head: `0dafd34e fix: validate promoted property override attributes`
 
 ## Progress Score
 
@@ -51,10 +51,44 @@ Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
 
-Post-Batch002 source checkpoint 11 is now primary-integrated under AO. This is a
+Post-Batch002 source checkpoint 12 is now primary-integrated under AO. This is a
 source checkpoint with focused proof, not a percentage change. The public score
 remains **1193 / 20294 runnable PHPTs = 5.88%** until another pinned full-suite
 run is completed, parsed, regression-checked, and published here.
+
+- primary source head:
+  `0dafd34e fix: validate promoted property override attributes`
+- p28 final handoff head:
+  `286b80809b369c480ba6717a716eca19209da262 fix: validate promoted property override attributes`
+- exported integration patch:
+  `/home/claude/supervised-php-compiler/state/patches/ao-integration-p17-promoted-property-override-source-20260528.patch`
+- exported integration patch SHA256:
+  `a21ed82a834d6d16c2a2d523b324b6a49cd0590d4836bc8894df2a9596ece6a5`
+- source candidate patch SHA256:
+  `3f0d273aadd46fab7ff5e29bb755f97e2ab32257b766e2475a99e84640206f53`
+- reviewer gate: p7 recorded `FINAL GO-CANDIDATE /
+  FOCUSED-GATES-PASS` with `FINAL_FAIL=0`
+- critic gate: phpc-26 recorded `SAFE-FOR-INTEGRATION` for the exact SHA on
+  public head `4985692f`
+- focused gates: PASS for `git diff --check`, `cargo fmt --all --
+  --check`, `cargo test -p phpc --test object_model
+  property_override_attribute_validates_promoted_constructor_properties --
+  --exact --test-threads=1`, `cargo test -p phpc --test syntax_boundaries
+  promoted_property -- --test-threads=1`, `cargo build -p phpc`, and wrapper
+  PHPTs `Zend/tests/attributes/override/properties_19.phpt` and
+  `Zend/tests/attributes/override/properties_20.phpt`
+- full PHPT suite: not run for this single source checkpoint
+
+This checkpoint generalizes constructor promoted-property metadata into the
+existing property `#[\Override]` validation path. It captures promotion
+visibility and pending attributes during parsing, materializes promoted
+constructor parameters as property metadata, and keeps constructor promotion
+initialization/native lowering conservative with generalized diagnostics. It is
+not keyed to PHPT filenames, exact output, class names, property names, or
+fixture shape.
+
+Previous post-Batch002 source checkpoint 11 was p19 dynamic static-method
+strings:
 
 - primary source head:
   `229c38cf test: cover dynamic static method strings`
