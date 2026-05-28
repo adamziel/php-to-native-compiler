@@ -6335,7 +6335,9 @@
   reference-binding diagnostic. Direct user-function calls also handle missing
   direct-variable arguments for this bounded path: by-value arguments warn and
   pass `NULL` without materializing the variable, while by-reference arguments
-  materialize a `NULL` caller cell that the callee may mutate.
+  materialize a `NULL` caller cell that the callee may mutate. Value-evaluated
+  direct builtin arguments use the same missing direct-variable warning/`NULL`
+  behavior.
   `foreach ($array as $value)` iterates array values in
   insertion order over a snapshot of the current entries and writes the current
   value to the direct loop variable in the active scope. `foreach ($array as

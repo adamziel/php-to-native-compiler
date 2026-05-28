@@ -42215,7 +42215,7 @@ impl Interpreter {
                 if key == "preg_replace_callback" {
                     let mut values = Vec::with_capacity(args.len());
                     for arg in args {
-                        values.push(self.evaluate(arg, caller_scope)?);
+                        values.push(self.evaluate_by_value_call_argument(arg, caller_scope)?);
                     }
                     return self.call_preg_replace_callback(values, span);
                 }
@@ -42265,7 +42265,7 @@ impl Interpreter {
                 }
                 let mut values = Vec::with_capacity(args.len());
                 for arg in args {
-                    values.push(self.evaluate(arg, caller_scope)?);
+                    values.push(self.evaluate_by_value_call_argument(arg, caller_scope)?);
                 }
                 self.call_builtin(&key, values, span)
             }
@@ -42316,7 +42316,7 @@ impl Interpreter {
                 if key == "preg_replace_callback" {
                     let mut values = Vec::with_capacity(args.len());
                     for arg in args {
-                        values.push(self.evaluate(arg, caller_scope)?);
+                        values.push(self.evaluate_by_value_call_argument(arg, caller_scope)?);
                     }
                     return self.call_preg_replace_callback(values, span);
                 }
@@ -42366,7 +42366,7 @@ impl Interpreter {
                 }
                 let mut values = Vec::with_capacity(args.len());
                 for arg in args {
-                    values.push(self.evaluate(arg, caller_scope)?);
+                    values.push(self.evaluate_by_value_call_argument(arg, caller_scope)?);
                 }
                 self.call_builtin(&key, values, span)
             }
@@ -43263,7 +43263,7 @@ impl Interpreter {
     ) -> CompileResult<Value> {
         let mut values = Vec::with_capacity(args.len());
         for arg in args {
-            values.push(self.evaluate(arg, caller_scope)?);
+            values.push(self.evaluate_by_value_call_argument(arg, caller_scope)?);
         }
         self.call_builtin_callback_with_values(key, values, span, true)
     }
@@ -48521,7 +48521,7 @@ impl Interpreter {
 
         let mut values = Vec::with_capacity(args.len().saturating_sub(1));
         for arg in &args[1..] {
-            values.push(self.evaluate(arg, caller_scope)?);
+            values.push(self.evaluate_by_value_call_argument(arg, caller_scope)?);
         }
 
         let mut array_value = caller_scope.read_static(array_name, span)?;
@@ -53120,6 +53120,37 @@ impl Interpreter {
         );
     }
 
+    fn missing_direct_variable_call_argument(name: &str, caller_scope: &SymbolTable) -> bool {
+        name != "GLOBALS"
+            && !(name.eq_ignore_ascii_case("this") && caller_scope.read_named("this").is_none())
+            && caller_scope.read_named(name).is_none()
+    }
+
+    fn evaluate_by_value_call_argument(
+        &mut self,
+        arg: &Expr,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        let (value, _) =
+            self.evaluate_by_value_call_argument_with_array_copy_source(arg, caller_scope)?;
+        Ok(value)
+    }
+
+    fn evaluate_by_value_call_argument_with_array_copy_source(
+        &mut self,
+        arg: &Expr,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<(Value, Option<ArrayCopySource>)> {
+        if let Expr::Variable(name, variable_span) = arg {
+            if Self::missing_direct_variable_call_argument(name, caller_scope) {
+                self.emit_undefined_variable_warning(name, *variable_span);
+                return Ok((Value::Null, None));
+            }
+        }
+
+        self.evaluate_value_with_array_copy_source(arg, caller_scope)
+    }
+
     fn emit_reference_argument_fatal(
         &mut self,
         function: &FunctionDecl,
@@ -53448,20 +53479,8 @@ impl Interpreter {
                     }
                 }
             } else {
-                let (value, array_copy_source) = if let Expr::Variable(name, variable_span) = arg {
-                    if name != "GLOBALS"
-                        && !(name.eq_ignore_ascii_case("this")
-                            && caller_scope.read_named("this").is_none())
-                        && caller_scope.read_named(name).is_none()
-                    {
-                        self.emit_undefined_variable_warning(name, *variable_span);
-                        (Value::Null, None)
-                    } else {
-                        self.evaluate_value_with_array_copy_source(arg, caller_scope)?
-                    }
-                } else {
-                    self.evaluate_value_with_array_copy_source(arg, caller_scope)?
-                };
+                let (value, array_copy_source) =
+                    self.evaluate_by_value_call_argument_with_array_copy_source(arg, caller_scope)?;
                 let value = caller_scope.value_with_object_property_aliases_from_array_copy(
                     value,
                     array_copy_source.clone(),
