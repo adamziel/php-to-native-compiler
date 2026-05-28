@@ -66788,7 +66788,115 @@ fn magic_method_startup_diagnostics(
         collect_property_override_startup_diagnostics(&mut diagnostics, program, source_file);
     }
 
+    if !diagnostics.has_fatal() {
+        collect_parameter_default_startup_diagnostics(&mut diagnostics, program, source_file);
+    }
+
     diagnostics
+}
+
+fn collect_parameter_default_startup_diagnostics(
+    diagnostics: &mut MagicMethodStartupDiagnostics,
+    program: &Program,
+    source_file: Option<&str>,
+) {
+    for stmt in &program.statements {
+        match stmt {
+            Stmt::Function(function) if !function.is_nested => {
+                if let Some((message, line)) = parameter_default_startup_diagnostic(function) {
+                    diagnostics.set_fatal(message, source_file, line);
+                    return;
+                }
+            }
+            Stmt::Class(class) if !class.is_nested => {
+                for member in &class.members {
+                    let ClassMember::Method(method) = member else {
+                        continue;
+                    };
+                    if let Some((message, line)) =
+                        parameter_default_startup_diagnostic(&method.function)
+                    {
+                        diagnostics.set_fatal(message, source_file, line);
+                        return;
+                    }
+                }
+            }
+            Stmt::Interface(interface) => {
+                for method in &interface.methods {
+                    if let Some((message, line)) =
+                        parameter_default_startup_diagnostic(&method.function)
+                    {
+                        diagnostics.set_fatal(message, source_file, line);
+                        return;
+                    }
+                }
+            }
+            Stmt::Trait(trait_decl) => {
+                for method in &trait_decl.methods {
+                    if let Some((message, line)) =
+                        parameter_default_startup_diagnostic(&method.function)
+                    {
+                        diagnostics.set_fatal(message, source_file, line);
+                        return;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn parameter_default_startup_diagnostic(function: &FunctionDecl) -> Option<(String, usize)> {
+    function.params.iter().find_map(|param| {
+        parameter_default_type_diagnostic(param).map(|message| (message, param.span.line))
+    })
+}
+
+fn parameter_default_type_diagnostic(param: &FunctionParam) -> Option<String> {
+    let type_decl = param.type_decl.as_ref()?;
+    let default = param.default.as_ref()?;
+    let default_type = scalar_literal_default_type(default)?;
+    let normalized_type = normalized_scalar_parameter_type(&type_decl.text)?;
+
+    if scalar_literal_default_matches_parameter_type(default_type, normalized_type) {
+        return None;
+    }
+
+    Some(format!(
+        "Cannot use {default_type} as default value for parameter ${} of type {}",
+        param.name, type_decl.text
+    ))
+}
+
+fn scalar_literal_default_type(default: &Expr) -> Option<&'static str> {
+    match default {
+        Expr::Null(_) => None,
+        Expr::Bool(_, _) => Some("bool"),
+        Expr::Int(_, _) => Some("int"),
+        Expr::Float(_, _) => Some("float"),
+        Expr::String(_, _) => Some("string"),
+        _ => None,
+    }
+}
+
+fn normalized_scalar_parameter_type(type_decl: &str) -> Option<&'static str> {
+    let mut name = type_decl.trim();
+    if name.contains('|') || name.contains('&') {
+        return None;
+    }
+    name = name.strip_prefix('?').unwrap_or(name);
+    name = name.strip_prefix('\\').unwrap_or(name);
+    match name.to_ascii_lowercase().as_str() {
+        "int" | "integer" => Some("int"),
+        "float" | "double" => Some("float"),
+        "string" => Some("string"),
+        "bool" | "boolean" => Some("bool"),
+        _ => None,
+    }
+}
+
+fn scalar_literal_default_matches_parameter_type(default_type: &str, parameter_type: &str) -> bool {
+    default_type == parameter_type || (default_type == "int" && parameter_type == "float")
 }
 
 fn collect_class_property_inheritance_startup_diagnostics(
