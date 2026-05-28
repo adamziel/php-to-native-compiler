@@ -1,5 +1,21 @@
 # Progress Log
 
+## 2026-05-28
+
+Implemented:
+
+- Added interpreter startup public-visibility warnings for otherwise valid
+  non-public covered magic methods in top-level classes and traits. The same
+  shared magic declaration contract used for startup fatals now also emits
+  PHP-shaped warnings for `__call`, `__callStatic`, `__get`, `__set`,
+  `__isset`, and `__unset` after arity, variadic, by-reference, staticness,
+  and parameter-type checks have had fatal precedence. Focused gates cover the
+  accepted Batch 001 stack plus `__set`/`__get` arity and by-reference PHPTs,
+  `__call` by-reference regression, `__unset` static fatal regression, and
+  `Zend/tests/magic_methods/magic_methods_002.phpt`. Exact startup diagnostic
+  ordering across multiple declarations, custom error-handler interaction,
+  and native lowering parity remain unsupported.
+
 ## 2026-05-27
 
 Implemented:

@@ -358,6 +358,11 @@
   typed supported bodies participate in the same copied-source and reference
   leaf COW model; general user functions also accept `mixed` metadata because
   it requires no runtime type check.
+  Interpreter startup validation for the covered magic method declarations
+  rejects malformed arity, variadic, by-reference parameter, staticness, and
+  parameter-type contracts for `__call`, `__callStatic`, `__get`, `__set`,
+  `__isset`, and `__unset`, and emits PHP-shaped public-visibility warnings
+  for otherwise valid non-public declarations in top-level classes and traits.
   This does
   not provide general PHP reference containers,
   `Closure::bind`/`bindTo`, untracked dynamic container recovery, arbitrary

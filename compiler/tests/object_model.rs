@@ -1441,6 +1441,27 @@ echo "unreached";
 }
 
 #[test]
+fn non_public_magic_method_emits_php_startup_warning_and_runs() {
+    let execution = run_source_with_source_file(
+        r#"<?php
+class MagicBox {
+    protected function __unset(string $name) {}
+}
+echo "reached";
+"#,
+        "Zend/tests/magic_methods/magic_methods_002.php",
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "reached");
+    assert_eq!(
+        execution.stderr,
+        "Warning: The magic method MagicBox::__unset() must have public visibility in Zend/tests/magic_methods/magic_methods_002.php on line 3"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn magic_to_string_runs_for_echo_print_cast_and_concat() {
     let source = r#"<?php
 class Label {
