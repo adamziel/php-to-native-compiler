@@ -716,6 +716,37 @@ echo "after";
 }
 
 #[test]
+fn reference_parameter_by_value_function_return_warns_and_passes_temporary() {
+    let execution = run_source_with_source_file(
+        r#"<?php
+function produce($value) {
+    echo "produce\n";
+    return $value;
+}
+function consume(&$value, $second) {
+    echo "consume=", $value, ",", $second, "\n";
+    $value = 99;
+}
+function side() {
+    echo "side\n";
+    return "next";
+}
+consume(produce(5), side());
+echo "done\n";
+"#,
+        "/tmp/passByReference_004.php",
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "produce\n\nNotice: Only variables should be passed by reference in /tmp/passByReference_004.php on line 14\nside\nconsume=5,next\ndone\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reference_parameters_share_direct_alias_and_array_slot_container_identity() {
     let execution = run_source(
         r#"<?php

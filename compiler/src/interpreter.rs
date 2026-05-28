@@ -53075,6 +53075,34 @@ impl Interpreter {
         )
     }
 
+    fn expr_is_definitely_by_value_call_reference_argument(&self, arg: &Expr) -> bool {
+        let Expr::Call { name, .. } = arg else {
+            return false;
+        };
+
+        match self.lookup_direct_function_call(name) {
+            Some(Callable::User(function)) => !function.returns_by_reference,
+            Some(Callable::Builtin(_)) | None => true,
+        }
+    }
+
+    fn emit_reference_argument_notice(&mut self, span: Span) {
+        let file = self
+            .source_file
+            .clone()
+            .unwrap_or_else(|| "Command line code".to_string());
+        if !self.stdout.is_empty() {
+            self.append_output_at("\n", span);
+        }
+        self.append_output_at(
+            &format!(
+                "Notice: Only variables should be passed by reference in {file} on line {}\n",
+                span.line
+            ),
+            span,
+        );
+    }
+
     fn emit_reference_argument_fatal(
         &mut self,
         function: &FunctionDecl,
@@ -53353,6 +53381,22 @@ impl Interpreter {
                                 },
                             });
                         } else {
+                            if self.expr_is_definitely_by_value_call_reference_argument(arg) {
+                                let value = self.evaluate_by_value_argument_with_cow_source(
+                                    arg,
+                                    caller_scope,
+                                )?;
+                                if self.exit_signal.is_some() {
+                                    return Ok((
+                                        values,
+                                        reference_bindings,
+                                        by_value_array_copy_source_bindings,
+                                    ));
+                                }
+                                self.emit_reference_argument_notice(arg.span());
+                                values.push(value);
+                                continue;
+                            }
                             if Self::expr_is_definitely_by_value_reference_argument(arg) {
                                 self.emit_reference_argument_fatal(
                                     function,
