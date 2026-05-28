@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-28 08:03 CEST
+Updated: 2026-05-28 08:10 CEST
 Primary branch: `master`
 Latest source head: `0fa7b666 runtime: autoload enum_exists misses`
 
@@ -112,6 +112,9 @@ Gate status and parked candidates:
 | `Zend/tests/try/finally_goto_003.phpt` goto into finally block PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after binary-recovery p7 rerun and p14 `SAFE-FOR-PROGRESS`; existing try/finally/goto behavior handles the upstream finally-block jump case, passing wrapper PHPT `Zend/tests/try/finally_goto_003.phpt` 1/1 using the reviewed public binary `/tmp/phpc-reviewed-public-6d161522-20260528-target/debug/phpc`; prior missing-binary NO-GO was infrastructure-only and superseded; no source patch, no cargo gate beyond reviewed binary recovery, no full-suite run, and no percent change |
 | `Zend/tests/try/finally_goto_005.phpt` goto/finally control-flow PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and p14 `SAFE-FOR-PROGRESS`; existing try/finally/goto behavior handles the upstream control-flow case, passing wrapper PHPT `Zend/tests/try/finally_goto_005.phpt` 1/1 using the reviewed public binary `/tmp/phpc-reviewed-public-6d161522-20260528-target/debug/phpc`; prior temp-target mkdir failure was infrastructure-only and superseded; no source patch, no cargo gate beyond reviewed binary recovery, no full-suite run, and no percent change |
 | `Zend/tests/try/try_finally_006.phpt` try/finally near-goto PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and p14 `SAFE-FOR-PROGRESS`; existing try/finally control-flow behavior handles the upstream near-goto case, passing wrapper PHPT `Zend/tests/try/try_finally_006.phpt` 1/1 using the reviewed public binary `/tmp/phpc-reviewed-public-6d161522-20260528-target/debug/phpc`; no source patch, no cargo gate beyond reviewed binary recovery, no full-suite run, and no percent change |
+| `Zend/tests/try/try_finally_013.phpt` try/finally return-in-loop PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and p14 `SAFE-FOR-PROGRESS`; existing try/finally loop return behavior handles return in try and finally inside a loop, passing wrapper PHPT `Zend/tests/try/try_finally_013.phpt` 1/1 using the reviewed public binary `/tmp/phpc-reviewed-public-6d161522-20260528-target/debug/phpc`; no source patch, no cargo gate beyond reviewed binary recovery, no full-suite run, and no percent change |
+| `Zend/tests/try/try_finally_014.phpt` nested-loop break/finally return PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and p14 `SAFE-FOR-PROGRESS`; existing try/finally nested-loop control-flow behavior handles `break 2` in try with return in finally, passing wrapper PHPT `Zend/tests/try/try_finally_014.phpt` 1/1 using the reviewed public binary `/tmp/phpc-reviewed-public-6d161522-20260528-target/debug/phpc`; no source patch, no cargo gate beyond reviewed binary recovery, no full-suite run, and no percent change |
+| `Zend/tests/try/try_finally_015.phpt` loop return ignored by finally PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and p14 `SAFE-FOR-PROGRESS`; existing try/finally loop control-flow behavior handles the upstream ignored-return case, passing wrapper PHPT `Zend/tests/try/try_finally_015.phpt` 1/1 using the reviewed public binary `/tmp/phpc-reviewed-public-6d161522-20260528-target/debug/phpc`; no source patch, no cargo gate beyond reviewed binary recovery, no full-suite run, and no percent change |
 | `Zend/tests/type_declarations/typed_properties_011.phpt` typed-property array reference fetch PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and p14 `SAFE-FOR-PROGRESS`; existing typed-property/reference behavior allows fetching a typed property by reference into an array and passes wrapper PHPT `Zend/tests/type_declarations/typed_properties_011.phpt` 1/1 using the pass005 repair2 reviewed binary; no source patch, no cargo gate, no full-suite run, and no percent change |
 | `Zend/tests/type_declarations/typed_properties_023.phpt` typed static property PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and p14 `SAFE-FOR-PROGRESS`; existing typed static-property behavior handles scalar coercion, increment/static reads and writes, and by-reference-return assignment into typed static properties, passing wrapper PHPT `Zend/tests/type_declarations/typed_properties_023.phpt` 1/1 using the rebuilt reviewed public binary `/tmp/phpc-reviewed-public-687fcc41-20260528-target2/debug/phpc`; no source patch, no cargo gate beyond the authorized binary recovery, no full-suite run, and no percent change |
 | `Zend/tests/type_declarations/typed_properties_024.phpt` private typed-property inheritance isolation PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and p14 `SAFE-FOR-PROGRESS`; existing typed-property inheritance behavior permits a subclass public typed property to reuse the name of a parent private typed property without conflict, passing wrapper PHPT `Zend/tests/type_declarations/typed_properties_024.phpt` 1/1 using the rebuilt reviewed public binary `/tmp/phpc-reviewed-public-687fcc41-20260528-target2/debug/phpc`; no source patch, no cargo gate beyond the authorized binary recovery, no full-suite run, and no percent change |
@@ -169,10 +172,10 @@ Required live roles:
 Current AO snapshot: `phpc-orchestrator` supervising; `phpc-14` critic;
 `phpc-7` reviewer; `phpc-8` progress reporter; active coder/support lanes
 `phpc-15`, `phpc-16`, `phpc-17`, `phpc-18`, and `phpc-19`. Current
-public-progress watch targets are typed-properties
-`typed_properties_050`/`typed_properties_051`, magic `bug75420.4`/successors,
-attributes objects/filter successors, `try_finally_009`/successors, asymmetric
-private/protected successors, the next p7-reviewed candidate plus p14
+public-progress watch targets are magic `bug75420.9`/successors,
+typed-properties `typed_properties_053`/`typed_properties_054`, attributes
+`doctrine_annotations_example`/successors, `try_finally_016`/successors,
+asymmetric `cpp_private`/successors, the next p7-reviewed candidate plus p14
 `SAFE-FOR-PROGRESS` audit, current coder lane artifacts, and any new full-suite
 PHPT row. Known no-go/not-safe items,
 including unsuffixed `bug44899`, `bug46238`, `bug48248`, `foreach_010`,
