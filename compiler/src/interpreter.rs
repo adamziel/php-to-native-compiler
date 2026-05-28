@@ -53103,6 +53103,23 @@ impl Interpreter {
         );
     }
 
+    fn emit_undefined_variable_warning(&mut self, name: &str, span: Span) {
+        let file = self
+            .source_file
+            .clone()
+            .unwrap_or_else(|| "Command line code".to_string());
+        if !self.stdout.is_empty() {
+            self.append_output_at("\n", span);
+        }
+        self.append_output_at(
+            &format!(
+                "Warning: Undefined variable ${name} in {file} on line {}\n",
+                span.line
+            ),
+            span,
+        );
+    }
+
     fn emit_reference_argument_fatal(
         &mut self,
         function: &FunctionDecl,
@@ -53189,9 +53206,19 @@ impl Interpreter {
                         });
                         continue;
                     }
-                    let caller_cell = caller_scope.read_cell(caller_name).ok_or_else(|| {
-                        runtime_error(arg.span(), RuntimeError::undefined_variable(caller_name))
-                    })?;
+                    let caller_cell = if let Some(cell) = caller_scope.read_cell(caller_name) {
+                        cell
+                    } else {
+                        if caller_name.eq_ignore_ascii_case("this") {
+                            return Err(runtime_error(
+                                arg.span(),
+                                RuntimeError::undefined_variable(caller_name),
+                            ));
+                        }
+                        let cell = value_cell(Value::Null);
+                        caller_scope.bind_static_to_cell(caller_name, cell.clone());
+                        cell
+                    };
                     let value = caller_cell.value_cloned();
                     let source = matches!(value, Value::Array(_))
                         .then(|| {
@@ -53421,8 +53448,20 @@ impl Interpreter {
                     }
                 }
             } else {
-                let (value, array_copy_source) =
-                    self.evaluate_value_with_array_copy_source(arg, caller_scope)?;
+                let (value, array_copy_source) = if let Expr::Variable(name, variable_span) = arg {
+                    if name != "GLOBALS"
+                        && !(name.eq_ignore_ascii_case("this")
+                            && caller_scope.read_named("this").is_none())
+                        && caller_scope.read_named(name).is_none()
+                    {
+                        self.emit_undefined_variable_warning(name, *variable_span);
+                        (Value::Null, None)
+                    } else {
+                        self.evaluate_value_with_array_copy_source(arg, caller_scope)?
+                    }
+                } else {
+                    self.evaluate_value_with_array_copy_source(arg, caller_scope)?
+                };
                 let value = caller_scope.value_with_object_property_aliases_from_array_copy(
                     value,
                     array_copy_source.clone(),

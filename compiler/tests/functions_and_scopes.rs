@@ -747,6 +747,42 @@ echo "done\n";
 }
 
 #[test]
+fn direct_missing_variable_arguments_warn_or_materialize_by_reference() {
+    let execution = run_source_with_source_file(
+        r#"<?php
+function read_val($value) {
+    var_dump($value);
+}
+function write_ref(&$value) {
+    $value = "Ref changed";
+}
+function both($value, &$ref) {
+    var_dump($value);
+    $ref = "Ref changed";
+}
+unset($u1, $u2);
+read_val($u1);
+echo isset($u1) ? "u1-set\n" : "u1-unset\n";
+write_ref($u2);
+var_dump($u2);
+unset($u1, $u2);
+both($u1, $u2);
+echo isset($u1) ? "u1-set\n" : "u1-unset\n";
+var_dump($u2);
+"#,
+        "/tmp/passByReference_005_direct.php",
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "Warning: Undefined variable $u1 in /tmp/passByReference_005_direct.php on line 13\nNULL\nu1-unset\nstring(11) \"Ref changed\"\n\nWarning: Undefined variable $u1 in /tmp/passByReference_005_direct.php on line 18\nNULL\nu1-unset\nstring(11) \"Ref changed\"\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reference_parameters_share_direct_alias_and_array_slot_container_identity() {
     let execution = run_source(
         r#"<?php
