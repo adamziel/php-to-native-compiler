@@ -1,7 +1,7 @@
 # PHP Native Compiler Progress
 
 Updated: 2026-05-28 03:04 CEST
-Primary source head: `5197008b docs: record batch 001 full gate readiness`
+Primary branch: `master`
 Latest source head: `0fa7b666 runtime: autoload enum_exists misses`
 
 ## Progress Score
