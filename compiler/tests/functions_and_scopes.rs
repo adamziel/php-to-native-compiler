@@ -751,6 +751,53 @@ echo "reference-return=", $value;
 }
 
 #[test]
+fn reference_returning_non_referenceable_values_warn_and_detach() {
+    let execution = run_source(
+        r#"<?php
+function &return_constant_ref() {
+    return 100;
+}
+class ReferenceReturnValueBox {
+    static function &return_constant_ref() {
+        return 200;
+    }
+}
+
+$a = 4;
+$b =& return_constant_ref();
+$a++;
+$b = 101;
+echo "function=", $a, "/", $b, "\n";
+
+$a = 4;
+$b =& ReferenceReturnValueBox::return_constant_ref();
+$a++;
+$b = 201;
+echo "static=", $a, "/", $b;
+"#,
+    )
+    .unwrap();
+
+    let notices = execution
+        .stdout
+        .lines()
+        .filter(|line| {
+            line.starts_with("Notice: Only variable references should be returned by reference")
+        })
+        .count();
+    assert_eq!(notices, 2);
+    let semantic_lines = execution
+        .stdout
+        .lines()
+        .filter(|line| !line.is_empty() && !line.starts_with("Notice:"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert_eq!(semantic_lines, "function=5/101\nstatic=5/201");
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reference_parameter_call_arguments_accept_reference_returns_and_value_temporaries() {
     let execution = run_source(
         r#"<?php
