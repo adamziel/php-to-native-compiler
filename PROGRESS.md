@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-28 20:23 CEST
+Updated: 2026-05-28 21:09 CEST
 Primary branch: `master`
-Latest source head: `5240b156 fix: add PHP_EOL and runtime multicatch metadata`
+Latest source head: `b75047df fix: preserve fatal output separator after inline output`
 
 ## Progress Score
 
@@ -56,13 +56,53 @@ score uses the stable pinned denominator and does not use the raw runner
 | First full-suite baseline | Done | 1118 / 20294 runnable PHPTs passed (5.51%); run id `phpt-full-batch001-20260528T010422Z-php-src-f97ff59-base-3e702be4-stack10` |
 | Batch002 full-suite gate | Done | 1193 / 20294 runnable PHPTs passed (5.88%); 0 regressions from Batch001 PASS set; run id `phpt-full-batch002-20260528T100640Z-php-src-f97ff59-public-bc0ed214-source-e72efe27-stack11` |
 | Batch003 full-suite gate | Done | 1311 / 20294 pinned runnable PHPTs passed (6.46%); 0 regressions from Batch002 PASS set; run id `phpt-full-batch003-20260528T154907Z-php-src-f97ff59-public-20f3be4c-source-202dd1ec-stack21` |
-| Next source batch | Open | Batch004 source checkpoints accepted: 7 / 10; route remaining checkpoints toward broad PHPT failures with focused PHPT proof; run the next full suite after 10 accepted source checkpoints or an explicit sharded publication gate |
+| Next source batch | Open | Batch004 source checkpoints accepted: 8 / 10; route remaining checkpoints toward broad PHPT failures with focused PHPT proof; run the next full suite after 10 accepted source checkpoints or an explicit sharded/regression-repair publication gate |
 
 Focused PHPT history is tracked separately in
 `/home/claude/supervised-php-compiler/state/php-core-suite-focused-history.tsv`.
 Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
+
+Batch004 source checkpoint 8 is primary-integrated under AO supervision as a
+regression repair for the checkpoint7 sharded gate. This is a source checkpoint
+with focused proof, not a percentage change. The public PHPT score remains
+**1311 / 20294 pinned runnable PHPTs = 6.46%** until a pinned full-suite or
+supervisor-approved sharded regression-repair gate completes, shows zero
+Batch003 PASS regressions, and is published here.
+
+- primary source head:
+  `b75047df fix: preserve fatal output separator after inline output`
+- source candidate patch:
+  `/home/claude/supervised-php-compiler/state/patches/ao-coder-lsb-bug47699-regression-fix-20260528.patch`
+- source candidate patch SHA256:
+  `d6f2feca7306349c7d057122c67a36bbce342b6141a460520de015b21208ecbe`
+- reviewer gate: p7 recorded `REVIEW-SCOPE-CORRECTED / FINAL
+  GO-CANDIDATE / FOCUSED-GATES-PASS / PHPT-BUG47699-PASS` with
+  `FINAL_FAIL=0`; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/batch004-review-lsb-bug47699-regression-fix-2fe12551-20260528.{status.md,report.md,gates.log}`
+- critic gate: supervisor audit recorded `SAFE-FOR-SUPERVISOR-APPLY`
+  after phpc-33 followed a stale contradictory route; artifact:
+  `/home/claude/supervised-php-compiler/state/workers/supervisor-critic-lsb-bug47699-regression-fix-2fe12551-20260528.status.md`
+- focused gates: PASS for `git diff --check`, docs/PROGRESS exclusion,
+  production exact-shape audit, `cargo fmt --all -- --check`, focused Rust
+  `autoload_builtins::lsb_autoload_class_not_found_fatal_uses_single_separator_after_inline_output`,
+  `cargo build -p phpc`, wrapper PHPT `Zend/tests/lsb/bug47699.phpt`, and
+  wrapper PHPT `Zend/tests/type_declarations/typed_properties_055.phpt`
+- supervisor primary gate log:
+  `/home/claude/supervised-php-compiler/state/workers/supervisor-primary-lsb-bug47699-regression-fix-20260528.gates.log`
+- full PHPT suite: not yet run after this regression repair; due as a
+  supervisor-approved regression-repair gate before any public score increase
+
+This checkpoint fixes a general fatal-output separator rule. Fatal output after
+inline output without a trailing newline now receives exactly one separator
+newline, while fatal output after newline-terminated multi-line output keeps the
+blank-line separator needed by typed-property fatal diagnostics. Production
+code is not keyed to a PHPT filename, batch marker, run-tests state, class name,
+or expected-output fixture.
+
+Previous Batch004 source checkpoint 7 was PHP_EOL plus RuntimeException
+multicatch:
 
 Batch004 source checkpoint 7 is primary-integrated under AO supervision.
 This is a source checkpoint with focused proof, not a percentage change. The
