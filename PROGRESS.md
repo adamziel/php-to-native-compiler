@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-28 19:42 CEST
+Updated: 2026-05-28 20:03 CEST
 Primary branch: `master`
-Latest source head: `1ae1c80d fix: expand builtin call argument unpacking`
+Latest source head: `0e7f0cd6 fix: validate dynamic static method calls`
 
 ## Progress Score
 
@@ -56,7 +56,7 @@ score uses the stable pinned denominator and does not use the raw runner
 | First full-suite baseline | Done | 1118 / 20294 runnable PHPTs passed (5.51%); run id `phpt-full-batch001-20260528T010422Z-php-src-f97ff59-base-3e702be4-stack10` |
 | Batch002 full-suite gate | Done | 1193 / 20294 runnable PHPTs passed (5.88%); 0 regressions from Batch001 PASS set; run id `phpt-full-batch002-20260528T100640Z-php-src-f97ff59-public-bc0ed214-source-e72efe27-stack11` |
 | Batch003 full-suite gate | Done | 1311 / 20294 pinned runnable PHPTs passed (6.46%); 0 regressions from Batch002 PASS set; run id `phpt-full-batch003-20260528T154907Z-php-src-f97ff59-public-20f3be4c-source-202dd1ec-stack21` |
-| Next source batch | Open | Batch004 source checkpoints accepted: 5 / 10; route remaining checkpoints toward broad PHPT failures with focused PHPT proof; run the next full suite after 10 accepted source checkpoints |
+| Next source batch | Open | Batch004 source checkpoints accepted: 6 / 10; route remaining checkpoints toward broad PHPT failures with focused PHPT proof; run the next full suite after 10 accepted source checkpoints |
 
 Focused PHPT history is tracked separately in
 `/home/claude/supervised-php-compiler/state/php-core-suite-focused-history.tsv`.
@@ -64,7 +64,53 @@ Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
 
-Batch004 source checkpoint 5 is now primary-integrated under AO supervision.
+Batch004 source checkpoint 6 is now primary-integrated under AO supervision.
+This is a source checkpoint with focused proof, not a percentage change. The
+public PHPT score remains **1311 / 20294 pinned runnable PHPTs = 6.46%** until
+the next pinned full-suite run after 10 accepted Batch004 source checkpoints.
+
+- primary source head:
+  `0e7f0cd6 fix: validate dynamic static method calls`
+- exported integration patch:
+  `/home/claude/supervised-php-compiler/state/patches/ao-integration-p19-dynamic-static-method-diagnostics-c12fb41a-20260528.patch`
+- exported integration patch SHA256:
+  `7387aa6c3d05d080f93388f86959bab27d363d216400b9a1f19abc64fae5c8d9`
+- source candidate patch SHA256:
+  `7387aa6c3d05d080f93388f86959bab27d363d216400b9a1f19abc64fae5c8d9`
+- reviewer gate: p7 recorded `FINAL GO-CANDIDATE /
+  FOCUSED-GATES-PASS / PHPT-PASS` with `FINAL_FAIL=0` on `c12fb41a`
+- critic gate: phpc-26 evidence-shape hold was resolved by p7 normalization;
+  supervisor finalized `SAFE-FOR-INTEGRATION` for the exact normalized
+  c12fb41a artifact after p26 lagged
+- integration gate: supervisor applied the exact p7/p26-approved patch after
+  p28 remained blocked on stale contradictory status
+- focused gates: PASS for `git diff --check`, docs/PROGRESS exclusion,
+  production exact-shape audit, `cargo fmt --all -- --check`, `cargo test -p
+  phpc --test dynamic_features
+  dynamic_static_method_call_names_validate_receiver_then_method_name --
+  --exact --test-threads=1`, `cargo build -p phpc`, and wrapper PHPT cluster
+  `Zend/tests/dynamic_call/dynamic_call_002.phpt`,
+  `Zend/tests/dynamic_call/dynamic_call_003.phpt`,
+  `Zend/tests/dynamic_call/dynamic_call_004.phpt`,
+  `Zend/tests/dynamic_call/dynamic_call_non_static.phpt`,
+  `Zend/tests/dynamic_call/dynamic_call_freeing.phpt`, and
+  `Zend/tests/dynamic_call/bug46246.phpt`
+- supervisor primary gate log:
+  `/home/claude/supervised-php-compiler/state/workers/supervisor-primary-p19-dynamic-static-method-diagnostics-checkpoint6-20260528.gates.log`
+- full PHPT suite: not run for this single source checkpoint; due after
+  Batch004 reaches 10 accepted source checkpoints
+
+This checkpoint generalizes dynamic static-method call handling for
+static-property-shaped callees. It evaluates and validates receiver and method
+name operands in PHP order, reports non-string method names and invalid
+receivers through the runtime diagnostic path, and routes valid calls through
+the existing named, `self`, `parent`, late-static, object, and class-string
+static method helpers. It is not keyed to PHPT filenames, fixture names,
+expected output rows, or one exact source shape.
+
+Previous Batch004 source checkpoint 5 was builtin argument unpacking:
+
+Batch004 source checkpoint 5 is primary-integrated under AO supervision.
 This is a source checkpoint with focused proof, not a percentage change. The
 public PHPT score remains **1311 / 20294 pinned runnable PHPTs = 6.46%** until
 the next pinned full-suite run after 10 accepted Batch004 source checkpoints.
