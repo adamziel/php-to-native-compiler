@@ -1084,3 +1084,31 @@ fn emit_ir_rejects_direct_spl_autoload_register_until_native_autoloading_exists(
     assert_eq!(class_alias_error.phase, Phase::Codegen);
     assert_eq!(class_alias_error.message, LLVM_FUNCTION_CALL_REJECTION);
 }
+
+#[test]
+fn lsb_autoload_class_not_found_fatal_uses_single_separator_after_inline_output() {
+    let execution = run_source_with_source_file(
+        r#"<?php
+class A {
+    static function test($v = '') {
+        print_r(get_called_class());
+    }
+}
+class B extends A {
+}
+B::test();
+spl_autoload_register('B::test');
+new X();
+?>
+"#,
+        "/tmp/bug47699.php",
+    )
+    .unwrap();
+
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 255);
+    assert_eq!(
+        execution.stdout,
+        "BB\nFatal error: Uncaught Error: Class \"X\" not found in /tmp/bug47699.php:11\nStack trace:\n#0 {main}\n  thrown in /tmp/bug47699.php on line 11"
+    );
+}

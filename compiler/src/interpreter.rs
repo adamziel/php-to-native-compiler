@@ -14109,6 +14109,7 @@ impl Interpreter {
         }
         if !self.stdout.ends_with('\n') {
             self.stdout.push('\n');
+            return;
         }
         if !self.stdout.ends_with("\n\n") {
             self.stdout.push('\n');
