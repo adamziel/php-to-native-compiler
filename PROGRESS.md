@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-28 18:13 CEST
+Updated: 2026-05-28 18:20 CEST
 Primary branch: `master`
 Latest source head: `202dd1ec fix: reject disallowed property types`
 
@@ -102,8 +102,8 @@ Previous post-Batch002 source checkpoint 20 was p19 dynamic-call bug63173:
 
 Post-Batch002 source checkpoint 20 is now primary-integrated under AO
 supervision. This is a source checkpoint with focused proof, not a percentage
-change. At that checkpoint time, the public score remained **1193 / 20294
-runnable PHPTs = 5.88%** pending the next pinned full-suite run.
+change. It was later included in Batch003, whose current public score is
+recorded at the top of this file.
 
 - primary source head:
   `32b8b637 fix: validate dynamic array callback shape`
@@ -142,8 +142,8 @@ Previous post-Batch002 source checkpoint 19 was p15 assignment expression:
 
 Post-Batch002 source checkpoint 19 is now primary-integrated under AO
 supervision. This is a source checkpoint with focused proof, not a percentage
-change. At that checkpoint time, the public score remained **1193 / 20294
-runnable PHPTs = 5.88%** pending the next pinned full-suite run.
+change. It was later included in Batch003, whose current public score is
+recorded at the top of this file.
 
 - primary source head:
   `dfd7ff09 fix: return coerced typed property assignment values`
@@ -181,8 +181,8 @@ Previous post-Batch002 source checkpoint 18 was p31 argument unpack successor:
 
 Post-Batch002 source checkpoint 18 is now primary-integrated under AO
 supervision. This is a source checkpoint with focused proof, not a percentage
-change. At that checkpoint time, the public score remained **1193 / 20294
-runnable PHPTs = 5.88%** pending the next pinned full-suite run.
+change. It was later included in Batch003, whose current public score is
+recorded at the top of this file.
 
 - primary source head:
   `97e80bcc fix: support string-keyed argument unpacking`
@@ -222,8 +222,8 @@ Previous post-Batch002 source checkpoint 17 was p17 attributes next-source:
 
 Post-Batch002 source checkpoint 17 is now primary-integrated under AO
 supervision. This is a source checkpoint with focused proof, not a percentage
-change. At that checkpoint time, the public score remained **1193 / 20294
-runnable PHPTs = 5.88%** pending the next pinned full-suite run.
+change. It was later included in Batch003, whose current public score is
+recorded at the top of this file.
 
 - primary source head:
   `f508515b fix: allow abstract trait override targets`
@@ -261,8 +261,8 @@ Previous post-Batch002 source checkpoint 16 was p19 dynamic call:
 
 Post-Batch002 source checkpoint 16 is now primary-integrated under AO
 supervision. This is a source checkpoint with focused proof, not a percentage
-change. At that checkpoint time, the public score remained **1193 / 20294
-runnable PHPTs = 5.88%** pending the next pinned full-suite run.
+change. It was later included in Batch003, whose current public score is
+recorded at the top of this file.
 
 - primary source head:
   `8f4e7996 fix: support static object array callbacks`
@@ -300,8 +300,8 @@ Previous post-Batch002 source checkpoint 15 was p17 method override:
 
 Post-Batch002 source checkpoint 15 is now primary-integrated under AO
 supervision. This is a source checkpoint with focused proof, not a percentage
-change. At that checkpoint time, the public score remained **1193 / 20294
-runnable PHPTs = 5.88%** pending the next pinned full-suite run.
+change. It was later included in Batch003, whose current public score is
+recorded at the top of this file.
 
 - primary source head:
   `8d4f1971 fix: validate method override attributes`
@@ -345,8 +345,8 @@ Previous post-Batch002 source checkpoint 14 was p31 call-argument unpack:
 
 Post-Batch002 source checkpoint 14 is primary-integrated under AO
 supervision. This is a source checkpoint with focused proof, not a percentage
-change. At that checkpoint time, the public score remained **1193 / 20294
-runnable PHPTs = 5.88%** pending the next pinned full-suite run.
+change. It was later included in Batch003, whose current public score is
+recorded at the top of this file.
 
 - primary source head:
   `30e8e734 fix: expand argument unpacking for calls`
@@ -381,8 +381,8 @@ TypeError:
 
 Post-Batch002 source checkpoint 13 is primary-integrated under AO
 supervision. This is a source checkpoint with focused proof, not a percentage
-change. At that checkpoint time, the public score remained **1193 / 20294
-runnable PHPTs = 5.88%** pending the next pinned full-suite run.
+change. It was later included in Batch003, whose current public score is
+recorded at the top of this file.
 
 - primary source head:
   `ed7fbc6b fix: throw type errors for constant defaults`
@@ -417,9 +417,9 @@ fixture function names, constant names, expected output rows, or `PHP_EOL`.
 Previous post-Batch002 source checkpoint 12 was p17 promoted-property override:
 
 Post-Batch002 source checkpoint 12 is primary-integrated under AO. This is a
-source checkpoint with focused proof, not a percentage change. At that
-checkpoint time, the public score remained **1193 / 20294 runnable PHPTs =
-5.88%** pending the next pinned full-suite run.
+source checkpoint with focused proof, not a percentage change. It was later
+included in Batch003, whose current public score is recorded at the top of this
+file.
 
 - primary source head:
   `0dafd34e fix: validate promoted property override attributes`
