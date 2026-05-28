@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-29 00:31 CEST
+Updated: 2026-05-29 00:39 CEST
 Primary branch: `master`
-Latest source head: `6d0ab7d4 fix: add core date and timezone builtins`
+Latest source head: `1c4da4c5 fix: expand standard array operations`
 
 ## Progress Score
 
@@ -76,13 +76,53 @@ stable pinned denominator and does not use the raw runner
 | Batch004 checkpoint8 regression-repair sharded gate | Done | 1369 / 20294 pinned runnable PHPTs passed (6.75%); 0 regressions from Batch003 PASS set; run id `phpt-full-batch004-regression-repair-sharded-20260528T192018Z-php-src-f97ff59-public-3c86fc6a-source-b75047df-stack8` |
 | Batch004 checkpoint10 sharded gate | Done | 1413 / 20294 pinned runnable PHPTs passed (6.96%); 0 regressions from checkpoint8 PASS set; run id `phpt-full-batch004-checkpoint10-sharded-20260528T195852Z-php-src-f97ff59-public-37941f23-source-241b8411-stack10` |
 | Batch004 source batch | Complete | Batch004 source checkpoints accepted: 10 / 10; checkpoint10 sharded gate published |
-| Batch005 source batch | In progress | Batch005 source checkpoints accepted: 9 / 10; public score unchanged until next full/sharded publication gate |
+| Batch005 source batch | Complete | Batch005 source checkpoints accepted: 10 / 10; next pinned full/sharded publication gate is due |
 
 Focused PHPT history is tracked separately in
 `/home/claude/supervised-php-compiler/state/php-core-suite-focused-history.tsv`.
 Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
+
+Batch005 source checkpoint 10 is primary-integrated under AO supervision. This
+is a source checkpoint with focused proof, not a percentage change. The public
+PHPT score remains **1413 / 20294 pinned runnable PHPTs = 6.96%** until the
+next pinned full-suite or supervisor-approved sharded publication gate is
+completed, regression-checked, and published here.
+
+- primary source head:
+  `1c4da4c5 fix: expand standard array operations`
+- reviewed patch:
+  `/home/claude/supervised-php-compiler/state/patches/ao-coder-standard-array-current-37941f23-20260528.patch`
+- reviewed patch SHA256:
+  `a3280b2db7a31346e4487a96bf28e1c477cbc25b243a854eb82b47cdf94203d6`
+- current-public integration patch:
+  `/home/claude/supervised-php-compiler/state/patches/ao-integration-p44-standard-array-successor4-5f4b43fe-20260529.patch`
+- current-public integration patch SHA256:
+  `4628dbd8e887da2c6b3ec1ce8575157ca41d2bcd983e262cd8964de233ff34d4`
+- reviewer gate: reviewer-B/phpc-48 recorded `FINAL GO-CANDIDATE` with
+  current-public `5f4b43fe` revalidation; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/batch005-review-standard-array-successor4-5f4b43fe-20260529.{status.md,report.md,gates.log}`
+- critic gate: phpc-49 recorded `SAFE-FOR-INTEGRATION`; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/batch005-critic-standard-array-successor4-5f4b43fe-20260529.{status.md,report.md}`
+- integration handoff: p28 recorded `FINAL-HANDOFF /
+  READY-FOR-SUPERVISOR-APPLY`; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/ao-integration-p44-standard-array-successor4-5f4b43fe-20260529.{status.md,report.md,gates.log}`
+- supervisor focused gates: PASS for patch SHA, `git apply --check`,
+  `git diff --check`, production exact-shape marker audit, and
+  `cargo fmt --all -- --check`; p28 scratch gates also passed focused Rust
+  `array_sort_builtin`, `array_unshift_builtin`, `current_builtin`,
+  `cargo build -p phpc`, and a 10-row focused standard-array PHPT cluster
+- full PHPT suite: not run for this single source checkpoint; the next broad
+  gate is due now that Batch005 has 10 accepted source checkpoints
+
+This checkpoint generalizes standard array ordering and pointer/mutation
+behavior, including sort operation routing, `SORT_*` flags, `array_shift()`,
+`array_push()`, and current/key/prev/reset/end array pointer behavior. It is
+not keyed to a PHPT filename, expected-output fixture, batch marker, public
+hash, or test-name branch.
+
+Previous Batch005 source checkpoint 9 was date/timezone scalar behavior:
 
 Batch005 source checkpoint 9 is primary-integrated under AO supervision. This
 is a source checkpoint with focused proof, not a percentage change. The public
