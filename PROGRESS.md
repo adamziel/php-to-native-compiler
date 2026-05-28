@@ -1,7 +1,7 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-28 02:59 CEST
-Primary source head: `ef73936d docs: update AO coder roster`
+Updated: 2026-05-28 03:04 CEST
+Primary source head: `5197008b docs: record batch 001 full gate readiness`
 Latest source head: `0fa7b666 runtime: autoload enum_exists misses`
 
 ## Progress Score
@@ -39,7 +39,7 @@ Policy: stage 10 accepted generalized source PRs, run focused gates per PR, run
 the full PHPT suite once after PR 10, repair regressions, then merge the whole
 batch.
 
-Current batch status: **10/10 accepted, not merged; full PHPT gate pending**.
+Current batch status: **10/10 accepted, not merged; full PHPT gate running**.
 Independent reviewer `phpc-7` accepted r81 / PR #1 as Batch 001 PR 10
 at 2026-05-28 02:59 CEST after accepted-stack apply, exact-shape audit,
 focused Rust/compiler gates, and focused wrapper PHPT `Zend/tests/namespaces/ns_065.phpt`
@@ -64,7 +64,7 @@ Gate status and parked candidates:
 
 | Item | State |
 | --- | --- |
-| Batch 001 full PHPT gate | Authorized now that Batch 001 is recorded as 10/10; AO orchestrator should start r84 and run the pinned full suite once before merge |
+| Batch 001 full PHPT gate | Running in AO session `phpc-11` using the r86 clean `/tmp` gate plan; this is the single authorized full-suite run before merge |
 | `Zend/tests/bug39944.phpt` reference invocation | PR #2/r82 has focused PASS and patch/report artifacts but is parked for post-Batch 001 / Batch 002 unless r81 is invalidated |
 | Anonymous-class dynamic-call blocker | AO scout classified this as NO-GO for Batch 001 PR 10; deferred as a broader parser/interpreter/native feature |
 | PHPT focused queue | `tests/classes/__set__get_002.phpt` passes on the 9/10 stack; r85 queue now feeds additional coder lanes |
@@ -85,7 +85,8 @@ Required live roles:
 | Progress reporter | Keeps this `PROGRESS.md` file and durable supervisor state current after material AO events |
 | Coders | Work disjoint focused PHPT lanes from the queue; each lane must produce a patch, PASS-NO-PATCH, or NO-GO artifact |
 
-Current AO snapshot: `phpc-orchestrator` should start the r84 full PHPT gate; `phpc-4` critic audit;
+Current AO snapshot: `phpc-orchestrator` supervising; `phpc-11` full-suite gate;
+`phpc-4` critic audit;
 `phpc-7` independent reviewer has accepted r81 as PR 10 and handed off;
 `phpc-8` progress reporter; `phpc-9` magic-signature coder; `phpc-10`
 by-reference coder. PR #2/r82 remains parked unless Batch 001 PR 10 selection
