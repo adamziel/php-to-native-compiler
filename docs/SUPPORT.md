@@ -6356,7 +6356,10 @@
   null-callback zip form, and one-array and variadic string-callback forms,
   `in_array`, `array_search`, both current `foreach` array forms, direct
   array-offset `unset`, multiple supported `unset(...)` operands, `print_r`,
-  and `var_dump` are implemented for this ordered value model.
+  and `var_dump` are implemented for this ordered value model. Array walkers
+  used by `print_r` and `var_dump` read cloned slot values, so reference-backed
+  leaves produced by supported by-reference foreach and array-reference flows
+  render without flattening or requiring direct value borrows.
 - Type coercion: scalar arithmetic supports `null`, booleans, integers, floats,
   and well-formed numeric strings with optional sign, decimal point, exponent,
   and surrounding ASCII whitespace. Non-numeric strings fail with a stable
