@@ -12603,6 +12603,11 @@ impl Interpreter {
                             &error_message,
                         );
                     }
+                    return self.uncaught_php_error_execution(
+                        &error,
+                        error_class_name,
+                        &error_message,
+                    );
                 }
                 return Err(error);
             }
@@ -14002,6 +14007,44 @@ impl Interpreter {
             stderr: self.stderr.clone(),
             exit_code: self.exit_signal.unwrap_or(255),
         })
+    }
+
+    fn uncaught_php_error_execution(
+        &mut self,
+        error: &Diagnostic,
+        error_class_name: &str,
+        error_message: &str,
+    ) -> CompileResult<Execution> {
+        self.emit_uncaught_php_error_fatal(error, error_class_name, error_message);
+        self.exit_signal = Some(255);
+        self.run_shutdown_callbacks()?;
+        self.run_shutdown_destructors()?;
+        self.flush_output_buffers();
+        Ok(Execution {
+            stdout: self.stdout.clone(),
+            stderr: self.stderr.clone(),
+            exit_code: self.exit_signal.unwrap_or(255),
+        })
+    }
+
+    fn emit_uncaught_php_error_fatal(
+        &mut self,
+        error: &Diagnostic,
+        error_class_name: &str,
+        error_message: &str,
+    ) {
+        let file = self
+            .source_file
+            .clone()
+            .or_else(|| error.file.as_ref().map(|file| file.display().to_string()))
+            .unwrap_or_else(|| "Command line code".to_string());
+        let line = error.line;
+        if !self.stdout.is_empty() && !self.stdout.ends_with('\n') {
+            self.stdout.push('\n');
+        }
+        self.stdout.push_str(&format!(
+            "Fatal error: Uncaught {error_class_name}: {error_message} in {file}:{line}\nStack trace:\n#0 {{main}}\n  thrown in {file} on line {line}"
+        ));
     }
 
     fn emit_uncaught_call_argument_type_error_fatal(
@@ -64742,12 +64785,10 @@ impl Interpreter {
         allow_extra_user_args: bool,
     ) -> CompileResult<Value> {
         let Some((target, method_name)) = array_callable_parts(callback) else {
-            return Err(runtime_error(
+            return Err(array_callable_shape_error(
+                callback,
+                "call_user_func_array()",
                 span,
-                RuntimeError::unsupported_call(
-                    "call_user_func_array()",
-                    "array callback must be [object-or-class, method] in the current subset",
-                ),
             ));
         };
 
@@ -71927,12 +71968,28 @@ fn non_static_method_called_statically_error(
 }
 
 fn array_callable_shape_error(callback: &PhpArray, context: &str, span: Span) -> Diagnostic {
-    if callback.entries().len() != 2 {
+    let entries = callback.entries();
+    if entries.len() != 2 {
         return Diagnostic::new(
             Phase::Runtime,
             span.line,
             span.column,
             "Array callback must have exactly two elements",
+        );
+    }
+
+    let has_zero = entries
+        .iter()
+        .any(|entry| matches!(entry.key, ArrayKey::Int(0)));
+    let has_one = entries
+        .iter()
+        .any(|entry| matches!(entry.key, ArrayKey::Int(1)));
+    if !has_zero || !has_one {
+        return Diagnostic::new(
+            Phase::Runtime,
+            span.line,
+            span.column,
+            "Array callback has to contain indices 0 and 1",
         );
     }
 
@@ -72116,6 +72173,10 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
         }
 
         if error.message == "Array callback must have exactly two elements" {
+            return Some(("Error", error.message.clone()));
+        }
+
+        if error.message == "Array callback has to contain indices 0 and 1" {
             return Some(("Error", error.message.clone()));
         }
 

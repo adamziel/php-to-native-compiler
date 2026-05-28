@@ -842,6 +842,24 @@ try {
 }
 
 #[test]
+fn invalid_array_callbacks_with_missing_zero_one_indices_emit_uncaught_error() {
+    let execution = run_source_with_source_file(
+        r#"<?php
+$callback = [1 => 0, 2 => 0];
+$callback();
+"#,
+        "Zend/tests/dynamic_call/bug63173.php".to_string(),
+    )
+    .unwrap();
+
+    assert_eq!(execution.exit_code, 255);
+    assert_eq!(
+        execution.stdout,
+        "Fatal error: Uncaught Error: Array callback has to contain indices 0 and 1 in Zend/tests/dynamic_call/bug63173.php:3\nStack trace:\n#0 {main}\n  thrown in Zend/tests/dynamic_call/bug63173.php on line 3"
+    );
+}
+
+#[test]
 fn dynamic_static_method_string_calls_are_dispatched() {
     let execution = run_source(
         r#"<?php
