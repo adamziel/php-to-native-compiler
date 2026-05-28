@@ -2,7 +2,7 @@
 
 Updated: 2026-05-28 11:47 CEST
 Primary branch: `master`
-Latest source head: `ff8961a3 fix: reject reserved scalar special class names` (p28 reviewed checkpoint; primary source remains `4fa93bd2`)
+Latest source head: `e72efe27 fix: reject reserved scalar special class names`
 
 ## Progress Score
 
@@ -40,12 +40,11 @@ Focused passes prove candidate direction; they do not define project percent.
 
 Batch002 `STACK-CLEAN-11` is the latest reviewed source-integration checkpoint
 under AO. This is a source checkpoint with focused proof, not a PASS-NO-PATCH
-row. Primary/public `master` currently contains source through
-`4fa93bd2 fix: dispatch static magic callbacks`; the p28 internal integration
-stack advanced to `ff8961a3 fix: reject reserved scalar special class names`,
-and phpc-26 marked that corrected checkpoint safe for public progress reporting.
+row. Primary/public `master` now contains the scalar-reserved source integration
+at `e72efe27 fix: reject reserved scalar special class names`, cherry-picked
+from the p28 internal integration stack head `ff8961a3`.
 
-- primary source head: `4fa93bd2 fix: dispatch static magic callbacks`
+- primary source head: `e72efe27 fix: reject reserved scalar special class names`
 - internal p28 stack head: `ff8961a3 fix: reject reserved scalar special class names`
 - exported patch:
   `/home/claude/supervised-php-compiler/state/patches/ao-integration-batch002-stack-20260528.patch`
