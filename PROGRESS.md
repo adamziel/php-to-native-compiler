@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-28 15:24 CEST
+Updated: 2026-05-28 15:39 CEST
 Primary branch: `master`
-Latest source head: `0dafd34e fix: validate promoted property override attributes`
+Latest source head: `ed7fbc6b fix: throw type errors for constant defaults`
 
 ## Progress Score
 
@@ -51,7 +51,45 @@ Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
 
-Post-Batch002 source checkpoint 12 is now primary-integrated under AO. This is a
+Post-Batch002 source checkpoint 13 is now primary-integrated under AO
+supervision. This is a source checkpoint with focused proof, not a percentage
+change. The public score remains **1193 / 20294 runnable PHPTs = 5.88%** until
+another pinned full-suite run is completed, parsed, regression-checked, and
+published here.
+
+- primary source head:
+  `ed7fbc6b fix: throw type errors for constant defaults`
+- source candidate patch:
+  `/home/claude/supervised-php-compiler/state/patches/ao-coder-scalar-constant-defaults-error-typeerror-20260528.patch`
+- source candidate patch SHA256:
+  `aa2f1fb770ecb26ee9aaac10425397baabfdf9b32361577ef79abe0e749049b6`
+- reviewer gate: p7 recorded `FINAL GO-CANDIDATE /
+  NON-REGRESSION-ANCHOR / FOCUSED-GATES-PASS` with `FINAL_FAIL=0`
+- critic gate: phpc-26 recorded `SAFE-FOR-INTEGRATION /
+  P15-SCALAR-CONSTANT-DEFAULT-TYPEERROR / NON-REGRESSION-ANCHOR`
+- focused gates: PASS for `git diff --check`, `cargo fmt --all --
+  --check`, `cargo test -p phpc --test scalar_constant_default_type_errors --
+  --test-threads=1`, `cargo test -p phpc --test default_parameter_constants
+  -- --test-threads=1`, `cargo test -p phpc --test functions_and_scopes
+  reference_parameter_literal_argument_reports_php_fatal_without_calling_body
+  -- --exact --test-threads=1`, `cargo build -p phpc`, and wrapper PHPT
+  `Zend/tests/type_declarations/scalar_constant_defaults_error.phpt`
+- non-regression anchor: `scalar_constant_defaults.phpt` still fails on
+  missing `PHP_EOL`, but p7 proved the same failure on clean public
+  `4574c6fc` without this candidate; it is a separate pre-existing dependency,
+  not a candidate-specific regression
+- full PHPT suite: not run for this single source checkpoint
+
+This checkpoint generalizes user-function call argument type mismatch handling
+for default and constant-backed scalar parameters. It routes mismatches through
+catchable `TypeError`, registers `TypeError` under the existing `Error`/Throwable
+model, preserves catchability for existing dynamic-call `Error` paths, and emits
+PHP-shaped uncaught call-argument diagnostics. It is not keyed to PHPT filenames,
+fixture function names, constant names, expected output rows, or `PHP_EOL`.
+
+Previous post-Batch002 source checkpoint 12 was p17 promoted-property override:
+
+Post-Batch002 source checkpoint 12 is primary-integrated under AO. This is a
 source checkpoint with focused proof, not a percentage change. The public score
 remains **1193 / 20294 runnable PHPTs = 5.88%** until another pinned full-suite
 run is completed, parsed, regression-checked, and published here.
