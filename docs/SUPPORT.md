@@ -5277,7 +5277,8 @@
   top-level class `use` imports with optional `as` aliases, including
   comma-separated class import lists and class-import prefix expansion for
   qualified function calls. Each namespace declaration starts a fresh lexical
-  import segment. Class declarations and class-like references in `extends`,
+  import segment. Top-level `class` declarations accept the keyword with
+  PHP-style ASCII case-insensitivity, and class-like references in `extends`,
   `new`, `instanceof`, static members, and `ClassName::class` resolve through
   the current namespace and class-import table. Namespace-scoped function and
   supported constant declarations register under their resolved names;
