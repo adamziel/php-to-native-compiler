@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-29 00:11 CEST
+Updated: 2026-05-29 00:13 CEST
 Primary branch: `master`
-Latest source head: `8b415d7e fix: track stream wrapper origins`
+Latest source head: `bb3852a8 fix: preserve call_user_func spread source order`
 
 ## Progress Score
 
@@ -76,13 +76,55 @@ stable pinned denominator and does not use the raw runner
 | Batch004 checkpoint8 regression-repair sharded gate | Done | 1369 / 20294 pinned runnable PHPTs passed (6.75%); 0 regressions from Batch003 PASS set; run id `phpt-full-batch004-regression-repair-sharded-20260528T192018Z-php-src-f97ff59-public-3c86fc6a-source-b75047df-stack8` |
 | Batch004 checkpoint10 sharded gate | Done | 1413 / 20294 pinned runnable PHPTs passed (6.96%); 0 regressions from checkpoint8 PASS set; run id `phpt-full-batch004-checkpoint10-sharded-20260528T195852Z-php-src-f97ff59-public-37941f23-source-241b8411-stack10` |
 | Batch004 source batch | Complete | Batch004 source checkpoints accepted: 10 / 10; checkpoint10 sharded gate published |
-| Batch005 source batch | In progress | Batch005 source checkpoints accepted: 7 / 10; public score unchanged until next full/sharded publication gate |
+| Batch005 source batch | In progress | Batch005 source checkpoints accepted: 8 / 10; public score unchanged until next full/sharded publication gate |
 
 Focused PHPT history is tracked separately in
 `/home/claude/supervised-php-compiler/state/php-core-suite-focused-history.tsv`.
 Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
+
+Batch005 source checkpoint 8 is primary-integrated under AO supervision. This
+is a source checkpoint with focused proof, not a percentage change. The public
+PHPT score remains **1413 / 20294 pinned runnable PHPTs = 6.96%** until the
+next pinned full-suite or supervisor-approved sharded publication gate is
+completed, regression-checked, and published here.
+
+- primary source head:
+  `bb3852a8 fix: preserve call_user_func spread source order`
+- reviewed patch:
+  `/home/claude/supervised-php-compiler/state/patches/ao-coder-call-argument-unpack-source-order-call-user-func-7c5484a6-20260528.patch`
+- reviewed patch SHA256:
+  `5e5b1410c57bb752add4eb0f26315d185276dedf38e0e49092de421c4ba4f383`
+- reviewer gate: p7 recorded `FINAL GO-CANDIDATE /
+  CURRENT-HEAD-EQUIVALENT / BASELINE-DIRECT-PHPT-BLOCKER-PROVEN /
+  CUSTOM-PHPT-PASS / FOCUSED-GATES-PASS` with `FINAL_FAIL=0`; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/batch005-review-call-argument-unpack-source-order-call-user-func-7c5484a6-20260528.{status.md,report.md,gates.log}`
+- critic gate: phpc-33 recorded `SAFE-FOR-INTEGRATION`; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/batch005-critic-call-argument-unpack-source-order-call-user-func-7c5484a6-20260528.{status.md,report.md}`
+- integration handoff: the supervisor applied the exact p7+phpc-33 SAFE patch
+  directly because it applied cleanly after checkpoint7
+- supervisor focused gates: PASS for patch SHA, `git apply --check`,
+  `git diff --check`, docs/PROGRESS/examples exclusion, added-line production
+  exact-shape marker audit, `cargo fmt --all -- --check`, focused Rust
+  `dynamic_features call_user_func_argument_unpacking_reuses_source_order_named_binding`,
+  `cargo build -p phpc`, and custom focused PHPT
+  `ao-coder-call-argument-unpack-source-order-call-user-func-7c5484a6-20260528.phpt`
+- supervisor primary gate log:
+  `/home/claude/supervised-php-compiler/state/workers/supervisor-primary-p31-source-order-batch005-checkpoint8-20260529.gates.log`
+- full PHPT suite: not run for this single source checkpoint; next broad gate
+  is due after 10 accepted Batch005 source checkpoints or explicit regression
+  repair
+
+This checkpoint generalizes `call_user_func()` spread/named argument handling
+for user-function dispatch. Spread arguments now reuse the source-order array
+spread evaluation path and carry argument keys through call-frame binding, so
+named and variadic keys are preserved without hard-coding a PHPT row. The
+pinned php-src `call_user_func.phpt` row is still baseline-blocked by an
+unsupported anonymous-class parser case, proven against an unpatched binary,
+so the custom focused PHPT isolates the source-order behavior.
+
+Previous Batch005 source checkpoint 7 was stream-wrapper origin metadata:
 
 Batch005 source checkpoint 7 is primary-integrated under AO supervision. This
 is a source checkpoint with focused proof, not a percentage change. The public
