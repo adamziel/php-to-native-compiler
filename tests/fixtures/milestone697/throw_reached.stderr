@@ -1,2 +1,1 @@
-runtime error at 3:1: unsupported call throw: exception objects and stack unwinding are not implemented
-
+runtime error at 3:1: unsupported call throw: uncaught Exception propagation beyond catch/finally is not implemented

@@ -1,2 +1,2 @@
 <?php
-throw new Exception('boom');
+throw new Exception();

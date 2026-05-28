@@ -124,6 +124,20 @@ fn emit_ir_rejects_short_echo_tags_at_lex_boundary() {
 }
 
 #[test]
+fn php_closing_tag_terminates_semicolonless_final_statements() {
+    let execution = run_source(
+        r#"<?php
+$value = "assigned"?>|<?php
+print "printed";?>|<?php
+echo $value?>"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "|printed|assigned");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn unsupported_php_attribute_arguments_have_stable_lex_errors() {
     let cases = [
         (

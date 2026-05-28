@@ -1,1 +1,0 @@
-phpc intentionally rejects multiple simple class imports in one use declaration until import-list metadata, alias handling, namespace resolution, and native lowering exist.

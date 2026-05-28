@@ -1,1 +1,0 @@
-phpc intentionally keeps reached throw/catch/finally unwinding unsupported; no catch matching or finally-on-error execution happens yet.

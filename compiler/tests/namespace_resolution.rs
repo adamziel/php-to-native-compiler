@@ -2,7 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use php_compiler::ast::{ClassMember, Expr, Stmt};
+use php_compiler::ast::{ClassMember, Expr, Stmt, UseImportKind};
 use php_compiler::error::Phase;
 use php_compiler::{
     codegen::emit_native_executable_c_source, emit_asm_source, emit_ir_source, parse, run_source,
@@ -96,6 +96,117 @@ echo \Vendor\Lib\Tool::class;
         "Vendor\\Lib\\Tool\nVendor\\Lib\\Tool\nVendor\\Lib\\Tool\nVendor\\Lib\\Tool"
     );
     assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn simple_grouped_class_imports_record_all_imports_and_aliases() {
+    let program = parse(
+        r#"<?php
+namespace App\Demo;
+use Vendor\Alpha, Vendor\Beta as LocalBeta;
+class Box {
+    public Alpha $alpha;
+    public LocalBeta $beta;
+}
+"#,
+    )
+    .unwrap();
+
+    let Stmt::Use { imports, .. } = &program.statements[1] else {
+        panic!("expected use declaration after namespace");
+    };
+    assert_eq!(imports.len(), 2);
+    assert_eq!(imports[0].name, "Vendor\\Alpha");
+    assert_eq!(imports[0].alias, "Alpha");
+    assert_eq!(imports[0].kind, UseImportKind::Class);
+    assert_eq!(imports[1].name, "Vendor\\Beta");
+    assert_eq!(imports[1].alias, "LocalBeta");
+    assert_eq!(imports[1].kind, UseImportKind::Class);
+
+    let class = program
+        .statements
+        .iter()
+        .find_map(|stmt| match stmt {
+            Stmt::Class(class) if class.name == "App\\Demo\\Box" => Some(class),
+            _ => None,
+        })
+        .expect("Box class should be parsed");
+    let type_names = class
+        .members
+        .iter()
+        .filter_map(|member| match member {
+            ClassMember::Property(property) => property
+                .type_decl
+                .as_ref()
+                .map(|type_decl| type_decl.text.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(type_names, vec!["Vendor\\Alpha", "Vendor\\Beta"]);
+}
+
+#[test]
+fn simple_grouped_class_imports_resolve_each_runtime_name() {
+    let root = std::env::temp_dir().join(format!(
+        "phpc-namespace-resolution-{}-{}",
+        std::process::id(),
+        "grouped-class-imports"
+    ));
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).expect("create grouped class import fixture directory");
+    let main = root.join("index.php");
+    let lib = root.join("classes.php");
+
+    fs::write(
+        &lib,
+        r#"<?php
+namespace Vendor;
+
+class Alpha {
+    public static function label() {
+        return self::class;
+    }
+}
+
+class Beta {
+    public static function label() {
+        return self::class;
+    }
+}
+"#,
+    )
+    .expect("write grouped class import library fixture");
+
+    let source = r#"<?php
+namespace App\Demo;
+
+use Vendor\Alpha, Vendor\Beta as LocalBeta;
+require 'classes.php';
+
+$alpha = new Alpha();
+$beta = new LocalBeta();
+
+echo Alpha::class, "\n";
+echo LocalBeta::class, "\n";
+echo Alpha::label(), "\n";
+echo LocalBeta::label(), "\n";
+echo get_class($alpha), "\n";
+echo get_class($beta);
+"#;
+    fs::write(&main, source).expect("write grouped class import main fixture");
+
+    let execution = run_source_with_source_file(source, main.display().to_string()).unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "Vendor\\Alpha\nVendor\\Beta\nVendor\\Alpha\nVendor\\Beta\nVendor\\Alpha\nVendor\\Beta"
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let _ = fs::remove_file(lib);
+    let _ = fs::remove_file(main);
+    let _ = fs::remove_dir(root);
 }
 
 #[test]
@@ -718,14 +829,6 @@ if (true) {
             3,
             5,
             "unsupported namespace declaration: namespace declarations are only implemented at file scope",
-        ),
-        (
-            r#"<?php
-use App\A, App\B;
-"#,
-            2,
-            10,
-            "unsupported multiple class use declaration: multiple simple class imports in one use declaration require import-list metadata, alias handling, namespace resolution, and native lowering",
         ),
         (
             r#"<?php

@@ -1,7 +1,6 @@
 use php_compiler::error::Phase;
 use php_compiler::{emit_asm_source, emit_ir_source, run_source};
 
-const LLVM_EXCEPTION_REJECTION: &str = "LLVM exception lowering rejects throw statements and try/catch/finally blocks until native Throwable objects, stack unwinding, catch/finally dispatch, stack traces, and exact native error behavior exist; phpc run handles the current exception boundary";
 const LLVM_OBJECT_INSTANTIATION_REJECTION: &str = "LLVM object-instantiation lowering rejects new expressions and constructor dispatch until native object allocation, object handles, constructor calls, visibility checks, autoload/class lookup, references/copy-on-write, and exact native object-instantiation errors exist; phpc run handles current bounded new behavior";
 const LLVM_OBJECT_METADATA_REJECTION: &str = "LLVM object-metadata lowering rejects object/class metadata builtins until native class metadata tables, object handles, inheritance/interface/trait/enum registries, property/method tables, autoload interaction, references/copy-on-write, and exact native object-metadata errors exist; phpc run handles current bounded object metadata behavior";
 
@@ -60,10 +59,10 @@ $exception = new Exception("message");
 }
 
 #[test]
-fn throw_new_exception_keeps_existing_runtime_boundary_without_evaluating_operand() {
+fn throw_new_exception_reports_uncaught_boundary_after_operand_evaluation() {
     let error = run_source(
         r#"<?php
-throw new Exception("boom");
+throw new Exception();
 "#,
     )
     .unwrap_err();
@@ -73,7 +72,7 @@ throw new Exception("boom");
     assert_eq!(error.column, 1);
     assert_eq!(
         error.message,
-        "unsupported call throw: exception objects and stack unwinding are not implemented"
+        "unsupported call throw: uncaught Exception propagation beyond catch/finally is not implemented"
     );
 }
 
@@ -111,11 +110,11 @@ fn emit_asm_rejects_builtin_exception_metadata_folds_before_backend_execution() 
 }
 
 #[test]
-fn emit_ir_rejects_throw_new_exception_before_native_exception_lowering() {
+fn emit_ir_rejects_throw_new_exception_before_native_object_lowering() {
     let error = emit_ir_source("<?php\nthrow new Exception(\"boom\");\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(error.message, LLVM_EXCEPTION_REJECTION);
+    assert_eq!(error.message, LLVM_OBJECT_INSTANTIATION_REJECTION);
 }
 
 #[test]

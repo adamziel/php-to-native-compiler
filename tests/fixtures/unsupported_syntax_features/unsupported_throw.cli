@@ -2,5 +2,5 @@ exit: 1
 stdout:
 --- stdout end ---
 stderr:
-runtime error at tests/fixtures/unsupported_syntax_features/unsupported_throw.php:2:1: unsupported call throw: exception objects and stack unwinding are not implemented
+runtime error at tests/fixtures/unsupported_syntax_features/unsupported_throw.php:2:1: unsupported call throw: uncaught Exception propagation beyond catch/finally is not implemented
 --- stderr end ---

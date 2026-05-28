@@ -1337,7 +1337,7 @@ const NATIVE_OBJECT_PROPERTY_MAGIC_SOURCE: &str = concat!(
     "        $this->events = $this->events . \"get:\" . $name . \";\";\n",
     "        return \"G:\" . $name;\n",
     "    }\n",
-    "    public function __set(string $name, $value) {\n",
+    "    public function __set(string $name, string $value) {\n",
     "        $this->events = $this->events . \"set:\" . $name . \"=\" . $value . \";\";\n",
     "    }\n",
     "    public function __isset(string $name) {\n",
@@ -1417,6 +1417,24 @@ const NATIVE_OBJECT_PROPERTY_MALFORMED_MAGIC_SOURCE: &str = concat!(
     "}\n",
     "$box = new MalformedObjectPropertyMagicBox();\n",
     "echo $box->missing, \"\\n\";\n",
+);
+
+const NATIVE_OBJECT_PROPERTY_MALFORMED_ISSET_MAGIC_SOURCE: &str = concat!(
+    "<?php\n",
+    "class MalformedIssetObjectPropertyMagicBox {\n",
+    "    public function __isset(&$name) { return true; }\n",
+    "}\n",
+    "$box = new MalformedIssetObjectPropertyMagicBox();\n",
+    "echo isset($box->missing) ? \"yes\" : \"no\", \"\\n\";\n",
+);
+
+const NATIVE_OBJECT_PROPERTY_MALFORMED_UNSET_MAGIC_SOURCE: &str = concat!(
+    "<?php\n",
+    "class MalformedUnsetObjectPropertyMagicBox {\n",
+    "    public function __unset(int $name) { return null; }\n",
+    "}\n",
+    "$box = new MalformedUnsetObjectPropertyMagicBox();\n",
+    "unset($box->missing);\n",
 );
 
 const NATIVE_OBJECT_PROPERTY_PRIVATE_STATIC_MAGIC_SOURCE: &str = concat!(
@@ -2239,6 +2257,22 @@ const NATIVE_REFERENCE_SLOT_FOREACH_ITERABLE_SOURCE: &str = concat!(
     "}\n",
     "$items = [\"outer\" => [\"a\" => \"one\", \"b\" => \"two\"], \"plain\" => [\"x\" => \"hi\"]];\n",
     "refslot_foreach($items);\n",
+    "echo \":\", $items[\"plain\"][\"x\"];\n",
+);
+
+const NATIVE_SYMBOL_TABLE_FOREACH_LVALUE_OWNER_SOURCE: &str = concat!(
+    "<?php\n",
+    "$items = [\"outer\" => [\"a\" => \"one\", \"b\" => \"two\"], \"plain\" => [\"x\" => \"hi\"]];\n",
+    "function activate_symbol_table_for_foreach() {\n",
+    "    global $items;\n",
+    "    return isset($items);\n",
+    "}\n",
+    "activate_symbol_table_for_foreach();\n",
+    "foreach ($items[\"outer\"] as $v) { echo \".\"; }\n",
+    "echo \"|\", $items[\"outer\"][\"a\"];\n",
+    "foreach ($items[\"plain\"] as &$leaf) { $leaf = strtoupper($leaf); }\n",
+    "echo \"|\", $items[\"plain\"][\"x\"];\n",
+    "$leaf = \"tail\";\n",
     "echo \":\", $items[\"plain\"][\"x\"];\n",
 );
 
@@ -5160,6 +5194,16 @@ fn emit_exe_reports_invalid_object_property_magic_metadata_before_fallback() {
             "Method MalformedObjectPropertyMagicBox::__get() must take exactly 1 arguments",
         ),
         (
+            "malformed_isset_object_property_magic",
+            NATIVE_OBJECT_PROPERTY_MALFORMED_ISSET_MAGIC_SOURCE,
+            "Method MalformedIssetObjectPropertyMagicBox::__isset() cannot take arguments by reference",
+        ),
+        (
+            "malformed_unset_object_property_magic",
+            NATIVE_OBJECT_PROPERTY_MALFORMED_UNSET_MAGIC_SOURCE,
+            "MalformedUnsetObjectPropertyMagicBox::__unset(): Parameter #1 must be of type string",
+        ),
+        (
             "private_static_object_property_magic",
             NATIVE_OBJECT_PROPERTY_PRIVATE_STATIC_MAGIC_SOURCE,
             "magic method PrivateObjectPropertyMagicBox::__get must be public",
@@ -5614,6 +5658,44 @@ fn native_executable_c_source_routes_foreach_reference_slot_iterable_owners() {
     assert!(
         !source.contains("array_lvalue_symbol_reference"),
         "foreach over a direct local reference slot should not route through symbol owners:\n{source}"
+    );
+    assert!(
+        !source.contains("native executable by-reference foreach lowering rejects"),
+        "{source}"
+    );
+    assert!(
+        !source.contains("assembly array lowering rejects"),
+        "{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_routes_symbol_table_foreach_lvalue_owners() {
+    let program = parse(NATIVE_SYMBOL_TABLE_FOREACH_LVALUE_OWNER_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("array_lvalue_symbol_reference"),
+        "active root-symbol foreach owners should borrow root references:\n{source}"
+    );
+    assert!(
+        source.contains("phpc_native_symbol_table_reference_for_path"),
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_array_lvalue_owner_reference_slot"),
+        "{source}"
+    );
+    assert!(
+        source
+            .matches("phpc_native_array_lvalue_owner_foreach_iterable_result")
+            .count()
+            >= 2,
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_array_lvalue_owner_foreach_value_reference_result"),
+        "{source}"
     );
     assert!(
         !source.contains("native executable by-reference foreach lowering rejects"),
@@ -9664,6 +9746,10 @@ fn native_executable_c_source_publishes_magic_signature_metadata_through_callabl
     let invalid =
         emit_native_executable_c_source(&parse(NATIVE_MALFORMED_MAGIC_SIGNATURE_SOURCE).unwrap())
             .unwrap();
+    let invalid_property = emit_native_executable_c_source(
+        &parse(NATIVE_OBJECT_PROPERTY_MALFORMED_ISSET_MAGIC_SOURCE).unwrap(),
+    )
+    .unwrap();
 
     assert!(
         valid_dynamic.contains(
@@ -9694,6 +9780,15 @@ fn native_executable_c_source_publishes_magic_signature_metadata_through_callabl
             && !invalid.contains("method_dispatch_status")
             && !invalid.contains("static_method_status"),
         "malformed magic signatures should publish invalid metadata without reviving exact-shape dispatch:\n{invalid}"
+    );
+    assert!(
+        invalid_property.contains("PHPC_NATIVE_CALLABLE_MAGIC_SIGNATURE_INVALID_BY_REFERENCE")
+            && invalid_property.contains(
+                "phpc_native_value_object_property_operation_with_magic_diagnostic"
+            )
+            && !invalid_property.contains("method_dispatch_status")
+            && !invalid_property.contains("static_method_status"),
+        "malformed property magic signatures should publish invalid metadata and route through the property-magic runtime boundary:\n{invalid_property}"
     );
 }
 
@@ -12982,6 +13077,34 @@ fn emit_exe_links_and_runs_reference_slot_foreach_iterable_program() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"a=ONE;b=TWO;|one|HI:tail");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_symbol_table_foreach_lvalue_owner_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "foreach_symbol_table_lvalue_owner",
+        NATIVE_SYMBOL_TABLE_FOREACH_LVALUE_OWNER_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native symbol-table foreach executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"..|one|HI:tail");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&source_path);

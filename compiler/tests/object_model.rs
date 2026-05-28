@@ -1398,6 +1398,49 @@ echo $object::route("object", 4);
 }
 
 #[test]
+fn invalid_magic_call_signature_emits_php_startup_fatal() {
+    let execution = run_source_with_source_file(
+        r#"<?php
+class Test {
+    function __call() {
+    }
+}
+echo "unreached";
+"#,
+        "tests/classes/__call_002.php",
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "");
+    assert_eq!(
+        execution.stderr,
+        "Fatal error: Method Test::__call() must take exactly 2 arguments in tests/classes/__call_002.php on line 3"
+    );
+    assert_eq!(execution.exit_code, 255);
+}
+
+#[test]
+fn invalid_property_magic_signature_emits_php_startup_fatal() {
+    let execution = run_source_with_source_file(
+        r#"<?php
+class MagicBox {
+    public function __unset(int $name) {}
+}
+echo "unreached";
+"#,
+        "tests/classes/magic_property_signature.php",
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "");
+    assert_eq!(
+        execution.stderr,
+        "Fatal error: MagicBox::__unset(): Parameter #1 ($name) must be of type string when declared in tests/classes/magic_property_signature.php on line 3"
+    );
+    assert_eq!(execution.exit_code, 255);
+}
+
+#[test]
 fn magic_to_string_runs_for_echo_print_cast_and_concat() {
     let source = r#"<?php
 class Label {
@@ -10748,6 +10791,176 @@ echo "body\n";
         execution.stdout,
         "construct:first\nconstruct:second\nbody\ndestruct:copy\ndestruct:second\ndestruct:first"
     );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn direct_variable_unset_finalizes_unreachable_destructor_objects_immediately() {
+    let execution = run_source(
+        r#"<?php
+class Watch {
+    public $name;
+
+    public function __construct($name) {
+        $this->name = $name;
+    }
+
+    public function __destruct() {
+        echo "|destruct:", $this->name;
+    }
+}
+
+$single = new Watch("single");
+echo "body";
+unset($single);
+echo "|after-single";
+
+$kept = new Watch("kept");
+$alias = $kept;
+unset($kept);
+echo "|after-kept";
+unset($alias);
+echo "|after-alias";
+
+$left = new Watch("many");
+$right = $left;
+unset($left, $right);
+echo "|after-many";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "body|destruct:single|after-single|after-kept|destruct:kept|after-alias|destruct:many|after-many"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn direct_variable_unset_destructor_output_stays_inside_active_output_buffer() {
+    let execution = run_source(
+        r#"<?php
+class BufferedWatch {
+    public function __destruct() {
+        echo "|destruct";
+    }
+}
+
+ob_start();
+$watch = new BufferedWatch();
+echo "body";
+unset($watch);
+echo "|after";
+$captured = ob_get_clean();
+echo "captured=[" . $captured . "]";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "captured=[body|destruct|after]");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn direct_variable_unset_keeps_caller_frame_object_roots_alive() {
+    let execution = run_source(
+        r#"<?php
+class FrameWatch {
+    public $name;
+
+    public function __construct($name) {
+        $this->name = $name;
+    }
+
+    public function __destruct() {
+        echo "|destruct:", $this->name;
+    }
+}
+
+function clear_parameter($param) {
+    echo "body";
+    unset($param);
+    echo "|after-callee";
+}
+
+function clear_caller() {
+    $root = new FrameWatch("caller");
+    clear_parameter($root);
+    echo "|after-caller";
+    unset($root);
+    echo "|after-caller-unset";
+}
+
+clear_caller();
+echo "|end";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "body|after-callee|after-caller|destruct:caller|after-caller-unset|end"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn direct_variable_unset_finalizes_function_local_last_root_immediately() {
+    let execution = run_source(
+        r#"<?php
+class LocalWatch {
+    public function __destruct() {
+        echo "|destruct";
+    }
+}
+
+function clear_local() {
+    $root = new LocalWatch();
+    echo "body";
+    unset($root);
+    echo "|after-local";
+}
+
+clear_local();
+echo "|end";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "body|destruct|after-local|end");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn direct_variable_unset_defers_objects_reachable_from_tracked_runtime_roots() {
+    let execution = run_source(
+        r#"<?php
+class StaticRoot {
+    public static $slot;
+}
+
+class RuntimeRootWatch {
+    public function __destruct() {
+        echo "|destruct";
+    }
+}
+
+function shutdown_marker($value) {
+    echo "|shutdown";
+}
+
+$root = new RuntimeRootWatch();
+StaticRoot::$slot = $root;
+register_shutdown_function("shutdown_marker", $root);
+echo "body";
+unset($root);
+echo "|after-unset";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "body|after-unset|shutdown|destruct");
     assert_eq!(execution.exit_code, 0);
 }
 

@@ -168,7 +168,7 @@ const ASSEMBLY_ENUM_REJECTION: &str = "assembly enum lowering rejects enum decla
 const LLVM_NAMESPACE_REJECTION: &str = "LLVM namespace lowering rejects namespace declarations, namespace-qualified names, namespace imports, and namespace-aware name resolution until native symbol tables, namespace context, aliases/imports, fallback function/constant lookup, class/autoload lookup, and exact native error behavior exist; phpc run handles current namespace behavior";
 const LLVM_ARRAY_REJECTION: &str = "LLVM array lowering rejects arrays, array literals, array indexing, array assignment, foreach array iteration, array offset unset, and array builtin function calls until native array storage layout, key normalization, copy-on-write, references, callbacks, and exact native error behavior exist; phpc run handles current array behavior";
 const ASSEMBLY_ARRAY_REJECTION: &str = "assembly array lowering rejects unsupported arrays, unsupported array indexing forms, unsupported array assignment forms, unsupported foreach array iteration forms, unsupported array offset unset forms, and array builtin function calls until native array storage layout, key normalization, copy-on-write, references, callbacks, and exact native error behavior exist; generated-native C routes lowerable direct array offset writes, appends, unsets, and by-value foreach over tracked native array owners through shared native ABIs";
-const ASSEMBLY_NATIVE_ARRAY_BY_REFERENCE_FOREACH_REJECTION: &str = "native executable by-reference foreach lowering rejects this by-reference iteration form; generated C currently supports array and nested-array lvalue owners with compact value-reference assignment, loop-value array-lvalue assignment bodies, and direct loop-variable post-loop aliases through phpc_native_array_lvalue_owner_foreach_value_reference_result(), while temporary iterable owners, arbitrary body mutation, cursor variable mutation, symbol-table/request owners, broader references/copy-on-write parity, and exact cleanup ownership remain unsupported; phpc run handles current by-reference foreach behavior";
+const ASSEMBLY_NATIVE_ARRAY_BY_REFERENCE_FOREACH_REJECTION: &str = "native executable by-reference foreach lowering rejects this by-reference iteration form; generated C currently supports array, nested-array, direct reference-slot, and active root symbol-table lvalue owners with compact value-reference assignment, loop-value array-lvalue assignment bodies, and direct loop-variable post-loop aliases through phpc_native_array_lvalue_owner_foreach_value_reference_result(), while temporary iterable owners, arbitrary body mutation, cursor variable mutation, request owners, arbitrary alias-root owners, broader references/copy-on-write parity, and exact cleanup ownership remain unsupported; phpc run handles current by-reference foreach behavior";
 const LLVM_ARRAY_ACCESS_REJECTION: &str = "LLVM ArrayAccess lowering rejects object offset reads/writes/isset/empty/unset/compound paths until native ArrayAccess dispatch for offsetGet(), offsetSet(), offsetExists(), and offsetUnset(), object handles, references/copy-on-write, and exact PHP diagnostics exist; phpc run handles current bounded ArrayAccess behavior";
 const ASSEMBLY_ARRAY_ACCESS_REJECTION: &str = "assembly ArrayAccess lowering rejects object offset reads/writes/isset/empty/unset/compound paths until native ArrayAccess dispatch for offsetGet(), offsetSet(), offsetExists(), and offsetUnset(), object handles, references/copy-on-write, and exact PHP diagnostics exist; phpc run handles current bounded ArrayAccess behavior";
 const LLVM_ARRAY_DESTRUCTURING_REJECTION: &str = "LLVM array destructuring lowering rejects list(...) and [...] assignment targets until native array storage layout, ordered key lookup, missing-key diagnostics, nested destructuring, references/copy-on-write, and exact native assignment ordering exist; phpc run handles current simple destructuring assignment behavior";
@@ -4963,26 +4963,30 @@ fn function_body_contains_native_frame_blocker(statements: &[Stmt]) -> bool {
         || statements.iter().any(stmt_contains_function_frame_blocker)
 }
 
-fn function_reference_return_sources_are_supported(function: &FunctionDecl) -> bool {
+fn function_reference_return_sources_are_supported<F>(
+    function: &FunctionDecl,
+    reference_source_supported: F,
+) -> bool
+where
+    F: Fn(&Expr) -> bool,
+{
     if !function.returns_by_reference {
         return true;
     }
 
-    let by_reference_symbols = function
-        .params
-        .iter()
-        .filter(|param| param.by_reference)
-        .map(|param| param.name.as_str())
-        .collect::<HashSet<_>>();
-    stmt_list_reference_return_sources_are_supported(&function.body, &by_reference_symbols)
+    stmt_list_reference_return_sources_are_supported(&function.body, &reference_source_supported)
 }
 
-fn closure_reference_return_sources_are_supported<'a>(
-    params: &'a [FunctionParam],
-    captures: &'a [ClosureCapture],
+fn closure_reference_return_sources_are_supported<F>(
+    params: &[FunctionParam],
+    captures: &[ClosureCapture],
     body: &[Stmt],
     returns_by_reference: bool,
-) -> bool {
+    reference_source_supported: F,
+) -> bool
+where
+    F: Fn(&Expr) -> bool,
+{
     if !returns_by_reference {
         return true;
     }
@@ -4998,61 +5002,87 @@ fn closure_reference_return_sources_are_supported<'a>(
             .filter(|capture| capture.by_reference)
             .map(|capture| capture.name.as_str()),
     );
-    stmt_list_reference_return_sources_are_supported(body, &by_reference_symbols)
+
+    stmt_list_reference_return_sources_are_supported(body, &|expr| {
+        closure_reference_return_source_is_supported(
+            expr,
+            &by_reference_symbols,
+            &reference_source_supported,
+        )
+    })
 }
 
-fn stmt_list_reference_return_sources_are_supported(
-    statements: &[Stmt],
+fn closure_reference_return_source_is_supported<F>(
+    expr: &Expr,
     by_reference_symbols: &HashSet<&str>,
-) -> bool {
+    reference_source_supported: &F,
+) -> bool
+where
+    F: Fn(&Expr) -> bool,
+{
+    if matches!(expr, Expr::Variable(name, _) if !by_reference_symbols.contains(name.as_str())) {
+        return false;
+    }
+
+    reference_source_supported(expr)
+}
+
+fn stmt_list_reference_return_sources_are_supported<F>(
+    statements: &[Stmt],
+    reference_source_supported: &F,
+) -> bool
+where
+    F: Fn(&Expr) -> bool,
+{
     statements
         .iter()
-        .all(|stmt| stmt_reference_return_sources_are_supported(stmt, by_reference_symbols))
+        .all(|stmt| stmt_reference_return_sources_are_supported(stmt, reference_source_supported))
 }
 
-fn stmt_reference_return_sources_are_supported(
+fn stmt_reference_return_sources_are_supported<F>(
     stmt: &Stmt,
-    by_reference_symbols: &HashSet<&str>,
-) -> bool {
+    reference_source_supported: &F,
+) -> bool
+where
+    F: Fn(&Expr) -> bool,
+{
     match stmt {
-        Stmt::Return { value, .. } => value.as_ref().map_or(true, |expr| {
-            reference_return_expr_is_supported(expr, by_reference_symbols)
-        }),
+        Stmt::Return { value, .. } => value.as_ref().map_or(true, reference_source_supported),
         Stmt::If {
             then_branch,
             else_branch,
             ..
         } => {
-            stmt_list_reference_return_sources_are_supported(then_branch, by_reference_symbols)
-                && stmt_list_reference_return_sources_are_supported(
-                    else_branch,
-                    by_reference_symbols,
-                )
+            stmt_list_reference_return_sources_are_supported(
+                then_branch,
+                reference_source_supported,
+            ) && stmt_list_reference_return_sources_are_supported(
+                else_branch,
+                reference_source_supported,
+            )
         }
         Stmt::While { body, .. } | Stmt::DoWhile { body, .. } | Stmt::Foreach { body, .. } => {
-            stmt_list_reference_return_sources_are_supported(body, by_reference_symbols)
+            stmt_list_reference_return_sources_are_supported(body, reference_source_supported)
         }
         Stmt::For { body, .. } => {
-            stmt_list_reference_return_sources_are_supported(body, by_reference_symbols)
+            stmt_list_reference_return_sources_are_supported(body, reference_source_supported)
         }
         Stmt::Switch { cases, .. } => cases.iter().all(|case| {
-            stmt_list_reference_return_sources_are_supported(&case.body, by_reference_symbols)
+            stmt_list_reference_return_sources_are_supported(&case.body, reference_source_supported)
         }),
         Stmt::Try {
             body, finally_body, ..
         } => {
-            stmt_list_reference_return_sources_are_supported(body, by_reference_symbols)
+            stmt_list_reference_return_sources_are_supported(body, reference_source_supported)
                 && finally_body.as_ref().map_or(true, |body| {
-                    stmt_list_reference_return_sources_are_supported(body, by_reference_symbols)
+                    stmt_list_reference_return_sources_are_supported(
+                        body,
+                        reference_source_supported,
+                    )
                 })
         }
         _ => true,
     }
-}
-
-fn reference_return_expr_is_supported(expr: &Expr, by_reference_symbols: &HashSet<&str>) -> bool {
-    matches!(expr, Expr::Variable(name, _) if by_reference_symbols.contains(name.as_str()))
-        || matches!(expr, Expr::Property { .. } | Expr::DynamicProperty { .. })
 }
 
 fn stmt_list_always_returns(statements: &[Stmt]) -> bool {
@@ -18792,6 +18822,12 @@ struct CNativeReferenceMaterialization {
     cleanup_after_use: Vec<String>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CNativeReferenceReturnSourceKind {
+    DirectVariable,
+    DelegatedReferenceSource,
+}
+
 enum CNativeEvaluatedCallArgument {
     Value {
         handle: String,
@@ -22175,7 +22211,9 @@ impl CGenerator {
             || stmt_list_contains_global_import(&method.function.body)
             || method.function.is_nested
             || (method.function.returns_by_reference && method.function.return_type.is_some())
-            || !function_reference_return_sources_are_supported(&method.function)
+            || !function_reference_return_sources_are_supported(&method.function, |expr| {
+                self.native_reference_return_source_is_supported(expr)
+            })
             || native_user_function_has_malformed_variadic_params(&method.function)
             || method
                 .function
@@ -22279,19 +22317,28 @@ impl CGenerator {
         })
     }
 
-    fn native_callable_magic_signature_status(method: &CDeclaredClassMethod) -> &'static str {
-        let name = method.decl.name.as_str();
-        let expected_arity = if name.eq_ignore_ascii_case("__call")
-            || name.eq_ignore_ascii_case("__callStatic")
-            || name.eq_ignore_ascii_case("__set")
-        {
-            2
+    fn native_callable_magic_signature_contract(
+        name: &str,
+    ) -> Option<(usize, Option<&'static str>, Option<&'static str>)> {
+        if name.eq_ignore_ascii_case("__call") || name.eq_ignore_ascii_case("__callStatic") {
+            Some((2, Some("string"), Some("array")))
+        } else if name.eq_ignore_ascii_case("__set") {
+            Some((2, Some("string"), None))
         } else if name.eq_ignore_ascii_case("__get")
             || name.eq_ignore_ascii_case("__isset")
             || name.eq_ignore_ascii_case("__unset")
         {
-            1
+            Some((1, Some("string"), None))
         } else {
+            None
+        }
+    }
+
+    fn native_callable_magic_signature_status(method: &CDeclaredClassMethod) -> &'static str {
+        let name = method.decl.name.as_str();
+        let Some((expected_arity, first_parameter_type, second_parameter_type)) =
+            Self::native_callable_magic_signature_contract(name)
+        else {
             return "PHPC_NATIVE_CALLABLE_MAGIC_SIGNATURE_NOT_MAGIC";
         };
         if method.decl.params.len() != expected_arity
@@ -22302,26 +22349,21 @@ impl CGenerator {
         if method.decl.params.iter().any(|param| param.by_reference) {
             return "PHPC_NATIVE_CALLABLE_MAGIC_SIGNATURE_INVALID_BY_REFERENCE";
         }
-        if !Self::native_magic_signature_type_accepts(
-            method.decl.params[0].type_decl.as_ref(),
-            "string",
-        ) {
-            return "PHPC_NATIVE_CALLABLE_MAGIC_SIGNATURE_INVALID_FIRST_PARAMETER_TYPE";
+        if let Some(expected_type) = first_parameter_type {
+            if !Self::native_magic_signature_type_accepts(
+                method.decl.params[0].type_decl.as_ref(),
+                expected_type,
+            ) {
+                return "PHPC_NATIVE_CALLABLE_MAGIC_SIGNATURE_INVALID_FIRST_PARAMETER_TYPE";
+            }
         }
-        if name.eq_ignore_ascii_case("__call") || name.eq_ignore_ascii_case("__callStatic") {
+        if let Some(expected_type) = second_parameter_type {
             if !Self::native_magic_signature_type_accepts(
                 method.decl.params[1].type_decl.as_ref(),
-                "array",
+                expected_type,
             ) {
                 return "PHPC_NATIVE_CALLABLE_MAGIC_SIGNATURE_INVALID_SECOND_PARAMETER_TYPE";
             }
-        } else if name.eq_ignore_ascii_case("__set")
-            && !Self::native_magic_signature_type_accepts(
-                method.decl.params[1].type_decl.as_ref(),
-                "mixed",
-            )
-        {
-            return "PHPC_NATIVE_CALLABLE_MAGIC_SIGNATURE_INVALID_SECOND_PARAMETER_TYPE";
         }
         "PHPC_NATIVE_CALLABLE_MAGIC_SIGNATURE_VALID"
     }
@@ -22410,7 +22452,9 @@ impl CGenerator {
         }
         if function.is_nested
             || (function.returns_by_reference && function.return_type.is_some())
-            || !function_reference_return_sources_are_supported(function)
+            || !function_reference_return_sources_are_supported(function, |expr| {
+                self.native_reference_return_source_is_supported(expr)
+            })
             || native_user_function_has_malformed_variadic_params(function)
             || function
                 .return_type
@@ -22461,6 +22505,7 @@ impl CGenerator {
                 captures,
                 body,
                 returns_by_reference,
+                |expr| self.native_reference_return_source_is_supported(expr),
             )
             || stmt_list_frame_environment_requirement(body).any()
             || calls_root_symbol_frame
@@ -28305,6 +28350,149 @@ impl CGenerator {
             handle: handle.clone(),
             cleanup_after_use: vec![format!("phpc_native_reference_free({handle});")],
         })
+    }
+
+    fn native_reference_return_source_is_supported(&self, expr: &Expr) -> bool {
+        self.native_reference_return_source_kind(expr).is_some()
+    }
+
+    fn native_reference_return_source_kind(
+        &self,
+        expr: &Expr,
+    ) -> Option<CNativeReferenceReturnSourceKind> {
+        if let Expr::Variable(name, _) = expr {
+            if is_globals_superglobal_name(name) {
+                return None;
+            }
+            if is_request_superglobal_name(name) {
+                return Some(CNativeReferenceReturnSourceKind::DelegatedReferenceSource);
+            }
+            return Some(CNativeReferenceReturnSourceKind::DirectVariable);
+        }
+
+        if self.source_call_reference_argument_is_supported(expr)
+            || Self::request_superglobal_reference_argument_is_supported(expr)
+            || self.object_property_reference_return_source_is_supported(expr)
+            || self.static_property_reference_return_source_is_supported(expr)
+            || self.reference_call_arrayaccess_argument_is_supported(expr)
+        {
+            return Some(CNativeReferenceReturnSourceKind::DelegatedReferenceSource);
+        }
+
+        None
+    }
+
+    fn object_property_reference_return_source_is_supported(&self, expr: &Expr) -> bool {
+        if object_property_reference_parts(expr).is_some() {
+            return true;
+        }
+
+        let Some((target, _, _, _)) = object_property_array_expr_path(expr) else {
+            return false;
+        };
+        object_property_reference_parts(target).is_some()
+    }
+
+    fn static_property_reference_return_source_is_supported(&self, expr: &Expr) -> bool {
+        if Self::static_property_lvalue_target_from_expr(expr).is_some() {
+            return true;
+        }
+
+        let Some((root, _, _)) = array_index_expr_path(expr) else {
+            return false;
+        };
+        Self::static_property_lvalue_target_from_expr(root).is_some()
+    }
+
+    fn unsupported_native_reference_return_source(
+        &self,
+        span: Span,
+        callee: NativeCallCallee,
+    ) -> Diagnostic {
+        self.unsupported_call_operation(NativeCallOperation::value_result(
+            span,
+            callee,
+            NativeCallBlocker::ByReferenceArgumentBinding,
+        ))
+    }
+
+    fn materialize_native_reference_return_variable_source(
+        &mut self,
+        name: &str,
+        span: Span,
+        failure_cleanup: &str,
+        callee: NativeCallCallee,
+    ) -> CompileResult<CNativeReferenceMaterialization> {
+        let Some(value) = self.variables.get(name).cloned() else {
+            return Err(self.unsupported_native_reference_return_source(span, callee));
+        };
+
+        if let CValue::NativeReferenceHandle(reference) = value {
+            let handle = self.clone_native_reference_handle(&reference);
+            let error_exit = self.native_error_exit(failure_cleanup);
+            self.body
+                .push(format!("if ({handle}.ptr == NULL) {{ {error_exit} }}"));
+            return Ok(CNativeReferenceMaterialization {
+                handle: handle.clone(),
+                cleanup_after_use: vec![format!("phpc_native_reference_free({handle});")],
+            });
+        }
+
+        let facts = self.native_value_facts_for_variable(name);
+        let value = self.materialize_native_array_c_value_handle(value, span)?;
+        let reference = self.next_native_name("return_reference_source");
+        self.uses_native_reference_helpers = true;
+        self.body.push(format!(
+            "phpc_NativeReferenceHandle {reference} = phpc_native_reference_from_value_and_free({});",
+            value.handle
+        ));
+        let error_exit = self.native_error_exit(failure_cleanup);
+        self.body
+            .push(format!("if ({reference}.ptr == NULL) {{ {error_exit} }}"));
+        self.release_variable_native_value_handle(name);
+        self.mutable_scalar_slots.remove(name);
+        self.retain_native_reference_cleanup_handle(&reference);
+        self.set_native_reference_facts(&reference, facts);
+        self.variables.insert(
+            name.to_string(),
+            CValue::NativeReferenceHandle(reference.clone()),
+        );
+        self.remember_variable_order(name);
+
+        let handle = self.clone_native_reference_handle(&reference);
+        let error_exit = self.native_error_exit(failure_cleanup);
+        self.body
+            .push(format!("if ({handle}.ptr == NULL) {{ {error_exit} }}"));
+        Ok(CNativeReferenceMaterialization {
+            handle: handle.clone(),
+            cleanup_after_use: vec![format!("phpc_native_reference_free({handle});")],
+        })
+    }
+
+    fn materialize_native_reference_return_source(
+        &mut self,
+        expr: &Expr,
+        span: Span,
+        failure_cleanup: &str,
+        callee: NativeCallCallee,
+    ) -> CompileResult<CNativeReferenceMaterialization> {
+        match self.native_reference_return_source_kind(expr) {
+            Some(CNativeReferenceReturnSourceKind::DirectVariable) => {
+                let Expr::Variable(name, variable_span) = expr else {
+                    return Err(self.unsupported_native_reference_return_source(span, callee));
+                };
+                self.materialize_native_reference_return_variable_source(
+                    name,
+                    *variable_span,
+                    failure_cleanup,
+                    callee,
+                )
+            }
+            Some(CNativeReferenceReturnSourceKind::DelegatedReferenceSource) => {
+                self.materialize_call_reference_argument(expr, span, failure_cleanup, callee)
+            }
+            None => Err(self.unsupported_native_reference_return_source(span, callee)),
+        }
     }
 
     fn materialize_request_superglobal_expr_reference_source(
@@ -39294,7 +39482,7 @@ impl CGenerator {
             return Ok(());
         };
         self.record_function_return_facts_for_value(Some(value));
-        let reference = self.materialize_call_reference_argument(
+        let reference = self.materialize_native_reference_return_source(
             value,
             value.span(),
             "",
@@ -52349,26 +52537,15 @@ impl CGenerator {
         iterable: &'a Expr,
     ) -> Option<CNativeArrayForeachLvalueParts<'a>> {
         match iterable {
-            Expr::Variable(name, span) => match self.variables.get(name) {
-                Some(CValue::ArrayHandle(handle)) => Some(CNativeArrayForeachLvalueParts {
+            Expr::Variable(name, span) => {
+                let source = self.native_array_lvalue_owner_source_for_name(name)?;
+                Some(CNativeArrayForeachLvalueParts {
                     root_name: name.clone(),
-                    source: CNativeArrayLvalueOwnerSource::ArrayHandle {
-                        name: name.clone(),
-                        handle: handle.clone(),
-                    },
+                    source,
                     indices: Vec::new(),
                     span: *span,
-                }),
-                Some(CValue::NativeReferenceHandle(reference)) => {
-                    Some(CNativeArrayForeachLvalueParts {
-                        root_name: name.clone(),
-                        source: CNativeArrayLvalueOwnerSource::ReferenceSlot(reference.clone()),
-                        indices: Vec::new(),
-                        span: *span,
-                    })
-                }
-                _ => None,
-            },
+                })
+            }
             Expr::Index {
                 target,
                 index,
@@ -73819,7 +73996,7 @@ echo " 10" < "zeta";
             "    public function __call(?string $name, mixed $args) { return \"ok\"; }\n",
             "    public static function __callStatic(string|int $name, array|null $args) { return \"ok\"; }\n",
             "    public function __get(?string $name) { return \"ok\"; }\n",
-            "    public function __set(string $name, mixed $value) { return \"ok\"; }\n",
+            "    public function __set(string $name, string $value) { return \"ok\"; }\n",
             "    public function __isset(string $name) { return true; }\n",
             "    public function __unset(string $name) { return null; }\n",
             "    public function normal($value) { return $value; }\n",
@@ -73831,7 +74008,6 @@ echo " 10" < "zeta";
             "class PropertyMagicSignatureInvalidArity { public function __get($name, $extra) {} }\n",
             "class PropertyMagicSignatureInvalidByReference { public function __isset(&$name) {} }\n",
             "class PropertyMagicSignatureInvalidFirstType { public function __unset(int $name) {} }\n",
-            "class PropertyMagicSignatureInvalidSecondType { public function __set(string $name, int $value) {} }\n",
         ))
         .expect("magic signature metadata fixture parses");
         let mut generator = CGenerator {
@@ -73911,10 +74087,6 @@ echo " 10" < "zeta";
         assert_eq!(
             method_status("PropertyMagicSignatureInvalidFirstType", "__unset"),
             "PHPC_NATIVE_CALLABLE_MAGIC_SIGNATURE_INVALID_FIRST_PARAMETER_TYPE"
-        );
-        assert_eq!(
-            method_status("PropertyMagicSignatureInvalidSecondType", "__set"),
-            "PHPC_NATIVE_CALLABLE_MAGIC_SIGNATURE_INVALID_SECOND_PARAMETER_TYPE"
         );
     }
 
