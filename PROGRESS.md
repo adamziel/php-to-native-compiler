@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-28 06:20 CEST
+Updated: 2026-05-28 06:22 CEST
 Primary branch: `master`
 Latest source head: `0fa7b666 runtime: autoload enum_exists misses`
 
@@ -88,6 +88,7 @@ Gate status and parked candidates:
 | `Zend/tests/magic_methods/bug36006.phpt` destructor `$this` / parent-destructor cleanup PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and p14 `SAFE-FOR-PROGRESS`; existing destructor cleanup behavior passes wrapper PHPT `Zend/tests/magic_methods/bug36006.phpt` 1/1; no source patch, no cargo gate, no full-suite run, and no percent change |
 | `Zend/tests/magic_methods/bug37707.phpt` clone-new `__clone` PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and p14 `SAFE-FOR-PROGRESS`; existing clone handling invokes `__clone` for unassigned `clone new` expressions and passes wrapper PHPT `Zend/tests/magic_methods/bug37707.phpt` 1/1 using the pass005 repair2 reviewed binary; no source patch, no cargo gate, no full-suite run, and no percent change |
 | `Zend/tests/magic_methods/bug36759.phpt` shutdown destructor order PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and p14 `SAFE-FOR-PROGRESS`; existing shutdown destructor order behavior passes wrapper PHPT `Zend/tests/magic_methods/bug36759.phpt` 1/1 using the pass005 repair2 reviewed binary; no source patch, no cargo gate, no full-suite run, and no percent change |
+| `Zend/tests/magic_methods/bug38146.phpt` `__get` array-return foreach PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and p14 `SAFE-FOR-PROGRESS`; existing runtime iterates over an array returned by `__get` in foreach/read context and passes wrapper PHPT `Zend/tests/magic_methods/bug38146.phpt` 1/1 using the pass005 repair2 reviewed binary; no source patch, no cargo gate, no full-suite run, and no percent change |
 | p15 `returnByReference.005` rebased object-receiver static reference-return dispatch | GO-CANDIDATE after independent p7 review and p14 `SAFE-FOR-PROGRESS`; patch SHA `9487557714a456f2b3f416af7db1ed9866c6428dd6072bd143afe6a86dd27895`; focused Rust gate, `cargo build -p phpc`, and wrapper PHPTs `tests/lang/returnByReference.005.phpt`, `tests/lang/returnByReference.004.phpt`, and `tests/lang/returnByReference.003.phpt` passed 3/3; no full-suite run and no percent change |
 | `Zend/tests/dereference/dereference_005.phpt` array dereference PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and p14 `SAFE-FOR-PROGRESS`; existing generalized ArrayAccess/object dereference handling passes wrapper PHPT `Zend/tests/dereference/dereference_005.phpt` 1/1; no source patch, no cargo gate, no full-suite run, and no percent change |
 | `Zend/tests/dereference/dereference_008.phpt` dynamic-method array dereference PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and p14 `SAFE-FOR-PROGRESS`; existing dynamic-method dereference/reference behavior passes wrapper PHPT `Zend/tests/dereference/dereference_008.phpt` 1/1; no source patch, no cargo gate, no full-suite run, and no percent change |
@@ -118,10 +119,11 @@ Required live roles:
 Current AO snapshot: `phpc-orchestrator` supervising; `phpc-14` critic;
 `phpc-7` reviewer; `phpc-8` progress reporter; active coder/support lanes
 `phpc-15`, `phpc-16`, `phpc-17`, `phpc-18`, and `phpc-19`. Current
-public-progress watch targets are p14 audits for p7 `bug38146` and
-`bug39449` PASS-NO-PATCH artifacts, the next p7-reviewed candidate plus p14
-`SAFE-FOR-PROGRESS` audit, current coder lane artifacts, and any new full-suite
-PHPT row. Extra sessions
+public-progress watch targets are the next p7-reviewed magic candidate plus p14
+`SAFE-FOR-PROGRESS` audit, including bug38234 only if it is later corrected
+from its current non-public/no-go state; p14 already marks bug37667 DO-NOT-SAFE,
+so do not publish it. Also watch current coder lane artifacts and any new
+full-suite PHPT row. Extra sessions
 `phpc-22` and stale `phpc-2` are killed/not active roster capacity.
 
 ## Current Rules
