@@ -431,12 +431,15 @@ incorrect native code.
   table-status counters or timestamps, full dbDelta diffing, real transactional DDL
   beyond bounded in-memory schema snapshots, persistent object cache, full
   `wpdb`, or native database support
-- a bounded namespace/class-name/function slice: one unbracketed named `namespace`
-  declaration per file, simple top-level class `use` imports with optional
-  `as` aliases, namespace-qualified class declarations, class imports for
-  class-like references, `new`, `extends`, `instanceof`, static members, and
+- a bounded namespace/class-name/function slice: multiple unbracketed named
+  `namespace` declarations per file, simple top-level class `use` imports with
+  optional `as` aliases, including comma-separated class import lists and
+  class-import prefix expansion for qualified function calls,
+  namespace-qualified class declarations, class imports for class-like
+  references, `new`, `extends`, `instanceof`, static members, and
   `ClassName::class`, plus namespace-scoped function declarations and
-  unqualified same-namespace calls
+  unqualified, qualified, namespace-relative, fully-qualified, and imported
+  direct function calls
 - declared interface metadata: top-level `interface Name {}` declarations,
   parent forms such as `interface Child extends Parent, OtherParent`,
   including parent interfaces declared later in the same parsed program, and

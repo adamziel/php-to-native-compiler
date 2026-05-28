@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::ast::{
     ArrayItem, AssignTarget, BinaryOp, CastKind, CatchClause, CatchType, ClassConstantDecl,
     ClassDecl, ClassMember, ClassMethodDecl, ClassPropertyDecl, ClassVisibility, ClosureCapture,
@@ -27,7 +29,8 @@ struct Parser {
     constant_imports: Vec<(String, String)>,
     function_declarations: Vec<String>,
     constant_declarations: Vec<String>,
-    namespace_declared: bool,
+    namespace_function_declarations: HashMap<String, Vec<String>>,
+    namespace_constant_declarations: HashMap<String, Vec<String>>,
     pending_doc_comment: Option<String>,
     trace_parse: bool,
 }
@@ -79,7 +82,8 @@ impl Parser {
             constant_imports: Vec::new(),
             function_declarations: Vec::new(),
             constant_declarations: Vec::new(),
-            namespace_declared: false,
+            namespace_function_declarations: HashMap::new(),
+            namespace_constant_declarations: HashMap::new(),
             pending_doc_comment: None,
             trace_parse: std::env::var_os("PHPC_TRACE_PARSE").is_some(),
         }
@@ -236,7 +240,11 @@ impl Parser {
                 return Err(self.error_at(start, function_declaration_import_conflict_message()));
             }
             if !is_nested {
-                self.function_declarations.push(alias);
+                self.function_declarations.push(alias.clone());
+                self.namespace_function_declarations
+                    .entry(self.current_namespace.clone())
+                    .or_default()
+                    .push(alias);
             }
         }
         let name = if resolve_namespace {
@@ -1452,9 +1460,6 @@ impl Parser {
         if self.nested_statement_depth > 0 || self.function_body_depth > 0 {
             return Err(self.error_at(span, unsupported_nested_namespace_message()));
         }
-        if self.namespace_declared {
-            return Err(self.error_at(span, unsupported_multiple_namespace_message()));
-        }
         if self.check(|kind| matches!(kind, TokenKind::LBrace)) {
             return Err(self.error_at(span, unsupported_bracketed_namespace_message()));
         }
@@ -1466,14 +1471,25 @@ impl Parser {
             TokenKind::Semicolon,
             "expected ';' after namespace declaration",
         )?;
+        self.enter_namespace(name.clone());
+        Ok(Stmt::Namespace { name, span })
+    }
+
+    fn enter_namespace(&mut self, name: String) {
         self.current_namespace = name.clone();
         self.class_imports.clear();
         self.function_imports.clear();
         self.constant_imports.clear();
-        self.function_declarations.clear();
-        self.constant_declarations.clear();
-        self.namespace_declared = true;
-        Ok(Stmt::Namespace { name, span })
+        self.function_declarations = self
+            .namespace_function_declarations
+            .get(&name)
+            .cloned()
+            .unwrap_or_default();
+        self.constant_declarations = self
+            .namespace_constant_declarations
+            .get(&name)
+            .cloned()
+            .unwrap_or_default();
     }
 
     fn parse_use_declaration(&mut self) -> CompileResult<Stmt> {
@@ -1752,6 +1768,10 @@ impl Parser {
             let value = self.parse_expression()?;
             self.ensure_supported_const_declaration_expr(&value)?;
             self.constant_declarations.push(name.clone());
+            self.namespace_constant_declarations
+                .entry(self.current_namespace.clone())
+                .or_default()
+                .push(name.clone());
             let name = self.resolve_constant_declaration_name(&name);
             declarations.push(ConstDeclarator {
                 name,
@@ -7648,7 +7668,8 @@ impl Parser {
                     format!("{}\\{}", self.current_namespace, name)
                 }
             }
-            FunctionCallName::Qualified(name) | FunctionCallName::NamespaceRelative(name) => {
+            FunctionCallName::Qualified(name) => self.resolve_class_like_name(&name),
+            FunctionCallName::NamespaceRelative(name) => {
                 if self.current_namespace.is_empty() {
                     name
                 } else {
@@ -8424,10 +8445,6 @@ fn unsupported_increment_decrement_target_message() -> &'static str {
 
 fn unsupported_bracketed_namespace_message() -> &'static str {
     "unsupported namespace declaration: bracketed namespace blocks are not implemented"
-}
-
-fn unsupported_multiple_namespace_message() -> &'static str {
-    "unsupported namespace declaration: multiple namespace declarations are not implemented"
 }
 
 fn unsupported_nested_namespace_message() -> &'static str {
