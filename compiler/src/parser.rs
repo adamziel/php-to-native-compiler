@@ -835,19 +835,25 @@ impl Parser {
         let span = self
             .consume_keyword(TokenKind::Function, "expected trait method declaration")?
             .span;
-        if modifiers.is_abstract
-            || modifiers.is_final
-            || !matches!(modifiers.visibility, ClassVisibility::Public)
-        {
+        if modifiers.is_final || !matches!(modifiers.visibility, ClassVisibility::Public) {
             return Err(self.error_at(span, unsupported_trait_method_message()));
         }
 
-        let function = self.parse_function_after_keyword(span, false, false)?;
+        let function = if modifiers.is_abstract {
+            let function = self.parse_function_signature_after_keyword(span)?;
+            self.consume_keyword(
+                TokenKind::Semicolon,
+                "expected ';' after abstract trait method declaration",
+            )?;
+            function
+        } else {
+            self.parse_function_after_keyword(span, false, false)?
+        };
         Ok(ClassMethodDecl {
             function,
             visibility: ClassVisibility::Public,
             is_static: modifiers.is_static,
-            is_abstract: false,
+            is_abstract: modifiers.is_abstract,
             is_final: false,
             attributes,
             span,

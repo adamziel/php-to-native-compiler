@@ -67608,7 +67608,33 @@ fn startup_class_method_override_has_match(
     if startup_class_has_non_private_parent_method(classes, traits, class, &method.function.name)? {
         return Some(true);
     }
+    if startup_class_uses_abstract_trait_method(traits, class, &method.function.name)? {
+        return Some(true);
+    }
     startup_class_implements_interface_method(classes, interfaces, class, &method.function.name)
+}
+
+fn startup_class_uses_abstract_trait_method(
+    traits: &HashMap<String, Rc<TraitDecl>>,
+    class: &ClassDecl,
+    method_name: &str,
+) -> Option<bool> {
+    for trait_use in &class.trait_uses {
+        let trait_decl = resolve_trait_use_decl(trait_use, traits).ok()?;
+        let trait_methods =
+            trait_semantics::compose_effective_trait_methods_for_trait(trait_decl, traits).ok()?;
+        if trait_methods.iter().any(|method| {
+            method.method.is_abstract
+                && method
+                    .method
+                    .function
+                    .name
+                    .eq_ignore_ascii_case(method_name)
+        }) {
+            return Some(true);
+        }
+    }
+    Some(false)
 }
 
 fn startup_class_has_abstract_parent_constructor(
@@ -69030,7 +69056,11 @@ fn register_class_member_runtime_tables(
             key.clone(),
             method_signature(&method.function, source_file.clone()),
         );
-        methods.insert(key, Rc::new(method.function));
+        if method.is_abstract {
+            abstract_methods.insert(key);
+        } else {
+            methods.insert(key, Rc::new(method.function));
+        }
     }
 
     for member in &class.members {

@@ -2663,6 +2663,51 @@ class Child extends Base {
 }
 
 #[test]
+fn abstract_trait_methods_can_satisfy_method_override_attributes() {
+    let execution = run_source(
+        r#"<?php
+trait RequiresRun {
+    public abstract function run(): void;
+}
+class Service {
+    use RequiresRun;
+
+    #[\Override]
+    public function run(): void {}
+}
+echo "abstract override ok";
+"#,
+    )
+    .unwrap();
+    assert_eq!(execution.stdout, "abstract override ok");
+    assert_eq!(execution.exit_code, 0);
+
+    let inherited_trait_requirement = run_source(
+        r#"<?php
+trait RequiresRun {
+    public abstract function run(): void;
+}
+trait UsesRequirement {
+    use RequiresRun;
+}
+class Service {
+    use UsesRequirement;
+
+    #[\Override]
+    public function run(): void {}
+}
+echo "nested abstract override ok";
+"#,
+    )
+    .unwrap();
+    assert_eq!(
+        inherited_trait_requirement.stdout,
+        "nested abstract override ok"
+    );
+    assert_eq!(inherited_trait_requirement.exit_code, 0);
+}
+
+#[test]
 fn static_interface_methods_are_declared_validated_and_callable() {
     let execution = run_source(
         r#"<?php
