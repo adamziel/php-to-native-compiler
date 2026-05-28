@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-28 16:44 CEST
+Updated: 2026-05-28 16:57 CEST
 Primary branch: `master`
-Latest source head: `f508515b fix: allow abstract trait override targets`
+Latest source head: `97e80bcc fix: support string-keyed argument unpacking`
 
 ## Progress Score
 
@@ -50,6 +50,48 @@ Focused PHPT history is tracked separately in
 Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
+
+Post-Batch002 source checkpoint 18 is now primary-integrated under AO
+supervision. This is a source checkpoint with focused proof, not a percentage
+change. The public score remains **1193 / 20294 runnable PHPTs = 5.88%** until
+another pinned full-suite run is completed, parsed, regression-checked, and
+published here.
+
+- primary source head:
+  `97e80bcc fix: support string-keyed argument unpacking`
+- p28 final handoff head:
+  `2ca746d91fba23d9c782efc774e5176802fdd546`
+- exported integration patch:
+  `/home/claude/supervised-php-compiler/state/patches/ao-integration-p31-call-argument-unpack-successor3-20260528.patch`
+- exported integration patch SHA256:
+  `3cfacd229b26665d76685fb7212a0c23ce11e689f78965105279172e267debdd`
+- source candidate patch SHA256:
+  `14e92e0e615934164fa76b2d3919c705c1388c7c480254cf675dfdbbb5675fd7`
+- reviewer gate: p7 recorded `FINAL GO-CANDIDATE /
+  FOCUSED-GATES-PASS / PHPT-NON-REGRESSION` with `FINAL_FAIL=0`
+- critic gate: phpc-26 recorded `SAFE-FOR-INTEGRATION /
+  P31-CALL-ARGUMENT-UNPACK-SUCCESSOR3`
+- focused gates: PASS for `git diff --check`, docs/PROGRESS exclusion,
+  production exact-shape audit, `cargo fmt --all -- --check`, `cargo test -p
+  phpc --test functions_and_scopes
+  string_keyed_argument_unpacking_binds_declared_parameter_names -- --exact
+  --test-threads=1`, `cargo test -p phpc --test functions_and_scopes
+  named_arguments_after_unpack_feed_variadic_rest_with_string_keys -- --exact
+  --test-threads=1`, `cargo test -p phpc --test dynamic_features
+  closure_argument_unpacking_accepts_string_keys_as_named_arguments -- --exact
+  --test-threads=1`, `cargo build -p phpc`, and wrapper PHPT
+  `Zend/tests/named_params/unpack_and_named_1.phpt`
+- full PHPT suite: not run for this single source checkpoint
+
+This checkpoint generalizes userland argument binding for string-keyed unpacked
+arguments. The interpreter now carries unpacked argument keys through call-frame
+binding, maps string keys to declared parameters, preserves unmatched string
+keys in variadic rest arrays, and reports duplicate named-parameter conflicts
+through the same runtime path. It is not keyed to PHPT filenames, fixture
+function names, expected output rows, public commit hashes, or one exact source
+shape.
+
+Previous post-Batch002 source checkpoint 17 was p17 attributes next-source:
 
 Post-Batch002 source checkpoint 17 is now primary-integrated under AO
 supervision. This is a source checkpoint with focused proof, not a percentage
