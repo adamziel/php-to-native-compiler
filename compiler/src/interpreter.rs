@@ -45725,10 +45725,8 @@ impl Interpreter {
         span: Span,
         caller_scope: &mut SymbolTable,
     ) -> CompileResult<Value> {
-        let mut values = Vec::with_capacity(args.len());
-        for arg in args {
-            values.push(self.evaluate_by_value_argument_with_cow_source(arg, caller_scope)?);
-        }
+        let callable = format!("{key}()");
+        let values = self.evaluate_builtin_value_call_arguments(&callable, args, caller_scope)?;
         self.call_builtin_callback_with_values(key, values, span, true)
     }
 

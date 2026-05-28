@@ -103,6 +103,33 @@ echo StaticMagicCallback::Direct(1, 2, 3);
 }
 
 #[test]
+fn call_user_func_builtin_callback_expands_integer_unpacked_arguments() {
+    let execution = run_source(
+        r#"<?php
+$strlen_args = ["four"];
+echo call_user_func("strlen", ...$strlen_args), "
+";
+
+$replace_args = [" ", "_", "hello world"];
+echo call_user_func("str_replace", ...$replace_args), "
+";
+
+$dynamic = "call_user_func";
+echo $dynamic("count", ...[[1, 2, 3]]);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "4
+hello_world
+3"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn call_user_func_array_invokes_current_string_callable_and_positional_array_subset() {
     let execution = run_source(
         r#"<?php
