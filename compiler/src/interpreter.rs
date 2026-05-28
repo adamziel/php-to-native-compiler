@@ -8083,6 +8083,9 @@ enum ReferenceBindingTarget {
         name: String,
         cell: VariableCell,
     },
+    ReferenceReturnCell {
+        cell: VariableCell,
+    },
     CallerCellWithStaticArrayCopySource {
         name: String,
         cell: VariableCell,
@@ -8142,6 +8145,12 @@ enum ReferenceReturnBinding {
     Cell(VariableCell),
     ArrayOffset(ArrayOffsetAlias),
     ArrayOffsets(Vec<ArrayOffsetAlias>),
+}
+
+#[derive(Debug, Clone, Copy)]
+enum ReferenceCallValueFallback {
+    Assignment,
+    Parameter,
 }
 
 #[derive(Debug, Clone)]
@@ -12129,6 +12138,33 @@ impl Interpreter {
         span: Span,
     ) -> CompileResult<()> {
         self.emit_runtime_diagnostic(function, "Notice", PHP_E_NOTICE, message, span)
+    }
+
+    fn emit_display_notice(&mut self, message: impl AsRef<str>, span: Span) -> CompileResult<()> {
+        let message = message.as_ref().to_string();
+        let file = self
+            .source_file
+            .clone()
+            .unwrap_or_else(|| "Command line code".to_string());
+        if self.call_error_handler_for_diagnostic(PHP_E_NOTICE, &message, &file, span)? {
+            return Ok(());
+        }
+        if self.error_reporting_mask & PHP_E_NOTICE == 0 {
+            return Ok(());
+        }
+
+        let current_output_is_empty =
+            self.stdout.is_empty() && self.output_buffers.iter().all(|buffer| buffer.is_empty());
+        let mut output = String::new();
+        if !current_output_is_empty {
+            output.push('\n');
+        }
+        output.push_str(&format!(
+            "Notice: {message} in {file} on line {}\n",
+            span.line
+        ));
+        self.append_output_at(&output, span);
+        Ok(())
     }
 
     fn emit_deprecated(
@@ -16612,7 +16648,12 @@ impl Interpreter {
                         )?;
                     }
                 } else if let ReferenceSource::MethodCall { expr, .. } = source {
-                    match self.evaluate_reference_return_call_binding(expr, span, scope)? {
+                    match self.evaluate_reference_or_value_return_call_binding(
+                        expr,
+                        span,
+                        scope,
+                        ReferenceCallValueFallback::Assignment,
+                    )? {
                         ReferenceReturnBinding::Cell(cell) => {
                             scope.bind_static_to_cell(name, cell);
                         }
@@ -22474,6 +22515,139 @@ impl Interpreter {
                 ),
             )),
         }
+    }
+
+    fn evaluate_reference_or_value_return_call_binding(
+        &mut self,
+        expr: &Expr,
+        span: Span,
+        scope: &mut SymbolTable,
+        fallback: ReferenceCallValueFallback,
+    ) -> CompileResult<ReferenceReturnBinding> {
+        if matches!(
+            self.call_expression_known_returns_by_reference(expr, scope)?,
+            Some(false)
+        ) {
+            let value = self.evaluate(expr, scope)?;
+            self.emit_reference_call_value_fallback_notice(fallback, span)?;
+            return Ok(ReferenceReturnBinding::Cell(PhpReferenceCell::new(value)));
+        }
+
+        self.evaluate_reference_return_call_binding(expr, span, scope)
+    }
+
+    fn emit_reference_call_value_fallback_notice(
+        &mut self,
+        fallback: ReferenceCallValueFallback,
+        span: Span,
+    ) -> CompileResult<()> {
+        let message = match fallback {
+            ReferenceCallValueFallback::Assignment => {
+                "Only variables should be assigned by reference"
+            }
+            ReferenceCallValueFallback::Parameter => "Only variables should be passed by reference",
+        };
+        self.emit_display_notice(message, span)
+    }
+
+    fn is_reference_call_argument_expr(arg: &Expr) -> bool {
+        matches!(
+            arg,
+            Expr::Call { .. }
+                | Expr::MethodCall { .. }
+                | Expr::DynamicMethodCall { .. }
+                | Expr::StaticMethodCall { .. }
+                | Expr::SelfMethodCall { .. }
+                | Expr::ParentMethodCall { .. }
+                | Expr::LateStaticMethodCall { .. }
+                | Expr::ObjectStaticMethodCall { .. }
+                | Expr::DynamicCall { .. }
+        )
+    }
+
+    fn evaluate_reference_call_argument_binding(
+        &mut self,
+        function: &FunctionDecl,
+        arg: &Expr,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Option<(Value, ReferenceBindingTarget)>> {
+        if !Self::is_reference_call_argument_expr(arg) {
+            return Ok(None);
+        }
+
+        let binding = self.evaluate_reference_or_value_return_call_binding(
+            arg,
+            arg.span(),
+            caller_scope,
+            ReferenceCallValueFallback::Parameter,
+        )?;
+        let cell =
+            self.reference_return_binding_cell(function, binding, arg.span(), caller_scope)?;
+        let value = cell.value_cloned();
+        Ok(Some((
+            value,
+            ReferenceBindingTarget::ReferenceReturnCell { cell },
+        )))
+    }
+
+    fn call_expression_known_returns_by_reference(
+        &self,
+        expr: &Expr,
+        scope: &SymbolTable,
+    ) -> CompileResult<Option<bool>> {
+        match expr {
+            Expr::Call { name, .. } => {
+                if name.eq_ignore_ascii_case("call_user_func")
+                    || name.eq_ignore_ascii_case("call_user_func_array")
+                {
+                    return Ok(None);
+                }
+                Ok(self
+                    .lookup_direct_function_call(name)
+                    .map(|callable| match callable {
+                        Callable::User(function) => function.returns_by_reference,
+                        Callable::Builtin(_) => false,
+                    }))
+            }
+            Expr::StaticMethodCall {
+                class_name, method, ..
+            } => {
+                let Some(class_id) = self.classes.lookup_class_id(class_name) else {
+                    return Ok(None);
+                };
+                self.class_method_known_returns_by_reference(class_id, method, expr.span())
+            }
+            Expr::MethodCall { target, method, .. } => {
+                let Expr::Variable(receiver_name, _) = target.as_ref() else {
+                    return Ok(None);
+                };
+                let Some(Value::Object(object)) = scope.read_named(receiver_name) else {
+                    return Ok(None);
+                };
+                self.class_method_known_returns_by_reference(object.class_id(), method, expr.span())
+            }
+            _ => Ok(None),
+        }
+    }
+
+    fn class_method_known_returns_by_reference(
+        &self,
+        class_id: ClassId,
+        method_name: &str,
+        span: Span,
+    ) -> CompileResult<Option<bool>> {
+        let Some((declaring_class_id, declaring_class_name, resolved_method_name, _, _)) =
+            self.resolve_instance_method(class_id, method_name)
+        else {
+            return Ok(None);
+        };
+        let function = self.method_function(
+            declaring_class_id,
+            &declaring_class_name,
+            &resolved_method_name,
+            span,
+        )?;
+        Ok(Some(function.returns_by_reference))
     }
 
     fn evaluate_container_reference_source_value(
@@ -44112,7 +44286,8 @@ impl Interpreter {
                     target_keys,
                     source,
                 } => (target_keys.clone(), Some(source.clone())),
-                ReferenceBindingTarget::ValueCopy => (Vec::new(), None),
+                ReferenceBindingTarget::ReferenceReturnCell { .. }
+                | ReferenceBindingTarget::ValueCopy => (Vec::new(), None),
                 ReferenceBindingTarget::ArrayOffset(alias) => caller_scope
                     .public_object_property_array_copy_source_for_alias_group(std::slice::from_ref(
                         alias,
@@ -50533,6 +50708,9 @@ impl Interpreter {
                             cell.clone(),
                         ));
                     }
+                    ReferenceBindingTarget::ReferenceReturnCell { cell } => {
+                        local_scope.bind_static_to_cell(&param.name, cell.clone());
+                    }
                     ReferenceBindingTarget::CallerCellWithStaticArrayCopySource {
                         cell,
                         source,
@@ -51339,6 +51517,9 @@ impl Interpreter {
             {
                 match &binding.target {
                     ReferenceBindingTarget::CallerCell { cell, .. } => {
+                        local_scope.bind_static_to_cell(&param.name, cell.clone());
+                    }
+                    ReferenceBindingTarget::ReferenceReturnCell { cell } => {
                         local_scope.bind_static_to_cell(&param.name, cell.clone());
                     }
                     ReferenceBindingTarget::CallerCellWithStaticArrayCopySource {
@@ -53128,6 +53309,17 @@ impl Interpreter {
                         target,
                     });
                 } else {
+                    if let Some((value, target)) =
+                        self.evaluate_reference_call_argument_binding(function, arg, caller_scope)?
+                    {
+                        values.push(value);
+                        reference_bindings.push(ReferenceBinding {
+                            param_name: param.name.clone(),
+                            target,
+                        });
+                        continue;
+                    }
+
                     let allow_by_value_overloaded_reference_argument =
                         !function.returns_by_reference || allow_reference_return_array_bindings;
                     if allow_by_value_overloaded_reference_argument {
@@ -54788,6 +54980,7 @@ impl Interpreter {
                 ReferenceBindingTarget::ValueWithArrayCopySource { .. } => {}
                 ReferenceBindingTarget::ValueWithArrayCopySourceAtPath { .. } => {}
                 ReferenceBindingTarget::ValueCopy => {}
+                ReferenceBindingTarget::ReferenceReturnCell { .. } => {}
                 ReferenceBindingTarget::ArrayOffset(_)
                 | ReferenceBindingTarget::ArrayOffsets(_) => {}
             }
@@ -54842,6 +55035,7 @@ impl Interpreter {
                 ReferenceBindingTarget::ValueWithArrayCopySource { .. }
                 | ReferenceBindingTarget::ValueWithArrayCopySourceAtPath { .. }
                 | ReferenceBindingTarget::ValueCopy
+                | ReferenceBindingTarget::ReferenceReturnCell { .. }
                 | ReferenceBindingTarget::ArrayOffset(_)
                 | ReferenceBindingTarget::ArrayOffsets(_) => {}
             }
@@ -54893,6 +55087,7 @@ impl Interpreter {
                 ReferenceBindingTarget::ValueWithArrayCopySource { .. } => {}
                 ReferenceBindingTarget::ValueWithArrayCopySourceAtPath { .. } => {}
                 ReferenceBindingTarget::ValueCopy => {}
+                ReferenceBindingTarget::ReferenceReturnCell { .. } => {}
                 ReferenceBindingTarget::ArrayOffset(_)
                 | ReferenceBindingTarget::ArrayOffsets(_) => {}
             }
@@ -55431,6 +55626,9 @@ impl Interpreter {
                                 }
                             }
                         }
+                    }
+                    ReferenceBindingTarget::ReferenceReturnCell { cell } => {
+                        local_scope.bind_static_to_cell(&param.name, cell.clone());
                     }
                     ReferenceBindingTarget::CallerCellWithStaticArrayCopySource {
                         cell,

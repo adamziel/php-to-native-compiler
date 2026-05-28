@@ -389,7 +389,15 @@
   `$object::method()` are executable for object or class-string receivers when
   they resolve to visible static methods in that same direct-variable return
   shape. In those shapes, the assigned alias binds to the returned variable
-  cell and `unset($alias)` detaches only the alias name. Normal invocation of
+  cell and `unset($alias)` detaches only the alias name. Statement-form
+  reference assignment from a direct free-function call, direct variable
+  receiver object-method call, or direct named static method call that is known
+  not to return by reference executes the call by value, emits the PHP-shaped
+  "Only variables should be assigned by reference" notice, and binds the
+  target name to a detached temporary value so later writes to that target do
+  not mutate the original return source. Broader dynamic, callback, and
+  side-effecting receiver forms for that by-value fallback remain unsupported.
+  Normal invocation of
   direct free-function, direct visible object-method, direct named static
   method, `self::` static method, `parent::` static method, `static::`
   late-static method, and dynamic static receiver reference-return calls is
@@ -474,6 +482,16 @@
   dispatch paths: the callee local parameter shares the caller's
   variable cell during execution, so writes through the parameter are visible
   to other reads of the caller variable before the call returns. Direct
+  free-function call arguments, direct variable receiver object-method call
+  arguments, and direct named static method call arguments are also accepted at
+  by-reference parameter positions when the argument call can be classified
+  before evaluation: reference-returning callees bind the receiving parameter
+  to the returned cell, while callees known to return by value emit the
+  PHP-shaped "Only variables should be passed by reference" notice and pass a
+  detached temporary so parameter writes do not mutate the original source.
+  Dynamic callables, callback helpers, side-effecting receiver expressions,
+  and unclassified method dispatch remain outside this call-argument binding
+  slice unless covered by another documented reference bridge. Direct
   array-offset arguments such as `handler($items[$key])`,
   `handler($items[$outer][$key])`, and
   `handler($_REQUEST["payload"]["slot"])` are supported on those same dispatch

@@ -708,6 +708,134 @@ mutate(1);
 }
 
 #[test]
+fn reference_assignment_from_value_return_call_uses_detached_value() {
+    let execution = run_source(
+        r#"<?php
+function return_value() {
+    global $value;
+    return $value;
+}
+function &return_reference() {
+    global $value;
+    return $value;
+}
+
+$value = "original";
+$alias =& return_value();
+$alias = "changed";
+echo "value-return=", $value, "\n";
+
+$value = "original";
+$alias =& return_reference();
+$alias = "changed";
+echo "reference-return=", $value;
+"#,
+    )
+    .unwrap();
+
+    assert!(execution
+        .stdout
+        .contains("Notice: Only variables should be assigned by reference"));
+    let semantic_lines = execution
+        .stdout
+        .lines()
+        .filter(|line| !line.is_empty() && !line.starts_with("Notice:"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert_eq!(
+        semantic_lines,
+        "value-return=original\nreference-return=changed"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reference_parameter_call_arguments_accept_reference_returns_and_value_temporaries() {
+    let execution = run_source(
+        r#"<?php
+class RefCallArgumentBox {
+    static function static_value() {
+        global $value;
+        return $value;
+    }
+    static function &static_reference() {
+        global $value;
+        return $value;
+    }
+    function object_value() {
+        global $value;
+        return $value;
+    }
+    function &object_reference() {
+        global $value;
+        return $value;
+    }
+}
+
+function return_value() {
+    global $value;
+    return $value;
+}
+function &return_reference() {
+    global $value;
+    return $value;
+}
+function mutate_reference(&$ref) {
+    echo "seen=", $ref, "\n";
+    $ref = "changed";
+}
+
+$box = new RefCallArgumentBox();
+
+$value = "original";
+mutate_reference(return_value());
+echo "function-value=", $value, "\n";
+
+$value = "original";
+mutate_reference(return_reference());
+echo "function-reference=", $value, "\n";
+
+$value = "original";
+mutate_reference(RefCallArgumentBox::static_value());
+echo "static-value=", $value, "\n";
+
+$value = "original";
+mutate_reference(RefCallArgumentBox::static_reference());
+echo "static-reference=", $value, "\n";
+
+$value = "original";
+mutate_reference($box->object_value());
+echo "object-value=", $value, "\n";
+
+$value = "original";
+mutate_reference($box->object_reference());
+echo "object-reference=", $value;
+"#,
+    )
+    .unwrap();
+
+    let notices = execution
+        .stdout
+        .lines()
+        .filter(|line| line.starts_with("Notice: Only variables should be passed by reference"))
+        .count();
+    assert_eq!(notices, 3);
+    let semantic_lines = execution
+        .stdout
+        .lines()
+        .filter(|line| !line.is_empty() && !line.starts_with("Notice:"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert_eq!(
+        semantic_lines,
+        "seen=original\nfunction-value=original\nseen=original\nfunction-reference=changed\nseen=original\nstatic-value=original\nseen=original\nstatic-reference=changed\nseen=original\nobject-value=original\nseen=original\nobject-reference=changed"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reference_parameters_share_direct_alias_and_array_slot_container_identity() {
     let execution = run_source(
         r#"<?php
