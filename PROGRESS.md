@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-28 07:39 CEST
+Updated: 2026-05-28 07:43 CEST
 Primary branch: `master`
 Latest source head: `0fa7b666 runtime: autoload enum_exists misses`
 
@@ -107,6 +107,7 @@ Gate status and parked candidates:
 | `Zend/tests/jump/jump04.phpt` backward `goto` from loop PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and p14 `SAFE-FOR-PROGRESS`; existing goto execution supports a backward jump from inside a loop to a prior label outside that loop, passing wrapper PHPT `Zend/tests/jump/jump04.phpt` 1/1 using the rebuilt reviewed public binary `/tmp/phpc-reviewed-public-687fcc41-20260528-target2/debug/phpc`; no source patch, no cargo gate beyond the authorized binary recovery, no full-suite run, and no percent change |
 | `Zend/tests/jump/jump05.phpt` forward `goto` from nested loop/switch PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and p14 `SAFE-FOR-PROGRESS`; existing goto execution supports a forward jump out of nested foreach/switch control flow to a later label, passing wrapper PHPT `Zend/tests/jump/jump05.phpt` 1/1 using the rebuilt reviewed public binary `/tmp/phpc-reviewed-public-687fcc41-20260528-target2/debug/phpc`; no source patch, no cargo gate beyond the authorized binary recovery, no full-suite run, and no percent change |
 | `Zend/tests/jump/jump11.phpt` goto inside switch in constructor PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and p14 `SAFE-FOR-PROGRESS`; existing goto label resolution and execution handles forward/backward jumps inside a switch in a constructor, passing wrapper PHPT `Zend/tests/jump/jump11.phpt` 1/1 using the replacement reviewed public binary `/tmp/phpc-reviewed-public-1b459adf-20260528-target/debug/phpc`; no source patch, no cargo gate beyond the reviewed binary recovery, no full-suite run, and no percent change |
+| `Zend/tests/jump/jump15.phpt` forward `goto` from loop PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and p14 `SAFE-FOR-PROGRESS`; existing goto label resolution and execution handles a forward jump out of a loop, passing wrapper PHPT `Zend/tests/jump/jump15.phpt` 1/1 using the replacement reviewed public binary `/tmp/phpc-reviewed-public-1b459adf-20260528-target/debug/phpc`; no source patch, no cargo gate beyond the reviewed binary recovery, no full-suite run, and no percent change |
 | `Zend/tests/type_declarations/typed_properties_011.phpt` typed-property array reference fetch PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and p14 `SAFE-FOR-PROGRESS`; existing typed-property/reference behavior allows fetching a typed property by reference into an array and passes wrapper PHPT `Zend/tests/type_declarations/typed_properties_011.phpt` 1/1 using the pass005 repair2 reviewed binary; no source patch, no cargo gate, no full-suite run, and no percent change |
 | `Zend/tests/type_declarations/typed_properties_023.phpt` typed static property PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and p14 `SAFE-FOR-PROGRESS`; existing typed static-property behavior handles scalar coercion, increment/static reads and writes, and by-reference-return assignment into typed static properties, passing wrapper PHPT `Zend/tests/type_declarations/typed_properties_023.phpt` 1/1 using the rebuilt reviewed public binary `/tmp/phpc-reviewed-public-687fcc41-20260528-target2/debug/phpc`; no source patch, no cargo gate beyond the authorized binary recovery, no full-suite run, and no percent change |
 | `Zend/tests/type_declarations/typed_properties_024.phpt` private typed-property inheritance isolation PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and p14 `SAFE-FOR-PROGRESS`; existing typed-property inheritance behavior permits a subclass public typed property to reuse the name of a parent private typed property without conflict, passing wrapper PHPT `Zend/tests/type_declarations/typed_properties_024.phpt` 1/1 using the rebuilt reviewed public binary `/tmp/phpc-reviewed-public-687fcc41-20260528-target2/debug/phpc`; no source patch, no cargo gate beyond the authorized binary recovery, no full-suite run, and no percent change |
@@ -162,11 +163,12 @@ Required live roles:
 Current AO snapshot: `phpc-orchestrator` supervising; `phpc-14` critic;
 `phpc-7` reviewer; `phpc-8` progress reporter; active coder/support lanes
 `phpc-15`, `phpc-16`, `phpc-17`, `phpc-18`, and `phpc-19`. Current
-public-progress watch targets are jump `jump15`, typed-properties
-`typed_properties_039`/successors, magic `bug72854`/successors, attributes
-target-values/successors, debugInfo/restrict-globals successors, the next
-p7-reviewed candidate plus p14 `SAFE-FOR-PROGRESS` audit, current coder lane
-artifacts, and any new full-suite PHPT row. Known no-go/not-safe items,
+public-progress watch targets are typed-properties
+`typed_properties_041`/successors, magic `bug74053`/successors, attributes
+`allow_dynamic_properties_on_interface`/successors, jump `jump17`/successors,
+asymmetric-visibility/reference successors, the next p7-reviewed candidate plus
+p14 `SAFE-FOR-PROGRESS` audit, current coder lane artifacts, and any new full-suite
+PHPT row. Known no-go/not-safe items,
 including unsuffixed `bug44899`, `bug46238`, `bug48248`, `foreach_010`,
 `foreach_016` and `foreach_list_001`, remain excluded. Extra sessions `phpc-22` and stale `phpc-2` are
 killed/not active roster capacity.
