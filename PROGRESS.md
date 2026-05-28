@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-28 22:54 CEST
+Updated: 2026-05-28 23:13 CEST
 Primary branch: `master`
-Latest source head: `268ef6ea fix: generalize class metadata existence checks`
+Latest source head: `251d8c0e fix: bind named arrays for builtin callbacks`
 
 ## Progress Score
 
@@ -76,13 +76,57 @@ stable pinned denominator and does not use the raw runner
 | Batch004 checkpoint8 regression-repair sharded gate | Done | 1369 / 20294 pinned runnable PHPTs passed (6.75%); 0 regressions from Batch003 PASS set; run id `phpt-full-batch004-regression-repair-sharded-20260528T192018Z-php-src-f97ff59-public-3c86fc6a-source-b75047df-stack8` |
 | Batch004 checkpoint10 sharded gate | Done | 1413 / 20294 pinned runnable PHPTs passed (6.96%); 0 regressions from checkpoint8 PASS set; run id `phpt-full-batch004-checkpoint10-sharded-20260528T195852Z-php-src-f97ff59-public-37941f23-source-241b8411-stack10` |
 | Batch004 source batch | Complete | Batch004 source checkpoints accepted: 10 / 10; checkpoint10 sharded gate published |
-| Batch005 source batch | In progress | Batch005 source checkpoints accepted: 3 / 10; public score unchanged until next full/sharded publication gate |
+| Batch005 source batch | In progress | Batch005 source checkpoints accepted: 4 / 10; public score unchanged until next full/sharded publication gate |
 
 Focused PHPT history is tracked separately in
 `/home/claude/supervised-php-compiler/state/php-core-suite-focused-history.tsv`.
 Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
+
+Batch005 source checkpoint 4 is primary-integrated under AO supervision. This
+is a source checkpoint with focused proof, not a percentage change. The public
+PHPT score remains **1413 / 20294 pinned runnable PHPTs = 6.96%** until the
+next pinned full-suite or supervisor-approved sharded publication gate is
+completed, regression-checked, and published here.
+
+- primary source head:
+  `251d8c0e fix: bind named arrays for builtin callbacks`
+- reviewed patch:
+  `/home/claude/supervised-php-compiler/state/patches/ao-coder-call-argument-unpack-builtin-named-array-afe8dfae-20260528.patch`
+- reviewed patch SHA256:
+  `9f74d6c87a269a0abec27b4f5255c8789e78a57d17ec92336d3d05ed6b0a2883`
+- reviewer gate: p7 recorded `FINAL GO-CANDIDATE /
+  FOCUSED-GATES-PASS / PHPT-PASS` with `FINAL_FAIL=0`; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/batch005-review-call-argument-unpack-builtin-named-array-afe8dfae-20260528.{status.md,report.md,gates.log}`
+- critic gate: phpc-33 recorded `SAFE-FOR-INTEGRATION /
+  P7-FINAL-GO-VERIFIED / READ-ONLY`; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/batch005-critic-call-argument-unpack-builtin-named-array-afe8dfae-20260528.{status.md,report.md}`
+- integration handoff: phpc-28 recorded a ready no-cargo handoff because the
+  strict cargo cap was occupied; supervisor applied the exact p7+phpc-33
+  reviewed patch to avoid stalling checkpoint4
+- supervisor focused gates: PASS for patch SHA, `git apply --check`,
+  `git diff --check`, docs/PROGRESS/examples exclusion, production
+  exact-shape marker audit, `cargo fmt --all -- --check`, focused Rust
+  `call_user_func_array_binds_named_arguments_for_metadata_backed_builtins`,
+  `cargo build -p phpc`, and focused custom PHPT
+  `call_user_func_array` metadata-backed builtin named-array row
+- supervisor primary gate log:
+  `/home/claude/supervised-php-compiler/state/workers/supervisor-primary-p31-builtin-named-array-batch005-checkpoint4-20260528.gates.log`
+- full PHPT suite: not run for this single source checkpoint; next broad gate
+  is due after 10 accepted Batch005 source checkpoints or explicit regression
+  repair
+
+This checkpoint generalizes `call_user_func_array()` for metadata-backed
+builtin callbacks. String-keyed argument arrays now bind through shared
+reflection parameter metadata, including duplicate and unknown named argument
+diagnostics, positional-after-named checks, default handling, required arity,
+and explicit unsupported boundaries for reference-taking or metadata-missing
+builtins. Production code is not keyed to a PHPT filename, expected-output
+fixture, batch marker, public hash, or test-name branch.
+
+Previous Batch005 source checkpoint 3 was class-like metadata existence
+behavior:
 
 Batch005 source checkpoint 3 is primary-integrated under AO supervision. This
 is a source checkpoint with focused proof, not a percentage change. The public
