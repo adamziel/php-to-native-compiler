@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-28 08:16 CEST
+Updated: 2026-05-28 08:20 CEST
 Primary branch: `master`
 Latest source head: `0fa7b666 runtime: autoload enum_exists misses`
 
@@ -102,6 +102,7 @@ Gate status and parked candidates:
 | `Zend/tests/magic_methods/bug75420.11.phpt` indirect magic argument modification PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and p14 `SAFE-FOR-PROGRESS`; existing magic-method argument handling covers the additional indirect modification case, passing wrapper PHPT `Zend/tests/magic_methods/bug75420.11.phpt` 1/1 using the reviewed public binary `/tmp/phpc-reviewed-public-6d161522-20260528-target/debug/phpc`; no source patch, no cargo gate beyond reviewed binary recovery, no full-suite run, and no percent change |
 | `Zend/tests/magic_methods/bug75420.13.phpt` indirect magic argument modification PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and p14 `SAFE-FOR-PROGRESS`; existing magic-method argument handling covers the additional indirect modification case, passing wrapper PHPT `Zend/tests/magic_methods/bug75420.13.phpt` 1/1 using the reviewed public binary `/tmp/phpc-reviewed-public-6d161522-20260528-target/debug/phpc`; no source patch, no cargo gate beyond reviewed binary recovery, no full-suite run, and no percent change |
 | `Zend/tests/magic_methods/bug75420.14.phpt` indirect magic argument modification PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and p14 `SAFE-FOR-PROGRESS`; existing magic-method argument handling covers the additional indirect modification case, passing wrapper PHPT `Zend/tests/magic_methods/bug75420.14.phpt` 1/1 using the reviewed public binary `/tmp/phpc-reviewed-public-6d161522-20260528-target/debug/phpc`; no source patch, no cargo gate beyond reviewed binary recovery, no full-suite run, and no percent change |
+| `Zend/tests/magic_methods/class_toString_concat_with_itself.phpt` `__toString()` self-concat PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and p14 `SAFE-FOR-PROGRESS`; existing `__toString()` conversion handles concatenating the same class instance with itself, passing wrapper PHPT `Zend/tests/magic_methods/class_toString_concat_with_itself.phpt` 1/1 using the reviewed public binary `/tmp/phpc-reviewed-public-6d161522-20260528-target/debug/phpc`; no source patch, no cargo gate beyond reviewed binary recovery, no full-suite run, and no percent change |
 | p15 `returnByReference.005` rebased object-receiver static reference-return dispatch | GO-CANDIDATE after independent p7 review and p14 `SAFE-FOR-PROGRESS`; patch SHA `9487557714a456f2b3f416af7db1ed9866c6428dd6072bd143afe6a86dd27895`; focused Rust gate, `cargo build -p phpc`, and wrapper PHPTs `tests/lang/returnByReference.005.phpt`, `tests/lang/returnByReference.004.phpt`, and `tests/lang/returnByReference.003.phpt` passed 3/3; no full-suite run and no percent change |
 | `Zend/tests/dereference/dereference_005.phpt` array dereference PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and p14 `SAFE-FOR-PROGRESS`; existing generalized ArrayAccess/object dereference handling passes wrapper PHPT `Zend/tests/dereference/dereference_005.phpt` 1/1; no source patch, no cargo gate, no full-suite run, and no percent change |
 | `Zend/tests/dereference/dereference_008.phpt` dynamic-method array dereference PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and p14 `SAFE-FOR-PROGRESS`; existing dynamic-method dereference/reference behavior passes wrapper PHPT `Zend/tests/dereference/dereference_008.phpt` 1/1; no source patch, no cargo gate, no full-suite run, and no percent change |
@@ -176,11 +177,11 @@ Required live roles:
 Current AO snapshot: `phpc-orchestrator` supervising; `phpc-14` critic;
 `phpc-7` reviewer; `phpc-8` progress reporter; active coder/support lanes
 `phpc-15`, `phpc-16`, `phpc-17`, `phpc-18`, and `phpc-19`. Current
-public-progress watch targets are typed-properties `typed_properties_058`,
-magic `bug77339`/successors, attributes `ast_export`, `try_finally_019`,
-asymmetric `decrease_scope_private_private`/successors, the next p7-reviewed candidate plus p14
-`SAFE-FOR-PROGRESS` audit, current coder lane artifacts, and any new full-suite
-PHPT row. Known no-go/not-safe items,
+public-progress watch targets are typed-properties `typed_properties_060`,
+magic `bug77339`/successors, `constructor_args`, attributes `class_const_group`,
+`try_finally_021`/successors, asymmetric `decrease_scope_protected_protected`,
+the next p7-reviewed candidate plus p14 `SAFE-FOR-PROGRESS` audit, current
+coder lane artifacts, and any new full-suite PHPT row. Known no-go/not-safe items,
 including unsuffixed `bug44899`, `bug46238`, `bug48248`, `foreach_010`,
 `foreach_016` and `foreach_list_001`, remain excluded. Extra sessions `phpc-22` and stale `phpc-2` are
 killed/not active roster capacity.
