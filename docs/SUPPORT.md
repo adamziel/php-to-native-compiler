@@ -3057,7 +3057,7 @@
   `array_diff_key`, `array_diff`, `array_intersect`, `array_unique`,
   `array_flip`, `array_change_key_case`, `array_column`, `array_fill_keys`, `array_count_values`, `array_sum`,
   `array_product`, `array_reduce`, `array_filter`, `array_map`,
-  `array_unshift`, `array_pop`, `next`, `ksort`,
+  `array_unshift`, `array_pop`, `array_shift`, `next`, `ksort`,
   `in_array`, `array_search`, `gettype`, `is_null`, `is_bool`, `is_int`, `is_integer`,
   `is_long`, `is_float`, `is_double`, `is_string`, `is_array`, `is_scalar`,
   `is_numeric`, `is_countable`, `is_iterable`, `is_callable`,
@@ -6154,6 +6154,20 @@
   by-reference handling beyond the selected callback forms,
   references/copy-on-write, exact warnings, and native lowering remain
   unsupported.
+  `array_shift($array)` removes and returns the first inserted value for
+  direct variable arrays, returns `null` for empty arrays, reindexes integer
+  keys, preserves string keys, and writes the mutated array back to the caller
+  variable. Passing a non-variable array expression to direct `array_shift()`
+  is bounded to the current PHP notice/temporary behavior: the interpreter
+  emits `Only variables should be passed by reference`, shifts the evaluated
+  temporary array, and leaves the source expression unchanged. Through
+  `call_user_func()` the covered callback form shifts a copied array, emits the
+  bounded reference-parameter warning, and leaves the caller array unchanged;
+  through `call_user_func_array()` a literal or stored reference element
+  mutates the referenced caller array. Object-property array direct targets,
+  broad by-reference handling beyond the selected direct/callback forms,
+  references/copy-on-write edge cases, exact warnings, and native lowering
+  remain unsupported.
   `array_is_list($array)`
   returns true for empty arrays and arrays whose entries are ordered with exact
   integer keys `0..n-1`; numeric string keys such as `"0"` participate through

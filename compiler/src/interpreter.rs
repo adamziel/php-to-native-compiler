@@ -11883,6 +11883,33 @@ impl Interpreter {
         self.emit_runtime_diagnostic(function, "Notice", PHP_E_NOTICE, message, span)
     }
 
+    fn emit_display_notice(&mut self, message: impl AsRef<str>, span: Span) -> CompileResult<()> {
+        let message = message.as_ref().to_string();
+        let file = self
+            .source_file
+            .clone()
+            .unwrap_or_else(|| "Command line code".to_string());
+        if self.call_error_handler_for_diagnostic(PHP_E_NOTICE, &message, &file, span)? {
+            return Ok(());
+        }
+        if self.error_reporting_mask & PHP_E_NOTICE == 0 {
+            return Ok(());
+        }
+
+        let current_output_is_empty =
+            self.stdout.is_empty() && self.output_buffers.iter().all(|buffer| buffer.is_empty());
+        let mut output = String::new();
+        if !current_output_is_empty {
+            output.push('\n');
+        }
+        output.push_str(&format!(
+            "Notice: {message} in {file} on line {}\n",
+            span.line
+        ));
+        self.append_output_at(&output, span);
+        Ok(())
+    }
+
     fn emit_deprecated(
         &mut self,
         function: &str,
@@ -41739,6 +41766,9 @@ impl Interpreter {
                 if key == "array_pop" {
                     return self.call_array_pop(args, span, caller_scope);
                 }
+                if key == "array_shift" {
+                    return self.call_array_shift(args, span, caller_scope);
+                }
                 if key == "next" {
                     return self.call_next(args, span, caller_scope);
                 }
@@ -41839,6 +41869,9 @@ impl Interpreter {
                 }
                 if key == "array_pop" {
                     return self.call_array_pop(args, span, caller_scope);
+                }
+                if key == "array_shift" {
+                    return self.call_array_shift(args, span, caller_scope);
                 }
                 if key == "next" {
                     return self.call_next(args, span, caller_scope);
@@ -42820,7 +42853,10 @@ impl Interpreter {
     }
 
     fn builtin_callback_has_first_reference_array_param(key: &str) -> bool {
-        matches!(key, "array_pop" | "array_unshift" | "ksort" | "next")
+        matches!(
+            key,
+            "array_pop" | "array_shift" | "array_unshift" | "ksort" | "next"
+        )
     }
 
     fn emit_builtin_callback_reference_value_warning(
@@ -42858,6 +42894,22 @@ impl Interpreter {
                     ));
                 };
                 Ok(array.pop_value())
+            }
+            "array_shift" => {
+                expect_arity("array_shift", &args, 1, span)?;
+                if warn_for_reference_value {
+                    self.emit_builtin_callback_reference_value_warning("array_shift", span)?;
+                }
+                let Value::Array(mut array) = args[0].clone() else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "array_shift()",
+                            format!("argument must be array, got {}", args[0].type_name()),
+                        ),
+                    ));
+                };
+                Ok(array.shift_value())
             }
             "array_unshift" => {
                 if args.is_empty() {
@@ -42976,6 +43028,32 @@ impl Interpreter {
                     ));
                 };
                 let value = array.pop_value();
+                reference.set_value(array_value);
+                Ok(value)
+            }
+            "array_shift" => {
+                if !rest.is_empty() {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::arity_mismatch(
+                            "array_shift()",
+                            ArityExpectation::Exactly(1),
+                            rest.len() + 1,
+                        ),
+                    ));
+                }
+                let mut array_value = reference.value_cloned();
+                let type_name = array_value.type_name();
+                let Value::Array(array) = &mut array_value else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "array_shift()",
+                            format!("argument must be array, got {type_name}"),
+                        ),
+                    ));
+                };
+                let value = array.shift_value();
                 reference.set_value(array_value);
                 Ok(value)
             }
@@ -48065,6 +48143,60 @@ impl Interpreter {
         let value = array.pop_value();
         caller_scope.write_static(array_name, array_value);
         Ok(value)
+    }
+
+    fn call_array_shift(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        if args.len() != 1 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "array_shift()",
+                    ArityExpectation::Exactly(1),
+                    args.len(),
+                ),
+            ));
+        }
+
+        let mut array_value = if let Expr::Variable(array_name, _) = &args[0] {
+            let mut array_value = caller_scope.read_static(array_name, span)?;
+            let type_name = array_value.type_name();
+            let Value::Array(array) = &mut array_value else {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "array_shift()",
+                        format!("argument must be array, got {type_name}"),
+                    ),
+                ));
+            };
+            let value = array.shift_value();
+            caller_scope.write_static(array_name, array_value);
+            return Ok(value);
+        } else {
+            let array_value = self.evaluate(&args[0], caller_scope)?;
+            self.emit_display_notice(
+                "Only variables should be passed by reference",
+                args[0].span(),
+            )?;
+            array_value
+        };
+
+        let type_name = array_value.type_name();
+        let Value::Array(array) = &mut array_value else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "array_shift()",
+                    format!("argument must be array, got {type_name}"),
+                ),
+            ));
+        };
+        Ok(array.shift_value())
     }
 
     fn call_next(
@@ -59384,6 +59516,13 @@ impl Interpreter {
                     "by-reference array arguments require a direct call target in the current subset",
                 ),
             )),
+            "array_shift" => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "array_shift()",
+                    "by-reference array arguments require a direct call target in the current subset",
+                ),
+            )),
             "next" => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
@@ -67440,6 +67579,7 @@ fn is_builtin(name: &str) -> bool {
             | "ksort"
             | "array_unshift"
             | "array_pop"
+            | "array_shift"
             | "next"
             | "in_array"
             | "array_search"
