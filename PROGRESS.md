@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-28 22:21 CEST
+Updated: 2026-05-28 22:37 CEST
 Primary branch: `master`
-Latest source head: `4e129363 fix: preserve named variadic keys in call_user_func_array`
+Latest source head: `fd8be20d fix: report supported stream wrappers`
 
 ## Progress Score
 
@@ -76,12 +76,61 @@ stable pinned denominator and does not use the raw runner
 | Batch004 checkpoint8 regression-repair sharded gate | Done | 1369 / 20294 pinned runnable PHPTs passed (6.75%); 0 regressions from Batch003 PASS set; run id `phpt-full-batch004-regression-repair-sharded-20260528T192018Z-php-src-f97ff59-public-3c86fc6a-source-b75047df-stack8` |
 | Batch004 checkpoint10 sharded gate | Done | 1413 / 20294 pinned runnable PHPTs passed (6.96%); 0 regressions from checkpoint8 PASS set; run id `phpt-full-batch004-checkpoint10-sharded-20260528T195852Z-php-src-f97ff59-public-37941f23-source-241b8411-stack10` |
 | Batch004 source batch | Complete | Batch004 source checkpoints accepted: 10 / 10; checkpoint10 sharded gate published |
+| Batch005 source batch | In progress | Batch005 source checkpoints accepted: 2 / 10; public score unchanged until next full/sharded publication gate |
 
 Focused PHPT history is tracked separately in
 `/home/claude/supervised-php-compiler/state/php-core-suite-focused-history.tsv`.
 Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
+
+Batch005 source checkpoint 2 is primary-integrated under AO supervision. This
+is a source checkpoint with focused proof, not a percentage change. The public
+PHPT score remains **1413 / 20294 pinned runnable PHPTs = 6.96%** until the
+next pinned full-suite or supervisor-approved sharded publication gate is
+completed, regression-checked, and published here.
+
+- primary source head:
+  `fd8be20d fix: report supported stream wrappers`
+- reviewed patch:
+  `/home/claude/supervised-php-compiler/state/patches/ao-coder-standard-stream-get-wrappers-capability-source-candidate-successor2-stack-after-p31-8eb41150-20260528.patch`
+- reviewed patch SHA256:
+  `c649759528b06ed84f7741213c545071d26338377a3a59906bae307623f4b434`
+- reviewer gate: p7 recorded `FINAL GO-CANDIDATE /
+  FOCUSED-GATES-PASS / PHPT-PASS` with `FINAL_FAIL=0` and canonical
+  stack-after-p31 equivalence; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/batch005-review-standard-stream-get-wrappers-successor2-stack-after-p31-8eb41150-20260528.{status.md,report.md,gates.log}`
+- critic gate: phpc-33 recorded `SAFE-FOR-INTEGRATION /
+  P7-FINAL-GO-VERIFIED / CANONICAL-EQUIVALENCE-PASS / READ-ONLY`;
+  artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/batch005-critic-standard-stream-get-wrappers-successor2-stack-after-p31-8eb41150-20260528.{status.md,report.md}`
+- integration handoff: phpc-28 acknowledged the exact p7+phpc-33 handoff but
+  stayed `WAITING-FOR-CARGO-SLOT` on a stale cargo sample; supervisor applied
+  the exact reviewed patch to avoid stalling the accepted checkpoint
+- supervisor focused gates: PASS for patch SHA, `git apply --check`,
+  `git diff --check`, docs/PROGRESS/examples exclusion, production
+  exact-shape marker audit, `cargo fmt --all -- --check`, focused Rust
+  `stream_get_wrappers_reports_truthful_current_stream_subset`, focused Rust
+  `emit_ir_folds_stream_metadata_but_rejects_direct_calls`, `cargo build -p
+  phpc`, focused custom `stream_get_wrappers` PHPT via `run-tests.php`, and
+  direct `opendir-001.phpt` skipif proof via `run-tests.php`
+- supervisor primary gate log:
+  `/home/claude/supervised-php-compiler/state/workers/supervisor-primary-p34-stream-get-wrappers-batch005-checkpoint2-20260528.gates.log`
+- full PHPT suite: not run for this single source checkpoint; next broad gate
+  is due after 10 accepted Batch005 source checkpoints or explicit regression
+  repair
+
+This checkpoint generalizes stream wrapper capability reporting.
+`stream_get_wrappers()` is now advertised in builtin/native metadata and
+returns the currently implemented `file` and `php` wrappers, while unsupported
+wrappers remain absent so PHP core skipifs can make truthful decisions. The
+direct `stream_get_wrappers.phpt` row still needs generalized
+`stream_wrapper_register()` mutation support, tracked as a separate blocker.
+Production code is not keyed to a PHPT filename, expected-output fixture,
+batch marker, public hash, or test-name branch.
+
+Previous Batch005 source checkpoint 1 was `call_user_func_array()` named and
+variadic argument handling:
 
 Batch005 source checkpoint 1 is primary-integrated under AO supervision. This
 is a source checkpoint with focused proof, not a percentage change. The public
