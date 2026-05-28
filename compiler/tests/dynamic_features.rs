@@ -111,6 +111,32 @@ echo $length("native",), "\n";
 }
 
 #[test]
+fn dynamic_callable_array_and_closure_spread_arguments_are_expanded() {
+    let execution = run_source(
+        r#"<?php
+class DynamicSpreadTarget {
+    public static function withArgs($left, $middle, $right) {
+        echo $left, "|", $middle, "|", $right, "\n";
+    }
+}
+
+$tail = ["B", "C"];
+$callback = ["DynamicSpreadTarget", "withArgs"];
+$callback("A", ...$tail);
+
+$closure = function($first, $second, $third) {
+    echo $first, ":", $second, ":", $third, "\n";
+};
+$closure(...[1, 2, 3]);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "A|B|C\n1:2:3\n");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn forbidden_scope_introspection_builtins_report_dynamic_call_error() {
     let execution = run_source(
         r#"<?php

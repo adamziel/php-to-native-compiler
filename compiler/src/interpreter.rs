@@ -15849,7 +15849,7 @@ impl Interpreter {
                 ),
             ));
         }
-        ensure_user_function_arity(function, args.len(), span)?;
+        Self::ensure_user_function_expr_arity_unless_spread(function, args, span)?;
         ensure_supported_function_metadata(function, span)?;
         self.ensure_user_function_call_depth(function, span)?;
 
@@ -37709,7 +37709,7 @@ impl Interpreter {
 
         let function = self.method_function(class_id, &class_name, &resolved_method_name, span)?;
         let function = function.as_ref();
-        ensure_user_function_arity(function, args.len(), span)?;
+        Self::ensure_user_function_expr_arity_unless_spread(function, args, span)?;
         if function.returns_by_reference {
             ensure_supported_reference_return_function_metadata(function, span)?;
             self.ensure_user_function_call_depth(function, span)?;
@@ -39241,7 +39241,7 @@ impl Interpreter {
             ));
         }
         let function = function.as_ref();
-        ensure_user_function_arity(function, args.len(), span)?;
+        Self::ensure_user_function_expr_arity_unless_spread(function, args, span)?;
         if function.returns_by_reference {
             ensure_supported_reference_return_function_metadata(function, span)?;
             self.ensure_user_function_call_depth(function, span)?;
@@ -40601,7 +40601,7 @@ impl Interpreter {
 
         let function = self.method_function(class_id, &class_name, &resolved_method_name, span)?;
         let function = function.as_ref();
-        ensure_user_function_arity(function, args.len(), span)?;
+        Self::ensure_user_function_expr_arity_unless_spread(function, args, span)?;
         let called_class_id = self
             .called_class_context
             .last()
@@ -40730,7 +40730,7 @@ impl Interpreter {
                 span,
             )?;
             let function = function.as_ref();
-            ensure_user_function_arity(function, args.len(), span)?;
+            Self::ensure_user_function_expr_arity_unless_spread(function, args, span)?;
             if function.returns_by_reference {
                 ensure_supported_reference_return_function_metadata(function, span)?;
                 self.ensure_user_function_call_depth(function, span)?;
@@ -40870,7 +40870,7 @@ impl Interpreter {
             span,
         )?;
         let function = function.as_ref();
-        ensure_user_function_arity(function, args.len(), span)?;
+        Self::ensure_user_function_expr_arity_unless_spread(function, args, span)?;
         if function.returns_by_reference {
             ensure_supported_reference_return_function_metadata(function, span)?;
             self.ensure_user_function_call_depth(function, span)?;
@@ -40895,23 +40895,17 @@ impl Interpreter {
             )?;
             return Ok(returned_value);
         }
-        ensure_supported_function_signature(function, args.len(), span)?;
-        self.ensure_user_function_call_depth(function, span)?;
-
-        let mut values = Vec::with_capacity(args.len());
-        for arg in args {
-            values.push(self.evaluate_by_value_argument_with_cow_source(arg, caller_scope)?);
-        }
-
-        self.call_user_function_with_checked_values(
+        self.call_source_aware_user_function_with_expr_args(
             function,
-            values,
+            args,
+            span,
+            caller_scope,
             None,
             Some(declaring_class_id),
             Some(receiver_class_id),
             Vec::new(),
-            None,
         )
+        .map(|(value, _)| value)
     }
 
     fn call_missing_static_method_via_magic(
@@ -42543,7 +42537,7 @@ impl Interpreter {
             let function =
                 self.method_function(class_id, &class_name, &resolved_method_name, span)?;
             let function = function.as_ref();
-            ensure_user_function_arity(function, args.len(), span)?;
+            Self::ensure_user_function_expr_arity_unless_spread(function, args, span)?;
             if function.returns_by_reference {
                 ensure_supported_reference_return_function_metadata(function, span)?;
                 self.ensure_user_function_call_depth(function, span)?;
@@ -42685,7 +42679,7 @@ impl Interpreter {
 
         let function = self.method_function(class_id, &class_name, &resolved_method_name, span)?;
         let function = function.as_ref();
-        ensure_user_function_arity(function, args.len(), span)?;
+        Self::ensure_user_function_expr_arity_unless_spread(function, args, span)?;
         if function.returns_by_reference {
             ensure_supported_reference_return_function_metadata(function, span)?;
             self.ensure_user_function_call_depth(function, span)?;
@@ -43389,7 +43383,7 @@ impl Interpreter {
                 .map(|value| (value, None));
         };
         let function = function_rc.as_ref();
-        ensure_user_function_arity(function, args.len(), span)?;
+        Self::ensure_user_function_expr_arity_unless_spread(function, args, span)?;
         if function.returns_by_reference {
             return self.call_reference_return_user_function_with_expr_args_and_array_copy_source(
                 function,
@@ -44391,7 +44385,7 @@ impl Interpreter {
         caller_scope: &mut SymbolTable,
     ) -> CompileResult<Value> {
         let function = function.as_ref();
-        ensure_user_function_arity(function, args.len(), span)?;
+        Self::ensure_user_function_expr_arity_unless_spread(function, args, span)?;
         if function.returns_by_reference {
             ensure_supported_reference_return_function_metadata(function, span)?;
         } else {
@@ -44459,7 +44453,7 @@ impl Interpreter {
             ));
         }
         let function = function.as_ref();
-        ensure_user_function_arity(function, args.len(), span)?;
+        Self::ensure_user_function_expr_arity_unless_spread(function, args, span)?;
         if function.returns_by_reference {
             ensure_supported_reference_return_function_metadata(function, span)?;
             self.ensure_user_function_call_depth(function, span)?;
@@ -44630,6 +44624,7 @@ impl Interpreter {
             self.evaluate_by_value_call_arguments_with_array_copy_sources(
                 function,
                 args,
+                span,
                 caller_scope,
             )?
         };
@@ -50730,7 +50725,7 @@ impl Interpreter {
         caller_scope: &mut SymbolTable,
     ) -> CompileResult<Value> {
         let function = function.as_ref();
-        ensure_user_function_arity(function, args.len(), span)?;
+        Self::ensure_user_function_expr_arity_unless_spread(function, args, span)?;
         if function.returns_by_reference {
             ensure_supported_reference_return_function_metadata(function, span)?;
             self.ensure_user_function_call_depth(function, span)?;
@@ -50844,6 +50839,126 @@ impl Interpreter {
         function.params.iter().all(|param| !param.by_reference)
     }
 
+    fn ensure_user_function_expr_arity_unless_spread(
+        function: &FunctionDecl,
+        args: &[Expr],
+        span: Span,
+    ) -> CompileResult<()> {
+        if call_arguments_have_spread(args) {
+            return Ok(());
+        }
+        ensure_user_function_arity(function, args.len(), span)
+    }
+
+    fn evaluate_positional_array_spread_call_values(
+        &mut self,
+        callable: &str,
+        args: &[Expr],
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Vec<Value>> {
+        let mut values = Vec::with_capacity(args.len());
+        let mut saw_spread = false;
+
+        for arg in args {
+            match arg {
+                Expr::SpreadArgument { expr, span } => {
+                    saw_spread = true;
+                    let (value, array_copy_source) = self
+                        .evaluate_by_value_call_argument_with_array_copy_source(
+                            expr,
+                            caller_scope,
+                        )?;
+                    let value = caller_scope.value_with_object_property_aliases_from_array_copy(
+                        value,
+                        array_copy_source,
+                        true,
+                    );
+                    let Value::Array(array) = value else {
+                        return Err(runtime_error(
+                            *span,
+                            RuntimeError::unsupported_call(
+                                callable,
+                                format!(
+                                    "argument unpacking requires an array in the current subset, got {}",
+                                    value.type_name()
+                                ),
+                            ),
+                        ));
+                    };
+
+                    for entry in array.entries() {
+                        if matches!(entry.key, ArrayKey::String(_)) {
+                            return Err(runtime_error(
+                                *span,
+                                RuntimeError::unsupported_call(
+                                    callable,
+                                    "string-keyed argument unpacking is not implemented in the current subset",
+                                ),
+                            ));
+                        }
+                        values.push(entry.value_cloned());
+                    }
+                }
+                Expr::NamedArgument { span, .. } => {
+                    return Err(runtime_error(
+                        *span,
+                        RuntimeError::unsupported_call(
+                            callable,
+                            "named arguments mixed with argument unpacking are not implemented in the current subset",
+                        ),
+                    ));
+                }
+                expr => {
+                    if saw_spread {
+                        return Err(runtime_error(
+                            expr.span(),
+                            RuntimeError::unsupported_call(
+                                callable,
+                                "positional arguments after argument unpacking are not implemented in the current subset",
+                            ),
+                        ));
+                    }
+                    values
+                        .push(self.evaluate_by_value_argument_with_cow_source(expr, caller_scope)?);
+                }
+            }
+        }
+
+        Ok(values)
+    }
+
+    fn evaluate_array_spread_call_frame_bindings(
+        &mut self,
+        function: &FunctionDecl,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<CallFrameArgumentBindings> {
+        if function.params.iter().any(|param| param.by_reference) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    callable_name(&function.name),
+                    "argument unpacking into by-reference parameters is not implemented in the current subset",
+                ),
+            ));
+        }
+
+        let values = self.evaluate_positional_array_spread_call_values(
+            &callable_name(&function.name),
+            args,
+            caller_scope,
+        )?;
+        ensure_user_function_arity(function, values.len(), span)?;
+
+        Ok(CallFrameArgumentBindings {
+            values,
+            reference_bindings: Vec::new(),
+            array_copy_source_bindings: Vec::new(),
+            by_value_array_copy_bindings: Vec::new(),
+        })
+    }
+
     fn call_source_aware_user_function_with_expr_args(
         &mut self,
         function: &FunctionDecl,
@@ -50855,7 +50970,7 @@ impl Interpreter {
         called_class_context: Option<ClassId>,
         prebound_locals: Vec<PreboundLocal>,
     ) -> CompileResult<(Value, Option<ArrayCopySource>)> {
-        ensure_user_function_arity(function, args.len(), span)?;
+        Self::ensure_user_function_expr_arity_unless_spread(function, args, span)?;
         ensure_supported_function_metadata(function, span)?;
         self.ensure_user_function_call_depth(function, span)?;
 
@@ -50890,7 +51005,7 @@ impl Interpreter {
         called_class_context: Option<ClassId>,
         prebound_locals: Vec<PreboundLocal>,
     ) -> CompileResult<(Value, Option<ArrayCopySource>)> {
-        ensure_user_function_arity(function, args.len(), span)?;
+        Self::ensure_user_function_expr_arity_unless_spread(function, args, span)?;
         ensure_supported_reference_return_function_metadata(function, span)?;
         self.ensure_user_function_call_depth(function, span)?;
 
@@ -50921,6 +51036,15 @@ impl Interpreter {
         caller_scope: &mut SymbolTable,
         allow_reference_return_array_bindings: bool,
     ) -> CompileResult<CallFrameArgumentBindings> {
+        if call_arguments_have_spread(args) {
+            return self.evaluate_array_spread_call_frame_bindings(
+                function,
+                args,
+                span,
+                caller_scope,
+            );
+        }
+
         self.evaluate_user_function_call_frame_bindings_with_options(
             function,
             args,
@@ -51207,8 +51331,15 @@ impl Interpreter {
         &mut self,
         function: &FunctionDecl,
         args: &[Expr],
+        span: Span,
         caller_scope: &mut SymbolTable,
     ) -> CompileResult<(Vec<Value>, Vec<ArrayCopySourceBinding>)> {
+        if call_arguments_have_spread(args) {
+            let frame =
+                self.evaluate_array_spread_call_frame_bindings(function, args, span, caller_scope)?;
+            return Ok((frame.values, frame.array_copy_source_bindings));
+        }
+
         let mut values = Vec::with_capacity(args.len());
         let mut copy_source_bindings = Vec::new();
 
@@ -55128,6 +55259,16 @@ impl Interpreter {
         Vec<ReferenceBinding>,
         Vec<ArrayCopySourceBinding>,
     )> {
+        if call_arguments_have_spread(args) {
+            let frame =
+                self.evaluate_array_spread_call_frame_bindings(function, args, span, caller_scope)?;
+            return Ok((
+                frame.values,
+                frame.reference_bindings,
+                frame.array_copy_source_bindings,
+            ));
+        }
+
         if args
             .iter()
             .any(|arg| matches!(arg, Expr::NamedArgument { .. }))

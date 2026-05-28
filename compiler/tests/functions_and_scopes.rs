@@ -9053,23 +9053,25 @@ echo $fn("Ada");
 }
 
 #[test]
-fn variadic_argument_unpacking_is_rejected_at_source_order_call_argument_boundary() {
-    let error = runtime_error(
+fn variadic_argument_unpacking_expands_array_values_for_user_functions() {
+    let execution = run_source(
         r#"<?php
-function first($value) {
-    return $value;
+function join_values($first, $second = "D", ...$rest) {
+    echo $first, "|", $second, "|", count($rest);
+    if (count($rest)) {
+        echo "|", $rest[0];
+    }
+    echo "\n";
 }
-$items = [1];
-echo first(...$items);
+$items = ["B", "C"];
+join_values("A", ...$items);
+join_values(...["X"]);
 "#,
-    );
+    )
+    .unwrap();
 
-    assert_eq!(error.line, 6);
-    assert_eq!(error.column, 12);
-    assert_eq!(
-        error.message,
-        "unsupported call source-order call argument: interpreter call consumers have not been wired to shared source-order call-argument normalization"
-    );
+    assert_eq!(execution.stdout, "A|B|1|C\nX|D|0\n");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
