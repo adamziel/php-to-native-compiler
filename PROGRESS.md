@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-28 14:20 CEST
+Updated: 2026-05-28 14:29 CEST
 Primary branch: `master`
-Latest source head: `7ba72ffd fix: make dynamic call undefined errors catchable`
+Latest source head: `785f0147 fix: validate property override attributes`
 
 ## Progress Score
 
@@ -51,10 +51,48 @@ Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
 
-Post-Batch002 source checkpoint 7 is now primary-integrated under AO. This is a
+Post-Batch002 source checkpoint 8 is now primary-integrated under AO. This is a
 source checkpoint with focused proof, not a percentage change. The public score
 remains **1193 / 20294 runnable PHPTs = 5.88%** until another pinned full-suite
 run is completed, parsed, regression-checked, and published here.
+
+- primary source head:
+  `785f0147 fix: validate property override attributes`
+- p28 final handoff head:
+  `079da6b0a6ed14ce1f6bb2f75bf5e5d80f5753d2 fix: validate property override attributes`
+- exported integration patch:
+  `/home/claude/supervised-php-compiler/state/patches/ao-integration-p17-property-override-validation-20260528.patch`
+- exported integration patch SHA256:
+  `d6165ed78b4c6a5ba71fd3cbcf88e26bd5a591bab50ed1f9699b37200a3439b1`
+- source candidate patch SHA256:
+  `7778c68b1d76172446230ec6295c3e467dba109052c8a44967a69d9f2a54a324`
+- reviewer gate: p7 recorded `FINAL GO-CANDIDATE /
+  FOCUSED-GATES-PASS` with `FINAL_FAIL=0`
+- critic gate: phpc-26 recorded `SAFE-FOR-INTEGRATION /
+  P17-PROPERTY-OVERRIDE-SUCCESSOR-7778-CLEAN-P7`
+- focused gates: PASS for `git diff --check`, `cargo fmt --all --
+  --check`, `cargo test -p phpc --test object_model
+  property_override_attribute -- --nocapture --test-threads=1`,
+  `cargo test -p phpc --test syntax_boundaries
+  interface_property_hook_declarations_parse_as_interface_metadata --
+  --nocapture --test-threads=1`, `cargo build -p phpc`, and wrapper PHPTs
+  `Zend/tests/attributes/override/properties_01.phpt`,
+  `Zend/tests/attributes/override/properties_02.phpt`,
+  `Zend/tests/attributes/override/properties_05.phpt`,
+  `Zend/tests/attributes/override/properties_07.phpt`,
+  `Zend/tests/attributes/override/properties_08.phpt`,
+  `Zend/tests/attributes/override/properties_09.phpt`,
+  `Zend/tests/attributes/override/properties_11.phpt`, and
+  `Zend/tests/attributes/override/properties_18.phpt`
+- full PHPT suite: not run for this single source checkpoint
+
+This checkpoint generalizes property `#[\Override]` validation across parsed
+class, interface, and trait property metadata and routes missing-match
+diagnostics through PHP/Zend fatal startup output shape. It is not keyed to a
+PHPT filename, exact output, class name, property name, or fixture shape.
+
+Previous post-Batch002 source checkpoint 7 was p19 dynamic-call catchable
+errors:
 
 - primary source head:
   `7ba72ffd fix: make dynamic call undefined errors catchable`
