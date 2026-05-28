@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-28 22:14 CEST
+Updated: 2026-05-28 22:21 CEST
 Primary branch: `master`
-Latest source head: `241b8411 fix: preserve byte strings in standard builtins`
+Latest source head: `4e129363 fix: preserve named variadic keys in call_user_func_array`
 
 ## Progress Score
 
@@ -82,6 +82,48 @@ Focused PHPT history is tracked separately in
 Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
+
+Batch005 source checkpoint 1 is primary-integrated under AO supervision. This
+is a source checkpoint with focused proof, not a percentage change. The public
+PHPT score remains **1413 / 20294 pinned runnable PHPTs = 6.96%** until the
+next pinned full-suite or supervisor-approved sharded publication gate is
+completed, regression-checked, and published here.
+
+- primary source head:
+  `4e129363 fix: preserve named variadic keys in call_user_func_array`
+- exported integration patch:
+  `/home/claude/supervised-php-compiler/state/patches/ao-integration-p31-call-user-func-array-named-variadic-d97da76e-20260528.patch`
+- exported integration patch SHA256:
+  `9fd36c727642483393657496e942dfc913145da92bb9bafcee2c5448f519ef02`
+- reviewer gate: p7 recorded `FINAL GO-CANDIDATE / FOCUSED-GATES-PASS /
+  PHPT-PASS / DIRECT-ROW-BASELINE-BLOCKED` with `FINAL_FAIL=0`; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/batch004-review-call-user-func-array-named-variadic-37941f23-20260528.{status.md,report.md,gates.log}`
+- critic gate: phpc-33 recorded `SAFE-FOR-INTEGRATION /
+  P7-FINAL-GO-NORMALIZED / BASELINE-BLOCKER-ACCEPTED / READ-ONLY`;
+  artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/batch004-critic-call-user-func-array-named-variadic-37941f23-20260528.{status.md,report.md}`
+- integration gate: phpc-28 recorded
+  `READY-FOR-SUPERVISOR-APPLY-ON-D97DA76E`; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/ao-integration-p31-call-user-func-array-named-variadic-d97da76e-20260528.{status.md,report.md,gates.log}`
+- supervisor focused gates: PASS for `git apply --check`, patch SHA,
+  `git diff --check`, docs/PROGRESS/examples exclusion, production exact-shape
+  audit, `cargo fmt --all -- --check`, focused Rust
+  `call_user_func_array_preserves_named_variadic_argument_keys`,
+  `cargo build -p phpc`, and focused wrapper PHPT custom
+  `call_user_func_array` named/variadic row
+- supervisor primary gate log:
+  `/home/claude/supervised-php-compiler/state/workers/supervisor-primary-p31-call-user-func-array-named-variadic-batch005-checkpoint1-20260528.gates.log`
+- full PHPT suite: not run for this single source checkpoint; next broad gate
+  is due after 10 accepted Batch005 source checkpoints or explicit regression
+  repair
+
+This checkpoint generalizes `call_user_func_array()` user-function argument
+handling. User-function frames now preserve supplied argument keys through
+named/variadic evaluation, including duplicate/unknown/subset error paths and
+keyed variadic rest storage. Production code is not keyed to a PHPT filename,
+expected-output fixture, batch marker, public hash, or test-name branch.
+
+Previous Batch004 source checkpoint 10 was standard byte-string builtins:
 
 Batch004 source checkpoint 10 is primary-integrated under AO supervision. The
 checkpoint10 sharded publication gate is now published with **1413 / 20294
