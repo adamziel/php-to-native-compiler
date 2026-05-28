@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-28 23:43 CEST
+Updated: 2026-05-28 23:58 CEST
 Primary branch: `master`
-Latest source head: `60d5ff6f fix: bind named arrays for reference builtins`
+Latest source head: `2beac3ba fix: cover local filesystem file operations`
 
 ## Progress Score
 
@@ -76,13 +76,56 @@ stable pinned denominator and does not use the raw runner
 | Batch004 checkpoint8 regression-repair sharded gate | Done | 1369 / 20294 pinned runnable PHPTs passed (6.75%); 0 regressions from Batch003 PASS set; run id `phpt-full-batch004-regression-repair-sharded-20260528T192018Z-php-src-f97ff59-public-3c86fc6a-source-b75047df-stack8` |
 | Batch004 checkpoint10 sharded gate | Done | 1413 / 20294 pinned runnable PHPTs passed (6.96%); 0 regressions from checkpoint8 PASS set; run id `phpt-full-batch004-checkpoint10-sharded-20260528T195852Z-php-src-f97ff59-public-37941f23-source-241b8411-stack10` |
 | Batch004 source batch | Complete | Batch004 source checkpoints accepted: 10 / 10; checkpoint10 sharded gate published |
-| Batch005 source batch | In progress | Batch005 source checkpoints accepted: 5 / 10; public score unchanged until next full/sharded publication gate |
+| Batch005 source batch | In progress | Batch005 source checkpoints accepted: 6 / 10; public score unchanged until next full/sharded publication gate |
 
 Focused PHPT history is tracked separately in
 `/home/claude/supervised-php-compiler/state/php-core-suite-focused-history.tsv`.
 Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
+
+Batch005 source checkpoint 6 is primary-integrated under AO supervision. This
+is a source checkpoint with focused proof, not a percentage change. The public
+PHPT score remains **1413 / 20294 pinned runnable PHPTs = 6.96%** until the
+next pinned full-suite or supervisor-approved sharded publication gate is
+completed, regression-checked, and published here.
+
+- primary source head:
+  `2beac3ba fix: cover local filesystem file operations`
+- reviewed patch:
+  `/home/claude/supervised-php-compiler/state/patches/ao-coder-standard-file-stream-successor2-current-e3c73bab-20260528.patch`
+- reviewed patch SHA256:
+  `6d7f7e918473e3b05954b8f89099ac444494c162c077ad091f3c5d61fe983218`
+- reviewer gate: p7 recorded `FINAL GO-CANDIDATE /
+  FOCUSED-GATES-PASS / PHPT-PASS` with `FINAL_FAIL=0`; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/batch005-review-standard-file-stream-successor2-da8720d0-20260528.{status.md,report.md,gates.log}`
+- critic gate: phpc-33 recorded `SAFE-FOR-INTEGRATION /
+  REVIEWER-FINAL-GO-VERIFIED / READ-ONLY`; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/batch005-critic-standard-file-stream-successor2-da8720d0-20260528.{status.md,report.md}`
+- integration handoff: p28 was routed but the supervisor applied the exact
+  p7+phpc-33 reviewed patch directly to avoid leaving a safe checkpoint idle
+- supervisor focused gates: PASS for patch SHA, `git diff --check`,
+  docs/PROGRESS/examples exclusion, corrected added-line production
+  exact-shape marker audit, `cargo fmt --all -- --check`, focused Rust
+  `standard_filesystem_mutation_builtins`, `cargo build -p phpc`, and a
+  corrected clean focused PHPT file/stream cluster with 10/10 PASS rows
+- supervisor primary gate log:
+  `/home/claude/supervised-php-compiler/state/workers/supervisor-primary-p43-standard-file-stream-batch005-checkpoint6-20260528.gates.log`
+- full PHPT suite: not run for this single source checkpoint; next broad gate
+  is due after 10 accepted Batch005 source checkpoints or explicit regression
+  repair
+
+This checkpoint generalizes local filesystem and stream-adjacent behavior for
+the supported native runtime subset. It registers and implements common file
+and directory builtins, bounded local path resolution, stat cache handling,
+file mutation/read helpers, `mkdir()`/`rmdir()`/`copy()`/`rename()`/`chdir()`/
+`scandir()` behavior, file mode `x` support, stream resource boundary checks,
+and related string/format helpers needed by the file/dir PHPT cluster.
+Production code is not keyed to a PHPT filename, expected-output fixture,
+batch marker, public hash, or test-name branch.
+
+Previous Batch005 source checkpoint 5 was reference-taking builtin named-array
+behavior:
 
 Batch005 source checkpoint 5 is primary-integrated under AO supervision. This
 is a source checkpoint with focused proof, not a percentage change. The public
