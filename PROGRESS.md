@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-28 03:41 CEST
+Updated: 2026-05-28 03:53 CEST
 Primary branch: `master`
 Latest source head: `0fa7b666 runtime: autoload enum_exists misses`
 
@@ -70,10 +70,12 @@ Gate status and parked candidates:
 | Batch 001 full PHPT gate | Done in AO session `phpc-11`; first baseline recorded at 1118 / 20294 runnable PHPTs (5.51%) |
 | Full-suite count guard | Done; `all-results.txt` used `PASSED/FAILED/SKIPPED/XFAILED`, the parser counted those statuses, and the verified row is in `state/php-core-suite-history.tsv` |
 | PR #4 by-reference call expressions | Batch002 stack decision says PR #4 supersedes r82/PR #2; use PR #4 as the by-reference candidate because it covers `Zend/tests/bug39944.phpt` plus adjacent return/pass-by-reference PHPTs |
+| PR #5 named by-reference arguments | GO-CANDIDATE after independent review on accepted stack10 + PR #4 + PR #5; focused Rust gates passed and wrapper PHPTs `Zend/tests/named_params/references.phpt`, `tests/lang/passByReference_007.phpt`, and `tests/lang/returnByReference.002.phpt` passed 3/3 |
+| PR #6 foreach reference-backed `print_r()` | Open and queued for independent review; author lane shows focused Rust/build gates passed and wrapper PHPT `tests/lang/foreach_with_references_001.phpt` plus foreach anchors passed after a generalized reference-backed array formatting fix |
 | `Zend/tests/bug39944.phpt` reference invocation | PR #2/r82 is parked/superseded for Batch002; do not stack it with PR #4 because both conflict in `compiler/src/interpreter.rs` and `compiler/tests/functions_and_scopes.rs` |
 | Magic visibility warnings | PR #3 is `REBASE-NEEDED` for Batch 002 after r81/stack10 due docs conflict; production/test hunks replay |
 | Foreach `$GLOBALS` lane | PASS-NO-PATCH accepted by reviewer; accepted stack10 passes `foreach_unset_globals`, `foreach_reference`, and `foreach_temp_array_expr_with_refs` |
-| Foreach object-property by-reference lane | GO candidate produced for `Zend/tests/foreach/foreach_by_ref_to_property.phpt`; queued for independent reviewer gates |
+| Foreach object-property by-reference lane | GO-CANDIDATE after independent review; focused PHPT `Zend/tests/foreach/foreach_by_ref_to_property.phpt` plus foreach anchors passed 3/3, with PR #3/#4 stack compatibility checks |
 | Anonymous-class dynamic-call blocker | AO scout classified this as NO-GO for Batch 001 PR 10; deferred as a broader parser/interpreter/native feature |
 | PHPT focused queue | `tests/classes/__set__get_002.phpt` passes on the 9/10 stack; r85 queue now feeds additional coder lanes |
 | Codex thread-store permissions | Fixed current session directory execute bit; smoke passed |
@@ -95,8 +97,8 @@ Required live roles:
 
 Current AO snapshot: `phpc-orchestrator` supervising; `phpc-14` critic;
 `phpc-7` reviewer; `phpc-8` progress reporter; coder lanes `phpc-15`
-by-reference named-parameter follow-up, `phpc-16` magic `__call_003`
-by-reference lane, and `phpc-17` foreach by-reference repacking/insert lane.
+`tests/lang/passByReference_003.phpt`, `phpc-16` magic `__call_003`
+by-reference lane, and `phpc-17` PR #6 / `tests/lang/foreach_with_references_001.phpt`.
 The completed full-suite gate (`phpc-11`), foreach object-property coder
 (`phpc-12`), and magic `__call_001` PASS-NO-PATCH coder (`phpc-13`) were
 killed after their durable artifacts were recorded.
