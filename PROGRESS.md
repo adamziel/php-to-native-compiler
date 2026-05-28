@@ -98,9 +98,9 @@ Required live roles:
 | Coders | Work disjoint focused PHPT lanes from the queue; each lane must produce a patch, PASS-NO-PATCH, or NO-GO artifact |
 
 Current AO snapshot: `phpc-orchestrator` supervising; `phpc-14` critic;
-reviewers `phpc-7` and `phpc-20`; `phpc-8` progress reporter; active
-coder/support lanes `phpc-15`, `phpc-16`, `phpc-17`, `phpc-18`, and
-`phpc-19`. Current public-progress watch targets are PR #13 /
+`phpc-7` reviewer; `phpc-8` progress reporter; active coder/support lanes
+`phpc-15`, `phpc-16`, `phpc-17`, `phpc-18`, and `phpc-19`. Current
+public-progress watch targets are PR #13 /
 `passByReference_012` review artifacts, PR #8 / `passByReference_002`
 real-stack review artifacts, PR #15 / `returnByReference.003` review
 artifacts, and any new full-suite PHPT row. Old idle session `phpc-2` was
