@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-28 10:31 CEST
+Updated: 2026-05-28 10:50 CEST
 Primary branch: `master`
 Latest source head: `0fa7b666 runtime: autoload enum_exists misses`
 
@@ -35,6 +35,28 @@ Counts: 1118 passed, 19156 failed, 964 skipped, 20 xfailed, 0 borked;
 Focused PHPT history is tracked separately in
 `/home/claude/supervised-php-compiler/state/php-core-suite-focused-history.tsv`.
 Focused passes prove candidate direction; they do not define project percent.
+
+## Current Integration
+
+Batch002 source integration is active under AO. The integration worker
+`phpc-28` built the reviewed stack on the accepted Batch001 base and gated
+seven source candidates:
+
+- stack head: `256574bc fix: initialize undefined by-reference array arguments`
+- exported patch:
+  `/home/claude/supervised-php-compiler/state/patches/ao-integration-batch002-stack-20260528.patch`
+- exported patch SHA256:
+  `af3b3f3a507ca895b46e4c65bd947f1b35d89fa10542c219de41996f1be28ed1`
+- focused gates: PASS for diff checks, `cargo fmt`, focused Rust tests,
+  `cargo build -p phpc`, fixture harness, and a 19/19 focused PHPT union
+- full PHPT suite: not rerun; public score remains 5.51%
+
+Candidate 8 / PR #19 `passByReference_003` is the next integration blocker.
+It conflicts on the gated stack in `compiler/src/interpreter.rs` and
+`compiler/tests/functions_and_scopes.rs`; AO is resolving or rebasing that
+source conflict before counting it as progress. Coder lanes `phpc-15` through
+`phpc-19` have been switched from probe-only PHPT mapping to source-patch
+candidate work.
 
 ## Batch 001
 
@@ -196,17 +218,13 @@ Required live roles:
 | Progress reporter | Keeps this `PROGRESS.md` file and durable supervisor state current after material AO events |
 | Coders | Work disjoint focused PHPT lanes from the queue; each lane must produce a patch, PASS-NO-PATCH, or NO-GO artifact |
 
-Current AO snapshot: `phpc-orchestrator` supervising; `phpc-14` critic;
-`phpc-7` reviewer; `phpc-8` progress reporter; active coder/support lanes
-`phpc-15`, `phpc-16`, `phpc-17`, `phpc-18`, and `phpc-19`. Current
-public-progress watch targets are typed-properties `typed_properties_060`,
-magic `bug77339`/successors, `constructor_args`, attributes `class_const_group`,
-`try_finally_021`/successors, asymmetric `decrease_scope_protected_protected`,
-the next p7-reviewed candidate plus p14 `SAFE-FOR-PROGRESS` audit, current
-coder lane artifacts, and any new full-suite PHPT row. Known no-go/not-safe items,
-including unsuffixed `bug44899`, `bug46238`, `bug48248`, `foreach_010`,
-`foreach_016` and `foreach_list_001`, remain excluded. Extra sessions `phpc-22` and stale `phpc-2` are
-killed/not active roster capacity.
+Current AO snapshot: `phpc-orchestrator` supervising; `phpc-26` critic;
+`phpc-7` reviewer; `phpc-8` progress reporter; `phpc-28` Batch002 integration
+worker; source-coder lanes `phpc-15`, `phpc-16`, `phpc-17`, `phpc-18`, and
+`phpc-19`. Current watch targets are p28 candidate8 conflict resolution,
+candidate9 compatibility after candidate8, new source patches exported by the
+coder lanes, and the next authorized full-suite PHPT row. PASS-NO-PATCH row
+publication is lower priority while reviewed source integration is active.
 
 ## Current Rules
 
