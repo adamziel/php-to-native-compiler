@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-29 00:39 CEST
+Updated: 2026-05-29 00:58 CEST
 Primary branch: `master`
 Latest source head: `1c4da4c5 fix: expand standard array operations`
 
@@ -13,7 +13,7 @@ Progress is the pinned php-src PHPT full-suite pass rate:
 
 `passed runnable PHPTs / total runnable PHPTs`
 
-Current score: **1413 / 20294 pinned runnable PHPTs = 6.96%**.
+Current score: **1618 / 20294 pinned runnable PHPTs = 7.97%**.
 
 No other percentage is public project progress. Focused PHPT passes, source
 checkpoints, PRs, and docs/status edits are evidence for the next batch, but
@@ -50,8 +50,8 @@ recorded 1369 / 20294 pinned runnable PHPTs = 6.75% with zero regressions from
 the Batch003 PASS set. Evidence lives under
 `/home/claude/supervised-php-compiler/state/logs/phpt-full-batch004-regression-repair-sharded-20260528T192018Z-php-src-f97ff59-public-3c86fc6a-source-b75047df-stack8`.
 
-The latest full-suite result is the Batch004 checkpoint10 sharded publication
-gate on the same php-src pin, run
+The Batch004 checkpoint10 sharded publication gate was on the same php-src pin,
+run
 `phpt-full-batch004-checkpoint10-sharded-20260528T195852Z-php-src-f97ff59-public-37941f23-source-241b8411-stack10`.
 Counts: 1413 passed, 17771 failed, 2109 skipped, 16 xfailed, 1022 borked;
 all 12 shards exited nonzero because failing PHPTs remain. Regressions from the
@@ -61,6 +61,22 @@ checkpoint8 PASS set: 0. Evidence lives under
 Batch004 checkpoint10 still has BORKED rows, so the public score uses the
 stable pinned denominator and does not use the raw runner
 `1413 / 19200 = 7.36%` calculation.
+
+The latest full-suite result is the Batch005 checkpoint10 sharded publication
+gate on the same php-src pin, run
+`phpt-full-batch005-checkpoint10-sharded-20260528T224229Z-php-src-f97ff59-public-fd74fba9-source-1c4da4c5-stack10`.
+Counts: 1618 passed, 17025 failed, 2490 skipped, 15 xfailed, 1183 borked;
+all 12 shards exited nonzero because failing PHPTs remain. The PASS-set
+comparison reported three Batch004 PASS rows as SKIPPED; a focused rerun showed
+all three are Windows-only PHPTs (`bug78220.phpt`,
+`dirname_no_path_normalization-win32.phpt`, and `bug69115.phpt`), so this is
+recorded as a platform-skip guard rather than a semantic regression. Evidence
+lives under
+`/home/claude/supervised-php-compiler/state/logs/phpt-full-batch005-checkpoint10-sharded-20260528T224229Z-php-src-f97ff59-public-fd74fba9-source-1c4da4c5-stack10`.
+
+Batch005 checkpoint10 still has BORKED rows, so the public score uses the
+stable pinned denominator and does not use the raw runner
+`1618 / 18658 = 8.67%` calculation.
 
 ## PHPT Harness
 
@@ -75,8 +91,9 @@ stable pinned denominator and does not use the raw runner
 | Batch003 full-suite gate | Done | 1311 / 20294 pinned runnable PHPTs passed (6.46%); 0 regressions from Batch002 PASS set; run id `phpt-full-batch003-20260528T154907Z-php-src-f97ff59-public-20f3be4c-source-202dd1ec-stack21` |
 | Batch004 checkpoint8 regression-repair sharded gate | Done | 1369 / 20294 pinned runnable PHPTs passed (6.75%); 0 regressions from Batch003 PASS set; run id `phpt-full-batch004-regression-repair-sharded-20260528T192018Z-php-src-f97ff59-public-3c86fc6a-source-b75047df-stack8` |
 | Batch004 checkpoint10 sharded gate | Done | 1413 / 20294 pinned runnable PHPTs passed (6.96%); 0 regressions from checkpoint8 PASS set; run id `phpt-full-batch004-checkpoint10-sharded-20260528T195852Z-php-src-f97ff59-public-37941f23-source-241b8411-stack10` |
+| Batch005 checkpoint10 sharded gate | Done | 1618 / 20294 pinned runnable PHPTs passed (7.97%); 3 PASS-to-SKIP platform guards from Windows-only PHPTs; run id `phpt-full-batch005-checkpoint10-sharded-20260528T224229Z-php-src-f97ff59-public-fd74fba9-source-1c4da4c5-stack10` |
 | Batch004 source batch | Complete | Batch004 source checkpoints accepted: 10 / 10; checkpoint10 sharded gate published |
-| Batch005 source batch | Complete | Batch005 source checkpoints accepted: 10 / 10; next pinned full/sharded publication gate is due |
+| Batch005 source batch | Complete | Batch005 source checkpoints accepted: 10 / 10; checkpoint10 sharded gate published |
 
 Focused PHPT history is tracked separately in
 `/home/claude/supervised-php-compiler/state/php-core-suite-focused-history.tsv`.
@@ -84,11 +101,9 @@ Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
 
-Batch005 source checkpoint 10 is primary-integrated under AO supervision. This
-is a source checkpoint with focused proof, not a percentage change. The public
-PHPT score remains **1413 / 20294 pinned runnable PHPTs = 6.96%** until the
-next pinned full-suite or supervisor-approved sharded publication gate is
-completed, regression-checked, and published here.
+Batch005 source checkpoint 10 is primary-integrated under AO supervision, and
+the Batch005 checkpoint10 sharded publication gate is published. The public
+PHPT score is now **1618 / 20294 pinned runnable PHPTs = 7.97%**.
 
 - primary source head:
   `1c4da4c5 fix: expand standard array operations`
@@ -113,8 +128,10 @@ completed, regression-checked, and published here.
   `cargo fmt --all -- --check`; p28 scratch gates also passed focused Rust
   `array_sort_builtin`, `array_unshift_builtin`, `current_builtin`,
   `cargo build -p phpc`, and a 10-row focused standard-array PHPT cluster
-- full PHPT suite: not run for this single source checkpoint; the next broad
-  gate is due now that Batch005 has 10 accepted source checkpoints
+- full PHPT suite: Batch005 checkpoint10 sharded publication gate recorded
+  1618 / 20294 pinned runnable PHPTs = 7.97%; focused follow-up confirmed the
+  three PASS-to-SKIP rows are Windows-only platform skips, not source semantic
+  regressions
 
 This checkpoint generalizes standard array ordering and pointer/mutation
 behavior, including sort operation routing, `SORT_*` flags, `array_shift()`,
