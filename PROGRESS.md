@@ -39,37 +39,41 @@ Focused passes prove candidate direction; they do not define project percent.
 ## Current Integration
 
 Batch002 source integration is active under AO. The integration worker
-`phpc-28` built the reviewed stack on the accepted Batch001 base and gated
-nine source candidates, with independent p7 review and phpc-26 critic approval
-for the public checkpoint.
+`phpc-28` built the reviewed stack on the accepted Batch001 base and gated ten
+source candidates, with independent p7 review and phpc-26 critic approval for
+the public checkpoint.
 
-- stack head: `139931fd fix: materialize missing by-reference variable arguments`
+- stack head: `6f4e36a0 fix: dispatch static magic callbacks`
 - exported patch:
   `/home/claude/supervised-php-compiler/state/patches/ao-integration-batch002-stack-20260528.patch`
 - exported patch SHA256:
-  `6d32f1a019fbada399e240878ba83a9777c5bcff889a1e6f973214f69c179f85`
-- applied/gated stack: r81 plus Batch002 candidates 1-9
-- focused gates: PASS for diff/fmt checks, focused Rust tests,
-  `cargo build -p phpc`, and focused PHPT anchors including
-  `tests/lang/passByReference_005.phpt`, `_006.phpt`, `_004.phpt`, and
-  `_002.phpt` (4/4) on the candidate9 stack
-- review gate: p7 recorded `SAFE-INTEGRATION-CHECKPOINT / STACK-CLEAN-9-GATED`
-  with `FINAL_FAIL=0`
-- critic gate: phpc-26 recorded `SAFE-INTEGRATION-CHECKPOINT — STACK-CLEAN-9 only`
+  `651f9a0472858f8a7492c32fc9d82057ff02b713840df572f59018e2b659dd3b`
+- applied/gated stack: r81 plus Batch002 candidates 1-10
+- focused gates: PASS for clean apply with `docs/PROGRESS.md` excluded,
+  diff/fmt checks, focused Rust test
+  `call_user_func_dispatches_missing_static_methods_through_callstatic`,
+  `cargo build -p phpc`, and focused PHPT
+  `Zend/tests/magic_methods/call_static.phpt`
+- review gate: p7 restored candidate10 as `GO-CANDIDATE` with `FINAL_FAIL=0`
+  after confirming `call_static_002.phpt` is a baseline pre-existing
+  non-regression
+- critic gate: phpc-26 recorded `SAFE-INTEGRATION-CHECKPOINT /
+  SAFE-FOR-PROGRESS` for `STACK-CLEAN-10` only
 - full PHPT suite: not rerun; public score remains 1118 / 20294 runnable PHPTs
   (5.51%)
 
-Candidate 9 was not a direct patch replay: the reviewed patch depended on a
-downstream stack order, so p28 manually integrated the same generalized
-missing-variable warning/null and missing by-reference variable materialization
-semantics onto the current source stack before running the focused gates. The
-exported stack patch contains source/test changes only; public progress rows for
-PASS-NO-PATCH probes remain frozen while source integration is active.
+Candidate 10 integrates the p16 static magic callback dispatch source patch. It
+generalizes interpreter dispatch for static-method callable strings, array static
+callbacks, and missing static methods through the existing `__callStatic` path;
+it is not keyed to PHPT filenames, expected output transcripts, or one
+class/method literal. The nearby `call_static_002.phpt` anchor remains a known
+baseline `PRE_EXISTING_FAIL`, not a candidate regression.
 
-Candidate 10 is queued for source review: p16 static magic callback dispatch,
-patch SHA256 `561b597f23a510902f02d9dd4cb25b23c46b15e279dea5d232f269b7b1639613`.
-Its apply audit has passed and focused gates are pending while AO waits for an
-available cargo slot.
+Next source integration remains gated on fresh FINAL GO plus phpc-26 SAFE and a
+clean p28 apply/gate cycle. Current likely watch is the p17 property-hooks parser
+review after auxiliary checks; older p15, p18, and p19 patches require
+rebase/repair for the current stack. Public PASS-NO-PATCH probe rows remain
+frozen while source integration is active.
 
 ## Batch 001
 
