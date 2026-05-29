@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-29 23:03 CEST
+Updated: 2026-05-29 23:30 CEST
 Primary branch: `master`
-Latest source head: `9da13ca3 fix: add ArrayObject and var_export semantics`
+Latest source head: `4928e9ef fix: add scanf and fscanf semantics`
 
 ## Progress Score
 
@@ -125,7 +125,12 @@ Batch015 source checkpoint2 `9da13ca3` is integrated with focused lowercase
 `23 PASS / 0 FAIL / 0 SKIP` across 10 selected SPL `ArrayObject` /
 `ArrayIterator` PHPT rows plus 13 selected `var_export()` PHPT rows, logged at
 `/home/claude/supervised-php-compiler/state/logs/primary-batch015-p63-p65-focused-20260529T2302/run-tests.log`.
-Batch015 source progress is now 2 checkpoints and +38 expected direct rows.
+Batch015 source checkpoint3 `4928e9ef` is integrated with focused lowercase
+`-p` proof for p68 `sscanf()` and first `fscanf()` semantics. The focused gate
+recorded `12 PASS / 0 FAIL / 0 SKIP` across 9 selected `sscanf()` PHPT rows
+and 3 selected `fscanf()` PHPT rows, logged at
+`/home/claude/supervised-php-compiler/state/logs/primary-batch015-p68-scanf-focused-20260529T212954Z/run-tests.log`.
+Batch015 source progress is now 3 checkpoints and +50 expected direct rows.
 The public percentage remains `3378 / 20294 = 16.65%` until the next pinned
 full-suite gate is completed, regression-checked, and published here.
 
