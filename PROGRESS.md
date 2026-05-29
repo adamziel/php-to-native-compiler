@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-29 03:30 CEST
+Updated: 2026-05-29 03:34 CEST
 Primary branch: `master`
-Latest source head: `0986d786 fix: add calendar core builtins`
+Latest source head: `e35a5d2c fix: reject invalid intersection type members`
 
 ## Progress Score
 
@@ -94,13 +94,49 @@ stable pinned denominator and does not use the raw runner
 | Batch005 checkpoint10 sharded gate | Done | 1618 / 20294 pinned runnable PHPTs passed (7.97%); 3 PASS-to-SKIP platform guards from Windows-only PHPTs; run id `phpt-full-batch005-checkpoint10-sharded-20260528T224229Z-php-src-f97ff59-public-fd74fba9-source-1c4da4c5-stack10` |
 | Batch004 source batch | Complete | Batch004 source checkpoints accepted: 10 / 10; checkpoint10 sharded gate published |
 | Batch005 source batch | Complete | Batch005 source checkpoints accepted: 10 / 10; checkpoint10 sharded gate published |
-| Batch006 source batch | Started | Source checkpoints accepted: 9 / 10 gate threshold; checkpoint9 integrates calendar core builtins |
+| Batch006 source batch | Complete | Source checkpoints accepted: 10 / 10 gate threshold; checkpoint10 integrates invalid intersection type member diagnostics; next step is the pinned sharded publication gate |
 
 Focused PHPT history is tracked separately in
 `/home/claude/supervised-php-compiler/state/php-core-suite-focused-history.tsv`.
 Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
+
+Batch006 source checkpoint 10 is primary-integrated under AO supervision. This
+is a source checkpoint with focused proof, not a percentage change. The public
+PHPT score remains **1618 / 20294 pinned runnable PHPTs = 7.97%** until the
+next pinned full-suite or supervisor-approved sharded publication gate is
+completed, regression-checked, and published here.
+
+- primary source head:
+  `e35a5d2c fix: reject invalid intersection type members`
+- reviewed and integration patch:
+  `/home/claude/supervised-php-compiler/state/patches/ao-coder-type-declarations-intersection-invalid-members-successor4-e91bc0df-20260529.patch`
+- reviewed and integration patch SHA256:
+  `50bb3633f22ebee6a4600127074acb3430421263dd3ae3a0f5f8c2f7dbc0c4fd`
+- reviewer gate: phpc-48 recorded `FINAL GO /
+  CURRENT-PUBLIC-4315-FOCUSED-GATES-PASS`; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/batch006-review-type-declarations-intersection-invalid-members-successor4-4315be56-20260529.{status.md,report.md,gates.log}`
+- critic gate: phpc-49 recorded `SAFE-FOR-INTEGRATION /
+  CURRENT-PUBLIC-4315-FOCUSED-GATES-PASS`; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/batch006-critic-type-declarations-intersection-invalid-members-successor4-4315be56-20260529.{status.md,report.md}`
+- supervisor focused gates: PASS for clean apply over checkpoint9,
+  `git diff --check`, production exact-shape audit,
+  `cargo fmt --all -- --check`, focused Rust
+  `intersection_invalid_type_members`, `cargo build -p phpc`, and the focused
+  15-file PHPT invalid intersection type cluster with 15 PASS and 0 FAIL
+- full PHPT suite: not run for this single source checkpoint; Batch006 has now
+  reached the 10 accepted source checkpoint threshold, so the next normal step
+  is the pinned sharded publication gate and regression comparison before the
+  public score can move
+
+This checkpoint generalizes startup diagnostics for invalid members inside
+intersection type declarations across functions, methods, class/interface/
+trait properties, interface methods, and trait methods. It is not keyed to a
+PHPT filename, expected-output fixture, batch marker, public hash, or
+test-name branch.
+
+Previous Batch006 source checkpoint 9 was calendar core builtins:
 
 Batch006 source checkpoint 9 is primary-integrated under AO supervision. This
 is a source checkpoint with focused proof, not a percentage change. The public
