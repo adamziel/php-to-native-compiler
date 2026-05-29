@@ -54,27 +54,27 @@ fn unsupported_builtin_call_has_stable_runtime_error() {
 }
 
 #[test]
-fn unsupported_array_key_has_stable_runtime_error() {
-    let error = runtime_error("<?php\n$items = [true => \"yes\"];\n");
+fn boolean_array_keys_are_normalized_in_short_arrays() {
+    let execution = run_source(
+        "<?php\n$items = [true => \"yes\", false => \"no\"];\necho $items[1], \"|\", $items[0];\n",
+    )
+    .unwrap();
 
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 11);
-    assert_eq!(
-        error.message,
-        "invalid array key: bool keys are not supported; only null, int, and string keys are implemented"
-    );
+    assert_eq!(execution.stdout, "yes|no");
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
-fn long_array_unsupported_key_uses_stable_runtime_error() {
-    let error = runtime_error("<?php\n$items = array(true => \"yes\");\n");
+fn boolean_array_keys_are_normalized_in_long_arrays() {
+    let execution = run_source(
+        "<?php\n$items = array(true => \"yes\", false => \"no\");\necho $items[1], \"|\", $items[0];\n",
+    )
+    .unwrap();
 
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 16);
-    assert_eq!(
-        error.message,
-        "invalid array key: bool keys are not supported; only null, int, and string keys are implemented"
-    );
+    assert_eq!(execution.stdout, "yes|no");
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

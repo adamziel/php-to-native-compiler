@@ -31129,11 +31129,24 @@ impl ArrayKey {
     pub fn from_value(value: &Value) -> RuntimeResult<Self> {
         match value {
             Value::Null => Ok(Self::String(String::new())),
+            Value::Bool(false) => Ok(Self::Int(0)),
+            Value::Bool(true) => Ok(Self::Int(1)),
             Value::Int(value) => Ok(Self::Int(*value)),
+            Value::Float(value)
+                if value.is_finite()
+                    && value.fract() == 0.0
+                    && *value >= i64::MIN as f64
+                    && *value < i64::MAX as f64 =>
+            {
+                Ok(Self::Int(*value as i64))
+            }
+            Value::Float(_) => Err(RuntimeError::invalid_array_key(
+                "lossy or non-finite float keys are not supported; only null, bool, int, string, binary string, and integral finite float keys are implemented",
+            )),
             Value::String(value) => Ok(Self::string(value.clone())),
             Value::BinaryString(value) => Ok(Self::String(binary_string_array_key(value))),
             other => Err(RuntimeError::invalid_array_key(format!(
-                "{} keys are not supported; only null, int, and string keys are implemented",
+                "{} keys are not supported; only null, bool, int, string, binary string, and integral finite float keys are implemented",
                 other.type_name()
             ))),
         }
@@ -78137,20 +78150,32 @@ mod tests {
     }
 
     #[test]
-    fn non_int_string_array_keys_fail_with_stable_error() {
-        let error = ArrayKey::from_value(&Value::Bool(true)).unwrap_err();
+    fn array_keys_accept_current_bool_and_integral_float_coercions() {
+        assert_eq!(
+            ArrayKey::from_value(&Value::Bool(false)).unwrap(),
+            ArrayKey::Int(0)
+        );
+        assert_eq!(
+            ArrayKey::from_value(&Value::Bool(true)).unwrap(),
+            ArrayKey::Int(1)
+        );
+        assert_eq!(
+            ArrayKey::from_value(&Value::Float(2.0)).unwrap(),
+            ArrayKey::Int(2)
+        );
+
+        let error = ArrayKey::from_value(&Value::Float(1.5)).unwrap_err();
 
         assert_eq!(
             error.kind(),
             &RuntimeErrorKind::InvalidArrayKey {
-                reason:
-                    "bool keys are not supported; only null, int, and string keys are implemented"
-                        .to_string(),
+                reason: "lossy or non-finite float keys are not supported; only null, bool, int, string, binary string, and integral finite float keys are implemented"
+                    .to_string(),
             }
         );
         assert_eq!(
             error.message(),
-            "invalid array key: bool keys are not supported; only null, int, and string keys are implemented"
+            "invalid array key: lossy or non-finite float keys are not supported; only null, bool, int, string, binary string, and integral finite float keys are implemented"
         );
     }
 
