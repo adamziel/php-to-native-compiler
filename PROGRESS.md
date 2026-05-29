@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-29 12:41 CEST
+Updated: 2026-05-29 12:47 CEST
 Primary branch: `master`
-Latest source head: `586e9a83 fix: add strspn and strcspn builtins`
+Latest source head: `7e079dd5 fix: expand reflection function method metadata`
 
 ## Progress Score
 
@@ -166,13 +166,45 @@ pinned denominator and does not use the raw runner
 | Batch008 source batch | Complete | Source checkpoints accepted: 10 / 10; checkpoint1 is `strncmp()` / `strncasecmp()` focused source proof; checkpoint2 is bcmath `bcmod()` / `bcpow()` / `bcpowmod()` / `bcsqrt()` focused source proof; checkpoint3 is `tempnam()` / `sys_get_temp_dir()` focused source proof; checkpoint4 is bounded date/timezone focused source proof; checkpoint5 is `SplObjectStorage` identity-map focused source proof; checkpoint5 sharded gate published; checkpoint6 is `strrpos()` / `strripos()` focused source proof; checkpoint7 is `fputcsv()` plus local file stream semantics focused source proof; checkpoint8 is `pathinfo()` / `basename()` / `dirname()` focused source proof; checkpoint9 is `vprintf()` focused source proof; checkpoint10 is `stripos()` focused source proof; checkpoint10 bug60598 repair gate published |
 | Batch009 burst1 sharded gate | Done | 2388 / 20294 pinned runnable PHPTs passed (11.77%); 0 regressions from Batch008 checkpoint10 PASS set; run id `phpt-full-batch009-burst1-sharded-20260529T095210Z-php-src-f97ff59-public-e0a15776-source-731c73cc` |
 | Batch009 source burst | Complete | Checkpoint1 is p47 `sizeof()` alias / `array_chunk` metadata focused source proof (+25 expected direct rows); checkpoint2 is p43 `fflush()` / `ftruncate()` focused source proof (+15 expected direct rows); checkpoint3 is p42 `fprintf()` / `vfprintf()` focused source proof (+14 expected direct rows); checkpoint4 is p39 OPcache bounded introspection focused source proof (+11 expected direct rows); checkpoint5 is p63 slash/cslash and bounded `strcmp()` focused source proof (+12 expected direct rows); burst total was +77 expected direct rows; burst1 sharded gate published 2388 / 20294 |
-| Batch010 source batch | Active | Checkpoint1 is p66 `bcround()` / bounded `RoundingMode` focused source proof (+11 expected direct rows); checkpoint2 is p51 generator `yield from` / `Generator::getReturn()` / yielded key preservation focused source proof (+10 expected direct rows); checkpoint3 is p50 `ReflectionAttribute` / `getAttributes()` focused source proof (+10 expected direct rows); checkpoint4 is p43 `disk_free_space()` / `disk_total_space()` / `is_executable()` focused source proof (+12 expected direct rows); checkpoint5 is p15 typed-property startup diagnostics focused source proof (+13 expected direct rows); checkpoint6 is p42 selected `strspn()` / `strcspn()` focused source proof (+11 expected direct rows); batch total is 6 / 10 checkpoints and +67 expected direct rows toward the next pinned full-suite gate |
+| Batch010 source batch | Active | Checkpoint1 is p66 `bcround()` / bounded `RoundingMode` focused source proof (+11 expected direct rows); checkpoint2 is p51 generator `yield from` / `Generator::getReturn()` / yielded key preservation focused source proof (+10 expected direct rows); checkpoint3 is p50 `ReflectionAttribute` / `getAttributes()` focused source proof (+10 expected direct rows); checkpoint4 is p43 `disk_free_space()` / `disk_total_space()` / `is_executable()` focused source proof (+12 expected direct rows); checkpoint5 is p15 typed-property startup diagnostics focused source proof (+13 expected direct rows); checkpoint6 is p42 selected `strspn()` / `strcspn()` focused source proof (+11 expected direct rows); checkpoint7 is p39 `ReflectionFunction` / `ReflectionMethod` metadata focused source proof (+10 expected direct rows); batch total is 7 / 10 checkpoints and +77 expected direct rows toward the next pinned full-suite gate |
 
 Focused PHPT history is tracked separately in
 `/home/claude/supervised-php-compiler/state/php-core-suite-focused-history.tsv`.
 Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
+
+Batch010 source batch checkpoint7 is primary-integrated under AO supervision.
+This is focused source proof, not a public percentage change. The public PHPT
+score remains **2388 / 20294 pinned runnable PHPTs = 11.77%** until the next
+10-checkpoint batch gate is completed, regression-checked, and published here.
+
+- primary source head:
+  `7e079dd5 fix: expand reflection function method metadata`
+- reviewed and integration patch:
+  `/home/claude/supervised-php-compiler/state/patches/batch010-author-p39-reflection-function-method-befc326c-phpc39-20260529.patch`
+- reviewed and integration patch SHA256:
+  `a263774bff2ffeede2af6f6a363018661840585bd447a1dbb559c1b3284d907b`
+- reviewer gate: phpc-32 completed current-public FINAL GO for p39
+  `ReflectionFunction` / `ReflectionMethod` metadata on `befc326c`;
+  artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/batch010-review-p39-reflection-function-method-befc326c-phpc32-20260529.{status.md,report.md,gates.log}`
+- critic gate: phpc-33 recorded current-public `SAFE-FOR-INTEGRATION` for
+  the same patch SHA on `befc326c`
+- supervisor focused gates: PASS for SHA verification, clean apply over
+  `bafde04c`, `git diff --check`, docs/`PROGRESS.md`/examples exclusion,
+  production exact-shape audit, consumed-scope audit, `cargo fmt`, three
+  focused Rust `object_model` reflection tests, `phpc` binary build,
+  `cargo check`, and focused PHP core ReflectionFunction / ReflectionMethod
+  PHPT cluster with 10 PASS and 0 FAIL
+- public progress gate: not run for this source checkpoint; focused proof is
+  candidate evidence for the next 10-checkpoint batch gate
+
+This checkpoint implements generalized bounded reflection metadata for
+function and method namespace/extension/internal/user/closure/deprecation and
+method-reference predicates in the current interpreter/runtime subset. It is
+not keyed to PHPT filenames, expected output, fixture names, public hashes,
+batch labels, or checkpoint markers.
 
 Batch010 source batch checkpoint6 is primary-integrated under AO supervision.
 This is focused source proof, not a public percentage change. The public PHPT
