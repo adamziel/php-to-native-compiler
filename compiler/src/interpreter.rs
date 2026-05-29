@@ -48415,6 +48415,12 @@ impl Interpreter {
                 if key == "array_pop" {
                     return self.call_array_pop(args, span, caller_scope);
                 }
+                if key == "array_walk" {
+                    return self.call_array_walk(false, args, span, caller_scope);
+                }
+                if key == "array_walk_recursive" {
+                    return self.call_array_walk(true, args, span, caller_scope);
+                }
                 if key == "next" {
                     return self.call_next(args, span, caller_scope);
                 }
@@ -48573,6 +48579,12 @@ impl Interpreter {
                 }
                 if key == "array_pop" {
                     return self.call_array_pop(args, span, caller_scope);
+                }
+                if key == "array_walk" {
+                    return self.call_array_walk(false, args, span, caller_scope);
+                }
+                if key == "array_walk_recursive" {
+                    return self.call_array_walk(true, args, span, caller_scope);
                 }
                 if key == "next" {
                     return self.call_next(args, span, caller_scope);
@@ -72853,6 +72865,20 @@ impl Interpreter {
                     "by-reference array arguments require a direct call target in the current subset",
                 ),
             )),
+            "array_walk" => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "array_walk()",
+                    "by-reference array arguments require a direct call target in the current subset",
+                ),
+            )),
+            "array_walk_recursive" => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "array_walk_recursive()",
+                    "by-reference array arguments require a direct call target in the current subset",
+                ),
+            )),
             "ksort" => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
@@ -76570,6 +76596,518 @@ impl Interpreter {
                 ),
             )),
         }
+    }
+
+    fn call_array_walk(
+        &mut self,
+        recursive: bool,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        let callable = if recursive {
+            "array_walk_recursive()"
+        } else {
+            "array_walk()"
+        };
+        if !(2..=3).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    callable,
+                    ArityExpectation::Between { min: 2, max: 3 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let callback = self.evaluate_by_value_argument_with_cow_source(&args[1], caller_scope)?;
+        let userdata = if let Some(arg) = args.get(2) {
+            Some(self.evaluate_by_value_argument_with_cow_source(arg, caller_scope)?)
+        } else {
+            None
+        };
+        match &args[0] {
+            Expr::Variable(array_name, _) => {
+                let mut array_value = caller_scope.read_static(array_name, span)?;
+                self.call_array_walk_on_value(
+                    &mut array_value,
+                    &callback,
+                    userdata.as_ref(),
+                    recursive,
+                    callable,
+                    span,
+                )?;
+                caller_scope.write_static(array_name, array_value);
+                Ok(Value::Bool(true))
+            }
+            Expr::Index {
+                target,
+                index,
+                span: index_span,
+            } => {
+                let Expr::Variable(array_name, _) = target.as_ref() else {
+                    return Err(runtime_error(
+                        target.span(),
+                        RuntimeError::unsupported_call(
+                            callable,
+                            "first argument array offset must use a direct variable root in the current subset",
+                        ),
+                    ));
+                };
+                let key = self.evaluate_array_key(index, caller_scope)?;
+                let mut outer_value = caller_scope.read_static(array_name, *index_span)?;
+                let outer_type_name = outer_value.type_name();
+                let Value::Array(outer_array) = &mut outer_value else {
+                    return Err(runtime_error(
+                        *index_span,
+                        RuntimeError::unsupported_call(
+                            callable,
+                            format!("array offset root must be array, got {outer_type_name}"),
+                        ),
+                    ));
+                };
+                let Some(mut array_value) = outer_array.get_cloned(key.clone()) else {
+                    return Err(runtime_error(
+                        *index_span,
+                        RuntimeError::undefined_array_key(key.diagnostic_key()),
+                    ));
+                };
+                self.call_array_walk_on_value(
+                    &mut array_value,
+                    &callback,
+                    userdata.as_ref(),
+                    recursive,
+                    callable,
+                    span,
+                )?;
+                outer_array.insert(key, array_value);
+                caller_scope.write_static(array_name, outer_value);
+                Ok(Value::Bool(true))
+            }
+            other => Err(runtime_error(
+                other.span(),
+                RuntimeError::unsupported_call(
+                    callable,
+                    "first argument must be a direct variable array or direct variable array offset in the current subset",
+                ),
+            )),
+        }
+    }
+
+    fn call_array_walk_on_value(
+        &mut self,
+        array_value: &mut Value,
+        callback: &Value,
+        userdata: Option<&Value>,
+        recursive: bool,
+        callable: &str,
+        span: Span,
+    ) -> CompileResult<()> {
+        let type_name = array_value.type_name();
+        let Value::Array(array) = array_value else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    callable,
+                    format!("argument must be array, got {type_name}"),
+                ),
+            ));
+        };
+
+        self.walk_array_with_callback(array, callback, userdata, recursive, callable, span)
+    }
+
+    fn walk_array_with_callback(
+        &mut self,
+        array: &mut PhpArray,
+        callback: &Value,
+        userdata: Option<&Value>,
+        recursive: bool,
+        callable: &str,
+        span: Span,
+    ) -> CompileResult<()> {
+        let keys: Vec<ArrayKey> = array
+            .entries()
+            .iter()
+            .map(|entry| entry.key.clone())
+            .collect();
+        for (index, key) in keys.into_iter().enumerate() {
+            let Some(slot) = array.get_slot_mut(key.clone()) else {
+                continue;
+            };
+            if recursive {
+                let mut value = slot.value_cloned();
+                if let Value::Array(child) = &mut value {
+                    self.walk_array_with_callback(
+                        child, callback, userdata, recursive, callable, span,
+                    )?;
+                    slot.set_value(value);
+                    continue;
+                }
+            }
+
+            let (value, value_reference) = {
+                let reference = slot.promote_to_reference_cell();
+                (reference.value_cloned(), reference)
+            };
+            self.call_array_walk_callback_with_values(
+                callback,
+                value,
+                value_reference,
+                value_from_array_key(&key),
+                userdata.cloned(),
+                index,
+                callable,
+                span,
+            )?;
+        }
+
+        Ok(())
+    }
+
+    fn call_array_walk_callback_with_values(
+        &mut self,
+        callback: &Value,
+        value: Value,
+        value_reference: PhpReferenceCell,
+        key: Value,
+        userdata: Option<Value>,
+        index: usize,
+        callable: &str,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let mut args = vec![value, key];
+        if let Some(userdata) = userdata {
+            args.push(userdata);
+        }
+
+        match callback {
+            Value::String(callback_name) => {
+                if let Some((class_name, method_name)) =
+                    static_method_callable_string(callback_name)
+                {
+                    let callback =
+                        static_method_array_callable_value(class_name, method_name, span)?;
+                    return self.call_array_walk_array_callable_with_values(
+                        &callback,
+                        args,
+                        value_reference,
+                        callable,
+                        span,
+                    );
+                }
+
+                if let Some(error) = forbidden_dynamic_builtin_call_error(callback_name, span) {
+                    return Err(error);
+                }
+                let callable_target = self.lookup_function(callback_name).ok_or_else(|| {
+                    runtime_error(
+                        span,
+                        RuntimeError::undefined_function(callable_name(callback_name)),
+                    )
+                })?;
+                self.call_array_walk_resolved_callable_with_values(
+                    callable_target,
+                    args,
+                    value_reference,
+                    index,
+                    span,
+                )
+            }
+            Value::Array(callback) => self.call_array_walk_array_callable_with_values(
+                callback,
+                args,
+                value_reference,
+                callable,
+                span,
+            ),
+            Value::Closure(closure) => self.call_array_walk_closure_with_values(
+                closure.clone(),
+                args,
+                value_reference,
+                index,
+                callable,
+                span,
+            ),
+            other => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    callable,
+                    format!(
+                        "callback must evaluate to string, closure, or array callable in the current subset, got {}",
+                        other.type_name()
+                    ),
+                ),
+            )),
+        }
+    }
+
+    fn call_array_walk_resolved_callable_with_values(
+        &mut self,
+        callable: Callable,
+        args: Vec<Value>,
+        value_reference: PhpReferenceCell,
+        index: usize,
+        span: Span,
+    ) -> CompileResult<Value> {
+        match callable {
+            Callable::Builtin(key) => self.call_builtin(&key, args, span),
+            Callable::User(function) => {
+                let function = function.as_ref();
+                self.call_array_walk_user_function_with_values(
+                    function,
+                    args,
+                    value_reference,
+                    index,
+                    None,
+                    None,
+                    None,
+                    Vec::new(),
+                    span,
+                )
+            }
+        }
+    }
+
+    fn call_array_walk_array_callable_with_values(
+        &mut self,
+        callback: &PhpArray,
+        args: Vec<Value>,
+        value_reference: PhpReferenceCell,
+        context: &str,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let Some((target, method_name)) = array_callable_parts(callback) else {
+            return Err(Self::invalid_array_callback_error(context, callback, span));
+        };
+
+        match target {
+            Value::Object(object) => {
+                let receiver_class = self
+                    .classes
+                    .get(object.class_id())
+                    .expect("object class id should resolve to class metadata");
+                let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
+                    self.resolve_instance_method(object.class_id(), method_name)
+                else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::undefined_function(format!(
+                            "{}::{method_name}()",
+                            receiver_class.name()
+                        )),
+                    ));
+                };
+                self.ensure_instance_method_visible(
+                    class_id,
+                    &class_name,
+                    method_name,
+                    visibility,
+                    span,
+                )?;
+
+                let function =
+                    self.method_function(class_id, &class_name, &resolved_method_name, span)?;
+                let this_object = if is_static {
+                    None
+                } else {
+                    Some(object.clone())
+                };
+                self.call_array_walk_user_function_with_values(
+                    function.as_ref(),
+                    args,
+                    value_reference,
+                    0,
+                    this_object,
+                    Some(class_id),
+                    Some(object.class_id()),
+                    Vec::new(),
+                    span,
+                )
+            }
+            Value::String(class_name) => {
+                let class_id = self.classes.lookup_class_id(class_name).ok_or_else(|| {
+                    Self::invalid_callback_error(
+                        context,
+                        format!("class \"{class_name}\" not found"),
+                        span,
+                    )
+                })?;
+                let receiver_class_name = self
+                    .classes
+                    .get(class_id)
+                    .expect("class id should resolve to class metadata")
+                    .name()
+                    .to_string();
+                let Some((
+                    declaring_class_id,
+                    declaring_class_name,
+                    resolved_method_name,
+                    visibility,
+                    is_static,
+                )) = self.resolve_instance_method(class_id, method_name)
+                else {
+                    return match self.call_missing_static_method_with_values_via_magic(
+                        class_id,
+                        method_name,
+                        args,
+                        span,
+                    )? {
+                        Some(value) => Ok(value),
+                        None => Err(runtime_error(
+                            span,
+                            RuntimeError::undefined_function(format!(
+                                "{receiver_class_name}::{method_name}()"
+                            )),
+                        )),
+                    };
+                };
+                if !is_static {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{declaring_class_name}::{method_name}()"),
+                            "non-static method array callables require an object receiver in the current subset",
+                        ),
+                    ));
+                }
+                if visibility != Visibility::Public {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{declaring_class_name}::{method_name}()"),
+                            "array callable method dispatch is only implemented for public methods",
+                        ),
+                    ));
+                }
+
+                let function = self.method_function(
+                    declaring_class_id,
+                    &declaring_class_name,
+                    &resolved_method_name,
+                    span,
+                )?;
+                self.call_array_walk_user_function_with_values(
+                    function.as_ref(),
+                    args,
+                    value_reference,
+                    0,
+                    None,
+                    Some(declaring_class_id),
+                    Some(class_id),
+                    Vec::new(),
+                    span,
+                )
+            }
+            _ => unreachable!("array_callable_parts restricts callback targets"),
+        }
+    }
+
+    fn call_array_walk_closure_with_values(
+        &mut self,
+        closure: PhpClosure,
+        args: Vec<Value>,
+        value_reference: PhpReferenceCell,
+        index: usize,
+        context: &str,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let function = self
+            .closure_functions
+            .get(&closure.id())
+            .cloned()
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        context,
+                        "closure body metadata is missing in the current subset",
+                    ),
+                )
+            })?;
+        let prebound_locals = self.closure_prebound_locals(&closure);
+        let (this_object, class_context, called_class_context) =
+            self.closure_call_context(&closure);
+        self.call_array_walk_user_function_with_values(
+            function.as_ref(),
+            args,
+            value_reference,
+            index,
+            this_object,
+            class_context,
+            called_class_context,
+            prebound_locals,
+            span,
+        )
+    }
+
+    fn call_array_walk_user_function_with_values(
+        &mut self,
+        function: &FunctionDecl,
+        args: Vec<Value>,
+        value_reference: PhpReferenceCell,
+        index: usize,
+        this_object: Option<PhpObject>,
+        class_context: Option<ClassId>,
+        called_class_context: Option<ClassId>,
+        prebound_locals: Vec<PreboundLocal>,
+        span: Span,
+    ) -> CompileResult<Value> {
+        ensure_user_function_arity_with_extra_policy(function, args.len(), span, true)?;
+        ensure_supported_array_walk_callback_metadata(function, span)?;
+        self.emit_array_walk_reference_parameter_warnings(function, args.len(), span)?;
+        self.ensure_user_function_call_depth(function, span)?;
+        let reference_bindings = function
+            .params
+            .first()
+            .filter(|param| param.by_reference)
+            .map(|param| ReferenceBinding {
+                param_name: param.name.clone(),
+                target: ReferenceBindingTarget::CallerCell {
+                    name: format!("\0array_walk:{index}"),
+                    cell: value_reference,
+                },
+            })
+            .into_iter()
+            .collect();
+        let frame = CallFrameArgumentBindings {
+            values: args,
+            argument_keys: Vec::new(),
+            reference_bindings,
+            array_copy_source_bindings: Vec::new(),
+            by_value_array_copy_bindings: Vec::new(),
+        };
+        self.call_user_function_with_call_frame(
+            function,
+            frame,
+            this_object,
+            class_context,
+            called_class_context,
+            None,
+            prebound_locals,
+        )
+    }
+
+    fn emit_array_walk_reference_parameter_warnings(
+        &mut self,
+        function: &FunctionDecl,
+        actual: usize,
+        span: Span,
+    ) -> CompileResult<()> {
+        for (index, param) in function.params.iter().take(actual).enumerate() {
+            if index == 0 || !param.by_reference {
+                continue;
+            }
+            self.emit_builtin_callback_reference_value_warning(
+                function.name.trim_start_matches('\\'),
+                index,
+                &param.name,
+                span,
+            )?;
+        }
+
+        Ok(())
     }
 
     fn call_isset(
@@ -84123,6 +84661,22 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_variadic_param("values", "mixed"),
             ],
         ),
+        "array_walk" => (
+            "bool",
+            vec![
+                reflection_internal_reference_param("array", "array"),
+                reflection_internal_param("callback", "callable"),
+                reflection_internal_optional_null_param("arg", "mixed"),
+            ],
+        ),
+        "array_walk_recursive" => (
+            "bool",
+            vec![
+                reflection_internal_reference_param("array", "array|object"),
+                reflection_internal_param("callback", "callable"),
+                reflection_internal_optional_null_param("arg", "mixed"),
+            ],
+        ),
         "ksort" => (
             "bool",
             vec![
@@ -86695,6 +87249,8 @@ fn is_builtin(name: &str) -> bool {
             | "array_reduce"
             | "array_filter"
             | "array_map"
+            | "array_walk"
+            | "array_walk_recursive"
             | "sort"
             | "rsort"
             | "asort"
@@ -105267,6 +105823,13 @@ fn ensure_supported_function_reference_params(
     }
 
     Ok(())
+}
+
+fn ensure_supported_array_walk_callback_metadata(
+    function: &FunctionDecl,
+    span: Span,
+) -> CompileResult<()> {
+    ensure_supported_function_metadata(function, span)
 }
 
 fn function_call_returns_by_reference(function: &FunctionDecl) -> bool {
