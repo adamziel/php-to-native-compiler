@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-29 22:33 CEST
+Updated: 2026-05-29 23:03 CEST
 Primary branch: `master`
-Latest source head: `03c1fdf2 fix: improve file contents include path semantics`
+Latest source head: `9da13ca3 fix: add ArrayObject and var_export semantics`
 
 ## Progress Score
 
@@ -119,8 +119,14 @@ Batch015 source checkpoint1 `03c1fdf2` is integrated with focused lowercase
 recorded `15 PASS / 0 FAIL / 0 SKIP` across 15 selected
 `file_get_contents()` / `file_put_contents()` PHPT rows, logged at
 `/home/claude/supervised-php-compiler/state/logs/primary-batch015-p62-file-contents-focused-20260529T2230/run-tests.log`.
-Batch015 source progress is now 1 checkpoint and +15 expected direct rows. The
-public percentage remains `3378 / 20294 = 16.65%` until the next pinned
+Batch015 source checkpoint2 `9da13ca3` is integrated with focused lowercase
+`-p` proof for p63 `ArrayObject` / `ArrayIterator` semantics and p65
+`var_export()` semantics. The focused gate recorded
+`23 PASS / 0 FAIL / 0 SKIP` across 10 selected SPL `ArrayObject` /
+`ArrayIterator` PHPT rows plus 13 selected `var_export()` PHPT rows, logged at
+`/home/claude/supervised-php-compiler/state/logs/primary-batch015-p63-p65-focused-20260529T2302/run-tests.log`.
+Batch015 source progress is now 2 checkpoints and +38 expected direct rows.
+The public percentage remains `3378 / 20294 = 16.65%` until the next pinned
 full-suite gate is completed, regression-checked, and published here.
 
 No other percentage is public project progress. Focused PHPT passes, source
