@@ -69277,6 +69277,7 @@ impl Interpreter {
             "strripos" => call_strrpos(&args, "strripos()", true, span),
             "strstr" => call_strstr(&args, "strstr()", false, span),
             "strchr" => call_strstr(&args, "strchr()", false, span),
+            "strrchr" => call_strrchr(&args, span),
             "stristr" => call_strstr(&args, "stristr()", true, span),
             "substr" => call_substr(&args, span),
             "substr_count" => call_substr_count(&args, span),
@@ -80424,7 +80425,7 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_optional_int_param("offset", 0),
             ],
         ),
-        "strstr" | "strchr" | "stristr" => (
+        "strstr" | "strchr" | "strrchr" | "stristr" => (
             "string|false",
             vec![
                 reflection_internal_param("haystack", "string"),
@@ -82844,6 +82845,7 @@ fn is_builtin(name: &str) -> bool {
             | "strripos"
             | "strstr"
             | "strchr"
+            | "strrchr"
             | "stristr"
             | "substr"
             | "substr_count"
@@ -90694,6 +90696,50 @@ fn call_strstr(
     } else {
         Ok(Value::String(haystack[index..].to_string()))
     }
+}
+
+fn call_strrchr(args: &[Value], span: Span) -> CompileResult<Value> {
+    if !(2..=3).contains(&args.len()) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "strrchr()",
+                ArityExpectation::Between { min: 2, max: 3 },
+                args.len(),
+            ),
+        ));
+    }
+
+    let haystack = string_compare_argument_bytes("strrchr()", "haystack", &args[0], span)?;
+    let needle = string_compare_argument_bytes("strrchr()", "needle", &args[1], span)?;
+    let before_needle = match args.get(2) {
+        Some(Value::Bool(value)) => *value,
+        Some(Value::Null) | None => false,
+        Some(other) => {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "strrchr()",
+                    format!(
+                        "before_needle argument must be bool in the current subset, got {}",
+                        other.type_name()
+                    ),
+                ),
+            ));
+        }
+    };
+
+    let needle = needle.first().copied().unwrap_or(0);
+    let Some(index) = haystack.iter().rposition(|&byte| byte == needle) else {
+        return Ok(Value::Bool(false));
+    };
+    let result = if before_needle {
+        haystack[..index].to_vec()
+    } else {
+        haystack[index..].to_vec()
+    };
+
+    Ok(interpreter_value_from_php_string_bytes(result))
 }
 
 fn call_substr(args: &[Value], span: Span) -> CompileResult<Value> {

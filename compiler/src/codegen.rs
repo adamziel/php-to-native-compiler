@@ -66233,6 +66233,7 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "strripos",
     "strstr",
     "strchr",
+    "strrchr",
     "stristr",
     "substr",
     "substr_count",
