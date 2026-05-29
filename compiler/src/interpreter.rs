@@ -17541,6 +17541,9 @@ impl Interpreter {
                 ),
             ));
         }
+        if declared_class_name.eq_ignore_ascii_case("BcMath\\Number") {
+            return self.instantiate_bcmath_number(args, span, scope);
+        }
 
         let constructor = self.resolve_instance_method(class_id, "__construct");
 
@@ -39965,6 +39968,11 @@ impl Interpreter {
         {
             return self
                 .call_reflection_compound_type_method(object, method_name, args, span)
+                .map(|value| (value, None));
+        }
+        if object.class_name().eq_ignore_ascii_case("BcMath\\Number") {
+            return self
+                .call_bcmath_number_method(object, method_name, args, span, caller_scope)
                 .map(|value| (value, None));
         }
 
@@ -69418,6 +69426,7 @@ impl Interpreter {
             "bcsub" => self.call_bc_binary_decimal("bcsub", &args, span, BcBinaryDecimalOp::Sub),
             "bcmul" => self.call_bc_binary_decimal("bcmul", &args, span, BcBinaryDecimalOp::Mul),
             "bcdiv" => self.call_bc_binary_decimal("bcdiv", &args, span, BcBinaryDecimalOp::Div),
+            "bcdivmod" => self.call_bcdivmod(&args, span),
             "bcmod" => self.call_bcmod(&args, span),
             "bcpow" => self.call_bcpow(&args, span),
             "bcpowmod" => self.call_bcpowmod(&args, span),
@@ -75098,6 +75107,9 @@ impl Interpreter {
 
     fn value_to_echo_string(&mut self, value: Value, span: Span) -> CompileResult<String> {
         if let Value::Object(object) = value.clone() {
+            if object.class_name().eq_ignore_ascii_case("BcMath\\Number") {
+                return self.bcmath_number_object_string(&object, span);
+            }
             if let Some(output) =
                 self.object_to_string_with_magic(object, "object-to-string", span)?
             {
@@ -75116,6 +75128,11 @@ impl Interpreter {
 
     fn value_to_echo_bytes(&mut self, value: Value, span: Span) -> CompileResult<Vec<u8>> {
         if let Value::Object(object) = value.clone() {
+            if object.class_name().eq_ignore_ascii_case("BcMath\\Number") {
+                return self
+                    .bcmath_number_object_string(&object, span)
+                    .map(String::into_bytes);
+            }
             if let Some(output) =
                 self.object_to_string_with_magic(object, "object-to-string", span)?
             {
@@ -75144,6 +75161,9 @@ impl Interpreter {
                 ),
             )),
             Value::Object(object) => {
+                if object.class_name().eq_ignore_ascii_case("BcMath\\Number") {
+                    return self.bcmath_number_object_string(&object, span);
+                }
                 if let Some(output) =
                     self.object_to_string_with_magic(object.clone(), "(string)", span)?
                 {
@@ -80518,6 +80538,14 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_optional_null_param("scale", "int"),
             ],
         ),
+        "bcdivmod" => (
+            "array",
+            vec![
+                reflection_internal_param("num1", "string"),
+                reflection_internal_param("num2", "string"),
+                reflection_internal_optional_null_param("scale", "int"),
+            ],
+        ),
         "bcmod" => (
             "string",
             vec![
@@ -82304,14 +82332,20 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
         }
 
         match error.message.as_str() {
-            "unsupported call bcdiv(): Division by zero" => {
+            "unsupported call bcdiv(): Division by zero"
+            | "unsupported call bcdivmod(): Division by zero"
+            | "unsupported call BcMath\\Number::div(): Division by zero"
+            | "unsupported call BcMath\\Number::divmod(): Division by zero" => {
                 return Some(("DivisionByZeroError", "Division by zero".to_string()));
             }
             "unsupported call bcmod(): Modulo by zero"
-            | "unsupported call bcpowmod(): Modulo by zero" => {
+            | "unsupported call bcpowmod(): Modulo by zero"
+            | "unsupported call BcMath\\Number::mod(): Modulo by zero"
+            | "unsupported call BcMath\\Number::powmod(): Modulo by zero" => {
                 return Some(("DivisionByZeroError", "Modulo by zero".to_string()));
             }
-            "unsupported call bcpow(): Negative power of zero" => {
+            "unsupported call bcpow(): Negative power of zero"
+            | "unsupported call BcMath\\Number::pow(): Negative power of zero" => {
                 return Some(("DivisionByZeroError", "Negative power of zero".to_string()));
             }
             _ => {}
@@ -82534,6 +82568,7 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
             | "bcsub()"
             | "bcmul()"
             | "bcdiv()"
+            | "bcdivmod()"
             | "bcmod()"
             | "bcpow()"
             | "bcpowmod()"
@@ -82879,6 +82914,7 @@ fn is_builtin(name: &str) -> bool {
             | "bcsub"
             | "bcmul"
             | "bcdiv"
+            | "bcdivmod"
             | "bcmod"
             | "bcpow"
             | "bcpowmod"
@@ -83795,6 +83831,7 @@ fn builtin_global_constant_value(name: &str) -> Option<Value> {
         "PHP_VERSION" => Some(Value::String("8.3.0".to_string())),
         "PHP_VERSION_ID" => Some(Value::Int(80300)),
         "PHP_INT_MAX" => Some(Value::Int(i64::MAX)),
+        "PHP_INT_MIN" => Some(Value::Int(i64::MIN)),
         "PHP_SAPI" => Some(Value::String("cli".to_string())),
         "PHP_OS" => Some(Value::String("Linux".to_string())),
         "PHP_OS_FAMILY" => Some(Value::String("Linux".to_string())),
@@ -95717,6 +95754,628 @@ impl Interpreter {
         Ok(Value::String(result.format_with_scale(scale)))
     }
 
+    fn call_bcdivmod(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(2..=3).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "bcdivmod()",
+                    ArityExpectation::Between { min: 2, max: 3 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let scale = match args.get(2) {
+            Some(Value::Null) | None => self.bcmath_default_scale(),
+            Some(value) => bcmath_scale_argument("bcdivmod()", 3, "scale", value, span)?,
+        };
+        let left = bcmath_number_argument("bcdivmod()", 1, "num1", &args[0], span)?;
+        let right = bcmath_number_argument("bcdivmod()", 2, "num2", &args[1], span)?;
+        if right.is_zero() {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call("bcdivmod()", "Division by zero"),
+            ));
+        }
+
+        let quotient = left.div(&right, 0, span)?;
+        let remainder = left.modulo(&right, span, "bcdivmod()")?;
+        let mut result = PhpArray::new();
+        result
+            .append(Value::String(quotient.format_with_scale(0)))
+            .map_err(|error| runtime_error(span, error))?;
+        result
+            .append(Value::String(remainder.format_with_scale(scale)))
+            .map_err(|error| runtime_error(span, error))?;
+        Ok(Value::Array(result))
+    }
+
+    fn instantiate_bcmath_number(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        expect_expr_arity("BcMath\\Number::__construct", args.len(), 1, span)?;
+        let value = self.evaluate(&args[0], scope)?;
+        let decimal = self.bcmath_number_constructor_decimal(&value, span)?;
+        self.bcmath_number_object(decimal, None, span)
+            .map(Value::Object)
+    }
+
+    fn call_bcmath_number_method(
+        &mut self,
+        object: PhpObject,
+        method_name: &str,
+        args: &[Expr],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        let values = args
+            .iter()
+            .map(|arg| self.evaluate(arg, scope))
+            .collect::<CompileResult<Vec<_>>>()?;
+        match method_name.to_ascii_lowercase().as_str() {
+            "__tostring" => {
+                expect_arity("BcMath\\Number::__toString", &values, 0, span)?;
+                self.bcmath_number_object_string(&object, span)
+                    .map(Value::String)
+            }
+            "add" => self.call_bcmath_number_binary_method(
+                object,
+                "BcMath\\Number::add()",
+                &values,
+                span,
+                BcNumberBinaryOp::Add,
+            ),
+            "sub" => self.call_bcmath_number_binary_method(
+                object,
+                "BcMath\\Number::sub()",
+                &values,
+                span,
+                BcNumberBinaryOp::Sub,
+            ),
+            "mul" => self.call_bcmath_number_binary_method(
+                object,
+                "BcMath\\Number::mul()",
+                &values,
+                span,
+                BcNumberBinaryOp::Mul,
+            ),
+            "div" => self.call_bcmath_number_binary_method(
+                object,
+                "BcMath\\Number::div()",
+                &values,
+                span,
+                BcNumberBinaryOp::Div,
+            ),
+            "mod" => self.call_bcmath_number_binary_method(
+                object,
+                "BcMath\\Number::mod()",
+                &values,
+                span,
+                BcNumberBinaryOp::Mod,
+            ),
+            "pow" => self.call_bcmath_number_pow_method(object, &values, span),
+            "powmod" => self.call_bcmath_number_powmod_method(object, &values, span),
+            "sqrt" => self.call_bcmath_number_sqrt_method(object, &values, span),
+            "round" => self.call_bcmath_number_round_method(object, &values, span),
+            "ceil" => self.call_bcmath_number_ceil_floor_method(object, &values, span, true),
+            "floor" => self.call_bcmath_number_ceil_floor_method(object, &values, span, false),
+            "compare" => self.call_bcmath_number_compare_method(object, &values, span),
+            "divmod" => self.call_bcmath_number_divmod_method(object, &values, span),
+            _ => Err(runtime_error(
+                span,
+                RuntimeError::undefined_function(format!("BcMath\\Number::{method_name}()")),
+            )),
+        }
+    }
+
+    fn call_bcmath_number_binary_method(
+        &mut self,
+        object: PhpObject,
+        function: &'static str,
+        args: &[Value],
+        span: Span,
+        op: BcNumberBinaryOp,
+    ) -> CompileResult<Value> {
+        if !(1..=2).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    function,
+                    ArityExpectation::Between { min: 1, max: 2 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let left = self.bcmath_number_object_decimal(&object, span)?;
+        let right = self.bcmath_number_decimal_argument(function, 1, "num", &args[0], span)?;
+        let explicit_scale = match args.get(1) {
+            Some(Value::Null) | None => None,
+            Some(value) => Some(bcmath_scale_argument(function, 2, "scale", value, span)?),
+        };
+        let result = match op {
+            BcNumberBinaryOp::Add => left.add(&right),
+            BcNumberBinaryOp::Sub => left.sub(&right),
+            BcNumberBinaryOp::Mul => left.mul(&right),
+            BcNumberBinaryOp::Div => {
+                if right.is_zero() {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(function, "Division by zero"),
+                    ));
+                }
+                left.div(
+                    &right,
+                    explicit_scale.unwrap_or_else(|| left.scale.max(right.scale)),
+                    span,
+                )?
+            }
+            BcNumberBinaryOp::Mod => left.modulo(&right, span, function)?,
+        };
+        self.bcmath_number_object(result, explicit_scale, span)
+            .map(Value::Object)
+    }
+
+    fn call_bcmath_number_pow_method(
+        &mut self,
+        object: PhpObject,
+        args: &[Value],
+        span: Span,
+    ) -> CompileResult<Value> {
+        if !(1..=2).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "BcMath\\Number::pow()",
+                    ArityExpectation::Between { min: 1, max: 2 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let base = self.bcmath_number_object_decimal(&object, span)?;
+        let exponent_decimal = self.bcmath_number_decimal_argument(
+            "BcMath\\Number::pow()",
+            1,
+            "exponent",
+            &args[0],
+            span,
+        )?;
+        let exponent = bcmath_integral_decimal_to_i64(
+            "BcMath\\Number::pow()",
+            1,
+            "exponent",
+            &exponent_decimal,
+            span,
+        )?;
+        let explicit_scale = match args.get(1) {
+            Some(Value::Null) | None => None,
+            Some(value) => Some(bcmath_scale_argument(
+                "BcMath\\Number::pow()",
+                2,
+                "scale",
+                value,
+                span,
+            )?),
+        };
+        let output_scale = explicit_scale.unwrap_or_else(|| {
+            if exponent == 0 {
+                0
+            } else {
+                base.scale.saturating_mul(exponent.unsigned_abs() as usize)
+            }
+        });
+        if output_scale > 10_000 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "BcMath\\Number::pow()",
+                    "computed scale above 10000 is not supported in the current subset",
+                ),
+            ));
+        }
+
+        let result = if exponent == 0 {
+            BcDecimal::one()
+        } else if base.is_zero() {
+            if exponent < 0 {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "BcMath\\Number::pow()",
+                        "Negative power of zero",
+                    ),
+                ));
+            }
+            BcDecimal::zero()
+        } else if base.is_integral_one_abs() {
+            BcDecimal::one().with_sign(base.negative && exponent.unsigned_abs() % 2 == 1)
+        } else {
+            let exponent_abs = exponent.unsigned_abs();
+            if exponent_abs > BCMATH_POW_EXPONENT_LIMIT {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "BcMath\\Number::pow()",
+                        format!(
+                            "absolute exponent above {BCMATH_POW_EXPONENT_LIMIT} is not supported in the current subset"
+                        ),
+                    ),
+                ));
+            }
+            let powered = base.pow_u64(exponent_abs);
+            if exponent > 0 {
+                powered
+            } else {
+                BcDecimal::one().div(&powered, output_scale, span)?
+            }
+        };
+        self.bcmath_number_object(result, Some(output_scale), span)
+            .map(Value::Object)
+    }
+
+    fn call_bcmath_number_powmod_method(
+        &mut self,
+        object: PhpObject,
+        args: &[Value],
+        span: Span,
+    ) -> CompileResult<Value> {
+        if !(2..=3).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "BcMath\\Number::powmod()",
+                    ArityExpectation::Between { min: 2, max: 3 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let scale = match args.get(2) {
+            Some(Value::Null) | None => self.bcmath_default_scale(),
+            Some(value) => {
+                bcmath_scale_argument("BcMath\\Number::powmod()", 3, "scale", value, span)?
+            }
+        };
+        let base = self.bcmath_number_object_decimal(&object, span)?;
+        let exponent_decimal = self.bcmath_number_decimal_argument(
+            "BcMath\\Number::powmod()",
+            1,
+            "exponent",
+            &args[0],
+            span,
+        )?;
+        let exponent = bcmath_integral_decimal_to_i64(
+            "BcMath\\Number::powmod()",
+            1,
+            "exponent",
+            &exponent_decimal,
+            span,
+        )?;
+        if exponent < 0 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "BcMath\\Number::powmod()",
+                    "Argument #1 ($exponent) must be greater than or equal to 0",
+                ),
+            ));
+        }
+        let modulus = self.bcmath_number_decimal_argument(
+            "BcMath\\Number::powmod()",
+            2,
+            "modulus",
+            &args[1],
+            span,
+        )?;
+        if modulus.has_nonzero_fraction() {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "BcMath\\Number::powmod()",
+                    "Argument #2 ($modulus) cannot have a fractional part",
+                ),
+            ));
+        }
+        if modulus.is_zero() {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call("BcMath\\Number::powmod()", "Modulo by zero"),
+            ));
+        }
+        let modulus = modulus.integer_part();
+
+        let modulus_digits = modulus.digits_at_scale(0);
+        let digits =
+            decimal_pow_mod_abs(&base.digits_at_scale(0), exponent as u64, &modulus_digits);
+        let negative = base.negative && exponent % 2 == 1 && !digits_are_zero(&digits);
+        let result = BcDecimal {
+            negative,
+            digits,
+            scale: 0,
+        };
+        self.bcmath_number_object(result, Some(scale), span)
+            .map(Value::Object)
+    }
+
+    fn call_bcmath_number_sqrt_method(
+        &mut self,
+        object: PhpObject,
+        args: &[Value],
+        span: Span,
+    ) -> CompileResult<Value> {
+        if args.len() > 1 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "BcMath\\Number::sqrt()",
+                    ArityExpectation::Between { min: 0, max: 1 },
+                    args.len(),
+                ),
+            ));
+        }
+        let scale = match args.first() {
+            Some(Value::Null) | None => self.bcmath_default_scale(),
+            Some(value) => {
+                bcmath_scale_argument("BcMath\\Number::sqrt()", 1, "scale", value, span)?
+            }
+        };
+        let value = self.bcmath_number_object_decimal(&object, span)?;
+        if value.negative {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "BcMath\\Number::sqrt()",
+                    "Argument #1 ($num) must be greater than or equal to 0",
+                ),
+            ));
+        }
+        self.bcmath_number_object(value.sqrt(scale), Some(scale), span)
+            .map(Value::Object)
+    }
+
+    fn call_bcmath_number_round_method(
+        &mut self,
+        object: PhpObject,
+        args: &[Value],
+        span: Span,
+    ) -> CompileResult<Value> {
+        if args.len() > 2 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "BcMath\\Number::round()",
+                    ArityExpectation::Between { min: 0, max: 2 },
+                    args.len(),
+                ),
+            ));
+        }
+        let value = self.bcmath_number_object_decimal(&object, span)?;
+        let precision = match args.first() {
+            Some(value) => {
+                bcmath_precision_argument("BcMath\\Number::round()", 1, "precision", value, span)?
+            }
+            None => 0,
+        };
+        let mode = match args.get(1) {
+            Some(value) => bcmath_rounding_mode_argument(value, span)?,
+            None => BcRoundingMode::HalfAwayFromZero,
+        };
+        let output_scale = precision.max(0) as usize;
+        self.bcmath_number_object(value.round(precision, mode), Some(output_scale), span)
+            .map(Value::Object)
+    }
+
+    fn call_bcmath_number_ceil_floor_method(
+        &mut self,
+        object: PhpObject,
+        args: &[Value],
+        span: Span,
+        ceil: bool,
+    ) -> CompileResult<Value> {
+        let function = if ceil {
+            "BcMath\\Number::ceil()"
+        } else {
+            "BcMath\\Number::floor()"
+        };
+        expect_arity(function, args, 0, span)?;
+        let value = self.bcmath_number_object_decimal(&object, span)?;
+        let result = if ceil {
+            if value.negative || !value.has_nonzero_fraction() {
+                value.integer_part()
+            } else {
+                value.integer_part().add(&BcDecimal::one())
+            }
+        } else if value.negative && value.has_nonzero_fraction() {
+            value.integer_part().sub(&BcDecimal::one())
+        } else {
+            value.integer_part()
+        };
+        self.bcmath_number_object(result, Some(0), span)
+            .map(Value::Object)
+    }
+
+    fn call_bcmath_number_compare_method(
+        &mut self,
+        object: PhpObject,
+        args: &[Value],
+        span: Span,
+    ) -> CompileResult<Value> {
+        if !(1..=2).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "BcMath\\Number::compare()",
+                    ArityExpectation::Between { min: 1, max: 2 },
+                    args.len(),
+                ),
+            ));
+        }
+        let left = self.bcmath_number_object_decimal(&object, span)?;
+        let right = self.bcmath_number_decimal_argument(
+            "BcMath\\Number::compare()",
+            1,
+            "num",
+            &args[0],
+            span,
+        )?;
+        let scale = match args.get(1) {
+            Some(Value::Null) | None => left.scale.max(right.scale),
+            Some(value) => {
+                bcmath_scale_argument("BcMath\\Number::compare()", 2, "scale", value, span)?
+            }
+        };
+        Ok(Value::Int(match left.compare_at_scale(&right, scale) {
+            Ordering::Less => -1,
+            Ordering::Equal => 0,
+            Ordering::Greater => 1,
+        }))
+    }
+
+    fn call_bcmath_number_divmod_method(
+        &mut self,
+        object: PhpObject,
+        args: &[Value],
+        span: Span,
+    ) -> CompileResult<Value> {
+        if !(1..=2).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "BcMath\\Number::divmod()",
+                    ArityExpectation::Between { min: 1, max: 2 },
+                    args.len(),
+                ),
+            ));
+        }
+        let scale = match args.get(1) {
+            Some(Value::Null) | None => self.bcmath_default_scale(),
+            Some(value) => {
+                bcmath_scale_argument("BcMath\\Number::divmod()", 2, "scale", value, span)?
+            }
+        };
+        let left = self.bcmath_number_object_decimal(&object, span)?;
+        let right = self.bcmath_number_decimal_argument(
+            "BcMath\\Number::divmod()",
+            1,
+            "num",
+            &args[0],
+            span,
+        )?;
+        if right.is_zero() {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call("BcMath\\Number::divmod()", "Division by zero"),
+            ));
+        }
+        let quotient = left.div(&right, 0, span)?;
+        let remainder = left.modulo(&right, span, "BcMath\\Number::divmod()")?;
+        let mut result = PhpArray::new();
+        result
+            .append(Value::Object(self.bcmath_number_object(
+                quotient,
+                Some(0),
+                span,
+            )?))
+            .map_err(|error| runtime_error(span, error))?;
+        result
+            .append(Value::Object(self.bcmath_number_object(
+                remainder,
+                Some(scale),
+                span,
+            )?))
+            .map_err(|error| runtime_error(span, error))?;
+        Ok(Value::Array(result))
+    }
+
+    fn bcmath_number_object(
+        &mut self,
+        decimal: BcDecimal,
+        output_scale: Option<usize>,
+        span: Span,
+    ) -> CompileResult<PhpObject> {
+        let scale = output_scale.unwrap_or(decimal.scale);
+        let class_id = self
+            .classes
+            .lookup_class_id("BcMath\\Number")
+            .ok_or_else(|| runtime_error(span, RuntimeError::undefined_class("BcMath\\Number")))?;
+        let object_id = self.allocate_object_id();
+        let class = self
+            .classes
+            .get(class_id)
+            .expect("BcMath\\Number class id should resolve");
+        let object = PhpObject::from_class_with_id(class, object_id);
+        object
+            .write_public_property("value", Value::String(decimal.format_with_scale(scale)))
+            .map_err(|error| runtime_error(span, error))?;
+        object
+            .write_public_property("scale", Value::Int(scale as i64))
+            .map_err(|error| runtime_error(span, error))?;
+        Ok(object)
+    }
+
+    fn bcmath_number_object_string(&self, object: &PhpObject, span: Span) -> CompileResult<String> {
+        match object
+            .read_public_property("value")
+            .map_err(|error| runtime_error(span, error))?
+        {
+            Value::String(value) => Ok(value),
+            other => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "BcMath\\Number::__toString()",
+                    format!(
+                        "stored value property must be string, got {}",
+                        other.type_name()
+                    ),
+                ),
+            )),
+        }
+    }
+
+    fn bcmath_number_object_decimal(
+        &self,
+        object: &PhpObject,
+        span: Span,
+    ) -> CompileResult<BcDecimal> {
+        let value = self.bcmath_number_object_string(object, span)?;
+        BcDecimal::parse(&value)
+            .ok_or_else(|| bcmath_number_error("BcMath\\Number", 1, "num", span))
+    }
+
+    fn bcmath_number_constructor_decimal(
+        &self,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<BcDecimal> {
+        if let Value::String(text) = value {
+            if matches!(text.as_str(), "" | "+" | "-") {
+                return Ok(BcDecimal::zero());
+            }
+        }
+        self.bcmath_number_decimal_argument("BcMath\\Number::__construct()", 1, "num", value, span)
+    }
+
+    fn bcmath_number_decimal_argument(
+        &self,
+        function: &str,
+        position: usize,
+        parameter: &str,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<BcDecimal> {
+        if let Value::Object(object) = value {
+            if object.class_name().eq_ignore_ascii_case("BcMath\\Number") {
+                return self.bcmath_number_object_decimal(object, span);
+            }
+        }
+        bcmath_number_argument(function, position, parameter, value, span)
+    }
+
     fn call_bcround(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         if !(1..=3).contains(&args.len()) {
             return Err(runtime_error(
@@ -97988,6 +98647,15 @@ enum BcBinaryDecimalOp {
     Sub,
     Mul,
     Div,
+}
+
+#[derive(Clone, Copy)]
+enum BcNumberBinaryOp {
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Mod,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -173,3 +173,64 @@ try {
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);
 }
+
+#[test]
+fn bcmath_number_methods_and_divmod_are_generalized() {
+    let execution = run_source(
+        r#"<?php
+ini_set("bcmath.scale", "0");
+$num = new BcMath\Number("100.012");
+echo (string) $num, "|", $num->value, "|", $num->scale, "\n";
+var_dump(class_exists("BcMath\\Number"));
+var_dump(method_exists("BcMath\\Number", "powmod"));
+echo $num->add("0.01", 4)->compare(bcadd("100.012", "0.01", 4)), "\n";
+echo $num->sub("-0.40", 4)->compare(bcsub("100.012", "-0.40", 4)), "\n";
+echo $num->mul("80.3", 5)->compare(bcmul("100.012", "80.3", 5)), "\n";
+echo $num->div("-50.6", 6)->compare(bcdiv("100.012", "-50.6", 6)), "\n";
+echo $num->mod("80.3", 3)->compare(bcmod("100.012", "80.3", 3)), "\n";
+echo (new BcMath\Number("12.5"))->pow("-2", 4)->compare(bcpow("12.5", "-2", 4)), "\n";
+echo (new BcMath\Number("12"))->powmod("3", "5", 2)->compare(bcpowmod("12", "3", "5", 2)), "\n";
+echo (new BcMath\Number("15151324141414.412312232141241"))->sqrt(10)->compare(bcsqrt("15151324141414.412312232141241", 10)), "\n";
+echo (new BcMath\Number("2.5"))->round(0, RoundingMode::HalfEven)->compare(bcround("2.5", 0, RoundingMode::HalfEven)), "\n";
+echo (new BcMath\Number("-1.0001"))->ceil()->compare(bcceil("-1.0001"), 0), "\n";
+echo (new BcMath\Number("-1.0001"))->floor()->compare(bcfloor("-1.0001")), "\n";
+[$quot, $rem] = bcdivmod("15", "14.14", 10);
+echo $quot, "|", $rem, "\n";
+[$mquot, $mrem] = $num->divmod("80.3", 3);
+echo $mquot->compare(bcdiv("100.012", "80.3", 0)), "|", $mrem->compare(bcmod("100.012", "80.3", 3)), "\n";
+echo PHP_INT_MIN, "\n";
+try {
+    bcdivmod("1", "0");
+} catch (DivisionByZeroError $e) {
+    echo get_class($e), ":", $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "100.012|100.012|3\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "0\n",
+            "0\n",
+            "0\n",
+            "0\n",
+            "0\n",
+            "0\n",
+            "0\n",
+            "0\n",
+            "0\n",
+            "0\n",
+            "0\n",
+            "1|0.8600000000\n",
+            "0|0\n",
+            "-9223372036854775808\n",
+            "DivisionByZeroError:Division by zero\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}

@@ -66267,6 +66267,7 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "bcsub",
     "bcmul",
     "bcdiv",
+    "bcdivmod",
     "bcmod",
     "bcpow",
     "bcpowmod",
