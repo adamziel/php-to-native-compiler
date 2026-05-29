@@ -2671,6 +2671,16 @@ current scalar/null string-convertible values. It compares valid UTF-8 runtime
 strings by bytes with ASCII case folding and returns only sign values. Native
 function-table introspection recognizes the name, while direct native calls
 still reject until string comparison helpers and diagnostics are lowered.
+`strncmp()` and `strncasecmp()` are bounded prefix string comparison builtins
+for current scalar/null string-convertible values plus int-compatible
+non-negative lengths. They compare runtime string bytes up to the requested
+length, preserve PHP's sign behavior when one prefix is shorter, return byte
+differences for differing bytes, and route negative lengths through the
+catchable `ValueError` path. `strncasecmp()` applies ASCII case folding before
+byte comparison. Array operands, object/resource coercions, broader binary
+edge cases, exact diagnostics beyond the covered negative-length path, and
+native parity for unsupported operand/reference/COW shapes remain out of
+scope.
 `str_replace()` is an interpreter-only bounded string replacement builtin for
 scalar/null string-convertible search, replacement, and subject values. Native
 function-table introspection recognizes the name, while direct native calls
@@ -3832,7 +3842,7 @@ user-function call path with evaluated by-value arguments; `invokeArgs()` uses
 the current ordered PHP array entries as positional values, not PHP 8 named
 argument semantics for string keys. A named internal-function slice re-enters
 the existing builtin dispatcher for `strlen`, `strtolower`, `trim`, `ltrim`,
-`rtrim`, `strcasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`,
+`rtrim`, `strcasecmp`, `strncmp`, `strncasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`,
 `strpos`, `substr`, `sprintf`, `implode`, `basename`, `dirname`, `defined`,
 `function_exists`, and `php_sapi_name`. Closure expressions also register a
 request-local `ReflectionFunction` metadata snapshot, parsed body, and captured

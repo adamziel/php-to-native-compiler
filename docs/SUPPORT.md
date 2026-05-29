@@ -3094,7 +3094,7 @@
   stable runtime diagnostics instead of materializing objects or dynamic
   properties
 - builtins for the documented subset: `strlen`, `strtolower`, `trim`, `ltrim`,
-  `rtrim`, `strcasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`, `strpos`, `strstr`, `strchr`, `stristr`, `substr`,
+  `rtrim`, `strcasecmp`, `strncmp`, `strncasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`, `strpos`, `strstr`, `strchr`, `stristr`, `substr`,
   `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `substr_count`,
   `error_reporting`, `ignore_user_abort`, `sprintf`, `vsprintf`, `call_user_func`, `call_user_func_array`,
   `implode`, `basename`, `dirname`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`,
@@ -3300,6 +3300,15 @@
   `-1`, `0`, or `1`. Array operands, object/resource coercions, binary string
   edge cases beyond valid UTF-8 runtime strings, locale-sensitive behavior,
   exact PHP diagnostics, and native lowering remain unsupported.
+  `strncmp($string1, $string2, $length)` and
+  `strncasecmp($string1, $string2, $length)` support scalar/null
+  string-convertible operands, an int-compatible non-negative length, binary
+  safe prefix comparison over current runtime string bytes, and PHP-shaped
+  `ValueError` handling for negative lengths. `strncasecmp()` applies ASCII
+  case folding before byte comparison. Array string operands, object/resource
+  coercions, broad binary edge cases beyond represented runtime byte strings,
+  exact diagnostics beyond the covered negative-length path, and native
+  lowering parity remain unsupported.
   `str_contains($haystack, $needle)` supports exactly two scalar/null
   string-convertible arguments and returns whether the current UTF-8 runtime
   haystack contains the current UTF-8 runtime needle. Empty needles return
@@ -7064,7 +7073,7 @@
   Direct `function_exists($name)` calls fold in native output when `$name` is
   an already-lowerable string value with a uniform known answer in the current
   documented builtin table: documented callable builtins, including
-  `strtolower`, `trim`, `ltrim`, `rtrim`, `str_contains`, `str_starts_with`, `str_ends_with`, `strpos`, `strstr`, `strchr`, `stristr`, `substr`, `substr_count`, `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`,
+  `strtolower`, `trim`, `ltrim`, `rtrim`, `strncmp`, `strncasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`, `strpos`, `strstr`, `strchr`, `stristr`, `substr`, `substr_count`, `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`,
   `error_reporting`, `min`, `rand`, `uniqid`, `hash_hmac`, `basename`, `dirname`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`,
   `file_put_contents`, `readfile`, `unlink`, `mkdir`, `rmdir`, `copy`, `rename`, `chdir`, `scandir`, `stat`, `lstat`, `fileperms`, `chmod`,
   `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_params`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `stream_context_set_params`, `fwrite`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`,
@@ -7468,7 +7477,7 @@
   global builtin/user-function table.
   Dynamic function calls are supported only when the callee expression evaluates
   to a string that case-insensitively resolves exactly to a user-defined function or to
-  one of the documented callable builtins: `strlen`, `strtolower`, `trim`, `ltrim`, `rtrim`, `strcasecmp`,
+  one of the documented callable builtins: `strlen`, `strtolower`, `trim`, `ltrim`, `rtrim`, `strcasecmp`, `strncmp`, `strncasecmp`,
   `str_contains`, `str_starts_with`, `str_ends_with`, `strpos`, `strstr`, `strchr`, `stristr`, `substr`, `substr_count`, `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `error_reporting`,
   `sprintf`, `vsprintf`, `call_user_func`, `call_user_func_array`, `implode`, `basename`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`,
   `file_put_contents`, `readfile`, `unlink`, `mkdir`, `rmdir`, `copy`, `rename`, `chdir`, `scandir`, `stat`, `lstat`, `fileperms`, `chmod`,
@@ -7705,7 +7714,7 @@
   first-class callable syntax, namespace-qualified callable
   resolution, autoload interaction, and native lowering for type declarations
   are unsupported.
-- Builtins: `strlen`, `strtolower`, `trim`, `ltrim`, `rtrim`, `strcasecmp`, `str_contains`,
+- Builtins: `strlen`, `strtolower`, `trim`, `ltrim`, `rtrim`, `strcasecmp`, `strncmp`, `strncasecmp`, `str_contains`,
   `str_starts_with`, `str_ends_with`, `strpos`, `strstr`, `strchr`, `stristr`, `substr`, `substr_count`, `str_replace`, `sprintf`, `vsprintf`,
   `call_user_func`, `call_user_func_array`, `implode`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`,
   `file_put_contents`, `readfile`, `unlink`, `mkdir`, `rmdir`, `copy`, `rename`, `chdir`, `scandir`, `stat`, `lstat`, `fileperms`, `chmod`,
@@ -8202,6 +8211,12 @@
   as the builtin section above; direct native `strcasecmp(...)` calls still
   reject under the function-call boundary, while native function-table
   introspection recognizes the name.
+  `strncmp` and `strncasecmp` accept the same current scalar/null
+  string-convertible operands and int-compatible non-negative length as the
+  builtin section above; direct native calls route through the existing native
+  string-int runtime contract for lowerable operands, while broader runtime
+  diagnostics, references/copy-on-write, and exact PHP diagnostic parity stay
+  outside the current native boundary.
   `str_replace` accepts the same current scalar/null string-convertible and
   direct-variable count-output subset as the builtin section above; direct
   native `str_replace(...)` calls still reject under the function-call
@@ -8483,7 +8498,7 @@
   simple named, bounded union, and pure intersection reflection type objects
   as the method path. The bounded internal target slice also accepts
   `new ReflectionFunction(...)` for `strlen`, `strtolower`, `trim`, `ltrim`,
-  `rtrim`, `strcasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`,
+  `rtrim`, `strcasecmp`, `strncmp`, `strncasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`,
   `strpos`, `substr`, `sprintf`, `implode`, `basename`, `dirname`, `defined`,
   `function_exists`, `is_array`, `is_object`, `is_string`, `is_scalar`,
   `count`, `array_key_exists`, `is_callable`, and `php_sapi_name`, exposes
@@ -10250,7 +10265,7 @@
   remain unsupported. `ReflectionFunction` currently supports declared
   user-function metadata named by string, plus bounded internal metadata and
   by-value invocation for `strlen`, `strtolower`, `trim`, `ltrim`, `rtrim`,
-  `strcasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`, `strpos`,
+  `strcasecmp`, `strncmp`, `strncasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`, `strpos`,
   `substr`, `sprintf`, `implode`, `basename`, `dirname`, `defined`,
   `function_exists`, and `php_sapi_name`. The supported
   metadata methods are the name, file/start/end/doc-comment, parameter-list,
@@ -10395,6 +10410,12 @@
   string edge cases beyond valid UTF-8 runtime strings, locale-sensitive
   behavior, exact PHP diagnostics, and native lowering beyond function-table
   introspection
+- `strncmp()`/`strncasecmp()` outside the current scalar/null
+  string-convertible operands plus int-compatible non-negative length subset:
+  array string operands, object/resource coercions, broad binary edge cases
+  beyond represented runtime byte strings, exact diagnostics beyond covered
+  negative-length `ValueError`, and native lowering parity for unsupported
+  operand/reference/COW shapes
 - `strtolower()` outside the current one-argument scalar/null
   string-convertible subset: locale-sensitive case mapping, full Unicode case
   folding, binary string edge cases beyond valid UTF-8 runtime strings,

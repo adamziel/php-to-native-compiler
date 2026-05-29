@@ -65816,6 +65816,8 @@ impl Interpreter {
             "ltrim" => call_ltrim(&args, span),
             "rtrim" => call_rtrim(&args, span),
             "strcasecmp" => call_strcasecmp(&args, span),
+            "strncmp" => call_strncmp(&args, span),
+            "strncasecmp" => call_strncasecmp(&args, span),
             "strcoll" => call_strcoll(&args, span),
             "strtr" => self.call_strtr(&args, span),
             "str_contains" => call_str_contains(&args, span),
@@ -76215,6 +76217,14 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_param("string2", "string"),
             ],
         ),
+        "strncmp" | "strncasecmp" => (
+            "int",
+            vec![
+                reflection_internal_param("string1", "string"),
+                reflection_internal_param("string2", "string"),
+                reflection_internal_param("length", "int"),
+            ],
+        ),
         "strtr" => (
             "string",
             vec![
@@ -78094,7 +78104,9 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
     match (function, message) {
         ("str_repeat()", "Argument #2 ($times) must be greater than or equal to 0")
         | ("chunk_split()", "Argument #2 ($length) must be greater than 0")
-        | ("str_split()", "Argument #2 ($length) must be greater than 0") => {
+        | ("str_split()", "Argument #2 ($length) must be greater than 0")
+        | ("strncmp()", "Argument #3 ($length) must be greater than or equal to 0")
+        | ("strncasecmp()", "Argument #3 ($length) must be greater than or equal to 0") => {
             Some(format!("{function}: {message}"))
         }
         (
@@ -78352,6 +78364,8 @@ fn is_builtin(name: &str) -> bool {
             | "ltrim"
             | "rtrim"
             | "strcasecmp"
+            | "strncmp"
+            | "strncasecmp"
             | "strcoll"
             | "strtr"
             | "str_contains"
@@ -84958,6 +84972,72 @@ fn call_strcasecmp(args: &[Value], span: Span) -> CompileResult<Value> {
     Ok(Value::Int(ascii_case_insensitive_compare(&left, &right)))
 }
 
+fn call_strncmp(args: &[Value], span: Span) -> CompileResult<Value> {
+    call_string_prefix_compare(args, span, "strncmp()", false)
+}
+
+fn call_strncasecmp(args: &[Value], span: Span) -> CompileResult<Value> {
+    call_string_prefix_compare(args, span, "strncasecmp()", true)
+}
+
+fn call_string_prefix_compare(
+    args: &[Value],
+    span: Span,
+    function: &'static str,
+    case_insensitive: bool,
+) -> CompileResult<Value> {
+    let name = function.trim_end_matches("()");
+    expect_arity(name, args, 3, span)?;
+
+    let left = string_compare_argument_bytes(function, "string1", &args[0], span)?;
+    let right = string_compare_argument_bytes(function, "string2", &args[1], span)?;
+    let length = php_internal_int_argument(function, 3, "length", &args[2], span)?;
+    if length < 0 {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                "Argument #3 ($length) must be greater than or equal to 0",
+            ),
+        ));
+    }
+
+    let length = usize::try_from(length).unwrap_or(usize::MAX);
+    Ok(Value::Int(php_prefix_compare_bytes(
+        &left,
+        &right,
+        length,
+        case_insensitive,
+    )))
+}
+
+fn php_prefix_compare_bytes(
+    left: &[u8],
+    right: &[u8],
+    length: usize,
+    case_insensitive: bool,
+) -> i64 {
+    let left_len = left.len().min(length);
+    let right_len = right.len().min(length);
+    for index in 0..left_len.min(right_len) {
+        let mut left = left[index];
+        let mut right = right[index];
+        if case_insensitive {
+            left = left.to_ascii_lowercase();
+            right = right.to_ascii_lowercase();
+        }
+        if left != right {
+            return i64::from(left) - i64::from(right);
+        }
+    }
+
+    match left_len.cmp(&right_len) {
+        std::cmp::Ordering::Less => -1,
+        std::cmp::Ordering::Equal => 0,
+        std::cmp::Ordering::Greater => 1,
+    }
+}
+
 fn call_strcoll(args: &[Value], span: Span) -> CompileResult<Value> {
     expect_arity("strcoll", args, 2, span)?;
 
@@ -87322,6 +87402,27 @@ fn string_compare_argument(
 
     value
         .try_echo_string()
+        .map_err(|error| runtime_error(span, error))
+}
+
+fn string_compare_argument_bytes(
+    function: &str,
+    label: &str,
+    value: &Value,
+    span: Span,
+) -> CompileResult<Vec<u8>> {
+    if matches!(value, Value::Array(_)) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                format!("{label} argument arrays are not implemented in the current subset"),
+            ),
+        ));
+    }
+
+    value
+        .try_echo_bytes()
         .map_err(|error| runtime_error(span, error))
 }
 
