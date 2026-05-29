@@ -2686,6 +2686,15 @@ scalar/null string-convertible search, replacement, and subject values. Native
 function-table introspection recognizes the name, while direct native calls
 still reject until string allocation, array forms, count-output references, and
 diagnostics have a lowered runtime model.
+`strtok()` is an interpreter-only stateful tokenizer with one saved byte cursor
+per interpreter execution. It accepts scalar/null string-convertible input and
+delimiter values, preserves embedded NUL delimiter behavior for current
+runtime strings, and keeps native lowering blocked until request-local builtin
+state and exact diagnostics have a native ABI. `substr_replace()` is an
+interpreter-only bounded string replacement-by-offset builtin for scalar
+subjects plus current array subject/replacement/offset/length forms. It
+preserves array keys, applies per-position array arguments by insertion order,
+and keeps broader coercion/reference/COW behavior outside native lowering.
 `call_user_func()` is an interpreter-only bounded callable dispatcher for
 string callbacks resolving to current user functions or documented callable
 builtins, plus current ordinary closure values. For string user-functions and

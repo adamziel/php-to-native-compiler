@@ -240,6 +240,7 @@ struct Interpreter {
     stream_wrappers: Vec<StreamWrapperRegistration>,
     directories: HashMap<i64, DirectoryResource>,
     last_opened_directory: Option<i64>,
+    strtok_state: Option<StrtokState>,
     uploaded_file_paths: HashSet<PathBuf>,
     stat_cache: HashMap<PathBuf, fs::Metadata>,
     realpath_cache: HashMap<String, RealpathCacheEntry>,
@@ -269,6 +270,12 @@ struct Interpreter {
 struct StreamWrapperRegistration {
     protocol: String,
     origin: StreamWrapperOrigin,
+}
+
+#[derive(Debug, Clone)]
+struct StrtokState {
+    input: Vec<u8>,
+    position: usize,
 }
 
 impl StreamWrapperRegistration {
@@ -10185,6 +10192,7 @@ impl Interpreter {
             stream_wrappers: default_stream_wrappers(),
             directories: HashMap::new(),
             last_opened_directory: None,
+            strtok_state: None,
             uploaded_file_paths: HashSet::new(),
             stat_cache: HashMap::new(),
             realpath_cache: HashMap::new(),
@@ -75743,7 +75751,9 @@ impl Interpreter {
             "strchr" => call_strstr(&args, "strchr()", false, span),
             "strrchr" => call_strrchr(&args, span),
             "stristr" => call_strstr(&args, "stristr()", true, span),
+            "strtok" => call_strtok_builtin(self, &args, span),
             "substr" => call_substr(&args, span),
+            "substr_replace" => call_substr_replace(&args, span),
             "substr_count" => call_substr_count(&args, span),
             "str_replace" => call_str_replace(&args, span),
             "urlencode" => call_urlencode(&args, span),
@@ -89213,12 +89223,28 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_optional_bool_param("before_needle", false),
             ],
         ),
+        "strtok" => (
+            "string|false",
+            vec![
+                reflection_internal_param("string", "string"),
+                reflection_internal_optional_null_param("token", "string"),
+            ],
+        ),
         "substr" => (
             "string",
             vec![
                 reflection_internal_param("string", "string"),
                 reflection_internal_param("offset", "int"),
                 reflection_internal_optional_null_param("length", "int"),
+            ],
+        ),
+        "substr_replace" => (
+            "array|string",
+            vec![
+                reflection_internal_param("string", "array|string"),
+                reflection_internal_param("replace", "array|string"),
+                reflection_internal_param("offset", "array|int"),
+                reflection_internal_optional_null_param("length", "array|int"),
             ],
         ),
         "str_replace" => (
@@ -91375,6 +91401,19 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
             return Some(("TypeError", message));
         }
 
+        if let Some(message) = error
+            .message
+            .strip_prefix("unsupported call substr_replace(): ")
+            .filter(|message| {
+                *message
+                    == "Argument #3 ($offset) cannot be an array when working on a single string"
+                    || *message
+                        == "Argument #4 ($length) cannot be an array when working on a single string"
+            })
+        {
+            return Some(("TypeError", format!("substr_replace(): {message}")));
+        }
+
         if error.message
             == "unsupported call SplObjectStorage::current(): Called current() on invalid iterator"
         {
@@ -92323,7 +92362,9 @@ fn is_builtin(name: &str) -> bool {
             | "strchr"
             | "strrchr"
             | "stristr"
+            | "strtok"
             | "substr"
+            | "substr_replace"
             | "substr_count"
             | "str_replace"
             | "urlencode"
@@ -102700,6 +102741,241 @@ fn call_substr(args: &[Value], span: Span) -> CompileResult<Value> {
     })?;
 
     Ok(Value::String(result))
+}
+
+fn call_substr_replace(args: &[Value], span: Span) -> CompileResult<Value> {
+    if !(3..=4).contains(&args.len()) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "substr_replace()",
+                ArityExpectation::Between { min: 3, max: 4 },
+                args.len(),
+            ),
+        ));
+    }
+
+    match &args[0] {
+        Value::Array(subjects) => {
+            let mut result = PhpArray::new();
+            for (position, entry) in subjects.entries().iter().enumerate() {
+                let subject = substr_replace_string_argument("string", entry.value(), span)?;
+                let replacement = substr_replace_array_position_string(&args[1], position, span)?;
+                let offset = substr_replace_array_position_int(&args[2], position, 0, span)?;
+                let length = match args.get(3) {
+                    Some(value) => {
+                        substr_replace_array_position_optional_int(value, position, span)?
+                    }
+                    None => None,
+                };
+                let replaced = substr_replace_scalar_string(&subject, &replacement, offset, length);
+                result.insert(entry.key.clone(), Value::String(replaced));
+            }
+            Ok(Value::Array(result))
+        }
+        subject => {
+            if matches!(args.get(2), Some(Value::Array(_))) {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "substr_replace()",
+                        "Argument #3 ($offset) cannot be an array when working on a single string",
+                    ),
+                ));
+            }
+            if matches!(args.get(3), Some(Value::Array(_))) {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "substr_replace()",
+                        "Argument #4 ($length) cannot be an array when working on a single string",
+                    ),
+                ));
+            }
+
+            let subject = substr_replace_string_argument("string", subject, span)?;
+            let replacement = substr_replace_array_position_string(&args[1], 0, span)?;
+            let offset = substr_replace_int_argument("offset", &args[2], span)?;
+            let length = match args.get(3) {
+                Some(value) => Some(substr_replace_int_argument("length", value, span)?),
+                None => None,
+            };
+            Ok(Value::String(substr_replace_scalar_string(
+                &subject,
+                &replacement,
+                offset,
+                length,
+            )))
+        }
+    }
+}
+
+fn substr_replace_scalar_string(
+    subject: &str,
+    replacement: &str,
+    offset: i64,
+    length: Option<i64>,
+) -> String {
+    let subject_len = subject.len() as i64;
+    let start = if offset >= 0 {
+        offset.min(subject_len)
+    } else {
+        (subject_len + offset).max(0)
+    };
+    let end = match length {
+        Some(length) if length >= 0 => (start + length).min(subject_len),
+        Some(length) => (subject_len + length).max(0),
+        None => subject_len,
+    };
+    let end = end.max(start).min(subject_len);
+
+    let mut output = String::with_capacity(subject.len() + replacement.len());
+    output.push_str(&subject[..start as usize]);
+    output.push_str(replacement);
+    output.push_str(&subject[end as usize..]);
+    output
+}
+
+fn substr_replace_array_position_string(
+    value: &Value,
+    position: usize,
+    span: Span,
+) -> CompileResult<String> {
+    match value {
+        Value::Array(array) => array
+            .entries()
+            .get(position)
+            .map(|entry| substr_replace_string_argument("replacement", entry.value(), span))
+            .unwrap_or_else(|| Ok(String::new())),
+        other => substr_replace_string_argument("replacement", other, span),
+    }
+}
+
+fn substr_replace_array_position_int(
+    value: &Value,
+    position: usize,
+    default: i64,
+    span: Span,
+) -> CompileResult<i64> {
+    match value {
+        Value::Array(array) => array
+            .entries()
+            .get(position)
+            .map(|entry| substr_replace_int_argument("offset", entry.value(), span))
+            .unwrap_or(Ok(default)),
+        other => substr_replace_int_argument("offset", other, span),
+    }
+}
+
+fn substr_replace_array_position_optional_int(
+    value: &Value,
+    position: usize,
+    span: Span,
+) -> CompileResult<Option<i64>> {
+    match value {
+        Value::Array(array) => array
+            .entries()
+            .get(position)
+            .map(|entry| substr_replace_int_argument("length", entry.value(), span).map(Some))
+            .unwrap_or(Ok(None)),
+        other => substr_replace_int_argument("length", other, span).map(Some),
+    }
+}
+
+fn substr_replace_int_argument(label: &str, value: &Value, span: Span) -> CompileResult<i64> {
+    match value {
+        Value::Int(value) => Ok(*value),
+        other => Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "substr_replace()",
+                format!(
+                    "{label} argument must be int in the current subset, got {}",
+                    other.type_name()
+                ),
+            ),
+        )),
+    }
+}
+
+fn substr_replace_string_argument(label: &str, value: &Value, span: Span) -> CompileResult<String> {
+    if matches!(value, Value::Array(_)) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "substr_replace()",
+                format!("{label} array values are not implemented in the current subset"),
+            ),
+        ));
+    }
+
+    value
+        .try_echo_string()
+        .map_err(|error| runtime_error(span, error))
+}
+
+fn call_strtok_builtin(
+    interpreter: &mut Interpreter,
+    args: &[Value],
+    span: Span,
+) -> CompileResult<Value> {
+    if !(1..=2).contains(&args.len()) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "strtok()",
+                ArityExpectation::Between { min: 1, max: 2 },
+                args.len(),
+            ),
+        ));
+    }
+
+    let tokens = if args.len() == 1 {
+        if interpreter.strtok_state.is_none() {
+            interpreter.emit_display_warning(
+                "strtok(): Both arguments must be provided when starting tokenization",
+                span,
+            )?;
+            return Ok(Value::Bool(false));
+        }
+        string_compare_argument_bytes("strtok()", "token", &args[0], span)?
+    } else {
+        let input = string_compare_argument_bytes("strtok()", "string", &args[0], span)?;
+        interpreter.strtok_state = Some(StrtokState { input, position: 0 });
+        string_compare_argument_bytes("strtok()", "token", &args[1], span)?
+    };
+
+    let Some(state) = interpreter.strtok_state.as_mut() else {
+        return Ok(Value::Bool(false));
+    };
+    if state.position >= state.input.len() {
+        return Ok(Value::Bool(false));
+    }
+
+    let delimiter = |byte: u8| tokens.contains(&byte);
+    let mut cursor = state.position;
+    while cursor < state.input.len() && delimiter(state.input[cursor]) {
+        cursor += 1;
+        if cursor >= state.input.len() {
+            interpreter.strtok_state = None;
+            return Ok(Value::Bool(false));
+        }
+    }
+
+    let start = cursor;
+    cursor += 1;
+    while cursor < state.input.len() {
+        if delimiter(state.input[cursor]) {
+            let token = state.input[start..cursor].to_vec();
+            state.position = cursor + 1;
+            return Ok(interpreter_value_from_php_string_bytes(token));
+        }
+        cursor += 1;
+    }
+
+    let token = state.input[start..].to_vec();
+    state.position = state.input.len() + 1;
+    Ok(interpreter_value_from_php_string_bytes(token))
 }
 
 fn call_substr_count(args: &[Value], span: Span) -> CompileResult<Value> {
