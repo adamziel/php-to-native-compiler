@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-29 13:27 CEST
+Updated: 2026-05-29 13:39 CEST
 Primary branch: `master`
 Latest source head: `783436bd fix: preserve binary string array keys`
 
@@ -13,7 +13,7 @@ Progress is the pinned php-src PHPT full-suite pass rate:
 
 `passed runnable PHPTs / total runnable PHPTs`
 
-Current score: **2388 / 20294 pinned runnable PHPTs = 11.77%**.
+Current score: **2563 / 20294 pinned runnable PHPTs = 12.63%**.
 
 No other percentage is public project progress. Focused PHPT passes, source
 checkpoints, PRs, and docs/status edits are evidence for the next batch, but
@@ -129,8 +129,7 @@ stable pinned denominator and does not use the raw runner
 the gate path length; the short-run-root rerun above has the same source head,
 passes that row, and has zero PASS-set regressions.
 
-The latest full-suite result is the Batch009 burst1 sharded publication gate
-on the same php-src pin, run
+The Batch009 burst1 sharded publication gate on the same php-src pin, run
 `phpt-full-batch009-burst1-sharded-20260529T095210Z-php-src-f97ff59-public-e0a15776-source-731c73cc`.
 Counts: 2388 passed, 16287 failed, 2568 skipped, 15 xfailed, 1073 borked;
 all 12 shards exited nonzero because failing PHPTs remain. Regressions from
@@ -140,6 +139,22 @@ the latest published Batch008 checkpoint10 PASS set: 0. Evidence lives under
 Batch009 burst1 still has BORKED rows, so the public score uses the stable
 pinned denominator and does not use the raw runner
 `2388 / 18690 = 12.78%` calculation.
+
+The latest full-suite result is the Batch010 checkpoint10 regression-repair
+sharded publication gate on the same php-src pin, run
+`phpt-full-batch010-checkpoint10-regression-repair-sharded-20260529T112818Z-php-src-f97ff59-public-6f6ac240-source-783436bd`.
+Counts: 2563 passed, 16116 failed, 2573 skipped, 15 xfailed, 1064 borked;
+all 12 shards exited nonzero because failing PHPTs remain. The PASS-set
+comparison reported one Batch009 PASS row as failed,
+`ext/standard/tests/file/bug75679.phpt`; a focused short-path rerun using the
+same gate `phpc` binary passed that row, so this is recorded as the existing
+path-length harness guard rather than a semantic regression. Evidence lives
+under
+`/home/claude/supervised-php-compiler/state/logs/phpt-full-batch010-checkpoint10-regression-repair-sharded-20260529T112818Z-php-src-f97ff59-public-6f6ac240-source-783436bd`.
+
+Batch010 checkpoint10 still has BORKED rows, so the public score uses the
+stable pinned denominator and does not use the raw runner
+`2563 / 18694 = 13.71%` calculation.
 
 ## PHPT Harness
 
@@ -166,7 +181,8 @@ pinned denominator and does not use the raw runner
 | Batch008 source batch | Complete | Source checkpoints accepted: 10 / 10; checkpoint1 is `strncmp()` / `strncasecmp()` focused source proof; checkpoint2 is bcmath `bcmod()` / `bcpow()` / `bcpowmod()` / `bcsqrt()` focused source proof; checkpoint3 is `tempnam()` / `sys_get_temp_dir()` focused source proof; checkpoint4 is bounded date/timezone focused source proof; checkpoint5 is `SplObjectStorage` identity-map focused source proof; checkpoint5 sharded gate published; checkpoint6 is `strrpos()` / `strripos()` focused source proof; checkpoint7 is `fputcsv()` plus local file stream semantics focused source proof; checkpoint8 is `pathinfo()` / `basename()` / `dirname()` focused source proof; checkpoint9 is `vprintf()` focused source proof; checkpoint10 is `stripos()` focused source proof; checkpoint10 bug60598 repair gate published |
 | Batch009 burst1 sharded gate | Done | 2388 / 20294 pinned runnable PHPTs passed (11.77%); 0 regressions from Batch008 checkpoint10 PASS set; run id `phpt-full-batch009-burst1-sharded-20260529T095210Z-php-src-f97ff59-public-e0a15776-source-731c73cc` |
 | Batch009 source burst | Complete | Checkpoint1 is p47 `sizeof()` alias / `array_chunk` metadata focused source proof (+25 expected direct rows); checkpoint2 is p43 `fflush()` / `ftruncate()` focused source proof (+15 expected direct rows); checkpoint3 is p42 `fprintf()` / `vfprintf()` focused source proof (+14 expected direct rows); checkpoint4 is p39 OPcache bounded introspection focused source proof (+11 expected direct rows); checkpoint5 is p63 slash/cslash and bounded `strcmp()` focused source proof (+12 expected direct rows); burst total was +77 expected direct rows; burst1 sharded gate published 2388 / 20294 |
-| Batch010 source batch | Complete | Checkpoint1 is p66 `bcround()` / bounded `RoundingMode` focused source proof (+11 expected direct rows); checkpoint2 is p51 generator `yield from` / `Generator::getReturn()` / yielded key preservation focused source proof (+10 expected direct rows); checkpoint3 is p50 `ReflectionAttribute` / `getAttributes()` focused source proof (+10 expected direct rows); checkpoint4 is p43 `disk_free_space()` / `disk_total_space()` / `is_executable()` focused source proof (+12 expected direct rows); checkpoint5 is p15 typed-property startup diagnostics focused source proof (+13 expected direct rows); checkpoint6 is p42 selected `strspn()` / `strcspn()` focused source proof (+11 expected direct rows); checkpoint7 is p39 `ReflectionFunction` / `ReflectionMethod` metadata focused source proof (+10 expected direct rows); checkpoint8 is p42 selected `strrchr()` focused source proof (+10 expected direct rows); checkpoint9 is p66 `bcdivmod()` / `BcMath\Number` focused source proof (+22 expected direct rows); checkpoint10 is p43 `fscanf()` stream scanning focused source proof (+11 expected direct rows); batch total is 10 / 10 checkpoints and +120 expected direct rows. The next step is the pinned sharded full-suite gate and PASS-set regression check before public score publication. |
+| Batch010 source batch | Complete | Checkpoint1 is p66 `bcround()` / bounded `RoundingMode` focused source proof (+11 expected direct rows); checkpoint2 is p51 generator `yield from` / `Generator::getReturn()` / yielded key preservation focused source proof (+10 expected direct rows); checkpoint3 is p50 `ReflectionAttribute` / `getAttributes()` focused source proof (+10 expected direct rows); checkpoint4 is p43 `disk_free_space()` / `disk_total_space()` / `is_executable()` focused source proof (+12 expected direct rows); checkpoint5 is p15 typed-property startup diagnostics focused source proof (+13 expected direct rows); checkpoint6 is p42 selected `strspn()` / `strcspn()` focused source proof (+11 expected direct rows); checkpoint7 is p39 `ReflectionFunction` / `ReflectionMethod` metadata focused source proof (+10 expected direct rows); checkpoint8 is p42 selected `strrchr()` focused source proof (+10 expected direct rows); checkpoint9 is p66 `bcdivmod()` / `BcMath\Number` focused source proof (+22 expected direct rows); checkpoint10 is p43 `fscanf()` stream scanning focused source proof (+11 expected direct rows); batch total is 10 / 10 checkpoints and +120 expected direct rows. Regression repair source `783436bd` fixed the initial gate's two real PASS losses; the repaired sharded gate published 2563 / 20294 with the existing `bug75679.phpt` path-length guard. |
+| Batch010 checkpoint10 regression-repair sharded gate | Done | 2563 / 20294 pinned runnable PHPTs passed (12.63%); only PASS-loss row was `ext/standard/tests/file/bug75679.phpt`, guarded by a same-binary short-path focused PASS; run id `phpt-full-batch010-checkpoint10-regression-repair-sharded-20260529T112818Z-php-src-f97ff59-public-6f6ac240-source-783436bd` |
 
 Focused PHPT history is tracked separately in
 `/home/claude/supervised-php-compiler/state/php-core-suite-focused-history.tsv`.
@@ -174,10 +190,8 @@ Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
 
-Batch010 checkpoint10 publication gate follow-up is in regression repair. This
-is focused source proof, not a public percentage change. The public PHPT score
-remains **2388 / 20294 pinned runnable PHPTs = 11.77%** until the repaired
-full-suite gate is completed, regression-checked, and published here.
+Batch010 checkpoint10 regression-repair gate is published. The public PHPT
+score is now **2563 / 20294 pinned runnable PHPTs = 12.63%**.
 
 - initial Batch010 checkpoint10 sharded gate:
   `/home/claude/supervised-php-compiler/state/logs/phpt-full-batch010-checkpoint10-publication-sharded-20260529T111238Z-php-src-f97ff59-public-de8f9989-source-dbda3e7a`
@@ -193,18 +207,27 @@ full-suite gate is completed, regression-checked, and published here.
 - supervisor focused repair gates: PASS for `cargo fmt`, runtime unit test
   `binary_string_array_keys_are_stable_for_lookup`, `phpc` build, and focused
   PHP core rerun of both regressed PHPTs with 2 PASS and 0 FAIL
-- public progress gate: must be rerun on source `783436bd` before publishing
-  any Batch010 public score
+- repaired public progress gate:
+  `/home/claude/supervised-php-compiler/state/logs/phpt-full-batch010-checkpoint10-regression-repair-sharded-20260529T112818Z-php-src-f97ff59-public-6f6ac240-source-783436bd`
+- repaired gate counts:
+  `2563 passed, 16116 failed, 2573 skipped, 15 xfailed, 1064 borked`
+  (`2563 / 20294 = 12.63%` public-comparable)
+- PASS-set guard:
+  the only latest-published PASS row reported as failed was
+  `ext/standard/tests/file/bug75679.phpt`; the same gate `phpc` binary passed
+  that PHPT from the short `/home/claude/php-src-phpt` path with 1 PASS and
+  0 FAIL, so this remains the known path-length harness guard rather than a
+  source regression
 
 This repair accepts binary PHP string values as stable array keys for the
 current runtime array-key subset, so invalid-UTF-8 literal keys can be inserted
 and looked up consistently. It is not keyed to PHPT filenames, expected output,
 fixture names, public hashes, batch labels, or checkpoint markers.
 
-Batch010 source batch checkpoint10 is primary-integrated under AO supervision.
-This is focused source proof, not a public percentage change. The public PHPT
-score remains **2388 / 20294 pinned runnable PHPTs = 11.77%** until the
-checkpoint10 sharded gate is completed, regression-checked, and published here.
+Historical source checkpoint record: Batch010 source batch checkpoint10 was
+primary-integrated under AO supervision before the full-suite publication
+gate. At that time it was focused source proof only; the superseding Batch010
+gate above now defines the public score.
 
 - primary source head:
   `dbda3e7a fix: add fscanf stream scanning`
@@ -223,9 +246,8 @@ checkpoint10 sharded gate is completed, regression-checked, and published here.
   focused Rust `standard_file_scanf_builtins` with 2 / 2 tests passing,
   `phpc` binary build, `cargo check`, and focused PHP core `fscanf()` PHPT
   cluster with 11 PASS and 0 FAIL
-- public progress gate: not run for this source checkpoint; Batch010 is now
-  ready for the pinned sharded full-suite publication gate and PASS-set
-  regression comparison
+- public progress gate: superseded by the Batch010 checkpoint10
+  regression-repair sharded gate published above
 
 This checkpoint implements bounded stream `fscanf()` support through the
 interpreter stream-resource subset, including local file and memory stream
