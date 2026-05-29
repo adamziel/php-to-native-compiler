@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-29 16:55 CEST
+Updated: 2026-05-29 17:09 CEST
 Primary branch: `master`
-Latest source head: `7fd908ba fix: add array walk builtins`
+Latest source head: `2f69a24d fix: improve array key coercion`
 
 ## Progress Score
 
@@ -198,13 +198,57 @@ pinned denominator and does not use the raw runner
 | Batch010 checkpoint10 regression-repair sharded gate | Done | 2563 / 20294 pinned runnable PHPTs passed (12.63%); only PASS-loss row was `ext/standard/tests/file/bug75679.phpt`, guarded by a same-binary short-path focused PASS; run id `phpt-full-batch010-checkpoint10-regression-repair-sharded-20260529T112818Z-php-src-f97ff59-public-6f6ac240-source-783436bd` |
 | Batch011 source burst | Published | Checkpoint1 is p63 residual string byte/scalar builtins focused source proof (+21 expected direct rows); checkpoint2 is p43 copy/filesize/unlink diagnostics focused source proof (+10 expected direct rows); checkpoint3 is p43 standard file metadata/time/link focused source proof (+21 expected direct rows); checkpoint4 is p66 ReflectionProperty / ReflectionParameter / ReflectionClassConstant residual focused source proof (+10 expected direct rows); checkpoint5 is p47 `range()` focused source proof (+16 expected direct rows); burst total is +78 expected direct rows; burst1 sharded gate published 2741 / 20294 with zero latest-published PASS regressions. |
 | Batch011 burst1 sharded gate | Done | 2741 / 20294 pinned runnable PHPTs passed (13.51%); 0 regressions from the Batch010 checkpoint10 repaired PASS set; run id `phpt-full-batch011-burst1-publication-sharded-20260529T122703Z-php-src-f97ff59-public-c956a1c0-source-cb2064dc` |
-| Batch012 source batch | Active | Checkpoint1 is p31 dynamic-call/reference focused source proof (+13 expected direct rows), committed as `75833ad5`; checkpoint2 is p66/p39 ReflectionExtension / ReflectionZendExtension metadata focused source proof (+13 expected direct rows), committed as `376ad126`; checkpoint3 is p42 `array_fill()` / `array_diff_assoc()` / `array_intersect_assoc()` focused source proof (+15 expected direct rows), committed as `5d1a84be`; checkpoint4 is p15 type declaration diagnostics focused source proof (+20 expected direct rows), committed as `f325b200`; checkpoint5 is p63 string algorithm builtins focused source proof (+11 expected direct rows), committed as `78de5a1e`; checkpoint6 is p31 user comparator sort focused source proof (+17 expected direct rows), committed as `59292a26`; checkpoint7 is p43 directory/glob builtins focused source proof (+10 expected direct rows), committed as `661b4f5c`; checkpoint8 is p31 array user-comparison builtins focused source proof (+19 expected direct rows), committed as `007075de`; checkpoint9 is p31 `array_walk()` / `array_walk_recursive()` focused source proof (+19 expected direct rows), committed as `7fd908ba`; Batch012 is 9 / 10 checkpoints and +137 expected direct rows. Public score remains 2741 / 20294 until checkpoint10 full-suite gate and regression repair. |
+| Batch012 source batch | Active | Checkpoint1 is p31 dynamic-call/reference focused source proof (+13 expected direct rows), committed as `75833ad5`; checkpoint2 is p66/p39 ReflectionExtension / ReflectionZendExtension metadata focused source proof (+13 expected direct rows), committed as `376ad126`; checkpoint3 is p42 `array_fill()` / `array_diff_assoc()` / `array_intersect_assoc()` focused source proof (+15 expected direct rows), committed as `5d1a84be`; checkpoint4 is p15 type declaration diagnostics focused source proof (+20 expected direct rows), committed as `f325b200`; checkpoint5 is p63 string algorithm builtins focused source proof (+11 expected direct rows), committed as `78de5a1e`; checkpoint6 is p31 user comparator sort focused source proof (+17 expected direct rows), committed as `59292a26`; checkpoint7 is p43 directory/glob builtins focused source proof (+10 expected direct rows), committed as `661b4f5c`; checkpoint8 is p31 array user-comparison builtins focused source proof (+19 expected direct rows), committed as `007075de`; checkpoint9 is p31 `array_walk()` / `array_walk_recursive()` focused source proof (+19 expected direct rows), committed as `7fd908ba`; checkpoint10 is p42 array-key coercion focused source proof (+20 expected direct rows), committed as `2f69a24d`; Batch012 is 10 / 10 checkpoints and +157 expected direct rows. Public score remains 2741 / 20294 until the checkpoint10 full-suite gate and regression repair are completed and published. |
 
 Focused PHPT history is tracked separately in
 `/home/claude/supervised-php-compiler/state/php-core-suite-focused-history.tsv`.
 Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
+
+Batch012 source batch checkpoint10 is primary-integrated under AO supervision.
+This is focused source proof, not a public percentage change. The public PHPT
+score remains **2741 / 20294 pinned runnable PHPTs = 13.51%** until the
+Batch012 checkpoint10 pinned full-suite gate is parsed, latest-published PASS
+regressions are repaired or guarded, and this file is updated again.
+
+- primary source head:
+  `2f69a24d fix: improve array key coercion`
+- reviewed and integration patch:
+  `/home/claude/supervised-php-compiler/state/patches/p42-array-key-coercion-current-ca1b79a4-sourceeq-7fd908ba-20260529T1700.patch`
+- reviewed and integration patch SHA256:
+  `111d4a7e9a0491b8d77b57a68fa37545794a494182f3c8a970f9d4c14d1a4fe2`
+- reviewer gate: phpc52, phpc32, and phpc53 recorded current-public FINAL GO
+  on `ca1b79a4` / source-equivalent `7fd908ba`
+- critic gate: phpc54, phpc49, phpc55, and phpc58 recorded
+  `SAFE-FOR-INTEGRATION` for the same exact SHA on `ca1b79a4` /
+  source-equivalent `7fd908ba`
+- handoff gate: p38 exported READY-FOR-SUPERVISOR scratch/no-primary handoff
+  with SHA verification, public/source apply checks, exclusions,
+  exact-shape audit, consumed-scope audit through checkpoint9, and lowercase
+  `-p` harness guard
+- supervisor focused gates: PASS for clean apply, `git diff --check`,
+  `cargo fmt --all -- --check`,
+  `cargo test -p php_runtime array_keys_accept_current_bool_and_integral_float_coercions`,
+  `cargo test -p phpc --test runtime_errors boolean_array_keys_are_normalized`,
+  `cargo check -q -p phpc -p php_runtime`,
+  `cargo build -q -p phpc --bin phpc`, exact-shape string audit, and the
+  focused PHP core array-key coercion PHPT cluster with 20 PASS and 0 FAIL using
+  `run-tests.php -p` with the `phpc` wrapper
+- focused PHPT log:
+  `/home/claude/supervised-php-compiler/state/logs/primary-batch012-p42-array-key-focused-20260529T1710/run-tests-wrapper.log`
+- Batch012 accounting:
+  checkpoint10 / 10 accepted, +157 expected direct PHPT rows; the next broad
+  PHPT gate requires a single supervisor order and latest-published PASS-set
+  comparison before any public score update
+
+This checkpoint adds generalized runtime array-key coercion for boolean keys
+and finite integral float keys. It excludes consumed p31 dynamic-call/reference,
+user-sort, array user-comparison, and array-walk scopes, p43 dir/glob, p42
+array fill/assoc, p15 type diagnostics, p63 string algorithms, p66/p39
+reflection extension, and earlier Batch007-Batch011 scopes. It is not keyed to
+PHPT filenames, expected output, fixture names, public hashes, batch labels, or
+checkpoint markers.
 
 Batch012 source batch checkpoint9 is primary-integrated under AO supervision.
 This is focused source proof, not a public percentage change. The public PHPT
