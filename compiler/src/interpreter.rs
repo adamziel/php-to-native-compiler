@@ -44383,6 +44383,9 @@ impl Interpreter {
                 if key == "headers_sent" {
                     return self.call_headers_sent_direct(args, span, caller_scope);
                 }
+                if key == "fgetcsv" {
+                    return self.call_fgetcsv_direct(args, span, caller_scope);
+                }
                 let values = self.evaluate_builtin_value_call_arguments(
                     &callable_name(name),
                     args,
@@ -44521,6 +44524,9 @@ impl Interpreter {
                 if key == "headers_sent" {
                     return self.call_headers_sent_direct(args, span, caller_scope);
                 }
+                if key == "fgetcsv" {
+                    return self.call_fgetcsv_direct(args, span, caller_scope);
+                }
                 let values = self.evaluate_builtin_value_call_arguments(
                     &callable_name(name),
                     args,
@@ -44546,6 +44552,102 @@ impl Interpreter {
                 }
             }
         }
+    }
+
+    fn call_fgetcsv_direct(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        if args.is_empty() || args.len() > 5 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "fgetcsv()",
+                    ArityExpectation::Between { min: 1, max: 5 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let mut values: Vec<Option<Value>> = vec![None, None, None, None, None];
+        let mut positional_index = 0_usize;
+        for arg in args {
+            match arg {
+                Expr::NamedArgument { name, expr, span } => {
+                    let Some(index) = fgetcsv_parameter_index(name) else {
+                        return Err(runtime_error(
+                            *span,
+                            RuntimeError::unsupported_call(
+                                "fgetcsv()",
+                                format!("named argument ${name} does not match a supported fgetcsv() parameter in the current subset"),
+                            ),
+                        ));
+                    };
+                    if values[index].is_some() {
+                        return Err(runtime_error(
+                            *span,
+                            RuntimeError::unsupported_call(
+                                "fgetcsv()",
+                                format!("Named parameter ${name} overwrites previous argument"),
+                            ),
+                        ));
+                    }
+                    values[index] =
+                        Some(self.evaluate_by_value_argument_with_cow_source(expr, caller_scope)?);
+                }
+                Expr::SpreadArgument { span, .. } => {
+                    return Err(runtime_error(
+                        *span,
+                        RuntimeError::unsupported_call(
+                            "fgetcsv()",
+                            "argument unpacking is not implemented for fgetcsv() in the current subset",
+                        ),
+                    ));
+                }
+                expr => {
+                    if positional_index >= values.len() || values[positional_index].is_some() {
+                        return Err(runtime_error(
+                            expr.span(),
+                            RuntimeError::arity_mismatch(
+                                "fgetcsv()",
+                                ArityExpectation::Between { min: 1, max: 5 },
+                                args.len(),
+                            ),
+                        ));
+                    }
+                    values[positional_index] =
+                        Some(self.evaluate_by_value_argument_with_cow_source(expr, caller_scope)?);
+                    positional_index += 1;
+                }
+            }
+        }
+
+        let Some(stream) = values[0].take() else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "fgetcsv()",
+                    ArityExpectation::Between { min: 1, max: 5 },
+                    0,
+                ),
+            ));
+        };
+        let normalized = vec![
+            stream,
+            values[1].take().unwrap_or(Value::Null),
+            values[2]
+                .take()
+                .unwrap_or_else(|| Value::String(",".to_string())),
+            values[3]
+                .take()
+                .unwrap_or_else(|| Value::String("\"".to_string())),
+            values[4]
+                .take()
+                .unwrap_or_else(|| Value::String("\\".to_string())),
+        ];
+        self.call_fgetcsv(&normalized, span)
     }
 
     fn evaluate_builtin_value_call_arguments(
@@ -62685,6 +62787,336 @@ impl Interpreter {
         Ok(Value::Int(data.len() as i64))
     }
 
+    fn call_fgetc(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("fgetc", args, 1, span)?;
+        match self.stream_mut("fgetc", &args[0], span)? {
+            StreamResource::Memory(stream) => {
+                if !stream.readable {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "fgetc()",
+                            "stream is not readable in the current subset",
+                        ),
+                    ));
+                }
+                if stream.position >= stream.buffer.len() {
+                    stream.eof = true;
+                    return Ok(Value::Bool(false));
+                }
+                let start = stream.position;
+                let Some(character) = stream.buffer[start..].chars().next() else {
+                    stream.eof = true;
+                    return Ok(Value::Bool(false));
+                };
+                stream.position += character.len_utf8();
+                stream.eof = false;
+                Ok(Value::String(character.to_string()))
+            }
+            StreamResource::File(stream) => {
+                if !stream.readable {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "fgetc()",
+                            "stream is not readable in the current subset",
+                        ),
+                    ));
+                }
+                let mut buffer = [0_u8; 1];
+                let read = stream.file.read(&mut buffer).map_err(|error| {
+                    runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "fgetc()",
+                            format!("local file stream read failed: {error}"),
+                        ),
+                    )
+                })?;
+                if read == 0 {
+                    stream.eof = true;
+                    return Ok(Value::Bool(false));
+                }
+                stream.eof = false;
+                let contents = String::from_utf8(buffer[..read].to_vec()).map_err(|error| {
+                    runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "fgetc()",
+                            format!("local file stream read was not valid UTF-8: {error}"),
+                        ),
+                    )
+                })?;
+                Ok(Value::String(contents))
+            }
+        }
+    }
+
+    fn call_fgets(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(1..=2).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "fgets()",
+                    ArityExpectation::Between { min: 1, max: 2 },
+                    args.len(),
+                ),
+            ));
+        }
+        let max_bytes = match args.get(1) {
+            Some(Value::Int(length)) if *length > 0 => Some((*length as usize).saturating_sub(1)),
+            Some(Value::Int(_)) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "fgets()",
+                        "length argument must be positive in the current subset",
+                    ),
+                ));
+            }
+            Some(other) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "fgets()",
+                        format!(
+                            "length argument must be int in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+            None => None,
+        };
+        match self.stream_mut("fgets", &args[0], span)? {
+            StreamResource::Memory(stream) => {
+                if !stream.readable {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "fgets()",
+                            "stream is not readable in the current subset",
+                        ),
+                    ));
+                }
+                if stream.position >= stream.buffer.len() {
+                    stream.eof = true;
+                    return Ok(Value::Bool(false));
+                }
+                let start = utf8_boundary_at_or_before(&stream.buffer, stream.position);
+                let limit = max_bytes
+                    .map(|length| utf8_boundary_at_or_before(&stream.buffer, start + length))
+                    .unwrap_or(stream.buffer.len())
+                    .min(stream.buffer.len());
+                let slice = &stream.buffer[start..limit];
+                let end = match slice.find('\n') {
+                    Some(index) => start + index + 1,
+                    None => limit,
+                };
+                stream.position = end;
+                stream.eof = false;
+                Ok(Value::String(stream.buffer[start..end].to_string()))
+            }
+            StreamResource::File(stream) => {
+                if !stream.readable {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "fgets()",
+                            "stream is not readable in the current subset",
+                        ),
+                    ));
+                }
+                let mut buffer = Vec::new();
+                let limit = max_bytes.unwrap_or(usize::MAX);
+                while buffer.len() < limit {
+                    let mut byte = [0_u8; 1];
+                    let read = stream.file.read(&mut byte).map_err(|error| {
+                        runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "fgets()",
+                                format!("local file stream read failed: {error}"),
+                            ),
+                        )
+                    })?;
+                    if read == 0 {
+                        stream.eof = true;
+                        break;
+                    }
+                    stream.eof = false;
+                    buffer.push(byte[0]);
+                    if byte[0] == b'\n' {
+                        break;
+                    }
+                }
+                if buffer.is_empty() && stream.eof {
+                    return Ok(Value::Bool(false));
+                }
+                let contents = String::from_utf8(buffer).map_err(|error| {
+                    runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "fgets()",
+                            format!("local file stream read was not valid UTF-8: {error}"),
+                        ),
+                    )
+                })?;
+                Ok(Value::String(contents))
+            }
+        }
+    }
+    fn call_fgetcsv(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if args.is_empty() || args.len() > 5 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "fgetcsv()",
+                    ArityExpectation::Between { min: 1, max: 5 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let max_bytes = match args.get(1) {
+            Some(Value::Int(length)) if *length > 0 => Some(*length as usize),
+            Some(Value::Null) | None => None,
+            Some(Value::Int(_)) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "fgetcsv()",
+                        "length argument must be positive or null in the current subset",
+                    ),
+                ));
+            }
+            Some(other) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "fgetcsv()",
+                        format!(
+                            "length argument must be int or null in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+        };
+        let delimiter =
+            csv_single_character_argument("fgetcsv()", "separator", args.get(2), ',', false, span)?
+                .expect("non-empty separator has a character");
+        let enclosure =
+            csv_single_character_argument("fgetcsv()", "enclosure", args.get(3), '"', false, span)?
+                .expect("non-empty enclosure has a character");
+        let escape =
+            csv_single_character_argument("fgetcsv()", "escape", args.get(4), '\\', true, span)?;
+
+        let Some(line) = self.read_stream_line_for_csv("fgetcsv", &args[0], max_bytes, span)?
+        else {
+            return Ok(Value::Bool(false));
+        };
+        let fields = parse_bounded_csv_record(&line, delimiter, enclosure, escape);
+        let mut array = PhpArray::new();
+        if fields.len() == 1
+            && fields[0].is_empty()
+            && csv_record_without_line_ending(&line).is_empty()
+        {
+            array.insert(0_i64, Value::Null);
+        } else {
+            for (index, field) in fields.into_iter().enumerate() {
+                array.insert(index as i64, Value::String(field));
+            }
+        }
+        Ok(Value::Array(array))
+    }
+
+    fn read_stream_line_for_csv(
+        &mut self,
+        function: &str,
+        value: &Value,
+        max_bytes: Option<usize>,
+        span: Span,
+    ) -> CompileResult<Option<String>> {
+        match self.stream_mut(function, value, span)? {
+            StreamResource::Memory(stream) => {
+                if !stream.readable {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{function}()"),
+                            "stream is not readable in the current subset",
+                        ),
+                    ));
+                }
+                if stream.position >= stream.buffer.len() {
+                    stream.eof = true;
+                    return Ok(None);
+                }
+                let start = utf8_boundary_at_or_before(&stream.buffer, stream.position);
+                let limit = max_bytes
+                    .map(|length| utf8_boundary_at_or_before(&stream.buffer, start + length))
+                    .unwrap_or(stream.buffer.len())
+                    .min(stream.buffer.len());
+                let slice = &stream.buffer[start..limit];
+                let end = match slice.find('\n') {
+                    Some(index) => start + index + 1,
+                    None => limit,
+                };
+                stream.position = end;
+                stream.eof = false;
+                Ok(Some(stream.buffer[start..end].to_string()))
+            }
+            StreamResource::File(stream) => {
+                if !stream.readable {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{function}()"),
+                            "stream is not readable in the current subset",
+                        ),
+                    ));
+                }
+                let mut buffer = Vec::new();
+                let limit = max_bytes.unwrap_or(usize::MAX);
+                while buffer.len() < limit {
+                    let mut byte = [0_u8; 1];
+                    let read = stream.file.read(&mut byte).map_err(|error| {
+                        runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                format!("{function}()"),
+                                format!("local file stream read failed: {error}"),
+                            ),
+                        )
+                    })?;
+                    if read == 0 {
+                        stream.eof = true;
+                        break;
+                    }
+                    stream.eof = false;
+                    buffer.push(byte[0]);
+                    if byte[0] == b'\n' {
+                        break;
+                    }
+                }
+                if buffer.is_empty() && stream.eof {
+                    return Ok(None);
+                }
+                let contents = String::from_utf8(buffer).map_err(|error| {
+                    runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{function}()"),
+                            format!("local file stream read was not valid UTF-8: {error}"),
+                        ),
+                    )
+                })?;
+                Ok(Some(contents))
+            }
+        }
+    }
+
     fn call_fread(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("fread", args, 2, span)?;
         let length = match &args[1] {
@@ -66513,6 +66945,9 @@ impl Interpreter {
             "stream_context_set_option" => self.call_stream_context_set_option(&args, span),
             "stream_context_set_params" => self.call_stream_context_set_params(&args, span),
             "fwrite" => self.call_fwrite(&args, span),
+            "fgetc" => self.call_fgetc(&args, span),
+            "fgets" => self.call_fgets(&args, span),
+            "fgetcsv" => self.call_fgetcsv(&args, span),
             "fread" => self.call_fread(&args, span),
             "rewind" => self.call_rewind(&args, span),
             "stream_get_contents" => self.call_stream_get_contents(&args, span),
@@ -77031,6 +77466,9 @@ fn is_builtin(name: &str) -> bool {
             | "stream_context_set_option"
             | "stream_context_set_params"
             | "fwrite"
+            | "fgetc"
+            | "fgets"
+            | "fgetcsv"
             | "fread"
             | "rewind"
             | "stream_get_contents"
@@ -77127,6 +77565,123 @@ fn is_builtin(name: &str) -> bool {
             | "var_dump"
             | "print_r"
     )
+}
+
+fn fgetcsv_parameter_index(name: &str) -> Option<usize> {
+    match name {
+        "stream" | "handle" => Some(0),
+        "length" => Some(1),
+        "separator" | "delimiter" => Some(2),
+        "enclosure" => Some(3),
+        "escape" => Some(4),
+        _ => None,
+    }
+}
+
+fn csv_single_character_argument(
+    function: &str,
+    label: &str,
+    value: Option<&Value>,
+    default: char,
+    allow_empty: bool,
+    span: Span,
+) -> CompileResult<Option<char>> {
+    let Some(value) = value else {
+        return Ok(Some(default));
+    };
+    let Value::String(value) = value else {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                format!(
+                    "{label} argument must be string in the current subset, got {}",
+                    value.type_name()
+                ),
+            ),
+        ));
+    };
+    if allow_empty && value.is_empty() {
+        return Ok(None);
+    }
+    let mut chars = value.chars();
+    let Some(first) = chars.next() else {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                format!("{label} argument must contain exactly one character"),
+            ),
+        ));
+    };
+    if chars.next().is_some() {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                format!("{label} argument must contain exactly one character"),
+            ),
+        ));
+    }
+    Ok(Some(first))
+}
+
+fn csv_record_without_line_ending(line: &str) -> &str {
+    line.strip_suffix("\r\n")
+        .or_else(|| line.strip_suffix('\n'))
+        .or_else(|| line.strip_suffix('\r'))
+        .unwrap_or(line)
+}
+
+fn parse_bounded_csv_record(
+    line: &str,
+    delimiter: char,
+    enclosure: char,
+    escape: Option<char>,
+) -> Vec<String> {
+    let record = csv_record_without_line_ending(line);
+    let mut fields = Vec::new();
+    let mut field = String::new();
+    let mut chars = record.chars().peekable();
+    let mut in_enclosure = false;
+    let mut at_field_start = true;
+
+    while let Some(character) = chars.next() {
+        if in_enclosure {
+            if Some(character) == escape {
+                if let Some(next) = chars.next() {
+                    field.push(next);
+                } else {
+                    field.push(character);
+                }
+            } else if character == enclosure {
+                if chars.peek().is_some_and(|next| *next == enclosure) {
+                    field.push(enclosure);
+                    chars.next();
+                } else {
+                    in_enclosure = false;
+                }
+            } else {
+                field.push(character);
+            }
+            at_field_start = false;
+            continue;
+        }
+
+        if at_field_start && character == enclosure {
+            in_enclosure = true;
+            at_field_start = false;
+        } else if character == delimiter {
+            fields.push(std::mem::take(&mut field));
+            at_field_start = true;
+        } else {
+            field.push(character);
+            at_field_start = false;
+        }
+    }
+
+    fields.push(field);
+    fields
 }
 
 fn dirname_path(path: &str, levels: i64) -> String {

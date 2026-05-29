@@ -10756,6 +10756,14 @@ Unsupported code should fail with an explicit parse, runtime, or codegen error.
   local link device metadata or `-1` with an inline PHP warning when metadata is
   unavailable. These helpers are limited to local filesystem paths;
   stream-wrapper link targets remain unsupported.
+- Bounded line-oriented stream reads in `phpc run`: `fgetc()` returns the next
+  UTF-8 character from local file and memory streams, `fgets()` returns the next
+  line or bounded positive-length slice, and `fgetcsv()` reads one bounded line
+  from local file or memory streams into numeric CSV fields with one-character
+  delimiter/enclosure/escape handling and direct named `escape:` support. These
+  helpers preserve stream position and return `false` at EOF. Binary/non-UTF-8
+  byte streams, filter chains, network/user streams, locale-specific CSV edge
+  cases, and exact PHP byte-vs-character behavior remain unsupported.
 - Bounded prerequisites for standard filesystem PHPTs: `touch()` creates or
   opens local files and clears the stat cache, while `sleep()` accepts
   non-negative integer seconds and returns `0`. Explicit `touch()` timestamp
