@@ -12701,6 +12701,9 @@ impl Interpreter {
         let flow = match self.execute_statements(&program.statements, &mut scope) {
             Ok(flow) => flow,
             Err(error) => {
+                if let Some(message) = fatal_memory_error_message(&error) {
+                    return self.fatal_runtime_message_execution(&error, &message);
+                }
                 if let Some((error_class_name, error_message)) =
                     catchable_php_error_class_and_message(&error)
                 {
@@ -14202,6 +14205,36 @@ impl Interpreter {
             stderr: self.stderr.clone(),
             exit_code: self.exit_signal.unwrap_or(255),
         })
+    }
+
+    fn fatal_runtime_message_execution(
+        &mut self,
+        error: &Diagnostic,
+        message: &str,
+    ) -> CompileResult<Execution> {
+        self.emit_runtime_fatal_message(error, message);
+        self.exit_signal = Some(255);
+        self.run_shutdown_callbacks()?;
+        self.run_shutdown_destructors()?;
+        self.flush_output_buffers();
+        Ok(Execution {
+            stdout: self.stdout.clone(),
+            stderr: self.stderr.clone(),
+            exit_code: self.exit_signal.unwrap_or(255),
+        })
+    }
+
+    fn emit_runtime_fatal_message(&mut self, error: &Diagnostic, message: &str) {
+        let file = self
+            .source_file
+            .clone()
+            .or_else(|| error.file.as_ref().map(|file| file.display().to_string()))
+            .unwrap_or_else(|| "Command line code".to_string());
+        self.push_uncaught_fatal_separator();
+        self.stdout.push_str(&format!(
+            "Fatal error: {message} in {file} on line {}",
+            error.line
+        ));
     }
 
     fn emit_uncaught_php_error_fatal(
@@ -64408,6 +64441,7 @@ impl Interpreter {
             "chr" => self.call_chr(&args, span),
             "bin2hex" => call_bin2hex(&args, span),
             "str_repeat" => call_str_repeat(&args, span),
+            "str_pad" => call_str_pad(&args, span),
             "strtolower" => call_strtolower(&args, span),
             "trim" => call_trim(&args, span),
             "ltrim" => call_ltrim(&args, span),
@@ -74029,6 +74063,15 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_param("times", "int"),
             ],
         ),
+        "str_pad" => (
+            "string",
+            vec![
+                reflection_internal_param("string", "string"),
+                reflection_internal_param("length", "int"),
+                reflection_internal_optional_string_param("pad_string", " "),
+                reflection_internal_optional_int_param("pad_type", PHP_STR_PAD_RIGHT),
+            ],
+        ),
         "strtolower" => (
             "string",
             vec![reflection_internal_param("string", "string")],
@@ -75677,13 +75720,37 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
         return Some(error.message.clone());
     }
 
-    let message = error
-        .message
-        .strip_prefix("unsupported call str_repeat(): ")?;
-    if message == "Argument #2 ($times) must be greater than or equal to 0" {
-        return Some(format!("str_repeat(): {message}"));
+    let unsupported = error.message.strip_prefix("unsupported call ")?;
+    let (function, message) = unsupported.split_once(": ")?;
+    match (function, message) {
+        ("str_repeat()", "Argument #2 ($times) must be greater than or equal to 0") => {
+            Some(format!("{function}: {message}"))
+        }
+        (
+            "str_pad()",
+            "Argument #3 ($pad_string) must not be empty" | "Argument #3 () must not be empty",
+        ) => Some("str_pad(): Argument #3 ($pad_string) must not be empty".to_string()),
+        (
+            "str_pad()",
+            "Argument #4 ($pad_type) must be STR_PAD_LEFT, STR_PAD_RIGHT, or STR_PAD_BOTH"
+            | "Argument #4 () must be STR_PAD_LEFT, STR_PAD_RIGHT, or STR_PAD_BOTH",
+        ) => Some(
+            "str_pad(): Argument #4 ($pad_type) must be STR_PAD_LEFT, STR_PAD_RIGHT, or STR_PAD_BOTH"
+                .to_string(),
+        ),
+        _ => None,
     }
-    None
+}
+
+fn fatal_memory_error_message(error: &Diagnostic) -> Option<String> {
+    if error.phase != Phase::Runtime {
+        return None;
+    }
+    error
+        .message
+        .strip_prefix("unsupported call str_pad(): ")
+        .filter(|message| message.starts_with("Allowed memory size of "))
+        .map(str::to_string)
 }
 
 fn typed_property_reference_type_error_message(error: &Diagnostic) -> Option<String> {
@@ -75895,6 +75962,7 @@ fn is_builtin(name: &str) -> bool {
             | "chr"
             | "bin2hex"
             | "str_repeat"
+            | "str_pad"
             | "strtolower"
             | "trim"
             | "ltrim"
@@ -76420,6 +76488,11 @@ const PHP_FILE_APPEND: i64 = 8;
 const PHP_SCANDIR_SORT_ASCENDING: i64 = 0;
 const PHP_SCANDIR_SORT_DESCENDING: i64 = 1;
 const PHP_SCANDIR_SORT_NONE: i64 = 2;
+const PHP_STR_PAD_LEFT: i64 = 0;
+const PHP_STR_PAD_RIGHT: i64 = 1;
+const PHP_STR_PAD_BOTH: i64 = 2;
+const PHP_STR_PAD_MEMORY_LIMIT_BYTES: usize = 128 * 1024 * 1024;
+const PHP_SETLOCALE_MAX_LOCALE_NAME_BYTES: usize = 255;
 const PHP_LC_CTYPE: i64 = 0;
 const PHP_LC_NUMERIC: i64 = 1;
 const PHP_LC_TIME: i64 = 2;
@@ -76444,6 +76517,9 @@ fn builtin_global_constant_value(name: &str) -> Option<Value> {
         "SCANDIR_SORT_ASCENDING" => Some(Value::Int(PHP_SCANDIR_SORT_ASCENDING)),
         "SCANDIR_SORT_DESCENDING" => Some(Value::Int(PHP_SCANDIR_SORT_DESCENDING)),
         "SCANDIR_SORT_NONE" => Some(Value::Int(PHP_SCANDIR_SORT_NONE)),
+        "STR_PAD_LEFT" => Some(Value::Int(PHP_STR_PAD_LEFT)),
+        "STR_PAD_RIGHT" => Some(Value::Int(PHP_STR_PAD_RIGHT)),
+        "STR_PAD_BOTH" => Some(Value::Int(PHP_STR_PAD_BOTH)),
         "LC_CTYPE" => Some(Value::Int(PHP_LC_CTYPE)),
         "LC_NUMERIC" => Some(Value::Int(PHP_LC_NUMERIC)),
         "LC_TIME" => Some(Value::Int(PHP_LC_TIME)),
@@ -81753,6 +81829,52 @@ fn integer_argument_current_subset(
     })
 }
 
+fn php_internal_int_type_error(
+    function: &str,
+    position: usize,
+    name: &str,
+    value: &Value,
+    span: Span,
+) -> Diagnostic {
+    runtime_error(
+        span,
+        RuntimeError::unsupported_call(
+            function,
+            format!(
+                "Argument #{position} (${name}) must be of type int, {} given",
+                value.type_name()
+            ),
+        ),
+    )
+}
+
+fn php_internal_int_argument(
+    function: &str,
+    position: usize,
+    name: &str,
+    value: &Value,
+    span: Span,
+) -> CompileResult<i64> {
+    let parsed = match value {
+        Value::Null => Some(0),
+        Value::Bool(value) => Some(i64::from(*value)),
+        Value::Int(value) => Some(*value),
+        Value::Float(value) if php_float_fits_i64(*value) => Some(value.trunc() as i64),
+        Value::Float(_) => None,
+        Value::String(value) => parse_supported_integer_string(value),
+        Value::BinaryString(value) => std::str::from_utf8(value)
+            .ok()
+            .and_then(parse_supported_integer_string),
+        Value::Array(_) | Value::Object(_) | Value::Closure(_) | Value::Resource(_) => None,
+    };
+
+    parsed.ok_or_else(|| php_internal_int_type_error(function, position, name, value, span))
+}
+
+fn php_float_fits_i64(value: f64) -> bool {
+    value.is_finite() && value >= i64::MIN as f64 && value <= i64::MAX as f64
+}
+
 impl Interpreter {
     fn call_chr(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("chr", args, 1, span)?;
@@ -81846,6 +81968,115 @@ fn call_str_repeat(args: &[Value], span: Span) -> CompileResult<Value> {
     }
 
     Ok(interpreter_value_from_php_string_bytes(repeated))
+}
+
+fn repeated_pad_bytes(pad: &[u8], len: usize) -> Vec<u8> {
+    let mut output = Vec::with_capacity(len);
+    while output.len() < len {
+        let remaining = len - output.len();
+        let take = remaining.min(pad.len());
+        output.extend_from_slice(&pad[..take]);
+    }
+    output
+}
+
+fn str_pad_memory_exhausted_message(target_len: usize) -> String {
+    format!(
+        "Allowed memory size of {} bytes exhausted (tried to allocate {} bytes)",
+        PHP_STR_PAD_MEMORY_LIMIT_BYTES, target_len
+    )
+}
+
+fn call_str_pad(args: &[Value], span: Span) -> CompileResult<Value> {
+    if !(2..=4).contains(&args.len()) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "str_pad()",
+                ArityExpectation::Between { min: 2, max: 4 },
+                args.len(),
+            ),
+        ));
+    }
+
+    if matches!(args[0], Value::Array(_)) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call("str_pad()", "string argument arrays are not supported"),
+        ));
+    }
+
+    let value = args[0]
+        .try_echo_bytes()
+        .map_err(|error| runtime_error(span, error))?;
+    let length = php_internal_int_argument("str_pad()", 2, "length", &args[1], span)?;
+    if length <= value.len() as i64 {
+        return Ok(interpreter_value_from_php_string_bytes(value));
+    }
+
+    let pad = if let Some(pad) = args.get(2) {
+        if matches!(pad, Value::Array(_)) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "str_pad()",
+                    "pad_string argument arrays are not supported",
+                ),
+            ));
+        }
+        pad.try_echo_bytes()
+            .map_err(|error| runtime_error(span, error))?
+    } else {
+        b" ".to_vec()
+    };
+
+    if pad.is_empty() {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "str_pad()",
+                "Argument #3 ($pad_string) must not be empty",
+            ),
+        ));
+    }
+
+    let pad_type = match args.get(3) {
+        Some(value) => php_internal_int_argument("str_pad()", 4, "pad_type", value, span)?,
+        None => PHP_STR_PAD_RIGHT,
+    };
+
+    let target_len = length as usize;
+    if target_len > 16 * 1024 * 1024 {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "str_pad()",
+                str_pad_memory_exhausted_message(target_len),
+            ),
+        ));
+    }
+    let needed = target_len - value.len();
+    let (left_len, right_len) = match pad_type {
+        PHP_STR_PAD_RIGHT => (0, needed),
+        PHP_STR_PAD_LEFT => (needed, 0),
+        PHP_STR_PAD_BOTH => (needed / 2, needed - (needed / 2)),
+        _ => {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "str_pad()",
+                    "Argument #4 ($pad_type) must be STR_PAD_LEFT, STR_PAD_RIGHT, or STR_PAD_BOTH",
+                ),
+            ));
+        }
+    };
+
+    let mut output = Vec::with_capacity(target_len);
+    output.extend_from_slice(&repeated_pad_bytes(&pad, left_len));
+    output.extend_from_slice(&value);
+    output.extend_from_slice(&repeated_pad_bytes(&pad, right_len));
+
+    Ok(interpreter_value_from_php_string_bytes(output))
 }
 
 fn call_strtolower(args: &[Value], span: Span) -> CompileResult<Value> {
@@ -86402,7 +86633,7 @@ impl Interpreter {
         }
     }
 
-    fn call_setlocale(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+    fn call_setlocale(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         if args.len() < 2 {
             return Err(runtime_error(
                 span,
@@ -86440,6 +86671,10 @@ impl Interpreter {
 
         let _ = category;
         for candidate in candidates {
+            if candidate.len() >= PHP_SETLOCALE_MAX_LOCALE_NAME_BYTES {
+                self.emit_display_warning("setlocale(): Specified locale name is too long", span)?;
+                return Ok(Value::Bool(false));
+            }
             if let Some(locale) = Self::normalized_supported_c_locale(candidate) {
                 return Ok(Value::String(locale.to_string()));
             }

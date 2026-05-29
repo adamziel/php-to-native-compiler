@@ -42633,21 +42633,30 @@ fn native_value_arithmetic_diagnostic(leading_numeric: bool) -> Option<String> {
 
 fn php_arithmetic_add_result(left: Number, right: Number) -> Value {
     match (left, right) {
-        (Number::Int(left), Number::Int(right)) => Value::Int(left.wrapping_add(right)),
+        (Number::Int(left), Number::Int(right)) => left
+            .checked_add(right)
+            .map(Value::Int)
+            .unwrap_or_else(|| Value::Float(left as f64 + right as f64)),
         (left, right) => Value::Float(left.as_float() + right.as_float()),
     }
 }
 
 fn php_arithmetic_subtract_result(left: Number, right: Number) -> Value {
     match (left, right) {
-        (Number::Int(left), Number::Int(right)) => Value::Int(left.wrapping_sub(right)),
+        (Number::Int(left), Number::Int(right)) => left
+            .checked_sub(right)
+            .map(Value::Int)
+            .unwrap_or_else(|| Value::Float(left as f64 - right as f64)),
         (left, right) => Value::Float(left.as_float() - right.as_float()),
     }
 }
 
 fn php_arithmetic_multiply_result(left: Number, right: Number) -> Value {
     match (left, right) {
-        (Number::Int(left), Number::Int(right)) => Value::Int(left.wrapping_mul(right)),
+        (Number::Int(left), Number::Int(right)) => left
+            .checked_mul(right)
+            .map(Value::Int)
+            .unwrap_or_else(|| Value::Float(left as f64 * right as f64)),
         (left, right) => Value::Float(left.as_float() * right.as_float()),
     }
 }
