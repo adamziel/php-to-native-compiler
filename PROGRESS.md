@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-29 21:02 CEST
+Updated: 2026-05-29 21:14 CEST
 Primary branch: `master`
-Latest source head: `d9a5bf8c fix: expand sprintf formatting semantics`
+Latest source head: `85620212 fix: improve array_map callback validation`
 
 ## Progress Score
 
@@ -52,7 +52,12 @@ plus 12 `array_merge_recursive()` rows. Batch014 source checkpoint3
 `d9a5bf8c` is integrated with focused lowercase `-p` proof for p42
 source-only `sprintf()` formatter semantics. The focused gate recorded
 `10 PASS / 0 FAIL / 0 SKIP` across 10 selected `sprintf*` PHPTs. Batch014
-source progress is now 3 checkpoints and +94 expected direct rows. The public
+source checkpoint4 `85620212` is integrated with focused lowercase `-p` proof
+for p31 currentized `array_map()` callback validation. The focused gate
+recorded `11 PASS / 0 FAIL / 0 SKIP` across 11 selected `array_map*` PHPTs.
+Batch014 source progress is now 4 checkpoints and +105 expected direct rows,
+crossing the supervisor threshold for considering the next pinned full-suite
+gate. The public
 percentage remains `3170 / 20294 = 15.62%` until the next pinned full-suite
 gate is completed, regression-checked, and published here.
 
