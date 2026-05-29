@@ -223,15 +223,15 @@ echo $value === false ? "false" : "value";
     )
     .unwrap();
 
-    assert_eq!(missing.stdout, "false");
-    assert!(missing.stderr.contains("PHP Warning:  file_get_contents(): tests/fixtures/missing-local-read.txt: Failed to open stream:"), "{}", missing.stderr);
+    assert!(missing.stdout.ends_with("\nfalse"), "{}", missing.stdout);
     assert!(
-        missing
-            .stderr
-            .contains("file_get_contents_warning_false.php on line 2"),
+        missing.stdout.contains(
+            "Warning: file_get_contents(tests/fixtures/missing-local-read.txt): Failed to open stream:"
+        ),
         "{}",
-        missing.stderr
+        missing.stdout
     );
+    assert_eq!(missing.stderr, "");
     assert_eq!(missing.exit_code, 0);
 
     let bad_offset = run_source_with_source_file(
@@ -334,14 +334,19 @@ echo $value === false ? "false" : "value";
     )
     .unwrap();
 
-    assert_eq!(mask_miss.stdout, "false");
     assert!(
-        mask_miss
-            .stderr
-            .contains("PHP Warning:  file_get_contents(): tests/fixtures/missing-mask-read.txt: Failed to open stream:"),
+        mask_miss.stdout.ends_with("\nfalse"),
         "{}",
-        mask_miss.stderr
+        mask_miss.stdout
     );
+    assert!(
+        mask_miss.stdout.contains(
+            "Warning: file_get_contents(tests/fixtures/missing-mask-read.txt): Failed to open stream:"
+        ),
+        "{}",
+        mask_miss.stdout
+    );
+    assert_eq!(mask_miss.stderr, "");
     assert_eq!(mask_miss.exit_code, 0);
 }
 
@@ -381,13 +386,19 @@ restore_error_handler();
 
 #[test]
 fn file_get_contents_rejects_forms_outside_current_subset() {
-    let non_string = run_source("<?php\nfile_get_contents(42);\n").unwrap_err();
-    assert_eq!(non_string.phase, Phase::Runtime);
-    assert_eq!(non_string.line, 2);
-    assert_eq!(non_string.column, 1);
+    let non_string = run_source(
+        r#"<?php
+try {
+    file_get_contents([]);
+} catch (TypeError $e) {
+    echo $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
     assert_eq!(
-        non_string.message,
-        "unsupported call file_get_contents(): path argument must be string in the current subset, got int"
+        non_string.stdout,
+        "file_get_contents(): Argument #1 ($filename) must be of type string, array given"
     );
 
     let stream = run_source("<?php\nfile_get_contents('php://memory');\n").unwrap_err();
@@ -409,14 +420,19 @@ fn file_get_contents_rejects_forms_outside_current_subset() {
         "unsupported call file_get_contents(): file:// URL path percent escapes must use two hexadecimal digits in the current subset"
     );
 
-    let bad_use_include_path =
-        run_source("<?php\nfile_get_contents('php://input', 1);\n").unwrap_err();
-    assert_eq!(bad_use_include_path.phase, Phase::Runtime);
-    assert_eq!(bad_use_include_path.line, 2);
-    assert_eq!(bad_use_include_path.column, 1);
+    let bad_use_include_path = run_source(
+        r#"<?php
+try {
+    file_get_contents('php://input', []);
+} catch (TypeError $e) {
+    echo $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
     assert_eq!(
-        bad_use_include_path.message,
-        "unsupported call file_get_contents(): use_include_path argument must be bool in the current subset, got int"
+        bad_use_include_path.stdout,
+        "file_get_contents(): Argument #2 ($use_include_path) must be of type bool, array given"
     );
 
     let bad_offset =
@@ -429,14 +445,19 @@ fn file_get_contents_rejects_forms_outside_current_subset() {
         "unsupported call file_get_contents(): offset argument must be int in the current subset, got string"
     );
 
-    let bad_length =
-        run_source("<?php\nfile_get_contents('php://input', false, null, 0, -1);\n").unwrap_err();
-    assert_eq!(bad_length.phase, Phase::Runtime);
-    assert_eq!(bad_length.line, 2);
-    assert_eq!(bad_length.column, 1);
+    let bad_length = run_source(
+        r#"<?php
+try {
+    file_get_contents('php://input', false, null, 0, -1);
+} catch (ValueError $e) {
+    echo $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
     assert_eq!(
-        bad_length.message,
-        "unsupported call file_get_contents(): max_length argument must be non-negative in the current subset"
+        bad_length.stdout,
+        "file_get_contents(): Argument #5 ($length) must be greater than or equal to 0"
     );
 
     let too_many =

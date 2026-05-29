@@ -215,6 +215,7 @@ struct Interpreter {
     date_time_objects: HashMap<i64, BoundedDateTimeObjectState>,
     source_file: Option<String>,
     main_source_file: Option<String>,
+    included_files: Vec<String>,
     max_execution_steps: Option<usize>,
     trace_includes: bool,
     request_time: i64,
@@ -10135,6 +10136,7 @@ impl Interpreter {
             date_time_objects: HashMap::new(),
             main_source_file: source_file.clone(),
             source_file,
+            included_files: Vec::new(),
             max_execution_steps: options.max_execution_steps,
             trace_includes: options.trace_includes,
             request_time: options
@@ -17829,9 +17831,17 @@ impl Interpreter {
         self.cache_bounded_realpath_entry_for_local_path(&path.read_path);
         let program = parse_source(&source).map_err(|error| error.with_file(&path.source_file))?;
         self.required_once.insert(include_key);
+        let included_file = path.source_file.display().to_string();
+        if !self
+            .included_files
+            .iter()
+            .any(|file| file == &included_file)
+        {
+            self.included_files.push(included_file.clone());
+        }
 
         let previous_source_file = self.source_file.clone();
-        self.source_file = Some(path.source_file.display().to_string());
+        self.source_file = Some(included_file);
         let flow = (|| {
             self.register_included_declarations(&program)?;
             self.execute_statements(&program.statements, scope)
@@ -17884,6 +17894,24 @@ impl Interpreter {
         }
 
         local_filesystem_metadata_path(path.to_string_lossy().as_ref())
+    }
+
+    fn included_files_array(&self) -> PhpArray {
+        let mut files = Vec::new();
+        if let Some(main) = &self.main_source_file {
+            files.push(main.clone());
+        }
+        for included in &self.included_files {
+            if !files.iter().any(|file| file == included) {
+                files.push(included.clone());
+            }
+        }
+
+        let mut array = PhpArray::new();
+        for (index, file) in files.into_iter().enumerate() {
+            array.insert(index as i64, Value::String(file));
+        }
+        array
     }
 
     fn enforce_bounded_open_basedir(
@@ -68563,6 +68591,78 @@ impl Interpreter {
         }
     }
 
+    fn filesystem_filename_argument(
+        &mut self,
+        function: &str,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<String> {
+        let path = match value {
+            Value::String(path) => path.clone(),
+            Value::BinaryString(bytes) => {
+                tree_walk_binary_string_utf8(bytes, "filesystem path", span)?.to_string()
+            }
+            Value::Null | Value::Bool(_) | Value::Int(_) | Value::Float(_) => value.echo_string(),
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        format!("{function}()"),
+                        format!(
+                            "Argument #1 ($filename) must be of type string, {} given",
+                            php_type_error_given(other)
+                        ),
+                    ),
+                ));
+            }
+        };
+        if path.is_empty() {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(format!("{function}()"), "Path must not be empty"),
+            ));
+        }
+        if path.contains('\0') {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{function}()"),
+                    "Argument #1 ($filename) must not contain any null bytes",
+                ),
+            ));
+        }
+        Ok(path)
+    }
+
+    fn use_include_path_argument(
+        &self,
+        function: &str,
+        value: Option<&Value>,
+        span: Span,
+    ) -> CompileResult<bool> {
+        match value {
+            Some(Value::Null) | None => Ok(false),
+            Some(Value::Bool(flag)) => Ok(*flag),
+            Some(Value::Int(flag)) => Ok(*flag != 0),
+            Some(Value::Float(flag)) => Ok(*flag != 0.0),
+            Some(Value::String(flag)) => Ok(Value::String(flag.clone()).is_truthy()),
+            Some(Value::BinaryString(bytes)) => {
+                let flag = tree_walk_binary_string_utf8(bytes, "use_include_path", span)?;
+                Ok(Value::String(flag.to_string()).is_truthy())
+            }
+            Some(other) => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{function}()"),
+                    format!(
+                        "Argument #2 ($use_include_path) must be of type bool, {} given",
+                        php_type_error_given(other)
+                    ),
+                ),
+            )),
+        }
+    }
+
     fn filesystem_scalar_path_argument(
         &mut self,
         function: &str,
@@ -68747,6 +68847,43 @@ impl Interpreter {
         } else {
             Ok(PathBuf::from(path))
         }
+    }
+
+    fn resolve_file_put_contents_path(
+        &self,
+        path: &str,
+        use_include_path: bool,
+        span: Span,
+    ) -> CompileResult<PathBuf> {
+        if let Some(file_url_path) = bounded_local_file_url_path(path) {
+            return file_url_path.map_err(|message| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call("file_put_contents()", message),
+                )
+            });
+        }
+        if path.contains("://") {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "file_put_contents()",
+                    "only local file:// URLs and local filesystem paths are supported in the current filesystem subset",
+                ),
+            ));
+        }
+        let requested_path = Path::new(path);
+        if requested_path.is_absolute() || !use_include_path {
+            return Ok(PathBuf::from(path));
+        }
+        for entry in self.include_path.split(INCLUDE_PATH_SEPARATOR) {
+            let entry = if entry.is_empty() { "." } else { entry };
+            let candidate = PathBuf::from(entry).join(requested_path);
+            if candidate.exists() {
+                return Ok(candidate);
+            }
+        }
+        Ok(PathBuf::from(path))
     }
 
     fn clear_stat_cache_filesystem_path(&mut self, path: &Path) {
@@ -69493,7 +69630,7 @@ impl Interpreter {
                 ),
             ));
         }
-        let path = self.filesystem_path_argument("file_put_contents", "path", &args[0], span)?;
+        let path = self.filesystem_filename_argument("file_put_contents", &args[0], span)?;
         let Some(data) = self.file_put_contents_data_bytes(&args[1], span)? else {
             return Ok(Value::Bool(false));
         };
@@ -69513,8 +69650,7 @@ impl Interpreter {
             self.expect_optional_stream_context_resource("file_put_contents", context, span)?;
         }
 
-        let filesystem_path = self.resolve_local_filesystem_operation_path(
-            "file_put_contents",
+        let filesystem_path = self.resolve_file_put_contents_path(
             &path,
             flags & PHP_FILE_USE_INCLUDE_PATH != 0,
             span,
@@ -69538,18 +69674,19 @@ impl Interpreter {
         let mut file = match options.open(&filesystem_path) {
             Ok(file) => file,
             Err(error) => {
-                self.emit_warning(
-                    "file_put_contents()",
-                    format!("{path}: Failed to open stream: {error}"),
+                self.emit_display_warning(
+                    format!(
+                        "file_put_contents({path}): Failed to open stream: {}",
+                        php_filesystem_open_error_message(&error)
+                    ),
                     span,
                 )?;
                 return Ok(Value::Bool(false));
             }
         };
         if let Err(error) = file.write_all(&data) {
-            self.emit_warning(
-                "file_put_contents()",
-                format!("{path}: Failed to write stream: {error}"),
+            self.emit_display_warning(
+                format!("file_put_contents({path}): Failed to write stream: {error}"),
                 span,
             )?;
             return Ok(Value::Bool(false));
@@ -69685,7 +69822,10 @@ impl Interpreter {
                 ),
             ));
         }
-        let path = self.filesystem_path_argument("unlink", "path", &args[0], span)?;
+        let Some(path) = self.filesystem_scalar_path_argument("unlink", "path", &args[0], span)?
+        else {
+            return Ok(Value::Bool(false));
+        };
         if let Some(context) = args.get(1) {
             self.expect_optional_stream_context_resource("unlink", context, span)?;
         }
@@ -74609,6 +74749,10 @@ impl Interpreter {
                 expect_arity(name, &args, 0, span)?;
                 Ok(Value::String(self.include_path.clone()))
             }
+            "get_included_files" | "get_required_files" => {
+                expect_arity(name, &args, 0, span)?;
+                Ok(Value::Array(self.included_files_array()))
+            }
             "set_include_path" => {
                 expect_arity(name, &args, 1, span)?;
                 let Value::String(path) = &args[0] else {
@@ -76221,31 +76365,12 @@ impl Interpreter {
                         ),
                     ));
                 }
-                let use_include_path = match args.get(1) {
-                    Some(Value::Bool(flag)) => *flag,
-                    Some(other) => {
-                        return Err(runtime_error(
-                            span,
-                            RuntimeError::unsupported_call(
-                                "file_get_contents()",
-                                format!(
-                                    "use_include_path argument must be bool in the current subset, got {}",
-                                    other.type_name()
-                                ),
-                            ),
-                        ));
-                    }
-                    None => false,
-                };
-                if let Some(context) = args.get(2) {
-                    self.expect_optional_stream_context_resource(
-                        "file_get_contents",
-                        context,
-                        span,
-                    )?;
-                }
+                let path = self.filesystem_filename_argument("file_get_contents", &args[0], span)?;
+                let use_include_path =
+                    self.use_include_path_argument("file_get_contents", args.get(1), span)?;
                 let offset = match args.get(3) {
                     Some(Value::Int(offset)) => Some(*offset),
+                    Some(Value::Null) => None,
                     Some(other) => {
                         return Err(runtime_error(
                             span,
@@ -76267,7 +76392,7 @@ impl Interpreter {
                             span,
                             RuntimeError::unsupported_call(
                                 "file_get_contents()",
-                                "max_length argument must be non-negative in the current subset",
+                                "Argument #5 ($length) must be greater than or equal to 0",
                             ),
                         ));
                     }
@@ -76286,26 +76411,24 @@ impl Interpreter {
                     }
                     None => None,
                 };
-                match &args[0] {
-                    Value::String(path) => {
-                        if path.contains('\0') {
-                            return Err(runtime_error(
-                                span,
-                                RuntimeError::unsupported_call(
-                                    "file_get_contents()",
-                                    "Argument #1 ($filename) must not contain any null bytes",
-                                ),
-                            ));
-                        }
+                if let Some(context) = args.get(2) {
+                    self.expect_optional_stream_context_resource(
+                        "file_get_contents",
+                        context,
+                        span,
+                    )?;
+                }
+
+                {
                         if !self.ensure_stream_wrapper_can_open_path(
                             "file_get_contents()",
-                            path,
+                            &path,
                             span,
                         )? {
                             return Ok(Value::Bool(false));
                         }
-                        if stream_path_protocol(path).eq_ignore_ascii_case("data") {
-                            return match parse_data_url_stream(path) {
+                        if stream_path_protocol(&path).eq_ignore_ascii_case("data") {
+                            return match parse_data_url_stream(&path) {
                                 Ok(stream) => match bounded_file_get_contents_slice(
                                     &stream.contents,
                                     offset,
@@ -76320,9 +76443,10 @@ impl Interpreter {
                                     }
                                 },
                                 Err(message) => {
-                                    self.emit_warning(
-                                        "file_get_contents()",
-                                        format!("{path}: Failed to open stream: {message}"),
+                                    self.emit_display_warning(
+                                        format!(
+                                            "file_get_contents({path}): Failed to open stream: {message}"
+                                        ),
                                         span,
                                     )?;
                                     Ok(Value::Bool(false))
@@ -76344,9 +76468,24 @@ impl Interpreter {
                                 }
                             };
                         }
+                        if path == "php://stdin" {
+                            if offset.unwrap_or(0) > 0 {
+                                return Ok(Value::Bool(false));
+                            }
+                            return match bounded_file_get_contents_slice(
+                                &self.request_body,
+                                offset,
+                                max_length,
+                            ) {
+                                FileGetContentsRead::Contents(contents) => {
+                                    Ok(Value::String(contents))
+                                }
+                                FileGetContentsRead::WarningFalse(_) => Ok(Value::Bool(false)),
+                            };
+                        }
 
                         let filesystem_path = if let Some(file_url_path) =
-                            bounded_local_file_url_path(path)
+                            bounded_local_file_url_path(&path)
                         {
                             file_url_path.map_err(|message| {
                                 runtime_error(
@@ -76363,11 +76502,11 @@ impl Interpreter {
                                 ),
                             ));
                         } else {
-                            self.resolve_file_get_contents_path(path, use_include_path)
+                            self.resolve_file_get_contents_path(&path, use_include_path)
                         };
                         if !self.enforce_bounded_open_basedir(
                             "file_get_contents()",
-                            path,
+                            &path,
                             &filesystem_path,
                             span,
                         )? {
@@ -76376,9 +76515,11 @@ impl Interpreter {
                         let contents = match fs::read_to_string(&filesystem_path) {
                             Ok(contents) => contents,
                             Err(error) => {
-                                self.emit_warning(
-                                    "file_get_contents()",
-                                    format!("{path}: Failed to open stream: {error}"),
+                                self.emit_display_warning(
+                                    format!(
+                                        "file_get_contents({path}): Failed to open stream: {}",
+                                        php_filesystem_open_error_message(&error)
+                                    ),
                                     span,
                                 )?;
                                 return Ok(Value::Bool(false));
@@ -76392,17 +76533,6 @@ impl Interpreter {
                                 Ok(Value::Bool(false))
                             }
                         }
-                    }
-                    other => Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            "file_get_contents()",
-                            format!(
-                                "path argument must be string in the current subset, got {}",
-                                other.type_name()
-                            ),
-                        ),
-                    )),
                 }
             }
             "fopen" => self.call_fopen(&args, span),
@@ -90395,9 +90525,19 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
         {
             Some(format!("{function}: {message}"))
         }
-        ("file_get_contents()", "Argument #1 ($filename) must not contain any null bytes") => {
+        (
+            "file_get_contents()" | "file_put_contents()",
+            "Argument #1 ($filename) must not contain any null bytes",
+        ) => {
             Some(format!("{function}: {message}"))
         }
+        ("file_get_contents()" | "file_put_contents()", "Path must not be empty") => {
+            Some("Path must not be empty".to_string())
+        }
+        (
+            "file_get_contents()",
+            "Argument #5 ($length) must be greater than or equal to 0",
+        ) => Some(format!("{function}: {message}")),
         (
             "disk_free_space()" | "diskfreespace()" | "disk_total_space()",
             "Argument #1 ($directory) must not contain any null bytes",
@@ -90876,6 +91016,8 @@ fn is_builtin(name: &str) -> bool {
             | "opcache_reset"
             | "opcache_is_script_cached_in_file_cache"
             | "get_include_path"
+            | "get_included_files"
+            | "get_required_files"
             | "set_include_path"
             | "min"
             | "rand"

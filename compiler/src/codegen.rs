@@ -66377,6 +66377,8 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "ini_get",
     "ini_set",
     "get_include_path",
+    "get_included_files",
+    "get_required_files",
     "set_include_path",
     "min",
     "rand",

@@ -53,6 +53,26 @@ echo "|loaded=" . $loaded;
 }
 
 #[test]
+fn get_included_files_reports_main_file_before_included_files() {
+    let execution = run_source_with_source_file(
+        r#"<?php
+include __DIR__ . "/include_path_lib/wp_loader.inc";
+$files = get_included_files();
+echo "|files=" . basename($files[0]) . ":" . basename($files[1]);
+echo "|same=" . (get_required_files() == $files ? "yes" : "no");
+"#,
+        fixture_source_file(),
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "inc:.|dir:./tests/fixtures/milestone1303/include_path_lib||files=include_path_resolution.php:wp_loader.inc|same=yes"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn include_path_lookup_precedes_source_relative_fallback_for_matching_names() {
     let execution = run_source_with_source_file(
         r#"<?php
