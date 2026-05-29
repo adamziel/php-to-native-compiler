@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-29 09:15 CEST
+Updated: 2026-05-29 11:00 CEST
 Primary branch: `master`
-Latest source head: `d0155a39 fix: add stripos semantics`
+Latest source head: `39ab1bf8 fix: optimize global array object retention`
 
 ## Progress Score
 
@@ -13,7 +13,7 @@ Progress is the pinned php-src PHPT full-suite pass rate:
 
 `passed runnable PHPTs / total runnable PHPTs`
 
-Current score: **2180 / 20294 pinned runnable PHPTs = 10.74%**.
+Current score: **2286 / 20294 pinned runnable PHPTs = 11.26%**.
 
 No other percentage is public project progress. Focused PHPT passes, source
 checkpoints, PRs, and docs/status edits are evidence for the next batch, but
@@ -90,7 +90,7 @@ Batch006 checkpoint10 still has BORKED rows, so the public score uses the
 stable pinned denominator and does not use the raw runner
 `1836 / 18715 = 9.81%` calculation.
 
-The latest full-suite result is the Batch007 checkpoint10 regression-repair
+The Batch007 checkpoint10 regression-repair
 sharded publication gate on the same php-src pin, run
 `phpt-full-batch007-checkpoint10-sharded-20260529T034255Z-php-src-f97ff59-public-906b4636-source-906b4636-stack10`.
 Counts: 2047 passed, 16653 failed, 2529 skipped, 15 xfailed, 1087 borked;
@@ -102,7 +102,7 @@ Batch007 checkpoint10 still has BORKED rows, so the public score uses the
 stable pinned denominator and does not use the raw runner
 `2047 / 18715 = 10.94%` calculation.
 
-The latest full-suite result is the Batch008 checkpoint5 supervisor-approved
+The Batch008 checkpoint5 supervisor-approved
 sharded publication gate on the same php-src pin, run
 `phpt-full-batch008-checkpoint5-sharded-20260529T051801Z-php-src-f97ff59-public-0855b815-source-f408875f`.
 Counts: 2180 passed, 16528 failed, 2535 skipped, 15 xfailed, 1073 borked;
@@ -113,6 +113,21 @@ the latest published Batch007 PASS set: 0. Evidence lives under
 Batch008 checkpoint5 still has BORKED rows, so the public score uses the
 stable pinned denominator and does not use the raw runner
 `2180 / 18723 = 11.64%` calculation.
+
+The latest full-suite result is the Batch008 checkpoint10 bug60598 repair
+short-run-root sharded publication gate on the same php-src pin, run
+`phpt-full-b8c10r2-sharded-20260529T085131Z-php-src-f97ff59-public-39ab1bf8-source-d0155a39`.
+Counts: 2286 passed, 16422 failed, 2535 skipped, 15 xfailed, 1073 borked;
+all 12 shards exited nonzero because failing PHPTs remain. Regressions from
+the latest published Batch008 checkpoint5 PASS set: 0. Evidence lives under
+`/home/claude/supervised-php-compiler/state/logs/phpt-full-b8c10r2-sharded-20260529T085131Z-php-src-f97ff59-public-39ab1bf8-source-d0155a39`.
+
+Batch008 checkpoint10 still has BORKED rows, so the public score uses the
+stable pinned denominator and does not use the raw runner
+`2286 / 18723 = 12.21%` calculation. A prior long-run-root follow-up measured
+2285 passes but was not published because `bug75679.phpt` false-failed from
+the gate path length; the short-run-root rerun above has the same source head,
+passes that row, and has zero PASS-set regressions.
 
 ## PHPT Harness
 
@@ -135,7 +150,8 @@ stable pinned denominator and does not use the raw runner
 | Batch007 checkpoint10 sharded gate | Done | 2047 / 20294 pinned runnable PHPTs passed (10.09%); 0 regressions from Batch006 checkpoint10 PASS set; run id `phpt-full-batch007-checkpoint10-sharded-20260529T034255Z-php-src-f97ff59-public-906b4636-source-906b4636-stack10` |
 | Batch007 source batch | Complete | Source checkpoints accepted: 10 / 10; checkpoint10 regression-repair sharded gate published |
 | Batch008 checkpoint5 sharded gate | Done | 2180 / 20294 pinned runnable PHPTs passed (10.74%); 0 regressions from Batch007 PASS set; run id `phpt-full-batch008-checkpoint5-sharded-20260529T051801Z-php-src-f97ff59-public-0855b815-source-f408875f` |
-| Batch008 source batch | Complete | Source checkpoints accepted: 10 / 10; checkpoint1 is `strncmp()` / `strncasecmp()` focused source proof; checkpoint2 is bcmath `bcmod()` / `bcpow()` / `bcpowmod()` / `bcsqrt()` focused source proof; checkpoint3 is `tempnam()` / `sys_get_temp_dir()` focused source proof; checkpoint4 is bounded date/timezone focused source proof; checkpoint5 is `SplObjectStorage` identity-map focused source proof; checkpoint5 sharded gate published; checkpoint6 is `strrpos()` / `strripos()` focused source proof; checkpoint7 is `fputcsv()` plus local file stream semantics focused source proof; checkpoint8 is `pathinfo()` / `basename()` / `dirname()` focused source proof; checkpoint9 is `vprintf()` focused source proof; checkpoint10 is `stripos()` focused source proof |
+| Batch008 checkpoint10 bug60598 repair sharded gate | Done | 2286 / 20294 pinned runnable PHPTs passed (11.26%); 0 regressions from Batch008 checkpoint5 PASS set; run id `phpt-full-b8c10r2-sharded-20260529T085131Z-php-src-f97ff59-public-39ab1bf8-source-d0155a39` |
+| Batch008 source batch | Complete | Source checkpoints accepted: 10 / 10; checkpoint1 is `strncmp()` / `strncasecmp()` focused source proof; checkpoint2 is bcmath `bcmod()` / `bcpow()` / `bcpowmod()` / `bcsqrt()` focused source proof; checkpoint3 is `tempnam()` / `sys_get_temp_dir()` focused source proof; checkpoint4 is bounded date/timezone focused source proof; checkpoint5 is `SplObjectStorage` identity-map focused source proof; checkpoint5 sharded gate published; checkpoint6 is `strrpos()` / `strripos()` focused source proof; checkpoint7 is `fputcsv()` plus local file stream semantics focused source proof; checkpoint8 is `pathinfo()` / `basename()` / `dirname()` focused source proof; checkpoint9 is `vprintf()` focused source proof; checkpoint10 is `stripos()` focused source proof; checkpoint10 bug60598 repair gate published |
 
 Focused PHPT history is tracked separately in
 `/home/claude/supervised-php-compiler/state/php-core-suite-focused-history.tsv`.
@@ -143,11 +159,49 @@ Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
 
-Batch008 source checkpoint 10 is primary-integrated under AO supervision. This
-is focused source proof, not a public percentage change. The public PHPT score
-remains **2180 / 20294 pinned runnable PHPTs = 10.74%** until the next
-supervisor-approved pinned aggregate gate is completed, regression-checked,
-and published here.
+Batch008 checkpoint10 bug60598 repair is primary-integrated under AO
+supervision and published through a supervisor-approved short-run-root sharded
+publication gate. The public PHPT score is now
+**2286 / 20294 pinned runnable PHPTs = 11.26%** with zero PASS-set regressions
+from the latest published Batch008 checkpoint5 PASS set.
+
+- primary source head:
+  `39ab1bf8 fix: optimize global array object retention`
+- reviewed and integration patch:
+  `/home/claude/supervised-php-compiler/state/patches/ao-integration-batch009-bug60598-p31-array-keyed-object-retention-268a3f29-20260529.patch`
+- reviewed and integration patch SHA256:
+  `d36dd0a674874bfdadf66c79c300d7b3c915adf25230bc66195a9d0f218c3e90`
+- reviewer gate: phpc-32 completed current-public proof for the exact p31
+  bug60598 repair packet; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/batch009-review-bug60598-repair-268a3f29-phpc32-20260529.{status.md,report.md,gates.log}`
+- critic gate: phpc-33 recorded `SAFE-FOR-INTEGRATION` for the exact repair
+  patch SHA; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/batch009-critic-bug60598-p31-array-keyed-object-retention-268a3f29-phpc33-20260529.{status.md,report.md}`
+- handoff gate: p38 completed scratch/no-primary handoff with SHA
+  verification, source-equivalence proof, clean apply, docs/`PROGRESS.md`/
+  examples exclusion, consumed-scope scan, production exact-shape scan, diff
+  check, reverse-apply, and exported patch proof; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/ao-integration-batch009-bug60598-p31-array-keyed-object-retention-268a3f29-20260529.{status.md,report.md,gates.log}`
+- supervisor focused gates: PASS for SHA sidecar verification, clean primary
+  apply, `git diff --check`, docs/`PROGRESS.md`/examples exclusion,
+  production exact-shape audit, consumed-scope audit, `cargo fmt`, focused Rust
+  `destructor_global_hash_table_retention_loop_finishes`, `phpc` binary
+  build, `cargo check`, and focused PHP core
+  `Zend/tests/bug60598.phpt` under the 60s timeout
+- public progress gate: completed as
+  `phpt-full-b8c10r2-sharded-20260529T085131Z-php-src-f97ff59-public-39ab1bf8-source-d0155a39`
+  with 2286 / 20294 pinned runnable PHPTs passed (11.26%) and zero regressions
+  from the Batch008 checkpoint5 PASS set
+
+This repair implements generalized in-place static/global array index writes,
+non-cloning object/string reads, and a `PhpArray` key index so object-retention
+destructor patterns such as `spl_object_hash()` keyed global arrays do not
+timeout in the current runtime subset. It is not keyed to PHPT filenames,
+expected output, fixture names, public hashes, batch labels, or checkpoint
+markers.
+
+Batch008 source checkpoint 10 was primary-integrated under AO supervision as
+focused source proof before the bug60598 repair follow-up publication gate.
 
 - primary source head:
   `d0155a39 fix: add stripos semantics`
