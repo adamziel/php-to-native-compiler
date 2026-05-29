@@ -70728,6 +70728,14 @@ fn magic_method_startup_diagnostics(
     }
 
     if !diagnostics.has_fatal() {
+        collect_invalid_intersection_type_startup_diagnostics(
+            &mut diagnostics,
+            program,
+            source_file,
+        );
+    }
+
+    if !diagnostics.has_fatal() {
         collect_typed_return_without_value_startup_diagnostics(
             &mut diagnostics,
             program,
@@ -70744,6 +70752,141 @@ fn magic_method_startup_diagnostics(
     }
 
     diagnostics
+}
+
+fn collect_invalid_intersection_type_startup_diagnostics(
+    diagnostics: &mut MagicMethodStartupDiagnostics,
+    program: &Program,
+    source_file: Option<&str>,
+) {
+    for stmt in &program.statements {
+        match stmt {
+            Stmt::Function(function) if !function.is_nested => {
+                if let Some((message, line)) =
+                    function_invalid_intersection_type_diagnostic(function)
+                {
+                    diagnostics.set_fatal(message, source_file, line);
+                    return;
+                }
+            }
+            Stmt::Class(class) if !class.is_nested => {
+                for member in &class.members {
+                    match member {
+                        ClassMember::Property(property) => {
+                            if let Some((message, line)) =
+                                property_invalid_intersection_type_diagnostic(property)
+                            {
+                                diagnostics.set_fatal(message, source_file, line);
+                                return;
+                            }
+                        }
+                        ClassMember::Method(method) => {
+                            if let Some((message, line)) =
+                                function_invalid_intersection_type_diagnostic(&method.function)
+                            {
+                                diagnostics.set_fatal(message, source_file, line);
+                                return;
+                            }
+                        }
+                        ClassMember::Constant(_) => {}
+                    }
+                }
+            }
+            Stmt::Interface(interface) => {
+                for property in &interface.properties {
+                    if let Some((message, line)) =
+                        property_invalid_intersection_type_diagnostic(property)
+                    {
+                        diagnostics.set_fatal(message, source_file, line);
+                        return;
+                    }
+                }
+                for method in &interface.methods {
+                    if let Some((message, line)) =
+                        function_invalid_intersection_type_diagnostic(&method.function)
+                    {
+                        diagnostics.set_fatal(message, source_file, line);
+                        return;
+                    }
+                }
+            }
+            Stmt::Trait(trait_decl) => {
+                for property in &trait_decl.properties {
+                    if let Some((message, line)) =
+                        property_invalid_intersection_type_diagnostic(property)
+                    {
+                        diagnostics.set_fatal(message, source_file, line);
+                        return;
+                    }
+                }
+                for method in &trait_decl.methods {
+                    if let Some((message, line)) =
+                        function_invalid_intersection_type_diagnostic(&method.function)
+                    {
+                        diagnostics.set_fatal(message, source_file, line);
+                        return;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn function_invalid_intersection_type_diagnostic(
+    function: &FunctionDecl,
+) -> Option<(String, usize)> {
+    for param in &function.params {
+        if let Some(type_decl) = &param.type_decl {
+            if let Some(message) = invalid_intersection_type_message(type_decl) {
+                return Some((message, type_decl.span.line));
+            }
+        }
+    }
+    let return_type = function.return_type.as_ref()?;
+    invalid_intersection_type_message(return_type).map(|message| (message, return_type.span.line))
+}
+
+fn property_invalid_intersection_type_diagnostic(
+    property: &ClassPropertyDecl,
+) -> Option<(String, usize)> {
+    let type_decl = property.type_decl.as_ref()?;
+    invalid_intersection_type_message(type_decl).map(|message| (message, type_decl.span.line))
+}
+
+fn invalid_intersection_type_message(type_decl: &TypeDecl) -> Option<String> {
+    if !type_decl.text.contains('&') {
+        return None;
+    }
+    type_decl
+        .text
+        .split('&')
+        .find_map(invalid_intersection_type_display)
+        .map(|display| format!("Type {display} cannot be part of an intersection type"))
+}
+
+fn invalid_intersection_type_display(part: &str) -> Option<&'static str> {
+    let mut name = part.trim();
+    name = name.strip_prefix('?').unwrap_or(name);
+    name = name.strip_prefix('\\').unwrap_or(name);
+    match name.to_ascii_lowercase().as_str() {
+        "array" => Some("array"),
+        "bool" | "boolean" => Some("bool"),
+        "callable" => Some("callable"),
+        "float" | "double" => Some("float"),
+        "int" | "integer" => Some("int"),
+        "iterable" => Some("Traversable|array"),
+        "mixed" => Some("mixed"),
+        "never" => Some("never"),
+        "null" => Some("null"),
+        "object" => Some("object"),
+        "static" => Some("static"),
+        "string" => Some("string"),
+        "true" => Some("true"),
+        "false" => Some("false"),
+        "void" => Some("void"),
+        _ => None,
+    }
 }
 
 fn collect_disallowed_property_type_startup_diagnostics(
