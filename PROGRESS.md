@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-29 14:41 CEST
+Updated: 2026-05-29 14:48 CEST
 Primary branch: `master`
-Latest source head: `cb2064dc fix: add range builtin semantics`
+Latest source head: `75833ad5 fix: broaden dynamic callback references`
 
 ## Progress Score
 
@@ -197,6 +197,7 @@ pinned denominator and does not use the raw runner
 | Batch010 checkpoint10 regression-repair sharded gate | Done | 2563 / 20294 pinned runnable PHPTs passed (12.63%); only PASS-loss row was `ext/standard/tests/file/bug75679.phpt`, guarded by a same-binary short-path focused PASS; run id `phpt-full-batch010-checkpoint10-regression-repair-sharded-20260529T112818Z-php-src-f97ff59-public-6f6ac240-source-783436bd` |
 | Batch011 source burst | Published | Checkpoint1 is p63 residual string byte/scalar builtins focused source proof (+21 expected direct rows); checkpoint2 is p43 copy/filesize/unlink diagnostics focused source proof (+10 expected direct rows); checkpoint3 is p43 standard file metadata/time/link focused source proof (+21 expected direct rows); checkpoint4 is p66 ReflectionProperty / ReflectionParameter / ReflectionClassConstant residual focused source proof (+10 expected direct rows); checkpoint5 is p47 `range()` focused source proof (+16 expected direct rows); burst total is +78 expected direct rows; burst1 sharded gate published 2741 / 20294 with zero latest-published PASS regressions. |
 | Batch011 burst1 sharded gate | Done | 2741 / 20294 pinned runnable PHPTs passed (13.51%); 0 regressions from the Batch010 checkpoint10 repaired PASS set; run id `phpt-full-batch011-burst1-publication-sharded-20260529T122703Z-php-src-f97ff59-public-c956a1c0-source-cb2064dc` |
+| Batch012 source batch | Active | Checkpoint1 is p31 dynamic-call/reference focused source proof (+13 expected direct rows), committed as `75833ad5`; focused PHPT 13 / 13 PASS plus formatter, `cargo check`, focused Rust tests, and `phpc` build PASS. Public score remains 2741 / 20294 until checkpoint10 full-suite gate and regression repair. |
 
 Focused PHPT history is tracked separately in
 `/home/claude/supervised-php-compiler/state/php-core-suite-focused-history.tsv`.
@@ -204,8 +205,47 @@ Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
 
-Batch011 burst1 publication gate is published. This is the current public
-project percentage.
+Batch012 source batch checkpoint1 is primary-integrated under AO supervision.
+This is focused source proof, not a public percentage change. The public PHPT
+score remains **2741 / 20294 pinned runnable PHPTs = 13.51%** until Batch012
+reaches checkpoint10, a pinned full-suite gate is parsed, latest-published PASS
+regressions are repaired or guarded, and this file is updated again.
+
+- primary source head:
+  `75833ad5 fix: broaden dynamic callback references`
+- reviewed and integration patch:
+  `/home/claude/supervised-php-compiler/state/patches/batch012-currentize-p31-dynamic-call-reference-c956a1c0-phpc47-20260529.source-tests.patch`
+- reviewed and integration patch SHA256:
+  `303e805399bc01fef17d44719bc9af195f8a27d2b61b05729c3c9b2b7848ec20`
+- reviewer gate: phpc32 recorded current-public FINAL GO on `6544d55d` /
+  source-equivalent `cb2064dc`
+- critic gate: phpc58 recorded `SAFE-FOR-INTEGRATION` for the same exact SHA
+  on `6544d55d` / source-equivalent `cb2064dc`; phpc33/phpc54/phpc55 had
+  compatible source-equivalent SAFEs on `c956a1c0`
+- handoff gate: p38 completed scratch/no-primary handoff with SHA
+  verification, clean apply/reverse-apply on public and source-equivalent
+  heads, exclusions, exact-shape audit, and consumed-scope audit
+- supervisor focused gates: PASS for clean apply, `git diff --check`,
+  `cargo fmt --all -- --check`, `cargo check -q -p phpc`, focused Rust
+  `call_user_func_builtin` tests, `cargo build -q -p phpc --bin phpc`, and the
+  focused PHP core p31 PHPT cluster with 13 PASS and 0 FAIL
+- focused PHPT log:
+  `/home/claude/supervised-php-compiler/state/logs/primary-batch012-p31-focused-phpt-6544d55d-20260529T1500.log`
+- Batch012 accounting:
+  checkpoint1 / 10 accepted, +13 expected direct PHPT rows; no broad PHPT gate
+  is authorized before checkpoint10
+
+This checkpoint broadens generalized dynamic callback/reference handling for
+selected `call_user_func()` / `call_user_func_array()` paths, scoped array
+callables, dynamic `parent` / `self` callback dispatch, invalid callback
+TypeError behavior, and builtin callback reference warnings. It excludes
+consumed Batch007 p31 non-array TypeError behavior and consumed Batch011
+string, file, reflection, and `range()` scopes. It is not keyed to PHPT
+filenames, expected output, fixture names, public hashes, batch labels, or
+checkpoint markers.
+
+Batch011 burst1 publication gate is still the current public project
+percentage.
 
 - public/source heads:
   `c956a1c0 docs: record batch011 range checkpoint` /
