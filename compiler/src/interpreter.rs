@@ -75891,6 +75891,30 @@ impl Interpreter {
                 Ok(Value::String(dirname_path(path, levels)))
             }
             "abs" => call_abs(&args, span),
+            "sin" => self.call_php_unary_float_math("sin", "sin()", &args, f64::sin, span),
+            "cos" => self.call_php_unary_float_math("cos", "cos()", &args, f64::cos, span),
+            "tan" => self.call_php_unary_float_math("tan", "tan()", &args, f64::tan, span),
+            "asin" => self.call_php_unary_float_math("asin", "asin()", &args, f64::asin, span),
+            "acos" => self.call_php_unary_float_math("acos", "acos()", &args, f64::acos, span),
+            "atan" => self.call_php_unary_float_math("atan", "atan()", &args, f64::atan, span),
+            "sinh" => self.call_php_unary_float_math("sinh", "sinh()", &args, f64::sinh, span),
+            "cosh" => self.call_php_unary_float_math("cosh", "cosh()", &args, f64::cosh, span),
+            "tanh" => self.call_php_unary_float_math("tanh", "tanh()", &args, f64::tanh, span),
+            "log10" => self.call_php_unary_float_math("log10", "log10()", &args, f64::log10, span),
+            "deg2rad" => self.call_php_unary_float_math(
+                "deg2rad",
+                "deg2rad()",
+                &args,
+                f64::to_radians,
+                span,
+            ),
+            "rad2deg" => self.call_php_unary_float_math(
+                "rad2deg",
+                "rad2deg()",
+                &args,
+                f64::to_degrees,
+                span,
+            ),
             "pow" => call_pow(&args, span),
             "bcadd" => self.call_bc_binary_decimal("bcadd", &args, span, BcBinaryDecimalOp::Add),
             "bcsub" => self.call_bc_binary_decimal("bcsub", &args, span, BcBinaryDecimalOp::Sub),
@@ -89337,6 +89361,8 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_optional_int_param("levels", 1),
             ],
         ),
+        "sin" | "cos" | "tan" | "asin" | "acos" | "atan" | "sinh" | "cosh" | "tanh" | "log10"
+        | "deg2rad" | "rad2deg" => ("float", vec![reflection_internal_param("num", "float")]),
         "bcadd" | "bcsub" | "bcmul" | "bcdiv" => (
             "string",
             vec![
@@ -92395,6 +92421,18 @@ fn is_builtin(name: &str) -> bool {
             | "pathinfo"
             | "dirname"
             | "abs"
+            | "sin"
+            | "cos"
+            | "tan"
+            | "asin"
+            | "acos"
+            | "atan"
+            | "sinh"
+            | "cosh"
+            | "tanh"
+            | "log10"
+            | "deg2rad"
+            | "rad2deg"
             | "pow"
             | "bcadd"
             | "bcsub"
@@ -93578,6 +93616,7 @@ fn builtin_global_constant_value(name: &str) -> Option<Value> {
         "PHP_INT_MIN" => Some(Value::Int(i64::MIN)),
         "INF" => Some(Value::Float(f64::INFINITY)),
         "NAN" => Some(Value::Float(f64::NAN)),
+        "M_PI" => Some(Value::Float(std::f64::consts::PI)),
         "PHP_SAPI" => Some(Value::String("cli".to_string())),
         "PHP_OS" => Some(Value::String("Linux".to_string())),
         "PHP_OS_FAMILY" => Some(Value::String("Linux".to_string())),
@@ -108358,6 +108397,71 @@ fn call_abs(args: &[Value], span: Span) -> CompileResult<Value> {
             ),
         )),
     }
+}
+
+impl Interpreter {
+    fn call_php_unary_float_math(
+        &mut self,
+        arity_name: &'static str,
+        function: &'static str,
+        args: &[Value],
+        operation: fn(f64) -> f64,
+        span: Span,
+    ) -> CompileResult<Value> {
+        expect_arity(arity_name, args, 1, span)?;
+        let number = self.php_math_float_argument(function, &args[0], span)?;
+        Ok(Value::Float(operation(number)))
+    }
+
+    fn php_math_float_argument(
+        &mut self,
+        function: &'static str,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<f64> {
+        match value {
+            Value::Null => {
+                self.emit_display_diagnostic(
+                    "Deprecated",
+                    PHP_E_DEPRECATED,
+                    format!(
+                        "{function}: Passing null to parameter #1 ($num) of type float is deprecated"
+                    ),
+                    span,
+                )?;
+                Ok(0.0)
+            }
+            Value::Bool(value) => Ok(f64::from(u8::from(*value))),
+            Value::Int(value) => Ok(*value as f64),
+            Value::Float(value) => Ok(*value),
+            Value::String(value) => parse_sprintf_numeric_string(value)
+                .ok_or_else(|| php_math_argument_type_error(function, "string", span)),
+            Value::BinaryString(value) => std::str::from_utf8(value)
+                .ok()
+                .and_then(parse_sprintf_numeric_string)
+                .ok_or_else(|| php_math_argument_type_error(function, "string", span)),
+            Value::Array(_) | Value::Object(_) | Value::Closure(_) | Value::Resource(_) => Err(
+                php_math_argument_type_error(function, php_type_error_given(value), span),
+            ),
+        }
+    }
+}
+
+fn php_math_argument_type_error(
+    function: &str,
+    given: impl Into<String>,
+    span: Span,
+) -> Diagnostic {
+    runtime_error(
+        span,
+        RuntimeError::unsupported_call(
+            function,
+            format!(
+                "Argument #1 ($num) must be of type float, {} given",
+                given.into()
+            ),
+        ),
+    )
 }
 
 fn call_pow(args: &[Value], span: Span) -> CompileResult<Value> {
