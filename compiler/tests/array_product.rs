@@ -49,27 +49,26 @@ fn array_product_requires_array_argument() {
 }
 
 #[test]
-fn array_product_rejects_non_numeric_strings_until_warning_recovery_exists() {
-    let error = runtime_error("<?php\n$items = [\"ok\", \"abc\"];\necho array_product($items);\n");
+fn array_product_warns_for_non_numeric_strings() {
+    let execution =
+        run_source("<?php\n$items = [\"ok\", \"abc\"];\necho array_product($items);\n").unwrap();
 
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 6);
     assert_eq!(
-        error.message,
-        "unsupported call array_product(): values must be numeric in the current subset, got non-numeric string"
+        execution.stdout,
+        "Warning: array_product(): Multiplication is not supported on type string in Command line code on line 3\n\nWarning: array_product(): Multiplication is not supported on type string in Command line code on line 3\n0"
     );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
-fn array_product_rejects_non_scalar_values() {
-    let error = runtime_error("<?php\n$items = [[]];\necho array_product($items);\n");
+fn array_product_warns_for_non_scalar_values() {
+    let execution = run_source("<?php\n$items = [[]];\necho array_product($items);\n").unwrap();
 
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 6);
     assert_eq!(
-        error.message,
-        "unsupported call array_product(): values must be numeric scalar in the current subset, got array"
+        execution.stdout,
+        "Warning: array_product(): Multiplication is not supported on type array in Command line code on line 3\n1"
     );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

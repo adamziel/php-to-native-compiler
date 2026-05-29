@@ -476,6 +476,76 @@ fclose($append);
 }
 
 #[test]
+fn local_file_fopen_modes_report_resource_type_and_direction_notices() {
+    let path = temp_stream_path("phpc-fopen-mode-matrix.txt");
+    fs::write(&path, "line\nline of text\nli").unwrap();
+    let source = format!(
+        r#"<?php
+$path = "{}";
+$read = fopen($path, "r");
+echo get_resource_type($read);
+echo "|";
+echo fwrite($read, "abcdefghij\nmnopqrst\tuvwxyz\n0123456789") === false ? "false" : "written";
+echo "|";
+fclose($read);
+echo get_resource_type($read);
+echo "|";
+try {{
+    ftell($read);
+}} catch (TypeError $e) {{
+    echo $e->getMessage();
+}}
+echo "|";
+try {{
+    feof($read);
+}} catch (TypeError $e) {{
+    echo $e->getMessage();
+}}
+echo "|";
+$write = fopen($path, "w");
+echo get_resource_type($write);
+echo "|";
+echo fwrite($write, "abcdefghij\nmnopqrst\tuvwxyz\n0123456789");
+echo "|";
+rewind($write);
+echo fread($write, 100) === false ? "false" : "read";
+echo "|";
+echo ftell($write);
+echo "|";
+fclose($write);
+echo get_resource_type($write);
+"#,
+        path.display()
+    );
+    let execution = run_source(&source).unwrap();
+
+    assert!(
+        execution.stdout.contains(
+            "stream|\nNotice: fwrite(): Write of 37 bytes failed with errno=9 Bad file descriptor"
+        ),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution.stdout.contains(
+            "\nfalse|Unknown|ftell(): Argument #1 ($stream) must be an open stream resource|feof(): Argument #1 ($stream) must be an open stream resource|stream|37|"
+        ),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution.stdout.contains(
+            "\nNotice: fread(): Read of 8192 bytes failed with errno=9 Bad file descriptor"
+        ),
+        "{}",
+        execution.stdout
+    );
+    assert!(execution.stdout.ends_with("\nfalse|0|Unknown"));
+    assert_eq!(execution.stderr, "");
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn local_file_url_stream_resources_read_utf8_contents() {
     let path = temp_stream_path("phpc-file-url-stream-resource.txt");
     fs::write(&path, "file-url-stream").expect("temporary stream file can be seeded");

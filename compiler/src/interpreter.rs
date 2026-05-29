@@ -211,6 +211,7 @@ struct Interpreter {
     reflection_compound_types: HashMap<i64, ReflectionCompoundTypeState>,
     spl_object_storages: HashMap<i64, SplObjectStorageState>,
     spl_doubly_linked_lists: HashMap<i64, SplDoublyLinkedListState>,
+    date_time_objects: HashMap<i64, BoundedDateTimeObjectState>,
     source_file: Option<String>,
     main_source_file: Option<String>,
     max_execution_steps: Option<usize>,
@@ -495,6 +496,12 @@ impl SplDoublyLinkedListState {
             active_lifo: iterator_mode & SPL_DLL_IT_MODE_LIFO != 0,
         }
     }
+}
+
+#[derive(Debug, Clone)]
+struct BoundedDateTimeObjectState {
+    timestamp: i64,
+    timezone: BoundedTimezone,
 }
 
 #[derive(Debug, Clone)]
@@ -10035,6 +10042,12 @@ impl Interpreter {
             }
         }
 
+        let ini_values = phpc_phpt_ini_overrides_from_env();
+        let error_reporting_mask = ini_values
+            .get("error_reporting")
+            .and_then(|value| parse_ini_error_reporting_mask(value))
+            .unwrap_or(PHP_E_ALL);
+
         let mut interpreter = Self {
             functions,
             function_source_files,
@@ -10068,10 +10081,10 @@ impl Interpreter {
             generator_states: HashMap::new(),
             active_generator_yields: Vec::new(),
             global_symbols: Rc::new(RefCell::new(HashMap::new())),
-            error_reporting_mask: PHP_E_ALL,
+            error_reporting_mask,
             error_control_suppression_depth: 0,
             ignore_user_abort: false,
-            ini_values: phpc_phpt_ini_overrides_from_env(),
+            ini_values,
             opcache_file_cache_paths: HashSet::new(),
             error_handlers: Vec::new(),
             error_handler_active: false,
@@ -10111,6 +10124,7 @@ impl Interpreter {
             reflection_compound_types: HashMap::new(),
             spl_object_storages: HashMap::new(),
             spl_doubly_linked_lists: HashMap::new(),
+            date_time_objects: HashMap::new(),
             main_source_file: source_file.clone(),
             source_file,
             max_execution_steps: options.max_execution_steps,
@@ -10279,6 +10293,34 @@ impl Interpreter {
         } else {
             SPL_DLL_IT_MODE_FIFO
         }
+    }
+
+    fn is_datetimezone_class_id(&self, class_id: ClassId) -> bool {
+        self.classes
+            .lookup_class_id("DateTimeZone")
+            .is_some_and(|timezone_id| {
+                class_id == timezone_id || self.classes.is_subclass_of(class_id, timezone_id)
+            })
+    }
+
+    fn resolved_method_is_core_datetimezone(&self, class_id: ClassId) -> bool {
+        self.classes
+            .lookup_class_id("DateTimeZone")
+            .is_some_and(|timezone_id| class_id == timezone_id)
+    }
+
+    fn is_datetime_class_id(&self, class_id: ClassId) -> bool {
+        self.classes
+            .lookup_class_id("DateTime")
+            .is_some_and(|datetime_id| {
+                class_id == datetime_id || self.classes.is_subclass_of(class_id, datetime_id)
+            })
+    }
+
+    fn resolved_method_is_core_datetime(&self, class_id: ClassId) -> bool {
+        self.classes
+            .lookup_class_id("DateTime")
+            .is_some_and(|datetime_id| class_id == datetime_id)
     }
 
     fn by_reference_foreach_variable_root(
@@ -14332,6 +14374,614 @@ impl Interpreter {
                 )),
             )),
         }
+    }
+
+    fn create_datetimezone_object_from_name(
+        &mut self,
+        name: &str,
+        span: Span,
+    ) -> CompileResult<PhpObject> {
+        let class_id = self
+            .classes
+            .lookup_class_id("DateTimeZone")
+            .ok_or_else(|| runtime_error(span, RuntimeError::undefined_class("DateTimeZone")))?;
+        let object_id = self.allocate_object_id();
+        let class = self
+            .classes
+            .get(class_id)
+            .expect("DateTimeZone class id should resolve");
+        let object = PhpObject::from_class_with_relationship_metadata_with_id(
+            class,
+            &[],
+            Vec::new(),
+            Vec::new(),
+            object_id,
+        );
+        self.assign_datetimezone_object_name(&object, name, span)?;
+        Ok(object)
+    }
+
+    fn initialize_datetimezone_object(
+        &mut self,
+        object: &PhpObject,
+        args: &[Expr],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<()> {
+        expect_expr_arity("DateTimeZone::__construct", args.len(), 1, span)?;
+        let value = self.evaluate(&args[0], scope)?;
+        let name = match value {
+            Value::String(value) => value,
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_object_instantiation(
+                        object.class_name().to_string(),
+                        format!(
+                            "DateTimeZone name must be string in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+        };
+        self.assign_datetimezone_object_name(object, &name, span)
+    }
+
+    fn assign_datetimezone_object_name(
+        &self,
+        object: &PhpObject,
+        name: &str,
+        span: Span,
+    ) -> CompileResult<()> {
+        let (timezone_type, timezone_name) =
+            bounded_timezone_object_parts(name).ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "DateTimeZone::__construct()",
+                        format!(
+                            "timezone identifier {name} is not implemented in the current subset"
+                        ),
+                    ),
+                )
+            })?;
+        object
+            .write_public_property("timezone_type", Value::Int(timezone_type))
+            .map_err(|error| runtime_error(span, error))?;
+        object
+            .write_public_property("timezone", Value::String(timezone_name))
+            .map_err(|error| runtime_error(span, error))?;
+        Ok(())
+    }
+
+    fn datetimezone_name(
+        object: &PhpObject,
+        function: impl Into<String>,
+        span: Span,
+    ) -> CompileResult<String> {
+        match object.read_public_property("timezone") {
+            Ok(Value::String(name)) => Ok(name),
+            _ => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function,
+                    "DateTimeZone object is not initialized in the current subset",
+                ),
+            )),
+        }
+    }
+
+    fn datetimezone_argument(
+        &self,
+        function: &'static str,
+        args: &[Value],
+        index: usize,
+        span: Span,
+    ) -> CompileResult<PhpObject> {
+        match args.get(index) {
+            Some(Value::Object(object)) if object.is_instance_of_class_name("DateTimeZone") => {
+                Ok(object.clone())
+            }
+            Some(other) => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function,
+                    format!(
+                        "Argument #{} must be a DateTimeZone object, {} given",
+                        index + 1,
+                        other.type_name()
+                    ),
+                ),
+            )),
+            None => Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    function,
+                    ArityExpectation::AtLeast(index + 1),
+                    args.len(),
+                ),
+            )),
+        }
+    }
+
+    fn call_datetimezone_method(
+        &mut self,
+        object: PhpObject,
+        method_name: &str,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        match method_name.to_ascii_lowercase().as_str() {
+            "__construct" => {
+                self.initialize_datetimezone_object(&object, args, span, caller_scope)?;
+                Ok(Value::Null)
+            }
+            "getname" => {
+                expect_expr_arity("DateTimeZone::getName", args.len(), 0, span)?;
+                Self::datetimezone_name(&object, "DateTimeZone::getName()", span).map(Value::String)
+            }
+            "getoffset" => {
+                expect_expr_arity("DateTimeZone::getOffset", args.len(), 1, span)?;
+                let value = self.evaluate(&args[0], caller_scope)?;
+                let datetime = match value {
+                    Value::Object(object) if object.is_instance_of_class_name("DateTime") => object,
+                    other => {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "DateTimeZone::getOffset()",
+                                format!(
+                                    "Argument #1 ($datetime) must be DateTime in the current subset, got {}",
+                                    other.type_name()
+                                ),
+                            ),
+                        ));
+                    }
+                };
+                let state = self.date_time_objects.get(&datetime.id()).ok_or_else(|| {
+                    runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "DateTimeZone::getOffset()",
+                            "DateTime object is not initialized in the current subset",
+                        ),
+                    )
+                })?;
+                let name = Self::datetimezone_name(&object, "DateTimeZone::getOffset()", span)?;
+                let timezone = bounded_timezone_from_name(&name).ok_or_else(|| {
+                    runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "DateTimeZone::getOffset()",
+                            format!("timezone {name} is not implemented in the current subset"),
+                        ),
+                    )
+                })?;
+                Ok(Value::Int(timezone.offset_at_timestamp(state.timestamp)))
+            }
+            "gettransitions" => {
+                if args.len() > 2 {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::arity_mismatch(
+                            "DateTimeZone::getTransitions()",
+                            ArityExpectation::Between { min: 0, max: 2 },
+                            args.len(),
+                        ),
+                    ));
+                }
+                let values = args
+                    .iter()
+                    .map(|arg| self.evaluate(arg, caller_scope))
+                    .collect::<CompileResult<Vec<_>>>()?;
+                let start = optional_date_int_arg(
+                    "DateTimeZone::getTransitions()",
+                    values.first(),
+                    "timestampBegin",
+                    span,
+                )?
+                .unwrap_or(i64::MIN / 2);
+                let end = optional_date_int_arg(
+                    "DateTimeZone::getTransitions()",
+                    values.get(1),
+                    "timestampEnd",
+                    span,
+                )?
+                .unwrap_or(i64::MAX / 2);
+                let name =
+                    Self::datetimezone_name(&object, "DateTimeZone::getTransitions()", span)?;
+                Ok(Value::Array(bounded_timezone_transitions_array(
+                    &name, start, end,
+                )))
+            }
+            _ => Err(runtime_error(
+                span,
+                RuntimeError::undefined_function(format!("DateTimeZone::{method_name}()")),
+            )),
+        }
+    }
+
+    fn initialize_datetime_object(
+        &mut self,
+        object: &PhpObject,
+        args: &[Expr],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<()> {
+        if args.len() > 1 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "DateTime::__construct()",
+                    ArityExpectation::Between { min: 0, max: 1 },
+                    args.len(),
+                ),
+            ));
+        }
+        let value = args
+            .first()
+            .map(|expr| self.evaluate(expr, scope))
+            .transpose()?;
+        self.initialize_datetime_object_from_value(object, value.as_ref(), span)
+    }
+
+    fn initialize_datetime_object_from_value(
+        &mut self,
+        object: &PhpObject,
+        value: Option<&Value>,
+        span: Span,
+    ) -> CompileResult<()> {
+        let default_timezone = bounded_timezone_from_name(&self.default_timezone)
+            .expect("stored default timezone should be bounded");
+        let (timestamp, timezone) = match value {
+            Some(Value::Null) | None => (self.request_time, default_timezone),
+            Some(Value::String(value)) if value.eq_ignore_ascii_case("now") => {
+                (self.request_time, default_timezone)
+            }
+            Some(Value::String(value)) => {
+                if let Some(zone) = bounded_timezone_from_name(value) {
+                    (self.request_time, zone)
+                } else {
+                    let timezone = bounded_datetime_timezone_hint(value, &default_timezone);
+                    let timestamp = parse_bounded_strtotime(value, &default_timezone)
+                        .unwrap_or(self.request_time);
+                    (timestamp, timezone)
+                }
+            }
+            Some(other) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_object_instantiation(
+                        object.class_name().to_string(),
+                        format!(
+                            "DateTime time argument must be string or null in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+        };
+        self.assign_datetime_object_state(object, timestamp, timezone, span)
+    }
+
+    fn assign_datetime_object_state(
+        &mut self,
+        object: &PhpObject,
+        timestamp: i64,
+        timezone: BoundedTimezone,
+        span: Span,
+    ) -> CompileResult<()> {
+        let (timezone_type, timezone_name) =
+            bounded_timezone_object_parts(&timezone.name).unwrap_or((3, timezone.name.clone()));
+        let date = format!(
+            "{}.000000",
+            format_bounded_date("Y-m-d H:i:s", timestamp, &timezone)
+        );
+        object
+            .write_public_property("date", Value::String(date))
+            .map_err(|error| runtime_error(span, error))?;
+        object
+            .write_public_property("timezone_type", Value::Int(timezone_type))
+            .map_err(|error| runtime_error(span, error))?;
+        object
+            .write_public_property("timezone", Value::String(timezone_name))
+            .map_err(|error| runtime_error(span, error))?;
+        self.date_time_objects.insert(
+            object.id(),
+            BoundedDateTimeObjectState {
+                timestamp,
+                timezone,
+            },
+        );
+        Ok(())
+    }
+
+    fn create_datetime_object_from_values(
+        &mut self,
+        args: &[Value],
+        span: Span,
+    ) -> CompileResult<PhpObject> {
+        let class_id = self
+            .classes
+            .lookup_class_id("DateTime")
+            .ok_or_else(|| runtime_error(span, RuntimeError::undefined_class("DateTime")))?;
+        let object_id = self.allocate_object_id();
+        let class = self
+            .classes
+            .get(class_id)
+            .expect("DateTime class id should resolve");
+        let object = PhpObject::from_class_with_relationship_metadata_with_id(
+            class,
+            &[],
+            Vec::new(),
+            Vec::new(),
+            object_id,
+        );
+        self.initialize_datetime_object_from_value(&object, args.first(), span)?;
+        Ok(object)
+    }
+
+    fn datetime_object_argument(
+        &self,
+        function: &'static str,
+        args: &[Value],
+        index: usize,
+        span: Span,
+    ) -> CompileResult<PhpObject> {
+        match args.get(index) {
+            Some(Value::Object(object)) if object.is_instance_of_class_name("DateTime") => {
+                Ok(object.clone())
+            }
+            Some(other) => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function,
+                    format!(
+                        "Argument #{} must be a DateTime object, {} given",
+                        index + 1,
+                        other.type_name()
+                    ),
+                ),
+            )),
+            None => Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    function,
+                    ArityExpectation::AtLeast(index + 1),
+                    args.len(),
+                ),
+            )),
+        }
+    }
+
+    fn call_datetime_method(
+        &mut self,
+        object: PhpObject,
+        method_name: &str,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        match method_name.to_ascii_lowercase().as_str() {
+            "__construct" => {
+                self.initialize_datetime_object(&object, args, span, caller_scope)?;
+                Ok(Value::Null)
+            }
+            "format" => {
+                expect_expr_arity("DateTime::format", args.len(), 1, span)?;
+                let value = self.evaluate(&args[0], caller_scope)?;
+                let Value::String(format) = value else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "DateTime::format()",
+                            format!(
+                                "format argument must be string in the current subset, got {}",
+                                value.type_name()
+                            ),
+                        ),
+                    ));
+                };
+                let state = self.date_time_objects.get(&object.id()).ok_or_else(|| {
+                    runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "DateTime::format()",
+                            "DateTime object is not initialized in the current subset",
+                        ),
+                    )
+                })?;
+                Ok(Value::String(format_bounded_date(
+                    &format,
+                    state.timestamp,
+                    &state.timezone,
+                )))
+            }
+            _ => Err(runtime_error(
+                span,
+                RuntimeError::undefined_function(format!("DateTime::{method_name}()")),
+            )),
+        }
+    }
+
+    fn call_date_create(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if args.len() > 1 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "date_create()",
+                    ArityExpectation::Between { min: 0, max: 1 },
+                    args.len(),
+                ),
+            ));
+        }
+        let object = self.create_datetime_object_from_values(args, span)?;
+        self.track_allocated_object(&object);
+        Ok(Value::Object(object))
+    }
+
+    fn call_date_format(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("date_format", args, 2, span)?;
+        let object = self.datetime_object_argument("date_format()", args, 0, span)?;
+        let format = expect_date_format_arg("date_format()", &args[1], span)?;
+        let state = self.date_time_objects.get(&object.id()).ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "date_format()",
+                    "DateTime object is not initialized in the current subset",
+                ),
+            )
+        })?;
+        Ok(Value::String(format_bounded_date(
+            &format,
+            state.timestamp,
+            &state.timezone,
+        )))
+    }
+
+    fn call_date_offset_get(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("date_offset_get", args, 1, span)?;
+        let object = self.datetime_object_argument("date_offset_get()", args, 0, span)?;
+        let state = self.date_time_objects.get(&object.id()).ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "date_offset_get()",
+                    "DateTime object is not initialized in the current subset",
+                ),
+            )
+        })?;
+        Ok(Value::Int(
+            state.timezone.offset_at_timestamp(state.timestamp),
+        ))
+    }
+
+    fn call_date_timezone_get(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("date_timezone_get", args, 1, span)?;
+        let object = self.datetime_object_argument("date_timezone_get()", args, 0, span)?;
+        let timezone_name = self
+            .date_time_objects
+            .get(&object.id())
+            .map(|state| state.timezone.name.clone())
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "date_timezone_get()",
+                        "DateTime object is not initialized in the current subset",
+                    ),
+                )
+            })?;
+        let timezone_object = self.create_datetimezone_object_from_name(&timezone_name, span)?;
+        self.track_allocated_object(&timezone_object);
+        Ok(Value::Object(timezone_object))
+    }
+
+    fn call_timezone_open(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("timezone_open", args, 1, span)?;
+        let Value::String(name) = &args[0] else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "timezone_open()",
+                    format!(
+                        "timezone argument must be string in the current subset, got {}",
+                        args[0].type_name()
+                    ),
+                ),
+            ));
+        };
+        match self.create_datetimezone_object_from_name(name, span) {
+            Ok(object) => {
+                self.track_allocated_object(&object);
+                Ok(Value::Object(object))
+            }
+            Err(_) => Ok(Value::Bool(false)),
+        }
+    }
+
+    fn call_timezone_name_get(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("timezone_name_get", args, 1, span)?;
+        let object = self.datetimezone_argument("timezone_name_get()", args, 0, span)?;
+        Self::datetimezone_name(&object, "timezone_name_get()", span).map(Value::String)
+    }
+
+    fn call_timezone_offset_get(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("timezone_offset_get", args, 2, span)?;
+        let timezone_object = self.datetimezone_argument("timezone_offset_get()", args, 0, span)?;
+        let datetime_object = match &args[1] {
+            Value::Object(object) if object.is_instance_of_class_name("DateTime") => object,
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "timezone_offset_get()",
+                        format!(
+                            "Argument #2 ($datetime) must be DateTime in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+        };
+        let state = self
+            .date_time_objects
+            .get(&datetime_object.id())
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "timezone_offset_get()",
+                        "DateTime object is not initialized in the current subset",
+                    ),
+                )
+            })?;
+        let name = Self::datetimezone_name(&timezone_object, "timezone_offset_get()", span)?;
+        let timezone = bounded_timezone_from_name(&name).ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "timezone_offset_get()",
+                    format!("timezone {name} is not implemented in the current subset"),
+                ),
+            )
+        })?;
+        Ok(Value::Int(timezone.offset_at_timestamp(state.timestamp)))
+    }
+
+    fn call_timezone_transitions_get(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if args.is_empty() || args.len() > 3 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "timezone_transitions_get()",
+                    ArityExpectation::Between { min: 1, max: 3 },
+                    args.len(),
+                ),
+            ));
+        }
+        let object = self.datetimezone_argument("timezone_transitions_get()", args, 0, span)?;
+        let start = optional_date_int_arg(
+            "timezone_transitions_get()",
+            args.get(1),
+            "timestampBegin",
+            span,
+        )?
+        .unwrap_or(i64::MIN / 2);
+        let end = optional_date_int_arg(
+            "timezone_transitions_get()",
+            args.get(2),
+            "timestampEnd",
+            span,
+        )?
+        .unwrap_or(i64::MAX / 2);
+        let name = Self::datetimezone_name(&object, "timezone_transitions_get()", span)?;
+        Ok(Value::Array(bounded_timezone_transitions_array(
+            &name, start, end,
+        )))
     }
 
     fn execute_foreach_iterator_by_value(
@@ -18407,6 +19057,16 @@ impl Interpreter {
             constructor_is_static,
         )) = constructor
         else {
+            if self.is_datetimezone_class_id(class_id) {
+                self.initialize_datetimezone_object(&object, args, span, scope)?;
+                self.track_allocated_object(&object);
+                return Ok(Value::Object(object));
+            }
+            if self.is_datetime_class_id(class_id) {
+                self.initialize_datetime_object(&object, args, span, scope)?;
+                self.track_allocated_object(&object);
+                return Ok(Value::Object(object));
+            }
             if self.is_exception_class_or_subclass(class_id) {
                 self.initialize_core_exception_object(
                     &object,
@@ -18450,6 +19110,18 @@ impl Interpreter {
 
         if self.resolved_method_is_core_spl_doubly_linked_list(constructor_class_id) {
             expect_expr_arity("SplDoublyLinkedList::__construct", args.len(), 0, span)?;
+            self.track_allocated_object(&object);
+            return Ok(Value::Object(object));
+        }
+
+        if self.resolved_method_is_core_datetimezone(constructor_class_id) {
+            self.initialize_datetimezone_object(&object, args, span, scope)?;
+            self.track_allocated_object(&object);
+            return Ok(Value::Object(object));
+        }
+
+        if self.resolved_method_is_core_datetime(constructor_class_id) {
+            self.initialize_datetime_object(&object, args, span, scope)?;
             self.track_allocated_object(&object);
             return Ok(Value::Object(object));
         }
@@ -19091,6 +19763,9 @@ impl Interpreter {
         if let Some(state) = self.spl_doubly_linked_lists.get(&object.id()).cloned() {
             self.spl_doubly_linked_lists.insert(clone.id(), state);
             self.sync_spl_doubly_linked_list_object_properties(&clone, span)?;
+        }
+        if let Some(state) = self.date_time_objects.get(&object.id()).cloned() {
+            self.date_time_objects.insert(clone.id(), state);
         }
 
         if let Some((class_id, class_name, method_name, visibility, is_static)) =
@@ -32842,25 +33517,50 @@ impl Interpreter {
         }
     }
 
-    fn evaluate_global_constant(&self, name: &str, span: Span) -> CompileResult<Value> {
+    fn evaluate_global_constant(&mut self, name: &str, span: Span) -> CompileResult<Value> {
         if let Some(exact_name) = name.strip_prefix('\\') {
-            return self
+            let value = self
                 .constants
                 .get(exact_name)
-                .ok_or_else(|| runtime_error(span, RuntimeError::undefined_constant(exact_name)));
+                .ok_or_else(|| runtime_error(span, RuntimeError::undefined_constant(exact_name)))?;
+            self.emit_builtin_global_constant_deprecation(exact_name, span)?;
+            return Ok(value);
         }
 
         if let Some(value) = self.constants.get(name) {
+            self.emit_builtin_global_constant_deprecation(name, span)?;
             return Ok(value);
         }
 
         if let Some((_, fallback_name)) = name.rsplit_once('\\') {
             if let Some(value) = self.constants.get(fallback_name) {
+                self.emit_builtin_global_constant_deprecation(fallback_name, span)?;
                 return Ok(value);
             }
         }
 
         Err(runtime_error(span, RuntimeError::undefined_constant(name)))
+    }
+
+    fn emit_builtin_global_constant_deprecation(
+        &mut self,
+        name: &str,
+        span: Span,
+    ) -> CompileResult<()> {
+        if matches!(
+            name,
+            "SUNFUNCS_RET_TIMESTAMP" | "SUNFUNCS_RET_STRING" | "SUNFUNCS_RET_DOUBLE"
+        ) {
+            self.emit_display_diagnostic(
+                "Deprecated",
+                PHP_E_DEPRECATED,
+                format!(
+                    "Constant {name} is deprecated since 8.4, as date_sunrise() and date_sunset() were deprecated in 8.1"
+                ),
+                span,
+            )?;
+        }
+        Ok(())
     }
 
     fn evaluate_array(
@@ -41023,6 +41723,16 @@ impl Interpreter {
                 .call_directory_method(object, method_name, args, span)
                 .map(|value| (value, None));
         }
+        if object.is_instance_of_class_name("DateTimeZone") {
+            return self
+                .call_datetimezone_method(object, method_name, args, span, caller_scope)
+                .map(|value| (value, None));
+        }
+        if object.is_instance_of_class_name("DateTime") {
+            return self
+                .call_datetime_method(object, method_name, args, span, caller_scope)
+                .map(|value| (value, None));
+        }
         if object.is_instance_of_class_name("ReflectionClass") {
             return self
                 .call_reflection_class_method(object, method_name, args, span, caller_scope)
@@ -45694,6 +46404,12 @@ impl Interpreter {
                 values.push(self.evaluate_by_value_argument_with_cow_source(arg, caller_scope)?);
             }
             return call_timezone_identifiers_list(&values, span);
+        }
+        if receiver_class_name.eq_ignore_ascii_case("DateTimeZone")
+            && method_name.eq_ignore_ascii_case("listAbbreviations")
+        {
+            expect_expr_arity("DateTimeZone::listAbbreviations", args.len(), 0, span)?;
+            return Ok(Value::Array(bounded_timezone_abbreviations_array()));
         }
         if self.is_reflection_method_class_id(class_id)
             && method_name.eq_ignore_ascii_case("createFromMethodName")
@@ -67159,9 +67875,11 @@ impl Interpreter {
             {
                 Ok(file) => file,
                 Err(error) => {
-                    self.emit_warning(
-                        "fopen()",
-                        format!("{path}: Failed to open stream: {error}"),
+                    self.emit_display_warning(
+                        format!(
+                            "fopen({path}): Failed to open stream: {}",
+                            php_filesystem_open_error_message(&error)
+                        ),
                         span,
                     )?;
                     return Ok(Value::Bool(false));
@@ -69357,6 +70075,14 @@ impl Interpreter {
         value: &Value,
         span: Span,
     ) -> CompileResult<&mut StreamResource> {
+        let id = self.stream_resource_id(function, value, span)?;
+        Ok(self
+            .streams
+            .get_mut(&id)
+            .expect("stream_resource_id validates the resource exists"))
+    }
+
+    fn stream_resource_id(&self, function: &str, value: &Value, span: Span) -> CompileResult<i64> {
         let Value::Resource(id) = value else {
             return Err(runtime_error(
                 span,
@@ -69369,15 +70095,53 @@ impl Interpreter {
                 ),
             ));
         };
-        self.streams.get_mut(id).ok_or_else(|| {
-            runtime_error(
+        if !self.streams.contains_key(id) {
+            return Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
                     format!("{function}()"),
-                    "closed or unknown stream resource in the current subset",
+                    format!("{function}(): Argument #1 ($stream) must be an open stream resource"),
                 ),
-            )
-        })
+            ));
+        }
+        Ok(*id)
+    }
+
+    fn stream_is_readable(&self, id: i64) -> bool {
+        match self
+            .streams
+            .get(&id)
+            .expect("stream_resource_id validates the resource exists")
+        {
+            StreamResource::Memory(stream) => stream.readable,
+            StreamResource::File(stream) => stream.readable,
+        }
+    }
+
+    fn stream_is_writable(&self, id: i64) -> bool {
+        match self
+            .streams
+            .get(&id)
+            .expect("stream_resource_id validates the resource exists")
+        {
+            StreamResource::Memory(stream) => stream.writable,
+            StreamResource::File(stream) => stream.writable,
+        }
+    }
+
+    fn emit_bad_file_descriptor_notice(
+        &mut self,
+        function: &str,
+        action: &str,
+        bytes: usize,
+        span: Span,
+    ) -> CompileResult<()> {
+        self.emit_display_notice(
+            format!(
+                "{function}: {action} of {bytes} bytes failed with errno=9 Bad file descriptor"
+            ),
+            span,
+        )
     }
 
     fn stream_read_to_string(
@@ -69526,17 +70290,17 @@ impl Interpreter {
             }
             None => data.as_str(),
         };
-        match self.stream_mut("fwrite", &args[0], span)? {
+        let stream_id = self.stream_resource_id("fwrite", &args[0], span)?;
+        if !self.stream_is_writable(stream_id) {
+            self.emit_bad_file_descriptor_notice("fwrite()", "Write", data.len(), span)?;
+            return Ok(Value::Bool(false));
+        }
+        match self
+            .streams
+            .get_mut(&stream_id)
+            .expect("stream_resource_id validates the resource exists")
+        {
             StreamResource::Memory(stream) => {
-                if !stream.writable {
-                    return Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            "fwrite()",
-                            "stream is not writable in the current subset",
-                        ),
-                    ));
-                }
                 if stream.append {
                     stream.position = stream.buffer.len();
                 }
@@ -69557,15 +70321,6 @@ impl Interpreter {
                 stream.eof = false;
             }
             StreamResource::File(stream) => {
-                if !stream.writable {
-                    return Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            "fwrite()",
-                            "stream is not writable in the current subset",
-                        ),
-                    ));
-                }
                 if stream.append {
                     stream.file.seek(SeekFrom::End(0)).map_err(|error| {
                         runtime_error(
@@ -69594,17 +70349,17 @@ impl Interpreter {
 
     fn call_fgetc(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("fgetc", args, 1, span)?;
-        match self.stream_mut("fgetc", &args[0], span)? {
+        let stream_id = self.stream_resource_id("fgetc", &args[0], span)?;
+        if !self.stream_is_readable(stream_id) {
+            self.emit_bad_file_descriptor_notice("fgetc()", "Read", 8192, span)?;
+            return Ok(Value::Bool(false));
+        }
+        match self
+            .streams
+            .get_mut(&stream_id)
+            .expect("stream_resource_id validates the resource exists")
+        {
             StreamResource::Memory(stream) => {
-                if !stream.readable {
-                    return Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            "fgetc()",
-                            "stream is not readable in the current subset",
-                        ),
-                    ));
-                }
                 if stream.position >= stream.buffer.len() {
                     stream.eof = true;
                     return Ok(Value::Bool(false));
@@ -69619,15 +70374,6 @@ impl Interpreter {
                 Ok(Value::String(character.to_string()))
             }
             StreamResource::File(stream) => {
-                if !stream.readable {
-                    return Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            "fgetc()",
-                            "stream is not readable in the current subset",
-                        ),
-                    ));
-                }
                 let mut buffer = [0_u8; 1];
                 let read = stream.file.read(&mut buffer).map_err(|error| {
                     runtime_error(
@@ -69693,17 +70439,17 @@ impl Interpreter {
             }
             None => None,
         };
-        match self.stream_mut("fgets", &args[0], span)? {
+        let stream_id = self.stream_resource_id("fgets", &args[0], span)?;
+        if !self.stream_is_readable(stream_id) {
+            self.emit_bad_file_descriptor_notice("fgets()", "Read", 8192, span)?;
+            return Ok(Value::Bool(false));
+        }
+        match self
+            .streams
+            .get_mut(&stream_id)
+            .expect("stream_resource_id validates the resource exists")
+        {
             StreamResource::Memory(stream) => {
-                if !stream.readable {
-                    return Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            "fgets()",
-                            "stream is not readable in the current subset",
-                        ),
-                    ));
-                }
                 if stream.position >= stream.buffer.len() {
                     stream.eof = true;
                     return Ok(Value::Bool(false));
@@ -69723,15 +70469,6 @@ impl Interpreter {
                 Ok(Value::String(stream.buffer[start..end].to_string()))
             }
             StreamResource::File(stream) => {
-                if !stream.readable {
-                    return Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            "fgets()",
-                            "stream is not readable in the current subset",
-                        ),
-                    ));
-                }
                 let mut buffer = Vec::new();
                 let limit = max_bytes.unwrap_or(usize::MAX);
                 while buffer.len() < limit {
@@ -70170,17 +70907,17 @@ impl Interpreter {
                 ));
             }
         };
-        match self.stream_mut("fread", &args[0], span)? {
+        let stream_id = self.stream_resource_id("fread", &args[0], span)?;
+        if !self.stream_is_readable(stream_id) {
+            self.emit_bad_file_descriptor_notice("fread()", "Read", 8192, span)?;
+            return Ok(Value::Bool(false));
+        }
+        match self
+            .streams
+            .get_mut(&stream_id)
+            .expect("stream_resource_id validates the resource exists")
+        {
             StreamResource::Memory(stream) => {
-                if !stream.readable {
-                    return Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            "fread()",
-                            "stream is not readable in the current subset",
-                        ),
-                    ));
-                }
                 let start = stream.position.min(stream.buffer.len());
                 let end = utf8_boundary_at_or_before(&stream.buffer, start + length);
                 stream.position = end;
@@ -70188,15 +70925,6 @@ impl Interpreter {
                 Ok(Value::String(stream.buffer[start..end].to_string()))
             }
             StreamResource::File(stream) => {
-                if !stream.readable {
-                    return Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            "fread()",
-                            "stream is not readable in the current subset",
-                        ),
-                    ));
-                }
                 let mut buffer = vec![0; length];
                 let read = stream.file.read(&mut buffer).map_err(|error| {
                     runtime_error(
@@ -73232,6 +73960,13 @@ impl Interpreter {
             "gmdate" => self.call_date(&args, span, true),
             "strftime" => self.call_strftime(&args, span, false),
             "gmstrftime" => self.call_strftime(&args, span, true),
+            "date_sunrise" => self.call_date_sunrise_sunset(&args, span, false),
+            "date_sunset" => self.call_date_sunrise_sunset(&args, span, true),
+            "date_sun_info" => self.call_date_sun_info(&args, span),
+            "date_create" => self.call_date_create(&args, span),
+            "date_format" => self.call_date_format(&args, span),
+            "date_offset_get" => self.call_date_offset_get(&args, span),
+            "date_timezone_get" => self.call_date_timezone_get(&args, span),
             "idate" => self.call_idate(&args, span),
             "checkdate" => call_checkdate(&args, span),
             "getdate" => self.call_getdate(&args, span),
@@ -73252,6 +73987,14 @@ impl Interpreter {
             "timezone_version_get" => call_timezone_version_get(&args, span),
             "timezone_identifiers_list" => call_timezone_identifiers_list(&args, span),
             "timezone_name_from_abbr" => call_timezone_name_from_abbr(&args, span),
+            "timezone_open" => self.call_timezone_open(&args, span),
+            "timezone_name_get" => self.call_timezone_name_get(&args, span),
+            "timezone_offset_get" => self.call_timezone_offset_get(&args, span),
+            "timezone_transitions_get" => self.call_timezone_transitions_get(&args, span),
+            "timezone_abbreviations_list" => {
+                expect_arity("timezone_abbreviations_list", &args, 0, span)?;
+                Ok(Value::Array(bounded_timezone_abbreviations_array()))
+            }
             "setlocale" => self.call_setlocale(&args, span),
             "getenv" => self.call_getenv(&args, span),
             "putenv" => self.call_putenv(&args, span),
@@ -73361,7 +74104,7 @@ impl Interpreter {
                             ));
                         };
 
-                        self.constants.get(normalized).ok_or_else(|| {
+                        let value = self.constants.get(normalized).ok_or_else(|| {
                             runtime_error(
                                 span,
                                 RuntimeError::unsupported_call(
@@ -73371,7 +74114,9 @@ impl Interpreter {
                                     ),
                                 ),
                             )
-                        })
+                        })?;
+                        self.emit_builtin_global_constant_deprecation(normalized, span)?;
+                        Ok(value)
                     }
                     other => Err(runtime_error(
                         span,
@@ -74345,9 +75090,7 @@ impl Interpreter {
             "array_sum" => {
                 expect_arity(name, &args, 1, span)?;
                 match &args[0] {
-                    Value::Array(array) => array
-                        .sum_values()
-                        .map_err(|error| runtime_error(span, error)),
+                    Value::Array(array) => self.call_array_sum(array, span),
                     other => Err(runtime_error(
                         span,
                         RuntimeError::unsupported_call(
@@ -74360,9 +75103,7 @@ impl Interpreter {
             "array_product" => {
                 expect_arity(name, &args, 1, span)?;
                 match &args[0] {
-                    Value::Array(array) => array
-                        .product_values()
-                        .map_err(|error| runtime_error(span, error)),
+                    Value::Array(array) => self.call_array_product(array, span),
                     other => Err(runtime_error(
                         span,
                         RuntimeError::unsupported_call(
@@ -75559,6 +76300,22 @@ impl Interpreter {
             "is_resource" => {
                 expect_arity(name, &args, 1, span)?;
                 Ok(Value::Bool(self.value_is_open_resource(&args[0])))
+            }
+            "get_resource_type" => {
+                expect_arity(name, &args, 1, span)?;
+                let Value::Resource(id) = args[0] else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "get_resource_type()",
+                            format!(
+                                "get_resource_type(): Argument #1 ($resource) must be of type resource, {} given",
+                                php_type_error_given(&args[0])
+                            ),
+                        ),
+                    ));
+                };
+                Ok(Value::String(self.resource_type_label(id).to_string()))
             }
             "get_debug_type" => {
                 expect_arity(name, &args, 1, span)?;
@@ -77535,6 +78292,107 @@ impl Interpreter {
         }
     }
 
+    fn call_array_sum(&mut self, array: &PhpArray, span: Span) -> CompileResult<Value> {
+        let mut sum = ArrayNumericNumber::Int(0);
+        for entry in array.entries() {
+            let value = self.array_numeric_value_for_sum_product(
+                "array_sum()",
+                ArrayNumericOperation::Addition,
+                entry.value_cloned(),
+                span,
+            )?;
+            sum = add_array_numeric_numbers(sum, value);
+        }
+        Ok(array_numeric_number_to_value(sum))
+    }
+
+    fn call_array_product(&mut self, array: &PhpArray, span: Span) -> CompileResult<Value> {
+        let mut product = ArrayNumericNumber::Int(1);
+        for entry in array.entries() {
+            let value = self.array_numeric_value_for_sum_product(
+                "array_product()",
+                ArrayNumericOperation::Multiplication,
+                entry.value_cloned(),
+                span,
+            )?;
+            product = multiply_array_numeric_numbers(product, value);
+        }
+        Ok(array_numeric_number_to_value(product))
+    }
+
+    fn array_numeric_value_for_sum_product(
+        &mut self,
+        callable: &'static str,
+        operation: ArrayNumericOperation,
+        value: Value,
+        span: Span,
+    ) -> CompileResult<ArrayNumericNumber> {
+        match value {
+            Value::Null => Ok(ArrayNumericNumber::Int(0)),
+            Value::Bool(false) => Ok(ArrayNumericNumber::Int(0)),
+            Value::Bool(true) => Ok(ArrayNumericNumber::Int(1)),
+            Value::Int(value) => Ok(ArrayNumericNumber::Int(value)),
+            Value::Float(value) => Ok(ArrayNumericNumber::Float(value)),
+            Value::String(value) => match parse_array_numeric_string(&value) {
+                Some(number) => Ok(number),
+                None if matches!(operation, ArrayNumericOperation::Multiplication) => {
+                    self.emit_array_numeric_unsupported_type_warning(
+                        callable, operation, "string", span,
+                    )?;
+                    Ok(ArrayNumericNumber::Int(0))
+                }
+                None => Ok(operation.unsupported_fallback()),
+            },
+            Value::BinaryString(value) => {
+                let number = std::str::from_utf8(&value)
+                    .ok()
+                    .and_then(parse_array_numeric_string)
+                    .unwrap_or(ArrayNumericNumber::Int(0));
+                Ok(number)
+            }
+            Value::Resource(id) => {
+                self.emit_array_numeric_unsupported_type_warning(
+                    callable, operation, "resource", span,
+                )?;
+                Ok(ArrayNumericNumber::Int(id))
+            }
+            Value::Object(object) => {
+                self.emit_array_numeric_unsupported_type_warning(
+                    callable,
+                    operation,
+                    object.class_name(),
+                    span,
+                )?;
+                Ok(operation.unsupported_fallback())
+            }
+            Value::Array(_) | Value::Closure(_) => {
+                self.emit_array_numeric_unsupported_type_warning(
+                    callable,
+                    operation,
+                    value.type_name(),
+                    span,
+                )?;
+                Ok(operation.unsupported_fallback())
+            }
+        }
+    }
+
+    fn emit_array_numeric_unsupported_type_warning(
+        &mut self,
+        callable: &'static str,
+        operation: ArrayNumericOperation,
+        type_name: &str,
+        span: Span,
+    ) -> CompileResult<()> {
+        self.emit_display_warning(
+            format!(
+                "{callable}: {} is not supported on type {type_name}",
+                operation.warning_gerund()
+            ),
+            span,
+        )
+    }
+
     fn call_array_reduce(&mut self, args: Vec<Value>, span: Span) -> CompileResult<Value> {
         match args.as_slice() {
             [Value::Array(array), callback] => {
@@ -77575,49 +78433,75 @@ impl Interpreter {
         initial: Value,
         span: Span,
     ) -> CompileResult<Value> {
-        let callable = self.resolve_array_reduce_callback(callback, span)?;
         let mut accumulator = initial;
 
         for entry in array.entries() {
-            accumulator = self.call_callable_with_values(
-                callable.clone(),
-                vec![accumulator, entry.value_cloned()],
-                span,
-            )?;
+            accumulator = self
+                .call_array_reduce_callback_with_values(
+                    callback,
+                    vec![accumulator, entry.value_cloned()],
+                    span,
+                )
+                .map_err(array_reduce_callback_diagnostic)?;
         }
 
         Ok(accumulator)
     }
 
-    fn resolve_array_reduce_callback(
-        &self,
+    fn call_array_reduce_callback_with_values(
+        &mut self,
         callback: &Value,
+        args: Vec<Value>,
         span: Span,
-    ) -> CompileResult<Callable> {
-        let callback_name = match callback {
-            Value::String(name) => name,
-            other => {
-                return Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
+    ) -> CompileResult<Value> {
+        match callback {
+            Value::String(callback_name) => {
+                if let Some((class_name, method_name)) =
+                    static_method_callable_string(callback_name)
+                {
+                    let callback =
+                        static_method_array_callable_value(class_name, method_name, span)?;
+                    return self.call_array_callable_with_values_with_context(
+                        &callback,
+                        args,
+                        span,
+                        false,
                         "array_reduce()",
-                        format!(
-                            "callback must evaluate to string, got {}",
-                            other.type_name()
-                        ),
-                    ),
-                ));
+                    );
+                }
+
+                if let Some(error) = forbidden_dynamic_builtin_call_error(callback_name, span) {
+                    return Err(error);
+                }
+                let callable = self.lookup_function(callback_name).ok_or_else(|| {
+                    runtime_error(
+                        span,
+                        RuntimeError::undefined_function(callable_name(callback_name)),
+                    )
+                })?;
+                self.call_callable_with_values(callable, args, span)
             }
-        };
-        if let Some(error) = forbidden_dynamic_builtin_call_error(callback_name, span) {
-            return Err(error);
-        }
-        self.lookup_function(callback_name).ok_or_else(|| {
-            runtime_error(
+            Value::Array(callback) => self.call_array_callable_with_values_with_context(
+                callback,
+                args,
                 span,
-                RuntimeError::undefined_function(callable_name(callback_name)),
-            )
-        })
+                false,
+                "array_reduce()",
+            ),
+            Value::Closure(closure) => {
+                self.invoke_closure_value(closure.clone(), args, span, "array_reduce()")
+            }
+            other => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "array_reduce()",
+                    format!(
+                        "callback must evaluate to string, closure, or array callable in the current subset, got {}",
+                        other.type_name()
+                    ),
+                ),
+            )),
+        }
     }
 
     fn call_array_filter(&mut self, args: Vec<Value>, span: Span) -> CompileResult<Value> {
@@ -80465,6 +81349,91 @@ fn cast_binary_string_to_int(value: &[u8], span: Span) -> CompileResult<Value> {
     match std::str::from_utf8(value) {
         Ok(value) => cast_string_to_int(value, span),
         Err(_) => Ok(Value::Int(0)),
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum ArrayNumericNumber {
+    Int(i64),
+    Float(f64),
+}
+
+impl ArrayNumericNumber {
+    fn as_float(self) -> f64 {
+        match self {
+            Self::Int(value) => value as f64,
+            Self::Float(value) => value,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum ArrayNumericOperation {
+    Addition,
+    Multiplication,
+}
+
+impl ArrayNumericOperation {
+    fn warning_gerund(self) -> &'static str {
+        match self {
+            Self::Addition => "Addition",
+            Self::Multiplication => "Multiplication",
+        }
+    }
+
+    fn unsupported_fallback(self) -> ArrayNumericNumber {
+        match self {
+            Self::Addition => ArrayNumericNumber::Int(0),
+            Self::Multiplication => ArrayNumericNumber::Int(1),
+        }
+    }
+}
+
+fn parse_array_numeric_string(value: &str) -> Option<ArrayNumericNumber> {
+    let trimmed = value.trim_matches(|ch: char| ch.is_ascii_whitespace());
+    if trimmed.is_empty() || !starts_with_numeric_prefix(trimmed) {
+        return None;
+    }
+
+    let number = leading_numeric_prefix(trimmed).unwrap_or(trimmed);
+    if !number.contains(['.', 'e', 'E']) {
+        if let Ok(value) = number.parse::<i64>() {
+            return Some(ArrayNumericNumber::Int(value));
+        }
+    }
+    number.parse::<f64>().ok().map(ArrayNumericNumber::Float)
+}
+
+fn add_array_numeric_numbers(
+    left: ArrayNumericNumber,
+    right: ArrayNumericNumber,
+) -> ArrayNumericNumber {
+    match (left, right) {
+        (ArrayNumericNumber::Int(left), ArrayNumericNumber::Int(right)) => left
+            .checked_add(right)
+            .map(ArrayNumericNumber::Int)
+            .unwrap_or_else(|| ArrayNumericNumber::Float(left as f64 + right as f64)),
+        (left, right) => ArrayNumericNumber::Float(left.as_float() + right.as_float()),
+    }
+}
+
+fn multiply_array_numeric_numbers(
+    left: ArrayNumericNumber,
+    right: ArrayNumericNumber,
+) -> ArrayNumericNumber {
+    match (left, right) {
+        (ArrayNumericNumber::Int(left), ArrayNumericNumber::Int(right)) => left
+            .checked_mul(right)
+            .map(ArrayNumericNumber::Int)
+            .unwrap_or_else(|| ArrayNumericNumber::Float(left as f64 * right as f64)),
+        (left, right) => ArrayNumericNumber::Float(left.as_float() * right.as_float()),
+    }
+}
+
+fn array_numeric_number_to_value(number: ArrayNumericNumber) -> Value {
+    match number {
+        ArrayNumericNumber::Int(value) => Value::Int(value),
+        ArrayNumericNumber::Float(value) => Value::Float(value),
     }
 }
 
@@ -86199,6 +87168,10 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
             "bool",
             vec![reflection_internal_param("function", "string")],
         ),
+        "get_resource_type" => (
+            "string",
+            vec![reflection_internal_param("resource", "resource")],
+        ),
         "setlocale" => (
             "string|false",
             vec![
@@ -88139,6 +89112,12 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
         }
 
         match error.message.as_str() {
+            "invalid arithmetic for *: resources are not numeric" => {
+                return Some((
+                    "TypeError",
+                    "Unsupported operand types: int * resource".to_string(),
+                ));
+            }
             "unsupported call bcdiv(): Division by zero"
             | "unsupported call bcdivmod(): Division by zero"
             | "unsupported call BcMath\\Number::div(): Division by zero"
@@ -88156,6 +89135,10 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
                 return Some(("DivisionByZeroError", "Negative power of zero".to_string()));
             }
             _ => {}
+        }
+
+        if let Some(message) = array_reduce_callback_too_few_arguments_message(error) {
+            return Some(("TypeError", message));
         }
 
         if error.message
@@ -88367,6 +89350,40 @@ fn user_function_too_few_arguments_message(error: &Diagnostic) -> Option<String>
     ))
 }
 
+fn array_reduce_callback_diagnostic(error: Diagnostic) -> Diagnostic {
+    if error.phase == Phase::Runtime && error.message.starts_with("arity mismatch for ") {
+        return Diagnostic {
+            phase: error.phase,
+            file: error.file,
+            line: error.line,
+            column: error.column,
+            message: format!("array_reduce callback {}", error.message),
+        };
+    }
+    error
+}
+
+fn array_reduce_callback_too_few_arguments_message(error: &Diagnostic) -> Option<String> {
+    if error.phase != Phase::Runtime {
+        return None;
+    }
+
+    let rest = error
+        .message
+        .strip_prefix("array_reduce callback arity mismatch for ")?;
+    let (callable, expectation) = rest.split_once(": expected ")?;
+    let (expected, actual) = expectation.split_once(" argument(s), got ")?;
+    let expected = expected.parse::<usize>().ok()?;
+    let actual = actual.parse::<usize>().ok()?;
+    if actual >= expected {
+        return None;
+    }
+
+    Some(format!(
+        "Too few arguments to function {callable}, {actual} passed and exactly {expected} expected"
+    ))
+}
+
 fn value_error_message(error: &Diagnostic) -> Option<String> {
     if error.phase != Phase::Runtime {
         return None;
@@ -88517,6 +89534,10 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
         ("dirname()", "Argument #2 ($levels) must be greater than or equal to 1") => {
             Some("dirname(): Argument #2 ($levels) must be greater than or equal to 1".to_string())
         }
+        (
+            "date_sunrise()" | "date_sunset()",
+            "Argument #2 ($returnFormat) must be one of SUNFUNCS_RET_TIMESTAMP, SUNFUNCS_RET_STRING, or SUNFUNCS_RET_DOUBLE",
+        ) => Some(format!("{function}: {message}")),
         _ => None,
     }
 }
@@ -88567,6 +89588,14 @@ fn builtin_resource_type_error_message(error: &Diagnostic) -> Option<String> {
         .map(|(_, reason)| reason)?;
     if reason == "file_put_contents(): supplied resource is not a valid stream resource"
         || reason.ends_with("(): supplied resource is not a valid Stream-Context resource")
+        || reason == "fgetc(): Argument #1 ($stream) must be an open stream resource"
+        || reason == "fgets(): Argument #1 ($stream) must be an open stream resource"
+        || reason == "fread(): Argument #1 ($stream) must be an open stream resource"
+        || reason == "fwrite(): Argument #1 ($stream) must be an open stream resource"
+        || reason == "feof(): Argument #1 ($stream) must be an open stream resource"
+        || reason == "ftell(): Argument #1 ($stream) must be an open stream resource"
+        || reason == "fseek(): Argument #1 ($stream) must be an open stream resource"
+        || reason == "rewind(): Argument #1 ($stream) must be an open stream resource"
         || reason == "fflush(): Argument #1 ($stream) must be an open stream resource"
         || reason == "ftruncate(): Argument #1 ($stream) must be an open stream resource"
         || reason == "flock(): Argument #1 ($stream) must be an open stream resource"
@@ -88875,6 +89904,13 @@ fn is_builtin(name: &str) -> bool {
             | "gmdate"
             | "strftime"
             | "gmstrftime"
+            | "date_sunrise"
+            | "date_sunset"
+            | "date_sun_info"
+            | "date_create"
+            | "date_format"
+            | "date_offset_get"
+            | "date_timezone_get"
             | "idate"
             | "checkdate"
             | "getdate"
@@ -88892,6 +89928,11 @@ fn is_builtin(name: &str) -> bool {
             | "timezone_version_get"
             | "timezone_identifiers_list"
             | "timezone_name_from_abbr"
+            | "timezone_open"
+            | "timezone_name_get"
+            | "timezone_offset_get"
+            | "timezone_transitions_get"
+            | "timezone_abbreviations_list"
             | "setlocale"
             | "getenv"
             | "putenv"
@@ -88997,6 +90038,7 @@ fn is_builtin(name: &str) -> bool {
             | "is_countable"
             | "is_iterable"
             | "is_resource"
+            | "get_resource_type"
             | "is_callable"
             | "function_exists"
             | "extension_loaded"
@@ -89816,6 +90858,9 @@ const PHP_DATETIMEZONE_UTC: i64 = 1024;
 const PHP_DATETIMEZONE_ALL: i64 = 2047;
 const PHP_DATETIMEZONE_ALL_WITH_BC: i64 = 4095;
 const PHP_DATETIMEZONE_PER_COUNTRY: i64 = 4096;
+const PHP_SUNFUNCS_RET_TIMESTAMP: i64 = 0;
+const PHP_SUNFUNCS_RET_STRING: i64 = 1;
+const PHP_SUNFUNCS_RET_DOUBLE: i64 = 2;
 
 fn php_array_from_strings(values: impl IntoIterator<Item = String>) -> PhpArray {
     let mut array = PhpArray::new();
@@ -90013,6 +91058,9 @@ fn builtin_global_constant_value(name: &str) -> Option<Value> {
         "PHP_OS" => Some(Value::String("Linux".to_string())),
         "PHP_OS_FAMILY" => Some(Value::String("Linux".to_string())),
         "PHP_EOL" => Some(Value::String("\n".to_string())),
+        "STDIN" => Some(Value::Resource(1)),
+        "STDOUT" => Some(Value::Resource(2)),
+        "STDERR" => Some(Value::Resource(3)),
         "DIRECTORY_SEPARATOR" => Some(Value::String(std::path::MAIN_SEPARATOR.to_string())),
         "PATH_SEPARATOR" => Some(Value::String(INCLUDE_PATH_SEPARATOR.to_string())),
         "FILE_USE_INCLUDE_PATH" => Some(Value::Int(PHP_FILE_USE_INCLUDE_PATH)),
@@ -90091,6 +91139,9 @@ fn builtin_global_constant_value(name: &str) -> Option<Value> {
         "DATE_RFC3339_EXTENDED" => Some(Value::String("Y-m-d\\TH:i:s.vP".to_string())),
         "DATE_RSS" => Some(Value::String("D, d M Y H:i:s O".to_string())),
         "DATE_W3C" => Some(Value::String("Y-m-d\\TH:i:sP".to_string())),
+        "SUNFUNCS_RET_TIMESTAMP" => Some(Value::Int(PHP_SUNFUNCS_RET_TIMESTAMP)),
+        "SUNFUNCS_RET_STRING" => Some(Value::Int(PHP_SUNFUNCS_RET_STRING)),
+        "SUNFUNCS_RET_DOUBLE" => Some(Value::Int(PHP_SUNFUNCS_RET_DOUBLE)),
         "PHP_SESSION_DISABLED" => Some(Value::Int(PHP_SESSION_DISABLED)),
         "PHP_SESSION_NONE" => Some(Value::Int(PHP_SESSION_NONE)),
         "PHP_SESSION_ACTIVE" => Some(Value::Int(PHP_SESSION_ACTIVE)),
@@ -102702,6 +103753,15 @@ fn set_stream_context_option(target: &mut PhpArray, wrapper: &str, option: &str,
     target.insert(wrapper, Value::Array(wrapper_options));
 }
 
+fn php_filesystem_open_error_message(error: &std::io::Error) -> String {
+    match error.kind() {
+        ErrorKind::AlreadyExists => "File exists".to_string(),
+        ErrorKind::NotFound => "No such file or directory".to_string(),
+        ErrorKind::PermissionDenied => "Permission denied".to_string(),
+        _ => error.to_string(),
+    }
+}
+
 fn parse_stream_mode(mode: &str) -> Option<StreamMode> {
     let mut chars = mode.chars();
     let primary = chars.next()?;
@@ -103681,6 +104741,174 @@ impl Interpreter {
         Ok(Value::String(format_bounded_strftime(
             &format, timestamp, &timezone,
         )))
+    }
+
+    fn call_date_sunrise_sunset(
+        &mut self,
+        args: &[Value],
+        span: Span,
+        sunset: bool,
+    ) -> CompileResult<Value> {
+        let function = if sunset {
+            "date_sunset()"
+        } else {
+            "date_sunrise()"
+        };
+        if !(1..=6).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    function,
+                    ArityExpectation::Between { min: 1, max: 6 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        self.emit_display_diagnostic(
+            "Deprecated",
+            PHP_E_DEPRECATED,
+            format!("Function {function} is deprecated since 8.1, use date_sun_info() instead"),
+            span,
+        )?;
+
+        let timestamp = required_date_int_arg(function, &args[0], "timestamp", span)?;
+        let return_format = match args.get(1) {
+            Some(value) => required_date_int_arg(function, value, "returnFormat", span)?,
+            None => PHP_SUNFUNCS_RET_STRING,
+        };
+        if !matches!(
+            return_format,
+            PHP_SUNFUNCS_RET_TIMESTAMP | PHP_SUNFUNCS_RET_STRING | PHP_SUNFUNCS_RET_DOUBLE
+        ) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function,
+                    "Argument #2 ($returnFormat) must be one of SUNFUNCS_RET_TIMESTAMP, SUNFUNCS_RET_STRING, or SUNFUNCS_RET_DOUBLE",
+                ),
+            ));
+        }
+
+        let latitude = optional_sun_float_arg(function, args.get(2), "latitude", span)?
+            .unwrap_or_else(|| self.date_ini_float("date.default_latitude", 31.7667));
+        let longitude = optional_sun_float_arg(function, args.get(3), "longitude", span)?
+            .unwrap_or_else(|| self.date_ini_float("date.default_longitude", 35.2333));
+        let zenith =
+            optional_sun_float_arg(function, args.get(4), "zenith", span)?.unwrap_or_else(|| {
+                if sunset {
+                    self.date_ini_float("date.sunset_zenith", 90.833333)
+                } else {
+                    self.date_ini_float("date.sunrise_zenith", 90.833333)
+                }
+            });
+
+        if !latitude.is_finite() || !longitude.is_finite() {
+            return Ok(Value::Bool(false));
+        }
+
+        let timezone = bounded_timezone_from_name(&self.default_timezone)
+            .expect("stored default timezone should be bounded");
+        let offset_hours = optional_sun_float_arg(function, args.get(5), "gmtOffset", span)?
+            .unwrap_or_else(|| timezone.offset_at_timestamp(timestamp) as f64 / 3600.0);
+        let altitude = 90.0 - zenith;
+        let event = bounded_solar_event(timestamp, &timezone, longitude, latitude, altitude, true);
+        if event.state != SolarEventState::Normal {
+            return Ok(Value::Bool(false));
+        }
+
+        if return_format == PHP_SUNFUNCS_RET_TIMESTAMP {
+            return Ok(Value::Int(if sunset { event.set } else { event.rise }));
+        }
+
+        let mut local_hours = if sunset {
+            event.set_hour
+        } else {
+            event.rise_hour
+        } + offset_hours;
+        if local_hours > 24.0 || local_hours < 0.0 {
+            local_hours -= (local_hours / 24.0).floor() * 24.0;
+        }
+        if !(0.0..=24.0).contains(&local_hours) {
+            return Ok(Value::Bool(false));
+        }
+
+        if return_format == PHP_SUNFUNCS_RET_DOUBLE {
+            return Ok(Value::Float(local_hours));
+        }
+
+        let hour = local_hours as i64;
+        let minute = (60.0 * (local_hours - hour as f64)) as i64;
+        Ok(Value::String(format!("{hour:02}:{minute:02}")))
+    }
+
+    fn call_date_sun_info(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("date_sun_info", args, 3, span)?;
+        let timestamp = required_date_int_arg("date_sun_info()", &args[0], "timestamp", span)?;
+        let latitude = required_sun_float_arg("date_sun_info()", &args[1], "latitude", span)?;
+        let longitude = required_sun_float_arg("date_sun_info()", &args[2], "longitude", span)?;
+        if !latitude.is_finite() {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "date_sun_info()",
+                    "Argument #2 ($latitude) must be finite",
+                ),
+            ));
+        }
+        if !longitude.is_finite() {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "date_sun_info()",
+                    "Argument #3 ($longitude) must be finite",
+                ),
+            ));
+        }
+
+        let timezone = bounded_timezone_from_name(&self.default_timezone)
+            .expect("stored default timezone should be bounded");
+        let sunrise = bounded_solar_event(
+            timestamp,
+            &timezone,
+            longitude,
+            latitude,
+            -35.0 / 60.0,
+            true,
+        );
+        let civil = bounded_solar_event(timestamp, &timezone, longitude, latitude, -6.0, false);
+        let nautical = bounded_solar_event(timestamp, &timezone, longitude, latitude, -12.0, false);
+        let astronomical =
+            bounded_solar_event(timestamp, &timezone, longitude, latitude, -18.0, false);
+
+        let mut array = PhpArray::new();
+        insert_solar_pair(&mut array, "sunrise", "sunset", &sunrise);
+        array.insert("transit", Value::Int(sunrise.transit));
+        insert_solar_pair(
+            &mut array,
+            "civil_twilight_begin",
+            "civil_twilight_end",
+            &civil,
+        );
+        insert_solar_pair(
+            &mut array,
+            "nautical_twilight_begin",
+            "nautical_twilight_end",
+            &nautical,
+        );
+        insert_solar_pair(
+            &mut array,
+            "astronomical_twilight_begin",
+            "astronomical_twilight_end",
+            &astronomical,
+        );
+        Ok(Value::Array(array))
+    }
+
+    fn date_ini_float(&self, name: &str, default: f64) -> f64 {
+        self.ini_value(name)
+            .and_then(|value| value.parse::<f64>().ok())
+            .unwrap_or(default)
     }
 
     fn call_idate(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -105590,6 +106818,7 @@ fn current_environment_array() -> PhpArray {
 #[derive(Debug, Clone)]
 struct BoundedTimezone {
     name: String,
+    fixed_offset: Option<i64>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -105609,15 +106838,22 @@ impl BoundedTimezone {
     fn utc() -> Self {
         Self {
             name: "GMT".to_string(),
+            fixed_offset: Some(0),
         }
     }
 
     fn offset_at_timestamp(&self, timestamp: i64) -> i64 {
+        if let Some(offset) = self.fixed_offset {
+            return offset;
+        }
         let utc = bounded_datetime_parts(timestamp, 0);
         self.offset_for_local_date(utc.year, utc.month, utc.day)
     }
 
     fn offset_for_local_date(&self, year: i64, month: i64, day: i64) -> i64 {
+        if let Some(offset) = self.fixed_offset {
+            return offset;
+        }
         match self.name.as_str() {
             "UTC" | "Etc/UTC" | "Etc/GMT" | "Etc/Universal" | "Etc/Zulu" | "GMT0" | "GMT"
             | "Africa/Abidjan" | "Zulu" => 0,
@@ -105658,11 +106894,33 @@ impl BoundedTimezone {
                     -14_400
                 }
             }
+            "America/Los_Angeles" => {
+                if bounded_month_is_in_dst_window(month, day, 3, 8, 11, 7) {
+                    -25_200
+                } else {
+                    -28_800
+                }
+            }
+            "America/Indiana/Knox" => -18_000,
             "America/Sao_Paulo" => {
                 if month >= 11 || month <= 2 {
                     -7_200
                 } else {
                     -10_800
+                }
+            }
+            "Europe/Amsterdam" | "Europe/Rome" => {
+                if bounded_month_is_in_dst_window(month, day, 3, 27, 10, 31) {
+                    7_200
+                } else {
+                    3_600
+                }
+            }
+            "Europe/Kyiv" => {
+                if bounded_month_is_in_dst_window(month, day, 3, 27, 10, 31) {
+                    10_800
+                } else {
+                    7_200
                 }
             }
             _ => {
@@ -105673,13 +106931,20 @@ impl BoundedTimezone {
     }
 
     fn standard_offset(&self) -> i64 {
+        if let Some(offset) = self.fixed_offset {
+            return offset;
+        }
         match self.name.as_str() {
             "America/Chicago" => -21_600,
             "US/Eastern" | "America/New_York" => -18_000,
             "Europe/London" => 0,
             "Europe/Berlin" | "Europe/Oslo" => 3_600,
             "America/Halifax" => -14_400,
+            "America/Los_Angeles" => -28_800,
+            "America/Indiana/Knox" => -18_000,
             "America/Sao_Paulo" => -10_800,
+            "Europe/Amsterdam" | "Europe/Rome" => 3_600,
+            "Europe/Kyiv" => 7_200,
             "Asia/Jerusalem" => 7_200,
             "Asia/Calcutta" | "Asia/Kolkata" => 19_800,
             _ => self.offset_for_local_date(1970, 1, 1),
@@ -105687,6 +106952,9 @@ impl BoundedTimezone {
     }
 
     fn abbreviation(&self, parts: &BoundedDateTimeParts) -> &'static str {
+        if self.fixed_offset.is_some() {
+            return "GMT";
+        }
         match self.name.as_str() {
             "GMT0" | "GMT" | "Africa/Abidjan" => "GMT",
             "UTC" | "Etc/UTC" | "Etc/Universal" | "Etc/Zulu" => "UTC",
@@ -105742,11 +107010,32 @@ impl BoundedTimezone {
                     "AST"
                 }
             }
+            "America/Los_Angeles" => {
+                if self.is_dst(parts) {
+                    "PDT"
+                } else {
+                    "PST"
+                }
+            }
             "America/Sao_Paulo" => {
                 if self.is_dst(parts) {
                     "-02"
                 } else {
                     "-03"
+                }
+            }
+            "Europe/Amsterdam" | "Europe/Rome" => {
+                if self.is_dst(parts) {
+                    "CEST"
+                } else {
+                    "CET"
+                }
+            }
+            "Europe/Kyiv" => {
+                if self.is_dst(parts) {
+                    "EEST"
+                } else {
+                    "EET"
                 }
             }
             _ => "UTC",
@@ -105759,6 +107048,12 @@ impl BoundedTimezone {
 }
 
 fn bounded_timezone_from_name(name: &str) -> Option<BoundedTimezone> {
+    if let Some(offset) = parse_timezone_offset_token(name) {
+        return Some(BoundedTimezone {
+            name: name.to_string(),
+            fixed_offset: Some(offset),
+        });
+    }
     let canonical = match name {
         "UTC" => "UTC",
         "Etc/UTC" => "Etc/UTC",
@@ -105774,16 +107069,26 @@ fn bounded_timezone_from_name(name: &str) -> Option<BoundedTimezone> {
         "Asia/Kolkata" => "Asia/Kolkata",
         "America/Chicago" => "America/Chicago",
         "America/Halifax" => "America/Halifax",
+        "America/Los_Angeles" => "America/Los_Angeles",
+        "America/Indiana/Knox" => "America/Indiana/Knox",
         "America/Sao_Paulo" => "America/Sao_Paulo",
+        "Europe/Amsterdam" => "Europe/Amsterdam",
         "Europe/Berlin" => "Europe/Berlin",
+        "Europe/Kyiv" => "Europe/Kyiv",
         "Europe/London" => "Europe/London",
         "Europe/Oslo" => "Europe/Oslo",
+        "Europe/Rome" => "Europe/Rome",
+        "CET" => "Europe/Berlin",
+        "CEST" => "Europe/Berlin",
+        "EST" | "EDT" => "America/New_York",
+        "PST" | "PDT" => "America/Los_Angeles",
         "US/Eastern" => "US/Eastern",
         "America/New_York" => "America/New_York",
         _ => return None,
     };
     Some(BoundedTimezone {
         name: canonical.to_string(),
+        fixed_offset: None,
     })
 }
 
@@ -105915,6 +107220,8 @@ const BOUNDED_TIMEZONE_IDENTIFIERS: &[(&str, i64, bool)] = &[
     ("Africa/Abidjan", PHP_DATETIMEZONE_AFRICA, false),
     ("America/Chicago", PHP_DATETIMEZONE_AMERICA, false),
     ("America/Halifax", PHP_DATETIMEZONE_AMERICA, false),
+    ("America/Indiana/Knox", PHP_DATETIMEZONE_AMERICA, false),
+    ("America/Los_Angeles", PHP_DATETIMEZONE_AMERICA, false),
     ("America/New_York", PHP_DATETIMEZONE_AMERICA, false),
     ("America/Sao_Paulo", PHP_DATETIMEZONE_AMERICA, false),
     ("Asia/Calcutta", PHP_DATETIMEZONE_ASIA, false),
@@ -105924,15 +107231,370 @@ const BOUNDED_TIMEZONE_IDENTIFIERS: &[(&str, i64, bool)] = &[
     ("Etc/UTC", PHP_DATETIMEZONE_UTC, false),
     ("Etc/Universal", PHP_DATETIMEZONE_UTC, false),
     ("Etc/Zulu", PHP_DATETIMEZONE_UTC, false),
+    ("Europe/Amsterdam", PHP_DATETIMEZONE_EUROPE, false),
     ("Europe/Berlin", PHP_DATETIMEZONE_EUROPE, false),
+    ("Europe/Kyiv", PHP_DATETIMEZONE_EUROPE, false),
     ("Europe/London", PHP_DATETIMEZONE_EUROPE, false),
     ("Europe/Oslo", PHP_DATETIMEZONE_EUROPE, false),
+    ("Europe/Rome", PHP_DATETIMEZONE_EUROPE, false),
     ("GMT", PHP_DATETIMEZONE_UTC, false),
     ("GMT0", PHP_DATETIMEZONE_UTC, false),
     ("UTC", PHP_DATETIMEZONE_UTC, false),
     ("US/Eastern", PHP_DATETIMEZONE_AMERICA, true),
     ("Zulu", PHP_DATETIMEZONE_UTC, false),
 ];
+
+fn bounded_timezone_object_parts(name: &str) -> Option<(i64, String)> {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let upper = trimmed.to_ascii_uppercase();
+    match upper.as_str() {
+        "GMT" | "CET" | "CEST" | "EST" | "EDT" | "PST" | "PDT" => {
+            return Some((2, upper));
+        }
+        "UTC" => return Some((3, "UTC".to_string())),
+        _ => {}
+    }
+    if matches!(trimmed.as_bytes().first(), Some(b'+') | Some(b'-'))
+        && parse_timezone_offset_token(trimmed).is_some()
+    {
+        return Some((1, trimmed.to_string()));
+    }
+    bounded_timezone_from_name(trimmed).map(|timezone| (3, timezone.name))
+}
+
+fn bounded_datetime_timezone_hint(
+    input: &str,
+    default_timezone: &BoundedTimezone,
+) -> BoundedTimezone {
+    let trimmed = input.trim();
+    if let Some(zone) = bounded_timezone_from_name(trimmed) {
+        return zone;
+    }
+    if let Some((_, token)) = trimmed.rsplit_once(' ') {
+        if let Some(zone) = bounded_timezone_from_name(token) {
+            return zone;
+        }
+    }
+    for suffix_len in [6_usize, 5] {
+        if trimmed.len() > suffix_len {
+            let suffix = &trimmed[trimmed.len() - suffix_len..];
+            if matches!(suffix.as_bytes().first(), Some(b'+') | Some(b'-')) {
+                if let Some(zone) = bounded_timezone_from_name(suffix) {
+                    return zone;
+                }
+            }
+        }
+    }
+    default_timezone.clone()
+}
+
+fn bounded_timezone_transition_entry(
+    timestamp: i64,
+    offset: i64,
+    is_dst: bool,
+    abbreviation: &str,
+) -> PhpArray {
+    let mut entry = PhpArray::new();
+    entry.insert("ts", Value::Int(timestamp));
+    entry.insert(
+        "time",
+        Value::String(format_bounded_date(
+            "Y-m-d\\TH:i:sP",
+            timestamp,
+            &BoundedTimezone::utc(),
+        )),
+    );
+    entry.insert("offset", Value::Int(offset));
+    entry.insert("isdst", Value::Bool(is_dst));
+    entry.insert("abbr", Value::String(abbreviation.to_string()));
+    entry
+}
+
+fn bounded_timezone_transitions_array(name: &str, start: i64, end: i64) -> PhpArray {
+    const EUROPE_LONDON_TRANSITIONS: &[(i64, i64, bool, &str)] = &[
+        (-306_972_000, 3_600, true, "BST"),
+        (-291_852_000, 0, false, "GMT"),
+        (-276_732_000, 3_600, true, "BST"),
+        (-257_983_200, 0, false, "GMT"),
+        (-245_282_400, 3_600, true, "BST"),
+        (-226_533_600, 0, false, "GMT"),
+        (-213_228_000, 3_600, true, "BST"),
+        (-195_084_000, 0, false, "GMT"),
+        (-182_383_200, 3_600, true, "BST"),
+        (-163_634_400, 0, false, "GMT"),
+        (-150_933_600, 3_600, true, "BST"),
+        (-132_184_800, 0, false, "GMT"),
+        (-119_484_000, 3_600, true, "BST"),
+        (-100_735_200, 0, false, "GMT"),
+        (-88_034_400, 3_600, true, "BST"),
+        (-68_680_800, 0, false, "GMT"),
+        (-59_004_000, 3_600, true, "BST"),
+        (-37_242_000, 3_600, true, "BST"),
+    ];
+
+    let mut array = PhpArray::new();
+    let Some(timezone) = bounded_timezone_from_name(name) else {
+        return array;
+    };
+    if timezone.name != "Europe/London" {
+        let offset = timezone.offset_at_timestamp(start.max(0));
+        array
+            .append(Value::Array(bounded_timezone_transition_entry(
+                start.max(0),
+                offset,
+                false,
+                timezone.abbreviation(&bounded_datetime_parts(start.max(0), offset)),
+            )))
+            .expect("bounded timezone transition append should not exhaust integer keys");
+        return array;
+    }
+    for (timestamp, offset, is_dst, abbreviation) in EUROPE_LONDON_TRANSITIONS {
+        if *timestamp < start || *timestamp > end {
+            continue;
+        }
+        array
+            .append(Value::Array(bounded_timezone_transition_entry(
+                *timestamp,
+                *offset,
+                *is_dst,
+                abbreviation,
+            )))
+            .expect("bounded timezone transition append should not exhaust integer keys");
+    }
+    array
+}
+
+fn bounded_timezone_abbreviations_array() -> PhpArray {
+    let mut array = PhpArray::new();
+    for (abbr, offset, dst, zone_id) in [
+        ("gmt", 0, false, "GMT"),
+        ("utc", 0, false, "UTC"),
+        ("bst", 3_600, true, "Europe/London"),
+        ("cet", 3_600, false, "Europe/Berlin"),
+        ("cest", 7_200, true, "Europe/Berlin"),
+        ("est", -18_000, false, "America/New_York"),
+        ("edt", -14_400, true, "America/New_York"),
+        ("pst", -28_800, false, "America/Los_Angeles"),
+        ("pdt", -25_200, true, "America/Los_Angeles"),
+    ] {
+        let mut rows = PhpArray::new();
+        let mut row = PhpArray::new();
+        row.insert("dst", Value::Bool(dst));
+        row.insert("offset", Value::Int(offset));
+        row.insert("timezone_id", Value::String(zone_id.to_string()));
+        rows.append(Value::Array(row))
+            .expect("bounded timezone abbreviation row append should not exhaust integer keys");
+        array.insert(abbr, Value::Array(rows));
+    }
+    array
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SolarEventState {
+    Normal,
+    AlwaysBelow,
+    AlwaysAbove,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct SolarEvent {
+    state: SolarEventState,
+    rise: i64,
+    set: i64,
+    transit: i64,
+    rise_hour: f64,
+    set_hour: f64,
+}
+
+fn insert_solar_pair(array: &mut PhpArray, rise_key: &str, set_key: &str, event: &SolarEvent) {
+    match event.state {
+        SolarEventState::AlwaysBelow => {
+            array.insert(rise_key, Value::Bool(false));
+            array.insert(set_key, Value::Bool(false));
+        }
+        SolarEventState::AlwaysAbove => {
+            array.insert(rise_key, Value::Bool(true));
+            array.insert(set_key, Value::Bool(true));
+        }
+        SolarEventState::Normal => {
+            array.insert(rise_key, Value::Int(event.rise));
+            array.insert(set_key, Value::Int(event.set));
+        }
+    }
+}
+
+fn bounded_solar_event(
+    timestamp: i64,
+    timezone: &BoundedTimezone,
+    longitude: f64,
+    latitude: f64,
+    mut altitude: f64,
+    upper_limb: bool,
+) -> SolarEvent {
+    let local_offset = timezone.offset_at_timestamp(timestamp);
+    let local = bounded_datetime_parts(timestamp, local_offset);
+    let utc_midnight = timestamp_from_local_parts(local.year, local.month, local.day, 0, 0, 0, 0);
+    let local_noon = timestamp_from_local_parts(
+        local.year,
+        local.month,
+        local.day,
+        12,
+        0,
+        0,
+        timezone.offset_for_local_date(local.year, local.month, local.day),
+    );
+    let days_since_j2000 = timestamp_to_j2000_days(utc_midnight) + 2.0 - longitude / 360.0;
+    let sidereal_time = astro_revolution(astro_gmst0(days_since_j2000) + 180.0 + longitude);
+    let (sun_right_ascension, sun_declination, solar_distance) =
+        astro_sun_right_ascension_declination(days_since_j2000);
+    let south_hour = 12.0 - astro_rev180(sidereal_time - sun_right_ascension) / 15.0;
+    if upper_limb {
+        altitude -= 0.2666 / solar_distance;
+    }
+
+    let cost = (sind(altitude) - sind(latitude) * sind(sun_declination))
+        / (cosd(latitude) * cosd(sun_declination));
+    let transit = (utc_midnight as f64 + south_hour * 3600.0) as i64;
+    if cost >= 1.0 {
+        return SolarEvent {
+            state: SolarEventState::AlwaysBelow,
+            rise: transit,
+            set: transit,
+            transit,
+            rise_hour: south_hour,
+            set_hour: south_hour,
+        };
+    }
+    if cost <= -1.0 {
+        return SolarEvent {
+            state: SolarEventState::AlwaysAbove,
+            rise: local_noon - 12 * 3600,
+            set: local_noon + 12 * 3600,
+            transit,
+            rise_hour: south_hour - 12.0,
+            set_hour: south_hour + 12.0,
+        };
+    }
+
+    let diurnal_arc = acosd(cost) / 15.0;
+    let rise_hour = south_hour - diurnal_arc;
+    let set_hour = south_hour + diurnal_arc;
+    SolarEvent {
+        state: SolarEventState::Normal,
+        rise: (utc_midnight as f64 + rise_hour * 3600.0) as i64,
+        set: (utc_midnight as f64 + set_hour * 3600.0) as i64,
+        transit,
+        rise_hour,
+        set_hour,
+    }
+}
+
+fn timestamp_to_j2000_days(timestamp: i64) -> f64 {
+    timestamp as f64 / 86_400.0 + 2_440_587.5 - 2_451_545.0
+}
+
+fn astro_gmst0(days_since_j2000: f64) -> f64 {
+    astro_revolution((180.0 + 356.0470 + 282.9404) + (0.9856002585 + 4.70935E-5) * days_since_j2000)
+}
+
+fn astro_sun_position(days_since_j2000: f64) -> (f64, f64) {
+    let mean_anomaly = astro_revolution(356.0470 + 0.9856002585 * days_since_j2000);
+    let perihelion = 282.9404 + 4.70935E-5 * days_since_j2000;
+    let eccentricity = 0.016709 - 1.151E-9 * days_since_j2000;
+    let eccentric_anomaly = mean_anomaly
+        + eccentricity * 180.0 / std::f64::consts::PI
+            * sind(mean_anomaly)
+            * (1.0 + eccentricity * cosd(mean_anomaly));
+    let x = cosd(eccentric_anomaly) - eccentricity;
+    let y = (1.0 - eccentricity * eccentricity).sqrt() * sind(eccentric_anomaly);
+    let distance = (x * x + y * y).sqrt();
+    let true_anomaly = atan2d(y, x);
+    let mut longitude = true_anomaly + perihelion;
+    if longitude >= 360.0 {
+        longitude -= 360.0;
+    }
+    (longitude, distance)
+}
+
+fn astro_sun_right_ascension_declination(days_since_j2000: f64) -> (f64, f64, f64) {
+    let (longitude, distance) = astro_sun_position(days_since_j2000);
+    let x = distance * cosd(longitude);
+    let mut y = distance * sind(longitude);
+    let obliquity = 23.4393 - 3.563E-7 * days_since_j2000;
+    let z = y * sind(obliquity);
+    y *= cosd(obliquity);
+    (atan2d(y, x), atan2d(z, (x * x + y * y).sqrt()), distance)
+}
+
+fn astro_revolution(value: f64) -> f64 {
+    value - 360.0 * (value / 360.0).floor()
+}
+
+fn astro_rev180(value: f64) -> f64 {
+    value - 360.0 * (value / 360.0 + 0.5).floor()
+}
+
+fn sind(degrees: f64) -> f64 {
+    degrees.to_radians().sin()
+}
+
+fn cosd(degrees: f64) -> f64 {
+    degrees.to_radians().cos()
+}
+
+fn atan2d(y: f64, x: f64) -> f64 {
+    y.atan2(x).to_degrees()
+}
+
+fn acosd(value: f64) -> f64 {
+    value.acos().to_degrees()
+}
+
+fn required_sun_float_arg(
+    function: &str,
+    value: &Value,
+    label: &str,
+    span: Span,
+) -> CompileResult<f64> {
+    match value {
+        Value::Int(value) => Ok(*value as f64),
+        Value::Float(value) => Ok(*value),
+        Value::String(value) => value.parse::<f64>().map_err(|_| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function,
+                    format!("{label} argument must be float-compatible in the current subset"),
+                ),
+            )
+        }),
+        other => Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                format!(
+                    "{label} argument must be int, float, numeric string, or null in the current subset, got {}",
+                    other.type_name()
+                ),
+            ),
+        )),
+    }
+}
+
+fn optional_sun_float_arg(
+    function: &str,
+    value: Option<&Value>,
+    label: &str,
+    span: Span,
+) -> CompileResult<Option<f64>> {
+    match value {
+        Some(Value::Null) | None => Ok(None),
+        Some(value) => required_sun_float_arg(function, value, label, span).map(Some),
+    }
+}
 
 fn parse_bounded_strtotime(input: &str, default_timezone: &BoundedTimezone) -> Option<i64> {
     let trimmed = input.trim();
@@ -105975,6 +107637,13 @@ fn parse_bounded_strtotime(input: &str, default_timezone: &BoundedTimezone) -> O
             None,
             default_timezone,
         );
+    }
+
+    if trimmed.len() == 10 && &trimmed[4..5] == "-" && &trimmed[7..8] == "-" {
+        let year = parse_ascii_i64(&trimmed[0..4])?;
+        let month = parse_ascii_i64(&trimmed[5..7])?;
+        let day = parse_ascii_i64(&trimmed[8..10])?;
+        return timestamp_for_bounded_parts(year, month, day, 0, 0, 0, None, default_timezone);
     }
 
     if let Some(timestamp) = parse_bounded_numeric_datetime(trimmed, default_timezone) {
@@ -106079,12 +107748,26 @@ fn parse_timezone_offset_token(token: &str) -> Option<i64> {
         b'-' => -1,
         _ => return None,
     };
-    let digits = token[1..].replace(':', "");
-    if digits.len() != 4 || !digits.chars().all(|ch| ch.is_ascii_digit()) {
-        return None;
-    }
-    let hours = parse_ascii_i64(&digits[0..2])?;
-    let minutes = parse_ascii_i64(&digits[2..4])?;
+    let (hours, minutes) = if let Some((hours, minutes)) = token[1..].split_once(':') {
+        if hours.is_empty()
+            || hours.len() > 2
+            || minutes.len() != 2
+            || !hours.chars().all(|ch| ch.is_ascii_digit())
+            || !minutes.chars().all(|ch| ch.is_ascii_digit())
+        {
+            return None;
+        }
+        (parse_ascii_i64(hours)?, parse_ascii_i64(minutes)?)
+    } else {
+        let digits = &token[1..];
+        if digits.len() != 4 || !digits.chars().all(|ch| ch.is_ascii_digit()) {
+            return None;
+        }
+        (
+            parse_ascii_i64(&digits[0..2])?,
+            parse_ascii_i64(&digits[2..4])?,
+        )
+    };
     if hours > 23 || minutes > 59 {
         return None;
     }
@@ -107129,10 +108812,51 @@ fn normalize_ini_name(name: &str) -> String {
     name.to_ascii_lowercase()
 }
 
+fn parse_ini_error_reporting_mask(value: &str) -> Option<i64> {
+    let mut tokens = value.split('&');
+    let first = parse_error_reporting_term(tokens.next()?.trim())?;
+    let mut mask = first;
+    for token in tokens {
+        let token = token.trim();
+        if let Some(rest) = token.strip_prefix('~') {
+            mask &= !parse_error_reporting_term(rest.trim())?;
+        } else {
+            mask &= parse_error_reporting_term(token)?;
+        }
+    }
+    Some(mask)
+}
+
+fn parse_error_reporting_term(value: &str) -> Option<i64> {
+    match value {
+        "E_ALL" => Some(PHP_E_ALL),
+        "E_ERROR" => Some(PHP_E_ERROR),
+        "E_WARNING" => Some(PHP_E_WARNING),
+        "E_PARSE" => Some(PHP_E_PARSE),
+        "E_NOTICE" => Some(PHP_E_NOTICE),
+        "E_CORE_ERROR" => Some(PHP_E_CORE_ERROR),
+        "E_CORE_WARNING" => Some(PHP_E_CORE_WARNING),
+        "E_COMPILE_ERROR" => Some(PHP_E_COMPILE_ERROR),
+        "E_COMPILE_WARNING" => Some(PHP_E_COMPILE_WARNING),
+        "E_USER_ERROR" => Some(PHP_E_USER_ERROR),
+        "E_USER_WARNING" => Some(PHP_E_USER_WARNING),
+        "E_USER_NOTICE" => Some(PHP_E_USER_NOTICE),
+        "E_STRICT" => Some(PHP_E_STRICT),
+        "E_RECOVERABLE_ERROR" => Some(PHP_E_RECOVERABLE_ERROR),
+        "E_DEPRECATED" => Some(PHP_E_DEPRECATED),
+        "E_USER_DEPRECATED" => Some(PHP_E_USER_DEPRECATED),
+        _ => value.parse::<i64>().ok(),
+    }
+}
+
 fn compat_ini_value(normalized_name: &str) -> Option<&'static str> {
     match normalized_name {
         "arg_separator.output" => Some("&"),
         "bcmath.scale" => Some("0"),
+        "date.default_latitude" => Some("31.7667"),
+        "date.default_longitude" => Some("35.2333"),
+        "date.sunrise_zenith" => Some("90.833333"),
+        "date.sunset_zenith" => Some("90.833333"),
         "default_mimetype" => Some("text/html"),
         "disable_functions" => Some(""),
         "display_errors" => Some(""),
@@ -108883,7 +110607,7 @@ where
         Value::Null => format!("{padding}NULL\n"),
         Value::Bool(value) => format!("{padding}bool({})\n", if *value { "true" } else { "false" }),
         Value::Int(value) => format!("{padding}int({value})\n"),
-        Value::Float(value) => format!("{padding}float({})\n", value),
+        Value::Float(value) => format!("{padding}float({})\n", format_var_dump_float(*value)),
         Value::String(value) => format!("{padding}string({}) \"{}\"\n", value.len(), value),
         Value::BinaryString(value) => {
             let value = tree_walk_binary_string_utf8(value, "var_dump()", span)?;
@@ -108965,6 +110689,18 @@ fn format_var_dump_key(key: &ArrayKey) -> String {
     match key {
         ArrayKey::Int(value) => value.to_string(),
         ArrayKey::String(value) => format!("\"{value}\""),
+    }
+}
+
+fn format_var_dump_float(value: f64) -> String {
+    if value.is_nan() {
+        "NAN".to_string()
+    } else if value == f64::INFINITY {
+        "INF".to_string()
+    } else if value == f64::NEG_INFINITY {
+        "-INF".to_string()
+    } else {
+        value.to_string()
     }
 }
 

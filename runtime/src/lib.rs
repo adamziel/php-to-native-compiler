@@ -29866,7 +29866,8 @@ impl PhpArray {
     pub fn sum_values(&self) -> RuntimeResult<Value> {
         let mut sum = Number::Int(0);
         for entry in &self.entries {
-            let value = array_sum_number_from_value(entry.value())?;
+            let value = entry.value_cloned();
+            let value = array_sum_number_from_value(&value)?;
             sum = add_array_sum_numbers(sum, value);
         }
 
@@ -29876,7 +29877,8 @@ impl PhpArray {
     pub fn product_values(&self) -> RuntimeResult<Value> {
         let mut product = Number::Int(1);
         for entry in &self.entries {
-            let value = array_product_number_from_value(entry.value())?;
+            let value = entry.value_cloned();
+            let value = array_product_number_from_value(&value)?;
             product = multiply_array_product_numbers(product, value);
         }
 
@@ -31534,6 +31536,11 @@ impl PhpClassTable {
         let datetimezone = classes
             .get_mut(datetimezone_id)
             .expect("declared DateTimeZone class id should resolve");
+        for property in ["timezone_type", "timezone"] {
+            datetimezone
+                .add_property(PhpPropertyMetadata::instance(property, Visibility::Public))
+                .expect("DateTimeZone core metadata should not duplicate properties");
+        }
         for constant in [
             "AFRICA",
             "AMERICA",
@@ -31557,6 +31564,17 @@ impl PhpClassTable {
         datetimezone
             .add_method(PhpMethodMetadata::static_method(
                 "listIdentifiers",
+                Visibility::Public,
+            ))
+            .expect("DateTimeZone core metadata should not duplicate methods");
+        for method in ["__construct", "getName", "getOffset", "getTransitions"] {
+            datetimezone
+                .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("DateTimeZone core metadata should not duplicate methods");
+        }
+        datetimezone
+            .add_method(PhpMethodMetadata::static_method(
+                "listAbbreviations",
                 Visibility::Public,
             ))
             .expect("DateTimeZone core metadata should not duplicate methods");
@@ -32156,6 +32174,22 @@ impl PhpClassTable {
             reflection_zend_extension
                 .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
                 .expect("ReflectionZendExtension core metadata should not duplicate methods");
+        }
+        let datetime_id = classes
+            .declare_class("DateTime")
+            .expect("core class table should contain ReflectionZendExtension before DateTime");
+        let datetime = classes
+            .get_mut(datetime_id)
+            .expect("declared DateTime class id should resolve");
+        for property in ["date", "timezone_type", "timezone"] {
+            datetime
+                .add_property(PhpPropertyMetadata::instance(property, Visibility::Public))
+                .expect("DateTime core metadata should not duplicate properties");
+        }
+        for method in ["__construct", "format"] {
+            datetime
+                .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("DateTime core metadata should not duplicate methods");
         }
         classes
     }
@@ -78861,6 +78895,9 @@ mod tests {
                 "RuntimeException",
                 "Directory",
                 "SplObjectStorage",
+                "ReflectionExtension",
+                "ReflectionZendExtension",
+                "DateTime",
             ]
         );
         let mut normalized_class_names = class_names
@@ -79020,10 +79057,33 @@ mod tests {
         assert_eq!(datetimezone.name(), "DateTimeZone");
         assert_eq!(datetimezone.id().index(), 10);
         assert!(datetimezone.parent_id().is_none());
-        assert!(datetimezone.properties().is_empty());
+        assert_eq!(
+            datetimezone
+                .properties()
+                .iter()
+                .map(PhpPropertyMetadata::name)
+                .collect::<Vec<_>>(),
+            vec!["timezone_type", "timezone"]
+        );
         assert!(datetimezone.constant("EUROPE").is_some());
         assert!(datetimezone.constant("PER_COUNTRY").is_some());
         assert!(datetimezone.method("listIdentifiers").is_some());
+        assert!(datetimezone.method("listAbbreviations").is_some());
+        assert!(datetimezone.method("getName").is_some());
+
+        let datetime = classes.lookup_class("datetime").unwrap();
+        assert_eq!(datetime.name(), "DateTime");
+        assert!(datetime.parent_id().is_none());
+        assert_eq!(
+            datetime
+                .properties()
+                .iter()
+                .map(PhpPropertyMetadata::name)
+                .collect::<Vec<_>>(),
+            vec!["date", "timezone_type", "timezone"]
+        );
+        assert!(datetime.method("__construct").is_some());
+        assert!(datetime.method("format").is_some());
 
         let reflection_exception = classes.lookup_class("reflectionexception").unwrap();
         assert_eq!(reflection_exception.name(), "ReflectionException");

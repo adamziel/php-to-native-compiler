@@ -74,36 +74,39 @@ fn array_reduce_requires_array_argument() {
 }
 
 #[test]
-fn array_reduce_callback_requires_string_callable() {
+fn array_reduce_callback_requires_callable_value() {
     let error = runtime_error("<?php\n$items = [\"Ada\"];\necho array_reduce($items, 42);\n");
 
     assert_eq!(error.line, 3);
     assert_eq!(error.column, 6);
     assert_eq!(
         error.message,
-        "unsupported call array_reduce(): callback must evaluate to string, got int"
-    );
-
-    let closure_error = runtime_error(
-        "<?php\n$items = [\"Ada\"];\n$callback = fn($carry, $value) => $value;\necho array_reduce($items, $callback);\n",
-    );
-    assert_eq!(closure_error.line, 4);
-    assert_eq!(closure_error.column, 6);
-    assert_eq!(
-        closure_error.message,
-        "unsupported call array_reduce(): callback must evaluate to string, got closure"
+        "unsupported call array_reduce(): callback must evaluate to string, closure, or array callable in the current subset, got int"
     );
 }
 
 #[test]
-fn array_reduce_callback_reports_unknown_function() {
-    let error = runtime_error(
-        "<?php\n$items = [\"Ada\"];\necho array_reduce($items, \"missing_reduce\");\n",
-    );
+fn array_reduce_accepts_closure_callback() {
+    let execution = run_source(
+        "<?php\n$items = [\"Ada\"];\n$callback = fn($carry, $value) => $value;\necho array_reduce($items, $callback);\n",
+    )
+    .unwrap();
 
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 6);
-    assert_eq!(error.message, "undefined function missing_reduce()");
+    assert_eq!(execution.stdout, "Ada");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn array_reduce_callback_reports_unknown_function() {
+    let execution =
+        run_source("<?php\n$items = [\"Ada\"];\necho array_reduce($items, \"missing_reduce\");\n")
+            .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "Fatal error: Uncaught Error: Call to undefined function missing_reduce() in Command line code:3\nStack trace:\n#0 {main}\n  thrown in Command line code on line 3"
+    );
+    assert_eq!(execution.exit_code, 255);
 }
 
 #[test]
@@ -146,16 +149,19 @@ echo $call([1, 2, 3], "add_value", 10);
 
 #[test]
 fn array_reduce_callback_arity_errors_come_from_callback() {
-    let error = runtime_error(
-        "<?php\nfunction only_one($carry) { return $carry; }\necho array_reduce([1], \"only_one\");\n",
-    );
+    let execution = run_source(
+        "<?php\nfunction needs_three($carry, $value, $extra) { return $carry; }\necho array_reduce([1], \"needs_three\");\n",
+    )
+    .unwrap();
 
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 6);
-    assert_eq!(
-        error.message,
-        "arity mismatch for only_one(): expected 1 argument(s), got 2"
+    assert!(
+        execution.stdout.contains(
+            "Fatal error: Uncaught TypeError: Too few arguments to function needs_three(), 2 passed and exactly 3 expected in Command line code:3"
+        ),
+        "{}",
+        execution.stdout
     );
+    assert_eq!(execution.exit_code, 255);
 }
 
 #[test]

@@ -140,3 +140,71 @@ echo is_float(gettimeofday(true)) ? "float" : "other", "\n";
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);
 }
+
+#[test]
+fn solar_date_builtins_match_bounded_timelib_rows() {
+    let execution = run_source(
+        r#"<?php
+error_reporting(E_ALL & ~E_DEPRECATED);
+date_default_timezone_set("UTC");
+$sun = date_sun_info(strtotime("2006-12-12"), 31.7667, 35.2333);
+echo $sun["sunrise"], "|", $sun["sunset"], "|", $sun["transit"], "\n";
+echo date("H:i:s", date_sunrise(mktime(8, 8, 8, 8, 11, 2008), SUNFUNCS_RET_TIMESTAMP, -14.24, -170.72, 90, -11)), "\n";
+echo date_sunrise(mktime(8, 8, 8, 8, 12, 2008), SUNFUNCS_RET_STRING, 41.85, -87.65, 90, -5), "\n";
+echo date_sunset(mktime(8, 8, 8, 8, 12, 2008), SUNFUNCS_RET_STRING, 55.75, 37.58, 90, 4), "\n";
+date_default_timezone_set("America/Sao_Paulo");
+$polar = date_sun_info(strtotime("2015-01-12 00:00:00 UTC"), 89.00, 1.00);
+var_dump($polar["sunrise"]);
+echo date("H:i:s", $polar["transit"]), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "1165897761|1165934160|1165915961\n17:42:19\n05:59\n21:08\nbool(false)\n10:03:48\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn datetimezone_and_datetime_residuals_match_bounded_rows() {
+    let execution = run_source(
+        r#"<?php
+date_default_timezone_set("Europe/London");
+$tz = timezone_open("Europe/Oslo");
+echo timezone_name_get($tz), "\n";
+var_dump(new DateTimeZone("GMT"));
+$date = date_create("2005-07-14 22:30:41 GMT");
+echo date_format($date, "D M j G:i:s T Y"), "\n";
+$epoch = date_create("2009-02-13 23:31:30 GMT");
+echo date_format($epoch, "B => (U) => T Y-M-d H:i:s"), "\n";
+$ny = new DateTimeZone("America/New_York");
+$fixed = date_create("2008-12-25 14:25:41 GMT");
+echo $ny->getName(), "|", $ny->getOffset($fixed), "\n";
+$tran = timezone_transitions_get(timezone_open("Europe/London"), -306972000, -37241999);
+echo count($tran), "|", $tran[6]["ts"], "|", $tran[6]["abbr"], "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "Europe/Oslo\n",
+            "object(DateTimeZone)#2 (2) {\n",
+            "  [\"timezone_type\"]=>\n",
+            "  int(2)\n",
+            "  [\"timezone\"]=>\n",
+            "  string(3) \"GMT\"\n",
+            "}\n",
+            "Thu Jul 14 22:30:41 GMT 2005\n",
+            "021 => (1234567890) => GMT 2009-Feb-13 23:31:30\n",
+            "America/New_York|-18000\n",
+            "18|-213228000|BST\n"
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}

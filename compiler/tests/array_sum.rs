@@ -46,27 +46,23 @@ fn array_sum_requires_array_argument() {
 }
 
 #[test]
-fn array_sum_rejects_non_numeric_strings_until_warning_recovery_exists() {
-    let error = runtime_error("<?php\n$items = [\"ok\", \"abc\"];\necho array_sum($items);\n");
+fn array_sum_treats_non_numeric_strings_as_zero() {
+    let execution =
+        run_source("<?php\n$items = [\"ok\", \"abc\"];\necho array_sum($items);\n").unwrap();
 
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 6);
-    assert_eq!(
-        error.message,
-        "unsupported call array_sum(): values must be numeric in the current subset, got non-numeric string"
-    );
+    assert_eq!(execution.stdout, "0");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
-fn array_sum_rejects_non_scalar_values() {
-    let error = runtime_error("<?php\n$items = [[]];\necho array_sum($items);\n");
+fn array_sum_warns_for_non_scalar_values() {
+    let execution = run_source("<?php\n$items = [[]];\necho array_sum($items);\n").unwrap();
 
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 6);
     assert_eq!(
-        error.message,
-        "unsupported call array_sum(): values must be numeric scalar in the current subset, got array"
+        execution.stdout,
+        "Warning: array_sum(): Addition is not supported on type array in Command line code on line 3\n0"
     );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
