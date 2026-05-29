@@ -44,6 +44,8 @@ const SPL_DLL_IT_MODE_DELETE: i64 = 1;
 const SPL_DLL_IT_MODE_LIFO: i64 = 2;
 const SPL_QUEUE_ITERATOR_MODE: i64 = 4;
 const SPL_STACK_ITERATOR_MODE: i64 = SPL_QUEUE_ITERATOR_MODE | SPL_DLL_IT_MODE_LIFO;
+const ARRAY_OBJECT_STD_PROP_LIST: i64 = 1;
+const ARRAY_OBJECT_ARRAY_AS_PROPS: i64 = 2;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Execution {
@@ -210,6 +212,7 @@ struct Interpreter {
     reflection_named_types: HashMap<i64, ReflectionNamedTypeState>,
     reflection_compound_types: HashMap<i64, ReflectionCompoundTypeState>,
     spl_fixed_arrays: HashMap<i64, SplFixedArrayState>,
+    array_objects: HashMap<i64, BoundedArrayObjectState>,
     spl_object_storages: HashMap<i64, SplObjectStorageState>,
     spl_doubly_linked_lists: HashMap<i64, SplDoublyLinkedListState>,
     date_time_objects: HashMap<i64, BoundedDateTimeObjectState>,
@@ -485,6 +488,25 @@ struct SplObjectStorageEntry {
 struct SplFixedArrayState {
     values: Vec<Value>,
     cursor: usize,
+}
+
+#[derive(Debug, Clone)]
+struct BoundedArrayObjectState {
+    storage: Value,
+    flags: i64,
+    iterator_class: String,
+    cursor: usize,
+}
+
+impl Default for BoundedArrayObjectState {
+    fn default() -> Self {
+        Self {
+            storage: Value::Array(PhpArray::new()),
+            flags: 0,
+            iterator_class: "ArrayIterator".to_string(),
+            cursor: 0,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -10131,6 +10153,7 @@ impl Interpreter {
             reflection_named_types: HashMap::new(),
             reflection_compound_types: HashMap::new(),
             spl_fixed_arrays: HashMap::new(),
+            array_objects: HashMap::new(),
             spl_object_storages: HashMap::new(),
             spl_doubly_linked_lists: HashMap::new(),
             date_time_objects: HashMap::new(),
@@ -10296,6 +10319,49 @@ impl Interpreter {
         self.classes
             .lookup_class_id("SplFixedArray")
             .is_some_and(|fixed_array_id| class_id == fixed_array_id)
+    }
+
+    fn is_array_object_class_id(&self, class_id: ClassId) -> bool {
+        self.classes
+            .lookup_class_id("ArrayObject")
+            .is_some_and(|array_object_id| {
+                class_id == array_object_id
+                    || self.classes.is_subclass_of(class_id, array_object_id)
+            })
+    }
+
+    fn is_array_iterator_class_id(&self, class_id: ClassId) -> bool {
+        self.classes
+            .lookup_class_id("ArrayIterator")
+            .is_some_and(|array_iterator_id| {
+                class_id == array_iterator_id
+                    || self.classes.is_subclass_of(class_id, array_iterator_id)
+            })
+    }
+
+    fn is_array_object_storage_class_id(&self, class_id: ClassId) -> bool {
+        self.is_array_object_class_id(class_id) || self.is_array_iterator_class_id(class_id)
+    }
+
+    fn is_array_object_storage_object(&self, object: &PhpObject) -> bool {
+        self.is_array_object_storage_class_id(object.class_id())
+    }
+
+    fn resolved_method_is_core_array_object(&self, class_id: ClassId) -> bool {
+        ["ArrayObject", "ArrayIterator"]
+            .iter()
+            .filter_map(|class_name| self.classes.lookup_class_id(class_name))
+            .any(|core_id| class_id == core_id)
+    }
+
+    fn array_object_storage_declaring_class_id(&self, object: &PhpObject) -> Option<ClassId> {
+        if self.is_array_iterator_class_id(object.class_id()) {
+            self.classes.lookup_class_id("ArrayIterator")
+        } else if self.is_array_object_class_id(object.class_id()) {
+            self.classes.lookup_class_id("ArrayObject")
+        } else {
+            None
+        }
     }
 
     fn is_spl_doubly_linked_list_class_id(&self, class_id: ClassId) -> bool {
@@ -10762,6 +10828,742 @@ impl Interpreter {
             _ => Err(runtime_error(
                 span,
                 RuntimeError::undefined_function(format!("SplFixedArray::{method_name}()")),
+            )),
+        }
+    }
+
+    fn array_object_state(
+        &self,
+        object: &PhpObject,
+        method_name: &str,
+        span: Span,
+    ) -> CompileResult<&BoundedArrayObjectState> {
+        self.array_objects.get(&object.id()).ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{}::{method_name}()", object.class_name()),
+                    "missing ArrayObject/ArrayIterator runtime state",
+                ),
+            )
+        })
+    }
+
+    fn array_object_constructor_storage(
+        &mut self,
+        class_name: &str,
+        args: &[Value],
+        span: Span,
+    ) -> CompileResult<(Value, i64, String)> {
+        if args.len() > 3 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    format!("{class_name}::__construct()"),
+                    ArityExpectation::Between { min: 0, max: 3 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let storage = match args.first() {
+            Some(Value::Array(array)) => Value::Array(array.clone()),
+            Some(Value::Object(object)) => {
+                self.emit_deprecated(
+                    &format!("{class_name}::__construct()"),
+                    format!(
+                        "{class_name}::__construct(): Using an object as a backing array for {class_name} is deprecated, as it allows violating class constraints and invariants"
+                    ),
+                    span,
+                )?;
+                Value::Object(object.clone())
+            }
+            Some(other) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        format!("{class_name}::__construct()"),
+                        format!(
+                            "{class_name}::__construct(): Argument #1 ($array) must be of type array|object, {} given",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+            None => Value::Array(PhpArray::new()),
+        };
+
+        let flags = match args.get(1) {
+            Some(Value::Int(flags)) => *flags,
+            Some(other) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        format!("{class_name}::__construct()"),
+                        format!(
+                            "{class_name}::__construct(): Argument #2 ($flags) must be of type int, {} given",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+            None => 0,
+        };
+
+        let iterator_class = match args.get(2) {
+            Some(Value::String(name)) if !name.is_empty() => name.clone(),
+            Some(other) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        format!("{class_name}::__construct()"),
+                        format!(
+                            "{class_name}::__construct(): Argument #3 ($iteratorClass) must be of type string, {} given",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+            None => "ArrayIterator".to_string(),
+        };
+
+        Ok((storage, flags, iterator_class))
+    }
+
+    fn public_object_properties_array(object: &PhpObject) -> PhpArray {
+        let mut array = PhpArray::new();
+        for property in object.properties() {
+            if property.visibility() == Visibility::Public && property.is_initialized() {
+                array.insert(
+                    ArrayKey::String(property.name().to_string()),
+                    property.value_cloned(),
+                );
+            }
+        }
+        array
+    }
+
+    fn array_object_storage_to_array(
+        &self,
+        storage: &Value,
+        method_name: &str,
+        span: Span,
+    ) -> CompileResult<PhpArray> {
+        match storage {
+            Value::Array(array) => Ok(array.clone()),
+            Value::Object(object) if self.is_array_object_storage_object(object) => {
+                let state = self.array_object_state(object, method_name, span)?;
+                self.array_object_storage_to_array(&state.storage, method_name, span)
+            }
+            Value::Object(object) => Ok(Self::public_object_properties_array(object)),
+            other => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("ArrayObject::{method_name}()"),
+                    format!(
+                        "ArrayObject storage must be array or object in the current subset, got {}",
+                        other.type_name()
+                    ),
+                ),
+            )),
+        }
+    }
+
+    fn array_object_entry_at_cursor(
+        &self,
+        state: &BoundedArrayObjectState,
+        method_name: &str,
+        span: Span,
+    ) -> CompileResult<Option<ArrayEntry>> {
+        let array = self.array_object_storage_to_array(&state.storage, method_name, span)?;
+        Ok(array.entries().get(state.cursor).cloned())
+    }
+
+    fn array_object_key_to_property_name(key: &ArrayKey) -> String {
+        match key {
+            ArrayKey::Int(value) => value.to_string(),
+            ArrayKey::String(value) => value.clone(),
+        }
+    }
+
+    fn array_object_read_storage_key(
+        &self,
+        storage: &Value,
+        key: &ArrayKey,
+        method_name: &str,
+        span: Span,
+    ) -> CompileResult<Option<Value>> {
+        match storage {
+            Value::Array(array) => Ok(array.get_cloned(key.clone())),
+            Value::Object(object) if self.is_array_object_storage_object(object) => {
+                let state = self.array_object_state(object, method_name, span)?;
+                self.array_object_read_storage_key(&state.storage, key, method_name, span)
+            }
+            Value::Object(object) => {
+                Ok(object
+                    .read_current_public_property(&Self::array_object_key_to_property_name(key)))
+            }
+            other => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("ArrayObject::{method_name}()"),
+                    format!(
+                        "ArrayObject storage must be array or object in the current subset, got {}",
+                        other.type_name()
+                    ),
+                ),
+            )),
+        }
+    }
+
+    fn array_object_offset_key(
+        method_name: &str,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<ArrayKey> {
+        ArrayKey::from_value(value).map_err(|error| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("ArrayObject::{method_name}()"),
+                    error.message(),
+                ),
+            )
+        })
+    }
+
+    fn array_object_write_storage_key(
+        storage: &mut Value,
+        key: Option<ArrayKey>,
+        value: Value,
+        method_name: &str,
+        span: Span,
+    ) -> CompileResult<()> {
+        match storage {
+            Value::Array(array) => {
+                if let Some(key) = key {
+                    array.insert(key, value);
+                } else {
+                    array
+                        .append(value)
+                        .map_err(|error| runtime_error(span, error))?;
+                }
+                Ok(())
+            }
+            Value::Object(object) => {
+                let key = key.ok_or_else(|| {
+                    runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("ArrayObject::{method_name}()"),
+                            "Cannot append properties to objects, use ArrayObject::offsetSet() instead",
+                        ),
+                    )
+                })?;
+                object
+                    .write_dynamic_public_property(
+                        &Self::array_object_key_to_property_name(&key),
+                        value,
+                    )
+                    .map_err(|error| runtime_error(span, error))
+            }
+            other => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("ArrayObject::{method_name}()"),
+                    format!(
+                        "ArrayObject storage must be array or object in the current subset, got {}",
+                        other.type_name()
+                    ),
+                ),
+            )),
+        }
+    }
+
+    fn array_object_unset_storage_key(
+        storage: &mut Value,
+        key: &ArrayKey,
+        method_name: &str,
+        span: Span,
+    ) -> CompileResult<()> {
+        match storage {
+            Value::Array(array) => {
+                array.remove(key.clone());
+                Ok(())
+            }
+            Value::Object(object) => object
+                .unset_property_from_context(
+                    &Self::array_object_key_to_property_name(key),
+                    None,
+                    &[],
+                )
+                .map(|_| ())
+                .map_err(|error| runtime_error(span, error)),
+            other => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("ArrayObject::{method_name}()"),
+                    format!(
+                        "ArrayObject storage must be array or object in the current subset, got {}",
+                        other.type_name()
+                    ),
+                ),
+            )),
+        }
+    }
+
+    fn sync_array_object_properties(
+        &self,
+        object: &PhpObject,
+        state: &BoundedArrayObjectState,
+        span: Span,
+    ) -> CompileResult<()> {
+        let class_id = self
+            .array_object_storage_declaring_class_id(object)
+            .ok_or_else(|| {
+                runtime_error(span, RuntimeError::undefined_class(object.class_name()))
+            })?;
+        object
+            .write_property_from_context(
+                "storage",
+                state.storage.clone(),
+                Some(class_id),
+                &[class_id],
+            )
+            .map_err(|error| runtime_error(span, error))?;
+        Ok(())
+    }
+
+    fn sync_array_object_object_properties(
+        &self,
+        object: &PhpObject,
+        span: Span,
+    ) -> CompileResult<()> {
+        if let Some(state) = self.array_objects.get(&object.id()) {
+            self.sync_array_object_properties(object, state, span)?;
+        }
+        Ok(())
+    }
+
+    fn create_array_iterator_object_with_storage(
+        &mut self,
+        storage: Value,
+        flags: i64,
+        iterator_class: String,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let class_id = self
+            .classes
+            .lookup_class_id("ArrayIterator")
+            .ok_or_else(|| runtime_error(span, RuntimeError::undefined_class("ArrayIterator")))?;
+        let object_id = self.allocate_object_id();
+        let class = self
+            .classes
+            .get(class_id)
+            .expect("ArrayIterator class id should resolve to class metadata");
+        let inherited_properties = self.inherited_instance_properties(class_id);
+        let mut ancestor_class_names = self.inherited_class_names(class_id);
+        ancestor_class_names.extend(self.class_alias_names(class_id));
+        let interface_names = self.class_implements_interface_names(class_id);
+        let object = PhpObject::from_class_with_relationship_metadata_with_id(
+            class,
+            &inherited_properties,
+            ancestor_class_names,
+            interface_names,
+            object_id,
+        );
+        self.apply_instance_property_defaults(&object, class_id)?;
+        let state = BoundedArrayObjectState {
+            storage,
+            flags,
+            iterator_class,
+            cursor: 0,
+        };
+        self.sync_array_object_properties(&object, &state, span)?;
+        self.array_objects.insert(object.id(), state);
+        self.track_allocated_object(&object);
+        Ok(Value::Object(object))
+    }
+
+    fn array_object_sort_flag<'a>(
+        class_name: &str,
+        method_name: &str,
+        args: &'a [Value],
+        span: Span,
+    ) -> CompileResult<Option<&'a Value>> {
+        if args.len() > 1 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    format!("{class_name}::{method_name}()"),
+                    ArityExpectation::Between { min: 0, max: 1 },
+                    args.len(),
+                ),
+            ));
+        }
+        if let Some(flag @ Value::Int(_)) = args.first() {
+            Ok(Some(flag))
+        } else if let Some(other) = args.first() {
+            Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{class_name}::{method_name}()"),
+                    format!(
+                        "Argument #1 ($flags) must be of type int, {} given",
+                        other.type_name()
+                    ),
+                ),
+            ))
+        } else {
+            Ok(None)
+        }
+    }
+
+    fn array_object_expect_no_args(
+        class_name: &str,
+        method_name: &str,
+        args: &[Value],
+        span: Span,
+    ) -> CompileResult<()> {
+        if args.is_empty() {
+            return Ok(());
+        }
+        Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                format!("{class_name}::{method_name}()"),
+                format!(
+                    "{class_name}::{method_name}() expects exactly 0 arguments, {} given",
+                    args.len()
+                ),
+            ),
+        ))
+    }
+
+    fn call_array_object_method_with_values(
+        &mut self,
+        object: PhpObject,
+        method_name: &str,
+        args: Vec<Value>,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let class_name = if self.is_array_iterator_class_id(object.class_id()) {
+            "ArrayIterator"
+        } else {
+            "ArrayObject"
+        };
+        match method_name.to_ascii_lowercase().as_str() {
+            "__construct" => {
+                let (storage, flags, iterator_class) =
+                    self.array_object_constructor_storage(class_name, &args, span)?;
+                let state = BoundedArrayObjectState {
+                    storage,
+                    flags,
+                    iterator_class,
+                    cursor: 0,
+                };
+                self.sync_array_object_properties(&object, &state, span)?;
+                self.array_objects.insert(object.id(), state);
+                Ok(Value::Null)
+            }
+            "count" => {
+                expect_arity(&format!("{class_name}::count"), &args, 0, span)?;
+                let state = self.array_object_state(&object, method_name, span)?;
+                Ok(Value::Int(
+                    self.array_object_storage_to_array(&state.storage, method_name, span)?
+                        .len() as i64,
+                ))
+            }
+            "getarraycopy" => {
+                expect_arity("ArrayObject::getArrayCopy", &args, 0, span)?;
+                let state = self.array_object_state(&object, method_name, span)?;
+                Ok(Value::Array(self.array_object_storage_to_array(
+                    &state.storage,
+                    method_name,
+                    span,
+                )?))
+            }
+            "exchangearray" => {
+                expect_arity("ArrayObject::exchangeArray", &args, 1, span)?;
+                let replacement = match args.first().expect("arity checked") {
+                    Value::Array(array) => Value::Array(array.clone()),
+                    Value::Object(object) => Value::Object(object.clone()),
+                    other => {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "ArrayObject::exchangeArray()",
+                                format!(
+                                    "ArrayObject::exchangeArray(): Argument #1 ($array) must be of type array|object, {} given",
+                                    other.type_name()
+                                ),
+                            ),
+                        ));
+                    }
+                };
+                let mut state = self.array_object_state(&object, method_name, span)?.clone();
+                let old = self.array_object_storage_to_array(&state.storage, method_name, span)?;
+                state.storage = replacement;
+                state.cursor = 0;
+                self.sync_array_object_properties(&object, &state, span)?;
+                self.array_objects.insert(object.id(), state);
+                Ok(Value::Array(old))
+            }
+            "getflags" => {
+                expect_arity(&format!("{class_name}::getFlags"), &args, 0, span)?;
+                let state = self.array_object_state(&object, method_name, span)?;
+                Ok(Value::Int(state.flags))
+            }
+            "setflags" => {
+                expect_arity(&format!("{class_name}::setFlags"), &args, 1, span)?;
+                let flags = match args.first() {
+                    Some(Value::Int(flags)) => *flags,
+                    Some(other) => {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                format!("{class_name}::setFlags()"),
+                                format!(
+                                    "{class_name}::setFlags(): Argument #1 ($flags) must be of type int, {} given",
+                                    other.type_name()
+                                ),
+                            ),
+                        ));
+                    }
+                    None => 0,
+                };
+                let mut state = self.array_object_state(&object, method_name, span)?.clone();
+                state.flags = flags;
+                self.array_objects.insert(object.id(), state);
+                Ok(Value::Null)
+            }
+            "getiterator" => {
+                expect_arity("ArrayObject::getIterator", &args, 0, span)?;
+                let state = self.array_object_state(&object, method_name, span)?.clone();
+                self.create_array_iterator_object_with_storage(
+                    state.storage,
+                    state.flags,
+                    state.iterator_class,
+                    span,
+                )
+            }
+            "offsetexists" => {
+                expect_arity(&format!("{class_name}::offsetExists"), &args, 1, span)?;
+                let key = Self::array_object_offset_key(
+                    "offsetExists",
+                    args.first().expect("arity checked"),
+                    span,
+                )?;
+                let state = self.array_object_state(&object, method_name, span)?;
+                Ok(Value::Bool(
+                    self.array_object_read_storage_key(&state.storage, &key, method_name, span)?
+                        .is_some(),
+                ))
+            }
+            "offsetget" => {
+                expect_arity(&format!("{class_name}::offsetGet"), &args, 1, span)?;
+                let key = Self::array_object_offset_key(
+                    "offsetGet",
+                    args.first().expect("arity checked"),
+                    span,
+                )?;
+                let state = self.array_object_state(&object, method_name, span)?;
+                match self.array_object_read_storage_key(&state.storage, &key, method_name, span)? {
+                    Some(value) => Ok(value),
+                    None => {
+                        self.emit_display_warning(
+                            format!("Undefined array key {}", key.diagnostic_key()),
+                            span,
+                        )?;
+                        Ok(Value::Null)
+                    }
+                }
+            }
+            "offsetset" => {
+                if args.len() != 2 {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::arity_mismatch(
+                            format!("{class_name}::offsetSet()"),
+                            ArityExpectation::Exactly(2),
+                            args.len(),
+                        ),
+                    ));
+                }
+                let key = if matches!(args.first(), Some(Value::Null)) {
+                    None
+                } else {
+                    Some(Self::array_object_offset_key(
+                        "offsetSet",
+                        args.first().expect("arity checked"),
+                        span,
+                    )?)
+                };
+                let value = args.get(1).cloned().unwrap_or(Value::Null);
+                let mut state = self.array_object_state(&object, method_name, span)?.clone();
+                Self::array_object_write_storage_key(
+                    &mut state.storage,
+                    key,
+                    value,
+                    method_name,
+                    span,
+                )?;
+                self.sync_array_object_properties(&object, &state, span)?;
+                self.array_objects.insert(object.id(), state);
+                Ok(Value::Null)
+            }
+            "append" => {
+                expect_arity(&format!("{class_name}::append"), &args, 1, span)?;
+                let value = args.first().cloned().unwrap_or(Value::Null);
+                let mut state = self.array_object_state(&object, method_name, span)?.clone();
+                Self::array_object_write_storage_key(
+                    &mut state.storage,
+                    None,
+                    value,
+                    method_name,
+                    span,
+                )?;
+                self.sync_array_object_properties(&object, &state, span)?;
+                self.array_objects.insert(object.id(), state);
+                Ok(Value::Null)
+            }
+            "offsetunset" => {
+                expect_arity(&format!("{class_name}::offsetUnset"), &args, 1, span)?;
+                let key = Self::array_object_offset_key(
+                    "offsetUnset",
+                    args.first().expect("arity checked"),
+                    span,
+                )?;
+                let mut state = self.array_object_state(&object, method_name, span)?.clone();
+                Self::array_object_unset_storage_key(&mut state.storage, &key, method_name, span)?;
+                if state.cursor
+                    > self
+                        .array_object_storage_to_array(&state.storage, method_name, span)?
+                        .len()
+                {
+                    state.cursor = self
+                        .array_object_storage_to_array(&state.storage, method_name, span)?
+                        .len();
+                }
+                self.sync_array_object_properties(&object, &state, span)?;
+                self.array_objects.insert(object.id(), state);
+                Ok(Value::Null)
+            }
+            "rewind" => {
+                expect_arity(&format!("{class_name}::rewind"), &args, 0, span)?;
+                let mut state = self.array_object_state(&object, method_name, span)?.clone();
+                state.cursor = 0;
+                self.array_objects.insert(object.id(), state);
+                Ok(Value::Null)
+            }
+            "valid" => {
+                expect_arity(&format!("{class_name}::valid"), &args, 0, span)?;
+                let state = self.array_object_state(&object, method_name, span)?;
+                Ok(Value::Bool(
+                    state.cursor
+                        < self
+                            .array_object_storage_to_array(&state.storage, method_name, span)?
+                            .len(),
+                ))
+            }
+            "current" => {
+                expect_arity(&format!("{class_name}::current"), &args, 0, span)?;
+                let state = self.array_object_state(&object, method_name, span)?;
+                Ok(self
+                    .array_object_entry_at_cursor(state, method_name, span)?
+                    .map(|entry| entry.value_cloned())
+                    .unwrap_or(Value::Null))
+            }
+            "key" => {
+                expect_arity(&format!("{class_name}::key"), &args, 0, span)?;
+                let state = self.array_object_state(&object, method_name, span)?;
+                Ok(self
+                    .array_object_entry_at_cursor(state, method_name, span)?
+                    .map(|entry| value_from_array_key(&entry.key))
+                    .unwrap_or(Value::Null))
+            }
+            "next" => {
+                expect_arity(&format!("{class_name}::next"), &args, 0, span)?;
+                let mut state = self.array_object_state(&object, method_name, span)?.clone();
+                state.cursor = state.cursor.saturating_add(1);
+                self.array_objects.insert(object.id(), state);
+                Ok(Value::Null)
+            }
+            "seek" => {
+                expect_arity(&format!("{class_name}::seek"), &args, 1, span)?;
+                let position = match args.first() {
+                    Some(Value::Int(position)) => *position,
+                    Some(other) => {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                format!("{class_name}::seek()"),
+                                format!("position must be int, got {}", other.type_name()),
+                            ),
+                        ));
+                    }
+                    None => 0,
+                };
+                let mut state = self.array_object_state(&object, method_name, span)?.clone();
+                let len = self
+                    .array_object_storage_to_array(&state.storage, method_name, span)?
+                    .len();
+                if position < 0 || position as usize >= len {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{class_name}::seek()"),
+                            format!("Seek position {position} is out of range"),
+                        ),
+                    ));
+                }
+                state.cursor = position as usize;
+                self.array_objects.insert(object.id(), state);
+                Ok(Value::Null)
+            }
+            "asort" | "ksort" | "natsort" | "natcasesort" => {
+                let operation = match method_name.to_ascii_lowercase().as_str() {
+                    "asort" => PhpArraySortOperation::Asort,
+                    "ksort" => PhpArraySortOperation::Ksort,
+                    "natsort" => {
+                        Self::array_object_expect_no_args(class_name, "natsort", &args, span)?;
+                        PhpArraySortOperation::Natsort
+                    }
+                    "natcasesort" => {
+                        Self::array_object_expect_no_args(class_name, "natcasesort", &args, span)?;
+                        PhpArraySortOperation::Natcasesort
+                    }
+                    _ => unreachable!("sort method matched"),
+                };
+                let flag = if matches!(
+                    operation,
+                    PhpArraySortOperation::Asort | PhpArraySortOperation::Ksort
+                ) {
+                    Self::array_object_sort_flag(class_name, method_name, &args, span)?
+                } else {
+                    None
+                };
+                let mut state = self.array_object_state(&object, method_name, span)?.clone();
+                let Value::Array(array) = &mut state.storage else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{class_name}::{method_name}()"),
+                            "sorting ArrayObject object-backed storage is not implemented in the current subset",
+                        ),
+                    ));
+                };
+                array
+                    .sort_for_php_builtin(operation, flag)
+                    .map_err(|error| runtime_error(span, error))?;
+                state.cursor = 0;
+                self.sync_array_object_properties(&object, &state, span)?;
+                self.array_objects.insert(object.id(), state);
+                Ok(Value::Bool(true))
+            }
+            _ => Err(runtime_error(
+                span,
+                RuntimeError::undefined_function(format!("{class_name}::{method_name}()")),
             )),
         }
     }
@@ -11718,6 +12520,12 @@ impl Interpreter {
         }
 
         self.ensure_instance_method_visible(class_id, &class_name, method_name, visibility, span)?;
+
+        if self.resolved_method_is_core_array_object(class_id) {
+            return self
+                .call_array_object_method_with_values(object, method_name, Vec::new(), span)
+                .map(|value| (value, None));
+        }
 
         if self.resolved_method_is_core_spl_object_storage(class_id) {
             return self
@@ -19517,6 +20325,10 @@ impl Interpreter {
             self.spl_fixed_arrays
                 .insert(object.id(), SplFixedArrayState::default());
         }
+        if self.is_array_object_storage_class_id(class_id) {
+            self.array_objects
+                .insert(object.id(), BoundedArrayObjectState::default());
+        }
         if self.is_spl_object_storage_class_id(class_id) {
             self.spl_object_storages
                 .insert(object.id(), SplObjectStorageState::default());
@@ -19579,6 +20391,16 @@ impl Interpreter {
                     "static constructors are not implemented",
                 ),
             ));
+        }
+
+        if self.resolved_method_is_core_array_object(constructor_class_id) {
+            let values = args
+                .iter()
+                .map(|arg| self.evaluate(arg, scope))
+                .collect::<CompileResult<Vec<_>>>()?;
+            self.call_array_object_method_with_values(object.clone(), "__construct", values, span)?;
+            self.track_allocated_object(&object);
+            return Ok(Value::Object(object));
         }
 
         if self.resolved_method_is_core_spl_object_storage(constructor_class_id) {
@@ -20253,6 +21075,10 @@ impl Interpreter {
         let clone = object.shallow_clone_with_id(object_id);
         if let Some(state) = self.spl_fixed_arrays.get(&object.id()).cloned() {
             self.spl_fixed_arrays.insert(clone.id(), state);
+        }
+        if let Some(state) = self.array_objects.get(&object.id()).cloned() {
+            self.array_objects.insert(clone.id(), state);
+            self.sync_array_object_object_properties(&clone, span)?;
         }
         if let Some(state) = self.spl_object_storages.get(&object.id()).cloned() {
             self.spl_object_storages.insert(clone.id(), state);
@@ -41819,6 +42645,12 @@ impl Interpreter {
 
         self.ensure_instance_method_visible(class_id, &class_name, method_name, visibility, span)?;
 
+        if self.resolved_method_is_core_array_object(class_id) {
+            return self
+                .call_array_object_method_with_values(object, method_name, args, span)
+                .map(Some);
+        }
+
         if self.resolved_method_is_core_spl_object_storage(class_id) {
             return self
                 .call_spl_object_storage_method_with_values(object, method_name, args, span)
@@ -41944,6 +42776,12 @@ impl Interpreter {
         }
 
         self.ensure_instance_method_visible(class_id, &class_name, method_name, visibility, span)?;
+
+        if self.resolved_method_is_core_array_object(class_id) {
+            return self
+                .call_array_object_method_with_values(object, method_name, args, span)
+                .map(Some);
+        }
 
         if self.resolved_method_is_core_spl_object_storage(class_id) {
             return self
@@ -42408,6 +43246,16 @@ impl Interpreter {
         }
 
         self.ensure_instance_method_visible(class_id, &class_name, method_name, visibility, span)?;
+
+        if self.resolved_method_is_core_array_object(class_id) {
+            let values = args
+                .iter()
+                .map(|arg| self.evaluate(arg, caller_scope))
+                .collect::<CompileResult<Vec<_>>>()?;
+            return self
+                .call_array_object_method_with_values(object, method_name, values, span)
+                .map(|value| (value, None));
+        }
 
         if self.resolved_method_is_core_spl_object_storage(class_id) {
             let values = args
@@ -77785,6 +78633,29 @@ impl Interpreter {
                     ),
                 )),
             },
+            "var_export" => match args.as_slice() {
+                [value] => {
+                    let output = format_var_export(value, span)?;
+                    self.append_output_at(&output, span);
+                    Ok(Value::Null)
+                }
+                [value, return_output] if return_output.is_truthy() => {
+                    format_var_export(value, span).map(Value::String)
+                }
+                [value, _] => {
+                    let output = format_var_export(value, span)?;
+                    self.append_output_at(&output, span);
+                    Ok(Value::Null)
+                }
+                _ => Err(runtime_error(
+                    span,
+                    RuntimeError::arity_mismatch(
+                        "var_export()",
+                        ArityExpectation::Between { min: 1, max: 2 },
+                        args.len(),
+                    ),
+                )),
+            },
             _ => unreachable!("is_builtin keeps this match exhaustive for callers"),
         }
     }
@@ -81334,6 +82205,9 @@ impl Interpreter {
         if let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
             self.resolve_instance_method(object.class_id(), method_name)
         {
+            if self.resolved_method_is_core_array_object(class_id) {
+                return self.call_array_object_method_with_values(object, method_name, args, span);
+            }
             if self.resolved_method_is_core_spl_object_storage(class_id) {
                 return self.call_spl_object_storage_method_with_values(
                     object,
@@ -81463,6 +82337,9 @@ impl Interpreter {
         if let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
             self.resolve_instance_method(object.class_id(), method_name)
         {
+            if self.resolved_method_is_core_array_object(class_id) {
+                return self.call_array_object_method_with_values(object, method_name, args, span);
+            }
             if self.resolved_method_is_core_spl_object_storage(class_id) {
                 return self.call_spl_object_storage_method_with_values(
                     object,
@@ -81564,6 +82441,16 @@ impl Interpreter {
         if let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
             self.resolve_instance_method(object.class_id(), "offsetGet")
         {
+            if self.resolved_method_is_core_array_object(class_id) {
+                return self
+                    .call_array_object_method_with_values(
+                        object,
+                        "offsetGet",
+                        vec![offset_arg],
+                        span,
+                    )
+                    .map(|value| (value, None));
+            }
             if self.resolved_method_is_core_spl_object_storage(class_id) {
                 return self
                     .call_spl_object_storage_method_with_values(
@@ -81723,6 +82610,10 @@ impl Interpreter {
         }
 
         self.ensure_instance_method_visible(class_id, &class_name, "count", visibility, span)?;
+
+        if self.resolved_method_is_core_array_object(class_id) {
+            return self.call_array_object_method_with_values(object, "count", Vec::new(), span);
+        }
 
         if self.resolved_method_is_core_spl_object_storage(class_id) {
             return self.call_spl_object_storage_method_with_values(
@@ -86144,6 +87035,26 @@ fn seed_core_class_constant_runtime_tables(
             );
         }
     }
+    for class_name in ["ArrayObject", "ArrayIterator"] {
+        if let Some(class_id) = classes.lookup_class_id(class_name) {
+            for (name, value) in [
+                ("STD_PROP_LIST", ARRAY_OBJECT_STD_PROP_LIST),
+                ("ARRAY_AS_PROPS", ARRAY_OBJECT_ARRAY_AS_PROPS),
+            ] {
+                let span = Span::new(1, 1);
+                class_constants.insert(
+                    (class_id, name.to_string()),
+                    ClassConstantDecl {
+                        name: name.to_string(),
+                        visibility: ClassVisibility::Public,
+                        value: Expr::Int(value, span),
+                        attributes: Vec::new(),
+                        span,
+                    },
+                );
+            }
+        }
+    }
     let Some(reflection_method_id) = classes.lookup_class_id("ReflectionMethod") else {
         return;
     };
@@ -90104,6 +91015,29 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
             }
         }
 
+        for prefix in [
+            "unsupported call ArrayObject::",
+            "unsupported call ArrayIterator::",
+        ] {
+            if let Some((method, reason)) = error
+                .message
+                .strip_prefix(prefix)
+                .and_then(|message| message.split_once(": "))
+            {
+                if reason.contains(" expects exactly ") {
+                    return Some(("ArgumentCountError", reason.to_string()));
+                }
+                if reason.contains(" must be of type ") {
+                    let class_name = if prefix.contains("ArrayIterator") {
+                        "ArrayIterator"
+                    } else {
+                        "ArrayObject"
+                    };
+                    return Some(("TypeError", format!("{class_name}::{method}: {reason}")));
+                }
+            }
+        }
+
         if error.message.starts_with("Object of type ")
             && error.message.ends_with(" is not callable")
         {
@@ -91376,6 +92310,7 @@ fn is_builtin(name: &str) -> bool {
             | "get_parent_class"
             | "var_dump"
             | "print_r"
+            | "var_export"
     )
 }
 
@@ -92126,6 +93061,8 @@ fn builtin_global_constant_value(name: &str) -> Option<Value> {
         "PHP_VERSION_ID" => Some(Value::Int(80300)),
         "PHP_INT_MAX" => Some(Value::Int(i64::MAX)),
         "PHP_INT_MIN" => Some(Value::Int(i64::MIN)),
+        "INF" => Some(Value::Float(f64::INFINITY)),
+        "NAN" => Some(Value::Float(f64::NAN)),
         "PHP_SAPI" => Some(Value::String("cli".to_string())),
         "PHP_OS" => Some(Value::String("Linux".to_string())),
         "PHP_OS_FAMILY" => Some(Value::String("Linux".to_string())),
@@ -113214,6 +114151,182 @@ fn format_print_r_object_property(property: &ObjectProperty) -> String {
             )
         }
     }
+}
+
+fn format_var_export(value: &Value, span: Span) -> CompileResult<String> {
+    format_var_export_with_indent(value, 0, span)
+}
+
+fn format_var_export_with_indent(
+    value: &Value,
+    indent: usize,
+    span: Span,
+) -> CompileResult<String> {
+    Ok(match value {
+        Value::Null => "NULL".to_string(),
+        Value::Bool(value) => {
+            if *value {
+                "true".to_string()
+            } else {
+                "false".to_string()
+            }
+        }
+        Value::Int(value) => value.to_string(),
+        Value::Float(value) => format_var_export_float(*value),
+        Value::String(value) => format_var_export_string(value),
+        Value::BinaryString(value) => {
+            let value = tree_walk_binary_string_utf8(value, "var_export()", span)?;
+            format_var_export_string(value)
+        }
+        Value::Array(array) => format_var_export_array(array, indent, span)?,
+        Value::Object(object) => format_var_export_object(object, indent, span)?,
+        Value::Resource(_) | Value::Closure(_) => {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "var_export()",
+                    format!(
+                        "{} values are not supported in the current var_export() subset",
+                        value.type_name()
+                    ),
+                ),
+            ))
+        }
+    })
+}
+
+fn format_var_export_float(value: f64) -> String {
+    if value.is_nan() {
+        return "NAN".to_string();
+    }
+    if value == f64::INFINITY {
+        return "INF".to_string();
+    }
+    if value == f64::NEG_INFINITY {
+        return "-INF".to_string();
+    }
+    if value == 0.0 {
+        return if value.is_sign_negative() {
+            "-0.0".to_string()
+        } else {
+            "0.0".to_string()
+        };
+    }
+
+    let abs = value.abs();
+    if !(1e-4..1e17).contains(&abs) {
+        normalize_sprintf_exponent(trim_scientific_float(format!("{value:.16E}")))
+    } else if value.fract() == 0.0 {
+        format!("{value:.1}")
+    } else {
+        let integer_digits = if abs >= 1.0 {
+            abs.log10().floor() as i32 + 1
+        } else {
+            0
+        };
+        let decimals = 17_i32.saturating_sub(integer_digits).max(0) as usize;
+        trim_decimal_suffix(&format!("{value:.decimals$}"))
+    }
+}
+
+fn format_var_export_string(value: &str) -> String {
+    if value.contains('\0') {
+        return value
+            .split('\0')
+            .map(format_var_export_non_nul_string)
+            .collect::<Vec<_>>()
+            .join(" . \"\\0\" . ");
+    }
+    format_var_export_non_nul_string(value)
+}
+
+fn format_var_export_non_nul_string(value: &str) -> String {
+    let mut output = String::from("'");
+    for ch in value.chars() {
+        match ch {
+            '\\' => output.push_str("\\\\"),
+            '\'' => output.push_str("\\'"),
+            ch => output.push(ch),
+        }
+    }
+    output.push('\'');
+    output
+}
+
+fn format_var_export_array(array: &PhpArray, indent: usize, span: Span) -> CompileResult<String> {
+    let padding = "  ".repeat(indent);
+    let child_padding = "  ".repeat(indent + 1);
+    let mut output = format!("{padding}array (\n");
+    for entry in array.entries() {
+        let key = format_var_export_array_key(&entry.key);
+        let value = entry.value();
+        match value {
+            Value::Array(_) | Value::Object(_) => {
+                output.push_str(&format!("{child_padding}{key} => \n"));
+                output.push_str(&format_var_export_with_indent(value, indent + 1, span)?);
+                output.push_str(",\n");
+            }
+            _ => {
+                output.push_str(&format!(
+                    "{child_padding}{key} => {},\n",
+                    format_var_export_with_indent(value, indent + 1, span)?
+                ));
+            }
+        }
+    }
+    output.push_str(&format!("{padding})"));
+    Ok(output)
+}
+
+fn format_var_export_array_key(key: &ArrayKey) -> String {
+    match key {
+        ArrayKey::Int(value) => value.to_string(),
+        ArrayKey::String(value) => format_var_export_string(value),
+    }
+}
+
+fn format_var_export_object(
+    object: &PhpObject,
+    indent: usize,
+    span: Span,
+) -> CompileResult<String> {
+    let padding = "  ".repeat(indent);
+    let property_padding = format!("{padding}   ");
+    let class_name = object.class_name();
+    let is_std_class = class_name.eq_ignore_ascii_case("stdClass");
+    let mut output = if is_std_class {
+        format!("{padding}(object) array(\n")
+    } else {
+        format!("{padding}\\{class_name}::__set_state(array(\n")
+    };
+
+    for property in object.properties() {
+        if !property.is_initialized() {
+            continue;
+        }
+        let key = format_var_export_string(property.name());
+        let value = property.value_cloned();
+        match &value {
+            Value::Array(_) | Value::Object(_) => {
+                output.push_str(&format!("{property_padding}{key} => \n"));
+                output.push_str(&format_var_export_with_indent(&value, indent + 1, span)?);
+                output.push_str(",\n");
+            }
+            _ => {
+                output.push_str(&format!(
+                    "{property_padding}{key} => {},\n",
+                    format_var_export_with_indent(&value, indent + 1, span)?
+                ));
+            }
+        }
+    }
+
+    if is_std_class {
+        output.push_str(&format!("{padding})"));
+    } else {
+        output.push_str(&format!("{padding}))"));
+    }
+    Ok(output)
 }
 
 fn format_var_dump_object_property(property: &ObjectProperty) -> String {

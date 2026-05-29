@@ -32112,9 +32112,115 @@ impl PhpClassTable {
                 Visibility::Public,
             ))
             .expect("SplFixedArray core metadata should not duplicate static methods");
+        let array_object_id = classes
+            .declare_class("ArrayObject")
+            .expect("core class table should contain SplFixedArray before ArrayObject");
+        classes
+            .set_interfaces(
+                array_object_id,
+                vec![
+                    "IteratorAggregate".to_string(),
+                    "ArrayAccess".to_string(),
+                    "Countable".to_string(),
+                ],
+            )
+            .expect("ArrayObject should implement core SPL interfaces");
+        let array_object = classes
+            .get_mut(array_object_id)
+            .expect("declared ArrayObject class id should resolve");
+        array_object
+            .add_property(PhpPropertyMetadata::instance(
+                "storage",
+                Visibility::Private,
+            ))
+            .expect("ArrayObject core metadata should not duplicate properties");
+        for constant in ["STD_PROP_LIST", "ARRAY_AS_PROPS"] {
+            array_object
+                .add_constant(PhpClassConstantMetadata::new(constant, Visibility::Public))
+                .expect("ArrayObject core metadata should not duplicate constants");
+        }
+        for method in [
+            "__construct",
+            "append",
+            "asort",
+            "count",
+            "exchangeArray",
+            "getArrayCopy",
+            "getFlags",
+            "getIterator",
+            "key",
+            "ksort",
+            "natcasesort",
+            "natsort",
+            "next",
+            "offsetExists",
+            "offsetGet",
+            "offsetSet",
+            "offsetUnset",
+            "rewind",
+            "setFlags",
+            "valid",
+        ] {
+            array_object
+                .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("ArrayObject core metadata should not duplicate methods");
+        }
+        let array_iterator_id = classes
+            .declare_class("ArrayIterator")
+            .expect("core class table should contain ArrayObject before ArrayIterator");
+        classes
+            .set_interfaces(
+                array_iterator_id,
+                vec![
+                    "Iterator".to_string(),
+                    "ArrayAccess".to_string(),
+                    "Countable".to_string(),
+                ],
+            )
+            .expect("ArrayIterator should implement core SPL interfaces");
+        let array_iterator = classes
+            .get_mut(array_iterator_id)
+            .expect("declared ArrayIterator class id should resolve");
+        array_iterator
+            .add_property(PhpPropertyMetadata::instance(
+                "storage",
+                Visibility::Private,
+            ))
+            .expect("ArrayIterator core metadata should not duplicate properties");
+        for constant in ["STD_PROP_LIST", "ARRAY_AS_PROPS"] {
+            array_iterator
+                .add_constant(PhpClassConstantMetadata::new(constant, Visibility::Public))
+                .expect("ArrayIterator core metadata should not duplicate constants");
+        }
+        for method in [
+            "__construct",
+            "append",
+            "asort",
+            "count",
+            "current",
+            "getArrayCopy",
+            "getFlags",
+            "key",
+            "ksort",
+            "natcasesort",
+            "natsort",
+            "next",
+            "offsetExists",
+            "offsetGet",
+            "offsetSet",
+            "offsetUnset",
+            "rewind",
+            "seek",
+            "setFlags",
+            "valid",
+        ] {
+            array_iterator
+                .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("ArrayIterator core metadata should not duplicate methods");
+        }
         let spl_doubly_linked_list_id = classes
             .declare_class("SplDoublyLinkedList")
-            .expect("core class table should contain SplFixedArray before SplDoublyLinkedList");
+            .expect("core class table should contain ArrayIterator before SplDoublyLinkedList");
         classes
             .set_interfaces(
                 spl_doubly_linked_list_id,

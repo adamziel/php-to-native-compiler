@@ -91,6 +91,8 @@ echo "ready\n";
             "OutOfBoundsException",
             "Directory",
             "SplFixedArray",
+            "ArrayObject",
+            "ArrayIterator",
             "SplDoublyLinkedList",
             "SplQueue",
             "SplStack",
@@ -146,6 +148,20 @@ echo "ready\n";
     let spl_fixed_array = classes.lookup_class("SplFixedArray").unwrap();
     assert!(spl_fixed_array.method("offsetGet").is_some());
     assert!(spl_fixed_array.method("fromArray").is_some());
+    let array_object = classes.lookup_class("ArrayObject").unwrap();
+    assert!(array_object.method("getIterator").is_some());
+    assert!(array_object.constant("ARRAY_AS_PROPS").is_some());
+    assert_eq!(
+        array_object.property("storage").unwrap().visibility(),
+        Visibility::Private
+    );
+    let array_iterator = classes.lookup_class("ArrayIterator").unwrap();
+    assert!(array_iterator.method("seek").is_some());
+    assert!(array_iterator.constant("STD_PROP_LIST").is_some());
+    assert_eq!(
+        array_iterator.property("storage").unwrap().visibility(),
+        Visibility::Private
+    );
     let spl_doubly_linked_list = classes.lookup_class("SplDoublyLinkedList").unwrap();
     assert!(spl_doubly_linked_list.constant("IT_MODE_LIFO").is_some());
     assert_eq!(
@@ -14520,6 +14536,42 @@ try {
     assert_eq!(
         execution.stdout,
         "zero|one|two\nbool(true)\nbool(false)\n3|3|3\n0:zero\n1:one\n2:two\n2|trimmed\none|copy\nArray\n(\n    [0] => a\n    [1] => \n    [2] => c\n)\n[] operator not supported for SplFixedArray\nOutOfBoundsException:Index invalid or out of range\n"
+    );
+}
+
+#[test]
+fn array_object_array_iterator_offsets_iteration_clone_and_sort() {
+    let source = r#"<?php
+$ao = new ArrayObject(array('b' => 2, 'a' => 1));
+$ao[] = 3;
+$ao['c'] = null;
+var_dump($ao->offsetExists('c'));
+echo count($ao), "|", $ao['a'], "\n";
+unset($ao['c']);
+
+foreach ($ao as $key => $value) {
+    echo $key, ":", $value, "\n";
+}
+
+$copy = clone $ao;
+$copy['a'] = 'copy';
+echo $ao['a'], "|", $copy['a'], "\n";
+
+$ao->ksort();
+foreach ($ao->getArrayCopy() as $key => $value) {
+    echo $key, "=", $value, "\n";
+}
+
+$it = new ArrayIterator(array('x' => 'ex', 'y' => 'why'));
+foreach ($it as $key => $value) {
+    echo $key, ":", $value, "\n";
+}
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "bool(true)\n4|1\nb:2\na:1\n0:3\n1|copy\n0=3\na=1\nb=2\nx:ex\ny:why\n"
     );
 }
 

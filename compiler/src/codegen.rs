@@ -66721,6 +66721,7 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "get_parent_class",
     "var_dump",
     "print_r",
+    "var_export",
 ];
 
 const COMPAT_LOADED_EXTENSION_NAMES: &[&str] = &["json", "hash", "pdo", "pdo_mysql"];
@@ -66951,6 +66952,8 @@ fn native_builtin_global_constant_c_value(name: &str) -> Option<CValue> {
         "PHP_VERSION" => Some(CValue::String("8.3.0".to_string())),
         "PHP_VERSION_ID" => Some(CValue::Int("80300".to_string())),
         "PHP_INT_MAX" => Some(CValue::Int(i64::MAX.to_string())),
+        "INF" => Some(CValue::Float("INFINITY".to_string())),
+        "NAN" => Some(CValue::Float("NAN".to_string())),
         "PHP_SAPI" => Some(CValue::String("cli".to_string())),
         "PHP_OS" => Some(CValue::String("Linux".to_string())),
         "PHP_OS_FAMILY" => Some(CValue::String("Linux".to_string())),
