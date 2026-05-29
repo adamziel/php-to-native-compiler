@@ -4757,7 +4757,10 @@
   an `E_WARNING`; `readfile()` reads a local path, emits its UTF-8 payload, and
   returns the byte count; `unlink()`, `mkdir()`, `rmdir()`, `copy()`,
   `rename()`, and `chdir()` perform host-local operations with bounded
-  `open_basedir` checks; and `scandir()` returns a PHP array for local
+  `open_basedir` checks; `copy()` rejects directory sources, existing
+  directory destinations, and same-source/destination local file paths with
+  PHP-style `false`/warning behavior while preserving the source file; and
+  `scandir()` returns a PHP array for local
   directories with `SCANDIR_SORT_ASCENDING`, `SCANDIR_SORT_DESCENDING`, or
   `SCANDIR_SORT_NONE`. The same bounded local path slice includes `stat()`,
   `lstat()`, `fileperms()`, `chmod()`, `is_executable()`,
@@ -4786,15 +4789,16 @@
   resource/stream codegen boundary, while function-table introspection
   recognizes the known builtin names.
   `filesize($path)` accepts one string local path, rejects stream-wrapper
-  paths, returns the host file byte length as an integer for existing regular
-  files, and returns `false` for missing paths or non-file paths such as
-  directories. It shares the same current relative path policy as
-  `file_exists`. Successful metadata reads are cached by resolved local path
-  until `clearstatcache()` clears all entries or
+  paths, returns the host metadata byte length as an integer for existing
+  local filesystem entries including directories, and returns `false` with a
+  PHP-style warning for missing paths. It shares the same current relative path
+  policy as `file_exists`. Successful metadata reads are cached by resolved
+  local path until `clearstatcache()` clears all entries or
   `clearstatcache(false, $path)` removes the matching entry. This is a
   bounded WordPress request/filesystem metadata slice, not full PHP filesystem
   support: include-path lookup, stream wrappers, full PHP stat-cache breadth,
-  `open_basedir`, warning behavior, non-string coercions, non-UTF-8 paths,
+  `open_basedir`, warning text parity outside the bounded missing-path slice,
+  non-string coercions, non-UTF-8 paths,
   oversized file handling beyond the current signed 64-bit integer subset,
   partial-output behavior, and native lowering remain unsupported.
   `filemtime($path)` accepts one string local path, rejects stream-wrapper

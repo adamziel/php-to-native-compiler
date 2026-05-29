@@ -152,6 +152,90 @@ rmdir($dir);
     assert_eq!(execution.exit_code, 0);
 }
 
+#[test]
+fn copy_filesize_and_unlink_cover_local_error_display_semantics() {
+    let fixture = TempFsFixture::new("copy-errors");
+    let root = php_string(&fixture.root);
+    let source = format!(
+        r#"<?php
+$root = {root};
+$file = $root . "/payload.txt";
+$dest = $root . "/copy.txt";
+$dir = $root . "/dir";
+file_put_contents($file, "payload");
+mkdir($dir);
+echo "same:";
+var_dump(copy($file, $file));
+echo filesize($file);
+echo "\nsource-dir:";
+var_dump(copy($dir, $dest));
+echo "dest-dir:";
+var_dump(copy($file, $dir));
+echo "missing:";
+var_dump(copy($root . "/missing.txt", $dest));
+echo "dir-size:";
+var_dump(is_int(filesize($dir)));
+echo "missing-size:";
+var_dump(filesize($root . "/missing-size.txt"));
+echo "unlink-dir:";
+var_dump(unlink($dir));
+unlink($file);
+rmdir($dir);
+"#,
+        root = root
+    );
+
+    let execution = run_source(&source).unwrap();
+
+    assert!(
+        execution.stdout.contains("same:bool(false)\n7\n"),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution.stdout.contains(
+            "Warning: copy(): The first argument to copy() function cannot be a directory"
+        ),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution.stdout.contains(
+            "Warning: copy(): The second argument to copy() function cannot be a directory"
+        ),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution.stdout.contains("Warning: copy(")
+            && execution
+                .stdout
+                .contains("Failed to open stream: No such file or directory"),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution.stdout.contains("dir-size:bool(true)"),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution
+            .stdout
+            .contains("Warning: filesize(): stat failed for"),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution.stdout.contains("Warning: unlink(")
+            && execution.stdout.contains("Is a directory"),
+        "{}",
+        execution.stdout
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
 struct TempFsFixture {
     root: PathBuf,
 }

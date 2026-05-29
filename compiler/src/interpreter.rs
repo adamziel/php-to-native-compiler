@@ -1640,6 +1640,19 @@ fn local_filesystem_metadata_path(path: &str) -> PathBuf {
     repo_root_relative_candidate(&path).unwrap_or(path)
 }
 
+fn local_filesystem_paths_match(left: &Path, right: &Path) -> bool {
+    if left == right {
+        return true;
+    }
+    let Ok(left) = fs::canonicalize(left) else {
+        return false;
+    };
+    let Ok(right) = fs::canonicalize(right) else {
+        return false;
+    };
+    left == right
+}
+
 fn open_basedir_check_path(path: &Path) -> PathBuf {
     if let Ok(resolved) = fs::canonicalize(path) {
         return resolved;
@@ -65680,7 +65693,13 @@ impl Interpreter {
                 Ok(Value::Bool(true))
             }
             Err(error) => {
-                self.emit_warning("unlink()", format!("{path}: {error}"), span)?;
+                self.emit_display_warning(
+                    format!(
+                        "unlink({path}): {}",
+                        Self::filesystem_io_warning_message(&error)
+                    ),
+                    span,
+                )?;
                 Ok(Value::Bool(false))
             }
         }
@@ -65841,6 +65860,38 @@ impl Interpreter {
         {
             return Ok(Value::Bool(false));
         }
+        let from_metadata = match fs::metadata(&from_path) {
+            Ok(metadata) => metadata,
+            Err(error) => {
+                self.emit_display_warning(
+                    format!(
+                        "copy({from}): Failed to open stream: {}",
+                        Self::filesystem_io_warning_message(&error)
+                    ),
+                    span,
+                )?;
+                return Ok(Value::Bool(false));
+            }
+        };
+        if from_metadata.is_dir() {
+            self.emit_display_warning(
+                "copy(): The first argument to copy() function cannot be a directory",
+                span,
+            )?;
+            return Ok(Value::Bool(false));
+        }
+        if let Ok(to_metadata) = fs::metadata(&to_path) {
+            if to_metadata.is_dir() {
+                self.emit_display_warning(
+                    "copy(): The second argument to copy() function cannot be a directory",
+                    span,
+                )?;
+                return Ok(Value::Bool(false));
+            }
+        }
+        if local_filesystem_paths_match(&from_path, &to_path) {
+            return Ok(Value::Bool(false));
+        }
         match fs::copy(&from_path, &to_path) {
             Ok(_) => {
                 self.clear_stat_cache_filesystem_path(&to_path);
@@ -65848,7 +65899,13 @@ impl Interpreter {
                 Ok(Value::Bool(true))
             }
             Err(error) => {
-                self.emit_warning("copy()", format!("{from}: {error}"), span)?;
+                self.emit_display_warning(
+                    format!(
+                        "copy({from}): Failed to open stream: {}",
+                        Self::filesystem_io_warning_message(&error)
+                    ),
+                    span,
+                )?;
                 Ok(Value::Bool(false))
             }
         }
@@ -71338,12 +71395,16 @@ impl Interpreter {
                                 ),
                             ));
                         }
-                        let Some(metadata) = self.cached_local_metadata(path) else {
-                            return Ok(Value::Bool(false));
+                        let metadata = match self.cached_local_metadata(path) {
+                            Some(metadata) => metadata,
+                            None => {
+                                self.emit_display_warning(
+                                    format!("filesize(): stat failed for {path}"),
+                                    span,
+                                )?;
+                                return Ok(Value::Bool(false));
+                            }
                         };
-                        if !metadata.is_file() {
-                            return Ok(Value::Bool(false));
-                        }
                         let size = i64::try_from(metadata.len()).map_err(|_| {
                             runtime_error(
                                 span,
