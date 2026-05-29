@@ -66575,6 +66575,8 @@ impl Interpreter {
             "str_starts_with" => call_str_starts_with(&args, span),
             "str_ends_with" => call_str_ends_with(&args, span),
             "strpos" => call_strpos(&args, span),
+            "strrpos" => call_strrpos(&args, "strrpos()", false, span),
+            "strripos" => call_strrpos(&args, "strripos()", true, span),
             "strstr" => call_strstr(&args, "strstr()", false, span),
             "strchr" => call_strstr(&args, "strchr()", false, span),
             "stristr" => call_strstr(&args, "stristr()", true, span),
@@ -77134,7 +77136,7 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_param("needle", "string"),
             ],
         ),
-        "strpos" => (
+        "strpos" | "strrpos" | "strripos" => (
             "int|false",
             vec![
                 reflection_internal_param("haystack", "string"),
@@ -79061,7 +79063,9 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
         | ("chunk_split()", "Argument #2 ($length) must be greater than 0")
         | ("str_split()", "Argument #2 ($length) must be greater than 0")
         | ("strncmp()", "Argument #3 ($length) must be greater than or equal to 0")
-        | ("strncasecmp()", "Argument #3 ($length) must be greater than or equal to 0") => {
+        | ("strncasecmp()", "Argument #3 ($length) must be greater than or equal to 0")
+        | ("strrpos()", "Argument #3 ($offset) must be contained in argument #1 ($haystack)")
+        | ("strripos()", "Argument #3 ($offset) must be contained in argument #1 ($haystack)") => {
             Some(format!("{function}: {message}"))
         }
         (
@@ -79353,6 +79357,8 @@ fn is_builtin(name: &str) -> bool {
             | "str_starts_with"
             | "str_ends_with"
             | "strpos"
+            | "strrpos"
+            | "strripos"
             | "strstr"
             | "strchr"
             | "stristr"
@@ -86380,6 +86386,84 @@ fn call_strpos(args: &[Value], span: Span) -> CompileResult<Value> {
         .windows(needle.len())
         .position(|window| window == needle)
         .map(|index| Value::Int((start + index) as i64))
+        .unwrap_or(Value::Bool(false)))
+}
+
+fn call_strrpos(
+    args: &[Value],
+    function: &'static str,
+    case_insensitive: bool,
+    span: Span,
+) -> CompileResult<Value> {
+    if !(2..=3).contains(&args.len()) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                function,
+                ArityExpectation::Between { min: 2, max: 3 },
+                args.len(),
+            ),
+        ));
+    }
+
+    let haystack = string_contains_argument(function, "haystack", &args[0], span)?;
+    let needle = string_contains_argument(function, "needle", &args[1], span)?;
+    let offset = match args.get(2) {
+        Some(Value::Int(offset)) => *offset,
+        Some(other) => {
+            return Err(php_internal_int_type_error(
+                function, 3, "offset", other, span,
+            ));
+        }
+        None => 0,
+    };
+
+    let haystack_len = haystack.len() as i64;
+    if offset < -haystack_len || offset > haystack_len {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                "Argument #3 ($offset) must be contained in argument #1 ($haystack)",
+            ),
+        ));
+    }
+
+    if needle.is_empty() {
+        let position = if offset < 0 {
+            haystack_len + offset
+        } else {
+            haystack_len
+        };
+        return Ok(Value::Int(position));
+    }
+
+    let haystack = haystack.as_bytes();
+    let needle = needle.as_bytes();
+    if needle.len() > haystack.len() {
+        return Ok(Value::Bool(false));
+    }
+
+    let min_start = if offset >= 0 { offset as usize } else { 0 };
+    let mut max_start = haystack.len() - needle.len();
+    if offset < 0 {
+        max_start = max_start.min((haystack_len + offset) as usize);
+    }
+    if min_start > max_start {
+        return Ok(Value::Bool(false));
+    }
+
+    let found = (min_start..=max_start).rev().find(|&index| {
+        let window = &haystack[index..index + needle.len()];
+        if case_insensitive {
+            window.eq_ignore_ascii_case(needle)
+        } else {
+            window == needle
+        }
+    });
+
+    Ok(found
+        .map(|index| Value::Int(index as i64))
         .unwrap_or(Value::Bool(false)))
 }
 
