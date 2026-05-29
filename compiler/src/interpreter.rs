@@ -816,6 +816,31 @@ enum ArrayFilterMode {
     Key,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum UserArraySortOperation {
+    Usort,
+    Uasort,
+    Uksort,
+}
+
+impl UserArraySortOperation {
+    fn callable(self) -> &'static str {
+        match self {
+            Self::Usort => "usort()",
+            Self::Uasort => "uasort()",
+            Self::Uksort => "uksort()",
+        }
+    }
+
+    fn preserves_keys(self) -> bool {
+        matches!(self, Self::Uasort | Self::Uksort)
+    }
+
+    fn compares_keys(self) -> bool {
+        matches!(self, Self::Uksort)
+    }
+}
+
 fn is_auto_global_name(name: &str) -> bool {
     matches!(
         name,
@@ -48349,6 +48374,9 @@ impl Interpreter {
                 if let Some(operation) = Self::array_sort_operation_for_builtin(&key) {
                     return self.call_array_sort(operation, args, span, caller_scope);
                 }
+                if let Some(operation) = Self::user_array_sort_operation_for_builtin(&key) {
+                    return self.call_user_array_sort(operation, args, span, caller_scope);
+                }
                 if key == "array_push" {
                     return self.call_array_push(args, span, caller_scope);
                 }
@@ -48416,6 +48444,15 @@ impl Interpreter {
             "krsort" => Some(PhpArraySortOperation::Krsort),
             "natsort" => Some(PhpArraySortOperation::Natsort),
             "natcasesort" => Some(PhpArraySortOperation::Natcasesort),
+            _ => None,
+        }
+    }
+
+    fn user_array_sort_operation_for_builtin(name: &str) -> Option<UserArraySortOperation> {
+        match name {
+            "usort" => Some(UserArraySortOperation::Usort),
+            "uasort" => Some(UserArraySortOperation::Uasort),
+            "uksort" => Some(UserArraySortOperation::Uksort),
             _ => None,
         }
     }
@@ -48495,6 +48532,9 @@ impl Interpreter {
                 }
                 if let Some(operation) = Self::array_sort_operation_for_builtin(&key) {
                     return self.call_array_sort(operation, args, span, caller_scope);
+                }
+                if let Some(operation) = Self::user_array_sort_operation_for_builtin(&key) {
+                    return self.call_user_array_sort(operation, args, span, caller_scope);
                 }
                 if key == "array_push" {
                     return self.call_array_push(args, span, caller_scope);
@@ -56451,6 +56491,222 @@ impl Interpreter {
                 ),
             )),
         }
+    }
+
+    fn call_user_array_sort(
+        &mut self,
+        operation: UserArraySortOperation,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        if args.len() != 2 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    operation.callable(),
+                    ArityExpectation::Exactly(2),
+                    args.len(),
+                ),
+            ));
+        }
+
+        let callback = self.evaluate(&args[1], caller_scope)?;
+
+        match &args[0] {
+            Expr::Variable(name, _) => {
+                let mut value = caller_scope.read_static(name, span)?;
+                let type_name = value.type_name();
+                let Value::Array(array) = &mut value else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            operation.callable(),
+                            format!("first argument must be array, got {type_name}"),
+                        ),
+                    ));
+                };
+                self.sort_array_with_user_comparator(array, operation, &callback, span)?;
+                caller_scope.write_static(name, value);
+                Ok(Value::Bool(true))
+            }
+            Expr::Property {
+                target,
+                property,
+                span: property_span,
+            } => {
+                let Expr::Variable(object_name, _) = target.as_ref() else {
+                    return Err(runtime_error(
+                        target.span(),
+                        RuntimeError::unsupported_call(
+                            operation.callable(),
+                            "only direct variable and direct object-property array arguments are implemented",
+                        ),
+                    ));
+                };
+                let object = match caller_scope.read_static(object_name, *property_span)? {
+                    Value::Object(object) => object,
+                    other => {
+                        return Err(runtime_error(
+                            *property_span,
+                            RuntimeError::invalid_property_access(format!(
+                                "cannot read property ${property} from {}",
+                                other.type_name()
+                            )),
+                        ));
+                    }
+                };
+                let (current_class_id, protected_class_ids) =
+                    self.current_property_access_context();
+                let mut value = object
+                    .read_property_from_context(property, current_class_id, &protected_class_ids)
+                    .map_err(|error| runtime_error(*property_span, error))?;
+                let type_name = value.type_name();
+                let Value::Array(array) = &mut value else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            operation.callable(),
+                            format!("first argument must be array, got {type_name}"),
+                        ),
+                    ));
+                };
+                self.sort_array_with_user_comparator(array, operation, &callback, span)?;
+                let boundary = caller_scope.object_property_holder_storage_boundary(
+                    object_name,
+                    &object,
+                    property,
+                    &[],
+                    current_class_id,
+                    &protected_class_ids,
+                );
+                caller_scope.pre_replace_holder_storage(&boundary);
+                object
+                    .write_property_from_context(
+                        property,
+                        value,
+                        current_class_id,
+                        &protected_class_ids,
+                    )
+                    .map_err(|error| runtime_error(*property_span, error))?;
+                caller_scope.post_replace_holder_storage(&boundary);
+                Ok(Value::Bool(true))
+            }
+            other => Err(runtime_error(
+                other.span(),
+                RuntimeError::unsupported_call(
+                    operation.callable(),
+                    "only direct variable and direct object-property array arguments are implemented",
+                ),
+            )),
+        }
+    }
+
+    fn sort_array_with_user_comparator(
+        &mut self,
+        array: &mut PhpArray,
+        operation: UserArraySortOperation,
+        callback: &Value,
+        span: Span,
+    ) -> CompileResult<()> {
+        let mut entries = array.entries().to_vec();
+        for index in 1..entries.len() {
+            let mut cursor = index;
+            while cursor > 0 {
+                let ordering = self.user_array_sort_entry_ordering(
+                    operation,
+                    callback,
+                    &entries[cursor],
+                    &entries[cursor - 1],
+                    span,
+                )?;
+                if ordering != Ordering::Less {
+                    break;
+                }
+                entries.swap(cursor, cursor - 1);
+                cursor -= 1;
+            }
+        }
+
+        *array = Self::array_from_user_sorted_entries(entries, operation);
+        Ok(())
+    }
+
+    fn user_array_sort_entry_ordering(
+        &mut self,
+        operation: UserArraySortOperation,
+        callback: &Value,
+        left: &ArrayEntry,
+        right: &ArrayEntry,
+        span: Span,
+    ) -> CompileResult<Ordering> {
+        let args = if operation.compares_keys() {
+            vec![
+                value_from_array_key(&left.key),
+                value_from_array_key(&right.key),
+            ]
+        } else {
+            vec![left.value_cloned(), right.value_cloned()]
+        };
+        let result = self.call_user_array_sort_callback_with_values(
+            callback,
+            args,
+            span,
+            operation.callable(),
+        )?;
+        Self::user_array_sort_ordering_from_result(operation.callable(), result, span)
+    }
+
+    fn user_array_sort_ordering_from_result(
+        function: &str,
+        result: Value,
+        span: Span,
+    ) -> CompileResult<Ordering> {
+        let Some(value) = Self::user_array_sort_result_to_i64(&result) else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function,
+                    format!(
+                        "comparator callback return value must be int-compatible in the current subset, got {}",
+                        result.type_name()
+                    ),
+                ),
+            ));
+        };
+
+        Ok(value.cmp(&0))
+    }
+
+    fn user_array_sort_result_to_i64(result: &Value) -> Option<i64> {
+        match result {
+            Value::Null => Some(0),
+            Value::Bool(value) => Some(i64::from(*value)),
+            Value::Int(value) => Some(*value),
+            Value::Float(value) if value.is_finite() => Some(value.trunc() as i64),
+            Value::Float(_) => None,
+            Value::String(value) => parse_supported_integer_string(value),
+            Value::BinaryString(value) => std::str::from_utf8(value)
+                .ok()
+                .and_then(parse_supported_integer_string),
+            Value::Array(_) | Value::Object(_) | Value::Closure(_) | Value::Resource(_) => None,
+        }
+    }
+
+    fn array_from_user_sorted_entries(
+        entries: Vec<ArrayEntry>,
+        operation: UserArraySortOperation,
+    ) -> PhpArray {
+        let mut sorted = PhpArray::new();
+        for (index, entry) in entries.into_iter().enumerate() {
+            let key = if operation.preserves_keys() {
+                entry.key.clone()
+            } else {
+                ArrayKey::Int(i64::try_from(index).expect("array length fits in i64"))
+            };
+            sorted.insert_slot(key, entry.slot().clone());
+        }
+        sorted
     }
 
     fn call_array_push(
@@ -72198,6 +72454,13 @@ impl Interpreter {
             "array_reduce" => self.call_array_reduce(args, span),
             "array_filter" => self.call_array_filter(args, span),
             "array_map" => self.call_array_map(args, span),
+            "usort" | "uasort" | "uksort" => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{name}()"),
+                    "by-reference array arguments require a direct call target in the current subset",
+                ),
+            )),
             "ksort" => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
@@ -75362,6 +75625,180 @@ impl Interpreter {
                     None,
                 )
             }
+        }
+    }
+
+    fn call_user_array_sort_resolved_callable_with_values(
+        &mut self,
+        callable: Callable,
+        args: Vec<Value>,
+        span: Span,
+    ) -> CompileResult<Value> {
+        match callable {
+            Callable::Builtin(key) => self.call_builtin(&key, args, span),
+            Callable::User(function) => self.call_user_array_sort_user_function_with_values(
+                function.as_ref(),
+                args,
+                None,
+                None,
+                None,
+                Vec::new(),
+                None,
+                span,
+            ),
+        }
+    }
+
+    fn call_user_array_sort_closure_with_values(
+        &mut self,
+        closure: PhpClosure,
+        args: Vec<Value>,
+        context: &str,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let function = self
+            .closure_functions
+            .get(&closure.id())
+            .cloned()
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        context,
+                        "closure body metadata is missing in the current subset",
+                    ),
+                )
+            })?;
+        let prebound_locals = self.closure_prebound_locals(&closure);
+        let (this_object, class_context, called_class_context) =
+            self.closure_call_context(&closure);
+        let warning_function = Some(format!(
+            "{{closure:{}:{}}}",
+            self.source_file.as_deref().unwrap_or("<unknown>"),
+            function.span.line
+        ));
+        self.call_user_array_sort_user_function_with_values(
+            function.as_ref(),
+            args,
+            this_object,
+            class_context,
+            called_class_context,
+            prebound_locals,
+            warning_function,
+            span,
+        )
+    }
+
+    fn call_user_array_sort_user_function_with_values(
+        &mut self,
+        function: &FunctionDecl,
+        args: Vec<Value>,
+        this_object: Option<PhpObject>,
+        class_context: Option<ClassId>,
+        called_class_context: Option<ClassId>,
+        prebound_locals: Vec<PreboundLocal>,
+        warning_function: Option<String>,
+        span: Span,
+    ) -> CompileResult<Value> {
+        ensure_user_function_arity_with_extra_policy(function, args.len(), span, true)?;
+        ensure_supported_function_metadata(function, span)?;
+        self.emit_user_array_sort_reference_parameter_warnings(
+            function,
+            args.len(),
+            warning_function.as_deref(),
+            span,
+        )?;
+        self.ensure_user_function_call_depth(function, span)?;
+        let frame = CallFrameArgumentBindings {
+            values: args,
+            argument_keys: Vec::new(),
+            reference_bindings: Vec::new(),
+            array_copy_source_bindings: Vec::new(),
+            by_value_array_copy_bindings: Vec::new(),
+        };
+        self.call_user_function_with_call_frame(
+            function,
+            frame,
+            this_object,
+            class_context,
+            called_class_context,
+            None,
+            prebound_locals,
+        )
+    }
+
+    fn emit_user_array_sort_reference_parameter_warnings(
+        &mut self,
+        function: &FunctionDecl,
+        actual: usize,
+        warning_function: Option<&str>,
+        span: Span,
+    ) -> CompileResult<()> {
+        let function_name =
+            warning_function.unwrap_or_else(|| function.name.trim_start_matches('\\'));
+        for (index, param) in function.params.iter().take(actual).enumerate() {
+            if !param.by_reference {
+                continue;
+            }
+            self.emit_builtin_callback_reference_value_warning(
+                function_name,
+                index,
+                &param.name,
+                span,
+            )?;
+        }
+
+        Ok(())
+    }
+
+    fn call_user_array_sort_callback_with_values(
+        &mut self,
+        callback: &Value,
+        args: Vec<Value>,
+        span: Span,
+        context: &str,
+    ) -> CompileResult<Value> {
+        match callback {
+            Value::String(callback_name) => {
+                if let Some((class_name, method_name)) =
+                    static_method_callable_string(callback_name)
+                {
+                    let callback =
+                        static_method_array_callable_value(class_name, method_name, span)?;
+                    return self.call_array_callable_with_values_with_context(
+                        &callback, args, span, true, context,
+                    );
+                }
+
+                if let Some(error) = forbidden_dynamic_builtin_call_error(callback_name, span) {
+                    return Err(error);
+                }
+                let callable = self.lookup_function(callback_name).ok_or_else(|| {
+                    runtime_error(
+                        span,
+                        RuntimeError::undefined_function(callable_name(callback_name)),
+                    )
+                })?;
+                self.call_user_array_sort_resolved_callable_with_values(callable, args, span)
+            }
+            Value::Array(callback) => {
+                self.call_array_callable_with_values_with_context(
+                    callback, args, span, true, context,
+                )
+            }
+            Value::Closure(closure) => {
+                self.call_user_array_sort_closure_with_values(closure.clone(), args, context, span)
+            }
+            other => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    context,
+                    format!(
+                        "callback must evaluate to string, closure, or array callable in the current subset, got {}",
+                        other.type_name()
+                    ),
+                ),
+            )),
         }
     }
 
@@ -85494,6 +85931,9 @@ fn is_builtin(name: &str) -> bool {
             | "krsort"
             | "natsort"
             | "natcasesort"
+            | "usort"
+            | "uasort"
+            | "uksort"
             | "array_push"
             | "array_unshift"
             | "array_shift"
