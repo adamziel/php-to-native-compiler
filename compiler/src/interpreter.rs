@@ -659,8 +659,12 @@ struct MemoryStream {
     append: bool,
     eof: bool,
     uri: String,
+    read_filter_rot13: bool,
+    metadata_wrapper_type: String,
     metadata_mode: String,
     metadata_stream_type: String,
+    metadata_include_runtime_flags: bool,
+    metadata_extra: Vec<(String, Value)>,
 }
 
 #[derive(Debug)]
@@ -671,6 +675,7 @@ struct FileStream {
     append: bool,
     eof: bool,
     uri: String,
+    read_filter_rot13: bool,
     metadata_mode: String,
 }
 
@@ -1830,7 +1835,7 @@ fn decode_hex_digit(byte: u8) -> Option<u8> {
 }
 
 const INCLUDE_PATH_SEPARATOR: char = if cfg!(windows) { ';' } else { ':' };
-const DEFAULT_STREAM_WRAPPERS: &[&str] = &["file", "php"];
+const DEFAULT_STREAM_WRAPPERS: &[&str] = &["file", "php", "data"];
 
 fn default_stream_wrappers() -> Vec<StreamWrapperRegistration> {
     DEFAULT_STREAM_WRAPPERS
@@ -1853,6 +1858,9 @@ fn builtin_stream_wrapper_default_index(protocol: &str) -> Option<usize> {
 }
 
 fn stream_path_protocol(path: &str) -> &str {
+    if path.starts_with("data:") {
+        return "data";
+    }
     path.split_once("://")
         .map(|(protocol, _)| protocol)
         .unwrap_or("file")
@@ -1863,6 +1871,154 @@ fn is_valid_stream_wrapper_protocol(protocol: &str) -> bool {
         && protocol
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'+' | b'-'))
+}
+
+#[derive(Debug, Clone)]
+struct DataUrlStream {
+    contents: String,
+    wrapper_type: String,
+    stream_type: String,
+    metadata_extra: Vec<(String, Value)>,
+}
+
+fn parse_data_url_stream(uri: &str) -> Result<DataUrlStream, String> {
+    let rest = uri
+        .strip_prefix("data://")
+        .or_else(|| uri.strip_prefix("data:"))
+        .ok_or_else(|| "rfc2397: illegal media type".to_string())?;
+    let Some((metadata, payload)) = rest.split_once(',') else {
+        return Err("rfc2397: no comma in URL".to_string());
+    };
+
+    let mut segments = metadata.split(';');
+    let mediatype = segments.next().filter(|segment| !segment.is_empty());
+    if let Some(mediatype) = mediatype {
+        if !is_valid_data_url_media_type(mediatype) {
+            return Err("rfc2397: illegal media type".to_string());
+        }
+    }
+
+    let mut is_base64 = false;
+    let mut metadata_extra = Vec::new();
+    if let Some(mediatype) = mediatype {
+        metadata_extra.push((
+            "mediatype".to_string(),
+            Value::String(mediatype.to_string()),
+        ));
+    }
+    for segment in segments {
+        if segment.eq_ignore_ascii_case("base64") {
+            is_base64 = true;
+            continue;
+        }
+        let Some((key, value)) = segment.split_once('=') else {
+            return Err("rfc2397: illegal parameter".to_string());
+        };
+        if mediatype.is_none() || key.is_empty() {
+            return Err("rfc2397: illegal parameter".to_string());
+        }
+        metadata_extra.push((key.to_string(), Value::String(value.to_string())));
+    }
+    metadata_extra.push(("base64".to_string(), Value::Bool(is_base64)));
+
+    let payload = percent_decode_data_url_payload(payload)?;
+    let contents = if is_base64 {
+        decode_base64_data_url_payload(&payload)?
+    } else {
+        payload
+    };
+    let contents = String::from_utf8(contents).map_err(|_| {
+        "data:// stream bytes must be valid UTF-8 in the current subset".to_string()
+    })?;
+
+    Ok(DataUrlStream {
+        contents,
+        wrapper_type: "RFC2397".to_string(),
+        stream_type: "RFC2397".to_string(),
+        metadata_extra,
+    })
+}
+
+fn is_valid_data_url_media_type(mediatype: &str) -> bool {
+    mediatype
+        .split_once('/')
+        .is_some_and(|(ty, sub)| !ty.is_empty() && !sub.is_empty())
+}
+
+fn percent_decode_data_url_payload(payload: &str) -> Result<Vec<u8>, String> {
+    let mut decoded = Vec::with_capacity(payload.len());
+    let bytes = payload.as_bytes();
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'%' {
+            let Some(&hi) = bytes.get(index + 1) else {
+                return Err("rfc2397: invalid percent escape".to_string());
+            };
+            let Some(&lo) = bytes.get(index + 2) else {
+                return Err("rfc2397: invalid percent escape".to_string());
+            };
+            let Some(hi) = decode_hex_digit(hi) else {
+                return Err("rfc2397: invalid percent escape".to_string());
+            };
+            let Some(lo) = decode_hex_digit(lo) else {
+                return Err("rfc2397: invalid percent escape".to_string());
+            };
+            decoded.push((hi << 4) | lo);
+            index += 3;
+        } else {
+            decoded.push(bytes[index]);
+            index += 1;
+        }
+    }
+    Ok(decoded)
+}
+
+fn decode_base64_data_url_payload(payload: &[u8]) -> Result<Vec<u8>, String> {
+    let cleaned: Vec<u8> = payload
+        .iter()
+        .copied()
+        .filter(|byte| !byte.is_ascii_whitespace())
+        .collect();
+    if cleaned.len() % 4 != 0 {
+        return Err("rfc2397: unable to decode".to_string());
+    }
+
+    let mut output = Vec::with_capacity(cleaned.len() / 4 * 3);
+    for chunk in cleaned.chunks(4) {
+        let mut values = [0_u8; 4];
+        let mut padding = 0;
+        for (index, byte) in chunk.iter().copied().enumerate() {
+            if byte == b'=' {
+                padding += 1;
+                values[index] = 0;
+            } else if padding > 0 {
+                return Err("rfc2397: unable to decode".to_string());
+            } else if let Some(value) = base64_value(byte) {
+                values[index] = value;
+            } else {
+                return Err("rfc2397: unable to decode".to_string());
+            }
+        }
+        output.push((values[0] << 2) | (values[1] >> 4));
+        if padding < 2 {
+            output.push((values[1] << 4) | (values[2] >> 2));
+        }
+        if padding == 0 {
+            output.push((values[2] << 6) | values[3]);
+        }
+    }
+    Ok(output)
+}
+
+fn base64_value(byte: u8) -> Option<u8> {
+    match byte {
+        b'A'..=b'Z' => Some(byte - b'A'),
+        b'a'..=b'z' => Some(byte - b'a' + 26),
+        b'0'..=b'9' => Some(byte - b'0' + 52),
+        b'+' => Some(62),
+        b'/' => Some(63),
+        _ => None,
+    }
 }
 
 fn include_path_candidates(
@@ -66144,8 +66300,25 @@ impl Interpreter {
             None => None,
         };
 
+        let data_url_stream = if stream_path_protocol(path).eq_ignore_ascii_case("data") {
+            Some(match parse_data_url_stream(path) {
+                Ok(stream) => stream,
+                Err(message) => {
+                    self.emit_warning(
+                        "fopen()",
+                        format!("{path}: Failed to open stream: {message}"),
+                        span,
+                    )?;
+                    return Ok(Value::Bool(false));
+                }
+            })
+        } else {
+            None
+        };
+
         let is_memory_stream = match path {
             "php://memory" | "php://temp" | "php://input" => true,
+            _ if data_url_stream.is_some() => true,
             other if other.contains("://") && file_url_path.is_none() => {
                 return Err(runtime_error(
                     span,
@@ -66173,40 +66346,53 @@ impl Interpreter {
         if is_memory_stream {
             let metadata_mode = stream_metadata_mode(path, mode);
             let is_input_stream = path == "php://input";
+            let data_url_stream = data_url_stream.as_ref();
             self.streams.insert(
                 id,
                 StreamResource::Memory(MemoryStream {
-                    buffer: if is_input_stream {
+                    buffer: if let Some(data_url_stream) = data_url_stream {
+                        data_url_stream.contents.clone()
+                    } else if is_input_stream {
                         self.request_body.clone()
                     } else {
                         String::new()
                     },
                     position: 0,
-                    readable: if is_input_stream {
+                    readable: if data_url_stream.is_some() || is_input_stream {
                         true
                     } else {
                         stream_mode.readable
                     },
-                    writable: if is_input_stream {
+                    writable: if data_url_stream.is_some() || is_input_stream {
                         false
                     } else {
                         stream_mode.writable
                     },
-                    append: if is_input_stream {
+                    append: if data_url_stream.is_some() || is_input_stream {
                         false
                     } else {
                         stream_mode.append
                     },
                     eof: false,
                     uri: path.to_string(),
+                    read_filter_rot13: false,
+                    metadata_wrapper_type: data_url_stream
+                        .map(|stream| stream.wrapper_type.clone())
+                        .unwrap_or_else(|| "PHP".to_string()),
                     metadata_mode,
-                    metadata_stream_type: if path == "php://temp" {
+                    metadata_stream_type: if let Some(data_url_stream) = data_url_stream {
+                        data_url_stream.stream_type.clone()
+                    } else if path == "php://temp" {
                         "TEMP".to_string()
                     } else if is_input_stream {
                         "Input".to_string()
                     } else {
                         "MEMORY".to_string()
                     },
+                    metadata_include_runtime_flags: data_url_stream.is_none(),
+                    metadata_extra: data_url_stream
+                        .map(|stream| stream.metadata_extra.clone())
+                        .unwrap_or_default(),
                 }),
             );
         } else {
@@ -66244,6 +66430,7 @@ impl Interpreter {
                 append: stream_mode.append,
                 eof: false,
                 uri: path.to_string(),
+                read_filter_rot13: false,
                 metadata_mode: mode.to_string(),
             };
             if stream.append {
@@ -66259,6 +66446,31 @@ impl Interpreter {
             }
             self.streams.insert(id, StreamResource::File(stream));
         }
+        Ok(Value::Resource(id))
+    }
+
+    fn call_tmpfile(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("tmpfile", args, 0, span)?;
+        let id = self.next_resource_id;
+        self.next_resource_id += 1;
+        self.streams.insert(
+            id,
+            StreamResource::Memory(MemoryStream {
+                buffer: String::new(),
+                position: 0,
+                readable: true,
+                writable: true,
+                append: false,
+                eof: false,
+                uri: "php://temp".to_string(),
+                read_filter_rot13: false,
+                metadata_wrapper_type: "PHP".to_string(),
+                metadata_mode: "r+b".to_string(),
+                metadata_stream_type: "TEMP".to_string(),
+                metadata_include_runtime_flags: true,
+                metadata_extra: Vec::new(),
+            }),
+        );
         Ok(Value::Resource(id))
     }
 
@@ -67965,7 +68177,7 @@ impl Interpreter {
         args: &[Value],
         span: Span,
     ) -> CompileResult<Value> {
-        if args.len() != 2 && args.len() != 4 {
+        if args.len() < 2 || args.len() > 4 {
             return Err(runtime_error(
                 span,
                 RuntimeError::arity_mismatch(
@@ -67979,27 +68191,36 @@ impl Interpreter {
         let Value::Resource(id) = args[0] else {
             unreachable!("stream context resource shape checked above")
         };
-        let context = self
-            .stream_contexts
-            .get_mut(&id)
-            .expect("stream context resource is initialized");
-        match args.len() {
-            2 => {
-                let options = match &args[1] {
-                    Value::Array(options) => options,
-                    other => {
-                        return Err(runtime_error(
-                            span,
-                            RuntimeError::unsupported_call(
-                                "stream_context_set_option()",
-                                format!(
-                                    "options argument must be array in the current subset, got {}",
-                                    other.type_name()
-                                ),
-                            ),
-                        ));
-                    }
-                };
+        match &args[1] {
+            Value::Array(options) => {
+                if args.len() == 2 {
+                    self.emit_display_diagnostic(
+                        "Deprecated",
+                        PHP_E_DEPRECATED,
+                        "Calling stream_context_set_option() with 2 arguments is deprecated, use stream_context_set_options() instead",
+                        span,
+                    )?;
+                } else if args.len() == 3 && !matches!(args[2], Value::Null) {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "stream_context_set_option()",
+                            "Argument #3 ($option_name) must be null when argument #2 ($wrapper_or_options) is an array",
+                        ),
+                    ));
+                } else if args.len() == 4 {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "stream_context_set_option()",
+                            "Argument #4 ($value) cannot be provided when argument #2 ($wrapper_or_options) is an array",
+                        ),
+                    ));
+                }
+                let context = self
+                    .stream_contexts
+                    .get_mut(&id)
+                    .expect("stream context resource is initialized");
                 apply_stream_context_options(
                     &mut context.options,
                     options,
@@ -68007,22 +68228,31 @@ impl Interpreter {
                     span,
                 )?;
             }
-            4 => {
-                let wrapper = match &args[1] {
-                    Value::String(wrapper) => wrapper.clone(),
-                    other => {
-                        return Err(runtime_error(
-                            span,
-                            RuntimeError::unsupported_call(
-                                "stream_context_set_option()",
-                                format!(
-                                    "wrapper argument must be string in the current subset, got {}",
-                                    other.type_name()
-                                ),
-                            ),
-                        ));
-                    }
-                };
+            Value::String(wrapper) => {
+                if args.len() == 2 {
+                    self.emit_display_diagnostic(
+                        "Deprecated",
+                        PHP_E_DEPRECATED,
+                        "Calling stream_context_set_option() with 2 arguments is deprecated, use stream_context_set_options() instead",
+                        span,
+                    )?;
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "stream_context_set_option()",
+                            "Argument #3 ($option_name) cannot be null when argument #2 ($wrapper_or_options) is a string",
+                        ),
+                    ));
+                }
+                if args.len() == 3 {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "stream_context_set_option()",
+                            "Argument #4 ($value) must be provided when argument #2 ($wrapper_or_options) is a string",
+                        ),
+                    ));
+                }
                 let option = match &args[2] {
                     Value::String(option) => option.clone(),
                     other => {
@@ -68038,10 +68268,63 @@ impl Interpreter {
                         ));
                     }
                 };
-                set_stream_context_option(&mut context.options, &wrapper, &option, args[3].clone());
+                let context = self
+                    .stream_contexts
+                    .get_mut(&id)
+                    .expect("stream context resource is initialized");
+                set_stream_context_option(&mut context.options, wrapper, &option, args[3].clone());
             }
-            _ => unreachable!(),
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "stream_context_set_option()",
+                        format!(
+                            "Argument #2 ($wrapper_or_options) must be of type array|string, {} given",
+                            php_type_error_given(other)
+                        ),
+                    ),
+                ));
+            }
         }
+        Ok(Value::Bool(true))
+    }
+
+    fn call_stream_context_set_options(
+        &mut self,
+        args: &[Value],
+        span: Span,
+    ) -> CompileResult<Value> {
+        expect_arity("stream_context_set_options", args, 2, span)?;
+        self.expect_stream_context_resource("stream_context_set_options", &args[0], span)?;
+        let Value::Resource(id) = args[0] else {
+            unreachable!("stream context resource shape checked above")
+        };
+        let options = match &args[1] {
+            Value::Array(options) => options,
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "stream_context_set_options()",
+                        format!(
+                            "Argument #2 ($options) must be of type array, {} given",
+                            php_type_error_given(other)
+                        ),
+                    ),
+                ));
+            }
+        };
+        let context = self
+            .stream_contexts
+            .get_mut(&id)
+            .expect("stream context resource is initialized");
+        apply_stream_context_options(
+            &mut context.options,
+            options,
+            "stream_context_set_options()",
+            span,
+        )?;
         Ok(Value::Bool(true))
     }
 
@@ -68185,6 +68468,7 @@ impl Interpreter {
                 ));
             }
         };
+        self.validate_stream_context_params_callbacks(params, span)?;
         let context = self
             .stream_contexts
             .get_mut(&id)
@@ -68198,6 +68482,82 @@ impl Interpreter {
             span,
         )?;
         Ok(Value::Bool(true))
+    }
+
+    fn validate_stream_context_params_callbacks(
+        &self,
+        params: &PhpArray,
+        span: Span,
+    ) -> CompileResult<()> {
+        let Some(notification) = params.get("notification") else {
+            return Ok(());
+        };
+        match notification {
+            Value::String(name) => {
+                if self.lookup_function(name).is_none() {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "stream_context_set_params()",
+                            format!(
+                                "Argument #1 ($context) must be an array with valid callbacks as values, function \"{name}\" not found or invalid function name"
+                            ),
+                        ),
+                    ));
+                }
+                Ok(())
+            }
+            Value::Array(callable) => {
+                let Some((target, method_name)) = array_callable_parts(callable) else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "stream_context_set_params()",
+                            "Argument #1 ($context) must be an array with valid callbacks as values",
+                        ),
+                    ));
+                };
+                let Value::String(class_name) = target else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "stream_context_set_params()",
+                            "Argument #1 ($context) must be an array with valid callbacks as values",
+                        ),
+                    ));
+                };
+                let Some(class) = self.classes.lookup_class(class_name) else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "stream_context_set_params()",
+                            format!(
+                                "Argument #1 ($context) must be an array with valid callbacks as values, class \"{class_name}\" not found"
+                            ),
+                        ),
+                    ));
+                };
+                if class.method(method_name).is_none() {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "stream_context_set_params()",
+                            format!(
+                                "Argument #1 ($context) must be an array with valid callbacks as values, function \"{method_name}\" not found or invalid function name"
+                            ),
+                        ),
+                    ));
+                }
+                Ok(())
+            }
+            _ => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "stream_context_set_params()",
+                    "Argument #1 ($context) must be an array with valid callbacks as values",
+                ),
+            )),
+        }
     }
 
     fn expect_stream_context_resource(
@@ -68271,6 +68631,94 @@ impl Interpreter {
                 ),
             )
         })
+    }
+
+    fn stream_read_to_string(
+        &mut self,
+        function: &str,
+        value: &Value,
+        length: Option<usize>,
+        span: Span,
+    ) -> CompileResult<String> {
+        match self.stream_mut(function, value, span)? {
+            StreamResource::Memory(stream) => {
+                if !stream.readable {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{function}()"),
+                            "stream is not readable in the current subset",
+                        ),
+                    ));
+                }
+                let start = stream.position.min(stream.buffer.len());
+                let end = length
+                    .map(|length| utf8_boundary_at_or_before(&stream.buffer, start + length))
+                    .unwrap_or(stream.buffer.len())
+                    .min(stream.buffer.len());
+                stream.position = end;
+                stream.eof = end >= stream.buffer.len();
+                let mut contents = stream.buffer[start..end].to_string();
+                if stream.read_filter_rot13 {
+                    apply_ascii_rot13_in_place(&mut contents);
+                }
+                Ok(contents)
+            }
+            StreamResource::File(stream) => {
+                if !stream.readable {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{function}()"),
+                            "stream is not readable in the current subset",
+                        ),
+                    ));
+                }
+                let mut bytes = match length {
+                    Some(length) => {
+                        let mut bytes = vec![0; length];
+                        let read = stream.file.read(&mut bytes).map_err(|error| {
+                            runtime_error(
+                                span,
+                                RuntimeError::unsupported_call(
+                                    format!("{function}()"),
+                                    format!("local file stream read failed: {error}"),
+                                ),
+                            )
+                        })?;
+                        stream.eof = read < length;
+                        bytes.truncate(read);
+                        bytes
+                    }
+                    None => {
+                        let mut bytes = Vec::new();
+                        stream.file.read_to_end(&mut bytes).map_err(|error| {
+                            runtime_error(
+                                span,
+                                RuntimeError::unsupported_call(
+                                    format!("{function}()"),
+                                    format!("local file stream read failed: {error}"),
+                                ),
+                            )
+                        })?;
+                        stream.eof = true;
+                        bytes
+                    }
+                };
+                if stream.read_filter_rot13 {
+                    apply_ascii_rot13_bytes_in_place(&mut bytes);
+                }
+                String::from_utf8(bytes).map_err(|error| {
+                    runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{function}()"),
+                            format!("local file stream read was not valid UTF-8: {error}"),
+                        ),
+                    )
+                })
+            }
+        }
     }
 
     fn call_fwrite(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -69063,46 +69511,276 @@ impl Interpreter {
     }
 
     fn call_stream_get_contents(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
-        expect_arity("stream_get_contents", args, 1, span)?;
-        match self.stream_mut("stream_get_contents", &args[0], span)? {
-            StreamResource::Memory(stream) => {
-                if !stream.readable {
+        if args.is_empty() || args.len() > 3 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "stream_get_contents()",
+                    ArityExpectation::Between { min: 1, max: 3 },
+                    args.len(),
+                ),
+            ));
+        }
+        let length = match args.get(1) {
+            Some(Value::Int(-1)) | Some(Value::Null) | None => None,
+            Some(Value::Int(length)) if *length >= 0 => Some(*length as usize),
+            Some(Value::Int(_)) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "stream_get_contents()",
+                        "Argument #2 ($length) must be greater than or equal to -1",
+                    ),
+                ));
+            }
+            Some(other) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "stream_get_contents()",
+                        format!(
+                            "Argument #2 ($length) must be of type int, {} given",
+                            php_type_error_given(other)
+                        ),
+                    ),
+                ));
+            }
+        };
+        if let Some(offset) = args.get(2) {
+            let offset = match offset {
+                Value::Int(offset) if *offset >= 0 => *offset,
+                Value::Int(_) => return Ok(Value::String(String::new())),
+                other => {
                     return Err(runtime_error(
                         span,
                         RuntimeError::unsupported_call(
                             "stream_get_contents()",
-                            "stream is not readable in the current subset",
+                            format!(
+                                "Argument #3 ($offset) must be of type int, {} given",
+                                php_type_error_given(other)
+                            ),
                         ),
                     ));
                 }
-                let start = utf8_boundary_at_or_before(&stream.buffer, stream.position);
-                stream.position = stream.buffer.len();
-                stream.eof = true;
-                Ok(Value::String(stream.buffer[start..].to_string()))
+            };
+            let seek_result = self.call_fseek(&[args[0].clone(), Value::Int(offset)], span)?;
+            if !matches!(seek_result, Value::Int(0)) {
+                return Ok(Value::String(String::new()));
             }
-            StreamResource::File(stream) => {
-                if !stream.readable {
+        }
+        self.stream_read_to_string("stream_get_contents", &args[0], length, span)
+            .map(Value::String)
+    }
+
+    fn call_fpassthru(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("fpassthru", args, 1, span)?;
+        let contents = self.stream_read_to_string("fpassthru", &args[0], None, span)?;
+        let length = contents.len() as i64;
+        self.append_output_at(&contents, span);
+        Ok(Value::Int(length))
+    }
+
+    fn call_stream_copy_to_stream(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if args.len() < 2 || args.len() > 4 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "stream_copy_to_stream()",
+                    ArityExpectation::Between { min: 2, max: 4 },
+                    args.len(),
+                ),
+            ));
+        }
+        let length = match args.get(2) {
+            Some(Value::Int(length)) if *length >= 0 => Some(*length as usize),
+            Some(Value::Int(-1)) | Some(Value::Null) | None => None,
+            Some(Value::Int(_)) => None,
+            Some(other) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "stream_copy_to_stream()",
+                        format!(
+                            "Argument #3 ($length) must be of type int, {} given",
+                            php_type_error_given(other)
+                        ),
+                    ),
+                ));
+            }
+        };
+        if let Some(offset) = args.get(3) {
+            let offset = match offset {
+                Value::Int(offset) if *offset >= 0 => *offset,
+                Value::Int(_) => return Ok(Value::Bool(false)),
+                other => {
                     return Err(runtime_error(
                         span,
                         RuntimeError::unsupported_call(
-                            "stream_get_contents()",
-                            "stream is not readable in the current subset",
+                            "stream_copy_to_stream()",
+                            format!(
+                                "Argument #4 ($offset) must be of type int, {} given",
+                                php_type_error_given(other)
+                            ),
                         ),
                     ));
                 }
-                let mut contents = String::new();
-                stream.file.read_to_string(&mut contents).map_err(|error| {
-                    runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            "stream_get_contents()",
-                            format!("local file stream read failed: {error}"),
-                        ),
-                    )
-                })?;
-                stream.eof = true;
-                Ok(Value::String(contents))
+            };
+            let seek_result = self.call_fseek(&[args[0].clone(), Value::Int(offset)], span)?;
+            if !matches!(seek_result, Value::Int(0)) {
+                return Ok(Value::Bool(false));
             }
+        }
+        let contents =
+            self.stream_read_to_string("stream_copy_to_stream", &args[0], length, span)?;
+        let length = contents.len() as i64;
+        self.write_stream_string("stream_copy_to_stream", &args[1], &contents, span)?;
+        Ok(Value::Int(length))
+    }
+
+    fn call_stream_filter_append(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if args.len() < 2 || args.len() > 4 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "stream_filter_append()",
+                    ArityExpectation::Between { min: 2, max: 4 },
+                    args.len(),
+                ),
+            ));
+        }
+        let filter_name = match &args[1] {
+            Value::String(filter_name) => filter_name,
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "stream_filter_append()",
+                        format!(
+                            "Argument #2 ($filter_name) must be of type string, {} given",
+                            php_type_error_given(other)
+                        ),
+                    ),
+                ));
+            }
+        };
+        let mode = match args.get(2) {
+            Some(Value::Int(mode)) => *mode,
+            Some(Value::Null) | None => PHP_STREAM_FILTER_READ,
+            Some(other) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "stream_filter_append()",
+                        format!(
+                            "Argument #3 ($mode) must be of type int, {} given",
+                            php_type_error_given(other)
+                        ),
+                    ),
+                ));
+            }
+        };
+        if !filter_name.eq_ignore_ascii_case("string.rot13") {
+            self.emit_warning(
+                "stream_filter_append()",
+                format!("Unable to locate filter \"{filter_name}\""),
+                span,
+            )?;
+            return Ok(Value::Bool(false));
+        }
+        if mode & PHP_STREAM_FILTER_READ == 0 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "stream_filter_append()",
+                    "only read-side string.rot13 filters are supported in the current subset",
+                ),
+            ));
+        }
+        match self.stream_mut("stream_filter_append", &args[0], span)? {
+            StreamResource::Memory(stream) => stream.read_filter_rot13 = true,
+            StreamResource::File(stream) => stream.read_filter_rot13 = true,
+        }
+        let id = self.next_resource_id;
+        self.next_resource_id += 1;
+        Ok(Value::Resource(id))
+    }
+
+    fn call_stream_is_local(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("stream_is_local", args, 1, span)?;
+        let result = match &args[0] {
+            Value::Resource(id) => {
+                if let Some(stream) = self.streams.get(id) {
+                    match stream {
+                        StreamResource::File(_) => true,
+                        StreamResource::Memory(stream) => {
+                            stream.uri.starts_with("php://") || !stream.uri.contains(':')
+                        }
+                    }
+                } else {
+                    true
+                }
+            }
+            Value::String(path) => {
+                let protocol = stream_path_protocol(path);
+                protocol.eq_ignore_ascii_case("file") || protocol.eq_ignore_ascii_case("php")
+            }
+            _ => true,
+        };
+        Ok(Value::Bool(result))
+    }
+
+    fn call_stream_supports_lock(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("stream_supports_lock", args, 1, span)?;
+        match self.stream_mut_open_resource("stream_supports_lock", &args[0], span)? {
+            StreamResource::File(_) => Ok(Value::Bool(true)),
+            StreamResource::Memory(_) => Ok(Value::Bool(false)),
+        }
+    }
+
+    fn call_flock(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if args.len() < 2 || args.len() > 3 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "flock()",
+                    ArityExpectation::Between { min: 2, max: 3 },
+                    args.len(),
+                ),
+            ));
+        }
+        let operation = match &args[1] {
+            Value::Int(operation) => *operation,
+            Value::Bool(operation) => i64::from(*operation),
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "flock()",
+                        format!(
+                            "Argument #2 ($operation) must be of type int, {} given",
+                            php_type_error_given(other)
+                        ),
+                    ),
+                ));
+            }
+        };
+        if operation & PHP_LOCK_OPERATION_MASK == 0 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "flock()",
+                    "Argument #2 ($operation) must be one of LOCK_SH, LOCK_EX, or LOCK_UN",
+                ),
+            ));
+        }
+        if let Value::Resource(id) = args[0] {
+            if self.directories.contains_key(&id) {
+                return Ok(Value::Bool(false));
+            }
+        }
+        match self.stream_mut_open_resource("flock", &args[0], span)? {
+            StreamResource::File(_) => Ok(Value::Bool(true)),
+            StreamResource::Memory(_) => Ok(Value::Bool(false)),
         }
     }
 
@@ -69691,10 +70369,18 @@ impl Interpreter {
         match self.stream_mut("stream_get_meta_data", &args[0], span)? {
             StreamResource::Memory(stream) => {
                 let mut metadata = PhpArray::new();
-                metadata.insert("timed_out", Value::Bool(false));
-                metadata.insert("blocked", Value::Bool(true));
-                metadata.insert("eof", Value::Bool(stream.eof));
-                metadata.insert("wrapper_type", Value::String("PHP".to_string()));
+                for (key, value) in &stream.metadata_extra {
+                    metadata.insert(key.as_str(), value.clone());
+                }
+                if stream.metadata_include_runtime_flags {
+                    metadata.insert("timed_out", Value::Bool(false));
+                    metadata.insert("blocked", Value::Bool(true));
+                    metadata.insert("eof", Value::Bool(stream.eof));
+                }
+                metadata.insert(
+                    "wrapper_type",
+                    Value::String(stream.metadata_wrapper_type.clone()),
+                );
                 metadata.insert(
                     "stream_type",
                     Value::String(stream.metadata_stream_type.clone()),
@@ -73476,12 +74162,46 @@ impl Interpreter {
                 };
                 match &args[0] {
                     Value::String(path) => {
+                        if path.contains('\0') {
+                            return Err(runtime_error(
+                                span,
+                                RuntimeError::unsupported_call(
+                                    "file_get_contents()",
+                                    "Argument #1 ($filename) must not contain any null bytes",
+                                ),
+                            ));
+                        }
                         if !self.ensure_stream_wrapper_can_open_path(
                             "file_get_contents()",
                             path,
                             span,
                         )? {
                             return Ok(Value::Bool(false));
+                        }
+                        if stream_path_protocol(path).eq_ignore_ascii_case("data") {
+                            return match parse_data_url_stream(path) {
+                                Ok(stream) => match bounded_file_get_contents_slice(
+                                    &stream.contents,
+                                    offset,
+                                    max_length,
+                                ) {
+                                    FileGetContentsRead::Contents(contents) => {
+                                        Ok(Value::String(contents))
+                                    }
+                                    FileGetContentsRead::WarningFalse(message) => {
+                                        self.emit_warning("file_get_contents()", message, span)?;
+                                        Ok(Value::Bool(false))
+                                    }
+                                },
+                                Err(message) => {
+                                    self.emit_warning(
+                                        "file_get_contents()",
+                                        format!("{path}: Failed to open stream: {message}"),
+                                        span,
+                                    )?;
+                                    Ok(Value::Bool(false))
+                                }
+                            };
                         }
                         if path == "php://input" {
                             return match bounded_file_get_contents_slice(
@@ -73560,12 +74280,14 @@ impl Interpreter {
                 }
             }
             "fopen" => self.call_fopen(&args, span),
+            "tmpfile" => self.call_tmpfile(&args, span),
             "stream_context_create" => self.call_stream_context_create(&args, span),
             "stream_context_get_options" => self.call_stream_context_get_options(&args, span),
             "stream_context_get_params" => self.call_stream_context_get_params(&args, span),
             "stream_context_get_default" => self.call_stream_context_get_default(&args, span),
             "stream_context_set_default" => self.call_stream_context_set_default(&args, span),
             "stream_context_set_option" => self.call_stream_context_set_option(&args, span),
+            "stream_context_set_options" => self.call_stream_context_set_options(&args, span),
             "stream_context_set_params" => self.call_stream_context_set_params(&args, span),
             "fwrite" => self.call_fwrite(&args, span),
             "fputs" => self.call_fwrite(&args, span),
@@ -73577,6 +74299,12 @@ impl Interpreter {
             "fread" => self.call_fread(&args, span),
             "rewind" => self.call_rewind(&args, span),
             "stream_get_contents" => self.call_stream_get_contents(&args, span),
+            "fpassthru" => self.call_fpassthru(&args, span),
+            "stream_copy_to_stream" => self.call_stream_copy_to_stream(&args, span),
+            "stream_filter_append" => self.call_stream_filter_append(&args, span),
+            "stream_is_local" => self.call_stream_is_local(&args, span),
+            "stream_supports_lock" => self.call_stream_supports_lock(&args, span),
+            "flock" => self.call_flock(&args, span),
             "feof" => self.call_feof(&args, span),
             "ftell" => self.call_ftell(&args, span),
             "fseek" => self.call_fseek(&args, span),
@@ -86795,6 +87523,19 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
         | ("strncasecmp()", "Argument #3 ($length) must be greater than or equal to 0")
         | ("count_chars()", "Argument #2 ($mode) must be between 0 and 4 (inclusive)")
         | ("ftruncate()", "Argument #2 ($size) must be greater than or equal to 0")
+        | ("stream_get_contents()", "Argument #2 ($length) must be greater than or equal to -1")
+        | (
+            "flock()",
+            "Argument #2 ($operation) must be one of LOCK_SH, LOCK_EX, or LOCK_UN",
+        )
+        | (
+            "stream_context_create()"
+            | "stream_context_get_default()"
+            | "stream_context_set_default()"
+            | "stream_context_set_option()"
+            | "stream_context_set_options()",
+            "Options should have the form [\"wrappername\"][\"optionname\"] = $value",
+        )
         | ("stripos()", "Argument #3 ($offset) must be contained in argument #1 ($haystack)")
         | ("strrpos()", "Argument #3 ($offset) must be contained in argument #1 ($haystack)")
         | ("strripos()", "Argument #3 ($offset) must be contained in argument #1 ($haystack)")
@@ -86857,6 +87598,9 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
             if message.starts_with("Argument #")
                 && message.ends_with(" must not contain any null bytes") =>
         {
+            Some(format!("{function}: {message}"))
+        }
+        ("file_get_contents()", "Argument #1 ($filename) must not contain any null bytes") => {
             Some(format!("{function}: {message}"))
         }
         (
@@ -86956,6 +87700,8 @@ fn builtin_resource_type_error_message(error: &Diagnostic) -> Option<String> {
         || reason.ends_with("(): supplied resource is not a valid Stream-Context resource")
         || reason == "fflush(): Argument #1 ($stream) must be an open stream resource"
         || reason == "ftruncate(): Argument #1 ($stream) must be an open stream resource"
+        || reason == "flock(): Argument #1 ($stream) must be an open stream resource"
+        || reason == "stream_supports_lock(): Argument #1 ($stream) must be an open stream resource"
         || reason == "fscanf(): supplied resource is not a valid File-Handle resource"
         || reason == "No resource supplied"
         || reason == "readdir(): Argument #1 ($dir_handle) must be an open stream resource"
@@ -87504,12 +88250,14 @@ fn is_builtin(name: &str) -> bool {
             | "file_exists"
             | "file_get_contents"
             | "fopen"
+            | "tmpfile"
             | "stream_context_create"
             | "stream_context_get_options"
             | "stream_context_get_params"
             | "stream_context_get_default"
             | "stream_context_set_default"
             | "stream_context_set_option"
+            | "stream_context_set_options"
             | "stream_context_set_params"
             | "fwrite"
             | "fputs"
@@ -87521,6 +88269,12 @@ fn is_builtin(name: &str) -> bool {
             | "fread"
             | "rewind"
             | "stream_get_contents"
+            | "fpassthru"
+            | "stream_copy_to_stream"
+            | "stream_filter_append"
+            | "stream_is_local"
+            | "stream_supports_lock"
+            | "flock"
             | "feof"
             | "ftell"
             | "fseek"
@@ -88104,8 +88858,15 @@ const PHP_SESSION_ACTIVE: i64 = 2;
 const PHP_FILE_USE_INCLUDE_PATH: i64 = 1;
 const PHP_FILE_IGNORE_NEW_LINES: i64 = 2;
 const PHP_FILE_SKIP_EMPTY_LINES: i64 = 4;
+const PHP_LOCK_SH: i64 = 1;
 const PHP_LOCK_EX: i64 = 2;
+const PHP_LOCK_UN: i64 = 3;
+const PHP_LOCK_NB: i64 = 4;
+const PHP_LOCK_OPERATION_MASK: i64 = PHP_LOCK_SH | PHP_LOCK_EX | PHP_LOCK_UN;
 const PHP_FILE_APPEND: i64 = 8;
+const PHP_STREAM_FILTER_READ: i64 = 1;
+const PHP_STREAM_FILTER_WRITE: i64 = 2;
+const PHP_STREAM_FILTER_ALL: i64 = PHP_STREAM_FILTER_READ | PHP_STREAM_FILTER_WRITE;
 const PHP_PATHINFO_DIRNAME: i64 = 1;
 const PHP_PATHINFO_BASENAME: i64 = 2;
 const PHP_PATHINFO_EXTENSION: i64 = 4;
@@ -88373,7 +89134,13 @@ fn builtin_global_constant_value(name: &str) -> Option<Value> {
         "FILE_IGNORE_NEW_LINES" => Some(Value::Int(PHP_FILE_IGNORE_NEW_LINES)),
         "FILE_SKIP_EMPTY_LINES" => Some(Value::Int(PHP_FILE_SKIP_EMPTY_LINES)),
         "FILE_APPEND" => Some(Value::Int(PHP_FILE_APPEND)),
+        "LOCK_SH" => Some(Value::Int(PHP_LOCK_SH)),
         "LOCK_EX" => Some(Value::Int(PHP_LOCK_EX)),
+        "LOCK_UN" => Some(Value::Int(PHP_LOCK_UN)),
+        "LOCK_NB" => Some(Value::Int(PHP_LOCK_NB)),
+        "STREAM_FILTER_READ" => Some(Value::Int(PHP_STREAM_FILTER_READ)),
+        "STREAM_FILTER_WRITE" => Some(Value::Int(PHP_STREAM_FILTER_WRITE)),
+        "STREAM_FILTER_ALL" => Some(Value::Int(PHP_STREAM_FILTER_ALL)),
         "PATHINFO_DIRNAME" => Some(Value::Int(PHP_PATHINFO_DIRNAME)),
         "PATHINFO_BASENAME" => Some(Value::Int(PHP_PATHINFO_BASENAME)),
         "PATHINFO_EXTENSION" => Some(Value::Int(PHP_PATHINFO_EXTENSION)),
@@ -100039,7 +100806,7 @@ fn apply_stream_context_options(
                 span,
                 RuntimeError::unsupported_call(
                     callable,
-                    "option wrapper keys must be strings in the current subset",
+                    "Options should have the form [\"wrappername\"][\"optionname\"] = $value",
                 ),
             ));
         };
@@ -100048,7 +100815,7 @@ fn apply_stream_context_options(
                 span,
                 RuntimeError::unsupported_call(
                     callable,
-                    "option wrapper values must be arrays in the current subset",
+                    "Options should have the form [\"wrappername\"][\"optionname\"] = $value",
                 ),
             ));
         };
@@ -100058,7 +100825,7 @@ fn apply_stream_context_options(
                     span,
                     RuntimeError::unsupported_call(
                         callable,
-                        "option names must be strings in the current subset",
+                        "Options should have the form [\"wrappername\"][\"optionname\"] = $value",
                     ),
                 ));
             };
@@ -100509,6 +101276,22 @@ fn utf8_boundary_at_or_before(value: &str, index: usize) -> usize {
         index -= 1;
     }
     index
+}
+
+fn apply_ascii_rot13_in_place(value: &mut String) {
+    let mut bytes = value.as_bytes().to_vec();
+    apply_ascii_rot13_bytes_in_place(&mut bytes);
+    *value = String::from_utf8(bytes).expect("rot13 preserves valid UTF-8");
+}
+
+fn apply_ascii_rot13_bytes_in_place(value: &mut [u8]) {
+    for byte in value {
+        *byte = match *byte {
+            b'a'..=b'm' | b'A'..=b'M' => *byte + 13,
+            b'n'..=b'z' | b'N'..=b'Z' => *byte - 13,
+            _ => *byte,
+        };
+    }
 }
 
 enum FileGetContentsRead {

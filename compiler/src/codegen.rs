@@ -107,8 +107,8 @@ const LLVM_BASENAME_REJECTION: &str = "LLVM basename lowering rejects direct pat
 const ASSEMBLY_BASENAME_REJECTION: &str = "assembly basename lowering rejects direct path basename calls until native PHP path string conversion, suffix handling, trailing-separator normalization, Windows/UNC and stream-wrapper path semantics, locale/codepage behavior, argument diagnostics, references/copy-on-write, and exact native basename diagnostics exist; phpc run handles current bounded basename behavior";
 const LLVM_FILE_GET_CONTENTS_REJECTION: &str = "LLVM file_get_contents lowering rejects direct filesystem reads until native PHP stream wrapper handling, local file I/O, binary string byte fidelity, warning plus false recovery, stream contexts, include-path lookup, open_basedir/stat-cache behavior, references/copy-on-write, and exact native file_get_contents diagnostics exist; phpc run handles current bounded file_get_contents behavior including UTF-8 offset/length reads and selected warning-plus-false recovery";
 const ASSEMBLY_FILE_GET_CONTENTS_REJECTION: &str = "assembly file_get_contents lowering rejects direct filesystem reads until native PHP stream wrapper handling, local file I/O, binary string byte fidelity, warning plus false recovery, stream contexts, include-path lookup, open_basedir/stat-cache behavior, references/copy-on-write, and exact native file_get_contents diagnostics exist; phpc run handles current bounded file_get_contents behavior including UTF-8 offset/length reads and selected warning-plus-false recovery";
-const LLVM_STREAM_RESOURCE_REJECTION: &str = "LLVM stream-resource lowering rejects fopen(), stream_context_create(), stream_context_get_options(), stream_context_get_params(), stream_context_get_default(), stream_context_set_default(), stream_context_set_option(), stream_context_set_params(), fwrite()/fputs(), fgetc(), fgets(), fgetcsv(), fputcsv(), fscanf(), fread(), rewind(), stream_get_contents(), feof(), ftell(), fseek(), fstat(), stream_get_meta_data(), stream_get_wrappers(), stream_wrapper_register(), stream_wrapper_unregister(), stream_wrapper_restore(), fclose(), dir(), opendir(), readdir(), rewinddir(), closedir(), glob(), is_uploaded_file(), and move_uploaded_file() until native PHP resource handles, stream wrapper state, stream context state, stream wrapper registry state, upload provenance state, directory/glob state, binary string byte fidelity, warning plus false recovery, references/copy-on-write, and exact native stream diagnostics exist; phpc run handles current bounded php://memory, php://temp, php://input, local file stream resources, stream wrapper capability metadata, stream context resources, local directory handles, bounded local glob patterns, and PHPC_FILES upload provenance";
-const ASSEMBLY_STREAM_RESOURCE_REJECTION: &str = "assembly stream-resource lowering rejects fopen(), stream_context_create(), stream_context_get_options(), stream_context_get_params(), stream_context_get_default(), stream_context_set_default(), stream_context_set_option(), stream_context_set_params(), fwrite()/fputs(), fgetc(), fgets(), fgetcsv(), fputcsv(), fscanf(), fread(), rewind(), stream_get_contents(), feof(), ftell(), fseek(), fstat(), stream_get_meta_data(), stream_get_wrappers(), stream_wrapper_register(), stream_wrapper_unregister(), stream_wrapper_restore(), fclose(), dir(), opendir(), readdir(), rewinddir(), closedir(), glob(), is_uploaded_file(), and move_uploaded_file() until native PHP resource handles, stream wrapper state, stream context state, stream wrapper registry state, upload provenance state, directory/glob state, binary string byte fidelity, warning plus false recovery, references/copy-on-write, and exact native stream diagnostics exist; phpc run handles current bounded php://memory, php://temp, php://input, local file stream resources, stream wrapper capability metadata, stream context resources, local directory handles, bounded local glob patterns, and PHPC_FILES upload provenance";
+const LLVM_STREAM_RESOURCE_REJECTION: &str = "LLVM stream-resource lowering rejects fopen(), tmpfile(), stream_context_create(), stream_context_get_options(), stream_context_get_params(), stream_context_get_default(), stream_context_set_default(), stream_context_set_option(), stream_context_set_options(), stream_context_set_params(), fwrite()/fputs(), fgetc(), fgets(), fgetcsv(), fputcsv(), fscanf(), fread(), rewind(), stream_get_contents(), fpassthru(), stream_copy_to_stream(), stream_filter_append(), stream_is_local(), stream_supports_lock(), flock(), feof(), ftell(), fseek(), fstat(), stream_get_meta_data(), stream_get_wrappers(), stream_wrapper_register(), stream_wrapper_unregister(), stream_wrapper_restore(), fclose(), dir(), opendir(), readdir(), rewinddir(), closedir(), glob(), is_uploaded_file(), and move_uploaded_file() until native PHP resource handles, stream wrapper state, stream context state, stream wrapper registry state, stream filter state, stream lock state, upload provenance state, directory/glob state, binary string byte fidelity, warning plus false recovery, references/copy-on-write, and exact native stream diagnostics exist; phpc run handles current bounded php://memory, php://temp, php://input, data://, local file stream resources, stream wrapper capability metadata, stream context resources, selected read filters, local directory handles, bounded local glob patterns, and PHPC_FILES upload provenance";
+const ASSEMBLY_STREAM_RESOURCE_REJECTION: &str = "assembly stream-resource lowering rejects fopen(), tmpfile(), stream_context_create(), stream_context_get_options(), stream_context_get_params(), stream_context_get_default(), stream_context_set_default(), stream_context_set_option(), stream_context_set_options(), stream_context_set_params(), fwrite()/fputs(), fgetc(), fgets(), fgetcsv(), fputcsv(), fscanf(), fread(), rewind(), stream_get_contents(), fpassthru(), stream_copy_to_stream(), stream_filter_append(), stream_is_local(), stream_supports_lock(), flock(), feof(), ftell(), fseek(), fstat(), stream_get_meta_data(), stream_get_wrappers(), stream_wrapper_register(), stream_wrapper_unregister(), stream_wrapper_restore(), fclose(), dir(), opendir(), readdir(), rewinddir(), closedir(), glob(), is_uploaded_file(), and move_uploaded_file() until native PHP resource handles, stream wrapper state, stream context state, stream wrapper registry state, stream filter state, stream lock state, upload provenance state, directory/glob state, binary string byte fidelity, warning plus false recovery, references/copy-on-write, and exact native stream diagnostics exist; phpc run handles current bounded php://memory, php://temp, php://input, data://, local file stream resources, stream wrapper capability metadata, stream context resources, selected read filters, local directory handles, bounded local glob patterns, and PHPC_FILES upload provenance";
 const LLVM_GETCWD_REJECTION: &str = "LLVM getcwd lowering rejects direct current-directory calls until native process/request cwd state, UTF-8/path policy, SAPI cwd behavior, chdir() interaction, failure false recovery, references/copy-on-write, and exact native getcwd diagnostics exist; phpc run handles current bounded getcwd behavior";
 const ASSEMBLY_GETCWD_REJECTION: &str = "assembly getcwd lowering rejects direct current-directory calls until native process/request cwd state, UTF-8/path policy, SAPI cwd behavior, chdir() interaction, failure false recovery, references/copy-on-write, and exact native getcwd diagnostics exist; phpc run handles current bounded getcwd behavior";
 const LLVM_REALPATH_REJECTION: &str = "LLVM realpath lowering rejects direct filesystem canonicalization calls until native filesystem canonicalization, symlink/path policy, warning/false recovery, include_path/open_basedir/stat cache, non-UTF-8 path handling, references/COW, and exact native realpath diagnostics exist; phpc run handles current bounded realpath behavior";
@@ -9578,12 +9578,14 @@ fn is_stream_resource_builtin(name: &str) -> bool {
     matches!(
         name.to_ascii_lowercase().as_str(),
         "fopen"
+            | "tmpfile"
             | "stream_context_create"
             | "stream_context_get_options"
             | "stream_context_get_params"
             | "stream_context_get_default"
             | "stream_context_set_default"
             | "stream_context_set_option"
+            | "stream_context_set_options"
             | "stream_context_set_params"
             | "fwrite"
             | "fputs"
@@ -9595,6 +9597,12 @@ fn is_stream_resource_builtin(name: &str) -> bool {
             | "fread"
             | "rewind"
             | "stream_get_contents"
+            | "fpassthru"
+            | "stream_copy_to_stream"
+            | "stream_filter_append"
+            | "stream_is_local"
+            | "stream_supports_lock"
+            | "flock"
             | "feof"
             | "ftell"
             | "fseek"
@@ -66552,12 +66560,14 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "file_exists",
     "file_get_contents",
     "fopen",
+    "tmpfile",
     "stream_context_create",
     "stream_context_get_options",
     "stream_context_get_params",
     "stream_context_get_default",
     "stream_context_set_default",
     "stream_context_set_option",
+    "stream_context_set_options",
     "stream_context_set_params",
     "fwrite",
     "fputs",
@@ -66569,6 +66579,12 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "fread",
     "rewind",
     "stream_get_contents",
+    "fpassthru",
+    "stream_copy_to_stream",
+    "stream_filter_append",
+    "stream_is_local",
+    "stream_supports_lock",
+    "flock",
     "feof",
     "ftell",
     "fseek",

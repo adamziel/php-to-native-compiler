@@ -5,7 +5,7 @@ use php_compiler::error::Phase;
 use php_compiler::interpreter::{run_program_with_options, RunOptions};
 use php_compiler::{emit_asm_source, emit_ir_source, parse, run_source};
 
-const LLVM_STREAM_RESOURCE_REJECTION: &str = "LLVM stream-resource lowering rejects fopen(), stream_context_create(), stream_context_get_options(), stream_context_get_params(), stream_context_get_default(), stream_context_set_default(), stream_context_set_option(), stream_context_set_params(), fwrite()/fputs(), fgetc(), fgets(), fgetcsv(), fputcsv(), fscanf(), fread(), rewind(), stream_get_contents(), feof(), ftell(), fseek(), fstat(), stream_get_meta_data(), stream_get_wrappers(), stream_wrapper_register(), stream_wrapper_unregister(), stream_wrapper_restore(), fclose(), dir(), opendir(), readdir(), rewinddir(), closedir(), glob(), is_uploaded_file(), and move_uploaded_file() until native PHP resource handles, stream wrapper state, stream context state, stream wrapper registry state, upload provenance state, directory/glob state, binary string byte fidelity, warning plus false recovery, references/copy-on-write, and exact native stream diagnostics exist; phpc run handles current bounded php://memory, php://temp, php://input, local file stream resources, stream wrapper capability metadata, stream context resources, local directory handles, bounded local glob patterns, and PHPC_FILES upload provenance";
+const LLVM_STREAM_RESOURCE_REJECTION: &str = "LLVM stream-resource lowering rejects fopen(), tmpfile(), stream_context_create(), stream_context_get_options(), stream_context_get_params(), stream_context_get_default(), stream_context_set_default(), stream_context_set_option(), stream_context_set_options(), stream_context_set_params(), fwrite()/fputs(), fgetc(), fgets(), fgetcsv(), fputcsv(), fscanf(), fread(), rewind(), stream_get_contents(), fpassthru(), stream_copy_to_stream(), stream_filter_append(), stream_is_local(), stream_supports_lock(), flock(), feof(), ftell(), fseek(), fstat(), stream_get_meta_data(), stream_get_wrappers(), stream_wrapper_register(), stream_wrapper_unregister(), stream_wrapper_restore(), fclose(), dir(), opendir(), readdir(), rewinddir(), closedir(), glob(), is_uploaded_file(), and move_uploaded_file() until native PHP resource handles, stream wrapper state, stream context state, stream wrapper registry state, stream filter state, stream lock state, upload provenance state, directory/glob state, binary string byte fidelity, warning plus false recovery, references/copy-on-write, and exact native stream diagnostics exist; phpc run handles current bounded php://memory, php://temp, php://input, data://, local file stream resources, stream wrapper capability metadata, stream context resources, selected read filters, local directory handles, bounded local glob patterns, and PHPC_FILES upload provenance";
 
 #[test]
 fn php_memory_and_temp_stream_resources_round_trip_buffer_contents() {
@@ -165,6 +165,8 @@ echo in_array("file", $wrappers) ? "file" : "no-file";
 echo "|";
 echo in_array("php", $wrappers) ? "php" : "no-php";
 echo "|";
+echo in_array("data", $wrappers) ? "data" : "no-data";
+echo "|";
 echo in_array("ftp", $wrappers) ? "ftp" : "no-ftp";
 echo "|";
 echo in_array("glob", $wrappers) ? "glob" : "no-glob";
@@ -178,7 +180,7 @@ echo count($wrappers);
 
     assert_eq!(
         execution.stdout,
-        "exists|callable|array|file|php|no-ftp|no-glob|no-phar|2"
+        "exists|callable|array|file|php|data|no-ftp|no-glob|no-phar|3"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -341,6 +343,98 @@ echo $close($stream) ? "closed" : "open";
 
     assert_eq!(execution.stdout, "yes|callable|dynamic|closed");
     assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn residual_stream_helpers_cover_data_get_contents_and_context_options() {
+    let execution = run_source(
+        r#"<?php
+echo file_get_contents("data://,hello%20world");
+echo "|";
+$data = fopen("data://text/plain;foo=bar;base64,Zm9v", "r");
+$meta = stream_get_meta_data($data);
+echo stream_get_contents($data);
+echo ":";
+echo $meta["mediatype"];
+echo ":";
+echo $meta["foo"];
+echo ":";
+echo $meta["base64"] ? "b64" : "plain";
+echo ":";
+echo $meta["wrapper_type"];
+echo "|";
+$tmp = tmpfile();
+fwrite($tmp, "abcdef");
+echo stream_get_contents($tmp, 2, 1);
+echo ":";
+try {
+    stream_get_contents($tmp, -2);
+} catch (ValueError $e) {
+    echo $e->getMessage();
+}
+echo "|";
+$ctx = stream_context_create();
+stream_context_set_options($ctx, ["http" => ["method" => "POST"]]);
+stream_context_set_option($ctx, "http", "user_agent", "PHPT Agent");
+$options = stream_context_get_options($ctx);
+echo $options["http"]["method"];
+echo ":";
+echo $options["http"]["user_agent"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "hello world|foo:text/plain:bar:b64:RFC2397|bc:stream_get_contents(): Argument #2 ($length) must be greater than or equal to -1|POST:PHPT Agent"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn residual_stream_helpers_passthrough_copy_lock_and_locality() {
+    let source_path = temp_stream_path("stream-residual-source.txt");
+    let destination_path = temp_stream_path("stream-residual-destination.txt");
+    fs::write(&source_path, "foo<br>bar<br>Another day").expect("source fixture is writable");
+    let source = format!(
+        r#"<?php
+$copy = fopen("{}", "r");
+stream_filter_append($copy, "string.rot13", STREAM_FILTER_READ);
+$dest = fopen("{}", "w+");
+echo stream_copy_to_stream($copy, $dest, 7);
+rewind($dest);
+echo ":";
+echo stream_get_contents($dest);
+echo "|";
+$pass = fopen("{}", "r");
+fseek($pass, 14);
+$count = fpassthru($pass);
+echo ":";
+echo $count;
+echo "|";
+$lock = fopen("{}", "r");
+echo stream_supports_lock($lock) ? "lock" : "no-lock";
+echo ":";
+echo flock($lock, LOCK_SH | LOCK_NB) ? "flocked" : "open";
+echo ":";
+echo stream_is_local($lock) ? "local" : "remote";
+echo ":";
+echo stream_is_local("data://,x") ? "data-local" : "data-remote";
+"#,
+        source_path.display(),
+        destination_path.display(),
+        source_path.display(),
+        source_path.display()
+    );
+    let execution = run_source(&source).unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "7:sbb<oe>|Another day:11|lock:flocked:local:data-remote"
+    );
+    assert_eq!(execution.exit_code, 0);
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(destination_path);
 }
 
 #[test]
@@ -679,7 +773,7 @@ $default = stream_context_get_default(array(
     "http" => array("method" => "GET"),
 ));
 stream_context_set_option($default, "http", "header", "X-WP: one");
-stream_context_set_option($default, array(
+stream_context_set_options($default, array(
     "ssl" => array("verify_peer" => false),
     "http" => array("method" => "POST"),
 ));
@@ -722,6 +816,8 @@ echo file_get_contents("{}", false, $replacement);
 fn stream_context_params_persist_notification_and_merge_option_params() {
     let execution = run_source(
         r#"<?php
+function initial() {}
+function updated() {}
 $context = stream_context_create(
     array(
         "http" => array("method" => "GET", "header" => "X-Seed: one"),
@@ -830,22 +926,19 @@ echo opendir("{}") === false ? "missing-false" : "missing-open";
 
 #[test]
 fn stream_resource_builtins_reject_forms_outside_current_subset() {
-    let wrapper = run_source("<?php\nfopen('http://example.test', 'r');\n").unwrap_err();
-    assert_eq!(wrapper.phase, Phase::Runtime);
-    assert_eq!(wrapper.line, 2);
-    assert_eq!(wrapper.column, 1);
-    assert_eq!(
-        wrapper.message,
-        "unsupported call fopen(): only php://memory, php://temp, php://input, local file:// URLs, and local file paths are supported in the current stream subset"
-    );
+    let wrapper = run_source("<?php\nvar_dump(fopen('http://example.test', 'r'));\n").unwrap();
+    assert_eq!(wrapper.stdout, "bool(false)\n");
+    assert!(wrapper
+        .stderr
+        .contains("Unable to find the wrapper \"http\""));
 
-    let bad_mode = run_source("<?php\nfopen('php://memory', 'x');\n").unwrap_err();
+    let bad_mode = run_source("<?php\nfopen('php://memory', 'q');\n").unwrap_err();
     assert_eq!(bad_mode.phase, Phase::Runtime);
     assert_eq!(bad_mode.line, 2);
     assert_eq!(bad_mode.column, 1);
     assert_eq!(
         bad_mode.message,
-        "unsupported call fopen(): mode \"x\" is not supported in the current stream subset"
+        "unsupported call fopen(): mode \"q\" is not supported in the current stream subset"
     );
 
     let bad_context =
@@ -991,14 +1084,22 @@ fn emit_ir_folds_stream_metadata_but_rejects_direct_calls() {
     let ir = emit_ir_source(
         r#"<?php
 echo function_exists("fopen") ? "1" : "0";
+echo function_exists("tmpfile") ? "1" : "0";
 echo function_exists("stream_context_create") ? "1" : "0";
 echo is_callable("stream_context_get_options") ? "1" : "0";
 echo function_exists("stream_context_get_params") ? "1" : "0";
 echo function_exists("stream_context_get_default") ? "1" : "0";
 echo is_callable("stream_context_set_default") ? "1" : "0";
 echo function_exists("stream_context_set_option") ? "1" : "0";
+echo function_exists("stream_context_set_options") ? "1" : "0";
 echo is_callable("stream_context_set_params") ? "1" : "0";
 echo is_callable("stream_get_contents") ? "1" : "0";
+echo function_exists("fpassthru") ? "1" : "0";
+echo function_exists("stream_copy_to_stream") ? "1" : "0";
+echo function_exists("stream_filter_append") ? "1" : "0";
+echo function_exists("stream_is_local") ? "1" : "0";
+echo function_exists("stream_supports_lock") ? "1" : "0";
+echo function_exists("flock") ? "1" : "0";
 echo defined("SEEK_END") ? "1" : "0";
 echo function_exists("fstat") ? "1" : "0";
 echo is_callable("stream_get_meta_data") ? "1" : "0";
@@ -1011,7 +1112,7 @@ echo is_callable("move_uploaded_file") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 17, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 25, "{ir}");
 
     let error = emit_ir_source("<?php\nis_uploaded_file('/tmp/phpc-upload');\n").unwrap_err();
     assert_eq!(error.phase, Phase::Codegen);
