@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-29 03:01 CEST
+Updated: 2026-05-29 03:12 CEST
 Primary branch: `master`
-Latest source head: `dedf970e fix: add str_pad builtin semantics`
+Latest source head: `848b3947 fix: add typed return without value diagnostics`
 
 ## Progress Score
 
@@ -94,13 +94,51 @@ stable pinned denominator and does not use the raw runner
 | Batch005 checkpoint10 sharded gate | Done | 1618 / 20294 pinned runnable PHPTs passed (7.97%); 3 PASS-to-SKIP platform guards from Windows-only PHPTs; run id `phpt-full-batch005-checkpoint10-sharded-20260528T224229Z-php-src-f97ff59-public-fd74fba9-source-1c4da4c5-stack10` |
 | Batch004 source batch | Complete | Batch004 source checkpoints accepted: 10 / 10; checkpoint10 sharded gate published |
 | Batch005 source batch | Complete | Batch005 source checkpoints accepted: 10 / 10; checkpoint10 sharded gate published |
-| Batch006 source batch | Started | Source checkpoints accepted: 6 / 10 gate threshold; checkpoint6 integrates generalized `str_pad()` semantics |
+| Batch006 source batch | Started | Source checkpoints accepted: 7 / 10 gate threshold; checkpoint7 integrates typed return-without-value diagnostics |
 
 Focused PHPT history is tracked separately in
 `/home/claude/supervised-php-compiler/state/php-core-suite-focused-history.tsv`.
 Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
+
+Batch006 source checkpoint 7 is primary-integrated under AO supervision. This
+is a source checkpoint with focused proof, not a percentage change. The public
+PHPT score remains **1618 / 20294 pinned runnable PHPTs = 7.97%** until the
+next pinned full-suite or supervisor-approved sharded publication gate is
+completed, regression-checked, and published here.
+
+- primary source head:
+  `848b3947 fix: add typed return without value diagnostics`
+- reviewed and integration patch:
+  `/home/claude/supervised-php-compiler/state/patches/ao-integration-p15-typed-return-without-value-successor4-c189f357-20260529.patch`
+- reviewed and integration patch SHA256:
+  `a3fa46507742cb7cb9604be7511ba8ef1dc3aa87ec3fb3f79403c900dc1804ad`
+- reviewer gate: phpc-18 recorded `FINAL-GO-CANDIDATE /
+  CURRENT-PUBLIC-C189F357 / CARGO-RUST-BUILD-PHPT-PASS`; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/batch006-review-type-declarations-typed-return-without-value-successor4-c189f357-20260529.{status.md,report.md,gates.log}`
+- critic gate: phpc-33 recorded `SAFE-FOR-INTEGRATION`; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/batch006-critic-type-declarations-typed-return-without-value-successor4-c189f357-20260529.{status.md,report.md}`
+- integration handoff: phpc-38's first PHPT pass used the wrapper default
+  binary and failed; the corrected scratch-binary rerun passed 4/4 and p15's
+  baseline audit recorded this as wrapper evidence, not a source blocker:
+  `/home/claude/supervised-php-compiler/state/workers/ao-coder-type-declarations-typed-return-without-value-integration-baseline-c189f357-20260529.{status.md,report.md,gates.log}`
+- supervisor focused gates: PASS for clean apply over checkpoint6,
+  `git diff --check`, production exact-shape audit,
+  `cargo fmt --all -- --check`, focused Rust
+  `typed_return_without_value`, `cargo build -p phpc`, and the focused
+  four-file PHPT typed return-without-value cluster with 4 PASS and 0 FAIL
+- full PHPT suite: not run for this single source checkpoint; Batch006 broad
+  gate is held until 10 accepted source checkpoints, or until the supervisor
+  explicitly opens a regression/publication gate
+
+This checkpoint generalizes startup diagnostics for typed functions and
+methods that use `return;` without a value when the declared return type is not
+`void`, including nullable/literal return-type variants. It is not keyed to a
+PHPT filename, expected-output fixture, batch marker, public hash, or test-name
+branch.
+
+Previous Batch006 source checkpoint 6 was generalized `str_pad()` semantics:
 
 Batch006 source checkpoint 6 is primary-integrated under AO supervision. This
 is a source checkpoint with focused proof, not a percentage change. The public
