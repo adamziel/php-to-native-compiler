@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-29 05:17 CEST
+Updated: 2026-05-29 05:20 CEST
 Primary branch: `master`
-Latest source head: `d12ef3ec fix: add str_split builtin semantics`
+Latest source head: `1be8c03c fix: reject non-array call_user_func_array args`
 
 ## Progress Score
 
@@ -108,13 +108,46 @@ stable pinned denominator and does not use the raw runner
 | Batch004 source batch | Complete | Batch004 source checkpoints accepted: 10 / 10; checkpoint10 sharded gate published |
 | Batch005 source batch | Complete | Batch005 source checkpoints accepted: 10 / 10; checkpoint10 sharded gate published |
 | Batch006 source batch | Complete | Source checkpoints accepted: 10 / 10; checkpoint10 sharded gate published |
-| Batch007 source batch | In progress | Source checkpoints accepted: 9 / 10; public score unchanged until pinned aggregate gate |
+| Batch007 source batch | Complete | Source checkpoints accepted: 10 / 10; checkpoint10 sharded publication gate pending |
 
 Focused PHPT history is tracked separately in
 `/home/claude/supervised-php-compiler/state/php-core-suite-focused-history.tsv`.
 Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
+
+Batch007 source checkpoint 10 is primary-integrated under AO supervision. This
+is a source checkpoint with focused proof, not a percentage change. The public
+PHPT score remains **1836 / 20294 pinned runnable PHPTs = 9.05%** until the
+Batch007 pinned sharded publication gate is completed, regression-checked, and
+published here.
+
+- primary source head:
+  `1be8c03c fix: reject non-array call_user_func_array args`
+- reviewed and integration patch:
+  `/home/claude/supervised-php-compiler/state/patches/ao-coder-call-argument-unpack-non-array-typeerror-successor2-16af8d49-20260529.patch`
+- reviewed and integration patch SHA256:
+  `bb1ee436d5dd403bd8825d547b11f13eabe2b75ac2b21564a24bcba1e4c01c85`
+- reviewer gate: phpc-32 recorded non-cargo current-public proof for the p31
+  non-array `call_user_func_array()` TypeError candidate; supervisor completed
+  the full checkpoint gate over public `93df4a02`
+- supervisor focused gates: PASS for clean apply over public `93df4a02`,
+  `git diff --cached --check`, docs/PROGRESS/examples exclusion, production
+  exact-shape audit, `cargo fmt --all -- --check`, focused Rust
+  `cargo test -q -p phpc --test call_user_func_builtin
+  call_user_func_array_non_array_args_raise_catchable_type_error`,
+  `cargo build -q -p phpc --bin phpc`, and the focused PHP core PHPT
+  `Zend/tests/call_user_functions/call_user_func_array_invalid_type.phpt` with
+  1 PASS and 0 FAIL
+- public progress gate: not run for this source checkpoint; Batch007 now has
+  10 / 10 source checkpoints and is ready for the pinned sharded publication
+  gate
+
+This checkpoint implements generalized `call_user_func_array()` second-argument
+TypeError behavior for non-array argument lists across direct, dynamic, builtin,
+reference, and magic dispatch paths, including PHP-style `null`, `true`, and
+`false` type names. It is not keyed to PHPT filenames, expected output,
+fixture names, public hashes, batch labels, or checkpoint markers.
 
 Batch007 source checkpoint 9 is primary-integrated under AO supervision. This
 is a source checkpoint with focused proof, not a percentage change. The public
