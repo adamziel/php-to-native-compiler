@@ -67016,6 +67016,117 @@ impl Interpreter {
         Ok(Value::Int(length))
     }
 
+    fn call_fprintf(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if args.len() < 2 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch("fprintf()", ArityExpectation::AtLeast(2), args.len()),
+            ));
+        }
+
+        let format = match &args[1] {
+            Value::String(value) => value,
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "fprintf()",
+                        format!(
+                            "format argument must be string in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+        };
+
+        let output = bounded_sprintf("fprintf()", format, &args[2..], span)?;
+        let length = output.as_bytes().len() as i64;
+        self.write_stream_string("fprintf", &args[0], &output, span)?;
+        Ok(Value::Int(length))
+    }
+
+    fn call_vfprintf(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("vfprintf()", args, 3, span)?;
+        let output = call_vsprintf(&args[1..], "vfprintf()", span)?;
+        let length = output.as_bytes().len() as i64;
+        self.write_stream_string("vfprintf", &args[0], &output, span)?;
+        Ok(Value::Int(length))
+    }
+
+    fn write_stream_string(
+        &mut self,
+        function: &'static str,
+        stream_value: &Value,
+        data: &str,
+        span: Span,
+    ) -> CompileResult<()> {
+        match self.stream_mut(function, stream_value, span)? {
+            StreamResource::Memory(stream) => {
+                if !stream.writable {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{function}()"),
+                            "stream is not writable in the current subset",
+                        ),
+                    ));
+                }
+                if stream.append {
+                    stream.position = stream.buffer.len();
+                }
+                if stream.position > stream.buffer.len() {
+                    stream
+                        .buffer
+                        .push_str(&"\0".repeat(stream.position - stream.buffer.len()));
+                }
+                let end = stream.position + data.len();
+                if end <= stream.buffer.len() {
+                    stream.buffer.replace_range(stream.position..end, data);
+                } else if stream.position < stream.buffer.len() {
+                    stream.buffer.replace_range(stream.position.., data);
+                } else {
+                    stream.buffer.push_str(data);
+                }
+                stream.position = end;
+                stream.eof = false;
+            }
+            StreamResource::File(stream) => {
+                if !stream.writable {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{function}()"),
+                            "stream is not writable in the current subset",
+                        ),
+                    ));
+                }
+                if stream.append {
+                    stream.file.seek(SeekFrom::End(0)).map_err(|error| {
+                        runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                format!("{function}()"),
+                                format!("local file stream seek failed: {error}"),
+                            ),
+                        )
+                    })?;
+                }
+                stream.file.write_all(data.as_bytes()).map_err(|error| {
+                    runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{function}()"),
+                            format!("local file stream write failed: {error}"),
+                        ),
+                    )
+                })?;
+                stream.eof = false;
+            }
+        }
+        Ok(())
+    }
+
     fn call_builtin(&mut self, name: &str, args: Vec<Value>, span: Span) -> CompileResult<Value> {
         match name {
             "define" => {
@@ -67143,9 +67254,11 @@ impl Interpreter {
             "ignore_user_abort" => self.call_ignore_user_abort(args, span),
             "php_sapi_name" => call_php_sapi_name(&args, span),
             "printf" => self.call_printf(&args, span),
+            "fprintf" => self.call_fprintf(&args, span),
             "sprintf" => call_sprintf(&args, span),
             "vsprintf" => call_vsprintf_value(&args, span),
             "vprintf" => self.call_vprintf(&args, span),
+            "vfprintf" => self.call_vfprintf(&args, span),
             "func_num_args" => self.call_func_num_args(&args, span),
             "func_get_args" => self.call_func_get_args(&args, span),
             "func_get_arg" => self.call_func_get_arg(&args, span),
@@ -77723,9 +77836,25 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_variadic_param("values", "mixed"),
             ],
         ),
+        "fprintf" => (
+            "int",
+            vec![
+                reflection_internal_param("stream", "resource"),
+                reflection_internal_param("format", "string"),
+                reflection_internal_variadic_param("values", "mixed"),
+            ],
+        ),
         "vprintf" => (
             "int",
             vec![
+                reflection_internal_param("format", "string"),
+                reflection_internal_param("values", "array"),
+            ],
+        ),
+        "vfprintf" => (
+            "int",
+            vec![
+                reflection_internal_param("stream", "resource"),
                 reflection_internal_param("format", "string"),
                 reflection_internal_param("values", "array"),
             ],
@@ -79970,7 +80099,9 @@ fn is_builtin(name: &str) -> bool {
             | "ignore_user_abort"
             | "php_sapi_name"
             | "printf"
+            | "fprintf"
             | "vprintf"
+            | "vfprintf"
             | "sprintf"
             | "vsprintf"
             | "func_num_args"
