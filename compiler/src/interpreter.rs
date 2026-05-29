@@ -70128,6 +70128,7 @@ impl Interpreter {
                     )),
                 }
             }
+            "range" => call_range(&args, span),
             "constant" => {
                 expect_arity(name, &args, 1, span)?;
                 match &args[0] {
@@ -80924,6 +80925,18 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_optional_int_param("length", 1),
             ],
         ),
+        "range" => (
+            "array",
+            vec![
+                reflection_internal_param("start", "string|int|float"),
+                reflection_internal_param("end", "string|int|float"),
+                reflection_internal_optional_param(
+                    "step",
+                    "int|float",
+                    Expr::Int(1, Span::new(0, 0)),
+                ),
+            ],
+        ),
         "addslashes" | "stripslashes" | "stripcslashes" => (
             "string",
             vec![reflection_internal_param("string", "string")],
@@ -81307,6 +81320,16 @@ fn reflection_internal_reference_param(name: &str, type_decl: &str) -> Reflectio
 fn reflection_internal_optional_int_param(name: &str, default: i64) -> ReflectionParameterMetadata {
     let mut param = reflection_internal_param(name, "int");
     param.default = Some(Expr::Int(default, Span::new(0, 0)));
+    param
+}
+
+fn reflection_internal_optional_param(
+    name: &str,
+    type_decl: &str,
+    default: Expr,
+) -> ReflectionParameterMetadata {
+    let mut param = reflection_internal_param(name, type_decl);
+    param.default = Some(default);
     param
 }
 
@@ -83118,7 +83141,16 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
         | ("ftruncate()", "Argument #2 ($size) must be greater than or equal to 0")
         | ("stripos()", "Argument #3 ($offset) must be contained in argument #1 ($haystack)")
         | ("strrpos()", "Argument #3 ($offset) must be contained in argument #1 ($haystack)")
-        | ("strripos()", "Argument #3 ($offset) must be contained in argument #1 ($haystack)") => {
+        | ("strripos()", "Argument #3 ($offset) must be contained in argument #1 ($haystack)")
+        | ("range()", "Argument #3 ($step) cannot be 0")
+        | ("range()", "Argument #3 ($step) must be greater than 0 for increasing ranges")
+        | ("range()", "Argument #3 ($step) must be less than the range spanned by argument #1 ($start) and argument #2 ($end)") => {
+            Some(format!("{function}: {message}"))
+        }
+        ("range()", message)
+            if message.starts_with("Argument #")
+                && message.contains(" must be a finite number, ") =>
+        {
             Some(format!("{function}: {message}"))
         }
         (
@@ -83454,6 +83486,7 @@ fn is_builtin(name: &str) -> bool {
             | "str_pad"
             | "chunk_split"
             | "str_split"
+            | "range"
             | "addslashes"
             | "stripslashes"
             | "addcslashes"
@@ -89837,6 +89870,409 @@ fn php_internal_int_argument(
 
 fn php_float_fits_i64(value: f64) -> bool {
     value.is_finite() && value >= i64::MIN as f64 && value <= i64::MAX as f64
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum RangeScalar {
+    Int(i64),
+    Float(f64),
+    Byte(u8),
+}
+
+impl RangeScalar {
+    fn raw_f64(self) -> f64 {
+        match self {
+            Self::Int(value) => value as f64,
+            Self::Float(value) => value,
+            Self::Byte(value) => f64::from(value),
+        }
+    }
+
+    fn numeric_f64(self) -> f64 {
+        match self {
+            Self::Byte(value) if value.is_ascii_digit() => f64::from(value - b'0'),
+            _ => self.raw_f64(),
+        }
+    }
+
+    fn raw_i64(self) -> i64 {
+        match self {
+            Self::Int(value) => value,
+            Self::Float(value) => value as i64,
+            Self::Byte(value) => i64::from(value),
+        }
+    }
+
+    fn numeric_i64(self) -> i64 {
+        match self {
+            Self::Byte(value) if value.is_ascii_digit() => i64::from(value - b'0'),
+            _ => self.raw_i64(),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RangeKind {
+    Int,
+    Float,
+    Byte,
+}
+
+fn call_range(args: &[Value], span: Span) -> CompileResult<Value> {
+    if !(2..=3).contains(&args.len()) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "range()",
+                ArityExpectation::Between { min: 2, max: 3 },
+                args.len(),
+            ),
+        ));
+    }
+
+    let start = range_boundary_argument("range()", 1, "start", &args[0], span)?;
+    let end = range_boundary_argument("range()", 2, "end", &args[1], span)?;
+    let step = match args.get(2) {
+        Some(value) => range_step_argument(value, span)?,
+        None => 1.0,
+    };
+    if step == 0.0 {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call("range()", "Argument #3 ($step) cannot be 0"),
+        ));
+    }
+
+    let kind = range_result_kind(start, end, step);
+    let increasing = range_order_value(end, kind) >= range_order_value(start, kind);
+    if increasing && step < 0.0 {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "range()",
+                "Argument #3 ($step) must be greater than 0 for increasing ranges",
+            ),
+        ));
+    }
+
+    let span_size = (range_order_value(end, kind) - range_order_value(start, kind)).abs();
+    let step_size = step.abs();
+    if step_size > span_size && span_size != 0.0 {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "range()",
+                "Argument #3 ($step) must be less than the range spanned by argument #1 ($start) and argument #2 ($end)",
+            ),
+        ));
+    }
+
+    let mut array = PhpArray::new();
+    let mut index = 0usize;
+    let max_len = 200_000usize;
+
+    match kind {
+        RangeKind::Byte => {
+            let mut current = start.raw_i64();
+            let end = end.raw_i64();
+            let step = step_size as i64;
+            let step = step.max(1);
+            while if increasing {
+                current <= end
+            } else {
+                current >= end
+            } {
+                array
+                    .append(interpreter_value_from_php_string_bytes(vec![current as u8]))
+                    .map_err(|error| runtime_error(span, error))?;
+                index += 1;
+                if index > max_len {
+                    return Err(range_memory_limit_error(span));
+                }
+                current = if increasing {
+                    current.saturating_add(step)
+                } else {
+                    current.saturating_sub(step)
+                };
+            }
+        }
+        RangeKind::Int => {
+            let mut current = start.numeric_i64();
+            let end = end.numeric_i64();
+            let step = step_size as i64;
+            let step = step.max(1);
+            while if increasing {
+                current <= end
+            } else {
+                current >= end
+            } {
+                array
+                    .append(Value::Int(current))
+                    .map_err(|error| runtime_error(span, error))?;
+                index += 1;
+                if index > max_len {
+                    return Err(range_memory_limit_error(span));
+                }
+                current = if increasing {
+                    current.saturating_add(step)
+                } else {
+                    current.saturating_sub(step)
+                };
+            }
+        }
+        RangeKind::Float => {
+            let start = start.numeric_f64();
+            let end = end.numeric_f64();
+            let delta = if increasing { step_size } else { -step_size };
+            let places = range_decimal_places(start)
+                .max(range_decimal_places(end))
+                .max(range_decimal_places(step_size));
+            let count = (span_size / step_size + 1e-10).floor() as usize + 1;
+            for offset in 0..count {
+                let raw = start + delta * offset as f64;
+                let current = if (raw - end).abs() <= 1e-10 {
+                    end
+                } else {
+                    range_round_float(raw, places)
+                };
+                array
+                    .append(Value::Float(current))
+                    .map_err(|error| runtime_error(span, error))?;
+                index += 1;
+                if index > max_len {
+                    return Err(range_memory_limit_error(span));
+                }
+            }
+        }
+    }
+
+    Ok(Value::Array(array))
+}
+
+fn range_boundary_argument(
+    function: &str,
+    position: usize,
+    name: &str,
+    value: &Value,
+    span: Span,
+) -> CompileResult<RangeScalar> {
+    match value {
+        Value::Null => Ok(RangeScalar::Int(0)),
+        Value::Bool(value) => Ok(RangeScalar::Int(i64::from(*value))),
+        Value::Int(value) => Ok(RangeScalar::Int(*value)),
+        Value::Float(value) if value.is_finite() => Ok(RangeScalar::Float(*value)),
+        Value::Float(value) => Err(range_non_finite_error(function, position, name, *value, span)),
+        Value::String(value) => range_scalar_from_string(function, position, name, value, span),
+        Value::BinaryString(value) => {
+            let value = String::from_utf8_lossy(value);
+            range_scalar_from_string(function, position, name, &value, span)
+        }
+        Value::Array(_) | Value::Object(_) | Value::Closure(_) | Value::Resource(_) => Err(
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function,
+                    format!(
+                        "Argument #{position} (${name}) must be int, float, or string in the current subset, {} given",
+                        value.type_name()
+                    ),
+                ),
+            ),
+        ),
+    }
+}
+
+fn range_scalar_from_string(
+    function: &str,
+    position: usize,
+    name: &str,
+    value: &str,
+    span: Span,
+) -> CompileResult<RangeScalar> {
+    let trimmed = value.trim();
+    if value.as_bytes().len() == 1 {
+        return Ok(RangeScalar::Byte(value.as_bytes()[0]));
+    }
+
+    if range_string_prefers_float(trimmed) {
+        if let Ok(value) = trimmed.parse::<f64>() {
+            if value.is_finite() {
+                return Ok(RangeScalar::Float(value));
+            }
+            return Err(range_non_finite_error(
+                function, position, name, value, span,
+            ));
+        }
+    }
+
+    if let Some(value) = parse_supported_integer_string(trimmed) {
+        return Ok(RangeScalar::Int(value));
+    }
+    if let Ok(value) = trimmed.parse::<f64>() {
+        if value.is_finite() {
+            return Ok(RangeScalar::Float(value));
+        }
+        return Err(range_non_finite_error(
+            function, position, name, value, span,
+        ));
+    }
+
+    value
+        .as_bytes()
+        .first()
+        .copied()
+        .map(RangeScalar::Byte)
+        .ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function,
+                    format!("Argument #{position} (${name}) must not be empty"),
+                ),
+            )
+        })
+}
+
+fn range_step_argument(value: &Value, span: Span) -> CompileResult<f64> {
+    let step = match value {
+        Value::Null => 0.0,
+        Value::Bool(value) => f64::from(i64::from(*value) as i32),
+        Value::Int(value) => *value as f64,
+        Value::Float(value) if value.is_finite() => *value,
+        Value::Float(value) => {
+            return Err(range_non_finite_error("range()", 3, "step", *value, span));
+        }
+        Value::String(value) => range_step_from_string(value, span)?,
+        Value::BinaryString(value) => {
+            let value = String::from_utf8_lossy(value);
+            range_step_from_string(&value, span)?
+        }
+        Value::Array(_) | Value::Object(_) | Value::Closure(_) | Value::Resource(_) => {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "range()",
+                    format!(
+                        "Argument #3 ($step) must be int, float, or string in the current subset, {} given",
+                        value.type_name()
+                    ),
+                ),
+            ));
+        }
+    };
+    if step.is_finite() {
+        Ok(step)
+    } else {
+        Err(range_non_finite_error("range()", 3, "step", step, span))
+    }
+}
+
+fn range_result_kind(start: RangeScalar, end: RangeScalar, step: f64) -> RangeKind {
+    if step.fract() != 0.0 {
+        return RangeKind::Float;
+    }
+
+    if matches!(start, RangeScalar::Byte(_)) && matches!(end, RangeScalar::Byte(_)) {
+        return RangeKind::Byte;
+    }
+
+    if matches!(start, RangeScalar::Float(_)) || matches!(end, RangeScalar::Float(_)) {
+        RangeKind::Float
+    } else {
+        RangeKind::Int
+    }
+}
+
+fn range_step_from_string(value: &str, span: Span) -> CompileResult<f64> {
+    let trimmed = value.trim();
+    if range_string_prefers_float(trimmed) {
+        if let Ok(value) = trimmed.parse::<f64>() {
+            if value.is_finite() {
+                return Ok(value);
+            }
+            return Err(range_non_finite_error("range()", 3, "step", value, span));
+        }
+    }
+
+    if let Some(value) = parse_supported_integer_string(trimmed) {
+        return Ok(value as f64);
+    }
+    if let Ok(value) = trimmed.parse::<f64>() {
+        if value.is_finite() {
+            return Ok(value);
+        }
+        return Err(range_non_finite_error("range()", 3, "step", value, span));
+    }
+
+    value
+        .as_bytes()
+        .first()
+        .copied()
+        .map(f64::from)
+        .ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call("range()", "Argument #3 ($step) must not be empty"),
+            )
+        })
+}
+
+fn range_string_prefers_float(value: &str) -> bool {
+    value
+        .as_bytes()
+        .iter()
+        .any(|byte| matches!(byte, b'.' | b'e' | b'E'))
+}
+
+fn range_order_value(value: RangeScalar, kind: RangeKind) -> f64 {
+    match kind {
+        RangeKind::Byte => value.raw_f64(),
+        RangeKind::Int | RangeKind::Float => value.numeric_f64(),
+    }
+}
+
+fn range_decimal_places(value: f64) -> u32 {
+    let rendered = format!("{value:.14}");
+    rendered
+        .trim_end_matches('0')
+        .split_once('.')
+        .map(|(_, fraction)| fraction.len().min(14) as u32)
+        .unwrap_or(0)
+}
+
+fn range_round_float(value: f64, places: u32) -> f64 {
+    if places == 0 {
+        return value;
+    }
+    let scale = 10_f64.powi(places as i32);
+    (value * scale).round() / scale
+}
+
+fn range_non_finite_error(
+    function: &str,
+    position: usize,
+    name: &str,
+    value: f64,
+    span: Span,
+) -> Diagnostic {
+    let label = if value.is_nan() { "NAN" } else { "INF" };
+    runtime_error(
+        span,
+        RuntimeError::unsupported_call(
+            function,
+            format!("Argument #{position} (${name}) must be a finite number, {label} provided"),
+        ),
+    )
+}
+
+fn range_memory_limit_error(span: Span) -> Diagnostic {
+    runtime_error(
+        span,
+        RuntimeError::unsupported_call(
+            "range()",
+            "result length above the range memory limit is not supported in the current subset",
+        ),
+    )
 }
 
 impl Interpreter {

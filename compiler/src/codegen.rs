@@ -66218,6 +66218,7 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "str_pad",
     "chunk_split",
     "str_split",
+    "range",
     "addslashes",
     "stripslashes",
     "addcslashes",

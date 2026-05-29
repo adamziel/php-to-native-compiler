@@ -233,7 +233,9 @@ impl<'a> Lexer<'a> {
                 '/' => TokenKind::Slash,
                 '%' => TokenKind::Percent,
                 '.' => {
-                    if self.match_char('.') {
+                    if matches!(self.peek(), Some('0'..='9')) {
+                        self.lex_leading_dot_number(span)?
+                    } else if self.match_char('.') {
                         if self.match_char('.') {
                             TokenKind::Ellipsis
                         } else {
@@ -1111,6 +1113,41 @@ impl<'a> Lexer<'a> {
             .parse::<i64>()
             .map_err(|_| self.error_at(span, format!("invalid integer literal '{text}'")))?;
         Ok(TokenKind::Int(value))
+    }
+
+    fn lex_leading_dot_number(&mut self, span: Span) -> CompileResult<TokenKind> {
+        let mut text = String::from(".");
+        while matches!(self.peek(), Some('0'..='9')) {
+            text.push(self.advance());
+        }
+
+        if self.peek().is_some_and(|ch| matches!(ch, 'e' | 'E'))
+            && (self
+                .chars
+                .get(self.index + 1)
+                .is_some_and(|ch| ch.is_ascii_digit())
+                || (self
+                    .chars
+                    .get(self.index + 1)
+                    .is_some_and(|ch| matches!(*ch, '+' | '-'))
+                    && self
+                        .chars
+                        .get(self.index + 2)
+                        .is_some_and(|ch| ch.is_ascii_digit())))
+        {
+            text.push(self.advance());
+            if self.peek().is_some_and(|ch| matches!(ch, '+' | '-')) {
+                text.push(self.advance());
+            }
+            while matches!(self.peek(), Some('0'..='9')) {
+                text.push(self.advance());
+            }
+        }
+
+        let value = text
+            .parse::<f64>()
+            .map_err(|_| self.error_at(span, format!("invalid float literal '{text}'")))?;
+        Ok(TokenKind::Float(value))
     }
 
     fn lex_identifier(&mut self, first: char) -> TokenKind {
