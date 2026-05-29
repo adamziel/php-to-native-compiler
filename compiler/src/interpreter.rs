@@ -89929,7 +89929,12 @@ impl Interpreter {
             }
         };
 
-        let Some(previous) = self.ini_value(name) else {
+        let normalized_name = normalize_ini_name(name);
+        if !ini_option_is_runtime_mutable(&normalized_name) {
+            return Ok(Value::Bool(false));
+        }
+
+        let Some(previous) = self.ini_value(&normalized_name) else {
             return Ok(Value::Bool(false));
         };
 
@@ -89951,7 +89956,7 @@ impl Interpreter {
             }
         };
 
-        self.ini_values.insert(normalize_ini_name(name), value);
+        self.ini_values.insert(normalized_name, value);
         Ok(Value::String(previous))
     }
 
@@ -90953,6 +90958,10 @@ fn compat_ini_value(normalized_name: &str) -> Option<&'static str> {
         "zlib.output_compression" => Some("0"),
         _ => None,
     }
+}
+
+fn ini_option_is_runtime_mutable(normalized_name: &str) -> bool {
+    !matches!(normalized_name, "max_memory_limit")
 }
 
 fn phpc_phpt_ini_overrides_from_env() -> HashMap<String, String> {

@@ -40,6 +40,20 @@ echo ini_set("missing.option", "x") === false ? "false" : "not-false";
 }
 
 #[test]
+fn ini_set_rejects_startup_only_max_memory_limit() {
+    let execution = run_source(
+        r#"<?php
+var_dump(ini_set("max_memory_limit", "128M"));
+var_dump(ini_set("MAX_MEMORY_LIMIT", "256M"));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "bool(false)\nbool(false)\n");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn ini_builtins_are_available_through_string_valued_calls() {
     let execution = run_source(
         r#"<?php
