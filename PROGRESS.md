@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-29 11:29 CEST
+Updated: 2026-05-29 11:44 CEST
 Primary branch: `master`
-Latest source head: `4a2cf091 fix: add fprintf and vfprintf stream writes`
+Latest source head: `ee58db2b fix: add bounded OPcache introspection`
 
 ## Progress Score
 
@@ -152,13 +152,54 @@ passes that row, and has zero PASS-set regressions.
 | Batch008 checkpoint5 sharded gate | Done | 2180 / 20294 pinned runnable PHPTs passed (10.74%); 0 regressions from Batch007 PASS set; run id `phpt-full-batch008-checkpoint5-sharded-20260529T051801Z-php-src-f97ff59-public-0855b815-source-f408875f` |
 | Batch008 checkpoint10 bug60598 repair sharded gate | Done | 2286 / 20294 pinned runnable PHPTs passed (11.26%); 0 regressions from Batch008 checkpoint5 PASS set; run id `phpt-full-b8c10r2-sharded-20260529T085131Z-php-src-f97ff59-public-39ab1bf8-source-d0155a39` |
 | Batch008 source batch | Complete | Source checkpoints accepted: 10 / 10; checkpoint1 is `strncmp()` / `strncasecmp()` focused source proof; checkpoint2 is bcmath `bcmod()` / `bcpow()` / `bcpowmod()` / `bcsqrt()` focused source proof; checkpoint3 is `tempnam()` / `sys_get_temp_dir()` focused source proof; checkpoint4 is bounded date/timezone focused source proof; checkpoint5 is `SplObjectStorage` identity-map focused source proof; checkpoint5 sharded gate published; checkpoint6 is `strrpos()` / `strripos()` focused source proof; checkpoint7 is `fputcsv()` plus local file stream semantics focused source proof; checkpoint8 is `pathinfo()` / `basename()` / `dirname()` focused source proof; checkpoint9 is `vprintf()` focused source proof; checkpoint10 is `stripos()` focused source proof; checkpoint10 bug60598 repair gate published |
-| Batch009 source burst | Started | Checkpoint1 is p47 `sizeof()` alias / `array_chunk` metadata focused source proof (+25 expected direct rows); checkpoint2 is p43 `fflush()` / `ftruncate()` focused source proof (+15 expected direct rows); checkpoint3 is p42 `fprintf()` / `vfprintf()` focused source proof (+14 expected direct rows); burst total is +54 expected direct rows; public score remains 2286 / 20294 until the next pinned sharded gate |
+| Batch009 source burst | Started | Checkpoint1 is p47 `sizeof()` alias / `array_chunk` metadata focused source proof (+25 expected direct rows); checkpoint2 is p43 `fflush()` / `ftruncate()` focused source proof (+15 expected direct rows); checkpoint3 is p42 `fprintf()` / `vfprintf()` focused source proof (+14 expected direct rows); checkpoint4 is p39 OPcache bounded introspection focused source proof (+11 expected direct rows); burst total is +65 expected direct rows; public score remains 2286 / 20294 until the next pinned sharded gate |
 
 Focused PHPT history is tracked separately in
 `/home/claude/supervised-php-compiler/state/php-core-suite-focused-history.tsv`.
 Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
+
+Batch009 source burst checkpoint4 is primary-integrated under AO supervision.
+This is focused source proof, not a public percentage change. The public PHPT
+score remains **2286 / 20294 pinned runnable PHPTs = 11.26%** until the next
+supervisor-approved pinned aggregate gate is completed, regression-checked,
+and published here.
+
+- primary source head:
+  `ee58db2b fix: add bounded OPcache introspection`
+- reviewed and integration patch:
+  `/home/claude/supervised-php-compiler/state/patches/ao-integration-batch009-p39-opcache-bounded-introspection-f70a4134-20260529.patch`
+- reviewed and integration patch SHA256:
+  `23c148d37563006fa8fe7c6070e1fbb67e9584104bbd1dce8d57865ee1fe6047`
+- reviewer gate: phpc-32, phpc-52, and phpc-18 completed refreshed
+  current-head proof for p39 OPcache bounded introspection; artifacts include:
+  `/home/claude/supervised-php-compiler/state/workers/batch009-review-p39-opcache-bounded-introspection-f70a4134-phpc52-20260529.{status.md,report.md,gates.log}`
+- critic gate: phpc-55 recorded `SAFE-FOR-INTEGRATION` for the exact patch
+  SHA; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/batch009-critic-p39-opcache-bounded-introspection-3f66c38a-phpc55-20260529.{status.md,report.md}`
+- handoff gate: p38 completed scratch/no-primary handoff with SHA
+  verification, clean apply, source-equivalence proof, docs/`PROGRESS.md`/
+  examples exclusion, consumed-scope scan, production exact-shape scan, diff
+  check, reverse apply, stack precheck with p63, and exported patch proof;
+  artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/ao-integration-batch009-p39-opcache-bounded-introspection-f70a4134-20260529.{status.md,report.md,gates.log}`
+- supervisor focused gates: PASS for SHA verification, clean apply over public
+  `f70a4134`, source-equivalence to `4a2cf091` with only root `PROGRESS.md`
+  drift, `git diff --check`, docs/`PROGRESS.md`/examples exclusion,
+  production exact-shape audit, consumed-scope audit, `cargo fmt`, focused
+  Rust `opcache_builtins`, `phpc` binary build, `cargo check`, and focused PHP
+  core OPcache cluster with 11 PASS and 0 FAIL
+- public progress gate: not run for this source checkpoint; focused proof is
+  candidate evidence for the next 75-row burst gate
+
+This checkpoint implements bounded OPcache metadata/introspection and no-op
+cache-control behavior for the current runtime subset, including
+`opcache_get_configuration()`, `opcache_get_status()`,
+`opcache_is_script_cached()`, `opcache_compile_file()`,
+`opcache_invalidate()`, `opcache_reset()`, and OPcache rows in
+`ini_get_all()`. It is not keyed to PHPT filenames, expected output, fixture
+names, public hashes, batch labels, or checkpoint markers.
 
 Batch009 source burst checkpoint3 is primary-integrated under AO supervision.
 This is focused source proof, not a public percentage change. The public PHPT
