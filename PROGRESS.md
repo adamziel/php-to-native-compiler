@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-29 22:29 CEST
+Updated: 2026-05-29 22:33 CEST
 Primary branch: `master`
-Latest source head: `6195b55e fix: repair batch014 PHPT regressions`
+Latest source head: `03c1fdf2 fix: improve file contents include path semantics`
 
 ## Progress Score
 
@@ -113,6 +113,15 @@ pin, run
 recorded 3378 / 20294 pinned runnable PHPTs = 16.65% with zero regressions
 from the latest published Batch013 PASS set. Evidence lives under
 `/home/claude/supervised-php-compiler/state/logs/phpt-full-batch014-regression-repair-publication-sharded-20260529T2218Z-php-src-f97ff59-public-71bab531-source-6195b55e`.
+
+Batch015 source checkpoint1 `03c1fdf2` is integrated with focused lowercase
+`-p` proof for p62 file contents and include-path semantics. The focused gate
+recorded `15 PASS / 0 FAIL / 0 SKIP` across 15 selected
+`file_get_contents()` / `file_put_contents()` PHPT rows, logged at
+`/home/claude/supervised-php-compiler/state/logs/primary-batch015-p62-file-contents-focused-20260529T2230/run-tests.log`.
+Batch015 source progress is now 1 checkpoint and +15 expected direct rows. The
+public percentage remains `3378 / 20294 = 16.65%` until the next pinned
+full-suite gate is completed, regression-checked, and published here.
 
 No other percentage is public project progress. Focused PHPT passes, source
 checkpoints, PRs, and docs/status edits are evidence for the next batch, but
