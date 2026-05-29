@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-30 00:50 CEST
+Updated: 2026-05-30 01:42 CEST
 Primary branch: `master`
-Latest source head: `56cb7980 fix: add array multisort semantics`
+Latest source head: `73358122 fix: repair array_multisort metadata`
 
 ## Progress Score
 
@@ -13,7 +13,7 @@ Progress is the pinned php-src PHPT full-suite pass rate:
 
 `passed runnable PHPTs / total runnable PHPTs`
 
-Current score: **3378 / 20294 pinned runnable PHPTs = 16.65%**.
+Current score: **3646 / 20294 pinned runnable PHPTs = 17.97%**.
 
 ## PHPT Goal Checklist
 
@@ -26,7 +26,7 @@ Current score: **3378 / 20294 pinned runnable PHPTs = 16.65%**.
 - [x] Run full-suite gates at batch boundaries, not for every change.
 - [x] Compare every publication gate against the latest published PASS set and
   repair regressions before publishing.
-- [ ] Build Batch015 as focused source packets and run the next full-suite gate
+- [x] Build Batch015 as focused source packets and run the next full-suite gate
   only after the batch threshold is met or an explicit regression-repair gate is
   required.
 
@@ -50,6 +50,7 @@ Current score: **3378 / 20294 pinned runnable PHPTs = 16.65%**.
 | Batch012 dynamic-call repair | 2945 / 20294 | 14.51% | 0 |
 | Batch013 checkpoint10 | 3170 / 20294 | 15.62% | 0 |
 | Batch014 regression repair | 3378 / 20294 | 16.65% | 0 |
+| Batch015 checkpoint9 | 3646 / 20294 | 17.97% | 0 semantic; `bug75679.phpt` long-root path guard |
 
 The Batch013 checkpoint10 source `fc2788a7` is integrated and published by a
 pinned sharded full-suite gate on public `b3e42ce1`. The gate recorded 3170
@@ -156,11 +157,28 @@ Batch015 source checkpoint8 `56cb7980` is integrated with focused lowercase
 `17 PASS / 0 FAIL / 0 SKIP` across selected `array_multisort*` PHPT rows,
 logged at
 `/home/claude/supervised-php-compiler/state/logs/primary-batch015-p57-array-multisort-focused-20260530T004628+0200`.
-Batch015 source progress is now 8 checkpoints and +111 expected direct rows,
-crossing the supervisor threshold for preparing the next pinned full-suite
-gate.
-The public percentage remains `3378 / 20294 = 16.65%` until the next pinned
-full-suite gate is completed, regression-checked, and published here.
+Batch015 source checkpoint9 `f60c3a64` is integrated with focused lowercase
+`-p` proof for p43 `readfile()` / `fwrite()` / bounded interpreter `md5()`
+semantics. The focused gate recorded `11 PASS / 0 FAIL / 0 SKIP`, logged at
+`/home/claude/supervised-php-compiler/state/logs/primary-batch015-p43-readfile-fwrite-md5-focused-20260530T011308+0200/run.log`.
+Batch015 p57 metadata repair `73358122` is integrated with focused lowercase
+`-p` proof for the `array_multisort()` metadata guard. The focused gate
+recorded `17 PASS / 0 FAIL / 0 SKIP`, logged at
+`/home/claude/supervised-php-compiler/state/logs/primary-batch015-p57-array-multisort-metadata-repair-focused-20260530T012636+0200/run.log`.
+Batch015 source progress is now 9 checkpoints and +122 expected direct rows.
+
+The Batch015 checkpoint9 sharded publication gate on the same php-src pin, run
+`phpt-full-batch015-publication-sharded-20260529T233235Z-php-src-f97ff59-public-73358122-source-73358122`,
+recorded 3646 / 20294 pinned runnable PHPTs = 17.97%. The raw PASS-set
+comparison reported one row,
+`php-src/ext/standard/tests/file/bug75679.phpt`, as failed in the long
+`/dev/shm/batch015-gate/...` run root. The same gate `phpc` binary passed that
+PHPT from the short pinned php-src root with `1 PASS / 0 FAIL / 0 SKIP`,
+logged at
+`/home/claude/supervised-php-compiler/state/logs/batch015-bug75679-short-root-rerun-20260530T014200+0200/run-tests.log`.
+This is treated as the existing long-root path-length harness guard, not a
+semantic latest-published PASS regression. Evidence lives under
+`/home/claude/supervised-php-compiler/state/logs/phpt-full-batch015-publication-sharded-20260529T233235Z-php-src-f97ff59-public-73358122-source-73358122`.
 
 No other percentage is public project progress. Focused PHPT passes, source
 checkpoints, PRs, and docs/status edits are evidence for the next batch, but
