@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-29 22:16 CEST
+Updated: 2026-05-29 22:29 CEST
 Primary branch: `master`
 Latest source head: `6195b55e fix: repair batch014 PHPT regressions`
 
@@ -13,7 +13,43 @@ Progress is the pinned php-src PHPT full-suite pass rate:
 
 `passed runnable PHPTs / total runnable PHPTs`
 
-Current score: **3170 / 20294 pinned runnable PHPTs = 15.62%**.
+Current score: **3378 / 20294 pinned runnable PHPTs = 16.65%**.
+
+## PHPT Goal Checklist
+
+- [x] Use pinned php-src PHPT full-suite pass rate as the only project
+  percentage.
+- [x] Track score over time in this public report before claiming public
+  progress.
+- [x] Use focused lowercase `run-tests.php -p phpc-phpt-wrapper` proof for
+  individual changes.
+- [x] Run full-suite gates at batch boundaries, not for every change.
+- [x] Compare every publication gate against the latest published PASS set and
+  repair regressions before publishing.
+- [ ] Build Batch015 as focused source packets and run the next full-suite gate
+  only after the batch threshold is met or an explicit regression-repair gate is
+  required.
+
+## Score History
+
+| Gate | Passed / runnable | Percent | PASS regressions |
+| --- | ---: | ---: | ---: |
+| Batch001 baseline | 1118 / 20294 | 5.51% | n/a |
+| Batch002 | 1193 / 20294 | 5.88% | 0 |
+| Batch003 | 1311 / 20294 | 6.46% | 0 |
+| Batch004 checkpoint8 repair | 1369 / 20294 | 6.75% | 0 |
+| Batch004 checkpoint10 | 1413 / 20294 | 6.96% | 0 |
+| Batch005 checkpoint10 | 1618 / 20294 | 7.97% | 0 semantic |
+| Batch006 checkpoint10 | 1836 / 20294 | 9.05% | 0 |
+| Batch007 checkpoint10 repair | 2047 / 20294 | 10.09% | 0 |
+| Batch008 checkpoint5 | 2180 / 20294 | 10.74% | 0 |
+| Batch008 checkpoint10 repair | 2286 / 20294 | 11.26% | 0 |
+| Batch009 burst1 | 2388 / 20294 | 11.77% | 0 |
+| Batch010 checkpoint10 repair | 2563 / 20294 | 12.63% | 0 semantic |
+| Batch011 burst1 | 2741 / 20294 | 13.51% | 0 |
+| Batch012 dynamic-call repair | 2945 / 20294 | 14.51% | 0 |
+| Batch013 checkpoint10 | 3170 / 20294 | 15.62% | 0 |
+| Batch014 regression repair | 3378 / 20294 | 16.65% | 0 |
 
 The Batch013 checkpoint10 source `fc2788a7` is integrated and published by a
 pinned sharded full-suite gate on public `b3e42ce1`. The gate recorded 3170
@@ -69,9 +105,14 @@ that blocked the checkpoint4 full-suite candidate. The focused gate recorded
 `Zend/tests/dynamic_call/dynamic_call_007.phpt`,
 `ext/opcache/tests/jit/assign_dim_004.phpt`,
 `ext/opcache/tests/jit/isset_001.phpt`, and
-`ext/standard/tests/array/array_product_variation3.phpt`. The public
-percentage remains `3170 / 20294 = 15.62%` until a repaired pinned full-suite
-gate is completed, regression-checked, and published here.
+`ext/standard/tests/array/array_product_variation3.phpt`.
+
+The Batch014 regression-repair sharded publication gate on the same php-src
+pin, run
+`phpt-full-batch014-regression-repair-publication-sharded-20260529T2218Z-php-src-f97ff59-public-71bab531-source-6195b55e`,
+recorded 3378 / 20294 pinned runnable PHPTs = 16.65% with zero regressions
+from the latest published Batch013 PASS set. Evidence lives under
+`/home/claude/supervised-php-compiler/state/logs/phpt-full-batch014-regression-repair-publication-sharded-20260529T2218Z-php-src-f97ff59-public-71bab531-source-6195b55e`.
 
 No other percentage is public project progress. Focused PHPT passes, source
 checkpoints, PRs, and docs/status edits are evidence for the next batch, but
