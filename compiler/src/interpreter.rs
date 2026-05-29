@@ -65962,10 +65962,14 @@ impl Interpreter {
             "bcsub" => self.call_bc_binary_decimal("bcsub", &args, span, BcBinaryDecimalOp::Sub),
             "bcmul" => self.call_bc_binary_decimal("bcmul", &args, span, BcBinaryDecimalOp::Mul),
             "bcdiv" => self.call_bc_binary_decimal("bcdiv", &args, span, BcBinaryDecimalOp::Div),
+            "bcmod" => self.call_bcmod(&args, span),
+            "bcpow" => self.call_bcpow(&args, span),
+            "bcpowmod" => self.call_bcpowmod(&args, span),
             "bccomp" => self.call_bccomp(&args, span),
             "bcscale" => self.call_bcscale(&args, span),
             "bcceil" => call_bcceil(&args, span),
             "bcfloor" => call_bcfloor(&args, span),
+            "bcsqrt" => self.call_bcsqrt(&args, span),
             "version_compare" => call_version_compare(&args, span),
             "microtime" => call_microtime(&args, span),
             "time" => self.call_time(&args, span),
@@ -76307,6 +76311,31 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_optional_null_param("scale", "int"),
             ],
         ),
+        "bcmod" => (
+            "string",
+            vec![
+                reflection_internal_param("num1", "string"),
+                reflection_internal_param("num2", "string"),
+                reflection_internal_optional_null_param("scale", "int"),
+            ],
+        ),
+        "bcpow" => (
+            "string",
+            vec![
+                reflection_internal_param("num", "string"),
+                reflection_internal_param("exponent", "string"),
+                reflection_internal_optional_null_param("scale", "int"),
+            ],
+        ),
+        "bcpowmod" => (
+            "string",
+            vec![
+                reflection_internal_param("num", "string"),
+                reflection_internal_param("exponent", "string"),
+                reflection_internal_param("modulus", "string"),
+                reflection_internal_optional_null_param("scale", "int"),
+            ],
+        ),
         "bccomp" => (
             "int",
             vec![
@@ -76320,6 +76349,13 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
             vec![reflection_internal_optional_null_param("scale", "int")],
         ),
         "bcceil" | "bcfloor" => ("string", vec![reflection_internal_param("num", "string")]),
+        "bcsqrt" => (
+            "string",
+            vec![
+                reflection_internal_param("num", "string"),
+                reflection_internal_optional_null_param("scale", "int"),
+            ],
+        ),
         "defined" => (
             "bool",
             vec![reflection_internal_param("constant_name", "string")],
@@ -77962,8 +77998,18 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
             return Some(("Error", error.message.clone()));
         }
 
-        if error.message == "unsupported call bcdiv(): Division by zero" {
-            return Some(("DivisionByZeroError", "Division by zero".to_string()));
+        match error.message.as_str() {
+            "unsupported call bcdiv(): Division by zero" => {
+                return Some(("DivisionByZeroError", "Division by zero".to_string()));
+            }
+            "unsupported call bcmod(): Modulo by zero"
+            | "unsupported call bcpowmod(): Modulo by zero" => {
+                return Some(("DivisionByZeroError", "Modulo by zero".to_string()));
+            }
+            "unsupported call bcpow(): Negative power of zero" => {
+                return Some(("DivisionByZeroError", "Negative power of zero".to_string()));
+            }
+            _ => {}
         }
 
         if error.message.starts_with("Object of type ")
@@ -78122,11 +78168,24 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
                 .to_string(),
         ),
         (
-            "bcadd()" | "bcsub()" | "bcmul()" | "bcdiv()" | "bccomp()" | "bcceil()" | "bcfloor()"
+            "bcadd()"
+            | "bcsub()"
+            | "bcmul()"
+            | "bcdiv()"
+            | "bcmod()"
+            | "bcpow()"
+            | "bcpowmod()"
+            | "bccomp()"
+            | "bcceil()"
+            | "bcfloor()"
+            | "bcsqrt()"
             | "bcscale()",
             message,
         ) if message.contains(" is not well-formed")
-            || message.contains(" must be between 0 and 2147483647") =>
+            || message.contains(" must be between 0 and 2147483647")
+            || message.contains(" cannot have a fractional part")
+            || message.contains(" is too large")
+            || message.contains(" must be greater than or equal to 0") =>
         {
             Some(format!("{function}: {message}"))
         }
@@ -78403,10 +78462,14 @@ fn is_builtin(name: &str) -> bool {
             | "bcsub"
             | "bcmul"
             | "bcdiv"
+            | "bcmod"
+            | "bcpow"
+            | "bcpowmod"
             | "bccomp"
             | "bcscale"
             | "bcceil"
             | "bcfloor"
+            | "bcsqrt"
             | "version_compare"
             | "microtime"
             | "time"
@@ -89940,6 +90003,161 @@ impl Interpreter {
         Ok(Value::String(result.format_with_scale(scale)))
     }
 
+    fn call_bcmod(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(2..=3).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "bcmod()",
+                    ArityExpectation::Between { min: 2, max: 3 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let scale = match args.get(2) {
+            Some(Value::Null) | None => self.bcmath_default_scale(),
+            Some(value) => bcmath_scale_argument("bcmod()", 3, "scale", value, span)?,
+        };
+        let left = bcmath_number_argument("bcmod()", 1, "num1", &args[0], span)?;
+        let right = bcmath_number_argument("bcmod()", 2, "num2", &args[1], span)?;
+        let result = left.modulo(&right, span, "bcmod()")?;
+        Ok(Value::String(result.format_with_scale(scale)))
+    }
+
+    fn call_bcpow(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(2..=3).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "bcpow()",
+                    ArityExpectation::Between { min: 2, max: 3 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let scale = match args.get(2) {
+            Some(Value::Null) | None => self.bcmath_default_scale(),
+            Some(value) => bcmath_scale_argument("bcpow()", 3, "scale", value, span)?,
+        };
+        let base = bcmath_number_argument("bcpow()", 1, "num", &args[0], span)?;
+        let exponent = bcmath_integral_i64_argument("bcpow()", 2, "exponent", &args[1], span)?;
+
+        let result = if exponent == 0 {
+            BcDecimal::one()
+        } else if base.is_zero() {
+            if exponent < 0 {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call("bcpow()", "Negative power of zero"),
+                ));
+            }
+            BcDecimal::zero()
+        } else if base.is_integral_one_abs() {
+            BcDecimal::one().with_sign(base.negative && exponent.unsigned_abs() % 2 == 1)
+        } else {
+            let exponent_abs = exponent.unsigned_abs();
+            if exponent_abs > BCMATH_POW_EXPONENT_LIMIT {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "bcpow()",
+                        format!(
+                            "absolute exponent above {BCMATH_POW_EXPONENT_LIMIT} is not supported in the current subset"
+                        ),
+                    ),
+                ));
+            }
+
+            let powered = base.pow_u64(exponent_abs);
+            if exponent > 0 {
+                powered
+            } else {
+                BcDecimal::one().div(&powered, scale, span)?
+            }
+        };
+
+        Ok(Value::String(result.format_with_scale(scale)))
+    }
+
+    fn call_bcpowmod(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(3..=4).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "bcpowmod()",
+                    ArityExpectation::Between { min: 3, max: 4 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let scale = match args.get(3) {
+            Some(Value::Null) | None => self.bcmath_default_scale(),
+            Some(value) => bcmath_scale_argument("bcpowmod()", 4, "scale", value, span)?,
+        };
+        let base = bcmath_integral_decimal_argument("bcpowmod()", 1, "num", &args[0], span)?;
+        let exponent = bcmath_integral_i64_argument("bcpowmod()", 2, "exponent", &args[1], span)?;
+        if exponent < 0 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "bcpowmod()",
+                    "Argument #2 ($exponent) must be greater than or equal to 0",
+                ),
+            ));
+        }
+        let modulus = bcmath_integral_decimal_argument("bcpowmod()", 3, "modulus", &args[2], span)?;
+        if modulus.is_zero() {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call("bcpowmod()", "Modulo by zero"),
+            ));
+        }
+
+        let modulus_digits = modulus.digits_at_scale(0);
+        let digits =
+            decimal_pow_mod_abs(&base.digits_at_scale(0), exponent as u64, &modulus_digits);
+        let negative = base.negative && exponent % 2 == 1 && !digits_are_zero(&digits);
+        let result = BcDecimal {
+            negative,
+            digits,
+            scale: 0,
+        };
+        Ok(Value::String(result.format_with_scale(scale)))
+    }
+
+    fn call_bcsqrt(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(1..=2).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "bcsqrt()",
+                    ArityExpectation::Between { min: 1, max: 2 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let scale = match args.get(1) {
+            Some(Value::Null) | None => self.bcmath_default_scale(),
+            Some(value) => bcmath_scale_argument("bcsqrt()", 2, "scale", value, span)?,
+        };
+        let value = bcmath_number_argument("bcsqrt()", 1, "num", &args[0], span)?;
+        if value.negative {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "bcsqrt()",
+                    "Argument #1 ($num) must be greater than or equal to 0",
+                ),
+            ));
+        }
+
+        Ok(Value::String(value.sqrt(scale).format_with_scale(scale)))
+    }
+
     fn call_bccomp(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         if !(2..=3).contains(&args.len()) {
             return Err(runtime_error(
@@ -91098,6 +91316,8 @@ enum BcBinaryDecimalOp {
     Div,
 }
 
+const BCMATH_POW_EXPONENT_LIMIT: u64 = 4096;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct BcDecimal {
     negative: bool,
@@ -91110,6 +91330,14 @@ impl BcDecimal {
         Self {
             negative: false,
             digits: vec![0],
+            scale: 0,
+        }
+    }
+
+    fn one() -> Self {
+        Self {
+            negative: false,
+            digits: vec![1],
             scale: 0,
         }
     }
@@ -91162,6 +91390,10 @@ impl BcDecimal {
 
     fn is_zero(&self) -> bool {
         digits_are_zero(&self.digits)
+    }
+
+    fn is_integral_one_abs(&self) -> bool {
+        !self.has_nonzero_fraction() && self.digits_at_scale(0).as_slice() == [1]
     }
 
     fn with_sign(mut self, negative: bool) -> Self {
@@ -91255,6 +91487,41 @@ impl BcDecimal {
         .normalized())
     }
 
+    fn modulo(&self, other: &Self, span: Span, function: &'static str) -> CompileResult<Self> {
+        if other.is_zero() {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(function, "Modulo by zero"),
+            ));
+        }
+
+        let scale = self.scale.max(other.scale);
+        let left = self.digits_at_scale(scale);
+        let right = other.digits_at_scale(scale);
+        let digits = decimal_mod_abs(&left, &right);
+        Ok(Self {
+            negative: self.negative && !digits_are_zero(&digits),
+            digits,
+            scale,
+        }
+        .normalized())
+    }
+
+    fn pow_u64(&self, mut exponent: u64) -> Self {
+        let mut result = Self::one();
+        let mut base = self.clone();
+        while exponent > 0 {
+            if exponent & 1 == 1 {
+                result = result.mul(&base);
+            }
+            exponent >>= 1;
+            if exponent > 0 {
+                base = base.mul(&base);
+            }
+        }
+        result.normalized()
+    }
+
     fn compare_at_scale(&self, other: &Self, scale: usize) -> Ordering {
         let left = self.digits_at_scale(scale);
         let right = other.digits_at_scale(scale);
@@ -91319,6 +91586,16 @@ impl BcDecimal {
             negative: self.negative,
             digits: self.digits_at_scale(0),
             scale: 0,
+        }
+        .normalized()
+    }
+
+    fn sqrt(&self, scale: usize) -> Self {
+        let digits = decimal_sqrt_scaled_abs(&self.digits, self.scale, scale);
+        Self {
+            negative: false,
+            digits,
+            scale,
         }
         .normalized()
     }
@@ -91416,11 +91693,11 @@ fn decimal_mul_abs(left: &[u8], right: &[u8]) -> Vec<u8> {
     if digits_are_zero(left) || digits_are_zero(right) {
         return vec![0];
     }
-    let mut slots = vec![0u16; left.len() + right.len()];
+    let mut slots = vec![0u32; left.len() + right.len()];
     for (left_pos, left_digit) in left.iter().rev().enumerate() {
         for (right_pos, right_digit) in right.iter().rev().enumerate() {
             let index = slots.len() - 1 - (left_pos + right_pos);
-            slots[index] += u16::from(*left_digit) * u16::from(*right_digit);
+            slots[index] += u32::from(*left_digit) * u32::from(*right_digit);
         }
     }
     for index in (1..slots.len()).rev() {
@@ -91438,10 +91715,58 @@ fn decimal_mul_abs(left: &[u8], right: &[u8]) -> Vec<u8> {
     result
 }
 
+fn decimal_mul_small_abs(digits: &[u8], factor: u16) -> Vec<u8> {
+    if factor == 0 || digits_are_zero(digits) {
+        return vec![0];
+    }
+
+    let mut result = Vec::with_capacity(digits.len() + 3);
+    let mut carry = 0u16;
+    for digit in digits.iter().rev() {
+        let product = u16::from(*digit) * factor + carry;
+        result.push((product % 10) as u8);
+        carry = product / 10;
+    }
+    while carry > 0 {
+        result.push((carry % 10) as u8);
+        carry /= 10;
+    }
+    result.reverse();
+    normalize_decimal_digits(&mut result);
+    result
+}
+
+fn decimal_add_small_abs(digits: &[u8], addend: u16) -> Vec<u8> {
+    let mut result = digits.to_vec();
+    let mut carry = addend;
+    let mut index = result.len();
+    while carry > 0 {
+        if index == 0 {
+            result.insert(0, (carry % 10) as u8);
+            carry /= 10;
+            continue;
+        }
+        index -= 1;
+        let sum = u16::from(result[index]) + (carry % 10);
+        result[index] = (sum % 10) as u8;
+        carry = carry / 10 + sum / 10;
+    }
+    normalize_decimal_digits(&mut result);
+    result
+}
+
 fn decimal_div_abs(numerator: &[u8], denominator: &[u8]) -> Vec<u8> {
+    decimal_div_mod_abs(numerator, denominator).0
+}
+
+fn decimal_mod_abs(numerator: &[u8], denominator: &[u8]) -> Vec<u8> {
+    decimal_div_mod_abs(numerator, denominator).1
+}
+
+fn decimal_div_mod_abs(numerator: &[u8], denominator: &[u8]) -> (Vec<u8>, Vec<u8>) {
     debug_assert!(!digits_are_zero(denominator));
     if digits_are_zero(numerator) {
-        return vec![0];
+        return (vec![0], vec![0]);
     }
     let mut quotient = Vec::with_capacity(numerator.len());
     let mut remainder = vec![0];
@@ -91460,7 +91785,87 @@ fn decimal_div_abs(numerator: &[u8], denominator: &[u8]) -> Vec<u8> {
         quotient.push(q);
     }
     normalize_decimal_digits(&mut quotient);
-    quotient
+    normalize_decimal_digits(&mut remainder);
+    (quotient, remainder)
+}
+
+fn decimal_pow_mod_abs(base: &[u8], mut exponent: u64, modulus: &[u8]) -> Vec<u8> {
+    debug_assert!(!digits_are_zero(modulus));
+    let mut result = decimal_mod_abs(&[1], modulus);
+    let mut base = decimal_mod_abs(base, modulus);
+    while exponent > 0 {
+        if exponent & 1 == 1 {
+            result = decimal_mod_abs(&decimal_mul_abs(&result, &base), modulus);
+        }
+        exponent >>= 1;
+        if exponent > 0 {
+            base = decimal_mod_abs(&decimal_mul_abs(&base, &base), modulus);
+        }
+    }
+    result
+}
+
+fn decimal_sqrt_scaled_abs(digits: &[u8], value_scale: usize, target_scale: usize) -> Vec<u8> {
+    let mut scaled = digits.to_vec();
+    let doubled_target = target_scale.saturating_mul(2);
+    if doubled_target >= value_scale {
+        scaled.extend(std::iter::repeat(0).take(doubled_target - value_scale));
+    } else {
+        let drop = value_scale - doubled_target;
+        if drop >= scaled.len() {
+            scaled.clear();
+            scaled.push(0);
+        } else {
+            scaled.truncate(scaled.len() - drop);
+        }
+    }
+    normalize_decimal_digits(&mut scaled);
+    decimal_integer_sqrt_abs(&scaled)
+}
+
+fn decimal_integer_sqrt_abs(digits: &[u8]) -> Vec<u8> {
+    if digits_are_zero(digits) {
+        return vec![0];
+    }
+
+    let mut normalized = digits.to_vec();
+    normalize_decimal_digits(&mut normalized);
+    let mut groups = Vec::with_capacity((normalized.len() + 1) / 2);
+    let mut index = 0;
+    if normalized.len() % 2 == 1 {
+        groups.push(normalized[0] as u16);
+        index = 1;
+    }
+    while index < normalized.len() {
+        groups.push(u16::from(normalized[index]) * 10 + u16::from(normalized[index + 1]));
+        index += 2;
+    }
+
+    let mut root = vec![0];
+    let mut remainder = vec![0];
+    for group in groups {
+        remainder = decimal_mul_small_abs(&remainder, 100);
+        remainder = decimal_add_small_abs(&remainder, group);
+
+        let root_times_twenty = decimal_mul_small_abs(&root, 20);
+        let mut chosen = 0u8;
+        for digit in 0..=9u8 {
+            let candidate = decimal_add_small_abs(&root_times_twenty, u16::from(digit));
+            let product = decimal_mul_small_abs(&candidate, u16::from(digit));
+            if decimal_cmp_abs(&product, &remainder) == Ordering::Greater {
+                break;
+            }
+            chosen = digit;
+        }
+
+        let candidate = decimal_add_small_abs(&root_times_twenty, u16::from(chosen));
+        let product = decimal_mul_small_abs(&candidate, u16::from(chosen));
+        remainder = decimal_sub_abs(&remainder, &product);
+        root = decimal_add_small_abs(&decimal_mul_small_abs(&root, 10), u16::from(chosen));
+    }
+
+    normalize_decimal_digits(&mut root);
+    root
 }
 
 fn parse_bcmath_scale_text(text: &str) -> Option<usize> {
@@ -91501,6 +91906,10 @@ fn bcmath_scale_argument(
             .ok_or_else(|| bcmath_scale_error(function, position, parameter, span))?,
         _ => return Err(bcmath_scale_error(function, position, parameter, span)),
     };
+
+    if scale > i32::MAX as usize {
+        return Err(bcmath_scale_error(function, position, parameter, span));
+    }
 
     if scale > 10_000 {
         return Err(runtime_error(
@@ -91560,6 +91969,82 @@ fn bcmath_number_error(function: &str, position: usize, parameter: &str, span: S
         RuntimeError::unsupported_call(
             function,
             format!("Argument #{position} (${parameter}) is not well-formed"),
+        ),
+    )
+}
+
+fn bcmath_integral_decimal_argument(
+    function: &str,
+    position: usize,
+    parameter: &str,
+    value: &Value,
+    span: Span,
+) -> CompileResult<BcDecimal> {
+    let decimal = bcmath_number_argument(function, position, parameter, value, span)?;
+    if decimal.has_nonzero_fraction() {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                format!("Argument #{position} (${parameter}) cannot have a fractional part"),
+            ),
+        ));
+    }
+    Ok(decimal.integer_part())
+}
+
+fn bcmath_integral_i64_argument(
+    function: &str,
+    position: usize,
+    parameter: &str,
+    value: &Value,
+    span: Span,
+) -> CompileResult<i64> {
+    let decimal = bcmath_integral_decimal_argument(function, position, parameter, value, span)?;
+    bcmath_integral_decimal_to_i64(function, position, parameter, &decimal, span)
+}
+
+fn bcmath_integral_decimal_to_i64(
+    function: &str,
+    position: usize,
+    parameter: &str,
+    decimal: &BcDecimal,
+    span: Span,
+) -> CompileResult<i64> {
+    let digits = decimal.digits_at_scale(0);
+    if digits.len() > 19 {
+        return Err(bcmath_integral_too_large_error(
+            function, position, parameter, span,
+        ));
+    }
+
+    let text: String = digits
+        .iter()
+        .map(|digit| char::from(b'0' + *digit))
+        .collect();
+    let magnitude = text
+        .parse::<u64>()
+        .map_err(|_| bcmath_integral_too_large_error(function, position, parameter, span))?;
+    if magnitude > i64::MAX as u64 {
+        return Err(bcmath_integral_too_large_error(
+            function, position, parameter, span,
+        ));
+    }
+    let value = magnitude as i64;
+    Ok(if decimal.negative { -value } else { value })
+}
+
+fn bcmath_integral_too_large_error(
+    function: &str,
+    position: usize,
+    parameter: &str,
+    span: Span,
+) -> Diagnostic {
+    runtime_error(
+        span,
+        RuntimeError::unsupported_call(
+            function,
+            format!("Argument #{position} (${parameter}) is too large"),
         ),
     )
 }

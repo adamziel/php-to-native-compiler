@@ -54,3 +54,71 @@ try {
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);
 }
+
+#[test]
+fn bcmath_mod_pow_powmod_and_sqrt_are_generalized() {
+    let execution = run_source(
+        r#"<?php
+ini_set("bcmath.scale", "0");
+var_dump(function_exists("bcmod"));
+echo bcmod("15", "14.14", 10), "\n";
+echo bcmod("-16.60", "14.14", 10), "\n";
+echo bcpow("14.14", "3", 5), "\n";
+echo bcpow("10", "-5", 8), "\n";
+echo bcpow("0", "1128321638", 2), "\n";
+echo bcpowmod("10", "2147483648", "2047"), "\n";
+echo bcpowmod("-2", "5", "7", 3), "\n";
+echo bcsqrt("15151324141414.412312232141241", 10), "\n";
+echo bcsqrt("0.1322135476547459213732911312", 10), "\n";
+try {
+    bcmod("10", "0");
+} catch (DivisionByZeroError $e) {
+    echo get_class($e), ":", $e->getMessage(), "\n";
+}
+try {
+    bcpow("0", "-1");
+} catch (DivisionByZeroError $e) {
+    echo get_class($e), ":", $e->getMessage(), "\n";
+}
+try {
+    bcpow("1", "1.1");
+} catch (ValueError $e) {
+    echo get_class($e), ":", $e->getMessage(), "\n";
+}
+try {
+    bcpowmod("4.1", "4", "3");
+} catch (ValueError $e) {
+    echo get_class($e), ":", $e->getMessage(), "\n";
+}
+try {
+    bcsqrt("-9");
+} catch (ValueError $e) {
+    echo get_class($e), ":", $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "bool(true)\n",
+            "0.8600000000\n",
+            "-2.4600000000\n",
+            "2827.14594\n",
+            "0.00001000\n",
+            "0.00\n",
+            "790\n",
+            "-4.000\n",
+            "3892470.1850385973\n",
+            "0.3636118090\n",
+            "DivisionByZeroError:Modulo by zero\n",
+            "DivisionByZeroError:Negative power of zero\n",
+            "ValueError:bcpow(): Argument #2 ($exponent) cannot have a fractional part\n",
+            "ValueError:bcpowmod(): Argument #1 ($num) cannot have a fractional part\n",
+            "ValueError:bcsqrt(): Argument #1 ($num) must be greater than or equal to 0\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
