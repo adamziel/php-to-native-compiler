@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-29 02:43 CEST
+Updated: 2026-05-29 02:56 CEST
 Primary branch: `master`
-Latest source head: `2911bd1f fix: add standard file metadata builtins`
+Latest source head: `ac13fb37 fix: add standard file link builtins`
 
 ## Progress Score
 
@@ -94,13 +94,53 @@ stable pinned denominator and does not use the raw runner
 | Batch005 checkpoint10 sharded gate | Done | 1618 / 20294 pinned runnable PHPTs passed (7.97%); 3 PASS-to-SKIP platform guards from Windows-only PHPTs; run id `phpt-full-batch005-checkpoint10-sharded-20260528T224229Z-php-src-f97ff59-public-fd74fba9-source-1c4da4c5-stack10` |
 | Batch004 source batch | Complete | Batch004 source checkpoints accepted: 10 / 10; checkpoint10 sharded gate published |
 | Batch005 source batch | Complete | Batch005 source checkpoints accepted: 10 / 10; checkpoint10 sharded gate published |
-| Batch006 source batch | Started | Source checkpoints accepted: 3 / 10 gate threshold; checkpoint3 integrates standard `fileinode()` / `fileowner()` / `filegroup()` / `filetype()` metadata builtins |
+| Batch006 source batch | Started | Source checkpoints accepted: 4 / 10 gate threshold; checkpoint4 integrates standard filesystem link helpers and bounded `touch()` / `sleep()` prerequisites |
 
 Focused PHPT history is tracked separately in
 `/home/claude/supervised-php-compiler/state/php-core-suite-focused-history.tsv`.
 Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
+
+Batch006 source checkpoint 4 is primary-integrated under AO supervision. This
+is a source checkpoint with focused proof, not a percentage change. The public
+PHPT score remains **1618 / 20294 pinned runnable PHPTs = 7.97%** until the
+next pinned full-suite or supervisor-approved sharded publication gate is
+completed, regression-checked, and published here.
+
+- primary source head:
+  `ac13fb37 fix: add standard file link builtins`
+- reviewed and integration patch:
+  `/home/claude/supervised-php-compiler/state/patches/ao-integration-p43-standard-file-link-successor6-4dc9d4e0-20260529.patch`
+- reviewed and integration patch SHA256:
+  `bb6041814648b25211d2e7a0a946a3c00ba1d28ad9e4ab073765ccb1f8c88c28`
+- reviewer gate: phpc-7 recorded `FINAL GO-CANDIDATE /
+  FOCUSED-GATES-PASS / PHPT-PASS`; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/batch006-review-standard-file-link-successor6-4dc9d4e0-20260529.{status.md,report.md,gates.log}`
+- critic gate: phpc-33 recorded `SAFE-FOR-INTEGRATION /
+  CURRENT-PUBLIC-4DC9D4E0`; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/batch006-critic-standard-file-link-successor6-4dc9d4e0-20260529.{status.md,report.md}`
+- integration handoff: phpc-38 recorded `FINAL-HANDOFF /
+  READY-FOR-SUPERVISOR-APPLY`; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/ao-integration-p43-standard-file-link-successor6-4dc9d4e0-20260529.{status.md,report.md,gates.log}`
+- supervisor focused gates: PASS for `git apply --check`,
+  `git diff --check`, production exact-shape audit,
+  `cargo fmt --all -- --check`, focused Rust
+  `standard_filesystem_link_builtins`, `cargo build -p phpc`, and the focused
+  10-file PHPT file/link cluster with 9 PASS, 1 platform SKIP for missing
+  `posix_mkfifo()`, and 0 FAIL
+- full PHPT suite: not run for this single source checkpoint; Batch006 broad
+  gate is held until 10 accepted source checkpoints, or until the supervisor
+  explicitly opens a regression/publication gate
+
+This checkpoint generalizes local filesystem behavior for `readlink()`,
+`symlink()`, `link()`, `linkinfo()`, bounded `touch()`, bounded `sleep()`, and
+interpreter diagnostic suppression for the current `@expr` slice. It uses
+shared path/stat/diagnostic helpers and known-function registration, and is not
+keyed to a PHPT filename, expected-output fixture, batch marker, public hash,
+or test-name branch.
+
+Previous Batch006 source checkpoint 3 was standard file metadata builtins:
 
 Batch006 source checkpoint 3 is primary-integrated under AO supervision. This
 is a source checkpoint with focused proof, not a percentage change. The public
