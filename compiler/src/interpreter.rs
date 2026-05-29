@@ -51622,6 +51622,9 @@ impl Interpreter {
                 if key == "fscanf" {
                     return self.call_fscanf_direct(args, span, caller_scope);
                 }
+                if key == "sscanf" {
+                    return self.call_sscanf_direct(args, span, caller_scope);
+                }
                 let values = self.evaluate_builtin_value_call_arguments(
                     &callable_name(name),
                     args,
@@ -51786,6 +51789,9 @@ impl Interpreter {
                 }
                 if key == "fscanf" {
                     return self.call_fscanf_direct(args, span, caller_scope);
+                }
+                if key == "sscanf" {
+                    return self.call_sscanf_direct(args, span, caller_scope);
                 }
                 let values = self.evaluate_builtin_value_call_arguments(
                     &callable_name(name),
@@ -52109,7 +52115,7 @@ impl Interpreter {
         let Some(line) = self.read_stream_line_for_scanf(&values[0], span)? else {
             return Ok(Value::Bool(false));
         };
-        let result = parsed.scan_line(&line);
+        let result = parsed.scan_line(line_without_ending(&line));
         let mut assigned = 0_i64;
         for (arg, value) in variable_args.iter().zip(result.values.into_iter()) {
             let value = value.unwrap_or(Value::Null);
@@ -52121,7 +52127,102 @@ impl Interpreter {
         Ok(Value::Int(assigned))
     }
 
+    fn call_sscanf_direct(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        if args.len() < 2 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch("sscanf()", ArityExpectation::AtLeast(2), args.len()),
+            ));
+        }
+
+        let mut values = Vec::with_capacity(2);
+        for arg in args.iter().take(2) {
+            match arg {
+                Expr::NamedArgument { span, .. } | Expr::SpreadArgument { span, .. } => {
+                    return Err(runtime_error(
+                        *span,
+                        RuntimeError::unsupported_call(
+                            "sscanf()",
+                            "named arguments and unpacking are not implemented for sscanf() in the current subset",
+                        ),
+                    ));
+                }
+                expr => values
+                    .push(self.evaluate_by_value_argument_with_cow_source(expr, caller_scope)?),
+            }
+        }
+
+        let input = string_builtin_argument("sscanf()", "string", &values[0], span)?;
+        let format = self.scanf_format_argument("sscanf()", &values[1], span)?;
+        let parsed = parse_fscanf_format(&format, span)?;
+        let variable_args = &args[2..];
+        if variable_args.is_empty() {
+            return Ok(scanf_values_to_array(parsed.scan_line(&input).values));
+        }
+
+        let assignable = parsed.assignable_count();
+        if variable_args.len() > assignable {
+            let result = parsed.scan_line(&input);
+            for (arg, value) in variable_args
+                .iter()
+                .take(assignable)
+                .zip(result.values.into_iter())
+            {
+                Self::assign_scanf_direct_target(
+                    "sscanf()",
+                    arg,
+                    value.unwrap_or(Value::Null),
+                    caller_scope,
+                )?;
+            }
+            for arg in variable_args.iter().skip(assignable) {
+                Self::assign_scanf_direct_target("sscanf()", arg, Value::Null, caller_scope)?;
+            }
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "sscanf()",
+                    "Variable is not assigned by any conversion specifiers",
+                ),
+            ));
+        }
+        if variable_args.len() < assignable {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "sscanf()",
+                    "Different numbers of variable names and field specifiers",
+                ),
+            ));
+        }
+
+        let result = parsed.scan_line(&input);
+        let mut assigned = 0_i64;
+        for (arg, value) in variable_args.iter().zip(result.values.into_iter()) {
+            let value = value.unwrap_or(Value::Null);
+            if !matches!(value, Value::Null) {
+                assigned += 1;
+            }
+            Self::assign_scanf_direct_target("sscanf()", arg, value, caller_scope)?;
+        }
+        Ok(Value::Int(assigned))
+    }
+
     fn assign_fscanf_direct_target(
+        arg: &Expr,
+        value: Value,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<()> {
+        Self::assign_scanf_direct_target("fscanf()", arg, value, caller_scope)
+    }
+
+    fn assign_scanf_direct_target(
+        function: &'static str,
         arg: &Expr,
         value: Value,
         caller_scope: &mut SymbolTable,
@@ -52135,15 +52236,18 @@ impl Interpreter {
                 runtime_error(
                     *span,
                     RuntimeError::unsupported_call(
-                        "fscanf()",
-                        "named arguments and unpacking are not implemented for fscanf() in the current subset",
+                        function,
+                        format!(
+                            "named arguments and unpacking are not implemented for {} in the current subset",
+                            function.trim_end_matches("()")
+                        ),
                     ),
                 ),
             ),
             other => Err(runtime_error(
                 other.span(),
                 RuntimeError::unsupported_call(
-                    "fscanf()",
+                    function,
                     "by-reference scan targets must be variables in the current subset",
                 ),
             )),
@@ -72429,6 +72533,28 @@ impl Interpreter {
         self.call_fscanf_parsed_return_array(&args[0], &parsed, span)
     }
 
+    fn call_sscanf(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if args.len() < 2 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch("sscanf()", ArityExpectation::AtLeast(2), args.len()),
+            ));
+        }
+        if args.len() > 2 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "sscanf()",
+                    "sscanf() by-reference assignments require direct variable arguments in the current subset",
+                ),
+            ));
+        }
+        let input = string_builtin_argument("sscanf()", "string", &args[0], span)?;
+        let format = self.scanf_format_argument("sscanf()", &args[1], span)?;
+        let parsed = parse_fscanf_format(&format, span)?;
+        Ok(scanf_values_to_array(parsed.scan_line(&input).values))
+    }
+
     fn call_fscanf_parsed_return_array(
         &mut self,
         stream: &Value,
@@ -72441,19 +72567,24 @@ impl Interpreter {
         if parsed.assignable_count() > 0 && line_without_ending(&line).is_empty() {
             return Ok(Value::Null);
         }
-        let result = parsed.scan_line(&line);
-        let mut array = PhpArray::new();
-        for (index, value) in result.values.into_iter().enumerate() {
-            array.insert(index as i64, value.unwrap_or(Value::Null));
-        }
-        Ok(Value::Array(array))
+        let result = parsed.scan_line(line_without_ending(&line));
+        Ok(scanf_values_to_array(result.values))
     }
 
     fn fscanf_format_argument(&mut self, value: &Value, span: Span) -> CompileResult<String> {
+        self.scanf_format_argument("fscanf()", value, span)
+    }
+
+    fn scanf_format_argument(
+        &mut self,
+        function: &'static str,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<String> {
         match value {
             Value::String(value) => Ok(value.clone()),
             Value::BinaryString(bytes) => {
-                tree_walk_binary_string_utf8(bytes, "fscanf()", span).map(|value| value.to_string())
+                tree_walk_binary_string_utf8(bytes, function, span).map(|value| value.to_string())
             }
             Value::Null | Value::Bool(_) | Value::Int(_) | Value::Float(_) => {
                 Ok(value.echo_string())
@@ -72461,7 +72592,7 @@ impl Interpreter {
             other => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
-                    "fscanf()",
+                    function,
                     format!(
                         "Argument #2 ($format) must be of type string, {} given",
                         php_type_error_given(other)
@@ -77400,6 +77531,7 @@ impl Interpreter {
             "fgetcsv" => self.call_fgetcsv(&args, span),
             "fputcsv" => self.call_fputcsv(&args, span),
             "fscanf" => self.call_fscanf(&args, span),
+            "sscanf" => self.call_sscanf(&args, span),
             "fread" => self.call_fread(&args, span),
             "rewind" => self.call_rewind(&args, span),
             "stream_get_contents" => self.call_stream_get_contents(&args, span),
@@ -91507,11 +91639,11 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
             | "Argument #2 ($flags) must be only one of the PATHINFO_* constants",
         ) => Some(format!("pathinfo(): {message}")),
         (
-            "fscanf()",
+            "fscanf()" | "sscanf()",
             "Variable is not assigned by any conversion specifiers"
             | "Different numbers of variable names and field specifiers",
         ) => Some(message.to_string()),
-        ("fscanf()", message) if message.starts_with("Bad scan conversion character") => {
+        ("fscanf()" | "sscanf()", message) if message.starts_with("Bad scan conversion character") => {
             Some(message.to_string())
         }
         ("dirname()", "Argument #2 ($levels) must be greater than or equal to 1") => {
@@ -92199,6 +92331,7 @@ fn is_builtin(name: &str) -> bool {
             | "fgetcsv"
             | "fputcsv"
             | "fscanf"
+            | "sscanf"
             | "fread"
             | "rewind"
             | "stream_get_contents"
@@ -104409,7 +104542,7 @@ impl FscanfConversion {
                 scan_fscanf_integer(input, position, self.width, 10, true)
             }
             FscanfConversionKind::UnsignedDecimal => {
-                scan_fscanf_integer(input, position, self.width, 10, true)
+                scan_fscanf_unsigned_decimal(input, position, self.width)
             }
             FscanfConversionKind::Octal => {
                 scan_fscanf_integer(input, position, self.width, 8, true)
@@ -104619,6 +104752,14 @@ fn line_without_ending(line: &str) -> &str {
         .unwrap_or(line)
 }
 
+fn scanf_values_to_array(values: Vec<Option<Value>>) -> Value {
+    let mut array = PhpArray::new();
+    for (index, value) in values.into_iter().enumerate() {
+        array.insert(index as i64, value.unwrap_or(Value::Null));
+    }
+    Value::Array(array)
+}
+
 fn skip_scanf_input_whitespace(input: &[char], position: &mut usize) {
     while input.get(*position).is_some_and(|ch| ch.is_whitespace()) {
         *position += 1;
@@ -104681,6 +104822,42 @@ fn scan_fscanf_integer(
     let digits: String = input[digits_start..*position].iter().collect();
     let magnitude = i128::from_str_radix(&digits, radix).ok()?;
     Some(Value::Int(clamp_i128_to_i64(sign * magnitude)))
+}
+
+fn scan_fscanf_unsigned_decimal(
+    input: &[char],
+    position: &mut usize,
+    width: Option<usize>,
+) -> Option<Value> {
+    skip_scanf_input_whitespace(input, position);
+    let start = *position;
+    let max = width.unwrap_or(usize::MAX);
+    let mut consumed = 0_usize;
+    let mut negative = false;
+    if consumed < max {
+        if let Some(character @ ('+' | '-')) = input.get(*position).copied() {
+            negative = character == '-';
+            *position += 1;
+            consumed += 1;
+        }
+    }
+    let digits_start = *position;
+    while *position < input.len() && consumed < max && input[*position].is_ascii_digit() {
+        *position += 1;
+        consumed += 1;
+    }
+    if *position == digits_start {
+        *position = start;
+        return None;
+    }
+    let digits: String = input[digits_start..*position].iter().collect();
+    let magnitude = i128::from_str_radix(&digits, 10).ok()?;
+    if negative {
+        let wrapped = (0_u128.wrapping_sub(magnitude as u128) & 0xffff_ffff) as u64;
+        Some(Value::String(wrapped.to_string()))
+    } else {
+        Some(Value::Int(clamp_i128_to_i64(magnitude)))
+    }
 }
 
 fn scan_fscanf_hex(input: &[char], position: &mut usize, width: Option<usize>) -> Option<Value> {

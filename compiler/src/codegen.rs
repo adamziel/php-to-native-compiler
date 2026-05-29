@@ -66611,6 +66611,7 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "fgetcsv",
     "fputcsv",
     "fscanf",
+    "sscanf",
     "fread",
     "rewind",
     "stream_get_contents",
