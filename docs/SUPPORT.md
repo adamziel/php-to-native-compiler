@@ -4586,13 +4586,26 @@
   suffix. It performs lexical Unix-style slash basename extraction for local
   paths used by the current WordPress-oriented probes, trims trailing slashes,
   and removes the suffix only when the extracted name ends with that non-empty
-  suffix. It does not resolve the filesystem, symlinks, include paths, stream
+  suffix and the suffix is shorter than the extracted name. It does not resolve
+  the filesystem, symlinks, include paths, stream
   wrappers, Windows drive/UNC paths, locale/codepage details, null-byte
   behavior, broad scalar coercions, exact PHP warnings/`TypeError` behavior, or
   native lowering.
+  `pathinfo($path, $flags = PATHINFO_ALL)` accepts scalar/null
+  string-convertible paths and the `PATHINFO_DIRNAME`, `PATHINFO_BASENAME`,
+  `PATHINFO_EXTENSION`, `PATHINFO_FILENAME`, or `PATHINFO_ALL` flag constants.
+  It performs the same lexical Unix-style slash splitting as `basename()` and
+  `dirname()`, returns PHP-ordered arrays for `PATHINFO_ALL`, and raises a
+  catchable `ValueError` for invalid flag values. It does not resolve the
+  filesystem, symlinks, include paths, stream wrappers, Windows drive/UNC
+  paths beyond treating backslashes as ordinary characters in the current Unix
+  slice, locale/codepage details, null-byte behavior, array/object/resource
+  coercions, exact PHP warnings/`TypeError` behavior, or native lowering.
   `dirname($path, $levels = 1)` accepts string paths and an optional positive
   integer level count. It performs lexical Unix-style slash parent-directory
-  extraction for local paths used by the current WordPress bootstrap probes;
+  extraction for local paths used by the current WordPress bootstrap probes,
+  saturating repeated parent extraction at `""`, `.`, or `/` and raising a
+  catchable `ValueError` for non-positive integer levels;
   it does not resolve the filesystem, symlinks, include paths, stream wrappers,
   Windows drive/UNC paths, locale/codepage details, or PHP's exact coercion and
   `ValueError` behavior.
@@ -5452,7 +5465,9 @@
   PHP property hook declarations such as `public string $name { get => ...; }`
   before hook metadata, backing/virtual property behavior, typed-property
   storage/enforcement, references, reflection, and native lowering exist,
-  instance property default values, multiple property declarations, unsupported class
+  legacy `var $property` declarations are treated as public untyped instance
+  properties in the same metadata/runtime slot model as `public $property`;
+  multiple property declarations, unsupported class
   constant declaration forms such as typed, static, or multi-declarator class constants,
   malformed `clone` expressions, dynamic `instanceof` class operands,
   unsupported magic static receiver forms outside the current `static::class`,
@@ -8257,6 +8272,11 @@
   stream-wrapper path semantics, locale/codepage behavior, argument
   diagnostics, references/copy-on-write, and exact native diagnostics exist,
   while native function-table introspection recognizes the name.
+  `pathinfo` accepts the same current lexical Unix-style local path and
+  `PATHINFO_*` flag subset as the builtin section above; direct native
+  `pathinfo(...)` calls still reject under the function-call boundary, while
+  native function-table introspection recognizes the name and native constant
+  lookup exposes the supported `PATHINFO_*` constants.
   `dirname` accepts the same current lexical Unix-style local path subset as
   the builtin section above; direct native `dirname(...)` calls still reject
   under the function-call boundary.
@@ -10576,6 +10596,13 @@
   canonicalization, symlink resolution, null-byte behavior, locale/codepage
   details, broad scalar coercions, exact warning/`TypeError` diagnostics, and
   native lowering beyond function-table introspection
+- `pathinfo()` path behavior outside the current lexical Unix-style local path
+  subset and supported `PATHINFO_*` constants: Windows drive and UNC semantics
+  beyond treating backslashes as ordinary Unix-path characters, stream wrappers,
+  filesystem canonicalization, symlink resolution, null-byte behavior,
+  locale/codepage details, array/object/resource coercions, exact
+  warning/`TypeError` diagnostics, and native lowering beyond function-table
+  introspection remain unsupported.
 - `realpath()` behavior beyond the current one-string local path resolution
   slice: symlink policy differences, exact warning plus `false` fidelity,
   include-path lookup, `open_basedir`, stream wrappers, non-UTF-8 paths,

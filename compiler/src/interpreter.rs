@@ -66949,6 +66949,7 @@ impl Interpreter {
 
                 Ok(Value::String(basename_path(path, suffix)))
             }
+            "pathinfo" => call_pathinfo(&args, span),
             "dirname" => {
                 if !(1..=2).contains(&args.len()) {
                     return Err(runtime_error(
@@ -66984,7 +66985,7 @@ impl Interpreter {
                             span,
                             RuntimeError::unsupported_call(
                                 "dirname()",
-                                "levels argument must be greater than or equal to 1 in the current subset",
+                                "Argument #2 ($levels) must be greater than or equal to 1",
                             ),
                         ));
                     }
@@ -77486,6 +77487,13 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_optional_string_param("suffix", ""),
             ],
         ),
+        "pathinfo" => (
+            "array|string",
+            vec![
+                reflection_internal_param("path", "string"),
+                reflection_internal_optional_int_param("flags", PHP_PATHINFO_ALL),
+            ],
+        ),
         "dirname" => (
             "string",
             vec![
@@ -79425,6 +79433,14 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
         ("fputcsv()", "escape argument must contain exactly one character") => {
             Some("fputcsv(): Argument #5 ($escape) must be empty or a single character".to_string())
         }
+        (
+            "pathinfo()",
+            "Argument #2 ($flags) must be one of the PATHINFO_* constants"
+            | "Argument #2 ($flags) must be only one of the PATHINFO_* constants",
+        ) => Some(format!("pathinfo(): {message}")),
+        ("dirname()", "Argument #2 ($levels) must be greater than or equal to 1") => {
+            Some("dirname(): Argument #2 ($levels) must be greater than or equal to 1".to_string())
+        }
         _ => None,
     }
 }
@@ -79694,6 +79710,7 @@ fn is_builtin(name: &str) -> bool {
             | "call_user_func_array"
             | "implode"
             | "basename"
+            | "pathinfo"
             | "dirname"
             | "abs"
             | "bcadd"
@@ -80263,6 +80280,9 @@ fn dirname_path(path: &str, levels: i64) -> String {
     let mut current = path.to_string();
     for _ in 0..levels {
         current = dirname_once(&current);
+        if matches!(current.as_str(), "" | "." | "/") {
+            break;
+        }
     }
     current
 }
@@ -80321,13 +80341,110 @@ fn basename_path(path: &str, suffix: Option<&str>) -> String {
     let mut name = trimmed[start..].to_string();
 
     if let Some(suffix) = suffix {
-        if !suffix.is_empty() && name.ends_with(suffix) {
+        if !suffix.is_empty() && suffix.len() < name.len() && name.ends_with(suffix) {
             let new_len = name.len() - suffix.len();
             name.truncate(new_len);
         }
     }
 
     name
+}
+
+struct PathInfoParts {
+    dirname: String,
+    basename: String,
+    extension: String,
+    filename: String,
+    has_extension_component: bool,
+}
+
+fn call_pathinfo(args: &[Value], span: Span) -> CompileResult<Value> {
+    if !(1..=2).contains(&args.len()) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "pathinfo()",
+                ArityExpectation::Between { min: 1, max: 2 },
+                args.len(),
+            ),
+        ));
+    }
+
+    let path = string_builtin_argument("pathinfo()", "path", &args[0], span)?;
+    let flags = match args.get(1) {
+        Some(value) => php_internal_int_argument("pathinfo()", 2, "flags", value, span)?,
+        None => PHP_PATHINFO_ALL,
+    };
+    validate_pathinfo_flags(flags, span)?;
+
+    let parts = pathinfo_parts(&path);
+    match flags {
+        PHP_PATHINFO_DIRNAME => Ok(Value::String(parts.dirname)),
+        PHP_PATHINFO_BASENAME => Ok(Value::String(parts.basename)),
+        PHP_PATHINFO_EXTENSION => Ok(Value::String(parts.extension)),
+        PHP_PATHINFO_FILENAME => Ok(Value::String(parts.filename)),
+        PHP_PATHINFO_ALL => Ok(Value::Array(pathinfo_array(path.is_empty(), parts))),
+        _ => unreachable!("pathinfo flags are validated before dispatch"),
+    }
+}
+
+fn validate_pathinfo_flags(flags: i64, span: Span) -> CompileResult<()> {
+    if matches!(
+        flags,
+        PHP_PATHINFO_DIRNAME
+            | PHP_PATHINFO_BASENAME
+            | PHP_PATHINFO_EXTENSION
+            | PHP_PATHINFO_FILENAME
+            | PHP_PATHINFO_ALL
+    ) {
+        return Ok(());
+    }
+
+    let message = if flags > 0 && flags < PHP_PATHINFO_ALL && (flags & (flags - 1)) != 0 {
+        "Argument #2 ($flags) must be only one of the PATHINFO_* constants"
+    } else {
+        "Argument #2 ($flags) must be one of the PATHINFO_* constants"
+    };
+    Err(runtime_error(
+        span,
+        RuntimeError::unsupported_call("pathinfo()", message),
+    ))
+}
+
+fn pathinfo_parts(path: &str) -> PathInfoParts {
+    let dirname = dirname_path(path, 1);
+    let basename = basename_path(path, None);
+    let (filename, extension, has_extension_component) = if let Some(position) = basename.rfind('.')
+    {
+        (
+            basename[..position].to_string(),
+            basename[position + 1..].to_string(),
+            true,
+        )
+    } else {
+        (basename.clone(), String::new(), false)
+    };
+
+    PathInfoParts {
+        dirname,
+        basename,
+        extension,
+        filename,
+        has_extension_component,
+    }
+}
+
+fn pathinfo_array(path_was_empty: bool, parts: PathInfoParts) -> PhpArray {
+    let mut array = PhpArray::new();
+    if !path_was_empty {
+        array.insert("dirname", Value::String(parts.dirname));
+    }
+    array.insert("basename", Value::String(parts.basename));
+    if parts.has_extension_component {
+        array.insert("extension", Value::String(parts.extension));
+    }
+    array.insert("filename", Value::String(parts.filename));
+    array
 }
 
 const PHP_E_ERROR: i64 = 1;
@@ -80414,6 +80531,12 @@ const PHP_FILE_IGNORE_NEW_LINES: i64 = 2;
 const PHP_FILE_SKIP_EMPTY_LINES: i64 = 4;
 const PHP_LOCK_EX: i64 = 2;
 const PHP_FILE_APPEND: i64 = 8;
+const PHP_PATHINFO_DIRNAME: i64 = 1;
+const PHP_PATHINFO_BASENAME: i64 = 2;
+const PHP_PATHINFO_EXTENSION: i64 = 4;
+const PHP_PATHINFO_FILENAME: i64 = 8;
+const PHP_PATHINFO_ALL: i64 =
+    PHP_PATHINFO_DIRNAME | PHP_PATHINFO_BASENAME | PHP_PATHINFO_EXTENSION | PHP_PATHINFO_FILENAME;
 const PHP_SCANDIR_SORT_ASCENDING: i64 = 0;
 const PHP_SCANDIR_SORT_DESCENDING: i64 = 1;
 const PHP_SCANDIR_SORT_NONE: i64 = 2;
@@ -80474,6 +80597,11 @@ fn builtin_global_constant_value(name: &str) -> Option<Value> {
         "FILE_SKIP_EMPTY_LINES" => Some(Value::Int(PHP_FILE_SKIP_EMPTY_LINES)),
         "FILE_APPEND" => Some(Value::Int(PHP_FILE_APPEND)),
         "LOCK_EX" => Some(Value::Int(PHP_LOCK_EX)),
+        "PATHINFO_DIRNAME" => Some(Value::Int(PHP_PATHINFO_DIRNAME)),
+        "PATHINFO_BASENAME" => Some(Value::Int(PHP_PATHINFO_BASENAME)),
+        "PATHINFO_EXTENSION" => Some(Value::Int(PHP_PATHINFO_EXTENSION)),
+        "PATHINFO_FILENAME" => Some(Value::Int(PHP_PATHINFO_FILENAME)),
+        "PATHINFO_ALL" => Some(Value::Int(PHP_PATHINFO_ALL)),
         "SCANDIR_SORT_ASCENDING" => Some(Value::Int(PHP_SCANDIR_SORT_ASCENDING)),
         "SCANDIR_SORT_DESCENDING" => Some(Value::Int(PHP_SCANDIR_SORT_DESCENDING)),
         "SCANDIR_SORT_NONE" => Some(Value::Int(PHP_SCANDIR_SORT_NONE)),

@@ -18,6 +18,8 @@ echo "[", basename("autoload.php"), "]\n";
 echo "[", basename(""), "]\n";
 echo "[", basename("/"), "]\n";
 echo basename("/a/b/c.php", ".php"), "\n";
+echo basename("bar.gz", "bar.gz"), "\n";
+echo basename("/foo/.gz", ".gz"), "\n";
 $call = "basename";
 echo $call("/a/b//c.php");
 "#,
@@ -26,7 +28,7 @@ echo $call("/a/b//c.php");
 
     assert_eq!(
         execution.stdout,
-        "plugin.php\nwp-includes\n[autoload.php]\n[]\n[]\nc\nc.php"
+        "plugin.php\nwp-includes\n[autoload.php]\n[]\n[]\nc\nbar.gz\n.gz\nc.php"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -73,6 +75,124 @@ echo is_callable("basename") ? "callable" : "not-callable";
     .unwrap();
 
     assert_eq!(execution.stdout, "exists\ncallable");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn pathinfo_executes_current_lexical_path_subset() {
+    let execution = run_source(
+        r#"<?php
+var_dump(pathinfo(""));
+var_dump(pathinfo("/"));
+var_dump(pathinfo("./"));
+var_dump(pathinfo("/usr/include/arpa/inet.h"));
+var_dump(pathinfo(".cvsignore"));
+var_dump(pathinfo("c:\..\dir1"));
+echo pathinfo("/dir/test.tar.gz", PATHINFO_DIRNAME), "\n";
+echo pathinfo("/dir/test.tar.gz", PATHINFO_BASENAME), "\n";
+echo pathinfo("/dir/test.tar.gz", PATHINFO_EXTENSION), "\n";
+echo pathinfo("/dir/test.tar.gz", PATHINFO_FILENAME), "\n";
+echo PATHINFO_DIRNAME, ":", PATHINFO_BASENAME, ":", PATHINFO_EXTENSION, ":", PATHINFO_FILENAME, ":", PATHINFO_ALL;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        r#"array(2) {
+  ["basename"]=>
+  string(0) ""
+  ["filename"]=>
+  string(0) ""
+}
+array(3) {
+  ["dirname"]=>
+  string(1) "/"
+  ["basename"]=>
+  string(0) ""
+  ["filename"]=>
+  string(0) ""
+}
+array(4) {
+  ["dirname"]=>
+  string(1) "."
+  ["basename"]=>
+  string(1) "."
+  ["extension"]=>
+  string(0) ""
+  ["filename"]=>
+  string(0) ""
+}
+array(4) {
+  ["dirname"]=>
+  string(17) "/usr/include/arpa"
+  ["basename"]=>
+  string(6) "inet.h"
+  ["extension"]=>
+  string(1) "h"
+  ["filename"]=>
+  string(4) "inet"
+}
+array(4) {
+  ["dirname"]=>
+  string(1) "."
+  ["basename"]=>
+  string(10) ".cvsignore"
+  ["extension"]=>
+  string(9) "cvsignore"
+  ["filename"]=>
+  string(0) ""
+}
+array(4) {
+  ["dirname"]=>
+  string(1) "."
+  ["basename"]=>
+  string(10) "c:\..\dir1"
+  ["extension"]=>
+  string(5) "\dir1"
+  ["filename"]=>
+  string(4) "c:\."
+}
+/dir
+test.tar.gz
+gz
+test.tar
+1:2:4:8:15"#
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn pathinfo_rejects_invalid_flag_shapes_as_value_errors() {
+    let execution = run_source(
+        r#"<?php
+foreach (array(PATHINFO_EXTENSION | PATHINFO_FILENAME, PATHINFO_DIRNAME - 1, PATHINFO_ALL + 1) as $flag) {
+    try {
+        pathinfo("/usr/include/arpa/inet.h", $flag);
+    } catch (ValueError $e) {
+        echo get_class($e), ":", $e->getMessage(), "\n";
+    }
+}
+$call = "pathinfo";
+echo $call("/x/y.z", PATHINFO_FILENAME), "\n";
+echo function_exists("pathinfo") ? "exists" : "missing";
+echo ":";
+echo is_callable("pathinfo") ? "callable" : "not-callable";
+echo "\n";
+var_dump((new ReflectionFunction("pathinfo"))->invoke("/x/y.z", PATHINFO_BASENAME));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "ValueError:pathinfo(): Argument #2 ($flags) must be only one of the PATHINFO_* constants\n\
+ValueError:pathinfo(): Argument #2 ($flags) must be one of the PATHINFO_* constants\n\
+ValueError:pathinfo(): Argument #2 ($flags) must be one of the PATHINFO_* constants\n\
+y\n\
+exists:callable\n\
+string(3) \"y.z\"\n"
+    );
     assert_eq!(execution.exit_code, 0);
 }
 
@@ -155,15 +275,6 @@ fn dirname_reports_current_argument_boundaries() {
         "unsupported call dirname(): path argument must be string in the current subset, got int"
     );
 
-    let non_positive_levels = run_source("<?php\necho dirname('/a', 0);\n").unwrap_err();
-    assert_eq!(non_positive_levels.phase, Phase::Runtime);
-    assert_eq!(non_positive_levels.line, 2);
-    assert_eq!(non_positive_levels.column, 6);
-    assert_eq!(
-        non_positive_levels.message,
-        "unsupported call dirname(): levels argument must be greater than or equal to 1 in the current subset"
-    );
-
     let non_int_levels = run_source("<?php\necho dirname('/a', '2');\n").unwrap_err();
     assert_eq!(non_int_levels.phase, Phase::Runtime);
     assert_eq!(non_int_levels.line, 2);
@@ -172,6 +283,29 @@ fn dirname_reports_current_argument_boundaries() {
         non_int_levels.message,
         "unsupported call dirname(): levels argument must be int in the current subset, got string"
     );
+}
+
+#[test]
+fn dirname_levels_zero_is_catchable_value_error_and_large_levels_saturate() {
+    let execution = run_source(
+        r#"<?php
+try {
+    dirname("/foo/bar/baz", 0);
+} catch (ValueError $e) {
+    echo get_class($e), ":", $e->getMessage(), "\n";
+}
+echo dirname("/foo/bar/baz", 1), "\n";
+echo dirname("/foo/bar/baz", 2), "\n";
+echo dirname("/foo/bar/baz", PHP_INT_MAX);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "ValueError:dirname(): Argument #2 ($levels) must be greater than or equal to 1\n/foo/bar\n/foo\n/"
+    );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

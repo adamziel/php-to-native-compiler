@@ -1574,6 +1574,9 @@ impl Parser {
                 TokenKind::Public => Some(ClassVisibility::Public),
                 TokenKind::Protected => Some(ClassVisibility::Protected),
                 TokenKind::Private => Some(ClassVisibility::Private),
+                TokenKind::Identifier(name) if name.eq_ignore_ascii_case("var") => {
+                    Some(ClassVisibility::Public)
+                }
                 TokenKind::Static => {
                     if is_static {
                         return Err(self.error_at(

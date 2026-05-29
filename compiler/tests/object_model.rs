@@ -320,6 +320,27 @@ print_r($profile);
 }
 
 #[test]
+fn legacy_var_properties_are_public_untyped_slots() {
+    let execution = run_source(
+        r#"<?php
+class LegacyBox {
+    var $name = "seed";
+    var $count;
+}
+$box = new LegacyBox();
+echo $box->name, "|";
+$box->count = 3;
+echo $box->count, "|";
+echo property_exists($box, "name") ? "prop" : "missing";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "seed|3|prop");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn object_property_nested_array_assignments_materialize_current_subset() {
     let source = r#"<?php
 class Bag {
