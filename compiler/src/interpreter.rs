@@ -41780,6 +41780,15 @@ impl Interpreter {
             .get(class_id)
             .expect("class id should resolve to class metadata");
         let receiver_class_name = receiver_class.name().to_string();
+        if receiver_class_name.eq_ignore_ascii_case("DateTimeZone")
+            && method_name.eq_ignore_ascii_case("listIdentifiers")
+        {
+            let mut values = Vec::with_capacity(args.len());
+            for arg in args {
+                values.push(self.evaluate_by_value_argument_with_cow_source(arg, caller_scope)?);
+            }
+            return call_timezone_identifiers_list(&values, span);
+        }
         let Some((
             declaring_class_id,
             declaring_class_name,
@@ -66160,7 +66169,9 @@ impl Interpreter {
             "bcsqrt" => self.call_bcsqrt(&args, span),
             "version_compare" => call_version_compare(&args, span),
             "microtime" => call_microtime(&args, span),
+            "gettimeofday" => self.call_gettimeofday(&args, span),
             "time" => self.call_time(&args, span),
+            "strtotime" => self.call_strtotime(&args, span),
             "mktime" => self.call_mktime(&args, span, false),
             "gmmktime" => self.call_mktime(&args, span, true),
             "date" => self.call_date(&args, span, false),
@@ -66184,6 +66195,9 @@ impl Interpreter {
                 Ok(Value::String(self.default_timezone.clone()))
             }
             "date_default_timezone_set" => self.call_date_default_timezone_set(&args, span),
+            "timezone_version_get" => call_timezone_version_get(&args, span),
+            "timezone_identifiers_list" => call_timezone_identifiers_list(&args, span),
+            "timezone_name_from_abbr" => call_timezone_name_from_abbr(&args, span),
             "setlocale" => self.call_setlocale(&args, span),
             "getenv" => self.call_getenv(&args, span),
             "putenv" => self.call_putenv(&args, span),
@@ -74965,6 +74979,35 @@ fn seed_core_class_constant_runtime_tables(
             },
         );
     }
+    if let Some(datetimezone_id) = classes.lookup_class_id("DateTimeZone") {
+        for (name, value) in [
+            ("AFRICA", PHP_DATETIMEZONE_AFRICA),
+            ("AMERICA", PHP_DATETIMEZONE_AMERICA),
+            ("ANTARCTICA", PHP_DATETIMEZONE_ANTARCTICA),
+            ("ARCTIC", PHP_DATETIMEZONE_ARCTIC),
+            ("ASIA", PHP_DATETIMEZONE_ASIA),
+            ("ATLANTIC", PHP_DATETIMEZONE_ATLANTIC),
+            ("AUSTRALIA", PHP_DATETIMEZONE_AUSTRALIA),
+            ("EUROPE", PHP_DATETIMEZONE_EUROPE),
+            ("INDIAN", PHP_DATETIMEZONE_INDIAN),
+            ("PACIFIC", PHP_DATETIMEZONE_PACIFIC),
+            ("UTC", PHP_DATETIMEZONE_UTC),
+            ("ALL", PHP_DATETIMEZONE_ALL),
+            ("ALL_WITH_BC", PHP_DATETIMEZONE_ALL_WITH_BC),
+            ("PER_COUNTRY", PHP_DATETIMEZONE_PER_COUNTRY),
+        ] {
+            let span = Span::new(1, 1);
+            class_constants.insert(
+                (datetimezone_id, name.to_string()),
+                ClassConstantDecl {
+                    name: name.to_string(),
+                    visibility: ClassVisibility::Public,
+                    value: Expr::Int(value, span),
+                    span,
+                },
+            );
+        }
+    }
     let Some(reflection_method_id) = classes.lookup_class_id("ReflectionMethod") else {
         return;
     };
@@ -78385,6 +78428,13 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
         {
             Some(format!("{function}: {message}"))
         }
+        (
+            "timezone_identifiers_list()",
+            "Argument #2 ($countryCode) must be a two-letter ISO 3166-1 compatible country code when argument #1 ($timezoneGroup) is DateTimeZone::PER_COUNTRY",
+        ) => Some(
+            "timezone_identifiers_list(): Argument #2 ($countryCode) must be a two-letter ISO 3166-1 compatible country code when argument #1 ($timezoneGroup) is DateTimeZone::PER_COUNTRY"
+                .to_string(),
+        ),
         _ => None,
     }
 }
@@ -78668,7 +78718,9 @@ fn is_builtin(name: &str) -> bool {
             | "bcsqrt"
             | "version_compare"
             | "microtime"
+            | "gettimeofday"
             | "time"
+            | "strtotime"
             | "mktime"
             | "gmmktime"
             | "date"
@@ -78689,6 +78741,9 @@ fn is_builtin(name: &str) -> bool {
             | "jddayofweek"
             | "date_default_timezone_get"
             | "date_default_timezone_set"
+            | "timezone_version_get"
+            | "timezone_identifiers_list"
+            | "timezone_name_from_abbr"
             | "setlocale"
             | "getenv"
             | "putenv"
@@ -79312,6 +79367,20 @@ const PHP_CAL_MONTH_JULIAN_SHORT: i64 = 2;
 const PHP_CAL_MONTH_JULIAN_LONG: i64 = 3;
 const PHP_CAL_MONTH_JEWISH: i64 = 4;
 const PHP_CAL_MONTH_FRENCH: i64 = 5;
+const PHP_DATETIMEZONE_AFRICA: i64 = 1;
+const PHP_DATETIMEZONE_AMERICA: i64 = 2;
+const PHP_DATETIMEZONE_ANTARCTICA: i64 = 4;
+const PHP_DATETIMEZONE_ARCTIC: i64 = 8;
+const PHP_DATETIMEZONE_ASIA: i64 = 16;
+const PHP_DATETIMEZONE_ATLANTIC: i64 = 32;
+const PHP_DATETIMEZONE_AUSTRALIA: i64 = 64;
+const PHP_DATETIMEZONE_EUROPE: i64 = 128;
+const PHP_DATETIMEZONE_INDIAN: i64 = 256;
+const PHP_DATETIMEZONE_PACIFIC: i64 = 512;
+const PHP_DATETIMEZONE_UTC: i64 = 1024;
+const PHP_DATETIMEZONE_ALL: i64 = 2047;
+const PHP_DATETIMEZONE_ALL_WITH_BC: i64 = 4095;
+const PHP_DATETIMEZONE_PER_COUNTRY: i64 = 4096;
 
 fn builtin_global_constant_value(name: &str) -> Option<Value> {
     match name {
@@ -79353,6 +79422,20 @@ fn builtin_global_constant_value(name: &str) -> Option<Value> {
         "CAL_MONTH_JULIAN_LONG" => Some(Value::Int(PHP_CAL_MONTH_JULIAN_LONG)),
         "CAL_MONTH_JEWISH" => Some(Value::Int(PHP_CAL_MONTH_JEWISH)),
         "CAL_MONTH_FRENCH" => Some(Value::Int(PHP_CAL_MONTH_FRENCH)),
+        "DATE_ATOM" => Some(Value::String("Y-m-d\\TH:i:sP".to_string())),
+        "DATE_COOKIE" => Some(Value::String("l, d-M-Y H:i:s T".to_string())),
+        "DATE_ISO8601" => Some(Value::String("Y-m-d\\TH:i:sO".to_string())),
+        "DATE_ISO8601_EXPANDED" => Some(Value::String("X-m-d\\TH:i:sP".to_string())),
+        "DATE_RFC822" => Some(Value::String("D, d M y H:i:s O".to_string())),
+        "DATE_RFC850" => Some(Value::String("l, d-M-y H:i:s T".to_string())),
+        "DATE_RFC1036" => Some(Value::String("D, d M y H:i:s O".to_string())),
+        "DATE_RFC1123" => Some(Value::String("D, d M Y H:i:s O".to_string())),
+        "DATE_RFC7231" => Some(Value::String("D, d M Y H:i:s \\G\\M\\T".to_string())),
+        "DATE_RFC2822" => Some(Value::String("D, d M Y H:i:s O".to_string())),
+        "DATE_RFC3339" => Some(Value::String("Y-m-d\\TH:i:sP".to_string())),
+        "DATE_RFC3339_EXTENDED" => Some(Value::String("Y-m-d\\TH:i:s.vP".to_string())),
+        "DATE_RSS" => Some(Value::String("D, d M Y H:i:s O".to_string())),
+        "DATE_W3C" => Some(Value::String("Y-m-d\\TH:i:sP".to_string())),
         "PHP_SESSION_DISABLED" => Some(Value::Int(PHP_SESSION_DISABLED)),
         "PHP_SESSION_NONE" => Some(Value::Int(PHP_SESSION_NONE)),
         "PHP_SESSION_ACTIVE" => Some(Value::Int(PHP_SESSION_ACTIVE)),
@@ -89621,13 +89704,24 @@ fn call_microtime(args: &[Value], span: Span) -> CompileResult<Value> {
                 })?;
             Ok(Value::Float(duration.as_secs_f64()))
         }
-        Some(Value::Bool(false)) | None => Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                "microtime()",
-                "string return format is not implemented; pass true for float seconds in the current subset",
-            ),
-        )),
+        Some(Value::Bool(false)) | None => {
+            let duration = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map_err(|error| {
+                    runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "microtime()",
+                            format!("system clock is before the Unix epoch: {error}"),
+                        ),
+                    )
+                })?;
+            Ok(Value::String(format!(
+                "0.{:06} {}",
+                duration.subsec_micros(),
+                duration.as_secs()
+            )))
+        }
         Some(other) => Err(runtime_error(
             span,
             RuntimeError::unsupported_call(
@@ -89642,9 +89736,105 @@ fn call_microtime(args: &[Value], span: Span) -> CompileResult<Value> {
 }
 
 impl Interpreter {
+    fn call_gettimeofday(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if args.len() > 1 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "gettimeofday()",
+                    ArityExpectation::Between { min: 0, max: 1 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let as_float = match args.first() {
+            Some(Value::Bool(value)) => *value,
+            Some(other) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "gettimeofday()",
+                        format!(
+                            "as_float argument must be bool in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+            None => false,
+        };
+
+        let duration = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|error| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "gettimeofday()",
+                        format!("system clock is before the Unix epoch: {error}"),
+                    ),
+                )
+            })?;
+        if as_float {
+            return Ok(Value::Float(duration.as_secs_f64()));
+        }
+
+        let timezone = bounded_timezone_from_name(&self.default_timezone)
+            .expect("stored default timezone should be bounded");
+        let timestamp = duration.as_secs() as i64;
+        let offset = timezone.offset_at_timestamp(timestamp);
+        let parts = bounded_datetime_parts(timestamp, offset);
+
+        let mut array = PhpArray::new();
+        array.insert("sec", Value::Int(timestamp));
+        array.insert("usec", Value::Int(i64::from(duration.subsec_micros())));
+        array.insert("minuteswest", Value::Int(-(offset / 60)));
+        array.insert("dsttime", Value::Int(i64::from(timezone.is_dst(&parts))));
+        Ok(Value::Array(array))
+    }
+
     fn call_time(&self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("time", args, 0, span)?;
         Ok(Value::Int(self.request_time))
+    }
+
+    fn call_strtotime(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(1..=2).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "strtotime()",
+                    ArityExpectation::Between { min: 1, max: 2 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let input = match &args[0] {
+            Value::String(value) => value,
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "strtotime()",
+                        format!(
+                            "datetime argument must be string in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+        };
+        if args.get(1).is_some() {
+            optional_timestamp_arg("strtotime()", args.get(1), span)?;
+        }
+
+        let timezone = bounded_timezone_from_name(&self.default_timezone)
+            .expect("stored default timezone should be bounded");
+        Ok(parse_bounded_strtotime(input, &timezone)
+            .map(Value::Int)
+            .unwrap_or(Value::Bool(false)))
     }
 
     fn call_mktime(&self, args: &[Value], span: Span, utc: bool) -> CompileResult<Value> {
@@ -90577,7 +90767,7 @@ struct BoundedDateTimeParts {
 impl BoundedTimezone {
     fn utc() -> Self {
         Self {
-            name: "UTC".to_string(),
+            name: "GMT".to_string(),
         }
     }
 
@@ -90588,9 +90778,17 @@ impl BoundedTimezone {
 
     fn offset_for_local_date(&self, year: i64, month: i64, day: i64) -> i64 {
         match self.name.as_str() {
-            "UTC" | "Etc/UTC" | "Etc/GMT" | "Etc/Universal" | "Etc/Zulu" | "GMT0" => 0,
+            "UTC" | "Etc/UTC" | "Etc/GMT" | "Etc/Universal" | "Etc/Zulu" | "GMT0" | "GMT"
+            | "Africa/Abidjan" | "Zulu" => 0,
             "Asia/Jerusalem" => 10_800,
             "Asia/Calcutta" | "Asia/Kolkata" => 19_800,
+            "Europe/Berlin" | "Europe/Oslo" => {
+                if bounded_month_is_in_dst_window(month, day, 3, 27, 10, 31) {
+                    7_200
+                } else {
+                    3_600
+                }
+            }
             "Europe/London" => {
                 if bounded_month_is_in_dst_window(month, day, 3, 31, 10, 31) {
                     3_600
@@ -90612,6 +90810,20 @@ impl BoundedTimezone {
                     -18_000
                 }
             }
+            "America/Halifax" => {
+                if bounded_month_is_in_dst_window(month, day, 3, 8, 11, 7) {
+                    -10_800
+                } else {
+                    -14_400
+                }
+            }
+            "America/Sao_Paulo" => {
+                if month >= 11 || month <= 2 {
+                    -7_200
+                } else {
+                    -10_800
+                }
+            }
             _ => {
                 let _ = year;
                 0
@@ -90624,6 +90836,9 @@ impl BoundedTimezone {
             "America/Chicago" => -21_600,
             "US/Eastern" | "America/New_York" => -18_000,
             "Europe/London" => 0,
+            "Europe/Berlin" | "Europe/Oslo" => 3_600,
+            "America/Halifax" => -14_400,
+            "America/Sao_Paulo" => -10_800,
             "Asia/Jerusalem" => 7_200,
             "Asia/Calcutta" | "Asia/Kolkata" => 19_800,
             _ => self.offset_for_local_date(1970, 1, 1),
@@ -90632,9 +90847,10 @@ impl BoundedTimezone {
 
     fn abbreviation(&self, parts: &BoundedDateTimeParts) -> &'static str {
         match self.name.as_str() {
-            "GMT0" => "GMT",
+            "GMT0" | "GMT" | "Africa/Abidjan" => "GMT",
             "UTC" | "Etc/UTC" | "Etc/Universal" | "Etc/Zulu" => "UTC",
             "Etc/GMT" => "GMT",
+            "Zulu" => "UTC",
             "Asia/Jerusalem" => {
                 if self.is_dst(parts) {
                     "IDT"
@@ -90650,6 +90866,20 @@ impl BoundedTimezone {
                     "GMT"
                 }
             }
+            "Europe/Berlin" => {
+                if self.is_dst(parts) {
+                    "CEST"
+                } else {
+                    "CET"
+                }
+            }
+            "Europe/Oslo" => {
+                if self.is_dst(parts) {
+                    "CEST"
+                } else {
+                    "CET"
+                }
+            }
             "America/Chicago" => {
                 if self.is_dst(parts) {
                     "CDT"
@@ -90662,6 +90892,20 @@ impl BoundedTimezone {
                     "EDT"
                 } else {
                     "EST"
+                }
+            }
+            "America/Halifax" => {
+                if self.is_dst(parts) {
+                    "ADT"
+                } else {
+                    "AST"
+                }
+            }
+            "America/Sao_Paulo" => {
+                if self.is_dst(parts) {
+                    "-02"
+                } else {
+                    "-03"
                 }
             }
             _ => "UTC",
@@ -90680,12 +90924,19 @@ fn bounded_timezone_from_name(name: &str) -> Option<BoundedTimezone> {
         "Etc/GMT" => "Etc/GMT",
         "Etc/Universal" => "Etc/Universal",
         "Etc/Zulu" => "Etc/Zulu",
+        "GMT" => "GMT",
         "GMT0" => "GMT0",
+        "Africa/Abidjan" => "Africa/Abidjan",
+        "Zulu" => "Zulu",
         "Asia/Jerusalem" => "Asia/Jerusalem",
         "Asia/Calcutta" => "Asia/Calcutta",
         "Asia/Kolkata" => "Asia/Kolkata",
         "America/Chicago" => "America/Chicago",
+        "America/Halifax" => "America/Halifax",
+        "America/Sao_Paulo" => "America/Sao_Paulo",
+        "Europe/Berlin" => "Europe/Berlin",
         "Europe/London" => "Europe/London",
+        "Europe/Oslo" => "Europe/Oslo",
         "US/Eastern" => "US/Eastern",
         "America/New_York" => "America/New_York",
         _ => return None,
@@ -90693,6 +90944,372 @@ fn bounded_timezone_from_name(name: &str) -> Option<BoundedTimezone> {
     Some(BoundedTimezone {
         name: canonical.to_string(),
     })
+}
+
+fn call_timezone_version_get(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("timezone_version_get", args, 0, span)?;
+    Ok(Value::String("2025.2".to_string()))
+}
+
+fn call_timezone_identifiers_list(args: &[Value], span: Span) -> CompileResult<Value> {
+    if args.len() > 2 {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "timezone_identifiers_list()",
+                ArityExpectation::Between { min: 0, max: 2 },
+                args.len(),
+            ),
+        ));
+    }
+
+    let group = match args.first() {
+        Some(value) => {
+            required_date_int_arg("timezone_identifiers_list()", value, "timezoneGroup", span)?
+        }
+        None => PHP_DATETIMEZONE_ALL,
+    };
+    if group == PHP_DATETIMEZONE_PER_COUNTRY {
+        let country_code_is_valid =
+            matches!(args.get(1), Some(Value::String(code)) if code.len() == 2);
+        if !country_code_is_valid {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "timezone_identifiers_list()",
+                    "Argument #2 ($countryCode) must be a two-letter ISO 3166-1 compatible country code when argument #1 ($timezoneGroup) is DateTimeZone::PER_COUNTRY",
+                ),
+            ));
+        }
+    }
+
+    let include_bc = (group & PHP_DATETIMEZONE_ALL_WITH_BC) == PHP_DATETIMEZONE_ALL_WITH_BC;
+    let include_all = (group & PHP_DATETIMEZONE_ALL) == PHP_DATETIMEZONE_ALL;
+    let mut zones = Vec::new();
+    for (zone, zone_group, backward_compat) in BOUNDED_TIMEZONE_IDENTIFIERS {
+        if *backward_compat && !include_bc {
+            continue;
+        }
+        if include_all || (group & *zone_group) != 0 {
+            zones.push(*zone);
+        }
+    }
+
+    let mut array = PhpArray::new();
+    for zone in zones {
+        array
+            .append(Value::String(zone.to_string()))
+            .expect("bounded timezone list append should not exhaust integer keys");
+    }
+    Ok(Value::Array(array))
+}
+
+fn call_timezone_name_from_abbr(args: &[Value], span: Span) -> CompileResult<Value> {
+    if !(1..=3).contains(&args.len()) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "timezone_name_from_abbr()",
+                ArityExpectation::Between { min: 1, max: 3 },
+                args.len(),
+            ),
+        ));
+    }
+
+    let abbreviation = match &args[0] {
+        Value::String(value) => value,
+        other => {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "timezone_name_from_abbr()",
+                    format!(
+                        "abbr argument must be string in the current subset, got {}",
+                        other.type_name()
+                    ),
+                ),
+            ));
+        }
+    };
+    let offset = match args.get(1) {
+        Some(value) => Some(required_date_int_arg(
+            "timezone_name_from_abbr()",
+            value,
+            "utcOffset",
+            span,
+        )?),
+        None => None,
+    };
+    let is_dst = match args.get(2) {
+        Some(value) => Some(required_date_int_arg(
+            "timezone_name_from_abbr()",
+            value,
+            "isDST",
+            span,
+        )?),
+        None => None,
+    };
+
+    let zone = match abbreviation.to_ascii_uppercase().as_str() {
+        "GMT" | "UTC" => Some("UTC"),
+        "CET" => Some("Europe/Berlin"),
+        "EDT" => Some("America/New_York"),
+        "ADT" => Some("America/Halifax"),
+        _ => match (offset, is_dst) {
+            (Some(3_600), Some(1)) => Some("Europe/London"),
+            (Some(3_600), Some(0)) => Some("Europe/Paris"),
+            (Some(-7_200), Some(1)) => Some("America/Sao_Paulo"),
+            (Some(-14_400), Some(1)) => Some("America/New_York"),
+            (Some(-14_400), Some(0)) => Some("America/Halifax"),
+            _ => None,
+        },
+    };
+
+    Ok(zone
+        .map(|zone| Value::String(zone.to_string()))
+        .unwrap_or(Value::Bool(false)))
+}
+
+const BOUNDED_TIMEZONE_IDENTIFIERS: &[(&str, i64, bool)] = &[
+    ("Africa/Abidjan", PHP_DATETIMEZONE_AFRICA, false),
+    ("America/Chicago", PHP_DATETIMEZONE_AMERICA, false),
+    ("America/Halifax", PHP_DATETIMEZONE_AMERICA, false),
+    ("America/New_York", PHP_DATETIMEZONE_AMERICA, false),
+    ("America/Sao_Paulo", PHP_DATETIMEZONE_AMERICA, false),
+    ("Asia/Calcutta", PHP_DATETIMEZONE_ASIA, false),
+    ("Asia/Jerusalem", PHP_DATETIMEZONE_ASIA, false),
+    ("Asia/Kolkata", PHP_DATETIMEZONE_ASIA, false),
+    ("Etc/GMT", PHP_DATETIMEZONE_UTC, false),
+    ("Etc/UTC", PHP_DATETIMEZONE_UTC, false),
+    ("Etc/Universal", PHP_DATETIMEZONE_UTC, false),
+    ("Etc/Zulu", PHP_DATETIMEZONE_UTC, false),
+    ("Europe/Berlin", PHP_DATETIMEZONE_EUROPE, false),
+    ("Europe/London", PHP_DATETIMEZONE_EUROPE, false),
+    ("Europe/Oslo", PHP_DATETIMEZONE_EUROPE, false),
+    ("GMT", PHP_DATETIMEZONE_UTC, false),
+    ("GMT0", PHP_DATETIMEZONE_UTC, false),
+    ("UTC", PHP_DATETIMEZONE_UTC, false),
+    ("US/Eastern", PHP_DATETIMEZONE_AMERICA, true),
+    ("Zulu", PHP_DATETIMEZONE_UTC, false),
+];
+
+fn parse_bounded_strtotime(input: &str, default_timezone: &BoundedTimezone) -> Option<i64> {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if let Some(rest) = trimmed.strip_prefix('@') {
+        let mut end = 0;
+        for (index, ch) in rest.char_indices() {
+            if index == 0 && (ch == '-' || ch == '+') {
+                end = ch.len_utf8();
+                continue;
+            }
+            if ch.is_ascii_digit() {
+                end = index + ch.len_utf8();
+                continue;
+            }
+            break;
+        }
+        if end == 0 || rest[..end].chars().all(|ch| ch == '-' || ch == '+') {
+            return None;
+        }
+        return rest[..end].parse::<i64>().ok();
+    }
+
+    if trimmed.len() == 14 && trimmed.chars().all(|ch| ch.is_ascii_digit()) {
+        let year = parse_ascii_i64(&trimmed[0..4])?;
+        let month = parse_ascii_i64(&trimmed[4..6])?;
+        let day = parse_ascii_i64(&trimmed[6..8])?;
+        let hour = parse_ascii_i64(&trimmed[8..10])?;
+        let minute = parse_ascii_i64(&trimmed[10..12])?;
+        let second = parse_ascii_i64(&trimmed[12..14])?;
+        return timestamp_for_bounded_parts(
+            year,
+            month,
+            day,
+            hour,
+            minute,
+            second,
+            None,
+            default_timezone,
+        );
+    }
+
+    if let Some(timestamp) = parse_bounded_numeric_datetime(trimmed, default_timezone) {
+        return Some(timestamp);
+    }
+
+    parse_bounded_textual_datetime(trimmed, default_timezone)
+}
+
+fn parse_bounded_numeric_datetime(input: &str, default_timezone: &BoundedTimezone) -> Option<i64> {
+    let (body, explicit_offset) = split_bounded_datetime_timezone(input);
+    let separator_index = body.find(' ').or_else(|| body.find('T'))?;
+    let date = &body[..separator_index];
+    let time = &body[separator_index + 1..];
+    if date.len() != 10 || time.len() != 8 {
+        return None;
+    }
+    if &date[4..5] != "-" || &date[7..8] != "-" || &time[2..3] != ":" || &time[5..6] != ":" {
+        return None;
+    }
+    let year = parse_ascii_i64(&date[0..4])?;
+    let month = parse_ascii_i64(&date[5..7])?;
+    let day = parse_ascii_i64(&date[8..10])?;
+    let hour = parse_ascii_i64(&time[0..2])?;
+    let minute = parse_ascii_i64(&time[3..5])?;
+    let second = parse_ascii_i64(&time[6..8])?;
+    timestamp_for_bounded_parts(
+        year,
+        month,
+        day,
+        hour,
+        minute,
+        second,
+        explicit_offset,
+        default_timezone,
+    )
+}
+
+fn parse_bounded_textual_datetime(input: &str, default_timezone: &BoundedTimezone) -> Option<i64> {
+    let tokens: Vec<&str> = input.split_whitespace().collect();
+    if tokens.len() < 4 {
+        return None;
+    }
+    let day = parse_ascii_i64(tokens[0])?;
+    let month = month_number_from_name(tokens[1])?;
+    let year = normalize_mktime_year(parse_ascii_i64(tokens[2])?, true);
+    let (hour, minute, second) = parse_hms_token(tokens[3])?;
+    let explicit_offset = tokens
+        .get(4)
+        .and_then(|token| parse_timezone_offset_token(token));
+    timestamp_for_bounded_parts(
+        year,
+        month,
+        day,
+        hour,
+        minute,
+        second,
+        explicit_offset,
+        default_timezone,
+    )
+}
+
+fn split_bounded_datetime_timezone(input: &str) -> (&str, Option<i64>) {
+    if let Some((body, token)) = input.rsplit_once(' ') {
+        if let Some(offset) = parse_timezone_offset_token(token) {
+            return (body, Some(offset));
+        }
+    }
+    if input.len() > 6 {
+        let suffix = &input[input.len() - 6..];
+        if matches!(suffix.as_bytes().first(), Some(b'+') | Some(b'-')) && &suffix[3..4] == ":" {
+            if let Some(offset) = parse_timezone_offset_token(suffix) {
+                return (&input[..input.len() - 6], Some(offset));
+            }
+        }
+    }
+    if input.len() > 5 {
+        let suffix = &input[input.len() - 5..];
+        if matches!(suffix.as_bytes().first(), Some(b'+') | Some(b'-')) {
+            if let Some(offset) = parse_timezone_offset_token(suffix) {
+                return (&input[..input.len() - 5], Some(offset));
+            }
+        }
+    }
+    (input, None)
+}
+
+fn parse_timezone_offset_token(token: &str) -> Option<i64> {
+    match token.to_ascii_uppercase().as_str() {
+        "UTC" | "GMT" => return Some(0),
+        "CEST" => return Some(7_200),
+        "CET" => return Some(3_600),
+        "EDT" => return Some(-14_400),
+        "EST" => return Some(-18_000),
+        "ADT" => return Some(-10_800),
+        "AST" => return Some(-14_400),
+        _ => {}
+    }
+
+    let sign = match token.as_bytes().first()? {
+        b'+' => 1,
+        b'-' => -1,
+        _ => return None,
+    };
+    let digits = token[1..].replace(':', "");
+    if digits.len() != 4 || !digits.chars().all(|ch| ch.is_ascii_digit()) {
+        return None;
+    }
+    let hours = parse_ascii_i64(&digits[0..2])?;
+    let minutes = parse_ascii_i64(&digits[2..4])?;
+    if hours > 23 || minutes > 59 {
+        return None;
+    }
+    Some(sign * (hours * 3_600 + minutes * 60))
+}
+
+fn timestamp_for_bounded_parts(
+    year: i64,
+    month: i64,
+    day: i64,
+    hour: i64,
+    minute: i64,
+    second: i64,
+    explicit_offset: Option<i64>,
+    default_timezone: &BoundedTimezone,
+) -> Option<i64> {
+    if !(1..=12).contains(&month)
+        || day < 1
+        || day > days_in_month(year, month)
+        || !(0..=23).contains(&hour)
+        || !(0..=59).contains(&minute)
+        || !(0..=59).contains(&second)
+    {
+        return None;
+    }
+    let offset =
+        explicit_offset.unwrap_or_else(|| default_timezone.offset_for_local_date(year, month, day));
+    Some(timestamp_from_local_parts(
+        year, month, day, hour, minute, second, offset,
+    ))
+}
+
+fn parse_hms_token(token: &str) -> Option<(i64, i64, i64)> {
+    if token.len() != 8 || &token[2..3] != ":" || &token[5..6] != ":" {
+        return None;
+    }
+    Some((
+        parse_ascii_i64(&token[0..2])?,
+        parse_ascii_i64(&token[3..5])?,
+        parse_ascii_i64(&token[6..8])?,
+    ))
+}
+
+fn parse_ascii_i64(value: &str) -> Option<i64> {
+    if value.is_empty() || !value.chars().all(|ch| ch.is_ascii_digit()) {
+        return None;
+    }
+    value.parse::<i64>().ok()
+}
+
+fn month_number_from_name(name: &str) -> Option<i64> {
+    match name.to_ascii_lowercase().as_str() {
+        "jan" | "january" => Some(1),
+        "feb" | "february" => Some(2),
+        "mar" | "march" => Some(3),
+        "apr" | "april" => Some(4),
+        "may" => Some(5),
+        "jun" | "june" => Some(6),
+        "jul" | "july" => Some(7),
+        "aug" | "august" => Some(8),
+        "sep" | "september" => Some(9),
+        "oct" | "october" => Some(10),
+        "nov" | "november" => Some(11),
+        "dec" | "december" => Some(12),
+        _ => None,
+    }
 }
 
 fn bounded_month_is_in_dst_window(
@@ -91045,6 +91662,13 @@ fn format_bounded_date_token(
         }
         'o' => iso_year_week(*parts).0.to_string(),
         'Y' => zero_pad(parts.year, 4),
+        'X' => {
+            if parts.year >= 0 {
+                format!("+{}", zero_pad(parts.year, 4))
+            } else {
+                zero_pad(parts.year, 4)
+            }
+        }
         'y' => zero_pad(positive_mod(parts.year, 100), 2),
         'a' => {
             if parts.hour < 12 {

@@ -66145,7 +66145,12 @@ fn is_exact_qualified_function_call_name(name: &str) -> bool {
 fn is_builtin_class_name(name: &str) -> bool {
     matches!(
         name.to_ascii_lowercase().as_str(),
-        "exception" | "pdo" | "pdostatement" | "reflectionclass" | "reflectionmethod"
+        "exception"
+            | "pdo"
+            | "pdostatement"
+            | "datetimezone"
+            | "reflectionclass"
+            | "reflectionmethod"
     )
 }
 
@@ -66252,7 +66257,9 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "bcsqrt",
     "version_compare",
     "microtime",
+    "gettimeofday",
     "time",
+    "strtotime",
     "mktime",
     "gmmktime",
     "date",
@@ -66273,6 +66280,9 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "jddayofweek",
     "date_default_timezone_get",
     "date_default_timezone_set",
+    "timezone_version_get",
+    "timezone_identifiers_list",
+    "timezone_name_from_abbr",
     "setlocale",
     "getenv",
     "putenv",
@@ -66861,6 +66871,20 @@ fn native_builtin_global_constant_c_value(name: &str) -> Option<CValue> {
         "CAL_MONTH_JULIAN_LONG" => Some(CValue::Int("3".to_string())),
         "CAL_MONTH_JEWISH" => Some(CValue::Int("4".to_string())),
         "CAL_MONTH_FRENCH" => Some(CValue::Int("5".to_string())),
+        "DATE_ATOM" => Some(CValue::String("Y-m-d\\TH:i:sP".to_string())),
+        "DATE_COOKIE" => Some(CValue::String("l, d-M-Y H:i:s T".to_string())),
+        "DATE_ISO8601" => Some(CValue::String("Y-m-d\\TH:i:sO".to_string())),
+        "DATE_ISO8601_EXPANDED" => Some(CValue::String("X-m-d\\TH:i:sP".to_string())),
+        "DATE_RFC822" => Some(CValue::String("D, d M y H:i:s O".to_string())),
+        "DATE_RFC850" => Some(CValue::String("l, d-M-y H:i:s T".to_string())),
+        "DATE_RFC1036" => Some(CValue::String("D, d M y H:i:s O".to_string())),
+        "DATE_RFC1123" => Some(CValue::String("D, d M Y H:i:s O".to_string())),
+        "DATE_RFC7231" => Some(CValue::String("D, d M Y H:i:s \\G\\M\\T".to_string())),
+        "DATE_RFC2822" => Some(CValue::String("D, d M Y H:i:s O".to_string())),
+        "DATE_RFC3339" => Some(CValue::String("Y-m-d\\TH:i:sP".to_string())),
+        "DATE_RFC3339_EXTENDED" => Some(CValue::String("Y-m-d\\TH:i:s.vP".to_string())),
+        "DATE_RSS" => Some(CValue::String("D, d M Y H:i:s O".to_string())),
+        "DATE_W3C" => Some(CValue::String("Y-m-d\\TH:i:sP".to_string())),
         "PHP_SESSION_DISABLED" => Some(CValue::Int("0".to_string())),
         "PHP_SESSION_NONE" => Some(CValue::Int("1".to_string())),
         "PHP_SESSION_ACTIVE" => Some(CValue::Int("2".to_string())),

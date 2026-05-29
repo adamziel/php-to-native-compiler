@@ -69,3 +69,74 @@ echo $numeric[0], "|", $numeric[1], "|", $numeric[2], "|", $numeric[3], "|", $nu
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);
 }
+
+#[test]
+fn current_public_date_formats_and_strtotime_subset() {
+    let execution = run_source(
+        r#"<?php
+date_default_timezone_set("Europe/Oslo");
+echo date(DATE_ISO8601, strtotime("2005-07-14 22:30:41")), "\n";
+echo date(DATE_ISO8601, strtotime("2005-07-14 22:30:41 GMT")), "\n";
+echo date(DATE_ISO8601, strtotime("@1121373041 CEST")), "\n";
+date_default_timezone_set("UTC");
+echo gmdate(DATE_COOKIE, mktime(8, 8, 8, 8, 8, 2008)), "\n";
+echo date("r", strtotime("19970523091528")), "\n";
+var_dump(strtotime("mayy 2 2009"));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "2005-07-14T22:30:41+0200\n2005-07-15T00:30:41+0200\n2005-07-14T22:30:41+0200\nFriday, 08-Aug-2008 08:08:08 GMT\nFri, 23 May 1997 09:15:28 +0000\nbool(false)\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn timezone_metadata_helpers_cover_current_public_rows() {
+    let execution = run_source(
+        r#"<?php
+$version = timezone_version_get();
+echo strpos($version, ".") !== false ? "version" : "bad", "\n";
+$zones = timezone_identifiers_list();
+echo is_array($zones) ? "array" : "other", "\n";
+echo in_array("Europe/London", $zones) ? "london" : "missing", "\n";
+echo in_array("America/New_York", $zones) ? "ny" : "missing", "\n";
+echo in_array("UTC", $zones) ? "utc" : "missing", "\n";
+$filtered = timezone_identifiers_list(DateTimezone::EUROPE | DateTimezone::UTC);
+echo in_array("Europe/Oslo", $filtered) ? "oslo" : "missing", "\n";
+echo in_array("America/New_York", $filtered) ? "bad" : "no-ny", "\n";
+var_dump(timezone_name_from_abbr("CET"));
+var_dump(timezone_name_from_abbr("", -14400, 0));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "version\narray\nlondon\nny\nutc\noslo\nno-ny\nstring(13) \"Europe/Berlin\"\nstring(15) \"America/Halifax\"\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn gettimeofday_uses_default_timezone_offset() {
+    let execution = run_source(
+        r#"<?php
+date_default_timezone_set("Asia/Calcutta");
+$time = gettimeofday();
+echo is_array($time) ? "array" : "other";
+echo "|", $time["minuteswest"];
+echo "|", $time["dsttime"], "\n";
+echo is_float(gettimeofday(true)) ? "float" : "other", "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "array|-330|0\nfloat\n");
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}

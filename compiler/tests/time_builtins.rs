@@ -39,24 +39,23 @@ echo is_float($call(true)) ? "float" : "other";
 }
 
 #[test]
-fn microtime_rejects_forms_outside_current_subset() {
-    let no_arg = run_source("<?php\nmicrotime();\n").unwrap_err();
-    assert_eq!(no_arg.phase, Phase::Runtime);
-    assert_eq!(no_arg.line, 2);
-    assert_eq!(no_arg.column, 1);
-    assert_eq!(
-        no_arg.message,
-        "unsupported call microtime(): string return format is not implemented; pass true for float seconds in the current subset"
-    );
+fn microtime_string_mode_returns_php_shape_and_rejects_non_bool_flag() {
+    let execution = run_source(
+        r#"<?php
+foreach ([microtime(), microtime(false)] as $value) {
+    echo is_string($value) ? "string" : "other";
+    echo "|", str_starts_with($value, "0.") ? "fraction" : "bad";
+    echo "|", strpos($value, " ") !== false ? "space" : "bad", "\n";
+}
+"#,
+    )
+    .unwrap();
 
-    let false_arg = run_source("<?php\nmicrotime(false);\n").unwrap_err();
-    assert_eq!(false_arg.phase, Phase::Runtime);
-    assert_eq!(false_arg.line, 2);
-    assert_eq!(false_arg.column, 1);
     assert_eq!(
-        false_arg.message,
-        "unsupported call microtime(): string return format is not implemented; pass true for float seconds in the current subset"
+        execution.stdout,
+        "string|fraction|space\nstring|fraction|space\n"
     );
+    assert_eq!(execution.exit_code, 0);
 
     let non_bool = run_source("<?php\nmicrotime(1);\n").unwrap_err();
     assert_eq!(non_bool.phase, Phase::Runtime);
