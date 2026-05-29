@@ -2120,8 +2120,12 @@ fn is_form_urlencoded_content_type(content_type: &str) -> bool {
 }
 
 fn parse_urlencoded_request_pairs(input: &str) -> PhpArray {
+    parse_urlencoded_pairs(input, "&")
+}
+
+fn parse_urlencoded_pairs(input: &str, separators: &str) -> PhpArray {
     let mut array = PhpArray::new();
-    for pair in input.split('&') {
+    for pair in input.split(|character| separators.contains(character)) {
         if pair.is_empty() {
             continue;
         }
@@ -2288,10 +2292,14 @@ fn parse_request_key_segments(key: &str) -> Option<(String, Vec<RequestKeySegmen
     let mut rest = &key[bracket_start..];
     while !rest.is_empty() {
         if !rest.starts_with('[') {
-            return None;
+            return (!segments.is_empty()).then_some((normalize_request_root_key(root), segments));
         }
         let Some(close_index) = rest.find(']') else {
-            return None;
+            if segments.is_empty() {
+                let malformed = format!("{}_{}", root, &rest[1..]);
+                return Some((normalize_request_root_key(&malformed), Vec::new()));
+            }
+            return Some((normalize_request_root_key(root), segments));
         };
         let segment = &rest[1..close_index];
         if segment.is_empty() {
@@ -51726,6 +51734,9 @@ impl Interpreter {
                 if key == "str_replace" {
                     return self.call_str_replace_with_optional_count(args, span, caller_scope);
                 }
+                if key == "parse_str" {
+                    return self.call_parse_str_direct(args, span, caller_scope);
+                }
                 if key == "call_user_func" {
                     return self.call_user_func_direct(args, span, caller_scope);
                 }
@@ -51896,6 +51907,9 @@ impl Interpreter {
                 }
                 if key == "str_replace" {
                     return self.call_str_replace_with_optional_count(args, span, caller_scope);
+                }
+                if key == "parse_str" {
+                    return self.call_parse_str_direct(args, span, caller_scope);
                 }
                 if key == "call_user_func" {
                     return self.call_user_func_direct(args, span, caller_scope);
@@ -59342,6 +59356,54 @@ impl Interpreter {
         }
 
         Ok(Value::String(result))
+    }
+
+    fn call_parse_str_direct(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        if args.len() != 2 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "parse_str()",
+                    ArityExpectation::Exactly(2),
+                    args.len(),
+                ),
+            ));
+        }
+
+        let input = self.evaluate(&args[0], caller_scope)?;
+        let input = string_compare_argument_bytes("parse_str()", "string", &input, span)?;
+        if input.contains(&0) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "parse_str()",
+                    "Argument #1 ($string) must not contain any null bytes",
+                ),
+            ));
+        }
+        let Expr::Variable(result_name, _) = &args[1] else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "parse_str()",
+                    "result output must be a direct variable in the current subset",
+                ),
+            ));
+        };
+
+        let input = String::from_utf8_lossy(&input).into_owned();
+        let separators = self
+            .ini_value("arg_separator.input")
+            .filter(|value| !value.is_empty())
+            .unwrap_or_else(|| "&".to_string());
+        let parsed = parse_urlencoded_pairs(&input, &separators);
+        caller_scope.write_static(result_name, Value::Array(parsed));
+        Ok(Value::Null)
     }
 
     fn call_mysqli_stmt_bind_param_direct(
@@ -76012,6 +76074,7 @@ impl Interpreter {
             "str_ends_with" => call_str_ends_with(&args, span),
             "strspn" => call_strspn(&args, span),
             "strcspn" => call_strcspn(&args, span),
+            "strpbrk" => call_strpbrk(&args, span),
             "strpos" => call_strpos(&args, span),
             "stripos" => call_strpos_like(&args, "stripos()", true, span),
             "strrpos" => call_strrpos(&args, "strrpos()", false, span),
@@ -76025,6 +76088,14 @@ impl Interpreter {
             "substr_replace" => call_substr_replace(&args, span),
             "substr_count" => call_substr_count(&args, span),
             "str_replace" => call_str_replace(&args, span),
+            "str_getcsv" => call_str_getcsv(&args, span),
+            "parse_str" => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "parse_str()",
+                    "direct result variable binding is required in the current subset",
+                ),
+            )),
             "urlencode" => call_urlencode(&args, span),
             "preg_match" => call_preg_match(&args, span),
             "preg_replace" => call_preg_replace(&args, span),
@@ -89563,6 +89634,13 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_optional_null_param("length", "int"),
             ],
         ),
+        "strpbrk" => (
+            "string|false",
+            vec![
+                reflection_internal_param("string", "string"),
+                reflection_internal_param("characters", "string"),
+            ],
+        ),
         "strpos" | "stripos" | "strrpos" | "strripos" => (
             "int|false",
             vec![
@@ -89610,6 +89688,22 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_param("replace", "array|string"),
                 reflection_internal_param("subject", "array|string"),
                 reflection_internal_optional_reference_null_param("count"),
+            ],
+        ),
+        "str_getcsv" => (
+            "array",
+            vec![
+                reflection_internal_param("string", "string"),
+                reflection_internal_optional_string_param("separator", ","),
+                reflection_internal_optional_string_param("enclosure", "\""),
+                reflection_internal_optional_string_param("escape", "\\"),
+            ],
+        ),
+        "parse_str" => (
+            "void",
+            vec![
+                reflection_internal_param("string", "string"),
+                reflection_internal_untyped_reference_param("result"),
             ],
         ),
         "json_encode" => (
@@ -89978,6 +90072,12 @@ fn reflection_internal_untyped_param(name: &str) -> ReflectionParameterMetadata 
         default: None,
         attributes: Vec::new(),
     }
+}
+
+fn reflection_internal_untyped_reference_param(name: &str) -> ReflectionParameterMetadata {
+    let mut param = reflection_internal_untyped_param(name);
+    param.by_reference = true;
+    param
 }
 
 fn reflection_internal_param(name: &str, type_decl: &str) -> ReflectionParameterMetadata {
@@ -92320,6 +92420,8 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
         )
         | ("chunk_split()", "Argument #2 ($length) must be greater than 0")
         | ("str_split()", "Argument #2 ($length) must be greater than 0")
+        | ("parse_str()", "Argument #1 ($string) must not contain any null bytes")
+        | ("strpbrk()", "Argument #2 ($characters) must be a non-empty string")
         | ("base_convert()", "Argument #2 ($from_base) must be between 2 and 36 (inclusive)")
         | ("base_convert()", "Argument #3 ($to_base) must be between 2 and 36 (inclusive)")
         | ("strncmp()", "Argument #3 ($length) must be greater than or equal to 0")
@@ -92460,6 +92562,15 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
         ("fputcsv()", "escape argument must contain exactly one character") => {
             Some("fputcsv(): Argument #5 ($escape) must be empty or a single character".to_string())
         }
+        ("str_getcsv()", "separator argument must contain exactly one character") => {
+            Some("str_getcsv(): Argument #2 ($separator) must be a single character".to_string())
+        }
+        ("str_getcsv()", "enclosure argument must contain exactly one character") => {
+            Some("str_getcsv(): Argument #3 ($enclosure) must be a single character".to_string())
+        }
+        ("str_getcsv()", "escape argument must contain exactly one character") => Some(
+            "str_getcsv(): Argument #4 ($escape) must be empty or a single character".to_string(),
+        ),
         (
             "pathinfo()",
             "Argument #2 ($flags) must be one of the PATHINFO_* constants"
@@ -92809,6 +92920,7 @@ fn is_builtin(name: &str) -> bool {
             | "str_ends_with"
             | "strspn"
             | "strcspn"
+            | "strpbrk"
             | "strpos"
             | "stripos"
             | "strrpos"
@@ -92822,6 +92934,8 @@ fn is_builtin(name: &str) -> bool {
             | "substr_replace"
             | "substr_count"
             | "str_replace"
+            | "str_getcsv"
+            | "parse_str"
             | "urlencode"
             | "preg_match"
             | "preg_replace"
@@ -103483,6 +103597,63 @@ fn call_strtok_builtin(
     Ok(interpreter_value_from_php_string_bytes(token))
 }
 
+fn call_strpbrk(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("strpbrk", args, 2, span)?;
+    let haystack = string_compare_argument_bytes("strpbrk()", "string", &args[0], span)?;
+    let characters = string_compare_argument_bytes("strpbrk()", "characters", &args[1], span)?;
+    if characters.is_empty() {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "strpbrk()",
+                "Argument #2 ($characters) must be a non-empty string",
+            ),
+        ));
+    }
+
+    let Some(index) = haystack.iter().position(|byte| characters.contains(byte)) else {
+        return Ok(Value::Bool(false));
+    };
+
+    Ok(interpreter_value_from_php_string_bytes(
+        haystack[index..].to_vec(),
+    ))
+}
+
+fn call_str_getcsv(args: &[Value], span: Span) -> CompileResult<Value> {
+    if args.is_empty() || args.len() > 4 {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "str_getcsv()",
+                ArityExpectation::Between { min: 1, max: 4 },
+                args.len(),
+            ),
+        ));
+    }
+
+    let input = string_compare_argument("str_getcsv()", "string", &args[0], span)?;
+    let delimiter =
+        csv_single_character_argument("str_getcsv()", "separator", args.get(1), ',', false, span)?
+            .expect("non-empty separator has a character");
+    let enclosure =
+        csv_single_character_argument("str_getcsv()", "enclosure", args.get(2), '"', false, span)?
+            .expect("non-empty enclosure has a character");
+    let escape =
+        csv_single_character_argument("str_getcsv()", "escape", args.get(3), '\\', true, span)?;
+
+    let fields = parse_bounded_csv_record(&input, delimiter, enclosure, escape);
+    let mut array = PhpArray::new();
+    if fields.len() == 1 && fields[0].is_empty() && input.is_empty() {
+        array.insert(0_i64, Value::Null);
+    } else {
+        for (index, field) in fields.into_iter().enumerate() {
+            array.insert(index as i64, Value::String(field));
+        }
+    }
+    Ok(Value::Array(array))
+}
+
 fn call_substr_count(args: &[Value], span: Span) -> CompileResult<Value> {
     if !(2..=4).contains(&args.len()) {
         return Err(runtime_error(
@@ -113583,6 +113754,7 @@ fn parse_error_reporting_term(value: &str) -> Option<i64> {
 
 fn compat_ini_value(normalized_name: &str) -> Option<&'static str> {
     match normalized_name {
+        "arg_separator.input" => Some("&"),
         "arg_separator.output" => Some("&"),
         "bcmath.scale" => Some("0"),
         "date.default_latitude" => Some("31.7667"),
