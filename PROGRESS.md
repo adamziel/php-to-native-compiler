@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-30 00:18 CEST
+Updated: 2026-05-30 00:50 CEST
 Primary branch: `master`
-Latest source head: `d296f09e fix: add elementary math builtins`
+Latest source head: `56cb7980 fix: add array multisort semantics`
 
 ## Progress Score
 
@@ -146,7 +146,19 @@ Batch015 source checkpoint6 `d296f09e` is integrated with focused lowercase
 `cos()` / `cosh()` / `deg2rad()` / `log10()` / `rad2deg()` / `sin()` /
 `sinh()` / `tan()` / `tanh()` PHPT rows, logged at
 `/home/claude/supervised-php-compiler/state/logs/primary-batch015-p50-elementary-math-focused-20260530T0014/run-tests.log`.
-Batch015 source progress is now 6 checkpoints and +82 expected direct rows.
+Batch015 source checkpoint7 `8877d7b9` is integrated with focused lowercase
+`-p` proof for p47 `array_rand()` / `compact()` semantics. The focused gate
+recorded `12 PASS / 0 FAIL / 0 SKIP` across selected array random and compact
+PHPT rows, logged at
+`/home/claude/supervised-php-compiler/state/logs/primary-batch015-p47-array-rand-compact-focused-20260530T003829+0200`.
+Batch015 source checkpoint8 `56cb7980` is integrated with focused lowercase
+`-p` proof for p57 `array_multisort()` semantics. The focused gate recorded
+`17 PASS / 0 FAIL / 0 SKIP` across selected `array_multisort*` PHPT rows,
+logged at
+`/home/claude/supervised-php-compiler/state/logs/primary-batch015-p57-array-multisort-focused-20260530T004628+0200`.
+Batch015 source progress is now 8 checkpoints and +111 expected direct rows,
+crossing the supervisor threshold for preparing the next pinned full-suite
+gate.
 The public percentage remains `3378 / 20294 = 16.65%` until the next pinned
 full-suite gate is completed, regression-checked, and published here.
 
