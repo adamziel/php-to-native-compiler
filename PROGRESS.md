@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-29 08:55 CEST
+Updated: 2026-05-29 09:15 CEST
 Primary branch: `master`
-Latest source head: `24c63e2c fix: add vprintf semantics`
+Latest source head: `d0155a39 fix: add stripos semantics`
 
 ## Progress Score
 
@@ -135,7 +135,7 @@ stable pinned denominator and does not use the raw runner
 | Batch007 checkpoint10 sharded gate | Done | 2047 / 20294 pinned runnable PHPTs passed (10.09%); 0 regressions from Batch006 checkpoint10 PASS set; run id `phpt-full-batch007-checkpoint10-sharded-20260529T034255Z-php-src-f97ff59-public-906b4636-source-906b4636-stack10` |
 | Batch007 source batch | Complete | Source checkpoints accepted: 10 / 10; checkpoint10 regression-repair sharded gate published |
 | Batch008 checkpoint5 sharded gate | Done | 2180 / 20294 pinned runnable PHPTs passed (10.74%); 0 regressions from Batch007 PASS set; run id `phpt-full-batch008-checkpoint5-sharded-20260529T051801Z-php-src-f97ff59-public-0855b815-source-f408875f` |
-| Batch008 source batch | Started | Source checkpoints accepted: 9 / 10; checkpoint1 is `strncmp()` / `strncasecmp()` focused source proof; checkpoint2 is bcmath `bcmod()` / `bcpow()` / `bcpowmod()` / `bcsqrt()` focused source proof; checkpoint3 is `tempnam()` / `sys_get_temp_dir()` focused source proof; checkpoint4 is bounded date/timezone focused source proof; checkpoint5 is `SplObjectStorage` identity-map focused source proof; checkpoint5 sharded gate published; checkpoint6 is `strrpos()` / `strripos()` focused source proof; checkpoint7 is `fputcsv()` plus local file stream semantics focused source proof; checkpoint8 is `pathinfo()` / `basename()` / `dirname()` focused source proof; checkpoint9 is `vprintf()` focused source proof |
+| Batch008 source batch | Complete | Source checkpoints accepted: 10 / 10; checkpoint1 is `strncmp()` / `strncasecmp()` focused source proof; checkpoint2 is bcmath `bcmod()` / `bcpow()` / `bcpowmod()` / `bcsqrt()` focused source proof; checkpoint3 is `tempnam()` / `sys_get_temp_dir()` focused source proof; checkpoint4 is bounded date/timezone focused source proof; checkpoint5 is `SplObjectStorage` identity-map focused source proof; checkpoint5 sharded gate published; checkpoint6 is `strrpos()` / `strripos()` focused source proof; checkpoint7 is `fputcsv()` plus local file stream semantics focused source proof; checkpoint8 is `pathinfo()` / `basename()` / `dirname()` focused source proof; checkpoint9 is `vprintf()` focused source proof; checkpoint10 is `stripos()` focused source proof |
 
 Focused PHPT history is tracked separately in
 `/home/claude/supervised-php-compiler/state/php-core-suite-focused-history.tsv`.
@@ -143,46 +143,48 @@ Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
 
-Batch008 source checkpoint 9 is primary-integrated under AO supervision. This
+Batch008 source checkpoint 10 is primary-integrated under AO supervision. This
 is focused source proof, not a public percentage change. The public PHPT score
 remains **2180 / 20294 pinned runnable PHPTs = 10.74%** until the next
 supervisor-approved pinned aggregate gate is completed, regression-checked,
 and published here.
 
 - primary source head:
-  `24c63e2c fix: add vprintf semantics`
+  `d0155a39 fix: add stripos semantics`
 - reviewed and integration patch:
-  `/home/claude/supervised-php-compiler/state/patches/ao-integration-p42-vprintf-fbe7b20c-20260529.patch`
+  `/home/claude/supervised-php-compiler/state/patches/ao-integration-p42-stripos-607a1863-20260529.patch`
 - reviewed and integration patch SHA256:
-  `d754859cccd0918d030a304cf7f6c5d63d0f69de3af7a259cb4568684f7c5c11`
-- reviewer gate: phpc-18 completed current-public `fbe7b20c` proof for p42
-  `vprintf()`; artifacts:
-  `/home/claude/supervised-php-compiler/state/workers/batch008-review-p42-vprintf-fbe7b20c-phpc18-20260529.{status.md,report.md,gates.log}`
-- critic gate: phpc-49 and phpc-54 recorded `SAFE-FOR-INTEGRATION` for the
-  exact patch SHA on current public `fbe7b20c`; artifacts:
-  `/home/claude/supervised-php-compiler/state/workers/batch008-critic-p42-vprintf-fbe7b20c-phpc49-20260529.{status.md,report.md}` and
-  `/home/claude/supervised-php-compiler/state/workers/batch008-critic-p42-vprintf-fbe7b20c-phpc54-20260529.{status.md,report.md}`
+  `3e272800dfd7069d0c4bdce0b8f459a67fa8fc2f00045f16ab776d3ad6e6e806`
+- reviewer gate: phpc-18 completed current-public `607a1863` proof for p42
+  `stripos()`; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/batch008-review-p42-stripos-607a1863-phpc18-20260529.{status.md,report.md,gates.log}`
+- critic gate: phpc-33 and phpc-55 recorded `SAFE-FOR-INTEGRATION` for the
+  exact patch SHA on current public `607a1863`; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/batch008-critic-p42-stripos-607a1863-phpc33-20260529.{status.md,report.md}` and
+  `/home/claude/supervised-php-compiler/state/workers/batch008-critic-p42-stripos-607a1863-phpc55-20260529.{status.md,report.md}`
 - handoff gate: p38 completed scratch/no-primary handoff preflight on public
-  `fbe7b20c` and semantic source `0314134d` with SHA verification, clean
+  `607a1863` and semantic source `24c63e2c` with SHA verification, clean
   apply, docs/`PROGRESS.md`/examples exclusion, consumed-scope scan,
   production exact-shape scan, diff check, reverse-apply check, and exported
   patch proof; artifacts:
-  `/home/claude/supervised-php-compiler/state/workers/ao-integration-p42-vprintf-fbe7b20c-20260529.{status.md,report.md,gates.log}`
+  `/home/claude/supervised-php-compiler/state/workers/ao-integration-p42-stripos-607a1863-20260529.{status.md,report.md,gates.log}`
 - supervisor focused gates: PASS for SHA sidecar verification, clean apply
-  over public `fbe7b20c`, `git diff --cached --check`, docs/`PROGRESS.md`/
+  over public `607a1863`, `git diff --cached --check`, docs/`PROGRESS.md`/
   examples exclusion, production exact-shape audit, consumed-scope audit,
-  `cargo fmt`, focused Rust `sprintf_builtin` with 5 PASS and 0 FAIL, `phpc`
-  binary build, `cargo check`, and the focused PHP core PHPT `vprintf()`
-  cluster with 10 PASS and 0 FAIL
+  `cargo fmt`, focused Rust `stripos_builtin` with 4 PASS and 0 FAIL,
+  focused Rust `strrpos_builtin` with 6 PASS and 0 FAIL, `phpc` binary
+  build, `cargo check`, and the focused PHP core PHPT `stripos()` cluster
+  with 13 PASS and 0 FAIL
 - public progress gate: not run for this source checkpoint; focused proof is
   candidate evidence only
 
-This checkpoint implements generalized bounded `vprintf()` support through the
-shared printf-family formatter path, including scalar conversion and common
-format classes exercised by PHP core string, integer, float, bool, char,
-exponential, unsigned, octal, hexadecimal, and string-variation PHPTs. It is
-not keyed to PHPT filenames, expected output, fixture names, public hashes,
-batch labels, or checkpoint markers.
+This checkpoint implements generalized bounded `stripos()` support through the
+forward string-search helper path, including scalar/null string conversion,
+ASCII-only case-insensitive matching, optional positive and negative offsets,
+empty-needle handling, PHP-shaped offset `ValueError` diagnostics for the
+current subset, dynamic callable membership, and reflection metadata. It is not
+keyed to PHPT filenames, expected output, fixture names, public hashes, batch
+labels, or checkpoint markers.
 
 Batch008 source checkpoint 5 is primary-integrated under AO supervision and
 published through a supervisor-approved sharded publication gate. The public
