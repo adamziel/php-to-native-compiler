@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-29 03:52 CEST
+Updated: 2026-05-29 04:06 CEST
 Primary branch: `master`
-Latest source head: `e35a5d2c fix: reject invalid intersection type members`
+Latest source head: `b19d2637 fix: add generator rewind iteration semantics`
 
 ## Progress Score
 
@@ -108,12 +108,37 @@ stable pinned denominator and does not use the raw runner
 | Batch004 source batch | Complete | Batch004 source checkpoints accepted: 10 / 10; checkpoint10 sharded gate published |
 | Batch005 source batch | Complete | Batch005 source checkpoints accepted: 10 / 10; checkpoint10 sharded gate published |
 | Batch006 source batch | Complete | Source checkpoints accepted: 10 / 10; checkpoint10 sharded gate published |
+| Batch007 source batch | In progress | Source checkpoints accepted: 1 / 10; public score unchanged until pinned aggregate gate |
 
 Focused PHPT history is tracked separately in
 `/home/claude/supervised-php-compiler/state/php-core-suite-focused-history.tsv`.
 Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
+
+Batch007 source checkpoint 1 is primary-integrated under AO supervision. This
+is a source checkpoint with focused proof, not a percentage change. The public
+PHPT score remains **1836 / 20294 pinned runnable PHPTs = 9.05%** until the
+next pinned full-suite or supervisor-approved sharded publication gate is
+completed, regression-checked, and published here.
+
+- primary source head:
+  `b19d2637 fix: add generator rewind iteration semantics`
+- reviewed and integration patch:
+  `/home/claude/supervised-php-compiler/state/patches/ao-integration-p51-generator-rewind-iterator-02352978-20260529.patch`
+- reviewed and integration patch SHA256:
+  `664053218337970f6658d0e387eb09cdb50ed5e7cebc88ec4dbf3b5839b954ae`
+- reviewer gate: phpc-38 recorded `FINAL-HANDOFF /
+  READY-FOR-SUPERVISOR-APPLY`; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/ao-integration-p51-generator-rewind-iterator-02352978-20260529.{status.md,report.md,gates.log}`
+- supervisor focused gates: PASS for clean apply over public `02352978`,
+  `git diff --cached --check`, docs/PROGRESS/examples exclusion, production
+  exact-shape audit, `cargo fmt --all -- --check`, focused Rust
+  `generator_rewind_foreach_and_func_get_use_materialized_yields`,
+  `cargo build -p phpc`, and the focused 3-file generator PHPT cluster with
+  3 PASS and 0 FAIL
+- public progress gate: not run for this source checkpoint; next public score
+  update waits for the Batch007 pinned aggregate gate
 
 Batch006 source checkpoint 10 is primary-integrated under AO supervision. The
 Batch006 checkpoint10 pinned sharded publication gate is now published with
