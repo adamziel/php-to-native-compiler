@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-29 01:10 CEST
+Updated: 2026-05-29 02:29 CEST
 Primary branch: `master`
-Latest source head: `94a9cfd9 fix: add C locale setlocale and strcoll`
+Latest source head: `0f844622 fix: add func_get call-frame semantics`
 
 ## Progress Score
 
@@ -94,7 +94,7 @@ stable pinned denominator and does not use the raw runner
 | Batch005 checkpoint10 sharded gate | Done | 1618 / 20294 pinned runnable PHPTs passed (7.97%); 3 PASS-to-SKIP platform guards from Windows-only PHPTs; run id `phpt-full-batch005-checkpoint10-sharded-20260528T224229Z-php-src-f97ff59-public-fd74fba9-source-1c4da4c5-stack10` |
 | Batch004 source batch | Complete | Batch004 source checkpoints accepted: 10 / 10; checkpoint10 sharded gate published |
 | Batch005 source batch | Complete | Batch005 source checkpoints accepted: 10 / 10; checkpoint10 sharded gate published |
-| Batch006 source batch | Started | Source checkpoints accepted: 1 / 4 gate threshold; checkpoint1 integrates p42 C/POSIX `setlocale()` and C-locale `strcoll()` capability |
+| Batch006 source batch | Started | Source checkpoints accepted: 2 / 10 gate threshold; checkpoint2 integrates p51 `func_get*` call-frame semantics |
 
 Focused PHPT history is tracked separately in
 `/home/claude/supervised-php-compiler/state/php-core-suite-focused-history.tsv`.
@@ -102,9 +102,53 @@ Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
 
-Batch006 source checkpoint 1 is primary-integrated under AO supervision. This
+Batch006 source checkpoint 2 is primary-integrated under AO supervision. This
 is a source checkpoint with focused proof, not a percentage change. The public
 PHPT score remains **1618 / 20294 pinned runnable PHPTs = 7.97%** until the
+next pinned full-suite or supervisor-approved sharded publication gate is
+completed, regression-checked, and published here.
+
+- primary source head:
+  `0f844622 fix: add func_get call-frame semantics`
+- reviewed and integration patch:
+  `/home/claude/supervised-php-compiler/state/patches/ao-integration-p51-func-get-successor2-5bf8ccd3-20260529.patch`
+- reviewed and integration patch SHA256:
+  `d40babd8f5b3d7c2fe1ec98d7b1707ddb4398882ea5f2ce549db77fce5177d3e`
+- staged integration diff:
+  `/home/claude/supervised-php-compiler/state/patches/ao-integration-p51-func-get-callframe-successor2-5bf8ccd3-20260529.staged.patch`
+- staged integration diff SHA256:
+  `fc69927875edd1e377ffd8ad871ede43f9357f98393fb22f09168f328b79d19c`
+- reviewer gate: p7 recorded `FINAL GO-CANDIDATE /
+  FOCUSED-GATES-PASS / PHPT-PASS`; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/batch006-review-dynamic-reference-func-get-callframe-successor2-5bf8ccd3-20260529.{status.md,report.md,gates.log}`
+- critic gate: phpc-33 recorded `SAFE-FOR-INTEGRATION`; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/batch006-critic-dynamic-reference-func-get-callframe-successor2-5bf8ccd3-20260529.{status.md,report.md}`
+- integration handoff: phpc-38 recorded `FINAL-HANDOFF /
+  READY-FOR-SUPERVISOR-APPLY`; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/ao-integration-p51-func-get-successor2-5bf8ccd3-20260529.{status.md,report.md,gates.log}`
+- supervisor focused gates: PASS for `git apply --check`,
+  `git diff --check`, `cargo fmt --all -- --check`, focused Rust
+  `dynamic_features func_get`, focused Rust
+  `forbidden_scope_introspection_builtins_report_dynamic_call_error`,
+  `cargo build -p phpc`, and the focused 20-file PHPT `func_get*` /
+  `func_num_args()` cluster
+- full PHPT suite: not run for this single source checkpoint; Batch006 broad
+  gate is held until 10 accepted source checkpoints, or until the supervisor
+  explicitly opens a regression/publication gate
+
+This checkpoint generalizes active user call-frame argument visibility for
+`func_get_arg()`, `func_get_args()`, and `func_num_args()`, including extra
+positional arguments, global-scope and invalid-position PHP-shaped diagnostics,
+and fully-qualified global constant reads through the existing constant path.
+The generator/yield row remains a separate runtime/source blocker. This is not
+keyed to a PHPT filename, expected-output fixture, batch marker, public hash, or
+test-name branch.
+
+Previous Batch006 source checkpoint 1 was C/POSIX locale support:
+
+Batch006 source checkpoint 1 is primary-integrated under AO supervision. This
+is a source checkpoint with focused proof, not a percentage change. The public
+PHPT score remained **1618 / 20294 pinned runnable PHPTs = 7.97%** until the
 next pinned full-suite or supervisor-approved sharded publication gate is
 completed, regression-checked, and published here.
 
@@ -131,8 +175,8 @@ completed, regression-checked, and published here.
   PHPT `ext/standard/tests/strings/strcoll.phpt` plus custom C/POSIX
   `setlocale()` coverage (2/2)
 - full PHPT suite: not run for this single source checkpoint; Batch006 broad
-  gate is due after 4 accepted source checkpoints or after 45 minutes with at
-  least 75 expected pass lift, whichever comes first
+  gate is held until 10 accepted source checkpoints, or until the supervisor
+  explicitly opens a regression/publication gate
 
 This checkpoint generalizes bounded C/POSIX locale support: `LC_*` constants,
 `setlocale()` metadata and argument handling for the supported subset, and
