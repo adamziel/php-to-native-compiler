@@ -12704,6 +12704,9 @@ impl Interpreter {
                 if let Some(message) = fatal_memory_error_message(&error) {
                     return self.fatal_runtime_message_execution(&error, &message);
                 }
+                if is_positional_argument_after_named_argument_error(&error) {
+                    return self.fatal_runtime_message_execution(&error, &error.message);
+                }
                 if let Some((error_class_name, error_message)) =
                     catchable_php_error_class_and_message(&error)
                 {
@@ -43826,6 +43829,8 @@ impl Interpreter {
             return self.call_empty(args, span, caller_scope);
         }
 
+        ensure_no_positional_arguments_after_named_arguments(args)?;
+
         self.call_direct_named_function(name, args, span, caller_scope)
     }
 
@@ -43849,6 +43854,7 @@ impl Interpreter {
                 .call_function(name, args, span, caller_scope)
                 .map(|value| (value, None));
         }
+        ensure_no_positional_arguments_after_named_arguments(args)?;
         if key == "call_user_func" || fallback_key.as_deref() == Some("call_user_func") {
             return self.call_user_func_direct_with_array_copy_source(args, span, caller_scope);
         }
@@ -46684,6 +46690,7 @@ impl Interpreter {
                 ),
             ));
         }
+        ensure_call_argument_order_in_expression(&args[1])?;
 
         let callback = self.evaluate(&args[0], caller_scope)?;
 
@@ -46782,6 +46789,7 @@ impl Interpreter {
                 ),
             ));
         }
+        ensure_call_argument_order_in_expression(&args[1])?;
 
         let callback = self.evaluate(&args[0], caller_scope)?;
 
@@ -47437,6 +47445,7 @@ impl Interpreter {
                 ),
             ));
         }
+        ensure_call_argument_order_in_expression(&args[1])?;
 
         let callback = self.evaluate(&args[0], caller_scope)?;
         match &callback {
@@ -48261,7 +48270,7 @@ impl Interpreter {
 
         let mut values = Vec::with_capacity(items.len());
         let mut reference_bindings = Vec::new();
-        let uses_named_arguments = items.iter().any(|item| {
+        let has_literal_string_key = items.iter().any(|item| {
             item.key.as_ref().is_some_and(|key_expr| {
                 matches!(
                     self.evaluate_array_key_for_literal_check(key_expr),
@@ -48269,7 +48278,15 @@ impl Interpreter {
                 )
             })
         });
-        if uses_named_arguments {
+        let has_dynamic_key = items.iter().any(|item| {
+            item.key.as_ref().is_some_and(|key_expr| {
+                self.evaluate_array_key_for_literal_check(key_expr)
+                    .is_none()
+            })
+        });
+        let can_route_dynamic_named_reference_keys =
+            has_dynamic_key && !function.params.iter().any(|param| param.is_variadic);
+        if has_literal_string_key || can_route_dynamic_named_reference_keys {
             let (values, reference_bindings) = self
                 .evaluate_literal_call_user_func_array_named_reference_arguments(
                     function,
@@ -75463,6 +75480,130 @@ fn format_stack_trace_arg(value: &Value) -> String {
         Value::Object(object) => format!("Object({})", object.class_name()),
         Value::Closure(_) => "Object(Closure)".to_string(),
         Value::Resource(id) => format!("Resource id #{id}"),
+    }
+}
+
+const POSITIONAL_ARGUMENT_AFTER_NAMED_ARGUMENT_MESSAGE: &str =
+    "Cannot use positional argument after named argument";
+
+fn positional_argument_after_named_argument_error(span: Span) -> Diagnostic {
+    Diagnostic::new(
+        Phase::Runtime,
+        span.line,
+        span.column,
+        POSITIONAL_ARGUMENT_AFTER_NAMED_ARGUMENT_MESSAGE,
+    )
+}
+
+fn is_positional_argument_after_named_argument_error(error: &Diagnostic) -> bool {
+    error.phase == Phase::Runtime
+        && error.message == POSITIONAL_ARGUMENT_AFTER_NAMED_ARGUMENT_MESSAGE
+}
+
+fn ensure_no_positional_arguments_after_named_arguments(args: &[Expr]) -> CompileResult<()> {
+    let mut saw_named = false;
+    for arg in args {
+        match arg {
+            Expr::NamedArgument { expr, .. } => {
+                saw_named = true;
+                ensure_call_argument_order_in_expression(expr)?;
+            }
+            Expr::SpreadArgument { expr, .. } => {
+                ensure_call_argument_order_in_expression(expr)?;
+            }
+            expr => {
+                if saw_named {
+                    return Err(positional_argument_after_named_argument_error(expr.span()));
+                }
+                ensure_call_argument_order_in_expression(expr)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn ensure_call_argument_order_in_expression(expr: &Expr) -> CompileResult<()> {
+    match expr {
+        Expr::Call { args, .. }
+        | Expr::DynamicCall { args, .. }
+        | Expr::MethodCall { args, .. }
+        | Expr::DynamicMethodCall { args, .. }
+        | Expr::ParentMethodCall { args, .. }
+        | Expr::StaticMethodCall { args, .. }
+        | Expr::ObjectStaticMethodCall { args, .. }
+        | Expr::SelfMethodCall { args, .. }
+        | Expr::LateStaticMethodCall { args, .. }
+        | Expr::New { args, .. } => ensure_no_positional_arguments_after_named_arguments(args),
+        Expr::Array { items, .. } => {
+            for item in items {
+                if let Some(key) = &item.key {
+                    ensure_call_argument_order_in_expression(key)?;
+                }
+                ensure_call_argument_order_in_expression(&item.value)?;
+            }
+            Ok(())
+        }
+        Expr::NamedArgument { expr, .. } | Expr::SpreadArgument { expr, .. } => {
+            ensure_call_argument_order_in_expression(expr)
+        }
+        Expr::Index { target, index, .. } => {
+            ensure_call_argument_order_in_expression(target)?;
+            ensure_call_argument_order_in_expression(index)
+        }
+        Expr::AppendIndex { target, .. }
+        | Expr::Clone { expr: target, .. }
+        | Expr::ErrorControl { expr: target, .. }
+        | Expr::Include { path: target, .. }
+        | Expr::Require { path: target, .. }
+        | Expr::Cast { expr: target, .. } => ensure_call_argument_order_in_expression(target),
+        Expr::Property { target, .. }
+        | Expr::ObjectClassNameConstant { target, .. }
+        | Expr::ObjectStaticClassConstant { target, .. }
+        | Expr::ObjectStaticProperty { target, .. } => {
+            ensure_call_argument_order_in_expression(target)
+        }
+        Expr::DynamicProperty {
+            target, property, ..
+        }
+        | Expr::DynamicObjectStaticProperty {
+            target, property, ..
+        } => {
+            ensure_call_argument_order_in_expression(target)?;
+            ensure_call_argument_order_in_expression(property)
+        }
+        Expr::DynamicStaticProperty { property, .. }
+        | Expr::DynamicSelfStaticProperty { property, .. }
+        | Expr::DynamicParentStaticProperty { property, .. }
+        | Expr::DynamicLateStaticProperty { property, .. } => {
+            ensure_call_argument_order_in_expression(property)
+        }
+        Expr::Binary { left, right, .. } => {
+            ensure_call_argument_order_in_expression(left)?;
+            ensure_call_argument_order_in_expression(right)
+        }
+        Expr::Unary { expr, .. } => ensure_call_argument_order_in_expression(expr),
+        Expr::Ternary {
+            condition,
+            if_true,
+            if_false,
+            ..
+        } => {
+            ensure_call_argument_order_in_expression(condition)?;
+            ensure_call_argument_order_in_expression(if_true)?;
+            ensure_call_argument_order_in_expression(if_false)
+        }
+        Expr::ShortTernary {
+            condition,
+            if_false,
+            ..
+        } => {
+            ensure_call_argument_order_in_expression(condition)?;
+            ensure_call_argument_order_in_expression(if_false)
+        }
+        Expr::Assign { expr, .. } | Expr::CompoundAssign { expr, .. } => {
+            ensure_call_argument_order_in_expression(expr)
+        }
+        _ => Ok(()),
     }
 }
 

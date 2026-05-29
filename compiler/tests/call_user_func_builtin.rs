@@ -1240,6 +1240,53 @@ $left->probe($right);
 }
 
 #[test]
+fn call_user_func_array_reports_nested_positional_after_named_before_callback_lookup() {
+    let execution = run_source(
+        r#"<?php
+call_user_func_array("missing_func", array_slice(array: $args, 1, 2));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "Fatal error: Cannot use positional argument after named argument in Command line code on line 2"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 255);
+}
+
+#[test]
+fn call_user_func_array_binds_dynamic_string_keyed_reference_argument_arrays() {
+    let execution = run_source(
+        r#"<?php
+function wp_refcow_dynamic_named(&$first, &$second, $label = "ok") {
+    $first = $first . ":first";
+    $second = $second . ":second";
+    echo $label, ":", $first, ":", $second, "
+";
+}
+
+$left = "L";
+$right = "R";
+$secondKey = "second";
+$firstKey = "fir" . "st";
+call_user_func_array("wp_refcow_dynamic_named", array($secondKey => &$right, $firstKey => &$left));
+echo $left, "|", $right;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "ok:L:first:R:second
+L:first|R:second"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn call_user_func_array_binds_string_keyed_reference_argument_arrays() {
     let execution = run_source(
         r#"<?php
