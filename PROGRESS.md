@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-29 23:57 CEST
+Updated: 2026-05-30 00:18 CEST
 Primary branch: `master`
-Latest source head: `e165ef07 fix: add strtok and substr_replace semantics`
+Latest source head: `d296f09e fix: add elementary math builtins`
 
 ## Progress Score
 
@@ -140,7 +140,13 @@ Batch015 source checkpoint5 `e165ef07` is integrated with focused lowercase
 gate recorded `10 PASS / 0 FAIL / 0 SKIP` across selected string-token and
 replacement PHPT rows, logged at
 `/home/claude/supervised-php-compiler/state/logs/primary-batch015-p39-strtok-substr-focused-20260529T2356/run-tests.log`.
-Batch015 source progress is now 5 checkpoints and +70 expected direct rows.
+Batch015 source checkpoint6 `d296f09e` is integrated with focused lowercase
+`-p` proof for p50 elementary math builtins. The focused gate recorded
+`12 PASS / 0 FAIL / 0 SKIP` across selected `acos()` / `asin()` / `atan()` /
+`cos()` / `cosh()` / `deg2rad()` / `log10()` / `rad2deg()` / `sin()` /
+`sinh()` / `tan()` / `tanh()` PHPT rows, logged at
+`/home/claude/supervised-php-compiler/state/logs/primary-batch015-p50-elementary-math-focused-20260530T0014/run-tests.log`.
+Batch015 source progress is now 6 checkpoints and +82 expected direct rows.
 The public percentage remains `3378 / 20294 = 16.65%` until the next pinned
 full-suite gate is completed, regression-checked, and published here.
 
