@@ -1364,6 +1364,7 @@ impl Expr {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UnaryOp {
+    Plus,
     Negate,
     Not,
     BitwiseNot,

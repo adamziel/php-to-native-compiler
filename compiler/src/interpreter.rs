@@ -74061,30 +74061,16 @@ impl Interpreter {
             ));
         }
 
-        let format = match &args[0] {
-            Value::String(value) => value,
-            other => {
-                return Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "printf()",
-                        format!(
-                            "format argument must be string in the current subset, got {}",
-                            other.type_name()
-                        ),
-                    ),
-                ));
-            }
-        };
+        let format = self.sprintf_format_argument("printf()", &args[0], span)?;
 
-        let output = bounded_sprintf("printf()", format, &args[1..], span)?;
+        let output = self.bounded_sprintf("printf()", &format, &args[1..], span)?;
         let length = output.as_bytes().len() as i64;
         self.append_output_at(&output, span);
         Ok(Value::Int(length))
     }
 
     fn call_vprintf(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
-        let output = call_vsprintf(args, "vprintf()", span)?;
+        let output = self.call_vsprintf(args, "vprintf()", span)?;
         let length = output.as_bytes().len() as i64;
         self.append_output_at(&output, span);
         Ok(Value::Int(length))
@@ -74098,23 +74084,9 @@ impl Interpreter {
             ));
         }
 
-        let format = match &args[1] {
-            Value::String(value) => value,
-            other => {
-                return Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "fprintf()",
-                        format!(
-                            "format argument must be string in the current subset, got {}",
-                            other.type_name()
-                        ),
-                    ),
-                ));
-            }
-        };
+        let format = self.sprintf_format_argument("fprintf()", &args[1], span)?;
 
-        let output = bounded_sprintf("fprintf()", format, &args[2..], span)?;
+        let output = self.bounded_sprintf("fprintf()", &format, &args[2..], span)?;
         let length = output.as_bytes().len() as i64;
         self.write_stream_string("fprintf", &args[0], &output, span)?;
         Ok(Value::Int(length))
@@ -74122,7 +74094,7 @@ impl Interpreter {
 
     fn call_vfprintf(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("vfprintf()", args, 3, span)?;
-        let output = call_vsprintf(&args[1..], "vfprintf()", span)?;
+        let output = self.call_vsprintf(&args[1..], "vfprintf()", span)?;
         let length = output.as_bytes().len() as i64;
         self.write_stream_string("vfprintf", &args[0], &output, span)?;
         Ok(Value::Int(length))
@@ -74376,10 +74348,11 @@ impl Interpreter {
             "error_reporting" => self.call_error_reporting(args, span),
             "ignore_user_abort" => self.call_ignore_user_abort(args, span),
             "php_sapi_name" => call_php_sapi_name(&args, span),
+            "json_encode" => call_json_encode(&args, span),
             "printf" => self.call_printf(&args, span),
             "fprintf" => self.call_fprintf(&args, span),
-            "sprintf" => call_sprintf(&args, span),
-            "vsprintf" => call_vsprintf_value(&args, span),
+            "sprintf" => self.call_sprintf(&args, span),
+            "vsprintf" => self.call_vsprintf_value(&args, span),
             "vprintf" => self.call_vprintf(&args, span),
             "vfprintf" => self.call_vfprintf(&args, span),
             "func_num_args" => self.call_func_num_args(&args, span),
@@ -81804,6 +81777,7 @@ impl Interpreter {
 
     fn apply_unary(&self, op: UnaryOp, value: Value, span: Span) -> CompileResult<Value> {
         let result: RuntimeResult<Value> = match op {
+            UnaryOp::Plus => Value::Int(0).php_add(&value),
             UnaryOp::Negate => value.php_negate(),
             UnaryOp::Not => Ok(Value::Bool(!value.is_truthy())),
             UnaryOp::BitwiseNot => value.php_bitwise_not(),
@@ -87650,6 +87624,10 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_optional_reference_null_param("count"),
             ],
         ),
+        "json_encode" => (
+            "string|false",
+            vec![reflection_internal_param("value", "mixed")],
+        ),
         "printf" => (
             "int",
             vec![
@@ -89706,6 +89684,10 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
         return Some(("ArgumentCountError", message));
     }
 
+    if let Some(message) = sprintf_argument_count_error_message(error) {
+        return Some(("ArgumentCountError", message));
+    }
+
     if let Some(message) = reflection_constructor_argument_count_error_message(error) {
         return Some(("TypeError", message));
     }
@@ -89864,6 +89846,13 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
             return Some(("Error", error.message.clone()));
         }
 
+        if let Some(message) = error
+            .message
+            .strip_prefix("unsupported call sprintf(): Object of class ")
+        {
+            return Some(("Error", format!("Object of class {message}")));
+        }
+
         if is_invalid_callback_argument_message(&error.message) {
             return Some(("TypeError", error.message.clone()));
         }
@@ -89982,6 +89971,33 @@ fn chunk_split_argument_count_error_message(error: &Diagnostic) -> Option<String
     } else {
         None
     }
+}
+
+fn sprintf_argument_count_error_message(error: &Diagnostic) -> Option<String> {
+    if error.phase != Phase::Runtime {
+        return None;
+    }
+
+    if let Some(actual) = error
+        .message
+        .strip_prefix("arity mismatch for sprintf(): expected at least 1 argument(s), got ")
+        .and_then(|actual| actual.parse::<usize>().ok())
+    {
+        return Some(format!(
+            "sprintf() expects at least 1 argument, {actual} given"
+        ));
+    }
+
+    let message = error
+        .message
+        .strip_prefix("unsupported call sprintf(): ")
+        .or_else(|| error.message.strip_prefix("unsupported call printf(): "))
+        .or_else(|| error.message.strip_prefix("unsupported call vsprintf(): "))
+        .or_else(|| error.message.strip_prefix("unsupported call vprintf(): "))?;
+    if message.ends_with(" given") && message.contains(" arguments are required, ") {
+        return Some(message.to_string());
+    }
+    None
 }
 
 fn reflection_constructor_argument_count_error_message(error: &Diagnostic) -> Option<String> {
@@ -90135,6 +90151,21 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
             "str_pad(): Argument #4 ($pad_type) must be STR_PAD_LEFT, STR_PAD_RIGHT, or STR_PAD_BOTH"
                 .to_string(),
         ),
+        (
+            "sprintf()" | "printf()" | "vsprintf()" | "vprintf()" | "fprintf()" | "vfprintf()",
+            "Missing format specifier at end of string"
+            | "Precision must be an integer"
+            | "Precision must be between -1 and 2147483647"
+            | "Precision must be between 0 and 2147483647"
+            | "Precision -1 is only supported for %g, %G, %h and %H"
+            | "Width must be an integer"
+            | "Width must be between 0 and 2147483647",
+        ) => Some(message.to_string()),
+        ("sprintf()" | "printf()" | "vsprintf()" | "vprintf()" | "fprintf()" | "vfprintf()", message)
+            if message.starts_with("Unknown format specifier ") =>
+        {
+            Some(message.to_string())
+        }
         (
             "bcadd()"
             | "bcsub()"
@@ -90557,6 +90588,7 @@ fn is_builtin(name: &str) -> bool {
             | "error_reporting"
             | "ignore_user_abort"
             | "php_sapi_name"
+            | "json_encode"
             | "printf"
             | "fprintf"
             | "vprintf"
@@ -103478,87 +103510,188 @@ fn clamp_i128_to_i64(value: i128) -> i64 {
     value.clamp(i64::MIN as i128, i64::MAX as i128) as i64
 }
 
-fn call_sprintf(args: &[Value], span: Span) -> CompileResult<Value> {
-    if args.is_empty() {
-        return Err(runtime_error(
-            span,
-            RuntimeError::arity_mismatch("sprintf()", ArityExpectation::AtLeast(1), args.len()),
-        ));
-    }
+fn call_json_encode(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("json_encode()", args, 1, span)?;
+    json_encode_value(&args[0], span).map(Value::String)
+}
 
-    let format = match &args[0] {
-        Value::String(value) => value,
-        other => {
+fn json_encode_value(value: &Value, span: Span) -> CompileResult<String> {
+    Ok(match value {
+        Value::Null => "null".to_string(),
+        Value::Bool(value) => value.to_string(),
+        Value::Int(value) => value.to_string(),
+        Value::Float(value) => php_default_precision_float_string(*value),
+        Value::String(value) => json_quote_string(value),
+        Value::BinaryString(value) => {
+            let value = tree_walk_binary_string_utf8(value, "json_encode()", span)?;
+            json_quote_string(value)
+        }
+        Value::Array(array) if json_array_is_list(array) => {
+            let mut output = String::from("[");
+            for (index, entry) in array.entries().iter().enumerate() {
+                if index > 0 {
+                    output.push(',');
+                }
+                output.push_str(&json_encode_value(entry.value(), span)?);
+            }
+            output.push(']');
+            output
+        }
+        Value::Array(array) => {
+            let mut output = String::from("{");
+            for (index, entry) in array.entries().iter().enumerate() {
+                if index > 0 {
+                    output.push(',');
+                }
+                let key = match &entry.key {
+                    ArrayKey::Int(value) => value.to_string(),
+                    ArrayKey::String(value) => value.clone(),
+                };
+                output.push_str(&json_quote_string(&key));
+                output.push(':');
+                output.push_str(&json_encode_value(entry.value(), span)?);
+            }
+            output.push('}');
+            output
+        }
+        Value::Object(object) if object.properties().is_empty() => "{}".to_string(),
+        Value::Object(object) => {
+            let mut output = String::from("{");
+            for (index, property) in object.properties().iter().enumerate() {
+                if index > 0 {
+                    output.push(',');
+                }
+                output.push_str(&json_quote_string(property.name()));
+                output.push(':');
+                output.push_str(&json_encode_value(&property.value_cloned(), span)?);
+            }
+            output.push('}');
+            output
+        }
+        Value::Resource(_) | Value::Closure(_) => "null".to_string(),
+    })
+}
+
+fn json_array_is_list(array: &PhpArray) -> bool {
+    array
+        .entries()
+        .iter()
+        .enumerate()
+        .all(|(index, entry)| matches!(entry.key, ArrayKey::Int(key) if key == index as i64))
+}
+
+fn json_quote_string(value: &str) -> String {
+    let mut output = String::from("\"");
+    for ch in value.chars() {
+        match ch {
+            '"' => output.push_str("\\\""),
+            '\\' => output.push_str("\\\\"),
+            '\n' => output.push_str("\\n"),
+            '\r' => output.push_str("\\r"),
+            '\t' => output.push_str("\\t"),
+            ch if ch < ' ' => output.push_str(&format!("\\u{:04x}", ch as u32)),
+            ch => output.push(ch),
+        }
+    }
+    output.push('"');
+    output
+}
+
+impl Interpreter {
+    fn call_sprintf(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if args.is_empty() {
             return Err(runtime_error(
                 span,
-                RuntimeError::unsupported_call(
-                    "sprintf()",
-                    format!(
-                        "format argument must be string in the current subset, got {}",
-                        other.type_name()
-                    ),
-                ),
+                RuntimeError::arity_mismatch("sprintf()", ArityExpectation::AtLeast(1), args.len()),
             ));
         }
-    };
 
-    bounded_sprintf("sprintf()", format, &args[1..], span).map(Value::String)
-}
+        let format = self.sprintf_format_argument("sprintf()", &args[0], span)?;
+        self.bounded_sprintf("sprintf()", &format, &args[1..], span)
+            .map(Value::String)
+    }
 
-fn call_vsprintf_value(args: &[Value], span: Span) -> CompileResult<Value> {
-    call_vsprintf(args, "vsprintf()", span).map(Value::String)
-}
+    fn call_vsprintf_value(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        self.call_vsprintf(args, "vsprintf()", span)
+            .map(Value::String)
+    }
 
-fn call_vsprintf(args: &[Value], function: &'static str, span: Span) -> CompileResult<String> {
-    expect_arity(function, args, 2, span)?;
+    fn call_vsprintf(
+        &mut self,
+        args: &[Value],
+        function: &'static str,
+        span: Span,
+    ) -> CompileResult<String> {
+        expect_arity(function, args, 2, span)?;
 
-    let format = match &args[0] {
-        Value::String(value) => value,
-        other => {
+        let format = self.sprintf_format_argument(function, &args[0], span)?;
+
+        let Value::Array(array) = &args[1] else {
             return Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
                     function,
                     format!(
-                        "format argument must be string in the current subset, got {}",
-                        other.type_name()
+                        "values argument must be array in the current subset, got {}",
+                        args[1].type_name()
                     ),
                 ),
             ));
-        }
-    };
+        };
 
-    let Value::Array(array) = &args[1] else {
-        return Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                function,
-                format!(
-                    "values argument must be array in the current subset, got {}",
-                    args[1].type_name()
-                ),
-            ),
-        ));
-    };
-
-    let values = array
-        .entries()
-        .iter()
-        .map(|entry| entry.value_cloned())
-        .collect::<Vec<_>>();
-    bounded_sprintf(function, format, &values, span)
+        let values = array
+            .entries()
+            .iter()
+            .map(|entry| entry.value_cloned())
+            .collect::<Vec<_>>();
+        self.bounded_sprintf(function, &format, &values, span)
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
 struct SprintfPlaceholder {
     arg_index: usize,
-    positional: bool,
+    next_arg: usize,
     kind: SprintfPlaceholderKind,
-    width: Option<usize>,
-    precision: Option<usize>,
+    width: Option<SprintfSizeSpec>,
+    precision: Option<SprintfSizeSpec>,
     left_align: bool,
     show_plus: bool,
     pad: char,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum SprintfArgRef {
+    Sequential(usize),
+    Positional(usize),
+}
+
+impl SprintfArgRef {
+    fn index(self) -> usize {
+        match self {
+            Self::Sequential(index) | Self::Positional(index) => index,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum SprintfSizeSpec {
+    Literal(usize),
+    Star(SprintfArgRef),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SprintfPrecision {
+    Unspecified,
+    Digits(usize),
+    DefaultPrecision,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum SprintfParseError {
+    Unsupported,
+    MissingFormatSpecifier,
+    ValueError(String),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -103574,87 +103707,143 @@ enum SprintfPlaceholderKind {
     Float,
     ScientificLower,
     ScientificUpper,
+    GeneralLower,
+    GeneralUpper,
 }
 
-fn bounded_sprintf(
-    function: &'static str,
-    format: &str,
-    args: &[Value],
-    span: Span,
-) -> CompileResult<String> {
-    let mut output = String::new();
-    let bytes = format.as_bytes();
-    let mut index = 0;
-    let mut next_arg = 0;
+impl Interpreter {
+    fn bounded_sprintf(
+        &mut self,
+        function: &'static str,
+        format: &str,
+        args: &[Value],
+        span: Span,
+    ) -> CompileResult<String> {
+        let mut output = String::new();
+        let bytes = format.as_bytes();
+        let mut index = 0;
+        let mut next_arg = 0;
+        let required_arg_count = sprintf_required_argument_count(format).unwrap_or(0);
 
-    while index < bytes.len() {
-        if bytes[index] != b'%' {
-            let ch = format[index..].chars().next().expect("index is in bounds");
-            output.push(ch);
-            index += ch.len_utf8();
-            continue;
-        }
+        while index < bytes.len() {
+            if bytes[index] != b'%' {
+                let ch = format[index..].chars().next().expect("index is in bounds");
+                output.push(ch);
+                index += ch.len_utf8();
+                continue;
+            }
 
-        index += 1;
-        if index < bytes.len() && bytes[index] == b'%' {
-            output.push('%');
             index += 1;
-            continue;
-        }
+            if index < bytes.len() && bytes[index] == b'%' {
+                output.push('%');
+                index += 1;
+                continue;
+            }
 
-        let placeholder_start = index - 1;
-        let (placeholder, next_index) = parse_sprintf_placeholder(format, index, next_arg)
-            .ok_or_else(|| {
-                let placeholder_end = if index < bytes.len() {
-                    index
-                        + format[index..]
-                            .chars()
-                            .next()
-                            .expect("index is in bounds")
-                            .len_utf8()
-                } else {
-                    index
-                };
-                runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
+            let placeholder_start = index - 1;
+            let (placeholder, next_index) = parse_sprintf_placeholder(format, index, next_arg)
+                .map_err(|error| {
+                    sprintf_parse_diagnostic(
                         function,
-                        format!(
-                            "unsupported format placeholder {} in the current subset",
-                            &format[placeholder_start..placeholder_end.min(bytes.len())]
-                        ),
-                    ),
-                )
-            })?;
+                        format,
+                        placeholder_start,
+                        index,
+                        error,
+                        span,
+                    )
+                })?;
 
-        if !placeholder.positional {
-            next_arg += 1;
-        }
-        index = next_index;
+            next_arg = placeholder.next_arg;
+            index = next_index;
 
-        let Some(value) = args.get(placeholder.arg_index) else {
-            return Err(runtime_error(
+            let value = sprintf_argument(
+                function,
+                args,
+                placeholder.arg_index,
+                required_arg_count,
                 span,
-                RuntimeError::unsupported_call(
-                    function,
-                    format!(
-                        "missing argument for placeholder {}",
-                        placeholder.arg_index + 1
-                    ),
-                ),
-            ));
-        };
-        output.push_str(&format_sprintf_value(function, &placeholder, value, span)?);
+            )?;
+            output.push_str(&self.format_sprintf_value(
+                function,
+                &placeholder,
+                value,
+                args,
+                span,
+            )?);
+        }
+
+        Ok(output)
     }
 
-    Ok(output)
+    fn sprintf_format_argument(
+        &mut self,
+        function: &'static str,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<String> {
+        match value {
+            Value::String(value) => Ok(value.clone()),
+            Value::BinaryString(value) => {
+                tree_walk_binary_string_utf8(value, function, span).map(str::to_owned)
+            }
+            Value::Null | Value::Bool(_) | Value::Int(_) => Ok(value.echo_string()),
+            Value::Float(value) => Ok(php_default_precision_float_string(*value)),
+            Value::Array(_) => Err(sprintf_format_type_error(function, "array", span)),
+            Value::Resource(_) => Err(sprintf_format_type_error(function, "resource", span)),
+            Value::Closure(_) => Err(sprintf_format_type_error(function, "Closure", span)),
+            Value::Object(object) => {
+                if let Some(output) =
+                    self.object_to_string_with_magic(object.clone(), function, span)?
+                {
+                    Ok(output)
+                } else {
+                    Err(sprintf_format_type_error(
+                        function,
+                        object.class_name(),
+                        span,
+                    ))
+                }
+            }
+        }
+    }
+
+    fn sprintf_string_argument(
+        &mut self,
+        function: &'static str,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<String> {
+        match value {
+            Value::Array(_) => {
+                self.emit_display_warning("Array to string conversion", span)?;
+                Ok("Array".to_string())
+            }
+            Value::Resource(id) => Ok(format!("Resource id #{id}")),
+            Value::Float(value) => Ok(php_default_precision_float_string(*value)),
+            Value::Object(object) => {
+                if let Some(output) =
+                    self.object_to_string_with_magic(object.clone(), function, span)?
+                {
+                    Ok(output)
+                } else {
+                    Err(object_to_string_error(object.class_name(), span))
+                }
+            }
+            Value::BinaryString(value) => {
+                tree_walk_binary_string_utf8(value, function, span).map(str::to_owned)
+            }
+            _ => value
+                .try_echo_string()
+                .map_err(|error| runtime_error(span, error)),
+        }
+    }
 }
 
 fn parse_sprintf_placeholder(
     format: &str,
     mut index: usize,
     next_arg: usize,
-) -> Option<(SprintfPlaceholder, usize)> {
+) -> Result<(SprintfPlaceholder, usize), SprintfParseError> {
     let bytes = format.as_bytes();
     let digits_start = index;
     while matches!(bytes.get(index), Some(b'0'..=b'9')) {
@@ -103662,9 +103851,15 @@ fn parse_sprintf_placeholder(
     }
 
     let positional = if index > digits_start && bytes.get(index) == Some(&b'$') {
-        let position = format[digits_start..index].parse::<usize>().ok()?;
+        let position = format[digits_start..index]
+            .parse::<usize>()
+            .map_err(|_| SprintfParseError::Unsupported)?;
         index += 1;
-        Some(position.checked_sub(1)?)
+        Some(
+            position
+                .checked_sub(1)
+                .ok_or(SprintfParseError::Unsupported)?,
+        )
     } else {
         index = digits_start;
         None
@@ -103675,6 +103870,7 @@ fn parse_sprintf_placeholder(
     let mut left_align = false;
     let mut show_plus = false;
     let mut pad = ' ';
+    let mut next_arg_cursor = next_arg;
 
     while index < bytes.len() {
         match bytes[index] {
@@ -103695,47 +103891,81 @@ fn parse_sprintf_placeholder(
                 while matches!(bytes.get(index), Some(b'0'..=b'9')) {
                     index += 1;
                 }
-                width = format[width_start..index].parse::<usize>().ok();
+                width = Some(SprintfSizeSpec::Literal(parse_sprintf_width_literal(
+                    &format[width_start..index],
+                )?));
             }
             b'1'..=b'9' => {
                 let width_start = index;
                 while matches!(bytes.get(index), Some(b'0'..=b'9')) {
                     index += 1;
                 }
-                width = format[width_start..index].parse::<usize>().ok();
+                width = Some(SprintfSizeSpec::Literal(parse_sprintf_width_literal(
+                    &format[width_start..index],
+                )?));
+            }
+            b'*' => {
+                index += 1;
+                width = Some(SprintfSizeSpec::Star(parse_sprintf_star_arg(
+                    format,
+                    &mut index,
+                    &mut next_arg_cursor,
+                )?));
             }
             b'\'' => {
                 index += 1;
-                let ch = format[index..].chars().next()?;
+                let ch = format[index..]
+                    .chars()
+                    .next()
+                    .ok_or(SprintfParseError::MissingFormatSpecifier)?;
                 pad = ch;
                 index += ch.len_utf8();
             }
             b'.' => {
                 index += 1;
-                let precision_start = index;
-                while matches!(bytes.get(index), Some(b'0'..=b'9')) {
+                if bytes.get(index) == Some(&b'*') {
                     index += 1;
+                    precision = Some(SprintfSizeSpec::Star(parse_sprintf_star_arg(
+                        format,
+                        &mut index,
+                        &mut next_arg_cursor,
+                    )?));
+                } else {
+                    let precision_start = index;
+                    while matches!(bytes.get(index), Some(b'0'..=b'9')) {
+                        index += 1;
+                    }
+                    if precision_start == index {
+                        return Err(match format[index..].chars().next() {
+                            Some(ch) => SprintfParseError::ValueError(format!(
+                                "Unknown format specifier \"{ch}\""
+                            )),
+                            None => SprintfParseError::MissingFormatSpecifier,
+                        });
+                    }
+                    precision = Some(SprintfSizeSpec::Literal(parse_sprintf_precision_literal(
+                        &format[precision_start..index],
+                    )?));
                 }
-                if precision_start == index {
-                    return None;
-                }
-                precision = format[precision_start..index].parse::<usize>().ok();
             }
-            b'h' | b'l' | b'L' => {
+            b'h' | b'H' => break,
+            b'l' | b'L' => {
                 index += 1;
                 if matches!(bytes.get(index), Some(b'h' | b'l')) {
                     index += 1;
                 }
                 break;
             }
-            b's' | b'd' | b'b' | b'c' | b'u' | b'o' | b'x' | b'X' | b'f' | b'F' | b'e' | b'E' => {
-                break
-            }
-            _ => return None,
+            b's' | b'd' | b'b' | b'c' | b'u' | b'o' | b'x' | b'X' | b'f' | b'F' | b'e' | b'E'
+            | b'g' | b'G' => break,
+            _ => return Err(SprintfParseError::Unsupported),
         }
     }
 
-    let kind = match bytes.get(index)? {
+    let kind = match bytes
+        .get(index)
+        .ok_or(SprintfParseError::MissingFormatSpecifier)?
+    {
         b's' => SprintfPlaceholderKind::String,
         b'd' => SprintfPlaceholderKind::Int,
         b'b' => SprintfPlaceholderKind::Binary,
@@ -103747,13 +103977,23 @@ fn parse_sprintf_placeholder(
         b'f' | b'F' => SprintfPlaceholderKind::Float,
         b'e' => SprintfPlaceholderKind::ScientificLower,
         b'E' => SprintfPlaceholderKind::ScientificUpper,
-        _ => return None,
+        b'g' | b'h' => SprintfPlaceholderKind::GeneralLower,
+        b'G' | b'H' => SprintfPlaceholderKind::GeneralUpper,
+        _ => return Err(SprintfParseError::Unsupported),
     };
 
-    Some((
+    let arg_ref = positional
+        .map(SprintfArgRef::Positional)
+        .unwrap_or_else(|| {
+            let arg = next_arg_cursor;
+            next_arg_cursor += 1;
+            SprintfArgRef::Sequential(arg)
+        });
+
+    Ok((
         SprintfPlaceholder {
-            arg_index: positional.unwrap_or(next_arg),
-            positional: positional.is_some(),
+            arg_index: arg_ref.index(),
+            next_arg: next_arg_cursor,
             kind,
             width,
             precision,
@@ -103765,99 +104005,305 @@ fn parse_sprintf_placeholder(
     ))
 }
 
-fn format_sprintf_value(
-    function: &'static str,
-    placeholder: &SprintfPlaceholder,
-    value: &Value,
-    span: Span,
-) -> CompileResult<String> {
-    let formatted = match placeholder.kind {
-        SprintfPlaceholderKind::String => {
-            let value = value
-                .try_echo_string()
-                .map_err(|error| runtime_error(span, error))?;
-            if let Some(precision) = placeholder.precision {
-                value.chars().take(precision).collect()
-            } else {
-                value
-            }
-        }
-        SprintfPlaceholderKind::Int => {
-            let value = sprintf_int_argument(function, value, span)?;
-            let sign = if value < 0 {
-                "-"
-            } else if placeholder.show_plus {
-                "+"
-            } else {
-                ""
-            };
-            format_integral_sprintf_digits(
-                sign,
-                value.unsigned_abs().to_string(),
-                placeholder.precision,
-            )
-        }
-        SprintfPlaceholderKind::Binary => {
-            let value = sprintf_int_argument(function, value, span)?;
-            format_integral_sprintf_digits("", format!("{:b}", value as u64), placeholder.precision)
-        }
-        SprintfPlaceholderKind::Char => {
-            let value = sprintf_int_argument(function, value, span)?;
-            let byte = value.rem_euclid(256) as u8;
-            char::from(byte).to_string()
-        }
-        SprintfPlaceholderKind::Unsigned => {
-            let value = sprintf_int_argument(function, value, span)?;
-            format_integral_sprintf_digits("", (value as u64).to_string(), placeholder.precision)
-        }
-        SprintfPlaceholderKind::Octal => {
-            let value = sprintf_int_argument(function, value, span)?;
-            format_integral_sprintf_digits("", format!("{:o}", value as u64), placeholder.precision)
-        }
-        SprintfPlaceholderKind::HexLower => {
-            let value = sprintf_int_argument(function, value, span)?;
-            format_integral_sprintf_digits("", format!("{:x}", value as u64), placeholder.precision)
-        }
-        SprintfPlaceholderKind::HexUpper => {
-            let value = sprintf_int_argument(function, value, span)?;
-            format_integral_sprintf_digits("", format!("{:X}", value as u64), placeholder.precision)
-        }
-        SprintfPlaceholderKind::Float => {
-            let value = sprintf_float_argument(function, value, span)?;
-            let precision = placeholder.precision.unwrap_or(6);
-            if placeholder.show_plus && value >= 0.0 {
-                format!("+{value:.precision$}")
-            } else {
-                format!("{value:.precision$}")
-            }
-        }
-        SprintfPlaceholderKind::ScientificLower | SprintfPlaceholderKind::ScientificUpper => {
-            let value = sprintf_float_argument(function, value, span)?;
-            let precision = placeholder.precision.unwrap_or(6);
-            let formatted = if matches!(placeholder.kind, SprintfPlaceholderKind::ScientificUpper) {
-                format!("{value:.precision$E}")
-            } else {
-                format!("{value:.precision$e}")
-            };
-            let formatted = normalize_sprintf_exponent(formatted);
-            if placeholder.show_plus && value >= 0.0 {
-                format!("+{formatted}")
-            } else {
-                formatted
-            }
-        }
-    };
+fn parse_sprintf_width_literal(value: &str) -> Result<usize, SprintfParseError> {
+    let width = value.parse::<usize>().map_err(|_| {
+        SprintfParseError::ValueError("Width must be between 0 and 2147483647".to_string())
+    })?;
+    if width > i32::MAX as usize {
+        return Err(SprintfParseError::ValueError(
+            "Width must be between 0 and 2147483647".to_string(),
+        ));
+    }
+    Ok(width)
+}
 
-    Ok(apply_sprintf_width(
-        formatted,
-        placeholder.width,
-        placeholder.left_align,
-        placeholder.effective_width_pad(),
-    ))
+fn parse_sprintf_precision_literal(value: &str) -> Result<usize, SprintfParseError> {
+    let precision = value.parse::<usize>().map_err(|_| {
+        SprintfParseError::ValueError("Precision must be between 0 and 2147483647".to_string())
+    })?;
+    if precision > i32::MAX as usize {
+        return Err(SprintfParseError::ValueError(
+            "Precision must be between 0 and 2147483647".to_string(),
+        ));
+    }
+    Ok(precision)
+}
+
+fn parse_sprintf_star_arg(
+    format: &str,
+    index: &mut usize,
+    next_arg: &mut usize,
+) -> Result<SprintfArgRef, SprintfParseError> {
+    let bytes = format.as_bytes();
+    let digits_start = *index;
+    while matches!(bytes.get(*index), Some(b'0'..=b'9')) {
+        *index += 1;
+    }
+
+    if *index > digits_start {
+        if bytes.get(*index) != Some(&b'$') {
+            return Err(SprintfParseError::Unsupported);
+        }
+        let position = format[digits_start..*index]
+            .parse::<usize>()
+            .map_err(|_| SprintfParseError::Unsupported)?;
+        *index += 1;
+        return Ok(SprintfArgRef::Positional(
+            position
+                .checked_sub(1)
+                .ok_or(SprintfParseError::Unsupported)?,
+        ));
+    }
+
+    let arg = *next_arg;
+    *next_arg += 1;
+    Ok(SprintfArgRef::Sequential(arg))
+}
+
+impl Interpreter {
+    fn format_sprintf_value(
+        &mut self,
+        function: &'static str,
+        placeholder: &SprintfPlaceholder,
+        value: &Value,
+        args: &[Value],
+        span: Span,
+    ) -> CompileResult<String> {
+        let width = self.resolve_sprintf_width(function, placeholder, args, span)?;
+        let precision = self.resolve_sprintf_precision(function, placeholder, args, span)?;
+
+        let formatted = match placeholder.kind {
+            SprintfPlaceholderKind::String => {
+                let value = self.sprintf_string_argument(function, value, span)?;
+                if let SprintfPrecision::Digits(precision) = precision {
+                    value.chars().take(precision).collect()
+                } else {
+                    value
+                }
+            }
+            SprintfPlaceholderKind::Int => {
+                let value = self.sprintf_int_argument(function, value, span)?;
+                let sign = if value < 0 {
+                    "-"
+                } else if placeholder.show_plus {
+                    "+"
+                } else {
+                    ""
+                };
+                format_integral_sprintf_digits(
+                    sign,
+                    value.unsigned_abs().to_string(),
+                    precision.digits(),
+                )
+            }
+            SprintfPlaceholderKind::Binary => {
+                let value = self.sprintf_int_argument(function, value, span)?;
+                format_integral_sprintf_digits(
+                    "",
+                    format!("{:b}", value as u64),
+                    precision.digits(),
+                )
+            }
+            SprintfPlaceholderKind::Char => {
+                let value = self.sprintf_int_argument(function, value, span)?;
+                let byte = value.rem_euclid(256) as u8;
+                char::from(byte).to_string()
+            }
+            SprintfPlaceholderKind::Unsigned => {
+                let value = self.sprintf_int_argument(function, value, span)?;
+                format_integral_sprintf_digits("", (value as u64).to_string(), precision.digits())
+            }
+            SprintfPlaceholderKind::Octal => {
+                let value = self.sprintf_int_argument(function, value, span)?;
+                format_integral_sprintf_digits(
+                    "",
+                    format!("{:o}", value as u64),
+                    precision.digits(),
+                )
+            }
+            SprintfPlaceholderKind::HexLower => {
+                let value = self.sprintf_int_argument(function, value, span)?;
+                format_integral_sprintf_digits(
+                    "",
+                    format!("{:x}", value as u64),
+                    precision.digits(),
+                )
+            }
+            SprintfPlaceholderKind::HexUpper => {
+                let value = self.sprintf_int_argument(function, value, span)?;
+                format_integral_sprintf_digits(
+                    "",
+                    format!("{:X}", value as u64),
+                    precision.digits(),
+                )
+            }
+            SprintfPlaceholderKind::Float => {
+                let value = self.sprintf_float_argument(function, value, span)?;
+                let precision = self.sprintf_float_precision(function, precision, span)?;
+                if placeholder.show_plus && value >= 0.0 {
+                    format!("+{value:.precision$}")
+                } else {
+                    format!("{value:.precision$}")
+                }
+            }
+            SprintfPlaceholderKind::ScientificLower | SprintfPlaceholderKind::ScientificUpper => {
+                let value = self.sprintf_float_argument(function, value, span)?;
+                let precision = self.sprintf_float_precision(function, precision, span)?;
+                let formatted =
+                    if matches!(placeholder.kind, SprintfPlaceholderKind::ScientificUpper) {
+                        format!("{value:.precision$E}")
+                    } else {
+                        format!("{value:.precision$e}")
+                    };
+                let formatted = normalize_sprintf_exponent(formatted);
+                if placeholder.show_plus && value >= 0.0 {
+                    format!("+{formatted}")
+                } else {
+                    formatted
+                }
+            }
+            SprintfPlaceholderKind::GeneralLower | SprintfPlaceholderKind::GeneralUpper => {
+                let value = self.sprintf_float_argument(function, value, span)?;
+                let precision = self.sprintf_general_precision(function, precision, span)?;
+                let upper = matches!(placeholder.kind, SprintfPlaceholderKind::GeneralUpper);
+                let formatted = format_sprintf_general_float(value, precision, upper);
+                if placeholder.show_plus && value >= 0.0 {
+                    format!("+{formatted}")
+                } else {
+                    formatted
+                }
+            }
+        };
+
+        Ok(apply_sprintf_width(
+            formatted,
+            width,
+            placeholder.left_align,
+            placeholder.effective_width_pad(precision),
+        ))
+    }
+
+    fn resolve_sprintf_width(
+        &mut self,
+        function: &'static str,
+        placeholder: &SprintfPlaceholder,
+        args: &[Value],
+        span: Span,
+    ) -> CompileResult<Option<usize>> {
+        match placeholder.width {
+            None => Ok(None),
+            Some(SprintfSizeSpec::Literal(width)) => Ok(Some(width)),
+            Some(SprintfSizeSpec::Star(arg_ref)) => {
+                let value = sprintf_argument(function, args, arg_ref.index(), 0, span)?;
+                let width = sprintf_star_integer("Width", value, span)?;
+                if !(0..=i32::MAX as i64).contains(&width) {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            function,
+                            "Width must be between 0 and 2147483647",
+                        ),
+                    ));
+                }
+                Ok(Some(width as usize))
+            }
+        }
+    }
+
+    fn resolve_sprintf_precision(
+        &mut self,
+        function: &'static str,
+        placeholder: &SprintfPlaceholder,
+        args: &[Value],
+        span: Span,
+    ) -> CompileResult<SprintfPrecision> {
+        let precision = match placeholder.precision {
+            None => return Ok(SprintfPrecision::Unspecified),
+            Some(SprintfSizeSpec::Literal(precision)) => SprintfPrecision::Digits(precision),
+            Some(SprintfSizeSpec::Star(arg_ref)) => {
+                let value = sprintf_argument(function, args, arg_ref.index(), 0, span)?;
+                let precision = sprintf_star_integer("Precision", value, span)?;
+                if !(-1..=i32::MAX as i64).contains(&precision) {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            function,
+                            "Precision must be between -1 and 2147483647",
+                        ),
+                    ));
+                }
+                if precision == -1 {
+                    SprintfPrecision::DefaultPrecision
+                } else {
+                    SprintfPrecision::Digits(precision as usize)
+                }
+            }
+        };
+
+        if precision == SprintfPrecision::DefaultPrecision && !placeholder.kind.is_general() {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function,
+                    "Precision -1 is only supported for %g, %G, %h and %H",
+                ),
+            ));
+        }
+
+        Ok(precision)
+    }
+
+    fn sprintf_float_precision(
+        &mut self,
+        function: &'static str,
+        precision: SprintfPrecision,
+        span: Span,
+    ) -> CompileResult<usize> {
+        let precision = precision.digits().unwrap_or(6);
+        if precision > PHP_SPRINTF_MAX_FLOAT_PRECISION {
+            self.emit_display_notice(
+                format!(
+                    "{function}: Requested precision of {precision} digits was truncated to PHP maximum of {PHP_SPRINTF_MAX_FLOAT_PRECISION} digits"
+                ),
+                span,
+            )?;
+            Ok(PHP_SPRINTF_MAX_FLOAT_PRECISION)
+        } else {
+            Ok(precision)
+        }
+    }
+
+    fn sprintf_general_precision(
+        &mut self,
+        function: &'static str,
+        precision: SprintfPrecision,
+        span: Span,
+    ) -> CompileResult<SprintfGeneralPrecision> {
+        match precision {
+            SprintfPrecision::DefaultPrecision => Ok(SprintfGeneralPrecision::PhpDefault),
+            SprintfPrecision::Digits(precision) => {
+                let precision = if precision == 0 { 1 } else { precision };
+                if precision > PHP_SPRINTF_MAX_FLOAT_PRECISION {
+                    self.emit_display_notice(
+                        format!(
+                            "{function}: Requested precision of {precision} digits was truncated to PHP maximum of {PHP_SPRINTF_MAX_FLOAT_PRECISION} digits"
+                        ),
+                        span,
+                    )?;
+                    Ok(SprintfGeneralPrecision::Digits(
+                        PHP_SPRINTF_MAX_FLOAT_PRECISION,
+                    ))
+                } else {
+                    Ok(SprintfGeneralPrecision::Digits(precision))
+                }
+            }
+            SprintfPrecision::Unspecified => Ok(SprintfGeneralPrecision::Digits(6)),
+        }
+    }
 }
 
 impl SprintfPlaceholder {
-    fn effective_width_pad(&self) -> char {
+    fn effective_width_pad(&self, precision: SprintfPrecision) -> char {
         match self.kind {
             SprintfPlaceholderKind::Int
             | SprintfPlaceholderKind::Binary
@@ -103865,7 +104311,7 @@ impl SprintfPlaceholder {
             | SprintfPlaceholderKind::Octal
             | SprintfPlaceholderKind::HexLower
             | SprintfPlaceholderKind::HexUpper
-                if self.precision.is_some() =>
+                if precision.digits().is_some() =>
             {
                 ' '
             }
@@ -103873,6 +104319,29 @@ impl SprintfPlaceholder {
         }
     }
 }
+
+impl SprintfPlaceholderKind {
+    fn is_general(self) -> bool {
+        matches!(self, Self::GeneralLower | Self::GeneralUpper)
+    }
+}
+
+impl SprintfPrecision {
+    fn digits(self) -> Option<usize> {
+        match self {
+            Self::Digits(value) => Some(value),
+            Self::Unspecified | Self::DefaultPrecision => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SprintfGeneralPrecision {
+    Digits(usize),
+    PhpDefault,
+}
+
+const PHP_SPRINTF_MAX_FLOAT_PRECISION: usize = 53;
 
 fn format_integral_sprintf_digits(
     sign: &str,
@@ -103921,81 +104390,100 @@ fn apply_sprintf_width(value: String, width: Option<usize>, left_align: bool, pa
     }
 }
 
-fn sprintf_int_argument(function: &'static str, value: &Value, span: Span) -> CompileResult<i64> {
-    match value {
-        Value::Null => Ok(0),
-        Value::Bool(value) => Ok(i64::from(*value)),
-        Value::Int(value) => Ok(*value),
-        Value::Float(value) if value.is_finite() => Ok(*value as i64),
-        Value::String(value) => parse_sprintf_numeric_string(value)
-            .map(|value| value as i64)
-            .ok_or_else(|| {
-                runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        function,
-                        "numeric placeholders require numeric scalar arguments in the current subset",
-                    ),
-                )
-            }),
-        other => Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                function,
-                format!(
-                    "numeric placeholders require numeric scalar arguments in the current subset, got {}",
-                    other.type_name()
-                ),
-            ),
-        )),
-    }
-}
-
-fn sprintf_float_argument(function: &'static str, value: &Value, span: Span) -> CompileResult<f64> {
-    let value = match value {
-        Value::Null => 0.0,
-        Value::Bool(value) => {
-            if *value {
-                1.0
-            } else {
-                0.0
-            }
-        }
-        Value::Int(value) => *value as f64,
-        Value::Float(value) => *value,
-        Value::String(value) => parse_sprintf_numeric_string(value).ok_or_else(|| {
-            runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    function,
-                    "numeric placeholders require numeric scalar arguments in the current subset",
-                ),
-            )
-        })?,
-        other => {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    function,
+impl Interpreter {
+    fn sprintf_int_argument(
+        &mut self,
+        _function: &'static str,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<i64> {
+        match value {
+            Value::Null => Ok(0),
+            Value::Bool(value) => Ok(i64::from(*value)),
+            Value::Int(value) => Ok(*value),
+            Value::Float(value) if value.is_finite() => Ok(*value as i64),
+            Value::String(value) => Ok(parse_sprintf_numeric_string(value).unwrap_or(0.0) as i64),
+            Value::BinaryString(value) => Ok(std::str::from_utf8(value)
+                .ok()
+                .and_then(parse_sprintf_numeric_string)
+                .unwrap_or(0.0) as i64),
+            Value::Array(value) => Ok(value.len() as i64),
+            Value::Resource(id) => Ok(*id),
+            Value::Object(object) => {
+                self.emit_display_warning(
                     format!(
-                        "numeric placeholders require numeric scalar arguments in the current subset, got {}",
-                        other.type_name()
+                        "Object of class {} could not be converted to int",
+                        object.class_name()
                     ),
+                    span,
+                )?;
+                Ok(1)
+            }
+            Value::Closure(_) => {
+                self.emit_display_warning(
+                    "Object of class Closure could not be converted to int",
+                    span,
+                )?;
+                Ok(1)
+            }
+            Value::Float(_) => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "sprintf()",
+                    "numeric placeholders require finite numeric arguments in the current subset",
                 ),
-            ));
+            )),
         }
-    };
+    }
 
-    if value.is_finite() {
-        Ok(value)
-    } else {
-        Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                function,
-                "numeric placeholders require finite numeric arguments in the current subset",
-            ),
-        ))
+    fn sprintf_float_argument(
+        &mut self,
+        _function: &'static str,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<f64> {
+        let value = match value {
+            Value::Null => 0.0,
+            Value::Bool(value) => f64::from(u8::from(*value)),
+            Value::Int(value) => *value as f64,
+            Value::Float(value) => *value,
+            Value::String(value) => parse_sprintf_numeric_string(value).unwrap_or(0.0),
+            Value::BinaryString(value) => std::str::from_utf8(value)
+                .ok()
+                .and_then(parse_sprintf_numeric_string)
+                .unwrap_or(0.0),
+            Value::Array(value) => value.len() as f64,
+            Value::Resource(id) => *id as f64,
+            Value::Object(object) => {
+                self.emit_display_warning(
+                    format!(
+                        "Object of class {} could not be converted to float",
+                        object.class_name()
+                    ),
+                    span,
+                )?;
+                1.0
+            }
+            Value::Closure(_) => {
+                self.emit_display_warning(
+                    "Object of class Closure could not be converted to float",
+                    span,
+                )?;
+                1.0
+            }
+        };
+
+        if value.is_finite() {
+            Ok(value)
+        } else {
+            Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "sprintf()",
+                    "numeric placeholders require finite numeric arguments in the current subset",
+                ),
+            ))
+        }
     }
 }
 
@@ -104004,7 +104492,264 @@ fn parse_sprintf_numeric_string(value: &str) -> Option<f64> {
     if value.is_empty() {
         return None;
     }
-    value.parse::<f64>().ok().filter(|value| value.is_finite())
+    if let Ok(parsed) = value.parse::<f64>() {
+        return parsed.is_finite().then_some(parsed);
+    }
+
+    let prefix_len = sprintf_numeric_prefix_len(value)?;
+    value[..prefix_len]
+        .parse::<f64>()
+        .ok()
+        .filter(|value| value.is_finite())
+}
+
+fn sprintf_numeric_prefix_len(value: &str) -> Option<usize> {
+    let bytes = value.as_bytes();
+    let mut index = 0;
+    if matches!(bytes.get(index), Some(b'+' | b'-')) {
+        index += 1;
+    }
+    let digits_before_decimal = consume_ascii_digits_from(bytes, &mut index);
+    if bytes.get(index) == Some(&b'.') {
+        index += 1;
+        let digits_after_decimal = consume_ascii_digits_from(bytes, &mut index);
+        if digits_before_decimal == 0 && digits_after_decimal == 0 {
+            return None;
+        }
+    } else if digits_before_decimal == 0 {
+        return None;
+    }
+    if matches!(bytes.get(index), Some(b'e' | b'E')) {
+        let exponent_start = index;
+        let mut exponent_index = index + 1;
+        if matches!(bytes.get(exponent_index), Some(b'+' | b'-')) {
+            exponent_index += 1;
+        }
+        if consume_ascii_digits_from(bytes, &mut exponent_index) > 0 {
+            index = exponent_index;
+        } else {
+            return Some(exponent_start);
+        }
+    }
+    Some(index)
+}
+
+fn consume_ascii_digits_from(bytes: &[u8], index: &mut usize) -> usize {
+    let start = *index;
+    while matches!(bytes.get(*index), Some(b'0'..=b'9')) {
+        *index += 1;
+    }
+    *index - start
+}
+
+fn sprintf_parse_diagnostic(
+    function: &'static str,
+    format: &str,
+    placeholder_start: usize,
+    index: usize,
+    error: SprintfParseError,
+    span: Span,
+) -> Diagnostic {
+    let message = match error {
+        SprintfParseError::MissingFormatSpecifier => {
+            "Missing format specifier at end of string".to_string()
+        }
+        SprintfParseError::ValueError(message) => message,
+        SprintfParseError::Unsupported => {
+            let placeholder_end = if index < format.len() {
+                index
+                    + format[index..]
+                        .chars()
+                        .next()
+                        .expect("index is in bounds")
+                        .len_utf8()
+            } else {
+                index
+            };
+            format!(
+                "unsupported format placeholder {} in the current subset",
+                &format[placeholder_start..placeholder_end.min(format.len())]
+            )
+        }
+    };
+    runtime_error(span, RuntimeError::unsupported_call(function, message))
+}
+
+fn sprintf_argument<'a>(
+    function: &'static str,
+    args: &'a [Value],
+    index: usize,
+    required_arg_count: usize,
+    span: Span,
+) -> CompileResult<&'a Value> {
+    args.get(index).ok_or_else(|| {
+        let required_arg_count = required_arg_count.max(index + 2);
+        runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                format!(
+                    "{} arguments are required, {} given",
+                    required_arg_count,
+                    args.len() + 1
+                ),
+            ),
+        )
+    })
+}
+
+fn sprintf_required_argument_count(format: &str) -> Option<usize> {
+    let bytes = format.as_bytes();
+    let mut index = 0;
+    let mut next_arg = 0;
+    let mut max_arg = None::<usize>;
+
+    while index < bytes.len() {
+        if bytes[index] != b'%' {
+            let ch = format[index..].chars().next()?;
+            index += ch.len_utf8();
+            continue;
+        }
+        index += 1;
+        if index < bytes.len() && bytes[index] == b'%' {
+            index += 1;
+            continue;
+        }
+        let (placeholder, next_index) = parse_sprintf_placeholder(format, index, next_arg).ok()?;
+        next_arg = placeholder.next_arg;
+        max_arg = Some(max_arg.map_or(placeholder.arg_index, |max| max.max(placeholder.arg_index)));
+        for spec in [placeholder.width, placeholder.precision]
+            .into_iter()
+            .flatten()
+        {
+            if let SprintfSizeSpec::Star(arg_ref) = spec {
+                max_arg = Some(max_arg.map_or(arg_ref.index(), |max| max.max(arg_ref.index())));
+            }
+        }
+        index = next_index;
+    }
+
+    Some(max_arg.map_or(1, |index| index + 2))
+}
+
+fn sprintf_format_type_error(function: &'static str, given: &str, span: Span) -> Diagnostic {
+    runtime_error(
+        span,
+        RuntimeError::unsupported_call(
+            function,
+            format!("Argument #1 ($format) must be of type string, {given} given"),
+        ),
+    )
+}
+
+fn object_to_string_error(class_name: &str, span: Span) -> Diagnostic {
+    runtime_error(
+        span,
+        RuntimeError::unsupported_call(
+            "sprintf()",
+            format!("Object of class {class_name} could not be converted to string"),
+        ),
+    )
+}
+
+fn sprintf_star_integer(label: &'static str, value: &Value, span: Span) -> CompileResult<i64> {
+    let parsed = match value {
+        Value::Null => 0,
+        Value::Bool(value) => i64::from(*value),
+        Value::Int(value) => *value,
+        Value::Float(value) if value.is_finite() && value.fract() == 0.0 => *value as i64,
+        Value::String(value) => value.trim().parse::<i64>().map_err(|_| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call("printf()", format!("{label} must be an integer")),
+            )
+        })?,
+        Value::BinaryString(value) => std::str::from_utf8(value)
+            .ok()
+            .and_then(|value| value.trim().parse::<i64>().ok())
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "printf()",
+                        format!("{label} must be an integer"),
+                    ),
+                )
+            })?,
+        _ => {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call("printf()", format!("{label} must be an integer")),
+            ))
+        }
+    };
+    Ok(parsed)
+}
+
+fn format_sprintf_general_float(
+    value: f64,
+    precision: SprintfGeneralPrecision,
+    upper: bool,
+) -> String {
+    if value.is_nan() {
+        return if upper { "NAN" } else { "NAN" }.to_string();
+    }
+    if value.is_infinite() {
+        let value = if value.is_sign_positive() {
+            "INF"
+        } else {
+            "-INF"
+        };
+        return value.to_string();
+    }
+
+    if precision == SprintfGeneralPrecision::PhpDefault {
+        let decimals = 16;
+        let formatted = if upper {
+            format!("{value:.decimals$E}")
+        } else {
+            format!("{value:.decimals$e}")
+        };
+        return normalize_sprintf_exponent(trim_scientific_float(formatted));
+    }
+
+    let SprintfGeneralPrecision::Digits(precision) = precision else {
+        unreachable!("default precision handled above")
+    };
+    if value == 0.0 {
+        return "0".to_string();
+    }
+
+    let abs = value.abs();
+    let exponent = abs.log10().floor() as i32;
+    if exponent < -4 || exponent >= precision as i32 {
+        let decimals = precision.saturating_sub(1);
+        let formatted = if upper {
+            format!("{value:.decimals$E}")
+        } else {
+            format!("{value:.decimals$e}")
+        };
+        normalize_sprintf_exponent(trim_scientific_float(formatted))
+    } else {
+        let decimals = if exponent >= 0 {
+            precision.saturating_sub(exponent as usize + 1)
+        } else {
+            precision + (-exponent as usize) - 1
+        };
+        trim_decimal_suffix(&format!("{value:.decimals$}"))
+    }
+}
+
+fn trim_scientific_float(value: String) -> String {
+    let Some(index) = value.find(['e', 'E']) else {
+        return trim_decimal_suffix(&value);
+    };
+    let (mantissa, exponent) = value.split_at(index);
+    let mut mantissa = trim_decimal_suffix(mantissa);
+    if !mantissa.contains('.') {
+        mantissa.push_str(".0");
+    }
+    format!("{mantissa}{exponent}")
 }
 
 impl Interpreter {
@@ -111966,6 +112711,8 @@ fn format_var_dump_float(value: f64) -> String {
         "INF".to_string()
     } else if value == f64::NEG_INFINITY {
         "-INF".to_string()
+    } else if value != 0.0 && !(1e-4..1e14).contains(&value.abs()) {
+        normalize_sprintf_exponent(trim_scientific_float(format!("{value:.16E}")))
     } else {
         value.to_string()
     }

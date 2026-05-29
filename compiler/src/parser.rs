@@ -6089,6 +6089,16 @@ impl Parser {
             });
         }
 
+        if self.match_token(|kind| matches!(kind, TokenKind::Plus)) {
+            let span = self.previous().span;
+            let expr = self.parse_unary()?;
+            return Ok(Expr::Unary {
+                op: UnaryOp::Plus,
+                expr: Box::new(expr),
+                span,
+            });
+        }
+
         if self.match_token(|kind| matches!(kind, TokenKind::Minus)) {
             let span = self.previous().span;
             let expr = self.parse_unary()?;

@@ -2649,6 +2649,7 @@ fn native_expr_is_call_operation_root(expr: &Expr) -> bool {
 
 fn native_value_unary_op_tag(op: UnaryOp) -> Option<&'static str> {
     match op {
+        UnaryOp::Plus => None,
         UnaryOp::Negate => Some("PHPC_NATIVE_VALUE_UNARY_NEGATE"),
         UnaryOp::BitwiseNot => Some("PHPC_NATIVE_VALUE_UNARY_BITWISE_NOT"),
         UnaryOp::Not => None,
@@ -2657,6 +2658,7 @@ fn native_value_unary_op_tag(op: UnaryOp) -> Option<&'static str> {
 
 fn native_numeric_unary_op_tag(op: UnaryOp) -> Option<&'static str> {
     match op {
+        UnaryOp::Plus => None,
         UnaryOp::Negate => Some("PHPC_NATIVE_NUMERIC_UNARY_OP_NEGATE"),
         UnaryOp::Not | UnaryOp::BitwiseNot => None,
     }
@@ -2664,6 +2666,7 @@ fn native_numeric_unary_op_tag(op: UnaryOp) -> Option<&'static str> {
 
 fn native_numeric_unary_op_tag_value(op: UnaryOp) -> Option<u8> {
     match op {
+        UnaryOp::Plus => None,
         UnaryOp::Negate => Some(0),
         UnaryOp::Not | UnaryOp::BitwiseNot => None,
     }
@@ -15621,6 +15624,7 @@ impl LlvmGenerator {
 
     fn emit_unary(&mut self, op: UnaryOp, value: IrValue, span: Span) -> CompileResult<IrValue> {
         match op {
+            UnaryOp::Plus => Err(self.unsupported(span, LLVM_UNARY_REJECTION)),
             UnaryOp::Negate => self.emit_numeric_negate(value, span),
             UnaryOp::Not => self.emit_bool_not(value, span),
             UnaryOp::BitwiseNot => self.emit_integer_bitwise_not(value, span),
@@ -59870,6 +59874,7 @@ impl CGenerator {
 
     fn emit_unary(&mut self, op: UnaryOp, value: CValue, span: Span) -> CompileResult<CValue> {
         match op {
+            UnaryOp::Plus => Err(self.unsupported(span, ASSEMBLY_UNARY_REJECTION)),
             UnaryOp::Negate => self.emit_numeric_negate(value, span),
             UnaryOp::Not => self.emit_bool_not(value, span),
             UnaryOp::BitwiseNot => self.emit_integer_bitwise_not(value, span),
@@ -66294,6 +66299,7 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "error_reporting",
     "ignore_user_abort",
     "php_sapi_name",
+    "json_encode",
     "printf",
     "fprintf",
     "vprintf",
