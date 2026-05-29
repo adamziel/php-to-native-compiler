@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-29 04:46 CEST
+Updated: 2026-05-29 05:00 CEST
 Primary branch: `master`
-Latest source head: `0dd0c0af fix: add reflection class metadata`
+Latest source head: `6873dd96 fix: add bcmath scalar decimal builtins`
 
 ## Progress Score
 
@@ -108,13 +108,47 @@ stable pinned denominator and does not use the raw runner
 | Batch004 source batch | Complete | Batch004 source checkpoints accepted: 10 / 10; checkpoint10 sharded gate published |
 | Batch005 source batch | Complete | Batch005 source checkpoints accepted: 10 / 10; checkpoint10 sharded gate published |
 | Batch006 source batch | Complete | Source checkpoints accepted: 10 / 10; checkpoint10 sharded gate published |
-| Batch007 source batch | In progress | Source checkpoints accepted: 5 / 10; public score unchanged until pinned aggregate gate |
+| Batch007 source batch | In progress | Source checkpoints accepted: 6 / 10; public score unchanged until pinned aggregate gate |
 
 Focused PHPT history is tracked separately in
 `/home/claude/supervised-php-compiler/state/php-core-suite-focused-history.tsv`.
 Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
+
+Batch007 source checkpoint 6 is primary-integrated under AO supervision. This
+is a source checkpoint with focused proof, not a percentage change. The public
+PHPT score remains **1836 / 20294 pinned runnable PHPTs = 9.05%** until the
+next pinned full-suite or supervisor-approved sharded publication gate is
+completed, regression-checked, and published here.
+
+- primary source head:
+  `6873dd96 fix: add bcmath scalar decimal builtins`
+- reviewed and integration patch:
+  `/home/claude/supervised-php-compiler/state/patches/ao-coder-bcmath-scalar-decimal-builtins-72794ca0-phpc66-20260529.patch`
+- reviewed and integration patch SHA256:
+  `551fe1d0369eef7a150bcb6e2bfff5dab98a8b43edcfd6e4965066621333324c`
+- reviewer gate: phpc-18 recorded `FINAL GO /
+  CURRENT-PUBLIC-33E8A19E / FOCUSED-RUST-BUILD-PHPT-PASS`; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/batch007-review-bcmath-scalar-decimal-builtins-33e8a19e-20260529.{status.md,report.md,gates.log}`
+- critic gate: phpc-33 recorded `SAFE-FOR-INTEGRATION /
+  CURRENT-PUBLIC-33E8A19E / BASELINE-RUNTIME-METADATA-WAIVED`; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/batch007-critic-bcmath-scalar-decimal-builtins-33e8a19e-20260529.{status.md,report.md}`
+- supervisor focused gates: PASS for clean apply over public `33e8a19e`,
+  `git diff --cached --check`, docs/PROGRESS/examples exclusion, production
+  exact-shape audit, `cargo fmt --all -- --check`, focused Rust
+  `cargo test -q -p phpc --test bcmath_builtin`,
+  `cargo build -q -p phpc --bin phpc`, and the focused 24-file
+  `ext/bcmath/tests` scalar decimal PHPT cluster with 24 PASS and 0 FAIL
+- public progress gate: not run for this source checkpoint; next public score
+  update waits for the Batch007 pinned aggregate gate
+
+This checkpoint implements generalized bcmath scalar decimal semantics:
+extension discovery, `bcmath.scale` state, decimal parsing/arithmetic/
+formatting for add/sub/mul/div/compare/ceil/floor, division/value diagnostics,
+and callable/builtin metadata needed by the covered bcmath rows. It is not
+keyed to PHPT filenames, expected output, fixture names, public hashes, batch
+labels, or checkpoint markers.
 
 Batch007 source checkpoint 5 is primary-integrated under AO supervision. This
 is a source checkpoint with focused proof, not a percentage change. The public
