@@ -1956,6 +1956,55 @@ echo $refTarget, "|", $refHook->callbacks[10]["id"]["function"], "|", $refHook->
 }
 
 #[test]
+fn call_user_func_array_non_array_arguments_throw_type_error() {
+    let execution = run_source(
+        r#"<?php
+function cufa_typeerror_target($value) {
+    return $value;
+}
+
+class CufaTypeErrorTarget {
+    public static function tag($value) {
+        return $value;
+    }
+}
+
+$closure = function ($value) {
+    return $value;
+};
+$notArray = "four";
+$callbacks = array(
+    "strlen",
+    "cufa_typeerror_target",
+    array("CufaTypeErrorTarget", "tag"),
+    $closure,
+);
+
+foreach ($callbacks as $callback) {
+    try {
+        call_user_func_array($callback, $notArray);
+    } catch (TypeError $e) {
+        echo get_class($e), "|", $e->getMessage(), "\n";
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "TypeError|call_user_func_array(): Argument #2 ($args) must be of type array, string given\n",
+            "TypeError|call_user_func_array(): Argument #2 ($args) must be of type array, string given\n",
+            "TypeError|call_user_func_array(): Argument #2 ($args) must be of type array, string given\n",
+            "TypeError|call_user_func_array(): Argument #2 ($args) must be of type array, string given\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn call_user_func_rejects_forms_outside_current_subset() {
     let missing = runtime_error(
         r#"<?php
@@ -2012,18 +2061,6 @@ echo call_user_func_array("strlen");
     assert_eq!(
         missing_array_arg.message,
         "arity mismatch for call_user_func_array(): expected 2 argument(s), got 1"
-    );
-
-    let non_array_args = runtime_error(
-        r#"<?php
-echo call_user_func_array("strlen", "four");
-"#,
-    );
-    assert_eq!(non_array_args.line, 2);
-    assert_eq!(non_array_args.column, 6);
-    assert_eq!(
-        non_array_args.message,
-        "unsupported call call_user_func_array(): argument array must be array in the current subset, got string"
     );
 
     let named_args = runtime_error(

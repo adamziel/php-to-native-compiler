@@ -41463,15 +41463,9 @@ impl Interpreter {
 
         let argument_array_value = self.evaluate(argument_expr, caller_scope)?;
         let Value::Array(argument_array) = &argument_array_value else {
-            return Err(runtime_error(
+            return Err(Self::call_user_func_array_non_array_argument_error(
+                &argument_array_value,
                 span,
-                RuntimeError::unsupported_call(
-                    "call_user_func_array()",
-                    format!(
-                        "argument array must be array in the current subset, got {}",
-                        argument_array_value.type_name()
-                    ),
-                ),
             ));
         };
         let values = Self::call_user_func_array_positional_values(argument_array, span)?;
@@ -45864,15 +45858,9 @@ impl Interpreter {
     ) -> CompileResult<Value> {
         let argument_array = self.evaluate(argument_expr, caller_scope)?;
         let Value::Array(argument_array) = &argument_array else {
-            return Err(runtime_error(
+            return Err(Self::call_user_func_array_non_array_argument_error(
+                &argument_array,
                 span,
-                RuntimeError::unsupported_call(
-                    "call_user_func_array()",
-                    format!(
-                        "argument array must be array in the current subset, got {}",
-                        argument_array.type_name()
-                    ),
-                ),
             ));
         };
 
@@ -47033,19 +47021,26 @@ impl Interpreter {
     ) -> CompileResult<Vec<Value>> {
         let argument_array = self.evaluate(argument_expr, caller_scope)?;
         let Value::Array(argument_array) = &argument_array else {
-            return Err(runtime_error(
+            return Err(Self::call_user_func_array_non_array_argument_error(
+                &argument_array,
                 span,
-                RuntimeError::unsupported_call(
-                    "call_user_func_array()",
-                    format!(
-                        "argument array must be array in the current subset, got {}",
-                        argument_array.type_name()
-                    ),
-                ),
             ));
         };
 
         Self::call_user_func_array_positional_values(argument_array, span)
+    }
+
+    fn call_user_func_array_non_array_argument_error(value: &Value, span: Span) -> Diagnostic {
+        runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "call_user_func_array()",
+                format!(
+                    "Argument #2 ($args) must be of type array, {} given",
+                    value.type_name()
+                ),
+            ),
+        )
     }
 
     fn call_user_func_array_positional_values(
@@ -48140,15 +48135,9 @@ impl Interpreter {
                 None => self.evaluate(argument_expr, caller_scope)?,
             };
             let Value::Array(argument_array) = &argument_array_value else {
-                return Err(runtime_error(
+                return Err(Self::call_user_func_array_non_array_argument_error(
+                    &argument_array_value,
                     span,
-                    RuntimeError::unsupported_call(
-                        "call_user_func_array()",
-                        format!(
-                            "argument array must be array in the current subset, got {}",
-                            argument_array_value.type_name()
-                        ),
-                    ),
                 ));
             };
             ensure_user_function_arity(function, argument_array.len(), span)?;
@@ -48540,15 +48529,9 @@ impl Interpreter {
             None => self.evaluate(argument_expr, caller_scope)?,
         };
         let Value::Array(argument_array) = &argument_array_value else {
-            return Err(runtime_error(
+            return Err(Self::call_user_func_array_non_array_argument_error(
+                &argument_array_value,
                 span,
-                RuntimeError::unsupported_call(
-                    "call_user_func_array()",
-                    format!(
-                        "argument array must be array in the current subset, got {}",
-                        argument_array_value.type_name()
-                    ),
-                ),
             ));
         };
 
@@ -53100,15 +53083,9 @@ impl Interpreter {
         let (argument_value, argument_source) =
             self.evaluate_value_with_array_copy_source(argument_expr, caller_scope)?;
         let Value::Array(argument_array) = &argument_value else {
-            return Err(runtime_error(
+            return Err(Self::call_user_func_array_non_array_argument_error(
+                &argument_value,
                 span,
-                RuntimeError::unsupported_call(
-                    "call_user_func_array()",
-                    format!(
-                        "argument array must be array in the current subset, got {}",
-                        argument_value.type_name()
-                    ),
-                ),
             ));
         };
 
@@ -54195,15 +54172,9 @@ impl Interpreter {
 
         let argument_array_value = self.evaluate(argument_expr, caller_scope)?;
         let Value::Array(argument_array) = &argument_array_value else {
-            return Err(runtime_error(
+            return Err(Self::call_user_func_array_non_array_argument_error(
+                &argument_array_value,
                 span,
-                RuntimeError::unsupported_call(
-                    "call_user_func_array()",
-                    format!(
-                        "argument array must be array in the current subset, got {}",
-                        argument_array_value.type_name()
-                    ),
-                ),
             ));
         };
         let values = Self::call_user_func_array_positional_values(argument_array, span)?;
@@ -67505,15 +67476,8 @@ impl Interpreter {
         expect_arity("call_user_func_array", &args, 2, span)?;
 
         let Value::Array(argument_array) = &args[1] else {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "call_user_func_array()",
-                    format!(
-                        "argument array must be array in the current subset, got {}",
-                        args[1].type_name()
-                    ),
-                ),
+            return Err(Self::call_user_func_array_non_array_argument_error(
+                &args[1], span,
             ));
         };
 
