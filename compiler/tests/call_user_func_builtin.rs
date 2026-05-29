@@ -149,6 +149,35 @@ echo $call("strlen", array("four"));
 }
 
 #[test]
+fn call_user_func_array_non_array_args_raise_catchable_type_error() {
+    let execution = run_source(
+        r#"<?php
+try {
+    call_user_func_array("strlen", null);
+} catch (TypeError $e) {
+    echo $e->getMessage(), "
+";
+}
+
+try {
+    call_user_func_array("strlen", true);
+} catch (TypeError $e) {
+    echo $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "call_user_func_array(): Argument #2 ($args) must be of type array, null given
+call_user_func_array(): Argument #2 ($args) must be of type array, true given"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn call_user_func_array_preserves_named_variadic_argument_keys() {
     let execution = run_source(
         r#"<?php
