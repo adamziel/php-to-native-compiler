@@ -59,14 +59,20 @@ if ($call("abc", $items)) {
 
 #[test]
 fn in_array_requires_array_second_argument() {
-    let error = runtime_error("<?php\necho in_array(\"name\", 42);\n");
+    let source = r#"<?php
+try {
+    echo in_array("name", 42);
+} catch (TypeError $e) {
+    echo $e->getMessage();
+}
+"#;
 
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 6);
+    let execution = run_source(source).unwrap();
     assert_eq!(
-        error.message,
-        "unsupported call in_array(): second argument must be array, got int"
+        execution.stdout,
+        "in_array(): Argument #2 ($haystack) must be of type array, int given"
     );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
@@ -178,31 +184,46 @@ fn in_array_rejects_non_bool_strict_mode_argument() {
 }
 
 #[test]
-fn in_array_rejects_array_and_object_comparison_gaps() {
-    let array_error = runtime_error("<?php\n$items = [[]];\necho in_array(\"needle\", $items);\n");
-
-    assert_eq!(array_error.line, 3);
-    assert_eq!(array_error.column, 6);
-    assert_eq!(
-        array_error.message,
-        "unsupported call in_array(): array needles and array values are not implemented"
-    );
-
-    let object_error = runtime_error(
-        r#"<?php
+fn in_array_uses_loose_array_and_object_membership() {
+    let source = r#"<?php
 class Box {}
 $box = new Box();
-$items = [$box];
-echo in_array("needle", $items);
-"#,
-    );
+$items = [[], ["value" => 1], $box, true];
 
-    assert_eq!(object_error.line, 5);
-    assert_eq!(object_error.column, 6);
+var_dump(in_array(null, $items));
+var_dump(in_array([], $items));
+var_dump(in_array(["value" => "1"], $items));
+var_dump(in_array($box, $items));
+var_dump(in_array(new Box(), $items, true));
+var_dump(in_array(new Box(), $items));
+"#;
+
+    let execution = run_source(source).unwrap();
     assert_eq!(
-        object_error.message,
-        "unsupported call in_array(): object needles and object values are not implemented"
+        execution.stdout,
+        "bool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(false)\nbool(true)\n"
     );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn in_array_uses_singleton_unbacked_enum_cases() {
+    let source = r#"<?php
+enum Sample { case A; case B; }
+$items = [Sample::A];
+
+var_dump(in_array(Sample::A, $items, true));
+var_dump(in_array(Sample::B, $items, true));
+var_dump(in_array(Sample::A, $items));
+var_dump(in_array(Sample::B, $items));
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "bool(true)\nbool(false)\nbool(true)\nbool(false)\n"
+    );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

@@ -30035,6 +30035,10 @@ fn array_comparison_matches(
     op: PhpComparisonOp,
     right: &Value,
 ) -> RuntimeResult<bool> {
+    if matches!(callable, "in_array()" | "array_search()") {
+        return array_membership_comparison_matches(left, op, right);
+    }
+
     let family = op.operation_family();
     if let Some(blocker) = comparison_blocker_for_family(left, right, family) {
         return Err(RuntimeError::unsupported_call(
@@ -30044,6 +30048,61 @@ fn array_comparison_matches(
     }
 
     left.php_compare_checked(right, op)
+}
+
+fn array_membership_comparison_matches(
+    left: &Value,
+    op: PhpComparisonOp,
+    right: &Value,
+) -> RuntimeResult<bool> {
+    let family = op.operation_family();
+    if let Some(expected_identical) = family.strict_identity_expectation() {
+        return Ok(left.php_identical_checked(right)? == expected_identical);
+    }
+
+    let Some(comparison) = family.loose_comparison() else {
+        unreachable!("array membership comparisons are loose equality or strict identity")
+    };
+    match comparison {
+        Comparison::Eq => array_membership_values_equal(left, right),
+        Comparison::Ne => array_membership_values_equal(left, right).map(|equal| !equal),
+        Comparison::Lt | Comparison::Le | Comparison::Gt | Comparison::Ge => {
+            left.php_compare_checked(right, op).map_err(|error| {
+                RuntimeError::unsupported_call("array membership comparison", error.message())
+            })
+        }
+    }
+}
+
+fn array_membership_values_equal(left: &Value, right: &Value) -> RuntimeResult<bool> {
+    match (left, right) {
+        (Value::Array(left), Value::Array(right)) => left.php_equality_checked(right),
+        (Value::Array(array), other) | (other, Value::Array(array)) => {
+            Ok(array_membership_array_equals_non_array(array, other))
+        }
+        (Value::Object(_) | Value::Closure(_), Value::Object(_) | Value::Closure(_)) => {
+            left.php_cmp_checked(right, Comparison::Eq)
+        }
+        (Value::Object(_) | Value::Closure(_), Value::Bool(value))
+        | (Value::Bool(value), Value::Object(_) | Value::Closure(_)) => Ok(*value),
+        (Value::Object(_) | Value::Closure(_), _) | (_, Value::Object(_) | Value::Closure(_)) => {
+            Ok(false)
+        }
+        (Value::Resource(left), Value::Resource(right)) => Ok(left == right),
+        (Value::Resource(_), Value::Bool(value)) | (Value::Bool(value), Value::Resource(_)) => {
+            Ok(*value)
+        }
+        (Value::Resource(_), _) | (_, Value::Resource(_)) => Ok(false),
+        _ => left.php_cmp_checked(right, Comparison::Eq),
+    }
+}
+
+fn array_membership_array_equals_non_array(array: &PhpArray, other: &Value) -> bool {
+    match other {
+        Value::Bool(value) => array.is_empty() != *value,
+        Value::Null => array.is_empty(),
+        _ => false,
+    }
 }
 
 fn array_comparison_blocker_call_reason(
@@ -77984,43 +78043,31 @@ mod tests {
     }
 
     #[test]
-    fn in_array_uses_shared_loose_comparison_blockers() {
+    fn in_array_uses_loose_membership_comparison_for_non_scalar_values() {
         let mut classes = PhpClassTable::new();
         let class_id = classes.declare_class("Box").unwrap();
         let object = Value::Object(PhpObject::from_class(classes.get(class_id).unwrap()));
 
-        for (value, expected_reason) in [
-            (
-                Value::Array(PhpArray::new()),
-                "array needles and array values are not implemented",
-            ),
-            (
-                object,
-                "object needles and object values are not implemented",
-            ),
-            (
-                Value::Resource(11),
-                "resource comparisons are not implemented",
-            ),
-        ] {
-            let mut array = PhpArray::new();
-            array.insert("blocked", value);
+        let mut nested = PhpArray::new();
+        nested.insert("value", Value::Int(1));
 
-            let error = array
-                .contains_value_loose_scalar(&Value::Int(1))
-                .unwrap_err();
-            assert_eq!(
-                error.kind(),
-                &RuntimeErrorKind::UnsupportedCall {
-                    callable: "in_array()".to_string(),
-                    reason: expected_reason.to_string(),
-                }
-            );
-            assert_eq!(
-                error.message(),
-                format!("unsupported call in_array(): {expected_reason}")
-            );
-        }
+        let mut array = PhpArray::new();
+        array.insert("empty-array", Value::Array(PhpArray::new()));
+        array.insert("nested-array", Value::Array(nested.clone()));
+        array.insert("object", object.clone());
+        array.insert("resource", Value::Resource(11));
+
+        assert!(array.contains_value_loose_scalar(&Value::Null).unwrap());
+        assert!(array
+            .contains_value_loose_scalar(&Value::Array(nested))
+            .unwrap());
+        assert!(array.contains_value_loose_scalar(&object).unwrap());
+        assert!(array
+            .contains_value_loose_scalar(&Value::Resource(11))
+            .unwrap());
+        assert!(!array
+            .contains_value_loose_scalar(&Value::Resource(12))
+            .unwrap());
     }
 
     #[test]
@@ -78156,41 +78203,46 @@ mod tests {
     }
 
     #[test]
-    fn array_search_uses_shared_loose_comparison_blockers() {
+    fn array_search_uses_loose_membership_comparison_for_non_scalar_values() {
         let mut classes = PhpClassTable::new();
         let class_id = classes.declare_class("Box").unwrap();
         let object = Value::Object(PhpObject::from_class(classes.get(class_id).unwrap()));
 
-        for (value, expected_reason) in [
-            (
-                Value::Array(PhpArray::new()),
-                "array needles and array values are not implemented",
-            ),
-            (
-                object,
-                "object needles and object values are not implemented",
-            ),
-            (
-                Value::Resource(13),
-                "resource comparisons are not implemented",
-            ),
-        ] {
-            let mut array = PhpArray::new();
-            array.insert("blocked", value);
+        let mut nested = PhpArray::new();
+        nested.insert("value", Value::Int(1));
 
-            let error = array.search_value_loose_scalar(&Value::Int(1)).unwrap_err();
-            assert_eq!(
-                error.kind(),
-                &RuntimeErrorKind::UnsupportedCall {
-                    callable: "array_search()".to_string(),
-                    reason: expected_reason.to_string(),
-                }
-            );
-            assert_eq!(
-                error.message(),
-                format!("unsupported call array_search(): {expected_reason}")
-            );
-        }
+        let mut array = PhpArray::new();
+        array.insert("empty-array", Value::Array(PhpArray::new()));
+        array.insert("nested-array", Value::Array(nested.clone()));
+        array.insert("object", object.clone());
+        array.insert("resource", Value::Resource(13));
+
+        assert_eq!(
+            array.search_value_loose_scalar(&Value::Null).unwrap(),
+            Some(ArrayKey::String("empty-array".to_string()))
+        );
+        assert_eq!(
+            array
+                .search_value_loose_scalar(&Value::Array(nested))
+                .unwrap(),
+            Some(ArrayKey::String("nested-array".to_string()))
+        );
+        assert_eq!(
+            array.search_value_loose_scalar(&object).unwrap(),
+            Some(ArrayKey::String("object".to_string()))
+        );
+        assert_eq!(
+            array
+                .search_value_loose_scalar(&Value::Resource(13))
+                .unwrap(),
+            Some(ArrayKey::String("resource".to_string()))
+        );
+        assert_eq!(
+            array
+                .search_value_loose_scalar(&Value::Resource(14))
+                .unwrap(),
+            None
+        );
     }
 
     #[test]

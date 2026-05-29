@@ -43,14 +43,20 @@ var_dump($call("abc", $items));
 
 #[test]
 fn array_search_requires_array_second_argument() {
-    let error = runtime_error("<?php\necho array_search(\"name\", 42);\n");
+    let source = r#"<?php
+try {
+    echo array_search("name", 42);
+} catch (TypeError $e) {
+    echo $e->getMessage();
+}
+"#;
 
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 6);
+    let execution = run_source(source).unwrap();
     assert_eq!(
-        error.message,
-        "unsupported call array_search(): second argument must be array, got int"
+        execution.stdout,
+        "array_search(): Argument #2 ($haystack) must be of type array, int given"
     );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
@@ -128,32 +134,46 @@ fn array_search_rejects_non_bool_strict_mode_argument() {
 }
 
 #[test]
-fn array_search_rejects_array_and_object_comparison_gaps() {
-    let array_error =
-        runtime_error("<?php\n$items = [[]];\necho array_search(\"needle\", $items);\n");
-
-    assert_eq!(array_error.line, 3);
-    assert_eq!(array_error.column, 6);
-    assert_eq!(
-        array_error.message,
-        "unsupported call array_search(): array needles and array values are not implemented"
-    );
-
-    let object_error = runtime_error(
-        r#"<?php
+fn array_search_uses_loose_array_and_object_membership() {
+    let source = r#"<?php
 class Box {}
 $box = new Box();
-$items = [$box];
-echo array_search("needle", $items);
-"#,
-    );
+$items = ["empty" => [], "array" => ["value" => 1], "object" => $box, "truthy" => true];
 
-    assert_eq!(object_error.line, 5);
-    assert_eq!(object_error.column, 6);
+var_dump(array_search(null, $items));
+var_dump(array_search([], $items));
+var_dump(array_search(["value" => "1"], $items));
+var_dump(array_search($box, $items));
+var_dump(array_search(new Box(), $items, true));
+var_dump(array_search(new Box(), $items));
+"#;
+
+    let execution = run_source(source).unwrap();
     assert_eq!(
-        object_error.message,
-        "unsupported call array_search(): object needles and object values are not implemented"
+        execution.stdout,
+        "string(5) \"empty\"\nstring(5) \"empty\"\nstring(5) \"array\"\nstring(6) \"object\"\nbool(false)\nstring(6) \"object\"\n"
     );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn array_search_uses_singleton_unbacked_enum_cases() {
+    let source = r#"<?php
+enum Sample { case A; case B; }
+$items = ["a" => Sample::A];
+
+var_dump(array_search(Sample::A, $items, true));
+var_dump(array_search(Sample::B, $items, true));
+var_dump(array_search(Sample::A, $items));
+var_dump(array_search(Sample::B, $items));
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "string(1) \"a\"\nbool(false)\nstring(1) \"a\"\nbool(false)\n"
+    );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

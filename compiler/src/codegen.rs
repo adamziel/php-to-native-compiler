@@ -66242,6 +66242,7 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "htmlspecialchars_decode",
     "html_entity_decode",
     "get_html_translation_table",
+    "strip_tags",
     "str_repeat",
     "str_pad",
     "chunk_split",

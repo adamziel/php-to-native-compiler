@@ -154,6 +154,7 @@ struct Interpreter {
     trait_lookup: HashMap<String, Rc<TraitDecl>>,
     enums: Vec<Rc<EnumDecl>>,
     enum_lookup: HashMap<String, Rc<EnumDecl>>,
+    enum_case_objects: HashMap<(String, String), PhpObject>,
     class_constants: HashMap<(ClassId, String), ClassConstantDecl>,
     static_properties: HashMap<(ClassId, String), VariableCell>,
     instance_property_defaults: HashMap<(ClassId, String), Value>,
@@ -9983,14 +9984,18 @@ impl Interpreter {
                     )?;
                 }
                 Stmt::Enum(enum_decl) => {
-                    register_enum_name(
-                        &classes,
+                    let class_id = register_enum_name(
+                        &mut classes,
                         &interface_lookup,
                         &trait_lookup,
                         &mut enums,
                         &mut enum_lookup,
                         enum_decl,
                     )?;
+                    class_source_metadata.insert(
+                        class_id,
+                        class_like_source_metadata_from_enum(enum_decl, source_file.clone()),
+                    );
                 }
                 _ => {}
             }
@@ -10049,6 +10054,7 @@ impl Interpreter {
             trait_lookup,
             enums,
             enum_lookup,
+            enum_case_objects: HashMap::new(),
             class_constants,
             static_properties,
             instance_property_defaults,
@@ -14602,14 +14608,18 @@ impl Interpreter {
                     )?;
                 }
                 Stmt::Enum(enum_decl) => {
-                    register_enum_name(
-                        &self.classes,
+                    let class_id = register_enum_name(
+                        &mut self.classes,
                         &self.interface_lookup,
                         &self.trait_lookup,
                         &mut self.enums,
                         &mut self.enum_lookup,
                         enum_decl,
                     )?;
+                    self.class_source_metadata.insert(
+                        class_id,
+                        class_like_source_metadata_from_enum(enum_decl, self.source_file.clone()),
+                    );
                 }
                 _ => {}
             }
@@ -18284,6 +18294,18 @@ impl Interpreter {
         }
         if declared_class_name.eq_ignore_ascii_case("Attribute") {
             return self.instantiate_core_attribute(args, span, scope);
+        }
+        if self
+            .enum_lookup
+            .contains_key(&declared_class_name.to_ascii_lowercase())
+        {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_object_instantiation(
+                    declared_class_name,
+                    "enum cases are singleton objects and direct enum construction is not implemented",
+                ),
+            ));
         }
         if self.abstract_classes.contains(&class_id) {
             return Err(runtime_error(
@@ -47016,6 +47038,14 @@ impl Interpreter {
             return Ok(Value::Object(self.rounding_mode_case_object(mode, span)?));
         }
 
+        if let Some(enum_decl) = self
+            .enum_lookup
+            .get(&class_name.to_ascii_lowercase())
+            .cloned()
+        {
+            return self.evaluate_enum_case_object(&enum_decl, constant, span);
+        }
+
         if let Some(class_id) = self.classes.lookup_class_id(class_name) {
             return self.evaluate_resolved_class_constant(class_id, class_name, constant, span);
         }
@@ -47031,6 +47061,43 @@ impl Interpreter {
             ));
         };
         self.evaluate_interface_constant(&interface, constant, span)
+    }
+
+    fn evaluate_enum_case_object(
+        &mut self,
+        enum_decl: &EnumDecl,
+        case_name: &str,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let Some(case_decl) = enum_decl.cases.iter().find(|case| case.name == case_name) else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::undefined_constant(format!("{}::{case_name}", enum_decl.name)),
+            ));
+        };
+
+        let key = (enum_decl.name.to_ascii_lowercase(), case_decl.name.clone());
+        if let Some(object) = self.enum_case_objects.get(&key) {
+            return Ok(Value::Object(object.clone()));
+        }
+
+        let object_id = self.allocate_object_id();
+        let class = self
+            .classes
+            .lookup_class(&enum_decl.name)
+            .ok_or_else(|| runtime_error(span, RuntimeError::undefined_class(&enum_decl.name)))?;
+        let class_id = class.id();
+        let object = PhpObject::from_class_with_id(class, object_id);
+        object
+            .write_property_from_context(
+                "name",
+                Value::String(case_decl.name.clone()),
+                Some(class_id),
+                &[class_id],
+            )
+            .map_err(|error| runtime_error(span, error))?;
+        self.enum_case_objects.insert(key, object.clone());
+        Ok(Value::Object(object))
     }
 
     fn evaluate_object_static_class_constant(
@@ -72970,6 +73037,7 @@ impl Interpreter {
             "htmlspecialchars_decode" => call_htmlspecialchars_decode(&args, span),
             "html_entity_decode" => call_html_entity_decode(&args, span),
             "get_html_translation_table" => call_get_html_translation_table(&args, span),
+            "strip_tags" => call_strip_tags(&args, span),
             "nl2br" => call_nl2br(&args, span),
             "str_repeat" => call_str_repeat(&args, span),
             "str_pad" => call_str_pad(&args, span),
@@ -74373,7 +74441,10 @@ impl Interpreter {
                     span,
                     RuntimeError::unsupported_call(
                         "in_array()",
-                        format!("second argument must be array, got {}", other.type_name()),
+                        format!(
+                            "Argument #2 ($haystack) must be of type array, {} given",
+                            php_type_error_given(other)
+                        ),
                     ),
                 )),
                 [_, Value::Array(_), other] => Err(runtime_error(
@@ -74390,7 +74461,10 @@ impl Interpreter {
                     span,
                     RuntimeError::unsupported_call(
                         "in_array()",
-                        format!("second argument must be array, got {}", other.type_name()),
+                        format!(
+                            "Argument #2 ($haystack) must be of type array, {} given",
+                            php_type_error_given(other)
+                        ),
                     ),
                 )),
                 _ => Err(runtime_error(
@@ -74431,7 +74505,10 @@ impl Interpreter {
                     span,
                     RuntimeError::unsupported_call(
                         "array_search()",
-                        format!("second argument must be array, got {}", other.type_name()),
+                        format!(
+                            "Argument #2 ($haystack) must be of type array, {} given",
+                            php_type_error_given(other)
+                        ),
                     ),
                 )),
                 [_, Value::Array(_), other] => Err(runtime_error(
@@ -74448,7 +74525,10 @@ impl Interpreter {
                     span,
                     RuntimeError::unsupported_call(
                         "array_search()",
-                        format!("second argument must be array, got {}", other.type_name()),
+                        format!(
+                            "Argument #2 ($haystack) must be of type array, {} given",
+                            php_type_error_given(other)
+                        ),
                     ),
                 )),
                 _ => Err(runtime_error(
@@ -84050,13 +84130,13 @@ fn register_trait_name(
 }
 
 fn register_enum_name(
-    classes: &PhpClassTable,
+    classes: &mut PhpClassTable,
     interface_lookup: &HashMap<String, Rc<InterfaceDecl>>,
     trait_lookup: &HashMap<String, Rc<TraitDecl>>,
     enums: &mut Vec<Rc<EnumDecl>>,
     enum_lookup: &mut HashMap<String, Rc<EnumDecl>>,
     enum_decl: &EnumDecl,
-) -> CompileResult<()> {
+) -> CompileResult<ClassId> {
     let key = enum_decl.name.to_ascii_lowercase();
     if classes.lookup_class_id(&enum_decl.name).is_some()
         || is_core_interface_name(&enum_decl.name)
@@ -84071,9 +84151,17 @@ fn register_enum_name(
     }
 
     let enum_decl = Rc::new(enum_decl.clone());
+    let class_id = classes
+        .declare_class(&enum_decl.name)
+        .map_err(|error| runtime_error(enum_decl.span, error))?;
+    classes
+        .get_mut(class_id)
+        .expect("enum class id should resolve to metadata")
+        .add_property(PhpPropertyMetadata::instance("name", Visibility::Public))
+        .map_err(|error| runtime_error(enum_decl.span, error))?;
     enums.push(enum_decl.clone());
     enum_lookup.insert(key, enum_decl);
-    Ok(())
+    Ok(class_id)
 }
 
 fn register_class_member_runtime_tables(
@@ -85622,6 +85710,19 @@ fn class_like_source_metadata_from_trait(
     }
 }
 
+fn class_like_source_metadata_from_enum(
+    enum_decl: &EnumDecl,
+    file_name: Option<String>,
+) -> ClassLikeSourceMetadata {
+    ClassLikeSourceMetadata {
+        file_name,
+        start_line: enum_decl.span.line,
+        end_line: enum_decl.span.line,
+        doc_comment: None,
+        attributes: enum_decl.attributes.clone(),
+    }
+}
+
 fn property_source_metadata_from_decl(property: &ClassPropertyDecl) -> PropertySourceMetadata {
     PropertySourceMetadata {
         doc_comment: property.doc_comment.clone(),
@@ -85784,6 +85885,13 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_optional_int_param("table", PHP_HTML_SPECIALCHARS),
                 reflection_internal_optional_int_param("flags", PHP_ENT_DEFAULT),
                 reflection_internal_optional_null_param("encoding", "?string"),
+            ],
+        ),
+        "strip_tags" => (
+            "string",
+            vec![
+                reflection_internal_param("string", "string"),
+                reflection_internal_optional_null_param("allowed_tags", "array|string|null"),
             ],
         ),
         "ucwords" => (
@@ -88678,6 +88786,7 @@ fn is_builtin(name: &str) -> bool {
             | "htmlspecialchars_decode"
             | "html_entity_decode"
             | "get_html_translation_table"
+            | "strip_tags"
             | "nl2br"
             | "str_repeat"
             | "str_pad"
@@ -96328,6 +96437,255 @@ fn html_insert_translation(array: &mut PhpArray, bytes: &[u8], entity: &[u8]) {
     let key = String::from_utf8_lossy(bytes).into_owned();
     let value = interpreter_value_from_php_string_bytes(entity.to_vec());
     array.insert(ArrayKey::String(key), value);
+}
+
+fn call_strip_tags(args: &[Value], span: Span) -> CompileResult<Value> {
+    if !(1..=2).contains(&args.len()) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "strip_tags()",
+                ArityExpectation::Between { min: 1, max: 2 },
+                args.len(),
+            ),
+        ));
+    }
+
+    let value = string_compare_argument_bytes("strip_tags()", "string", &args[0], span)?;
+    let allowed = match args.get(1) {
+        None | Some(Value::Null) => HashSet::new(),
+        Some(Value::Array(array)) => strip_tags_allowed_tags_from_array(array, span)?,
+        Some(Value::Resource(_)) => {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "strip_tags()",
+                    "Argument #2 ($allowed_tags) must be of type array|string|null, resource given",
+                ),
+            ));
+        }
+        Some(Value::Object(_)) | Some(Value::Closure(_)) => HashSet::new(),
+        Some(value) => {
+            let bytes = value
+                .try_echo_bytes()
+                .map_err(|error| runtime_error(span, error))?;
+            strip_tags_allowed_tags_from_string_bytes(&bytes)
+        }
+    };
+
+    Ok(interpreter_value_from_php_string_bytes(strip_tags_bytes(
+        &value, &allowed,
+    )))
+}
+
+fn strip_tags_allowed_tags_from_array(
+    array: &PhpArray,
+    span: Span,
+) -> CompileResult<HashSet<String>> {
+    let mut allowed = HashSet::new();
+    for entry in array.entries() {
+        match entry.value() {
+            Value::Resource(_) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "strip_tags()",
+                        "Argument #2 ($allowed_tags) must be of type array|string|null, resource given",
+                    ),
+                ));
+            }
+            Value::Array(_) | Value::Object(_) | Value::Closure(_) => {}
+            value => {
+                let bytes = value
+                    .try_echo_bytes()
+                    .map_err(|error| runtime_error(span, error))?;
+                if let Some(name) = strip_tags_plain_allowed_tag_name(&bytes) {
+                    allowed.insert(name);
+                } else {
+                    allowed.extend(strip_tags_allowed_tags_from_string_bytes(&bytes));
+                }
+            }
+        }
+    }
+    Ok(allowed)
+}
+
+fn strip_tags_plain_allowed_tag_name(bytes: &[u8]) -> Option<String> {
+    if bytes.is_empty() || !bytes.iter().all(|byte| byte.is_ascii_alphanumeric()) {
+        return None;
+    }
+    bytes
+        .first()
+        .filter(|byte| byte.is_ascii_alphabetic())
+        .map(|_| {
+            bytes
+                .iter()
+                .map(|byte| byte.to_ascii_lowercase() as char)
+                .collect()
+        })
+}
+
+fn strip_tags_allowed_tags_from_string_bytes(bytes: &[u8]) -> HashSet<String> {
+    let mut allowed = HashSet::new();
+    for index in 0..bytes.len() {
+        if bytes[index] != b'<' {
+            continue;
+        }
+        if let Some((name, _, _)) = strip_tags_html_tag_name(bytes, index + 1) {
+            allowed.insert(name);
+        }
+    }
+    allowed
+}
+
+struct StripTagSpan {
+    end: usize,
+    keep: bool,
+}
+
+fn strip_tags_bytes(value: &[u8], allowed: &HashSet<String>) -> Vec<u8> {
+    let mut output = Vec::with_capacity(value.len());
+    let mut index = 0;
+    while index < value.len() {
+        if value[index] == b'\0' {
+            index += 1;
+            continue;
+        }
+
+        if value[index] != b'<' {
+            output.push(value[index]);
+            index += 1;
+            continue;
+        }
+
+        if value.get(index + 1) == Some(&b'<') {
+            if let Some(span) = strip_tags_span(value, index + 1, allowed) {
+                if span.keep {
+                    output.extend_from_slice(&value[index + 1..span.end]);
+                }
+                index = span.end;
+                if value.get(index) == Some(&b'>') {
+                    index += 1;
+                }
+                continue;
+            }
+        }
+
+        let Some(span) = strip_tags_span(value, index, allowed) else {
+            output.push(value[index]);
+            index += 1;
+            continue;
+        };
+
+        if span.keep {
+            output.extend_from_slice(&value[index..span.end]);
+        }
+        index = span.end;
+    }
+
+    output
+}
+
+fn strip_tags_span(value: &[u8], start: usize, allowed: &HashSet<String>) -> Option<StripTagSpan> {
+    let next = *value.get(start + 1)?;
+    if next == b'?' {
+        return Some(StripTagSpan {
+            end: strip_tags_find_terminator(value, start + 2, b'?', b'>').unwrap_or(value.len()),
+            keep: false,
+        });
+    }
+    if next == b'%' {
+        return Some(StripTagSpan {
+            end: strip_tags_find_terminator(value, start + 2, b'%', b'>').unwrap_or(value.len()),
+            keep: false,
+        });
+    }
+    if value.get(start + 1..start + 4) == Some(b"!--") {
+        return Some(StripTagSpan {
+            end: strip_tags_find_comment_end(value, start + 4).unwrap_or(value.len()),
+            keep: false,
+        });
+    }
+
+    let tag_like = next == b'!' || next == b'/' || next.is_ascii_alphabetic();
+    if !tag_like {
+        return None;
+    }
+
+    let end = strip_tags_find_tag_end(value, start + 1)?;
+    let keep = strip_tags_html_tag_name(value, start + 1).is_some_and(
+        |(name, name_end, boundary_valid)| {
+            boundary_valid && name_end < end && allowed.contains(&name)
+        },
+    );
+    Some(StripTagSpan { end, keep })
+}
+
+fn strip_tags_find_terminator(
+    value: &[u8],
+    mut index: usize,
+    first: u8,
+    second: u8,
+) -> Option<usize> {
+    while index + 1 < value.len() {
+        if value[index] == first && value[index + 1] == second {
+            return Some(index + 2);
+        }
+        index += 1;
+    }
+    None
+}
+
+fn strip_tags_find_comment_end(value: &[u8], mut index: usize) -> Option<usize> {
+    while index + 2 < value.len() {
+        if &value[index..index + 3] == b"-->" {
+            return Some(index + 3);
+        }
+        index += 1;
+    }
+    None
+}
+
+fn strip_tags_find_tag_end(value: &[u8], mut index: usize) -> Option<usize> {
+    let mut quote = None;
+    while index < value.len() {
+        let byte = value[index];
+        if let Some(current_quote) = quote {
+            if byte == current_quote {
+                quote = None;
+            }
+        } else if byte == b'\'' || byte == b'"' {
+            quote = Some(byte);
+        } else if byte == b'>' {
+            return Some(index + 1);
+        }
+        index += 1;
+    }
+    None
+}
+
+fn strip_tags_html_tag_name(value: &[u8], mut index: usize) -> Option<(String, usize, bool)> {
+    if value.get(index) == Some(&b'/') {
+        index += 1;
+    }
+    let start = index;
+    while value
+        .get(index)
+        .is_some_and(|byte| byte.is_ascii_alphanumeric())
+    {
+        index += 1;
+    }
+    if start == index || !value[start].is_ascii_alphabetic() {
+        return None;
+    }
+    let boundary_valid = value
+        .get(index)
+        .is_some_and(|byte| byte.is_ascii_whitespace() || matches!(*byte, b'/' | b'>'));
+    let name = value[start..index]
+        .iter()
+        .map(|byte| byte.to_ascii_lowercase() as char)
+        .collect();
+    Some((name, index, boundary_valid))
 }
 
 fn htmlspecialchars_encode_bytes(value: &[u8], flags: i64, double_encode: bool) -> Vec<u8> {
