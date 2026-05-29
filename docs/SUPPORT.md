@@ -10739,3 +10739,12 @@
   PHP's output buffering and fatal-error behavior
 
 Unsupported code should fail with an explicit parse, runtime, or codegen error.
+
+- Additional local file metadata helpers in `phpc run`: `fileinode()`,
+  `fileowner()`, `filegroup()`, and `filetype()` read bounded local filesystem
+  metadata using the same stat-cache/local-path subset as `filesize()` and
+  `filemtime()`. `fileatime()`, `filectime()`, and `is_executable()` remain a
+  separate split pending the generalized `touch()`, `tempnam()`, and missing-file
+  stat-warning behavior required by their focused PHPT clusters. Stream-wrapper
+  metadata paths and platform-specific ACL/owner name resolution remain
+  unsupported.

@@ -60835,6 +60835,54 @@ impl Interpreter {
         }
     }
 
+    fn call_file_metadata_int_builtin(
+        &mut self,
+        args: &[Value],
+        function: &str,
+        value: fn(&fs::Metadata) -> i64,
+        span: Span,
+    ) -> CompileResult<Value> {
+        expect_arity(function, args, 1, span)?;
+        let path = self.filesystem_path_argument(function, "filename", &args[0], span)?;
+        if path.contains("://") {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{function}()"),
+                    "stream wrappers are not supported in the current subset",
+                ),
+            ));
+        }
+        let Some(metadata) = self.cached_local_metadata(&path) else {
+            return Ok(Value::Bool(false));
+        };
+        Ok(Value::Int(value(&metadata)))
+    }
+
+    fn call_filetype(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("filetype", args, 1, span)?;
+        let path = self.filesystem_path_argument("filetype", "filename", &args[0], span)?;
+        if path.contains("://") {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "filetype()",
+                    "stream wrappers are not supported in the current subset",
+                ),
+            ));
+        }
+        let metadata_path = local_filesystem_metadata_path(&path);
+        let Some(file_type) = fs::symlink_metadata(&metadata_path)
+            .ok()
+            .map(|metadata| metadata.file_type())
+        else {
+            return Ok(Value::Bool(false));
+        };
+        Ok(Value::String(
+            filesystem_file_type_name(&file_type).to_string(),
+        ))
+    }
+
     fn file_put_contents_data_bytes(
         &mut self,
         value: &Value,
@@ -65892,6 +65940,25 @@ impl Interpreter {
                     )),
                 }
             }
+            "fileinode" => self.call_file_metadata_int_builtin(
+                &args,
+                "fileinode",
+                filesystem_inode_value,
+                span,
+            ),
+            "fileowner" => self.call_file_metadata_int_builtin(
+                &args,
+                "fileowner",
+                filesystem_owner_value,
+                span,
+            ),
+            "filegroup" => self.call_file_metadata_int_builtin(
+                &args,
+                "filegroup",
+                filesystem_group_value,
+                span,
+            ),
+            "filetype" => self.call_filetype(&args, span),
             "clearstatcache" => {
                 if args.len() > 2 {
                     return Err(runtime_error(
@@ -75801,6 +75868,10 @@ fn is_builtin(name: &str) -> bool {
             | "closedir"
             | "filesize"
             | "filemtime"
+            | "fileinode"
+            | "fileowner"
+            | "filegroup"
+            | "filetype"
             | "realpath"
             | "realpath_cache_get"
             | "realpath_cache_size"
@@ -85224,6 +85295,78 @@ fn stream_stat_array(values: [i64; 13]) -> PhpArray {
 
 fn memory_stream_stat_array(size: i64) -> PhpArray {
     stream_stat_array([12, 0, 33206, 1, 0, 0, -1, size, 0, 0, 0, -1, -1])
+}
+
+#[cfg(unix)]
+fn filesystem_inode_value(metadata: &fs::Metadata) -> i64 {
+    use std::os::unix::fs::MetadataExt;
+
+    metadata.ino() as i64
+}
+
+#[cfg(not(unix))]
+fn filesystem_inode_value(_metadata: &fs::Metadata) -> i64 {
+    0
+}
+
+#[cfg(unix)]
+fn filesystem_owner_value(metadata: &fs::Metadata) -> i64 {
+    use std::os::unix::fs::MetadataExt;
+
+    metadata.uid() as i64
+}
+
+#[cfg(not(unix))]
+fn filesystem_owner_value(_metadata: &fs::Metadata) -> i64 {
+    0
+}
+
+#[cfg(unix)]
+fn filesystem_group_value(metadata: &fs::Metadata) -> i64 {
+    use std::os::unix::fs::MetadataExt;
+
+    metadata.gid() as i64
+}
+
+#[cfg(not(unix))]
+fn filesystem_group_value(_metadata: &fs::Metadata) -> i64 {
+    0
+}
+
+#[cfg(unix)]
+fn filesystem_file_type_name(file_type: &fs::FileType) -> &'static str {
+    use std::os::unix::fs::FileTypeExt;
+
+    if file_type.is_file() {
+        "file"
+    } else if file_type.is_dir() {
+        "dir"
+    } else if file_type.is_symlink() {
+        "link"
+    } else if file_type.is_fifo() {
+        "fifo"
+    } else if file_type.is_socket() {
+        "socket"
+    } else if file_type.is_char_device() {
+        "char"
+    } else if file_type.is_block_device() {
+        "block"
+    } else {
+        "unknown"
+    }
+}
+
+#[cfg(not(unix))]
+fn filesystem_file_type_name(file_type: &fs::FileType) -> &'static str {
+    if file_type.is_file() {
+        "file"
+    } else if file_type.is_dir() {
+        "dir"
+    } else if file_type.is_symlink() {
+        "link"
+    } else {
+        "unknown"
+    }
 }
 
 #[cfg(unix)]
