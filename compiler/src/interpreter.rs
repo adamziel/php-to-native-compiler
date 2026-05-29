@@ -73750,10 +73750,29 @@ impl Interpreter {
             "bin2hex" => call_bin2hex(&args, span),
             "hex2bin" => self.call_hex2bin(&args, span),
             "ord" => self.call_ord(&args, span),
+            "dechex" => self.call_int_base_string_builtin("dechex()", &args, 16, span),
+            "decbin" => self.call_int_base_string_builtin("decbin()", &args, 2, span),
+            "decoct" => self.call_int_base_string_builtin("decoct()", &args, 8, span),
+            "hexdec" => self.call_hexdec(&args, span),
+            "base_convert" => self.call_base_convert(&args, span),
             "crc32" => call_crc32(&args, span),
             "levenshtein" => call_levenshtein(&args, span),
             "soundex" => call_soundex(&args, span),
             "count_chars" => call_count_chars(&args, span),
+            "base64_decode" => call_base64_decode(&args, span),
+            "ctype_alnum" => self.call_ctype("ctype_alnum()", &args, ctype_byte_is_alnum, span),
+            "ctype_alpha" => self.call_ctype("ctype_alpha()", &args, ctype_byte_is_alpha, span),
+            "ctype_cntrl" => self.call_ctype("ctype_cntrl()", &args, ctype_byte_is_cntrl, span),
+            "ctype_digit" => self.call_ctype("ctype_digit()", &args, ctype_byte_is_digit, span),
+            "ctype_graph" => self.call_ctype("ctype_graph()", &args, ctype_byte_is_graph, span),
+            "ctype_lower" => self.call_ctype("ctype_lower()", &args, ctype_byte_is_lower, span),
+            "ctype_print" => self.call_ctype("ctype_print()", &args, ctype_byte_is_print, span),
+            "ctype_punct" => self.call_ctype("ctype_punct()", &args, ctype_byte_is_punct, span),
+            "ctype_space" => self.call_ctype("ctype_space()", &args, ctype_byte_is_space, span),
+            "ctype_upper" => self.call_ctype("ctype_upper()", &args, ctype_byte_is_upper, span),
+            "ctype_xdigit" => {
+                self.call_ctype("ctype_xdigit()", &args, ctype_byte_is_xdigit, span)
+            }
             "strrev" => call_strrev(&args, span),
             "str_rot13" => call_str_rot13(&args, span),
             "ucfirst" => call_ucfirst(&args, span),
@@ -86806,6 +86825,19 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
             "int",
             vec![reflection_internal_param("character", "string")],
         ),
+        "dechex" | "decbin" | "decoct" => ("string", vec![reflection_internal_param("num", "int")]),
+        "hexdec" => (
+            "int|float",
+            vec![reflection_internal_param("hex_string", "string")],
+        ),
+        "base_convert" => (
+            "string",
+            vec![
+                reflection_internal_param("num", "string"),
+                reflection_internal_param("from_base", "int"),
+                reflection_internal_param("to_base", "int"),
+            ],
+        ),
         "crc32" => ("int", vec![reflection_internal_param("string", "string")]),
         "levenshtein" => (
             "int",
@@ -86828,6 +86860,16 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_optional_int_param("mode", 0),
             ],
         ),
+        "base64_decode" => (
+            "string|false",
+            vec![
+                reflection_internal_param("string", "string"),
+                reflection_internal_optional_bool_param("strict", false),
+            ],
+        ),
+        "ctype_alnum" | "ctype_alpha" | "ctype_cntrl" | "ctype_digit" | "ctype_graph"
+        | "ctype_lower" | "ctype_print" | "ctype_punct" | "ctype_space" | "ctype_upper"
+        | "ctype_xdigit" => ("bool", vec![reflection_internal_param("text", "mixed")]),
         "strrev" | "str_rot13" | "ucfirst" | "lcfirst" | "quotemeta" => (
             "string",
             vec![reflection_internal_param("string", "string")],
@@ -87344,6 +87386,8 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
 fn reflection_internal_extension_name(name: &str) -> String {
     if name.starts_with("bc") {
         "bcmath".to_string()
+    } else if name.starts_with("ctype_") {
+        "ctype".to_string()
     } else {
         "standard".to_string()
     }
@@ -89405,6 +89449,8 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
         | ("array_fill()", "Argument #2 ($count) is too large")
         | ("chunk_split()", "Argument #2 ($length) must be greater than 0")
         | ("str_split()", "Argument #2 ($length) must be greater than 0")
+        | ("base_convert()", "Argument #2 ($from_base) must be between 2 and 36 (inclusive)")
+        | ("base_convert()", "Argument #3 ($to_base) must be between 2 and 36 (inclusive)")
         | ("strncmp()", "Argument #3 ($length) must be greater than or equal to 0")
         | ("strncasecmp()", "Argument #3 ($length) must be greater than or equal to 0")
         | ("count_chars()", "Argument #2 ($mode) must be between 0 and 4 (inclusive)")
@@ -89800,10 +89846,27 @@ fn is_builtin(name: &str) -> bool {
             | "bin2hex"
             | "hex2bin"
             | "ord"
+            | "dechex"
+            | "decbin"
+            | "decoct"
+            | "hexdec"
+            | "base_convert"
             | "crc32"
             | "levenshtein"
             | "soundex"
             | "count_chars"
+            | "base64_decode"
+            | "ctype_alnum"
+            | "ctype_alpha"
+            | "ctype_cntrl"
+            | "ctype_digit"
+            | "ctype_graph"
+            | "ctype_lower"
+            | "ctype_print"
+            | "ctype_punct"
+            | "ctype_space"
+            | "ctype_upper"
+            | "ctype_xdigit"
             | "strrev"
             | "str_rot13"
             | "ucfirst"
@@ -96932,6 +96995,110 @@ fn call_bin2hex(args: &[Value], span: Span) -> CompileResult<Value> {
     Ok(Value::String(hex_bytes(&value)))
 }
 
+fn call_base64_decode(args: &[Value], span: Span) -> CompileResult<Value> {
+    if !(1..=2).contains(&args.len()) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "base64_decode()",
+                ArityExpectation::Between { min: 1, max: 2 },
+                args.len(),
+            ),
+        ));
+    }
+
+    let value = string_compare_argument_bytes("base64_decode()", "string", &args[0], span)?;
+    let strict = args.get(1).is_some_and(Value::is_truthy);
+    match base64_decode_bytes(&value, strict) {
+        Some(decoded) => Ok(interpreter_value_from_php_string_bytes(decoded)),
+        None => Ok(Value::Bool(false)),
+    }
+}
+
+fn base64_decode_bytes(input: &[u8], strict: bool) -> Option<Vec<u8>> {
+    let mut symbols = Vec::with_capacity(input.len());
+    let mut padding = 0usize;
+    let mut saw_padding = false;
+
+    for &byte in input {
+        if let Some(value) = base64_decode_value(byte) {
+            if strict && saw_padding {
+                return None;
+            }
+            symbols.push(value);
+            continue;
+        }
+
+        if byte == b'=' {
+            saw_padding = true;
+            padding += 1;
+            if strict && padding > 2 {
+                return None;
+            }
+            continue;
+        }
+
+        if base64_decode_ignored_whitespace(byte) {
+            continue;
+        }
+
+        if strict {
+            return None;
+        }
+    }
+
+    if strict {
+        let encoded_len = symbols.len() + padding;
+        if symbols.len() % 4 == 1 || (padding > 0 && encoded_len % 4 != 0) {
+            return None;
+        }
+    }
+
+    let mut output = Vec::with_capacity(symbols.len() / 4 * 3 + 2);
+    for chunk in symbols.chunks_exact(4) {
+        let triple = ((chunk[0] as u32) << 18)
+            | ((chunk[1] as u32) << 12)
+            | ((chunk[2] as u32) << 6)
+            | chunk[3] as u32;
+        output.push(((triple >> 16) & 0xff) as u8);
+        output.push(((triple >> 8) & 0xff) as u8);
+        output.push((triple & 0xff) as u8);
+    }
+
+    match symbols.chunks_exact(4).remainder() {
+        [] => {}
+        [_] if strict => return None,
+        [_] => {}
+        [a, b] => {
+            let triple = ((*a as u32) << 18) | ((*b as u32) << 12);
+            output.push(((triple >> 16) & 0xff) as u8);
+        }
+        [a, b, c] => {
+            let triple = ((*a as u32) << 18) | ((*b as u32) << 12) | ((*c as u32) << 6);
+            output.push(((triple >> 16) & 0xff) as u8);
+            output.push(((triple >> 8) & 0xff) as u8);
+        }
+        _ => unreachable!("base64 remainder length is bounded by chunks_exact(4)"),
+    }
+
+    Some(output)
+}
+
+fn base64_decode_value(byte: u8) -> Option<u8> {
+    match byte {
+        b'A'..=b'Z' => Some(byte - b'A'),
+        b'a'..=b'z' => Some(byte - b'a' + 26),
+        b'0'..=b'9' => Some(byte - b'0' + 52),
+        b'+' => Some(62),
+        b'/' => Some(63),
+        _ => None,
+    }
+}
+
+fn base64_decode_ignored_whitespace(byte: u8) -> bool {
+    matches!(byte, b' ' | b'\t' | b'\n' | b'\r')
+}
+
 impl Interpreter {
     fn call_hex2bin(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("hex2bin", args, 1, span)?;
@@ -96983,6 +97150,472 @@ impl Interpreter {
 
         Ok(Value::Int(i64::from(value[0])))
     }
+
+    fn call_int_base_string_builtin(
+        &mut self,
+        function: &'static str,
+        args: &[Value],
+        base: u32,
+        span: Span,
+    ) -> CompileResult<Value> {
+        expect_arity(function.trim_end_matches("()"), args, 1, span)?;
+        let value = self.php_base_conversion_int_argument(function, &args[0], span)?;
+        Ok(Value::String(format_unsigned_radix(value as u64, base)))
+    }
+
+    fn php_base_conversion_int_argument(
+        &mut self,
+        function: &'static str,
+        arg: &Value,
+        span: Span,
+    ) -> CompileResult<i64> {
+        match arg {
+            Value::Null => Ok(0),
+            Value::Bool(value) => Ok(i64::from(*value)),
+            Value::Int(value) => Ok(*value),
+            Value::Float(value) => {
+                if let Some(parsed) = php_base_conversion_float_to_i64(*value) {
+                    if value.trunc() != *value {
+                        self.emit_display_diagnostic(
+                            "Deprecated",
+                            PHP_E_DEPRECATED,
+                            format!(
+                                "Implicit conversion from float {value} to int loses precision"
+                            ),
+                            span,
+                        )?;
+                    }
+                    Ok(parsed)
+                } else {
+                    Err(php_internal_int_type_error(function, 1, "num", arg, span))
+                }
+            }
+            Value::String(value) => {
+                if let Some(parsed) = parse_base_conversion_integer_string(value, self, span)? {
+                    Ok(parsed)
+                } else {
+                    Err(php_internal_int_type_error(function, 1, "num", arg, span))
+                }
+            }
+            Value::BinaryString(bytes) => {
+                if let Ok(value) = std::str::from_utf8(bytes) {
+                    if let Some(parsed) = parse_base_conversion_integer_string(value, self, span)? {
+                        return Ok(parsed);
+                    }
+                }
+                Err(php_internal_int_type_error(function, 1, "num", arg, span))
+            }
+            Value::Array(_) | Value::Object(_) | Value::Closure(_) | Value::Resource(_) => {
+                Err(php_internal_int_type_error(function, 1, "num", arg, span))
+            }
+        }
+    }
+
+    fn call_hexdec(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("hexdec", args, 1, span)?;
+        let input = self.php_hexdec_string_argument(&args[0], span)?;
+        let (value, ignored_invalid) = parse_php_base_string(&input, 16);
+        if ignored_invalid {
+            self.emit_display_diagnostic(
+                "Deprecated",
+                PHP_E_DEPRECATED,
+                "Invalid characters passed for attempted conversion, these have been ignored",
+                span,
+            )?;
+        }
+
+        if value <= i64::MAX as u128 {
+            Ok(Value::Int(value as i64))
+        } else {
+            Ok(Value::Float(value as f64))
+        }
+    }
+
+    fn php_hexdec_string_argument(&mut self, value: &Value, span: Span) -> CompileResult<String> {
+        match value {
+            Value::String(value) => Ok(value.clone()),
+            Value::BinaryString(bytes) => Ok(String::from_utf8_lossy(bytes).into_owned()),
+            Value::Float(float) => Ok(format_php_precision_float(
+                *float,
+                self.php_scalar_precision(),
+            )),
+            Value::Null | Value::Bool(_) | Value::Int(_) => Ok(value.echo_string()),
+            Value::Array(_) | Value::Object(_) | Value::Closure(_) | Value::Resource(_) => {
+                Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "hexdec()",
+                        format!(
+                            "Argument #1 ($hex_string) must be of type string, {} given",
+                            php_type_error_given(value)
+                        ),
+                    ),
+                ))
+            }
+        }
+    }
+
+    fn call_base_convert(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("base_convert", args, 3, span)?;
+        let input = self.php_base_convert_string_argument(&args[0], span)?;
+        let from_base =
+            php_internal_int_argument("base_convert()", 2, "from_base", &args[1], span)?;
+        let to_base = php_internal_int_argument("base_convert()", 3, "to_base", &args[2], span)?;
+        if !(2..=36).contains(&from_base) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "base_convert()",
+                    "Argument #2 ($from_base) must be between 2 and 36 (inclusive)",
+                ),
+            ));
+        }
+        if !(2..=36).contains(&to_base) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "base_convert()",
+                    "Argument #3 ($to_base) must be between 2 and 36 (inclusive)",
+                ),
+            ));
+        }
+
+        let (value, ignored_invalid) = parse_php_base_string(&input, from_base as u32);
+        if ignored_invalid {
+            self.emit_display_diagnostic(
+                "Deprecated",
+                PHP_E_DEPRECATED,
+                "Invalid characters passed for attempted conversion, these have been ignored",
+                span,
+            )?;
+        }
+        Ok(Value::String(format_unsigned_radix_any(
+            value,
+            to_base as u32,
+        )))
+    }
+
+    fn php_base_convert_string_argument(
+        &mut self,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<String> {
+        match value {
+            Value::String(value) => Ok(value.clone()),
+            Value::BinaryString(bytes) => Ok(String::from_utf8_lossy(bytes).into_owned()),
+            Value::Float(float) => Ok(format_php_precision_float(
+                *float,
+                self.php_scalar_precision(),
+            )),
+            Value::Null | Value::Bool(_) | Value::Int(_) => Ok(value.echo_string()),
+            Value::Array(_) | Value::Object(_) | Value::Closure(_) | Value::Resource(_) => {
+                Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "base_convert()",
+                        format!(
+                            "Argument #1 ($num) must be of type string, {} given",
+                            php_type_error_given(value)
+                        ),
+                    ),
+                ))
+            }
+        }
+    }
+
+    fn php_scalar_precision(&self) -> usize {
+        self.ini_value("precision")
+            .as_deref()
+            .and_then(parse_ini_i64_prefix)
+            .filter(|precision| *precision > 0)
+            .and_then(|precision| usize::try_from(precision).ok())
+            .unwrap_or(14)
+            .min(100)
+    }
+}
+
+fn parse_base_conversion_integer_string(
+    value: &str,
+    interpreter: &mut Interpreter,
+    span: Span,
+) -> CompileResult<Option<i64>> {
+    if let Ok(parsed) = value.parse::<i64>() {
+        return Ok(Some(parsed));
+    }
+
+    let Ok(parsed) = value.parse::<f64>() else {
+        return Ok(None);
+    };
+    let Some(integer) = php_base_conversion_float_to_i64(parsed) else {
+        return Ok(None);
+    };
+    if parsed.trunc() != parsed {
+        interpreter.emit_display_diagnostic(
+            "Deprecated",
+            PHP_E_DEPRECATED,
+            format!("Implicit conversion from float-string \"{value}\" to int loses precision"),
+            span,
+        )?;
+    }
+    Ok(Some(integer))
+}
+
+fn php_base_conversion_float_to_i64(value: f64) -> Option<i64> {
+    if !value.is_finite() {
+        return None;
+    }
+    let truncated = value.trunc();
+    if truncated < i64::MIN as f64 || truncated >= 9_223_372_036_854_775_808.0 {
+        return None;
+    }
+    Some(truncated as i64)
+}
+
+fn format_unsigned_radix(mut value: u64, base: u32) -> String {
+    debug_assert!((2..=16).contains(&base));
+    if value == 0 {
+        return "0".to_string();
+    }
+
+    let mut digits = Vec::new();
+    while value != 0 {
+        let digit = (value % u64::from(base)) as u8;
+        let ch = match digit {
+            0..=9 => b'0' + digit,
+            _ => b'a' + (digit - 10),
+        };
+        digits.push(ch);
+        value /= u64::from(base);
+    }
+    digits.reverse();
+    String::from_utf8(digits).expect("radix digits are ASCII")
+}
+
+fn format_unsigned_radix_any(mut value: u128, base: u32) -> String {
+    debug_assert!((2..=36).contains(&base));
+    if value == 0 {
+        return "0".to_string();
+    }
+
+    let mut digits = Vec::new();
+    while value != 0 {
+        let digit = (value % u128::from(base)) as u8;
+        let ch = match digit {
+            0..=9 => b'0' + digit,
+            _ => b'a' + (digit - 10),
+        };
+        digits.push(ch);
+        value /= u128::from(base);
+    }
+    digits.reverse();
+    String::from_utf8(digits).expect("radix digits are ASCII")
+}
+
+fn parse_php_base_string(input: &str, base: u32) -> (u128, bool) {
+    let trimmed = input.trim();
+    let body = match base {
+        2 => trimmed
+            .strip_prefix("0b")
+            .or_else(|| trimmed.strip_prefix("0B"))
+            .unwrap_or(trimmed),
+        8 => trimmed
+            .strip_prefix("0o")
+            .or_else(|| trimmed.strip_prefix("0O"))
+            .unwrap_or(trimmed),
+        16 => trimmed
+            .strip_prefix("0x")
+            .or_else(|| trimmed.strip_prefix("0X"))
+            .unwrap_or(trimmed),
+        _ => trimmed,
+    };
+
+    let mut value = 0_u128;
+    let mut ignored_invalid = false;
+    for byte in body.bytes() {
+        let Some(digit) = base36_digit_value(byte) else {
+            ignored_invalid = true;
+            continue;
+        };
+        if digit >= base {
+            ignored_invalid = true;
+            continue;
+        }
+        value = value
+            .saturating_mul(u128::from(base))
+            .saturating_add(u128::from(digit));
+    }
+    (value, ignored_invalid)
+}
+
+fn base36_digit_value(byte: u8) -> Option<u32> {
+    match byte {
+        b'0'..=b'9' => Some(u32::from(byte - b'0')),
+        b'a'..=b'z' => Some(u32::from(byte - b'a' + 10)),
+        b'A'..=b'Z' => Some(u32::from(byte - b'A' + 10)),
+        _ => None,
+    }
+}
+
+fn format_php_precision_float(value: f64, precision: usize) -> String {
+    if value.is_nan() {
+        return "NAN".to_string();
+    }
+    if value.is_infinite() {
+        return if value.is_sign_positive() {
+            "INF".to_string()
+        } else {
+            "-INF".to_string()
+        };
+    }
+    if value == 0.0 {
+        return "0".to_string();
+    }
+
+    let abs = value.abs();
+    if abs < 1e-4 || abs >= 10_f64.powi(precision.min(308) as i32) {
+        let fractional = precision.saturating_sub(1);
+        return normalize_php_scientific_float(format!("{value:.fractional$E}"));
+    }
+
+    Value::Float(value).echo_string()
+}
+
+fn normalize_php_scientific_float(mut value: String) -> String {
+    let Some(exponent_index) = value.find('E') else {
+        return value;
+    };
+
+    let mut mantissa = value[..exponent_index].to_string();
+    if mantissa.contains('.') {
+        while mantissa.ends_with('0') {
+            mantissa.pop();
+        }
+        if mantissa.ends_with('.') {
+            mantissa.pop();
+        }
+    }
+
+    let exponent = value.split_off(exponent_index + 1);
+    let (sign, digits) = if let Some(digits) = exponent.strip_prefix('-') {
+        ("-", digits)
+    } else {
+        ("", &exponent[..])
+    };
+    let digits = digits.trim_start_matches(|ch| matches!(ch, '+' | '0'));
+    let digits = if digits.is_empty() { "0" } else { digits };
+    format!("{mantissa}E{sign}{digits}")
+}
+
+impl Interpreter {
+    fn call_ctype(
+        &mut self,
+        function: &'static str,
+        args: &[Value],
+        predicate: fn(u8) -> bool,
+        span: Span,
+    ) -> CompileResult<Value> {
+        expect_arity(function.trim_end_matches("()"), args, 1, span)?;
+
+        let bytes = self.ctype_argument_bytes(function, &args[0], span)?;
+        Ok(Value::Bool(
+            !bytes.is_empty() && bytes.into_iter().all(predicate),
+        ))
+    }
+
+    fn ctype_argument_bytes(
+        &mut self,
+        function: &'static str,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<Vec<u8>> {
+        match value {
+            Value::String(value) => Ok(value.as_bytes().to_vec()),
+            Value::BinaryString(value) => Ok(value.clone()),
+            Value::Int(value) => {
+                self.emit_ctype_scalar_deprecation(function, "int", span)?;
+                if (0..=255).contains(value) {
+                    Ok(vec![*value as u8])
+                } else {
+                    Ok(value.to_string().into_bytes())
+                }
+            }
+            other => {
+                self.emit_ctype_scalar_deprecation(
+                    function,
+                    &ctype_deprecated_type_label(other),
+                    span,
+                )?;
+                Ok(Vec::new())
+            }
+        }
+    }
+
+    fn emit_ctype_scalar_deprecation(
+        &mut self,
+        function: &'static str,
+        type_label: &str,
+        span: Span,
+    ) -> CompileResult<()> {
+        self.emit_display_diagnostic(
+            "Deprecated",
+            PHP_E_DEPRECATED,
+            format!(
+                "{function}: Argument of type {type_label} will be interpreted as string in the future"
+            ),
+            span,
+        )
+    }
+}
+
+fn ctype_deprecated_type_label(value: &Value) -> String {
+    match value {
+        Value::Object(object) => object.class_name().to_string(),
+        other => other.type_name().to_string(),
+    }
+}
+
+fn ctype_byte_is_alnum(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric()
+}
+
+fn ctype_byte_is_alpha(byte: u8) -> bool {
+    byte.is_ascii_alphabetic()
+}
+
+fn ctype_byte_is_cntrl(byte: u8) -> bool {
+    byte <= 0x1f || byte == 0x7f
+}
+
+fn ctype_byte_is_digit(byte: u8) -> bool {
+    byte.is_ascii_digit()
+}
+
+fn ctype_byte_is_graph(byte: u8) -> bool {
+    (0x21..=0x7e).contains(&byte)
+}
+
+fn ctype_byte_is_lower(byte: u8) -> bool {
+    byte.is_ascii_lowercase()
+}
+
+fn ctype_byte_is_print(byte: u8) -> bool {
+    (0x20..=0x7e).contains(&byte)
+}
+
+fn ctype_byte_is_punct(byte: u8) -> bool {
+    ctype_byte_is_graph(byte) && !ctype_byte_is_alnum(byte)
+}
+
+fn ctype_byte_is_space(byte: u8) -> bool {
+    matches!(byte, b'\t' | b'\n' | 0x0b | 0x0c | b'\r' | b' ')
+}
+
+fn ctype_byte_is_upper(byte: u8) -> bool {
+    byte.is_ascii_uppercase()
+}
+
+fn ctype_byte_is_xdigit(byte: u8) -> bool {
+    byte.is_ascii_hexdigit()
 }
 
 fn call_strrev(args: &[Value], span: Span) -> CompileResult<Value> {
