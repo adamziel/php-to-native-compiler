@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-29 06:17 CEST
+Updated: 2026-05-29 06:38 CEST
 Primary branch: `master`
-Latest source head: `4e8ce2c7 fix: add strncmp and strncasecmp semantics`
+Latest source head: `98c928c2 fix: add bcmath exponent and modulus builtins`
 
 ## Progress Score
 
@@ -122,13 +122,57 @@ stable pinned denominator and does not use the raw runner
 | Batch006 source batch | Complete | Source checkpoints accepted: 10 / 10; checkpoint10 sharded gate published |
 | Batch007 checkpoint10 sharded gate | Done | 2047 / 20294 pinned runnable PHPTs passed (10.09%); 0 regressions from Batch006 checkpoint10 PASS set; run id `phpt-full-batch007-checkpoint10-sharded-20260529T034255Z-php-src-f97ff59-public-906b4636-source-906b4636-stack10` |
 | Batch007 source batch | Complete | Source checkpoints accepted: 10 / 10; checkpoint10 regression-repair sharded gate published |
-| Batch008 source batch | Started | Source checkpoints accepted: 1 / 10; checkpoint1 is `strncmp()` / `strncasecmp()` focused source proof; public score unchanged until a pinned aggregate gate |
+| Batch008 source batch | Started | Source checkpoints accepted: 2 / 10; checkpoint1 is `strncmp()` / `strncasecmp()` focused source proof; checkpoint2 is bcmath `bcmod()` / `bcpow()` / `bcpowmod()` / `bcsqrt()` focused source proof; public score unchanged until a pinned aggregate gate |
 
 Focused PHPT history is tracked separately in
 `/home/claude/supervised-php-compiler/state/php-core-suite-focused-history.tsv`.
 Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
+
+Batch008 source checkpoint 2 is primary-integrated under AO supervision. This
+is a source checkpoint with focused proof, not a percentage change. The public
+PHPT score remains **2047 / 20294 pinned runnable PHPTs = 10.09%** until the
+next pinned full-suite or supervisor-approved sharded publication gate is
+completed, regression-checked, and published here.
+
+- primary source head:
+  `98c928c2 fix: add bcmath exponent and modulus builtins`
+- reviewed and integration patch:
+  `/home/claude/supervised-php-compiler/state/patches/ao-integration-bcmath-next-5eebbfc9-20260529.patch`
+- reviewed and integration patch SHA256:
+  `8b8c24f424d101c32cd407785df1796804b7a4621a12e946c8fb2658773c0f85`
+- author patch SHA256:
+  `7b2beac5879eddc78f46f84e008c3d4d605600dedae5de2a56d039435638eb92`
+- reviewer gate: phpc-52 completed current-public `5eebbfc9` proof for bcmath
+  `bcmod()` / `bcpow()` / `bcpowmod()` / `bcsqrt()`; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/batch008-review-bcmath-next-split-phpc52-currentized-5eebbfc9.{status.md,report.md,audit.log,rust-gates.log,phpt-pass30.log}`
+- critic gate: phpc-33 recorded `SAFE-FOR-INTEGRATION` for the exact author
+  patch SHA on current public `5eebbfc9`; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/phpc-33-batch008-critic-bcmath-next-5eebbfc9-20260529.{status.md,report.md}`
+- handoff gate: p38 completed scratch/no-primary handoff preflight with exact
+  source patch SHA verification, clean apply, staged diff, docs/`PROGRESS.md`/
+  examples exclusion, production exact-shape scan, and exported patch proof;
+  artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/ao-integration-bcmath-next-5eebbfc9-20260529.{status.md,report.md,gates.log}`
+- supervisor focused gates: PASS for clean apply over public `5eebbfc9`,
+  `git diff --cached --check`, docs/`PROGRESS.md`/examples exclusion,
+  production exact-shape audit, `cargo fmt --all -- --check`, focused Rust
+  `cargo test -q -p phpc --test bcmath_builtin -- --test-threads=1`,
+  `cargo build -q -p phpc --bin phpc`, `cargo check -q -p phpc`, and the
+  focused PHP core PHPT cluster under `ext/bcmath/tests` with 30 PASS and
+  0 FAIL
+- public progress gate: not run for this source checkpoint; Batch008 has
+  2 / 10 source checkpoints and 46 expected direct PHPT rows since the last
+  aggregate gate
+
+This checkpoint implements generalized bcmath exponent, modulus, modular
+exponentiation, and square-root behavior: scalar argument conversion,
+well-formed decimal checks, scale handling, integer exponent/modulus checks,
+modulo-by-zero and negative-power-zero exception mapping, reflection metadata,
+known function metadata, and callable support. It is not keyed to PHPT
+filenames, expected output, fixture names, public hashes, batch labels, or
+checkpoint markers.
 
 Batch008 source checkpoint 1 is primary-integrated under AO supervision. This
 is a source checkpoint with focused proof, not a percentage change. The public
