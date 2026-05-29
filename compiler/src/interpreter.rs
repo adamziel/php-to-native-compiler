@@ -44516,6 +44516,17 @@ impl Interpreter {
         span: Span,
         context: &str,
     ) -> CompileResult<Value> {
+        self.invoke_closure_value_with_extra_policy(closure, values, span, context, false)
+    }
+
+    fn invoke_closure_value_with_extra_policy(
+        &mut self,
+        closure: PhpClosure,
+        values: Vec<Value>,
+        span: Span,
+        context: &str,
+        allow_extra_user_args: bool,
+    ) -> CompileResult<Value> {
         let function = self
             .closure_functions
             .get(&closure.id())
@@ -44530,7 +44541,19 @@ impl Interpreter {
                 )
             })?;
         let function = function.as_ref();
-        ensure_user_function_arity(function, values.len(), span)?;
+        ensure_user_function_arity_with_extra_policy(
+            function,
+            values.len(),
+            span,
+            allow_extra_user_args,
+        )
+        .map_err(|error| {
+            if context == "array_map()" {
+                array_map_callback_diagnostic(error)
+            } else {
+                error
+            }
+        })?;
         ensure_supported_function_signature(function, values.len(), span)?;
         self.ensure_user_function_call_depth(function, span)?;
         let prebound_locals = self.closure_prebound_locals(&closure);
@@ -49168,12 +49191,17 @@ impl Interpreter {
     }
 
     fn invalid_callback_error(context: &str, detail: impl AsRef<str>, span: Span) -> Diagnostic {
+        let valid_callback = if context == "array_map()" {
+            "valid callback or null"
+        } else {
+            "valid callback"
+        };
         Diagnostic::new(
             Phase::Runtime,
             span.line,
             span.column,
             format!(
-                "{context}: Argument #1 ($callback) must be a valid callback, {}",
+                "{context}: Argument #1 ($callback) must be a {valid_callback}, {}",
                 detail.as_ref()
             ),
         )
@@ -49966,6 +49994,14 @@ impl Interpreter {
                 expr.span(),
             )?;
             return Ok(ArrayKey::Int(*id));
+        }
+        if matches!(key, Value::Null) {
+            self.emit_display_diagnostic(
+                "Deprecated",
+                PHP_E_DEPRECATED,
+                "Using null as an array offset is deprecated, use an empty string instead",
+                expr.span(),
+            )?;
         }
         ArrayKey::from_value(&key).map_err(|error| runtime_error(expr.span(), error))
     }
@@ -74468,6 +74504,7 @@ impl Interpreter {
                 Ok(Value::String(dirname_path(path, levels)))
             }
             "abs" => call_abs(&args, span),
+            "pow" => call_pow(&args, span),
             "bcadd" => self.call_bc_binary_decimal("bcadd", &args, span, BcBinaryDecimalOp::Add),
             "bcsub" => self.call_bc_binary_decimal("bcsub", &args, span, BcBinaryDecimalOp::Sub),
             "bcmul" => self.call_bc_binary_decimal("bcmul", &args, span, BcBinaryDecimalOp::Mul),
@@ -78177,6 +78214,16 @@ impl Interpreter {
                 let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
                     self.resolve_instance_method(object.class_id(), method_name)
                 else {
+                    if context == "array_map()" {
+                        return Err(Self::invalid_callback_error(
+                            context,
+                            format!(
+                                "class {} does not have a method \"{method_name}\"",
+                                receiver_class.name()
+                            ),
+                            span,
+                        ));
+                    }
                     return Err(runtime_error(
                         span,
                         RuntimeError::undefined_function(format!(
@@ -78191,7 +78238,20 @@ impl Interpreter {
                     method_name,
                     visibility,
                     span,
-                )?;
+                )
+                .map_err(|error| {
+                    if context == "array_map()" {
+                        Self::invalid_callback_visibility_error(
+                            context,
+                            &class_name,
+                            method_name,
+                            visibility,
+                            span,
+                        )
+                    } else {
+                        error
+                    }
+                })?;
 
                 let function =
                     self.method_function(class_id, &class_name, &resolved_method_name, span)?;
@@ -78201,7 +78261,14 @@ impl Interpreter {
                     args.len(),
                     span,
                     allow_extra_user_args,
-                )?;
+                )
+                .map_err(|error| {
+                    if context == "array_map()" {
+                        array_map_callback_diagnostic(error)
+                    } else {
+                        error
+                    }
+                })?;
                 ensure_supported_function_signature(function, args.len(), span)?;
                 self.ensure_user_function_call_depth(function, span)?;
                 let this_object = if is_static {
@@ -78248,6 +78315,13 @@ impl Interpreter {
                         span,
                     )? {
                         Some(value) => Ok(value),
+                        None if context == "array_map()" => Err(Self::invalid_callback_error(
+                            context,
+                            format!(
+                                "class {receiver_class_name} does not have a method \"{method_name}\""
+                            ),
+                            span,
+                        )),
                         None => Err(runtime_error(
                             span,
                             RuntimeError::undefined_function(format!(
@@ -78266,6 +78340,15 @@ impl Interpreter {
                     ));
                 }
                 if visibility != Visibility::Public {
+                    if context == "array_map()" {
+                        return Err(Self::invalid_callback_visibility_error(
+                            context,
+                            &declaring_class_name,
+                            method_name,
+                            visibility,
+                            span,
+                        ));
+                    }
                     return Err(runtime_error(
                         span,
                         RuntimeError::unsupported_call(
@@ -78287,7 +78370,14 @@ impl Interpreter {
                     args.len(),
                     span,
                     allow_extra_user_args,
-                )?;
+                )
+                .map_err(|error| {
+                    if context == "array_map()" {
+                        array_map_callback_diagnostic(error)
+                    } else {
+                        error
+                    }
+                })?;
                 ensure_supported_function_signature(function, args.len(), span)?;
                 self.ensure_user_function_call_depth(function, span)?;
                 self.call_user_function_with_checked_values(
@@ -79253,9 +79343,9 @@ impl Interpreter {
                         RuntimeError::unsupported_call(
                             "array_map()",
                             format!(
-                                "{} must be array, got {}",
-                                positional_argument_label(index),
-                                other.type_name()
+                                "Argument #{} ($array) must be of type array, {} given",
+                                index + 1,
+                                Self::php_type_error_actual_name(other)
                             ),
                         ),
                     ));
@@ -79375,7 +79465,8 @@ impl Interpreter {
             Callable::Builtin(key) => self.call_builtin(&key, args, span),
             Callable::User(function) => {
                 let function = function.as_ref();
-                ensure_user_function_arity_with_extra_policy(function, args.len(), span, true)?;
+                ensure_user_function_arity_with_extra_policy(function, args.len(), span, true)
+                    .map_err(array_map_callback_diagnostic)?;
                 ensure_supported_function_signature(function, args.len(), span)?;
                 self.ensure_user_function_call_depth(function, span)?;
                 self.call_user_function_with_checked_values(
@@ -79581,30 +79672,36 @@ impl Interpreter {
                     return self.call_array_map_array_callable_with_values(&callback, args, span);
                 }
 
-                if let Some(error) = forbidden_dynamic_builtin_call_error(callback_name, span) {
-                    return Err(error);
+                if forbidden_dynamic_builtin_call_error(callback_name, span).is_some() {
+                    return Err(Self::invalid_callback_error(
+                        "array_map()",
+                        format!("function \"{callback_name}\" not found or invalid function name"),
+                        span,
+                    ));
                 }
                 let callable = self.lookup_function(callback_name).ok_or_else(|| {
-                    runtime_error(
+                    Self::invalid_callback_error(
+                        "array_map()",
+                        format!("function \"{callback_name}\" not found or invalid function name"),
                         span,
-                        RuntimeError::undefined_function(callable_name(callback_name)),
                     )
                 })?;
                 self.call_array_map_resolved_callable_with_values(callable, args, span)
             }
-            Value::Array(callback) => self.call_array_map_array_callable_with_values(callback, args, span),
-            Value::Closure(closure) => {
-                self.invoke_closure_value(closure.clone(), args, span, "array_map()")
+            Value::Array(callback) => {
+                self.call_array_map_array_callable_with_values(callback, args, span)
             }
-            other => Err(runtime_error(
+            Value::Closure(closure) => self.invoke_closure_value_with_extra_policy(
+                closure.clone(),
+                args,
                 span,
-                RuntimeError::unsupported_call(
-                    "array_map()",
-                    format!(
-                        "callback must evaluate to string, closure, or array callable in the current subset, got {}",
-                        other.type_name()
-                    ),
-                ),
+                "array_map()",
+                true,
+            ),
+            _ => Err(Self::invalid_callback_error(
+                "array_map()",
+                "no array or string given",
+                span,
             )),
         }
     }
@@ -89684,6 +89781,10 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
         return Some(("ArgumentCountError", message));
     }
 
+    if let Some(message) = array_map_internal_argument_count_error_message(error) {
+        return Some(("ArgumentCountError", message));
+    }
+
     if let Some(message) = sprintf_argument_count_error_message(error) {
         return Some(("ArgumentCountError", message));
     }
@@ -89758,6 +89859,10 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
         }
 
         if let Some(message) = array_reduce_callback_too_few_arguments_message(error) {
+            return Some(("TypeError", message));
+        }
+
+        if let Some(message) = array_map_callback_too_few_arguments_message(error) {
             return Some(("TypeError", message));
         }
 
@@ -89973,6 +90078,36 @@ fn chunk_split_argument_count_error_message(error: &Diagnostic) -> Option<String
     }
 }
 
+fn array_map_internal_argument_count_error_message(error: &Diagnostic) -> Option<String> {
+    if error.phase != Phase::Runtime {
+        return None;
+    }
+
+    let rest = error.message.strip_prefix("arity mismatch for ")?;
+    let (callable, expectation) = rest.split_once(": expected ")?;
+    let (expected, actual) = expectation.split_once(" argument(s), got ")?;
+    let actual = actual.parse::<usize>().ok()?;
+
+    if let Some(count) = expected.strip_prefix("at least ") {
+        let count = count.parse::<usize>().ok()?;
+        if actual < count && callable == "array_map()" {
+            return Some(format!(
+                "{callable} expects at least {count} arguments, {actual} given"
+            ));
+        }
+        return None;
+    }
+
+    let count = expected.parse::<usize>().ok()?;
+    if actual != count && callable == "pow()" {
+        return Some(format!(
+            "{callable} expects exactly {count} arguments, {actual} given"
+        ));
+    }
+
+    None
+}
+
 fn sprintf_argument_count_error_message(error: &Diagnostic) -> Option<String> {
     if error.phase != Phase::Runtime {
         return None;
@@ -89997,6 +90132,7 @@ fn sprintf_argument_count_error_message(error: &Diagnostic) -> Option<String> {
     if message.ends_with(" given") && message.contains(" arguments are required, ") {
         return Some(message.to_string());
     }
+
     None
 }
 
@@ -90056,6 +90192,19 @@ fn array_reduce_callback_diagnostic(error: Diagnostic) -> Diagnostic {
     error
 }
 
+fn array_map_callback_diagnostic(error: Diagnostic) -> Diagnostic {
+    if error.phase == Phase::Runtime && error.message.starts_with("arity mismatch for ") {
+        return Diagnostic {
+            phase: error.phase,
+            file: error.file,
+            line: error.line,
+            column: error.column,
+            message: format!("array_map callback {}", error.message),
+        };
+    }
+    error
+}
+
 fn array_reduce_callback_too_few_arguments_message(error: &Diagnostic) -> Option<String> {
     if error.phase != Phase::Runtime {
         return None;
@@ -90064,6 +90213,27 @@ fn array_reduce_callback_too_few_arguments_message(error: &Diagnostic) -> Option
     let rest = error
         .message
         .strip_prefix("array_reduce callback arity mismatch for ")?;
+    let (callable, expectation) = rest.split_once(": expected ")?;
+    let (expected, actual) = expectation.split_once(" argument(s), got ")?;
+    let expected = expected.parse::<usize>().ok()?;
+    let actual = actual.parse::<usize>().ok()?;
+    if actual >= expected {
+        return None;
+    }
+
+    Some(format!(
+        "Too few arguments to function {callable}, {actual} passed and exactly {expected} expected"
+    ))
+}
+
+fn array_map_callback_too_few_arguments_message(error: &Diagnostic) -> Option<String> {
+    if error.phase != Phase::Runtime {
+        return None;
+    }
+
+    let rest = error
+        .message
+        .strip_prefix("array_map callback arity mismatch for ")?;
     let (callable, expectation) = rest.split_once(": expected ")?;
     let (expected, actual) = expectation.split_once(" argument(s), got ")?;
     let expected = expected.parse::<usize>().ok()?;
@@ -90377,6 +90547,7 @@ fn is_internal_method_argument_type_error_message(message: &str) -> bool {
 
 fn is_invalid_callback_argument_message(message: &str) -> bool {
     message.contains("(): Argument #1 ($callback) must be a valid callback, ")
+        || message.contains("(): Argument #1 ($callback) must be a valid callback or null, ")
 }
 
 fn call_argument_type_error_callable(message: &str) -> Option<&str> {
@@ -90607,6 +90778,7 @@ fn is_builtin(name: &str) -> bool {
             | "pathinfo"
             | "dirname"
             | "abs"
+            | "pow"
             | "bcadd"
             | "bcsub"
             | "bcmul"
@@ -106279,6 +106451,77 @@ fn call_abs(args: &[Value], span: Span) -> CompileResult<Value> {
                 "abs()",
                 format!(
                     "argument must be int or finite float in the current subset, got {}",
+                    other.type_name()
+                ),
+            ),
+        )),
+    }
+}
+
+fn call_pow(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("pow", args, 2, span)?;
+
+    match (&args[0], &args[1]) {
+        (Value::Int(base), Value::Int(exponent)) if *exponent >= 0 => {
+            let exponent = u32::try_from(*exponent).map_err(|_| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "pow()",
+                        "integer exponents larger than u32 are not implemented in the current subset",
+                    ),
+                )
+            })?;
+            if let Some(value) = base.checked_pow(exponent) {
+                Ok(Value::Int(value))
+            } else {
+                Ok(Value::Float((*base as f64).powf(exponent as f64)))
+            }
+        }
+        (base, exponent) => {
+            let base = finite_pow_number_arg("pow()", "base", base, span)?;
+            let exponent = finite_pow_number_arg("pow()", "exponent", exponent, span)?;
+            let result = base.powf(exponent);
+            if !result.is_finite() {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "pow()",
+                        "non-finite results are not implemented in the current subset",
+                    ),
+                ));
+            }
+            if result.fract() == 0.0 && result >= i64::MIN as f64 && result <= i64::MAX as f64 {
+                Ok(Value::Int(result as i64))
+            } else {
+                Ok(Value::Float(result))
+            }
+        }
+    }
+}
+
+fn finite_pow_number_arg(
+    function: &'static str,
+    name: &str,
+    value: &Value,
+    span: Span,
+) -> CompileResult<f64> {
+    match value {
+        Value::Int(value) => Ok(*value as f64),
+        Value::Float(value) if value.is_finite() => Ok(*value),
+        Value::Float(_) => Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                format!("{name} argument must be finite in the current subset"),
+            ),
+        )),
+        other => Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                format!(
+                    "{name} argument must be int or finite float in the current subset, got {}",
                     other.type_name()
                 ),
             ),

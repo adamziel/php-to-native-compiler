@@ -1,10 +1,10 @@
 use php_compiler::error::Phase;
 use php_compiler::{emit_ir_source, run_source};
 
-fn runtime_error(source: &str) -> php_compiler::error::Diagnostic {
-    let error = run_source(source).unwrap_err();
-    assert_eq!(error.phase, Phase::Runtime);
-    error
+fn fatal_stdout(source: &str) -> String {
+    let execution = run_source(source).unwrap();
+    assert_eq!(execution.exit_code, 255);
+    execution.stdout
 }
 
 #[test]
@@ -113,25 +113,25 @@ print_r($dynamic);
 
 #[test]
 fn array_map_requires_array_argument() {
-    let error = runtime_error("<?php\necho array_map(\"strlen\", 42);\n");
+    let stdout = fatal_stdout("<?php\necho array_map(\"strlen\", 42);\n");
 
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 6);
-    assert_eq!(
-        error.message,
-        "unsupported call array_map(): second argument must be array, got int"
+    assert!(
+        stdout.contains(
+            "Fatal error: Uncaught TypeError: array_map(): Argument #2 ($array) must be of type array, int given"
+        ),
+        "{stdout}"
     );
 }
 
 #[test]
 fn array_map_callback_requires_string_callable() {
-    let error = runtime_error("<?php\n$items = [\"Ada\"];\necho array_map(42, $items);\n");
+    let stdout = fatal_stdout("<?php\n$items = [\"Ada\"];\necho array_map(42, $items);\n");
 
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 6);
-    assert_eq!(
-        error.message,
-        "unsupported call array_map(): callback must evaluate to string, closure, or array callable in the current subset, got int"
+    assert!(
+        stdout.contains(
+            "Fatal error: Uncaught TypeError: array_map(): Argument #1 ($callback) must be a valid callback or null, no array or string given"
+        ),
+        "{stdout}"
     );
 
     let execution = run_source(
@@ -144,12 +144,70 @@ fn array_map_callback_requires_string_callable() {
 
 #[test]
 fn array_map_callback_reports_unknown_function() {
-    let error =
-        runtime_error("<?php\n$items = [\"Ada\"];\necho array_map(\"missing_map\", $items);\n");
+    let stdout =
+        fatal_stdout("<?php\n$items = [\"Ada\"];\necho array_map(\"missing_map\", $items);\n");
 
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 6);
-    assert_eq!(error.message, "undefined function missing_map()");
+    assert!(
+        stdout.contains(
+            "Fatal error: Uncaught TypeError: array_map(): Argument #1 ($callback) must be a valid callback or null, function \"missing_map\" not found or invalid function name"
+        ),
+        "{stdout}"
+    );
+}
+
+#[test]
+fn array_map_reports_php_callback_errors_and_allows_extra_user_args() {
+    let source = r#"<?php
+class HiddenMap {
+    private static function nope($value) {
+        return $value;
+    }
+}
+
+$extra = array_map(function($left) { return $left; }, [1], [2]);
+echo $extra[0], "\n";
+
+try {
+    array_map("echo", [1]);
+} catch (Throwable $e) {
+    echo $e->getMessage(), "\n";
+}
+
+try {
+    array_map("", [1]);
+} catch (Throwable $e) {
+    echo $e->getMessage(), "\n";
+}
+
+try {
+    array_map(["HiddenMap", "nope"], [1]);
+} catch (Throwable $e) {
+    echo $e->getMessage(), "\n";
+}
+
+try {
+    array_map(42, [1]);
+} catch (Throwable $e) {
+    echo $e->getMessage(), "\n";
+}
+
+try {
+    array_map("pow", [2]);
+} catch (Throwable $e) {
+    echo $e->getMessage(), "\n";
+}
+
+if (False === false && TRUE === true && NuLl === null) {
+    echo "case-insensitive constants\n";
+}
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "1\narray_map(): Argument #1 ($callback) must be a valid callback or null, function \"echo\" not found or invalid function name\narray_map(): Argument #1 ($callback) must be a valid callback or null, function \"\" not found or invalid function name\narray_map(): Argument #1 ($callback) must be a valid callback or null, cannot access private method HiddenMap::nope()\narray_map(): Argument #1 ($callback) must be a valid callback or null, no array or string given\npow() expects exactly 2 arguments, 1 given\ncase-insensitive constants\n"
+    );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
@@ -342,43 +400,40 @@ if ($builtin[0] === null) {
 
 #[test]
 fn array_map_requires_third_array_argument() {
-    let error =
-        runtime_error("<?php\n$items = [\"Ada\"];\necho array_map(\"strlen\", $items, 42);\n");
+    let stdout =
+        fatal_stdout("<?php\n$items = [\"Ada\"];\necho array_map(\"strlen\", $items, 42);\n");
 
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 6);
-    assert_eq!(
-        error.message,
-        "unsupported call array_map(): third argument must be array, got int"
+    assert!(
+        stdout.contains(
+            "Fatal error: Uncaught TypeError: array_map(): Argument #3 ($array) must be of type array, int given"
+        ),
+        "{stdout}"
     );
 }
 
 #[test]
 fn array_map_requires_variadic_array_arguments() {
-    let error = runtime_error(
+    let stdout = fatal_stdout(
         "<?php\n$left = [\"Ada\"];\n$middle = [\"Grace\"];\n$right = [\"Linus\"];\necho array_map(null, $left, $middle, $right, 42);\n",
     );
 
-    assert_eq!(error.line, 5);
-    assert_eq!(error.column, 6);
-    assert_eq!(
-        error.message,
-        "unsupported call array_map(): fifth argument must be array, got int"
+    assert!(
+        stdout.contains(
+            "Fatal error: Uncaught TypeError: array_map(): Argument #5 ($array) must be of type array, int given"
+        ),
+        "{stdout}"
     );
 }
 
 #[test]
-fn array_map_variadic_callback_arity_errors_come_from_callback() {
-    let error = runtime_error(
-        "<?php\nfunction combine_two($a, $b) { return $a; }\n$left = [\"Ada\"];\n$middle = [\"Grace\"];\n$right = [\"Linus\"];\necho array_map(\"combine_two\", $left, $middle, $right);\n",
-    );
+fn array_map_variadic_callback_allows_extra_callback_arguments() {
+    let execution = run_source(
+        "<?php\nfunction combine_two($a, $b) { return $a . ':' . $b; }\n$left = [\"Ada\"];\n$middle = [\"Grace\"];\n$right = [\"Linus\"];\nprint_r(array_map(\"combine_two\", $left, $middle, $right));\n",
+    )
+    .unwrap();
 
-    assert_eq!(error.line, 6);
-    assert_eq!(error.column, 6);
-    assert_eq!(
-        error.message,
-        "arity mismatch for combine_two(): expected 2 argument(s), got 3"
-    );
+    assert_eq!(execution.stdout, "Array\n(\n    [0] => Ada:Grace\n)\n");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

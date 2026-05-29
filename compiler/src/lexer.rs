@@ -1208,9 +1208,9 @@ impl<'a> Lexer<'a> {
             "try" => TokenKind::Try,
             "catch" => TokenKind::Catch,
             "finally" => TokenKind::Finally,
-            "null" | "NULL" => TokenKind::Null,
-            "true" | "TRUE" => TokenKind::True,
-            "false" | "FALSE" => TokenKind::False,
+            keyword if keyword.eq_ignore_ascii_case("null") => TokenKind::Null,
+            keyword if keyword.eq_ignore_ascii_case("true") => TokenKind::True,
+            keyword if keyword.eq_ignore_ascii_case("false") => TokenKind::False,
             _ => TokenKind::Identifier(text),
         }
     }
