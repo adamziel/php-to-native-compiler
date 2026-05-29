@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-29 13:08 CEST
+Updated: 2026-05-29 13:27 CEST
 Primary branch: `master`
-Latest source head: `dbda3e7a fix: add fscanf stream scanning`
+Latest source head: `783436bd fix: preserve binary string array keys`
 
 ## Progress Score
 
@@ -173,6 +173,33 @@ Focused PHPT history is tracked separately in
 Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
+
+Batch010 checkpoint10 publication gate follow-up is in regression repair. This
+is focused source proof, not a public percentage change. The public PHPT score
+remains **2388 / 20294 pinned runnable PHPTs = 11.77%** until the repaired
+full-suite gate is completed, regression-checked, and published here.
+
+- initial Batch010 checkpoint10 sharded gate:
+  `/home/claude/supervised-php-compiler/state/logs/phpt-full-batch010-checkpoint10-publication-sharded-20260529T111238Z-php-src-f97ff59-public-de8f9989-source-dbda3e7a`
+- initial gate counts:
+  `2562 passed, 16117 failed, 2573 skipped, 15 xfailed, 1064 borked`
+  (`2562 / 20294 = 12.62%` public-comparable)
+- publication blocker:
+  2 latest-published PASS regressions:
+  `tests/lang/foreachLoop.017.phpt` and
+  `Zend/tests/array_hash_zero.phpt`
+- repair source head:
+  `783436bd fix: preserve binary string array keys`
+- supervisor focused repair gates: PASS for `cargo fmt`, runtime unit test
+  `binary_string_array_keys_are_stable_for_lookup`, `phpc` build, and focused
+  PHP core rerun of both regressed PHPTs with 2 PASS and 0 FAIL
+- public progress gate: must be rerun on source `783436bd` before publishing
+  any Batch010 public score
+
+This repair accepts binary PHP string values as stable array keys for the
+current runtime array-key subset, so invalid-UTF-8 literal keys can be inserted
+and looked up consistently. It is not keyed to PHPT filenames, expected output,
+fixture names, public hashes, batch labels, or checkpoint markers.
 
 Batch010 source batch checkpoint10 is primary-integrated under AO supervision.
 This is focused source proof, not a public percentage change. The public PHPT
