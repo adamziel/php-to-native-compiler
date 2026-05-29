@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-29 19:55 CEST
+Updated: 2026-05-29 20:21 CEST
 Primary branch: `master`
 Latest source head: `fc2788a7 fix: add date array and fopen semantics`
 
@@ -13,11 +13,11 @@ Progress is the pinned php-src PHPT full-suite pass rate:
 
 `passed runnable PHPTs / total runnable PHPTs`
 
-Current score: **2945 / 20294 pinned runnable PHPTs = 14.51%**.
+Current score: **3170 / 20294 pinned runnable PHPTs = 15.62%**.
 
-The Batch012 dynamic/indirect-call regression repair source `f1bd55bf` is
-integrated and published by a pinned sharded full-suite gate. The gate recorded
-2945 passed pinned runnable PHPTs with zero latest-published PASS regressions.
+The Batch013 checkpoint10 source `fc2788a7` is integrated and published by a
+pinned sharded full-suite gate on public `b3e42ce1`. The gate recorded 3170
+passed pinned runnable PHPTs with zero latest-published PASS regressions.
 Batch013 checkpoint1 source `e2291ae0` is integrated with a focused p43
 stream-resource proof covering 16 direct PHPT rows. Batch013 checkpoint2
 source `9ad49e1d` is integrated with a focused p42 explode/implode/join proof
@@ -36,8 +36,7 @@ covering 20 direct PHPT rows, checkpoint9 source `fc2788a7` is integrated with
 a focused p47 array numeric proof covering 10 direct PHPT rows, and
 checkpoint10 source `fc2788a7` is integrated with a focused p43 local
 `fopen()` mode-matrix proof covering 25 direct PHPT rows. Batch013 source
-progress is now 10 / 10 checkpoints and +151 expected direct rows. The public
-percentage is unchanged until the next pinned full-suite publication gate.
+progress is now 10 / 10 checkpoints and +151 expected direct rows.
 
 No other percentage is public project progress. Focused PHPT passes, source
 checkpoints, PRs, and docs/status edits are evidence for the next batch, but
@@ -192,8 +191,8 @@ Batch011 burst1 still has BORKED rows, so the public score uses the stable
 pinned denominator and does not use the raw runner
 `2741 / 18694 = 14.66%` calculation.
 
-The latest full-suite result is the Batch012 dynamic-call repair sharded
-publication gate on the same php-src pin, run
+The Batch012 dynamic-call repair sharded publication gate on the same php-src
+pin, run
 `phpt-full-batch012-dynamic-repair-publication-sharded-20260529T154830Z-php-src-f97ff59-public-c5e560c4-source-f1bd55bf`.
 Counts: 2945 passed, 15739 failed, 2568 skipped, 15 xfailed, 1064 borked;
 all 12 shards exited nonzero because failing PHPTs remain. Regressions from
@@ -203,6 +202,18 @@ the latest published Batch011 PASS set: 0. Evidence lives under
 Batch012 dynamic repair still has BORKED rows, so the public score uses the
 stable pinned denominator and does not use the raw runner
 `2945 / 18699 = 15.75%` calculation.
+
+The latest full-suite result is the Batch013 checkpoint10 sharded publication
+gate on the same php-src pin, run
+`phpt-full-batch013-checkpoint10-publication-sharded-20260529T180650Z-php-src-f97ff59-public-b3e42ce1-source-fc2788a7`.
+Counts: 3170 passed, 15514 failed, 2568 skipped, 15 xfailed, 1064 borked;
+all 12 shards exited nonzero because failing PHPTs remain. Regressions from
+the latest published Batch012 PASS set: 0. Evidence lives under
+`/home/claude/supervised-php-compiler/state/logs/phpt-full-batch013-checkpoint10-publication-sharded-20260529T180650Z-php-src-f97ff59-public-b3e42ce1-source-fc2788a7`.
+
+Batch013 checkpoint10 still has BORKED rows, so the public score uses the
+stable pinned denominator and does not use the raw runner
+`3170 / 18699 = 16.95%` calculation.
 
 ## PHPT Harness
 
@@ -236,7 +247,8 @@ stable pinned denominator and does not use the raw runner
 | Batch011 burst1 sharded gate | Done | 2741 / 20294 pinned runnable PHPTs passed (13.51%); 0 regressions from the Batch010 checkpoint10 repaired PASS set; run id `phpt-full-batch011-burst1-publication-sharded-20260529T122703Z-php-src-f97ff59-public-c956a1c0-source-cb2064dc` |
 | Batch012 source batch | Published | Checkpoint1 is p31 dynamic-call/reference focused source proof (+13 expected direct rows), committed as `75833ad5`; checkpoint2 is p66/p39 ReflectionExtension / ReflectionZendExtension metadata focused source proof (+13 expected direct rows), committed as `376ad126`; checkpoint3 is p42 `array_fill()` / `array_diff_assoc()` / `array_intersect_assoc()` focused source proof (+15 expected direct rows), committed as `5d1a84be`; checkpoint4 is p15 type declaration diagnostics focused source proof (+20 expected direct rows), committed as `f325b200`; checkpoint5 is p63 string algorithm builtins focused source proof (+11 expected direct rows), committed as `78de5a1e`; checkpoint6 is p31 user comparator sort focused source proof (+17 expected direct rows), committed as `59292a26`; checkpoint7 is p43 directory/glob builtins focused source proof (+10 expected direct rows), committed as `661b4f5c`; checkpoint8 is p31 array user-comparison builtins focused source proof (+19 expected direct rows), committed as `007075de`; checkpoint9 is p31 `array_walk()` / `array_walk_recursive()` focused source proof (+19 expected direct rows), committed as `7fd908ba`; checkpoint10 is p42 array-key coercion focused source proof (+20 expected direct rows), committed as `2f69a24d`; Batch012 is 10 / 10 checkpoints and +157 expected direct rows. The initial checkpoint10 gate candidate was blocked by four dynamic/indirect-call PASS regressions, then source `f1bd55bf` repaired them. |
 | Batch012 dynamic-call repair sharded gate | Done | 2945 / 20294 pinned runnable PHPTs passed (14.51%); 0 regressions from the Batch011 PASS set; run id `phpt-full-batch012-dynamic-repair-publication-sharded-20260529T154830Z-php-src-f97ff59-public-c5e560c4-source-f1bd55bf` |
-| Batch013 source batch | Complete | Checkpoint1 is p43 stream-resource residual focused source proof (+16 expected direct rows), committed as `e2291ae0`; primary proof passed `cargo fmt --check --all`, `cargo test -p phpc --test stream_resource_builtin` (25/25), `cargo check -p phpc`, `cargo build -p phpc --bin phpc`, and focused lowercase `-p` PHPT 16/16. Checkpoint2 is p42 `explode()` / `implode()` / `join()` focused source proof (+12 expected direct rows), committed as `9ad49e1d`; primary proof passed `cargo fmt --check --all`, `cargo test -p phpc --test explode_join_builtin` (2/2), `cargo check -p phpc`, `cargo build -p phpc --bin phpc`, and focused lowercase `-p` PHPT 12/12. Checkpoint3 is p39 ReflectionObject focused source proof (+11 expected direct rows), committed as `d2c258a9`; primary proof passed `cargo fmt --check --all`, `cargo test -p phpc --test object_model reflection_object_reflects_object_instances_as_reflection_class_subtype`, `cargo check -p phpc`, `cargo build -p phpc --bin phpc`, and focused lowercase `-p` PHPT 11/11. Checkpoint4 is p7 HTML entity string builtins focused source proof (+10 expected direct rows), committed as `a2c62479`; primary proof passed `cargo fmt --check --all`, `cargo test -p phpc --test html_entity_builtins` (4/4), `cargo check -p phpc`, `cargo build -p phpc --bin phpc`, and focused lowercase `-p` PHPT 10/10. Checkpoint5 is p50 SPL `SplDoublyLinkedList` / `SplQueue` / `SplStack` focused source proof (+22 expected direct rows), committed as `0bec6ea4`; primary proof passed `cargo fmt --check --all`, `cargo test -p phpc --test object_model spl_doubly_linked_list` (3/3), `cargo test -p phpc --test object_model class_declarations_register_metadata_without_object_execution`, `cargo check -p phpc`, `cargo build -p phpc --bin phpc`, and focused lowercase `-p` PHPT 22/22. Checkpoint6 is p42 `strip_tags()` focused source proof (+11 expected direct rows), committed as `53de9d2b`; checkpoint7 is p31 `in_array()` / `array_search()` membership focused source proof (+14 expected direct rows), also committed as `53de9d2b`; primary combined proof passed `cargo fmt --check --all`, `cargo test -p phpc --test strip_tags_builtin` (5/5), `cargo test -p php_runtime membership_comparison_for_non_scalar_values` (2/2), `cargo test -p phpc --test in_array` (8/8), `cargo test -p phpc --test array_search`, `cargo check -p phpc`, `cargo build -p phpc --bin phpc`, and focused lowercase `-p` PHPT 25/25. Checkpoint8 is p46 true-narrow date/time focused source proof (+20 expected direct rows), checkpoint9 is p47 `array_sum()` / `array_product()` / `array_reduce()` focused source proof (+10 expected direct rows), and checkpoint10 is p43 local `fopen()` mode-matrix focused source proof (+25 expected direct rows), committed together as `fc2788a7`; primary combined proof passed `cargo fmt --check --all`, `cargo test -p phpc --test date_time_builtin` (8/8), `cargo test -p phpc --test array_sum` (5/5), `cargo test -p phpc --test array_product` (5/5), `cargo test -p phpc --test array_reduce` (9/9), three focused `stream_resource_builtin` Rust tests, `cargo check -p phpc`, `cargo build -p phpc --bin phpc`, and focused lowercase `-p` PHPT 55/55. Batch013 is 10 / 10 checkpoints and +151 expected direct rows. Public score remains 2945 / 20294 until a pinned full-suite gate is completed, regression-checked, and published. |
+| Batch013 source batch | Published | Checkpoint1 is p43 stream-resource residual focused source proof (+16 expected direct rows), committed as `e2291ae0`; primary proof passed `cargo fmt --check --all`, `cargo test -p phpc --test stream_resource_builtin` (25/25), `cargo check -p phpc`, `cargo build -p phpc --bin phpc`, and focused lowercase `-p` PHPT 16/16. Checkpoint2 is p42 `explode()` / `implode()` / `join()` focused source proof (+12 expected direct rows), committed as `9ad49e1d`; primary proof passed `cargo fmt --check --all`, `cargo test -p phpc --test explode_join_builtin` (2/2), `cargo check -p phpc`, `cargo build -p phpc --bin phpc`, and focused lowercase `-p` PHPT 12/12. Checkpoint3 is p39 ReflectionObject focused source proof (+11 expected direct rows), committed as `d2c258a9`; primary proof passed `cargo fmt --check --all`, `cargo test -p phpc --test object_model reflection_object_reflects_object_instances_as_reflection_class_subtype`, `cargo check -p phpc`, `cargo build -p phpc --bin phpc`, and focused lowercase `-p` PHPT 11/11. Checkpoint4 is p7 HTML entity string builtins focused source proof (+10 expected direct rows), committed as `a2c62479`; primary proof passed `cargo fmt --check --all`, `cargo test -p phpc --test html_entity_builtins` (4/4), `cargo check -p phpc`, `cargo build -p phpc --bin phpc`, and focused lowercase `-p` PHPT 10/10. Checkpoint5 is p50 SPL `SplDoublyLinkedList` / `SplQueue` / `SplStack` focused source proof (+22 expected direct rows), committed as `0bec6ea4`; primary proof passed `cargo fmt --check --all`, `cargo test -p phpc --test object_model spl_doubly_linked_list` (3/3), `cargo test -p phpc --test object_model class_declarations_register_metadata_without_object_execution`, `cargo check -p phpc`, `cargo build -p phpc --bin phpc`, and focused lowercase `-p` PHPT 22/22. Checkpoint6 is p42 `strip_tags()` focused source proof (+11 expected direct rows), committed as `53de9d2b`; checkpoint7 is p31 `in_array()` / `array_search()` membership focused source proof (+14 expected direct rows), also committed as `53de9d2b`; primary combined proof passed `cargo fmt --check --all`, `cargo test -p phpc --test strip_tags_builtin` (5/5), `cargo test -p php_runtime membership_comparison_for_non_scalar_values` (2/2), `cargo test -p phpc --test in_array` (8/8), `cargo test -p phpc --test array_search`, `cargo check -p phpc`, `cargo build -p phpc --bin phpc`, and focused lowercase `-p` PHPT 25/25. Checkpoint8 is p46 true-narrow date/time focused source proof (+20 expected direct rows), checkpoint9 is p47 `array_sum()` / `array_product()` / `array_reduce()` focused source proof (+10 expected direct rows), and checkpoint10 is p43 local `fopen()` mode-matrix focused source proof (+25 expected direct rows), committed together as `fc2788a7`; primary combined proof passed `cargo fmt --check --all`, `cargo test -p phpc --test date_time_builtin` (8/8), `cargo test -p phpc --test array_sum` (5/5), `cargo test -p phpc --test array_product` (5/5), `cargo test -p phpc --test array_reduce` (9/9), three focused `stream_resource_builtin` Rust tests, `cargo check -p phpc`, `cargo build -p phpc --bin phpc`, and focused lowercase `-p` PHPT 55/55. Batch013 is 10 / 10 checkpoints and +151 expected direct rows. The checkpoint10 sharded publication gate published 3170 / 20294 with zero latest-published PASS regressions. |
+| Batch013 checkpoint10 sharded gate | Done | 3170 / 20294 pinned runnable PHPTs passed (15.62%); 0 regressions from the Batch012 dynamic-call repair PASS set; run id `phpt-full-batch013-checkpoint10-publication-sharded-20260529T180650Z-php-src-f97ff59-public-b3e42ce1-source-fc2788a7` |
 
 Focused PHPT history is tracked separately in
 `/home/claude/supervised-php-compiler/state/php-core-suite-focused-history.tsv`.
@@ -245,11 +257,10 @@ Focused passes prove candidate direction; they do not define project percent.
 ## Current Integration
 
 Batch013 checkpoints8-10 p46 true-narrow date/time, p47 array numeric, and
-p43 local `fopen()` mode-matrix semantics are primary-integrated under AO
-supervision. This is focused source proof, not a public percentage change. The
-public PHPT score remains **2945 / 20294 pinned runnable PHPTs = 14.51%** until
-a pinned full-suite gate is parsed, latest-published PASS regressions are
-repaired or guarded, and this file is updated again.
+p43 local `fopen()` mode-matrix semantics are primary-integrated and published
+by the Batch013 checkpoint10 sharded gate. The public PHPT score is now
+**3170 / 20294 pinned runnable PHPTs = 15.62%** with zero latest-published
+PASS regressions.
 
 - primary source head:
   `fc2788a7 fix: add date array and fopen semantics`
@@ -283,9 +294,11 @@ repaired or guarded, and this file is updated again.
   and
   `/home/claude/supervised-php-compiler/state/logs/supervisor-p46-p47-p43-combined-phpt-d1a127c7-20260529T1955`
 - Batch013 accounting:
-  checkpoint10 / 10 accepted, +151 expected direct PHPT rows; the next broad
-  PHPT gate requires a single supervisor order and latest-published PASS-set
-  comparison before any public score update
+  checkpoint10 / 10 accepted, +151 expected direct PHPT rows; the sharded
+  publication gate recorded 3170 passed pinned runnable PHPTs with zero
+  latest-published PASS regressions
+- public publication gate:
+  `/home/claude/supervised-php-compiler/state/logs/phpt-full-batch013-checkpoint10-publication-sharded-20260529T180650Z-php-src-f97ff59-public-b3e42ce1-source-fc2788a7`
 
 Batch012 source batch checkpoint9 is primary-integrated under AO supervision.
 This is focused source proof, not a public percentage change. The public PHPT
