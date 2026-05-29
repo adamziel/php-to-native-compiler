@@ -69497,6 +69497,15 @@ impl Interpreter {
             }
             "chr" => self.call_chr(&args, span),
             "bin2hex" => call_bin2hex(&args, span),
+            "hex2bin" => self.call_hex2bin(&args, span),
+            "ord" => self.call_ord(&args, span),
+            "strrev" => call_strrev(&args, span),
+            "str_rot13" => call_str_rot13(&args, span),
+            "ucfirst" => call_ucfirst(&args, span),
+            "lcfirst" => call_lcfirst(&args, span),
+            "ucwords" => call_ucwords(&args, span),
+            "quotemeta" => call_quotemeta(&args, span),
+            "nl2br" => call_nl2br(&args, span),
             "str_repeat" => call_str_repeat(&args, span),
             "str_pad" => call_str_pad(&args, span),
             "chunk_split" => call_chunk_split(&args, span),
@@ -80587,6 +80596,32 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
             "string",
             vec![reflection_internal_param("string", "string")],
         ),
+        "hex2bin" => (
+            "string|false",
+            vec![reflection_internal_param("string", "string")],
+        ),
+        "ord" => (
+            "int",
+            vec![reflection_internal_param("character", "string")],
+        ),
+        "strrev" | "str_rot13" | "ucfirst" | "lcfirst" | "quotemeta" => (
+            "string",
+            vec![reflection_internal_param("string", "string")],
+        ),
+        "ucwords" => (
+            "string",
+            vec![
+                reflection_internal_param("string", "string"),
+                reflection_internal_optional_string_param("separators", " \t\r\n\u{000B}\u{000C}"),
+            ],
+        ),
+        "nl2br" => (
+            "string",
+            vec![
+                reflection_internal_param("string", "string"),
+                reflection_internal_optional_bool_param("use_xhtml", true),
+            ],
+        ),
         "str_repeat" => (
             "string",
             vec![
@@ -83102,6 +83137,15 @@ fn is_builtin(name: &str) -> bool {
             | "strlen"
             | "chr"
             | "bin2hex"
+            | "hex2bin"
+            | "ord"
+            | "strrev"
+            | "str_rot13"
+            | "ucfirst"
+            | "lcfirst"
+            | "ucwords"
+            | "quotemeta"
+            | "nl2br"
             | "str_repeat"
             | "str_pad"
             | "chunk_split"
@@ -89526,6 +89570,199 @@ fn call_bin2hex(args: &[Value], span: Span) -> CompileResult<Value> {
         .map_err(|error| runtime_error(span, error))?;
 
     Ok(Value::String(hex_bytes(&value)))
+}
+
+impl Interpreter {
+    fn call_hex2bin(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("hex2bin", args, 1, span)?;
+
+        let value = string_compare_argument_bytes("hex2bin()", "string", &args[0], span)?;
+        if value.len() % 2 != 0 {
+            self.emit_display_warning("hex2bin(): Input string must be hexadecimal string", span)?;
+            return Ok(Value::Bool(false));
+        }
+
+        let mut output = Vec::with_capacity(value.len() / 2);
+        for pair in value.chunks_exact(2) {
+            let (Some(high), Some(low)) = (hex_digit_value(pair[0]), hex_digit_value(pair[1]))
+            else {
+                self.emit_display_warning(
+                    "hex2bin(): Input string must be hexadecimal string",
+                    span,
+                )?;
+                return Ok(Value::Bool(false));
+            };
+            output.push((high << 4) | low);
+        }
+
+        Ok(interpreter_value_from_php_string_bytes(output))
+    }
+
+    fn call_ord(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("ord", args, 1, span)?;
+
+        let value = string_compare_argument_bytes("ord()", "character", &args[0], span)?;
+        if value.is_empty() {
+            self.emit_display_diagnostic(
+                "Deprecated",
+                PHP_E_DEPRECATED,
+                "ord(): Providing an empty string is deprecated",
+                span,
+            )?;
+            return Ok(Value::Int(0));
+        }
+
+        if value.len() != 1 {
+            self.emit_display_diagnostic(
+                "Deprecated",
+                PHP_E_DEPRECATED,
+                "ord(): Providing a string that is not one byte long is deprecated. Use ord($str[0]) instead",
+                span,
+            )?;
+        }
+
+        Ok(Value::Int(i64::from(value[0])))
+    }
+}
+
+fn call_strrev(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("strrev", args, 1, span)?;
+
+    let mut value = string_compare_argument_bytes("strrev()", "string", &args[0], span)?;
+    value.reverse();
+    Ok(interpreter_value_from_php_string_bytes(value))
+}
+
+fn call_str_rot13(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("str_rot13", args, 1, span)?;
+
+    let mut value = string_compare_argument_bytes("str_rot13()", "string", &args[0], span)?;
+    for byte in &mut value {
+        *byte = match *byte {
+            b'a'..=b'm' | b'A'..=b'M' => *byte + 13,
+            b'n'..=b'z' | b'N'..=b'Z' => *byte - 13,
+            _ => *byte,
+        };
+    }
+    Ok(interpreter_value_from_php_string_bytes(value))
+}
+
+fn call_ucfirst(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("ucfirst", args, 1, span)?;
+
+    let mut value = string_compare_argument_bytes("ucfirst()", "string", &args[0], span)?;
+    if let Some(first) = value.first_mut() {
+        *first = (*first).to_ascii_uppercase();
+    }
+    Ok(interpreter_value_from_php_string_bytes(value))
+}
+
+fn call_lcfirst(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("lcfirst", args, 1, span)?;
+
+    let mut value = string_compare_argument_bytes("lcfirst()", "string", &args[0], span)?;
+    if let Some(first) = value.first_mut() {
+        *first = (*first).to_ascii_lowercase();
+    }
+    Ok(interpreter_value_from_php_string_bytes(value))
+}
+
+const PHP_UCWORDS_DEFAULT_DELIMITERS: &[u8] = b" \t\r\n\x0b\x0c";
+
+fn call_ucwords(args: &[Value], span: Span) -> CompileResult<Value> {
+    if !(1..=2).contains(&args.len()) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "ucwords()",
+                ArityExpectation::Between { min: 1, max: 2 },
+                args.len(),
+            ),
+        ));
+    }
+
+    let mut value = string_compare_argument_bytes("ucwords()", "string", &args[0], span)?;
+    let delimiters = match args.get(1) {
+        Some(delimiters) => {
+            string_compare_argument_bytes("ucwords()", "separators", delimiters, span)?
+        }
+        None => PHP_UCWORDS_DEFAULT_DELIMITERS.to_vec(),
+    };
+
+    let mut uppercase_next = true;
+    for byte in &mut value {
+        if uppercase_next {
+            *byte = (*byte).to_ascii_uppercase();
+        }
+        uppercase_next = delimiters.contains(&*byte);
+    }
+
+    Ok(interpreter_value_from_php_string_bytes(value))
+}
+
+fn call_quotemeta(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("quotemeta", args, 1, span)?;
+
+    let value = string_compare_argument_bytes("quotemeta()", "string", &args[0], span)?;
+    let mut output = Vec::with_capacity(value.len());
+    for byte in value {
+        if matches!(
+            byte,
+            b'.' | b'\\' | b'+' | b'*' | b'?' | b'[' | b'^' | b']' | b'(' | b'$' | b')'
+        ) {
+            output.push(b'\\');
+        }
+        output.push(byte);
+    }
+
+    Ok(interpreter_value_from_php_string_bytes(output))
+}
+
+fn call_nl2br(args: &[Value], span: Span) -> CompileResult<Value> {
+    if !(1..=2).contains(&args.len()) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "nl2br()",
+                ArityExpectation::Between { min: 1, max: 2 },
+                args.len(),
+            ),
+        ));
+    }
+
+    let value = string_compare_argument_bytes("nl2br()", "string", &args[0], span)?;
+    let tag: &[u8] = match args.get(1) {
+        Some(use_xhtml) if !use_xhtml.is_truthy() => b"<br>",
+        _ => b"<br />",
+    };
+
+    let mut output = Vec::with_capacity(value.len());
+    let mut index = 0;
+    while index < value.len() {
+        match value[index] {
+            b'\r' if value.get(index + 1) == Some(&b'\n') => {
+                output.extend_from_slice(tag);
+                output.extend_from_slice(b"\r\n");
+                index += 2;
+            }
+            b'\n' if value.get(index + 1) == Some(&b'\r') => {
+                output.extend_from_slice(tag);
+                output.extend_from_slice(b"\n\r");
+                index += 2;
+            }
+            b'\r' | b'\n' => {
+                output.extend_from_slice(tag);
+                output.push(value[index]);
+                index += 1;
+            }
+            byte => {
+                output.push(byte);
+                index += 1;
+            }
+        }
+    }
+
+    Ok(interpreter_value_from_php_string_bytes(output))
 }
 
 fn call_str_repeat(args: &[Value], span: Span) -> CompileResult<Value> {
