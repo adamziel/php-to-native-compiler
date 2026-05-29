@@ -67429,7 +67429,7 @@ fn native_builtin_signature_for_name(name: &str) -> Option<CNativeBuiltinSignatu
             fixed_param_defaults: NATIVE_BUILTIN_DEFAULTS_NONE_1,
             accepts_variadic_args: true,
             variadic_param_name: Some("rest"),
-            variadic_param_by_reference: false,
+            variadic_param_by_reference: true,
             returns_by_reference: false,
             source_call_support: Blocked(MissingRuntimeCallableFamily),
         },
@@ -74641,7 +74641,7 @@ echo " 10" < "zeta";
         assert_eq!(multisort.fixed_param_by_reference, &[true]);
         assert!(multisort.accepts_variadic_args);
         assert_eq!(multisort.variadic_param_name, Some("rest"));
-        assert!(!multisort.variadic_param_by_reference);
+        assert!(multisort.variadic_param_by_reference);
         assert!(multisort.accepts_arg_count(1));
         assert!(multisort.accepts_arg_count(4));
         assert_eq!(

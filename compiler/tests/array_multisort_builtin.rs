@@ -97,6 +97,25 @@ try {
 }
 
 #[test]
+fn array_multisort_reflection_metadata_matches_php_shape() {
+    let execution = run_source(
+        r#"<?php
+$function = new ReflectionFunction("array_multisort");
+foreach ($function->getParameters() as $param) {
+    echo $param->getName(), "|",
+        ($param->isPassedByReference() ? "1" : "0"), "|",
+        ($param->isVariadic() ? "1" : "0"), "|",
+        ($param->hasType() ? "1" : "0"), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "array|1|0|0\nrest|1|1|0\n");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn emit_ir_folds_array_multisort_metadata_but_rejects_direct_calls() {
     let ir = emit_ir_source(
         r#"<?php

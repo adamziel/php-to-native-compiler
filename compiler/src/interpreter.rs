@@ -89885,8 +89885,8 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
         "array_multisort" => (
             "bool",
             vec![
-                reflection_internal_reference_param("array", "array"),
-                reflection_internal_variadic_param("rest", "array|int"),
+                reflection_internal_reference_untyped_param("array"),
+                reflection_internal_variadic_reference_untyped_param("rest"),
             ],
         ),
         "sort" => (
@@ -89997,6 +89997,12 @@ fn reflection_internal_reference_param(name: &str, type_decl: &str) -> Reflectio
     param
 }
 
+fn reflection_internal_reference_untyped_param(name: &str) -> ReflectionParameterMetadata {
+    let mut param = reflection_internal_untyped_param(name);
+    param.by_reference = true;
+    param
+}
+
 fn reflection_internal_optional_int_param(name: &str, default: i64) -> ReflectionParameterMetadata {
     let mut param = reflection_internal_param(name, "int");
     param.default = Some(Expr::Int(default, Span::new(0, 0)));
@@ -90049,6 +90055,12 @@ fn reflection_internal_optional_reference_null_param(name: &str) -> ReflectionPa
 
 fn reflection_internal_variadic_param(name: &str, type_decl: &str) -> ReflectionParameterMetadata {
     let mut param = reflection_internal_param(name, type_decl);
+    param.is_variadic = true;
+    param
+}
+
+fn reflection_internal_variadic_reference_untyped_param(name: &str) -> ReflectionParameterMetadata {
+    let mut param = reflection_internal_reference_untyped_param(name);
     param.is_variadic = true;
     param
 }
