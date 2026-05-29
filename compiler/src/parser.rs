@@ -98,6 +98,9 @@ impl Parser {
             if self.skip_doc_comments_before(|kind| matches!(kind, TokenKind::Eof)) {
                 continue;
             }
+            if self.skip_empty_statements() {
+                continue;
+            }
             statements.push(self.parse_statement()?);
         }
         Ok(Program { statements })
@@ -121,6 +124,14 @@ impl Parser {
 
     fn take_pending_attributes(&mut self) -> Vec<String> {
         std::mem::take(&mut self.pending_attributes)
+    }
+
+    fn skip_empty_statements(&mut self) -> bool {
+        let mut skipped = false;
+        while self.match_token(|kind| matches!(kind, TokenKind::Semicolon)) {
+            skipped = true;
+        }
+        skipped
     }
 
     fn parse_statement(&mut self) -> CompileResult<Stmt> {
@@ -2159,6 +2170,9 @@ impl Parser {
             while !self.check_alternate_if_boundary()
                 && !self.check(|kind| matches!(kind, TokenKind::Eof))
             {
+                if self.skip_empty_statements() {
+                    continue;
+                }
                 if self.check(|kind| matches!(kind, TokenKind::Interface)) {
                     return Err(self.error_at(
                         self.peek().span,
@@ -2517,6 +2531,9 @@ impl Parser {
                 && !self.check(|kind| matches!(kind, TokenKind::Eof))
                 && !self.check_switch_label()
             {
+                if self.skip_empty_statements() {
+                    continue;
+                }
                 if self.check(|kind| matches!(kind, TokenKind::Interface)) {
                     return Err(self.error_at(
                         self.peek().span,
@@ -5219,6 +5236,9 @@ impl Parser {
                 if self.skip_doc_comments_before(|kind| {
                     matches!(kind, TokenKind::RBrace | TokenKind::Eof)
                 }) {
+                    continue;
+                }
+                if self.skip_empty_statements() {
                     continue;
                 }
                 if self.check(|kind| matches!(kind, TokenKind::Interface)) {

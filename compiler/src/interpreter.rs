@@ -64559,6 +64559,8 @@ impl Interpreter {
             "gmmktime" => self.call_mktime(&args, span, true),
             "date" => self.call_date(&args, span, false),
             "gmdate" => self.call_date(&args, span, true),
+            "strftime" => self.call_strftime(&args, span, false),
+            "gmstrftime" => self.call_strftime(&args, span, true),
             "idate" => self.call_idate(&args, span),
             "checkdate" => call_checkdate(&args, span),
             "getdate" => self.call_getdate(&args, span),
@@ -74126,6 +74128,13 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_variadic_param("locales", "array|string|int|null"),
             ],
         ),
+        "strftime" | "gmstrftime" => (
+            "string|false",
+            vec![
+                reflection_internal_param("format", "string"),
+                reflection_internal_optional_null_param("timestamp", "int"),
+            ],
+        ),
         "getenv" => (
             "array|string|false",
             vec![
@@ -75930,6 +75939,8 @@ fn is_builtin(name: &str) -> bool {
             | "gmmktime"
             | "date"
             | "gmdate"
+            | "strftime"
+            | "gmstrftime"
             | "idate"
             | "checkdate"
             | "getdate"
@@ -86169,6 +86180,45 @@ impl Interpreter {
         )))
     }
 
+    fn call_strftime(&mut self, args: &[Value], span: Span, utc: bool) -> CompileResult<Value> {
+        let function = if utc { "gmstrftime()" } else { "strftime()" };
+        if !(1..=2).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    function,
+                    ArityExpectation::Between { min: 1, max: 2 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        self.emit_display_diagnostic(
+            "Deprecated",
+            PHP_E_DEPRECATED,
+            format!(
+                "Function {function} is deprecated since 8.1, use IntlDateFormatter::format() instead"
+            ),
+            span,
+        )?;
+
+        let format = expect_date_format_arg(function, &args[0], span)?;
+        if format.is_empty() {
+            return Ok(Value::Bool(false));
+        }
+        let timestamp =
+            optional_timestamp_arg(function, args.get(1), span)?.unwrap_or(self.request_time);
+        let timezone = if utc {
+            BoundedTimezone::utc()
+        } else {
+            bounded_timezone_from_name(&self.default_timezone)
+                .expect("stored default timezone should be bounded")
+        };
+        Ok(Value::String(format_bounded_strftime(
+            &format, timestamp, &timezone,
+        )))
+    }
+
     fn call_idate(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         if !(1..=2).contains(&args.len()) {
             return Err(runtime_error(
@@ -86590,6 +86640,7 @@ impl BoundedTimezone {
         match self.name.as_str() {
             "UTC" | "Etc/UTC" | "Etc/GMT" | "Etc/Universal" | "Etc/Zulu" | "GMT0" => 0,
             "Asia/Jerusalem" => 10_800,
+            "Asia/Calcutta" | "Asia/Kolkata" => 19_800,
             "Europe/London" => {
                 if bounded_month_is_in_dst_window(month, day, 3, 31, 10, 31) {
                     3_600
@@ -86624,6 +86675,7 @@ impl BoundedTimezone {
             "US/Eastern" | "America/New_York" => -18_000,
             "Europe/London" => 0,
             "Asia/Jerusalem" => 7_200,
+            "Asia/Calcutta" | "Asia/Kolkata" => 19_800,
             _ => self.offset_for_local_date(1970, 1, 1),
         }
     }
@@ -86640,6 +86692,7 @@ impl BoundedTimezone {
                     "IST"
                 }
             }
+            "Asia/Calcutta" | "Asia/Kolkata" => "IST",
             "Europe/London" => {
                 if self.is_dst(parts) {
                     "BST"
@@ -86679,6 +86732,8 @@ fn bounded_timezone_from_name(name: &str) -> Option<BoundedTimezone> {
         "Etc/Zulu" => "Etc/Zulu",
         "GMT0" => "GMT0",
         "Asia/Jerusalem" => "Asia/Jerusalem",
+        "Asia/Calcutta" => "Asia/Calcutta",
+        "Asia/Kolkata" => "Asia/Kolkata",
         "America/Chicago" => "America/Chicago",
         "Europe/London" => "Europe/London",
         "US/Eastern" => "US/Eastern",
@@ -86846,6 +86901,139 @@ fn positive_mod(value: i64, modulus: i64) -> i64 {
     } else {
         result
     }
+}
+
+fn format_bounded_strftime(format: &str, timestamp: i64, timezone: &BoundedTimezone) -> String {
+    let offset = timezone.offset_at_timestamp(timestamp);
+    let parts = bounded_datetime_parts(timestamp, offset);
+    let mut output = String::new();
+    let mut chars = format.chars();
+    while let Some(ch) = chars.next() {
+        if ch != '%' {
+            output.push(ch);
+            continue;
+        }
+        let Some(token) = chars.next() else {
+            output.push('%');
+            break;
+        };
+        output.push_str(&format_bounded_strftime_token(
+            token, timestamp, timezone, &parts,
+        ));
+    }
+    output
+}
+
+fn format_bounded_strftime_token(
+    token: char,
+    timestamp: i64,
+    timezone: &BoundedTimezone,
+    parts: &BoundedDateTimeParts,
+) -> String {
+    match token {
+        '%' => "%".to_string(),
+        'a' => weekday_name(parts.weekday, false).to_string(),
+        'A' => weekday_name(parts.weekday, true).to_string(),
+        'b' | 'h' => month_name(parts.month, false).to_string(),
+        'B' => month_name(parts.month, true).to_string(),
+        'C' => zero_pad(div_floor(parts.year, 100), 2),
+        'c' => format!(
+            "{} {} {:>2} {}:{}:{} {}",
+            weekday_name(parts.weekday, false),
+            month_name(parts.month, false),
+            parts.day,
+            zero_pad(parts.hour, 2),
+            zero_pad(parts.minute, 2),
+            zero_pad(parts.second, 2),
+            zero_pad(parts.year, 4)
+        ),
+        'D' => format!(
+            "{}/{}/{}",
+            zero_pad(parts.month, 2),
+            zero_pad(parts.day, 2),
+            zero_pad(positive_mod(parts.year, 100), 2)
+        ),
+        'd' => zero_pad(parts.day, 2),
+        'e' => format!("{:>2}", parts.day),
+        'F' => format!(
+            "{}-{}-{}",
+            zero_pad(parts.year, 4),
+            zero_pad(parts.month, 2),
+            zero_pad(parts.day, 2)
+        ),
+        'G' => iso_year_week(*parts).0.to_string(),
+        'g' => zero_pad(positive_mod(iso_year_week(*parts).0, 100), 2),
+        'H' => zero_pad(parts.hour, 2),
+        'I' => zero_pad(twelve_hour(parts.hour), 2),
+        'j' => zero_pad(parts.yday + 1, 3),
+        'k' => format!("{:>2}", parts.hour),
+        'l' => format!("{:>2}", twelve_hour(parts.hour)),
+        'm' => zero_pad(parts.month, 2),
+        'M' => zero_pad(parts.minute, 2),
+        'n' => "\n".to_string(),
+        'p' => {
+            if parts.hour < 12 {
+                "AM".to_string()
+            } else {
+                "PM".to_string()
+            }
+        }
+        'P' => {
+            if parts.hour < 12 {
+                "am".to_string()
+            } else {
+                "pm".to_string()
+            }
+        }
+        'R' => format!("{}:{}", zero_pad(parts.hour, 2), zero_pad(parts.minute, 2)),
+        'r' => format!(
+            "{}:{}:{} {}",
+            zero_pad(twelve_hour(parts.hour), 2),
+            zero_pad(parts.minute, 2),
+            zero_pad(parts.second, 2),
+            if parts.hour < 12 { "AM" } else { "PM" }
+        ),
+        'S' => zero_pad(parts.second, 2),
+        's' => timestamp.to_string(),
+        'T' | 'X' => format!(
+            "{}:{}:{}",
+            zero_pad(parts.hour, 2),
+            zero_pad(parts.minute, 2),
+            zero_pad(parts.second, 2)
+        ),
+        't' => "\t".to_string(),
+        'u' => {
+            if parts.weekday == 0 {
+                "7".to_string()
+            } else {
+                parts.weekday.to_string()
+            }
+        }
+        'U' => zero_pad(strftime_week_number(*parts, false), 2),
+        'V' => zero_pad(iso_year_week(*parts).1, 2),
+        'w' => parts.weekday.to_string(),
+        'W' => zero_pad(strftime_week_number(*parts, true), 2),
+        'x' => format!(
+            "{}/{}/{}",
+            zero_pad(parts.month, 2),
+            zero_pad(parts.day, 2),
+            zero_pad(positive_mod(parts.year, 100), 2)
+        ),
+        'y' => zero_pad(positive_mod(parts.year, 100), 2),
+        'Y' => zero_pad(parts.year, 4),
+        'z' => format_timezone_offset(parts.offset, false),
+        'Z' => timezone.abbreviation(parts).to_string(),
+        other => format!("%{other}"),
+    }
+}
+
+fn strftime_week_number(parts: BoundedDateTimeParts, monday_first: bool) -> i64 {
+    let first_day = if monday_first {
+        positive_mod(parts.weekday + 6, 7)
+    } else {
+        parts.weekday
+    };
+    (parts.yday + 7 - first_day) / 7
 }
 
 fn format_bounded_date(format: &str, timestamp: i64, timezone: &BoundedTimezone) -> String {

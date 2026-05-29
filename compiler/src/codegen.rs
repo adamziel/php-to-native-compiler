@@ -66231,6 +66231,8 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "gmmktime",
     "date",
     "gmdate",
+    "strftime",
+    "gmstrftime",
     "idate",
     "checkdate",
     "getdate",
