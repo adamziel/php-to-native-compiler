@@ -1747,6 +1747,64 @@ impl SymbolTable {
         self.write_named_checked_with_object_type_resolver(name, value, span, object_type_resolver)
     }
 
+    fn write_static_array_index_in_place_checked_with_object_type_resolver(
+        &mut self,
+        name: &str,
+        key: &ArrayKey,
+        value: Value,
+        span: Span,
+        object_type_resolver: &dyn Fn(&PhpObject, &str) -> bool,
+    ) -> CompileResult<bool> {
+        if self.is_array_offset_alias_name(name) {
+            return Ok(false);
+        }
+
+        let storage = self.routed_storage(name).clone();
+        let cell = storage.borrow().get(name).cloned();
+        let wrote = if let Some(cell) = cell {
+            cell.update_value(|slot| match slot {
+                Value::Array(array) => array
+                    .insert_checked_with_object_type_resolver(
+                        key.clone(),
+                        value,
+                        |object, type_name| object_type_resolver(object, type_name),
+                    )
+                    .map(|_| true),
+                Value::Null => {
+                    let mut array = PhpArray::new();
+                    array.insert_checked_with_object_type_resolver(
+                        key.clone(),
+                        value,
+                        |object, type_name| object_type_resolver(object, type_name),
+                    )?;
+                    *slot = Value::Array(array);
+                    Ok(true)
+                }
+                _ => Ok(false),
+            })
+        } else {
+            let mut array = PhpArray::new();
+            array
+                .insert_checked_with_object_type_resolver(
+                    key.clone(),
+                    value,
+                    |object, type_name| object_type_resolver(object, type_name),
+                )
+                .map_err(|error| runtime_error(span, error))?;
+            storage
+                .borrow_mut()
+                .insert(name.to_string(), value_cell(Value::Array(array)));
+            Ok(true)
+        }
+        .map_err(|error| runtime_error(span, error))?;
+
+        if wrote && self.name_routes_to_global_storage(name) {
+            self.sync_array_offset_aliases_for_global_root(name);
+        }
+
+        Ok(wrote)
+    }
+
     fn write_detached_static(&mut self, name: &str, value: Value) {
         self.clear_public_object_property_array_copy_source(name);
         self.clear_array_literal_copy_source_paths_for_root(name);
@@ -1815,6 +1873,44 @@ impl SymbolTable {
         }
 
         self.read_storage_named(name)
+    }
+
+    fn read_named_object(&self, name: &str) -> Option<PhpObject> {
+        if let Some(aliases) = self.array_offset_aliases.get(name) {
+            return aliases
+                .first()
+                .and_then(|alias| self.read_array_offset_alias(alias))
+                .and_then(|value| match value {
+                    Value::Object(object) => Some(object),
+                    _ => None,
+                });
+        }
+
+        self.read_cell(name).and_then(|cell| {
+            cell.with_value(|value| match value {
+                Value::Object(object) => Some(object.clone()),
+                _ => None,
+            })
+        })
+    }
+
+    fn read_named_string(&self, name: &str) -> Option<String> {
+        if let Some(aliases) = self.array_offset_aliases.get(name) {
+            return aliases
+                .first()
+                .and_then(|alias| self.read_array_offset_alias(alias))
+                .and_then(|value| match value {
+                    Value::String(string) => Some(string),
+                    _ => None,
+                });
+        }
+
+        self.read_cell(name).and_then(|cell| {
+            cell.with_value(|value| match value {
+                Value::String(string) => Some(string.clone()),
+                _ => None,
+            })
+        })
     }
 
     fn read_global_name(&self, name: &str) -> Option<Value> {
@@ -25017,8 +25113,7 @@ impl Interpreter {
                 self.evaluate_list_assignment(names, expr, *span, scope)
             }
             AssignTarget::ArrayIndex { name, index, span } => {
-                if let (Some(index), Some(Value::Object(object))) =
-                    (index.as_ref(), scope.read_named(name))
+                if let (Some(index), Some(object)) = (index.as_ref(), scope.read_named_object(name))
                 {
                     if self.is_spl_object_storage_object(&object) {
                         let (value, _source) =
@@ -25124,7 +25219,7 @@ impl Interpreter {
                     return Ok(value);
                 }
                 if let Some(key) = key.as_ref() {
-                    if let Some(Value::String(mut string)) = scope.read_named(name) {
+                    if let Some(mut string) = scope.read_named_string(name) {
                         self.write_ascii_string_offset(&mut string, key, value.clone(), *span)?;
                         scope.write_static(name, Value::String(string));
                         return Ok(value);
@@ -25172,13 +25267,10 @@ impl Interpreter {
                     }]);
                 }
                 let is_direct_array_access_append = key.is_none()
-                    && matches!(
-                        scope.read_named(name),
-                        Some(Value::Object(object))
-                            if self
-                                .classes
-                                .implements_interface(object.class_id(), "ArrayAccess")
-                    );
+                    && scope.read_named_object(name).is_some_and(|object| {
+                        self.classes
+                            .implements_interface(object.class_id(), "ArrayAccess")
+                    });
                 if key.is_none()
                     && matches!(value, Value::Array(_))
                     && !array_literal_references.is_empty()
@@ -25220,6 +25312,39 @@ impl Interpreter {
                     return Ok(value);
                 }
                 let target_key = key.clone();
+                if let Some(key) = target_key.as_ref() {
+                    if !matches!(value, Value::Array(_))
+                        && array_literal_references.is_empty()
+                        && array_literal_copy_sources.is_empty()
+                        && array_copy_source.is_none()
+                        && scope
+                            .write_static_array_index_in_place_checked_with_object_type_resolver(
+                                name,
+                                key,
+                                value.clone(),
+                                *span,
+                                &|object, type_name| {
+                                    self.object_satisfies_live_property_type(object, type_name)
+                                },
+                            )?
+                    {
+                        scope.record_array_literal_copy_source_paths(
+                            name,
+                            retained_array_literal_copy_source_paths,
+                        );
+                        if let Some(source) = retained_array_copy_source {
+                            scope.record_public_object_property_array_copy_source(name, source);
+                            scope.mark_public_object_property_array_copy_source_dirty(name);
+                        }
+                        scope.sync_array_offset_aliases_for_root_path(
+                            &ArrayOffsetAliasRoot::StaticArray {
+                                name: name.to_string(),
+                            },
+                            std::slice::from_ref(key),
+                        );
+                        return Ok(value);
+                    }
+                }
                 let mut slot = scope
                     .read_named(name)
                     .unwrap_or_else(|| Value::Array(PhpArray::new()));

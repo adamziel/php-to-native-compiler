@@ -28323,15 +28323,26 @@ fn format_arity_expectation(expected: ArityExpectation) -> String {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct PhpArray {
     entries: Vec<ArrayEntry>,
     next_auto_index: i64,
     auto_index_exhausted: bool,
     cursor: isize,
+    key_index: Option<HashMap<ArrayKey, usize>>,
 }
 
 const ARRAY_PAD_MAX_PADDING: u64 = 1_048_576;
+const PHP_ARRAY_KEY_INDEX_THRESHOLD: usize = 64;
+
+impl PartialEq for PhpArray {
+    fn eq(&self, other: &Self) -> bool {
+        self.entries == other.entries
+            && self.next_auto_index == other.next_auto_index
+            && self.auto_index_exhausted == other.auto_index_exhausted
+            && self.cursor == other.cursor
+    }
+}
 
 impl PhpArray {
     pub fn new() -> Self {
@@ -28340,6 +28351,7 @@ impl PhpArray {
             next_auto_index: 0,
             auto_index_exhausted: false,
             cursor: 0,
+            key_index: None,
         }
     }
 
@@ -28355,6 +28367,51 @@ impl PhpArray {
         &self.entries
     }
 
+    fn index_for_key(&self, key: &ArrayKey) -> Option<usize> {
+        let index = self.key_index.as_ref()?.get(key).copied()?;
+        self.entries
+            .get(index)
+            .is_some_and(|entry| entry.key == *key)
+            .then_some(index)
+    }
+
+    fn index_for_key_mut(&mut self, key: &ArrayKey) -> Option<usize> {
+        if self.key_index.is_none() && self.entries.len() >= PHP_ARRAY_KEY_INDEX_THRESHOLD {
+            self.rebuild_key_index();
+        }
+        if let Some(index) = self.index_for_key(key) {
+            return Some(index);
+        }
+        self.entries.iter().position(|entry| entry.key == *key)
+    }
+
+    fn rebuild_key_index(&mut self) {
+        if self.entries.len() < PHP_ARRAY_KEY_INDEX_THRESHOLD {
+            self.key_index = None;
+            return;
+        }
+        let mut index = HashMap::with_capacity(self.entries.len());
+        for (position, entry) in self.entries.iter().enumerate() {
+            index.insert(entry.key.clone(), position);
+        }
+        self.key_index = Some(index);
+    }
+
+    fn invalidate_key_index(&mut self) {
+        self.key_index = None;
+    }
+
+    fn push_entry(&mut self, entry: ArrayEntry) {
+        let key = entry.key.clone();
+        let position = self.entries.len();
+        self.entries.push(entry);
+        if let Some(index) = &mut self.key_index {
+            index.insert(key, position);
+        } else if self.entries.len() >= PHP_ARRAY_KEY_INDEX_THRESHOLD {
+            self.rebuild_key_index();
+        }
+    }
+
     pub fn get(&self, key: impl Into<ArrayKey>) -> Option<&Value> {
         self.get_slot(key).map(ArraySlot::value)
     }
@@ -28365,6 +28422,9 @@ impl PhpArray {
 
     pub fn get_slot(&self, key: impl Into<ArrayKey>) -> Option<&ArraySlot> {
         let key = key.into().normalized();
+        if let Some(index) = self.index_for_key(&key) {
+            return self.entries.get(index).map(ArrayEntry::slot);
+        }
         self.entries
             .iter()
             .find(|entry| entry.key == key)
@@ -28373,21 +28433,20 @@ impl PhpArray {
 
     pub fn get_slot_mut(&mut self, key: impl Into<ArrayKey>) -> Option<&mut ArraySlot> {
         let key = key.into().normalized();
-        self.entries
-            .iter_mut()
-            .find(|entry| entry.key == key)
-            .map(ArrayEntry::slot_mut)
+        let index = self.index_for_key_mut(&key)?;
+        self.entries.get_mut(index).map(ArrayEntry::slot_mut)
     }
 
     pub fn contains_key(&self, key: impl Into<ArrayKey>) -> bool {
         let key = key.into().normalized();
-        self.entries.iter().any(|entry| entry.key == key)
+        self.index_for_key(&key).is_some() || self.entries.iter().any(|entry| entry.key == key)
     }
 
     pub fn remove(&mut self, key: impl Into<ArrayKey>) -> bool {
         let key = key.into().normalized();
-        if let Some(index) = self.entries.iter().position(|entry| entry.key == key) {
+        if let Some(index) = self.index_for_key_mut(&key) {
             self.entries.remove(index);
+            self.invalidate_key_index();
             return true;
         }
 
@@ -28403,7 +28462,7 @@ impl PhpArray {
             return key;
         }
 
-        self.entries.push(ArrayEntry::new(key.clone(), value));
+        self.push_entry(ArrayEntry::new(key.clone(), value));
         key
     }
 
@@ -28434,7 +28493,7 @@ impl PhpArray {
             return Ok(key);
         }
 
-        self.entries.push(ArrayEntry::new(key.clone(), value));
+        self.push_entry(ArrayEntry::new(key.clone(), value));
         Ok(key)
     }
 
@@ -28455,7 +28514,7 @@ impl PhpArray {
             return key;
         }
 
-        self.entries.push(ArrayEntry::from_slot(key.clone(), slot));
+        self.push_entry(ArrayEntry::from_slot(key.clone(), slot));
         key
     }
 
@@ -28766,6 +28825,7 @@ impl PhpArray {
             compare_numbers(*left, *right).unwrap_or(Ordering::Equal)
         });
         self.entries = sortable.into_iter().map(|(_, entry)| entry).collect();
+        self.invalidate_key_index();
         Ok(())
     }
 
@@ -28875,6 +28935,7 @@ impl PhpArray {
                 })
                 .collect()
         };
+        self.invalidate_key_index();
         if !operation.preserves_keys() {
             self.next_auto_index = i64::try_from(self.entries.len()).expect("array length fits");
             self.auto_index_exhausted = false;
@@ -28906,6 +28967,7 @@ impl PhpArray {
                 })
                 .collect()
         };
+        self.invalidate_key_index();
         if !preserve_keys {
             self.next_auto_index = i64::try_from(self.entries.len()).expect("array length fits");
             self.auto_index_exhausted = false;
@@ -28922,6 +28984,7 @@ impl PhpArray {
         self.entries = self.sorted_entries_by(|left, right| {
             array_sort_natural_value_ordering(callable, left, right, case_insensitive)
         })?;
+        self.invalidate_key_index();
         self.cursor = 0;
         Ok(())
     }
@@ -28950,6 +29013,7 @@ impl PhpArray {
                 })
                 .collect()
         };
+        self.invalidate_key_index();
         if !preserve_keys {
             self.next_auto_index = i64::try_from(self.entries.len()).expect("array length fits");
             self.auto_index_exhausted = false;
@@ -28969,6 +29033,7 @@ impl PhpArray {
                 callable, comparator, left, right, true, diagnostic,
             )
         })?;
+        self.invalidate_key_index();
         self.cursor = 0;
         Ok(())
     }
@@ -28984,6 +29049,7 @@ impl PhpArray {
                 .map(|ordering| array_sort_direction_ordering(ordering, reverse))
         })?;
         self.entries = entries;
+        self.invalidate_key_index();
         self.cursor = 0;
         Ok(())
     }
@@ -29051,6 +29117,7 @@ impl PhpArray {
             self.cursor = 0;
             return Value::Null;
         };
+        self.invalidate_key_index();
 
         if matches!(entry.key, ArrayKey::Int(key) if key >= 0 && key.checked_add(1) == Some(self.next_auto_index))
         {
@@ -30662,8 +30729,18 @@ impl PhpReferenceCell {
         self.state.borrow().value.clone()
     }
 
+    pub fn with_value<R>(&self, read: impl FnOnce(&Value) -> R) -> R {
+        let state = self.state.borrow();
+        read(&state.value)
+    }
+
     pub fn set_value(&self, value: Value) {
         self.state.borrow_mut().value = value;
+    }
+
+    pub fn update_value<R>(&self, update: impl FnOnce(&mut Value) -> R) -> R {
+        let mut state = self.state.borrow_mut();
+        update(&mut state.value)
     }
 
     pub fn coerce_value_for_write(&self, value: Value) -> RuntimeResult<Value> {
@@ -30799,7 +30876,7 @@ impl PhpValueCell {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ArrayKey {
     Int(i64),
     String(String),

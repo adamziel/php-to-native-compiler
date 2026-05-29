@@ -11375,6 +11375,42 @@ echo "body\n";
 }
 
 #[test]
+fn destructor_global_hash_table_retention_loop_finishes() {
+    let execution = run_source(
+        r#"<?php
+define('OBJECT_COUNT', 512);
+
+$containers = array();
+
+class ObjectOne {
+    protected $guid = 0;
+
+    public function __construct() {
+        global $containers;
+        $this->guid = 1;
+        $containers[spl_object_hash($this)] = $this;
+    }
+
+    public function __destruct() {
+        global $containers;
+        $containers[spl_object_hash($this)] = NULL;
+    }
+}
+
+for ($i = 0; $i < OBJECT_COUNT; ++$i) {
+    new ObjectOne();
+}
+
+echo count($containers), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "512\n");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn direct_variable_unset_finalizes_unreachable_destructor_objects_immediately() {
     let execution = run_source(
         r#"<?php
