@@ -2660,12 +2660,14 @@ WordPress `wpdb::placeholder_escape()` salt path. The current slice accepts no
 arguments and returns a fixed integer so compatibility probes are reproducible;
 PHP random-state compatibility, min/max forms, seeding, cryptographic
 randomness, and native lowering remain out of scope.
-`uniqid()` and `hash_hmac()` are interpreter-only deterministic hash
-boundaries for the same placeholder-escape path. `uniqid()` returns a fixed
-prefix-based ID, and `hash_hmac()` currently supports lowercase hex
-HMAC-SHA256 through the `hmac` and `sha2` crates. Broader hash algorithms,
-raw binary output, exact entropy/time behavior, and native lowering remain out
-of scope.
+`uniqid()`, `hash_hmac()`, and `md5()` are interpreter-only deterministic hash
+boundaries for the same placeholder-escape path and focused file-content
+checks. `uniqid()` returns a fixed prefix-based ID, `hash_hmac()` currently
+supports lowercase hex HMAC-SHA256 through the `hmac` and `sha2` crates, and
+`md5()` supports scalar/null string-convertible input with lowercase hex or
+raw binary output through the `md-5` crate. Broader hash algorithms, streaming
+hash contexts, exact entropy/time behavior, FIPS/provider policy, and native
+lowering remain out of scope.
 `strcasecmp()` is an interpreter-only bounded string comparison builtin for
 current scalar/null string-convertible values. It compares valid UTF-8 runtime
 strings by bytes with ASCII case folding and returns only sign values. Native
@@ -3348,12 +3350,14 @@ native lowering remain unsupported. `fwrite()`,
 `fread()`, `rewind()`, `stream_get_contents()`, `feof()`, `ftell()`,
 `fseek()`, `fstat()`, `stream_get_meta_data()`, and `fclose()` mutate, consume,
 or inspect the resource cursor or bounded metadata; append-mode writes are
-routed to EOF. A separate request-local directory resource table backs
+routed to EOF while local file streams retain PHP's logical cursor advancement
+after the write. A separate request-local directory resource table backs
 `opendir()`, `readdir()`, `rewinddir()`, and `closedir()` for local UTF-8
 directories, returning `.`, `..`, and sorted host entry names through the same
 generic resource value shape. `fseek()` supports the built-in `SEEK_SET`,
 `SEEK_CUR`, and `SEEK_END` constants for the current memory/temp/local-file
-resource set, and `feof()` tracks the bounded EOF flag produced by exhaustive
+resource set, returning `-1` without moving the stream for other integer
+`whence` values, and `feof()` tracks the bounded EOF flag produced by exhaustive
 reads. `fstat()` exposes buffer size for memory/temp/input handles and host
 metadata for local files;
 `stream_get_meta_data()` exposes deterministic wrapper/type/mode/URI,

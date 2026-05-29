@@ -1093,14 +1093,9 @@ fn stream_resource_builtins_reject_forms_outside_current_subset() {
     );
 
     let bad_whence =
-        run_source("<?php\n$s = fopen('php://memory', 'w+'); fseek($s, 0, 9);\n").unwrap_err();
-    assert_eq!(bad_whence.phase, Phase::Runtime);
-    assert_eq!(bad_whence.line, 2);
-    assert_eq!(bad_whence.column, 35);
-    assert_eq!(
-        bad_whence.message,
-        "unsupported call fseek(): whence argument must be SEEK_SET, SEEK_CUR, or SEEK_END in the current subset"
-    );
+        run_source("<?php\n$s = fopen('php://memory', 'w+'); fwrite($s, 'abc'); echo fseek($s, 0, 9); echo ':' . ftell($s);\n").unwrap();
+    assert_eq!(bad_whence.stdout, "-1:3");
+    assert_eq!(bad_whence.stderr, "");
 
     let bad_stat = run_source("<?php\nfstat('not-resource');\n").unwrap_err();
     assert_eq!(bad_stat.phase, Phase::Runtime);

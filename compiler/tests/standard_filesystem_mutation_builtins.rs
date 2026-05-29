@@ -236,6 +236,94 @@ rmdir($dir);
     assert_eq!(execution.exit_code, 0);
 }
 
+#[test]
+fn readfile_supports_php_filename_coercion_include_path_and_display_warnings() {
+    let fixture = TempFsFixture::new("readfile");
+    let root = php_string(&fixture.root);
+    let source = format!(
+        r#"<?php
+$root = {root};
+$lib = $root . "/lib";
+mkdir($lib);
+file_put_contents($lib . "/payload.txt", "include-data");
+ini_set("include_path", $lib);
+$count = readfile("payload.txt", "1", stream_context_create());
+echo ":" . $count . "|";
+try {{
+    readfile(false);
+}} catch (ValueError $e) {{
+    echo $e->getMessage() . "|";
+}}
+var_dump(readfile(-1));
+unlink($lib . "/payload.txt");
+rmdir($lib);
+"#,
+        root = root
+    );
+
+    let execution = run_source(&source).unwrap();
+
+    assert!(
+        execution
+            .stdout
+            .contains("include-data:12|Path must not be empty|"),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution
+            .stdout
+            .contains("Warning: readfile(-1): Failed to open stream: No such file or directory"),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution.stdout.ends_with("bool(false)\n"),
+        "{}",
+        execution.stdout
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn fwrite_negative_length_and_md5_cover_file_hash_phpt_shapes() {
+    let fixture = TempFsFixture::new("fwrite-md5");
+    let root = php_string(&fixture.root);
+    let source = format!(
+        r#"<?php
+$path = {root} . "/write.txt";
+$handle = fopen($path, "w");
+var_dump(fwrite($handle, "data", -1));
+var_dump(fwrite($handle, "data", 100000));
+fclose($handle);
+echo md5(file_get_contents($path)) . "|";
+echo bin2hex(md5("A", true));
+$append = fopen($path, "a+");
+echo "|";
+echo ftell($append);
+echo ":" . fwrite($append, "xy");
+echo ":" . ftell($append);
+fclose($append);
+unlink($path);
+"#,
+        root = root
+    );
+
+    let execution = run_source(&source).unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "int(0)\n",
+            "int(4)\n",
+            "8d777f385d3dfec8815d20f7496026dc|7fc56270e7a70fa81a5935b72eacbe29|0:2:2"
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
 struct TempFsFixture {
     root: PathBuf,
 }

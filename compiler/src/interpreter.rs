@@ -8,6 +8,7 @@ use std::rc::Rc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use hmac::{Hmac, Mac};
+use md5::{Digest as Md5Digest, Md5};
 use php_runtime::{
     coerce_property_value_with_object_type_resolver, ArityExpectation, ArrayColumnKey, ArrayEntry,
     ArrayKey, ArrayKeyCase, ClassId, ClassMemberKind, Comparison, ObjectProperty, PhpArray,
@@ -69839,7 +69840,7 @@ impl Interpreter {
                 metadata_mode: mode.to_string(),
             };
             if stream.append {
-                stream.file.seek(SeekFrom::End(0)).map_err(|error| {
+                stream.file.seek(SeekFrom::Start(0)).map_err(|error| {
                     runtime_error(
                         span,
                         RuntimeError::unsupported_call(
@@ -71017,23 +71018,8 @@ impl Interpreter {
                 ),
             ));
         }
-        let path = self.filesystem_path_argument("readfile", "path", &args[0], span)?;
-        let use_include_path = match args.get(1) {
-            Some(Value::Bool(flag)) => *flag,
-            Some(Value::Null) | None => false,
-            Some(other) => {
-                return Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "readfile()",
-                        format!(
-                            "use_include_path argument must be bool in the current subset, got {}",
-                            other.type_name()
-                        ),
-                    ),
-                ));
-            }
-        };
+        let path = self.filesystem_filename_argument("readfile", &args[0], span)?;
+        let use_include_path = self.use_include_path_argument("readfile", args.get(1), span)?;
         if let Some(context) = args.get(2) {
             self.expect_optional_stream_context_resource("readfile", context, span)?;
         }
@@ -71049,9 +71035,11 @@ impl Interpreter {
         let bytes = match fs::read(&filesystem_path) {
             Ok(bytes) => bytes,
             Err(error) => {
-                self.emit_warning(
-                    "readfile()",
-                    format!("{path}: Failed to open stream: {error}"),
+                self.emit_display_warning(
+                    format!(
+                        "readfile({path}): Failed to open stream: {}",
+                        php_filesystem_open_error_message(&error)
+                    ),
                     span,
                 )?;
                 return Ok(Value::Bool(false));
@@ -72315,18 +72303,10 @@ impl Interpreter {
             }
         };
         let data = match args.get(2) {
-            Some(Value::Int(length)) if *length >= 0 => {
+            Some(Value::Int(length)) if *length <= 0 => "",
+            Some(Value::Int(length)) => {
                 let length = utf8_boundary_at_or_before(&data, *length as usize);
                 &data[..length]
-            }
-            Some(Value::Int(_)) => {
-                return Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "fwrite()",
-                        "length argument must be non-negative in the current subset",
-                    ),
-                ));
             }
             Some(other) => {
                 return Err(runtime_error(
@@ -72373,6 +72353,19 @@ impl Interpreter {
                 stream.eof = false;
             }
             StreamResource::File(stream) => {
+                let logical_position = if stream.append {
+                    Some(stream.file.stream_position().map_err(|error| {
+                        runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "fwrite()",
+                                format!("local file stream position failed: {error}"),
+                            ),
+                        )
+                    })?)
+                } else {
+                    None
+                };
                 if stream.append {
                     stream.file.seek(SeekFrom::End(0)).map_err(|error| {
                         runtime_error(
@@ -72393,6 +72386,29 @@ impl Interpreter {
                         ),
                     )
                 })?;
+                if let Some(position) = logical_position {
+                    let Some(position) = position.checked_add(data.len() as u64) else {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "fwrite()",
+                                "local file stream position overflowed in append mode",
+                            ),
+                        ));
+                    };
+                    stream
+                        .file
+                        .seek(SeekFrom::Start(position))
+                        .map_err(|error| {
+                            runtime_error(
+                                span,
+                                RuntimeError::unsupported_call(
+                                    "fwrite()",
+                                    format!("local file stream seek failed: {error}"),
+                                ),
+                            )
+                        })?;
+                }
                 stream.eof = false;
             }
         }
@@ -72721,6 +72737,19 @@ impl Interpreter {
                         ),
                     ));
                 }
+                let logical_position = if stream.append {
+                    Some(stream.file.stream_position().map_err(|error| {
+                        runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "fputcsv()",
+                                format!("local file stream position failed: {error}"),
+                            ),
+                        )
+                    })?)
+                } else {
+                    None
+                };
                 if stream.append {
                     stream.file.seek(SeekFrom::End(0)).map_err(|error| {
                         runtime_error(
@@ -72741,6 +72770,29 @@ impl Interpreter {
                         ),
                     )
                 })?;
+                if let Some(position) = logical_position {
+                    let Some(position) = position.checked_add(line.len() as u64) else {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "fputcsv()",
+                                "local file stream position overflowed in append mode",
+                            ),
+                        ));
+                    };
+                    stream
+                        .file
+                        .seek(SeekFrom::Start(position))
+                        .map_err(|error| {
+                            runtime_error(
+                                span,
+                                RuntimeError::unsupported_call(
+                                    "fputcsv()",
+                                    format!("local file stream seek failed: {error}"),
+                                ),
+                            )
+                        })?;
+                }
                 stream.eof = false;
             }
         }
@@ -73393,15 +73445,7 @@ impl Interpreter {
         };
         let whence = match args.get(2) {
             Some(Value::Int(whence @ 0..=2)) => *whence,
-            Some(Value::Int(_)) => {
-                return Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "fseek()",
-                        "whence argument must be SEEK_SET, SEEK_CUR, or SEEK_END in the current subset",
-                    ),
-                ));
-            }
+            Some(Value::Int(_)) => return Ok(Value::Int(-1)),
             Some(other) => {
                 return Err(runtime_error(
                     span,
@@ -75756,6 +75800,19 @@ impl Interpreter {
                         ),
                     ));
                 }
+                let logical_position = if stream.append {
+                    Some(stream.file.stream_position().map_err(|error| {
+                        runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                format!("{function}()"),
+                                format!("local file stream position failed: {error}"),
+                            ),
+                        )
+                    })?)
+                } else {
+                    None
+                };
                 if stream.append {
                     stream.file.seek(SeekFrom::End(0)).map_err(|error| {
                         runtime_error(
@@ -75776,6 +75833,29 @@ impl Interpreter {
                         ),
                     )
                 })?;
+                if let Some(position) = logical_position {
+                    let Some(position) = position.checked_add(data.len() as u64) else {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                format!("{function}()"),
+                                "local file stream position overflowed in append mode",
+                            ),
+                        ));
+                    };
+                    stream
+                        .file
+                        .seek(SeekFrom::Start(position))
+                        .map_err(|error| {
+                            runtime_error(
+                                span,
+                                RuntimeError::unsupported_call(
+                                    format!("{function}()"),
+                                    format!("local file stream seek failed: {error}"),
+                                ),
+                            )
+                        })?;
+                }
                 stream.eof = false;
             }
         }
@@ -75878,6 +75958,7 @@ impl Interpreter {
             "hexdec" => self.call_hexdec(&args, span),
             "base_convert" => self.call_base_convert(&args, span),
             "crc32" => call_crc32(&args, span),
+            "md5" => call_md5(&args, span),
             "levenshtein" => call_levenshtein(&args, span),
             "soundex" => call_soundex(&args, span),
             "count_chars" => call_count_chars(&args, span),
@@ -89291,6 +89372,13 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
             ],
         ),
         "crc32" => ("int", vec![reflection_internal_param("string", "string")]),
+        "md5" => (
+            "string",
+            vec![
+                reflection_internal_param("string", "string"),
+                reflection_internal_optional_bool_param("binary", false),
+            ],
+        ),
         "levenshtein" => (
             "int",
             vec![
@@ -92319,12 +92407,12 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
             Some(format!("{function}: {message}"))
         }
         (
-            "file_get_contents()" | "file_put_contents()",
+            "file_get_contents()" | "file_put_contents()" | "readfile()",
             "Argument #1 ($filename) must not contain any null bytes",
         ) => {
             Some(format!("{function}: {message}"))
         }
-        ("file_get_contents()" | "file_put_contents()", "Path must not be empty") => {
+        ("file_get_contents()" | "file_put_contents()" | "readfile()", "Path must not be empty") => {
             Some("Path must not be empty".to_string())
         }
         (
@@ -92656,6 +92744,7 @@ fn is_builtin(name: &str) -> bool {
             | "hexdec"
             | "base_convert"
             | "crc32"
+            | "md5"
             | "levenshtein"
             | "soundex"
             | "count_chars"
@@ -100475,6 +100564,41 @@ fn call_crc32(args: &[Value], span: Span) -> CompileResult<Value> {
 
     let value = string_compare_argument_bytes("crc32()", "string", &args[0], span)?;
     Ok(Value::Int(php_crc32_bytes(&value)))
+}
+
+fn call_md5(args: &[Value], span: Span) -> CompileResult<Value> {
+    if !(1..=2).contains(&args.len()) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "md5()",
+                ArityExpectation::Between { min: 1, max: 2 },
+                args.len(),
+            ),
+        ));
+    }
+
+    let value = string_compare_argument_bytes("md5()", "string", &args[0], span)?;
+    let raw_output = match args.get(1) {
+        Some(Value::Array(_)) => {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "md5()",
+                    "Argument #2 ($binary) must be of type bool, array given",
+                ),
+            ));
+        }
+        Some(value) => value.is_truthy(),
+        None => false,
+    };
+
+    let digest = Md5::digest(&value);
+    if raw_output {
+        Ok(Value::BinaryString(digest.to_vec()))
+    } else {
+        Ok(Value::String(hex_bytes(&digest)))
+    }
 }
 
 fn php_crc32_bytes(bytes: &[u8]) -> i64 {
@@ -111339,12 +111463,19 @@ impl Interpreter {
             }
         }
 
+        if normalized_name == "include_path" {
+            self.include_path = value.clone();
+        }
+
         self.ini_values.insert(normalized_name, value);
         Ok(Value::String(previous))
     }
 
     fn ini_value(&self, name: &str) -> Option<String> {
         let normalized = normalize_ini_name(name);
+        if normalized == "include_path" {
+            return Some(self.include_path.clone());
+        }
         if is_opcache_ini_option(&normalized) {
             return self.opcache_ini_value(&normalized);
         }
