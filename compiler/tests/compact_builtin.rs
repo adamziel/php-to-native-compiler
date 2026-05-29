@@ -4,12 +4,6 @@ use php_compiler::run_source;
 
 const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
 
-fn runtime_error(source: &str) -> php_compiler::error::Diagnostic {
-    let error = run_source(source).unwrap_err();
-    assert_eq!(error.phase, Phase::Runtime);
-    error
-}
-
 #[test]
 fn compact_collects_direct_string_variable_names_from_current_scope() {
     let execution = run_source(
@@ -26,19 +20,21 @@ echo $result["collate"];
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "2|utf8mb4|utf8mb4_unicode_ci");
+    assert_eq!(
+        execution.stdout,
+        "Warning: compact(): Undefined variable $missing in Command line code on line 4\n2|utf8mb4|utf8mb4_unicode_ci"
+    );
     assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
-fn compact_uses_function_local_scope_and_dynamic_string_calls() {
+fn compact_uses_function_local_scope() {
     let execution = run_source(
         r#"<?php
 $name = "global";
 function build_compact() {
     $name = "local";
-    $call = "compact";
-    return $call("name");
+    return compact("name");
 }
 $result = build_compact();
 echo $result["name"];
@@ -51,44 +47,39 @@ echo $result["name"];
 }
 
 #[test]
-fn compact_rejects_forms_outside_current_subset() {
-    let array_arg = runtime_error(
+fn compact_collects_array_arguments_and_warns_for_invalid_values() {
+    let execution = run_source(
         r#"<?php
 $name = "value";
-compact(["name"]);
+$result = compact(["name", ["missing"]], true, "not-valid");
+echo count($result);
+echo "|";
+echo $result["name"];
 "#,
-    );
-    assert_eq!(array_arg.line, 3);
-    assert_eq!(array_arg.column, 1);
-    assert_eq!(
-        array_arg.message,
-        "unsupported call compact(): variable names must be direct strings in the current subset, got array"
-    );
+    )
+    .unwrap();
 
-    let invalid_name = runtime_error(
-        r#"<?php
-compact("not-valid");
-"#,
-    );
-    assert_eq!(invalid_name.line, 2);
-    assert_eq!(invalid_name.column, 1);
     assert_eq!(
-        invalid_name.message,
-        "unsupported call compact(): variable names must be non-empty simple identifiers in the current subset"
+        execution.stdout,
+        "Warning: compact(): Undefined variable $missing in Command line code on line 3\n\nWarning: compact(): Argument #2 must be string or array of strings, true given in Command line code on line 3\n\nWarning: compact(): Undefined variable $not-valid in Command line code on line 3\n1|value"
     );
+    assert_eq!(execution.exit_code, 0);
+}
 
-    let call_user_func_boundary = runtime_error(
+#[test]
+fn compact_rejects_dynamic_call_boundary() {
+    let execution = run_source(
         r#"<?php
 $name = "value";
 call_user_func("compact", "name");
 "#,
-    );
-    assert_eq!(call_user_func_boundary.line, 3);
-    assert_eq!(call_user_func_boundary.column, 1);
-    assert_eq!(
-        call_user_func_boundary.message,
-        "unsupported call compact(): caller-scope variable lookup is only implemented for direct and dynamic compact() calls in the current subset"
-    );
+    )
+    .unwrap();
+
+    assert!(execution
+        .stdout
+        .contains("Cannot call compact() dynamically"));
+    assert_eq!(execution.exit_code, 255);
 }
 
 #[test]

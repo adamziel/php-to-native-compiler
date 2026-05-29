@@ -3110,10 +3110,10 @@
   `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_params`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `stream_context_set_params`, `fwrite`, `fscanf`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fflush`, `ftruncate`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`,
   `disk_free_space`, `diskfreespace`, `disk_total_space`, `clearstatcache`, `realpath`, `realpath_cache_get`, `realpath_cache_size`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_executable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_length`, `ob_list_handlers`, `ob_get_status`, `ob_get_clean`, `ob_get_flush`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `date_default_timezone_set`,
   `version_compare`, `microtime`, `ini_get`, `ini_set`,
-  `get_include_path`, `set_include_path`, `min`, `rand`, `uniqid`,
+  `get_include_path`, `set_include_path`, `min`, `rand`, `array_rand`, `uniqid`,
   `hash_hmac`, `isset`, `empty`, `count`, `sizeof`, `compact`, `define`, `constant`, `defined`,
   `array_key_exists`, `key_exists`, `array_key_first`, `array_key_last`, `current`,
-  `array_is_list`, `array_values`, `array_keys`, `array_reverse`, `array_slice`, `array_chunk`,
+  `array_is_list`, `array_values`, `array_keys`, `array_rand`, `array_reverse`, `array_slice`, `array_chunk`,
   `array_pad`, `array_merge`, `array_replace`, `array_combine`,
   `array_intersect_key`,
   `array_diff_key`, `array_diff`, `array_intersect`, `array_unique`,
@@ -4607,13 +4607,14 @@
   invalid-string behavior, exact escaping edge cases, errors/warnings,
   transactions, configuration beyond the report-mode flag, PDO behavior, and
   native database calls are not implemented.
-  `compact($name, ...$names)` supports one or more direct string variable-name
-  arguments, reads the current caller scope, returns an array keyed by each
-  found variable name, and omits missing variables. This covers the reached
-  WordPress `compact('charset', 'collate')` path. Array arguments, nested
-  arrays, invalid names, PHP warning behavior for missing or invalid names,
-  variable-variable interactions, exact diagnostics, and native lowering remain
-  unsupported.
+  `compact($name, ...$names)` supports string variable-name arguments and
+  nested array arguments containing strings. It reads the current caller scope,
+  returns an array keyed by each found variable name, warns and omits missing
+  string names, and warns then continues for non-string/non-array arguments.
+  Recursive argument arrays are bounded by the runtime recursion guard.
+  Dynamic `compact()` calls, arbitrary recursive/reference argument graphs,
+  `$this` object-context handling, exact diagnostic wording outside the
+  covered warnings, and native lowering remain unsupported.
   `assert($assertion, $description = null)` evaluates one or two arguments
   normally and returns `true` for truthy assertions. The optional description
   is inert metadata in this slice and may be `null`, bool, int, float, or
@@ -6323,6 +6324,15 @@
   `array_keys($array, $search_value, true)` uses the current scalar strict
   identity rules, and `array_keys($array, $search_value, false)` uses the loose
   path. These forms are available through string-valued dynamic function calls.
+  `array_rand($array)` returns the first inserted key as the deterministic
+  current subset for PHP's randomized selection, and
+  `array_rand($array, $num)` returns the first `$num` inserted keys in a
+  zero-indexed array. Empty arrays and counts below one or above the input
+  count map to PHP `ValueError` messages through the current runtime diagnostic
+  bridge. Real random selection, RNG seeding/state, MT_RAND_PHP behavior,
+  exact randomness distribution, references/copy-on-write side effects, broad
+  scalar coercions beyond the current integer argument path, and native
+  lowering remain unsupported.
   `array_reverse($array)` and `array_reverse($array, false)` return a new
   ordered array in reverse insertion order, reindex integer-keyed entries from
   zero, preserve string keys, and are available through string-valued dynamic
@@ -8803,6 +8813,16 @@
   the current subset. These forms are also available through string-valued
   dynamic function calls. Array/object search values or array/object values
   encountered during filtering fail with stable unsupported-call diagnostics.
+  `array_rand($array)` accepts arrays only and returns the first inserted key
+  as an `int` or `string` in the current deterministic runtime subset.
+  `array_rand($array, $num)` accepts an integer count and returns the first
+  `$num` inserted keys as a zero-indexed array. Empty arrays and invalid counts
+  report PHP `ValueError` messages through the current diagnostic bridge. The
+  implementation intentionally does not model PHP's random key selection,
+  engine RNG state, MT_RAND_PHP compatibility, exact distribution, seeded
+  reproducibility, reference/copy-on-write side effects, non-int count
+  coercions outside the current argument helper, object/resource values, or
+  native lowering.
   `array_reverse($array)` and `array_reverse($array, false)` accept arrays only,
   return a new array in
   reverse insertion order, reindex integer-keyed entries from zero, preserve
@@ -9224,7 +9244,7 @@
   direct missing-property `__isset`/`__get`, and unsupported
   array-key coercions remain unsupported.
   `array_key_first`, `array_key_last`, `current`, `next`, `array_pop`, `array_is_list`, `array_values`,
-  `array_keys`, `array_reverse`, `array_slice`, `array_chunk`, `array_pad`,
+  `array_keys`, `array_rand`, `array_reverse`, `array_slice`, `array_chunk`, `array_pad`,
   `array_merge`, `array_replace`, `array_combine`, `array_intersect_key`,
   `array_diff_key`, `array_diff`, `array_intersect`, `array_unique`, `array_flip`,
   `array_fill_keys`, `array_count_values`, `array_sum`, `array_product`,
@@ -9232,7 +9252,9 @@
   both current `foreach` array forms follow the current by-value model; PHP
   references, copy-on-write containers, object handle identity preservation,
   resource values, array, object, resource, or reference search values for
-  `array_keys`, non-bool `array_keys` strict-flag coercion, non-bool
+  `array_keys`, non-bool `array_keys` strict-flag coercion, non-array or empty
+  `array_rand` inputs, invalid `array_rand` counts, PHP RNG parity for
+  `array_rand`, non-bool
   `array_reverse` preserve-key flag coercion, non-bool `array_slice`
   preserve-key flag coercion, non-int offset coercion, non-int/non-null length
   coercion, non-bool `array_chunk` preserve-key flag coercion,
@@ -10649,10 +10671,16 @@
   resources/extensions, non-integer object count results, exact diagnostics,
   references/copy-on-write, and native lowering beyond function-table
   introspection
-- `compact()` outside the current direct string variable-name argument subset:
-  array arguments, nested arrays, invalid names, PHP warning behavior for
-  missing or invalid names, variable-variable interactions, exact diagnostics,
-  and native lowering beyond function-table introspection
+- `compact()` outside the current string and nested-array variable-name
+  argument subset: arbitrary recursive/reference argument graphs, `$this`
+  object-context behavior, dynamic `compact()` invocation, variable-variable
+  edge cases, exact diagnostics beyond the covered warning paths, and native
+  lowering beyond function-table introspection
+- `array_rand()` outside the current deterministic first-key/first-N-key
+  interpreter subset: real random selection, RNG seeding/state, MT_RAND_PHP
+  compatibility, exact distribution, non-int count coercions beyond the
+  current argument helper, reference/copy-on-write side effects, object or
+  resource values, and native lowering beyond function-table introspection
 - `str_replace()` outside the current scalar/null string-convertible subject
   subset with scalar/null replacement and scalar/null or one-level array
   search values: replacement arrays, subject arrays, nested search arrays,

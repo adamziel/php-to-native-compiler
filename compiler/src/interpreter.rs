@@ -46,6 +46,7 @@ const SPL_QUEUE_ITERATOR_MODE: i64 = 4;
 const SPL_STACK_ITERATOR_MODE: i64 = SPL_QUEUE_ITERATOR_MODE | SPL_DLL_IT_MODE_LIFO;
 const ARRAY_OBJECT_STD_PROP_LIST: i64 = 1;
 const ARRAY_OBJECT_ARRAY_AS_PROPS: i64 = 2;
+const COMPACT_MAX_ARRAY_DEPTH: usize = 64;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Execution {
@@ -59834,35 +59835,94 @@ impl Interpreter {
         }
 
         let mut compacted = PhpArray::new();
-        for arg in args {
+        for (index, arg) in args.iter().enumerate() {
             let value = self.evaluate(arg, caller_scope)?;
-            let Value::String(name) = value else {
-                return Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "compact()",
-                        format!(
-                            "variable names must be direct strings in the current subset, got {}",
-                            value.type_name()
-                        ),
-                    ),
-                ));
-            };
-            if !is_compact_variable_name(&name) {
-                return Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "compact()",
-                        "variable names must be non-empty simple identifiers in the current subset",
-                    ),
-                ));
-            }
-            if let Some(value) = caller_scope.read_named(&name) {
-                compacted.insert(name, value);
-            }
+            self.collect_compact_argument_names(
+                value,
+                arg.span(),
+                arg.span(),
+                index + 1,
+                &*caller_scope,
+                &mut compacted,
+            )?;
         }
 
         Ok(Value::Array(compacted))
+    }
+
+    fn collect_compact_argument_names(
+        &mut self,
+        value: Value,
+        value_span: Span,
+        argument_span: Span,
+        argument_position: usize,
+        caller_scope: &SymbolTable,
+        compacted: &mut PhpArray,
+    ) -> CompileResult<()> {
+        self.collect_compact_argument_names_at_depth(
+            value,
+            value_span,
+            argument_span,
+            argument_position,
+            0,
+            caller_scope,
+            compacted,
+        )
+    }
+
+    fn collect_compact_argument_names_at_depth(
+        &mut self,
+        value: Value,
+        value_span: Span,
+        argument_span: Span,
+        argument_position: usize,
+        depth: usize,
+        caller_scope: &SymbolTable,
+        compacted: &mut PhpArray,
+    ) -> CompileResult<()> {
+        if depth > COMPACT_MAX_ARRAY_DEPTH {
+            return Err(runtime_error(
+                value_span,
+                RuntimeError::unsupported_call("compact()", "Recursion detected"),
+            ));
+        }
+
+        match value {
+            Value::String(name) => {
+                if let Some(value) = caller_scope.read_named(&name) {
+                    compacted.insert(name, value);
+                } else {
+                    self.emit_display_warning(
+                        format!("compact(): Undefined variable ${name}"),
+                        value_span,
+                    )?;
+                }
+            }
+            Value::Array(array) => {
+                for entry in array.entries() {
+                    self.collect_compact_argument_names_at_depth(
+                        entry.value_cloned(),
+                        argument_span,
+                        argument_span,
+                        argument_position,
+                        depth + 1,
+                        caller_scope,
+                        compacted,
+                    )?;
+                }
+            }
+            other => {
+                self.emit_display_warning(
+                    format!(
+                        "compact(): Argument #{argument_position} must be string or array of strings, {} given",
+                        compact_argument_type_name(&other)
+                    ),
+                    value_span,
+                )?;
+            }
+        }
+
+        Ok(())
     }
 
     fn call_array_sort(
@@ -76285,6 +76345,55 @@ impl Interpreter {
                     ),
                 )),
             },
+            "array_rand" => match args.as_slice() {
+                [Value::Array(array)] => array
+                    .rand_keys(1)
+                    .map_err(|error| runtime_error(span, error)),
+                [Value::Array(array), num] => {
+                    let num = php_internal_int_argument("array_rand()", 2, "num", num, span)?;
+                    if array.is_empty() {
+                        return array
+                            .rand_keys(1)
+                            .map_err(|error| runtime_error(span, error));
+                    }
+                    if num < 1 {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "array_rand()",
+                                "Argument #2 ($num) must be between 1 and the number of elements in argument #1 ($array)",
+                            ),
+                        ));
+                    }
+                    let count = usize::try_from(num).map_err(|_| {
+                        runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "array_rand()",
+                                "Argument #2 ($num) must be between 1 and the number of elements in argument #1 ($array)",
+                            ),
+                        )
+                    })?;
+                    array
+                        .rand_keys(count)
+                        .map_err(|error| runtime_error(span, error))
+                }
+                [other] | [other, _] => Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "array_rand()",
+                        format!("first argument must be array, got {}", other.type_name()),
+                    ),
+                )),
+                _ => Err(runtime_error(
+                    span,
+                    RuntimeError::arity_mismatch(
+                        "array_rand()",
+                        ArityExpectation::Between { min: 1, max: 2 },
+                        args.len(),
+                    ),
+                )),
+            },
             "array_change_key_case" => match args.as_slice() {
                 [Value::Array(array)] => {
                     Ok(Value::Array(array.keys_with_ascii_case(ArrayKeyCase::Lower)))
@@ -89499,6 +89608,13 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_param("array", "array"),
             ],
         ),
+        "array_rand" => (
+            "int|string|array",
+            vec![
+                reflection_internal_param("array", "array"),
+                reflection_internal_optional_int_param("num", 1),
+            ],
+        ),
         "array_fill" => (
             "array",
             vec![
@@ -91897,6 +92013,11 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
         | ("str_repeat()", "Argument #2 ($times) must be greater than or equal to 0")
         | ("array_fill()", "Argument #2 ($count) must be greater than or equal to 0")
         | ("array_fill()", "Argument #2 ($count) is too large")
+        | ("array_rand()", "Argument #1 ($array) must not be empty")
+        | (
+            "array_rand()",
+            "Argument #2 ($num) must be between 1 and the number of elements in argument #1 ($array)",
+        )
         | ("chunk_split()", "Argument #2 ($length) must be greater than 0")
         | ("str_split()", "Argument #2 ($length) must be greater than 0")
         | ("base_convert()", "Argument #2 ($from_base) must be between 2 and 36 (inclusive)")
@@ -92527,6 +92648,7 @@ fn is_builtin(name: &str) -> bool {
             | "end"
             | "array_is_list"
             | "array_keys"
+            | "array_rand"
             | "array_change_key_case"
             | "array_column"
             | "array_reverse"
@@ -103661,15 +103783,13 @@ struct BoundedPregMatch {
     captures: PhpArray,
 }
 
-fn is_compact_variable_name(name: &str) -> bool {
-    let mut bytes = name.bytes();
-    let Some(first) = bytes.next() else {
-        return false;
-    };
-    if !(first == b'_' || first.is_ascii_alphabetic()) {
-        return false;
+fn compact_argument_type_name(value: &Value) -> String {
+    match value {
+        Value::Null => "null".to_string(),
+        Value::Bool(true) => "true".to_string(),
+        Value::Bool(false) => "false".to_string(),
+        _ => value.type_name().to_string(),
     }
-    bytes.all(|byte| byte == b'_' || byte.is_ascii_alphanumeric())
 }
 
 enum BoundedPregPattern {

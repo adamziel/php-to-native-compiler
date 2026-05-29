@@ -29173,6 +29173,31 @@ impl PhpArray {
         array
     }
 
+    pub fn rand_keys(&self, count: usize) -> RuntimeResult<Value> {
+        if self.entries.is_empty() {
+            return Err(RuntimeError::unsupported_call(
+                "array_rand()",
+                "Argument #1 ($array) must not be empty",
+            ));
+        }
+        if count == 0 || count > self.entries.len() {
+            return Err(RuntimeError::unsupported_call(
+                "array_rand()",
+                "Argument #2 ($num) must be between 1 and the number of elements in argument #1 ($array)",
+            ));
+        }
+        if count == 1 {
+            return Ok(self.first_key_value());
+        }
+
+        let mut array = Self::new();
+        for (index, entry) in self.entries.iter().take(count).enumerate() {
+            let key = i64::try_from(index).expect("array length fits in i64");
+            array.insert(key, array_key_to_value(&entry.key));
+        }
+        Ok(Value::Array(array))
+    }
+
     pub fn first_key_value(&self) -> Value {
         self.entries
             .first()
