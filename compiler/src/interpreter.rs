@@ -65162,6 +65162,122 @@ impl Interpreter {
         }
     }
 
+    fn stream_mut_open_resource(
+        &mut self,
+        function: &str,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<&mut StreamResource> {
+        let Value::Resource(id) = value else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{function}()"),
+                    format!("{function}(): Argument #1 ($stream) must be an open stream resource"),
+                ),
+            ));
+        };
+        self.streams.get_mut(id).ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{function}()"),
+                    format!("{function}(): Argument #1 ($stream) must be an open stream resource"),
+                ),
+            )
+        })
+    }
+
+    fn call_fflush(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("fflush", args, 1, span)?;
+        match self.stream_mut_open_resource("fflush", &args[0], span)? {
+            StreamResource::Memory(_) => Ok(Value::Bool(true)),
+            StreamResource::File(stream) => {
+                if stream.writable {
+                    stream.file.flush().map_err(|error| {
+                        runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "fflush()",
+                                format!("local file stream flush failed: {error}"),
+                            ),
+                        )
+                    })?;
+                }
+                Ok(Value::Bool(true))
+            }
+        }
+    }
+
+    fn call_ftruncate(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("ftruncate", args, 2, span)?;
+        let size = match args.get(1) {
+            Some(Value::Int(size)) if *size >= 0 => *size as usize,
+            Some(Value::Int(_)) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "ftruncate()",
+                        "Argument #2 ($size) must be greater than or equal to 0",
+                    ),
+                ));
+            }
+            Some(other) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "ftruncate()",
+                        format!(
+                            "Argument #2 ($size) must be of type int, {} given",
+                            php_type_error_given(other)
+                        ),
+                    ),
+                ));
+            }
+            None => unreachable!("arity checked above"),
+        };
+
+        match self.stream_mut_open_resource("ftruncate", &args[0], span)? {
+            StreamResource::Memory(stream) => {
+                if !stream.writable {
+                    return Ok(Value::Bool(false));
+                }
+                if size <= stream.buffer.len() {
+                    let end = utf8_boundary_at_or_before(&stream.buffer, size);
+                    stream.buffer.truncate(end);
+                    stream.position = stream.position.min(end);
+                } else {
+                    stream
+                        .buffer
+                        .push_str(&"\0".repeat(size - stream.buffer.len()));
+                }
+                stream.eof = false;
+                Ok(Value::Bool(true))
+            }
+            StreamResource::File(stream) => {
+                if !stream.writable {
+                    return Ok(Value::Bool(false));
+                }
+                stream.file.flush().map_err(|error| {
+                    runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "ftruncate()",
+                            format!("local file stream flush failed: {error}"),
+                        ),
+                    )
+                })?;
+                match stream.file.set_len(size as u64) {
+                    Ok(()) => {
+                        stream.eof = false;
+                        Ok(Value::Bool(true))
+                    }
+                    Err(_) => Ok(Value::Bool(false)),
+                }
+            }
+        }
+    }
+
     fn call_fstat(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("fstat", args, 1, span)?;
         match self.stream_mut("fstat", &args[0], span)? {
@@ -68768,6 +68884,8 @@ impl Interpreter {
             "feof" => self.call_feof(&args, span),
             "ftell" => self.call_ftell(&args, span),
             "fseek" => self.call_fseek(&args, span),
+            "fflush" => self.call_fflush(&args, span),
+            "ftruncate" => self.call_ftruncate(&args, span),
             "fstat" => self.call_fstat(&args, span),
             "stream_get_meta_data" => self.call_stream_get_meta_data(&args, span),
             "stream_get_wrappers" => self.call_stream_get_wrappers(&args, span),
@@ -79516,6 +79634,7 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
         | ("str_split()", "Argument #2 ($length) must be greater than 0")
         | ("strncmp()", "Argument #3 ($length) must be greater than or equal to 0")
         | ("strncasecmp()", "Argument #3 ($length) must be greater than or equal to 0")
+        | ("ftruncate()", "Argument #2 ($size) must be greater than or equal to 0")
         | ("stripos()", "Argument #3 ($offset) must be contained in argument #1 ($haystack)")
         | ("strrpos()", "Argument #3 ($offset) must be contained in argument #1 ($haystack)")
         | ("strripos()", "Argument #3 ($offset) must be contained in argument #1 ($haystack)") => {
@@ -79638,6 +79757,8 @@ fn builtin_resource_type_error_message(error: &Diagnostic) -> Option<String> {
         .map(|(_, reason)| reason)?;
     if reason == "file_put_contents(): supplied resource is not a valid stream resource"
         || reason.ends_with("(): supplied resource is not a valid Stream-Context resource")
+        || reason == "fflush(): Argument #1 ($stream) must be an open stream resource"
+        || reason == "ftruncate(): Argument #1 ($stream) must be an open stream resource"
     {
         return Some(reason.to_string());
     }
@@ -80139,6 +80260,8 @@ fn is_builtin(name: &str) -> bool {
             | "feof"
             | "ftell"
             | "fseek"
+            | "fflush"
+            | "ftruncate"
             | "fstat"
             | "stream_get_meta_data"
             | "stream_get_wrappers"
@@ -80741,6 +80864,7 @@ fn builtin_global_constant_value(name: &str) -> Option<Value> {
         "PHP_OS" => Some(Value::String("Linux".to_string())),
         "PHP_OS_FAMILY" => Some(Value::String("Linux".to_string())),
         "PHP_EOL" => Some(Value::String("\n".to_string())),
+        "DIRECTORY_SEPARATOR" => Some(Value::String(std::path::MAIN_SEPARATOR.to_string())),
         "PATH_SEPARATOR" => Some(Value::String(INCLUDE_PATH_SEPARATOR.to_string())),
         "FILE_USE_INCLUDE_PATH" => Some(Value::Int(PHP_FILE_USE_INCLUDE_PATH)),
         "FILE_IGNORE_NEW_LINES" => Some(Value::Int(PHP_FILE_IGNORE_NEW_LINES)),

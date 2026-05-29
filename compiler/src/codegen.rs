@@ -9595,6 +9595,8 @@ fn is_stream_resource_builtin(name: &str) -> bool {
             | "feof"
             | "ftell"
             | "fseek"
+            | "fflush"
+            | "ftruncate"
             | "fstat"
             | "stream_get_meta_data"
             | "stream_get_wrappers"
@@ -66526,6 +66528,8 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "feof",
     "ftell",
     "fseek",
+    "fflush",
+    "ftruncate",
     "fstat",
     "stream_get_meta_data",
     "stream_get_wrappers",
