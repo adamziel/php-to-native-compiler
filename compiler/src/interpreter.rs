@@ -64616,6 +64616,14 @@ impl Interpreter {
             "checkdate" => call_checkdate(&args, span),
             "getdate" => self.call_getdate(&args, span),
             "localtime" => self.call_localtime(&args, span),
+            "cal_days_in_month" => self.call_cal_days_in_month(&args, span),
+            "gregoriantojd" => self.call_gregoriantojd(&args, span),
+            "jdtogregorian" => self.call_jdtogregorian(&args, span),
+            "juliantojd" => self.call_juliantojd(&args, span),
+            "jdtojulian" => self.call_jdtojulian(&args, span),
+            "unixtojd" => self.call_unixtojd(&args, span),
+            "jdtounix" => self.call_jdtounix(&args, span),
+            "jddayofweek" => self.call_jddayofweek(&args, span),
             "date_default_timezone_get" => {
                 expect_arity(name, &args, 0, span)?;
                 Ok(Value::String(self.default_timezone.clone()))
@@ -64623,6 +64631,7 @@ impl Interpreter {
             "date_default_timezone_set" => self.call_date_default_timezone_set(&args, span),
             "setlocale" => self.call_setlocale(&args, span),
             "getenv" => self.call_getenv(&args, span),
+            "putenv" => self.call_putenv(&args, span),
             "ini_get" => self.call_ini_get(&args, span),
             "ini_set" => self.call_ini_set(&args, span),
             "get_include_path" => {
@@ -74356,6 +74365,10 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_optional_bool_param("local_only", false),
             ],
         ),
+        "putenv" => (
+            "bool",
+            vec![reflection_internal_param("assignment", "string")],
+        ),
         "stream_get_wrappers" => ("array", vec![]),
         "stream_wrapper_register" => (
             "bool",
@@ -76308,10 +76321,19 @@ fn is_builtin(name: &str) -> bool {
             | "checkdate"
             | "getdate"
             | "localtime"
+            | "cal_days_in_month"
+            | "gregoriantojd"
+            | "jdtogregorian"
+            | "juliantojd"
+            | "jdtojulian"
+            | "unixtojd"
+            | "jdtounix"
+            | "jddayofweek"
             | "date_default_timezone_get"
             | "date_default_timezone_set"
             | "setlocale"
             | "getenv"
+            | "putenv"
             | "ini_get"
             | "ini_set"
             | "get_include_path"
@@ -76795,6 +76817,20 @@ const PHP_LC_COLLATE: i64 = 3;
 const PHP_LC_MONETARY: i64 = 4;
 const PHP_LC_MESSAGES: i64 = 5;
 const PHP_LC_ALL: i64 = 6;
+const PHP_CAL_GREGORIAN: i64 = 0;
+const PHP_CAL_JULIAN: i64 = 1;
+const PHP_CAL_JEWISH: i64 = 2;
+const PHP_CAL_FRENCH: i64 = 3;
+const PHP_CAL_NUM_CALS: i64 = 4;
+const PHP_CAL_DOW_DAYNO: i64 = 0;
+const PHP_CAL_DOW_LONG: i64 = 1;
+const PHP_CAL_DOW_SHORT: i64 = 2;
+const PHP_CAL_MONTH_GREGORIAN_SHORT: i64 = 0;
+const PHP_CAL_MONTH_GREGORIAN_LONG: i64 = 1;
+const PHP_CAL_MONTH_JULIAN_SHORT: i64 = 2;
+const PHP_CAL_MONTH_JULIAN_LONG: i64 = 3;
+const PHP_CAL_MONTH_JEWISH: i64 = 4;
+const PHP_CAL_MONTH_FRENCH: i64 = 5;
 
 fn builtin_global_constant_value(name: &str) -> Option<Value> {
     match name {
@@ -76822,6 +76858,20 @@ fn builtin_global_constant_value(name: &str) -> Option<Value> {
         "LC_MONETARY" => Some(Value::Int(PHP_LC_MONETARY)),
         "LC_MESSAGES" => Some(Value::Int(PHP_LC_MESSAGES)),
         "LC_ALL" => Some(Value::Int(PHP_LC_ALL)),
+        "CAL_GREGORIAN" => Some(Value::Int(PHP_CAL_GREGORIAN)),
+        "CAL_JULIAN" => Some(Value::Int(PHP_CAL_JULIAN)),
+        "CAL_JEWISH" => Some(Value::Int(PHP_CAL_JEWISH)),
+        "CAL_FRENCH" => Some(Value::Int(PHP_CAL_FRENCH)),
+        "CAL_NUM_CALS" => Some(Value::Int(PHP_CAL_NUM_CALS)),
+        "CAL_DOW_DAYNO" => Some(Value::Int(PHP_CAL_DOW_DAYNO)),
+        "CAL_DOW_LONG" => Some(Value::Int(PHP_CAL_DOW_LONG)),
+        "CAL_DOW_SHORT" => Some(Value::Int(PHP_CAL_DOW_SHORT)),
+        "CAL_MONTH_GREGORIAN_SHORT" => Some(Value::Int(PHP_CAL_MONTH_GREGORIAN_SHORT)),
+        "CAL_MONTH_GREGORIAN_LONG" => Some(Value::Int(PHP_CAL_MONTH_GREGORIAN_LONG)),
+        "CAL_MONTH_JULIAN_SHORT" => Some(Value::Int(PHP_CAL_MONTH_JULIAN_SHORT)),
+        "CAL_MONTH_JULIAN_LONG" => Some(Value::Int(PHP_CAL_MONTH_JULIAN_LONG)),
+        "CAL_MONTH_JEWISH" => Some(Value::Int(PHP_CAL_MONTH_JEWISH)),
+        "CAL_MONTH_FRENCH" => Some(Value::Int(PHP_CAL_MONTH_FRENCH)),
         "PHP_SESSION_DISABLED" => Some(Value::Int(PHP_SESSION_DISABLED)),
         "PHP_SESSION_NONE" => Some(Value::Int(PHP_SESSION_NONE)),
         "PHP_SESSION_ACTIVE" => Some(Value::Int(PHP_SESSION_ACTIVE)),
@@ -86832,6 +86882,102 @@ impl Interpreter {
         )))
     }
 
+    fn call_cal_days_in_month(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("cal_days_in_month", args, 3, span)?;
+        let calendar = required_date_int_arg("cal_days_in_month()", &args[0], "calendar", span)?;
+        let month = required_date_int_arg("cal_days_in_month()", &args[1], "month", span)?;
+        let year = required_date_int_arg("cal_days_in_month()", &args[2], "year", span)?;
+        match calendar {
+            PHP_CAL_GREGORIAN if (1..=12).contains(&month) => {
+                Ok(Value::Int(days_in_month(year, month)))
+            }
+            PHP_CAL_JULIAN if (1..=12).contains(&month) => {
+                Ok(Value::Int(julian_days_in_month(year, month)))
+            }
+            _ => Ok(Value::Bool(false)),
+        }
+    }
+
+    fn call_gregoriantojd(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("gregoriantojd", args, 3, span)?;
+        let month = required_date_int_arg("gregoriantojd()", &args[0], "month", span)?;
+        let day = required_date_int_arg("gregoriantojd()", &args[1], "day", span)?;
+        let year = required_date_int_arg("gregoriantojd()", &args[2], "year", span)?;
+        Ok(Value::Int(calendar_gregorian_to_jd(month, day, year)))
+    }
+
+    fn call_jdtogregorian(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("jdtogregorian", args, 1, span)?;
+        let jd = required_date_int_arg("jdtogregorian()", &args[0], "julian_day", span)?;
+        let (month, day, year) = calendar_jd_to_gregorian(jd);
+        Ok(Value::String(format!("{month}/{day}/{year}")))
+    }
+
+    fn call_juliantojd(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("juliantojd", args, 3, span)?;
+        let month = required_date_int_arg("juliantojd()", &args[0], "month", span)?;
+        let day = required_date_int_arg("juliantojd()", &args[1], "day", span)?;
+        let year = required_date_int_arg("juliantojd()", &args[2], "year", span)?;
+        Ok(Value::Int(calendar_julian_to_jd(month, day, year)))
+    }
+
+    fn call_jdtojulian(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("jdtojulian", args, 1, span)?;
+        let jd = required_date_int_arg("jdtojulian()", &args[0], "julian_day", span)?;
+        let (month, day, year) = calendar_jd_to_julian(jd);
+        Ok(Value::String(format!("{month}/{day}/{year}")))
+    }
+
+    fn call_unixtojd(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if args.len() > 1 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "unixtojd()",
+                    ArityExpectation::Between { min: 0, max: 1 },
+                    args.len(),
+                ),
+            ));
+        }
+        let timestamp =
+            optional_timestamp_arg("unixtojd()", args.first(), span)?.unwrap_or(self.request_time);
+        Ok(Value::Int(unix_timestamp_to_jd(timestamp)))
+    }
+
+    fn call_jdtounix(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("jdtounix", args, 1, span)?;
+        let jd = required_date_int_arg("jdtounix()", &args[0], "julian_day", span)?;
+        match jd_to_unix_timestamp(jd) {
+            Some(timestamp) => Ok(Value::Int(timestamp)),
+            None => Ok(Value::Bool(false)),
+        }
+    }
+
+    fn call_jddayofweek(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(1..=2).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "jddayofweek()",
+                    ArityExpectation::Between { min: 1, max: 2 },
+                    args.len(),
+                ),
+            ));
+        }
+        let jd = required_date_int_arg("jddayofweek()", &args[0], "julian_day", span)?;
+        let mode = match args.get(1) {
+            Some(value) => required_date_int_arg("jddayofweek()", value, "mode", span)?,
+            None => PHP_CAL_DOW_DAYNO,
+        };
+        let dow = calendar_day_of_week(jd);
+        match mode {
+            PHP_CAL_DOW_DAYNO => Ok(Value::Int(dow)),
+            PHP_CAL_DOW_LONG => Ok(Value::String(weekday_name(dow, true).to_string())),
+            PHP_CAL_DOW_SHORT => Ok(Value::String(weekday_name(dow, false).to_string())),
+            _ => Ok(Value::Bool(false)),
+        }
+    }
+
     fn call_date_default_timezone_set(
         &mut self,
         args: &[Value],
@@ -87046,6 +87192,28 @@ impl Interpreter {
             .unwrap_or(Value::Bool(false)))
     }
 
+    fn call_putenv(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("putenv", args, 1, span)?;
+
+        let assignment = match &args[0] {
+            Value::String(assignment) => assignment,
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "putenv()",
+                        format!(
+                            "assignment argument must be string in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+        };
+
+        apply_putenv_assignment(assignment, span)
+    }
+
     fn call_ini_get(&self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("ini_get", args, 1, span)?;
 
@@ -87123,6 +87291,44 @@ impl Interpreter {
             .cloned()
             .or_else(|| compat_ini_value(&normalized).map(str::to_string))
     }
+}
+
+fn apply_putenv_assignment(assignment: &str, span: Span) -> CompileResult<Value> {
+    if assignment.as_bytes().contains(&b'\0') {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "putenv()",
+                "assignment argument cannot contain null bytes in the current subset",
+            ),
+        ));
+    }
+
+    if let Some((name, value)) = assignment.split_once('=') {
+        if name.is_empty() {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "putenv()",
+                    "assignment argument must start with a non-empty name in the current subset",
+                ),
+            ));
+        }
+        std::env::set_var(name, value);
+    } else {
+        if assignment.is_empty() {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "putenv()",
+                    "assignment argument must be non-empty in the current subset",
+                ),
+            ));
+        }
+        std::env::remove_var(assignment);
+    }
+
+    Ok(Value::Bool(true))
 }
 
 fn current_environment_array() -> PhpArray {
@@ -87774,6 +87980,119 @@ fn call_checkdate(args: &[Value], span: Span) -> CompileResult<Value> {
             && day >= 1
             && day <= days_in_month(year, month),
     ))
+}
+
+fn calendar_gregorian_to_jd(month: i64, day: i64, year: i64) -> i64 {
+    if !(1..=12).contains(&month) || day < 1 || day > days_in_month(year, month) {
+        return 0;
+    }
+    let astronomical_year = php_calendar_year_to_astronomical(year);
+    let a = (14 - month) / 12;
+    let y = astronomical_year + 4800 - a;
+    let m = month + 12 * a - 3;
+    let jd = day + (153 * m + 2) / 5 + 365 * y + y / 4 - y / 100 + y / 400 - 32_045;
+    if jd < 1 {
+        0
+    } else {
+        jd
+    }
+}
+
+fn calendar_jd_to_gregorian(jd: i64) -> (i64, i64, i64) {
+    if jd < 1 {
+        return (0, 0, 0);
+    }
+    let mut l = jd + 68_569;
+    let n = 4 * l / 146_097;
+    l -= (146_097 * n + 3) / 4;
+    let i = 4_000 * (l + 1) / 1_461_001;
+    l = l - 1_461 * i / 4 + 31;
+    let j = 80 * l / 2_447;
+    let day = l - 2_447 * j / 80;
+    l = j / 11;
+    let month = j + 2 - 12 * l;
+    let astronomical_year = 100 * (n - 49) + i + l;
+    (
+        month,
+        day,
+        astronomical_calendar_year_to_php(astronomical_year),
+    )
+}
+
+fn calendar_julian_to_jd(month: i64, day: i64, year: i64) -> i64 {
+    if !(1..=12).contains(&month) || day < 1 || day > julian_days_in_month(year, month) {
+        return 0;
+    }
+    let astronomical_year = php_calendar_year_to_astronomical(year);
+    let a = (14 - month) / 12;
+    let y = astronomical_year + 4800 - a;
+    let m = month + 12 * a - 3;
+    let jd = day + (153 * m + 2) / 5 + 365 * y + y / 4 - 32_083;
+    if jd < 1 {
+        0
+    } else {
+        jd
+    }
+}
+
+fn calendar_jd_to_julian(jd: i64) -> (i64, i64, i64) {
+    if jd < 1 {
+        return (0, 0, 0);
+    }
+    let c = jd + 32_082;
+    let d = (4 * c + 3) / 1_461;
+    let e = c - 1_461 * d / 4;
+    let m = (5 * e + 2) / 153;
+    let day = e - (153 * m + 2) / 5 + 1;
+    let month = m + 3 - 12 * (m / 10);
+    let astronomical_year = d - 4_800 + (m / 10);
+    (
+        month,
+        day,
+        astronomical_calendar_year_to_php(astronomical_year),
+    )
+}
+
+fn php_calendar_year_to_astronomical(year: i64) -> i64 {
+    if year < 0 {
+        year + 1
+    } else {
+        year
+    }
+}
+
+fn astronomical_calendar_year_to_php(year: i64) -> i64 {
+    if year <= 0 {
+        year - 1
+    } else {
+        year
+    }
+}
+
+fn julian_days_in_month(year: i64, month: i64) -> i64 {
+    match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 if julian_is_leap_year(year) => 29,
+        2 => 28,
+        _ => 0,
+    }
+}
+
+fn julian_is_leap_year(year: i64) -> bool {
+    php_calendar_year_to_astronomical(year).rem_euclid(4) == 0
+}
+
+fn unix_timestamp_to_jd(timestamp: i64) -> i64 {
+    div_floor(timestamp, 86_400) + 2_440_588
+}
+
+fn jd_to_unix_timestamp(jd: i64) -> Option<i64> {
+    jd.checked_sub(2_440_588)?.checked_mul(86_400)
+}
+
+fn calendar_day_of_week(jd: i64) -> i64 {
+    positive_mod(jd + 1, 7)
 }
 
 fn required_date_int_arg(
