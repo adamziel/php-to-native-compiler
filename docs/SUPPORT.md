@@ -10787,5 +10787,11 @@ Unsupported code should fail with an explicit parse, runtime, or codegen error.
   cases, and exact PHP byte-vs-character behavior remain unsupported.
 - Bounded prerequisites for standard filesystem PHPTs: `touch()` creates or
   opens local files and clears the stat cache, while `sleep()` accepts
-  non-negative integer seconds and returns `0`. Explicit `touch()` timestamp
-  mutation and interrupted sleeps remain unsupported.
+  non-negative integer seconds and returns `0`. `sys_get_temp_dir()` exposes the
+  process temporary directory, and `tempnam()` creates unique local filesystem
+  files for existing directories or the system temporary directory, including
+  scalar prefix coercion, basename-only prefixes, open_basedir checks,
+  stat-cache invalidation, realpath-cache seeding, and Unix `0600` mode creation.
+  Explicit `touch()` timestamp mutation, interrupted sleeps, non-local stream
+  wrappers for temporary files, Windows permission parity, and exact PHP
+  temporary-name entropy/truncation diagnostics remain unsupported.

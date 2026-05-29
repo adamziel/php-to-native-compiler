@@ -61798,6 +61798,44 @@ impl Interpreter {
         }
     }
 
+    fn filesystem_tempnam_string_argument(
+        &mut self,
+        position: usize,
+        name: &'static str,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<String> {
+        let value = match value {
+            Value::String(value) => value.clone(),
+            Value::BinaryString(bytes) => {
+                tree_walk_binary_string_utf8(bytes, name, span)?.to_string()
+            }
+            Value::Null | Value::Bool(_) | Value::Int(_) | Value::Float(_) => value.echo_string(),
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "tempnam()",
+                        format!(
+                            "Argument #{position} (${name}) must be of type string, {} given",
+                            php_type_error_given(other)
+                        ),
+                    ),
+                ));
+            }
+        };
+        if value.contains('\0') {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "tempnam()",
+                    format!("Argument #{position} (${name}) must not contain any null bytes"),
+                ),
+            ));
+        }
+        Ok(value)
+    }
+
     fn emit_filesystem_display_warning(
         &mut self,
         function: &str,
@@ -62213,6 +62251,156 @@ impl Interpreter {
                 Ok(Value::Bool(false))
             }
         }
+    }
+
+    fn call_sys_get_temp_dir(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("sys_get_temp_dir", args, 0, span)?;
+        let path = std::env::temp_dir();
+        let path = path.into_os_string().into_string().map_err(|_| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "sys_get_temp_dir()",
+                    "system temporary directory must be valid UTF-8 in the current subset",
+                ),
+            )
+        })?;
+        Ok(Value::String(path))
+    }
+
+    fn call_tempnam(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("tempnam", args, 2, span)?;
+        let directory = self.filesystem_tempnam_string_argument(1, "directory", &args[0], span)?;
+        let prefix = self.filesystem_tempnam_string_argument(2, "prefix", &args[1], span)?;
+
+        let (mut directory_path, mut used_system_temp_dir) = if directory.is_empty() {
+            (std::env::temp_dir(), false)
+        } else {
+            let requested_path =
+                self.resolve_local_filesystem_operation_path("tempnam", &directory, false, span)?;
+            if fs::metadata(&requested_path)
+                .map(|metadata| metadata.is_dir())
+                .unwrap_or(false)
+            {
+                (
+                    fs::canonicalize(&requested_path).unwrap_or(requested_path),
+                    false,
+                )
+            } else {
+                (std::env::temp_dir(), true)
+            }
+        };
+
+        let prefix = tempnam_filename_prefix(&prefix);
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|_| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "tempnam()",
+                        "system time before the Unix epoch is not supported in the current subset",
+                    ),
+                )
+            })?
+            .as_nanos();
+        let mut fallback_attempted = used_system_temp_dir;
+        let mut system_temp_notice_emitted = false;
+
+        loop {
+            let directory_display = directory_path.to_string_lossy().into_owned();
+            if !self.enforce_bounded_open_basedir(
+                "tempnam()",
+                &directory_display,
+                &directory_path,
+                span,
+            )? {
+                return Ok(Value::Bool(false));
+            }
+            if used_system_temp_dir && !system_temp_notice_emitted {
+                self.emit_display_notice(
+                    "tempnam(): file created in the system's temporary directory",
+                    span,
+                )?;
+                system_temp_notice_emitted = true;
+            }
+
+            match self.create_tempnam_file_in_directory(
+                &directory_path,
+                &prefix,
+                timestamp,
+                span,
+            )? {
+                TempnamCreateResult::Created(candidate) => {
+                    let path = candidate.into_os_string().into_string().map_err(|_| {
+                        runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "tempnam()",
+                                "created path must be valid UTF-8 in the current subset",
+                            ),
+                        )
+                    })?;
+                    return Ok(Value::String(path));
+                }
+                TempnamCreateResult::RetryExhausted => {
+                    self.emit_filesystem_display_warning(
+                        "tempnam",
+                        "Unable to create a unique temporary file",
+                        span,
+                    )?;
+                    return Ok(Value::Bool(false));
+                }
+                TempnamCreateResult::Failed(error)
+                    if !fallback_attempted && tempnam_should_fallback_to_system_temp(&error) =>
+                {
+                    directory_path = std::env::temp_dir();
+                    used_system_temp_dir = true;
+                    fallback_attempted = true;
+                }
+                TempnamCreateResult::Failed(error) => {
+                    self.emit_filesystem_display_warning(
+                        "tempnam",
+                        Self::filesystem_io_warning_message(&error),
+                        span,
+                    )?;
+                    return Ok(Value::Bool(false));
+                }
+            }
+        }
+    }
+
+    fn create_tempnam_file_in_directory(
+        &mut self,
+        directory_path: &Path,
+        prefix: &str,
+        timestamp: u128,
+        span: Span,
+    ) -> CompileResult<TempnamCreateResult> {
+        for attempt in 0..1024u16 {
+            let filename = format!(
+                "{prefix}{:016x}{:03x}",
+                (timestamp & u128::from(u64::MAX)) as u64,
+                attempt
+            );
+            let candidate = directory_path.join(filename);
+            match fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&candidate)
+            {
+                Ok(_) => {
+                    self.set_bounded_unix_permissions(&candidate, 0o600, "tempnam", span)?;
+                    self.clear_stat_cache_filesystem_path(&candidate);
+                    self.cache_bounded_realpath_entry_for_local_path(&candidate);
+                    return Ok(TempnamCreateResult::Created(candidate));
+                }
+                Err(error) if error.kind() == ErrorKind::AlreadyExists => continue,
+                Err(error) => return Ok(TempnamCreateResult::Failed(error)),
+            }
+        }
+
+        Ok(TempnamCreateResult::RetryExhausted)
     }
 
     fn call_sleep(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -67342,6 +67530,8 @@ impl Interpreter {
             "fileperms" => self.call_fileperms(&args, span),
             "chmod" => self.call_chmod(&args, span),
             "touch" => self.call_touch(&args, span),
+            "tempnam" => self.call_tempnam(&args, span),
+            "sys_get_temp_dir" => self.call_sys_get_temp_dir(&args, span),
             "sleep" => self.call_sleep(&args, span),
             "readlink" => self.call_readlink(&args, span),
             "symlink" => self.call_symlink(&args, span),
@@ -78189,6 +78379,12 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
         {
             Some(format!("{function}: {message}"))
         }
+        ("tempnam()", message)
+            if message.starts_with("Argument #")
+                && message.ends_with(" must not contain any null bytes") =>
+        {
+            Some(format!("{function}: {message}"))
+        }
         _ => None,
     }
 }
@@ -78697,6 +78893,8 @@ fn is_builtin(name: &str) -> bool {
             | "fileperms"
             | "chmod"
             | "touch"
+            | "tempnam"
+            | "sys_get_temp_dir"
             | "sleep"
             | "readlink"
             | "symlink"
@@ -89036,6 +89234,27 @@ fn filesystem_linkinfo_value(metadata: &fs::Metadata) -> i64 {
 #[cfg(not(unix))]
 fn filesystem_linkinfo_value(_metadata: &fs::Metadata) -> i64 {
     0
+}
+
+fn tempnam_filename_prefix(prefix: &str) -> String {
+    let component = prefix
+        .rsplit(|character| character == '/' || character == '\\')
+        .next()
+        .unwrap_or(prefix);
+    component.chars().take(63).collect()
+}
+
+enum TempnamCreateResult {
+    Created(PathBuf),
+    Failed(std::io::Error),
+    RetryExhausted,
+}
+
+fn tempnam_should_fallback_to_system_temp(error: &std::io::Error) -> bool {
+    matches!(
+        error.kind(),
+        ErrorKind::NotFound | ErrorKind::PermissionDenied
+    )
 }
 
 #[cfg(unix)]

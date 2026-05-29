@@ -66235,6 +66235,8 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "implode",
     "basename",
     "dirname",
+    "tempnam",
+    "sys_get_temp_dir",
     "abs",
     "bcadd",
     "bcsub",
