@@ -3096,7 +3096,7 @@
 - builtins for the documented subset: `strlen`, `strtolower`, `trim`, `ltrim`,
   `rtrim`, `strcasecmp`, `strncmp`, `strncasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`, `strpos`, `strrpos`, `strripos`, `strstr`, `strchr`, `stristr`, `substr`,
   `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `substr_count`,
-  `error_reporting`, `ignore_user_abort`, `sprintf`, `vsprintf`, `call_user_func`, `call_user_func_array`,
+  `error_reporting`, `ignore_user_abort`, `printf`, `sprintf`, `vsprintf`, `vprintf`, `call_user_func`, `call_user_func_array`,
   `implode`, `basename`, `dirname`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`,
   `file_put_contents`, `readfile`, `unlink`, `mkdir`, `rmdir`, `copy`, `rename`, `chdir`, `scandir`, `stat`, `lstat`, `fileperms`, `chmod`,
   `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_params`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `stream_context_set_params`, `fwrite`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`,
@@ -3247,18 +3247,21 @@
   placeholder state using PHP truthiness. Real client disconnect state,
   web-server/SAPI connection-abort behavior, warning/`TypeError` fidelity, and
   native lowering remain unsupported.
-  `sprintf($format, ...$values)` and `vsprintf($format, $values)` support
+  `printf($format, ...$values)`, `sprintf($format, ...$values)`,
+  `vsprintf($format, $values)`, and `vprintf($format, $values)` support
   string format values with literal text, escaped percent signs `%%`,
-  sequential and positional `%s`, `%d`, `%f`, and `%F` placeholders, plus the
-  reached WordPress width, precision, sign, zero/custom padding, and left-align
-  subset. `vsprintf()` requires the second argument to be a current ordered
-  array and consumes values in insertion order. String placeholders use the
-  current PHP-shaped echo string conversion; numeric placeholders accept
-  null/bool/int/float/numeric-string values in the current finite numeric
-  subset. PHP's full format grammar, star width or precision, length
-  modifiers, locale behavior, broad argument reordering, array/object/resource
-  conversions, exact warning behavior, partial-output behavior, and native
-  lowering remain unsupported.
+  sequential and positional `%s`, `%d`, `%b`, `%c`, `%u`, `%o`, `%x`, `%X`,
+  `%f`, `%F`, `%e`, and `%E` placeholders, plus the reached WordPress width, precision,
+  sign, zero/custom padding, left-align, and ignored integer length-modifier
+  subset. `printf()` and `vprintf()` output the formatted string and return
+  its byte length. `vsprintf()` and `vprintf()` require the second argument to
+  be a current ordered array and consume values in insertion order. String
+  placeholders use the current PHP-shaped echo string conversion; numeric
+  placeholders accept null/bool/int/float/numeric-string values in the current
+  finite numeric subset. PHP's full format grammar, star width or precision,
+  general placeholders, locale behavior, broad argument reordering,
+  array/object/resource conversions, exact warning behavior, partial-output
+  behavior, and native lowering remain unsupported.
   `strtolower($value)` supports exactly one scalar/null string-convertible
   argument and applies ASCII lowercase mapping over the current runtime UTF-8
   string value. Locale-sensitive case mapping, full Unicode case folding,
@@ -7504,7 +7507,7 @@
   to a string that case-insensitively resolves exactly to a user-defined function or to
   one of the documented callable builtins: `strlen`, `strtolower`, `trim`, `ltrim`, `rtrim`, `strcasecmp`, `strncmp`, `strncasecmp`,
   `str_contains`, `str_starts_with`, `str_ends_with`, `strpos`, `strrpos`, `strripos`, `strstr`, `strchr`, `stristr`, `substr`, `substr_count`, `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `error_reporting`,
-  `sprintf`, `vsprintf`, `call_user_func`, `call_user_func_array`, `implode`, `basename`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`,
+  `printf`, `sprintf`, `vsprintf`, `vprintf`, `call_user_func`, `call_user_func_array`, `implode`, `basename`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`,
   `file_put_contents`, `readfile`, `unlink`, `mkdir`, `rmdir`, `copy`, `rename`, `chdir`, `scandir`, `stat`, `lstat`, `fileperms`, `chmod`,
   `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_params`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `stream_context_set_params`, `fwrite`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`, `clearstatcache`, `realpath`, `realpath_cache_get`, `realpath_cache_size`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `abs`,
   `microtime`, `ini_get`, `min`, `count`, `compact`,
@@ -7740,7 +7743,7 @@
   resolution, autoload interaction, and native lowering for type declarations
   are unsupported.
 - Builtins: `strlen`, `strtolower`, `trim`, `ltrim`, `rtrim`, `strcasecmp`, `strncmp`, `strncasecmp`, `str_contains`,
-  `str_starts_with`, `str_ends_with`, `strpos`, `strrpos`, `strripos`, `strstr`, `strchr`, `stristr`, `substr`, `substr_count`, `str_replace`, `sprintf`, `vsprintf`,
+  `str_starts_with`, `str_ends_with`, `strpos`, `strrpos`, `strripos`, `strstr`, `strchr`, `stristr`, `substr`, `substr_count`, `str_replace`, `printf`, `sprintf`, `vsprintf`, `vprintf`,
   `call_user_func`, `call_user_func_array`, `implode`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`,
   `file_put_contents`, `readfile`, `unlink`, `mkdir`, `rmdir`, `copy`, `rename`, `chdir`, `scandir`, `stat`, `lstat`, `fileperms`, `chmod`,
   `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_params`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `stream_context_set_params`, `fwrite`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`, `clearstatcache`, `realpath`, `realpath_cache_get`, `realpath_cache_size`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_length`, `ob_list_handlers`, `ob_get_status`, `ob_get_clean`, `ob_get_flush`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `date_default_timezone_set`, `abs`, `microtime`, `ini_get`, `min`, `isset`, `empty`, `count`,
@@ -8229,10 +8232,11 @@
   section above; direct native `min(...)` calls still reject under the
   function-call boundary, while native function-table introspection recognizes
   the name.
-  `sprintf` and `vsprintf` accept the same current bounded format subset as the
-  builtin section above; direct native `sprintf(...)` and `vsprintf(...)` calls
+  `printf`, `sprintf`, `vsprintf`, and `vprintf` accept the same current
+  bounded format subset as the builtin section above; direct native
+  `printf(...)`, `sprintf(...)`, `vsprintf(...)`, and `vprintf(...)` calls
   still reject under the function-call boundary, while native function-table
-  introspection recognizes both names.
+  introspection recognizes those names.
   `strcasecmp` accepts the same current scalar/null string-convertible subset
   as the builtin section above; direct native `strcasecmp(...)` calls still
   reject under the function-call boundary, while native function-table
@@ -8530,7 +8534,7 @@
   as the method path. The bounded internal target slice also accepts
   `new ReflectionFunction(...)` for `strlen`, `strtolower`, `trim`, `ltrim`,
   `rtrim`, `strcasecmp`, `strncmp`, `strncasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`,
-  `strpos`, `strrpos`, `strripos`, `substr`, `sprintf`, `implode`, `basename`, `dirname`, `defined`,
+  `strpos`, `strrpos`, `strripos`, `substr`, `printf`, `sprintf`, `vprintf`, `implode`, `basename`, `dirname`, `defined`,
   `function_exists`, `is_array`, `is_object`, `is_string`, `is_scalar`,
   `count`, `array_key_exists`, `is_callable`, and `php_sapi_name`, exposes
   their name, false file/start/end/doc-comment metadata, current
@@ -10297,7 +10301,7 @@
   user-function metadata named by string, plus bounded internal metadata and
   by-value invocation for `strlen`, `strtolower`, `trim`, `ltrim`, `rtrim`,
   `strcasecmp`, `strncmp`, `strncasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`, `strpos`, `strrpos`, `strripos`,
-  `substr`, `sprintf`, `implode`, `basename`, `dirname`, `defined`,
+  `substr`, `printf`, `sprintf`, `vprintf`, `implode`, `basename`, `dirname`, `defined`,
   `function_exists`, and `php_sapi_name`. The supported
   metadata methods are the name, file/start/end/doc-comment, parameter-list,
   return-type, and by-reference-return methods documented above.
@@ -10431,11 +10435,13 @@
 - `version_compare()` outside the current numeric-component subset: PHP's full
   version-string grammar, pre-release labels, arbitrary separators, invalid
   argument diagnostics, extension version coupling, and native lowering
-- `sprintf()`/`vsprintf()` outside the current `%s`/`%d`/`%f`/`%F` subset:
-  PHP's full format grammar, star width or precision, length modifiers, locale
-  behavior, broad argument reordering, array/object/resource conversions,
-  exact warning behavior, partial-output behavior, and native lowering beyond
-  function-table introspection
+- `printf()`/`sprintf()`/`vsprintf()`/`vprintf()` outside the current
+  `%s`/`%d`/`%b`/`%c`/`%u`/`%o`/`%x`/`%X`/`%f`/`%F`/`%e`/`%E` subset:
+  PHP's full format grammar, star width or precision, general placeholders,
+  locale behavior, broad argument reordering, binary byte fidelity for non-ASCII
+  `%c`, array/object/resource conversions, exact warning behavior,
+  partial-output behavior, and native lowering beyond function-table
+  introspection
 - `strcasecmp()` outside the current exact-two-argument scalar/null
   string-convertible subset: array operands, object/resource coercions, binary
   string edge cases beyond valid UTF-8 runtime strings, locale-sensitive

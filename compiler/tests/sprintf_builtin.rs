@@ -18,13 +18,14 @@ echo sprintf("Hello %s", "Ada"), "\n";
 echo sprintf('%2$s:%1$s', "one", "two"), "\n";
 echo sprintf('%% %s %1$s', "done"), "\n";
 echo sprintf('%05d|%.2F|%5s|%-5s|%1$s|%s', "7", 12, "x", "y", "z"), "\n";
+echo sprintf('%.4d|%b|%c|%u|%o|%x|%X|%.2e', -42, 5, 65, 9, 9, 255, 255, 1000), "\n";
 "#,
     )
     .unwrap();
 
     assert_eq!(
         execution.stdout,
-        "Hello Ada\ntwo:one\n% done done\n00007|12.00|    x|y    |7|z\n"
+        "Hello Ada\ntwo:one\n% done done\n00007|12.00|    x|y    |7|z\n-0042|101|A|9|11|ff|FF|1.00e+3\n"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -41,14 +42,33 @@ $call = "vsprintf";
 echo function_exists($call) ? "yes" : "no";
 echo "|", is_callable($call) ? "callable" : "missing";
 echo "|", $call("SELECT option_value FROM wp_options WHERE option_name = '%s' LIMIT %d", ["rewrite_rules", 1]);
+$call = "vprintf";
+echo "|", function_exists($call) ? "yes" : "no";
+echo "|";
+$length = $call('%2$s/%1$s', ["left", "right"]);
+echo "|", $length;
 "#,
     )
     .unwrap();
 
     assert_eq!(
         execution.stdout,
-        "yes|wp-php|yes|callable|SELECT option_value FROM wp_options WHERE option_name = 'rewrite_rules' LIMIT 1"
+        "yes|wp-php|yes|callable|SELECT option_value FROM wp_options WHERE option_name = 'rewrite_rules' LIMIT 1|yes|right/left|10"
     );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn vprintf_outputs_formatted_string_and_returns_byte_length() {
+    let execution = run_source(
+        r#"<?php
+$length = vprintf("%s:%04d:%x", ["id", 7, 255]);
+echo "\n", $length, "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "id:0007:ff\n10\n");
     assert_eq!(execution.exit_code, 0);
 }
 
@@ -68,14 +88,14 @@ echo sprintf(42, "x");
 
     let placeholder = runtime_error(
         r#"<?php
-echo sprintf("%x", 4);
+echo sprintf("%g", 4);
 "#,
     );
     assert_eq!(placeholder.line, 2);
     assert_eq!(placeholder.column, 6);
     assert_eq!(
         placeholder.message,
-        "unsupported call sprintf(): unsupported format placeholder %x in the current subset"
+        "unsupported call sprintf(): unsupported format placeholder %g in the current subset"
     );
 
     let missing = runtime_error(
@@ -113,6 +133,18 @@ echo vsprintf("%d", ["abc"]);
         vsprintf_numeric.message,
         "unsupported call vsprintf(): numeric placeholders require numeric scalar arguments in the current subset"
     );
+
+    let vprintf_args = runtime_error(
+        r#"<?php
+echo vprintf("%s", "not-array");
+"#,
+    );
+    assert_eq!(vprintf_args.line, 2);
+    assert_eq!(vprintf_args.column, 6);
+    assert_eq!(
+        vprintf_args.message,
+        "unsupported call vprintf(): values argument must be array in the current subset, got string"
+    );
 }
 
 #[test]
@@ -121,11 +153,12 @@ fn emit_ir_folds_sprintf_metadata_but_rejects_runtime_formatting_calls() {
         r#"<?php
 echo function_exists("sprintf") ? "1" : "0";
 echo is_callable("vsprintf") ? "1" : "0";
+echo function_exists("vprintf") ? "1" : "0";
 "#,
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 2, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 3, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
 
@@ -144,6 +177,18 @@ echo sprintf("Hello %s", "Ada");
     let error = emit_ir_source(
         r#"<?php
 echo vsprintf("Hello %s", ["Ada"]);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 6);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+echo vprintf("Hello %s", ["Ada"]);
 "#,
     )
     .unwrap_err();

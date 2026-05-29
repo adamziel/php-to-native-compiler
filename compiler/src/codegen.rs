@@ -66237,6 +66237,7 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "ignore_user_abort",
     "php_sapi_name",
     "printf",
+    "vprintf",
     "sprintf",
     "vsprintf",
     "call_user_func",
