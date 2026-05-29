@@ -107,8 +107,8 @@ const LLVM_BASENAME_REJECTION: &str = "LLVM basename lowering rejects direct pat
 const ASSEMBLY_BASENAME_REJECTION: &str = "assembly basename lowering rejects direct path basename calls until native PHP path string conversion, suffix handling, trailing-separator normalization, Windows/UNC and stream-wrapper path semantics, locale/codepage behavior, argument diagnostics, references/copy-on-write, and exact native basename diagnostics exist; phpc run handles current bounded basename behavior";
 const LLVM_FILE_GET_CONTENTS_REJECTION: &str = "LLVM file_get_contents lowering rejects direct filesystem reads until native PHP stream wrapper handling, local file I/O, binary string byte fidelity, warning plus false recovery, stream contexts, include-path lookup, open_basedir/stat-cache behavior, references/copy-on-write, and exact native file_get_contents diagnostics exist; phpc run handles current bounded file_get_contents behavior including UTF-8 offset/length reads and selected warning-plus-false recovery";
 const ASSEMBLY_FILE_GET_CONTENTS_REJECTION: &str = "assembly file_get_contents lowering rejects direct filesystem reads until native PHP stream wrapper handling, local file I/O, binary string byte fidelity, warning plus false recovery, stream contexts, include-path lookup, open_basedir/stat-cache behavior, references/copy-on-write, and exact native file_get_contents diagnostics exist; phpc run handles current bounded file_get_contents behavior including UTF-8 offset/length reads and selected warning-plus-false recovery";
-const LLVM_STREAM_RESOURCE_REJECTION: &str = "LLVM stream-resource lowering rejects fopen(), stream_context_create(), stream_context_get_options(), stream_context_get_params(), stream_context_get_default(), stream_context_set_default(), stream_context_set_option(), stream_context_set_params(), fwrite()/fputs(), fgetc(), fgets(), fgetcsv(), fputcsv(), fscanf(), fread(), rewind(), stream_get_contents(), feof(), ftell(), fseek(), fstat(), stream_get_meta_data(), stream_get_wrappers(), stream_wrapper_register(), stream_wrapper_unregister(), stream_wrapper_restore(), fclose(), opendir(), readdir(), rewinddir(), closedir(), is_uploaded_file(), and move_uploaded_file() until native PHP resource handles, stream wrapper state, stream context state, stream wrapper registry state, upload provenance state, binary string byte fidelity, warning plus false recovery, references/copy-on-write, and exact native stream diagnostics exist; phpc run handles current bounded php://memory, php://temp, php://input, local file stream resources, stream wrapper capability metadata, stream context resources, local directory handles, and PHPC_FILES upload provenance";
-const ASSEMBLY_STREAM_RESOURCE_REJECTION: &str = "assembly stream-resource lowering rejects fopen(), stream_context_create(), stream_context_get_options(), stream_context_get_params(), stream_context_get_default(), stream_context_set_default(), stream_context_set_option(), stream_context_set_params(), fwrite()/fputs(), fgetc(), fgets(), fgetcsv(), fputcsv(), fscanf(), fread(), rewind(), stream_get_contents(), feof(), ftell(), fseek(), fstat(), stream_get_meta_data(), stream_get_wrappers(), stream_wrapper_register(), stream_wrapper_unregister(), stream_wrapper_restore(), fclose(), opendir(), readdir(), rewinddir(), closedir(), is_uploaded_file(), and move_uploaded_file() until native PHP resource handles, stream wrapper state, stream context state, stream wrapper registry state, upload provenance state, binary string byte fidelity, warning plus false recovery, references/copy-on-write, and exact native stream diagnostics exist; phpc run handles current bounded php://memory, php://temp, php://input, local file stream resources, stream wrapper capability metadata, stream context resources, local directory handles, and PHPC_FILES upload provenance";
+const LLVM_STREAM_RESOURCE_REJECTION: &str = "LLVM stream-resource lowering rejects fopen(), stream_context_create(), stream_context_get_options(), stream_context_get_params(), stream_context_get_default(), stream_context_set_default(), stream_context_set_option(), stream_context_set_params(), fwrite()/fputs(), fgetc(), fgets(), fgetcsv(), fputcsv(), fscanf(), fread(), rewind(), stream_get_contents(), feof(), ftell(), fseek(), fstat(), stream_get_meta_data(), stream_get_wrappers(), stream_wrapper_register(), stream_wrapper_unregister(), stream_wrapper_restore(), fclose(), dir(), opendir(), readdir(), rewinddir(), closedir(), glob(), is_uploaded_file(), and move_uploaded_file() until native PHP resource handles, stream wrapper state, stream context state, stream wrapper registry state, upload provenance state, directory/glob state, binary string byte fidelity, warning plus false recovery, references/copy-on-write, and exact native stream diagnostics exist; phpc run handles current bounded php://memory, php://temp, php://input, local file stream resources, stream wrapper capability metadata, stream context resources, local directory handles, bounded local glob patterns, and PHPC_FILES upload provenance";
+const ASSEMBLY_STREAM_RESOURCE_REJECTION: &str = "assembly stream-resource lowering rejects fopen(), stream_context_create(), stream_context_get_options(), stream_context_get_params(), stream_context_get_default(), stream_context_set_default(), stream_context_set_option(), stream_context_set_params(), fwrite()/fputs(), fgetc(), fgets(), fgetcsv(), fputcsv(), fscanf(), fread(), rewind(), stream_get_contents(), feof(), ftell(), fseek(), fstat(), stream_get_meta_data(), stream_get_wrappers(), stream_wrapper_register(), stream_wrapper_unregister(), stream_wrapper_restore(), fclose(), dir(), opendir(), readdir(), rewinddir(), closedir(), glob(), is_uploaded_file(), and move_uploaded_file() until native PHP resource handles, stream wrapper state, stream context state, stream wrapper registry state, upload provenance state, directory/glob state, binary string byte fidelity, warning plus false recovery, references/copy-on-write, and exact native stream diagnostics exist; phpc run handles current bounded php://memory, php://temp, php://input, local file stream resources, stream wrapper capability metadata, stream context resources, local directory handles, bounded local glob patterns, and PHPC_FILES upload provenance";
 const LLVM_GETCWD_REJECTION: &str = "LLVM getcwd lowering rejects direct current-directory calls until native process/request cwd state, UTF-8/path policy, SAPI cwd behavior, chdir() interaction, failure false recovery, references/copy-on-write, and exact native getcwd diagnostics exist; phpc run handles current bounded getcwd behavior";
 const ASSEMBLY_GETCWD_REJECTION: &str = "assembly getcwd lowering rejects direct current-directory calls until native process/request cwd state, UTF-8/path policy, SAPI cwd behavior, chdir() interaction, failure false recovery, references/copy-on-write, and exact native getcwd diagnostics exist; phpc run handles current bounded getcwd behavior";
 const LLVM_REALPATH_REJECTION: &str = "LLVM realpath lowering rejects direct filesystem canonicalization calls until native filesystem canonicalization, symlink/path policy, warning/false recovery, include_path/open_basedir/stat cache, non-UTF-8 path handling, references/COW, and exact native realpath diagnostics exist; phpc run handles current bounded realpath behavior";
@@ -3393,6 +3393,7 @@ fn native_value_type_predicate_tag(name: &str) -> Option<&'static str> {
         "is_countable" => Some("PHPC_NATIVE_VALUE_TYPE_IS_COUNTABLE"),
         "is_iterable" => Some("PHPC_NATIVE_VALUE_TYPE_IS_ITERABLE"),
         "is_object" => Some("PHPC_NATIVE_VALUE_TYPE_IS_OBJECT"),
+        "is_resource" => Some("PHPC_NATIVE_VALUE_TYPE_IS_RESOURCE"),
         _ => None,
     }
 }
@@ -3410,6 +3411,7 @@ fn native_value_type_predicate_abi_value(predicate_tag: &str) -> &'static str {
         "PHPC_NATIVE_VALUE_TYPE_IS_COUNTABLE" => "8",
         "PHPC_NATIVE_VALUE_TYPE_IS_ITERABLE" => "9",
         "PHPC_NATIVE_VALUE_TYPE_IS_OBJECT" => "10",
+        "PHPC_NATIVE_VALUE_TYPE_IS_RESOURCE" => "11",
         _ => "255",
     }
 }
@@ -9605,10 +9607,12 @@ fn is_stream_resource_builtin(name: &str) -> bool {
             | "stream_wrapper_unregister"
             | "stream_wrapper_restore"
             | "fclose"
+            | "dir"
             | "opendir"
             | "readdir"
             | "rewinddir"
             | "closedir"
+            | "glob"
             | "is_uploaded_file"
             | "move_uploaded_file"
     )
@@ -13133,6 +13137,7 @@ impl LlvmGenerator {
                 }),
             "is_countable" | "is_iterable" => Ok(IrValue::Bool(false)),
             "is_object" => Ok(IrValue::Bool(false)),
+            "is_resource" => Ok(IrValue::Bool(false)),
             _ => {
                 Err(self.unsupported_direct_call(span, NativeCallBlocker::UnknownCalleeDiagnostics))
             }
@@ -24500,6 +24505,7 @@ impl CGenerator {
                 output.push_str("#define PHPC_NATIVE_VALUE_TYPE_IS_COUNTABLE 8\n");
                 output.push_str("#define PHPC_NATIVE_VALUE_TYPE_IS_ITERABLE 9\n");
                 output.push_str("#define PHPC_NATIVE_VALUE_TYPE_IS_OBJECT 10\n");
+                output.push_str("#define PHPC_NATIVE_VALUE_TYPE_IS_RESOURCE 11\n");
                 output.push_str("#define PHPC_NATIVE_VALUE_TYPE_NAME_GETTYPE 0\n");
                 output.push_str("#define PHPC_NATIVE_VALUE_TYPE_NAME_DEBUG 1\n");
                 output.push_str("#define PHPC_NATIVE_REFERENCE_PREDICATE_ISSET 0\n");
@@ -56536,6 +56542,7 @@ impl CGenerator {
                 )
             }
             "is_object" => Ok(CValue::Bool(false)),
+            "is_resource" => Ok(CValue::Bool(false)),
             _ => {
                 Err(self.unsupported_direct_call(span, NativeCallBlocker::UnknownCalleeDiagnostics))
             }
@@ -66045,6 +66052,7 @@ fn is_native_type_introspection_builtin(name: &str) -> bool {
             | "is_numeric"
             | "is_countable"
             | "is_iterable"
+            | "is_resource"
             | "extension_loaded"
             | "is_object"
             | "get_debug_type"
@@ -66158,6 +66166,7 @@ fn is_builtin_class_name(name: &str) -> bool {
         "exception"
             | "pdo"
             | "pdostatement"
+            | "directory"
             | "datetimezone"
             | "reflectionclass"
             | "reflectionmethod"
@@ -66406,6 +66415,7 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "is_numeric",
     "is_countable",
     "is_iterable",
+    "is_resource",
     "is_callable",
     "function_exists",
     "extension_loaded",
@@ -66571,10 +66581,12 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "stream_wrapper_unregister",
     "stream_wrapper_restore",
     "fclose",
+    "dir",
     "opendir",
     "readdir",
     "rewinddir",
     "closedir",
+    "glob",
     "filesize",
     "filemtime",
     "fileinode",
@@ -66626,6 +66638,7 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "assert",
     "get_class",
     "is_object",
+    "is_resource",
     "get_debug_type",
     "class_exists",
     "interface_exists",
@@ -66907,6 +66920,13 @@ fn native_builtin_global_constant_c_value(name: &str) -> Option<CValue> {
         "SCANDIR_SORT_ASCENDING" => Some(CValue::Int("0".to_string())),
         "SCANDIR_SORT_DESCENDING" => Some(CValue::Int("1".to_string())),
         "SCANDIR_SORT_NONE" => Some(CValue::Int("2".to_string())),
+        "GLOB_ERR" => Some(CValue::Int("1".to_string())),
+        "GLOB_MARK" => Some(CValue::Int("2".to_string())),
+        "GLOB_NOSORT" => Some(CValue::Int("4".to_string())),
+        "GLOB_NOCHECK" => Some(CValue::Int("16".to_string())),
+        "GLOB_NOESCAPE" => Some(CValue::Int("64".to_string())),
+        "GLOB_BRACE" => Some(CValue::Int("1024".to_string())),
+        "GLOB_ONLYDIR" => Some(CValue::Int("8192".to_string())),
         "STR_PAD_LEFT" => Some(CValue::Int("0".to_string())),
         "STR_PAD_RIGHT" => Some(CValue::Int("1".to_string())),
         "STR_PAD_BOTH" => Some(CValue::Int("2".to_string())),
@@ -67137,6 +67157,7 @@ fn native_dynamic_callable_builtin_canonical_name(name: &str) -> Option<&'static
         "is_countable" => Some("is_countable"),
         "is_iterable" => Some("is_iterable"),
         "is_object" => Some("is_object"),
+        "is_resource" => Some("is_resource"),
         _ => None,
     }
 }
@@ -67485,6 +67506,10 @@ fn native_dynamic_callable_builtin_runtime_candidates(
         (
             "is_object",
             TypePredicate("PHPC_NATIVE_VALUE_TYPE_IS_OBJECT"),
+        ),
+        (
+            "is_resource",
+            TypePredicate("PHPC_NATIVE_VALUE_TYPE_IS_RESOURCE"),
         ),
     ]
 }

@@ -1298,6 +1298,7 @@ const NATIVE_VALUE_TYPE_IS_NUMERIC: u8 = 7;
 const NATIVE_VALUE_TYPE_IS_COUNTABLE: u8 = 8;
 const NATIVE_VALUE_TYPE_IS_ITERABLE: u8 = 9;
 const NATIVE_VALUE_TYPE_IS_OBJECT: u8 = 10;
+const NATIVE_VALUE_TYPE_IS_RESOURCE: u8 = 11;
 const NATIVE_VALUE_TYPE_NAME_GETTYPE: u8 = 0;
 const NATIVE_VALUE_TYPE_NAME_DEBUG: u8 = 1;
 const NATIVE_DECLARED_CLASS_PROPERTY_PUBLIC: u8 = 1;
@@ -1791,6 +1792,7 @@ impl NativeCallableBuiltin {
             Self::TypePredicate(NATIVE_VALUE_TYPE_IS_COUNTABLE) => "is_countable",
             Self::TypePredicate(NATIVE_VALUE_TYPE_IS_ITERABLE) => "is_iterable",
             Self::TypePredicate(NATIVE_VALUE_TYPE_IS_OBJECT) => "is_object",
+            Self::TypePredicate(NATIVE_VALUE_TYPE_IS_RESOURCE) => "is_resource",
             Self::TypePredicate(_) => "type-predicate",
         }
     }
@@ -10333,6 +10335,9 @@ fn native_callable_builtin_for_function_name(name: &str) -> Option<NativeCallabl
         )),
         "is_object" => Some(NativeCallableBuiltin::TypePredicate(
             NATIVE_VALUE_TYPE_IS_OBJECT,
+        )),
+        "is_resource" => Some(NativeCallableBuiltin::TypePredicate(
+            NATIVE_VALUE_TYPE_IS_RESOURCE,
         )),
         _ => None,
     }
@@ -31881,9 +31886,25 @@ impl PhpClassTable {
         classes
             .set_parent(runtime_exception_id, exception_id)
             .expect("RuntimeException should extend Exception");
+        let directory_id = classes
+            .declare_class("Directory")
+            .expect("core class table should contain RuntimeException before Directory");
+        let directory = classes
+            .get_mut(directory_id)
+            .expect("declared Directory class id should resolve");
+        for property in ["path", "handle"] {
+            directory
+                .add_property(PhpPropertyMetadata::instance(property, Visibility::Public))
+                .expect("Directory core metadata should not duplicate properties");
+        }
+        for method in ["read", "rewind", "close"] {
+            directory
+                .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("Directory core metadata should not duplicate methods");
+        }
         let spl_object_storage_id = classes
             .declare_class("SplObjectStorage")
-            .expect("core class table should contain RuntimeException before SplObjectStorage");
+            .expect("core class table should contain Directory before SplObjectStorage");
         classes
             .set_interfaces(
                 spl_object_storage_id,
@@ -38459,6 +38480,7 @@ fn native_value_type_predicate(value: &Value, predicate: u8) -> Option<bool> {
         NATIVE_VALUE_TYPE_IS_COUNTABLE => Some(value.is_countable()),
         NATIVE_VALUE_TYPE_IS_ITERABLE => Some(value.is_iterable()),
         NATIVE_VALUE_TYPE_IS_OBJECT => Some(matches!(value, Value::Object(_) | Value::Closure(_))),
+        NATIVE_VALUE_TYPE_IS_RESOURCE => Some(matches!(value, Value::Resource(_))),
         _ => None,
     }
 }
@@ -55415,6 +55437,12 @@ mod tests {
         });
         assert!(!unsafe {
             phpc_native_value_type_predicate(resource_value, NATIVE_VALUE_TYPE_IS_OBJECT)
+        });
+        assert!(unsafe {
+            phpc_native_value_type_predicate(resource_value, NATIVE_VALUE_TYPE_IS_RESOURCE)
+        });
+        assert!(!unsafe {
+            phpc_native_value_type_predicate(int_value, NATIVE_VALUE_TYPE_IS_RESOURCE)
         });
         assert!(!unsafe {
             phpc_native_value_type_predicate(int_value, NATIVE_VALUE_TYPE_IS_ARRAY)
@@ -78658,6 +78686,7 @@ mod tests {
                 "ArithmeticError",
                 "DivisionByZeroError",
                 "RuntimeException",
+                "Directory",
                 "SplObjectStorage",
             ]
         );

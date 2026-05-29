@@ -224,6 +224,7 @@ struct Interpreter {
     default_stream_context_id: Option<i64>,
     stream_wrappers: Vec<StreamWrapperRegistration>,
     directories: HashMap<i64, DirectoryResource>,
+    last_opened_directory: Option<i64>,
     uploaded_file_paths: HashSet<PathBuf>,
     stat_cache: HashMap<PathBuf, fs::Metadata>,
     realpath_cache: HashMap<String, RealpathCacheEntry>,
@@ -9925,6 +9926,7 @@ impl Interpreter {
             default_stream_context_id: None,
             stream_wrappers: default_stream_wrappers(),
             directories: HashMap::new(),
+            last_opened_directory: None,
             uploaded_file_paths: HashSet::new(),
             stat_cache: HashMap::new(),
             realpath_cache: HashMap::new(),
@@ -40176,6 +40178,11 @@ impl Interpreter {
                 .call_generator_method(object, method_name, args, span, caller_scope)
                 .map(|value| (value, None));
         }
+        if object.class_name().eq_ignore_ascii_case("Directory") {
+            return self
+                .call_directory_method(object, method_name, args, span)
+                .map(|value| (value, None));
+        }
         if object.class_name().eq_ignore_ascii_case("ReflectionClass") {
             return self
                 .call_reflection_class_method(object, method_name, args, span, caller_scope)
@@ -69624,6 +69631,77 @@ impl Interpreter {
         Ok(Value::Bool(self.streams.remove(&id).is_some()))
     }
 
+    fn open_local_directory_handle(
+        &mut self,
+        function: &str,
+        path: &str,
+        span: Span,
+    ) -> CompileResult<Value> {
+        if path.contains("://") {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{function}()"),
+                    "stream wrappers are not supported in the current directory-handle subset",
+                ),
+            ));
+        }
+
+        let directory_path = local_filesystem_metadata_path(path);
+        let Ok(metadata) = fs::metadata(&directory_path) else {
+            return Ok(Value::Bool(false));
+        };
+        if !metadata.is_dir() {
+            return Ok(Value::Bool(false));
+        }
+
+        let mut entries = vec![".".to_string(), "..".to_string()];
+        let mut host_entries = Vec::new();
+        for entry in fs::read_dir(&directory_path).map_err(|error| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{function}()"),
+                    format!("local directory read failed: {error}"),
+                ),
+            )
+        })? {
+            let entry = entry.map_err(|error| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        format!("{function}()"),
+                        format!("local directory entry read failed: {error}"),
+                    ),
+                )
+            })?;
+            let Some(name) = entry.file_name().to_str().map(str::to_string) else {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        format!("{function}()"),
+                        "non-UTF-8 directory entries are not supported in the current subset",
+                    ),
+                ));
+            };
+            host_entries.push(name);
+        }
+        host_entries.sort();
+        entries.extend(host_entries);
+
+        let id = self.next_resource_id;
+        self.next_resource_id += 1;
+        self.directories.insert(
+            id,
+            DirectoryResource {
+                entries,
+                position: 0,
+            },
+        );
+        self.last_opened_directory = Some(id);
+        Ok(Value::Resource(id))
+    }
+
     fn call_opendir(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         if !(1..=2).contains(&args.len()) {
             return Err(runtime_error(
@@ -69644,83 +69722,53 @@ impl Interpreter {
                 ),
             ));
         }
-        let path = match &args[0] {
-            Value::String(path) => path.as_str(),
-            other => {
-                return Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "opendir()",
-                        format!(
-                            "path argument must be string in the current subset, got {}",
-                            other.type_name()
-                        ),
-                    ),
-                ));
-            }
-        };
-        if path.contains("://") {
+        let path = self.filesystem_path_argument("opendir", "path", &args[0], span)?;
+        self.open_local_directory_handle("opendir", &path, span)
+    }
+
+    fn call_dir(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(1..=2).contains(&args.len()) {
             return Err(runtime_error(
                 span,
-                RuntimeError::unsupported_call(
-                    "opendir()",
-                    "stream wrappers are not supported in the current directory-handle subset",
+                RuntimeError::arity_mismatch(
+                    "dir()",
+                    ArityExpectation::Between { min: 1, max: 2 },
+                    args.len(),
                 ),
             ));
         }
-
-        let directory_path = local_filesystem_metadata_path(path);
-        let Ok(metadata) = fs::metadata(&directory_path) else {
-            return Ok(Value::Bool(false));
-        };
-        if !metadata.is_dir() {
-            return Ok(Value::Bool(false));
-        }
-
-        let mut entries = vec![".".to_string(), "..".to_string()];
-        let mut host_entries = Vec::new();
-        for entry in fs::read_dir(&directory_path).map_err(|error| {
-            runtime_error(
+        if args.len() > 1 {
+            return Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
-                    "opendir()",
-                    format!("local directory read failed: {error}"),
+                    "dir()",
+                    "context arguments are not supported in the current directory-handle subset",
                 ),
-            )
-        })? {
-            let entry = entry.map_err(|error| {
-                runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "opendir()",
-                        format!("local directory entry read failed: {error}"),
-                    ),
-                )
-            })?;
-            let Some(name) = entry.file_name().to_str().map(str::to_string) else {
-                return Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "opendir()",
-                        "non-UTF-8 directory entries are not supported in the current subset",
-                    ),
-                ));
-            };
-            host_entries.push(name);
+            ));
         }
-        host_entries.sort();
-        entries.extend(host_entries);
-
-        let id = self.next_resource_id;
-        self.next_resource_id += 1;
-        self.directories.insert(
-            id,
-            DirectoryResource {
-                entries,
-                position: 0,
-            },
-        );
-        Ok(Value::Resource(id))
+        let path = self.filesystem_path_argument("dir", "directory", &args[0], span)?;
+        let handle = self.open_local_directory_handle("dir", &path, span)?;
+        let Value::Resource(_) = handle else {
+            return Ok(handle);
+        };
+        let class_id = self
+            .classes
+            .lookup_class_id("Directory")
+            .ok_or_else(|| runtime_error(span, RuntimeError::undefined_class("Directory")))?;
+        let object_id = self.allocate_object_id();
+        let class = self
+            .classes
+            .get(class_id)
+            .expect("core Directory class id should resolve");
+        let object = PhpObject::from_class_with_id(class, object_id);
+        object
+            .write_public_property("path", Value::String(path))
+            .map_err(|error| runtime_error(span, error))?;
+        object
+            .write_public_property("handle", handle)
+            .map_err(|error| runtime_error(span, error))?;
+        self.track_allocated_object(&object);
+        Ok(Value::Object(object))
     }
 
     fn directory_mut(
@@ -69741,20 +69789,70 @@ impl Interpreter {
                 ),
             ));
         };
-        self.directories.get_mut(id).ok_or_else(|| {
-            runtime_error(
+        let id = *id;
+        if !self.directories.contains_key(&id) {
+            return Err(runtime_error(
                 span,
-                RuntimeError::unsupported_call(
+                self.directory_resource_error(function, id),
+            ));
+        }
+        Ok(self
+            .directories
+            .get_mut(&id)
+            .expect("directory presence was just checked"))
+    }
+
+    fn directory_resource_error(&self, function: &str, id: i64) -> RuntimeError {
+        let message = if self.streams.contains_key(&id) || self.stream_contexts.contains_key(&id) {
+            format!("{function}(): Argument #1 ($dir_handle) must be a valid Directory resource")
+        } else {
+            format!("{function}(): Argument #1 ($dir_handle) must be an open stream resource")
+        };
+        RuntimeError::unsupported_call(format!("{function}()"), message)
+    }
+
+    fn directory_handle_argument(
+        &mut self,
+        function: &str,
+        args: &[Value],
+        span: Span,
+    ) -> CompileResult<Value> {
+        match args {
+            [] => {
+                self.emit_deprecated(
+                    function,
+                    format!(
+                        "{function}(): Passing null is deprecated, instead the last opened directory stream should be provided"
+                    ),
+                    span,
+                )?;
+                if let Some(id) = self.last_opened_directory {
+                    Ok(Value::Resource(id))
+                } else {
+                    Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{function}()"),
+                            "No resource supplied",
+                        ),
+                    ))
+                }
+            }
+            [handle] => Ok(handle.clone()),
+            _ => Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
                     format!("{function}()"),
-                    "closed or unknown directory resource in the current subset",
+                    ArityExpectation::Between { min: 0, max: 1 },
+                    args.len(),
                 ),
-            )
-        })
+            )),
+        }
     }
 
     fn call_readdir(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
-        expect_arity("readdir", args, 1, span)?;
-        let directory = self.directory_mut("readdir", &args[0], span)?;
+        let handle = self.directory_handle_argument("readdir", args, span)?;
+        let directory = self.directory_mut("readdir", &handle, span)?;
         let Some(entry) = directory.entries.get(directory.position).cloned() else {
             return Ok(Value::Bool(false));
         };
@@ -69763,14 +69861,14 @@ impl Interpreter {
     }
 
     fn call_rewinddir(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
-        expect_arity("rewinddir", args, 1, span)?;
-        self.directory_mut("rewinddir", &args[0], span)?.position = 0;
+        let handle = self.directory_handle_argument("rewinddir", args, span)?;
+        self.directory_mut("rewinddir", &handle, span)?.position = 0;
         Ok(Value::Null)
     }
 
     fn call_closedir(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
-        expect_arity("closedir", args, 1, span)?;
-        let Value::Resource(id) = args[0] else {
+        let handle = self.directory_handle_argument("closedir", args, span)?;
+        let Value::Resource(id) = handle else {
             return Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
@@ -69782,16 +69880,227 @@ impl Interpreter {
                 ),
             ));
         };
-        self.directories.remove(&id).ok_or_else(|| {
-            runtime_error(
+        if !self.directories.contains_key(&id) {
+            return Err(runtime_error(
+                span,
+                self.directory_resource_error("closedir", id),
+            ));
+        }
+        self.directories.remove(&id);
+        if self.last_opened_directory == Some(id) {
+            self.last_opened_directory = None;
+        }
+        Ok(Value::Null)
+    }
+
+    fn call_directory_method(
+        &mut self,
+        object: PhpObject,
+        method_name: &str,
+        args: &[Expr],
+        span: Span,
+    ) -> CompileResult<Value> {
+        let canonical = match method_name.to_ascii_lowercase().as_str() {
+            "read" => "read",
+            "rewind" => "rewind",
+            "close" => "close",
+            _ => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::undefined_function(format!("Directory::{method_name}()")),
+                ));
+            }
+        };
+        expect_expr_arity(&format!("Directory::{method_name}"), args.len(), 0, span)?;
+        let handle = object
+            .read_property_from_context("handle", None, &[])
+            .map_err(|error| runtime_error(span, error))?;
+        let Value::Resource(id) = handle else {
+            return Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
-                    "closedir()",
-                    "closed or unknown directory resource in the current subset",
+                    format!("Directory::{method_name}()"),
+                    format!("Directory::{method_name}(): cannot use Directory resource after it has been closed"),
                 ),
-            )
-        })?;
-        Ok(Value::Null)
+            ));
+        };
+        if !self.directories.contains_key(&id) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("Directory::{method_name}()"),
+                    format!("Directory::{method_name}(): cannot use Directory resource after it has been closed"),
+                ),
+            ));
+        }
+        match canonical {
+            "read" => self.call_readdir(&[Value::Resource(id)], span),
+            "rewind" => self.call_rewinddir(&[Value::Resource(id)], span),
+            "close" => self.call_closedir(&[Value::Resource(id)], span),
+            _ => unreachable!(),
+        }
+    }
+
+    fn value_is_open_resource(&self, value: &Value) -> bool {
+        matches!(value, Value::Resource(id) if self.streams.contains_key(id)
+            || self.stream_contexts.contains_key(id)
+            || self.directories.contains_key(id))
+    }
+
+    fn resource_type_label(&self, id: i64) -> &'static str {
+        if self.streams.contains_key(&id) || self.directories.contains_key(&id) {
+            "stream"
+        } else if self.stream_contexts.contains_key(&id) {
+            "stream-context"
+        } else {
+            "Unknown"
+        }
+    }
+
+    fn format_var_dump(&self, value: &Value, span: Span) -> CompileResult<String> {
+        format_var_dump_with_resource_type(value, span, |id| self.resource_type_label(id))
+    }
+
+    fn call_glob(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(1..=2).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "glob()",
+                    ArityExpectation::Between { min: 1, max: 2 },
+                    args.len(),
+                ),
+            ));
+        }
+        let pattern = self.filesystem_path_argument("glob", "pattern", &args[0], span)?;
+        if pattern.contains('\0') {
+            return Ok(Value::Bool(false));
+        }
+        if pattern.contains("://") {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "glob()",
+                    "stream wrappers are not supported in the current glob subset",
+                ),
+            ));
+        }
+        let flags = match args.get(1) {
+            Some(value) => php_internal_int_argument("glob()", 2, "flags", value, span)?,
+            None => 0,
+        };
+        if flags & !PHP_GLOB_SUPPORTED_FLAGS != 0 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "glob()",
+                    "Argument #2 ($flags) must be a valid flag value",
+                ),
+            ));
+        }
+
+        let matches = if php_glob_pattern_has_magic(&pattern) {
+            Some(self.local_glob_pattern_matches(&pattern, flags, span)?)
+        } else {
+            self.local_glob_exact_match(&pattern, flags, span)?
+        };
+        let Some(matches) = matches else {
+            return Ok(Value::Bool(false));
+        };
+
+        if matches.is_empty() && flags & PHP_GLOB_NOCHECK != 0 {
+            return Ok(Value::Array(php_array_from_strings([pattern])));
+        }
+
+        Ok(Value::Array(php_array_from_strings(matches)))
+    }
+
+    fn local_glob_exact_match(
+        &self,
+        pattern: &str,
+        flags: i64,
+        span: Span,
+    ) -> CompileResult<Option<Vec<String>>> {
+        let path = self.resolve_local_filesystem_operation_path("glob", pattern, false, span)?;
+        let Ok(metadata) = fs::metadata(&path) else {
+            return Ok(Some(Vec::new()));
+        };
+        if !self.path_allowed_by_bounded_open_basedir(&path) {
+            return Ok(None);
+        }
+        if flags & PHP_GLOB_ONLYDIR != 0 && !metadata.is_dir() {
+            return Ok(Some(Vec::new()));
+        }
+        let mut value = pattern.to_string();
+        if flags & PHP_GLOB_MARK != 0 && metadata.is_dir() && !value.ends_with('/') {
+            value.push('/');
+        }
+        Ok(Some(vec![value]))
+    }
+
+    fn local_glob_pattern_matches(
+        &self,
+        pattern: &str,
+        flags: i64,
+        span: Span,
+    ) -> CompileResult<Vec<String>> {
+        let (directory_display, result_prefix, name_pattern) = split_php_glob_pattern(pattern);
+        if php_glob_pattern_has_magic(&directory_display) {
+            return Ok(Vec::new());
+        }
+        let directory_path = self.resolve_local_filesystem_operation_path(
+            "glob",
+            directory_display.as_str(),
+            false,
+            span,
+        )?;
+        let Ok(read_dir) = fs::read_dir(&directory_path) else {
+            return Ok(Vec::new());
+        };
+        let mut matches = Vec::new();
+        for entry in read_dir {
+            let entry = entry.map_err(|error| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "glob()",
+                        format!("local directory entry read failed: {error}"),
+                    ),
+                )
+            })?;
+            let Some(name) = entry.file_name().to_str().map(str::to_string) else {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "glob()",
+                        "non-UTF-8 directory entries are not supported in the current subset",
+                    ),
+                ));
+            };
+            if name.starts_with('.') && !name_pattern.starts_with('.') {
+                continue;
+            }
+            if !php_glob_component_matches(&name_pattern, &name, flags) {
+                continue;
+            }
+            let candidate_path = directory_path.join(&name);
+            if !self.path_allowed_by_bounded_open_basedir(&candidate_path) {
+                continue;
+            }
+            let is_dir = entry.file_type().map(|kind| kind.is_dir()).unwrap_or(false);
+            if flags & PHP_GLOB_ONLYDIR != 0 && !is_dir {
+                continue;
+            }
+            let mut result = format!("{result_prefix}{name}");
+            if flags & PHP_GLOB_MARK != 0 && is_dir && !result.ends_with('/') {
+                result.push('/');
+            }
+            matches.push(result);
+        }
+        if flags & PHP_GLOB_NOSORT == 0 {
+            matches.sort();
+        }
+        Ok(matches)
     }
 
     fn call_ob_start(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -73095,10 +73404,12 @@ impl Interpreter {
             "stream_wrapper_unregister" => self.call_stream_wrapper_unregister(&args, span),
             "stream_wrapper_restore" => self.call_stream_wrapper_restore(&args, span),
             "fclose" => self.call_fclose(&args, span),
+            "dir" => self.call_dir(&args, span),
             "opendir" => self.call_opendir(&args, span),
             "readdir" => self.call_readdir(&args, span),
             "rewinddir" => self.call_rewinddir(&args, span),
             "closedir" => self.call_closedir(&args, span),
+            "glob" => self.call_glob(&args, span),
             "filesize" => {
                 expect_arity(name, &args, 1, span)?;
                 match &args[0] {
@@ -73564,6 +73875,10 @@ impl Interpreter {
             "is_object" => {
                 expect_arity(name, &args, 1, span)?;
                 Ok(Value::Bool(matches!(&args[0], Value::Object(_))))
+            }
+            "is_resource" => {
+                expect_arity(name, &args, 1, span)?;
+                Ok(Value::Bool(self.value_is_open_resource(&args[0])))
             }
             "get_debug_type" => {
                 expect_arity(name, &args, 1, span)?;
@@ -74259,7 +74574,7 @@ impl Interpreter {
             },
             "var_dump" => {
                 for value in &args {
-                    let output = format_var_dump(value, span)?;
+                    let output = self.format_var_dump(value, span)?;
                     self.append_output_at(&output, span);
                 }
                 Ok(Value::Null)
@@ -85489,6 +85804,9 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
         ("file()", "Argument #2 ($flags) must be a valid flag value") => {
             Some("file(): Argument #2 ($flags) must be a valid flag value".to_string())
         }
+        ("glob()", "Argument #2 ($flags) must be a valid flag value") => {
+            Some("glob(): Argument #2 ($flags) must be a valid flag value".to_string())
+        }
         ("fputcsv()", "separator argument must contain exactly one character") => {
             Some("fputcsv(): Argument #3 ($separator) must be a single character".to_string())
         }
@@ -85567,6 +85885,16 @@ fn builtin_resource_type_error_message(error: &Diagnostic) -> Option<String> {
         || reason == "fflush(): Argument #1 ($stream) must be an open stream resource"
         || reason == "ftruncate(): Argument #1 ($stream) must be an open stream resource"
         || reason == "fscanf(): supplied resource is not a valid File-Handle resource"
+        || reason == "No resource supplied"
+        || reason == "readdir(): Argument #1 ($dir_handle) must be an open stream resource"
+        || reason == "rewinddir(): Argument #1 ($dir_handle) must be an open stream resource"
+        || reason == "closedir(): Argument #1 ($dir_handle) must be an open stream resource"
+        || reason == "readdir(): Argument #1 ($dir_handle) must be a valid Directory resource"
+        || reason == "rewinddir(): Argument #1 ($dir_handle) must be a valid Directory resource"
+        || reason == "closedir(): Argument #1 ($dir_handle) must be a valid Directory resource"
+        || reason == "Directory::read(): cannot use Directory resource after it has been closed"
+        || reason == "Directory::rewind(): cannot use Directory resource after it has been closed"
+        || reason == "Directory::close(): cannot use Directory resource after it has been closed"
     {
         return Some(reason.to_string());
     }
@@ -85955,6 +86283,7 @@ fn is_builtin(name: &str) -> bool {
             | "is_numeric"
             | "is_countable"
             | "is_iterable"
+            | "is_resource"
             | "is_callable"
             | "function_exists"
             | "extension_loaded"
@@ -86122,10 +86451,12 @@ fn is_builtin(name: &str) -> bool {
             | "stream_wrapper_unregister"
             | "stream_wrapper_restore"
             | "fclose"
+            | "dir"
             | "opendir"
             | "readdir"
             | "rewinddir"
             | "closedir"
+            | "glob"
             | "filesize"
             | "fileatime"
             | "filemtime"
@@ -86702,6 +87033,20 @@ const PHP_PATHINFO_ALL: i64 =
 const PHP_SCANDIR_SORT_ASCENDING: i64 = 0;
 const PHP_SCANDIR_SORT_DESCENDING: i64 = 1;
 const PHP_SCANDIR_SORT_NONE: i64 = 2;
+const PHP_GLOB_ERR: i64 = 1;
+const PHP_GLOB_MARK: i64 = 2;
+const PHP_GLOB_NOSORT: i64 = 4;
+const PHP_GLOB_NOCHECK: i64 = 16;
+const PHP_GLOB_NOESCAPE: i64 = 64;
+const PHP_GLOB_BRACE: i64 = 1024;
+const PHP_GLOB_ONLYDIR: i64 = 8192;
+const PHP_GLOB_SUPPORTED_FLAGS: i64 = PHP_GLOB_ERR
+    | PHP_GLOB_MARK
+    | PHP_GLOB_NOSORT
+    | PHP_GLOB_NOCHECK
+    | PHP_GLOB_NOESCAPE
+    | PHP_GLOB_BRACE
+    | PHP_GLOB_ONLYDIR;
 const PHP_STR_PAD_LEFT: i64 = 0;
 const PHP_STR_PAD_RIGHT: i64 = 1;
 const PHP_STR_PAD_BOTH: i64 = 2;
@@ -86744,6 +87089,192 @@ const PHP_DATETIMEZONE_ALL: i64 = 2047;
 const PHP_DATETIMEZONE_ALL_WITH_BC: i64 = 4095;
 const PHP_DATETIMEZONE_PER_COUNTRY: i64 = 4096;
 
+fn php_array_from_strings(values: impl IntoIterator<Item = String>) -> PhpArray {
+    let mut array = PhpArray::new();
+    for value in values {
+        let _ = array.append(Value::String(value));
+    }
+    array
+}
+
+fn split_php_glob_pattern(pattern: &str) -> (String, String, String) {
+    match pattern.rfind('/') {
+        Some(index) => {
+            let directory = if index == 0 {
+                "/".to_string()
+            } else {
+                pattern[..index].to_string()
+            };
+            let prefix = pattern[..=index].to_string();
+            let name_pattern = pattern[index + 1..].to_string();
+            (directory, prefix, name_pattern)
+        }
+        None => (".".to_string(), String::new(), pattern.to_string()),
+    }
+}
+
+fn php_glob_pattern_has_magic(pattern: &str) -> bool {
+    let mut escaped = false;
+    for ch in pattern.chars() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if ch == '\\' {
+            escaped = true;
+            continue;
+        }
+        if matches!(ch, '*' | '?' | '[' | '{') {
+            return true;
+        }
+    }
+    false
+}
+
+fn php_glob_component_matches(pattern: &str, name: &str, flags: i64) -> bool {
+    let pattern_chars = pattern.chars().collect::<Vec<_>>();
+    let name_chars = name.chars().collect::<Vec<_>>();
+    php_glob_component_matches_at(
+        &pattern_chars,
+        0,
+        &name_chars,
+        0,
+        flags & PHP_GLOB_NOESCAPE != 0,
+    )
+}
+
+fn php_glob_component_matches_at(
+    pattern: &[char],
+    mut pattern_index: usize,
+    name: &[char],
+    name_index: usize,
+    no_escape: bool,
+) -> bool {
+    if pattern_index == pattern.len() {
+        return name_index == name.len();
+    }
+
+    match pattern[pattern_index] {
+        '*' => {
+            while pattern_index + 1 < pattern.len() && pattern[pattern_index + 1] == '*' {
+                pattern_index += 1;
+            }
+            if pattern_index + 1 == pattern.len() {
+                return true;
+            }
+            (name_index..=name.len()).any(|index| {
+                php_glob_component_matches_at(pattern, pattern_index + 1, name, index, no_escape)
+            })
+        }
+        '?' => {
+            name_index < name.len()
+                && php_glob_component_matches_at(
+                    pattern,
+                    pattern_index + 1,
+                    name,
+                    name_index + 1,
+                    no_escape,
+                )
+        }
+        '[' => {
+            if let Some((matched, next_pattern_index)) =
+                php_glob_bracket_class_matches(pattern, pattern_index, name, name_index)
+            {
+                matched
+                    && php_glob_component_matches_at(
+                        pattern,
+                        next_pattern_index,
+                        name,
+                        name_index + 1,
+                        no_escape,
+                    )
+            } else {
+                name_index < name.len()
+                    && name[name_index] == '['
+                    && php_glob_component_matches_at(
+                        pattern,
+                        pattern_index + 1,
+                        name,
+                        name_index + 1,
+                        no_escape,
+                    )
+            }
+        }
+        '\\' if !no_escape && pattern_index + 1 < pattern.len() => {
+            name_index < name.len()
+                && name[name_index] == pattern[pattern_index + 1]
+                && php_glob_component_matches_at(
+                    pattern,
+                    pattern_index + 2,
+                    name,
+                    name_index + 1,
+                    no_escape,
+                )
+        }
+        literal => {
+            name_index < name.len()
+                && name[name_index] == literal
+                && php_glob_component_matches_at(
+                    pattern,
+                    pattern_index + 1,
+                    name,
+                    name_index + 1,
+                    no_escape,
+                )
+        }
+    }
+}
+
+fn php_glob_bracket_class_matches(
+    pattern: &[char],
+    start: usize,
+    name: &[char],
+    name_index: usize,
+) -> Option<(bool, usize)> {
+    if name_index >= name.len() || start + 1 >= pattern.len() {
+        return None;
+    }
+    let mut index = start + 1;
+    let mut negate = false;
+    if matches!(pattern.get(index), Some('!') | Some('^')) {
+        negate = true;
+        index += 1;
+    }
+
+    let mut matched = false;
+    let target = name[name_index];
+    let mut previous: Option<char> = None;
+    let mut saw_member = false;
+    while index < pattern.len() {
+        let current = pattern[index];
+        if current == ']' && saw_member {
+            return Some((if negate { !matched } else { matched }, index + 1));
+        }
+        if current == '-'
+            && previous.is_some()
+            && index + 1 < pattern.len()
+            && pattern[index + 1] != ']'
+        {
+            let end = pattern[index + 1];
+            let start = previous.expect("previous class member is present");
+            if start <= target && target <= end {
+                matched = true;
+            }
+            previous = Some(end);
+            saw_member = true;
+            index += 2;
+            continue;
+        }
+        if current == target {
+            matched = true;
+        }
+        previous = Some(current);
+        saw_member = true;
+        index += 1;
+    }
+    None
+}
+
 fn builtin_global_constant_value(name: &str) -> Option<Value> {
     match name {
         "PHP_VERSION" => Some(Value::String("8.3.0".to_string())),
@@ -86769,6 +87300,13 @@ fn builtin_global_constant_value(name: &str) -> Option<Value> {
         "SCANDIR_SORT_ASCENDING" => Some(Value::Int(PHP_SCANDIR_SORT_ASCENDING)),
         "SCANDIR_SORT_DESCENDING" => Some(Value::Int(PHP_SCANDIR_SORT_DESCENDING)),
         "SCANDIR_SORT_NONE" => Some(Value::Int(PHP_SCANDIR_SORT_NONE)),
+        "GLOB_ERR" => Some(Value::Int(PHP_GLOB_ERR)),
+        "GLOB_MARK" => Some(Value::Int(PHP_GLOB_MARK)),
+        "GLOB_NOSORT" => Some(Value::Int(PHP_GLOB_NOSORT)),
+        "GLOB_NOCHECK" => Some(Value::Int(PHP_GLOB_NOCHECK)),
+        "GLOB_NOESCAPE" => Some(Value::Int(PHP_GLOB_NOESCAPE)),
+        "GLOB_BRACE" => Some(Value::Int(PHP_GLOB_BRACE)),
+        "GLOB_ONLYDIR" => Some(Value::Int(PHP_GLOB_ONLYDIR)),
         "STR_PAD_LEFT" => Some(Value::Int(PHP_STR_PAD_LEFT)),
         "STR_PAD_RIGHT" => Some(Value::Int(PHP_STR_PAD_RIGHT)),
         "STR_PAD_BOTH" => Some(Value::Int(PHP_STR_PAD_BOTH)),
@@ -104624,11 +105162,26 @@ fn materialize_generator_yields(
     Ok(yields)
 }
 
-fn format_var_dump(value: &Value, span: Span) -> CompileResult<String> {
-    format_var_dump_with_indent(value, 0, span)
+fn format_var_dump_with_resource_type<F>(
+    value: &Value,
+    span: Span,
+    resource_type: F,
+) -> CompileResult<String>
+where
+    F: Fn(i64) -> &'static str,
+{
+    format_var_dump_with_indent(value, 0, span, &resource_type)
 }
 
-fn format_var_dump_with_indent(value: &Value, indent: usize, span: Span) -> CompileResult<String> {
+fn format_var_dump_with_indent<F>(
+    value: &Value,
+    indent: usize,
+    span: Span,
+    resource_type: &F,
+) -> CompileResult<String>
+where
+    F: Fn(i64) -> &'static str,
+{
     let padding = "  ".repeat(indent);
     Ok(match value {
         Value::Null => format!("{padding}NULL\n"),
@@ -104647,7 +105200,12 @@ fn format_var_dump_with_indent(value: &Value, indent: usize, span: Span) -> Comp
                     "{padding}  [{}]=>\n",
                     format_var_dump_key(&entry.key)
                 ));
-                output.push_str(&format_var_dump_array_entry(entry, indent + 1, span)?);
+                output.push_str(&format_var_dump_array_entry(
+                    entry,
+                    indent + 1,
+                    span,
+                    resource_type,
+                )?);
             }
             output.push_str(&format!("{padding}}}\n"));
             output
@@ -104669,6 +105227,7 @@ fn format_var_dump_with_indent(value: &Value, indent: usize, span: Span) -> Comp
                     &property_value,
                     indent + 1,
                     span,
+                    resource_type,
                 )?);
             }
             output.push_str(&format!("{padding}}}\n"));
@@ -104680,17 +105239,23 @@ fn format_var_dump_with_indent(value: &Value, indent: usize, span: Span) -> Comp
                 value.id()
             )
         }
-        Value::Resource(id) => format!("{padding}resource({id}) of type (stream)\n"),
+        Value::Resource(id) => {
+            format!("{padding}resource({id}) of type ({})\n", resource_type(*id))
+        }
     })
 }
 
-fn format_var_dump_array_entry(
+fn format_var_dump_array_entry<F>(
     entry: &ArrayEntry,
     indent: usize,
     span: Span,
-) -> CompileResult<String> {
+    resource_type: &F,
+) -> CompileResult<String>
+where
+    F: Fn(i64) -> &'static str,
+{
     let value = entry.value_cloned();
-    let mut output = format_var_dump_with_indent(&value, indent, span)?;
+    let mut output = format_var_dump_with_indent(&value, indent, span, resource_type)?;
     if entry.slot().is_reference() {
         let padding = "  ".repeat(indent);
         if output.starts_with(&padding) {
