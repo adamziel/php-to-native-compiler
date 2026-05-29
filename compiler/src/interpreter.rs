@@ -65831,6 +65831,7 @@ impl Interpreter {
             "str_repeat" => call_str_repeat(&args, span),
             "str_pad" => call_str_pad(&args, span),
             "chunk_split" => call_chunk_split(&args, span),
+            "str_split" => call_str_split(&args, span),
             "strtolower" => call_strtolower(&args, span),
             "trim" => call_trim(&args, span),
             "ltrim" => call_ltrim(&args, span),
@@ -76217,6 +76218,13 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_optional_string_param("separator", "\r\n"),
             ],
         ),
+        "str_split" => (
+            "array",
+            vec![
+                reflection_internal_param("string", "string"),
+                reflection_internal_optional_int_param("length", 1),
+            ],
+        ),
         "strtolower" => (
             "string",
             vec![reflection_internal_param("string", "string")],
@@ -78113,7 +78121,8 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
     let (function, message) = unsupported.split_once(": ")?;
     match (function, message) {
         ("str_repeat()", "Argument #2 ($times) must be greater than or equal to 0")
-        | ("chunk_split()", "Argument #2 ($length) must be greater than 0") => {
+        | ("chunk_split()", "Argument #2 ($length) must be greater than 0")
+        | ("str_split()", "Argument #2 ($length) must be greater than 0") => {
             Some(format!("{function}: {message}"))
         }
         (
@@ -78365,6 +78374,7 @@ fn is_builtin(name: &str) -> bool {
             | "str_repeat"
             | "str_pad"
             | "chunk_split"
+            | "str_split"
             | "strtolower"
             | "trim"
             | "ltrim"
@@ -84752,6 +84762,56 @@ fn call_chunk_split(args: &[Value], span: Span) -> CompileResult<Value> {
     }
 
     Ok(interpreter_value_from_php_string_bytes(output))
+}
+
+fn call_str_split(args: &[Value], span: Span) -> CompileResult<Value> {
+    if !(1..=2).contains(&args.len()) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "str_split()",
+                ArityExpectation::Between { min: 1, max: 2 },
+                args.len(),
+            ),
+        ));
+    }
+
+    if matches!(args[0], Value::Array(_)) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "str_split()",
+                "string argument arrays are not supported",
+            ),
+        ));
+    }
+
+    let value = args[0]
+        .try_echo_bytes()
+        .map_err(|error| runtime_error(span, error))?;
+    let split_len = match args.get(1) {
+        Some(length) => php_internal_int_argument("str_split()", 2, "length", length, span)?,
+        None => 1,
+    };
+    if split_len < 1 {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "str_split()",
+                "Argument #2 ($length) must be greater than 0",
+            ),
+        ));
+    }
+
+    let split_len = split_len as usize;
+    let mut array = PhpArray::new();
+    for chunk in value.chunks(split_len) {
+        array
+            .append(interpreter_value_from_php_string_bytes(chunk.to_vec()))
+            .map_err(|error| runtime_error(span, error))?;
+    }
+
+    Ok(Value::Array(array))
 }
 
 fn call_strtolower(args: &[Value], span: Span) -> CompileResult<Value> {

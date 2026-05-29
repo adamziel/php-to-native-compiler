@@ -66196,6 +66196,7 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "str_repeat",
     "str_pad",
     "chunk_split",
+    "str_split",
     "strtolower",
     "trim",
     "ltrim",
