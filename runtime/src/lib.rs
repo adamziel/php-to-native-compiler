@@ -30895,6 +30895,18 @@ pub enum ArrayColumnKey {
     String(String),
 }
 
+const PHP_BINARY_ARRAY_KEY_SENTINEL_BASE: u32 = 0xE000;
+
+fn binary_string_array_key(bytes: &[u8]) -> String {
+    bytes
+        .iter()
+        .map(|byte| {
+            char::from_u32(PHP_BINARY_ARRAY_KEY_SENTINEL_BASE + u32::from(*byte))
+                .expect("binary array-key sentinel stays within Unicode private use area")
+        })
+        .collect()
+}
+
 impl ArrayKeyCase {
     pub fn from_flag(flag: i64) -> Self {
         if flag == 0 {
@@ -31006,6 +31018,7 @@ impl ArrayKey {
             Value::Null => Ok(Self::String(String::new())),
             Value::Int(value) => Ok(Self::Int(*value)),
             Value::String(value) => Ok(Self::string(value.clone())),
+            Value::BinaryString(value) => Ok(Self::String(binary_string_array_key(value))),
             other => Err(RuntimeError::invalid_array_key(format!(
                 "{} keys are not supported; only null, int, and string keys are implemented",
                 other.type_name()
@@ -31031,6 +31044,7 @@ impl ArrayKey {
                 "lossy or non-finite float keys are not supported for array_key_exists(); only null, bool, int, string, and integral finite float keys are implemented",
             )),
             Value::String(value) => Ok(Self::string(value.clone())),
+            Value::BinaryString(value) => Ok(Self::String(binary_string_array_key(value))),
             other => Err(RuntimeError::invalid_array_key(format!(
                 "{} keys are not supported for array_key_exists(); only null, bool, int, string, and integral finite float keys are implemented",
                 other.type_name()
@@ -77929,6 +77943,27 @@ mod tests {
         assert_eq!(
             error.message(),
             "invalid array key: bool keys are not supported; only null, int, and string keys are implemented"
+        );
+    }
+
+    #[test]
+    fn binary_string_array_keys_are_stable_for_lookup() {
+        let first = Value::BinaryString(vec![0x8e, 0x1a, 0x63, 0x0f, 0x61]);
+        let second = Value::BinaryString(vec![0xf7, 0x17, 0x7f, 0x7f, 0x7f, 0x6b]);
+        let first_key = ArrayKey::from_value(&first).unwrap();
+        let second_key = ArrayKey::from_value(&second).unwrap();
+
+        assert_ne!(first_key, second_key);
+
+        let mut array = PhpArray::new();
+        array.insert(first_key.clone(), Value::Int(32));
+        array.insert(second_key.clone(), Value::Int(64));
+
+        assert_eq!(array.get_cloned(first_key), Some(Value::Int(32)));
+        assert_eq!(array.get_cloned(second_key), Some(Value::Int(64)));
+        assert_eq!(
+            ArrayKey::from_array_key_exists_value(&first).unwrap(),
+            ArrayKey::from_value(&first).unwrap()
         );
     }
 
