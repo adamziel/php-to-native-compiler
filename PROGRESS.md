@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-29 20:58 CEST
+Updated: 2026-05-29 21:02 CEST
 Primary branch: `master`
-Latest source head: `5b9f764d fix: add SplFixedArray and recursive array merge semantics`
+Latest source head: `d9a5bf8c fix: expand sprintf formatting semantics`
 
 ## Progress Score
 
@@ -48,8 +48,11 @@ Batch014 source checkpoint2 `5b9f764d` is integrated with focused lowercase
 `-p` proof for p50 repaired `SplFixedArray` support and p47 repaired
 `array_merge_recursive()` semantics. The combined focused gate recorded
 `23 PASS / 0 FAIL / 0 SKIP` across 23 selected PHPTs: 11 `SplFixedArray` rows
-plus 12 `array_merge_recursive()` rows. Batch014 source progress is now
-2 checkpoints and +84 expected direct rows. The public
+plus 12 `array_merge_recursive()` rows. Batch014 source checkpoint3
+`d9a5bf8c` is integrated with focused lowercase `-p` proof for p42
+source-only `sprintf()` formatter semantics. The focused gate recorded
+`10 PASS / 0 FAIL / 0 SKIP` across 10 selected `sprintf*` PHPTs. Batch014
+source progress is now 3 checkpoints and +94 expected direct rows. The public
 percentage remains `3170 / 20294 = 15.62%` until the next pinned full-suite
 gate is completed, regression-checked, and published here.
 
