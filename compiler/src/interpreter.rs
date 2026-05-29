@@ -70702,6 +70702,14 @@ fn magic_method_startup_diagnostics(
     }
 
     if !diagnostics.has_fatal() {
+        collect_typed_return_without_value_startup_diagnostics(
+            &mut diagnostics,
+            program,
+            source_file,
+        );
+    }
+
+    if !diagnostics.has_fatal() {
         collect_disallowed_property_type_startup_diagnostics(
             &mut diagnostics,
             program,
@@ -70804,6 +70812,152 @@ fn property_type_name_is_disallowed(type_name: &str) -> bool {
     name = name.strip_prefix('?').unwrap_or(name);
     name = name.strip_prefix('\\').unwrap_or(name);
     matches!(name.to_ascii_lowercase().as_str(), "callable" | "void")
+}
+
+fn collect_typed_return_without_value_startup_diagnostics(
+    diagnostics: &mut MagicMethodStartupDiagnostics,
+    program: &Program,
+    source_file: Option<&str>,
+) {
+    for stmt in &program.statements {
+        match stmt {
+            Stmt::Function(function) if !function.is_nested => {
+                if let Some((message, line)) = typed_return_without_value_startup_diagnostic(
+                    function.return_type.as_ref(),
+                    &function.body,
+                ) {
+                    diagnostics.set_fatal(message, source_file, line);
+                    return;
+                }
+            }
+            Stmt::Class(class) if !class.is_nested => {
+                for member in &class.members {
+                    let ClassMember::Method(method) = member else {
+                        continue;
+                    };
+                    if let Some((message, line)) = typed_return_without_value_startup_diagnostic(
+                        method.function.return_type.as_ref(),
+                        &method.function.body,
+                    ) {
+                        diagnostics.set_fatal(message, source_file, line);
+                        return;
+                    }
+                }
+            }
+            Stmt::Trait(trait_decl) => {
+                for method in &trait_decl.methods {
+                    if let Some((message, line)) = typed_return_without_value_startup_diagnostic(
+                        method.function.return_type.as_ref(),
+                        &method.function.body,
+                    ) {
+                        diagnostics.set_fatal(message, source_file, line);
+                        return;
+                    }
+                }
+            }
+            Stmt::Interface(_) => {}
+            _ => {}
+        }
+    }
+}
+
+fn typed_return_without_value_startup_diagnostic(
+    return_type: Option<&TypeDecl>,
+    body: &[Stmt],
+) -> Option<(String, usize)> {
+    let return_type = return_type?;
+    if type_decl_is_exact(return_type, "void") {
+        return None;
+    }
+    let span = return_without_value_span(body)?;
+    Some((
+        typed_return_without_value_message(&return_type.text),
+        span.line,
+    ))
+}
+
+fn typed_return_without_value_message(return_type: &str) -> String {
+    if return_type_allows_null(return_type) {
+        concat!(
+            "A function with return type must return a value ",
+            "(did you mean \"return null;\" instead of \"return;\"?)"
+        )
+        .to_string()
+    } else {
+        "A function with return type must return a value".to_string()
+    }
+}
+
+fn return_type_allows_null(return_type: &str) -> bool {
+    let text = return_type.trim();
+    if text.starts_with('?') {
+        return true;
+    }
+    text.split('|').any(|part| {
+        let part = part.trim().strip_prefix('\\').unwrap_or(part.trim());
+        part.eq_ignore_ascii_case("null")
+    })
+}
+
+fn return_without_value_span(statements: &[Stmt]) -> Option<Span> {
+    for stmt in statements {
+        match stmt {
+            Stmt::Return { value: None, span } => return Some(*span),
+            Stmt::If {
+                then_branch,
+                else_branch,
+                ..
+            } => {
+                if let Some(span) = return_without_value_span(then_branch)
+                    .or_else(|| return_without_value_span(else_branch))
+                {
+                    return Some(span);
+                }
+            }
+            Stmt::While { body, .. }
+            | Stmt::DoWhile { body, .. }
+            | Stmt::For { body, .. }
+            | Stmt::Foreach { body, .. } => {
+                if let Some(span) = return_without_value_span(body) {
+                    return Some(span);
+                }
+            }
+            Stmt::Switch { cases, .. } => {
+                for case in cases {
+                    if let Some(span) = return_without_value_span(&case.body) {
+                        return Some(span);
+                    }
+                }
+            }
+            Stmt::Try {
+                body,
+                catches,
+                finally_body,
+                ..
+            } => {
+                if let Some(span) = return_without_value_span(body) {
+                    return Some(span);
+                }
+                for catch in catches {
+                    if let Some(span) = return_without_value_span(&catch.body) {
+                        return Some(span);
+                    }
+                }
+                if let Some(finally_body) = finally_body {
+                    if let Some(span) = return_without_value_span(finally_body) {
+                        return Some(span);
+                    }
+                }
+            }
+            Stmt::Function(_)
+            | Stmt::Class(_)
+            | Stmt::Interface(_)
+            | Stmt::Trait(_)
+            | Stmt::Enum(_) => {}
+            _ => {}
+        }
+    }
+    None
 }
 
 fn collect_parameter_default_startup_diagnostics(
