@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-29 11:50 CEST
+Updated: 2026-05-29 12:01 CEST
 Primary branch: `master`
 Latest source head: `731c73cc fix: add cslash escapes and strcmp builtins`
 
@@ -13,7 +13,7 @@ Progress is the pinned php-src PHPT full-suite pass rate:
 
 `passed runnable PHPTs / total runnable PHPTs`
 
-Current score: **2286 / 20294 pinned runnable PHPTs = 11.26%**.
+Current score: **2388 / 20294 pinned runnable PHPTs = 11.77%**.
 
 No other percentage is public project progress. Focused PHPT passes, source
 checkpoints, PRs, and docs/status edits are evidence for the next batch, but
@@ -114,7 +114,7 @@ Batch008 checkpoint5 still has BORKED rows, so the public score uses the
 stable pinned denominator and does not use the raw runner
 `2180 / 18723 = 11.64%` calculation.
 
-The latest full-suite result is the Batch008 checkpoint10 bug60598 repair
+The Batch008 checkpoint10 bug60598 repair
 short-run-root sharded publication gate on the same php-src pin, run
 `phpt-full-b8c10r2-sharded-20260529T085131Z-php-src-f97ff59-public-39ab1bf8-source-d0155a39`.
 Counts: 2286 passed, 16422 failed, 2535 skipped, 15 xfailed, 1073 borked;
@@ -128,6 +128,18 @@ stable pinned denominator and does not use the raw runner
 2285 passes but was not published because `bug75679.phpt` false-failed from
 the gate path length; the short-run-root rerun above has the same source head,
 passes that row, and has zero PASS-set regressions.
+
+The latest full-suite result is the Batch009 burst1 sharded publication gate
+on the same php-src pin, run
+`phpt-full-batch009-burst1-sharded-20260529T095210Z-php-src-f97ff59-public-e0a15776-source-731c73cc`.
+Counts: 2388 passed, 16287 failed, 2568 skipped, 15 xfailed, 1073 borked;
+all 12 shards exited nonzero because failing PHPTs remain. Regressions from
+the latest published Batch008 checkpoint10 PASS set: 0. Evidence lives under
+`/home/claude/supervised-php-compiler/state/logs/phpt-full-batch009-burst1-sharded-20260529T095210Z-php-src-f97ff59-public-e0a15776-source-731c73cc`.
+
+Batch009 burst1 still has BORKED rows, so the public score uses the stable
+pinned denominator and does not use the raw runner
+`2388 / 18690 = 12.78%` calculation.
 
 ## PHPT Harness
 
@@ -152,7 +164,8 @@ passes that row, and has zero PASS-set regressions.
 | Batch008 checkpoint5 sharded gate | Done | 2180 / 20294 pinned runnable PHPTs passed (10.74%); 0 regressions from Batch007 PASS set; run id `phpt-full-batch008-checkpoint5-sharded-20260529T051801Z-php-src-f97ff59-public-0855b815-source-f408875f` |
 | Batch008 checkpoint10 bug60598 repair sharded gate | Done | 2286 / 20294 pinned runnable PHPTs passed (11.26%); 0 regressions from Batch008 checkpoint5 PASS set; run id `phpt-full-b8c10r2-sharded-20260529T085131Z-php-src-f97ff59-public-39ab1bf8-source-d0155a39` |
 | Batch008 source batch | Complete | Source checkpoints accepted: 10 / 10; checkpoint1 is `strncmp()` / `strncasecmp()` focused source proof; checkpoint2 is bcmath `bcmod()` / `bcpow()` / `bcpowmod()` / `bcsqrt()` focused source proof; checkpoint3 is `tempnam()` / `sys_get_temp_dir()` focused source proof; checkpoint4 is bounded date/timezone focused source proof; checkpoint5 is `SplObjectStorage` identity-map focused source proof; checkpoint5 sharded gate published; checkpoint6 is `strrpos()` / `strripos()` focused source proof; checkpoint7 is `fputcsv()` plus local file stream semantics focused source proof; checkpoint8 is `pathinfo()` / `basename()` / `dirname()` focused source proof; checkpoint9 is `vprintf()` focused source proof; checkpoint10 is `stripos()` focused source proof; checkpoint10 bug60598 repair gate published |
-| Batch009 source burst | Gate-ready | Checkpoint1 is p47 `sizeof()` alias / `array_chunk` metadata focused source proof (+25 expected direct rows); checkpoint2 is p43 `fflush()` / `ftruncate()` focused source proof (+15 expected direct rows); checkpoint3 is p42 `fprintf()` / `vfprintf()` focused source proof (+14 expected direct rows); checkpoint4 is p39 OPcache bounded introspection focused source proof (+11 expected direct rows); checkpoint5 is p63 slash/cslash and bounded `strcmp()` focused source proof (+12 expected direct rows); burst total is +77 expected direct rows; public score remains 2286 / 20294 until the next pinned sharded gate |
+| Batch009 burst1 sharded gate | Done | 2388 / 20294 pinned runnable PHPTs passed (11.77%); 0 regressions from Batch008 checkpoint10 PASS set; run id `phpt-full-batch009-burst1-sharded-20260529T095210Z-php-src-f97ff59-public-e0a15776-source-731c73cc` |
+| Batch009 source burst | Complete | Checkpoint1 is p47 `sizeof()` alias / `array_chunk` metadata focused source proof (+25 expected direct rows); checkpoint2 is p43 `fflush()` / `ftruncate()` focused source proof (+15 expected direct rows); checkpoint3 is p42 `fprintf()` / `vfprintf()` focused source proof (+14 expected direct rows); checkpoint4 is p39 OPcache bounded introspection focused source proof (+11 expected direct rows); checkpoint5 is p63 slash/cslash and bounded `strcmp()` focused source proof (+12 expected direct rows); burst total was +77 expected direct rows; burst1 sharded gate published 2388 / 20294 |
 
 Focused PHPT history is tracked separately in
 `/home/claude/supervised-php-compiler/state/php-core-suite-focused-history.tsv`.
@@ -161,10 +174,9 @@ Focused passes prove candidate direction; they do not define project percent.
 ## Current Integration
 
 Batch009 source burst checkpoint5 is primary-integrated under AO supervision.
-This is focused source proof, not a public percentage change. The public PHPT
-score remains **2286 / 20294 pinned runnable PHPTs = 11.26%** until the next
-supervisor-approved pinned aggregate gate is completed, regression-checked,
-and published here.
+The follow-up supervisor-approved pinned aggregate gate has now been completed,
+regression-checked, and published here at
+**2388 / 20294 pinned runnable PHPTs = 11.77%**.
 
 - primary source head:
   `731c73cc fix: add cslash escapes and strcmp builtins`
@@ -191,9 +203,10 @@ and published here.
   `cargo fmt`, focused Rust `cslashes_builtin` and `strcmp_builtin`, native
   builtin metadata test, `phpc` binary build, `cargo check`, and focused PHP
   core slash/cslash PHPT cluster with 12 PASS and 0 FAIL
-- public progress gate: authorized next because Batch009 burst now totals +77
-  expected direct rows; public percentage remains unchanged until that gate is
-  completed, regression-checked, and published
+- public progress gate: completed as
+  `phpt-full-batch009-burst1-sharded-20260529T095210Z-php-src-f97ff59-public-e0a15776-source-731c73cc`
+  with 2388 / 20294 pinned runnable PHPTs passed (11.77%) and zero regressions
+  from the latest published Batch008 checkpoint10 PASS set
 
 This checkpoint implements generalized bounded escape/unescape behavior for
 `addslashes()`, `stripslashes()`, `addcslashes()`, and `stripcslashes()`, plus
