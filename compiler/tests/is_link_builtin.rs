@@ -59,23 +59,19 @@ echo $call({link}) ? "link" : "not-link";
 
 #[test]
 fn is_link_rejects_forms_outside_current_subset() {
-    let arity = run_source("<?php\necho is_link();\n").unwrap_err();
-    assert_eq!(arity.phase, Phase::Runtime);
-    assert_eq!(arity.line, 2);
-    assert_eq!(arity.column, 6);
-    assert_eq!(
-        arity.message,
-        "arity mismatch for is_link(): expected 1 argument(s), got 0"
+    let arity = run_source("<?php\necho is_link();\n").unwrap();
+    assert_eq!(arity.exit_code, 255);
+    assert!(
+        arity
+            .stdout
+            .contains("Too few arguments to function is_link(), 0 passed"),
+        "{}",
+        arity.stdout
     );
 
-    let type_error = run_source("<?php\necho is_link(42);\n").unwrap_err();
-    assert_eq!(type_error.phase, Phase::Runtime);
-    assert_eq!(type_error.line, 2);
-    assert_eq!(type_error.column, 6);
-    assert_eq!(
-        type_error.message,
-        "unsupported call is_link(): path argument must be string in the current subset, got int"
-    );
+    let scalar = run_source("<?php\nvar_dump(is_link(42)); var_dump(is_link(false));\n").unwrap();
+    assert_eq!(scalar.stdout, "bool(false)\nbool(false)\n");
+    assert_eq!(scalar.exit_code, 0);
 
     let stream = run_source("<?php\necho is_link('php://memory');\n").unwrap_err();
     assert_eq!(stream.phase, Phase::Runtime);

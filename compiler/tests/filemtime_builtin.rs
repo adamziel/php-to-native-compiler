@@ -37,7 +37,18 @@ echo filemtime(__DIR__ . "/missing-file.php") === false ? "missing-false" : "mis
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "int|positive|dir-int|missing-false");
+    assert!(
+        execution
+            .stdout
+            .starts_with("int|positive|dir-int|\nWarning: filemtime(): stat failed"),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution.stdout.ends_with("missing-false"),
+        "{}",
+        execution.stdout
+    );
     assert_eq!(execution.exit_code, 0);
 }
 
@@ -62,29 +73,34 @@ echo $call(__FILE__) === filemtime(__FILE__) ? "repeat" : "different";
 
 #[test]
 fn filemtime_rejects_forms_outside_current_subset() {
-    let arity = runtime_error(
+    let arity = run_source_with_source_file(
         r#"<?php
 echo filemtime();
 "#,
-    );
-    assert_eq!(arity.line, 2);
-    assert_eq!(arity.column, 6);
-    assert_eq!(
-        arity.message,
-        "arity mismatch for filemtime(): expected 1 argument(s), got 0"
+        fixture_source_file(),
+    )
+    .unwrap();
+    assert_eq!(arity.exit_code, 255);
+    assert!(
+        arity
+            .stdout
+            .contains("Too few arguments to function filemtime(), 0 passed"),
+        "{}",
+        arity.stdout
     );
 
-    let type_error = runtime_error(
+    let scalar = run_source_with_source_file(
         r#"<?php
-echo filemtime(42);
+var_dump(filemtime(42));
 "#,
-    );
-    assert_eq!(type_error.line, 2);
-    assert_eq!(type_error.column, 6);
-    assert_eq!(
-        type_error.message,
-        "unsupported call filemtime(): path argument must be string in the current subset, got int"
-    );
+        fixture_source_file(),
+    )
+    .unwrap();
+    assert!(scalar
+        .stdout
+        .contains("Warning: filemtime(): stat failed for 42"));
+    assert!(scalar.stdout.ends_with("bool(false)\n"));
+    assert_eq!(scalar.exit_code, 0);
 
     let stream = runtime_error(
         r#"<?php

@@ -66,6 +66,13 @@ var_dump(symlink($file, $link));
 unlink($link);
 unlink($file);
 var_dump(link($file, $link));
+var_dump(link(false, $link));
+var_dump(is_link(false));
+try {{
+    linkinfo("");
+}} catch (ValueError $e) {{
+    echo $e->getMessage(), "\n";
+}}
 var_dump(readlink(12.5));
 @unlink($link);
 @rmdir($root . "/missing-dir");
@@ -113,6 +120,13 @@ var_dump(sleep(0));
         execution
             .stdout
             .contains("Warning: link(): No such file or directory"),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution
+            .stdout
+            .contains("linkinfo(): Argument #1 ($path) must not be empty"),
         "{}",
         execution.stdout
     );

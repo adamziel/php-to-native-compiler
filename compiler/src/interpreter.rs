@@ -64719,6 +64719,41 @@ impl Interpreter {
         }
     }
 
+    fn filesystem_scalar_metadata_path_argument(
+        &mut self,
+        function: &str,
+        label: &str,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<Option<String>> {
+        let Some(path) = self.filesystem_scalar_path_argument(function, label, value, span)? else {
+            return Ok(None);
+        };
+        if path.is_empty() {
+            return Ok(None);
+        }
+        if path.contains('\0') {
+            self.emit_filesystem_display_warning(function, "Filename contains null byte", span)?;
+            return Ok(None);
+        }
+        Ok(Some(path))
+    }
+
+    fn emit_filesystem_metadata_failure_warning(
+        &mut self,
+        function: &str,
+        path: &str,
+        follow_links: bool,
+        span: Span,
+    ) -> CompileResult<()> {
+        let operation = if follow_links {
+            "stat failed"
+        } else {
+            "Lstat failed"
+        };
+        self.emit_filesystem_display_warning(function, format!("{operation} for {path}"), span)
+    }
+
     fn filesystem_tempnam_string_argument(
         &mut self,
         position: usize,
@@ -64861,29 +64896,6 @@ impl Interpreter {
         Some(metadata)
     }
 
-    fn filesystem_metadata_for_path_builtin(
-        &mut self,
-        function: &str,
-        path: &str,
-        follow_links: bool,
-        span: Span,
-    ) -> CompileResult<Option<(PathBuf, fs::Metadata)>> {
-        let filesystem_path =
-            self.resolve_local_filesystem_operation_path(function, path, false, span)?;
-        if !self.enforce_bounded_open_basedir(
-            &format!("{function}()"),
-            path,
-            &filesystem_path,
-            span,
-        )? {
-            return Ok(None);
-        }
-
-        Ok(self
-            .cached_filesystem_metadata(&filesystem_path, follow_links)
-            .map(|metadata| (filesystem_path, metadata)))
-    }
-
     fn call_stat_path_builtin(
         &mut self,
         args: &[Value],
@@ -64892,10 +64904,23 @@ impl Interpreter {
         span: Span,
     ) -> CompileResult<Value> {
         expect_arity(function, args, 1, span)?;
-        let path = self.filesystem_path_argument(function, "path", &args[0], span)?;
-        let Some((filesystem_path, metadata)) =
-            self.filesystem_metadata_for_path_builtin(function, &path, follow_links, span)?
+        let Some(path) =
+            self.filesystem_scalar_metadata_path_argument(function, "path", &args[0], span)?
         else {
+            return Ok(Value::Bool(false));
+        };
+        let filesystem_path =
+            self.resolve_local_filesystem_operation_path(function, &path, false, span)?;
+        if !self.enforce_bounded_open_basedir(
+            &format!("{function}()"),
+            &path,
+            &filesystem_path,
+            span,
+        )? {
+            return Ok(Value::Bool(false));
+        }
+        let Some(metadata) = self.cached_filesystem_metadata(&filesystem_path, follow_links) else {
+            self.emit_filesystem_metadata_failure_warning(function, &path, follow_links, span)?;
             return Ok(Value::Bool(false));
         };
         self.cache_bounded_realpath_entry_for_local_path(&filesystem_path);
@@ -64904,10 +64929,18 @@ impl Interpreter {
 
     fn call_fileperms(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("fileperms", args, 1, span)?;
-        let path = self.filesystem_path_argument("fileperms", "path", &args[0], span)?;
-        let Some((_filesystem_path, metadata)) =
-            self.filesystem_metadata_for_path_builtin("fileperms", &path, true, span)?
+        let Some(path) =
+            self.filesystem_scalar_metadata_path_argument("fileperms", "path", &args[0], span)?
         else {
+            return Ok(Value::Bool(false));
+        };
+        let filesystem_path =
+            self.resolve_local_filesystem_operation_path("fileperms", &path, false, span)?;
+        if !self.enforce_bounded_open_basedir("fileperms()", &path, &filesystem_path, span)? {
+            return Ok(Value::Bool(false));
+        }
+        let Some(metadata) = self.cached_filesystem_metadata(&filesystem_path, true) else {
+            self.emit_filesystem_metadata_failure_warning("fileperms", &path, true, span)?;
             return Ok(Value::Bool(false));
         };
         Ok(Value::Int(filesystem_mode_bits(&metadata)))
@@ -64956,7 +64989,11 @@ impl Interpreter {
         span: Span,
     ) -> CompileResult<Value> {
         expect_arity(function, args, 1, span)?;
-        let path = self.filesystem_path_argument(function, "filename", &args[0], span)?;
+        let Some(path) =
+            self.filesystem_scalar_metadata_path_argument(function, "filename", &args[0], span)?
+        else {
+            return Ok(Value::Bool(false));
+        };
         if path.contains("://") {
             return Err(runtime_error(
                 span,
@@ -64966,7 +65003,18 @@ impl Interpreter {
                 ),
             ));
         }
-        let Some(metadata) = self.cached_local_metadata(&path) else {
+        let filesystem_path =
+            self.resolve_local_filesystem_operation_path(function, &path, false, span)?;
+        if !self.enforce_bounded_open_basedir(
+            &format!("{function}()"),
+            &path,
+            &filesystem_path,
+            span,
+        )? {
+            return Ok(Value::Bool(false));
+        }
+        let Some(metadata) = self.cached_filesystem_metadata(&filesystem_path, true) else {
+            self.emit_filesystem_metadata_failure_warning(function, &path, true, span)?;
             return Ok(Value::Bool(false));
         };
         Ok(Value::Int(value(&metadata)))
@@ -64974,7 +65022,11 @@ impl Interpreter {
 
     fn call_filetype(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("filetype", args, 1, span)?;
-        let path = self.filesystem_path_argument("filetype", "filename", &args[0], span)?;
+        let Some(path) =
+            self.filesystem_scalar_metadata_path_argument("filetype", "filename", &args[0], span)?
+        else {
+            return Ok(Value::Bool(false));
+        };
         if path.contains("://") {
             return Err(runtime_error(
                 span,
@@ -64984,16 +65036,60 @@ impl Interpreter {
                 ),
             ));
         }
-        let metadata_path = local_filesystem_metadata_path(&path);
-        let Some(file_type) = fs::symlink_metadata(&metadata_path)
-            .ok()
+        let filesystem_path =
+            self.resolve_local_filesystem_operation_path("filetype", &path, false, span)?;
+        if !self.enforce_bounded_open_basedir("filetype()", &path, &filesystem_path, span)? {
+            return Ok(Value::Bool(false));
+        }
+        let Some(file_type) = self
+            .cached_filesystem_metadata(&filesystem_path, false)
             .map(|metadata| metadata.file_type())
         else {
+            self.emit_filesystem_metadata_failure_warning("filetype", &path, false, span)?;
             return Ok(Value::Bool(false));
         };
         Ok(Value::String(
             filesystem_file_type_name(&file_type).to_string(),
         ))
+    }
+
+    fn call_file_timestamp_builtin(
+        &mut self,
+        args: &[Value],
+        function: &str,
+        timestamp: fn(&fs::Metadata, Span) -> CompileResult<i64>,
+        span: Span,
+    ) -> CompileResult<Value> {
+        expect_arity(function, args, 1, span)?;
+        let Some(path) =
+            self.filesystem_scalar_metadata_path_argument(function, "filename", &args[0], span)?
+        else {
+            return Ok(Value::Bool(false));
+        };
+        if path.contains("://") {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{function}()"),
+                    "stream wrappers are not supported in the current subset",
+                ),
+            ));
+        }
+        let filesystem_path =
+            self.resolve_local_filesystem_operation_path(function, &path, false, span)?;
+        if !self.enforce_bounded_open_basedir(
+            &format!("{function}()"),
+            &path,
+            &filesystem_path,
+            span,
+        )? {
+            return Ok(Value::Bool(false));
+        }
+        let Some(metadata) = self.cached_filesystem_metadata(&filesystem_path, true) else {
+            self.emit_filesystem_metadata_failure_warning(function, &path, true, span)?;
+            return Ok(Value::Bool(false));
+        };
+        Ok(Value::Int(timestamp(&metadata, span)?))
     }
 
     fn call_is_executable(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -65110,8 +65206,15 @@ impl Interpreter {
 
     fn call_symlink(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("symlink", args, 2, span)?;
-        let target = self.filesystem_path_argument("symlink", "target", &args[0], span)?;
-        let link = self.filesystem_path_argument("symlink", "link", &args[1], span)?;
+        let Some(target) =
+            self.filesystem_scalar_path_argument("symlink", "target", &args[0], span)?
+        else {
+            return Ok(Value::Bool(false));
+        };
+        let Some(link) = self.filesystem_scalar_path_argument("symlink", "link", &args[1], span)?
+        else {
+            return Ok(Value::Bool(false));
+        };
         if target.contains("://") {
             return Err(runtime_error(
                 span,
@@ -65148,8 +65251,15 @@ impl Interpreter {
 
     fn call_link(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("link", args, 2, span)?;
-        let target = self.filesystem_path_argument("link", "target", &args[0], span)?;
-        let link = self.filesystem_path_argument("link", "link", &args[1], span)?;
+        let Some(target) =
+            self.filesystem_scalar_path_argument("link", "target", &args[0], span)?
+        else {
+            return Ok(Value::Bool(false));
+        };
+        let Some(link) = self.filesystem_scalar_path_argument("link", "link", &args[1], span)?
+        else {
+            return Ok(Value::Bool(false));
+        };
         let target_path =
             self.resolve_local_filesystem_operation_path("link", &target, false, span)?;
         let link_path = self.resolve_local_filesystem_operation_path("link", &link, false, span)?;
@@ -65178,7 +65288,20 @@ impl Interpreter {
 
     fn call_linkinfo(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("linkinfo", args, 1, span)?;
-        let path = self.filesystem_path_argument("linkinfo", "path", &args[0], span)?;
+        let Some(path) =
+            self.filesystem_scalar_path_argument("linkinfo", "path", &args[0], span)?
+        else {
+            return Ok(Value::Int(-1));
+        };
+        if path.is_empty() {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "linkinfo()",
+                    "Argument #1 ($path) must not be empty",
+                ),
+            ));
+        }
         let filesystem_path =
             self.resolve_local_filesystem_operation_path("linkinfo", &path, false, span)?;
         if !self.enforce_bounded_open_basedir("linkinfo()", &path, &filesystem_path, span)? {
@@ -65208,7 +65331,14 @@ impl Interpreter {
                 ),
             ));
         }
-        let path = self.filesystem_path_argument("touch", "filename", &args[0], span)?;
+        let Some(path) =
+            self.filesystem_scalar_path_argument("touch", "filename", &args[0], span)?
+        else {
+            return Ok(Value::Bool(false));
+        };
+        if path.is_empty() {
+            return Ok(Value::Bool(false));
+        }
         for (index, value) in args.iter().enumerate().skip(1) {
             if !matches!(value, Value::Int(_) | Value::Null) {
                 return Err(runtime_error(
@@ -65242,7 +65372,10 @@ impl Interpreter {
             Err(error) => {
                 self.emit_filesystem_display_warning(
                     "touch",
-                    Self::filesystem_io_warning_message(&error),
+                    format!(
+                        "Unable to create file {path} because {}",
+                        Self::filesystem_io_warning_message(&error)
+                    ),
                     span,
                 )?;
                 Ok(Value::Bool(false))
@@ -71428,62 +71561,14 @@ impl Interpreter {
                     )),
                 }
             }
+            "fileatime" => {
+                self.call_file_timestamp_builtin(&args, "fileatime", filesystem_atime_value, span)
+            }
             "filemtime" => {
-                expect_arity(name, &args, 1, span)?;
-                match &args[0] {
-                    Value::String(path) => {
-                        if path.contains("://") {
-                            return Err(runtime_error(
-                                span,
-                                RuntimeError::unsupported_call(
-                                    "filemtime()",
-                                    "stream wrappers are not supported in the current subset",
-                                ),
-                            ));
-                        }
-                        let Some(metadata) = self.cached_local_metadata(path) else {
-                            return Ok(Value::Bool(false));
-                        };
-                        let modified = metadata.modified().map_err(|error| {
-                            runtime_error(
-                                span,
-                                RuntimeError::unsupported_call(
-                                    "filemtime()",
-                                    format!("filesystem modification-time lookup failed: {error}"),
-                                ),
-                            )
-                        })?;
-                        let timestamp = modified.duration_since(UNIX_EPOCH).map_err(|_| {
-                            runtime_error(
-                                span,
-                                RuntimeError::unsupported_call(
-                                    "filemtime()",
-                                    "file modification time before the Unix epoch is not supported in the current subset",
-                                ),
-                            )
-                        })?;
-                        let seconds = i64::try_from(timestamp.as_secs()).map_err(|_| {
-                            runtime_error(
-                                span,
-                                RuntimeError::unsupported_call(
-                                    "filemtime()",
-                                    "file modification time exceeds the current signed 64-bit integer subset",
-                                ),
-                            )
-                        })?;
-                        Ok(Value::Int(seconds))
-                    }
-                    other => Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            "filemtime()",
-                            format!(
-                                "path argument must be string in the current subset, got {}",
-                                other.type_name()
-                            ),
-                        ),
-                    )),
-                }
+                self.call_file_timestamp_builtin(&args, "filemtime", filesystem_mtime_value, span)
+            }
+            "filectime" => {
+                self.call_file_timestamp_builtin(&args, "filectime", filesystem_ctime_value, span)
             }
             "fileinode" => self.call_file_metadata_int_builtin(
                 &args,
@@ -71776,35 +71861,29 @@ impl Interpreter {
             }
             "is_link" => {
                 expect_arity(name, &args, 1, span)?;
-                match &args[0] {
-                    Value::String(path) => {
-                        if path.contains("://") {
-                            return Err(runtime_error(
-                                span,
-                                RuntimeError::unsupported_call(
-                                    "is_link()",
-                                    "stream wrappers are not supported in the current subset",
-                                ),
-                            ));
-                        }
-                        let metadata_path = local_filesystem_metadata_path(path);
-                        Ok(Value::Bool(
-                            fs::symlink_metadata(&metadata_path)
-                                .map(|metadata| metadata.file_type().is_symlink())
-                                .unwrap_or(false),
-                        ))
-                    }
-                    other => Err(runtime_error(
+                let Some(path) =
+                    self.filesystem_scalar_path_argument("is_link", "path", &args[0], span)?
+                else {
+                    return Ok(Value::Bool(false));
+                };
+                if path.is_empty() {
+                    return Ok(Value::Bool(false));
+                }
+                if path.contains("://") {
+                    return Err(runtime_error(
                         span,
                         RuntimeError::unsupported_call(
                             "is_link()",
-                            format!(
-                                "path argument must be string in the current subset, got {}",
-                                other.type_name()
-                            ),
+                            "stream wrappers are not supported in the current subset",
                         ),
-                    )),
+                    ));
                 }
+                let metadata_path = local_filesystem_metadata_path(&path);
+                Ok(Value::Bool(
+                    fs::symlink_metadata(&metadata_path)
+                        .map(|metadata| metadata.file_type().is_symlink())
+                        .unwrap_or(false),
+                ))
             }
             "register_shutdown_function" => {
                 self.call_register_shutdown_function(args, span)
@@ -82935,6 +83014,9 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
             "disk_free_space()" | "diskfreespace()" | "disk_total_space()",
             "Argument #1 ($directory) must not contain any null bytes",
         ) => Some(format!("{function}: {message}")),
+        ("linkinfo()", "Argument #1 ($path) must not be empty") => {
+            Some("linkinfo(): Argument #1 ($path) must not be empty".to_string())
+        }
         (
             "timezone_identifiers_list()",
             "Argument #2 ($countryCode) must be a two-letter ISO 3166-1 compatible country code when argument #1 ($timezoneGroup) is DateTimeZone::PER_COUNTRY",
@@ -83568,7 +83650,9 @@ fn is_builtin(name: &str) -> bool {
             | "rewinddir"
             | "closedir"
             | "filesize"
+            | "fileatime"
             | "filemtime"
+            | "filectime"
             | "fileinode"
             | "fileowner"
             | "filegroup"
@@ -95399,6 +95483,92 @@ fn filesystem_group_value(metadata: &fs::Metadata) -> i64 {
 #[cfg(not(unix))]
 fn filesystem_group_value(_metadata: &fs::Metadata) -> i64 {
     0
+}
+
+#[cfg(unix)]
+fn filesystem_atime_value(metadata: &fs::Metadata, _span: Span) -> CompileResult<i64> {
+    use std::os::unix::fs::MetadataExt;
+
+    Ok(metadata.atime())
+}
+
+#[cfg(not(unix))]
+fn filesystem_atime_value(metadata: &fs::Metadata, span: Span) -> CompileResult<i64> {
+    filesystem_system_time_value(
+        "fileatime()",
+        "filesystem access-time lookup failed",
+        "file access time before the Unix epoch is not supported in the current subset",
+        "file access time exceeds the current signed 64-bit integer subset",
+        metadata.accessed(),
+        span,
+    )
+}
+
+#[cfg(unix)]
+fn filesystem_mtime_value(metadata: &fs::Metadata, _span: Span) -> CompileResult<i64> {
+    use std::os::unix::fs::MetadataExt;
+
+    Ok(metadata.mtime())
+}
+
+#[cfg(not(unix))]
+fn filesystem_mtime_value(metadata: &fs::Metadata, span: Span) -> CompileResult<i64> {
+    filesystem_system_time_value(
+        "filemtime()",
+        "filesystem modification-time lookup failed",
+        "file modification time before the Unix epoch is not supported in the current subset",
+        "file modification time exceeds the current signed 64-bit integer subset",
+        metadata.modified(),
+        span,
+    )
+}
+
+#[cfg(unix)]
+fn filesystem_ctime_value(metadata: &fs::Metadata, _span: Span) -> CompileResult<i64> {
+    use std::os::unix::fs::MetadataExt;
+
+    Ok(metadata.ctime())
+}
+
+#[cfg(not(unix))]
+fn filesystem_ctime_value(metadata: &fs::Metadata, span: Span) -> CompileResult<i64> {
+    filesystem_system_time_value(
+        "filectime()",
+        "filesystem change-time lookup failed",
+        "file change time before the Unix epoch is not supported in the current subset",
+        "file change time exceeds the current signed 64-bit integer subset",
+        metadata.created().or_else(|_| metadata.modified()),
+        span,
+    )
+}
+
+#[cfg(not(unix))]
+fn filesystem_system_time_value(
+    function: &str,
+    lookup_message: &str,
+    before_epoch_message: &str,
+    overflow_message: &str,
+    time: std::io::Result<SystemTime>,
+    span: Span,
+) -> CompileResult<i64> {
+    let time = time.map_err(|error| {
+        runtime_error(
+            span,
+            RuntimeError::unsupported_call(function, format!("{lookup_message}: {error}")),
+        )
+    })?;
+    let timestamp = time.duration_since(UNIX_EPOCH).map_err(|_| {
+        runtime_error(
+            span,
+            RuntimeError::unsupported_call(function, before_epoch_message),
+        )
+    })?;
+    i64::try_from(timestamp.as_secs()).map_err(|_| {
+        runtime_error(
+            span,
+            RuntimeError::unsupported_call(function, overflow_message),
+        )
+    })
 }
 
 #[cfg(unix)]

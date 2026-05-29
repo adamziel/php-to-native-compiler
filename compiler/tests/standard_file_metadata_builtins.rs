@@ -19,6 +19,8 @@ mkdir($dir);
 echo gettype(fileinode($file)) . ":";
 echo gettype(fileowner($file)) . ":";
 echo gettype(filegroup($file)) . ":";
+echo gettype(fileatime($file)) . ":";
+echo gettype(filectime($file)) . ":";
 echo filetype($file) . ":" . filetype($dir) . ":";
 echo filegroup($root . "/missing") === false ? "missing" : "bad";
 unlink($file);
@@ -29,7 +31,121 @@ rmdir($dir);
 
     let execution = run_source(&source).unwrap();
 
-    assert_eq!(execution.stdout, "integer:integer:integer:file:dir:missing");
+    assert!(
+        execution.stdout.starts_with(
+            "integer:integer:integer:integer:integer:file:dir:\nWarning: filegroup(): stat failed"
+        ),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution.stdout.ends_with("missing"),
+        "{}",
+        execution.stdout
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn file_metadata_builtins_emit_php_shaped_scalar_path_warnings() {
+    let source = r#"<?php
+var_dump(filegroup("/no/such/file/dir"));
+var_dump(fileinode(100));
+var_dump(fileowner("string"));
+var_dump(fileperms(" "));
+var_dump(filetype("missing-type"));
+var_dump(stat(false));
+var_dump(stat(" "));
+var_dump(lstat(22));
+var_dump(filegroup("bad" . chr(0) . "path"));
+var_dump(fileatime("/no/such/file/or/dir"));
+var_dump(filemtime("missing-mtime"));
+var_dump(filectime(1234));
+var_dump(touch(false));
+var_dump(touch(""));
+"#;
+
+    let execution = run_source(source).unwrap();
+
+    assert!(
+        execution
+            .stdout
+            .contains("Warning: filegroup(): stat failed for /no/such/file/dir"),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution
+            .stdout
+            .contains("Warning: fileinode(): stat failed for 100"),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution
+            .stdout
+            .contains("Warning: fileowner(): stat failed for string"),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution
+            .stdout
+            .contains("Warning: fileperms(): stat failed for  "),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution
+            .stdout
+            .contains("Warning: filetype(): Lstat failed for missing-type"),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution
+            .stdout
+            .contains("Warning: stat(): stat failed for  "),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution
+            .stdout
+            .contains("Warning: lstat(): Lstat failed for 22"),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution
+            .stdout
+            .contains("Warning: filegroup(): Filename contains null byte"),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution
+            .stdout
+            .contains("Warning: fileatime(): stat failed for /no/such/file/or/dir"),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution
+            .stdout
+            .contains("Warning: filemtime(): stat failed for missing-mtime"),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution
+            .stdout
+            .contains("Warning: filectime(): stat failed for 1234"),
+        "{}",
+        execution.stdout
+    );
+    assert_eq!(execution.stdout.matches("bool(false)").count(), 14);
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);
 }
