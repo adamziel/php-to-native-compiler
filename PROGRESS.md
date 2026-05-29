@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-29 04:34 CEST
+Updated: 2026-05-29 04:39 CEST
 Primary branch: `master`
-Latest source head: `8693281d fix: reject redundant union types`
+Latest source head: `a0359527 fix: add chunk_split builtin semantics`
 
 ## Progress Score
 
@@ -108,13 +108,46 @@ stable pinned denominator and does not use the raw runner
 | Batch004 source batch | Complete | Batch004 source checkpoints accepted: 10 / 10; checkpoint10 sharded gate published |
 | Batch005 source batch | Complete | Batch005 source checkpoints accepted: 10 / 10; checkpoint10 sharded gate published |
 | Batch006 source batch | Complete | Source checkpoints accepted: 10 / 10; checkpoint10 sharded gate published |
-| Batch007 source batch | In progress | Source checkpoints accepted: 3 / 10; public score unchanged until pinned aggregate gate |
+| Batch007 source batch | In progress | Source checkpoints accepted: 4 / 10; public score unchanged until pinned aggregate gate |
 
 Focused PHPT history is tracked separately in
 `/home/claude/supervised-php-compiler/state/php-core-suite-focused-history.tsv`.
 Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
+
+Batch007 source checkpoint 4 is primary-integrated under AO supervision. This
+is a source checkpoint with focused proof, not a percentage change. The public
+PHPT score remains **1836 / 20294 pinned runnable PHPTs = 9.05%** until the
+next pinned full-suite or supervisor-approved sharded publication gate is
+completed, regression-checked, and published here.
+
+- primary source head:
+  `a0359527 fix: add chunk_split builtin semantics`
+- reviewed and integration patch:
+  `/home/claude/supervised-php-compiler/state/patches/ao-coder-ext-standard-chunk-split-string-builtin-successor10-16af8d49-phpc42-20260529.patch`
+- reviewed and integration patch SHA256:
+  `d8025c8093f1cef25fd047d673653d3c0cdef24c80a7293bdd09e1651d1a2ab8`
+- reviewer gate: phpc-32 recorded `FINAL GO /
+  FOCUSED-RUST-BUILD-PHPT-PASS`; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/batch007-review-ext-standard-chunk-split-string-builtin-successor10-16af8d49-20260529.{status.md,report.md,gates.log}`
+- critic gate: phpc-49 recorded `SAFE-FOR-INTEGRATION /
+  CURRENT-PUBLIC-16AF8D49`; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/batch007-critic-ext-standard-chunk-split-string-builtin-successor10-16af8d49-20260529.{status.md,report.md}`
+- supervisor focused gates: PASS for clean apply over public `e31aac6b`,
+  `git diff --cached --check`, docs/PROGRESS/examples exclusion, production
+  exact-shape audit, `cargo fmt --all -- --check`, focused Rust
+  `chunk_split_builtin`, `cargo build -p phpc --bin phpc`, and the focused
+  12-file `ext/standard/tests/strings/chunk_split*` PHPT cluster with 12 PASS
+  and 0 FAIL
+- public progress gate: not run for this source checkpoint; next public score
+  update waits for the Batch007 pinned aggregate gate
+
+This checkpoint implements generalized `chunk_split()` builtin semantics:
+byte-length splitting, the PHP default CRLF ending as real CRLF bytes, explicit
+ending handling, arity/value diagnostics, and runtime/codegen registration. It
+is not keyed to PHPT filenames, expected output, fixture names, public hashes,
+batch labels, or checkpoint markers.
 
 Batch007 source checkpoint 3 is primary-integrated under AO supervision. This
 is a source checkpoint with focused proof, not a percentage change. The public
