@@ -6342,10 +6342,10 @@ impl Parser {
                         span: token.span,
                     });
                 }
-                Err(self.error_at(
-                    token.span,
-                    unsupported_fully_qualified_constant_name_message(),
-                ))
+                Ok(Expr::GlobalConstant {
+                    name: qualified,
+                    span: token.span,
+                })
             }
             TokenKind::Namespace if self.check(|kind| matches!(kind, TokenKind::Backslash)) => {
                 self.advance();

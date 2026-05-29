@@ -134,6 +134,7 @@ struct Interpreter {
     static_locals: HashMap<(String, String), Value>,
     active_static_locals: Vec<Vec<String>>,
     active_symbol_roots: Vec<SymbolStorage>,
+    active_function_call_arguments: Vec<ActiveFunctionCallArguments>,
     global_symbols: SymbolStorage,
     error_reporting_mask: i64,
     ignore_user_abort: bool,
@@ -8450,6 +8451,11 @@ struct CallFrameArgumentBindings {
     by_value_array_copy_bindings: Vec<(String, String, Vec<ArrayKey>)>,
 }
 
+#[derive(Debug, Clone, Default)]
+struct ActiveFunctionCallArguments {
+    cells: Vec<VariableCell>,
+}
+
 #[derive(Debug, Clone)]
 struct EvaluatedCallArgument {
     value: Value,
@@ -8756,6 +8762,7 @@ impl Interpreter {
             static_locals: HashMap::new(),
             active_static_locals: Vec::new(),
             active_symbol_roots: Vec::new(),
+            active_function_call_arguments: Vec::new(),
             global_symbols: Rc::new(RefCell::new(HashMap::new())),
             error_reporting_mask: PHP_E_ALL,
             ignore_user_abort: false,
@@ -52380,7 +52387,7 @@ impl Interpreter {
         if call_arguments_have_spread(args) {
             return Ok(());
         }
-        ensure_user_function_arity(function, args.len(), span)
+        ensure_user_function_arity_with_extra_policy(function, args.len(), span, true)
     }
 
     fn evaluate_positional_array_spread_call_values(
@@ -54560,11 +54567,21 @@ impl Interpreter {
             }
         }
 
+        let active_function_arguments = Self::active_function_call_arguments_for_func_get(
+            function,
+            &args,
+            &argument_keys,
+            &local_scope,
+        );
+
         self.call_depth += 1;
         self.active_static_locals.push(Vec::new());
         self.active_symbol_roots.push(local_scope.symbols.clone());
+        self.active_function_call_arguments
+            .push(active_function_arguments);
         let result =
             self.execute_reference_return_assignment_statements(function, &mut local_scope);
+        self.active_function_call_arguments.pop();
         let returned_value_copy_param_cell = match result.as_ref() {
             Ok(ReferenceReturnLocalBinding::ArrayOffset { root_name, keys })
                 if value_copy_reference_params
@@ -55381,11 +55398,17 @@ impl Interpreter {
             local_scope.write_static(&param.name, value);
         }
 
+        let active_function_arguments =
+            Self::active_function_call_arguments_for_func_get(function, &args, &[], &local_scope);
+
         self.call_depth += 1;
         self.active_static_locals.push(Vec::new());
         self.active_symbol_roots.push(local_scope.symbols.clone());
+        self.active_function_call_arguments
+            .push(active_function_arguments);
         let local_binding_result =
             self.execute_reference_return_assignment_statements(function, &mut local_scope);
+        self.active_function_call_arguments.pop();
         let result = local_binding_result.and_then(|binding| {
             self.reference_return_local_binding_cell(
                 function,
@@ -56932,7 +56955,7 @@ impl Interpreter {
         span: Span,
     ) -> CompileResult<Value> {
         let function = function.as_ref();
-        ensure_user_function_arity(function, args.len(), span)?;
+        ensure_user_function_arity_with_extra_policy(function, args.len(), span, true)?;
         ensure_supported_function_signature(function, args.len(), span)?;
         self.ensure_user_function_call_depth(function, span)?;
         self.call_user_function_with_checked_values(
@@ -59886,11 +59909,21 @@ impl Interpreter {
             }
         }
 
+        let active_function_arguments = Self::active_function_call_arguments_for_func_get(
+            function,
+            &args,
+            &argument_keys,
+            &local_scope,
+        );
+
         self.call_depth += 1;
         self.active_static_locals.push(Vec::new());
         self.active_symbol_roots.push(local_scope.symbols.clone());
+        self.active_function_call_arguments
+            .push(active_function_arguments);
         let flow =
             self.execute_statements_with_array_copy_return_source(&function.body, &mut local_scope);
+        self.active_function_call_arguments.pop();
         let writeback_result = if matches!(
             &flow,
             Ok((Flow::Normal, _)) | Ok((Flow::Return(_), _)) | Ok((Flow::Exit(_), _))
@@ -60060,6 +60093,106 @@ impl Interpreter {
             Flow::Exit(_) => Ok((Value::Null, None)),
             Flow::Goto { label, span } => Err(undefined_goto_label_error(span, &label)),
         }
+    }
+
+    fn active_function_call_arguments_for_func_get(
+        function: &FunctionDecl,
+        args: &[Value],
+        argument_keys: &[Option<ArrayKey>],
+        local_scope: &SymbolTable,
+    ) -> ActiveFunctionCallArguments {
+        let mut cells = Vec::new();
+
+        for (index, value) in args.iter().enumerate() {
+            let Some((_, param)) = Self::call_argument_param_for_index(function, index) else {
+                cells.push(value_cell(value.clone()));
+                continue;
+            };
+
+            if param.is_variadic {
+                if matches!(
+                    argument_keys.get(index).and_then(|key| key.as_ref()),
+                    Some(ArrayKey::String(_))
+                ) {
+                    continue;
+                }
+                cells.push(value_cell(value.clone()));
+                continue;
+            }
+
+            cells.push(
+                local_scope
+                    .read_cell(&param.name)
+                    .unwrap_or_else(|| value_cell(value.clone())),
+            );
+        }
+
+        ActiveFunctionCallArguments { cells }
+    }
+
+    fn active_func_get_frame(
+        &self,
+        callable: &str,
+        span: Span,
+    ) -> CompileResult<&ActiveFunctionCallArguments> {
+        self.active_function_call_arguments.last().ok_or_else(|| {
+            let message = match callable {
+                "func_num_args()" => {
+                    "func_num_args() must be called from a function context".to_string()
+                }
+                "func_get_arg()" | "func_get_args()" => {
+                    format!("{callable} cannot be called from the global scope")
+                }
+                _ => format!("{callable} cannot be called from the global scope"),
+            };
+            Diagnostic::new(Phase::Runtime, span.line, span.column, message)
+        })
+    }
+
+    fn call_func_num_args(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("func_num_args", args, 0, span)?;
+        let frame = self.active_func_get_frame("func_num_args()", span)?;
+        Ok(Value::Int(frame.cells.len() as i64))
+    }
+
+    fn call_func_get_args(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("func_get_args", args, 0, span)?;
+        let frame = self.active_func_get_frame("func_get_args()", span)?;
+        let mut array = PhpArray::new();
+        for cell in &frame.cells {
+            array
+                .append(cell.value_cloned())
+                .map_err(|error| runtime_error(span, error))?;
+        }
+        Ok(Value::Array(array))
+    }
+
+    fn call_func_get_arg(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("func_get_arg", args, 1, span)?;
+        let position =
+            integer_argument_current_subset("func_get_arg()", "position", &args[0], span)?;
+        if position < 0 {
+            return Err(Diagnostic::new(
+                Phase::Runtime,
+                span.line,
+                span.column,
+                "func_get_arg(): Argument #1 ($position) must be greater than or equal to 0",
+            ));
+        }
+
+        let frame = self.active_func_get_frame("func_get_arg()", span)?;
+        frame
+            .cells
+            .get(position as usize)
+            .map(|cell| cell.value_cloned())
+            .ok_or_else(|| {
+                Diagnostic::new(
+                    Phase::Runtime,
+                    span.line,
+                    span.column,
+                    "func_get_arg(): Argument #1 ($position) must be less than the number of the arguments passed to the currently executed function",
+                )
+            })
     }
 
     fn coerce_call_frame_values(
@@ -63967,6 +64100,9 @@ impl Interpreter {
             "printf" => self.call_printf(&args, span),
             "sprintf" => call_sprintf(&args, span),
             "vsprintf" => call_vsprintf(&args, span),
+            "func_num_args" => self.call_func_num_args(&args, span),
+            "func_get_args" => self.call_func_get_args(&args, span),
+            "func_get_arg" => self.call_func_get_arg(&args, span),
             "call_user_func" => self.call_user_func_builtin(args, span),
             "call_user_func_array" => self.call_user_func_array_builtin(args, span),
             "implode" => call_implode(&args, span),
@@ -75023,6 +75159,14 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
         return Some(("Error", error.message.clone()));
     }
 
+    if let Some((class_name, message)) = func_get_php_error_class_and_message(error) {
+        return Some((class_name, message));
+    }
+
+    if let Some(message) = user_function_too_few_arguments_message(error) {
+        return Some(("TypeError", message));
+    }
+
     if error.phase == Phase::Runtime {
         if error.message.starts_with("Non-static method ")
             && error.message.ends_with(" cannot be called statically")
@@ -75101,10 +75245,62 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
     None
 }
 
+fn func_get_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static str, String)> {
+    if error.phase != Phase::Runtime {
+        return None;
+    }
+
+    match error.message.as_str() {
+        "func_get_arg() cannot be called from the global scope"
+        | "func_get_args() cannot be called from the global scope"
+        | "func_num_args() must be called from a function context" => {
+            Some(("Error", error.message.clone()))
+        }
+        "func_get_arg(): Argument #1 ($position) must be greater than or equal to 0"
+        | "func_get_arg(): Argument #1 ($position) must be less than the number of the arguments passed to the currently executed function" => {
+            Some(("ValueError", error.message.clone()))
+        }
+        _ => None,
+    }
+}
+
+fn user_function_too_few_arguments_message(error: &Diagnostic) -> Option<String> {
+    if error.phase != Phase::Runtime {
+        return None;
+    }
+
+    let rest = error.message.strip_prefix("arity mismatch for ")?;
+    let (callable, expectation) = rest.split_once(": expected ")?;
+    let (expected, actual) = expectation.split_once(" argument(s), got ")?;
+    let expected = expected.parse::<usize>().ok()?;
+    let actual = actual.parse::<usize>().ok()?;
+    if actual >= expected {
+        return None;
+    }
+
+    let source = error
+        .file
+        .as_ref()
+        .map(|file| file.display().to_string())
+        .unwrap_or_else(|| "Command line code".to_string());
+    Some(format!(
+        "Too few arguments to function {callable}, {actual} passed in {source} on line {} and exactly {expected} expected",
+        error.line
+    ))
+}
+
 fn value_error_message(error: &Diagnostic) -> Option<String> {
     if error.phase != Phase::Runtime {
         return None;
     }
+    if matches!(
+        error.message.as_str(),
+        "func_get_arg(): Argument #1 ($position) must be greater than or equal to 0"
+            | "func_get_arg(): Argument #1 ($position) must be less than the number of the arguments passed to the currently executed function"
+    ) {
+        return Some(error.message.clone());
+    }
+
     let message = error
         .message
         .strip_prefix("unsupported call str_repeat(): ")?;
@@ -75351,6 +75547,9 @@ fn is_builtin(name: &str) -> bool {
             | "printf"
             | "sprintf"
             | "vsprintf"
+            | "func_num_args"
+            | "func_get_args"
+            | "func_get_arg"
             | "call_user_func"
             | "call_user_func_array"
             | "implode"

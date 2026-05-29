@@ -179,6 +179,90 @@ call_user_func("collect_call_unpack", ...[1, "a" => 2], b: 3);
 }
 
 #[test]
+fn direct_func_get_builtins_read_active_user_call_frame() {
+    let execution = run_source(
+        r#"<?php
+function fixed_frame($a = "A", $b = "B") {
+    $a = "changed";
+    echo func_num_args(), "|", implode(",", func_get_args()), "|", func_get_arg(0), "|", func_get_arg(1), "\n";
+}
+
+function variadic_frame($a, ...$rest) {
+    $a = "first";
+    $rest[0] = "mutated-rest";
+    echo func_num_args(), "|", implode(",", func_get_args()), "\n";
+}
+
+fixed_frame(b: "Bee");
+variadic_frame("A", "B", "C");
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "2|changed,Bee|changed|Bee\n3|first,B,C\n");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn func_get_builtins_cover_extra_args_global_errors_and_fq_constants() {
+    let execution = run_source(
+        r#"<?php
+function extra_frame($a) {
+    var_dump(func_num_args());
+    var_dump(func_get_args());
+    var_dump(func_get_arg(1));
+    try {
+        func_get_arg(3);
+    } catch (\Error $e) {
+        echo $e->getMessage(), \PHP_EOL;
+    }
+    try {
+        func_get_arg(-1);
+    } catch (\ValueError $e) {
+        echo $e->getMessage(), \PHP_EOL;
+    }
+}
+
+extra_frame(1, 2, 3);
+
+try {
+    func_get_args();
+} catch (\Error $e) {
+    echo $e->getMessage(), \PHP_EOL;
+}
+
+try {
+    func_num_args();
+} catch (\Error $e) {
+    echo $e->getMessage(), \PHP_EOL;
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "int(3)\n",
+            "array(3) {\n",
+            "  [0]=>\n",
+            "  int(1)\n",
+            "  [1]=>\n",
+            "  int(2)\n",
+            "  [2]=>\n",
+            "  int(3)\n",
+            "}\n",
+            "int(2)\n",
+            "func_get_arg(): Argument #1 ($position) must be less than the number of the arguments passed to the currently executed function\n",
+            "func_get_arg(): Argument #1 ($position) must be greater than or equal to 0\n",
+            "func_get_args() cannot be called from the global scope\n",
+            "func_num_args() must be called from a function context\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn forbidden_scope_introspection_builtins_report_dynamic_call_error() {
     let execution = run_source(
         r#"<?php
