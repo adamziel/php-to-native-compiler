@@ -189,10 +189,10 @@ and published here.
 - reviewer gate: phpc-32 completed current-head FINAL GO for p15
   typed-property startup diagnostics; artifacts:
   `/home/claude/supervised-php-compiler/state/workers/batch010-review-p15-typed-property-diagnostics-ccc66817-phpc32-20260529.{status.md,report.md,gates.log}`
-- critic gate: phpc-55 recorded prior exact-patch `SAFE-FOR-INTEGRATION` for
-  the same patch SHA on `73e6ef80`; the current-head reviewer refresh verified
-  that intervening public heads through `ccc66817` were source-equivalent for
-  this scope
+- critic gate: phpc-33 recorded current-head `SAFE-FOR-INTEGRATION` for the
+  same patch SHA on `ccc66817`, superseding an earlier routeability hold that
+  predated the durable current-head reviewer status; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/batch010-critic-p15-typed-property-diagnostics-ccc66817-phpc33-20260529.{status.md,report.md}`
 - supervisor focused gates: PASS for SHA verification, clean apply over
   `ccc66817`, `git diff --check`, docs/`PROGRESS.md`/examples exclusion,
   production exact-shape audit, consumed-scope audit, `cargo fmt`, focused
