@@ -31415,9 +31415,15 @@ impl PhpClassTable {
         classes
             .set_parent(type_error_id, error_id)
             .expect("TypeError should extend Error");
+        let argument_count_error_id = classes
+            .declare_class("ArgumentCountError")
+            .expect("core class table should contain TypeError before ArgumentCountError");
+        classes
+            .set_parent(argument_count_error_id, type_error_id)
+            .expect("ArgumentCountError should extend TypeError");
         let value_error_id = classes
             .declare_class("ValueError")
-            .expect("core class table should contain TypeError before ValueError");
+            .expect("core class table should contain ArgumentCountError before ValueError");
         classes
             .set_parent(value_error_id, error_id)
             .expect("ValueError should extend Error");

@@ -547,49 +547,10 @@ impl<'a> Lexer<'a> {
                     continue;
                 }
 
-                let escaped = match self.peek() {
-                    Some('n') => {
-                        self.advance();
-                        '\n'
-                    }
-                    Some('r') => {
-                        self.advance();
-                        '\r'
-                    }
-                    Some('t') => {
-                        self.advance();
-                        '\t'
-                    }
-                    Some('x') => {
-                        self.advance();
-                        self.consume_hex_escape_byte()
-                            .map(char::from)
-                            .unwrap_or('x')
-                    }
-                    Some('0'..='7') => char::from(self.consume_octal_escape_byte()),
-                    Some('\\') => {
-                        self.advance();
-                        '\\'
-                    }
-                    Some('\'') => {
-                        self.advance();
-                        '\''
-                    }
-                    Some('"') => {
-                        self.advance();
-                        '"'
-                    }
-                    Some('$') => {
-                        self.advance();
-                        '$'
-                    }
-                    Some(other) => {
-                        self.advance();
-                        other
-                    }
-                    None => return Err(self.error_at(span, "unterminated string literal")),
+                let Some(escaped) = self.peek() else {
+                    return Err(self.error_at(span, "unterminated string literal"));
                 };
-                value.push(escaped);
+                self.push_escaped_double_quoted_char(&mut value, escaped, true);
                 continue;
             }
 
@@ -711,7 +672,7 @@ impl<'a> Lexer<'a> {
                 let Some(escaped) = self.peek() else {
                     return Err(self.error_at(span, "unterminated heredoc string literal"));
                 };
-                value.push(self.advance_escaped_string_char(escaped));
+                self.push_escaped_double_quoted_char(&mut value, escaped, false);
                 continue;
             }
 
@@ -778,7 +739,7 @@ impl<'a> Lexer<'a> {
         let start = self.byte_index() + label.len();
         matches!(
             self.source[start..].chars().next(),
-            None | Some(';' | '\r' | '\n')
+            None | Some(';' | ',' | ')' | ']' | '\r' | '\n')
         )
     }
 
@@ -942,6 +903,56 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    fn push_escaped_double_quoted_char(
+        &mut self,
+        value: &mut String,
+        escaped: char,
+        recognize_quote: bool,
+    ) {
+        match escaped {
+            'n' => {
+                self.advance();
+                value.push('\n');
+            }
+            'r' => {
+                self.advance();
+                value.push('\r');
+            }
+            't' => {
+                self.advance();
+                value.push('\t');
+            }
+            'x' if self
+                .chars
+                .get(self.index + 1)
+                .is_some_and(|ch| ch.is_ascii_hexdigit()) =>
+            {
+                self.advance();
+                if let Some(byte) = self.consume_hex_escape_byte() {
+                    value.push(char::from(byte));
+                }
+            }
+            '0'..='7' => value.push(char::from(self.consume_octal_escape_byte())),
+            '\\' => {
+                self.advance();
+                value.push('\\');
+            }
+            '$' => {
+                self.advance();
+                value.push('$');
+            }
+            '"' if recognize_quote => {
+                self.advance();
+                value.push('"');
+            }
+            other => {
+                self.advance();
+                value.push('\\');
+                value.push(other);
+            }
+        }
+    }
+
     fn consume_hex_escape_byte(&mut self) -> Option<u8> {
         let mut value = 0u8;
         let mut digits = 0;
@@ -1012,11 +1023,40 @@ impl<'a> Lexer<'a> {
             text.push(self.advance());
         }
 
+        let mut is_float = false;
         if self.peek() == Some('.') && matches!(self.peek_next(), Some('0'..='9')) {
+            is_float = true;
             text.push(self.advance());
             while matches!(self.peek(), Some('0'..='9')) {
                 text.push(self.advance());
             }
+        }
+
+        if self.peek().is_some_and(|ch| matches!(ch, 'e' | 'E'))
+            && (self
+                .chars
+                .get(self.index + 1)
+                .is_some_and(|ch| ch.is_ascii_digit())
+                || (self
+                    .chars
+                    .get(self.index + 1)
+                    .is_some_and(|ch| matches!(*ch, '+' | '-'))
+                    && self
+                        .chars
+                        .get(self.index + 2)
+                        .is_some_and(|ch| ch.is_ascii_digit())))
+        {
+            is_float = true;
+            text.push(self.advance());
+            if self.peek().is_some_and(|ch| matches!(ch, '+' | '-')) {
+                text.push(self.advance());
+            }
+            while matches!(self.peek(), Some('0'..='9')) {
+                text.push(self.advance());
+            }
+        }
+
+        if is_float {
             let value = text
                 .parse::<f64>()
                 .map_err(|_| self.error_at(span, format!("invalid float literal '{text}'")))?;

@@ -65218,6 +65218,7 @@ impl Interpreter {
             "bin2hex" => call_bin2hex(&args, span),
             "str_repeat" => call_str_repeat(&args, span),
             "str_pad" => call_str_pad(&args, span),
+            "chunk_split" => call_chunk_split(&args, span),
             "strtolower" => call_strtolower(&args, span),
             "trim" => call_trim(&args, span),
             "ltrim" => call_ltrim(&args, span),
@@ -75447,6 +75448,14 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_optional_int_param("pad_type", PHP_STR_PAD_RIGHT),
             ],
         ),
+        "chunk_split" => (
+            "string",
+            vec![
+                reflection_internal_param("string", "string"),
+                reflection_internal_optional_int_param("length", 76),
+                reflection_internal_optional_string_param("separator", "\r\n"),
+            ],
+        ),
         "strtolower" => (
             "string",
             vec![reflection_internal_param("string", "string")],
@@ -77085,6 +77094,10 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
         return Some((class_name, message));
     }
 
+    if let Some(message) = chunk_split_argument_count_error_message(error) {
+        return Some(("ArgumentCountError", message));
+    }
+
     if let Some(message) = user_function_too_few_arguments_message(error) {
         return Some(("TypeError", message));
     }
@@ -77186,6 +77199,30 @@ fn func_get_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static 
     }
 }
 
+fn chunk_split_argument_count_error_message(error: &Diagnostic) -> Option<String> {
+    if error.phase != Phase::Runtime {
+        return None;
+    }
+
+    let actual = error
+        .message
+        .strip_prefix("arity mismatch for chunk_split(): expected 1 to 3 argument(s), got ")?
+        .parse::<usize>()
+        .ok()?;
+
+    if actual < 1 {
+        Some(format!(
+            "chunk_split() expects at least 1 argument, {actual} given"
+        ))
+    } else if actual > 3 {
+        Some(format!(
+            "chunk_split() expects at most 3 arguments, {actual} given"
+        ))
+    } else {
+        None
+    }
+}
+
 fn user_function_too_few_arguments_message(error: &Diagnostic) -> Option<String> {
     if error.phase != Phase::Runtime {
         return None;
@@ -77226,7 +77263,8 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
     let unsupported = error.message.strip_prefix("unsupported call ")?;
     let (function, message) = unsupported.split_once(": ")?;
     match (function, message) {
-        ("str_repeat()", "Argument #2 ($times) must be greater than or equal to 0") => {
+        ("str_repeat()", "Argument #2 ($times) must be greater than or equal to 0")
+        | ("chunk_split()", "Argument #2 ($length) must be greater than 0") => {
             Some(format!("{function}: {message}"))
         }
         (
@@ -77249,11 +77287,13 @@ fn fatal_memory_error_message(error: &Diagnostic) -> Option<String> {
     if error.phase != Phase::Runtime {
         return None;
     }
-    error
+    let (_, message) = error
         .message
-        .strip_prefix("unsupported call str_pad(): ")
-        .filter(|message| message.starts_with("Allowed memory size of "))
-        .map(str::to_string)
+        .strip_prefix("unsupported call ")?
+        .split_once(": ")?;
+    message
+        .starts_with("Allowed memory size of ")
+        .then(|| message.to_string())
 }
 
 fn typed_property_reference_type_error_message(error: &Diagnostic) -> Option<String> {
@@ -77466,6 +77506,7 @@ fn is_builtin(name: &str) -> bool {
             | "bin2hex"
             | "str_repeat"
             | "str_pad"
+            | "chunk_split"
             | "strtolower"
             | "trim"
             | "ltrim"
@@ -78124,6 +78165,7 @@ const PHP_STR_PAD_LEFT: i64 = 0;
 const PHP_STR_PAD_RIGHT: i64 = 1;
 const PHP_STR_PAD_BOTH: i64 = 2;
 const PHP_STR_PAD_MEMORY_LIMIT_BYTES: usize = 128 * 1024 * 1024;
+const PHP_STANDARD_STRING_MEMORY_LIMIT_BYTES: usize = 128 * 1024 * 1024;
 const PHP_SETLOCALE_MAX_LOCALE_NAME_BYTES: usize = 255;
 const PHP_LC_CTYPE: i64 = 0;
 const PHP_LC_NUMERIC: i64 = 1;
@@ -83612,12 +83654,12 @@ fn call_str_repeat(args: &[Value], span: Span) -> CompileResult<Value> {
             ),
         )
     })?;
-    if output_len > 16 * 1024 * 1024 {
+    if output_len > PHP_STANDARD_STRING_MEMORY_LIMIT_BYTES {
         return Err(runtime_error(
             span,
             RuntimeError::unsupported_call(
                 "str_repeat()",
-                "result length above 16MiB is not supported in the current subset",
+                "result length above the standard string memory limit is not supported in the current subset",
             ),
         ));
     }
@@ -83735,6 +83777,112 @@ fn call_str_pad(args: &[Value], span: Span) -> CompileResult<Value> {
     output.extend_from_slice(&repeated_pad_bytes(&pad, left_len));
     output.extend_from_slice(&value);
     output.extend_from_slice(&repeated_pad_bytes(&pad, right_len));
+
+    Ok(interpreter_value_from_php_string_bytes(output))
+}
+
+fn call_chunk_split(args: &[Value], span: Span) -> CompileResult<Value> {
+    if !(1..=3).contains(&args.len()) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "chunk_split()",
+                ArityExpectation::Between { min: 1, max: 3 },
+                args.len(),
+            ),
+        ));
+    }
+
+    if matches!(args[0], Value::Array(_)) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "chunk_split()",
+                "string argument arrays are not supported",
+            ),
+        ));
+    }
+
+    let value = args[0]
+        .try_echo_bytes()
+        .map_err(|error| runtime_error(span, error))?;
+    let chunk_len = match args.get(1) {
+        Some(length) => php_internal_int_argument("chunk_split()", 2, "length", length, span)?,
+        None => 76,
+    };
+    if chunk_len < 1 {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "chunk_split()",
+                "Argument #2 ($length) must be greater than 0",
+            ),
+        ));
+    }
+
+    let separator = if let Some(separator) = args.get(2) {
+        if matches!(separator, Value::Array(_)) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "chunk_split()",
+                    "separator argument arrays are not supported",
+                ),
+            ));
+        }
+        separator
+            .try_echo_bytes()
+            .map_err(|error| runtime_error(span, error))?
+    } else {
+        b"\r\n".to_vec()
+    };
+
+    let chunk_len = chunk_len as usize;
+    let chunk_count = if value.is_empty() {
+        1
+    } else {
+        value.len().div_ceil(chunk_len)
+    };
+    let separator_bytes = separator.len().checked_mul(chunk_count).ok_or_else(|| {
+        runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "chunk_split()",
+                "result length overflows the current subset",
+            ),
+        )
+    })?;
+    let output_len = value.len().checked_add(separator_bytes).ok_or_else(|| {
+        runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "chunk_split()",
+                "result length overflows the current subset",
+            ),
+        )
+    })?;
+    if output_len > PHP_STANDARD_STRING_MEMORY_LIMIT_BYTES {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "chunk_split()",
+                format!(
+                    "Allowed memory size of {} bytes exhausted (tried to allocate {} bytes)",
+                    PHP_STANDARD_STRING_MEMORY_LIMIT_BYTES, output_len
+                ),
+            ),
+        ));
+    }
+
+    let mut output = Vec::with_capacity(output_len);
+    if value.is_empty() {
+        output.extend_from_slice(&separator);
+    } else {
+        for chunk in value.chunks(chunk_len) {
+            output.extend_from_slice(chunk);
+            output.extend_from_slice(&separator);
+        }
+    }
 
     Ok(interpreter_value_from_php_string_bytes(output))
 }

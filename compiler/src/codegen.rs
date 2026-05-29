@@ -66195,6 +66195,7 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "bin2hex",
     "str_repeat",
     "str_pad",
+    "chunk_split",
     "strtolower",
     "trim",
     "ltrim",
