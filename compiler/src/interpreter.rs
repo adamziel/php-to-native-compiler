@@ -70909,14 +70909,18 @@ impl Interpreter {
                     ));
                 }
                 let value = args[0]
-                    .try_echo_string()
+                    .try_echo_bytes()
                     .map_err(|error| runtime_error(span, error))?;
-                Ok(Value::Int(value.as_bytes().len() as i64))
+                Ok(Value::Int(value.len() as i64))
             }
             "chr" => self.call_chr(&args, span),
             "bin2hex" => call_bin2hex(&args, span),
             "hex2bin" => self.call_hex2bin(&args, span),
             "ord" => self.call_ord(&args, span),
+            "crc32" => call_crc32(&args, span),
+            "levenshtein" => call_levenshtein(&args, span),
+            "soundex" => call_soundex(&args, span),
+            "count_chars" => call_count_chars(&args, span),
             "strrev" => call_strrev(&args, span),
             "str_rot13" => call_str_rot13(&args, span),
             "ucfirst" => call_ucfirst(&args, span),
@@ -82520,6 +82524,28 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
             "int",
             vec![reflection_internal_param("character", "string")],
         ),
+        "crc32" => ("int", vec![reflection_internal_param("string", "string")]),
+        "levenshtein" => (
+            "int",
+            vec![
+                reflection_internal_param("string1", "string"),
+                reflection_internal_param("string2", "string"),
+                reflection_internal_optional_int_param("insertion_cost", 1),
+                reflection_internal_optional_int_param("replacement_cost", 1),
+                reflection_internal_optional_int_param("deletion_cost", 1),
+            ],
+        ),
+        "soundex" => (
+            "string",
+            vec![reflection_internal_param("string", "string")],
+        ),
+        "count_chars" => (
+            "array|string",
+            vec![
+                reflection_internal_param("string", "string"),
+                reflection_internal_optional_int_param("mode", 0),
+            ],
+        ),
         "strrev" | "str_rot13" | "ucfirst" | "lcfirst" | "quotemeta" => (
             "string",
             vec![reflection_internal_param("string", "string")],
@@ -84943,6 +84969,7 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
         | ("str_split()", "Argument #2 ($length) must be greater than 0")
         | ("strncmp()", "Argument #3 ($length) must be greater than or equal to 0")
         | ("strncasecmp()", "Argument #3 ($length) must be greater than or equal to 0")
+        | ("count_chars()", "Argument #2 ($mode) must be between 0 and 4 (inclusive)")
         | ("ftruncate()", "Argument #2 ($size) must be greater than or equal to 0")
         | ("stripos()", "Argument #3 ($offset) must be contained in argument #1 ($haystack)")
         | ("strrpos()", "Argument #3 ($offset) must be contained in argument #1 ($haystack)")
@@ -85284,6 +85311,10 @@ fn is_builtin(name: &str) -> bool {
             | "bin2hex"
             | "hex2bin"
             | "ord"
+            | "crc32"
+            | "levenshtein"
+            | "soundex"
+            | "count_chars"
             | "strrev"
             | "str_rot13"
             | "ucfirst"
@@ -92199,6 +92230,254 @@ fn call_str_rot13(args: &[Value], span: Span) -> CompileResult<Value> {
         };
     }
     Ok(interpreter_value_from_php_string_bytes(value))
+}
+
+fn call_crc32(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("crc32", args, 1, span)?;
+
+    let value = string_compare_argument_bytes("crc32()", "string", &args[0], span)?;
+    Ok(Value::Int(php_crc32_bytes(&value)))
+}
+
+fn php_crc32_bytes(bytes: &[u8]) -> i64 {
+    let mut crc = 0xffff_ffffu32;
+    for byte in bytes {
+        crc ^= u32::from(*byte);
+        for _ in 0..8 {
+            crc = if crc & 1 == 0 {
+                crc >> 1
+            } else {
+                (crc >> 1) ^ 0xedb8_8320
+            };
+        }
+    }
+    i64::from(!crc)
+}
+
+fn call_levenshtein(args: &[Value], span: Span) -> CompileResult<Value> {
+    if !(2..=5).contains(&args.len()) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "levenshtein()",
+                ArityExpectation::Between { min: 2, max: 5 },
+                args.len(),
+            ),
+        ));
+    }
+
+    let left = string_compare_argument_bytes("levenshtein()", "string1", &args[0], span)?;
+    let right = string_compare_argument_bytes("levenshtein()", "string2", &args[1], span)?;
+    let insertion_cost = match args.get(2) {
+        Some(value) => {
+            php_internal_int_argument("levenshtein()", 3, "insertion_cost", value, span)?
+        }
+        None => 1,
+    };
+    let replacement_cost = match args.get(3) {
+        Some(value) => {
+            php_internal_int_argument("levenshtein()", 4, "replacement_cost", value, span)?
+        }
+        None => 1,
+    };
+    let deletion_cost = match args.get(4) {
+        Some(value) => php_internal_int_argument("levenshtein()", 5, "deletion_cost", value, span)?,
+        None => 1,
+    };
+
+    let distance = php_levenshtein_bytes(
+        &left,
+        &right,
+        insertion_cost,
+        replacement_cost,
+        deletion_cost,
+        span,
+    )?;
+    Ok(Value::Int(distance))
+}
+
+fn php_levenshtein_bytes(
+    left: &[u8],
+    right: &[u8],
+    insertion_cost: i64,
+    replacement_cost: i64,
+    deletion_cost: i64,
+    span: Span,
+) -> CompileResult<i64> {
+    let insertion_cost = i128::from(insertion_cost);
+    let replacement_cost = i128::from(replacement_cost);
+    let deletion_cost = i128::from(deletion_cost);
+
+    let mut previous = Vec::with_capacity(right.len() + 1);
+    let mut current = Vec::with_capacity(right.len() + 1);
+    previous.push(0_i128);
+    for index in 1..=right.len() {
+        previous.push(checked_levenshtein_add(
+            previous[index - 1],
+            insertion_cost,
+            span,
+        )?);
+    }
+
+    for (left_index, left_byte) in left.iter().enumerate() {
+        current.clear();
+        current.push(checked_levenshtein_mul(
+            i128::try_from(left_index + 1).unwrap_or(i128::MAX),
+            deletion_cost,
+            span,
+        )?);
+
+        for (right_index, right_byte) in right.iter().enumerate() {
+            let insert = checked_levenshtein_add(current[right_index], insertion_cost, span)?;
+            let delete = checked_levenshtein_add(previous[right_index + 1], deletion_cost, span)?;
+            let replace = checked_levenshtein_add(
+                previous[right_index],
+                if left_byte == right_byte {
+                    0
+                } else {
+                    replacement_cost
+                },
+                span,
+            )?;
+            current.push(insert.min(delete).min(replace));
+        }
+
+        std::mem::swap(&mut previous, &mut current);
+    }
+
+    i64::try_from(previous[right.len()]).map_err(|_| levenshtein_overflow(span))
+}
+
+fn checked_levenshtein_add(left: i128, right: i128, span: Span) -> CompileResult<i128> {
+    left.checked_add(right)
+        .ok_or_else(|| levenshtein_overflow(span))
+}
+
+fn checked_levenshtein_mul(left: i128, right: i128, span: Span) -> CompileResult<i128> {
+    left.checked_mul(right)
+        .ok_or_else(|| levenshtein_overflow(span))
+}
+
+fn levenshtein_overflow(span: Span) -> Diagnostic {
+    runtime_error(
+        span,
+        RuntimeError::unsupported_call(
+            "levenshtein()",
+            "distance overflowed the current integer subset",
+        ),
+    )
+}
+
+fn call_soundex(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("soundex", args, 1, span)?;
+
+    let value = string_compare_argument_bytes("soundex()", "string", &args[0], span)?;
+    Ok(Value::String(php_soundex_bytes(&value)))
+}
+
+fn php_soundex_bytes(bytes: &[u8]) -> String {
+    let mut letters = bytes.iter().copied().filter(u8::is_ascii_alphabetic);
+    let Some(first) = letters.next() else {
+        return "0000".to_string();
+    };
+
+    let first = first.to_ascii_uppercase();
+    let mut output = String::with_capacity(4);
+    output.push(first as char);
+    let mut previous = php_soundex_code(first);
+
+    for byte in letters {
+        let code = php_soundex_code(byte.to_ascii_uppercase());
+        match code {
+            0 => previous = 0,
+            7 => {}
+            value if value != previous => {
+                output.push((b'0' + value) as char);
+                previous = value;
+                if output.len() == 4 {
+                    return output;
+                }
+            }
+            value => previous = value,
+        }
+    }
+
+    while output.len() < 4 {
+        output.push('0');
+    }
+    output
+}
+
+fn php_soundex_code(byte: u8) -> u8 {
+    match byte {
+        b'B' | b'F' | b'P' | b'V' => 1,
+        b'C' | b'G' | b'J' | b'K' | b'Q' | b'S' | b'X' | b'Z' => 2,
+        b'D' | b'T' => 3,
+        b'L' => 4,
+        b'M' | b'N' => 5,
+        b'R' => 6,
+        b'H' | b'W' => 7,
+        _ => 0,
+    }
+}
+
+fn call_count_chars(args: &[Value], span: Span) -> CompileResult<Value> {
+    if !(1..=2).contains(&args.len()) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "count_chars()",
+                ArityExpectation::Between { min: 1, max: 2 },
+                args.len(),
+            ),
+        ));
+    }
+
+    let value = string_compare_argument_bytes("count_chars()", "string", &args[0], span)?;
+    let mode = match args.get(1) {
+        Some(value) => php_internal_int_argument("count_chars()", 2, "mode", value, span)?,
+        None => 0,
+    };
+    if !(0..=4).contains(&mode) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "count_chars()",
+                "Argument #2 ($mode) must be between 0 and 4 (inclusive)",
+            ),
+        ));
+    }
+
+    let mut counts = [0_i64; 256];
+    for byte in value {
+        counts[byte as usize] += 1;
+    }
+
+    match mode {
+        0 | 1 | 2 => {
+            let mut array = PhpArray::new();
+            for (index, count) in counts.iter().copied().enumerate() {
+                if mode == 1 && count == 0 {
+                    continue;
+                }
+                if mode == 2 && count != 0 {
+                    continue;
+                }
+                array.insert(ArrayKey::Int(index as i64), Value::Int(count));
+            }
+            Ok(Value::Array(array))
+        }
+        3 | 4 => {
+            let mut output = Vec::new();
+            for (index, count) in counts.iter().copied().enumerate() {
+                if (mode == 3 && count != 0) || (mode == 4 && count == 0) {
+                    output.push(index as u8);
+                }
+            }
+            Ok(interpreter_value_from_php_string_bytes(output))
+        }
+        _ => unreachable!("count_chars mode already validated"),
+    }
 }
 
 fn call_ucfirst(args: &[Value], span: Span) -> CompileResult<Value> {
