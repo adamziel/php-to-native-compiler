@@ -1755,6 +1755,58 @@ echo $bag[0];
 }
 
 #[test]
+fn array_access_and_isset_undefined_offsets_keep_warning_without_null_offset_deprecation() {
+    let source = r#"<?php
+class Bag implements ArrayAccess {
+    #[ReturnTypeWillChange]
+    public function offsetExists($offset) {
+        echo "exists:" . ($offset === null ? "null" : $offset) . "\n";
+        return false;
+    }
+
+    #[ReturnTypeWillChange]
+    public function offsetGet($offset) {
+        return null;
+    }
+
+    #[ReturnTypeWillChange]
+    public function offsetSet($offset, $value) {
+        echo "set:" . ($offset === null ? "null" : $offset) . ":$value\n";
+    }
+
+    #[ReturnTypeWillChange]
+    public function offsetUnset($offset) {}
+}
+
+$bag = new Bag();
+$bag[$undef] = 1;
+var_dump(isset($array[$missing]));
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert!(execution
+        .stdout
+        .contains("Warning: Undefined variable $undef"));
+    assert!(execution
+        .stdout
+        .contains("Warning: Undefined variable $missing"));
+    assert!(
+        !execution
+            .stdout
+            .contains("Using null as an array offset is deprecated"),
+        "{}",
+        execution.stdout
+    );
+    assert!(execution.stdout.contains("set::1"), "{}", execution.stdout);
+    assert!(
+        execution.stdout.ends_with("bool(false)\n"),
+        "{}",
+        execution.stdout
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn array_access_offsets_support_compound_assignment() {
     let source = r#"<?php
 class Bag implements ArrayAccess {

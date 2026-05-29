@@ -28118,7 +28118,15 @@ impl Interpreter {
                         return Ok(value);
                     }
                 }
+                let suppress_null_offset_deprecation =
+                    scope.read_named_object(name).is_some_and(|object| {
+                        self.classes
+                            .implements_interface(object.class_id(), "ArrayAccess")
+                    });
                 let key = match index {
+                    Some(index) if suppress_null_offset_deprecation => {
+                        Some(self.evaluate_array_key_without_null_offset_deprecation(index, scope)?)
+                    }
                     Some(index) => Some(self.evaluate_array_key(index, scope)?),
                     None => None,
                 };
@@ -49987,6 +49995,23 @@ impl Interpreter {
         expr: &Expr,
         scope: &mut SymbolTable,
     ) -> CompileResult<ArrayKey> {
+        self.evaluate_array_key_with_null_offset_deprecation(expr, scope, true)
+    }
+
+    fn evaluate_array_key_without_null_offset_deprecation(
+        &mut self,
+        expr: &Expr,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<ArrayKey> {
+        self.evaluate_array_key_with_null_offset_deprecation(expr, scope, false)
+    }
+
+    fn evaluate_array_key_with_null_offset_deprecation(
+        &mut self,
+        expr: &Expr,
+        scope: &mut SymbolTable,
+        emit_null_offset_deprecation: bool,
+    ) -> CompileResult<ArrayKey> {
         let key = self.evaluate(expr, scope)?;
         if let Value::Resource(id) = &key {
             self.emit_display_warning(
@@ -49995,7 +50020,7 @@ impl Interpreter {
             )?;
             return Ok(ArrayKey::Int(*id));
         }
-        if matches!(key, Value::Null) {
+        if emit_null_offset_deprecation && matches!(key, Value::Null) {
             self.emit_display_diagnostic(
                 "Deprecated",
                 PHP_E_DEPRECATED,
@@ -79672,12 +79697,8 @@ impl Interpreter {
                     return self.call_array_map_array_callable_with_values(&callback, args, span);
                 }
 
-                if forbidden_dynamic_builtin_call_error(callback_name, span).is_some() {
-                    return Err(Self::invalid_callback_error(
-                        "array_map()",
-                        format!("function \"{callback_name}\" not found or invalid function name"),
-                        span,
-                    ));
+                if let Some(error) = forbidden_dynamic_builtin_call_error(callback_name, span) {
+                    return Err(error);
                 }
                 let callable = self.lookup_function(callback_name).ok_or_else(|| {
                     Self::invalid_callback_error(
@@ -80314,7 +80335,9 @@ impl Interpreter {
             }
             let mut keys = Vec::with_capacity(indices.len());
             for index in indices {
-                keys.push(self.evaluate_array_key(index, caller_scope)?);
+                keys.push(
+                    self.evaluate_array_key_without_null_offset_deprecation(index, caller_scope)?,
+                );
             }
 
             if name == "GLOBALS" {
@@ -80371,7 +80394,9 @@ impl Interpreter {
 
         let mut keys = Vec::with_capacity(indices.len());
         for index in indices {
-            keys.push(self.evaluate_array_key(index, caller_scope)?);
+            keys.push(
+                self.evaluate_array_key_without_null_offset_deprecation(index, caller_scope)?,
+            );
         }
 
         let Some(Value::Object(object)) = caller_scope.read_named(&object_name) else {
@@ -80901,7 +80926,9 @@ impl Interpreter {
             }
             let mut keys = Vec::with_capacity(indices.len());
             for index in indices {
-                keys.push(self.evaluate_array_key(index, caller_scope)?);
+                keys.push(
+                    self.evaluate_array_key_without_null_offset_deprecation(index, caller_scope)?,
+                );
             }
 
             return match caller_scope.read_named(name) {
@@ -80942,7 +80969,9 @@ impl Interpreter {
 
         let mut keys = Vec::with_capacity(indices.len());
         for index in indices {
-            keys.push(self.evaluate_array_key(index, caller_scope)?);
+            keys.push(
+                self.evaluate_array_key_without_null_offset_deprecation(index, caller_scope)?,
+            );
         }
 
         let Some(Value::Object(object)) = caller_scope.read_named(&object_name) else {
@@ -112954,8 +112983,8 @@ fn format_var_dump_float(value: f64) -> String {
         "INF".to_string()
     } else if value == f64::NEG_INFINITY {
         "-INF".to_string()
-    } else if value != 0.0 && !(1e-4..1e14).contains(&value.abs()) {
-        normalize_sprintf_exponent(trim_scientific_float(format!("{value:.16E}")))
+    } else if value != 0.0 && !(1e-4..1e17).contains(&value.abs()) {
+        normalize_sprintf_exponent(trim_scientific_float(format!("{value:E}")))
     } else {
         value.to_string()
     }
@@ -113061,6 +113090,22 @@ fn format_var_dump_object_property(property: &ObjectProperty) -> String {
 mod tests {
     use super::*;
     use crate::error::Phase;
+
+    #[test]
+    fn format_var_dump_float_uses_php_serialize_precision_cutoffs() {
+        assert_eq!(
+            format_var_dump_float(-99999999.9 * 99999999.1),
+            "-9999999900000000"
+        );
+        assert_eq!(format_var_dump_float(100000000000000.0), "100000000000000");
+        assert_eq!(
+            format_var_dump_float(99999999999999980.0),
+            "99999999999999980"
+        );
+        assert_eq!(format_var_dump_float(1.0e17), "1.0E+17");
+        assert_eq!(format_var_dump_float(1.0e-5), "1.0E-5");
+        assert_eq!(format_var_dump_float(0.0001), "0.0001");
+    }
 
     #[test]
     fn symbol_table_static_reads_and_writes_use_named_storage() {
