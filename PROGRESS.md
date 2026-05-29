@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-29 19:19 CEST
+Updated: 2026-05-29 19:33 CEST
 Primary branch: `master`
-Latest source head: `0bec6ea4 fix: add SPL doubly linked list support`
+Latest source head: `53de9d2b fix: add strip tags and membership semantics`
 
 ## Progress Score
 
@@ -27,9 +27,12 @@ rows. Batch013 checkpoint4 source `a2c62479` is integrated with a focused p7
 HTML entity string builtins proof covering 10 direct PHPT rows. Batch013
 checkpoint5 source `0bec6ea4` is integrated with a focused p50 SPL
 `SplDoublyLinkedList` / `SplQueue` / `SplStack` proof covering 22 direct PHPT
-rows. Batch013 source progress is now 5 / 10 checkpoints and +71 expected
-direct rows. The public percentage is unchanged until the next pinned
-full-suite publication gate.
+rows. Batch013 checkpoint6 source `53de9d2b` is integrated with a focused p42
+`strip_tags()` proof covering 11 direct PHPT rows, and checkpoint7 source
+`53de9d2b` is integrated with a focused p31 `in_array()` / `array_search()`
+membership proof covering 14 direct PHPT rows. Batch013 source progress is now
+7 / 10 checkpoints and +96 expected direct rows. The public percentage is
+unchanged until the next pinned full-suite publication gate.
 
 No other percentage is public project progress. Focused PHPT passes, source
 checkpoints, PRs, and docs/status edits are evidence for the next batch, but
@@ -228,7 +231,7 @@ stable pinned denominator and does not use the raw runner
 | Batch011 burst1 sharded gate | Done | 2741 / 20294 pinned runnable PHPTs passed (13.51%); 0 regressions from the Batch010 checkpoint10 repaired PASS set; run id `phpt-full-batch011-burst1-publication-sharded-20260529T122703Z-php-src-f97ff59-public-c956a1c0-source-cb2064dc` |
 | Batch012 source batch | Published | Checkpoint1 is p31 dynamic-call/reference focused source proof (+13 expected direct rows), committed as `75833ad5`; checkpoint2 is p66/p39 ReflectionExtension / ReflectionZendExtension metadata focused source proof (+13 expected direct rows), committed as `376ad126`; checkpoint3 is p42 `array_fill()` / `array_diff_assoc()` / `array_intersect_assoc()` focused source proof (+15 expected direct rows), committed as `5d1a84be`; checkpoint4 is p15 type declaration diagnostics focused source proof (+20 expected direct rows), committed as `f325b200`; checkpoint5 is p63 string algorithm builtins focused source proof (+11 expected direct rows), committed as `78de5a1e`; checkpoint6 is p31 user comparator sort focused source proof (+17 expected direct rows), committed as `59292a26`; checkpoint7 is p43 directory/glob builtins focused source proof (+10 expected direct rows), committed as `661b4f5c`; checkpoint8 is p31 array user-comparison builtins focused source proof (+19 expected direct rows), committed as `007075de`; checkpoint9 is p31 `array_walk()` / `array_walk_recursive()` focused source proof (+19 expected direct rows), committed as `7fd908ba`; checkpoint10 is p42 array-key coercion focused source proof (+20 expected direct rows), committed as `2f69a24d`; Batch012 is 10 / 10 checkpoints and +157 expected direct rows. The initial checkpoint10 gate candidate was blocked by four dynamic/indirect-call PASS regressions, then source `f1bd55bf` repaired them. |
 | Batch012 dynamic-call repair sharded gate | Done | 2945 / 20294 pinned runnable PHPTs passed (14.51%); 0 regressions from the Batch011 PASS set; run id `phpt-full-batch012-dynamic-repair-publication-sharded-20260529T154830Z-php-src-f97ff59-public-c5e560c4-source-f1bd55bf` |
-| Batch013 source batch | Started | Checkpoint1 is p43 stream-resource residual focused source proof (+16 expected direct rows), committed as `e2291ae0`; primary proof passed `cargo fmt --check --all`, `cargo test -p phpc --test stream_resource_builtin` (25/25), `cargo check -p phpc`, `cargo build -p phpc --bin phpc`, and focused lowercase `-p` PHPT 16/16. Checkpoint2 is p42 `explode()` / `implode()` / `join()` focused source proof (+12 expected direct rows), committed as `9ad49e1d`; primary proof passed `cargo fmt --check --all`, `cargo test -p phpc --test explode_join_builtin` (2/2), `cargo check -p phpc`, `cargo build -p phpc --bin phpc`, and focused lowercase `-p` PHPT 12/12. Checkpoint3 is p39 ReflectionObject focused source proof (+11 expected direct rows), committed as `d2c258a9`; primary proof passed `cargo fmt --check --all`, `cargo test -p phpc --test object_model reflection_object_reflects_object_instances_as_reflection_class_subtype`, `cargo check -p phpc`, `cargo build -p phpc --bin phpc`, and focused lowercase `-p` PHPT 11/11. Checkpoint4 is p7 HTML entity string builtins focused source proof (+10 expected direct rows), committed as `a2c62479`; primary proof passed `cargo fmt --check --all`, `cargo test -p phpc --test html_entity_builtins` (4/4), `cargo check -p phpc`, `cargo build -p phpc --bin phpc`, and focused lowercase `-p` PHPT 10/10. Checkpoint5 is p50 SPL `SplDoublyLinkedList` / `SplQueue` / `SplStack` focused source proof (+22 expected direct rows), committed as `0bec6ea4`; primary proof passed `cargo fmt --check --all`, `cargo test -p phpc --test object_model spl_doubly_linked_list` (3/3), `cargo test -p phpc --test object_model class_declarations_register_metadata_without_object_execution`, `cargo check -p phpc`, `cargo build -p phpc --bin phpc`, and focused lowercase `-p` PHPT 22/22. Batch013 is 5 / 10 checkpoints and +71 expected direct rows. Public score remains 2945 / 20294 until a pinned full-suite gate is completed, regression-checked, and published. |
+| Batch013 source batch | Started | Checkpoint1 is p43 stream-resource residual focused source proof (+16 expected direct rows), committed as `e2291ae0`; primary proof passed `cargo fmt --check --all`, `cargo test -p phpc --test stream_resource_builtin` (25/25), `cargo check -p phpc`, `cargo build -p phpc --bin phpc`, and focused lowercase `-p` PHPT 16/16. Checkpoint2 is p42 `explode()` / `implode()` / `join()` focused source proof (+12 expected direct rows), committed as `9ad49e1d`; primary proof passed `cargo fmt --check --all`, `cargo test -p phpc --test explode_join_builtin` (2/2), `cargo check -p phpc`, `cargo build -p phpc --bin phpc`, and focused lowercase `-p` PHPT 12/12. Checkpoint3 is p39 ReflectionObject focused source proof (+11 expected direct rows), committed as `d2c258a9`; primary proof passed `cargo fmt --check --all`, `cargo test -p phpc --test object_model reflection_object_reflects_object_instances_as_reflection_class_subtype`, `cargo check -p phpc`, `cargo build -p phpc --bin phpc`, and focused lowercase `-p` PHPT 11/11. Checkpoint4 is p7 HTML entity string builtins focused source proof (+10 expected direct rows), committed as `a2c62479`; primary proof passed `cargo fmt --check --all`, `cargo test -p phpc --test html_entity_builtins` (4/4), `cargo check -p phpc`, `cargo build -p phpc --bin phpc`, and focused lowercase `-p` PHPT 10/10. Checkpoint5 is p50 SPL `SplDoublyLinkedList` / `SplQueue` / `SplStack` focused source proof (+22 expected direct rows), committed as `0bec6ea4`; primary proof passed `cargo fmt --check --all`, `cargo test -p phpc --test object_model spl_doubly_linked_list` (3/3), `cargo test -p phpc --test object_model class_declarations_register_metadata_without_object_execution`, `cargo check -p phpc`, `cargo build -p phpc --bin phpc`, and focused lowercase `-p` PHPT 22/22. Checkpoint6 is p42 `strip_tags()` focused source proof (+11 expected direct rows), committed as `53de9d2b`; checkpoint7 is p31 `in_array()` / `array_search()` membership focused source proof (+14 expected direct rows), also committed as `53de9d2b`; primary combined proof passed `cargo fmt --check --all`, `cargo test -p phpc --test strip_tags_builtin` (5/5), `cargo test -p php_runtime membership_comparison_for_non_scalar_values` (2/2), `cargo test -p phpc --test in_array` (8/8), `cargo test -p phpc --test array_search`, `cargo check -p phpc`, `cargo build -p phpc --bin phpc`, and focused lowercase `-p` PHPT 25/25. Batch013 is 7 / 10 checkpoints and +96 expected direct rows. Public score remains 2945 / 20294 until a pinned full-suite gate is completed, regression-checked, and published. |
 
 Focused PHPT history is tracked separately in
 `/home/claude/supervised-php-compiler/state/php-core-suite-focused-history.tsv`.
@@ -236,40 +239,44 @@ Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
 
-Batch013 checkpoint5 p50 SPL `SplDoublyLinkedList` / `SplQueue` / `SplStack`
-support is primary-integrated under AO supervision. This is focused source
-proof, not a public percentage change. The public PHPT score remains
-**2945 / 20294 pinned runnable PHPTs = 14.51%** until a pinned full-suite gate
-is parsed, latest-published PASS regressions are repaired or guarded, and this
-file is updated again.
+Batch013 checkpoints6-7 p42 `strip_tags()` and p31 `in_array()` /
+`array_search()` membership semantics are primary-integrated under AO
+supervision. This is focused source proof, not a public percentage change. The
+public PHPT score remains **2945 / 20294 pinned runnable PHPTs = 14.51%** until
+a pinned full-suite gate is parsed, latest-published PASS regressions are
+repaired or guarded, and this file is updated again.
 
 - primary source head:
-  `0bec6ea4 fix: add SPL doubly linked list support`
-- reviewed and integration patch:
-  `/home/claude/supervised-php-compiler/state/patches/batch013-p50-spl-doubly-linked-list-current-a9891064-sourceeq-a2c62479-phpc52-20260529.patch`
-- reviewed and integration patch SHA256:
-  `959ded6fe02e718d52e94c54531a58b6ee6f0d25791ccdb1e5082160bd57e44b`
-- reviewer gate: phpc7 and phpc59 recorded current-public FINAL GO on
-  `a9891064` / source-equivalent `a2c62479`
-- critic gate: phpc54, phpc49, phpc55, and phpc58 recorded
-  `SAFE-FOR-INTEGRATION` for the same exact SHA on `a9891064` /
-  source-equivalent `a2c62479`
-- handoff gate: p38 exported READY-FOR-SUPERVISOR scratch/no-primary handoff
-  with SHA verification, public/source apply checks, exclusions,
-  exact-shape audit, consumed-scope audit through Batch013 checkpoint4, and
-  lowercase `-p` harness guard
-- supervisor focused gates: PASS for clean apply, `git diff --check`,
+  `53de9d2b fix: add strip tags and membership semantics`
+- reviewed p42 patch:
+  `/home/claude/supervised-php-compiler/state/patches/p42-strip-tags-current-c7e66364-sourceeq-0bec6ea4-20260529T1924.patch`
+- p42 patch SHA256:
+  `25f65f004a2dc28355d016af8dba060ba5551b9d29e785f770cce512a5084b92`
+- reviewed p31 patch:
+  `/home/claude/supervised-php-compiler/state/patches/batch013-p31-in-array-array-search-membership-current-a9891064-sourceeq-a2c62479-20260529T191535.patch`
+- p31 patch SHA256:
+  `844d27ff06b70faaf85e9e5ad624fd26e427acf35b967e0b52ebbd32490c1dfa`
+- reviewer gate: p42 current FINAL GO from phpc52/phpc32; p31 current FINAL GO
+  from phpc59 on `c7e66364` / source-equivalent `0bec6ea4`
+- critic gate: p42 exact current SHA `25f65f00...` and p31 exact SHA
+  `844d27ff...` both recorded `SAFE-FOR-INTEGRATION`
+- handoff gate: p38 exported READY-FOR-SUPERVISOR scratch/no-primary handoffs
+  for both exact current SHAs, with SHA verification, public/source apply
+  checks, exclusions, exact-shape audit, consumed-scope audit through Batch013
+  checkpoint5, and lowercase `-p` harness guard
+- supervisor focused gates: PASS for clean combined apply, `git diff --check`,
   `cargo fmt --check --all`,
-  `cargo test -p phpc --test object_model spl_doubly_linked_list`,
-  `cargo test -p phpc --test object_model class_declarations_register_metadata_without_object_execution`,
-  `cargo check -p phpc`, `cargo build -p phpc --bin phpc`, and the focused PHP
-  core SPL cluster with 22 PASS and 0 FAIL using `run-tests.php -p` with the
-  `phpc` wrapper
+  `cargo test -p phpc --test strip_tags_builtin`,
+  `cargo test -p php_runtime membership_comparison_for_non_scalar_values`,
+  `cargo test -p phpc --test in_array`,
+  `cargo test -p phpc --test array_search`, `cargo check -p phpc`,
+  `cargo build -p phpc --bin phpc`, and the combined focused PHP core cluster
+  with 25 PASS and 0 FAIL using `run-tests.php -p` with the `phpc` wrapper
 - focused PHPT log:
-  `/home/claude/supervised-php-compiler/state/logs/supervisor-p50-spl-verification-a9891064-20260529T1920.log`
+  `/home/claude/supervised-php-compiler/state/logs/supervisor-p42-p31-combined-verification-c7e66364-20260529T1934.log`
 - Batch013 accounting:
-  checkpoint5 / 10 accepted, +71 expected direct PHPT rows; the next broad PHPT
-  gate requires a single supervisor order and latest-published PASS-set
+  checkpoint7 / 10 accepted, +96 expected direct PHPT rows; the next broad
+  PHPT gate requires a single supervisor order and latest-published PASS-set
   comparison before any public score update
 
 Batch012 source batch checkpoint9 is primary-integrated under AO supervision.
