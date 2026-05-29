@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-29 02:29 CEST
+Updated: 2026-05-29 02:43 CEST
 Primary branch: `master`
-Latest source head: `0f844622 fix: add func_get call-frame semantics`
+Latest source head: `2911bd1f fix: add standard file metadata builtins`
 
 ## Progress Score
 
@@ -94,13 +94,52 @@ stable pinned denominator and does not use the raw runner
 | Batch005 checkpoint10 sharded gate | Done | 1618 / 20294 pinned runnable PHPTs passed (7.97%); 3 PASS-to-SKIP platform guards from Windows-only PHPTs; run id `phpt-full-batch005-checkpoint10-sharded-20260528T224229Z-php-src-f97ff59-public-fd74fba9-source-1c4da4c5-stack10` |
 | Batch004 source batch | Complete | Batch004 source checkpoints accepted: 10 / 10; checkpoint10 sharded gate published |
 | Batch005 source batch | Complete | Batch005 source checkpoints accepted: 10 / 10; checkpoint10 sharded gate published |
-| Batch006 source batch | Started | Source checkpoints accepted: 2 / 10 gate threshold; checkpoint2 integrates p51 `func_get*` call-frame semantics |
+| Batch006 source batch | Started | Source checkpoints accepted: 3 / 10 gate threshold; checkpoint3 integrates standard `fileinode()` / `fileowner()` / `filegroup()` / `filetype()` metadata builtins |
 
 Focused PHPT history is tracked separately in
 `/home/claude/supervised-php-compiler/state/php-core-suite-focused-history.tsv`.
 Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
+
+Batch006 source checkpoint 3 is primary-integrated under AO supervision. This
+is a source checkpoint with focused proof, not a percentage change. The public
+PHPT score remains **1618 / 20294 pinned runnable PHPTs = 7.97%** until the
+next pinned full-suite or supervisor-approved sharded publication gate is
+completed, regression-checked, and published here.
+
+- primary source head:
+  `2911bd1f fix: add standard file metadata builtins`
+- reviewed and integration patch:
+  `/home/claude/supervised-php-compiler/state/patches/ao-coder-standard-file-metadata-successor3-split-current-aa1b289e-20260529.patch`
+- reviewed and integration patch SHA256:
+  `8dec37f4eda2e204088cc55d69d31aa10ec213e1d49b065157e7f35418a96643`
+- reviewer gate: phpc-18 recorded `FINAL GO-CANDIDATE /
+  FOCUSED-GATES-PASS`; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/batch006-review-standard-file-metadata-successor3-split-aa1b289e-20260529.{status.md,report.md,gates.log}`
+- critic gate: phpc-33 recorded `SAFE-FOR-INTEGRATION /
+  CURRENT-PUBLIC-AA1B289E`; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/batch006-critic-standard-file-metadata-successor3-split-aa1b289e-20260529.{status.md,report.md}`
+- integration handoff: phpc-38 recorded the exact current-public GO+SAFE pair
+  as routeable under:
+  `/home/claude/supervised-php-compiler/state/workers/ao-p28-replacement-handoff-watch-aa1b289e-20260529.{status.md,report.md,watch.log}`
+- supervisor focused gates: PASS for `git apply --check`,
+  `git diff --check`, `cargo fmt --all -- --check`, focused Rust
+  `standard_file_metadata_builtins`, `cargo build -p phpc`, and the focused
+  four-file PHPT metadata split
+- full PHPT suite: not run for this single source checkpoint; Batch006 broad
+  gate is held until 10 accepted source checkpoints, or until the supervisor
+  explicitly opens a regression/publication gate
+
+This checkpoint generalizes local filesystem metadata builtins for
+`fileinode()`, `fileowner()`, `filegroup()`, and `filetype()` through shared
+path/stat helpers and native known-function registration. It deliberately
+splits out the larger metadata family rows that still need `touch()`,
+`tempnam()`, and warning-diagnostic support. This is not keyed to a PHPT
+filename, expected-output fixture, batch marker, public hash, or test-name
+branch.
+
+Previous Batch006 source checkpoint 2 was `func_get*` call-frame semantics:
 
 Batch006 source checkpoint 2 is primary-integrated under AO supervision. This
 is a source checkpoint with focused proof, not a percentage change. The public
