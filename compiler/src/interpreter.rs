@@ -198,6 +198,8 @@ struct Interpreter {
     reflection_properties: HashMap<i64, ReflectionPropertyState>,
     reflection_class_constants: HashMap<i64, ReflectionClassConstantState>,
     reflection_attributes: HashMap<i64, ReflectionAttributeState>,
+    reflection_extensions: HashMap<i64, ReflectionExtensionState>,
+    reflection_zend_extensions: HashMap<i64, ReflectionZendExtensionState>,
     reflection_named_types: HashMap<i64, ReflectionNamedTypeState>,
     reflection_compound_types: HashMap<i64, ReflectionCompoundTypeState>,
     spl_object_storages: HashMap<i64, SplObjectStorageState>,
@@ -609,6 +611,23 @@ struct ReflectionAttributeState {
     target: i64,
     arguments: Option<String>,
     is_repeated: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ReflectionExtensionState {
+    name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ReflectionZendExtensionState {
+    name: String,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ReflectionExtensionMetadata {
+    name: &'static str,
+    class_names: &'static [&'static str],
+    dependencies: &'static [(&'static str, &'static str)],
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -9853,6 +9872,8 @@ impl Interpreter {
             reflection_properties: HashMap::new(),
             reflection_class_constants: HashMap::new(),
             reflection_attributes: HashMap::new(),
+            reflection_extensions: HashMap::new(),
+            reflection_zend_extensions: HashMap::new(),
             reflection_named_types: HashMap::new(),
             reflection_compound_types: HashMap::new(),
             spl_object_storages: HashMap::new(),
@@ -17563,6 +17584,12 @@ impl Interpreter {
                     "ReflectionAttribute objects are only materialized by supported getAttributes() paths in the current subset",
                 ),
             ));
+        }
+        if declared_class_name.eq_ignore_ascii_case("ReflectionExtension") {
+            return self.instantiate_reflection_extension(args, span, scope);
+        }
+        if declared_class_name.eq_ignore_ascii_case("ReflectionZendExtension") {
+            return self.instantiate_reflection_zend_extension(args, span, scope);
         }
         if declared_class_name.eq_ignore_ascii_case("ReflectionType")
             || declared_class_name.eq_ignore_ascii_case("ReflectionNamedType")
@@ -33649,6 +33676,146 @@ impl Interpreter {
         Ok(Value::Object(object))
     }
 
+    fn instantiate_reflection_extension(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        let state = self.reflection_extension_state_from_constructor_args(
+            "ReflectionExtension",
+            args,
+            span,
+            scope,
+        )?;
+        self.create_reflection_extension_object(state, span)
+    }
+
+    fn instantiate_reflection_zend_extension(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        let state =
+            self.reflection_zend_extension_state_from_constructor_args(args, span, scope)?;
+        self.create_reflection_zend_extension_object(state, span)
+    }
+
+    fn reflection_extension_state_from_constructor_args(
+        &mut self,
+        class_name: &'static str,
+        args: &[Expr],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<ReflectionExtensionState> {
+        if args.len() != 1 {
+            return Err(reflection_constructor_argument_count_error(
+                class_name,
+                args.len(),
+                span,
+            ));
+        }
+        let value = self.evaluate(&args[0], scope)?;
+        let name = reflection_constructor_name_argument(class_name, value, span)?;
+        let metadata = reflection_extension_metadata(&name).ok_or_else(|| {
+            reflection_exception_error(span, format!("Extension \"{name}\" does not exist"))
+        })?;
+        Ok(ReflectionExtensionState {
+            name: metadata.name.to_string(),
+        })
+    }
+
+    fn reflection_zend_extension_state_from_constructor_args(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<ReflectionZendExtensionState> {
+        if args.len() != 1 {
+            return Err(reflection_constructor_argument_count_error(
+                "ReflectionZendExtension",
+                args.len(),
+                span,
+            ));
+        }
+        let value = self.evaluate(&args[0], scope)?;
+        let name = reflection_constructor_name_argument("ReflectionZendExtension", value, span)?;
+        if !name.eq_ignore_ascii_case("Zend OPcache") {
+            return Err(reflection_exception_error(
+                span,
+                format!("Zend Extension \"{name}\" does not exist"),
+            ));
+        }
+        Ok(ReflectionZendExtensionState {
+            name: "Zend OPcache".to_string(),
+        })
+    }
+
+    fn create_reflection_extension_object(
+        &mut self,
+        state: ReflectionExtensionState,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let class_id = self
+            .classes
+            .lookup_class_id("ReflectionExtension")
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::undefined_class("ReflectionExtension core placeholder"),
+                )
+            })?;
+        let object_id = self.allocate_object_id();
+        let class = self
+            .classes
+            .get(class_id)
+            .expect("core ReflectionExtension class id should resolve");
+        let object = PhpObject::from_class_with_id(class, object_id);
+        self.assign_reflection_extension_state(&object, state, span)?;
+        Ok(Value::Object(object))
+    }
+
+    fn create_reflection_zend_extension_object(
+        &mut self,
+        state: ReflectionZendExtensionState,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let class_id = self
+            .classes
+            .lookup_class_id("ReflectionZendExtension")
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::undefined_class("ReflectionZendExtension core placeholder"),
+                )
+            })?;
+        let object_id = self.allocate_object_id();
+        let class = self
+            .classes
+            .get(class_id)
+            .expect("core ReflectionZendExtension class id should resolve");
+        let object = PhpObject::from_class_with_id(class, object_id);
+        object
+            .write_public_property("name", Value::String(state.name.clone()))
+            .map_err(|error| runtime_error(span, error))?;
+        self.reflection_zend_extensions.insert(object_id, state);
+        Ok(Value::Object(object))
+    }
+
+    fn assign_reflection_extension_state(
+        &mut self,
+        object: &PhpObject,
+        state: ReflectionExtensionState,
+        span: Span,
+    ) -> CompileResult<()> {
+        object
+            .write_public_property("name", Value::String(state.name.clone()))
+            .map_err(|error| runtime_error(span, error))?;
+        self.reflection_extensions.insert(object.id(), state);
+        Ok(())
+    }
+
     fn create_reflection_named_type_object(
         &mut self,
         state: ReflectionNamedTypeState,
@@ -40046,6 +40213,28 @@ impl Interpreter {
         }
         if object
             .class_name()
+            .eq_ignore_ascii_case("ReflectionExtension")
+        {
+            return self
+                .call_reflection_extension_method(object, method_name, args, span, caller_scope)
+                .map(|value| (value, None));
+        }
+        if object
+            .class_name()
+            .eq_ignore_ascii_case("ReflectionZendExtension")
+        {
+            return self
+                .call_reflection_zend_extension_method(
+                    object,
+                    method_name,
+                    args,
+                    span,
+                    caller_scope,
+                )
+                .map(|value| (value, None));
+        }
+        if object
+            .class_name()
             .eq_ignore_ascii_case("ReflectionNamedType")
         {
             return self
@@ -43933,6 +44122,172 @@ impl Interpreter {
             ));
         }
         Ok(args.clone())
+    }
+
+    fn call_reflection_extension_method(
+        &mut self,
+        object: PhpObject,
+        method_name: &str,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        let state = self
+            .reflection_extensions
+            .get(&object.id())
+            .cloned()
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        format!("ReflectionExtension::{method_name}()"),
+                        "missing ReflectionExtension runtime metadata",
+                    ),
+                )
+            })?;
+
+        match method_name.to_ascii_lowercase().as_str() {
+            "__construct" => {
+                let state = self.reflection_extension_state_from_constructor_args(
+                    "ReflectionExtension",
+                    args,
+                    span,
+                    caller_scope,
+                )?;
+                self.assign_reflection_extension_state(&object, state, span)?;
+                Ok(Value::Null)
+            }
+            "getname" => {
+                expect_expr_arity("ReflectionExtension::getName", args.len(), 0, span)?;
+                Ok(Value::String(state.name))
+            }
+            "getversion" => {
+                expect_expr_arity("ReflectionExtension::getVersion", args.len(), 0, span)?;
+                Ok(Value::String(php_version_string()))
+            }
+            "getclassnames" => {
+                expect_expr_arity("ReflectionExtension::getClassNames", args.len(), 0, span)?;
+                Ok(Value::Array(reflection_extension_class_names_array(&state)))
+            }
+            "getclasses" => {
+                expect_expr_arity("ReflectionExtension::getClasses", args.len(), 0, span)?;
+                self.reflection_extension_classes_array(&state, span)
+                    .map(Value::Array)
+            }
+            "getdependencies" => {
+                expect_expr_arity("ReflectionExtension::getDependencies", args.len(), 0, span)?;
+                Ok(Value::Array(reflection_extension_dependencies_array(
+                    &state,
+                )))
+            }
+            "info" => {
+                expect_expr_arity("ReflectionExtension::info", args.len(), 0, span)?;
+                let output = format!(
+                    "{} support => enabled\nVersion => {}\n",
+                    state.name,
+                    php_version_string()
+                );
+                self.append_output_from(&output, Some(span));
+                Ok(Value::Null)
+            }
+            "ispersistent" => {
+                expect_expr_arity("ReflectionExtension::isPersistent", args.len(), 0, span)?;
+                Ok(Value::Bool(true))
+            }
+            "istemporary" => {
+                expect_expr_arity("ReflectionExtension::isTemporary", args.len(), 0, span)?;
+                Ok(Value::Bool(false))
+            }
+            _ => Err(runtime_error(
+                span,
+                RuntimeError::undefined_function(format!("ReflectionExtension::{method_name}()")),
+            )),
+        }
+    }
+
+    fn reflection_extension_classes_array(
+        &mut self,
+        state: &ReflectionExtensionState,
+        span: Span,
+    ) -> CompileResult<PhpArray> {
+        let mut classes = PhpArray::new();
+        let Some(metadata) = reflection_extension_metadata(&state.name) else {
+            return Ok(classes);
+        };
+        for class_name in metadata.class_names {
+            let Ok(class_state) =
+                self.resolve_reflection_class_name_without_autoload(class_name, span)
+            else {
+                continue;
+            };
+            let class = self.create_reflection_class_object(class_state, span)?;
+            classes.insert(ArrayKey::String((*class_name).to_string()), class);
+        }
+        Ok(classes)
+    }
+
+    fn call_reflection_zend_extension_method(
+        &mut self,
+        object: PhpObject,
+        method_name: &str,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        let state = self
+            .reflection_zend_extensions
+            .get(&object.id())
+            .cloned()
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        format!("ReflectionZendExtension::{method_name}()"),
+                        "missing ReflectionZendExtension runtime metadata",
+                    ),
+                )
+            })?;
+
+        match method_name.to_ascii_lowercase().as_str() {
+            "__construct" => {
+                let state = self.reflection_zend_extension_state_from_constructor_args(
+                    args,
+                    span,
+                    caller_scope,
+                )?;
+                object
+                    .write_public_property("name", Value::String(state.name.clone()))
+                    .map_err(|error| runtime_error(span, error))?;
+                self.reflection_zend_extensions.insert(object.id(), state);
+                Ok(Value::Null)
+            }
+            "getname" => {
+                expect_expr_arity("ReflectionZendExtension::getName", args.len(), 0, span)?;
+                Ok(Value::String(state.name))
+            }
+            "getversion" => {
+                expect_expr_arity("ReflectionZendExtension::getVersion", args.len(), 0, span)?;
+                Ok(Value::String(php_version_string()))
+            }
+            "getauthor" => {
+                expect_expr_arity("ReflectionZendExtension::getAuthor", args.len(), 0, span)?;
+                Ok(Value::String("Zend by Perforce".to_string()))
+            }
+            "getcopyright" => {
+                expect_expr_arity("ReflectionZendExtension::getCopyright", args.len(), 0, span)?;
+                Ok(Value::String("Copyright \u{00A9}".to_string()))
+            }
+            "geturl" => {
+                expect_expr_arity("ReflectionZendExtension::getURL", args.len(), 0, span)?;
+                Ok(Value::String("https://www.zend.com/".to_string()))
+            }
+            _ => Err(runtime_error(
+                span,
+                RuntimeError::undefined_function(format!(
+                    "ReflectionZendExtension::{method_name}()"
+                )),
+            )),
+        }
     }
 
     fn call_reflection_named_type_method(
@@ -83308,6 +83663,150 @@ fn core_class_attributes_for_reflection(name: &str) -> Vec<AttributeDecl> {
     Vec::new()
 }
 
+const REFLECTION_EXTENSION_REFLECTION_CLASSES: &[&str] = &[
+    "ReflectionException",
+    "Reflection",
+    "Reflector",
+    "ReflectionFunctionAbstract",
+    "ReflectionFunction",
+    "ReflectionGenerator",
+    "ReflectionParameter",
+    "ReflectionType",
+    "ReflectionNamedType",
+    "ReflectionUnionType",
+    "ReflectionIntersectionType",
+    "ReflectionMethod",
+    "ReflectionClass",
+    "ReflectionObject",
+    "ReflectionProperty",
+    "ReflectionClassConstant",
+    "ReflectionExtension",
+    "ReflectionZendExtension",
+    "ReflectionReference",
+    "ReflectionAttribute",
+    "ReflectionEnum",
+    "ReflectionEnumUnitCase",
+    "ReflectionEnumBackedCase",
+    "ReflectionFiber",
+    "ReflectionClassConstant",
+    "PropertyHookType",
+];
+
+const REFLECTION_EXTENSION_STANDARD_CLASSES: &[&str] = &[
+    "AssertionError",
+    "Directory",
+    "RoundingMode",
+    "SortDirection",
+    "StreamBucket",
+    "__PHP_Incomplete_Class",
+    "php_user_filter",
+];
+
+const REFLECTION_EXTENSION_CTYPE_CLASSES: &[&str] = &[];
+
+const REFLECTION_EXTENSION_STANDARD_DEPENDENCIES: &[(&str, &str)] = &[
+    ("random", "Required"),
+    ("uri", "Required"),
+    ("session", "Optional"),
+];
+
+fn reflection_extension_metadata(name: &str) -> Option<ReflectionExtensionMetadata> {
+    match name.to_ascii_lowercase().as_str() {
+        "reflection" => Some(ReflectionExtensionMetadata {
+            name: "Reflection",
+            class_names: REFLECTION_EXTENSION_REFLECTION_CLASSES,
+            dependencies: &[],
+        }),
+        "standard" => Some(ReflectionExtensionMetadata {
+            name: "standard",
+            class_names: REFLECTION_EXTENSION_STANDARD_CLASSES,
+            dependencies: REFLECTION_EXTENSION_STANDARD_DEPENDENCIES,
+        }),
+        "ctype" => Some(ReflectionExtensionMetadata {
+            name: "ctype",
+            class_names: REFLECTION_EXTENSION_CTYPE_CLASSES,
+            dependencies: &[],
+        }),
+        _ => None,
+    }
+}
+
+fn reflection_extension_class_names_array(state: &ReflectionExtensionState) -> PhpArray {
+    let mut class_names = PhpArray::new();
+    if let Some(metadata) = reflection_extension_metadata(&state.name) {
+        for (index, class_name) in metadata.class_names.iter().enumerate() {
+            class_names.insert(
+                ArrayKey::Int(index as i64),
+                Value::String((*class_name).to_string()),
+            );
+        }
+    }
+    class_names
+}
+
+fn reflection_extension_dependencies_array(state: &ReflectionExtensionState) -> PhpArray {
+    let mut dependencies = PhpArray::new();
+    if let Some(metadata) = reflection_extension_metadata(&state.name) {
+        for (name, status) in metadata.dependencies {
+            dependencies.insert(
+                ArrayKey::String((*name).to_string()),
+                Value::String((*status).to_string()),
+            );
+        }
+    }
+    dependencies
+}
+
+fn reflection_constructor_name_argument(
+    class_name: &'static str,
+    value: Value,
+    span: Span,
+) -> CompileResult<String> {
+    match value {
+        Value::String(name) => Ok(name),
+        Value::BinaryString(bytes) => String::from_utf8(bytes).map_err(|_| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{class_name}::__construct()"),
+                    "Argument #1 ($name) must be valid UTF-8 in the current subset",
+                ),
+            )
+        }),
+        other => Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                format!("{class_name}::__construct()"),
+                format!(
+                    "Argument #1 ($name) must be of type string, {} given",
+                    php_type_error_given(&other)
+                ),
+            ),
+        )),
+    }
+}
+
+fn reflection_constructor_argument_count_error(
+    class_name: &'static str,
+    actual: usize,
+    span: Span,
+) -> Diagnostic {
+    runtime_error(
+        span,
+        RuntimeError::unsupported_call(
+            format!("{class_name}::__construct()"),
+            format!("{class_name}::__construct() expects exactly 1 argument, {actual} given"),
+        ),
+    )
+}
+
+fn php_version_string() -> String {
+    match builtin_global_constant_value("PHP_VERSION") {
+        Some(Value::String(version)) => version,
+        _ => "8.3.0".to_string(),
+    }
+}
+
 const POSITIONAL_ARGUMENT_AFTER_NAMED_ARGUMENT_MESSAGE: &str =
     "Cannot use positional argument after named argument";
 
@@ -83685,6 +84184,10 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
         return Some(("ArgumentCountError", message));
     }
 
+    if let Some(message) = reflection_constructor_argument_count_error_message(error) {
+        return Some(("TypeError", message));
+    }
+
     if let Some(message) = user_function_too_few_arguments_message(error) {
         return Some(("TypeError", message));
     }
@@ -83881,6 +84384,24 @@ fn chunk_split_argument_count_error_message(error: &Diagnostic) -> Option<String
     } else {
         None
     }
+}
+
+fn reflection_constructor_argument_count_error_message(error: &Diagnostic) -> Option<String> {
+    if error.phase != Phase::Runtime {
+        return None;
+    }
+    let message = error
+        .message
+        .strip_prefix("unsupported call ")?
+        .split_once(": ")
+        .map(|(_, message)| message)?;
+    for class_name in ["ReflectionExtension", "ReflectionZendExtension"] {
+        let prefix = format!("{class_name}::__construct() expects exactly 1 argument, ");
+        if message.starts_with(&prefix) && message.ends_with(" given") {
+            return Some(message.to_string());
+        }
+    }
+    None
 }
 
 fn user_function_too_few_arguments_message(error: &Diagnostic) -> Option<String> {

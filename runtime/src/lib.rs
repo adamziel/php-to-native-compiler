@@ -31816,6 +31816,51 @@ impl PhpClassTable {
                 .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
                 .expect("SplObjectStorage core metadata should not duplicate methods");
         }
+        let reflection_extension_id = classes
+            .declare_class("ReflectionExtension")
+            .expect("core class table should contain SplObjectStorage before ReflectionExtension");
+        let reflection_extension = classes
+            .get_mut(reflection_extension_id)
+            .expect("declared ReflectionExtension class id should resolve");
+        reflection_extension
+            .add_property(PhpPropertyMetadata::instance("name", Visibility::Public))
+            .expect("ReflectionExtension core metadata should not duplicate properties");
+        for method in [
+            "__construct",
+            "getName",
+            "getVersion",
+            "getClassNames",
+            "getClasses",
+            "getDependencies",
+            "info",
+            "isPersistent",
+            "isTemporary",
+        ] {
+            reflection_extension
+                .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("ReflectionExtension core metadata should not duplicate methods");
+        }
+        let reflection_zend_extension_id = classes.declare_class("ReflectionZendExtension").expect(
+            "core class table should contain ReflectionExtension before ReflectionZendExtension",
+        );
+        let reflection_zend_extension = classes
+            .get_mut(reflection_zend_extension_id)
+            .expect("declared ReflectionZendExtension class id should resolve");
+        reflection_zend_extension
+            .add_property(PhpPropertyMetadata::instance("name", Visibility::Public))
+            .expect("ReflectionZendExtension core metadata should not duplicate properties");
+        for method in [
+            "__construct",
+            "getName",
+            "getVersion",
+            "getAuthor",
+            "getCopyright",
+            "getURL",
+        ] {
+            reflection_zend_extension
+                .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("ReflectionZendExtension core metadata should not duplicate methods");
+        }
         classes
     }
 
