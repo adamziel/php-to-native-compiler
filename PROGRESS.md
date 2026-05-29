@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-29 03:34 CEST
+Updated: 2026-05-29 03:52 CEST
 Primary branch: `master`
 Latest source head: `e35a5d2c fix: reject invalid intersection type members`
 
@@ -13,7 +13,7 @@ Progress is the pinned php-src PHPT full-suite pass rate:
 
 `passed runnable PHPTs / total runnable PHPTs`
 
-Current score: **1618 / 20294 pinned runnable PHPTs = 7.97%**.
+Current score: **1836 / 20294 pinned runnable PHPTs = 9.05%**.
 
 No other percentage is public project progress. Focused PHPT passes, source
 checkpoints, PRs, and docs/status edits are evidence for the next batch, but
@@ -62,8 +62,8 @@ Batch004 checkpoint10 still has BORKED rows, so the public score uses the
 stable pinned denominator and does not use the raw runner
 `1413 / 19200 = 7.36%` calculation.
 
-The latest full-suite result is the Batch005 checkpoint10 sharded publication
-gate on the same php-src pin, run
+The Batch005 checkpoint10 sharded publication gate was on the same php-src pin,
+run
 `phpt-full-batch005-checkpoint10-sharded-20260528T224229Z-php-src-f97ff59-public-fd74fba9-source-1c4da4c5-stack10`.
 Counts: 1618 passed, 17025 failed, 2490 skipped, 15 xfailed, 1183 borked;
 all 12 shards exited nonzero because failing PHPTs remain. The PASS-set
@@ -77,6 +77,18 @@ lives under
 Batch005 checkpoint10 still has BORKED rows, so the public score uses the
 stable pinned denominator and does not use the raw runner
 `1618 / 18658 = 8.67%` calculation.
+
+The latest full-suite result is the Batch006 checkpoint10 sharded publication
+gate on the same php-src pin, run
+`phpt-full-batch006-checkpoint10-sharded-20260529T013919Z-php-src-f97ff59-public-10e768d3-source-e35a5d2c-stack10`.
+Counts: 1836 passed, 16864 failed, 2529 skipped, 15 xfailed, 1087 borked;
+all 12 shards exited nonzero because failing PHPTs remain. Regressions from
+the latest published Batch005 checkpoint10 PASS set: 0. Evidence lives under
+`/home/claude/supervised-php-compiler/state/logs/phpt-full-batch006-checkpoint10-sharded-20260529T013919Z-php-src-f97ff59-public-10e768d3-source-e35a5d2c-stack10`.
+
+Batch006 checkpoint10 still has BORKED rows, so the public score uses the
+stable pinned denominator and does not use the raw runner
+`1836 / 18715 = 9.81%` calculation.
 
 ## PHPT Harness
 
@@ -92,9 +104,10 @@ stable pinned denominator and does not use the raw runner
 | Batch004 checkpoint8 regression-repair sharded gate | Done | 1369 / 20294 pinned runnable PHPTs passed (6.75%); 0 regressions from Batch003 PASS set; run id `phpt-full-batch004-regression-repair-sharded-20260528T192018Z-php-src-f97ff59-public-3c86fc6a-source-b75047df-stack8` |
 | Batch004 checkpoint10 sharded gate | Done | 1413 / 20294 pinned runnable PHPTs passed (6.96%); 0 regressions from checkpoint8 PASS set; run id `phpt-full-batch004-checkpoint10-sharded-20260528T195852Z-php-src-f97ff59-public-37941f23-source-241b8411-stack10` |
 | Batch005 checkpoint10 sharded gate | Done | 1618 / 20294 pinned runnable PHPTs passed (7.97%); 3 PASS-to-SKIP platform guards from Windows-only PHPTs; run id `phpt-full-batch005-checkpoint10-sharded-20260528T224229Z-php-src-f97ff59-public-fd74fba9-source-1c4da4c5-stack10` |
+| Batch006 checkpoint10 sharded gate | Done | 1836 / 20294 pinned runnable PHPTs passed (9.05%); 0 regressions from Batch005 checkpoint10 PASS set; run id `phpt-full-batch006-checkpoint10-sharded-20260529T013919Z-php-src-f97ff59-public-10e768d3-source-e35a5d2c-stack10` |
 | Batch004 source batch | Complete | Batch004 source checkpoints accepted: 10 / 10; checkpoint10 sharded gate published |
 | Batch005 source batch | Complete | Batch005 source checkpoints accepted: 10 / 10; checkpoint10 sharded gate published |
-| Batch006 source batch | Complete | Source checkpoints accepted: 10 / 10 gate threshold; checkpoint10 integrates invalid intersection type member diagnostics; next step is the pinned sharded publication gate |
+| Batch006 source batch | Complete | Source checkpoints accepted: 10 / 10; checkpoint10 sharded gate published |
 
 Focused PHPT history is tracked separately in
 `/home/claude/supervised-php-compiler/state/php-core-suite-focused-history.tsv`.
@@ -102,11 +115,10 @@ Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
 
-Batch006 source checkpoint 10 is primary-integrated under AO supervision. This
-is a source checkpoint with focused proof, not a percentage change. The public
-PHPT score remains **1618 / 20294 pinned runnable PHPTs = 7.97%** until the
-next pinned full-suite or supervisor-approved sharded publication gate is
-completed, regression-checked, and published here.
+Batch006 source checkpoint 10 is primary-integrated under AO supervision. The
+Batch006 checkpoint10 pinned sharded publication gate is now published with
+**1836 / 20294 pinned runnable PHPTs = 9.05%** and 0 regressions from the
+latest published Batch005 checkpoint10 PASS set.
 
 - primary source head:
   `e35a5d2c fix: reject invalid intersection type members`
@@ -125,10 +137,12 @@ completed, regression-checked, and published here.
   `cargo fmt --all -- --check`, focused Rust
   `intersection_invalid_type_members`, `cargo build -p phpc`, and the focused
   15-file PHPT invalid intersection type cluster with 15 PASS and 0 FAIL
-- full PHPT suite: not run for this single source checkpoint; Batch006 has now
-  reached the 10 accepted source checkpoint threshold, so the next normal step
-  is the pinned sharded publication gate and regression comparison before the
-  public score can move
+- full PHPT suite: supervisor-approved Batch006 checkpoint10 sharded
+  publication gate completed on php-src pin
+  `f97ff597429a2fe633665a7e02d97c8077f9f90f`; run id
+  `phpt-full-batch006-checkpoint10-sharded-20260529T013919Z-php-src-f97ff59-public-10e768d3-source-e35a5d2c-stack10`; counts 1836 passed, 16864
+  failed, 2529 skipped, 15 xfailed, 1087 borked; regressions from latest
+  published Batch005 checkpoint10 PASS set: 0
 
 This checkpoint generalizes startup diagnostics for invalid members inside
 intersection type declarations across functions, methods, class/interface/
