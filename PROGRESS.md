@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-29 13:46 CEST
+Updated: 2026-05-29 13:54 CEST
 Primary branch: `master`
-Latest source head: `d590e4ac fix: add residual string byte builtins`
+Latest source head: `11d5f804 fix: improve copy filesize unlink diagnostics`
 
 ## Progress Score
 
@@ -183,13 +183,51 @@ stable pinned denominator and does not use the raw runner
 | Batch009 source burst | Complete | Checkpoint1 is p47 `sizeof()` alias / `array_chunk` metadata focused source proof (+25 expected direct rows); checkpoint2 is p43 `fflush()` / `ftruncate()` focused source proof (+15 expected direct rows); checkpoint3 is p42 `fprintf()` / `vfprintf()` focused source proof (+14 expected direct rows); checkpoint4 is p39 OPcache bounded introspection focused source proof (+11 expected direct rows); checkpoint5 is p63 slash/cslash and bounded `strcmp()` focused source proof (+12 expected direct rows); burst total was +77 expected direct rows; burst1 sharded gate published 2388 / 20294 |
 | Batch010 source batch | Complete | Checkpoint1 is p66 `bcround()` / bounded `RoundingMode` focused source proof (+11 expected direct rows); checkpoint2 is p51 generator `yield from` / `Generator::getReturn()` / yielded key preservation focused source proof (+10 expected direct rows); checkpoint3 is p50 `ReflectionAttribute` / `getAttributes()` focused source proof (+10 expected direct rows); checkpoint4 is p43 `disk_free_space()` / `disk_total_space()` / `is_executable()` focused source proof (+12 expected direct rows); checkpoint5 is p15 typed-property startup diagnostics focused source proof (+13 expected direct rows); checkpoint6 is p42 selected `strspn()` / `strcspn()` focused source proof (+11 expected direct rows); checkpoint7 is p39 `ReflectionFunction` / `ReflectionMethod` metadata focused source proof (+10 expected direct rows); checkpoint8 is p42 selected `strrchr()` focused source proof (+10 expected direct rows); checkpoint9 is p66 `bcdivmod()` / `BcMath\Number` focused source proof (+22 expected direct rows); checkpoint10 is p43 `fscanf()` stream scanning focused source proof (+11 expected direct rows); batch total is 10 / 10 checkpoints and +120 expected direct rows. Regression repair source `783436bd` fixed the initial gate's two real PASS losses; the repaired sharded gate published 2563 / 20294 with the existing `bug75679.phpt` path-length guard. |
 | Batch010 checkpoint10 regression-repair sharded gate | Done | 2563 / 20294 pinned runnable PHPTs passed (12.63%); only PASS-loss row was `ext/standard/tests/file/bug75679.phpt`, guarded by a same-binary short-path focused PASS; run id `phpt-full-batch010-checkpoint10-regression-repair-sharded-20260529T112818Z-php-src-f97ff59-public-6f6ac240-source-783436bd` |
-| Batch011 source burst | In progress | Checkpoint1 is p63 residual string byte/scalar builtins focused source proof (+21 expected direct rows); public score remains 2563 / 20294 until the next pinned full-suite gate is completed, regression-checked, and published. |
+| Batch011 source burst | In progress | Checkpoint1 is p63 residual string byte/scalar builtins focused source proof (+21 expected direct rows); checkpoint2 is p43 copy/filesize/unlink diagnostics focused source proof (+10 expected direct rows); burst total is +31 expected direct rows. Public score remains 2563 / 20294 until the next pinned full-suite gate is completed, regression-checked, and published. |
 
 Focused PHPT history is tracked separately in
 `/home/claude/supervised-php-compiler/state/php-core-suite-focused-history.tsv`.
 Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
+
+Batch011 source burst checkpoint2 is primary-integrated under AO supervision.
+This is focused source proof, not a public percentage change. The public PHPT
+score remains **2563 / 20294 pinned runnable PHPTs = 12.63%** until the next
+pinned full-suite gate is completed, regression-checked, and published here.
+
+- primary source head:
+  `11d5f804 fix: improve copy filesize unlink diagnostics`
+- reviewed and integration patch:
+  `/home/claude/supervised-php-compiler/state/patches/batch010-buffer-review-p43-copy-filesize-de8f9989-phpc7-20260529.patch`
+- reviewed and integration patch SHA256:
+  `64064137ec1bfff57a293ac48edecbb7ee8870969c79023dbd60fdea56362aff`
+- reviewer gate: phpc-18, phpc-52, and phpc-7 recorded current-public FINAL
+  GO for the p43 copy/filesize/unlink residual packet on `6f6ac240` /
+  source-equivalent `783436bd`; this patch still applied cleanly after
+  Batch011 checkpoint1
+- critic gate: phpc-58 recorded `SAFE-FOR-INTEGRATION` for the same exact
+  SHA
+- handoff gate: p38 completed scratch/no-primary handoff on `ccd8a020` with
+  SHA verification, clean apply/reverse-apply, exclusions, exact-shape audit,
+  and consumed-scope audit; supervisor rechecked clean apply over the current
+  `72b83be7` / `d590e4ac` state before integration
+- supervisor focused gates: PASS for SHA verification, clean apply,
+  `git diff --check`, patch-scope root `PROGRESS.md`/examples exclusion,
+  production exact-shape audit, consumed-scope audit, `cargo fmt`, focused
+  Rust `standard_filesystem_mutation_builtins` with 1 / 1 selected test
+  passing, `phpc` binary build, `cargo check`, and focused PHP core
+  copy/filesize/unlink PHPT cluster with 10 PASS and 0 FAIL
+- public progress gate: not run for this source checkpoint; focused proof is
+  candidate evidence for the next aggregate publication gate
+
+This checkpoint implements generalized local filesystem diagnostics and
+behavior for `copy()` error/directory/same-path cases, `filesize()` directory
+and missing-path warning behavior, and `unlink()` local failure display
+behavior. It excludes consumed `fscanf()`, fgetcsv, tempnam/temp dir, fputcsv,
+path helper, fflush/ftruncate, disk/executable, and earlier Batch007-Batch010
+scopes. It is not keyed to PHPT filenames, expected output, fixture names,
+public hashes, batch labels, or checkpoint markers.
 
 Batch011 source burst checkpoint1 is primary-integrated under AO supervision.
 This is focused source proof, not a public percentage change. The public PHPT
