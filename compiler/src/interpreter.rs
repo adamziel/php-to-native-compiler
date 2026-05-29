@@ -72346,7 +72346,9 @@ impl Interpreter {
             "func_get_arg" => self.call_func_get_arg(&args, span),
             "call_user_func" => self.call_user_func_builtin(args, span),
             "call_user_func_array" => self.call_user_func_array_builtin(args, span),
-            "implode" => call_implode(&args, span),
+            "explode" => self.call_explode(&args, span),
+            "implode" => self.call_implode("implode()", &args, span),
+            "join" => self.call_implode("join()", &args, span),
             "basename" => {
                 if !(1..=2).contains(&args.len()) {
                     return Err(runtime_error(
@@ -85247,7 +85249,15 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_variadic_param("values", "mixed"),
             ],
         ),
-        "implode" => (
+        "explode" => (
+            "array",
+            vec![
+                reflection_internal_param("separator", "string"),
+                reflection_internal_param("string", "string"),
+                reflection_internal_optional_int_param("limit", i64::MAX),
+            ],
+        ),
+        "implode" | "join" => (
             "string",
             vec![
                 reflection_internal_param("separator", "array|string"),
@@ -87514,7 +87524,8 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
     let unsupported = error.message.strip_prefix("unsupported call ")?;
     let (function, message) = unsupported.split_once(": ")?;
     match (function, message) {
-        ("str_repeat()", "Argument #2 ($times) must be greater than or equal to 0")
+        ("explode()", "Argument #1 ($separator) must not be empty")
+        | ("str_repeat()", "Argument #2 ($times) must be greater than or equal to 0")
         | ("array_fill()", "Argument #2 ($count) must be greater than or equal to 0")
         | ("array_fill()", "Argument #2 ($count) is too large")
         | ("chunk_split()", "Argument #2 ($length) must be greater than 0")
@@ -87756,7 +87767,8 @@ fn call_argument_type_error_message(error: &Diagnostic) -> Option<String> {
 }
 
 fn is_call_argument_type_error_message(message: &str) -> bool {
-    message.contains("(): Argument #") && message.contains(" must be of type ")
+    message.contains(" must be of type ")
+        && (message.contains("(): Argument #") || message.contains("(): If argument #"))
 }
 
 fn is_invalid_callback_argument_message(message: &str) -> bool {
@@ -87960,7 +87972,9 @@ fn is_builtin(name: &str) -> bool {
             | "func_get_arg"
             | "call_user_func"
             | "call_user_func_array"
+            | "explode"
             | "implode"
+            | "join"
             | "basename"
             | "pathinfo"
             | "dirname"
@@ -100087,82 +100101,304 @@ fn parse_sprintf_numeric_string(value: &str) -> Option<f64> {
     value.parse::<f64>().ok().filter(|value| value.is_finite())
 }
 
-fn call_implode(args: &[Value], span: Span) -> CompileResult<Value> {
-    if !(1..=2).contains(&args.len()) {
-        return Err(runtime_error(
-            span,
-            RuntimeError::arity_mismatch(
-                "implode()",
-                ArityExpectation::Between { min: 1, max: 2 },
-                args.len(),
-            ),
-        ));
+impl Interpreter {
+    fn call_explode(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(2..=3).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "explode()",
+                    ArityExpectation::Between { min: 2, max: 3 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let separator =
+            self.cslashes_string_argument_bytes("explode()", 1, "separator", &args[0], span)?;
+        let subject =
+            self.cslashes_string_argument_bytes("explode()", 2, "string", &args[1], span)?;
+        let limit = match args.get(2) {
+            Some(value) => Some(php_internal_int_argument(
+                "explode()",
+                3,
+                "limit",
+                value,
+                span,
+            )?),
+            None => None,
+        };
+
+        if separator.is_empty() {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "explode()",
+                    "Argument #1 ($separator) must not be empty",
+                ),
+            ));
+        }
+
+        Ok(Value::Array(php_explode_array(
+            &separator, &subject, limit, span,
+        )?))
     }
 
-    let (separator, array) = match args {
-        [Value::Array(array)] => ("", array),
-        [Value::String(separator), Value::Array(array)] => (separator.as_str(), array),
-        [other] => {
+    fn call_implode(&mut self, function: &str, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(1..=2).contains(&args.len()) {
             return Err(runtime_error(
                 span,
-                RuntimeError::unsupported_call(
-                    "implode()",
-                    format!(
-                        "single argument must be array in the current subset, got {}",
-                        other.type_name()
-                    ),
+                RuntimeError::arity_mismatch(
+                    function,
+                    ArityExpectation::Between { min: 1, max: 2 },
+                    args.len(),
                 ),
             ));
         }
-        [separator, Value::Array(_)] => {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "implode()",
-                    format!(
-                        "separator argument must be string in the current subset, got {}",
-                        separator.type_name()
-                    ),
-                ),
-            ));
-        }
-        [_, value] => {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "implode()",
-                    format!(
-                        "array argument must be array in the current subset, got {}",
-                        value.type_name()
-                    ),
-                ),
-            ));
-        }
-        _ => unreachable!("implode arity already checked"),
-    };
 
-    let mut parts = Vec::with_capacity(array.len());
-    for entry in array.entries() {
-        match entry.value() {
-            Value::Null | Value::Bool(_) | Value::Int(_) | Value::Float(_) | Value::String(_) => {
-                parts.push(entry.value().echo_string());
-            }
-            other => {
+        let (separator, array) = match args {
+            [Value::Array(array)] => (Vec::new(), array),
+            [_] => {
                 return Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
-                        "implode()",
+                        function,
                         format!(
-                            "array values must be null, bool, int, float, or string in the current subset, got {}",
-                            other.type_name()
+                            "If argument #1 ($separator) is of type string, argument #2 ($array) must be of type array, null given"
                         ),
                     ),
                 ));
             }
+            [separator, Value::Array(array)] => (
+                self.implode_separator_bytes(function, separator, span)?,
+                array,
+            ),
+            [separator, value] => {
+                let message = if matches!(separator, Value::String(_) | Value::BinaryString(_)) {
+                    format!(
+                        "If argument #1 ($separator) is of type string, argument #2 ($array) must be of type array, {} given",
+                        php_type_error_given(value)
+                    )
+                } else {
+                    format!(
+                        "Argument #2 ($array) must be of type ?array, {} given",
+                        php_type_error_given(value)
+                    )
+                };
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(function, message),
+                ));
+            }
+            _ => unreachable!("implode arity already checked"),
+        };
+
+        let mut output = Vec::new();
+        for (index, entry) in array.entries().iter().enumerate() {
+            if index > 0 {
+                output.extend_from_slice(&separator);
+            }
+            output.extend(self.implode_piece_bytes(function, entry.value(), span)?);
+        }
+
+        Ok(interpreter_value_from_php_string_bytes(output))
+    }
+
+    fn implode_separator_bytes(
+        &mut self,
+        function: &str,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<Vec<u8>> {
+        match value {
+            Value::Array(_) => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function,
+                    "Argument #1 ($separator) must be of type string, array given",
+                ),
+            )),
+            Value::Resource(_) | Value::Closure(_) => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function,
+                    format!(
+                        "Argument #1 ($separator) must be of type array|string, {} given",
+                        php_type_error_given(value)
+                    ),
+                ),
+            )),
+            Value::Object(object) => {
+                if let Some(output) =
+                    self.object_to_string_with_magic(object.clone(), function, span)?
+                {
+                    Ok(output.into_bytes())
+                } else {
+                    Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            function,
+                            format!(
+                                "Argument #1 ($separator) must be of type array|string, {} given",
+                                php_type_error_given(value)
+                            ),
+                        ),
+                    ))
+                }
+            }
+            Value::Float(value) => Ok(php_default_precision_float_string(*value).into_bytes()),
+            _ => value
+                .try_echo_bytes()
+                .map_err(|error| runtime_error(span, error)),
         }
     }
 
-    Ok(Value::String(parts.join(separator)))
+    fn implode_piece_bytes(
+        &mut self,
+        function: &str,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<Vec<u8>> {
+        match value {
+            Value::Array(_) => {
+                self.emit_display_warning("Array to string conversion", span)?;
+                Ok(b"Array".to_vec())
+            }
+            Value::Object(object) => {
+                if let Some(output) =
+                    self.object_to_string_with_magic(object.clone(), function, span)?
+                {
+                    Ok(output.into_bytes())
+                } else {
+                    value
+                        .try_echo_bytes()
+                        .map_err(|error| runtime_error(span, error))
+                }
+            }
+            Value::Resource(id) => Ok(format!("Resource id #{id}").into_bytes()),
+            Value::Float(value) => Ok(php_default_precision_float_string(*value).into_bytes()),
+            _ => value
+                .try_echo_bytes()
+                .map_err(|error| runtime_error(span, error)),
+        }
+    }
+}
+
+fn php_default_precision_float_string(value: f64) -> String {
+    if value.is_nan() {
+        return "NAN".to_string();
+    }
+    if value.is_infinite() {
+        return if value.is_sign_positive() {
+            "INF".to_string()
+        } else {
+            "-INF".to_string()
+        };
+    }
+    if value == 0.0 {
+        return "0".to_string();
+    }
+
+    let abs = value.abs();
+    let formatted = if !(1e-4..1e14).contains(&abs) {
+        format!("{value:.14E}")
+    } else {
+        let integer_digits = if abs >= 1.0 {
+            abs.log10().floor() as i32 + 1
+        } else {
+            0
+        };
+        let decimals = 14_i32.saturating_sub(integer_digits).max(0) as usize;
+        format!("{value:.decimals$}")
+    };
+    trim_php_float_string(&formatted)
+}
+
+fn trim_php_float_string(value: &str) -> String {
+    if let Some((mantissa, exponent)) = value.split_once('E') {
+        let mantissa = trim_decimal_suffix(mantissa);
+        let exponent = exponent.parse::<i32>().unwrap_or(0);
+        return format!("{mantissa}E{exponent}");
+    }
+
+    trim_decimal_suffix(value)
+}
+
+fn trim_decimal_suffix(value: &str) -> String {
+    if !value.contains('.') {
+        return value.to_string();
+    }
+    let trimmed = value.trim_end_matches('0').trim_end_matches('.');
+    if trimmed == "-0" {
+        "0".to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
+fn php_explode_array(
+    separator: &[u8],
+    subject: &[u8],
+    limit: Option<i64>,
+    span: Span,
+) -> CompileResult<PhpArray> {
+    let limit = limit.unwrap_or(i64::MAX);
+    let segments = if limit < 0 {
+        let mut segments = split_all_bytes(subject, separator);
+        let remove = limit
+            .checked_neg()
+            .and_then(|value| usize::try_from(value).ok())
+            .unwrap_or(usize::MAX);
+        segments.truncate(segments.len().saturating_sub(remove));
+        segments
+    } else {
+        let max_parts = if limit == 0 {
+            1
+        } else {
+            usize::try_from(limit).unwrap_or(usize::MAX)
+        };
+        let mut segments = Vec::new();
+        let mut cursor = 0;
+        while segments.len().saturating_add(1) < max_parts {
+            let Some(position) = find_subslice(&subject[cursor..], separator) else {
+                break;
+            };
+            let end = cursor + position;
+            segments.push(subject[cursor..end].to_vec());
+            cursor = end + separator.len();
+        }
+        segments.push(subject[cursor..].to_vec());
+        segments
+    };
+
+    let mut array = PhpArray::new();
+    for segment in segments {
+        array
+            .append(interpreter_value_from_php_string_bytes(segment))
+            .map_err(|error| runtime_error(span, error))?;
+    }
+    Ok(array)
+}
+
+fn split_all_bytes(subject: &[u8], separator: &[u8]) -> Vec<Vec<u8>> {
+    let mut segments = Vec::new();
+    let mut cursor = 0;
+    while let Some(position) = find_subslice(&subject[cursor..], separator) {
+        let end = cursor + position;
+        segments.push(subject[cursor..end].to_vec());
+        cursor = end + separator.len();
+    }
+    segments.push(subject[cursor..].to_vec());
+    segments
+}
+
+fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    if needle.is_empty() {
+        return Some(0);
+    }
+    haystack
+        .windows(needle.len())
+        .position(|window| window == needle)
 }
 
 fn is_bounded_session_id(session_id: &str) -> bool {
