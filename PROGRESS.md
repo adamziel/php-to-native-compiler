@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-29 20:21 CEST
+Updated: 2026-05-29 20:44 CEST
 Primary branch: `master`
-Latest source head: `fc2788a7 fix: add date array and fopen semantics`
+Latest source head: `100adcb7 fix: add base conversion and ctype builtins`
 
 ## Progress Score
 
@@ -37,6 +37,15 @@ a focused p47 array numeric proof covering 10 direct PHPT rows, and
 checkpoint10 source `fc2788a7` is integrated with a focused p43 local
 `fopen()` mode-matrix proof covering 25 direct PHPT rows. Batch013 source
 progress is now 10 / 10 checkpoints and +151 expected direct rows.
+
+Batch014 source checkpoint1 `100adcb7` is integrated with focused lowercase
+`-p` proof for p63 base-conversion builtins and p15/p63 ctype classification.
+The combined focused gate recorded `61 PASS / 0 FAIL / 1 SKIP` across 62
+selected PHPTs: 13 base-conversion rows plus 48 ctype rows, with
+`lc_ctype_inheritance.phpt` skipped for missing `de_DE` locale. Batch014 source
+progress is now 1 checkpoint and +61 expected direct rows. The public
+percentage remains `3170 / 20294 = 15.62%` until the next pinned full-suite
+gate is completed, regression-checked, and published here.
 
 No other percentage is public project progress. Focused PHPT passes, source
 checkpoints, PRs, and docs/status edits are evidence for the next batch, but
