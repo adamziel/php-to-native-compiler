@@ -32048,8 +32048,16 @@ impl PhpClassTable {
         classes
             .set_parent(out_of_range_exception_id, runtime_exception_id)
             .expect("OutOfRangeException should extend RuntimeException");
+        let unexpected_value_exception_id = classes
+            .declare_class("UnexpectedValueException")
+            .expect(
+            "core class table should contain OutOfRangeException before UnexpectedValueException",
+        );
+        classes
+            .set_parent(unexpected_value_exception_id, runtime_exception_id)
+            .expect("UnexpectedValueException should extend RuntimeException");
         let out_of_bounds_exception_id = classes.declare_class("OutOfBoundsException").expect(
-            "core class table should contain OutOfRangeException before OutOfBoundsException",
+            "core class table should contain UnexpectedValueException before OutOfBoundsException",
         );
         classes
             .set_parent(out_of_bounds_exception_id, runtime_exception_id)

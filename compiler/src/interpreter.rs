@@ -214,6 +214,7 @@ struct Interpreter {
     spl_fixed_arrays: HashMap<i64, SplFixedArrayState>,
     array_objects: HashMap<i64, BoundedArrayObjectState>,
     spl_object_storages: HashMap<i64, SplObjectStorageState>,
+    spl_object_storage_get_hash_depth: usize,
     spl_doubly_linked_lists: HashMap<i64, SplDoublyLinkedListState>,
     date_time_objects: HashMap<i64, BoundedDateTimeObjectState>,
     source_file: Option<String>,
@@ -480,6 +481,7 @@ struct SplObjectStorageState {
 
 #[derive(Debug, Clone)]
 struct SplObjectStorageEntry {
+    hash: String,
     object: PhpObject,
     info: Value,
 }
@@ -10155,6 +10157,7 @@ impl Interpreter {
             spl_fixed_arrays: HashMap::new(),
             array_objects: HashMap::new(),
             spl_object_storages: HashMap::new(),
+            spl_object_storage_get_hash_depth: 0,
             spl_doubly_linked_lists: HashMap::new(),
             date_time_objects: HashMap::new(),
             main_source_file: source_file.clone(),
@@ -12680,16 +12683,9 @@ impl Interpreter {
             ArrayCopyReturnBodyFlow::Return { value, source } => Ok((Flow::Return(value), source)),
             ArrayCopyReturnBodyFlow::Exit(code) => Ok((Flow::Exit(code), None)),
             ArrayCopyReturnBodyFlow::Goto { label, span } => Ok((Flow::Goto { label, span }, None)),
-            ArrayCopyReturnBodyFlow::Throw { object, span } => Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "throw",
-                    format!(
-                        "uncaught {} during array-copy return evaluation is not implemented",
-                        object.class_name()
-                    ),
-                ),
-            )),
+            ArrayCopyReturnBodyFlow::Throw { object, span } => {
+                Err(self.uncaught_throw_error(&object, span))
+            }
         }
     }
 
@@ -14926,26 +14922,23 @@ impl Interpreter {
 
     fn spl_object_storage_insert_or_update(
         state: &mut SplObjectStorageState,
+        hash: String,
         object: PhpObject,
         info: Value,
     ) {
-        if let Some(entry) = state
-            .entries
-            .iter_mut()
-            .find(|entry| entry.object.id() == object.id())
-        {
+        if let Some(entry) = state.entries.iter_mut().find(|entry| entry.hash == hash) {
+            entry.hash = hash;
+            entry.object = object;
             entry.info = info;
         } else {
-            state.entries.push(SplObjectStorageEntry { object, info });
+            state
+                .entries
+                .push(SplObjectStorageEntry { hash, object, info });
         }
     }
 
-    fn spl_object_storage_remove(state: &mut SplObjectStorageState, object_id: i64) {
-        if let Some(index) = state
-            .entries
-            .iter()
-            .position(|entry| entry.object.id() == object_id)
-        {
+    fn spl_object_storage_remove(state: &mut SplObjectStorageState, hash: &str) {
+        if let Some(index) = state.entries.iter().position(|entry| entry.hash == hash) {
             state.entries.remove(index);
             if state.cursor > index {
                 state.cursor -= 1;
@@ -14954,6 +14947,121 @@ impl Interpreter {
                 state.cursor = state.entries.len();
             }
         }
+    }
+
+    fn ensure_spl_object_storage_not_hashing(
+        &self,
+        method_name: &str,
+        span: Span,
+    ) -> CompileResult<()> {
+        if self.spl_object_storage_get_hash_depth == 0 {
+            return Ok(());
+        }
+
+        Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                format!("SplObjectStorage::{method_name}()"),
+                "Modification of SplObjectStorage during getHash() is prohibited",
+            ),
+        ))
+    }
+
+    fn spl_object_storage_hash_for_object(
+        &mut self,
+        storage: PhpObject,
+        stored_object: PhpObject,
+        span: Span,
+    ) -> CompileResult<String> {
+        let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
+            self.resolve_instance_method(storage.class_id(), "getHash")
+        else {
+            return Ok(stored_object.id().to_string());
+        };
+
+        if self.resolved_method_is_core_spl_object_storage(class_id) {
+            return Ok(stored_object.id().to_string());
+        }
+
+        if is_static {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{class_name}::getHash()"),
+                    "static SplObjectStorage::getHash() overrides are not implemented",
+                ),
+            ));
+        }
+        self.ensure_instance_method_visible(class_id, &class_name, "getHash", visibility, span)?;
+
+        let function = self.method_function(class_id, &class_name, &resolved_method_name, span)?;
+        let function = function.as_ref();
+        ensure_user_function_arity(function, 1, span)?;
+        ensure_supported_function_metadata(function, span)?;
+        self.ensure_user_function_call_depth(function, span)?;
+
+        self.spl_object_storage_get_hash_depth += 1;
+        let result = self.call_user_function_with_this(
+            function,
+            storage.clone(),
+            vec![Value::Object(stored_object)],
+            Some(class_id),
+            Some(storage.class_id()),
+        );
+        self.spl_object_storage_get_hash_depth -= 1;
+
+        match result? {
+            Value::String(hash) => Ok(hash),
+            other => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{class_name}::getHash()"),
+                    format!(
+                        "{class_name}::getHash(): Return value must be of type string, {} returned",
+                        other.type_name()
+                    ),
+                ),
+            )),
+        }
+    }
+
+    fn spl_object_storage_objects_equal(
+        &self,
+        left: &PhpObject,
+        right: &PhpObject,
+        span: Span,
+    ) -> CompileResult<bool> {
+        if !left.class_name().eq_ignore_ascii_case(right.class_name()) {
+            return Ok(false);
+        }
+
+        let left_state = self.spl_object_storage_state(left, "compare", span)?;
+        let right_state = self.spl_object_storage_state(right, "compare", span)?;
+        if left_state.entries.len() != right_state.entries.len() {
+            return Ok(false);
+        }
+
+        for left_entry in &left_state.entries {
+            let Some(right_entry) = right_state
+                .entries
+                .iter()
+                .find(|entry| entry.hash == left_entry.hash)
+            else {
+                return Ok(false);
+            };
+            if left_entry.object.id() != right_entry.object.id() {
+                return Ok(false);
+            }
+            if !left_entry
+                .info
+                .php_cmp_checked(&right_entry.info, Comparison::Eq)
+                .map_err(|error| runtime_error(span, error))?
+            {
+                return Ok(false);
+            }
+        }
+
+        Ok(true)
     }
 
     fn call_spl_object_storage_method_with_values(
@@ -14982,39 +15090,49 @@ impl Interpreter {
                 let stored_object =
                     Self::spl_object_storage_object_argument(method_name, &args, 0, span)?;
                 let info = args.get(1).cloned().unwrap_or(Value::Null);
+                self.ensure_spl_object_storage_not_hashing(method_name, span)?;
+                let hash = self.spl_object_storage_hash_for_object(
+                    object.clone(),
+                    stored_object.clone(),
+                    span,
+                )?;
                 let state = self.spl_object_storage_state_mut(&object, method_name, span)?;
-                Self::spl_object_storage_insert_or_update(state, stored_object, info);
+                Self::spl_object_storage_insert_or_update(state, hash, stored_object, info);
                 Ok(Value::Null)
             }
             "detach" | "offsetunset" => {
                 expect_arity(&format!("SplObjectStorage::{method_name}"), &args, 1, span)?;
                 let stored_object =
                     Self::spl_object_storage_object_argument(method_name, &args, 0, span)?;
+                self.ensure_spl_object_storage_not_hashing(method_name, span)?;
+                let hash =
+                    self.spl_object_storage_hash_for_object(object.clone(), stored_object, span)?;
                 let state = self.spl_object_storage_state_mut(&object, method_name, span)?;
-                Self::spl_object_storage_remove(state, stored_object.id());
+                Self::spl_object_storage_remove(state, &hash);
                 Ok(Value::Null)
             }
             "contains" | "offsetexists" => {
                 expect_arity(&format!("SplObjectStorage::{method_name}"), &args, 1, span)?;
                 let stored_object =
                     Self::spl_object_storage_object_argument(method_name, &args, 0, span)?;
+                let hash =
+                    self.spl_object_storage_hash_for_object(object.clone(), stored_object, span)?;
                 let state = self.spl_object_storage_state(&object, method_name, span)?;
                 Ok(Value::Bool(
-                    state
-                        .entries
-                        .iter()
-                        .any(|entry| entry.object.id() == stored_object.id()),
+                    state.entries.iter().any(|entry| entry.hash == hash),
                 ))
             }
             "offsetget" => {
                 expect_arity("SplObjectStorage::offsetGet", &args, 1, span)?;
                 let stored_object =
                     Self::spl_object_storage_object_argument(method_name, &args, 0, span)?;
+                let hash =
+                    self.spl_object_storage_hash_for_object(object.clone(), stored_object, span)?;
                 let state = self.spl_object_storage_state(&object, method_name, span)?;
                 state
                     .entries
                     .iter()
-                    .find(|entry| entry.object.id() == stored_object.id())
+                    .find(|entry| entry.hash == hash)
                     .map(|entry| entry.info.clone())
                     .ok_or_else(|| {
                         runtime_error(
@@ -15082,6 +15200,7 @@ impl Interpreter {
             "setinfo" => {
                 expect_arity("SplObjectStorage::setInfo", &args, 1, span)?;
                 let info = args.first().cloned().unwrap_or(Value::Null);
+                self.ensure_spl_object_storage_not_hashing(method_name, span)?;
                 let state = self.spl_object_storage_state_mut(&object, method_name, span)?;
                 if let Some(entry) = state.entries.get_mut(state.cursor) {
                     entry.info = info;
@@ -15100,29 +15219,36 @@ impl Interpreter {
                 let other_state = self
                     .spl_object_storage_state(&other, method_name, span)?
                     .clone();
-                let state = self.spl_object_storage_state_mut(&object, method_name, span)?;
+                self.ensure_spl_object_storage_not_hashing(method_name, span)?;
+                let mut entries = Vec::with_capacity(other_state.entries.len());
                 for entry in other_state.entries {
-                    Self::spl_object_storage_insert_or_update(
-                        state,
+                    let hash = self.spl_object_storage_hash_for_object(
+                        object.clone(),
                         entry.object.clone(),
-                        entry.info.clone(),
-                    );
+                        span,
+                    )?;
+                    entries.push((hash, entry.object, entry.info));
+                }
+                let state = self.spl_object_storage_state_mut(&object, method_name, span)?;
+                for (hash, stored_object, info) in entries {
+                    Self::spl_object_storage_insert_or_update(state, hash, stored_object, info);
                 }
                 Ok(Value::Null)
             }
             "removeall" => {
                 expect_arity("SplObjectStorage::removeAll", &args, 1, span)?;
                 let other = self.spl_object_storage_argument(method_name, &args, 0, span)?;
-                let other_ids = self
+                let other_hashes = self
                     .spl_object_storage_state(&other, method_name, span)?
                     .entries
                     .iter()
-                    .map(|entry| entry.object.id())
+                    .map(|entry| entry.hash.clone())
                     .collect::<HashSet<_>>();
+                self.ensure_spl_object_storage_not_hashing(method_name, span)?;
                 let state = self.spl_object_storage_state_mut(&object, method_name, span)?;
                 state
                     .entries
-                    .retain(|entry| !other_ids.contains(&entry.object.id()));
+                    .retain(|entry| !other_hashes.contains(&entry.hash));
                 if state.cursor > state.entries.len() {
                     state.cursor = state.entries.len();
                 }
@@ -15131,16 +15257,44 @@ impl Interpreter {
             "removeallexcept" => {
                 expect_arity("SplObjectStorage::removeAllExcept", &args, 1, span)?;
                 let other = self.spl_object_storage_argument(method_name, &args, 0, span)?;
-                let other_ids = self
+                let own_entries = self
+                    .spl_object_storage_state(&object, method_name, span)?
+                    .entries
+                    .iter()
+                    .map(|entry| (entry.hash.clone(), entry.object.clone()))
+                    .collect::<Vec<_>>();
+                let other_hashes = self
                     .spl_object_storage_state(&other, method_name, span)?
                     .entries
                     .iter()
-                    .map(|entry| entry.object.id())
+                    .map(|entry| entry.hash.clone())
                     .collect::<HashSet<_>>();
+                let other_uses_core_hash = self
+                    .resolve_instance_method(other.class_id(), "getHash")
+                    .is_some_and(|(class_id, _, _, _, _)| {
+                        self.resolved_method_is_core_spl_object_storage(class_id)
+                    });
+                let allowed_hashes = if other_uses_core_hash {
+                    other_hashes
+                } else {
+                    let mut allowed = HashSet::new();
+                    for (own_hash, stored_object) in own_entries {
+                        let other_hash = self.spl_object_storage_hash_for_object(
+                            other.clone(),
+                            stored_object,
+                            span,
+                        )?;
+                        if other_hashes.contains(&other_hash) {
+                            allowed.insert(own_hash);
+                        }
+                    }
+                    allowed
+                };
+                self.ensure_spl_object_storage_not_hashing(method_name, span)?;
                 let state = self.spl_object_storage_state_mut(&object, method_name, span)?;
                 state
                     .entries
-                    .retain(|entry| other_ids.contains(&entry.object.id()));
+                    .retain(|entry| allowed_hashes.contains(&entry.hash));
                 if state.cursor > state.entries.len() {
                     state.cursor = state.entries.len();
                 }
@@ -20467,21 +20621,29 @@ impl Interpreter {
             span,
         )?;
         let function = function.as_ref();
-        if function_has_promoted_properties(function) {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_object_instantiation(
-                    declared_class_name,
-                    "constructor property promotion initialization is not implemented",
-                ),
-            ));
-        }
         Self::ensure_user_function_expr_arity_unless_spread(function, args, span)?;
         ensure_supported_function_metadata(function, span)?;
         self.ensure_user_function_call_depth(function, span)?;
 
         let (values, reference_bindings) =
             self.evaluate_user_function_call_arguments(function, args, span, scope)?;
+        if function_has_promoted_properties(function) {
+            let protected_class_ids = self.protected_class_ids_for_context(constructor_class_id);
+            for (param, value) in function.params.iter().zip(values.iter()) {
+                if param.promotion.is_none() {
+                    continue;
+                }
+                object
+                    .write_property_from_context_with_object_type_resolver(
+                        &param.name,
+                        value.clone(),
+                        Some(constructor_class_id),
+                        &protected_class_ids,
+                        |object, type_name| object.is_instance_of_class_name(type_name),
+                    )
+                    .map_err(|error| runtime_error(span, error))?;
+            }
+        }
 
         self.call_user_function_with_checked_values(
             function,
@@ -73947,7 +74109,78 @@ impl Interpreter {
     }
 
     fn format_var_dump(&self, value: &Value, span: Span) -> CompileResult<String> {
+        if let Value::Object(object) = value {
+            if self.is_spl_object_storage_object(object) {
+                return self.format_spl_object_storage_var_dump(object, 0, span);
+            }
+        }
         format_var_dump_with_resource_type(value, span, |id| self.resource_type_label(id))
+    }
+
+    fn format_spl_object_storage_var_dump(
+        &self,
+        object: &PhpObject,
+        indent: usize,
+        span: Span,
+    ) -> CompileResult<String> {
+        let padding = "  ".repeat(indent);
+        let child_padding = "  ".repeat(indent + 1);
+        let entry_padding = "  ".repeat(indent + 2);
+        let pair_padding = "  ".repeat(indent + 3);
+        let state = self.spl_object_storage_state(object, "var_dump", span)?;
+        let properties = object.properties();
+        let mut output = format!(
+            "{padding}object({})#{} ({}) {{\n",
+            object.class_name(),
+            object.id(),
+            properties.len() + 1
+        );
+        for property in properties {
+            output.push_str(&format!(
+                "{child_padding}[{}]=>\n",
+                format_var_dump_object_property(&property)
+            ));
+            let property_value = property.value_cloned();
+            output.push_str(&format_var_dump_with_indent(
+                &property_value,
+                indent + 1,
+                span,
+                &|id| self.resource_type_label(id),
+            )?);
+        }
+        output.push_str(&format!(
+            "{child_padding}[\"storage\":\"SplObjectStorage\":private]=>\n"
+        ));
+        output.push_str(&format!(
+            "{child_padding}array({}) {{\n",
+            state.entries.len()
+        ));
+        for (index, entry) in state.entries.iter().enumerate() {
+            output.push_str(&format!("{entry_padding}[{index}]=>\n"));
+            output.push_str(&format!("{entry_padding}array(2) {{\n"));
+            output.push_str(&format!("{pair_padding}[\"obj\"]=>\n"));
+            output.push_str(&format_var_dump_with_indent(
+                &Value::Object(entry.object.clone()),
+                indent + 3,
+                span,
+                &|id| self.resource_type_label(id),
+            )?);
+            output.push_str(&format!("{pair_padding}[\"inf\"]=>\n"));
+            if matches!(&entry.info, Value::Object(info) if info.id() == object.id()) {
+                output.push_str(&format!("{pair_padding}*RECURSION*\n"));
+            } else {
+                output.push_str(&format_var_dump_with_indent(
+                    &entry.info,
+                    indent + 3,
+                    span,
+                    &|id| self.resource_type_label(id),
+                )?);
+            }
+            output.push_str(&format!("{entry_padding}}}\n"));
+        }
+        output.push_str(&format!("{child_padding}}}\n"));
+        output.push_str(&format!("{padding}}}\n"));
+        Ok(output)
     }
 
     fn call_glob(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -83011,6 +83244,22 @@ impl Interpreter {
             return Ok(interpreter_value_from_php_string_bytes(bytes));
         }
 
+        if matches!(op, BinaryOp::Eq | BinaryOp::Ne) {
+            if let (Value::Object(left_object), Value::Object(right_object)) = (&left, &right) {
+                if self.is_spl_object_storage_object(left_object)
+                    && self.is_spl_object_storage_object(right_object)
+                {
+                    let equal =
+                        self.spl_object_storage_objects_equal(left_object, right_object, span)?;
+                    return Ok(Value::Bool(if matches!(op, BinaryOp::Eq) {
+                        equal
+                    } else {
+                        !equal
+                    }));
+                }
+            }
+        }
+
         let result: RuntimeResult<Value> = match op {
             BinaryOp::Add => left.php_add(&right),
             BinaryOp::Sub => left.php_sub(&right),
@@ -83173,6 +83422,60 @@ impl Interpreter {
                     ),
                 )),
             },
+            CastKind::Object => {
+                let class_id = self.classes.lookup_class_id("stdClass").ok_or_else(|| {
+                    runtime_error(span, RuntimeError::undefined_class("stdClass"))
+                })?;
+                let object_id = self.allocate_object_id();
+                let class = self
+                    .classes
+                    .get(class_id)
+                    .expect("stdClass class id should resolve");
+                let object = PhpObject::from_class_with_id(class, object_id);
+                match value {
+                    Value::Null => {}
+                    Value::Array(array) => {
+                        for entry in array.entries() {
+                            object
+                                .write_dynamic_public_property(
+                                    &entry.key.display_key(),
+                                    entry.value_cloned(),
+                                )
+                                .map_err(|error| runtime_error(span, error))?;
+                        }
+                    }
+                    Value::Bool(_)
+                    | Value::Int(_)
+                    | Value::Float(_)
+                    | Value::String(_)
+                    | Value::BinaryString(_) => {
+                        object
+                            .write_dynamic_public_property("scalar", value)
+                            .map_err(|error| runtime_error(span, error))?;
+                    }
+                    Value::Object(object) => return Ok(Value::Object(object)),
+                    Value::Closure(_) => {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "(object)",
+                                "Closure object casts are not implemented",
+                            ),
+                        ));
+                    }
+                    Value::Resource(_) => {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "(object)",
+                                "resource-to-object cast behavior is not implemented",
+                            ),
+                        ));
+                    }
+                }
+                self.track_allocated_object(&object);
+                Ok(Value::Object(object))
+            }
         }
     }
 }
@@ -84849,6 +85152,10 @@ fn typed_property_default_literal_matches_type(
     default_kind: TypedPropertyDefaultKind,
     type_decl: &str,
 ) -> bool {
+    if default_kind == TypedPropertyDefaultKind::Null && typed_property_type_allows_null(type_decl)
+    {
+        return true;
+    }
     if type_decl.contains('|') {
         return type_decl
             .split('|')
@@ -91075,6 +91382,40 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
                 "RuntimeException",
                 "Called current() on invalid iterator".to_string(),
             ));
+        }
+
+        if error.message == "unsupported call SplObjectStorage::offsetGet(): Object not found" {
+            return Some(("UnexpectedValueException", "Object not found".to_string()));
+        }
+
+        if let Some(message) = error
+            .message
+            .strip_prefix("unsupported call SplObjectStorage::seek(): ")
+            .filter(|message| message.starts_with("Seek position "))
+        {
+            return Some(("OutOfBoundsException", message.to_string()));
+        }
+
+        if error
+            .message
+            .ends_with("Modification of SplObjectStorage during getHash() is prohibited")
+        {
+            return Some((
+                "Error",
+                "Modification of SplObjectStorage during getHash() is prohibited".to_string(),
+            ));
+        }
+
+        if let Some(message) = error
+            .message
+            .strip_prefix("unsupported call ")
+            .and_then(|message| message.split_once(": "))
+            .map(|(_, message)| message.to_string())
+            .filter(|message| {
+                message.contains("::getHash(): Return value must be of type string, ")
+            })
+        {
+            return Some(("TypeError", message));
         }
 
         if let Some(message) = error
