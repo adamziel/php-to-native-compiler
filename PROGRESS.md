@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-29 05:20 CEST
+Updated: 2026-05-29 05:52 CEST
 Primary branch: `master`
-Latest source head: `1be8c03c fix: reject non-array call_user_func_array args`
+Latest source head: `906b4636 fix: reject max_memory_limit ini_set changes`
 
 ## Progress Score
 
@@ -13,7 +13,7 @@ Progress is the pinned php-src PHPT full-suite pass rate:
 
 `passed runnable PHPTs / total runnable PHPTs`
 
-Current score: **1836 / 20294 pinned runnable PHPTs = 9.05%**.
+Current score: **2047 / 20294 pinned runnable PHPTs = 10.09%**.
 
 No other percentage is public project progress. Focused PHPT passes, source
 checkpoints, PRs, and docs/status edits are evidence for the next batch, but
@@ -78,7 +78,7 @@ Batch005 checkpoint10 still has BORKED rows, so the public score uses the
 stable pinned denominator and does not use the raw runner
 `1618 / 18658 = 8.67%` calculation.
 
-The latest full-suite result is the Batch006 checkpoint10 sharded publication
+The Batch006 checkpoint10 sharded publication
 gate on the same php-src pin, run
 `phpt-full-batch006-checkpoint10-sharded-20260529T013919Z-php-src-f97ff59-public-10e768d3-source-e35a5d2c-stack10`.
 Counts: 1836 passed, 16864 failed, 2529 skipped, 15 xfailed, 1087 borked;
@@ -89,6 +89,18 @@ the latest published Batch005 checkpoint10 PASS set: 0. Evidence lives under
 Batch006 checkpoint10 still has BORKED rows, so the public score uses the
 stable pinned denominator and does not use the raw runner
 `1836 / 18715 = 9.81%` calculation.
+
+The latest full-suite result is the Batch007 checkpoint10 regression-repair
+sharded publication gate on the same php-src pin, run
+`phpt-full-batch007-checkpoint10-sharded-20260529T034255Z-php-src-f97ff59-public-906b4636-source-906b4636-stack10`.
+Counts: 2047 passed, 16653 failed, 2529 skipped, 15 xfailed, 1087 borked;
+all 12 shards exited nonzero because failing PHPTs remain. Regressions from
+the latest published Batch006 checkpoint10 PASS set: 0. Evidence lives under
+`/home/claude/supervised-php-compiler/state/logs/phpt-full-batch007-checkpoint10-sharded-20260529T034255Z-php-src-f97ff59-public-906b4636-source-906b4636-stack10`.
+
+Batch007 checkpoint10 still has BORKED rows, so the public score uses the
+stable pinned denominator and does not use the raw runner
+`2047 / 18715 = 10.94%` calculation.
 
 ## PHPT Harness
 
@@ -108,7 +120,8 @@ stable pinned denominator and does not use the raw runner
 | Batch004 source batch | Complete | Batch004 source checkpoints accepted: 10 / 10; checkpoint10 sharded gate published |
 | Batch005 source batch | Complete | Batch005 source checkpoints accepted: 10 / 10; checkpoint10 sharded gate published |
 | Batch006 source batch | Complete | Source checkpoints accepted: 10 / 10; checkpoint10 sharded gate published |
-| Batch007 source batch | Complete | Source checkpoints accepted: 10 / 10; checkpoint10 sharded publication gate pending |
+| Batch007 checkpoint10 sharded gate | Done | 2047 / 20294 pinned runnable PHPTs passed (10.09%); 0 regressions from Batch006 checkpoint10 PASS set; run id `phpt-full-batch007-checkpoint10-sharded-20260529T034255Z-php-src-f97ff59-public-906b4636-source-906b4636-stack10` |
+| Batch007 source batch | Complete | Source checkpoints accepted: 10 / 10; checkpoint10 regression-repair sharded gate published |
 
 Focused PHPT history is tracked separately in
 `/home/claude/supervised-php-compiler/state/php-core-suite-focused-history.tsv`.
@@ -116,11 +129,15 @@ Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
 
-Batch007 source checkpoint 10 is primary-integrated under AO supervision. This
-is a source checkpoint with focused proof, not a percentage change. The public
-PHPT score remains **1836 / 20294 pinned runnable PHPTs = 9.05%** until the
-Batch007 pinned sharded publication gate is completed, regression-checked, and
-published here.
+Batch007 checkpoint10 is now published as the current public PHPT score:
+**2047 / 20294 pinned runnable PHPTs = 10.09%**. The first checkpoint10
+sharded gate measured 2046 passed rows but found one real PASS-set regression
+in `tests/basic/gh17951_runtime_change_5.phpt`; supervisor repair commit
+`906b4636` restored that row, and the repair sharded gate completed with
+0 regressions from the Batch006 checkpoint10 PASS set.
+
+Batch007 source checkpoint 10 remains recorded below as the final source
+checkpoint in the batch.
 
 - primary source head:
   `1be8c03c fix: reject non-array call_user_func_array args`
