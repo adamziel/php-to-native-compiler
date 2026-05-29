@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-29 05:52 CEST
+Updated: 2026-05-29 06:17 CEST
 Primary branch: `master`
-Latest source head: `906b4636 fix: reject max_memory_limit ini_set changes`
+Latest source head: `4e8ce2c7 fix: add strncmp and strncasecmp semantics`
 
 ## Progress Score
 
@@ -122,12 +122,54 @@ stable pinned denominator and does not use the raw runner
 | Batch006 source batch | Complete | Source checkpoints accepted: 10 / 10; checkpoint10 sharded gate published |
 | Batch007 checkpoint10 sharded gate | Done | 2047 / 20294 pinned runnable PHPTs passed (10.09%); 0 regressions from Batch006 checkpoint10 PASS set; run id `phpt-full-batch007-checkpoint10-sharded-20260529T034255Z-php-src-f97ff59-public-906b4636-source-906b4636-stack10` |
 | Batch007 source batch | Complete | Source checkpoints accepted: 10 / 10; checkpoint10 regression-repair sharded gate published |
+| Batch008 source batch | Started | Source checkpoints accepted: 1 / 10; checkpoint1 is `strncmp()` / `strncasecmp()` focused source proof; public score unchanged until a pinned aggregate gate |
 
 Focused PHPT history is tracked separately in
 `/home/claude/supervised-php-compiler/state/php-core-suite-focused-history.tsv`.
 Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
+
+Batch008 source checkpoint 1 is primary-integrated under AO supervision. This
+is a source checkpoint with focused proof, not a percentage change. The public
+PHPT score remains **2047 / 20294 pinned runnable PHPTs = 10.09%** until the
+next pinned full-suite or supervisor-approved sharded publication gate is
+completed, regression-checked, and published here.
+
+- primary source head:
+  `4e8ce2c7 fix: add strncmp and strncasecmp semantics`
+- reviewed and integration patch:
+  `/home/claude/supervised-php-compiler/state/patches/ao-integration-p42-strncmp-strncasecmp-f7aae689-20260529.patch`
+- reviewed and integration patch SHA256:
+  `ec896fdc94badc44fd040336ba208666140212743b1bfbc54cc0f844d332045f`
+- author patch SHA256:
+  `cf1c30060f9291677de01e90e101aa4e836f106f2f378b8cabbaf493dd827c25`
+- reviewer gate: phpc-7 completed current-public `f7aae689` proof for p42
+  `strncmp()` / `strncasecmp()`; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/batch008-review-p42-strncmp-strncasecmp-f7aae689-phpc7-20260529.{status.md,report.md,gates.log}`
+- critic gate: phpc-33 recorded `SAFE-FOR-INTEGRATION` for the exact p42 SHA
+  on current public `f7aae689`; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/phpc-33-batch008-critic-f7aae689-20260529.{status.md,report.md}`
+- handoff gate: p38 completed scratch/no-primary handoff preflight with apply,
+  diff, docs/`PROGRESS.md`/examples exclusion, exact-shape, and patch export
+  proof; artifact:
+  `/home/claude/supervised-php-compiler/state/workers/ao-integration-p42-strncmp-strncasecmp-f7aae689-20260529.gates.log`
+- supervisor focused gates: PASS for clean apply over public `f7aae689`,
+  `git diff --cached --check`, docs/`PROGRESS.md`/examples exclusion,
+  production exact-shape audit, `cargo fmt --all -- --check`, focused Rust
+  `cargo test -q -p phpc --test strncmp_builtin -- --test-threads=1`,
+  `cargo build -q -p phpc --bin phpc`, `cargo check -q -p phpc`, and the
+  focused PHP core PHPT cluster
+  `ext/standard/tests/strings/{strncmp,strncasecmp}*` with 16 PASS and 0 FAIL
+- public progress gate: not run for this source checkpoint; next public score
+  update waits for a pinned aggregate gate
+
+This checkpoint implements generalized `strncmp()` and `strncasecmp()` builtin
+behavior: scalar argument conversion, negative-length `ValueError`, binary-safe
+prefix comparison, case-insensitive ASCII comparison for `strncasecmp()`, known
+function metadata, and callable/reflection support. It is not keyed to PHPT
+filenames, expected output, fixture names, public hashes, batch labels, or
+checkpoint markers.
 
 Batch007 checkpoint10 is now published as the current public PHPT score:
 **2047 / 20294 pinned runnable PHPTs = 10.09%**. The first checkpoint10
