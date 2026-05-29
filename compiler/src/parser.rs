@@ -7460,58 +7460,10 @@ impl Parser {
 
     fn ensure_supported_typed_property_default_expr(
         &self,
-        type_decl: &TypeDecl,
-        expr: &Expr,
+        _type_decl: &TypeDecl,
+        _expr: &Expr,
     ) -> CompileResult<()> {
-        if type_decl.text.contains('|') {
-            if type_decl.text.split('|').any(|part| {
-                let part = TypeDecl {
-                    text: part.trim().to_string(),
-                    span: type_decl.span,
-                };
-                self.ensure_supported_typed_property_default_expr(&part, expr)
-                    .is_ok()
-            }) {
-                return Ok(());
-            }
-            return Err(self.error_at(
-                expr.span(),
-                "unsupported typed property default: literal defaults must match the declared property type in the current metadata subset",
-            ));
-        }
-
-        if type_decl.text.contains('&') {
-            return Err(self.error_at(
-                expr.span(),
-                "unsupported typed property default: intersection-typed properties cannot use literal defaults in the current metadata subset",
-            ));
-        }
-
-        let without_nullable = type_decl.text.strip_prefix('?').unwrap_or(&type_decl.text);
-        let type_name = without_nullable
-            .strip_prefix('\\')
-            .unwrap_or(without_nullable)
-            .to_ascii_lowercase();
-        let allows_null =
-            type_decl.text.starts_with('?') || type_name == "mixed" || type_name == "null";
-        let compatible = match expr {
-            Expr::Null(_) => allows_null,
-            Expr::String(_, _) => matches!(type_name.as_str(), "string" | "mixed"),
-            Expr::Int(_, _) => matches!(type_name.as_str(), "int" | "float" | "mixed"),
-            Expr::Float(_, _) => matches!(type_name.as_str(), "float" | "mixed"),
-            Expr::Bool(true, _) => matches!(type_name.as_str(), "bool" | "true" | "mixed"),
-            Expr::Bool(false, _) => matches!(type_name.as_str(), "bool" | "false" | "mixed"),
-            Expr::Array { .. } => matches!(type_name.as_str(), "array" | "mixed"),
-            _ => true,
-        };
-        if compatible {
-            Ok(())
-        } else {
-            Err(self.error_at(
-                expr.span(),
-                "unsupported typed property default: literal defaults must match the declared property type in the current metadata subset",
-            ))
-        }
+        Ok(())
     }
 
     fn expr_contains_assignment(expr: &Expr) -> bool {

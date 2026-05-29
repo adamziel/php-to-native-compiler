@@ -75501,6 +75501,14 @@ fn magic_method_startup_diagnostics(
     }
 
     if !diagnostics.has_fatal() {
+        collect_trait_property_composition_startup_diagnostics(
+            &mut diagnostics,
+            program,
+            source_file,
+        );
+    }
+
+    if !diagnostics.has_fatal() {
         collect_property_override_startup_diagnostics(&mut diagnostics, program, source_file);
     }
 
@@ -75526,6 +75534,10 @@ fn magic_method_startup_diagnostics(
             program,
             source_file,
         );
+    }
+
+    if !diagnostics.has_fatal() {
+        collect_typed_property_default_startup_diagnostics(&mut diagnostics, program, source_file);
     }
 
     if !diagnostics.has_fatal() {
@@ -76262,6 +76274,151 @@ fn invalid_intersection_type_display(part: &str) -> Option<&'static str> {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TypedPropertyDefaultKind {
+    Null,
+    String,
+    Int,
+    Float,
+    BoolTrue,
+    BoolFalse,
+    Array,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct TypedPropertyDefaultLiteral {
+    kind: TypedPropertyDefaultKind,
+    display: &'static str,
+}
+
+fn collect_typed_property_default_startup_diagnostics(
+    diagnostics: &mut MagicMethodStartupDiagnostics,
+    program: &Program,
+    source_file: Option<&str>,
+) {
+    for stmt in &program.statements {
+        match stmt {
+            Stmt::Class(class) if !class.is_nested => {
+                for property in declared_class_properties_in_source_order(class) {
+                    if let Some((message, line)) =
+                        typed_property_default_startup_diagnostic(&class.name, &property)
+                    {
+                        diagnostics.set_fatal(message, source_file, line);
+                        return;
+                    }
+                }
+            }
+            Stmt::Trait(trait_decl) => {
+                for property in &trait_decl.properties {
+                    if let Some((message, line)) =
+                        typed_property_default_startup_diagnostic(&trait_decl.name, property)
+                    {
+                        diagnostics.set_fatal(message, source_file, line);
+                        return;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn typed_property_default_startup_diagnostic(
+    class_name: &str,
+    property: &ClassPropertyDecl,
+) -> Option<(String, usize)> {
+    let type_decl = property.type_decl.as_ref()?;
+    let default = property.default.as_ref()?;
+    let literal = typed_property_default_literal(default)?;
+    if typed_property_default_literal_matches_type(literal.kind, &type_decl.text) {
+        return None;
+    }
+
+    let message = if literal.kind == TypedPropertyDefaultKind::Null && type_decl.text.contains('&')
+    {
+        format!(
+            "Cannot use null as default value for property {class_name}::${} of type {}",
+            property.name, type_decl.text
+        )
+    } else if literal.kind == TypedPropertyDefaultKind::Null
+        && !typed_property_type_allows_null(&type_decl.text)
+    {
+        format!(
+            "Default value for property of type {} may not be null. Use the nullable type ?{} to allow null default value",
+            type_decl.text, type_decl.text
+        )
+    } else {
+        format!(
+            "Cannot use {} as default value for property {class_name}::${} of type {}",
+            literal.display, property.name, type_decl.text
+        )
+    };
+    Some((message, property.span.line))
+}
+
+fn typed_property_default_literal(expr: &Expr) -> Option<TypedPropertyDefaultLiteral> {
+    let (kind, display) = match expr {
+        Expr::Null(_) => (TypedPropertyDefaultKind::Null, "null"),
+        Expr::String(_, _) => (TypedPropertyDefaultKind::String, "string"),
+        Expr::Int(_, _) => (TypedPropertyDefaultKind::Int, "int"),
+        Expr::Float(_, _) => (TypedPropertyDefaultKind::Float, "float"),
+        Expr::Bool(true, _) => (TypedPropertyDefaultKind::BoolTrue, "bool"),
+        Expr::Bool(false, _) => (TypedPropertyDefaultKind::BoolFalse, "bool"),
+        Expr::Array { .. } => (TypedPropertyDefaultKind::Array, "array"),
+        _ => return None,
+    };
+    Some(TypedPropertyDefaultLiteral { kind, display })
+}
+
+fn typed_property_default_literal_matches_type(
+    default_kind: TypedPropertyDefaultKind,
+    type_decl: &str,
+) -> bool {
+    if type_decl.contains('|') {
+        return type_decl
+            .split('|')
+            .any(|part| typed_property_default_literal_matches_type_part(default_kind, part));
+    }
+    if type_decl.contains('&') {
+        return false;
+    }
+    typed_property_default_literal_matches_type_part(default_kind, type_decl)
+}
+
+fn typed_property_default_literal_matches_type_part(
+    default_kind: TypedPropertyDefaultKind,
+    type_part: &str,
+) -> bool {
+    let name = normalize_type_name(type_part).to_ascii_lowercase();
+    match default_kind {
+        TypedPropertyDefaultKind::Null => matches!(name.as_str(), "null" | "mixed"),
+        TypedPropertyDefaultKind::String => matches!(name.as_str(), "string" | "mixed"),
+        TypedPropertyDefaultKind::Int => matches!(
+            name.as_str(),
+            "int" | "integer" | "float" | "double" | "mixed"
+        ),
+        TypedPropertyDefaultKind::Float => matches!(name.as_str(), "float" | "double" | "mixed"),
+        TypedPropertyDefaultKind::BoolTrue => {
+            matches!(name.as_str(), "bool" | "boolean" | "true" | "mixed")
+        }
+        TypedPropertyDefaultKind::BoolFalse => {
+            matches!(name.as_str(), "bool" | "boolean" | "false" | "mixed")
+        }
+        TypedPropertyDefaultKind::Array => matches!(name.as_str(), "array" | "iterable" | "mixed"),
+    }
+}
+
+fn typed_property_type_allows_null(type_decl: &str) -> bool {
+    let text = type_decl.trim();
+    if text.starts_with('?') {
+        return true;
+    }
+    text.split('|').any(|part| {
+        let name = normalize_type_name(part).to_ascii_lowercase();
+        matches!(name.as_str(), "null" | "mixed")
+    })
+}
+
 fn collect_disallowed_property_type_startup_diagnostics(
     diagnostics: &mut MagicMethodStartupDiagnostics,
     program: &Program,
@@ -76353,7 +76510,10 @@ fn property_type_name_is_disallowed(type_name: &str) -> bool {
     let mut name = type_name.trim();
     name = name.strip_prefix('?').unwrap_or(name);
     name = name.strip_prefix('\\').unwrap_or(name);
-    matches!(name.to_ascii_lowercase().as_str(), "callable" | "void")
+    matches!(
+        name.to_ascii_lowercase().as_str(),
+        "callable" | "void" | "never"
+    )
 }
 
 fn collect_typed_return_without_value_startup_diagnostics(
@@ -76642,10 +76802,108 @@ fn collect_class_property_inheritance_startup_diagnostics(
                 continue;
             };
 
-            diagnostics.set_fatal(message, source_file, property.span.line);
+            diagnostics.set_fatal(message, source_file, class.span.line);
             return;
         }
     }
+}
+
+#[derive(Debug, Clone)]
+struct StartupTraitProperty {
+    declaring_trait_name: String,
+    property: ClassPropertyDecl,
+}
+
+fn collect_trait_property_composition_startup_diagnostics(
+    diagnostics: &mut MagicMethodStartupDiagnostics,
+    program: &Program,
+    source_file: Option<&str>,
+) {
+    let traits = top_level_trait_startup_lookup(program);
+    for stmt in &program.statements {
+        let Stmt::Class(class) = stmt else {
+            continue;
+        };
+        if class.is_nested {
+            continue;
+        }
+        if let Some((message, line)) =
+            class_trait_property_composition_startup_diagnostic(class, &traits)
+        {
+            diagnostics.set_fatal(message, source_file, line);
+            return;
+        }
+    }
+}
+
+fn class_trait_property_composition_startup_diagnostic(
+    class: &ClassDecl,
+    traits: &HashMap<String, Rc<TraitDecl>>,
+) -> Option<(String, usize)> {
+    let mut composed: HashMap<String, StartupTraitProperty> = HashMap::new();
+    for trait_use in &class.trait_uses {
+        let trait_decl = traits.get(&startup_class_lookup_key(&trait_use.name))?;
+        for property in startup_trait_properties_for_trait(trait_decl, traits, &mut HashSet::new())?
+        {
+            let key = property.property.name.clone();
+            if let Some(existing) = composed.get(&key) {
+                if trait_properties_are_compatible(&existing.property, &property.property) {
+                    continue;
+                }
+                return Some((
+                    format!(
+                        "{} and {} define the same property (${}) in the composition of {}. However, the definition differs and is considered incompatible. Class was composed",
+                        existing.declaring_trait_name,
+                        property.declaring_trait_name,
+                        property.property.name,
+                        class.name
+                    ),
+                    class.span.line,
+                ));
+            }
+            composed.insert(key, property);
+        }
+    }
+    None
+}
+
+fn startup_trait_properties_for_trait(
+    trait_decl: &TraitDecl,
+    traits: &HashMap<String, Rc<TraitDecl>>,
+    path: &mut HashSet<String>,
+) -> Option<Vec<StartupTraitProperty>> {
+    let key = startup_class_lookup_key(&trait_decl.name);
+    if !path.insert(key.clone()) {
+        return None;
+    }
+
+    let direct_names: HashSet<&str> = trait_decl
+        .properties
+        .iter()
+        .map(|property| property.name.as_str())
+        .collect();
+    let mut properties = Vec::new();
+    for trait_use in &trait_decl.trait_uses {
+        let nested = traits.get(&startup_class_lookup_key(&trait_use.name))?;
+        for property in startup_trait_properties_for_trait(nested, traits, path)? {
+            if !direct_names.contains(property.property.name.as_str()) {
+                properties.push(property);
+            }
+        }
+    }
+    properties.extend(
+        trait_decl
+            .properties
+            .iter()
+            .cloned()
+            .map(|property| StartupTraitProperty {
+                declaring_trait_name: trait_decl.name.clone(),
+                property,
+            }),
+    );
+
+    path.remove(&key);
+    Some(properties)
 }
 
 fn top_level_class_startup_lookup(program: &Program) -> HashMap<String, &ClassDecl> {
@@ -77331,10 +77589,13 @@ fn inherited_property_startup_diagnostic_message(
     let parent_type = class_property_type_text(parent_property);
     let child_type = class_property_type_text(property);
     if parent_type != child_type {
-        let type_requirement = match parent_type {
-            Some(type_text) => format!("must be {type_text}"),
-            None => "must not be defined".to_string(),
-        };
+        if parent_type.is_none() {
+            return Some(format!(
+                "Type of {}::${} must be omitted to match the parent definition in class {}",
+                class_name, property.name, parent_name
+            ));
+        }
+        let type_requirement = format!("must be {}", parent_type.expect("checked above"));
         return Some(format!(
             "Type of {}::${} {} (as in class {})",
             class_name, property.name, type_requirement, parent_name
