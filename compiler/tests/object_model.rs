@@ -64,6 +64,8 @@ echo "ready\n";
             "mysqli_stmt",
             "PDO",
             "PDOStatement",
+            "RoundingMode",
+            "BcMath\\Number",
             "DateTimeZone",
             "ReflectionException",
             "Attribute",
@@ -85,7 +87,14 @@ echo "ready\n";
             "ArithmeticError",
             "DivisionByZeroError",
             "RuntimeException",
+            "OutOfRangeException",
+            "Directory",
+            "SplDoublyLinkedList",
+            "SplQueue",
+            "SplStack",
             "SplObjectStorage",
+            "ReflectionExtension",
+            "ReflectionZendExtension",
             "Generator",
             "Box",
         ]
@@ -121,6 +130,35 @@ echo "ready\n";
     );
     let runtime_exception = classes.lookup_class("RuntimeException").unwrap();
     assert_eq!(runtime_exception.parent_id(), Some(exception.id()));
+    let out_of_range_exception = classes.lookup_class("OutOfRangeException").unwrap();
+    assert_eq!(
+        out_of_range_exception.parent_id(),
+        Some(runtime_exception.id())
+    );
+    let spl_doubly_linked_list = classes.lookup_class("SplDoublyLinkedList").unwrap();
+    assert!(spl_doubly_linked_list.constant("IT_MODE_LIFO").is_some());
+    assert_eq!(
+        spl_doubly_linked_list
+            .property("flags")
+            .unwrap()
+            .visibility(),
+        Visibility::Private
+    );
+    assert_eq!(
+        spl_doubly_linked_list
+            .property("dllist")
+            .unwrap()
+            .visibility(),
+        Visibility::Private
+    );
+    assert_eq!(
+        classes.lookup_class("SplQueue").unwrap().parent_id(),
+        Some(spl_doubly_linked_list.id())
+    );
+    assert_eq!(
+        classes.lookup_class("SplStack").unwrap().parent_id(),
+        Some(spl_doubly_linked_list.id())
+    );
 
     let class = classes.lookup_class("box").unwrap();
     assert_eq!(class.name(), "Box");
@@ -14371,4 +14409,116 @@ echo $store[$first], "\n";
         execution.stdout,
         "one|two\nbool(true)\nbool(false)\nbool(true)\n2|2\n0:one\n1:two\ncopy=2\nafter=0|2\nagain\n"
     );
+}
+
+#[test]
+fn spl_doubly_linked_list_iteration_offsets_and_exceptions() {
+    let source = r#"<?php
+$list = new SplDoublyLinkedList();
+$list->push("a");
+$list->push("b");
+$list->add(1, "x");
+echo $list->count(), "|", $list->bottom(), "|", $list->top(), "\n";
+var_dump($list->offsetExists(0));
+var_dump($list->offsetExists(3));
+echo $list->offsetGet(1), "\n";
+$list->offsetUnset(1);
+echo $list->offsetGet(1), "\n";
+$list->setIteratorMode(SplDoublyLinkedList::IT_MODE_LIFO);
+echo $list->getIteratorMode(), "\n";
+$list->rewind();
+while ($list->valid()) {
+    echo $list->key(), ":", $list->current(), "\n";
+    $list->next();
+}
+try {
+    $list->add([], "bad");
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    $list->offsetUnset(99);
+} catch (OutOfRangeException $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    (new SplDoublyLinkedList())->bottom();
+} catch (RuntimeException $e) {
+    echo $e->getMessage(), "\n";
+}
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "3|a|b\nbool(true)\nbool(false)\nx\nb\n2\n1:b\n0:a\nSplDoublyLinkedList::add(): Argument #1 ($index) must be of type int, array given\nSplDoublyLinkedList::offsetUnset(): Argument #1 ($index) is out of range\nCan't peek at an empty datastructure\n"
+    );
+}
+
+#[test]
+fn spl_doubly_linked_list_foreach_keeps_rewind_direction() {
+    let source = r#"<?php
+$list = new SplDoublyLinkedList();
+$list->push(1);
+$list->push(2);
+$list->push(3);
+
+$list->setIteratorMode(SplDoublyLinkedList::IT_MODE_FIFO);
+foreach ($list as $item) {
+    $list->setIteratorMode(SplDoublyLinkedList::IT_MODE_LIFO);
+    echo $item, "\n";
+}
+echo "***\n";
+$list->setIteratorMode(SplDoublyLinkedList::IT_MODE_LIFO);
+foreach ($list as $item) {
+    $list->setIteratorMode(SplDoublyLinkedList::IT_MODE_FIFO);
+    echo $item, "\n";
+}
+
+try {
+    (new SplQueue())->setIteratorMode(SplDoublyLinkedList::IT_MODE_LIFO);
+} catch (Exception $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    (new SplStack())->setIteratorMode(SplDoublyLinkedList::IT_MODE_FIFO);
+} catch (Exception $e) {
+    echo $e->getMessage(), "\n";
+}
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "1\n2\n3\n***\n3\n2\n1\nIterators' LIFO/FIFO modes for SplStack/SplQueue objects are frozen\nIterators' LIFO/FIFO modes for SplStack/SplQueue objects are frozen\n"
+    );
+}
+
+#[test]
+fn spl_doubly_linked_list_debug_info_and_uncaught_type_error_shape() {
+    let source = r#"<?php
+$list = new SplDoublyLinkedList();
+$list->push(1);
+$list->push(2);
+$list->push(3);
+print_r($list);
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "SplDoublyLinkedList Object\n(\n    [flags:SplDoublyLinkedList:private] => 0\n    [dllist:SplDoublyLinkedList:private] => Array\n        (\n            [0] => 1\n            [1] => 2\n            [2] => 3\n        )\n\n)\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let source = r#"<?php
+$list = new SplDoublyLinkedList();
+$list->offsetGet("fail");
+"#;
+    let execution = run_source(source).unwrap();
+    assert_eq!(execution.exit_code, 255);
+    assert!(execution.stdout.contains(
+        "Fatal error: Uncaught TypeError: SplDoublyLinkedList::offsetGet(): Argument #1 ($index) must be of type int, string given in Command line code:3"
+    ));
+    assert!(!execution.stdout.contains("called in"));
 }

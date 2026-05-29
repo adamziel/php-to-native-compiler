@@ -38,6 +38,12 @@ const SESSION_NOCACHE_HEADERS: [&str; 3] = [
     "Pragma: no-cache",
 ];
 const SESSION_CACHE_REFERENCE_TIMESTAMP: i64 = 0;
+const SPL_DLL_IT_MODE_FIFO: i64 = 0;
+const SPL_DLL_IT_MODE_KEEP: i64 = 0;
+const SPL_DLL_IT_MODE_DELETE: i64 = 1;
+const SPL_DLL_IT_MODE_LIFO: i64 = 2;
+const SPL_QUEUE_ITERATOR_MODE: i64 = 4;
+const SPL_STACK_ITERATOR_MODE: i64 = SPL_QUEUE_ITERATOR_MODE | SPL_DLL_IT_MODE_LIFO;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Execution {
@@ -203,6 +209,7 @@ struct Interpreter {
     reflection_named_types: HashMap<i64, ReflectionNamedTypeState>,
     reflection_compound_types: HashMap<i64, ReflectionCompoundTypeState>,
     spl_object_storages: HashMap<i64, SplObjectStorageState>,
+    spl_doubly_linked_lists: HashMap<i64, SplDoublyLinkedListState>,
     source_file: Option<String>,
     main_source_file: Option<String>,
     max_execution_steps: Option<usize>,
@@ -468,6 +475,25 @@ struct SplObjectStorageState {
 struct SplObjectStorageEntry {
     object: PhpObject,
     info: Value,
+}
+
+#[derive(Debug, Clone)]
+struct SplDoublyLinkedListState {
+    values: Vec<Value>,
+    cursor: Option<usize>,
+    iterator_mode: i64,
+    active_lifo: bool,
+}
+
+impl SplDoublyLinkedListState {
+    fn new(iterator_mode: i64) -> Self {
+        Self {
+            values: Vec::new(),
+            cursor: Some(0),
+            iterator_mode,
+            active_lifo: iterator_mode & SPL_DLL_IT_MODE_LIFO != 0,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -10078,6 +10104,7 @@ impl Interpreter {
             reflection_named_types: HashMap::new(),
             reflection_compound_types: HashMap::new(),
             spl_object_storages: HashMap::new(),
+            spl_doubly_linked_lists: HashMap::new(),
             main_source_file: source_file.clone(),
             source_file,
             max_execution_steps: options.max_execution_steps,
@@ -10221,6 +10248,31 @@ impl Interpreter {
         self.classes
             .lookup_class_id("SplObjectStorage")
             .is_some_and(|storage_id| class_id == storage_id)
+    }
+
+    fn is_spl_doubly_linked_list_class_id(&self, class_id: ClassId) -> bool {
+        self.classes
+            .lookup_class_id("SplDoublyLinkedList")
+            .is_some_and(|list_id| {
+                class_id == list_id || self.classes.is_subclass_of(class_id, list_id)
+            })
+    }
+
+    fn resolved_method_is_core_spl_doubly_linked_list(&self, class_id: ClassId) -> bool {
+        ["SplDoublyLinkedList", "SplQueue", "SplStack"]
+            .iter()
+            .filter_map(|class_name| self.classes.lookup_class_id(class_name))
+            .any(|core_id| class_id == core_id)
+    }
+
+    fn spl_doubly_linked_list_default_iterator_mode(class_name: &str) -> i64 {
+        if class_name.eq_ignore_ascii_case("SplQueue") {
+            SPL_QUEUE_ITERATOR_MODE
+        } else if class_name.eq_ignore_ascii_case("SplStack") {
+            SPL_STACK_ITERATOR_MODE
+        } else {
+            SPL_DLL_IT_MODE_FIFO
+        }
     }
 
     fn by_reference_foreach_variable_root(
@@ -11179,6 +11231,17 @@ impl Interpreter {
         if self.resolved_method_is_core_spl_object_storage(class_id) {
             return self
                 .call_spl_object_storage_method_with_values(object, method_name, Vec::new(), span)
+                .map(|value| (value, None));
+        }
+
+        if self.resolved_method_is_core_spl_doubly_linked_list(class_id) {
+            return self
+                .call_spl_doubly_linked_list_method_with_values(
+                    object,
+                    method_name,
+                    Vec::new(),
+                    span,
+                )
                 .map(|value| (value, None));
         }
 
@@ -13813,6 +13876,458 @@ impl Interpreter {
         }
     }
 
+    fn spl_doubly_linked_list_state(
+        &self,
+        object: &PhpObject,
+        method_name: &str,
+        span: Span,
+    ) -> CompileResult<&SplDoublyLinkedListState> {
+        self.spl_doubly_linked_lists
+            .get(&object.id())
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        format!("SplDoublyLinkedList::{method_name}()"),
+                        "missing SplDoublyLinkedList runtime state",
+                    ),
+                )
+            })
+    }
+
+    fn spl_doubly_linked_list_state_mut(
+        &mut self,
+        object: &PhpObject,
+        method_name: &str,
+        span: Span,
+    ) -> CompileResult<&mut SplDoublyLinkedListState> {
+        self.spl_doubly_linked_lists
+            .get_mut(&object.id())
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        format!("SplDoublyLinkedList::{method_name}()"),
+                        "missing SplDoublyLinkedList runtime state",
+                    ),
+                )
+            })
+    }
+
+    fn spl_doubly_linked_list_index_argument(
+        method_name: &str,
+        args: &[Value],
+        index: usize,
+        span: Span,
+    ) -> CompileResult<i64> {
+        match args.get(index) {
+            Some(Value::Int(value)) => Ok(*value),
+            Some(other) => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("SplDoublyLinkedList::{method_name}()"),
+                    format!(
+                        "SplDoublyLinkedList::{method_name}(): Argument #{} ($index) must be of type int, {} given",
+                        index + 1,
+                        other.type_name()
+                    ),
+                ),
+            )),
+            None => Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    format!("SplDoublyLinkedList::{method_name}()"),
+                    ArityExpectation::AtLeast(index + 1),
+                    args.len(),
+                ),
+            )),
+        }
+    }
+
+    fn spl_doubly_linked_list_usize_index(
+        method_name: &str,
+        args: &[Value],
+        index: usize,
+        span: Span,
+    ) -> CompileResult<usize> {
+        let value = Self::spl_doubly_linked_list_index_argument(method_name, args, index, span)?;
+        usize::try_from(value).map_err(|_| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("SplDoublyLinkedList::{method_name}()"),
+                    format!(
+                        "SplDoublyLinkedList::{method_name}(): Argument #1 ($index) is out of range"
+                    ),
+                ),
+            )
+        })
+    }
+
+    fn spl_doubly_linked_list_out_of_range(method_name: &str, span: Span) -> Diagnostic {
+        runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                format!("SplDoublyLinkedList::{method_name}()"),
+                format!(
+                    "SplDoublyLinkedList::{method_name}(): Argument #1 ($index) is out of range"
+                ),
+            ),
+        )
+    }
+
+    fn spl_doubly_linked_list_values_array(values: &[Value]) -> PhpArray {
+        let mut array = PhpArray::new();
+        for value in values {
+            array
+                .append(value.clone())
+                .expect("SplDoublyLinkedList length fits in array keys");
+        }
+        array
+    }
+
+    fn sync_spl_doubly_linked_list_properties(
+        &self,
+        object: &PhpObject,
+        state: &SplDoublyLinkedListState,
+        span: Span,
+    ) -> CompileResult<()> {
+        let class_id = self
+            .classes
+            .lookup_class_id("SplDoublyLinkedList")
+            .ok_or_else(|| {
+                runtime_error(span, RuntimeError::undefined_class("SplDoublyLinkedList"))
+            })?;
+        object
+            .write_property_from_context(
+                "flags",
+                Value::Int(state.iterator_mode),
+                Some(class_id),
+                &[class_id],
+            )
+            .map_err(|error| runtime_error(span, error))?;
+        object
+            .write_property_from_context(
+                "dllist",
+                Value::Array(Self::spl_doubly_linked_list_values_array(&state.values)),
+                Some(class_id),
+                &[class_id],
+            )
+            .map_err(|error| runtime_error(span, error))?;
+        Ok(())
+    }
+
+    fn sync_spl_doubly_linked_list_object_properties(
+        &self,
+        object: &PhpObject,
+        span: Span,
+    ) -> CompileResult<()> {
+        if let Some(state) = self.spl_doubly_linked_lists.get(&object.id()) {
+            self.sync_spl_doubly_linked_list_properties(object, state, span)?;
+        }
+        Ok(())
+    }
+
+    fn call_spl_doubly_linked_list_method_with_values(
+        &mut self,
+        object: PhpObject,
+        method_name: &str,
+        args: Vec<Value>,
+        span: Span,
+    ) -> CompileResult<Value> {
+        match method_name.to_ascii_lowercase().as_str() {
+            "__construct" => {
+                expect_arity("SplDoublyLinkedList::__construct", &args, 0, span)?;
+                Ok(Value::Null)
+            }
+            "push" | "enqueue" => {
+                expect_arity(
+                    &format!("SplDoublyLinkedList::{method_name}"),
+                    &args,
+                    1,
+                    span,
+                )?;
+                let value = args.first().cloned().unwrap_or(Value::Null);
+                {
+                    let state =
+                        self.spl_doubly_linked_list_state_mut(&object, method_name, span)?;
+                    state.values.push(value);
+                }
+                self.sync_spl_doubly_linked_list_object_properties(&object, span)?;
+                Ok(Value::Null)
+            }
+            "unshift" => {
+                expect_arity("SplDoublyLinkedList::unshift", &args, 1, span)?;
+                let value = args.first().cloned().unwrap_or(Value::Null);
+                {
+                    let state =
+                        self.spl_doubly_linked_list_state_mut(&object, method_name, span)?;
+                    state.values.insert(0, value);
+                    if let Some(cursor) = state.cursor.as_mut() {
+                        *cursor += 1;
+                    }
+                }
+                self.sync_spl_doubly_linked_list_object_properties(&object, span)?;
+                Ok(Value::Null)
+            }
+            "add" => {
+                expect_arity("SplDoublyLinkedList::add", &args, 2, span)?;
+                let index = Self::spl_doubly_linked_list_usize_index(method_name, &args, 0, span)?;
+                let value = args.get(1).cloned().unwrap_or(Value::Null);
+                {
+                    let state =
+                        self.spl_doubly_linked_list_state_mut(&object, method_name, span)?;
+                    if index > state.values.len() {
+                        return Err(Self::spl_doubly_linked_list_out_of_range(method_name, span));
+                    }
+                    state.values.insert(index, value);
+                    if let Some(cursor) = state.cursor.as_mut() {
+                        if *cursor >= index {
+                            *cursor += 1;
+                        }
+                    }
+                }
+                self.sync_spl_doubly_linked_list_object_properties(&object, span)?;
+                Ok(Value::Null)
+            }
+            "pop" => {
+                expect_arity("SplDoublyLinkedList::pop", &args, 0, span)?;
+                let value = {
+                    let state =
+                        self.spl_doubly_linked_list_state_mut(&object, method_name, span)?;
+                    state.values.pop().ok_or_else(|| {
+                        runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "SplDoublyLinkedList::pop()",
+                                "Can't pop from an empty datastructure",
+                            ),
+                        )
+                    })?
+                };
+                self.sync_spl_doubly_linked_list_object_properties(&object, span)?;
+                Ok(value)
+            }
+            "shift" | "dequeue" => {
+                expect_arity(
+                    &format!("SplDoublyLinkedList::{method_name}"),
+                    &args,
+                    0,
+                    span,
+                )?;
+                let value = {
+                    let state =
+                        self.spl_doubly_linked_list_state_mut(&object, method_name, span)?;
+                    if state.values.is_empty() {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                format!("SplDoublyLinkedList::{method_name}()"),
+                                "Can't shift from an empty datastructure",
+                            ),
+                        ));
+                    }
+                    let value = state.values.remove(0);
+                    if let Some(cursor) = state.cursor.as_mut() {
+                        *cursor = cursor.saturating_sub(1);
+                    }
+                    value
+                };
+                self.sync_spl_doubly_linked_list_object_properties(&object, span)?;
+                Ok(value)
+            }
+            "isempty" => {
+                expect_arity("SplDoublyLinkedList::isEmpty", &args, 0, span)?;
+                let state = self.spl_doubly_linked_list_state(&object, method_name, span)?;
+                Ok(Value::Bool(state.values.is_empty()))
+            }
+            "count" => {
+                expect_arity("SplDoublyLinkedList::count", &args, 0, span)?;
+                let state = self.spl_doubly_linked_list_state(&object, method_name, span)?;
+                Ok(Value::Int(state.values.len() as i64))
+            }
+            "setiteratormode" => {
+                expect_arity("SplDoublyLinkedList::setIteratorMode", &args, 1, span)?;
+                let mode =
+                    Self::spl_doubly_linked_list_index_argument(method_name, &args, 0, span)?;
+                if object.class_name().eq_ignore_ascii_case("SplQueue")
+                    && mode & SPL_DLL_IT_MODE_LIFO != 0
+                    || object.class_name().eq_ignore_ascii_case("SplStack")
+                        && mode & SPL_DLL_IT_MODE_LIFO == 0
+                {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "SplDoublyLinkedList::setIteratorMode()",
+                            "Iterators' LIFO/FIFO modes for SplStack/SplQueue objects are frozen",
+                        ),
+                    ));
+                }
+                {
+                    let state =
+                        self.spl_doubly_linked_list_state_mut(&object, method_name, span)?;
+                    state.iterator_mode = mode;
+                }
+                self.sync_spl_doubly_linked_list_object_properties(&object, span)?;
+                Ok(Value::Null)
+            }
+            "getiteratormode" => {
+                expect_arity("SplDoublyLinkedList::getIteratorMode", &args, 0, span)?;
+                let state = self.spl_doubly_linked_list_state(&object, method_name, span)?;
+                Ok(Value::Int(state.iterator_mode))
+            }
+            "rewind" => {
+                expect_arity("SplDoublyLinkedList::rewind", &args, 0, span)?;
+                let state = self.spl_doubly_linked_list_state_mut(&object, method_name, span)?;
+                state.active_lifo = state.iterator_mode & SPL_DLL_IT_MODE_LIFO != 0;
+                state.cursor = if state.active_lifo {
+                    state.values.len().checked_sub(1)
+                } else {
+                    Some(0)
+                };
+                Ok(Value::Null)
+            }
+            "valid" => {
+                expect_arity("SplDoublyLinkedList::valid", &args, 0, span)?;
+                let state = self.spl_doubly_linked_list_state(&object, method_name, span)?;
+                Ok(Value::Bool(
+                    state
+                        .cursor
+                        .is_some_and(|cursor| cursor < state.values.len()),
+                ))
+            }
+            "key" => {
+                expect_arity("SplDoublyLinkedList::key", &args, 0, span)?;
+                let state = self.spl_doubly_linked_list_state(&object, method_name, span)?;
+                Ok(Value::Int(state.cursor.unwrap_or(0) as i64))
+            }
+            "current" => {
+                expect_arity("SplDoublyLinkedList::current", &args, 0, span)?;
+                let state = self.spl_doubly_linked_list_state(&object, method_name, span)?;
+                Ok(state
+                    .cursor
+                    .and_then(|cursor| state.values.get(cursor).cloned())
+                    .unwrap_or(Value::Null))
+            }
+            "next" => {
+                expect_arity("SplDoublyLinkedList::next", &args, 0, span)?;
+                let state = self.spl_doubly_linked_list_state_mut(&object, method_name, span)?;
+                state.cursor = match (state.cursor, state.active_lifo) {
+                    (Some(0), true) => None,
+                    (Some(cursor), true) => Some(cursor - 1),
+                    (Some(cursor), false) => Some(cursor.saturating_add(1)),
+                    (None, _) => None,
+                };
+                Ok(Value::Null)
+            }
+            "offsetexists" => {
+                expect_arity("SplDoublyLinkedList::offsetExists", &args, 1, span)?;
+                let index =
+                    Self::spl_doubly_linked_list_index_argument(method_name, &args, 0, span)?;
+                let state = self.spl_doubly_linked_list_state(&object, method_name, span)?;
+                Ok(Value::Bool(
+                    index >= 0 && (index as usize) < state.values.len(),
+                ))
+            }
+            "offsetget" => {
+                expect_arity("SplDoublyLinkedList::offsetGet", &args, 1, span)?;
+                let index = Self::spl_doubly_linked_list_usize_index(method_name, &args, 0, span)?;
+                let state = self.spl_doubly_linked_list_state(&object, method_name, span)?;
+                state
+                    .values
+                    .get(index)
+                    .cloned()
+                    .ok_or_else(|| Self::spl_doubly_linked_list_out_of_range(method_name, span))
+            }
+            "offsetset" => {
+                if !(args.len() == 1 || args.len() == 2) {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::arity_mismatch(
+                            "SplDoublyLinkedList::offsetSet()",
+                            ArityExpectation::Between { min: 1, max: 2 },
+                            args.len(),
+                        ),
+                    ));
+                }
+                let value = args.last().cloned().unwrap_or(Value::Null);
+                {
+                    let state =
+                        self.spl_doubly_linked_list_state_mut(&object, method_name, span)?;
+                    if args.len() == 1 || matches!(args.first(), Some(Value::Null)) {
+                        state.values.push(value);
+                    } else {
+                        let index =
+                            Self::spl_doubly_linked_list_usize_index(method_name, &args, 0, span)?;
+                        if index >= state.values.len() {
+                            return Err(Self::spl_doubly_linked_list_out_of_range(
+                                method_name,
+                                span,
+                            ));
+                        }
+                        state.values[index] = value;
+                    }
+                }
+                self.sync_spl_doubly_linked_list_object_properties(&object, span)?;
+                Ok(Value::Null)
+            }
+            "offsetunset" => {
+                expect_arity("SplDoublyLinkedList::offsetUnset", &args, 1, span)?;
+                let index = Self::spl_doubly_linked_list_usize_index(method_name, &args, 0, span)?;
+                {
+                    let state =
+                        self.spl_doubly_linked_list_state_mut(&object, method_name, span)?;
+                    if index >= state.values.len() {
+                        return Err(Self::spl_doubly_linked_list_out_of_range(method_name, span));
+                    }
+                    state.values.remove(index);
+                    if let Some(cursor) = state.cursor.as_mut() {
+                        if *cursor > index {
+                            *cursor -= 1;
+                        } else if *cursor >= state.values.len() {
+                            state.cursor = None;
+                        }
+                    }
+                }
+                self.sync_spl_doubly_linked_list_object_properties(&object, span)?;
+                Ok(Value::Null)
+            }
+            "top" => {
+                expect_arity("SplDoublyLinkedList::top", &args, 0, span)?;
+                let state = self.spl_doubly_linked_list_state(&object, method_name, span)?;
+                state.values.last().cloned().ok_or_else(|| {
+                    runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "SplDoublyLinkedList::top()",
+                            "Can't peek at an empty datastructure",
+                        ),
+                    )
+                })
+            }
+            "bottom" => {
+                expect_arity("SplDoublyLinkedList::bottom", &args, 0, span)?;
+                let state = self.spl_doubly_linked_list_state(&object, method_name, span)?;
+                state.values.first().cloned().ok_or_else(|| {
+                    runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "SplDoublyLinkedList::bottom()",
+                            "Can't peek at an empty datastructure",
+                        ),
+                    )
+                })
+            }
+            _ => Err(runtime_error(
+                span,
+                RuntimeError::undefined_function(format!(
+                    "{}::{method_name}()",
+                    object.class_name()
+                )),
+            )),
+        }
+    }
+
     fn execute_foreach_iterator_by_value(
         &mut self,
         object: PhpObject,
@@ -16010,6 +16525,25 @@ impl Interpreter {
             });
     }
 
+    fn record_pending_uncaught_internal_call_frame(
+        &mut self,
+        callable: impl Into<String>,
+        call_span: Span,
+        args: &[Value],
+        error: &Diagnostic,
+    ) {
+        if catchable_php_error_message(error).is_none() {
+            return;
+        }
+        self.pending_uncaught_call_frames
+            .push(PendingUncaughtCallFrame {
+                function_name: callable.into(),
+                function_line: call_span.line,
+                call_line: call_span.line,
+                args: args.to_vec(),
+            });
+    }
+
     fn emit_uncaught_call_argument_type_error_fatal(
         &mut self,
         error: &Diagnostic,
@@ -17836,7 +18370,13 @@ impl Interpreter {
             self.spl_object_storages
                 .insert(object.id(), SplObjectStorageState::default());
         }
+        if self.is_spl_doubly_linked_list_class_id(class_id) {
+            let iterator_mode = Self::spl_doubly_linked_list_default_iterator_mode(class.name());
+            self.spl_doubly_linked_lists
+                .insert(object.id(), SplDoublyLinkedListState::new(iterator_mode));
+        }
         self.apply_instance_property_defaults(&object, class_id)?;
+        self.sync_spl_doubly_linked_list_object_properties(&object, span)?;
         let Some((
             constructor_class_id,
             constructor_class_name,
@@ -17882,6 +18422,12 @@ impl Interpreter {
 
         if self.resolved_method_is_core_spl_object_storage(constructor_class_id) {
             expect_expr_arity("SplObjectStorage::__construct", args.len(), 0, span)?;
+            self.track_allocated_object(&object);
+            return Ok(Value::Object(object));
+        }
+
+        if self.resolved_method_is_core_spl_doubly_linked_list(constructor_class_id) {
+            expect_expr_arity("SplDoublyLinkedList::__construct", args.len(), 0, span)?;
             self.track_allocated_object(&object);
             return Ok(Value::Object(object));
         }
@@ -18519,6 +19065,10 @@ impl Interpreter {
         let clone = object.shallow_clone_with_id(object_id);
         if let Some(state) = self.spl_object_storages.get(&object.id()).cloned() {
             self.spl_object_storages.insert(clone.id(), state);
+        }
+        if let Some(state) = self.spl_doubly_linked_lists.get(&object.id()).cloned() {
+            self.spl_doubly_linked_lists.insert(clone.id(), state);
+            self.sync_spl_doubly_linked_list_object_properties(&clone, span)?;
         }
 
         if let Some((class_id, class_name, method_name, visibility, is_static)) =
@@ -40048,6 +40598,12 @@ impl Interpreter {
                 .map(Some);
         }
 
+        if self.resolved_method_is_core_spl_doubly_linked_list(class_id) {
+            return self
+                .call_spl_doubly_linked_list_method_with_values(object, method_name, args, span)
+                .map(Some);
+        }
+
         if method_name.eq_ignore_ascii_case("__toString") && args.is_empty() {
             if object
                 .class_name()
@@ -40159,6 +40715,12 @@ impl Interpreter {
         if self.resolved_method_is_core_spl_object_storage(class_id) {
             return self
                 .call_spl_object_storage_method_with_values(object, method_name, args, span)
+                .map(Some);
+        }
+
+        if self.resolved_method_is_core_spl_doubly_linked_list(class_id) {
+            return self
+                .call_spl_doubly_linked_list_method_with_values(object, method_name, args, span)
                 .map(Some);
         }
 
@@ -40606,6 +41168,24 @@ impl Interpreter {
             return self
                 .call_spl_object_storage_method_with_values(object, method_name, values, span)
                 .map(|value| (value, None));
+        }
+
+        if self.resolved_method_is_core_spl_doubly_linked_list(class_id) {
+            let values = args
+                .iter()
+                .map(|arg| self.evaluate(arg, caller_scope))
+                .collect::<CompileResult<Vec<_>>>()?;
+            let callable = format!("{}->{method_name}", object.class_name());
+            let result = self.call_spl_doubly_linked_list_method_with_values(
+                object,
+                method_name,
+                values.clone(),
+                span,
+            );
+            if let Err(error) = &result {
+                self.record_pending_uncaught_internal_call_frame(callable, span, &values, error);
+            }
+            return result.map(|value| (value, None));
         }
 
         let function = self.method_function(class_id, &class_name, &resolved_method_name, span)?;
@@ -83644,6 +84224,26 @@ fn seed_core_class_constant_runtime_tables(
             );
         }
     }
+    if let Some(spl_doubly_linked_list_id) = classes.lookup_class_id("SplDoublyLinkedList") {
+        for (name, value) in [
+            ("IT_MODE_FIFO", SPL_DLL_IT_MODE_FIFO),
+            ("IT_MODE_LIFO", SPL_DLL_IT_MODE_LIFO),
+            ("IT_MODE_KEEP", SPL_DLL_IT_MODE_KEEP),
+            ("IT_MODE_DELETE", SPL_DLL_IT_MODE_DELETE),
+        ] {
+            let span = Span::new(1, 1);
+            class_constants.insert(
+                (spl_doubly_linked_list_id, name.to_string()),
+                ClassConstantDecl {
+                    name: name.to_string(),
+                    visibility: ClassVisibility::Public,
+                    value: Expr::Int(value, span),
+                    attributes: Vec::new(),
+                    span,
+                },
+            );
+        }
+    }
     let Some(reflection_method_id) = classes.lookup_class_id("ReflectionMethod") else {
         return;
     };
@@ -87469,6 +88069,27 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
             return Some(("TypeError", message));
         }
 
+        if let Some(message) = error
+            .message
+            .strip_prefix("unsupported call SplDoublyLinkedList::")
+            .and_then(|message| message.split_once(": "))
+            .map(|(_, message)| message.to_string())
+        {
+            if message == "Can't peek at an empty datastructure"
+                || message == "Can't pop from an empty datastructure"
+                || message == "Can't shift from an empty datastructure"
+                || message == "Iterators' LIFO/FIFO modes for SplStack/SplQueue objects are frozen"
+            {
+                return Some(("RuntimeException", message));
+            }
+            if message.ends_with(" is out of range") {
+                return Some(("OutOfRangeException", message));
+            }
+            if message.contains(" must be of type int, ") {
+                return Some(("TypeError", message));
+            }
+        }
+
         if error.message.starts_with("Object of type ")
             && error.message.ends_with(" is not callable")
         {
@@ -87896,8 +88517,15 @@ fn call_argument_type_error_message(error: &Diagnostic) -> Option<String> {
 }
 
 fn is_call_argument_type_error_message(message: &str) -> bool {
+    if is_internal_method_argument_type_error_message(message) {
+        return false;
+    }
     message.contains(" must be of type ")
         && (message.contains("(): Argument #") || message.contains("(): If argument #"))
+}
+
+fn is_internal_method_argument_type_error_message(message: &str) -> bool {
+    message.starts_with("SplDoublyLinkedList::")
 }
 
 fn is_invalid_callback_argument_message(message: &str) -> bool {
@@ -108035,10 +108663,12 @@ fn format_print_r_object(object: &PhpObject, indent: usize) -> String {
         ));
         match property.value_cloned() {
             Value::Array(value) => {
-                output.push_str(&format_print_r_array(&value, indent + 1));
+                output.push_str(&format_print_r_array(&value, indent + 2));
+                output.push('\n');
             }
             Value::Object(value) => {
-                output.push_str(&format_print_r_object(&value, indent + 1));
+                output.push_str(&format_print_r_object(&value, indent + 2));
+                output.push('\n');
             }
             value => {
                 output.push_str(&value.echo_string());

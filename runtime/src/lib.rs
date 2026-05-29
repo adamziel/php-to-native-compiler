@@ -31910,9 +31910,15 @@ impl PhpClassTable {
         classes
             .set_parent(runtime_exception_id, exception_id)
             .expect("RuntimeException should extend Exception");
+        let out_of_range_exception_id = classes
+            .declare_class("OutOfRangeException")
+            .expect("core class table should contain RuntimeException before OutOfRangeException");
+        classes
+            .set_parent(out_of_range_exception_id, runtime_exception_id)
+            .expect("OutOfRangeException should extend RuntimeException");
         let directory_id = classes
             .declare_class("Directory")
-            .expect("core class table should contain RuntimeException before Directory");
+            .expect("core class table should contain OutOfRangeException before Directory");
         let directory = classes
             .get_mut(directory_id)
             .expect("declared Directory class id should resolve");
@@ -31926,9 +31932,87 @@ impl PhpClassTable {
                 .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
                 .expect("Directory core metadata should not duplicate methods");
         }
+        let spl_doubly_linked_list_id = classes
+            .declare_class("SplDoublyLinkedList")
+            .expect("core class table should contain Directory before SplDoublyLinkedList");
+        classes
+            .set_interfaces(
+                spl_doubly_linked_list_id,
+                vec![
+                    "Iterator".to_string(),
+                    "ArrayAccess".to_string(),
+                    "Countable".to_string(),
+                ],
+            )
+            .expect("SplDoublyLinkedList should implement core SPL interfaces");
+        let spl_doubly_linked_list = classes
+            .get_mut(spl_doubly_linked_list_id)
+            .expect("declared SplDoublyLinkedList class id should resolve");
+        for property in ["flags", "dllist"] {
+            spl_doubly_linked_list
+                .add_property(PhpPropertyMetadata::instance(property, Visibility::Private))
+                .expect("SplDoublyLinkedList core metadata should not duplicate properties");
+        }
+        for constant in [
+            "IT_MODE_FIFO",
+            "IT_MODE_LIFO",
+            "IT_MODE_KEEP",
+            "IT_MODE_DELETE",
+        ] {
+            spl_doubly_linked_list
+                .add_constant(PhpClassConstantMetadata::new(constant, Visibility::Public))
+                .expect("SplDoublyLinkedList core metadata should not duplicate constants");
+        }
+        for method in [
+            "__construct",
+            "add",
+            "bottom",
+            "count",
+            "current",
+            "getIteratorMode",
+            "isEmpty",
+            "key",
+            "next",
+            "offsetExists",
+            "offsetGet",
+            "offsetSet",
+            "offsetUnset",
+            "pop",
+            "push",
+            "rewind",
+            "setIteratorMode",
+            "shift",
+            "top",
+            "unshift",
+            "valid",
+        ] {
+            spl_doubly_linked_list
+                .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("SplDoublyLinkedList core metadata should not duplicate methods");
+        }
+        let spl_queue_id = classes
+            .declare_class("SplQueue")
+            .expect("core class table should contain SplDoublyLinkedList before SplQueue");
+        classes
+            .set_parent(spl_queue_id, spl_doubly_linked_list_id)
+            .expect("SplQueue should extend SplDoublyLinkedList");
+        let spl_queue = classes
+            .get_mut(spl_queue_id)
+            .expect("declared SplQueue class id should resolve");
+        for method in ["enqueue", "dequeue"] {
+            spl_queue
+                .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("SplQueue core metadata should not duplicate methods");
+        }
+        let spl_stack_id = classes
+            .declare_class("SplStack")
+            .expect("core class table should contain SplQueue before SplStack");
+        classes
+            .set_parent(spl_stack_id, spl_doubly_linked_list_id)
+            .expect("SplStack should extend SplDoublyLinkedList");
         let spl_object_storage_id = classes
             .declare_class("SplObjectStorage")
-            .expect("core class table should contain Directory before SplObjectStorage");
+            .expect("core class table should contain SplStack before SplObjectStorage");
         classes
             .set_interfaces(
                 spl_object_storage_id,
