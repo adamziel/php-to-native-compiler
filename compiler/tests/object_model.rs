@@ -68,6 +68,7 @@ echo "ready\n";
             "ReflectionException",
             "Attribute",
             "ReflectionClass",
+            "ReflectionObject",
             "ReflectionFunction",
             "ReflectionMethod",
             "ReflectionParameter",
@@ -5389,7 +5390,7 @@ echo $dynamic[0], "|", $dynamic[1], "|", $dynamic[2];
     let execution = run_source(source).unwrap();
     assert_eq!(
         execution.stdout,
-        "Array\n(\n    [0] => Exception\n    [1] => stdClass\n    [2] => mysqli\n    [3] => mysqli_result\n    [4] => mysqli_stmt\n    [5] => PDO\n    [6] => PDOStatement\n    [7] => ReflectionException\n    [8] => ReflectionClass\n    [9] => ReflectionFunction\n    [10] => ReflectionMethod\n    [11] => ReflectionParameter\n    [12] => ReflectionType\n    [13] => ReflectionNamedType\n    [14] => ReflectionUnionType\n    [15] => ReflectionIntersectionType\n    [16] => ReflectionProperty\n    [17] => Box\n    [18] => Profile\n)\n19|Exception|stdClass|mysqli\nException|stdClass|mysqli"
+        "Array\n(\n    [0] => Exception\n    [1] => stdClass\n    [2] => mysqli\n    [3] => mysqli_result\n    [4] => mysqli_stmt\n    [5] => PDO\n    [6] => PDOStatement\n    [7] => ReflectionException\n    [8] => ReflectionClass\n    [9] => ReflectionObject\n    [10] => ReflectionFunction\n    [11] => ReflectionMethod\n    [12] => ReflectionParameter\n    [13] => ReflectionType\n    [14] => ReflectionNamedType\n    [15] => ReflectionUnionType\n    [16] => ReflectionIntersectionType\n    [17] => ReflectionProperty\n    [18] => Box\n    [19] => Profile\n)\n20|Exception|stdClass|mysqli\nException|stdClass|mysqli"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -5410,7 +5411,7 @@ echo count($declared), "\n";
     let execution = run_source(source).unwrap();
     assert_eq!(
         execution.stdout,
-        "Array\n(\n    [0] => Exception\n    [1] => stdClass\n    [2] => mysqli\n    [3] => mysqli_result\n    [4] => mysqli_stmt\n    [5] => PDO\n    [6] => PDOStatement\n    [7] => ReflectionException\n    [8] => ReflectionClass\n    [9] => ReflectionFunction\n    [10] => ReflectionMethod\n    [11] => ReflectionParameter\n    [12] => ReflectionType\n    [13] => ReflectionNamedType\n    [14] => ReflectionUnionType\n    [15] => ReflectionIntersectionType\n    [16] => ReflectionProperty\n    [17] => App\\Mode\n    [18] => App\\Status\n)\n19\n"
+        "Array\n(\n    [0] => Exception\n    [1] => stdClass\n    [2] => mysqli\n    [3] => mysqli_result\n    [4] => mysqli_stmt\n    [5] => PDO\n    [6] => PDOStatement\n    [7] => ReflectionException\n    [8] => ReflectionClass\n    [9] => ReflectionObject\n    [10] => ReflectionFunction\n    [11] => ReflectionMethod\n    [12] => ReflectionParameter\n    [13] => ReflectionType\n    [14] => ReflectionNamedType\n    [15] => ReflectionUnionType\n    [16] => ReflectionIntersectionType\n    [17] => ReflectionProperty\n    [18] => App\\Mode\n    [19] => App\\Status\n)\n20\n"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -5433,6 +5434,32 @@ echo array_search("ReflectionException", $classes, true);
     assert_eq!(
         execution.stdout,
         "exists\nextends\nException\nReflectionException|Exception|1\n7"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reflection_object_reflects_object_instances_as_reflection_class_subtype() {
+    let execution = run_source(
+        r#"<?php
+class Base {}
+class Plugin extends Base {
+    public $name = "hook";
+    public function run() { return "ok"; }
+}
+
+$plugin = new Plugin();
+$reflection = new ReflectionObject($plugin);
+echo get_class($reflection), "|", is_a($reflection, "ReflectionClass"), "\n";
+echo $reflection->getName(), "|", $reflection->getParentClass()->getName(), "|", $reflection->isInstance($plugin), "|", $reflection->isSubclassOf(Base::class), "\n";
+echo $reflection->hasMethod("run"), "|", get_class($reflection->getMethod("run")), "|", $reflection->hasProperty("name"), "|", $reflection->name;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "ReflectionObject|1\nPlugin|Base|1|1\n1|ReflectionMethod|1|Plugin"
     );
     assert_eq!(execution.exit_code, 0);
 }

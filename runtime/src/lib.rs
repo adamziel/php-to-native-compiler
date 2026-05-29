@@ -31587,9 +31587,20 @@ impl PhpClassTable {
                 .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
                 .expect("ReflectionClass core metadata should not duplicate methods");
         }
+        let reflection_object_id = classes
+            .declare_class("ReflectionObject")
+            .expect("core class table should contain ReflectionClass before ReflectionObject");
+        classes
+            .set_parent(reflection_object_id, reflection_class_id)
+            .expect("ReflectionObject should extend ReflectionClass");
+        classes
+            .get_mut(reflection_object_id)
+            .expect("declared ReflectionObject class id should resolve")
+            .add_property(PhpPropertyMetadata::instance("name", Visibility::Public))
+            .expect("ReflectionObject core metadata should not duplicate properties");
         let reflection_function_id = classes
             .declare_class("ReflectionFunction")
-            .expect("core class table should contain ReflectionClass before ReflectionFunction");
+            .expect("core class table should contain ReflectionObject before ReflectionFunction");
         let reflection_function = classes
             .get_mut(reflection_function_id)
             .expect("declared ReflectionFunction class id should resolve");
@@ -78695,6 +78706,7 @@ mod tests {
                 "ReflectionException",
                 "Attribute",
                 "ReflectionClass",
+                "ReflectionObject",
                 "ReflectionFunction",
                 "ReflectionMethod",
                 "ReflectionParameter",
@@ -78908,9 +78920,22 @@ mod tests {
         assert!(reflection_class.method("hasMethod").is_some());
         assert!(reflection_class.method("getAttributes").is_some());
 
+        let reflection_object = classes.lookup_class("reflectionobject").unwrap();
+        assert_eq!(reflection_object.name(), "ReflectionObject");
+        assert_eq!(reflection_object.id().index(), 14);
+        assert_eq!(reflection_object.parent_id(), Some(reflection_class.id()));
+        assert_eq!(
+            reflection_object
+                .properties()
+                .iter()
+                .map(PhpPropertyMetadata::name)
+                .collect::<Vec<_>>(),
+            vec!["name"]
+        );
+
         let reflection_function = classes.lookup_class("reflectionfunction").unwrap();
         assert_eq!(reflection_function.name(), "ReflectionFunction");
-        assert_eq!(reflection_function.id().index(), 14);
+        assert_eq!(reflection_function.id().index(), 15);
         assert!(reflection_function.parent_id().is_none());
         assert!(reflection_function.properties().is_empty());
         assert!(reflection_function.method("getParameters").is_some());
@@ -78919,7 +78944,7 @@ mod tests {
 
         let reflection_method = classes.lookup_class("reflectionmethod").unwrap();
         assert_eq!(reflection_method.name(), "ReflectionMethod");
-        assert_eq!(reflection_method.id().index(), 15);
+        assert_eq!(reflection_method.id().index(), 16);
         assert!(reflection_method.parent_id().is_none());
         assert!(reflection_method.properties().is_empty());
         assert!(reflection_method.constant("IS_PUBLIC").is_some());
@@ -78928,7 +78953,7 @@ mod tests {
 
         let reflection_parameter = classes.lookup_class("reflectionparameter").unwrap();
         assert_eq!(reflection_parameter.name(), "ReflectionParameter");
-        assert_eq!(reflection_parameter.id().index(), 16);
+        assert_eq!(reflection_parameter.id().index(), 17);
         assert!(reflection_parameter.parent_id().is_none());
         assert!(reflection_parameter.properties().is_empty());
         assert!(reflection_parameter.method("getDefaultValue").is_some());
@@ -78937,14 +78962,14 @@ mod tests {
 
         let reflection_type = classes.lookup_class("reflectiontype").unwrap();
         assert_eq!(reflection_type.name(), "ReflectionType");
-        assert_eq!(reflection_type.id().index(), 17);
+        assert_eq!(reflection_type.id().index(), 18);
         assert!(reflection_type.parent_id().is_none());
         assert!(reflection_type.properties().is_empty());
         assert!(reflection_type.method("allowsNull").is_some());
 
         let reflection_named_type = classes.lookup_class("reflectionnamedtype").unwrap();
         assert_eq!(reflection_named_type.name(), "ReflectionNamedType");
-        assert_eq!(reflection_named_type.id().index(), 18);
+        assert_eq!(reflection_named_type.id().index(), 19);
         assert_eq!(
             reflection_named_type.parent_id(),
             Some(reflection_type.id())
@@ -78955,7 +78980,7 @@ mod tests {
 
         let reflection_union_type = classes.lookup_class("reflectionuniontype").unwrap();
         assert_eq!(reflection_union_type.name(), "ReflectionUnionType");
-        assert_eq!(reflection_union_type.id().index(), 19);
+        assert_eq!(reflection_union_type.id().index(), 20);
         assert_eq!(
             reflection_union_type.parent_id(),
             Some(reflection_type.id())
@@ -78969,7 +78994,7 @@ mod tests {
             reflection_intersection_type.name(),
             "ReflectionIntersectionType"
         );
-        assert_eq!(reflection_intersection_type.id().index(), 20);
+        assert_eq!(reflection_intersection_type.id().index(), 21);
         assert_eq!(
             reflection_intersection_type.parent_id(),
             Some(reflection_type.id())
@@ -78979,7 +79004,7 @@ mod tests {
 
         let reflection_property = classes.lookup_class("reflectionproperty").unwrap();
         assert_eq!(reflection_property.name(), "ReflectionProperty");
-        assert_eq!(reflection_property.id().index(), 21);
+        assert_eq!(reflection_property.id().index(), 22);
         assert!(reflection_property.parent_id().is_none());
         assert!(reflection_property.properties().is_empty());
         assert!(reflection_property.constant("IS_PUBLIC").is_some());
@@ -78988,7 +79013,7 @@ mod tests {
 
         let reflection_class_constant = classes.lookup_class("reflectionclassconstant").unwrap();
         assert_eq!(reflection_class_constant.name(), "ReflectionClassConstant");
-        assert_eq!(reflection_class_constant.id().index(), 22);
+        assert_eq!(reflection_class_constant.id().index(), 23);
         assert!(reflection_class_constant.parent_id().is_none());
         assert!(reflection_class_constant.properties().is_empty());
         assert!(reflection_class_constant.constant("IS_PUBLIC").is_some());
@@ -78997,7 +79022,7 @@ mod tests {
 
         let reflection_attribute = classes.lookup_class("reflectionattribute").unwrap();
         assert_eq!(reflection_attribute.name(), "ReflectionAttribute");
-        assert_eq!(reflection_attribute.id().index(), 23);
+        assert_eq!(reflection_attribute.id().index(), 24);
         assert!(reflection_attribute.parent_id().is_none());
         assert_eq!(
             reflection_attribute
@@ -79012,29 +79037,29 @@ mod tests {
 
         let type_error = classes.lookup_class("typeerror").unwrap();
         assert_eq!(type_error.name(), "TypeError");
-        assert_eq!(type_error.id().index(), 24);
+        assert_eq!(type_error.id().index(), 25);
         assert_eq!(type_error.parent_id(), Some(error.id()));
         assert!(type_error.properties().is_empty());
 
         let argument_count_error = classes.lookup_class("argumentcounterror").unwrap();
         assert_eq!(argument_count_error.name(), "ArgumentCountError");
-        assert_eq!(argument_count_error.id().index(), 25);
+        assert_eq!(argument_count_error.id().index(), 26);
         assert_eq!(argument_count_error.parent_id(), Some(type_error.id()));
         assert!(argument_count_error.properties().is_empty());
 
         let value_error = classes.lookup_class("valueerror").unwrap();
         assert_eq!(value_error.name(), "ValueError");
-        assert_eq!(value_error.id().index(), 26);
+        assert_eq!(value_error.id().index(), 27);
         assert_eq!(value_error.parent_id(), Some(error.id()));
 
         let arithmetic_error = classes.lookup_class("arithmeticerror").unwrap();
         assert_eq!(arithmetic_error.name(), "ArithmeticError");
-        assert_eq!(arithmetic_error.id().index(), 27);
+        assert_eq!(arithmetic_error.id().index(), 28);
         assert_eq!(arithmetic_error.parent_id(), Some(error.id()));
 
         let division_by_zero_error = classes.lookup_class("divisionbyzeroerror").unwrap();
         assert_eq!(division_by_zero_error.name(), "DivisionByZeroError");
-        assert_eq!(division_by_zero_error.id().index(), 28);
+        assert_eq!(division_by_zero_error.id().index(), 29);
         assert_eq!(
             division_by_zero_error.parent_id(),
             Some(arithmetic_error.id())
@@ -79042,7 +79067,7 @@ mod tests {
 
         let runtime_exception = classes.lookup_class("runtimeexception").unwrap();
         assert_eq!(runtime_exception.name(), "RuntimeException");
-        assert_eq!(runtime_exception.id().index(), 29);
+        assert_eq!(runtime_exception.id().index(), 30);
         assert_eq!(runtime_exception.parent_id(), Some(exception.id()));
         assert!(runtime_exception.properties().is_empty());
         assert!(runtime_exception.methods().is_empty());

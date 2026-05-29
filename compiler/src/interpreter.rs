@@ -17763,6 +17763,9 @@ impl Interpreter {
         if declared_class_name.eq_ignore_ascii_case("ReflectionClass") {
             return self.instantiate_reflection_class(args, span, scope);
         }
+        if declared_class_name.eq_ignore_ascii_case("ReflectionObject") {
+            return self.instantiate_reflection_object(args, span, scope);
+        }
         if declared_class_name.eq_ignore_ascii_case("ReflectionFunction") {
             return self.instantiate_reflection_function(args, span, scope);
         }
@@ -32973,6 +32976,84 @@ impl Interpreter {
         )))
     }
 
+    fn instantiate_reflection_object(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        if args.len() != 1 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "ReflectionObject::__construct()",
+                    ArityExpectation::Exactly(1),
+                    args.len(),
+                ),
+            ));
+        }
+
+        let target = self.evaluate(&args[0], scope)?;
+        if !matches!(target, Value::Object(_)) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_object_instantiation(
+                    "ReflectionObject",
+                    format!(
+                        "argument must be object in the current subset, got {}",
+                        target.type_name()
+                    ),
+                ),
+            ));
+        }
+
+        let state = self.resolve_reflection_class_target(&target, span)?;
+        self.create_reflection_object_object(state, span)
+    }
+
+    fn create_reflection_object_object(
+        &mut self,
+        state: ReflectionClassState,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let class_id = self
+            .classes
+            .lookup_class_id("ReflectionObject")
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::undefined_class("ReflectionObject core placeholder"),
+                )
+            })?;
+        let object_id = self.allocate_object_id();
+        let class = self
+            .classes
+            .get(class_id)
+            .expect("core ReflectionObject class id should resolve");
+        let object = PhpObject::from_class_with_relationship_metadata_with_id(
+            class,
+            &[],
+            vec!["ReflectionClass".to_string()],
+            Vec::new(),
+            object_id,
+        );
+        self.assign_reflection_object_state(&object, state, span)?;
+        Ok(Value::Object(object))
+    }
+
+    fn assign_reflection_object_state(
+        &mut self,
+        object: &PhpObject,
+        state: ReflectionClassState,
+        span: Span,
+    ) -> CompileResult<()> {
+        object
+            .write_public_property("name", Value::String(state.name.clone()))
+            .map_err(|error| runtime_error(span, error))?;
+        self.reflection_classes.insert(object.id(), state);
+        Ok(())
+    }
+
     fn reflection_class_state_for(
         &self,
         name: String,
@@ -40358,7 +40439,7 @@ impl Interpreter {
                 .call_directory_method(object, method_name, args, span)
                 .map(|value| (value, None));
         }
-        if object.class_name().eq_ignore_ascii_case("ReflectionClass") {
+        if object.is_instance_of_class_name("ReflectionClass") {
             return self
                 .call_reflection_class_method(object, method_name, args, span, caller_scope)
                 .map(|value| (value, None));
@@ -40612,6 +40693,25 @@ impl Interpreter {
             })?;
 
         match method_name.to_ascii_lowercase().as_str() {
+            "__construct" if object.class_name().eq_ignore_ascii_case("ReflectionObject") => {
+                expect_expr_arity("ReflectionObject::__construct", args.len(), 1, span)?;
+                let target = self.evaluate(&args[0], caller_scope)?;
+                if !matches!(target, Value::Object(_)) {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "ReflectionObject::__construct()",
+                            format!(
+                                "argument must be object in the current subset, got {}",
+                                target.type_name()
+                            ),
+                        ),
+                    ));
+                }
+                let state = self.resolve_reflection_class_target(&target, span)?;
+                self.assign_reflection_object_state(&object, state, span)?;
+                Ok(Value::Null)
+            }
             "__construct" => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
@@ -41106,7 +41206,7 @@ impl Interpreter {
         span: Span,
     ) -> CompileResult<ReflectionClassState> {
         match value {
-            Value::Object(object) if object.class_name().eq_ignore_ascii_case("ReflectionClass") => {
+            Value::Object(object) if object.is_instance_of_class_name("ReflectionClass") => {
                 self.reflection_classes
                     .get(&object.id())
                     .cloned()
@@ -41126,7 +41226,7 @@ impl Interpreter {
                 RuntimeError::unsupported_call(
                     "ReflectionClass comparison",
                     format!(
-                        "target must be ReflectionClass object or class-like string in the current subset, got {}",
+                        "target must be ReflectionClass/ReflectionObject object or class-like string in the current subset, got {}",
                         other.type_name()
                     ),
                 ),
