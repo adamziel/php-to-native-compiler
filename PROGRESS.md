@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-29 07:13 CEST
+Updated: 2026-05-29 07:16 CEST
 Primary branch: `master`
-Latest source head: `e2474271 fix: add bounded date and timezone builtins`
+Latest source head: `f408875f fix: add SplObjectStorage identity map`
 
 ## Progress Score
 
@@ -122,13 +122,57 @@ stable pinned denominator and does not use the raw runner
 | Batch006 source batch | Complete | Source checkpoints accepted: 10 / 10; checkpoint10 sharded gate published |
 | Batch007 checkpoint10 sharded gate | Done | 2047 / 20294 pinned runnable PHPTs passed (10.09%); 0 regressions from Batch006 checkpoint10 PASS set; run id `phpt-full-batch007-checkpoint10-sharded-20260529T034255Z-php-src-f97ff59-public-906b4636-source-906b4636-stack10` |
 | Batch007 source batch | Complete | Source checkpoints accepted: 10 / 10; checkpoint10 regression-repair sharded gate published |
-| Batch008 source batch | Started | Source checkpoints accepted: 4 / 10; checkpoint1 is `strncmp()` / `strncasecmp()` focused source proof; checkpoint2 is bcmath `bcmod()` / `bcpow()` / `bcpowmod()` / `bcsqrt()` focused source proof; checkpoint3 is `tempnam()` / `sys_get_temp_dir()` focused source proof; checkpoint4 is bounded date/timezone focused source proof; public score unchanged until a pinned aggregate gate |
+| Batch008 source batch | Started | Source checkpoints accepted: 5 / 10; checkpoint1 is `strncmp()` / `strncasecmp()` focused source proof; checkpoint2 is bcmath `bcmod()` / `bcpow()` / `bcpowmod()` / `bcsqrt()` focused source proof; checkpoint3 is `tempnam()` / `sys_get_temp_dir()` focused source proof; checkpoint4 is bounded date/timezone focused source proof; checkpoint5 is `SplObjectStorage` identity-map focused source proof; public score unchanged until a pinned aggregate gate |
 
 Focused PHPT history is tracked separately in
 `/home/claude/supervised-php-compiler/state/php-core-suite-focused-history.tsv`.
 Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
+
+Batch008 source checkpoint 5 is primary-integrated under AO supervision. This
+is a source checkpoint with focused proof, not a percentage change. The public
+PHPT score remains **2047 / 20294 pinned runnable PHPTs = 10.09%** until the
+next pinned full-suite or supervisor-approved sharded publication gate is
+completed, regression-checked, and published here.
+
+- primary source head:
+  `f408875f fix: add SplObjectStorage identity map`
+- reviewed and integration patch:
+  `/home/claude/supervised-php-compiler/state/patches/ao-integration-splobjectstorage-9de0d35a-20260529.patch`
+- reviewed and integration patch SHA256:
+  `0fa8ad6167d2551e3b85fc7f07db32b3644bbcb1c997b98afb2c0d0e148b1e5e`
+- original author patch SHA256:
+  `c59c2c5ca5f7bfa17dcf6a9a8724240fcb94fe5e80f82b30b63b905718c4de0b`
+- currentized input patch SHA256:
+  `6d1e6557c0d1ec866e3bfd5b91a1472d185dae66c2e90dca923b1b988304bf87`
+- reviewer gate: phpc-7 completed current-public `566782de` proof for p39
+  `SplObjectStorage` identity map; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/batch008-review-p39-splobjectstorage-identity-map-566782de-phpc7-20260529.{status.md,report.md,gates.log}`
+- critic gate: phpc-58 recorded `SAFE-FOR-INTEGRATION` for the currentized
+  SHA; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/phpc-58-batch008-critic-splobjectstorage-566782de-20260529.{status.md,report.md}`
+- handoff gate: p38 completed scratch/no-primary handoff preflight on public
+  `9de0d35a` with original and currentized patch SHA verification, clean
+  apply, docs/`PROGRESS.md`/README/examples exclusion, consumed-scope scan,
+  production exact-shape scan, diff check, reverse-apply check, and exported
+  patch proof; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/ao-integration-splobjectstorage-9de0d35a-20260529.{status.md,report.md,gates.log}`
+- supervisor focused gates: PASS for SHA sidecar verification, clean apply
+  over public `89bf5950`, `git diff --cached --check`, docs/`PROGRESS.md`/
+  README/examples exclusion, consumed-scope and production exact-shape audits,
+  `cargo fmt`, focused Rust `object_model` SplObjectStorage test, `phpc`
+  binary build, `cargo check`, and the focused PHP core PHPT cluster under
+  `ext/spl/tests/SplObjectStorage` with 12 PASS and 0 FAIL
+- public progress gate: not run for this source checkpoint; Batch008 has
+  5 / 10 source checkpoints and 83 expected direct PHPT rows since the last
+  aggregate gate. This crosses the supervisor publication-gate trigger.
+
+This checkpoint implements generalized bounded runtime support for
+`SplObjectStorage` identity-keyed entries, info values, offset operations,
+iterator movement, clone copying, `Countable` dispatch, and focused
+observer/subject metadata. It is not keyed to PHPT filenames, expected output,
+fixture names, public hashes, batch labels, or checkpoint markers.
 
 Batch008 source checkpoint 4 is primary-integrated under AO supervision. This
 is a source checkpoint with focused proof, not a percentage change. The public
