@@ -31443,9 +31443,21 @@ impl PhpClassTable {
         classes
             .set_parent(value_error_id, error_id)
             .expect("ValueError should extend Error");
+        let arithmetic_error_id = classes
+            .declare_class("ArithmeticError")
+            .expect("core class table should contain ValueError before ArithmeticError");
+        classes
+            .set_parent(arithmetic_error_id, error_id)
+            .expect("ArithmeticError should extend Error");
+        let division_by_zero_error_id = classes
+            .declare_class("DivisionByZeroError")
+            .expect("core class table should contain ArithmeticError before DivisionByZeroError");
+        classes
+            .set_parent(division_by_zero_error_id, arithmetic_error_id)
+            .expect("DivisionByZeroError should extend ArithmeticError");
         let runtime_exception_id = classes
             .declare_class("RuntimeException")
-            .expect("core class table should contain ValueError before RuntimeException");
+            .expect("core class table should contain DivisionByZeroError before RuntimeException");
         let exception_id = classes
             .lookup_class_id("Exception")
             .expect("core Exception class id should resolve for RuntimeException");
@@ -78099,6 +78111,9 @@ mod tests {
                 "ReflectionIntersectionType",
                 "ReflectionProperty",
                 "TypeError",
+                "ValueError",
+                "ArithmeticError",
+                "DivisionByZeroError",
                 "RuntimeException",
             ]
         );
@@ -78299,9 +78314,27 @@ mod tests {
         assert_eq!(type_error.parent_id(), Some(error.id()));
         assert!(type_error.properties().is_empty());
 
+        let value_error = classes.lookup_class("valueerror").unwrap();
+        assert_eq!(value_error.name(), "ValueError");
+        assert_eq!(value_error.id().index(), 19);
+        assert_eq!(value_error.parent_id(), Some(error.id()));
+
+        let arithmetic_error = classes.lookup_class("arithmeticerror").unwrap();
+        assert_eq!(arithmetic_error.name(), "ArithmeticError");
+        assert_eq!(arithmetic_error.id().index(), 20);
+        assert_eq!(arithmetic_error.parent_id(), Some(error.id()));
+
+        let division_by_zero_error = classes.lookup_class("divisionbyzeroerror").unwrap();
+        assert_eq!(division_by_zero_error.name(), "DivisionByZeroError");
+        assert_eq!(division_by_zero_error.id().index(), 21);
+        assert_eq!(
+            division_by_zero_error.parent_id(),
+            Some(arithmetic_error.id())
+        );
+
         let runtime_exception = classes.lookup_class("runtimeexception").unwrap();
         assert_eq!(runtime_exception.name(), "RuntimeException");
-        assert_eq!(runtime_exception.id().index(), 19);
+        assert_eq!(runtime_exception.id().index(), 22);
         assert_eq!(runtime_exception.parent_id(), Some(exception.id()));
         assert!(runtime_exception.properties().is_empty());
         assert!(runtime_exception.methods().is_empty());

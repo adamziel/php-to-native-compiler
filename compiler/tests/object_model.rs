@@ -75,6 +75,9 @@ echo "ready\n";
             "ReflectionIntersectionType",
             "ReflectionProperty",
             "TypeError",
+            "ValueError",
+            "ArithmeticError",
+            "DivisionByZeroError",
             "RuntimeException",
             "Box",
         ]
@@ -99,6 +102,15 @@ echo "ready\n";
     assert!(!message.is_static());
     let type_error = classes.lookup_class("TypeError").unwrap();
     assert_eq!(type_error.parent_id(), Some(error.id()));
+    let value_error = classes.lookup_class("ValueError").unwrap();
+    assert_eq!(value_error.parent_id(), Some(error.id()));
+    let arithmetic_error = classes.lookup_class("ArithmeticError").unwrap();
+    assert_eq!(arithmetic_error.parent_id(), Some(error.id()));
+    let division_by_zero_error = classes.lookup_class("DivisionByZeroError").unwrap();
+    assert_eq!(
+        division_by_zero_error.parent_id(),
+        Some(arithmetic_error.id())
+    );
     let runtime_exception = classes.lookup_class("RuntimeException").unwrap();
     assert_eq!(runtime_exception.parent_id(), Some(exception.id()));
 

@@ -6354,15 +6354,10 @@ impl Parser {
                             unsupported_namespace_qualified_constant_name_message(),
                         ));
                     }
-                    self.consume_keyword(TokenKind::LParen, "expected '(' after function name")?;
-                    let args = self.parse_call_arguments_after_open()?;
                     let name =
                         self.resolve_function_call_name(FunctionCallName::Qualified(qualified));
-                    return Ok(Expr::Call {
-                        name,
-                        args,
-                        span: token.span,
-                    });
+                    self.consume_keyword(TokenKind::LParen, "expected '(' after function name")?;
+                    return self.parse_call_or_first_class_callable_after_open(name, token.span);
                 }
                 if self.check(|kind| matches!(kind, TokenKind::DoubleColon)) {
                     let receiver = if is_magic_static_receiver(&name) {
@@ -6379,14 +6374,9 @@ impl Parser {
                         span: token.span,
                     });
                 }
-                self.consume_keyword(TokenKind::LParen, "expected '(' after function name")?;
-                let args = self.parse_call_arguments_after_open()?;
                 let name = self.resolve_function_call_name(FunctionCallName::Unqualified(name));
-                Ok(Expr::Call {
-                    name,
-                    args,
-                    span: token.span,
-                })
+                self.consume_keyword(TokenKind::LParen, "expected '(' after function name")?;
+                self.parse_call_or_first_class_callable_after_open(name, token.span)
             }
             TokenKind::Backslash => {
                 let qualified = format!(
@@ -6398,15 +6388,10 @@ impl Parser {
                     return self.reject_unsupported_static_member_access(Some(&resolved));
                 }
                 if self.check(|kind| matches!(kind, TokenKind::LParen)) {
-                    self.consume_keyword(TokenKind::LParen, "expected '(' after function name")?;
-                    let args = self.parse_call_arguments_after_open()?;
                     let name = self
                         .resolve_function_call_name(FunctionCallName::FullyQualified(qualified));
-                    return Ok(Expr::Call {
-                        name,
-                        args,
-                        span: token.span,
-                    });
+                    self.consume_keyword(TokenKind::LParen, "expected '(' after function name")?;
+                    return self.parse_call_or_first_class_callable_after_open(name, token.span);
                 }
                 Ok(Expr::GlobalConstant {
                     name: qualified,
@@ -6426,15 +6411,10 @@ impl Parser {
                         unsupported_namespace_qualified_constant_name_message(),
                     ));
                 }
-                self.consume_keyword(TokenKind::LParen, "expected '(' after function name")?;
-                let args = self.parse_call_arguments_after_open()?;
                 let name =
                     self.resolve_function_call_name(FunctionCallName::NamespaceRelative(suffix));
-                Ok(Expr::Call {
-                    name,
-                    args,
-                    span: token.span,
-                })
+                self.consume_keyword(TokenKind::LParen, "expected '(' after function name")?;
+                self.parse_call_or_first_class_callable_after_open(name, token.span)
             }
             TokenKind::Static if self.check(|kind| matches!(kind, TokenKind::Function)) => {
                 self.advance();
@@ -7017,6 +6997,24 @@ impl Parser {
         }
         self.consume_keyword(TokenKind::RParen, "expected ')' after arguments")?;
         Ok(args)
+    }
+
+    fn parse_call_or_first_class_callable_after_open(
+        &mut self,
+        name: String,
+        span: Span,
+    ) -> CompileResult<Expr> {
+        if matches!(self.peek().kind, TokenKind::Ellipsis)
+            && matches!(self.peek_next().kind, TokenKind::RParen)
+        {
+            self.advance();
+            self.advance();
+            let callable = name.strip_prefix('\\').unwrap_or(&name).to_string();
+            return Ok(Expr::String(callable, span));
+        }
+
+        let args = self.parse_call_arguments_after_open()?;
+        Ok(Expr::Call { name, args, span })
     }
 
     fn parse_call_argument_after_open(&mut self) -> CompileResult<Expr> {
