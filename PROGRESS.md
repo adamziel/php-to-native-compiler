@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-29 02:56 CEST
+Updated: 2026-05-29 02:59 CEST
 Primary branch: `master`
-Latest source head: `ac13fb37 fix: add standard file link builtins`
+Latest source head: `af645159 fix: add bounded strftime builtins`
 
 ## Progress Score
 
@@ -94,13 +94,48 @@ stable pinned denominator and does not use the raw runner
 | Batch005 checkpoint10 sharded gate | Done | 1618 / 20294 pinned runnable PHPTs passed (7.97%); 3 PASS-to-SKIP platform guards from Windows-only PHPTs; run id `phpt-full-batch005-checkpoint10-sharded-20260528T224229Z-php-src-f97ff59-public-fd74fba9-source-1c4da4c5-stack10` |
 | Batch004 source batch | Complete | Batch004 source checkpoints accepted: 10 / 10; checkpoint10 sharded gate published |
 | Batch005 source batch | Complete | Batch005 source checkpoints accepted: 10 / 10; checkpoint10 sharded gate published |
-| Batch006 source batch | Started | Source checkpoints accepted: 4 / 10 gate threshold; checkpoint4 integrates standard filesystem link helpers and bounded `touch()` / `sleep()` prerequisites |
+| Batch006 source batch | Started | Source checkpoints accepted: 5 / 10 gate threshold; checkpoint5 integrates bounded `strftime()` / `gmstrftime()` builtins |
 
 Focused PHPT history is tracked separately in
 `/home/claude/supervised-php-compiler/state/php-core-suite-focused-history.tsv`.
 Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
+
+Batch006 source checkpoint 5 is primary-integrated under AO supervision. This
+is a source checkpoint with focused proof, not a percentage change. The public
+PHPT score remains **1618 / 20294 pinned runnable PHPTs = 7.97%** until the
+next pinned full-suite or supervisor-approved sharded publication gate is
+completed, regression-checked, and published here.
+
+- primary source head:
+  `af645159 fix: add bounded strftime builtins`
+- reviewed and integration patch:
+  `/home/claude/supervised-php-compiler/state/patches/ao-coder-date-timezone-strftime-successor5-4dc9d4e0-20260529.patch`
+- reviewed and integration patch SHA256:
+  `bc42a80bd94ea702468b9f1b19e940002769dd3092cb804313887d3fb2ff51e8`
+- reviewer gate: phpc-7 recorded `FINAL GO-CANDIDATE /
+  FOCUSED-GATES-PASS / PHPT-PASS`; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/batch006-review-date-timezone-strftime-successor5-4dc9d4e0-20260529.{status.md,report.md,gates.log}`
+- critic gate: phpc-33 recorded `SAFE-FOR-INTEGRATION /
+  CURRENT-PUBLIC-4DC9D4E0`; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/batch006-critic-date-timezone-strftime-successor5-4dc9d4e0-20260529.{status.md,report.md}`
+- supervisor currentization and focused gates: PASS for clean apply over
+  checkpoint4, `git diff --check`, production exact-shape audit,
+  `cargo fmt --all -- --check`, focused Rust `strftime_builtin`,
+  `cargo build -p phpc`, and the focused seven-file PHPT
+  `strftime()` / `gmstrftime()` cluster with 7 PASS and 0 FAIL
+- full PHPT suite: not run for this single source checkpoint; Batch006 broad
+  gate is held until 10 accepted source checkpoints, or until the supervisor
+  explicitly opens a regression/publication gate
+
+This checkpoint generalizes bounded `strftime()` / `gmstrftime()` formatting,
+date token handling, timezone alias/offset behavior, and empty-statement
+parsing support needed by the focused date cluster. It is not keyed to a PHPT
+filename, expected-output fixture, batch marker, public hash, or test-name
+branch.
+
+Previous Batch006 source checkpoint 4 was standard filesystem link helpers:
 
 Batch006 source checkpoint 4 is primary-integrated under AO supervision. This
 is a source checkpoint with focused proof, not a percentage change. The public
