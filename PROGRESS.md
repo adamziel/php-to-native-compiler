@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-29 05:00 CEST
+Updated: 2026-05-29 05:05 CEST
 Primary branch: `master`
-Latest source head: `6873dd96 fix: add bcmath scalar decimal builtins`
+Latest source head: `19ab5b41 fix: reject invalid standalone type syntax`
 
 ## Progress Score
 
@@ -108,13 +108,48 @@ stable pinned denominator and does not use the raw runner
 | Batch004 source batch | Complete | Batch004 source checkpoints accepted: 10 / 10; checkpoint10 sharded gate published |
 | Batch005 source batch | Complete | Batch005 source checkpoints accepted: 10 / 10; checkpoint10 sharded gate published |
 | Batch006 source batch | Complete | Source checkpoints accepted: 10 / 10; checkpoint10 sharded gate published |
-| Batch007 source batch | In progress | Source checkpoints accepted: 6 / 10; public score unchanged until pinned aggregate gate |
+| Batch007 source batch | In progress | Source checkpoints accepted: 7 / 10; public score unchanged until pinned aggregate gate |
 
 Focused PHPT history is tracked separately in
 `/home/claude/supervised-php-compiler/state/php-core-suite-focused-history.tsv`.
 Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
+
+Batch007 source checkpoint 7 is primary-integrated under AO supervision. This
+is a source checkpoint with focused proof, not a percentage change. The public
+PHPT score remains **1836 / 20294 pinned runnable PHPTs = 9.05%** until the
+next pinned full-suite or supervisor-approved sharded publication gate is
+completed, regression-checked, and published here.
+
+- primary source head:
+  `19ab5b41 fix: reject invalid standalone type syntax`
+- reviewed and integration patch:
+  `/home/claude/supervised-php-compiler/state/patches/ao-coder-type-declarations-standalone-type-syntax-successor6-33e8a19e-20260529.patch`
+- reviewed and integration patch SHA256:
+  `70e81837052e16461b957a2a64c2fcc2606d00f7735d1ff413aa6c60ca43dbfc`
+- reviewer gate: phpc-7 recorded `FINAL GO-CANDIDATE /
+  CURRENT-PUBLIC-33E8A19E / FOCUSED-GATES-PASS / PHPT-9-OF-9-PASS`;
+  artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/batch007-review-type-declarations-standalone-type-syntax-successor6-33e8a19e-20260529.{status.md,report.md,gates.log}`
+- critic gate: phpc-33 recorded `SAFE-FOR-INTEGRATION /
+  CURRENT-PUBLIC-33E8A19E / FOCUSED-GATES-PASS`; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/batch007-critic-type-declarations-standalone-type-syntax-successor6-33e8a19e-20260529.{status.md,report.md}`
+- supervisor focused gates: PASS for fresh apply over public `4a58fb19`,
+  `git diff --cached --check`, docs/PROGRESS/examples exclusion, production
+  exact-shape audit, `cargo fmt --all -- --check`, focused Rust
+  `cargo test -q -p phpc --test standalone_type_syntax`,
+  `cargo build -q -p phpc --bin phpc`, and the focused 9-file standalone /
+  nullable / union type syntax PHPT cluster with 9 PASS and 0 FAIL
+- public progress gate: not run for this source checkpoint; next public score
+  update waits for the Batch007 pinned aggregate gate
+
+This checkpoint adds generalized startup diagnostics for invalid standalone
+and nullable type declarations across functions, methods, properties,
+interfaces, and traits, including invalid nullable `mixed`, union `mixed`,
+nullable/union `void`, and union `never` forms. It is not keyed to PHPT
+filenames, expected output, fixture names, public hashes, batch labels, or
+checkpoint markers.
 
 Batch007 source checkpoint 6 is primary-integrated under AO supervision. This
 is a source checkpoint with focused proof, not a percentage change. The public
