@@ -72111,6 +72111,10 @@ fn magic_method_startup_diagnostics(
     }
 
     if !diagnostics.has_fatal() {
+        collect_standalone_type_syntax_startup_diagnostics(&mut diagnostics, program, source_file);
+    }
+
+    if !diagnostics.has_fatal() {
         collect_parameter_default_startup_diagnostics(&mut diagnostics, program, source_file);
     }
 
@@ -72415,6 +72419,142 @@ fn union_type_decl_normalized_name(type_name: &str) -> &str {
     let name = type_name.trim();
     let name = name.strip_prefix('?').unwrap_or(name);
     name.strip_prefix('\\').unwrap_or(name)
+}
+
+fn collect_standalone_type_syntax_startup_diagnostics(
+    diagnostics: &mut MagicMethodStartupDiagnostics,
+    program: &Program,
+    source_file: Option<&str>,
+) {
+    for stmt in &program.statements {
+        match stmt {
+            Stmt::Function(function) if !function.is_nested => {
+                if let Some((message, line)) = function_standalone_type_syntax_diagnostic(function)
+                {
+                    diagnostics.set_fatal(message, source_file, line);
+                    return;
+                }
+            }
+            Stmt::Class(class) if !class.is_nested => {
+                for member in &class.members {
+                    match member {
+                        ClassMember::Property(property) => {
+                            if let Some((message, line)) =
+                                type_decl_standalone_syntax_diagnostic(property.type_decl.as_ref())
+                            {
+                                diagnostics.set_fatal(message, source_file, line);
+                                return;
+                            }
+                        }
+                        ClassMember::Method(method) => {
+                            if let Some((message, line)) =
+                                function_standalone_type_syntax_diagnostic(&method.function)
+                            {
+                                diagnostics.set_fatal(message, source_file, line);
+                                return;
+                            }
+                        }
+                        ClassMember::Constant(_) => {}
+                    }
+                }
+            }
+            Stmt::Interface(interface) => {
+                for property in &interface.properties {
+                    if let Some((message, line)) =
+                        type_decl_standalone_syntax_diagnostic(property.type_decl.as_ref())
+                    {
+                        diagnostics.set_fatal(message, source_file, line);
+                        return;
+                    }
+                }
+                for method in &interface.methods {
+                    if let Some((message, line)) =
+                        function_standalone_type_syntax_diagnostic(&method.function)
+                    {
+                        diagnostics.set_fatal(message, source_file, line);
+                        return;
+                    }
+                }
+            }
+            Stmt::Trait(trait_decl) => {
+                for property in &trait_decl.properties {
+                    if let Some((message, line)) =
+                        type_decl_standalone_syntax_diagnostic(property.type_decl.as_ref())
+                    {
+                        diagnostics.set_fatal(message, source_file, line);
+                        return;
+                    }
+                }
+                for method in &trait_decl.methods {
+                    if let Some((message, line)) =
+                        function_standalone_type_syntax_diagnostic(&method.function)
+                    {
+                        diagnostics.set_fatal(message, source_file, line);
+                        return;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn function_standalone_type_syntax_diagnostic(function: &FunctionDecl) -> Option<(String, usize)> {
+    function
+        .params
+        .iter()
+        .find_map(|param| type_decl_standalone_syntax_diagnostic(param.type_decl.as_ref()))
+        .or_else(|| type_decl_standalone_syntax_diagnostic(function.return_type.as_ref()))
+}
+
+fn type_decl_standalone_syntax_diagnostic(type_decl: Option<&TypeDecl>) -> Option<(String, usize)> {
+    let type_decl = type_decl?;
+    standalone_type_syntax_message(&type_decl.text).map(|message| (message, type_decl.span.line))
+}
+
+fn standalone_type_syntax_message(type_decl: &str) -> Option<String> {
+    let text = type_decl.trim();
+    if let Some(nullable) = text.strip_prefix('?') {
+        let normalized = normalize_type_name(nullable);
+        if normalized.eq_ignore_ascii_case("mixed") {
+            return Some(
+                "Type mixed cannot be marked as nullable since mixed already includes null"
+                    .to_string(),
+            );
+        }
+        if let Some(display) = standalone_only_type_display(normalized) {
+            return Some(format!("{display} can only be used as a standalone type"));
+        }
+    }
+
+    if !text.contains('|') {
+        return None;
+    }
+
+    for part in text.split('|') {
+        let normalized = normalize_type_name(part);
+        if normalized.eq_ignore_ascii_case("mixed") {
+            return Some("Type mixed can only be used as a standalone type".to_string());
+        }
+        if let Some(display) = standalone_only_type_display(normalized) {
+            return Some(format!("{display} can only be used as a standalone type"));
+        }
+    }
+    None
+}
+
+fn normalize_type_name(type_name: &str) -> &str {
+    let name = type_name.trim();
+    let name = name.strip_prefix('?').unwrap_or(name);
+    name.strip_prefix('\\').unwrap_or(name)
+}
+
+fn standalone_only_type_display(type_name: &str) -> Option<&'static str> {
+    match type_name.to_ascii_lowercase().as_str() {
+        "void" => Some("Void"),
+        "never" => Some("never"),
+        _ => None,
+    }
 }
 
 fn collect_invalid_intersection_type_startup_diagnostics(
