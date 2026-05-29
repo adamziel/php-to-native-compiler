@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-29 17:09 CEST
+Updated: 2026-05-29 17:47 CEST
 Primary branch: `master`
-Latest source head: `2f69a24d fix: improve array key coercion`
+Latest source head: `f1bd55bf fix: repair dynamic indirect call diagnostics`
 
 ## Progress Score
 
@@ -14,6 +14,12 @@ Progress is the pinned php-src PHPT full-suite pass rate:
 `passed runnable PHPTs / total runnable PHPTs`
 
 Current score: **2741 / 20294 pinned runnable PHPTs = 13.51%**.
+
+Post-Batch012 regression repair source `f1bd55bf` is integrated and pushed.
+It repairs the four dynamic/indirect-call latest-published PASS regressions
+found by the Batch012 checkpoint10 gate, but the public percentage remains
+unchanged until the pinned full-suite publication gate is rerun, parsed, and
+published here.
 
 No other percentage is public project progress. Focused PHPT passes, source
 checkpoints, PRs, and docs/status edits are evidence for the next batch, but
