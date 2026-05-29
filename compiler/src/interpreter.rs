@@ -276,6 +276,7 @@ enum ConstantResolution {
     Missing,
 }
 
+#[derive(Debug, Clone)]
 struct ResolvedConstant {
     declaring_class_id: Option<ClassId>,
     declaring_name: String,
@@ -284,7 +285,7 @@ struct ResolvedConstant {
     kind: ConstantOwnerKind,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ConstantOwnerKind {
     Class,
     Interface,
@@ -519,6 +520,29 @@ struct ReflectionPropertyState {
     is_static: bool,
     has_default: bool,
     type_decl: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct ReflectionClassConstantState {
+    declaring_class_name: String,
+    declaring_class_id: Option<ClassId>,
+    name: String,
+    visibility: Visibility,
+    value: Expr,
+    kind: ConstantOwnerKind,
+}
+
+impl ReflectionClassConstantState {
+    fn from_resolved(requested_name: &str, resolved: ResolvedConstant) -> Self {
+        Self {
+            declaring_class_name: resolved.declaring_name,
+            declaring_class_id: resolved.declaring_class_id,
+            name: requested_name.to_string(),
+            visibility: resolved.visibility,
+            value: resolved.value,
+            kind: resolved.kind,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -38338,6 +38362,22 @@ impl Interpreter {
                     .map(Value::String)
                     .unwrap_or(Value::Bool(false)))
             }
+            "innamespace" => {
+                expect_expr_arity("ReflectionClass::inNamespace", args.len(), 0, span)?;
+                Ok(Value::Bool(state.name.contains('\\')))
+            }
+            "getnamespacename" => {
+                expect_expr_arity("ReflectionClass::getNamespaceName", args.len(), 0, span)?;
+                Ok(Value::String(reflection_class_namespace_name(&state.name)))
+            }
+            "isinternal" => {
+                expect_expr_arity("ReflectionClass::isInternal", args.len(), 0, span)?;
+                Ok(Value::Bool(!self.reflection_class_is_user_defined(&state)))
+            }
+            "isuserdefined" => {
+                expect_expr_arity("ReflectionClass::isUserDefined", args.len(), 0, span)?;
+                Ok(Value::Bool(self.reflection_class_is_user_defined(&state)))
+            }
             "isinterface" => {
                 expect_expr_arity("ReflectionClass::isInterface", args.len(), 0, span)?;
                 Ok(Value::Bool(state.kind == ReflectionClassKind::Interface))
@@ -38346,12 +38386,60 @@ impl Interpreter {
                 expect_expr_arity("ReflectionClass::isTrait", args.len(), 0, span)?;
                 Ok(Value::Bool(state.kind == ReflectionClassKind::Trait))
             }
+            "isabstract" => {
+                expect_expr_arity("ReflectionClass::isAbstract", args.len(), 0, span)?;
+                Ok(Value::Bool(self.reflection_class_is_abstract(&state)))
+            }
+            "isfinal" => {
+                expect_expr_arity("ReflectionClass::isFinal", args.len(), 0, span)?;
+                Ok(Value::Bool(self.reflection_class_is_final(&state)))
+            }
+            "getmodifiers" => {
+                expect_expr_arity("ReflectionClass::getModifiers", args.len(), 0, span)?;
+                Ok(Value::Int(self.reflection_class_modifier_mask(&state)))
+            }
             "isinstantiable" => {
                 expect_expr_arity("ReflectionClass::isInstantiable", args.len(), 0, span)?;
                 let instantiable = state
                     .class_id
                     .is_some_and(|class_id| !self.abstract_classes.contains(&class_id));
                 Ok(Value::Bool(instantiable))
+            }
+            "isinstance" => {
+                expect_expr_arity("ReflectionClass::isInstance", args.len(), 1, span)?;
+                let value = self.evaluate(&args[0], caller_scope)?;
+                let Value::Object(object) = value else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "ReflectionClass::isInstance",
+                            format!(
+                                "object argument must be object in the current subset, got {}",
+                                value.type_name()
+                            ),
+                        ),
+                    ));
+                };
+                Ok(Value::Bool(
+                    self.reflection_class_matches_object(&state, &object),
+                ))
+            }
+            "issubclassof" => {
+                expect_expr_arity("ReflectionClass::isSubclassOf", args.len(), 1, span)?;
+                let value = self.evaluate(&args[0], caller_scope)?;
+                let target = self.resolve_reflection_class_compare_target(value, span)?;
+                Ok(Value::Bool(
+                    self.reflection_class_is_subclass_of(&state, &target),
+                ))
+            }
+            "isiterable" | "isiterateable" => {
+                let method = if method_name.eq_ignore_ascii_case("isIterable") {
+                    "ReflectionClass::isIterable"
+                } else {
+                    "ReflectionClass::isIterateable"
+                };
+                expect_expr_arity(method, args.len(), 0, span)?;
+                Ok(Value::Bool(self.reflection_class_is_iterable(&state)))
             }
             "getparentclass" => {
                 expect_expr_arity("ReflectionClass::getParentClass", args.len(), 0, span)?;
@@ -38452,6 +38540,78 @@ impl Interpreter {
                     traits.insert(ArrayKey::String(trait_name), trait_reflection);
                 }
                 Ok(Value::Array(traits))
+            }
+            "hasconstant" => {
+                expect_expr_arity("ReflectionClass::hasConstant", args.len(), 1, span)?;
+                let value = self.evaluate(&args[0], caller_scope)?;
+                let Value::String(constant) = value else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "ReflectionClass::hasConstant",
+                            format!(
+                                "constant argument must be string in the current subset, got {}",
+                                value.type_name()
+                            ),
+                        ),
+                    ));
+                };
+                Ok(Value::Bool(
+                    self.reflection_class_resolve_constant(&state, &constant, span)?
+                        .is_some(),
+                ))
+            }
+            "getconstant" => {
+                expect_expr_arity("ReflectionClass::getConstant", args.len(), 1, span)?;
+                let value = self.evaluate(&args[0], caller_scope)?;
+                let Value::String(constant) = value else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "ReflectionClass::getConstant",
+                            format!(
+                                "constant argument must be string in the current subset, got {}",
+                                value.type_name()
+                            ),
+                        ),
+                    ));
+                };
+                let Some(constant_state) =
+                    self.reflection_class_resolve_constant(&state, &constant, span)?
+                else {
+                    self.emit_display_diagnostic(
+                        "Deprecated",
+                        PHP_E_DEPRECATED,
+                        "ReflectionClass::getConstant() for a non-existent constant is deprecated, use ReflectionClass::hasConstant() to check if the constant exists",
+                        span,
+                    )?;
+                    return Ok(Value::Bool(false));
+                };
+                self.evaluate_reflection_class_constant_value(&constant_state, span)
+            }
+            "getconstants" => {
+                if args.len() > 1 {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::arity_mismatch(
+                            "ReflectionClass::getConstants()",
+                            ArityExpectation::Between { min: 0, max: 1 },
+                            args.len(),
+                        ),
+                    ));
+                }
+                let filter = if let Some(arg) = args.first() {
+                    let value = self.evaluate(arg, caller_scope)?;
+                    Some(reflection_class_constant_filter_argument(value, span)?)
+                } else {
+                    None
+                };
+                let mut constants = PhpArray::new();
+                for constant in self.reflection_class_constants(&state, filter)? {
+                    let value = self.evaluate_reflection_class_constant_value(&constant, span)?;
+                    constants.insert(ArrayKey::String(constant.name), value);
+                }
+                Ok(Value::Array(constants))
             }
             "hasmethod" => {
                 expect_expr_arity("ReflectionClass::hasMethod", args.len(), 1, span)?;
@@ -38578,6 +38738,436 @@ impl Interpreter {
                 RuntimeError::undefined_function(format!("ReflectionClass::{method_name}()")),
             )),
         }
+    }
+
+    fn reflection_class_is_user_defined(&self, state: &ReflectionClassState) -> bool {
+        match state.kind {
+            ReflectionClassKind::Class => state
+                .class_id
+                .is_some_and(|class_id| self.class_source_metadata.contains_key(&class_id)),
+            ReflectionClassKind::Interface => self
+                .interface_source_metadata
+                .contains_key(&state.name.to_ascii_lowercase()),
+            ReflectionClassKind::Trait => self
+                .trait_source_metadata
+                .contains_key(&state.name.to_ascii_lowercase()),
+        }
+    }
+
+    fn reflection_class_is_abstract(&self, state: &ReflectionClassState) -> bool {
+        state
+            .class_id
+            .is_some_and(|class_id| self.abstract_classes.contains(&class_id))
+    }
+
+    fn reflection_class_is_final(&self, state: &ReflectionClassState) -> bool {
+        state
+            .class_id
+            .is_some_and(|class_id| self.final_classes.contains(&class_id))
+    }
+
+    fn reflection_class_modifier_mask(&self, state: &ReflectionClassState) -> i64 {
+        let mut mask = 0;
+        if self.reflection_class_is_final(state) {
+            mask |= 32;
+        }
+        if self.reflection_class_is_abstract(state) {
+            mask |= 64;
+        }
+        mask
+    }
+
+    fn reflection_class_matches_object(
+        &self,
+        state: &ReflectionClassState,
+        object: &PhpObject,
+    ) -> bool {
+        match state.kind {
+            ReflectionClassKind::Class => state.class_id.is_some_and(|class_id| {
+                object.class_id() == class_id
+                    || self.classes.is_subclass_of(object.class_id(), class_id)
+            }),
+            ReflectionClassKind::Interface => {
+                self.class_implements_or_matches_core_interface(object.class_id(), &state.name)
+            }
+            ReflectionClassKind::Trait => false,
+        }
+    }
+
+    fn resolve_reflection_class_compare_target(
+        &self,
+        value: Value,
+        span: Span,
+    ) -> CompileResult<ReflectionClassState> {
+        match value {
+            Value::Object(object) if object.class_name().eq_ignore_ascii_case("ReflectionClass") => {
+                self.reflection_classes
+                    .get(&object.id())
+                    .cloned()
+                    .ok_or_else(|| {
+                        runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "ReflectionClass comparison",
+                                "missing ReflectionClass runtime metadata",
+                            ),
+                        )
+                    })
+            }
+            Value::String(name) => self.resolve_reflection_class_name_without_autoload(&name, span),
+            other => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "ReflectionClass comparison",
+                    format!(
+                        "target must be ReflectionClass object or class-like string in the current subset, got {}",
+                        other.type_name()
+                    ),
+                ),
+            )),
+        }
+    }
+
+    fn resolve_reflection_class_name_without_autoload(
+        &self,
+        name: &str,
+        span: Span,
+    ) -> CompileResult<ReflectionClassState> {
+        if let Some(class) = self.classes.lookup_class(name) {
+            return Ok(self.reflection_class_state_for(
+                class.name().to_string(),
+                ReflectionClassKind::Class,
+                Some(class.id()),
+            ));
+        }
+        if let Some(interface) = self.interface_lookup.get(&name.to_ascii_lowercase()) {
+            return Ok(self.reflection_class_state_for(
+                interface.name.clone(),
+                ReflectionClassKind::Interface,
+                None,
+            ));
+        }
+        if let Some(trait_decl) = self.trait_lookup.get(&name.to_ascii_lowercase()) {
+            return Ok(self.reflection_class_state_for(
+                trait_decl.name.clone(),
+                ReflectionClassKind::Trait,
+                None,
+            ));
+        }
+        Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "ReflectionClass comparison",
+                format!("target {name} must name a declared class, interface, or trait"),
+            ),
+        ))
+    }
+
+    fn reflection_class_is_subclass_of(
+        &self,
+        child: &ReflectionClassState,
+        parent: &ReflectionClassState,
+    ) -> bool {
+        match (child.kind, parent.kind) {
+            (ReflectionClassKind::Class, ReflectionClassKind::Class) => {
+                let (Some(child_id), Some(parent_id)) = (child.class_id, parent.class_id) else {
+                    return false;
+                };
+                child_id != parent_id && self.classes.is_subclass_of(child_id, parent_id)
+            }
+            (ReflectionClassKind::Class, ReflectionClassKind::Interface) => {
+                child.class_id.is_some_and(|class_id| {
+                    self.class_implements_or_matches_core_interface(class_id, &parent.name)
+                })
+            }
+            (ReflectionClassKind::Interface, ReflectionClassKind::Interface) => {
+                !child.name.eq_ignore_ascii_case(&parent.name)
+                    && self.interface_extends_interface(&child.name, &parent.name)
+            }
+            _ => false,
+        }
+    }
+
+    fn interface_extends_interface(&self, child_name: &str, parent_name: &str) -> bool {
+        let Some(interface) = self.interface_lookup.get(&child_name.to_ascii_lowercase()) else {
+            return false;
+        };
+        interface.parents.iter().any(|candidate| {
+            candidate.eq_ignore_ascii_case(parent_name)
+                || self.interface_extends_interface(candidate, parent_name)
+        })
+    }
+
+    fn reflection_class_is_iterable(&self, state: &ReflectionClassState) -> bool {
+        match state.kind {
+            ReflectionClassKind::Class => state.class_id.is_some_and(|class_id| {
+                self.classes.implements_interface(class_id, "Iterator")
+                    || self
+                        .classes
+                        .implements_interface(class_id, "IteratorAggregate")
+            }),
+            ReflectionClassKind::Interface => {
+                state.name.eq_ignore_ascii_case("Traversable")
+                    || state.name.eq_ignore_ascii_case("Iterator")
+                    || state.name.eq_ignore_ascii_case("IteratorAggregate")
+                    || self.interface_extends_interface(&state.name, "Traversable")
+                    || self.interface_extends_interface(&state.name, "Iterator")
+                    || self.interface_extends_interface(&state.name, "IteratorAggregate")
+            }
+            ReflectionClassKind::Trait => false,
+        }
+    }
+
+    fn reflection_class_resolve_constant(
+        &self,
+        state: &ReflectionClassState,
+        constant: &str,
+        span: Span,
+    ) -> CompileResult<Option<ReflectionClassConstantState>> {
+        let resolution = match state.kind {
+            ReflectionClassKind::Class => {
+                let Some(class_id) = state.class_id else {
+                    return Ok(None);
+                };
+                self.resolve_class_constant(class_id, constant)
+            }
+            ReflectionClassKind::Interface => {
+                let Some(interface) = self.interface_lookup.get(&state.name.to_ascii_lowercase())
+                else {
+                    return Ok(None);
+                };
+                self.resolve_interface_constant(interface, constant)
+            }
+            ReflectionClassKind::Trait => {
+                let Some(trait_decl) = self.trait_lookup.get(&state.name.to_ascii_lowercase())
+                else {
+                    return Ok(None);
+                };
+                self.resolve_trait_constant(trait_decl, constant)?
+            }
+        };
+
+        match resolution {
+            ConstantResolution::Found(resolved) => Ok(Some(
+                ReflectionClassConstantState::from_resolved(constant, resolved),
+            )),
+            ConstantResolution::Missing => Ok(None),
+            ConstantResolution::Ambiguous(owners) => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{}::{constant}", state.name),
+                    format!(
+                        "interface constant resolution is ambiguous between {}",
+                        owners.join(", ")
+                    ),
+                ),
+            )),
+        }
+    }
+
+    fn resolve_trait_constant(
+        &self,
+        trait_decl: &TraitDecl,
+        constant: &str,
+    ) -> CompileResult<ConstantResolution> {
+        let mut matches = Vec::new();
+        let mut path = HashSet::new();
+        for constant_decl in
+            composed_trait_constants_for_trait(trait_decl, &self.trait_lookup, &mut path)?
+        {
+            if constant_decl.name == constant {
+                matches.push(ResolvedConstant {
+                    declaring_class_id: None,
+                    declaring_name: trait_decl.name.clone(),
+                    visibility: runtime_visibility(constant_decl.visibility),
+                    value: constant_decl.value,
+                    kind: ConstantOwnerKind::Class,
+                });
+            }
+        }
+
+        Ok(match matches.len() {
+            0 => ConstantResolution::Missing,
+            1 => ConstantResolution::Found(matches.remove(0)),
+            _ => ConstantResolution::Ambiguous(
+                matches
+                    .into_iter()
+                    .map(|resolved| format!("{}::{constant}", resolved.declaring_name))
+                    .collect(),
+            ),
+        })
+    }
+
+    fn reflection_class_constants(
+        &self,
+        state: &ReflectionClassState,
+        filter: Option<i64>,
+    ) -> CompileResult<Vec<ReflectionClassConstantState>> {
+        let mut constants = Vec::new();
+        let mut seen = HashSet::new();
+        match state.kind {
+            ReflectionClassKind::Class => {
+                if let Some(class_id) = state.class_id {
+                    self.push_class_constant_states(class_id, filter, &mut seen, &mut constants);
+                    self.push_class_interface_constant_states(
+                        class_id,
+                        filter,
+                        &mut seen,
+                        &mut constants,
+                    );
+                }
+            }
+            ReflectionClassKind::Interface => {
+                if let Some(interface) = self.interface_lookup.get(&state.name.to_ascii_lowercase())
+                {
+                    self.push_interface_constant_states(
+                        interface,
+                        filter,
+                        &mut seen,
+                        &mut constants,
+                    );
+                }
+            }
+            ReflectionClassKind::Trait => {
+                if let Some(trait_decl) = self.trait_lookup.get(&state.name.to_ascii_lowercase()) {
+                    let mut path = HashSet::new();
+                    for constant in composed_trait_constants_for_trait(
+                        trait_decl,
+                        &self.trait_lookup,
+                        &mut path,
+                    )? {
+                        if !seen.insert(constant.name.clone()) {
+                            continue;
+                        }
+                        let constant_state = ReflectionClassConstantState {
+                            declaring_class_name: trait_decl.name.clone(),
+                            declaring_class_id: None,
+                            name: constant.name,
+                            visibility: runtime_visibility(constant.visibility),
+                            value: constant.value,
+                            kind: ConstantOwnerKind::Class,
+                        };
+                        if reflection_class_constant_matches_filter(&constant_state, filter) {
+                            constants.push(constant_state);
+                        }
+                    }
+                }
+            }
+        }
+        Ok(constants)
+    }
+
+    fn push_class_constant_states(
+        &self,
+        class_id: ClassId,
+        filter: Option<i64>,
+        seen: &mut HashSet<String>,
+        constants: &mut Vec<ReflectionClassConstantState>,
+    ) {
+        let mut current = Some(class_id);
+        while let Some(current_id) = current {
+            let class = self
+                .classes
+                .get(current_id)
+                .expect("class id should resolve to class metadata");
+            for metadata in class.constants() {
+                if !seen.insert(metadata.name().to_string()) {
+                    continue;
+                }
+                let Some(constant_state) =
+                    self.reflection_class_constant_state_for_class_metadata(current_id, metadata)
+                else {
+                    continue;
+                };
+                if reflection_class_constant_matches_filter(&constant_state, filter) {
+                    constants.push(constant_state);
+                }
+            }
+            current = class.parent_id();
+        }
+    }
+
+    fn reflection_class_constant_state_for_class_metadata(
+        &self,
+        class_id: ClassId,
+        metadata: &PhpClassConstantMetadata,
+    ) -> Option<ReflectionClassConstantState> {
+        let class = self.classes.get(class_id)?;
+        let constant = self
+            .class_constants
+            .get(&(class_id, metadata.name().to_string()))?;
+        Some(ReflectionClassConstantState {
+            declaring_class_name: class.name().to_string(),
+            declaring_class_id: Some(class_id),
+            name: metadata.name().to_string(),
+            visibility: metadata.visibility(),
+            value: constant.value.clone(),
+            kind: ConstantOwnerKind::Class,
+        })
+    }
+
+    fn push_class_interface_constant_states(
+        &self,
+        class_id: ClassId,
+        filter: Option<i64>,
+        seen: &mut HashSet<String>,
+        constants: &mut Vec<ReflectionClassConstantState>,
+    ) {
+        for interface_name in implemented_interface_names(&self.classes, class_id) {
+            let Some(interface) = self
+                .interface_lookup
+                .get(&interface_name.to_ascii_lowercase())
+            else {
+                continue;
+            };
+            self.push_interface_constant_states(interface, filter, seen, constants);
+        }
+    }
+
+    fn push_interface_constant_states(
+        &self,
+        interface: &InterfaceDecl,
+        filter: Option<i64>,
+        seen: &mut HashSet<String>,
+        constants: &mut Vec<ReflectionClassConstantState>,
+    ) {
+        for constant in &interface.constants {
+            if !seen.insert(constant.name.clone()) {
+                continue;
+            }
+            let constant_state = ReflectionClassConstantState {
+                declaring_class_name: interface.name.clone(),
+                declaring_class_id: None,
+                name: constant.name.clone(),
+                visibility: Visibility::Public,
+                value: constant.value.clone(),
+                kind: ConstantOwnerKind::Interface,
+            };
+            if reflection_class_constant_matches_filter(&constant_state, filter) {
+                constants.push(constant_state);
+            }
+        }
+        for parent_name in &interface.parents {
+            let Some(parent) = self.interface_lookup.get(&parent_name.to_ascii_lowercase()) else {
+                continue;
+            };
+            self.push_interface_constant_states(parent, filter, seen, constants);
+        }
+    }
+
+    fn evaluate_reflection_class_constant_value(
+        &mut self,
+        constant: &ReflectionClassConstantState,
+        span: Span,
+    ) -> CompileResult<Value> {
+        self.evaluate_reflection_constant_expr(
+            constant.declaring_class_id,
+            &constant.declaring_class_name,
+            &constant.name,
+            constant.kind,
+            &constant.value,
+            span,
+        )
     }
 
     fn reflection_class_methods(
@@ -42742,25 +43332,14 @@ impl Interpreter {
             )?;
         }
 
-        let mut constant_scope = SymbolTable::new();
-        let value = self.evaluate(&resolved.value, &mut constant_scope)?;
-        if let Some(type_name) = unsupported_runtime_constant_value_type(&value) {
-            let owner_kind = match resolved.kind {
-                ConstantOwnerKind::Class => "class",
-                ConstantOwnerKind::Interface => "interface",
-            };
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    format!("{}::{constant}", resolved.declaring_name),
-                    format!(
-                        "{owner_kind} constant value must be null, bool, int, float, string, or array values in the current subset, got {type_name}"
-                    ),
-                ),
-            ));
-        }
-
-        Ok(value)
+        self.evaluate_reflection_constant_expr(
+            resolved.declaring_class_id,
+            &resolved.declaring_name,
+            constant,
+            resolved.kind,
+            &resolved.value,
+            span,
+        )
     }
 
     fn evaluate_interface_constant(
@@ -42791,19 +43370,52 @@ impl Interpreter {
             }
         };
 
+        self.evaluate_reflection_constant_expr(
+            resolved.declaring_class_id,
+            &resolved.declaring_name,
+            constant,
+            resolved.kind,
+            &resolved.value,
+            span,
+        )
+    }
+
+    fn evaluate_reflection_constant_expr(
+        &mut self,
+        declaring_class_id: Option<ClassId>,
+        declaring_name: &str,
+        constant: &str,
+        kind: ConstantOwnerKind,
+        value_expr: &Expr,
+        span: Span,
+    ) -> CompileResult<Value> {
+        if let Some(class_id) = declaring_class_id {
+            self.class_context.push(class_id);
+            self.called_class_context.push(class_id);
+        }
         let mut constant_scope = SymbolTable::new();
-        let value = self.evaluate(&resolved.value, &mut constant_scope)?;
+        let value = self.evaluate(value_expr, &mut constant_scope);
+        if declaring_class_id.is_some() {
+            self.called_class_context.pop();
+            self.class_context.pop();
+        }
+        let value = value?;
         if let Some(type_name) = unsupported_runtime_constant_value_type(&value) {
+            let owner_kind = match kind {
+                ConstantOwnerKind::Class => "class",
+                ConstantOwnerKind::Interface => "interface",
+            };
             return Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
-                    format!("{}::{constant}", resolved.declaring_name),
+                    format!("{declaring_name}::{constant}"),
                     format!(
-                        "interface constant value must be null, bool, int, float, string, or array values in the current subset, got {type_name}"
+                        "{owner_kind} constant value must be null, bool, int, float, string, or array values in the current subset, got {type_name}"
                     ),
                 ),
             ));
         }
+
         Ok(value)
     }
 
@@ -75855,6 +76467,61 @@ fn reflection_method_filter_argument(value: Value, span: Span) -> CompileResult<
             span,
             RuntimeError::unsupported_call(
                 "ReflectionClass::getMethods",
+                format!(
+                    "filter argument must be int-like scalar in the current subset, got {}",
+                    other.type_name()
+                ),
+            ),
+        )),
+    }
+}
+
+fn reflection_class_namespace_name(name: &str) -> String {
+    name.rsplit_once('\\')
+        .map(|(namespace, _)| namespace.to_string())
+        .unwrap_or_default()
+}
+
+fn reflection_class_constant_modifier_mask(constant: &ReflectionClassConstantState) -> i64 {
+    match constant.visibility {
+        Visibility::Public => 1,
+        Visibility::Protected => 2,
+        Visibility::Private => 4,
+    }
+}
+
+fn reflection_class_constant_matches_filter(
+    constant: &ReflectionClassConstantState,
+    filter: Option<i64>,
+) -> bool {
+    match filter {
+        Some(0) => false,
+        Some(filter) => reflection_class_constant_modifier_mask(constant) & filter != 0,
+        None => true,
+    }
+}
+
+fn reflection_class_constant_filter_argument(value: Value, span: Span) -> CompileResult<i64> {
+    match value {
+        Value::Null => Ok(0),
+        Value::Bool(value) => Ok(i64::from(value)),
+        Value::Int(value) => Ok(value),
+        Value::Float(value) if value.is_finite() => Ok(value as i64),
+        Value::String(value) => parse_sprintf_numeric_string(&value)
+            .map(|value| value as i64)
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "ReflectionClass::getConstants",
+                        "filter argument must be int-like scalar in the current subset",
+                    ),
+                )
+            }),
+        other => Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "ReflectionClass::getConstants",
                 format!(
                     "filter argument must be int-like scalar in the current subset, got {}",
                     other.type_name()

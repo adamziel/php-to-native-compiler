@@ -10550,6 +10550,93 @@ echo Root::MISSING;
 }
 
 #[test]
+fn reflection_class_reports_bounded_constant_metadata() {
+    let execution = run_source(
+        r#"<?php
+interface Contract {
+    const FLAG = "iface";
+}
+
+class Base {
+    public const BASE = "base";
+    protected const PROTECTED_NAME = "protected";
+    private const SECRET = "base-secret";
+}
+
+class Plugin extends Base implements Contract {
+    public const NAME = "plugin";
+    public const COMBO = "combo";
+    private const SECRET = "child-secret";
+}
+
+function yn($value) {
+    return $value ? "1" : "0";
+}
+
+$class = new ReflectionClass(Plugin::class);
+echo "has|", yn($class->hasConstant("NAME")), yn($class->hasConstant("MISSING")), "\n";
+echo "values|", $class->getConstant("COMBO"), "|", $class->getConstant("PROTECTED_NAME"), "|", $class->getConstant("SECRET"), "|", $class->getConstant("FLAG"), "\n";
+foreach ($class->getConstants() as $name => $value) {
+    echo "all|", $name, "=", $value, "\n";
+}
+foreach ($class->getConstants(1) as $name => $value) {
+    echo "public|", $name, "=", $value, "\n";
+}
+foreach ($class->getConstants(4) as $name => $value) {
+    echo "private|", $name, "=", $value, "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "has|10\nvalues|combo|protected|child-secret|iface\nall|NAME=plugin\nall|COMBO=combo\nall|SECRET=child-secret\nall|BASE=base\nall|PROTECTED_NAME=protected\nall|FLAG=iface\npublic|NAME=plugin\npublic|COMBO=combo\npublic|BASE=base\npublic|FLAG=iface\nprivate|SECRET=child-secret\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reflection_class_reports_bounded_shape_relationship_metadata() {
+    let execution = run_source(
+        r#"<?php
+namespace App\Meta;
+
+abstract class Base {}
+final class Plugin extends Base implements \IteratorAggregate {
+    public function getIterator() {
+        return array();
+    }
+}
+class Plain {}
+
+function yn($value) {
+    return $value ? "1" : "0";
+}
+
+$plugin = new \ReflectionClass(Plugin::class);
+$base = new \ReflectionClass(Base::class);
+$plain = new \ReflectionClass(Plain::class);
+$core = new \ReflectionClass("stdClass");
+
+echo "names|", yn($plugin->inNamespace()), "|", $plugin->getNamespaceName(), "|", $plugin->getShortName(), "\n";
+echo "mods|", $base->getModifiers(), "|", yn($base->isAbstract()), yn($base->isFinal()), "|", $plugin->getModifiers(), "|", yn($plugin->isAbstract()), yn($plugin->isFinal()), "\n";
+echo "origin|", yn($core->isInternal()), yn($core->isUserDefined()), "|", yn($plain->isInternal()), yn($plain->isUserDefined()), "\n";
+echo "subclass|", yn($plugin->isSubclassOf($base)), yn($plugin->isSubclassOf(Base::class)), yn($base->isSubclassOf($plugin)), "\n";
+echo "instance|", yn($base->isInstance(new Plugin())), yn($plugin->isInstance(new Plain())), yn($plain->isInstance(new Plugin())), "\n";
+echo "iterable|", yn($plugin->isIterable()), yn($plugin->isIterateable()), yn($plain->isIterable());
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "names|1|App\\Meta|Plugin\nmods|64|10|32|01\norigin|10|01\nsubclass|110\ninstance|100\niterable|110"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn emit_ir_rejects_class_constants_until_native_object_lowering_exists() {
     for source in [
         "<?php\necho Box::VERSION;\n",
