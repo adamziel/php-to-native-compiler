@@ -3766,7 +3766,7 @@ a time: current `ArrayAccess` paths dispatch selected offset methods, current
 `Countable` paths require concrete implementors to expose a public non-static
 `count()` method with no required parameters, let `is_countable($object)`
 recognize recorded `implements Countable` metadata, and let `count($object)`
-dispatch that method with an integer result. Current `Iterator` and
+and its `sizeof()` alias dispatch that method with an integer result. Current `Iterator` and
 `IteratorAggregate` paths require concrete implementors to expose their
 required public non-static methods with no required parameters so
 `is_iterable($object)` can observe those metadata relationships. Full internal
@@ -3844,7 +3844,7 @@ argument semantics for string keys. A named internal-function slice re-enters
 the existing builtin dispatcher for `strlen`, `strtolower`, `trim`, `ltrim`,
 `rtrim`, `strcasecmp`, `strncmp`, `strncasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`,
 `strpos`, `substr`, `sprintf`, `implode`, `basename`, `dirname`, `defined`,
-`function_exists`, and `php_sapi_name`. Closure expressions also register a
+`function_exists`, `count`, `sizeof`, and `php_sapi_name`. Closure expressions also register a
 request-local `ReflectionFunction` metadata snapshot, parsed body, and captured
 by-value snapshot keyed by closure id, so direct closure invocation,
 closure-valued `call_user_func()`/`call_user_func_array()` callbacks, and

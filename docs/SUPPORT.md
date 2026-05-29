@@ -3103,7 +3103,7 @@
   `clearstatcache`, `realpath`, `realpath_cache_get`, `realpath_cache_size`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_length`, `ob_list_handlers`, `ob_get_status`, `ob_get_clean`, `ob_get_flush`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `date_default_timezone_set`,
   `version_compare`, `microtime`, `ini_get`, `ini_set`,
   `get_include_path`, `set_include_path`, `min`, `rand`, `uniqid`,
-  `hash_hmac`, `isset`, `empty`, `count`, `compact`, `define`, `constant`, `defined`,
+  `hash_hmac`, `isset`, `empty`, `count`, `sizeof`, `compact`, `define`, `constant`, `defined`,
   `array_key_exists`, `key_exists`, `array_key_first`, `array_key_last`, `current`,
   `array_is_list`, `array_values`, `array_keys`, `array_reverse`, `array_slice`, `array_chunk`,
   `array_pad`, `array_merge`, `array_replace`, `array_combine`,
@@ -3475,8 +3475,9 @@
   the smallest integer. Array-form `min([..])`, mixed-type comparison rules,
   float/string/bool/null/object/resource operands, exact PHP diagnostics, and
   native lowering remain unsupported.
-  `count($value)` supports current arrays and objects whose class metadata
-  records `implements Countable`. Concrete `Countable` implementors must
+  `count($value)` and its `sizeof($value)` alias support current arrays and
+  objects whose class metadata records `implements Countable`. Concrete
+  `Countable` implementors must
   register with a public non-static `count()` method that has no required
   parameters. For `Countable` objects, the interpreter dispatches that method
   and accepts an integer result. Tentative return-type notices and
@@ -8545,7 +8546,7 @@
   `rtrim`, `strcasecmp`, `strncmp`, `strncasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`,
   `strpos`, `stripos`, `strrpos`, `strripos`, `substr`, `printf`, `sprintf`, `vprintf`, `implode`, `basename`, `dirname`, `defined`,
   `function_exists`, `is_array`, `is_object`, `is_string`, `is_scalar`,
-  `count`, `array_key_exists`, `is_callable`, and `php_sapi_name`, exposes
+  `count`, `sizeof`, `array_key_exists`, `is_callable`, and `php_sapi_name`, exposes
   their name, false file/start/end/doc-comment metadata, current
   parameter/default metadata, return type, and by-reference-return predicate,
   and executes them through `invoke()`/`invokeArgs()`.
@@ -10583,7 +10584,7 @@
   calls, mixed-type comparison rules, float/string/bool/null/object/resource
   operands, exact PHP diagnostics, and native lowering beyond function-table
   introspection
-- `count()` outside the current array and bounded `Countable` object subset:
+- `count()`/`sizeof()` outside the current array and bounded `Countable` object subset:
   full interface signature enforcement, magic `__call` fallback,
   resources/extensions, non-integer object count results, exact diagnostics,
   references/copy-on-write, and native lowering beyond function-table

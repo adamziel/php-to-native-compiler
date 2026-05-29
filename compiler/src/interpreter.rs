@@ -67222,8 +67222,13 @@ impl Interpreter {
                 expect_arity(name, &args, 0, span)?;
                 Ok(Value::Int(0))
             }
-            "count" => {
+            "count" | "sizeof" => {
                 expect_arity(name, &args, 1, span)?;
+                let call_label = if name.eq_ignore_ascii_case("sizeof") {
+                    "sizeof()"
+                } else {
+                    "count()"
+                };
                 match &args[0] {
                     Value::Array(value) => Ok(Value::Int(value.len() as i64)),
                     Value::Object(object)
@@ -67249,7 +67254,7 @@ impl Interpreter {
                     _ => Err(runtime_error(
                         span,
                         RuntimeError::unsupported_call(
-                            "count()",
+                            call_label,
                             "only arrays and Countable objects are supported",
                         ),
                     )),
@@ -77744,7 +77749,7 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
         "is_array" | "is_object" | "is_string" | "is_scalar" => {
             ("bool", vec![reflection_internal_param("value", "mixed")])
         }
-        "count" => (
+        "count" | "sizeof" => (
             "int",
             vec![
                 reflection_internal_param("value", "Countable|array"),
@@ -79911,6 +79916,7 @@ fn is_builtin(name: &str) -> bool {
             | "gc_enable"
             | "gc_collect_cycles"
             | "count"
+            | "sizeof"
             | "constant"
             | "defined"
             | "array_key_exists"

@@ -10344,6 +10344,7 @@ const RUNTIME_DYNAMIC_GENERATED_C_UNSUPPORTED_NATIVE_BUILTIN_REASON: &str =
 fn native_callable_unsupported_runtime_builtin_canonical_name(name: &str) -> Option<&'static str> {
     match name.to_ascii_lowercase().as_str() {
         "count" => Some("count"),
+        "sizeof" => Some("sizeof"),
         _ => None,
     }
 }

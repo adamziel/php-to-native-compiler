@@ -66302,6 +66302,7 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "uniqid",
     "hash_hmac",
     "count",
+    "sizeof",
     "constant",
     "defined",
     "array_key_exists",
@@ -67212,8 +67213,12 @@ fn native_builtin_signature_for_name(name: &str) -> Option<CNativeBuiltinSignatu
             returns_by_reference: false,
             source_call_support: RuntimeCallableValue,
         },
-        "count" => CNativeBuiltinSignature {
-            canonical_name: "count",
+        "count" | "sizeof" => CNativeBuiltinSignature {
+            canonical_name: if name.eq_ignore_ascii_case("sizeof") {
+                "sizeof"
+            } else {
+                "count"
+            },
             required_arg_count: 1,
             fixed_param_names: NATIVE_BUILTIN_PARAM_VALUE,
             fixed_param_by_reference: NATIVE_BUILTIN_BY_VALUE_1,
@@ -74333,6 +74338,16 @@ echo " 10" < "zeta";
             )
         );
 
+        let sizeof = native_builtin_signature_for_name("sizeOf")
+            .expect("sizeof should share count's blocked runtime builtin signature");
+        assert_eq!(sizeof.canonical_name, "sizeof");
+        assert_eq!(sizeof.required_arg_count, count.required_arg_count);
+        assert_eq!(
+            sizeof.fixed_param_by_reference,
+            count.fixed_param_by_reference
+        );
+        assert_eq!(sizeof.source_call_support, count.source_call_support);
+
         let sort = native_builtin_signature_for_name("sort")
             .expect("sort should be mapped as a runtime sorting builtin signature");
         assert_eq!(sort.canonical_name, "sort");
@@ -74668,6 +74683,15 @@ echo " 10" < "zeta";
                 .callable_string_signature_for_expr(&Expr::String("count".to_string(), span(8)), 1,)
                 .is_none(),
             "blocked runtime builtins must preserve the unsupported-native boundary"
+        );
+        assert!(
+            generator
+                .callable_string_signature_for_expr(
+                    &Expr::String("sizeof".to_string(), span(8)),
+                    1,
+                )
+                .is_none(),
+            "blocked runtime builtin aliases must preserve the unsupported-native boundary"
         );
         let trim_signature = generator
             .callable_string_signature_for_expr(&Expr::String("trim".to_string(), span(8)), 1)
