@@ -31423,6 +31423,15 @@ impl PhpClassTable {
         for method in [
             "__construct",
             "getName",
+            "getShortName",
+            "getNamespaceName",
+            "inNamespace",
+            "isInternal",
+            "isUserDefined",
+            "isClosure",
+            "isAnonymous",
+            "isDeprecated",
+            "getExtensionName",
             "getFileName",
             "getStartLine",
             "getEndLine",
@@ -31434,7 +31443,6 @@ impl PhpClassTable {
             "hasReturnType",
             "getReturnType",
             "returnsReference",
-            "isDeprecated",
         ] {
             reflection_function
                 .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
@@ -31461,6 +31469,10 @@ impl PhpClassTable {
         for method in [
             "__construct",
             "getName",
+            "getFileName",
+            "getStartLine",
+            "getEndLine",
+            "getDocComment",
             "getDeclaringClass",
             "getModifiers",
             "getParameters",
@@ -31477,11 +31489,21 @@ impl PhpClassTable {
             "isConstructor",
             "isDeprecated",
             "getAttributes",
+            "isDestructor",
+            "isInternal",
+            "isUserDefined",
+            "returnsReference",
         ] {
             reflection_method
                 .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
                 .expect("ReflectionMethod core metadata should not duplicate methods");
         }
+        reflection_method
+            .add_method(PhpMethodMetadata::static_method(
+                "createFromMethodName",
+                Visibility::Public,
+            ))
+            .expect("ReflectionMethod core metadata should not duplicate static methods");
         let reflection_parameter_id = classes
             .declare_class("ReflectionParameter")
             .expect("core class table should contain ReflectionMethod before ReflectionParameter");

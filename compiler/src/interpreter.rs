@@ -301,6 +301,7 @@ struct MethodSignature {
     required_params: usize,
     params: Vec<ParameterSignature>,
     return_type: Option<String>,
+    returns_by_reference: bool,
     file_name: Option<String>,
     start_line: usize,
     end_line: usize,
@@ -509,7 +510,9 @@ struct ReflectionMethodState {
     is_static: bool,
     is_abstract: bool,
     is_final: bool,
+    is_internal: bool,
     return_type: Option<String>,
+    returns_by_reference: bool,
     params: Vec<ReflectionParameterMetadata>,
     is_deprecated: bool,
     attributes: Vec<AttributeDecl>,
@@ -32993,15 +32996,34 @@ impl Interpreter {
                     RuntimeError::undefined_class("ReflectionMethod core placeholder"),
                 )
             })?;
+        self.create_reflection_method_object_with_class_id(state, class_id, span)
+    }
+
+    fn create_reflection_method_object_with_class_id(
+        &mut self,
+        state: ReflectionMethodState,
+        class_id: ClassId,
+        _span: Span,
+    ) -> CompileResult<Value> {
         let object_id = self.allocate_object_id();
+        let inherited_properties = self.inherited_instance_properties(class_id);
+        let mut ancestor_class_names = self.inherited_class_names(class_id);
+        ancestor_class_names.extend(self.class_alias_names(class_id));
+        let interface_names = self.class_implements_interface_names(class_id);
         let class = self
             .classes
             .get(class_id)
             .expect("core ReflectionMethod class id should resolve");
         self.reflection_methods.insert(object_id, state);
-        Ok(Value::Object(PhpObject::from_class_with_id(
-            class, object_id,
-        )))
+        Ok(Value::Object(
+            PhpObject::from_class_with_relationship_metadata_with_id(
+                class,
+                &inherited_properties,
+                ancestor_class_names,
+                interface_names,
+                object_id,
+            ),
+        ))
     }
 
     fn resolve_reflection_method_target(
@@ -33044,6 +33066,7 @@ impl Interpreter {
                     .expect("resolved method metadata should exist");
                 let signature_key = (declaring_class_id, metadata.name().to_ascii_lowercase());
                 let signature = self.method_signatures.get(&signature_key);
+                let is_internal = signature.is_none();
                 Ok(ReflectionMethodState {
                     reflected_class_id: Some(class_id),
                     declaring_class_name,
@@ -33058,13 +33081,12 @@ impl Interpreter {
                     is_static,
                     is_abstract: metadata.is_abstract(),
                     is_final: metadata.is_final(),
-                    return_type: self
-                        .method_signatures
-                        .get(&(declaring_class_id, metadata.name().to_ascii_lowercase()))
-                        .and_then(|signature| signature.return_type.clone()),
-                    params: self
-                        .method_signatures
-                        .get(&(declaring_class_id, metadata.name().to_ascii_lowercase()))
+                    is_internal,
+                    return_type: signature.and_then(|signature| signature.return_type.clone()),
+                    returns_by_reference: signature
+                        .map(|signature| signature.returns_by_reference)
+                        .unwrap_or(false),
+                    params: signature
                         .map(reflection_parameter_metadata_from_signature)
                         .unwrap_or_default(),
                     is_deprecated: signature.is_some_and(|signature| signature.is_deprecated),
@@ -33088,13 +33110,16 @@ impl Interpreter {
                     expanded_interface_methods(&self.interface_lookup, interface)
                 {
                     if method.function.name.eq_ignore_ascii_case(method_name) {
+                        let metadata = self
+                            .interface_source_metadata
+                            .get(&declaring_interface.to_ascii_lowercase());
                         return Ok(ReflectionMethodState {
                             reflected_class_id: None,
                             declaring_class_name: declaring_interface,
                             declaring_kind: ReflectionClassKind::Interface,
                             declaring_class_id: None,
                             name: method.function.name.clone(),
-                            file_name: None,
+                            file_name: metadata.and_then(|metadata| metadata.file_name.clone()),
                             start_line: method.function.span.line,
                             end_line: method.function.end_line,
                             doc_comment: method.function.doc_comment.clone(),
@@ -33102,11 +33127,13 @@ impl Interpreter {
                             is_static: method.is_static,
                             is_abstract: true,
                             is_final: false,
+                            is_internal: false,
                             return_type: method
                                 .function
                                 .return_type
                                 .as_ref()
                                 .map(|decl| decl.text.clone()),
+                            returns_by_reference: method.function.returns_by_reference,
                             params: reflection_parameter_metadata_from_function_params(
                                 &method.function.params,
                             ),
@@ -33136,13 +33163,16 @@ impl Interpreter {
                 };
                 for method in self.reflection_trait_methods(trait_decl)? {
                     if method.function.name.eq_ignore_ascii_case(method_name) {
+                        let metadata = self
+                            .trait_source_metadata
+                            .get(&trait_decl.name.to_ascii_lowercase());
                         return Ok(ReflectionMethodState {
                             reflected_class_id: None,
                             declaring_class_name: trait_decl.name.clone(),
                             declaring_kind: ReflectionClassKind::Trait,
                             declaring_class_id: None,
                             name: method.function.name.clone(),
-                            file_name: None,
+                            file_name: metadata.and_then(|metadata| metadata.file_name.clone()),
                             start_line: method.function.span.line,
                             end_line: method.function.end_line,
                             doc_comment: method.function.doc_comment.clone(),
@@ -33150,11 +33180,13 @@ impl Interpreter {
                             is_static: method.is_static,
                             is_abstract: method.is_abstract,
                             is_final: method.is_final,
+                            is_internal: false,
                             return_type: method
                                 .function
                                 .return_type
                                 .as_ref()
                                 .map(|decl| decl.text.clone()),
+                            returns_by_reference: method.function.returns_by_reference,
                             params: reflection_parameter_metadata_from_function_params(
                                 &method.function.params,
                             ),
@@ -39869,7 +39901,7 @@ impl Interpreter {
                 .call_reflection_function_method(object, method_name, args, span, caller_scope)
                 .map(|value| (value, None));
         }
-        if object.class_name().eq_ignore_ascii_case("ReflectionMethod") {
+        if object.is_instance_of_class_name("ReflectionMethod") {
             return self.call_reflection_method_method_with_array_copy_source(
                 object,
                 method_name,
@@ -41146,6 +41178,7 @@ impl Interpreter {
             .expect("declaring class id should resolve");
         let signature_key = (declaring_class_id, method.name().to_ascii_lowercase());
         let signature = self.method_signatures.get(&signature_key);
+        let is_internal = signature.is_none();
         ReflectionMethodState {
             reflected_class_id: Some(reflected_class_id),
             declaring_class_name: declaring_class.name().to_string(),
@@ -41160,7 +41193,11 @@ impl Interpreter {
             is_static: method.is_static(),
             is_abstract: method.is_abstract(),
             is_final: method.is_final(),
+            is_internal,
             return_type: signature.and_then(|signature| signature.return_type.clone()),
+            returns_by_reference: signature
+                .map(|signature| signature.returns_by_reference)
+                .unwrap_or(false),
             params: signature
                 .map(reflection_parameter_metadata_from_signature)
                 .unwrap_or_default(),
@@ -41176,13 +41213,16 @@ impl Interpreter {
         declaring_interface: String,
         method: &InterfaceMethodDecl,
     ) -> ReflectionMethodState {
+        let metadata = self
+            .interface_source_metadata
+            .get(&declaring_interface.to_ascii_lowercase());
         ReflectionMethodState {
             reflected_class_id: None,
             declaring_class_name: declaring_interface,
             declaring_kind: ReflectionClassKind::Interface,
             declaring_class_id: None,
             name: method.function.name.clone(),
-            file_name: None,
+            file_name: metadata.and_then(|metadata| metadata.file_name.clone()),
             start_line: method.function.span.line,
             end_line: method.function.end_line,
             doc_comment: method.function.doc_comment.clone(),
@@ -41190,11 +41230,13 @@ impl Interpreter {
             is_static: method.is_static,
             is_abstract: true,
             is_final: false,
+            is_internal: false,
             return_type: method
                 .function
                 .return_type
                 .as_ref()
                 .map(|decl| decl.text.clone()),
+            returns_by_reference: method.function.returns_by_reference,
             params: reflection_parameter_metadata_from_function_params(&method.function.params),
             is_deprecated: attributes_include_deprecated(&method.attributes),
             attributes: method.attributes.clone(),
@@ -41206,13 +41248,16 @@ impl Interpreter {
         trait_decl: &TraitDecl,
         method: &ClassMethodDecl,
     ) -> ReflectionMethodState {
+        let metadata = self
+            .trait_source_metadata
+            .get(&trait_decl.name.to_ascii_lowercase());
         ReflectionMethodState {
             reflected_class_id: None,
             declaring_class_name: trait_decl.name.clone(),
             declaring_kind: ReflectionClassKind::Trait,
             declaring_class_id: None,
             name: method.function.name.clone(),
-            file_name: None,
+            file_name: metadata.and_then(|metadata| metadata.file_name.clone()),
             start_line: method.function.span.line,
             end_line: method.function.end_line,
             doc_comment: method.function.doc_comment.clone(),
@@ -41220,11 +41265,13 @@ impl Interpreter {
             is_static: method.is_static,
             is_abstract: method.is_abstract,
             is_final: method.is_final,
+            is_internal: false,
             return_type: method
                 .function
                 .return_type
                 .as_ref()
                 .map(|decl| decl.text.clone()),
+            returns_by_reference: method.function.returns_by_reference,
             params: reflection_parameter_metadata_from_function_params(&method.function.params),
             is_deprecated: attributes_include_deprecated(&method.attributes),
             attributes: method.attributes.clone(),
@@ -41386,6 +41433,44 @@ impl Interpreter {
             "getname" => {
                 expect_expr_arity("ReflectionFunction::getName", args.len(), 0, span)?;
                 Ok(Value::String(state.name))
+            }
+            "getshortname" => {
+                expect_expr_arity("ReflectionFunction::getShortName", args.len(), 0, span)?;
+                Ok(Value::String(reflection_name_short_name(&state.name)))
+            }
+            "getnamespacename" => {
+                expect_expr_arity("ReflectionFunction::getNamespaceName", args.len(), 0, span)?;
+                Ok(Value::String(reflection_name_namespace_name(&state.name)))
+            }
+            "innamespace" => {
+                expect_expr_arity("ReflectionFunction::inNamespace", args.len(), 0, span)?;
+                Ok(Value::Bool(reflection_name_in_namespace(&state.name)))
+            }
+            "isinternal" => {
+                expect_expr_arity("ReflectionFunction::isInternal", args.len(), 0, span)?;
+                Ok(Value::Bool(state.is_internal))
+            }
+            "isuserdefined" => {
+                expect_expr_arity("ReflectionFunction::isUserDefined", args.len(), 0, span)?;
+                Ok(Value::Bool(!state.is_internal))
+            }
+            "isclosure" => {
+                expect_expr_arity("ReflectionFunction::isClosure", args.len(), 0, span)?;
+                Ok(Value::Bool(state.is_closure))
+            }
+            "isanonymous" => {
+                expect_expr_arity("ReflectionFunction::isAnonymous", args.len(), 0, span)?;
+                Ok(Value::Bool(state.is_closure))
+            }
+            "getextensionname" => {
+                expect_expr_arity("ReflectionFunction::getExtensionName", args.len(), 0, span)?;
+                if state.is_internal {
+                    Ok(Value::String(reflection_internal_extension_name(
+                        &state.name,
+                    )))
+                } else {
+                    Ok(Value::Bool(false))
+                }
             }
             "getfilename" => {
                 expect_expr_arity("ReflectionFunction::getFileName", args.len(), 0, span)?;
@@ -41570,10 +41655,16 @@ impl Interpreter {
             }
             "getstartline" => {
                 expect_expr_arity("ReflectionMethod::getStartLine", args.len(), 0, span)?;
+                if state.is_internal {
+                    return Ok(Value::Bool(false));
+                }
                 Ok(Value::Int(state.start_line as i64))
             }
             "getendline" => {
                 expect_expr_arity("ReflectionMethod::getEndLine", args.len(), 0, span)?;
+                if state.is_internal {
+                    return Ok(Value::Bool(false));
+                }
                 Ok(Value::Int(state.end_line as i64))
             }
             "getdoccomment" => {
@@ -41699,6 +41790,22 @@ impl Interpreter {
                 span,
                 caller_scope,
             ),
+            "isdestructor" => {
+                expect_expr_arity("ReflectionMethod::isDestructor", args.len(), 0, span)?;
+                Ok(Value::Bool(state.name.eq_ignore_ascii_case("__destruct")))
+            }
+            "isinternal" => {
+                expect_expr_arity("ReflectionMethod::isInternal", args.len(), 0, span)?;
+                Ok(Value::Bool(state.is_internal))
+            }
+            "isuserdefined" => {
+                expect_expr_arity("ReflectionMethod::isUserDefined", args.len(), 0, span)?;
+                Ok(Value::Bool(!state.is_internal))
+            }
+            "returnsreference" => {
+                expect_expr_arity("ReflectionMethod::returnsReference", args.len(), 0, span)?;
+                Ok(Value::Bool(state.returns_by_reference))
+            }
             "invoke" => {
                 if args.is_empty() {
                     return Err(runtime_error(
@@ -44066,6 +44173,53 @@ impl Interpreter {
         }
     }
 
+    fn is_reflection_method_class_id(&self, class_id: ClassId) -> bool {
+        let Some(reflection_method_id) = self.classes.lookup_class_id("ReflectionMethod") else {
+            return false;
+        };
+        class_id == reflection_method_id
+            || self.classes.is_subclass_of(class_id, reflection_method_id)
+    }
+
+    fn call_reflection_method_create_from_method_name(
+        &mut self,
+        reflection_object_class_id: ClassId,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        expect_expr_arity(
+            "ReflectionMethod::createFromMethodName",
+            args.len(),
+            1,
+            span,
+        )?;
+        let value = self.evaluate(&args[0], caller_scope)?;
+        let Value::String(method_name) = value else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "ReflectionMethod::createFromMethodName",
+                    format!(
+                        "method argument must be string in the current subset, got {}",
+                        value.type_name()
+                    ),
+                ),
+            ));
+        };
+        let (class_name, method_name) = reflection_method_name_parts(&method_name, span)?;
+        let class = self.resolve_reflection_class_target(&Value::String(class_name), span)?;
+        let state = self
+            .resolve_reflection_method_target(&class, &method_name, span)
+            .map_err(|_| {
+                reflection_exception_error(
+                    span,
+                    format!("Method {}::{}() does not exist", class.name, method_name),
+                )
+            })?;
+        self.create_reflection_method_object_with_class_id(state, reflection_object_class_id, span)
+    }
+
     fn call_named_static_method(
         &mut self,
         class_name: &str,
@@ -44097,6 +44251,16 @@ impl Interpreter {
                 values.push(self.evaluate_by_value_argument_with_cow_source(arg, caller_scope)?);
             }
             return call_timezone_identifiers_list(&values, span);
+        }
+        if self.is_reflection_method_class_id(class_id)
+            && method_name.eq_ignore_ascii_case("createFromMethodName")
+        {
+            return self.call_reflection_method_create_from_method_name(
+                class_id,
+                args,
+                span,
+                caller_scope,
+            );
         }
         let Some((
             declaring_class_id,
@@ -44231,6 +44395,16 @@ impl Interpreter {
             .get(receiver_class_id)
             .expect("receiver class id should resolve to class metadata");
         let receiver_class_name = receiver_class.name().to_string();
+        if self.is_reflection_method_class_id(receiver_class_id)
+            && method_name.eq_ignore_ascii_case("createFromMethodName")
+        {
+            return self.call_reflection_method_create_from_method_name(
+                receiver_class_id,
+                args,
+                span,
+                caller_scope,
+            );
+        }
         let Some((
             declaring_class_id,
             declaring_class_name,
@@ -79983,6 +80157,7 @@ fn method_signature(
     MethodSignature {
         required_params: required_param_count(function),
         return_type: function.return_type.as_ref().map(|decl| decl.text.clone()),
+        returns_by_reference: function.returns_by_reference,
         file_name,
         start_line: function.span.line,
         end_line: function.end_line,
@@ -80462,6 +80637,13 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
             "mixed",
             vec![reflection_internal_reference_param("array", "array")],
         ),
+        "sort" => (
+            "bool",
+            vec![
+                reflection_internal_reference_param("array", "array"),
+                reflection_internal_optional_int_param("flags", 0),
+            ],
+        ),
         "array_unshift" => (
             "int",
             vec![
@@ -80507,6 +80689,14 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
         is_deprecated: false,
         attributes: Vec::new(),
     })
+}
+
+fn reflection_internal_extension_name(name: &str) -> String {
+    if name.starts_with("bc") {
+        "bcmath".to_string()
+    } else {
+        "standard".to_string()
+    }
 }
 
 fn reflection_internal_untyped_param(name: &str) -> ReflectionParameterMetadata {
@@ -81576,6 +81766,45 @@ fn runtime_visibility(visibility: ClassVisibility) -> Visibility {
     }
 }
 
+fn reflection_name_short_name(name: &str) -> String {
+    name.rsplit('\\').next().unwrap_or(name).to_string()
+}
+
+fn reflection_name_namespace_name(name: &str) -> String {
+    name.rsplit_once('\\')
+        .map(|(namespace, _)| namespace.to_string())
+        .unwrap_or_default()
+}
+
+fn reflection_name_in_namespace(name: &str) -> bool {
+    name.contains('\\')
+}
+
+fn reflection_method_name_parts(name: &str, span: Span) -> CompileResult<(String, String)> {
+    let Some((class_name, method_name)) = name.split_once("::") else {
+        return Err(reflection_exception_error(
+            span,
+            "ReflectionMethod::createFromMethodName(): Argument #1 ($method) must be a valid method name",
+        ));
+    };
+    if class_name.is_empty() || method_name.is_empty() || method_name.contains("::") {
+        return Err(reflection_exception_error(
+            span,
+            "ReflectionMethod::createFromMethodName(): Argument #1 ($method) must be a valid method name",
+        ));
+    }
+    Ok((class_name.to_string(), method_name.to_string()))
+}
+
+fn reflection_exception_error(span: Span, message: impl Into<String>) -> Diagnostic {
+    Diagnostic::new(
+        Phase::Runtime,
+        span.line,
+        span.column,
+        format!("ReflectionException: {}", message.into()),
+    )
+}
+
 impl PendingUncaughtCallFrame {
     fn display_callable(&self, file: &str) -> String {
         if self.function_name == "{closure}" {
@@ -82045,6 +82274,10 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
     }
 
     if error.phase == Phase::Runtime {
+        if let Some(message) = error.message.strip_prefix("ReflectionException: ") {
+            return Some(("ReflectionException", message.to_string()));
+        }
+
         if error.message.starts_with("Non-static method ")
             && error.message.ends_with(" cannot be called statically")
         {

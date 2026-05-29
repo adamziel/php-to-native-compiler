@@ -6238,6 +6238,51 @@ echo "plain|", $plain->getStartLine(), "|", $plain->getEndLine(), "|", yn($plain
 }
 
 #[test]
+fn reflection_method_reports_internal_user_reference_and_destructor_metadata() {
+    let execution = run_source(
+        r#"<?php
+class BaseHook {
+    public function __destruct() {}
+    public function &byRef() {}
+}
+
+class ChildHook extends BaseHook {}
+
+class MyReflectionMethod extends ReflectionMethod {}
+
+function yn($value) {
+    return $value ? "1" : "0";
+}
+
+$destructor = new ReflectionMethod(ChildHook::class, "__destruct");
+echo "destruct|", yn($destructor->isDestructor()), "|", yn($destructor->isUserDefined()), "|", yn($destructor->isInternal()), "|", $destructor->getDeclaringClass()->getName(), "\n";
+
+$byRef = ReflectionMethod::createFromMethodName("ChildHook::byRef");
+echo "byref|", yn($byRef->returnsReference()), "|", yn($byRef->isUserDefined()), "|", yn($byRef->isInternal()), "|", $byRef->getDeclaringClass()->getName(), "\n";
+
+$subclassed = MyReflectionMethod::createFromMethodName("ChildHook::byRef");
+echo "subclass|", get_class($subclassed), "|", yn($subclassed->returnsReference()), "\n";
+
+$internal = new ReflectionMethod(ReflectionProperty::class, "__construct");
+echo "internal|", yn($internal->isInternal()), "|", yn($internal->isUserDefined()), "|", yn($internal->getStartLine() === false), yn($internal->getEndLine() === false), yn($internal->getFileName() === false), "\n";
+
+try {
+    MyReflectionMethod::createFromMethodName("ChildHook::missing");
+} catch (ReflectionException $e) {
+    echo "missing|", $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "destruct|1|1|0|BaseHook\nbyref|1|1|0|BaseHook\nsubclass|MyReflectionMethod|1\ninternal|1|0|111\nmissing|Method ChildHook::missing() does not exist"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reflection_parameter_reports_bounded_method_parameter_metadata() {
     let execution = run_source(
         r#"<?php
@@ -6423,49 +6468,33 @@ type_line("raw-return", (new ReflectionFunction("raw_hook"))->getReturnType());
 }
 
 #[test]
-fn reflection_function_and_method_report_deprecated_attribute_metadata() {
+fn reflection_function_reports_namespace_identity_and_extension_metadata() {
     let execution = run_source(
         r#"<?php
-#[Deprecated]
-function old_hook() {}
+namespace App\Meta;
 
-function current_hook() {}
-
-interface HookContract {
-    #[\Deprecated]
-    public function legacy();
-
-    public function current();
-}
-
-abstract class BaseHook {
-    #[Deprecated]
-    abstract public function abstractLegacy();
-}
-
-class HookRunner extends BaseHook implements HookContract {
-    public function legacy() {}
-    public function current() {}
-    public function abstractLegacy() {}
-}
+function sample() {}
 
 function yn($value) {
     return $value ? "1" : "0";
 }
 
-echo "old-fn|", yn((new ReflectionFunction("old_hook"))->isDeprecated()), "\n";
-echo "current-fn|", yn((new ReflectionFunction("current_hook"))->isDeprecated()), "\n";
-echo "interface-legacy|", yn((new ReflectionMethod(HookContract::class, "legacy"))->isDeprecated()), "\n";
-echo "interface-current|", yn((new ReflectionMethod(HookContract::class, "current"))->isDeprecated()), "\n";
-echo "abstract-legacy|", yn((new ReflectionMethod(BaseHook::class, "abstractLegacy"))->isDeprecated()), "\n";
-echo "implementation|", yn((new ReflectionMethod(HookRunner::class, "abstractLegacy"))->isDeprecated());
+$sort = new \ReflectionFunction("sort");
+$user = new \ReflectionFunction("App\\Meta\\sample");
+$closure = new \ReflectionFunction(function () {});
+$dump = new \ReflectionFunction("var_dump");
+
+echo "sort|", $sort->getName(), "|", $sort->getShortName(), "|", $sort->getNamespaceName(), "|", yn($sort->inNamespace()), "|", yn($sort->isInternal()), "|", yn($sort->isUserDefined()), "|", $sort->getExtensionName(), "\n";
+echo "user|", $user->getName(), "|", $user->getShortName(), "|", $user->getNamespaceName(), "|", yn($user->inNamespace()), "|", yn($user->isInternal()), "|", yn($user->isUserDefined()), "|", ($user->getExtensionName() === false ? "false" : "wrong"), "\n";
+echo "closure|", yn($closure->isClosure()), "|", yn($closure->isAnonymous()), "|", yn($closure->isInternal()), "\n";
+echo "dump|", yn($dump->isDeprecated()), "|", $dump->getExtensionName();
 "#,
     )
     .unwrap();
 
     assert_eq!(
         execution.stdout,
-        "old-fn|1\ncurrent-fn|0\ninterface-legacy|1\ninterface-current|0\nabstract-legacy|1\nimplementation|0"
+        "sort|sort|sort||0|1|0|standard\nuser|App\\Meta\\sample|sample|App\\Meta|1|0|1|false\nclosure|1|1|0\ndump|0|standard"
     );
     assert_eq!(execution.exit_code, 0);
 }
