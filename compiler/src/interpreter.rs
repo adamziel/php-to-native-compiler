@@ -8599,11 +8599,12 @@ struct ActiveFunctionCallArguments {
 struct PendingGeneratorYield {
     key: Option<Value>,
     value: Value,
+    advances_auto_key: bool,
 }
 
 #[derive(Debug, Clone)]
 struct GeneratorYield {
-    key: ArrayKey,
+    key: Value,
     value: Value,
 }
 
@@ -8616,6 +8617,7 @@ struct GeneratorState {
     called_class_context: Option<ClassId>,
     active_function_arguments: ActiveFunctionCallArguments,
     yields: Vec<GeneratorYield>,
+    return_value: Option<Value>,
     position: usize,
     started: bool,
 }
@@ -9045,7 +9047,9 @@ impl Interpreter {
             | Expr::Ternary { .. }
             | Expr::ShortTernary { .. } => true,
             Expr::Call { name, .. } => match self.lookup_direct_function_call(name) {
-                Some(Callable::User(function)) => !function.returns_by_reference,
+                Some(Callable::User(function)) => {
+                    !function_call_returns_by_reference(function.as_ref())
+                }
                 _ => true,
             },
             _ => false,
@@ -9055,7 +9059,7 @@ impl Interpreter {
     fn direct_function_call_returns_by_reference(&self, name: &str) -> bool {
         matches!(
             self.lookup_direct_function_call(name),
-            Some(Callable::User(function)) if function.returns_by_reference
+            Some(Callable::User(function)) if function_call_returns_by_reference(function.as_ref())
         )
     }
 
@@ -14737,13 +14741,20 @@ impl Interpreter {
     }
 
     fn uncaught_throw_error(&self, object: &PhpObject, span: Span) -> Diagnostic {
+        let message = self.throwable_message_for_fatal(object);
+        let message_suffix = if message.is_empty() {
+            String::new()
+        } else {
+            format!(": {message}")
+        };
         runtime_error(
             span,
             RuntimeError::unsupported_call(
                 "throw",
                 format!(
-                    "uncaught {} propagation beyond catch/finally is not implemented",
-                    object.class_name()
+                    "uncaught {} propagation beyond catch/finally is not implemented{}",
+                    object.class_name(),
+                    message_suffix
                 ),
             ),
         )
@@ -24576,7 +24587,9 @@ impl Interpreter {
                 Ok(self
                     .lookup_direct_function_call(name)
                     .map(|callable| match callable {
-                        Callable::User(function) => function.returns_by_reference,
+                        Callable::User(function) => {
+                            function_call_returns_by_reference(function.as_ref())
+                        }
                         Callable::Builtin(_) => false,
                     }))
             }
@@ -24618,7 +24631,7 @@ impl Interpreter {
             &resolved_method_name,
             span,
         )?;
-        Ok(Some(function.returns_by_reference))
+        Ok(Some(function_call_returns_by_reference(function.as_ref())))
     }
 
     fn evaluate_container_reference_source_value(
@@ -38779,7 +38792,7 @@ impl Interpreter {
         }
         if object.class_name().eq_ignore_ascii_case("Generator") {
             return self
-                .call_generator_method(object, method_name, args, span)
+                .call_generator_method(object, method_name, args, span, caller_scope)
                 .map(|value| (value, None));
         }
         if object.class_name().eq_ignore_ascii_case("ReflectionClass") {
@@ -38955,14 +38968,7 @@ impl Interpreter {
         match method_name.to_ascii_lowercase().as_str() {
             "getmessage" => {
                 expect_expr_arity("Error::getMessage", args.len(), 0, span)?;
-                let protected_class_ids = self.protected_class_ids_for_context(object.class_id());
-                Ok(object
-                    .read_property_from_context(
-                        "message",
-                        Some(object.class_id()),
-                        &protected_class_ids,
-                    )
-                    .unwrap_or_else(|_| Value::String(String::new())))
+                Ok(Value::String(self.throwable_message_for_fatal(&object)))
             }
             _ => Err(runtime_error(
                 span,
@@ -45207,6 +45213,9 @@ impl Interpreter {
         if key == "__phpc_yield" {
             return self.call_phpc_yield(args, span, caller_scope);
         }
+        if key == "__phpc_yield_from" {
+            return self.call_phpc_yield_from(args, span, caller_scope);
+        }
 
         ensure_no_positional_arguments_after_named_arguments(args)?;
 
@@ -45256,7 +45265,7 @@ impl Interpreter {
         };
         let function = function_rc.as_ref();
         Self::ensure_user_function_expr_arity_unless_spread(function, args, span)?;
-        if function.returns_by_reference {
+        if function_call_returns_by_reference(function) {
             return self.call_reference_return_user_function_with_expr_args_and_array_copy_source(
                 function,
                 args,
@@ -45729,7 +45738,7 @@ impl Interpreter {
                 self.call_builtin(&key, values, span)
             }
             Callable::User(function) => {
-                if function.returns_by_reference {
+                if function_call_returns_by_reference(function.as_ref()) {
                     self.call_user_function(function, args, span, caller_scope)
                 } else {
                     self.call_source_aware_user_function_with_expr_args(
@@ -53934,7 +53943,7 @@ impl Interpreter {
     ) -> CompileResult<Value> {
         let function = function.as_ref();
         Self::ensure_user_function_expr_arity_unless_spread(function, args, span)?;
-        if function.returns_by_reference {
+        if function_call_returns_by_reference(function) {
             ensure_supported_reference_return_function_metadata(function, span)?;
             self.ensure_user_function_call_depth(function, span)?;
 
@@ -61809,6 +61818,7 @@ impl Interpreter {
                 called_class_context,
                 active_function_arguments,
                 yields: Vec::new(),
+                return_value: None,
                 position: 0,
                 started: false,
             },
@@ -61848,7 +61858,92 @@ impl Interpreter {
                 ),
             ));
         };
-        yields.push(PendingGeneratorYield { key, value });
+        yields.push(PendingGeneratorYield {
+            key,
+            value,
+            advances_auto_key: true,
+        });
+        Ok(Value::Null)
+    }
+
+    fn call_phpc_yield_from(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        if args.len() != 1 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "yield from",
+                    ArityExpectation::Exactly(1),
+                    args.len(),
+                ),
+            ));
+        }
+
+        let iterable = self.evaluate(&args[0], scope)?;
+        let mut delegated = Vec::new();
+        match iterable {
+            Value::Array(array) => {
+                for entry in array.entries() {
+                    delegated.push(PendingGeneratorYield {
+                        key: Some(value_from_array_key(&entry.key)),
+                        value: entry.value_cloned(),
+                        advances_auto_key: false,
+                    });
+                }
+            }
+            Value::Object(object) if object.class_name().eq_ignore_ascii_case("Generator") => {
+                if !self
+                    .generator_states
+                    .get(&object.id())
+                    .is_some_and(|state| state.started)
+                {
+                    self.rewind_generator_object(object.clone(), span)?;
+                }
+                let state = self.generator_states.get(&object.id()).ok_or_else(|| {
+                    runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "yield from",
+                            "generator state is missing in the current subset",
+                        ),
+                    )
+                })?;
+                for entry in &state.yields {
+                    delegated.push(PendingGeneratorYield {
+                        key: Some(entry.key.clone()),
+                        value: entry.value.clone(),
+                        advances_auto_key: false,
+                    });
+                }
+            }
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "yield from",
+                        format!(
+                            "Can use \"yield from\" only with arrays and bounded Generator objects in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+        }
+
+        let Some(yields) = self.active_generator_yields.last_mut() else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "yield from",
+                    "yield from can only execute while a generator is being rewound in the current subset",
+                ),
+            ));
+        };
+        yields.extend(delegated);
         Ok(Value::Null)
     }
 
@@ -61858,7 +61953,14 @@ impl Interpreter {
         method_name: &str,
         args: &[Expr],
         span: Span,
+        scope: &mut SymbolTable,
     ) -> CompileResult<Value> {
+        if method_name.eq_ignore_ascii_case("throw") {
+            expect_expr_arity("Generator::throw", args.len(), 1, span)?;
+            let thrown = self.throwable_object_from_expr(&args[0], span, scope)?;
+            self.abort_generator_object(object, span)?;
+            return Err(self.uncaught_throw_error(&thrown, span));
+        }
         expect_expr_arity(&format!("Generator::{method_name}"), args.len(), 0, span)?;
         self.call_generator_method_with_values(object, method_name, Vec::new(), span)
     }
@@ -61896,9 +61998,10 @@ impl Interpreter {
                 state
                     .yields
                     .get(state.position)
-                    .map(|entry| value_from_array_key(&entry.key))
+                    .map(|entry| entry.key.clone())
                     .unwrap_or(Value::Null)
             }),
+            "getreturn" => self.generator_return_value(object, span),
             "next" => {
                 let object_id = object.id();
                 let state = self.generator_states.get_mut(&object_id).ok_or_else(|| {
@@ -61949,6 +62052,60 @@ impl Interpreter {
             )
         })?;
         Ok(make_value(state))
+    }
+
+    fn generator_return_value(&mut self, object: PhpObject, span: Span) -> CompileResult<Value> {
+        if !self
+            .generator_states
+            .get(&object.id())
+            .is_some_and(|state| state.started)
+        {
+            self.rewind_generator_object(object.clone(), span)?;
+        }
+        let state = self.generator_states.get(&object.id()).ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "Generator::getReturn()",
+                    "generator state is missing in the current subset",
+                ),
+            )
+        })?;
+        if state.position < state.yields.len() {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "Generator::getReturn()",
+                    "Cannot get return value of a generator that hasn't returned",
+                ),
+            ));
+        }
+        state.return_value.clone().ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "Generator::getReturn()",
+                    "Cannot get return value of a generator that hasn't returned",
+                ),
+            )
+        })
+    }
+
+    fn abort_generator_object(&mut self, object: PhpObject, span: Span) -> CompileResult<()> {
+        let state = self.generator_states.get_mut(&object.id()).ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "Generator::throw()",
+                    "generator state is missing in the current subset",
+                ),
+            )
+        })?;
+        state.started = true;
+        state.position = 0;
+        state.yields.clear();
+        state.return_value = None;
+        Ok(())
     }
 
     fn rewind_generator_object(&mut self, object: PhpObject, span: Span) -> CompileResult<Value> {
@@ -62014,6 +62171,11 @@ impl Interpreter {
         }
 
         state.yields = materialize_generator_yields(pending_yields, span)?;
+        state.return_value = match &flow {
+            Ok(Flow::Return(value)) => Some(value.clone()),
+            Ok(Flow::Normal | Flow::Exit(_)) => Some(Value::Null),
+            _ => None,
+        };
         self.generator_states.insert(object_id, state);
 
         match flow? {
@@ -74376,6 +74538,7 @@ fn collect_typed_return_without_value_startup_diagnostics(
                 if let Some((message, line)) = typed_return_without_value_startup_diagnostic(
                     function.return_type.as_ref(),
                     &function.body,
+                    function.is_generator,
                 ) {
                     diagnostics.set_fatal(message, source_file, line);
                     return;
@@ -74389,6 +74552,7 @@ fn collect_typed_return_without_value_startup_diagnostics(
                     if let Some((message, line)) = typed_return_without_value_startup_diagnostic(
                         method.function.return_type.as_ref(),
                         &method.function.body,
+                        method.function.is_generator,
                     ) {
                         diagnostics.set_fatal(message, source_file, line);
                         return;
@@ -74400,6 +74564,7 @@ fn collect_typed_return_without_value_startup_diagnostics(
                     if let Some((message, line)) = typed_return_without_value_startup_diagnostic(
                         method.function.return_type.as_ref(),
                         &method.function.body,
+                        method.function.is_generator,
                     ) {
                         diagnostics.set_fatal(message, source_file, line);
                         return;
@@ -74415,7 +74580,11 @@ fn collect_typed_return_without_value_startup_diagnostics(
 fn typed_return_without_value_startup_diagnostic(
     return_type: Option<&TypeDecl>,
     body: &[Stmt],
+    is_generator: bool,
 ) -> Option<(String, usize)> {
+    if is_generator {
+        return None;
+    }
     let return_type = return_type?;
     if type_decl_is_exact(return_type, "void") {
         return None;
@@ -79638,6 +79807,20 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
         return Some(("Error", error.message.clone()));
     }
 
+    if let Some(thrown) = catchable_uncaught_throw_class_and_message(error) {
+        return Some(thrown);
+    }
+
+    if error.phase == Phase::Runtime
+        && error.message
+            == "unsupported call Generator::getReturn(): Cannot get return value of a generator that hasn't returned"
+    {
+        return Some((
+            "Exception",
+            "Cannot get return value of a generator that hasn't returned".to_string(),
+        ));
+    }
+
     if let Some((class_name, message)) = func_get_php_error_class_and_message(error) {
         return Some((class_name, message));
     }
@@ -79756,6 +79939,32 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
 
     if let Some(message) = value_error_message(error) {
         return Some(("ValueError", message));
+    }
+
+    None
+}
+
+fn catchable_uncaught_throw_class_and_message(
+    error: &Diagnostic,
+) -> Option<(&'static str, String)> {
+    if error.phase != Phase::Runtime {
+        return None;
+    }
+
+    for class_name in ["Exception", "Error"] {
+        let prefix = format!(
+            "unsupported call throw: uncaught {class_name} propagation beyond catch/finally is not implemented"
+        );
+        if error.message == prefix {
+            return Some((class_name, String::new()));
+        }
+        if let Some(message) = error
+            .message
+            .strip_prefix(&prefix)
+            .and_then(|message| message.strip_prefix(": "))
+        {
+            return Some((class_name, message.to_string()));
+        }
     }
 
     None
@@ -96384,8 +96593,12 @@ fn ensure_supported_function_reference_params(
     Ok(())
 }
 
+fn function_call_returns_by_reference(function: &FunctionDecl) -> bool {
+    function.returns_by_reference && !function.is_generator
+}
+
 fn ensure_supported_function_metadata(function: &FunctionDecl, span: Span) -> CompileResult<()> {
-    if function.returns_by_reference {
+    if function_call_returns_by_reference(function) {
         return Err(runtime_error(
             span,
             RuntimeError::unsupported_call(
@@ -96688,26 +96901,23 @@ fn value_from_array_key(key: &ArrayKey) -> Value {
 
 fn materialize_generator_yields(
     pending: Vec<PendingGeneratorYield>,
-    span: Span,
+    _span: Span,
 ) -> CompileResult<Vec<GeneratorYield>> {
     let mut yields = Vec::with_capacity(pending.len());
     let mut next_auto_key = 0_i64;
     for pending in pending {
         let key = match pending.key {
-            Some(value) => {
-                let key =
-                    ArrayKey::from_value(&value).map_err(|error| runtime_error(span, error))?;
-                if let ArrayKey::Int(index) = key {
-                    if index >= next_auto_key {
+            Some(value) => match value {
+                Value::Int(index) => {
+                    if pending.advances_auto_key && index >= next_auto_key {
                         next_auto_key = index.saturating_add(1);
                     }
-                    ArrayKey::Int(index)
-                } else {
-                    key
+                    Value::Int(index)
                 }
-            }
+                other => other,
+            },
             None => {
-                let key = ArrayKey::Int(next_auto_key);
+                let key = Value::Int(next_auto_key);
                 next_auto_key = next_auto_key.saturating_add(1);
                 key
             }

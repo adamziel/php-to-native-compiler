@@ -314,6 +314,214 @@ foreach (sample_generator("X") as $key => $value) {
 }
 
 #[test]
+fn generator_yield_from_arrays_and_generators_materializes_values() {
+    let execution = run_source(
+        r#"<?php
+function inner_values() {
+    yield "start";
+    yield from [];
+    yield from ["left", "right"];
+}
+
+function outer_values() {
+    yield "outer";
+    yield from inner_values();
+    yield from ["done"];
+    yield "tail";
+}
+
+foreach (outer_values() as $key => $value) {
+    echo $key, ":", $value, "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "0:outer\n",
+            "0:start\n",
+            "0:left\n",
+            "1:right\n",
+            "0:done\n",
+            "1:tail\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn generator_get_return_reads_materialized_return_value() {
+    let execution = run_source(
+        r#"<?php
+function immediate_return() {
+    return 42;
+    yield 24;
+}
+
+function return_after_yield($value) {
+    yield "first";
+    return $value;
+}
+
+function implicit_null_return() {
+    yield "once";
+}
+
+function typed_value_less_return() : Generator {
+    return;
+    yield "never";
+}
+
+function &by_reference_generator_declaration() {
+    $value = "ref-yield-syntax";
+    yield $value;
+    return "ref-return";
+}
+
+$immediate = immediate_return();
+var_dump($immediate->getReturn());
+
+$after = return_after_yield("done");
+var_dump($after->current());
+$after->next();
+var_dump($after->getReturn());
+
+$implicit = implicit_null_return();
+var_dump($implicit->current());
+$implicit->next();
+var_dump($implicit->getReturn());
+
+$typed = typed_value_less_return();
+var_dump($typed->getReturn());
+
+$reflection = new ReflectionFunction("by_reference_generator_declaration");
+var_dump($reflection->returnsReference());
+$byRefDeclaration = by_reference_generator_declaration();
+var_dump($byRefDeclaration->current());
+$byRefDeclaration->next();
+var_dump($byRefDeclaration->getReturn());
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "int(42)\n",
+            "string(5) \"first\"\n",
+            "string(4) \"done\"\n",
+            "string(4) \"once\"\n",
+            "NULL\n",
+            "NULL\n",
+            "bool(true)\n",
+            "string(16) \"ref-yield-syntax\"\n",
+            "string(10) \"ref-return\"\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn generator_throw_aborts_generator_and_remains_catchable() {
+    let source = r#"<?php
+function throwing_before_yield() {
+    throw new Exception("before");
+    yield 1;
+    return 2;
+}
+
+$gen = throwing_before_yield();
+try {
+    $gen->next();
+} catch (Exception $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    $gen->getReturn();
+} catch (Exception $e) {
+    echo $e->getMessage(), "\n";
+}
+
+function injected_throw() {
+    yield;
+    return "done";
+}
+
+$gen = injected_throw();
+try {
+    $gen->throw(new Exception("injected"));
+} catch (Exception $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    $gen->getReturn();
+} catch (Exception $e) {
+    echo $e->getMessage(), "\n";
+}
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "before\nCannot get return value of a generator that hasn't returned\ninjected\nCannot get return value of a generator that hasn't returned\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn generator_yield_keys_preserve_nonscalar_values() {
+    let execution = run_source(
+        r#"<?php
+function nonscalar_keys() {
+    yield [] => 1;
+    yield [1, 2] => [3, 4];
+    yield 3.14 => "pi";
+    yield false => "false-key";
+    yield true => "true-key";
+    yield null => "null-key";
+}
+
+foreach (nonscalar_keys() as $key => $value) {
+    var_dump($key, $value);
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "array(0) {\n",
+            "}\n",
+            "int(1)\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  int(1)\n",
+            "  [1]=>\n",
+            "  int(2)\n",
+            "}\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  int(3)\n",
+            "  [1]=>\n",
+            "  int(4)\n",
+            "}\n",
+            "float(3.14)\n",
+            "string(2) \"pi\"\n",
+            "bool(false)\n",
+            "string(9) \"false-key\"\n",
+            "bool(true)\n",
+            "string(8) \"true-key\"\n",
+            "NULL\n",
+            "string(8) \"null-key\"\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn forbidden_scope_introspection_builtins_report_dynamic_call_error() {
     let execution = run_source(
         r#"<?php

@@ -620,20 +620,23 @@ echo $box->function, "|", $box->match;
 }
 
 #[test]
-fn keyword_method_names_remain_explicitly_unsupported() {
-    let error = parse_error(
+fn keyword_method_names_parse_before_runtime_dispatch() {
+    let execution = run_source(
         r#"<?php
 $data = new stdClass();
 $data->public();
 "#,
-    );
+    )
+    .unwrap();
 
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 6);
-    assert_eq!(
-        error.message,
-        "unsupported keyword method call: keyword method names after '->' are not implemented"
+    assert!(
+        execution
+            .stdout
+            .contains("Call to undefined method stdClass::public()"),
+        "{}",
+        execution.stdout
     );
+    assert_eq!(execution.exit_code, 255);
 }
 
 #[test]

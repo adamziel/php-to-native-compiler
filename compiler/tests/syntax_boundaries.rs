@@ -11,6 +11,7 @@ const LLVM_CLONE_REJECTION: &str = "LLVM clone lowering rejects clone expression
 const LLVM_INTERFACE_REJECTION: &str = "LLVM interface lowering rejects interface declarations until native class/interface tables, implementation checks, relationship queries, autoload interaction, and exact native error behavior exist; phpc run handles current interface metadata behavior";
 const LLVM_TRAIT_REJECTION: &str = "LLVM trait lowering rejects trait declarations until native trait tables, class trait-use composition, conflict resolution, aliasing, relationship metadata, autoload interaction, and exact native error behavior exist; phpc run handles current trait metadata behavior";
 const LLVM_ENUM_REJECTION: &str = "LLVM enum lowering rejects enum declarations until native class/enum tables, enum case objects, backed enum values, interface implementation, relationship queries, autoload interaction, and exact native error behavior exist; phpc run handles current enum metadata behavior";
+const LLVM_FUNCTION_DECLARATION_REJECTION: &str = "LLVM user-function lowering rejects function declarations and return statements until native function symbol tables, stack-frame layout, default parameter binding, recursion guards, return-value flow, and exact native error behavior exist; phpc run handles current user-function declaration and return behavior";
 
 fn parse_error(source: &str) -> php_compiler::error::Diagnostic {
     let error = run_source(source).unwrap_err();
@@ -413,7 +414,7 @@ fn unsupported_yield_syntax_has_stable_parse_errors() {
             "<?php\nYIELD from [1, 2];\n",
             2,
             1,
-            "unsupported yield from expression: generator delegation requires Traversable iteration, yielded key/value forwarding, send/throw propagation, generator return values, references/copy-on-write, and native lowering",
+            "unsupported yield expression: generators and generator object execution are not implemented",
         ),
         (
             "<?php\necho yield 1;\n",
@@ -432,14 +433,12 @@ fn unsupported_yield_syntax_has_stable_parse_errors() {
 }
 
 #[test]
-fn emit_ir_rejects_yield_syntax_at_parse_boundary() {
-    let error = php_compiler::emit_ir_source("<?php\nyield from [1, 2];\n").unwrap_err();
+fn emit_ir_rejects_yield_from_syntax_at_codegen_boundary() {
+    let error =
+        php_compiler::emit_ir_source("<?php\nfunction gen() { yield from [1, 2]; }\n").unwrap_err();
 
-    assert_eq!(error.phase, Phase::Parse);
-    assert_eq!(
-        error.message,
-        "unsupported yield from expression: generator delegation requires Traversable iteration, yielded key/value forwarding, send/throw propagation, generator return values, references/copy-on-write, and native lowering"
-    );
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.message, LLVM_FUNCTION_DECLARATION_REJECTION);
 }
 
 #[test]

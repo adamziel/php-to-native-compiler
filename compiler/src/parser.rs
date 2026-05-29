@@ -296,12 +296,6 @@ impl Parser {
         let is_generator = self.function_generator_stack.pop().unwrap_or(false);
         self.function_body_depth -= 1;
         let body = body?;
-        if is_generator && returns_by_reference {
-            return Err(self.error_at(
-                start,
-                "unsupported generator by reference: reference-yield generator state is not implemented",
-            ));
-        }
         let end_line = self.previous().span.line;
 
         Ok(FunctionDecl {
@@ -5350,7 +5344,21 @@ impl Parser {
         if self.check(
             |kind| matches!(kind, TokenKind::Identifier(name) if name.eq_ignore_ascii_case("from")),
         ) {
-            return Err(self.error_at(span, unsupported_yield_from_message()));
+            self.advance();
+            let Some(is_generator) = self.function_generator_stack.last_mut() else {
+                return Err(self.error_at(span, unsupported_yield_message()));
+            };
+            *is_generator = true;
+            let iterable = self.parse_expression()?;
+            self.consume_keyword(TokenKind::Semicolon, "expected ';' after yield from")?;
+            return Ok(Stmt::Expr {
+                expr: Expr::Call {
+                    name: "__phpc_yield_from".to_string(),
+                    args: vec![iterable],
+                    span,
+                },
+                span,
+            });
         }
         if self.check(|kind| matches!(kind, TokenKind::Ampersand)) {
             return Err(self.error_at(
@@ -6168,14 +6176,8 @@ impl Parser {
                     };
                     continue;
                 }
-                let (member, keyword_member) = self.consume_object_property_name(operator_span)?;
+                let (member, _) = self.consume_object_property_name(operator_span)?;
                 if self.match_token(|kind| matches!(kind, TokenKind::LParen)) {
-                    if keyword_member {
-                        return Err(self.error_at(
-                            operator_span,
-                            "unsupported keyword method call: keyword method names after '->' are not implemented",
-                        ));
-                    }
                     let span = expr.span();
                     let args = self.parse_call_arguments_after_open()?;
                     expr = Expr::MethodCall {
