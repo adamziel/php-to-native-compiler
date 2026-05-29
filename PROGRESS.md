@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-29 03:22 CEST
+Updated: 2026-05-29 03:30 CEST
 Primary branch: `master`
-Latest source head: `b3f21b0d fix: validate dynamic call_user_func_array references`
+Latest source head: `0986d786 fix: add calendar core builtins`
 
 ## Progress Score
 
@@ -94,13 +94,51 @@ stable pinned denominator and does not use the raw runner
 | Batch005 checkpoint10 sharded gate | Done | 1618 / 20294 pinned runnable PHPTs passed (7.97%); 3 PASS-to-SKIP platform guards from Windows-only PHPTs; run id `phpt-full-batch005-checkpoint10-sharded-20260528T224229Z-php-src-f97ff59-public-fd74fba9-source-1c4da4c5-stack10` |
 | Batch004 source batch | Complete | Batch004 source checkpoints accepted: 10 / 10; checkpoint10 sharded gate published |
 | Batch005 source batch | Complete | Batch005 source checkpoints accepted: 10 / 10; checkpoint10 sharded gate published |
-| Batch006 source batch | Started | Source checkpoints accepted: 8 / 10 gate threshold; checkpoint8 integrates dynamic `call_user_func_array()` named-reference handling |
+| Batch006 source batch | Started | Source checkpoints accepted: 9 / 10 gate threshold; checkpoint9 integrates calendar core builtins |
 
 Focused PHPT history is tracked separately in
 `/home/claude/supervised-php-compiler/state/php-core-suite-focused-history.tsv`.
 Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
+
+Batch006 source checkpoint 9 is primary-integrated under AO supervision. This
+is a source checkpoint with focused proof, not a percentage change. The public
+PHPT score remains **1618 / 20294 pinned runnable PHPTs = 7.97%** until the
+next pinned full-suite or supervisor-approved sharded publication gate is
+completed, regression-checked, and published here.
+
+- primary source head:
+  `0986d786 fix: add calendar core builtins`
+- reviewed and integration patch:
+  `/home/claude/supervised-php-compiler/state/patches/ao-coder-date-calendar-core-successor5-c189f357-20260529.patch`
+- reviewed and integration patch SHA256:
+  `2025eb4f0ac75f0ea68ba99b60e44f23bde8a432ee42230a0fc3c52ed7aba94a`
+- reviewer gate: phpc-48 previously recorded `FINAL GO /
+  CURRENT-PUBLIC-E91-FOCUSED-GATES-PASS` for the exact patch, with current
+  `4315be56` apply proof refreshed by phpc-46; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/batch006-review-date-calendar-core-successor5-e91bc0df-20260529.{status.md,report.md,gates.log}`
+  and
+  `/home/claude/supervised-php-compiler/state/workers/ao-coder-date-calendar-core-successor5-4315be56-20260529.{status.md,report.md,gates.log}`
+- critic gate: phpc-49 recorded `SAFE-FOR-INTEGRATION /
+  CURRENT-PUBLIC-4315-PROOF`; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/batch006-critic-date-calendar-core-successor5-4315be56-20260529.{status.md,report.md}`
+- supervisor focused gates: PASS for clean apply over checkpoint8,
+  `git diff --check`, production exact-shape audit,
+  `cargo fmt --all -- --check`, focused Rust `calendar_builtin`, focused Rust
+  `getenv_builtin`, `cargo build -p phpc`, and the focused eight-file calendar
+  PHPT cluster with 8 PASS and 0 FAIL
+- full PHPT suite: not run for this single source checkpoint; Batch006 broad
+  gate remains held until 10 accepted source checkpoints, or until the
+  supervisor explicitly opens a regression/publication gate
+
+This checkpoint generalizes calendar conversion/day-count APIs and constants,
+plus generic `putenv()` set/update/unset behavior needed by the ext/calendar
+PHPT setup path. It is not keyed to a PHPT filename, expected-output fixture,
+batch marker, public hash, or test-name branch.
+
+Previous Batch006 source checkpoint 8 was dynamic `call_user_func_array()`
+named-reference handling:
 
 Batch006 source checkpoint 8 is primary-integrated under AO supervision. This
 is a source checkpoint with focused proof, not a percentage change. The public
