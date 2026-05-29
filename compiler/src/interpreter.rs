@@ -13158,7 +13158,7 @@ impl Interpreter {
             Expr::Bool(value, _) => Value::Bool(*value),
             Expr::Int(value, _) => Value::Int(*value),
             Expr::Float(value, _) => Value::Float(*value),
-            Expr::String(value, _) => Value::String(value.clone()),
+            Expr::String(value, _) => php_string_literal_value(value),
             Expr::Variable(name, _) => scope.read_named(name)?,
             Expr::Property {
                 target, property, ..
@@ -17098,7 +17098,7 @@ impl Interpreter {
             Expr::Bool(value, _) => Ok(Value::Bool(*value)),
             Expr::Int(value, _) => Ok(Value::Int(*value)),
             Expr::Float(value, _) => Ok(Value::Float(*value)),
-            Expr::String(value, _) => Ok(Value::String(value.clone())),
+            Expr::String(value, _) => Ok(php_string_literal_value(value)),
             Expr::InterpolatedString { parts, span } => {
                 self.evaluate_interpolated_string(parts, *span, scope)
             }
@@ -44557,7 +44557,7 @@ impl Interpreter {
                 }
             }
         }
-        Ok(Value::String(output))
+        Ok(php_string_literal_value(&output))
     }
 
     fn evaluate_interpolated_access_chain(
@@ -69095,6 +69095,8 @@ impl Interpreter {
             "str_contains" => call_str_contains(&args, span),
             "str_starts_with" => call_str_starts_with(&args, span),
             "str_ends_with" => call_str_ends_with(&args, span),
+            "strspn" => call_strspn(&args, span),
+            "strcspn" => call_strcspn(&args, span),
             "strpos" => call_strpos(&args, span),
             "stripos" => call_strpos_like(&args, "stripos()", true, span),
             "strrpos" => call_strrpos(&args, "strrpos()", false, span),
@@ -80230,6 +80232,15 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_param("needle", "string"),
             ],
         ),
+        "strspn" | "strcspn" => (
+            "int",
+            vec![
+                reflection_internal_param("string", "string"),
+                reflection_internal_param("characters", "string"),
+                reflection_internal_optional_int_param("offset", 0),
+                reflection_internal_optional_null_param("length", "int"),
+            ],
+        ),
         "strpos" | "stripos" | "strrpos" | "strripos" => (
             "int|false",
             vec![
@@ -82592,6 +82603,8 @@ fn is_builtin(name: &str) -> bool {
             | "str_contains"
             | "str_starts_with"
             | "str_ends_with"
+            | "strspn"
+            | "strcspn"
             | "strpos"
             | "stripos"
             | "strrpos"
@@ -89626,6 +89639,38 @@ fn interpreter_value_from_php_string_bytes(bytes: Vec<u8>) -> Value {
         .unwrap_or_else(|error| Value::BinaryString(error.into_bytes()))
 }
 
+const PHP_ESCAPED_BYTE_SENTINEL_BASE: u32 = 0xE000;
+const PHP_ESCAPED_BYTE_SENTINEL_END: u32 = PHP_ESCAPED_BYTE_SENTINEL_BASE + 0xFF;
+
+fn php_escaped_byte_sentinel_value(ch: char) -> Option<u8> {
+    let value = ch as u32;
+    if (PHP_ESCAPED_BYTE_SENTINEL_BASE..=PHP_ESCAPED_BYTE_SENTINEL_END).contains(&value) {
+        Some((value - PHP_ESCAPED_BYTE_SENTINEL_BASE) as u8)
+    } else {
+        None
+    }
+}
+
+fn php_string_literal_value(value: &str) -> Value {
+    if !value
+        .chars()
+        .any(|ch| php_escaped_byte_sentinel_value(ch).is_some())
+    {
+        return Value::String(value.to_string());
+    }
+
+    let mut bytes = Vec::with_capacity(value.len());
+    for ch in value.chars() {
+        if let Some(byte) = php_escaped_byte_sentinel_value(ch) {
+            bytes.push(byte);
+        } else {
+            let mut buffer = [0_u8; 4];
+            bytes.extend_from_slice(ch.encode_utf8(&mut buffer).as_bytes());
+        }
+    }
+    interpreter_value_from_php_string_bytes(bytes)
+}
+
 fn trim_mask_parse_error(name: &str, reason: &str) -> RuntimeError {
     RuntimeError::unsupported_call(
         name,
@@ -90115,6 +90160,83 @@ fn call_str_ends_with(args: &[Value], span: Span) -> CompileResult<Value> {
     let needle = string_contains_argument("str_ends_with()", "needle", &args[1], span)?;
 
     Ok(Value::Bool(haystack.ends_with(&needle)))
+}
+
+fn call_strspn(args: &[Value], span: Span) -> CompileResult<Value> {
+    call_string_byte_span(args, "strspn()", true, span)
+}
+
+fn call_strcspn(args: &[Value], span: Span) -> CompileResult<Value> {
+    call_string_byte_span(args, "strcspn()", false, span)
+}
+
+fn call_string_byte_span(
+    args: &[Value],
+    function: &'static str,
+    count_masked_bytes: bool,
+    span: Span,
+) -> CompileResult<Value> {
+    if !(2..=4).contains(&args.len()) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                function,
+                ArityExpectation::Between { min: 2, max: 4 },
+                args.len(),
+            ),
+        ));
+    }
+
+    let subject = string_compare_argument_bytes(function, "string", &args[0], span)?;
+    let characters = string_compare_argument_bytes(function, "characters", &args[1], span)?;
+    let offset = match args.get(2) {
+        Some(value) => php_internal_int_argument(function, 3, "offset", value, span)?,
+        None => 0,
+    };
+    let length = match args.get(3) {
+        Some(Value::Null) | None => None,
+        Some(value) => Some(php_internal_int_argument(
+            function, 4, "length", value, span,
+        )?),
+    };
+
+    let (start, end) = php_byte_window_bounds(subject.len(), offset, length);
+    let mut byte_set = [false; 256];
+    for byte in characters {
+        byte_set[byte as usize] = true;
+    }
+
+    let mut count = 0_i64;
+    for byte in &subject[start..end] {
+        if byte_set[*byte as usize] == count_masked_bytes {
+            count += 1;
+        } else {
+            break;
+        }
+    }
+
+    Ok(Value::Int(count))
+}
+
+fn php_byte_window_bounds(subject_len: usize, offset: i64, length: Option<i64>) -> (usize, usize) {
+    let subject_len = subject_len as i64;
+    let start = if offset >= 0 {
+        offset.min(subject_len)
+    } else {
+        (subject_len + offset).max(0)
+    };
+
+    let end = match length {
+        Some(length) if length >= 0 => start.saturating_add(length).min(subject_len),
+        Some(length) => (subject_len + length).max(0).min(subject_len),
+        None => subject_len,
+    };
+
+    if end < start {
+        (start as usize, start as usize)
+    } else {
+        (start as usize, end as usize)
+    }
 }
 
 fn call_strpos(args: &[Value], span: Span) -> CompileResult<Value> {

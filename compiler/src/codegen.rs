@@ -66225,6 +66225,8 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "str_contains",
     "str_starts_with",
     "str_ends_with",
+    "strspn",
+    "strcspn",
     "strpos",
     "stripos",
     "strrpos",

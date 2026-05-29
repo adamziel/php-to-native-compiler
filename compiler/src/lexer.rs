@@ -123,6 +123,13 @@ pub fn tokenize(source: &str) -> CompileResult<Vec<Token>> {
     Lexer::new(source).tokenize()
 }
 
+const PHP_ESCAPED_BYTE_SENTINEL_BASE: u32 = 0xE000;
+
+fn php_escaped_byte_sentinel(byte: u8) -> char {
+    char::from_u32(PHP_ESCAPED_BYTE_SENTINEL_BASE + u32::from(byte))
+        .expect("PHP escaped byte sentinel must be a valid private-use scalar")
+}
+
 struct Lexer<'a> {
     source: &'a str,
     chars: Vec<char>,
@@ -917,10 +924,10 @@ impl<'a> Lexer<'a> {
             'x' => {
                 self.advance();
                 self.consume_hex_escape_byte()
-                    .map(char::from)
+                    .map(php_escaped_byte_sentinel)
                     .unwrap_or('x')
             }
-            '0'..='7' => char::from(self.consume_octal_escape_byte()),
+            '0'..='7' => php_escaped_byte_sentinel(self.consume_octal_escape_byte()),
             other => {
                 self.advance();
                 other
@@ -966,10 +973,10 @@ impl<'a> Lexer<'a> {
             {
                 self.advance();
                 if let Some(byte) = self.consume_hex_escape_byte() {
-                    value.push(char::from(byte));
+                    value.push(php_escaped_byte_sentinel(byte));
                 }
             }
-            '0'..='7' => value.push(char::from(self.consume_octal_escape_byte())),
+            '0'..='7' => value.push(php_escaped_byte_sentinel(self.consume_octal_escape_byte())),
             '\\' => {
                 self.advance();
                 value.push('\\');
