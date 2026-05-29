@@ -131,7 +131,7 @@ lowering remain unsupported. `fopen()` can create bounded
 interpreter-owned `php://memory`,
 `php://temp`, `php://input`, local absolute `file://` URL with bounded UTF-8
 percent-decoded path portions, and local UTF-8 file stream resources for simple
-flows through `fwrite()`, `fread()`, `rewind()`, `stream_get_contents()`,
+flows through `fwrite()`, `fscanf()`, `fread()`, `rewind()`, `stream_get_contents()`,
 `feof()`, `ftell()`, `fseek()`, `fflush()`, `ftruncate()`, `fstat()`,
 `stream_get_meta_data()`, and
 `fclose()`. `php://input` handles read the deterministic
@@ -979,7 +979,7 @@ direct `basename(...)` lexical path calls,
 direct `file_get_contents(...)` filesystem/stream reads,
 direct `fopen()`/`stream_context_create()`/`stream_context_get_options()`/
 `stream_context_get_params()`/`stream_context_set_params()`/`fwrite()`/
-`fread()`/`rewind()`/`stream_get_contents()`/`feof()`/`ftell()`/
+`fscanf()`/`fread()`/`rewind()`/`stream_get_contents()`/`feof()`/`ftell()`/
 `fseek()`/`fflush()`/`ftruncate()`/`fstat()`/`stream_get_meta_data()`/`fclose()`/`opendir()`/
 `readdir()`/`rewinddir()`/`closedir()` stream-resource and directory-handle
 calls,
