@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-29 12:23 CEST
+Updated: 2026-05-29 12:30 CEST
 Primary branch: `master`
-Latest source head: `7736e4ac fix: add bounded generator yield-from support`
+Latest source head: `9750bc4f fix: add reflection attribute consumers`
 
 ## Progress Score
 
@@ -166,13 +166,49 @@ pinned denominator and does not use the raw runner
 | Batch008 source batch | Complete | Source checkpoints accepted: 10 / 10; checkpoint1 is `strncmp()` / `strncasecmp()` focused source proof; checkpoint2 is bcmath `bcmod()` / `bcpow()` / `bcpowmod()` / `bcsqrt()` focused source proof; checkpoint3 is `tempnam()` / `sys_get_temp_dir()` focused source proof; checkpoint4 is bounded date/timezone focused source proof; checkpoint5 is `SplObjectStorage` identity-map focused source proof; checkpoint5 sharded gate published; checkpoint6 is `strrpos()` / `strripos()` focused source proof; checkpoint7 is `fputcsv()` plus local file stream semantics focused source proof; checkpoint8 is `pathinfo()` / `basename()` / `dirname()` focused source proof; checkpoint9 is `vprintf()` focused source proof; checkpoint10 is `stripos()` focused source proof; checkpoint10 bug60598 repair gate published |
 | Batch009 burst1 sharded gate | Done | 2388 / 20294 pinned runnable PHPTs passed (11.77%); 0 regressions from Batch008 checkpoint10 PASS set; run id `phpt-full-batch009-burst1-sharded-20260529T095210Z-php-src-f97ff59-public-e0a15776-source-731c73cc` |
 | Batch009 source burst | Complete | Checkpoint1 is p47 `sizeof()` alias / `array_chunk` metadata focused source proof (+25 expected direct rows); checkpoint2 is p43 `fflush()` / `ftruncate()` focused source proof (+15 expected direct rows); checkpoint3 is p42 `fprintf()` / `vfprintf()` focused source proof (+14 expected direct rows); checkpoint4 is p39 OPcache bounded introspection focused source proof (+11 expected direct rows); checkpoint5 is p63 slash/cslash and bounded `strcmp()` focused source proof (+12 expected direct rows); burst total was +77 expected direct rows; burst1 sharded gate published 2388 / 20294 |
-| Batch010 source burst | Active | Checkpoint1 is p66 `bcround()` / bounded `RoundingMode` focused source proof (+11 expected direct rows); checkpoint2 is p51 generator `yield from` / `Generator::getReturn()` / yielded key preservation focused source proof (+10 expected direct rows); burst total is +21 / +75 expected direct rows toward the next supervisor-approved aggregate gate |
+| Batch010 source burst | Active | Checkpoint1 is p66 `bcround()` / bounded `RoundingMode` focused source proof (+11 expected direct rows); checkpoint2 is p51 generator `yield from` / `Generator::getReturn()` / yielded key preservation focused source proof (+10 expected direct rows); checkpoint3 is p50 `ReflectionAttribute` / `getAttributes()` focused source proof (+10 expected direct rows); burst total is +31 / +75 expected direct rows toward the next supervisor-approved aggregate gate |
 
 Focused PHPT history is tracked separately in
 `/home/claude/supervised-php-compiler/state/php-core-suite-focused-history.tsv`.
 Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
+
+Batch010 source burst checkpoint3 is primary-integrated under AO supervision.
+This is focused source proof, not a public percentage change. The public PHPT
+score remains **2388 / 20294 pinned runnable PHPTs = 11.77%** until the next
+supervisor-approved pinned aggregate gate is completed, regression-checked,
+and published here.
+
+- primary source head:
+  `9750bc4f fix: add reflection attribute consumers`
+- reviewed and integration patch:
+  `/home/claude/supervised-php-compiler/state/patches/ao-integration-batch009-p50-reflection-attributes-getattributes-73e6ef80-20260529.patch`
+- reviewed and integration patch SHA256:
+  `7ea0725dd3d7e47e740b38ddea45f5bca9c809bc0406e10b0a5c64b77814e128`
+- reviewer gate: phpc-18 completed FINAL GO for p50
+  `ReflectionAttribute` / `getAttributes()`; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/batch009-review-p50-reflection-attributes-getattributes-73e6ef80-phpc18-20260529.{status.md,report.md,gates.log}`
+- critic gate: phpc-33 recorded `SAFE-FOR-INTEGRATION` for the exact patch
+  SHA, with additional SAFE evidence from phpc-55
+- handoff gate: p38 completed scratch/no-primary handoff with SHA
+  verification, clean apply, docs/`PROGRESS.md`/examples exclusion,
+  consumed-scope scan, production exact-shape scan, diff check, and reverse
+  apply proof; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/ao-integration-batch009-p50-reflection-attributes-getattributes-73e6ef80-20260529.{status.md,report.md,gates.log}`
+- supervisor focused gates: PASS for SHA verification, clean apply over
+  `c7189cc5`, `git diff --check`, docs/`PROGRESS.md`/examples exclusion,
+  production exact-shape audit, consumed-scope audit, `cargo fmt`, focused
+  Rust attribute/reflection, `array_map`, and arrow-function gates, `phpc`
+  binary build, `cargo check`, and focused PHP core attribute PHPT cluster
+  with 10 PASS and 0 FAIL
+- public progress gate: not run for this source checkpoint; focused proof is
+  candidate evidence for the next 75-row burst gate
+
+This checkpoint implements generalized bounded attribute metadata and
+`ReflectionAttribute` / `getAttributes()` consumers across the current
+reflection subset. It is not keyed to PHPT filenames, expected output, fixture
+names, public hashes, batch labels, or checkpoint markers.
 
 Batch010 source burst checkpoint2 is primary-integrated under AO supervision.
 This is focused source proof, not a public percentage change. The public PHPT
