@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-29 21:14 CEST
+Updated: 2026-05-29 22:16 CEST
 Primary branch: `master`
-Latest source head: `85620212 fix: improve array_map callback validation`
+Latest source head: `6195b55e fix: repair batch014 PHPT regressions`
 
 ## Progress Score
 
@@ -59,6 +59,18 @@ Batch014 source progress is now 4 checkpoints and +105 expected direct rows,
 crossing the supervisor threshold for considering the next pinned full-suite
 gate. The public
 percentage remains `3170 / 20294 = 15.62%` until the next pinned full-suite
+gate is completed, regression-checked, and published here.
+
+Batch014 regression-repair source checkpoint5 `6195b55e` is integrated with
+focused lowercase `-p` proof for the five latest-published PASS regressions
+that blocked the checkpoint4 full-suite candidate. The focused gate recorded
+`5 PASS / 0 FAIL / 0 SKIP` across
+`Zend/tests/dynamic_call/dynamic_call_005.phpt`,
+`Zend/tests/dynamic_call/dynamic_call_007.phpt`,
+`ext/opcache/tests/jit/assign_dim_004.phpt`,
+`ext/opcache/tests/jit/isset_001.phpt`, and
+`ext/standard/tests/array/array_product_variation3.phpt`. The public
+percentage remains `3170 / 20294 = 15.62%` until a repaired pinned full-suite
 gate is completed, regression-checked, and published here.
 
 No other percentage is public project progress. Focused PHPT passes, source
