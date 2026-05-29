@@ -142,6 +142,7 @@ struct Interpreter {
     error_control_suppression_depth: usize,
     ignore_user_abort: bool,
     ini_values: HashMap<String, String>,
+    opcache_file_cache_paths: HashSet<String>,
     error_handlers: Vec<ErrorHandlerRegistration>,
     error_handler_active: bool,
     shutdown_callbacks: Vec<ShutdownCallback>,
@@ -8934,6 +8935,7 @@ impl Interpreter {
             error_control_suppression_depth: 0,
             ignore_user_abort: false,
             ini_values: phpc_phpt_ini_overrides_from_env(),
+            opcache_file_cache_paths: HashSet::new(),
             error_handlers: Vec::new(),
             error_handler_active: false,
             shutdown_callbacks: Vec::new(),
@@ -67417,7 +67419,17 @@ impl Interpreter {
             "getenv" => self.call_getenv(&args, span),
             "putenv" => self.call_putenv(&args, span),
             "ini_get" => self.call_ini_get(&args, span),
+            "ini_get_all" => self.call_ini_get_all(&args, span),
             "ini_set" => self.call_ini_set(&args, span),
+            "opcache_get_configuration" => self.call_opcache_get_configuration(&args, span),
+            "opcache_get_status" => self.call_opcache_get_status(&args, span),
+            "opcache_is_script_cached" => self.call_opcache_is_script_cached(&args, span),
+            "opcache_compile_file" => self.call_opcache_compile_file(&args, span),
+            "opcache_invalidate" => self.call_opcache_invalidate(&args, span),
+            "opcache_reset" => self.call_opcache_reset(&args, span),
+            "opcache_is_script_cached_in_file_cache" => {
+                self.call_opcache_is_script_cached_in_file_cache(&args, span)
+            }
             "get_include_path" => {
                 expect_arity(name, &args, 0, span)?;
                 Ok(Value::String(self.include_path.clone()))
@@ -80158,7 +80170,15 @@ fn is_builtin(name: &str) -> bool {
             | "getenv"
             | "putenv"
             | "ini_get"
+            | "ini_get_all"
             | "ini_set"
+            | "opcache_get_configuration"
+            | "opcache_get_status"
+            | "opcache_is_script_cached"
+            | "opcache_compile_file"
+            | "opcache_invalidate"
+            | "opcache_reset"
+            | "opcache_is_script_cached_in_file_cache"
             | "get_include_path"
             | "set_include_path"
             | "min"
@@ -92439,6 +92459,423 @@ impl Interpreter {
         Ok(Value::Int(previous))
     }
 
+    fn opcache_ini_value(&self, normalized_name: &str) -> Option<String> {
+        let raw = self
+            .ini_values
+            .get(normalized_name)
+            .cloned()
+            .or_else(|| opcache_default_ini_value(normalized_name).map(str::to_string))?;
+
+        match normalized_name {
+            "opcache.memory_consumption" => {
+                let mb = parse_ini_i64_prefix(&raw).unwrap_or(128);
+                Some(if mb < 8 { "128".to_string() } else { raw })
+            }
+            "opcache.max_accelerated_files" => {
+                let files = parse_ini_i64_prefix(&raw).unwrap_or(10_000);
+                Some(if files < 200 {
+                    "10000".to_string()
+                } else {
+                    raw
+                })
+            }
+            "opcache.max_wasted_percentage" => {
+                let percentage = parse_ini_f64_prefix(&raw).unwrap_or(5.0);
+                Some(if !(1.0..=50.0).contains(&percentage) {
+                    "5".to_string()
+                } else {
+                    raw
+                })
+            }
+            _ => Some(raw),
+        }
+    }
+
+    fn opcache_ini_bool(&self, normalized_name: &str) -> bool {
+        self.opcache_ini_value(normalized_name)
+            .as_deref()
+            .is_some_and(php_ini_truthy)
+    }
+
+    fn opcache_enabled(&self) -> bool {
+        self.opcache_ini_bool("opcache.enable") && self.opcache_ini_bool("opcache.enable_cli")
+    }
+
+    fn opcache_directive_value(&self, name: &str) -> Value {
+        match name {
+            "opcache.enable"
+            | "opcache.enable_cli"
+            | "opcache.file_cache_only"
+            | "opcache.validate_timestamps"
+            | "opcache.enable_file_override"
+            | "opcache.save_comments"
+            | "opcache.fast_shutdown"
+            | "opcache.dups_fix" => Value::Bool(self.opcache_ini_bool(name)),
+            "opcache.memory_consumption" => {
+                Value::Int(self.opcache_ini_size_bytes(name, 128 * 1024 * 1024))
+            }
+            "opcache.interned_strings_buffer" => Value::Int(self.opcache_ini_int(name, 8)),
+            "opcache.max_accelerated_files" => Value::Int(self.opcache_ini_int(name, 10_000)),
+            "opcache.max_wasted_percentage" => {
+                Value::Float(self.opcache_ini_float(name, 5.0) / 100.0)
+            }
+            "opcache.revalidate_freq"
+            | "opcache.file_update_protection"
+            | "opcache.log_verbosity_level"
+            | "opcache.opt_debug_level"
+            | "opcache.optimization_level"
+            | "opcache.force_restart_timeout"
+            | "opcache.jit_hot_loop"
+            | "opcache.jit_hot_func"
+            | "opcache.jit_hot_return"
+            | "opcache.jit_hot_side_exit"
+            | "opcache.jit_max_root_traces"
+            | "opcache.jit_max_side_traces"
+            | "opcache.jit_max_exit_counters"
+            | "opcache.jit_max_loop_unrolls"
+            | "opcache.jit_max_recursive_calls"
+            | "opcache.jit_max_recursive_returns"
+            | "opcache.jit_max_polymorphic_calls"
+            | "opcache.jit_blacklist_root_trace"
+            | "opcache.jit_blacklist_side_trace" => {
+                Value::Int(self.opcache_ini_int(name, opcache_default_i64(name)))
+            }
+            "opcache.jit_buffer_size" => {
+                Value::Int(self.opcache_ini_size_bytes(name, opcache_default_i64(name)))
+            }
+            "opcache.jit_prof_threshold" => {
+                Value::Float(self.opcache_ini_float(name, opcache_default_f64(name)))
+            }
+            _ => Value::String(self.opcache_ini_value(name).unwrap_or_default()),
+        }
+    }
+
+    fn opcache_ini_int(&self, name: &str, default: i64) -> i64 {
+        self.opcache_ini_value(name)
+            .as_deref()
+            .and_then(parse_ini_i64_prefix)
+            .unwrap_or(default)
+    }
+
+    fn opcache_ini_float(&self, name: &str, default: f64) -> f64 {
+        self.opcache_ini_value(name)
+            .as_deref()
+            .and_then(parse_ini_f64_prefix)
+            .unwrap_or(default)
+    }
+
+    fn opcache_ini_size_bytes(&self, name: &str, default: i64) -> i64 {
+        self.opcache_ini_value(name)
+            .as_deref()
+            .and_then(parse_ini_size_bytes)
+            .unwrap_or(default)
+    }
+
+    fn call_ini_get_all(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if args.len() > 2 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "ini_get_all()",
+                    ArityExpectation::Between { min: 0, max: 2 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let extension = match args.first() {
+            Some(Value::String(extension)) => Some(extension.as_str()),
+            Some(Value::Null) | None => None,
+            Some(other) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "ini_get_all()",
+                        format!(
+                            "extension argument must be string or null in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+        };
+        let details = match args.get(1) {
+            Some(Value::Bool(details)) => *details,
+            Some(other) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "ini_get_all()",
+                        format!(
+                            "details argument must be bool in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+            None => true,
+        };
+
+        if extension.is_some_and(|extension| {
+            !extension.eq_ignore_ascii_case("zend opcache")
+                && !extension.eq_ignore_ascii_case("opcache")
+        }) {
+            return Ok(Value::Array(PhpArray::new()));
+        }
+
+        let mut options = PhpArray::new();
+        for directive in OPCACHE_DIRECTIVES {
+            let value = self.opcache_ini_value(directive).unwrap_or_default();
+            let option = if details {
+                let mut details_array = PhpArray::new();
+                details_array.insert("global_value".to_string(), Value::String(value.clone()));
+                details_array.insert("local_value".to_string(), Value::String(value));
+                details_array.insert("access".to_string(), Value::Int(7));
+                Value::Array(details_array)
+            } else {
+                Value::String(value)
+            };
+            options.insert((*directive).to_string(), option);
+        }
+        Ok(Value::Array(options))
+    }
+
+    fn call_opcache_get_configuration(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("opcache_get_configuration", args, 0, span)?;
+
+        let mut directives = PhpArray::new();
+        for directive in OPCACHE_DIRECTIVES {
+            directives.insert(
+                (*directive).to_string(),
+                self.opcache_directive_value(directive),
+            );
+        }
+
+        let mut version = PhpArray::new();
+        version.insert("version".to_string(), Value::String("8.3.0".to_string()));
+        version.insert(
+            "opcache_product_name".to_string(),
+            Value::String("Zend OPcache".to_string()),
+        );
+
+        let mut config = PhpArray::new();
+        config.insert("directives".to_string(), Value::Array(directives));
+        config.insert("version".to_string(), Value::Array(version));
+        config.insert("blacklist".to_string(), Value::Array(PhpArray::new()));
+        Ok(Value::Array(config))
+    }
+
+    fn call_opcache_get_status(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if args.len() > 1 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "opcache_get_status()",
+                    ArityExpectation::Between { min: 0, max: 1 },
+                    args.len(),
+                ),
+            ));
+        }
+        let include_scripts = match args.first() {
+            Some(Value::Bool(include_scripts)) => *include_scripts,
+            Some(other) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "opcache_get_status()",
+                        format!(
+                            "include_scripts argument must be bool in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+            None => true,
+        };
+
+        if !self.opcache_enabled() {
+            return Ok(Value::Bool(false));
+        }
+
+        let memory_size =
+            self.opcache_ini_size_bytes("opcache.memory_consumption", 128 * 1024 * 1024);
+        let interned_size =
+            self.opcache_ini_int("opcache.interned_strings_buffer", 8) * 1024 * 1024;
+        let mut memory_usage = PhpArray::new();
+        memory_usage.insert("used_memory".to_string(), Value::Int(0));
+        memory_usage.insert("free_memory".to_string(), Value::Int(memory_size));
+        memory_usage.insert("wasted_memory".to_string(), Value::Int(0));
+        memory_usage.insert("current_wasted_percentage".to_string(), Value::Float(0.0));
+
+        let mut interned_strings_usage = PhpArray::new();
+        interned_strings_usage.insert("buffer_size".to_string(), Value::Int(interned_size));
+        interned_strings_usage.insert("used_memory".to_string(), Value::Int(0));
+        interned_strings_usage.insert("free_memory".to_string(), Value::Int(interned_size));
+        interned_strings_usage.insert("number_of_strings".to_string(), Value::Int(0));
+
+        let mut statistics = PhpArray::new();
+        let script_count = self.opcache_status_scripts().len() as i64;
+        statistics.insert("num_cached_scripts".to_string(), Value::Int(script_count));
+        statistics.insert("num_cached_keys".to_string(), Value::Int(script_count));
+        statistics.insert(
+            "max_cached_keys".to_string(),
+            Value::Int(self.opcache_ini_int("opcache.max_accelerated_files", 10_000)),
+        );
+        statistics.insert("hits".to_string(), Value::Int(0));
+        statistics.insert("start_time".to_string(), Value::Int(self.request_time));
+        statistics.insert("last_restart_time".to_string(), Value::Int(0));
+        statistics.insert("oom_restarts".to_string(), Value::Int(0));
+        statistics.insert("hash_restarts".to_string(), Value::Int(0));
+        statistics.insert("manual_restarts".to_string(), Value::Int(0));
+        statistics.insert("misses".to_string(), Value::Int(0));
+        statistics.insert("blacklist_misses".to_string(), Value::Int(0));
+        statistics.insert("blacklist_miss_ratio".to_string(), Value::Float(0.0));
+        statistics.insert("opcache_hit_rate".to_string(), Value::Float(0.0));
+
+        let mut jit = PhpArray::new();
+        jit.insert("enabled".to_string(), Value::Bool(false));
+        jit.insert("on".to_string(), Value::Bool(false));
+        jit.insert("kind".to_string(), Value::Int(0));
+        jit.insert("opt_level".to_string(), Value::Int(0));
+        jit.insert("opt_flags".to_string(), Value::Int(0));
+        jit.insert(
+            "buffer_size".to_string(),
+            self.opcache_directive_value("opcache.jit_buffer_size"),
+        );
+        jit.insert(
+            "buffer_free".to_string(),
+            self.opcache_directive_value("opcache.jit_buffer_size"),
+        );
+
+        let mut status = PhpArray::new();
+        status.insert("opcache_enabled".to_string(), Value::Bool(true));
+        status.insert("cache_full".to_string(), Value::Bool(false));
+        status.insert("restart_pending".to_string(), Value::Bool(false));
+        status.insert("restart_in_progress".to_string(), Value::Bool(false));
+        status.insert("memory_usage".to_string(), Value::Array(memory_usage));
+        status.insert(
+            "interned_strings_usage".to_string(),
+            Value::Array(interned_strings_usage),
+        );
+        status.insert("opcache_statistics".to_string(), Value::Array(statistics));
+        if include_scripts {
+            status.insert(
+                "scripts".to_string(),
+                Value::Array(self.opcache_status_scripts()),
+            );
+        }
+        status.insert("jit".to_string(), Value::Array(jit));
+
+        Ok(Value::Array(status))
+    }
+
+    fn opcache_status_scripts(&self) -> PhpArray {
+        let mut scripts = PhpArray::new();
+        if let Some(source_file) = &self.source_file {
+            let key = opcache_path_key(source_file);
+            scripts.insert(key.clone(), opcache_script_status_entry(&key));
+        }
+        for key in &self.opcache_file_cache_paths {
+            scripts.insert(key.clone(), opcache_script_status_entry(key));
+        }
+        scripts
+    }
+
+    fn call_opcache_is_script_cached(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("opcache_is_script_cached", args, 1, span)?;
+        let path =
+            string_builtin_argument("opcache_is_script_cached()", "filename", &args[0], span)?;
+        let key = opcache_path_key(&path);
+        let is_current_script = self
+            .source_file
+            .as_deref()
+            .is_some_and(|source_file| opcache_path_key(source_file) == key);
+        let exists = local_filesystem_metadata_path(&path).exists();
+        Ok(Value::Bool(
+            self.opcache_enabled()
+                && (is_current_script || exists || self.opcache_file_cache_paths.contains(&key)),
+        ))
+    }
+
+    fn call_opcache_is_script_cached_in_file_cache(
+        &self,
+        args: &[Value],
+        span: Span,
+    ) -> CompileResult<Value> {
+        expect_arity("opcache_is_script_cached_in_file_cache", args, 1, span)?;
+        let path = string_builtin_argument(
+            "opcache_is_script_cached_in_file_cache()",
+            "filename",
+            &args[0],
+            span,
+        )?;
+        Ok(Value::Bool(
+            self.opcache_file_cache_paths
+                .contains(&opcache_path_key(&path)),
+        ))
+    }
+
+    fn call_opcache_compile_file(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("opcache_compile_file", args, 1, span)?;
+        let path = string_builtin_argument("opcache_compile_file()", "filename", &args[0], span)?;
+        if !self.opcache_enabled() {
+            self.emit_display_notice(
+                "Zend OPcache has not been properly started, can't compile file",
+                span,
+            )?;
+            return Ok(Value::Bool(false));
+        }
+
+        let local_path = local_filesystem_metadata_path(&path);
+        if !local_path.exists() {
+            return Ok(Value::Bool(false));
+        }
+        self.opcache_file_cache_paths
+            .insert(opcache_path_key(&path));
+        Ok(Value::Bool(true))
+    }
+
+    fn call_opcache_invalidate(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(1..=2).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "opcache_invalidate()",
+                    ArityExpectation::Between { min: 1, max: 2 },
+                    args.len(),
+                ),
+            ));
+        }
+        let path = string_builtin_argument("opcache_invalidate()", "filename", &args[0], span)?;
+        if let Some(other) = args.get(1) {
+            if !matches!(other, Value::Bool(_)) {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "opcache_invalidate()",
+                        format!(
+                            "force argument must be bool in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+        }
+
+        let key = opcache_path_key(&path);
+        let was_cached = self.opcache_file_cache_paths.remove(&key);
+        let exists = local_filesystem_metadata_path(&path).exists();
+        Ok(Value::Bool(
+            self.opcache_enabled() && (was_cached || exists),
+        ))
+    }
+
+    fn call_opcache_reset(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("opcache_reset", args, 0, span)?;
+        self.opcache_file_cache_paths.clear();
+        Ok(Value::Bool(self.opcache_enabled()))
+    }
+
     fn call_ini_get(&self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("ini_get", args, 1, span)?;
 
@@ -92510,12 +92947,25 @@ impl Interpreter {
             }
         };
 
+        if normalized_name == "opcache.enable" {
+            if !php_ini_truthy(&previous) && php_ini_truthy(&value) {
+                self.emit_display_warning(
+                    "Zend OPcache can't be temporarily enabled (it may be only disabled until the end of request)",
+                    span,
+                )?;
+                return Ok(Value::String(previous));
+            }
+        }
+
         self.ini_values.insert(normalized_name, value);
         Ok(Value::String(previous))
     }
 
     fn ini_value(&self, name: &str) -> Option<String> {
         let normalized = normalize_ini_name(name);
+        if is_opcache_ini_option(&normalized) {
+            return self.opcache_ini_value(&normalized);
+        }
         self.ini_values
             .get(&normalized)
             .cloned()
@@ -93913,6 +94363,201 @@ fn iso_weeks_in_year(year: i64) -> i64 {
     } else {
         52
     }
+}
+
+const OPCACHE_DIRECTIVES: &[&str] = &[
+    "opcache.enable",
+    "opcache.enable_cli",
+    "opcache.memory_consumption",
+    "opcache.interned_strings_buffer",
+    "opcache.max_accelerated_files",
+    "opcache.max_wasted_percentage",
+    "opcache.validate_timestamps",
+    "opcache.revalidate_freq",
+    "opcache.file_update_protection",
+    "opcache.file_cache",
+    "opcache.file_cache_only",
+    "opcache.file_cache_consistency_checks",
+    "opcache.blacklist_filename",
+    "opcache.log_verbosity_level",
+    "opcache.opt_debug_level",
+    "opcache.optimization_level",
+    "opcache.enable_file_override",
+    "opcache.save_comments",
+    "opcache.fast_shutdown",
+    "opcache.dups_fix",
+    "opcache.preload",
+    "opcache.preload_user",
+    "opcache.force_restart_timeout",
+    "opcache.error_log",
+    "opcache.jit",
+    "opcache.jit_buffer_size",
+    "opcache.jit_prof_threshold",
+    "opcache.jit_hot_loop",
+    "opcache.jit_hot_func",
+    "opcache.jit_hot_return",
+    "opcache.jit_hot_side_exit",
+    "opcache.jit_max_root_traces",
+    "opcache.jit_max_side_traces",
+    "opcache.jit_max_exit_counters",
+    "opcache.jit_max_loop_unrolls",
+    "opcache.jit_max_recursive_calls",
+    "opcache.jit_max_recursive_returns",
+    "opcache.jit_max_polymorphic_calls",
+    "opcache.jit_blacklist_root_trace",
+    "opcache.jit_blacklist_side_trace",
+];
+
+fn is_opcache_ini_option(normalized_name: &str) -> bool {
+    OPCACHE_DIRECTIVES.contains(&normalized_name)
+}
+
+fn opcache_default_ini_value(normalized_name: &str) -> Option<&'static str> {
+    match normalized_name {
+        "opcache.enable" => Some("1"),
+        "opcache.enable_cli" => Some("0"),
+        "opcache.memory_consumption" => Some("128"),
+        "opcache.interned_strings_buffer" => Some("8"),
+        "opcache.max_accelerated_files" => Some("10000"),
+        "opcache.max_wasted_percentage" => Some("5"),
+        "opcache.validate_timestamps" => Some("1"),
+        "opcache.revalidate_freq" => Some("2"),
+        "opcache.file_update_protection" => Some("2"),
+        "opcache.file_cache" => Some(""),
+        "opcache.file_cache_only" => Some("0"),
+        "opcache.file_cache_consistency_checks" => Some("1"),
+        "opcache.blacklist_filename" => Some(""),
+        "opcache.log_verbosity_level" => Some("1"),
+        "opcache.opt_debug_level" => Some("0"),
+        "opcache.optimization_level" => Some("0x7FFEBFFF"),
+        "opcache.enable_file_override" => Some("0"),
+        "opcache.save_comments" => Some("1"),
+        "opcache.fast_shutdown" => Some("0"),
+        "opcache.dups_fix" => Some("0"),
+        "opcache.preload" => Some(""),
+        "opcache.preload_user" => Some(""),
+        "opcache.force_restart_timeout" => Some("180"),
+        "opcache.error_log" => Some(""),
+        "opcache.jit" => Some("disable"),
+        "opcache.jit_buffer_size" => Some("0"),
+        "opcache.jit_prof_threshold" => Some("0.005"),
+        "opcache.jit_hot_loop" => Some("64"),
+        "opcache.jit_hot_func" => Some("127"),
+        "opcache.jit_hot_return" => Some("8"),
+        "opcache.jit_hot_side_exit" => Some("8"),
+        "opcache.jit_max_root_traces" => Some("1024"),
+        "opcache.jit_max_side_traces" => Some("128"),
+        "opcache.jit_max_exit_counters" => Some("8192"),
+        "opcache.jit_max_loop_unrolls" => Some("8"),
+        "opcache.jit_max_recursive_calls" => Some("2"),
+        "opcache.jit_max_recursive_returns" => Some("2"),
+        "opcache.jit_max_polymorphic_calls" => Some("2"),
+        "opcache.jit_blacklist_root_trace" => Some("16"),
+        "opcache.jit_blacklist_side_trace" => Some("8"),
+        _ => None,
+    }
+}
+
+fn php_ini_truthy(value: &str) -> bool {
+    let value = value.trim();
+    !value.is_empty()
+        && !matches!(
+            value.to_ascii_lowercase().as_str(),
+            "0" | "off" | "false" | "no" | "none" | "disable" | "disabled"
+        )
+}
+
+fn parse_ini_i64_prefix(value: &str) -> Option<i64> {
+    parse_ini_numeric_prefix(value).and_then(|value| {
+        if value.is_finite() && value >= i64::MIN as f64 && value <= i64::MAX as f64 {
+            Some(value.trunc() as i64)
+        } else {
+            None
+        }
+    })
+}
+
+fn parse_ini_f64_prefix(value: &str) -> Option<f64> {
+    parse_ini_numeric_prefix(value).filter(|value| value.is_finite())
+}
+
+fn parse_ini_numeric_prefix(value: &str) -> Option<f64> {
+    let value = value.trim();
+    if value.is_empty() {
+        return None;
+    }
+
+    let mut end = 0;
+    let mut saw_digit = false;
+    for (index, ch) in value.char_indices() {
+        if ch.is_ascii_digit() {
+            saw_digit = true;
+            end = index + ch.len_utf8();
+            continue;
+        }
+        if matches!(ch, '+' | '-') && index == 0 {
+            end = index + ch.len_utf8();
+            continue;
+        }
+        if ch == '.' {
+            end = index + ch.len_utf8();
+            continue;
+        }
+        break;
+    }
+
+    if !saw_digit {
+        return None;
+    }
+    value[..end].parse::<f64>().ok()
+}
+
+fn parse_ini_size_bytes(value: &str) -> Option<i64> {
+    let trimmed = value.trim();
+    let number = parse_ini_i64_prefix(trimmed)?;
+    let suffix = trimmed
+        .chars()
+        .rev()
+        .find(|ch| ch.is_ascii_alphabetic())
+        .map(|ch| ch.to_ascii_lowercase());
+    let multiplier = match suffix {
+        Some('g') => 1024_i64 * 1024 * 1024,
+        Some('m') => 1024_i64 * 1024,
+        Some('k') => 1024_i64,
+        _ => 1024_i64 * 1024,
+    };
+    number.checked_mul(multiplier)
+}
+
+fn opcache_default_i64(name: &str) -> i64 {
+    opcache_default_ini_value(name)
+        .and_then(parse_ini_i64_prefix)
+        .unwrap_or(0)
+}
+
+fn opcache_default_f64(name: &str) -> f64 {
+    opcache_default_ini_value(name)
+        .and_then(parse_ini_f64_prefix)
+        .unwrap_or(0.0)
+}
+
+fn opcache_path_key(path: &str) -> String {
+    let path = local_filesystem_metadata_path(path);
+    fs::canonicalize(&path)
+        .unwrap_or(path)
+        .to_string_lossy()
+        .into_owned()
+}
+
+fn opcache_script_status_entry(path: &str) -> Value {
+    let mut entry = PhpArray::new();
+    entry.insert("full_path".to_string(), Value::String(path.to_string()));
+    entry.insert("hits".to_string(), Value::Int(0));
+    entry.insert("memory_consumption".to_string(), Value::Int(0));
+    entry.insert("last_used".to_string(), Value::String(String::new()));
+    entry.insert("last_used_timestamp".to_string(), Value::Int(0));
+    entry.insert("timestamp".to_string(), Value::Int(0));
+    Value::Array(entry)
 }
 
 fn normalize_ini_name(name: &str) -> String {
