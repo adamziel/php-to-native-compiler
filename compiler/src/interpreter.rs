@@ -77492,6 +77492,18 @@ fn magic_method_startup_diagnostics(
     }
 
     if !diagnostics.has_fatal() {
+        collect_static_parameter_type_startup_diagnostics(&mut diagnostics, program, source_file);
+    }
+
+    if !diagnostics.has_fatal() {
+        collect_reserved_qualified_type_name_startup_diagnostics(
+            &mut diagnostics,
+            program,
+            source_file,
+        );
+    }
+
+    if !diagnostics.has_fatal() {
         collect_union_redundant_type_startup_diagnostics(&mut diagnostics, program, source_file);
     }
 
@@ -77501,6 +77513,18 @@ fn magic_method_startup_diagnostics(
 
     if !diagnostics.has_fatal() {
         collect_parameter_default_startup_diagnostics(&mut diagnostics, program, source_file);
+    }
+
+    if !diagnostics.has_fatal() {
+        collect_relative_type_scope_startup_diagnostics(&mut diagnostics, program, source_file);
+    }
+
+    if !diagnostics.has_fatal() {
+        collect_trait_intersection_relative_type_startup_diagnostics(
+            &mut diagnostics,
+            program,
+            source_file,
+        );
     }
 
     if !diagnostics.has_fatal() {
@@ -77726,6 +77750,371 @@ struct UnionTypePart {
     key: String,
     display: String,
     kind: UnionTypePartKind,
+}
+
+fn collect_static_parameter_type_startup_diagnostics(
+    diagnostics: &mut MagicMethodStartupDiagnostics,
+    program: &Program,
+    source_file: Option<&str>,
+) {
+    for stmt in &program.statements {
+        match stmt {
+            Stmt::Function(function) if !function.is_nested => {
+                if let Some((message, line)) = static_parameter_type_startup_diagnostic(function) {
+                    diagnostics.set_fatal(message, source_file, line);
+                    return;
+                }
+            }
+            Stmt::Class(class) if !class.is_nested => {
+                for member in &class.members {
+                    let ClassMember::Method(method) = member else {
+                        continue;
+                    };
+                    if let Some((message, line)) =
+                        static_parameter_type_startup_diagnostic(&method.function)
+                    {
+                        diagnostics.set_fatal(message, source_file, line);
+                        return;
+                    }
+                }
+            }
+            Stmt::Interface(interface) => {
+                for method in &interface.methods {
+                    if let Some((message, line)) =
+                        static_parameter_type_startup_diagnostic(&method.function)
+                    {
+                        diagnostics.set_fatal(message, source_file, line);
+                        return;
+                    }
+                }
+            }
+            Stmt::Trait(trait_decl) => {
+                for method in &trait_decl.methods {
+                    if let Some((message, line)) =
+                        static_parameter_type_startup_diagnostic(&method.function)
+                    {
+                        diagnostics.set_fatal(message, source_file, line);
+                        return;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn static_parameter_type_startup_diagnostic(function: &FunctionDecl) -> Option<(String, usize)> {
+    function.params.iter().find_map(|param| {
+        let type_decl = param.type_decl.as_ref()?;
+        if type_decl_contains_name(&type_decl.text, "static") {
+            Some((
+                "Cannot use the static modifier on a parameter".to_string(),
+                type_decl.span.line,
+            ))
+        } else {
+            None
+        }
+    })
+}
+
+fn collect_reserved_qualified_type_name_startup_diagnostics(
+    diagnostics: &mut MagicMethodStartupDiagnostics,
+    program: &Program,
+    source_file: Option<&str>,
+) {
+    for stmt in &program.statements {
+        match stmt {
+            Stmt::Function(function) if !function.is_nested => {
+                if let Some((message, line)) =
+                    function_reserved_qualified_type_name_diagnostic(function)
+                {
+                    diagnostics.set_fatal(message, source_file, line);
+                    return;
+                }
+            }
+            Stmt::Class(class) if !class.is_nested => {
+                for member in &class.members {
+                    match member {
+                        ClassMember::Property(property) => {
+                            if let Some((message, line)) =
+                                type_decl_reserved_qualified_type_name_diagnostic(
+                                    property.type_decl.as_ref(),
+                                )
+                            {
+                                diagnostics.set_fatal(message, source_file, line);
+                                return;
+                            }
+                        }
+                        ClassMember::Method(method) => {
+                            if let Some((message, line)) =
+                                function_reserved_qualified_type_name_diagnostic(&method.function)
+                            {
+                                diagnostics.set_fatal(message, source_file, line);
+                                return;
+                            }
+                        }
+                        ClassMember::Constant(_) => {}
+                    }
+                }
+            }
+            Stmt::Interface(interface) => {
+                for property in &interface.properties {
+                    if let Some((message, line)) = type_decl_reserved_qualified_type_name_diagnostic(
+                        property.type_decl.as_ref(),
+                    ) {
+                        diagnostics.set_fatal(message, source_file, line);
+                        return;
+                    }
+                }
+                for method in &interface.methods {
+                    if let Some((message, line)) =
+                        function_reserved_qualified_type_name_diagnostic(&method.function)
+                    {
+                        diagnostics.set_fatal(message, source_file, line);
+                        return;
+                    }
+                }
+            }
+            Stmt::Trait(trait_decl) => {
+                for property in &trait_decl.properties {
+                    if let Some((message, line)) = type_decl_reserved_qualified_type_name_diagnostic(
+                        property.type_decl.as_ref(),
+                    ) {
+                        diagnostics.set_fatal(message, source_file, line);
+                        return;
+                    }
+                }
+                for method in &trait_decl.methods {
+                    if let Some((message, line)) =
+                        function_reserved_qualified_type_name_diagnostic(&method.function)
+                    {
+                        diagnostics.set_fatal(message, source_file, line);
+                        return;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn function_reserved_qualified_type_name_diagnostic(
+    function: &FunctionDecl,
+) -> Option<(String, usize)> {
+    function
+        .params
+        .iter()
+        .find_map(|param| {
+            type_decl_reserved_qualified_type_name_diagnostic(param.type_decl.as_ref())
+        })
+        .or_else(|| {
+            type_decl_reserved_qualified_type_name_diagnostic(function.return_type.as_ref())
+        })
+}
+
+fn type_decl_reserved_qualified_type_name_diagnostic(
+    type_decl: Option<&TypeDecl>,
+) -> Option<(String, usize)> {
+    let type_decl = type_decl?;
+    let name = reserved_qualified_type_name(&type_decl.text)?;
+    Some((
+        format!("Cannot use \"{name}\" as a type name as it is reserved"),
+        type_decl.span.line,
+    ))
+}
+
+fn reserved_qualified_type_name(type_decl: &str) -> Option<&str> {
+    type_decl
+        .split(['|', '&'])
+        .find_map(reserved_qualified_type_part)
+}
+
+fn reserved_qualified_type_part(part: &str) -> Option<&str> {
+    let name = type_decl_normalized_part(part);
+    if !name.contains('\\') {
+        return None;
+    }
+    let segment = name.rsplit('\\').next().unwrap_or(name);
+    if is_reserved_special_class_name(segment) {
+        Some(name)
+    } else {
+        None
+    }
+}
+
+fn collect_relative_type_scope_startup_diagnostics(
+    diagnostics: &mut MagicMethodStartupDiagnostics,
+    program: &Program,
+    source_file: Option<&str>,
+) {
+    for stmt in &program.statements {
+        match stmt {
+            Stmt::Function(function) if !function.is_nested => {
+                if let Some((message, line)) = function_relative_type_scope_diagnostic(
+                    function,
+                    RelativeTypeScope::NoClassScope,
+                ) {
+                    diagnostics.set_fatal(message, source_file, line);
+                    return;
+                }
+            }
+            Stmt::Class(class) if !class.is_nested => {
+                if class.parent.is_none() {
+                    for member in &class.members {
+                        let ClassMember::Method(method) = member else {
+                            continue;
+                        };
+                        if let Some((message, line)) = function_relative_type_scope_diagnostic(
+                            &method.function,
+                            RelativeTypeScope::ClassWithoutParent,
+                        ) {
+                            diagnostics.set_fatal(message, source_file, line);
+                            return;
+                        }
+                    }
+                }
+            }
+            Stmt::Interface(interface) => {
+                for method in &interface.methods {
+                    if let Some((message, line)) = function_relative_type_scope_diagnostic(
+                        &method.function,
+                        RelativeTypeScope::ClassWithoutParent,
+                    ) {
+                        diagnostics.set_fatal(message, source_file, line);
+                        return;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RelativeTypeScope {
+    NoClassScope,
+    ClassWithoutParent,
+}
+
+fn function_relative_type_scope_diagnostic(
+    function: &FunctionDecl,
+    scope: RelativeTypeScope,
+) -> Option<(String, usize)> {
+    function
+        .params
+        .iter()
+        .find_map(|param| {
+            relative_type_scope_message(param.type_decl.as_ref()?, scope)
+                .map(|message| (message, param.span.line))
+        })
+        .or_else(|| {
+            let return_type = function.return_type.as_ref()?;
+            relative_type_scope_message(return_type, scope)
+                .map(|message| (message, return_type.span.line))
+        })
+}
+
+fn relative_type_scope_message(type_decl: &TypeDecl, scope: RelativeTypeScope) -> Option<String> {
+    let relative_type = relative_type_name_for_scope(&type_decl.text, scope)?;
+    let message = match scope {
+        RelativeTypeScope::NoClassScope => {
+            format!("Cannot use \"{relative_type}\" when no class scope is active")
+        }
+        RelativeTypeScope::ClassWithoutParent => {
+            format!("Cannot use \"{relative_type}\" when current class scope has no parent")
+        }
+    };
+    Some(message)
+}
+
+fn relative_type_name_for_scope(type_decl: &str, scope: RelativeTypeScope) -> Option<&str> {
+    type_decl
+        .split(['|', '&'])
+        .find_map(|part| relative_type_part_for_scope(part, scope))
+}
+
+fn relative_type_part_for_scope(part: &str, scope: RelativeTypeScope) -> Option<&str> {
+    let name = type_decl_normalized_part(part);
+    match (scope, name.to_ascii_lowercase().as_str()) {
+        (RelativeTypeScope::NoClassScope, "self" | "parent" | "static") => Some(name),
+        (RelativeTypeScope::ClassWithoutParent, "parent") => Some(name),
+        _ => None,
+    }
+}
+
+fn type_decl_contains_name(type_decl: &str, needle: &str) -> bool {
+    type_decl
+        .split(['|', '&'])
+        .any(|part| type_decl_normalized_part(part).eq_ignore_ascii_case(needle))
+}
+
+fn type_decl_normalized_part(part: &str) -> &str {
+    let name = part.trim();
+    let name = name.strip_prefix('?').unwrap_or(name);
+    name.strip_prefix('\\').unwrap_or(name)
+}
+
+fn collect_trait_intersection_relative_type_startup_diagnostics(
+    diagnostics: &mut MagicMethodStartupDiagnostics,
+    program: &Program,
+    source_file: Option<&str>,
+) {
+    for stmt in &program.statements {
+        let Stmt::Trait(trait_decl) = stmt else {
+            continue;
+        };
+        for property in &trait_decl.properties {
+            if let Some((message, line)) =
+                type_decl_trait_intersection_relative_type_diagnostic(property.type_decl.as_ref())
+            {
+                diagnostics.set_fatal(message, source_file, line);
+                return;
+            }
+        }
+        for method in &trait_decl.methods {
+            if let Some((message, line)) =
+                function_trait_intersection_relative_type_diagnostic(&method.function)
+            {
+                diagnostics.set_fatal(message, source_file, line);
+                return;
+            }
+        }
+    }
+}
+
+fn function_trait_intersection_relative_type_diagnostic(
+    function: &FunctionDecl,
+) -> Option<(String, usize)> {
+    function
+        .params
+        .iter()
+        .find_map(|param| {
+            type_decl_trait_intersection_relative_type_diagnostic(param.type_decl.as_ref())
+        })
+        .or_else(|| {
+            type_decl_trait_intersection_relative_type_diagnostic(function.return_type.as_ref())
+        })
+}
+
+fn type_decl_trait_intersection_relative_type_diagnostic(
+    type_decl: Option<&TypeDecl>,
+) -> Option<(String, usize)> {
+    let type_decl = type_decl?;
+    let display = trait_intersection_relative_type_display(&type_decl.text)?;
+    Some((
+        format!("Type {display} cannot be part of an intersection type"),
+        type_decl.span.line,
+    ))
+}
+
+fn trait_intersection_relative_type_display(type_decl: &str) -> Option<&str> {
+    if !type_decl.contains('&') || type_decl.contains('|') {
+        return None;
+    }
+    type_decl
+        .split('&')
+        .map(type_decl_normalized_part)
+        .find(|part| matches!(part.to_ascii_lowercase().as_str(), "parent" | "self"))
 }
 
 fn collect_union_redundant_type_startup_diagnostics(

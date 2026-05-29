@@ -446,10 +446,7 @@ impl Parser {
         if self.match_token(|kind| matches!(kind, TokenKind::Question)) {
             text.push('?');
         }
-        if self.check(|kind| matches!(kind, TokenKind::LParen)) {
-            return Err(self.error_at(self.peek().span, unsupported_dnf_type_message()));
-        }
-        self.parse_type_name(&mut text, message)?;
+        self.parse_type_factor(&mut text, message)?;
 
         loop {
             let separator = match &self.peek().kind {
@@ -463,13 +460,32 @@ impl Parser {
             };
             self.advance();
             text.push(separator);
-            if self.check(|kind| matches!(kind, TokenKind::LParen)) {
-                return Err(self.error_at(self.peek().span, unsupported_dnf_type_message()));
-            }
-            self.parse_type_name(&mut text, message)?;
+            self.parse_type_factor(&mut text, message)?;
         }
 
         Ok(TypeDecl { text, span })
+    }
+
+    fn parse_type_factor(&mut self, text: &mut String, message: &'static str) -> CompileResult<()> {
+        if !self.match_token(|kind| matches!(kind, TokenKind::LParen)) {
+            return self.parse_type_name(text, message);
+        }
+
+        text.push('(');
+        self.parse_type_name(text, message)?;
+        while self.match_token(|kind| matches!(kind, TokenKind::Ampersand)) {
+            if matches!(self.peek().kind, TokenKind::Variable(_)) {
+                return Err(self.error_at(self.previous().span, unsupported_dnf_type_message()));
+            }
+            text.push('&');
+            self.parse_type_name(text, message)?;
+        }
+        self.consume_keyword(
+            TokenKind::RParen,
+            "expected ')' after parenthesized intersection type",
+        )?;
+        text.push(')');
+        Ok(())
     }
 
     fn parse_type_name(&mut self, text: &mut String, message: &'static str) -> CompileResult<()> {
