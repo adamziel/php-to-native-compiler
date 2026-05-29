@@ -64664,6 +64664,82 @@ impl Interpreter {
         ))
     }
 
+    fn call_is_executable(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("is_executable", args, 1, span)?;
+        let Some(path) =
+            self.filesystem_scalar_path_argument("is_executable", "filename", &args[0], span)?
+        else {
+            return Ok(Value::Bool(false));
+        };
+        if path.is_empty() || path.contains('\0') {
+            return Ok(Value::Bool(false));
+        }
+        if path.contains("://") {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "is_executable()",
+                    "stream wrappers are not supported in the current subset",
+                ),
+            ));
+        }
+        let filesystem_path =
+            self.resolve_local_filesystem_operation_path("is_executable", &path, false, span)?;
+        if !self.enforce_bounded_open_basedir("is_executable()", &path, &filesystem_path, span)? {
+            return Ok(Value::Bool(false));
+        }
+        Ok(Value::Bool(
+            fs::metadata(&filesystem_path)
+                .map(|metadata| filesystem_mode_has_owner_execute(&metadata))
+                .unwrap_or(false),
+        ))
+    }
+
+    fn call_disk_space_builtin(
+        &mut self,
+        args: &[Value],
+        function: &str,
+        total: bool,
+        span: Span,
+    ) -> CompileResult<Value> {
+        expect_arity(function, args, 1, span)?;
+        let Some(path) =
+            self.filesystem_scalar_path_argument(function, "directory", &args[0], span)?
+        else {
+            return Ok(Value::Bool(false));
+        };
+        if path.contains('\0') {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{function}()"),
+                    "Argument #1 ($directory) must not contain any null bytes",
+                ),
+            ));
+        }
+        let filesystem_path =
+            self.resolve_local_filesystem_operation_path(function, &path, false, span)?;
+        if !self.enforce_bounded_open_basedir(
+            &format!("{function}()"),
+            &path,
+            &filesystem_path,
+            span,
+        )? {
+            return Ok(Value::Bool(false));
+        }
+        if fs::metadata(&filesystem_path).is_err() {
+            self.emit_filesystem_display_warning(function, "No such file or directory", span)?;
+            return Ok(Value::Bool(false));
+        }
+        match filesystem_disk_space_bytes(&filesystem_path, total) {
+            Some(bytes) => Ok(Value::Float(bytes)),
+            None => {
+                self.emit_filesystem_display_warning(function, "No such file or directory", span)?;
+                Ok(Value::Bool(false))
+            }
+        }
+    }
+
     fn call_readlink(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("readlink", args, 1, span)?;
         let Some(path) =
@@ -70930,6 +71006,14 @@ impl Interpreter {
                 span,
             ),
             "filetype" => self.call_filetype(&args, span),
+            "is_executable" => self.call_is_executable(&args, span),
+            "disk_free_space" => {
+                self.call_disk_space_builtin(&args, "disk_free_space", false, span)
+            }
+            "diskfreespace" => self.call_disk_space_builtin(&args, "diskfreespace", false, span),
+            "disk_total_space" => {
+                self.call_disk_space_builtin(&args, "disk_total_space", true, span)
+            }
             "clearstatcache" => {
                 if args.len() > 2 {
                     return Err(runtime_error(
@@ -81969,6 +82053,10 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
             Some(format!("{function}: {message}"))
         }
         (
+            "disk_free_space()" | "diskfreespace()" | "disk_total_space()",
+            "Argument #1 ($directory) must not contain any null bytes",
+        ) => Some(format!("{function}: {message}")),
+        (
             "timezone_identifiers_list()",
             "Argument #2 ($countryCode) must be a two-letter ISO 3166-1 compatible country code when argument #1 ($timezoneGroup) is DateTimeZone::PER_COUNTRY",
         ) => Some(
@@ -82583,6 +82671,10 @@ fn is_builtin(name: &str) -> bool {
             | "fileowner"
             | "filegroup"
             | "filetype"
+            | "is_executable"
+            | "disk_free_space"
+            | "diskfreespace"
+            | "disk_total_space"
             | "realpath"
             | "realpath_cache_get"
             | "realpath_cache_size"
@@ -93639,6 +93731,66 @@ fn filesystem_mode_bits(metadata: &fs::Metadata) -> i64 {
     } else {
         0o666
     }
+}
+
+#[cfg(unix)]
+fn filesystem_mode_has_owner_execute(metadata: &fs::Metadata) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+
+    metadata.permissions().mode() & 0o100 != 0
+}
+
+#[cfg(not(unix))]
+fn filesystem_mode_has_owner_execute(_metadata: &fs::Metadata) -> bool {
+    false
+}
+
+#[cfg(unix)]
+fn filesystem_disk_space_bytes(path: &Path, total: bool) -> Option<f64> {
+    use std::ffi::CString;
+    use std::mem::MaybeUninit;
+    use std::os::raw::{c_char, c_int, c_ulong};
+    use std::os::unix::ffi::OsStrExt;
+
+    #[repr(C)]
+    struct Statvfs {
+        f_bsize: c_ulong,
+        f_frsize: c_ulong,
+        f_blocks: c_ulong,
+        f_bfree: c_ulong,
+        f_bavail: c_ulong,
+        f_files: c_ulong,
+        f_ffree: c_ulong,
+        f_favail: c_ulong,
+        f_fsid: c_ulong,
+        f_flag: c_ulong,
+        f_namemax: c_ulong,
+        __f_spare: [c_int; 6],
+    }
+
+    unsafe extern "C" {
+        fn statvfs(path: *const c_char, buf: *mut Statvfs) -> c_int;
+    }
+
+    let path = CString::new(path.as_os_str().as_bytes()).ok()?;
+    let mut stat = MaybeUninit::<Statvfs>::uninit();
+    let status = unsafe { statvfs(path.as_ptr(), stat.as_mut_ptr()) };
+    if status != 0 {
+        return None;
+    }
+    let stat = unsafe { stat.assume_init() };
+    let block_size = if stat.f_frsize == 0 {
+        stat.f_bsize
+    } else {
+        stat.f_frsize
+    };
+    let blocks = if total { stat.f_blocks } else { stat.f_bavail };
+    Some((blocks as f64) * (block_size as f64))
+}
+
+#[cfg(not(unix))]
+fn filesystem_disk_space_bytes(_path: &Path, _total: bool) -> Option<f64> {
+    None
 }
 
 #[cfg(unix)]

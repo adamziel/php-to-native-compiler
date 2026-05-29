@@ -195,6 +195,10 @@ impl<'a> Lexer<'a> {
                 '$' => self.lex_variable(span)?,
                 '\'' | '"' => self.lex_string(ch, span)?,
                 '0'..='9' => self.lex_number(ch, span)?,
+                'b' | 'B' if matches!(self.peek(), Some('\'' | '"')) => {
+                    let quote = self.advance();
+                    self.lex_string(quote, span)?
+                }
                 'a'..='z' | 'A'..='Z' | '_' => self.lex_identifier(ch),
                 '(' => TokenKind::LParen,
                 ')' => TokenKind::RParen,
