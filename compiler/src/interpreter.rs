@@ -842,6 +842,25 @@ impl UserArraySortOperation {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ArrayUserCompareMode {
+    Diff,
+    Intersect,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ArrayUserCompareValueMode {
+    Native,
+    Callback,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ArrayUserCompareKeyMode {
+    Ignored,
+    Native,
+    Callback,
+}
+
 fn is_auto_global_name(name: &str) -> bool {
     matches!(
         name,
@@ -72674,6 +72693,70 @@ impl Interpreter {
                     .map(Value::Array)
                     .map_err(|error| runtime_error(span, error))
             }
+            "array_udiff" => self.call_array_user_compare(
+                name,
+                args,
+                ArrayUserCompareMode::Diff,
+                ArrayUserCompareValueMode::Callback,
+                ArrayUserCompareKeyMode::Ignored,
+                span,
+            ),
+            "array_uintersect" => self.call_array_user_compare(
+                name,
+                args,
+                ArrayUserCompareMode::Intersect,
+                ArrayUserCompareValueMode::Callback,
+                ArrayUserCompareKeyMode::Ignored,
+                span,
+            ),
+            "array_udiff_assoc" => self.call_array_user_compare(
+                name,
+                args,
+                ArrayUserCompareMode::Diff,
+                ArrayUserCompareValueMode::Callback,
+                ArrayUserCompareKeyMode::Native,
+                span,
+            ),
+            "array_uintersect_assoc" => self.call_array_user_compare(
+                name,
+                args,
+                ArrayUserCompareMode::Intersect,
+                ArrayUserCompareValueMode::Callback,
+                ArrayUserCompareKeyMode::Native,
+                span,
+            ),
+            "array_diff_uassoc" => self.call_array_user_compare(
+                name,
+                args,
+                ArrayUserCompareMode::Diff,
+                ArrayUserCompareValueMode::Native,
+                ArrayUserCompareKeyMode::Callback,
+                span,
+            ),
+            "array_intersect_uassoc" => self.call_array_user_compare(
+                name,
+                args,
+                ArrayUserCompareMode::Intersect,
+                ArrayUserCompareValueMode::Native,
+                ArrayUserCompareKeyMode::Callback,
+                span,
+            ),
+            "array_udiff_uassoc" => self.call_array_user_compare(
+                name,
+                args,
+                ArrayUserCompareMode::Diff,
+                ArrayUserCompareValueMode::Callback,
+                ArrayUserCompareKeyMode::Callback,
+                span,
+            ),
+            "array_uintersect_uassoc" => self.call_array_user_compare(
+                name,
+                args,
+                ArrayUserCompareMode::Intersect,
+                ArrayUserCompareValueMode::Callback,
+                ArrayUserCompareKeyMode::Callback,
+                span,
+            ),
             "array_unique" => match args.as_slice() {
                 [Value::Array(array)] => array
                     .unique_values_by_string()
@@ -75525,6 +75608,334 @@ impl Interpreter {
         }
 
         Ok(Value::Int(previous))
+    }
+
+    fn call_array_user_compare(
+        &mut self,
+        function_name: &str,
+        args: Vec<Value>,
+        mode: ArrayUserCompareMode,
+        value_mode: ArrayUserCompareValueMode,
+        key_mode: ArrayUserCompareKeyMode,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let callback_count = usize::from(value_mode == ArrayUserCompareValueMode::Callback)
+            + usize::from(key_mode == ArrayUserCompareKeyMode::Callback);
+        let min_args = 2 + callback_count;
+        let context = format!("{function_name}()");
+
+        if args.len() < min_args {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    context.clone(),
+                    ArityExpectation::AtLeast(min_args),
+                    args.len(),
+                ),
+            ));
+        }
+
+        let array_count = args.len() - callback_count;
+        let mut arrays = Vec::with_capacity(array_count);
+        for (index, arg) in args[..array_count].iter().enumerate() {
+            match arg {
+                Value::Array(array) => arrays.push(array.clone()),
+                other => {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            context,
+                            format!(
+                                "{} must be array, got {}",
+                                positional_argument_label(index),
+                                other.type_name()
+                            ),
+                        ),
+                    ));
+                }
+            }
+        }
+
+        let (value_callback, key_callback) = match (value_mode, key_mode) {
+            (ArrayUserCompareValueMode::Callback, ArrayUserCompareKeyMode::Callback) => {
+                (Some(&args[args.len() - 2]), Some(&args[args.len() - 1]))
+            }
+            (ArrayUserCompareValueMode::Callback, _) => (Some(&args[args.len() - 1]), None),
+            (_, ArrayUserCompareKeyMode::Callback) => (None, Some(&args[args.len() - 1])),
+            _ => (None, None),
+        };
+
+        let (left, others) = arrays
+            .split_first()
+            .expect("array user compare requires at least two arrays");
+        let mut result = PhpArray::new();
+
+        for left_entry in left.entries() {
+            let mut matched = match mode {
+                ArrayUserCompareMode::Diff => false,
+                ArrayUserCompareMode::Intersect => true,
+            };
+            for right in others {
+                let has_match = self.array_user_compare_entry_matches_any(
+                    &context,
+                    left_entry,
+                    right,
+                    value_mode,
+                    key_mode,
+                    value_callback,
+                    key_callback,
+                    span,
+                )?;
+                match mode {
+                    ArrayUserCompareMode::Diff if has_match => {
+                        matched = true;
+                        break;
+                    }
+                    ArrayUserCompareMode::Intersect if !has_match => {
+                        matched = false;
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+            let keep = match mode {
+                ArrayUserCompareMode::Diff => !matched,
+                ArrayUserCompareMode::Intersect => matched,
+            };
+
+            if keep {
+                result.insert(left_entry.key.clone(), left_entry.value_cloned());
+            }
+        }
+
+        Ok(Value::Array(result))
+    }
+
+    fn array_user_compare_entry_matches_any(
+        &mut self,
+        context: &str,
+        left_entry: &ArrayEntry,
+        right: &PhpArray,
+        value_mode: ArrayUserCompareValueMode,
+        key_mode: ArrayUserCompareKeyMode,
+        value_callback: Option<&Value>,
+        key_callback: Option<&Value>,
+        span: Span,
+    ) -> CompileResult<bool> {
+        for right_entry in right.entries() {
+            if self.array_user_compare_entries_match(
+                context,
+                left_entry,
+                right_entry,
+                value_mode,
+                key_mode,
+                value_callback,
+                key_callback,
+                span,
+            )? {
+                return Ok(true);
+            }
+        }
+
+        Ok(false)
+    }
+
+    fn array_user_compare_entries_match(
+        &mut self,
+        context: &str,
+        left: &ArrayEntry,
+        right: &ArrayEntry,
+        value_mode: ArrayUserCompareValueMode,
+        key_mode: ArrayUserCompareKeyMode,
+        value_callback: Option<&Value>,
+        key_callback: Option<&Value>,
+        span: Span,
+    ) -> CompileResult<bool> {
+        let values_match = match value_mode {
+            ArrayUserCompareValueMode::Native => Self::array_user_compare_native_values_match(
+                context,
+                left.value(),
+                right.value(),
+                span,
+            )?,
+            ArrayUserCompareValueMode::Callback => {
+                let callback =
+                    value_callback.expect("value callback exists for callback comparison");
+                self.call_array_user_compare_callback(
+                    context,
+                    callback,
+                    left.value_cloned(),
+                    right.value_cloned(),
+                    span,
+                )? == 0
+            }
+        };
+        if !values_match {
+            return Ok(false);
+        }
+
+        match key_mode {
+            ArrayUserCompareKeyMode::Ignored => Ok(true),
+            ArrayUserCompareKeyMode::Native => Ok(left.key == right.key),
+            ArrayUserCompareKeyMode::Callback => {
+                let callback = key_callback.expect("key callback exists for callback comparison");
+                Ok(self.call_array_user_compare_callback(
+                    context,
+                    callback,
+                    value_from_array_key(&left.key),
+                    value_from_array_key(&right.key),
+                    span,
+                )? == 0)
+            }
+        }
+    }
+
+    fn array_user_compare_native_values_match(
+        context: &str,
+        left: &Value,
+        right: &Value,
+        span: Span,
+    ) -> CompileResult<bool> {
+        let left = Self::array_user_compare_scalar_string_value(context, left, span)?;
+        let right = Self::array_user_compare_scalar_string_value(context, right, span)?;
+        Ok(left == right)
+    }
+
+    fn array_user_compare_scalar_string_value(
+        context: &str,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<Vec<u8>> {
+        value.php_scalar_string_bytes().ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    context,
+                    format!(
+                        "native value comparison requires scalar values in the current subset, got {}",
+                        value.type_name()
+                    ),
+                ),
+            )
+        })
+    }
+
+    fn call_array_user_compare_callback(
+        &mut self,
+        context: &str,
+        callback: &Value,
+        left: Value,
+        right: Value,
+        span: Span,
+    ) -> CompileResult<i64> {
+        let value = self.call_array_user_compare_callback_value(
+            context,
+            callback,
+            vec![left, right],
+            span,
+        )?;
+        Self::array_user_compare_callback_result_to_int(context, value, span)
+    }
+
+    fn call_array_user_compare_callback_value(
+        &mut self,
+        context: &str,
+        callback: &Value,
+        args: Vec<Value>,
+        span: Span,
+    ) -> CompileResult<Value> {
+        match callback {
+            Value::String(callback_name) => {
+                if let Some((class_name, method_name)) =
+                    static_method_callable_string(callback_name)
+                {
+                    let callback =
+                        static_method_array_callable_value(class_name, method_name, span)?;
+                    return self.call_array_callable_with_values_with_context(
+                        &callback,
+                        args,
+                        span,
+                        true,
+                        context,
+                    );
+                }
+
+                if let Some(error) = forbidden_dynamic_builtin_call_error(callback_name, span) {
+                    return Err(error);
+                }
+                let callable = self.lookup_function(callback_name).ok_or_else(|| {
+                    runtime_error(
+                        span,
+                        RuntimeError::undefined_function(callable_name(callback_name)),
+                    )
+                })?;
+                match callable {
+                    Callable::Builtin(key) => self.call_builtin(&key, args, span),
+                    Callable::User(function) => {
+                        let function = function.as_ref();
+                        ensure_user_function_arity_with_extra_policy(
+                            function,
+                            args.len(),
+                            span,
+                            true,
+                        )?;
+                        ensure_supported_function_signature(function, args.len(), span)?;
+                        self.ensure_user_function_call_depth(function, span)?;
+                        self.call_user_function_with_checked_values(
+                            function,
+                            args,
+                            None,
+                            None,
+                            None,
+                            Vec::new(),
+                            None,
+                        )
+                    }
+                }
+            }
+            Value::Array(callback) => self.call_array_callable_with_values_with_context(
+                callback, args, span, true, context,
+            ),
+            Value::Closure(closure) => {
+                self.invoke_closure_value(closure.clone(), args, span, context)
+            }
+            other => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    context,
+                    format!(
+                        "callback must evaluate to string, closure, or array callable in the current subset, got {}",
+                        other.type_name()
+                    ),
+                ),
+            )),
+        }
+    }
+
+    fn array_user_compare_callback_result_to_int(
+        _context: &str,
+        value: Value,
+        span: Span,
+    ) -> CompileResult<i64> {
+        match value {
+            Value::Null => Ok(0),
+            Value::Bool(value) => Ok(i64::from(value)),
+            Value::Int(value) => Ok(value),
+            Value::Float(value) => match cast_float_to_int(value, "(int)", span)? {
+                Value::Int(value) => Ok(value),
+                _ => unreachable!("float-to-int cast returns an int value"),
+            },
+            Value::String(value) => match cast_string_to_int(&value, span)? {
+                Value::Int(value) => Ok(value),
+                _ => unreachable!("string-to-int cast returns an int value"),
+            },
+            Value::BinaryString(value) => match cast_binary_string_to_int(&value, span)? {
+                Value::Int(value) => Ok(value),
+                _ => unreachable!("binary-string-to-int cast returns an int value"),
+            },
+            Value::Array(array) => Ok(i64::from(!array.is_empty())),
+            Value::Object(_) | Value::Closure(_) | Value::Resource(_) => Ok(1),
+        }
     }
 
     fn call_array_reduce(&mut self, args: Vec<Value>, span: Span) -> CompileResult<Value> {
@@ -83669,6 +84080,31 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_variadic_param("arrays", "array"),
             ],
         ),
+        "array_udiff" | "array_uintersect" | "array_udiff_assoc" | "array_uintersect_assoc" => (
+            "array",
+            vec![
+                reflection_internal_param("array", "array"),
+                reflection_internal_variadic_param("arrays", "array"),
+                reflection_internal_param("value_compare_func", "callable"),
+            ],
+        ),
+        "array_diff_uassoc" | "array_intersect_uassoc" => (
+            "array",
+            vec![
+                reflection_internal_param("array", "array"),
+                reflection_internal_variadic_param("arrays", "array"),
+                reflection_internal_param("key_compare_func", "callable"),
+            ],
+        ),
+        "array_udiff_uassoc" | "array_uintersect_uassoc" => (
+            "array",
+            vec![
+                reflection_internal_param("array", "array"),
+                reflection_internal_variadic_param("arrays", "array"),
+                reflection_internal_param("value_compare_func", "callable"),
+                reflection_internal_param("key_compare_func", "callable"),
+            ],
+        ),
         "array_pop" => (
             "mixed",
             vec![reflection_internal_reference_param("array", "array")],
@@ -86244,6 +86680,14 @@ fn is_builtin(name: &str) -> bool {
             | "array_diff_assoc"
             | "array_intersect"
             | "array_intersect_assoc"
+            | "array_udiff"
+            | "array_uintersect"
+            | "array_udiff_assoc"
+            | "array_uintersect_assoc"
+            | "array_diff_uassoc"
+            | "array_intersect_uassoc"
+            | "array_udiff_uassoc"
+            | "array_uintersect_uassoc"
             | "array_unique"
             | "array_count_values"
             | "array_sum"
