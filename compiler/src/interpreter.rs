@@ -45542,6 +45542,9 @@ impl Interpreter {
                 if key == "fgetcsv" {
                     return self.call_fgetcsv_direct(args, span, caller_scope);
                 }
+                if key == "fputcsv" {
+                    return self.call_fputcsv_direct(args, span, caller_scope);
+                }
                 let values = self.evaluate_builtin_value_call_arguments(
                     &callable_name(name),
                     args,
@@ -45683,6 +45686,9 @@ impl Interpreter {
                 if key == "fgetcsv" {
                     return self.call_fgetcsv_direct(args, span, caller_scope);
                 }
+                if key == "fputcsv" {
+                    return self.call_fputcsv_direct(args, span, caller_scope);
+                }
                 let values = self.evaluate_builtin_value_call_arguments(
                     &callable_name(name),
                     args,
@@ -45804,6 +45810,115 @@ impl Interpreter {
                 .unwrap_or_else(|| Value::String("\\".to_string())),
         ];
         self.call_fgetcsv(&normalized, span)
+    }
+
+    fn call_fputcsv_direct(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        if args.len() < 2 || args.len() > 6 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "fputcsv()",
+                    ArityExpectation::Between { min: 2, max: 6 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let mut values: Vec<Option<Value>> = vec![None, None, None, None, None, None];
+        let mut positional_index = 0_usize;
+        for arg in args {
+            match arg {
+                Expr::NamedArgument { name, expr, span } => {
+                    let Some(index) = fputcsv_parameter_index(name) else {
+                        return Err(runtime_error(
+                            *span,
+                            RuntimeError::unsupported_call(
+                                "fputcsv()",
+                                format!("named argument ${name} does not match a supported fputcsv() parameter in the current subset"),
+                            ),
+                        ));
+                    };
+                    if values[index].is_some() || index < positional_index {
+                        return Err(runtime_error(
+                            *span,
+                            RuntimeError::unsupported_call(
+                                "fputcsv()",
+                                format!("Named parameter ${name} overwrites previous argument"),
+                            ),
+                        ));
+                    }
+                    values[index] =
+                        Some(self.evaluate_by_value_argument_with_cow_source(expr, caller_scope)?);
+                }
+                Expr::SpreadArgument { span, .. } => {
+                    return Err(runtime_error(
+                        *span,
+                        RuntimeError::unsupported_call(
+                            "fputcsv()",
+                            "argument unpacking is not implemented for fputcsv() in the current subset",
+                        ),
+                    ));
+                }
+                expr => {
+                    if positional_index >= values.len() || values[positional_index].is_some() {
+                        return Err(runtime_error(
+                            expr.span(),
+                            RuntimeError::arity_mismatch(
+                                "fputcsv()",
+                                ArityExpectation::Between { min: 2, max: 6 },
+                                args.len(),
+                            ),
+                        ));
+                    }
+                    values[positional_index] =
+                        Some(self.evaluate_by_value_argument_with_cow_source(expr, caller_scope)?);
+                    positional_index += 1;
+                }
+            }
+        }
+
+        let Some(stream) = values[0].take() else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "fputcsv()",
+                    ArityExpectation::Between { min: 2, max: 6 },
+                    0,
+                ),
+            ));
+        };
+        let Some(fields) = values[1].take() else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "fputcsv()",
+                    ArityExpectation::Between { min: 2, max: 6 },
+                    1,
+                ),
+            ));
+        };
+        let normalized = vec![
+            stream,
+            fields,
+            values[2]
+                .take()
+                .unwrap_or_else(|| Value::String(",".to_string())),
+            values[3]
+                .take()
+                .unwrap_or_else(|| Value::String("\"".to_string())),
+            values[4]
+                .take()
+                .unwrap_or_else(|| Value::String("\\".to_string())),
+            values[5]
+                .take()
+                .unwrap_or_else(|| Value::String("\n".to_string())),
+        ];
+        self.call_fputcsv(&normalized, span)
     }
 
     fn evaluate_builtin_value_call_arguments(
@@ -63175,6 +63290,64 @@ impl Interpreter {
         Ok(Value::Int(bytes.len() as i64))
     }
 
+    fn call_file_builtin(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if args.is_empty() || args.len() > 3 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "file()",
+                    ArityExpectation::Between { min: 1, max: 3 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let path = self.filesystem_path_argument("file", "filename", &args[0], span)?;
+        let flags = self.filesystem_flags_argument("file", "flags", args.get(1), span)?;
+        let allowed_flags =
+            PHP_FILE_USE_INCLUDE_PATH | PHP_FILE_IGNORE_NEW_LINES | PHP_FILE_SKIP_EMPTY_LINES;
+        if flags & !allowed_flags != 0 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "file()",
+                    "Argument #2 ($flags) must be a valid flag value",
+                ),
+            ));
+        }
+        if let Some(context) = args.get(2) {
+            self.expect_optional_stream_context_resource("file", context, span)?;
+        }
+        if !self.ensure_stream_wrapper_can_open_path("file()", &path, span)? {
+            return Ok(Value::Bool(false));
+        }
+        let filesystem_path = self.resolve_local_filesystem_operation_path(
+            "file",
+            &path,
+            flags & PHP_FILE_USE_INCLUDE_PATH != 0,
+            span,
+        )?;
+        if !self.enforce_bounded_open_basedir("file()", &path, &filesystem_path, span)? {
+            return Ok(Value::Bool(false));
+        }
+        let contents = match fs::read_to_string(&filesystem_path) {
+            Ok(contents) => contents,
+            Err(error) => {
+                self.emit_warning(
+                    "file()",
+                    format!(
+                        "{path}: Failed to open stream: {}",
+                        Self::filesystem_io_warning_message(&error)
+                    ),
+                    span,
+                )?;
+                return Ok(Value::Bool(false));
+            }
+        };
+        self.cache_bounded_realpath_entry_for_local_path(&filesystem_path);
+        Ok(Value::Array(file_lines_array(&contents, flags, span)?))
+    }
+
     fn call_unlink(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         if !(1..=2).contains(&args.len()) {
             return Err(runtime_error(
@@ -64371,6 +64544,128 @@ impl Interpreter {
             }
         }
         Ok(Value::Array(array))
+    }
+
+    fn call_fputcsv(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if args.len() < 2 || args.len() > 6 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "fputcsv()",
+                    ArityExpectation::Between { min: 2, max: 6 },
+                    args.len(),
+                ),
+            ));
+        }
+        let fields = match &args[1] {
+            Value::Array(fields) => fields.clone(),
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "fputcsv()",
+                        format!(
+                            "fields argument must be array in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+        };
+        let delimiter =
+            csv_single_character_argument("fputcsv()", "separator", args.get(2), ',', false, span)?
+                .expect("non-empty separator has a character");
+        let enclosure =
+            csv_single_character_argument("fputcsv()", "enclosure", args.get(3), '"', false, span)?
+                .expect("non-empty enclosure has a character");
+        let escape =
+            csv_single_character_argument("fputcsv()", "escape", args.get(4), '\\', true, span)?;
+        let eol = match args.get(5) {
+            Some(Value::String(value)) => value.clone(),
+            Some(other) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "fputcsv()",
+                        format!(
+                            "eol argument must be string in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+            None => "\n".to_string(),
+        };
+
+        let mut field_values = Vec::with_capacity(fields.len());
+        for entry in fields.entries() {
+            field_values.push(self.value_to_echo_string(entry.value_cloned(), span)?);
+        }
+        let line = format_csv_record(&field_values, delimiter, enclosure, escape, &eol);
+        match self.stream_mut("fputcsv", &args[0], span)? {
+            StreamResource::Memory(stream) => {
+                if !stream.writable {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "fputcsv()",
+                            "stream is not writable in the current subset",
+                        ),
+                    ));
+                }
+                if stream.append {
+                    stream.position = stream.buffer.len();
+                }
+                if stream.position > stream.buffer.len() {
+                    stream
+                        .buffer
+                        .push_str(&"\0".repeat(stream.position - stream.buffer.len()));
+                }
+                let end = stream.position + line.len();
+                if end <= stream.buffer.len() {
+                    stream.buffer.replace_range(stream.position..end, &line);
+                } else if stream.position < stream.buffer.len() {
+                    stream.buffer.replace_range(stream.position.., &line);
+                } else {
+                    stream.buffer.push_str(&line);
+                }
+                stream.position = end;
+                stream.eof = false;
+            }
+            StreamResource::File(stream) => {
+                if !stream.writable {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "fputcsv()",
+                            "stream is not writable in the current subset",
+                        ),
+                    ));
+                }
+                if stream.append {
+                    stream.file.seek(SeekFrom::End(0)).map_err(|error| {
+                        runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "fputcsv()",
+                                format!("local file stream seek failed: {error}"),
+                            ),
+                        )
+                    })?;
+                }
+                stream.file.write_all(line.as_bytes()).map_err(|error| {
+                    runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "fputcsv()",
+                            format!("local file stream write failed: {error}"),
+                        ),
+                    )
+                })?;
+                stream.eof = false;
+            }
+        }
+        Ok(Value::Int(line.len() as i64))
     }
 
     fn read_stream_line_for_csv(
@@ -68096,6 +68391,7 @@ impl Interpreter {
             "move_uploaded_file" => self.call_move_uploaded_file(&args, span),
             "file_put_contents" => self.call_file_put_contents(&args, span),
             "readfile" => self.call_readfile(&args, span),
+            "file" => self.call_file_builtin(&args, span),
             "unlink" => self.call_unlink(&args, span),
             "mkdir" => self.call_mkdir(&args, span),
             "rmdir" => self.call_rmdir(&args, span),
@@ -68321,9 +68617,11 @@ impl Interpreter {
             "stream_context_set_option" => self.call_stream_context_set_option(&args, span),
             "stream_context_set_params" => self.call_stream_context_set_params(&args, span),
             "fwrite" => self.call_fwrite(&args, span),
+            "fputs" => self.call_fwrite(&args, span),
             "fgetc" => self.call_fgetc(&args, span),
             "fgets" => self.call_fgets(&args, span),
             "fgetcsv" => self.call_fgetcsv(&args, span),
+            "fputcsv" => self.call_fputcsv(&args, span),
             "fread" => self.call_fread(&args, span),
             "rewind" => self.call_rewind(&args, span),
             "stream_get_contents" => self.call_stream_get_contents(&args, span),
@@ -79115,6 +79413,18 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
             "timezone_identifiers_list(): Argument #2 ($countryCode) must be a two-letter ISO 3166-1 compatible country code when argument #1 ($timezoneGroup) is DateTimeZone::PER_COUNTRY"
                 .to_string(),
         ),
+        ("file()", "Argument #2 ($flags) must be a valid flag value") => {
+            Some("file(): Argument #2 ($flags) must be a valid flag value".to_string())
+        }
+        ("fputcsv()", "separator argument must contain exactly one character") => {
+            Some("fputcsv(): Argument #3 ($separator) must be a single character".to_string())
+        }
+        ("fputcsv()", "enclosure argument must contain exactly one character") => {
+            Some("fputcsv(): Argument #4 ($enclosure) must be a single character".to_string())
+        }
+        ("fputcsv()", "escape argument must contain exactly one character") => {
+            Some("fputcsv(): Argument #5 ($escape) must be empty or a single character".to_string())
+        }
         _ => None,
     }
 }
@@ -79620,6 +79930,7 @@ fn is_builtin(name: &str) -> bool {
             | "move_uploaded_file"
             | "file_put_contents"
             | "readfile"
+            | "file"
             | "unlink"
             | "mkdir"
             | "rmdir"
@@ -79650,9 +79961,11 @@ fn is_builtin(name: &str) -> bool {
             | "stream_context_set_option"
             | "stream_context_set_params"
             | "fwrite"
+            | "fputs"
             | "fgetc"
             | "fgets"
             | "fgetcsv"
+            | "fputcsv"
             | "fread"
             | "rewind"
             | "stream_get_contents"
@@ -79762,6 +80075,18 @@ fn fgetcsv_parameter_index(name: &str) -> Option<usize> {
     }
 }
 
+fn fputcsv_parameter_index(name: &str) -> Option<usize> {
+    match name {
+        "stream" | "handle" => Some(0),
+        "fields" => Some(1),
+        "separator" | "delimiter" => Some(2),
+        "enclosure" => Some(3),
+        "escape" => Some(4),
+        "eol" => Some(5),
+        _ => None,
+    }
+}
+
 fn csv_single_character_argument(
     function: &str,
     label: &str,
@@ -79866,6 +80191,72 @@ fn parse_bounded_csv_record(
 
     fields.push(field);
     fields
+}
+
+fn format_csv_record(
+    fields: &[String],
+    delimiter: char,
+    enclosure: char,
+    escape: Option<char>,
+    eol: &str,
+) -> String {
+    let mut output = String::new();
+    for (index, field) in fields.iter().enumerate() {
+        if index > 0 {
+            output.push(delimiter);
+        }
+        let should_enclose = field.is_empty()
+            || field.chars().any(|ch| {
+                ch == delimiter
+                    || ch == enclosure
+                    || matches!(ch, '\n' | '\r' | '\t' | ' ')
+                    || Some(ch) == escape
+            });
+        if should_enclose {
+            output.push(enclosure);
+            for ch in field.chars() {
+                if ch == enclosure {
+                    output.push(enclosure);
+                    output.push(enclosure);
+                } else {
+                    output.push(ch);
+                }
+            }
+            output.push(enclosure);
+        } else {
+            output.push_str(field);
+        }
+    }
+    output.push_str(eol);
+    output
+}
+
+fn file_lines_array(contents: &str, flags: i64, span: Span) -> CompileResult<PhpArray> {
+    let ignore_new_lines = flags & PHP_FILE_IGNORE_NEW_LINES != 0;
+    let skip_empty_lines = flags & PHP_FILE_SKIP_EMPTY_LINES != 0;
+    let mut array = PhpArray::new();
+
+    for raw_line in contents.split_inclusive('\n') {
+        let mut line = raw_line.to_string();
+        if ignore_new_lines {
+            if line.ends_with('\n') {
+                line.pop();
+                if line.ends_with('\r') {
+                    line.pop();
+                }
+            } else if line.ends_with('\r') {
+                line.pop();
+            }
+        }
+        if skip_empty_lines && line.is_empty() {
+            continue;
+        }
+        array
+            .append(Value::String(line))
+            .map_err(|error| runtime_error(span, error))?;
+    }
+
+    Ok(array)
 }
 
 fn dirname_path(path: &str, levels: i64) -> String {
@@ -80019,6 +80410,8 @@ const PHP_SESSION_DISABLED: i64 = 0;
 const PHP_SESSION_NONE: i64 = 1;
 const PHP_SESSION_ACTIVE: i64 = 2;
 const PHP_FILE_USE_INCLUDE_PATH: i64 = 1;
+const PHP_FILE_IGNORE_NEW_LINES: i64 = 2;
+const PHP_FILE_SKIP_EMPTY_LINES: i64 = 4;
 const PHP_LOCK_EX: i64 = 2;
 const PHP_FILE_APPEND: i64 = 8;
 const PHP_SCANDIR_SORT_ASCENDING: i64 = 0;
@@ -80077,6 +80470,8 @@ fn builtin_global_constant_value(name: &str) -> Option<Value> {
         "PHP_EOL" => Some(Value::String("\n".to_string())),
         "PATH_SEPARATOR" => Some(Value::String(INCLUDE_PATH_SEPARATOR.to_string())),
         "FILE_USE_INCLUDE_PATH" => Some(Value::Int(PHP_FILE_USE_INCLUDE_PATH)),
+        "FILE_IGNORE_NEW_LINES" => Some(Value::Int(PHP_FILE_IGNORE_NEW_LINES)),
+        "FILE_SKIP_EMPTY_LINES" => Some(Value::Int(PHP_FILE_SKIP_EMPTY_LINES)),
         "FILE_APPEND" => Some(Value::Int(PHP_FILE_APPEND)),
         "LOCK_EX" => Some(Value::Int(PHP_LOCK_EX)),
         "SCANDIR_SORT_ASCENDING" => Some(Value::Int(PHP_SCANDIR_SORT_ASCENDING)),

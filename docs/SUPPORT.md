@@ -10812,3 +10812,12 @@ Unsupported code should fail with an explicit parse, runtime, or codegen error.
   Explicit `touch()` timestamp mutation, interrupted sleeps, non-local stream
   wrappers for temporary files, Windows permission parity, and exact PHP
   temporary-name entropy/truncation diagnostics remain unsupported.
+- Additional bounded local file/CSV helpers in `phpc run`: `file()` reads local
+  filesystem paths into line arrays with `FILE_USE_INCLUDE_PATH`,
+  `FILE_IGNORE_NEW_LINES`, and `FILE_SKIP_EMPTY_LINES`; `fputs()` aliases the
+  existing `fwrite()` stream write subset; `fputcsv()` writes local/php memory
+  stream CSV records with single-character separator/enclosure and
+  empty-or-single-character escape settings, including direct named-argument
+  calls for declared CSV option names. Stream-wrapper CSV, locale/codepage
+  CSV, binary invalid-UTF-8 records, exact CSV edge diagnostics, and native
+  lowering remain unsupported.
