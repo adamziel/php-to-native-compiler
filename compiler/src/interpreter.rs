@@ -67218,10 +67218,15 @@ impl Interpreter {
             "str_pad" => call_str_pad(&args, span),
             "chunk_split" => call_chunk_split(&args, span),
             "str_split" => call_str_split(&args, span),
+            "addslashes" => self.call_addslashes(&args, span),
+            "stripslashes" => self.call_stripslashes(&args, span),
+            "addcslashes" => self.call_addcslashes(&args, span),
+            "stripcslashes" => self.call_stripcslashes(&args, span),
             "strtolower" => call_strtolower(&args, span),
             "trim" => call_trim(&args, span),
             "ltrim" => call_ltrim(&args, span),
             "rtrim" => call_rtrim(&args, span),
+            "strcmp" => call_strcmp(&args, span),
             "strcasecmp" => call_strcasecmp(&args, span),
             "strncmp" => call_strncmp(&args, span),
             "strncasecmp" => call_strncasecmp(&args, span),
@@ -77776,6 +77781,17 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_optional_int_param("length", 1),
             ],
         ),
+        "addslashes" | "stripslashes" | "stripcslashes" => (
+            "string",
+            vec![reflection_internal_param("string", "string")],
+        ),
+        "addcslashes" => (
+            "string",
+            vec![
+                reflection_internal_param("string", "string"),
+                reflection_internal_param("characters", "string"),
+            ],
+        ),
         "strtolower" => (
             "string",
             vec![reflection_internal_param("string", "string")],
@@ -77787,7 +77803,7 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_optional_string_param("characters", " \n\r\t\u{000B}\0"),
             ],
         ),
-        "strcasecmp" | "strcoll" => (
+        "strcmp" | "strcasecmp" | "strcoll" => (
             "int",
             vec![
                 reflection_internal_param("string1", "string"),
@@ -80079,10 +80095,15 @@ fn is_builtin(name: &str) -> bool {
             | "str_pad"
             | "chunk_split"
             | "str_split"
+            | "addslashes"
+            | "stripslashes"
+            | "addcslashes"
+            | "stripcslashes"
             | "strtolower"
             | "trim"
             | "ltrim"
             | "rtrim"
+            | "strcmp"
             | "strcasecmp"
             | "strncmp"
             | "strncasecmp"
@@ -86776,6 +86797,288 @@ fn call_str_split(args: &[Value], span: Span) -> CompileResult<Value> {
     Ok(Value::Array(array))
 }
 
+impl Interpreter {
+    fn call_addslashes(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("addslashes", args, 1, span)?;
+        let value =
+            self.cslashes_string_argument_bytes("addslashes()", 1, "string", &args[0], span)?;
+        Ok(interpreter_value_from_php_string_bytes(addslashes_bytes(
+            &value,
+        )))
+    }
+
+    fn call_stripslashes(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("stripslashes", args, 1, span)?;
+        let value =
+            self.cslashes_string_argument_bytes("stripslashes()", 1, "string", &args[0], span)?;
+        Ok(interpreter_value_from_php_string_bytes(stripslashes_bytes(
+            &value,
+        )))
+    }
+
+    fn call_addcslashes(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("addcslashes", args, 2, span)?;
+        let value =
+            self.cslashes_string_argument_bytes("addcslashes()", 1, "string", &args[0], span)?;
+        let characters =
+            self.cslashes_string_argument_bytes("addcslashes()", 2, "characters", &args[1], span)?;
+        let mask = self.addcslashes_mask(&characters, span)?;
+        Ok(interpreter_value_from_php_string_bytes(addcslashes_bytes(
+            &value, &mask,
+        )))
+    }
+
+    fn call_stripcslashes(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("stripcslashes", args, 1, span)?;
+        let value =
+            self.cslashes_string_argument_bytes("stripcslashes()", 1, "string", &args[0], span)?;
+        Ok(interpreter_value_from_php_string_bytes(
+            stripcslashes_bytes(&value),
+        ))
+    }
+
+    fn cslashes_string_argument_bytes(
+        &mut self,
+        function: &str,
+        position: usize,
+        name: &str,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<Vec<u8>> {
+        if matches!(value, Value::Array(_)) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function,
+                    format!("Argument #{position} (${name}) must be of type string, array given"),
+                ),
+            ));
+        }
+
+        if let Value::Object(object) = value {
+            if let Some(value) = self.object_to_string_with_magic(object.clone(), function, span)? {
+                return Ok(value.into_bytes());
+            }
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function,
+                    format!(
+                        "Argument #{position} (${name}) must be of type string, {} given",
+                        php_type_error_given(value)
+                    ),
+                ),
+            ));
+        }
+
+        if matches!(value, Value::Closure(_) | Value::Resource(_)) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function,
+                    format!(
+                        "Argument #{position} (${name}) must be of type string, {} given",
+                        php_type_error_given(value)
+                    ),
+                ),
+            ));
+        }
+
+        value
+            .try_echo_bytes()
+            .map_err(|error| runtime_error(span, error))
+    }
+
+    fn addcslashes_mask(&mut self, characters: &[u8], span: Span) -> CompileResult<[bool; 256]> {
+        let mut mask = [false; 256];
+        let mut index = 0;
+
+        while index < characters.len() {
+            if characters.get(index + 1) == Some(&b'.')
+                && characters.get(index + 2) == Some(&b'.')
+                && characters.get(index + 3).is_some()
+            {
+                let start = characters[index];
+                let end = characters[index + 3];
+                if start <= end {
+                    for byte in start..=end {
+                        mask[byte as usize] = true;
+                    }
+                    index += 4;
+                    continue;
+                }
+
+                self.emit_display_warning(
+                    "addcslashes(): Invalid '..'-range, '..'-range needs to be incrementing",
+                    span,
+                )?;
+            }
+
+            mask[characters[index] as usize] = true;
+            index += 1;
+        }
+
+        Ok(mask)
+    }
+}
+
+fn addslashes_bytes(value: &[u8]) -> Vec<u8> {
+    let mut output = Vec::with_capacity(value.len());
+    for &byte in value {
+        match byte {
+            b'\0' => output.extend_from_slice(br"\0"),
+            b'\'' | b'"' | b'\\' => {
+                output.push(b'\\');
+                output.push(byte);
+            }
+            _ => output.push(byte),
+        }
+    }
+    output
+}
+
+fn stripslashes_bytes(value: &[u8]) -> Vec<u8> {
+    let mut output = Vec::with_capacity(value.len());
+    let mut index = 0;
+    while index < value.len() {
+        let byte = value[index];
+        if byte != b'\\' {
+            output.push(byte);
+            index += 1;
+            continue;
+        }
+
+        let Some(&next) = value.get(index + 1) else {
+            break;
+        };
+        output.push(if next == b'0' { b'\0' } else { next });
+        index += 2;
+    }
+    output
+}
+
+fn addcslashes_bytes(value: &[u8], mask: &[bool; 256]) -> Vec<u8> {
+    let mut output = Vec::with_capacity(value.len());
+    for &byte in value {
+        if !mask[byte as usize] {
+            output.push(byte);
+            continue;
+        }
+
+        match byte {
+            b'\0' => output.extend_from_slice(br"\000"),
+            b'\n' => output.extend_from_slice(br"\n"),
+            b'\r' => output.extend_from_slice(br"\r"),
+            b'\t' => output.extend_from_slice(br"\t"),
+            0x0b => output.extend_from_slice(br"\v"),
+            0x0c => output.extend_from_slice(br"\f"),
+            0x07 => output.extend_from_slice(br"\a"),
+            0x08 => output.extend_from_slice(br"\b"),
+            0x01..=0x1f | 0x7f..=0xff => {
+                output.push(b'\\');
+                output.push(b'0' + ((byte >> 6) & 0x07));
+                output.push(b'0' + ((byte >> 3) & 0x07));
+                output.push(b'0' + (byte & 0x07));
+            }
+            _ => {
+                output.push(b'\\');
+                output.push(byte);
+            }
+        }
+    }
+    output
+}
+
+fn stripcslashes_bytes(value: &[u8]) -> Vec<u8> {
+    let mut output = Vec::with_capacity(value.len());
+    let mut index = 0;
+    while index < value.len() {
+        let byte = value[index];
+        if byte != b'\\' {
+            output.push(byte);
+            index += 1;
+            continue;
+        }
+
+        let Some(&next) = value.get(index + 1) else {
+            break;
+        };
+        match next {
+            b'n' => {
+                output.push(b'\n');
+                index += 2;
+            }
+            b'r' => {
+                output.push(b'\r');
+                index += 2;
+            }
+            b't' => {
+                output.push(b'\t');
+                index += 2;
+            }
+            b'v' => {
+                output.push(0x0b);
+                index += 2;
+            }
+            b'f' => {
+                output.push(0x0c);
+                index += 2;
+            }
+            b'a' => {
+                output.push(0x07);
+                index += 2;
+            }
+            b'b' => {
+                output.push(0x08);
+                index += 2;
+            }
+            b'x' | b'X' => {
+                let mut parsed = 0u8;
+                let mut digits = 0usize;
+                let mut cursor = index + 2;
+                while digits < 2 {
+                    let Some(&digit) = value.get(cursor) else {
+                        break;
+                    };
+                    let Some(value) = hex_digit_value(digit) else {
+                        break;
+                    };
+                    parsed = (parsed << 4) | value;
+                    digits += 1;
+                    cursor += 1;
+                }
+                if digits == 0 {
+                    output.push(next);
+                    index += 2;
+                } else {
+                    output.push(parsed);
+                    index = cursor;
+                }
+            }
+            b'0'..=b'7' => {
+                let mut parsed = 0u8;
+                let mut digits = 0usize;
+                let mut cursor = index + 1;
+                while digits < 3 {
+                    let Some(&digit @ b'0'..=b'7') = value.get(cursor) else {
+                        break;
+                    };
+                    parsed = (parsed << 3) | (digit - b'0');
+                    digits += 1;
+                    cursor += 1;
+                }
+                output.push(parsed);
+                index = cursor;
+            }
+            _ => {
+                output.push(next);
+                index += 2;
+            }
+        }
+    }
+    output
+}
+
 fn call_strtolower(args: &[Value], span: Span) -> CompileResult<Value> {
     expect_arity("strtolower", args, 1, span)?;
 
@@ -86948,6 +87251,15 @@ fn call_strcasecmp(args: &[Value], span: Span) -> CompileResult<Value> {
     Ok(Value::Int(ascii_case_insensitive_compare(&left, &right)))
 }
 
+fn call_strcmp(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("strcmp", args, 2, span)?;
+
+    let left = string_compare_argument_bytes("strcmp()", "first", &args[0], span)?;
+    let right = string_compare_argument_bytes("strcmp()", "second", &args[1], span)?;
+
+    Ok(Value::Int(byte_compare(&left, &right)))
+}
+
 fn call_strncmp(args: &[Value], span: Span) -> CompileResult<Value> {
     call_string_prefix_compare(args, span, "strncmp()", false)
 }
@@ -87008,6 +87320,20 @@ fn php_prefix_compare_bytes(
     }
 
     match left_len.cmp(&right_len) {
+        std::cmp::Ordering::Less => -1,
+        std::cmp::Ordering::Equal => 0,
+        std::cmp::Ordering::Greater => 1,
+    }
+}
+
+fn byte_compare(left: &[u8], right: &[u8]) -> i64 {
+    for (&left, &right) in left.iter().zip(right.iter()) {
+        if left != right {
+            return i64::from(left) - i64::from(right);
+        }
+    }
+
+    match left.len().cmp(&right.len()) {
         std::cmp::Ordering::Less => -1,
         std::cmp::Ordering::Equal => 0,
         std::cmp::Ordering::Greater => 1,

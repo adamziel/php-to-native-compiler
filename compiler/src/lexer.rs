@@ -889,6 +889,18 @@ impl<'a> Lexer<'a> {
                 self.advance();
                 '\t'
             }
+            'v' => {
+                self.advance();
+                '\u{000B}'
+            }
+            'f' => {
+                self.advance();
+                '\u{000C}'
+            }
+            'e' => {
+                self.advance();
+                '\u{001B}'
+            }
             'x' => {
                 self.advance();
                 self.consume_hex_escape_byte()
@@ -921,6 +933,18 @@ impl<'a> Lexer<'a> {
             't' => {
                 self.advance();
                 value.push('\t');
+            }
+            'v' => {
+                self.advance();
+                value.push('\u{000B}');
+            }
+            'f' => {
+                self.advance();
+                value.push('\u{000C}');
+            }
+            'e' => {
+                self.advance();
+                value.push('\u{001B}');
             }
             'x' if self
                 .chars
