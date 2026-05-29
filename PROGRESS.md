@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-29 13:56 CEST
+Updated: 2026-05-29 14:08 CEST
 Primary branch: `master`
-Latest source head: `92c45d79 fix: expand file metadata link semantics`
+Latest source head: `b4b985ab fix: expand reflection property metadata`
 
 ## Progress Score
 
@@ -183,13 +183,56 @@ stable pinned denominator and does not use the raw runner
 | Batch009 source burst | Complete | Checkpoint1 is p47 `sizeof()` alias / `array_chunk` metadata focused source proof (+25 expected direct rows); checkpoint2 is p43 `fflush()` / `ftruncate()` focused source proof (+15 expected direct rows); checkpoint3 is p42 `fprintf()` / `vfprintf()` focused source proof (+14 expected direct rows); checkpoint4 is p39 OPcache bounded introspection focused source proof (+11 expected direct rows); checkpoint5 is p63 slash/cslash and bounded `strcmp()` focused source proof (+12 expected direct rows); burst total was +77 expected direct rows; burst1 sharded gate published 2388 / 20294 |
 | Batch010 source batch | Complete | Checkpoint1 is p66 `bcround()` / bounded `RoundingMode` focused source proof (+11 expected direct rows); checkpoint2 is p51 generator `yield from` / `Generator::getReturn()` / yielded key preservation focused source proof (+10 expected direct rows); checkpoint3 is p50 `ReflectionAttribute` / `getAttributes()` focused source proof (+10 expected direct rows); checkpoint4 is p43 `disk_free_space()` / `disk_total_space()` / `is_executable()` focused source proof (+12 expected direct rows); checkpoint5 is p15 typed-property startup diagnostics focused source proof (+13 expected direct rows); checkpoint6 is p42 selected `strspn()` / `strcspn()` focused source proof (+11 expected direct rows); checkpoint7 is p39 `ReflectionFunction` / `ReflectionMethod` metadata focused source proof (+10 expected direct rows); checkpoint8 is p42 selected `strrchr()` focused source proof (+10 expected direct rows); checkpoint9 is p66 `bcdivmod()` / `BcMath\Number` focused source proof (+22 expected direct rows); checkpoint10 is p43 `fscanf()` stream scanning focused source proof (+11 expected direct rows); batch total is 10 / 10 checkpoints and +120 expected direct rows. Regression repair source `783436bd` fixed the initial gate's two real PASS losses; the repaired sharded gate published 2563 / 20294 with the existing `bug75679.phpt` path-length guard. |
 | Batch010 checkpoint10 regression-repair sharded gate | Done | 2563 / 20294 pinned runnable PHPTs passed (12.63%); only PASS-loss row was `ext/standard/tests/file/bug75679.phpt`, guarded by a same-binary short-path focused PASS; run id `phpt-full-batch010-checkpoint10-regression-repair-sharded-20260529T112818Z-php-src-f97ff59-public-6f6ac240-source-783436bd` |
-| Batch011 source burst | In progress | Checkpoint1 is p63 residual string byte/scalar builtins focused source proof (+21 expected direct rows); checkpoint2 is p43 copy/filesize/unlink diagnostics focused source proof (+10 expected direct rows); checkpoint3 is p43 standard file metadata/time/link focused source proof (+21 expected direct rows); burst total is +52 expected direct rows. Public score remains 2563 / 20294 until the next pinned full-suite gate is completed, regression-checked, and published. |
+| Batch011 source burst | In progress | Checkpoint1 is p63 residual string byte/scalar builtins focused source proof (+21 expected direct rows); checkpoint2 is p43 copy/filesize/unlink diagnostics focused source proof (+10 expected direct rows); checkpoint3 is p43 standard file metadata/time/link focused source proof (+21 expected direct rows); checkpoint4 is p66 ReflectionProperty / ReflectionParameter / ReflectionClassConstant residual focused source proof (+10 expected direct rows); burst total is +62 expected direct rows. Public score remains 2563 / 20294 until the next pinned full-suite gate is completed, regression-checked, and published. |
 
 Focused PHPT history is tracked separately in
 `/home/claude/supervised-php-compiler/state/php-core-suite-focused-history.tsv`.
 Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
+
+Batch011 source burst checkpoint4 is primary-integrated under AO supervision.
+This is focused source proof, not a public percentage change. The public PHPT
+score remains **2563 / 20294 pinned runnable PHPTs = 12.63%** until the next
+pinned full-suite gate is completed, regression-checked, and published here.
+
+- primary source head:
+  `b4b985ab fix: expand reflection property metadata`
+- reviewed and integration patch:
+  `/home/claude/supervised-php-compiler/state/patches/batch011-author-p66-reflection-property-parameter-classconstant-24c3554a-phpc66-20260529.patch`
+- reviewed and integration patch SHA256:
+  `8b1b38f33acf1efcae0e953deba97844b8dacd6300fe3b068dcc4d8b4feb745e`
+- reviewer gate: phpc-7 recorded current-public FINAL GO on `ecbfb7b4` /
+  source-equivalent `92c45d79`; phpc-18 and phpc-52 recorded compatible
+  current-review artifacts
+- critic gate: phpc-33 recorded `SAFE-FOR-INTEGRATION` for the same exact SHA
+  on `ecbfb7b4` / source-equivalent `92c45d79`; phpc-55 and phpc-58 recorded
+  compatible SAFE artifacts
+- handoff gate: p38 completed scratch/no-primary handoff with SHA
+  verification, clean apply/reverse-apply on public and source-equivalent
+  heads, source-equivalence proof, exclusions, exact-shape audit, and
+  consumed-scope audit
+- supervisor focused gates: PASS for SHA verification, clean apply,
+  `git diff --check`, patch-scope root `PROGRESS.md`/docs/`PROGRESS.md`/
+  `docs/SUPPORT.md`/README/examples exclusion, production exact-shape audit,
+  consumed-scope audit, `cargo fmt`, focused Rust reflection/object-cast
+  tests, `phpc` binary build, `cargo check`, and focused PHP core reflection
+  residual PHPT cluster with 10 PASS and 0 FAIL
+- non-gating note: a broad `object_model` integration-test run was attempted
+  and still has unrelated existing expectation failures; the accepted proof is
+  the focused p66 Rust/PHPT gate
+- public progress gate: not run for this source checkpoint; focused proof is
+  candidate evidence for the next aggregate publication gate
+
+This checkpoint implements generalized bounded `ReflectionParameter`,
+`ReflectionProperty`, and `ReflectionClassConstant` metadata behavior,
+including pseudo properties, string summaries, mangled property names, dynamic
+and default property state, missing-property `ReflectionException` behavior,
+and object array-cast materialization. It excludes consumed ReflectionClass,
+ReflectionAttribute/getAttributes, ReflectionFunction/Method, bcmath,
+SplObjectStorage, OPcache, p63 string residuals, and p43 file checkpoints. It
+is not keyed to PHPT filenames, expected output, fixture names, public hashes,
+batch labels, or checkpoint markers.
 
 Batch011 source burst checkpoint3 is primary-integrated under AO supervision.
 This is focused source proof, not a public percentage change. The public PHPT
