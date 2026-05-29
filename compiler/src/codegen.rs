@@ -66035,6 +66035,7 @@ fn is_array_builtin(name: &str) -> bool {
             | "array_reduce"
             | "array_filter"
             | "array_map"
+            | "array_multisort"
             | "sort"
             | "rsort"
             | "asort"
@@ -66436,6 +66437,7 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "array_reduce",
     "array_filter",
     "array_map",
+    "array_multisort",
     "sort",
     "rsort",
     "asort",
@@ -67213,6 +67215,7 @@ fn native_dynamic_callable_builtin_canonical_name(name: &str) -> Option<&'static
         "usort" => Some("usort"),
         "uasort" => Some("uasort"),
         "uksort" => Some("uksort"),
+        "array_multisort" => Some("array_multisort"),
         "array_push" => Some("array_push"),
         "array_pop" => Some("array_pop"),
         "array_shift" => Some("array_shift"),
@@ -67417,6 +67420,18 @@ fn native_builtin_signature_for_name(name: &str) -> Option<CNativeBuiltinSignatu
             variadic_param_by_reference: false,
             returns_by_reference: false,
             source_call_support: RuntimeCallableValue,
+        },
+        "array_multisort" => CNativeBuiltinSignature {
+            canonical_name: "array_multisort",
+            required_arg_count: 1,
+            fixed_param_names: NATIVE_BUILTIN_PARAM_ARRAY,
+            fixed_param_by_reference: NATIVE_BUILTIN_BY_REF_1,
+            fixed_param_defaults: NATIVE_BUILTIN_DEFAULTS_NONE_1,
+            accepts_variadic_args: true,
+            variadic_param_name: Some("rest"),
+            variadic_param_by_reference: false,
+            returns_by_reference: false,
+            source_call_support: Blocked(MissingRuntimeCallableFamily),
         },
         "array_push" | "array_unshift" => CNativeBuiltinSignature {
             canonical_name: match name.to_ascii_lowercase().as_str() {
@@ -74618,6 +74633,23 @@ echo " 10" < "zeta";
         );
         assert_eq!(uksort.fixed_param_defaults, usort.fixed_param_defaults);
         assert_eq!(uksort.source_call_support, usort.source_call_support);
+
+        let multisort = native_builtin_signature_for_name("array_multisort")
+            .expect("array_multisort should expose blocked variadic by-reference metadata");
+        assert_eq!(multisort.required_arg_count, 1);
+        assert_eq!(multisort.fixed_param_names, &["array"]);
+        assert_eq!(multisort.fixed_param_by_reference, &[true]);
+        assert!(multisort.accepts_variadic_args);
+        assert_eq!(multisort.variadic_param_name, Some("rest"));
+        assert!(!multisort.variadic_param_by_reference);
+        assert!(multisort.accepts_arg_count(1));
+        assert!(multisort.accepts_arg_count(4));
+        assert_eq!(
+            multisort.source_call_support,
+            CNativeBuiltinSignatureSourceCallSupport::Blocked(
+                CNativeBuiltinSignatureBlocker::MissingRuntimeCallableFamily,
+            )
+        );
 
         let push = native_builtin_signature_for_name("array_push")
             .expect("array_push should be mapped as a runtime variadic mutation signature");

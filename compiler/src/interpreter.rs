@@ -51751,6 +51751,9 @@ impl Interpreter {
                 if key == "compact" {
                     return self.call_compact(args, span, caller_scope);
                 }
+                if key == "array_multisort" {
+                    return self.call_array_multisort(args, span, caller_scope);
+                }
                 if let Some(operation) = Self::array_sort_operation_for_builtin(&key) {
                     return self.call_array_sort(operation, args, span, caller_scope);
                 }
@@ -51918,6 +51921,9 @@ impl Interpreter {
                 }
                 if key == "compact" {
                     return self.call_compact(args, span, caller_scope);
+                }
+                if key == "array_multisort" {
+                    return self.call_array_multisort(args, span, caller_scope);
                 }
                 if let Some(operation) = Self::array_sort_operation_for_builtin(&key) {
                     return self.call_array_sort(operation, args, span, caller_scope);
@@ -60036,6 +60042,128 @@ impl Interpreter {
                 ),
             )),
         }
+    }
+
+    fn call_array_multisort(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        if args.is_empty() {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch("array_multisort()", ArityExpectation::AtLeast(1), 0),
+            ));
+        }
+
+        let mut specs = Vec::<ArrayMultisortSpec>::new();
+        let mut expected_len = None::<usize>;
+        for (index, arg) in args.iter().enumerate() {
+            let position = index + 1;
+            let value = self.evaluate(arg, caller_scope)?;
+            if let Value::Array(array) = value {
+                if let Some(len) = expected_len {
+                    if array.len() != len {
+                        return Err(array_multisort_value_error(
+                            span,
+                            "Array sizes are inconsistent",
+                        ));
+                    }
+                } else {
+                    expected_len = Some(array.len());
+                }
+                let target = match arg {
+                    Expr::Variable(name, _) => Some(name.clone()),
+                    _ => None,
+                };
+                specs.push(ArrayMultisortSpec {
+                    target,
+                    array,
+                    flag: None,
+                    descending: false,
+                    seen_sort_flag: false,
+                    seen_order_flag: false,
+                });
+                continue;
+            }
+
+            let Some(flag) = array_multisort_flag_from_value(&value) else {
+                if matches!(value, Value::Int(_)) {
+                    let parameter = if specs.is_empty() { " ($array)" } else { "" };
+                    return Err(array_multisort_value_error(
+                        span,
+                        format!("Argument #{position}{parameter} must be a valid sort flag"),
+                    ));
+                }
+                return Err(array_multisort_type_error(
+                    span,
+                    position,
+                    if specs.is_empty() {
+                        "($array) must be an array or a sort flag"
+                    } else {
+                        "must be an array or a sort flag"
+                    },
+                ));
+            };
+            let Some(spec) = specs.last_mut() else {
+                return Err(array_multisort_type_error(
+                    span,
+                    position,
+                    "($array) must be an array or a sort flag that has not already been specified",
+                ));
+            };
+            match flag {
+                ArrayMultisortFlag::Ascending => {
+                    if spec.seen_order_flag {
+                        return Err(array_multisort_duplicate_flag_error(span, position));
+                    }
+                    spec.seen_order_flag = true;
+                    spec.descending = false;
+                }
+                ArrayMultisortFlag::Descending => {
+                    if spec.seen_order_flag {
+                        return Err(array_multisort_duplicate_flag_error(span, position));
+                    }
+                    spec.seen_order_flag = true;
+                    spec.descending = true;
+                }
+                ArrayMultisortFlag::SortMode(value) => {
+                    if spec.seen_sort_flag {
+                        return Err(array_multisort_duplicate_flag_error(span, position));
+                    }
+                    spec.seen_sort_flag = true;
+                    spec.flag = Some(Value::Int(value));
+                }
+            }
+        }
+
+        if specs.is_empty() {
+            return Err(array_multisort_type_error(
+                span,
+                1,
+                "($array) must be an array or a sort flag that has not already been specified",
+            ));
+        }
+
+        let mut arrays = specs
+            .iter()
+            .map(|spec| spec.array.clone())
+            .collect::<Vec<_>>();
+        let flags = specs
+            .iter()
+            .map(|spec| spec.flag.clone())
+            .collect::<Vec<_>>();
+        let descending = specs.iter().map(|spec| spec.descending).collect::<Vec<_>>();
+        PhpArray::multisort_for_php_builtin(&mut arrays, &flags, &descending)
+            .map_err(|error| runtime_error(span, error))?;
+
+        for (spec, array) in specs.into_iter().zip(arrays) {
+            if let Some(name) = spec.target {
+                caller_scope.write_static(&name, Value::Array(array));
+            }
+        }
+        Ok(Value::Bool(true))
     }
 
     fn call_user_array_sort(
@@ -77233,6 +77361,13 @@ impl Interpreter {
             "array_reduce" => self.call_array_reduce(args, span),
             "array_filter" => self.call_array_filter(args, span),
             "array_map" => self.call_array_map(args, span),
+            "array_multisort" => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "array_multisort()",
+                    "by-reference array arguments require a direct call target in the current subset",
+                ),
+            )),
             "usort" | "uasort" | "uksort" => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
@@ -89659,6 +89794,13 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
             "mixed",
             vec![reflection_internal_reference_param("array", "array")],
         ),
+        "array_multisort" => (
+            "bool",
+            vec![
+                reflection_internal_reference_param("array", "array"),
+                reflection_internal_variadic_param("rest", "array|int"),
+            ],
+        ),
         "sort" => (
             "bool",
             vec![
@@ -91205,6 +91347,58 @@ fn ensure_call_argument_order_in_expression(expr: &Expr) -> CompileResult<()> {
     }
 }
 
+struct ArrayMultisortSpec {
+    target: Option<String>,
+    array: PhpArray,
+    flag: Option<Value>,
+    descending: bool,
+    seen_sort_flag: bool,
+    seen_order_flag: bool,
+}
+
+enum ArrayMultisortFlag {
+    Ascending,
+    Descending,
+    SortMode(i64),
+}
+
+fn array_multisort_flag_from_value(value: &Value) -> Option<ArrayMultisortFlag> {
+    let Value::Int(raw) = value else {
+        return None;
+    };
+    match *raw {
+        3 => Some(ArrayMultisortFlag::Descending),
+        4 => Some(ArrayMultisortFlag::Ascending),
+        0 | 1 | 2 | 6 | 10 | 14 => Some(ArrayMultisortFlag::SortMode(*raw)),
+        _ => None,
+    }
+}
+
+fn array_multisort_type_error(span: Span, position: usize, reason: &str) -> Diagnostic {
+    runtime_error(
+        span,
+        RuntimeError::unsupported_call(
+            "array_multisort()",
+            format!("Argument #{position} {reason}"),
+        ),
+    )
+}
+
+fn array_multisort_duplicate_flag_error(span: Span, position: usize) -> Diagnostic {
+    array_multisort_type_error(
+        span,
+        position,
+        "must be an array or a sort flag that has not already been specified",
+    )
+}
+
+fn array_multisort_value_error(span: Span, message: impl Into<String>) -> Diagnostic {
+    runtime_error(
+        span,
+        RuntimeError::unsupported_call("array_multisort()", message.into()),
+    )
+}
+
 fn runtime_error(span: Span, error: RuntimeError) -> Diagnostic {
     Diagnostic::new(Phase::Runtime, span.line, span.column, error.message())
 }
@@ -92009,6 +92203,12 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
     let unsupported = error.message.strip_prefix("unsupported call ")?;
     let (function, message) = unsupported.split_once(": ")?;
     match (function, message) {
+        ("array_multisort()", message)
+            if message.starts_with("Argument #") && message.ends_with(" must be a valid sort flag") =>
+        {
+            Some(format!("{function}: {message}"))
+        }
+        ("array_multisort()", "Array sizes are inconsistent") => Some(message.to_string()),
         ("explode()", "Argument #1 ($separator) must not be empty")
         | ("str_repeat()", "Argument #2 ($times) must be greater than or equal to 0")
         | ("array_fill()", "Argument #2 ($count) must be greater than or equal to 0")
@@ -92289,6 +92489,13 @@ fn call_argument_type_error_message(error: &Diagnostic) -> Option<String> {
         return None;
     }
     let reason = error.message.strip_prefix("unsupported call ")?;
+    if reason.starts_with("array_multisort(): Argument #")
+        && (reason.contains(" must be an array or a sort flag")
+            || reason
+                .contains(" must be an array or a sort flag that has not already been specified"))
+    {
+        return Some(reason.to_string());
+    }
     if !is_call_argument_type_error_message(reason) {
         return None;
     }
@@ -92683,6 +92890,7 @@ fn is_builtin(name: &str) -> bool {
             | "array_reduce"
             | "array_filter"
             | "array_map"
+            | "array_multisort"
             | "array_walk"
             | "array_walk_recursive"
             | "sort"

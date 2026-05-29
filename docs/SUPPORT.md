@@ -6480,6 +6480,18 @@
   to the longest input, supply `null` for missing values from shorter arrays,
   and return mapped values reindexed with integer keys starting at zero. These
   forms are available through string-valued dynamic calls to `array_map`.
+  `array_multisort($array, ...)` accepts direct interpreter calls with one or
+  more scalar-valued arrays plus `SORT_ASC`, `SORT_DESC`, `SORT_REGULAR`,
+  `SORT_NUMERIC`, `SORT_STRING`, `SORT_NATURAL`, and
+  `SORT_FLAG_CASE` combinations supported by the existing array sorting
+  runtime. It sorts arrays in insertion-order lockstep, preserves string keys,
+  reindexes integer keys from zero, writes back direct variable array
+  arguments, and returns `true`. Duplicate per-array order/type flags report
+  the PHP `TypeError` message, invalid integer flags report the PHP
+  `ValueError` message, and mismatched array sizes report `Array sizes are
+  inconsistent`. Object/resource values, object string conversion warnings,
+  broad by-reference argument handling beyond direct variables, dynamic
+  callable writeback, locale sorting, and native lowering remain unsupported.
   `in_array($needle, $array)` scans values in insertion order using the
   current loose scalar comparison rules; `in_array($needle, $array, true)` uses
   the current scalar strict identity rules, and `in_array($needle, $array,
@@ -7211,16 +7223,18 @@
   `mysqli_store_result`, `mysqli_use_result`, `mysqli_reap_async_query`,
   `mysqli_poll`, `mysqli_report`, `mysqli_init`,
   `compact`, `array_change_key_case`, `array_column`, `array_is_list`,
-  `array_count_values`, `array_sum`, `array_product`, `array_reduce`, and
-  `array_filter`, fold to `true`, and missing names fold to `false`.
+  `array_count_values`, `array_sum`, `array_product`, `array_reduce`,
+  `array_filter`, and `array_multisort`, fold to `true`, and missing names
+  fold to `false`.
   Direct `extension_loaded($name)` calls with already-lowerable string names
   fold against the same bounded compatibility registry: `json` and `hash`
   fold to `true`, while other names fold to `false`. Native code does not
   model host extension discovery, ini state, dynamic module loading, or
   extension side effects.
   Direct calls to array builtins such as `array_change_key_case(...)`,
-  `array_column(...)`, `array_sum(...)`, `array_product(...)`, and
-  callback-driven forms such as `array_reduce(...)` and `array_filter(...)`
+  `array_column(...)`, `array_sum(...)`, `array_product(...)`,
+  `array_multisort(...)`, and callback-driven forms such as
+  `array_reduce(...)` and `array_filter(...)`
   still reject under the native array-lowering boundary. Assembly snapshots
   also validate that the deterministic folded IR for this existing slice reaches the fallback backend
   without widening production lowering behavior.
@@ -9182,6 +9196,18 @@
   first-class callables, method calls, references, copy-on-write containers,
   exact native `TypeError` objects, object handle identity preservation,
   resource values, and native lowering are not implemented.
+  `array_multisort($array, ...)` accepts direct interpreter calls with one or
+  more scalar-valued arrays plus `SORT_ASC`, `SORT_DESC`, `SORT_REGULAR`,
+  `SORT_NUMERIC`, `SORT_STRING`, `SORT_NATURAL`, and
+  `SORT_FLAG_CASE` combinations supported by the existing array sorting
+  runtime. It sorts arrays in insertion-order lockstep, preserves string keys,
+  reindexes integer keys from zero, writes back direct variable array
+  arguments, and returns `true`. Duplicate per-array order/type flags report
+  the PHP `TypeError` message, invalid integer flags report the PHP
+  `ValueError` message, and mismatched array sizes report `Array sizes are
+  inconsistent`. Object/resource values, object string conversion warnings,
+  broad by-reference argument handling beyond direct variables, dynamic
+  callable writeback, locale sorting, and native lowering remain unsupported.
   `in_array($needle, $array)` accepts an array haystack, scans values in
   insertion order, and uses the
   current PHP 8-style loose scalar comparison rules for `null`, booleans,

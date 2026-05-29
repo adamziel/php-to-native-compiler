@@ -28951,6 +28951,76 @@ impl PhpArray {
         Ok(())
     }
 
+    pub fn multisort_for_php_builtin(
+        arrays: &mut [PhpArray],
+        flags: &[Option<Value>],
+        descending: &[bool],
+    ) -> RuntimeResult<()> {
+        if arrays.is_empty() {
+            return Ok(());
+        }
+        let len = arrays[0].entries.len();
+        if arrays.iter().any(|array| array.entries.len() != len) {
+            return Err(RuntimeError::unsupported_call(
+                "array_multisort()",
+                "Array sizes are inconsistent",
+            ));
+        }
+
+        let modes = flags
+            .iter()
+            .map(|flag| php_array_sort_mode_from_flag(PhpArraySortOperation::Sort, flag.as_ref()))
+            .collect::<RuntimeResult<Vec<_>>>()?;
+
+        let mut order: Vec<usize> = (0..len).collect();
+        for index in 1..order.len() {
+            let mut cursor = index;
+            while cursor > 0 {
+                let ordering = array_multisort_index_ordering(
+                    arrays,
+                    &modes,
+                    descending,
+                    order[cursor],
+                    order[cursor - 1],
+                )?;
+                if ordering != Ordering::Less {
+                    break;
+                }
+                order.swap(cursor, cursor - 1);
+                cursor -= 1;
+            }
+        }
+
+        for array in arrays {
+            array.reorder_for_array_multisort(&order);
+        }
+        Ok(())
+    }
+
+    fn reorder_for_array_multisort(&mut self, order: &[usize]) {
+        let old_entries = self.entries.clone();
+        let mut next_int = 0i64;
+        self.entries = order
+            .iter()
+            .map(|index| {
+                let entry = old_entries[*index].clone();
+                let key = match entry.key {
+                    ArrayKey::String(key) => ArrayKey::String(key),
+                    ArrayKey::Int(_) => {
+                        let key = ArrayKey::Int(next_int);
+                        next_int += 1;
+                        key
+                    }
+                };
+                ArrayEntry::from_slot(key, entry.slot)
+            })
+            .collect();
+        self.invalidate_key_index();
+        self.next_auto_index = next_int;
+        self.auto_index_exhausted = false;
+        self.cursor = 0;
+    }
+
     fn sort_values_for_native(
         &mut self,
         callable: &'static str,
@@ -30432,6 +30502,78 @@ fn array_sort_value_ordering(
             let right = array_scalar_string_comparison_value(callable, &right)?;
             Ok(left.cmp(&right))
         }
+    }
+}
+
+fn array_multisort_index_ordering(
+    arrays: &[PhpArray],
+    modes: &[PhpArraySortFlagMode],
+    descending: &[bool],
+    left_index: usize,
+    right_index: usize,
+) -> RuntimeResult<Ordering> {
+    for (array_index, array) in arrays.iter().enumerate() {
+        let left = &array.entries[left_index];
+        let right = &array.entries[right_index];
+        let ordering = match modes[array_index] {
+            PhpArraySortFlagMode::Regular => array_sort_value_ordering(
+                "array_multisort()",
+                left,
+                right,
+                NativeArraySortMode::Regular,
+            )?,
+            PhpArraySortFlagMode::Numeric => array_multisort_numeric_value_ordering(left, right)?,
+            PhpArraySortFlagMode::String { case_insensitive } => array_sort_string_value_ordering(
+                "array_multisort()",
+                left,
+                right,
+                case_insensitive,
+            )?,
+            PhpArraySortFlagMode::Natural { case_insensitive } => {
+                array_sort_natural_value_ordering(
+                    "array_multisort()",
+                    left,
+                    right,
+                    case_insensitive,
+                )?
+            }
+        };
+        let ordering = array_sort_direction_ordering(ordering, descending[array_index]);
+        if ordering != Ordering::Equal {
+            return Ok(ordering);
+        }
+    }
+    Ok(Ordering::Equal)
+}
+
+fn array_multisort_numeric_value_ordering(
+    left: &ArrayEntry,
+    right: &ArrayEntry,
+) -> RuntimeResult<Ordering> {
+    let left = array_multisort_numeric_number_from_value(&left.value_cloned())?;
+    let right = array_multisort_numeric_number_from_value(&right.value_cloned())?;
+    Ok(compare_numbers(left, right).unwrap_or(Ordering::Equal))
+}
+
+fn array_multisort_numeric_number_from_value(value: &Value) -> RuntimeResult<Number> {
+    match value {
+        Value::Null => Ok(Number::Int(0)),
+        Value::Bool(false) => Ok(Number::Int(0)),
+        Value::Bool(true) => Ok(Number::Int(1)),
+        Value::Int(value) => Ok(Number::Int(*value)),
+        Value::Float(value) => Ok(Number::Float(*value)),
+        Value::String(value) => Ok(parse_numeric_string(value).unwrap_or(Number::Int(0))),
+        Value::BinaryString(value) => Ok(std::str::from_utf8(value)
+            .ok()
+            .and_then(parse_numeric_string)
+            .unwrap_or(Number::Int(0))),
+        other => Err(RuntimeError::unsupported_call(
+            "array_multisort()",
+            format!(
+                "SORT_NUMERIC values must be scalar in the current subset, got {}",
+                other.type_name()
+            ),
+        )),
     }
 }
 
