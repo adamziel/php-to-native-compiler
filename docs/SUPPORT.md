@@ -2986,6 +2986,14 @@
 - `php_sapi_name()` with no arguments, returning the same current
   deterministic `cli` SAPI string as `PHP_SAPI`. String-valued dynamic calls,
   `function_exists()`, and `is_callable()` recognize the builtin.
+- HTML entity builtins `htmlspecialchars`, `htmlentities`,
+  `htmlspecialchars_decode`, `html_entity_decode`, and
+  `get_html_translation_table` cover the current byte-string special-character
+  subset, quote-style flags, double-encode preservation, selected Latin-1
+  named entities, internal metadata, and the `HTML_*` / `ENT_*` constants.
+  Full HTML4/HTML5 translation tables, all legacy encodings, invalid Unicode
+  substitution/disallowed-character parity, and native lowering remain
+  unsupported.
 - exact uppercase PHP error mask constants `E_ERROR`, `E_WARNING`, `E_PARSE`,
   `E_NOTICE`, `E_CORE_ERROR`, `E_CORE_WARNING`, `E_COMPILE_ERROR`,
   `E_COMPILE_WARNING`, `E_USER_ERROR`, `E_USER_WARNING`, `E_USER_NOTICE`,

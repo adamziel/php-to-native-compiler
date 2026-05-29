@@ -72385,6 +72385,11 @@ impl Interpreter {
             "lcfirst" => call_lcfirst(&args, span),
             "ucwords" => call_ucwords(&args, span),
             "quotemeta" => call_quotemeta(&args, span),
+            "htmlspecialchars" => call_htmlspecialchars(&args, span),
+            "htmlentities" => call_htmlentities(&args, span),
+            "htmlspecialchars_decode" => call_htmlspecialchars_decode(&args, span),
+            "html_entity_decode" => call_html_entity_decode(&args, span),
+            "get_html_translation_table" => call_get_html_translation_table(&args, span),
             "nl2br" => call_nl2br(&args, span),
             "str_repeat" => call_str_repeat(&args, span),
             "str_pad" => call_str_pad(&args, span),
@@ -85157,6 +85162,30 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
             "string",
             vec![reflection_internal_param("string", "string")],
         ),
+        "htmlspecialchars" | "htmlentities" => (
+            "string",
+            vec![
+                reflection_internal_param("string", "string"),
+                reflection_internal_optional_int_param("flags", PHP_ENT_DEFAULT),
+                reflection_internal_optional_null_param("encoding", "?string"),
+                reflection_internal_optional_bool_param("double_encode", true),
+            ],
+        ),
+        "htmlspecialchars_decode" | "html_entity_decode" => (
+            "string",
+            vec![
+                reflection_internal_param("string", "string"),
+                reflection_internal_optional_int_param("flags", PHP_ENT_DEFAULT),
+            ],
+        ),
+        "get_html_translation_table" => (
+            "array",
+            vec![
+                reflection_internal_optional_int_param("table", PHP_HTML_SPECIALCHARS),
+                reflection_internal_optional_int_param("flags", PHP_ENT_DEFAULT),
+                reflection_internal_optional_null_param("encoding", "?string"),
+            ],
+        ),
         "ucwords" => (
             "string",
             vec![
@@ -88016,6 +88045,11 @@ fn is_builtin(name: &str) -> bool {
             | "lcfirst"
             | "ucwords"
             | "quotemeta"
+            | "htmlspecialchars"
+            | "htmlentities"
+            | "htmlspecialchars_decode"
+            | "html_entity_decode"
+            | "get_html_translation_table"
             | "nl2br"
             | "str_repeat"
             | "str_pad"
@@ -89273,6 +89307,18 @@ fn builtin_global_constant_value(name: &str) -> Option<Value> {
         "STR_PAD_LEFT" => Some(Value::Int(PHP_STR_PAD_LEFT)),
         "STR_PAD_RIGHT" => Some(Value::Int(PHP_STR_PAD_RIGHT)),
         "STR_PAD_BOTH" => Some(Value::Int(PHP_STR_PAD_BOTH)),
+        "HTML_SPECIALCHARS" => Some(Value::Int(PHP_HTML_SPECIALCHARS)),
+        "HTML_ENTITIES" => Some(Value::Int(PHP_HTML_ENTITIES)),
+        "ENT_COMPAT" => Some(Value::Int(PHP_ENT_COMPAT)),
+        "ENT_QUOTES" => Some(Value::Int(PHP_ENT_QUOTES)),
+        "ENT_NOQUOTES" => Some(Value::Int(PHP_ENT_NOQUOTES)),
+        "ENT_IGNORE" => Some(Value::Int(PHP_ENT_IGNORE)),
+        "ENT_SUBSTITUTE" => Some(Value::Int(PHP_ENT_SUBSTITUTE)),
+        "ENT_DISALLOWED" => Some(Value::Int(PHP_ENT_DISALLOWED)),
+        "ENT_HTML401" => Some(Value::Int(PHP_ENT_HTML401)),
+        "ENT_XML1" => Some(Value::Int(PHP_ENT_XML1)),
+        "ENT_XHTML" => Some(Value::Int(PHP_ENT_XHTML)),
+        "ENT_HTML5" => Some(Value::Int(PHP_ENT_HTML5)),
         "LC_CTYPE" => Some(Value::Int(PHP_LC_CTYPE)),
         "LC_NUMERIC" => Some(Value::Int(PHP_LC_NUMERIC)),
         "LC_TIME" => Some(Value::Int(PHP_LC_TIME)),
@@ -95442,6 +95488,462 @@ fn call_lcfirst(args: &[Value], span: Span) -> CompileResult<Value> {
 }
 
 const PHP_UCWORDS_DEFAULT_DELIMITERS: &[u8] = b" \t\r\n\x0b\x0c";
+
+const PHP_HTML_SPECIALCHARS: i64 = 0;
+const PHP_HTML_ENTITIES: i64 = 1;
+const PHP_ENT_NOQUOTES: i64 = 0;
+const PHP_ENT_COMPAT: i64 = 2;
+const PHP_ENT_QUOTES: i64 = 3;
+const PHP_ENT_IGNORE: i64 = 4;
+const PHP_ENT_SUBSTITUTE: i64 = 8;
+const PHP_ENT_HTML401: i64 = 0;
+const PHP_ENT_XML1: i64 = 16;
+const PHP_ENT_XHTML: i64 = 32;
+const PHP_ENT_HTML5: i64 = 48;
+const PHP_ENT_DISALLOWED: i64 = 128;
+const PHP_ENT_DEFAULT: i64 = PHP_ENT_QUOTES | PHP_ENT_SUBSTITUTE | PHP_ENT_HTML401;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum HtmlQuoteMode {
+    None,
+    Double,
+    Both,
+}
+
+fn html_quote_mode(flags: i64) -> HtmlQuoteMode {
+    if flags & PHP_ENT_QUOTES == PHP_ENT_QUOTES {
+        HtmlQuoteMode::Both
+    } else if flags & PHP_ENT_COMPAT == PHP_ENT_COMPAT {
+        HtmlQuoteMode::Double
+    } else {
+        HtmlQuoteMode::None
+    }
+}
+
+fn html_document_type(flags: i64) -> i64 {
+    flags & PHP_ENT_HTML5
+}
+
+fn html_single_quote_entity(flags: i64) -> &'static [u8] {
+    match html_document_type(flags) {
+        PHP_ENT_XML1 | PHP_ENT_XHTML | PHP_ENT_HTML5 => b"&apos;",
+        _ => b"&#039;",
+    }
+}
+
+fn html_decode_apostrophe_entity(flags: i64) -> bool {
+    matches!(
+        html_document_type(flags),
+        PHP_ENT_XML1 | PHP_ENT_XHTML | PHP_ENT_HTML5
+    )
+}
+
+fn html_default_flags(
+    args: &[Value],
+    index: usize,
+    function: &str,
+    span: Span,
+) -> CompileResult<i64> {
+    match args.get(index) {
+        Some(value) => php_internal_int_argument(function, index + 1, "flags", value, span),
+        None => Ok(PHP_ENT_DEFAULT),
+    }
+}
+
+fn html_ignore_encoding_arg(
+    args: &[Value],
+    index: usize,
+    function: &str,
+    span: Span,
+) -> CompileResult<()> {
+    if let Some(value) = args.get(index) {
+        if !matches!(value, Value::Null) {
+            let _ = string_compare_argument_bytes(function, "encoding", value, span)?;
+        }
+    }
+    Ok(())
+}
+
+fn call_htmlspecialchars(args: &[Value], span: Span) -> CompileResult<Value> {
+    if !(1..=4).contains(&args.len()) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "htmlspecialchars()",
+                ArityExpectation::Between { min: 1, max: 4 },
+                args.len(),
+            ),
+        ));
+    }
+
+    let value = string_compare_argument_bytes("htmlspecialchars()", "string", &args[0], span)?;
+    let flags = html_default_flags(args, 1, "htmlspecialchars()", span)?;
+    html_ignore_encoding_arg(args, 2, "htmlspecialchars()", span)?;
+    let double_encode = args.get(3).map(Value::is_truthy).unwrap_or(true);
+    Ok(interpreter_value_from_php_string_bytes(
+        htmlspecialchars_encode_bytes(&value, flags, double_encode),
+    ))
+}
+
+fn call_htmlentities(args: &[Value], span: Span) -> CompileResult<Value> {
+    if !(1..=4).contains(&args.len()) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "htmlentities()",
+                ArityExpectation::Between { min: 1, max: 4 },
+                args.len(),
+            ),
+        ));
+    }
+
+    let value = string_compare_argument_bytes("htmlentities()", "string", &args[0], span)?;
+    let flags = html_default_flags(args, 1, "htmlentities()", span)?;
+    html_ignore_encoding_arg(args, 2, "htmlentities()", span)?;
+    let double_encode = args.get(3).map(Value::is_truthy).unwrap_or(true);
+    Ok(interpreter_value_from_php_string_bytes(
+        htmlentities_encode_bytes(&value, flags, double_encode),
+    ))
+}
+
+fn call_htmlspecialchars_decode(args: &[Value], span: Span) -> CompileResult<Value> {
+    if !(1..=2).contains(&args.len()) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "htmlspecialchars_decode()",
+                ArityExpectation::Between { min: 1, max: 2 },
+                args.len(),
+            ),
+        ));
+    }
+
+    let value =
+        string_compare_argument_bytes("htmlspecialchars_decode()", "string", &args[0], span)?;
+    let flags = html_default_flags(args, 1, "htmlspecialchars_decode()", span)?;
+    Ok(interpreter_value_from_php_string_bytes(html_decode_bytes(
+        &value, flags, false,
+    )))
+}
+
+fn call_html_entity_decode(args: &[Value], span: Span) -> CompileResult<Value> {
+    if !(1..=3).contains(&args.len()) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "html_entity_decode()",
+                ArityExpectation::Between { min: 1, max: 3 },
+                args.len(),
+            ),
+        ));
+    }
+
+    let value = string_compare_argument_bytes("html_entity_decode()", "string", &args[0], span)?;
+    let flags = html_default_flags(args, 1, "html_entity_decode()", span)?;
+    html_ignore_encoding_arg(args, 2, "html_entity_decode()", span)?;
+    Ok(interpreter_value_from_php_string_bytes(html_decode_bytes(
+        &value, flags, true,
+    )))
+}
+
+fn call_get_html_translation_table(args: &[Value], span: Span) -> CompileResult<Value> {
+    if args.len() > 3 {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "get_html_translation_table()",
+                ArityExpectation::Between { min: 0, max: 3 },
+                args.len(),
+            ),
+        ));
+    }
+
+    let table = match args.get(0) {
+        Some(value) => {
+            php_internal_int_argument("get_html_translation_table()", 1, "table", value, span)?
+        }
+        None => PHP_HTML_SPECIALCHARS,
+    };
+    let flags = html_default_flags(args, 1, "get_html_translation_table()", span)?;
+    html_ignore_encoding_arg(args, 2, "get_html_translation_table()", span)?;
+    if table != PHP_HTML_SPECIALCHARS && table != PHP_HTML_ENTITIES {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "get_html_translation_table()",
+                "Argument #1 ($table) must be HTML_SPECIALCHARS or HTML_ENTITIES",
+            ),
+        ));
+    }
+
+    let mut array = PhpArray::new();
+    html_insert_translation(&mut array, b"&", b"&amp;");
+    html_insert_translation(&mut array, b">", b"&gt;");
+    html_insert_translation(&mut array, b"<", b"&lt;");
+    match html_quote_mode(flags) {
+        HtmlQuoteMode::Both => {
+            html_insert_translation(&mut array, b"\"", b"&quot;");
+            html_insert_translation(&mut array, b"'", html_single_quote_entity(flags));
+        }
+        HtmlQuoteMode::Double => html_insert_translation(&mut array, b"\"", b"&quot;"),
+        HtmlQuoteMode::None => {}
+    }
+    if table == PHP_HTML_ENTITIES {
+        for (bytes, entity) in HTML_ENTITY_EXTRA_TRANSLATIONS {
+            html_insert_translation(&mut array, bytes, entity.as_bytes());
+        }
+    }
+    Ok(Value::Array(array))
+}
+
+fn html_insert_translation(array: &mut PhpArray, bytes: &[u8], entity: &[u8]) {
+    let key = String::from_utf8_lossy(bytes).into_owned();
+    let value = interpreter_value_from_php_string_bytes(entity.to_vec());
+    array.insert(ArrayKey::String(key), value);
+}
+
+fn htmlspecialchars_encode_bytes(value: &[u8], flags: i64, double_encode: bool) -> Vec<u8> {
+    html_encode_bytes(value, flags, double_encode, false)
+}
+
+fn htmlentities_encode_bytes(value: &[u8], flags: i64, double_encode: bool) -> Vec<u8> {
+    html_encode_bytes(value, flags, double_encode, true)
+}
+
+fn html_encode_bytes(value: &[u8], flags: i64, double_encode: bool, all_entities: bool) -> Vec<u8> {
+    let mut output = Vec::with_capacity(value.len());
+    let quote_mode = html_quote_mode(flags);
+    let mut index = 0;
+    while index < value.len() {
+        let byte = value[index];
+        match byte {
+            b'&' if !double_encode && html_entity_like_end(value, index).is_some() => {
+                output.push(byte);
+                index += 1;
+            }
+            b'&' => {
+                output.extend_from_slice(b"&amp;");
+                index += 1;
+            }
+            b'<' => {
+                output.extend_from_slice(b"&lt;");
+                index += 1;
+            }
+            b'>' => {
+                output.extend_from_slice(b"&gt;");
+                index += 1;
+            }
+            b'\"' if matches!(quote_mode, HtmlQuoteMode::Double | HtmlQuoteMode::Both) => {
+                output.extend_from_slice(b"&quot;");
+                index += 1;
+            }
+            b'\'' if matches!(quote_mode, HtmlQuoteMode::Both) => {
+                output.extend_from_slice(html_single_quote_entity(flags));
+                index += 1;
+            }
+            _ if all_entities => {
+                if let Some((consumed, entity)) = html_extra_entity_at(value, index) {
+                    output.extend_from_slice(entity.as_bytes());
+                    index += consumed;
+                } else {
+                    output.push(byte);
+                    index += 1;
+                }
+            }
+            _ => {
+                output.push(byte);
+                index += 1;
+            }
+        }
+    }
+    output
+}
+
+fn html_entity_like_end(value: &[u8], amp_index: usize) -> Option<usize> {
+    let mut index = amp_index + 1;
+    if value.get(index) == Some(&b'#') {
+        index += 1;
+        if matches!(value.get(index).copied(), Some(b'x' | b'X')) {
+            index += 1;
+            let start = index;
+            while matches!(value.get(index), Some(byte) if byte.is_ascii_hexdigit()) {
+                index += 1;
+            }
+            return (index > start && value.get(index) == Some(&b';')).then_some(index);
+        }
+        let start = index;
+        while matches!(value.get(index), Some(byte) if byte.is_ascii_digit()) {
+            index += 1;
+        }
+        return (index > start && value.get(index) == Some(&b';')).then_some(index);
+    }
+
+    let start = index;
+    while matches!(value.get(index), Some(byte) if byte.is_ascii_alphanumeric()) {
+        index += 1;
+    }
+    (index > start && value.get(index) == Some(&b';')).then_some(index)
+}
+
+fn html_decode_bytes(value: &[u8], flags: i64, all_entities: bool) -> Vec<u8> {
+    let mut output = Vec::with_capacity(value.len());
+    let quote_mode = html_quote_mode(flags);
+    let mut index = 0;
+    while index < value.len() {
+        if value[index] != b'&' {
+            output.push(value[index]);
+            index += 1;
+            continue;
+        }
+
+        if let Some((consumed, decoded)) =
+            html_decode_entity_at(value, index, flags, quote_mode, all_entities)
+        {
+            output.extend_from_slice(&decoded);
+            index += consumed;
+        } else {
+            output.push(value[index]);
+            index += 1;
+        }
+    }
+    output
+}
+
+fn html_decode_entity_at(
+    value: &[u8],
+    amp_index: usize,
+    flags: i64,
+    quote_mode: HtmlQuoteMode,
+    all_entities: bool,
+) -> Option<(usize, Vec<u8>)> {
+    let rest = &value[amp_index..];
+    for (entity, decoded) in HTML_BASIC_DECODE_ENTITIES {
+        if rest.starts_with(entity.as_bytes()) {
+            let allowed = match *entity {
+                "&quot;" => matches!(quote_mode, HtmlQuoteMode::Double | HtmlQuoteMode::Both),
+                "&#039;" => matches!(quote_mode, HtmlQuoteMode::Both),
+                "&apos;" => {
+                    matches!(quote_mode, HtmlQuoteMode::Both)
+                        && html_decode_apostrophe_entity(flags)
+                }
+                _ => true,
+            };
+            if allowed {
+                return Some((entity.len(), decoded.as_bytes().to_vec()));
+            }
+        }
+    }
+
+    if all_entities {
+        for (decoded, entity) in HTML_ENTITY_EXTRA_TRANSLATIONS {
+            if rest.starts_with(entity.as_bytes()) {
+                return Some((entity.len(), decoded.to_vec()));
+            }
+        }
+    }
+
+    html_numeric_entity_at(value, amp_index).and_then(|(consumed, codepoint)| {
+        if html_numeric_decode_allowed(codepoint, quote_mode, all_entities) {
+            let mut buffer = [0_u8; 4];
+            char::from_u32(codepoint).map(|character| {
+                (
+                    consumed,
+                    character.encode_utf8(&mut buffer).as_bytes().to_vec(),
+                )
+            })
+        } else {
+            None
+        }
+    })
+}
+
+fn html_numeric_entity_at(value: &[u8], amp_index: usize) -> Option<(usize, u32)> {
+    let mut index = amp_index + 1;
+    if value.get(index) != Some(&b'#') {
+        return None;
+    }
+    index += 1;
+    let radix = if matches!(value.get(index).copied(), Some(b'x' | b'X')) {
+        index += 1;
+        16
+    } else {
+        10
+    };
+    let start = index;
+    while matches!(value.get(index), Some(byte) if byte.is_ascii_hexdigit()) {
+        index += 1;
+    }
+    if start == index || value.get(index) != Some(&b';') {
+        return None;
+    }
+    let digits = std::str::from_utf8(&value[start..index]).ok()?;
+    let codepoint = u32::from_str_radix(digits, radix).ok()?;
+    Some((index + 1 - amp_index, codepoint))
+}
+
+fn html_numeric_decode_allowed(
+    codepoint: u32,
+    quote_mode: HtmlQuoteMode,
+    all_entities: bool,
+) -> bool {
+    match codepoint {
+        34 => matches!(quote_mode, HtmlQuoteMode::Double | HtmlQuoteMode::Both),
+        39 => matches!(quote_mode, HtmlQuoteMode::Both),
+        38 | 60 | 62 => true,
+        _ => {
+            all_entities
+                && (codepoint == 9 || codepoint == 10 || codepoint == 13 || codepoint >= 32)
+        }
+    }
+}
+
+static HTML_BASIC_DECODE_ENTITIES: &[(&str, &str)] = &[
+    ("&quot;", "\""),
+    ("&#039;", "'"),
+    ("&apos;", "'"),
+    ("&amp;", "&"),
+    ("&lt;", "<"),
+    ("&gt;", ">"),
+];
+
+static HTML_ENTITY_EXTRA_TRANSLATIONS: &[(&[u8], &str)] = &[
+    ("\u{00a0}".as_bytes(), "&nbsp;"),
+    ("\u{00a1}".as_bytes(), "&iexcl;"),
+    ("\u{00a2}".as_bytes(), "&cent;"),
+    ("\u{00a3}".as_bytes(), "&pound;"),
+    ("\u{00a4}".as_bytes(), "&curren;"),
+    ("\u{00a5}".as_bytes(), "&yen;"),
+    ("\u{00a9}".as_bytes(), "&copy;"),
+    ("\u{00ae}".as_bytes(), "&reg;"),
+    ("\u{00c4}".as_bytes(), "&Auml;"),
+    ("\u{00c5}".as_bytes(), "&Aring;"),
+    ("\u{00e5}".as_bytes(), "&aring;"),
+    ("\u{00e9}".as_bytes(), "&eacute;"),
+    ("\u{0152}".as_bytes(), "&OElig;"),
+    ("\u{0153}".as_bytes(), "&oelig;"),
+    ("\u{0178}".as_bytes(), "&Yuml;"),
+    (&[0xa0], "&nbsp;"),
+    (&[0xa1], "&iexcl;"),
+    (&[0xa2], "&cent;"),
+    (&[0xa3], "&pound;"),
+    (&[0xa4], "&curren;"),
+    (&[0xa5], "&yen;"),
+    (&[0xa9], "&copy;"),
+    (&[0xae], "&reg;"),
+    (&[0xc4], "&Auml;"),
+    (&[0xc5], "&Aring;"),
+    (&[0xe5], "&aring;"),
+    (&[0xe9], "&eacute;"),
+];
+
+fn html_extra_entity_at(value: &[u8], index: usize) -> Option<(usize, &'static str)> {
+    for (bytes, entity) in HTML_ENTITY_EXTRA_TRANSLATIONS {
+        if value[index..].starts_with(bytes) {
+            return Some((bytes.len(), *entity));
+        }
+    }
+    None
+}
 
 fn call_ucwords(args: &[Value], span: Span) -> CompileResult<Value> {
     if !(1..=2).contains(&args.len()) {
