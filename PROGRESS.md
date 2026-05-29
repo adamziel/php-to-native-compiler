@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-29 17:47 CEST
+Updated: 2026-05-29 18:02 CEST
 Primary branch: `master`
 Latest source head: `f1bd55bf fix: repair dynamic indirect call diagnostics`
 
@@ -13,13 +13,11 @@ Progress is the pinned php-src PHPT full-suite pass rate:
 
 `passed runnable PHPTs / total runnable PHPTs`
 
-Current score: **2741 / 20294 pinned runnable PHPTs = 13.51%**.
+Current score: **2945 / 20294 pinned runnable PHPTs = 14.51%**.
 
-Post-Batch012 regression repair source `f1bd55bf` is integrated and pushed.
-It repairs the four dynamic/indirect-call latest-published PASS regressions
-found by the Batch012 checkpoint10 gate, but the public percentage remains
-unchanged until the pinned full-suite publication gate is rerun, parsed, and
-published here.
+The Batch012 dynamic/indirect-call regression repair source `f1bd55bf` is
+integrated and published by a pinned sharded full-suite gate. The gate recorded
+2945 passed pinned runnable PHPTs with zero latest-published PASS regressions.
 
 No other percentage is public project progress. Focused PHPT passes, source
 checkpoints, PRs, and docs/status edits are evidence for the next batch, but
@@ -162,7 +160,7 @@ Batch010 checkpoint10 still has BORKED rows, so the public score uses the
 stable pinned denominator and does not use the raw runner
 `2563 / 18694 = 13.71%` calculation.
 
-The latest full-suite result is the Batch011 burst1 sharded publication gate
+The Batch011 burst1 sharded publication gate
 on the same php-src pin, run
 `phpt-full-batch011-burst1-publication-sharded-20260529T122703Z-php-src-f97ff59-public-c956a1c0-source-cb2064dc`.
 Counts: 2741 passed, 15938 failed, 2573 skipped, 15 xfailed, 1064 borked;
@@ -173,6 +171,18 @@ the latest published Batch010 PASS set: 0. Evidence lives under
 Batch011 burst1 still has BORKED rows, so the public score uses the stable
 pinned denominator and does not use the raw runner
 `2741 / 18694 = 14.66%` calculation.
+
+The latest full-suite result is the Batch012 dynamic-call repair sharded
+publication gate on the same php-src pin, run
+`phpt-full-batch012-dynamic-repair-publication-sharded-20260529T154830Z-php-src-f97ff59-public-c5e560c4-source-f1bd55bf`.
+Counts: 2945 passed, 15739 failed, 2568 skipped, 15 xfailed, 1064 borked;
+all 12 shards exited nonzero because failing PHPTs remain. Regressions from
+the latest published Batch011 PASS set: 0. Evidence lives under
+`/home/claude/supervised-php-compiler/state/logs/phpt-full-batch012-dynamic-repair-publication-sharded-20260529T154830Z-php-src-f97ff59-public-c5e560c4-source-f1bd55bf`.
+
+Batch012 dynamic repair still has BORKED rows, so the public score uses the
+stable pinned denominator and does not use the raw runner
+`2945 / 18699 = 15.75%` calculation.
 
 ## PHPT Harness
 
@@ -204,7 +214,8 @@ pinned denominator and does not use the raw runner
 | Batch010 checkpoint10 regression-repair sharded gate | Done | 2563 / 20294 pinned runnable PHPTs passed (12.63%); only PASS-loss row was `ext/standard/tests/file/bug75679.phpt`, guarded by a same-binary short-path focused PASS; run id `phpt-full-batch010-checkpoint10-regression-repair-sharded-20260529T112818Z-php-src-f97ff59-public-6f6ac240-source-783436bd` |
 | Batch011 source burst | Published | Checkpoint1 is p63 residual string byte/scalar builtins focused source proof (+21 expected direct rows); checkpoint2 is p43 copy/filesize/unlink diagnostics focused source proof (+10 expected direct rows); checkpoint3 is p43 standard file metadata/time/link focused source proof (+21 expected direct rows); checkpoint4 is p66 ReflectionProperty / ReflectionParameter / ReflectionClassConstant residual focused source proof (+10 expected direct rows); checkpoint5 is p47 `range()` focused source proof (+16 expected direct rows); burst total is +78 expected direct rows; burst1 sharded gate published 2741 / 20294 with zero latest-published PASS regressions. |
 | Batch011 burst1 sharded gate | Done | 2741 / 20294 pinned runnable PHPTs passed (13.51%); 0 regressions from the Batch010 checkpoint10 repaired PASS set; run id `phpt-full-batch011-burst1-publication-sharded-20260529T122703Z-php-src-f97ff59-public-c956a1c0-source-cb2064dc` |
-| Batch012 source batch | Active | Checkpoint1 is p31 dynamic-call/reference focused source proof (+13 expected direct rows), committed as `75833ad5`; checkpoint2 is p66/p39 ReflectionExtension / ReflectionZendExtension metadata focused source proof (+13 expected direct rows), committed as `376ad126`; checkpoint3 is p42 `array_fill()` / `array_diff_assoc()` / `array_intersect_assoc()` focused source proof (+15 expected direct rows), committed as `5d1a84be`; checkpoint4 is p15 type declaration diagnostics focused source proof (+20 expected direct rows), committed as `f325b200`; checkpoint5 is p63 string algorithm builtins focused source proof (+11 expected direct rows), committed as `78de5a1e`; checkpoint6 is p31 user comparator sort focused source proof (+17 expected direct rows), committed as `59292a26`; checkpoint7 is p43 directory/glob builtins focused source proof (+10 expected direct rows), committed as `661b4f5c`; checkpoint8 is p31 array user-comparison builtins focused source proof (+19 expected direct rows), committed as `007075de`; checkpoint9 is p31 `array_walk()` / `array_walk_recursive()` focused source proof (+19 expected direct rows), committed as `7fd908ba`; checkpoint10 is p42 array-key coercion focused source proof (+20 expected direct rows), committed as `2f69a24d`; Batch012 is 10 / 10 checkpoints and +157 expected direct rows. Public score remains 2741 / 20294 until the checkpoint10 full-suite gate and regression repair are completed and published. |
+| Batch012 source batch | Published | Checkpoint1 is p31 dynamic-call/reference focused source proof (+13 expected direct rows), committed as `75833ad5`; checkpoint2 is p66/p39 ReflectionExtension / ReflectionZendExtension metadata focused source proof (+13 expected direct rows), committed as `376ad126`; checkpoint3 is p42 `array_fill()` / `array_diff_assoc()` / `array_intersect_assoc()` focused source proof (+15 expected direct rows), committed as `5d1a84be`; checkpoint4 is p15 type declaration diagnostics focused source proof (+20 expected direct rows), committed as `f325b200`; checkpoint5 is p63 string algorithm builtins focused source proof (+11 expected direct rows), committed as `78de5a1e`; checkpoint6 is p31 user comparator sort focused source proof (+17 expected direct rows), committed as `59292a26`; checkpoint7 is p43 directory/glob builtins focused source proof (+10 expected direct rows), committed as `661b4f5c`; checkpoint8 is p31 array user-comparison builtins focused source proof (+19 expected direct rows), committed as `007075de`; checkpoint9 is p31 `array_walk()` / `array_walk_recursive()` focused source proof (+19 expected direct rows), committed as `7fd908ba`; checkpoint10 is p42 array-key coercion focused source proof (+20 expected direct rows), committed as `2f69a24d`; Batch012 is 10 / 10 checkpoints and +157 expected direct rows. The initial checkpoint10 gate candidate was blocked by four dynamic/indirect-call PASS regressions, then source `f1bd55bf` repaired them. |
+| Batch012 dynamic-call repair sharded gate | Done | 2945 / 20294 pinned runnable PHPTs passed (14.51%); 0 regressions from the Batch011 PASS set; run id `phpt-full-batch012-dynamic-repair-publication-sharded-20260529T154830Z-php-src-f97ff59-public-c5e560c4-source-f1bd55bf` |
 
 Focused PHPT history is tracked separately in
 `/home/claude/supervised-php-compiler/state/php-core-suite-focused-history.tsv`.
@@ -212,13 +223,20 @@ Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
 
-Batch012 source batch checkpoint10 is primary-integrated under AO supervision.
-This is focused source proof, not a public percentage change. The public PHPT
-score remains **2741 / 20294 pinned runnable PHPTs = 13.51%** until the
-Batch012 checkpoint10 pinned full-suite gate is parsed, latest-published PASS
-regressions are repaired or guarded, and this file is updated again.
+Batch012 checkpoint10 plus the dynamic/indirect-call regression repair are
+published under AO supervision. The public PHPT score is now
+**2945 / 20294 pinned runnable PHPTs = 14.51%**.
 
-- primary source head:
+- latest published gate:
+  `phpt-full-batch012-dynamic-repair-publication-sharded-20260529T154830Z-php-src-f97ff59-public-c5e560c4-source-f1bd55bf`
+- latest source head:
+  `f1bd55bf fix: repair dynamic indirect call diagnostics`
+- raw gate counts:
+  2945 passed, 15739 failed, 2568 skipped, 15 xfailed, 1064 borked
+- latest-published PASS regressions:
+  0
+
+- checkpoint10 source head:
   `2f69a24d fix: improve array key coercion`
 - reviewed and integration patch:
   `/home/claude/supervised-php-compiler/state/patches/p42-array-key-coercion-current-ca1b79a4-sourceeq-7fd908ba-20260529T1700.patch`
