@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-29 20:44 CEST
+Updated: 2026-05-29 20:58 CEST
 Primary branch: `master`
-Latest source head: `100adcb7 fix: add base conversion and ctype builtins`
+Latest source head: `5b9f764d fix: add SplFixedArray and recursive array merge semantics`
 
 ## Progress Score
 
@@ -43,7 +43,13 @@ Batch014 source checkpoint1 `100adcb7` is integrated with focused lowercase
 The combined focused gate recorded `61 PASS / 0 FAIL / 1 SKIP` across 62
 selected PHPTs: 13 base-conversion rows plus 48 ctype rows, with
 `lc_ctype_inheritance.phpt` skipped for missing `de_DE` locale. Batch014 source
-progress is now 1 checkpoint and +61 expected direct rows. The public
+progress after checkpoint1 was 1 checkpoint and +61 expected direct rows.
+Batch014 source checkpoint2 `5b9f764d` is integrated with focused lowercase
+`-p` proof for p50 repaired `SplFixedArray` support and p47 repaired
+`array_merge_recursive()` semantics. The combined focused gate recorded
+`23 PASS / 0 FAIL / 0 SKIP` across 23 selected PHPTs: 11 `SplFixedArray` rows
+plus 12 `array_merge_recursive()` rows. Batch014 source progress is now
+2 checkpoints and +84 expected direct rows. The public
 percentage remains `3170 / 20294 = 15.62%` until the next pinned full-suite
 gate is completed, regression-checked, and published here.
 
