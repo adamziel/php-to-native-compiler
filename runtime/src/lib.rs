@@ -31281,9 +31281,24 @@ impl PhpClassTable {
         classes
             .declare_class("PDOStatement")
             .expect("core class table should contain PDO before PDOStatement");
+        let rounding_mode_id = classes
+            .declare_class("RoundingMode")
+            .expect("core class table should contain PDOStatement before RoundingMode");
+        let rounding_mode = classes
+            .get_mut(rounding_mode_id)
+            .expect("declared RoundingMode class id should resolve");
+        rounding_mode
+            .add_property(PhpPropertyMetadata::instance("name", Visibility::Public))
+            .expect("RoundingMode core metadata should not duplicate name");
+        rounding_mode
+            .add_method(PhpMethodMetadata::static_method(
+                "cases",
+                Visibility::Public,
+            ))
+            .expect("RoundingMode core metadata should not duplicate methods");
         let datetimezone_id = classes
             .declare_class("DateTimeZone")
-            .expect("core class table should contain PDOStatement before DateTimeZone");
+            .expect("core class table should contain RoundingMode before DateTimeZone");
         let datetimezone = classes
             .get_mut(datetimezone_id)
             .expect("declared DateTimeZone class id should resolve");

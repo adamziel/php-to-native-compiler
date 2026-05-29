@@ -122,3 +122,54 @@ try {
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);
 }
+
+#[test]
+fn bcmath_rounding_modes_are_generalized() {
+    let execution = run_source(
+        r#"<?php
+foreach (RoundingMode::cases() as $mode) {
+    echo $mode->name, "=", bcround("2.5", 0, $mode), "\n";
+}
+echo bcround("1.5"), "\n";
+echo bcround("123", 1), "\n";
+echo bcround("50", -2, RoundingMode::HalfEven), "\n";
+echo bcround("50", -2, RoundingMode::HalfOdd), "\n";
+echo bcround("3450.0001", -2, RoundingMode::HalfTowardsZero), "\n";
+echo bcround("-0.0005", 3, RoundingMode::HalfAwayFromZero), "\n";
+var_dump(function_exists("bcround"));
+$reflection = new ReflectionFunction("bcround");
+echo $reflection->getNumberOfParameters(), ":", $reflection->getNumberOfRequiredParameters(), "\n";
+try {
+    bcround("hoge");
+} catch (Throwable $e) {
+    echo get_class($e), ":", $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "HalfAwayFromZero=3\n",
+            "HalfTowardsZero=2\n",
+            "HalfEven=2\n",
+            "HalfOdd=3\n",
+            "TowardsZero=2\n",
+            "AwayFromZero=3\n",
+            "NegativeInfinity=2\n",
+            "PositiveInfinity=3\n",
+            "2\n",
+            "123.0\n",
+            "0\n",
+            "100\n",
+            "3500\n",
+            "-0.001\n",
+            "bool(true)\n",
+            "3:1\n",
+            "ValueError:bcround(): Argument #1 ($num) is not well-formed\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}

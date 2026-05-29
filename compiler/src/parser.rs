@@ -2391,14 +2391,37 @@ impl Parser {
         let iterable = self.parse_expression()?;
         self.consume_foreach_as()?;
         let first_by_reference = self.match_token(|kind| matches!(kind, TokenKind::Ampersand));
-        if self.check(|kind| matches!(kind, TokenKind::LBracket)) {
+        if first_by_reference && self.check_foreach_destructuring_target_start() {
             return Err(self.error_at(
                 self.peek().span,
                 unsupported_foreach_destructuring_message(),
             ));
         }
         let (first_variable, first_variable_span) =
-            self.consume_variable_with_span("expected foreach value variable")?;
+            if self.check_foreach_destructuring_target_start() {
+                let value = self.parse_foreach_value_target()?;
+                if self.match_token(|kind| matches!(kind, TokenKind::FatArrow)) {
+                    return Err(
+                        self.error_at(value.span(), unsupported_foreach_destructuring_message())
+                    );
+                }
+                self.consume_keyword(
+                    TokenKind::RParen,
+                    "expected ')' after foreach value variable",
+                )?;
+                let body = self.parse_block_or_statement()?;
+
+                return Ok(Stmt::Foreach {
+                    iterable,
+                    key: None,
+                    value,
+                    by_reference: first_by_reference,
+                    body,
+                    span,
+                });
+            } else {
+                self.consume_variable_with_span("expected foreach value variable")?
+            };
         let (key, value, by_reference) = if self
             .match_token(|kind| matches!(kind, TokenKind::FatArrow))
         {
@@ -2409,15 +2432,13 @@ impl Parser {
                     ));
             }
             let value_by_reference = self.match_token(|kind| matches!(kind, TokenKind::Ampersand));
-            if self.check(|kind| matches!(kind, TokenKind::LBracket)) {
+            if value_by_reference && self.check_foreach_destructuring_target_start() {
                 return Err(self.error_at(
                     self.peek().span,
                     unsupported_foreach_destructuring_message(),
                 ));
             }
-            let (value, value_span) =
-                self.consume_variable_with_span("expected foreach value variable")?;
-            let value = self.parse_foreach_value_target_tail(value, value_span)?;
+            let value = self.parse_foreach_value_target()?;
             (Some(first_variable), value, value_by_reference)
         } else {
             let value =
@@ -2438,6 +2459,109 @@ impl Parser {
             body,
             span,
         })
+    }
+
+    fn check_foreach_destructuring_target_start(&self) -> bool {
+        self.check(|kind| matches!(kind, TokenKind::LBracket))
+            || (self.check(
+                |kind| matches!(kind, TokenKind::Identifier(name) if name.eq_ignore_ascii_case("list")),
+            ) && matches!(self.peek_next().kind, TokenKind::LParen))
+    }
+
+    fn parse_foreach_value_target(&mut self) -> CompileResult<ForeachValueTarget> {
+        if self.check(|kind| matches!(kind, TokenKind::LBracket)) {
+            let span = self.advance().span;
+            return self.parse_foreach_destructuring_target(span, TokenKind::RBracket);
+        }
+
+        if self.check(
+            |kind| matches!(kind, TokenKind::Identifier(name) if name.eq_ignore_ascii_case("list")),
+        ) && matches!(self.peek_next().kind, TokenKind::LParen)
+        {
+            let span = self.advance().span;
+            self.consume_keyword(TokenKind::LParen, "expected '(' after list")?;
+            return self.parse_foreach_destructuring_target(span, TokenKind::RParen);
+        }
+
+        let (name, span) = self.consume_variable_with_span("expected foreach value variable")?;
+        self.parse_foreach_value_target_tail(name, span)
+    }
+
+    fn parse_foreach_destructuring_target(
+        &mut self,
+        span: Span,
+        closing_token: TokenKind,
+    ) -> CompileResult<ForeachValueTarget> {
+        let mut items = Vec::new();
+
+        if self.check(|kind| same_token_kind(kind, &closing_token)) {
+            return Err(self.error_at(span, unsupported_foreach_destructuring_message()));
+        }
+
+        loop {
+            match self.peek().kind.clone() {
+                TokenKind::Comma => {
+                    items.push(None);
+                    self.advance();
+                    if self.check(|kind| same_token_kind(kind, &closing_token)) {
+                        break;
+                    }
+                    continue;
+                }
+                TokenKind::Variable(name) => {
+                    let item_span = self.advance().span;
+                    let item = self.parse_foreach_value_target_tail(name, item_span)?;
+                    if !self.check(|kind| {
+                        matches!(kind, TokenKind::Comma) || same_token_kind(kind, &closing_token)
+                    }) {
+                        return Err(self.error_at(
+                            self.peek().span,
+                            unsupported_foreach_destructuring_message(),
+                        ));
+                    }
+                    items.push(Some(item));
+                }
+                TokenKind::Ampersand | TokenKind::LBracket => {
+                    return Err(self.error_at(
+                        self.peek().span,
+                        unsupported_foreach_destructuring_message(),
+                    ));
+                }
+                TokenKind::Identifier(name) if name.eq_ignore_ascii_case("list") => {
+                    return Err(self.error_at(
+                        self.peek().span,
+                        unsupported_foreach_destructuring_message(),
+                    ));
+                }
+                _ => {
+                    return Err(self.error_at(
+                        self.peek().span,
+                        unsupported_foreach_destructuring_message(),
+                    ));
+                }
+            }
+
+            if !self.match_token(|kind| matches!(kind, TokenKind::Comma)) {
+                break;
+            }
+            if self.check(|kind| same_token_kind(kind, &closing_token)) {
+                break;
+            }
+        }
+
+        if items.iter().all(Option::is_none) {
+            return Err(self.error_at(span, unsupported_foreach_destructuring_message()));
+        }
+
+        let message = if same_token_kind(&closing_token, &TokenKind::RParen) {
+            "expected ')' after foreach list target"
+        } else if same_token_kind(&closing_token, &TokenKind::RBracket) {
+            "expected ']' after foreach list target"
+        } else {
+            unreachable!("foreach destructuring target uses a closing delimiter")
+        };
+        self.consume_keyword(closing_token, message)?;
+        Ok(ForeachValueTarget::List { items, span })
     }
 
     fn parse_foreach_value_target_tail(
@@ -8841,7 +8965,7 @@ fn unsupported_foreach_expression_message() -> &'static str {
 }
 
 fn unsupported_foreach_destructuring_message() -> &'static str {
-    "unsupported foreach: destructuring loop targets are not implemented"
+    "unsupported foreach: only by-value positional destructuring loop targets with variables, object properties, and skipped slots are implemented; by-reference, nested, keyed, and expression targets are not implemented"
 }
 
 fn unsupported_do_while_expression_message() -> &'static str {

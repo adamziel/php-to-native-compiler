@@ -9694,6 +9694,32 @@ impl Interpreter {
                 scope.write_static(name, assigned_value);
                 Ok(())
             }
+            ForeachValueTarget::List { items, span } => {
+                let array = match assigned_value {
+                    Value::Array(array) => array,
+                    other => {
+                        return Err(runtime_error(
+                            *span,
+                            RuntimeError::unsupported_call(
+                                "foreach destructuring",
+                                format!("value must be array, got {}", other.type_name()),
+                            ),
+                        ));
+                    }
+                };
+
+                for (index, item) in items.iter().enumerate() {
+                    let Some(item) = item else {
+                        continue;
+                    };
+                    let element = array
+                        .get_cloned(ArrayKey::Int(index as i64))
+                        .unwrap_or(Value::Null);
+                    self.write_foreach_value_target(item, element, *span, scope)?;
+                }
+
+                Ok(())
+            }
             ForeachValueTarget::Property {
                 object, property, ..
             } => self.write_foreach_object_property_target(
@@ -9761,6 +9787,13 @@ impl Interpreter {
             ForeachValueTarget::Variable { name, .. } => {
                 bind_foreach_reference_to_key(scope, name, root, key, span)
             }
+            ForeachValueTarget::List { .. } => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "foreach",
+                    "by-reference destructuring loop targets are not implemented",
+                ),
+            )),
             ForeachValueTarget::Property {
                 object, property, ..
             } => {
@@ -42448,6 +42481,12 @@ impl Interpreter {
             .get(class_id)
             .expect("class id should resolve to class metadata");
         let receiver_class_name = receiver_class.name().to_string();
+        if receiver_class_name.eq_ignore_ascii_case("RoundingMode")
+            && method_name.eq_ignore_ascii_case("cases")
+        {
+            expect_expr_arity("RoundingMode::cases", args.len(), 0, span)?;
+            return self.rounding_mode_cases_array(span);
+        }
         if receiver_class_name.eq_ignore_ascii_case("DateTimeZone")
             && method_name.eq_ignore_ascii_case("listIdentifiers")
         {
@@ -43770,6 +43809,16 @@ impl Interpreter {
         constant: &str,
         span: Span,
     ) -> CompileResult<Value> {
+        if class_name.eq_ignore_ascii_case("RoundingMode") {
+            let Some(mode) = BcRoundingMode::from_case_name(constant) else {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::undefined_constant(format!("{class_name}::{constant}")),
+                ));
+            };
+            return Ok(Value::Object(self.rounding_mode_case_object(mode, span)?));
+        }
+
         if let Some(class_id) = self.classes.lookup_class_id(class_name) {
             return self.evaluate_resolved_class_constant(class_id, class_name, constant, span);
         }
@@ -67388,6 +67437,7 @@ impl Interpreter {
             "bcscale" => self.call_bcscale(&args, span),
             "bcceil" => call_bcceil(&args, span),
             "bcfloor" => call_bcfloor(&args, span),
+            "bcround" => self.call_bcround(&args, span),
             "bcsqrt" => self.call_bcsqrt(&args, span),
             "version_compare" => call_version_compare(&args, span),
             "microtime" => call_microtime(&args, span),
@@ -77968,6 +78018,14 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
             vec![reflection_internal_optional_null_param("scale", "int")],
         ),
         "bcceil" | "bcfloor" => ("string", vec![reflection_internal_param("num", "string")]),
+        "bcround" => (
+            "string",
+            vec![
+                reflection_internal_param("num", "string"),
+                reflection_internal_optional_int_param("precision", 0),
+                reflection_internal_optional_null_param("mode", "RoundingMode"),
+            ],
+        ),
         "bcsqrt" => (
             "string",
             vec![
@@ -79820,6 +79878,7 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
             | "bccomp()"
             | "bcceil()"
             | "bcfloor()"
+            | "bcround()"
             | "bcsqrt()"
             | "bcscale()",
             message,
@@ -80158,6 +80217,7 @@ fn is_builtin(name: &str) -> bool {
             | "bcscale"
             | "bcceil"
             | "bcfloor"
+            | "bcround"
             | "bcsqrt"
             | "version_compare"
             | "microtime"
@@ -92549,6 +92609,38 @@ impl Interpreter {
             .unwrap_or(0)
     }
 
+    fn rounding_mode_case_object(
+        &self,
+        mode: BcRoundingMode,
+        span: Span,
+    ) -> CompileResult<PhpObject> {
+        let class = self
+            .classes
+            .lookup_class("RoundingMode")
+            .ok_or_else(|| runtime_error(span, RuntimeError::undefined_class("RoundingMode")))?;
+        let class_id = class.id();
+        let object = PhpObject::from_class(class);
+        object
+            .write_property_from_context(
+                "name",
+                Value::String(mode.case_name().to_string()),
+                Some(class_id),
+                &[class_id],
+            )
+            .map_err(|error| runtime_error(span, error))?;
+        Ok(object)
+    }
+
+    fn rounding_mode_cases_array(&self, span: Span) -> CompileResult<Value> {
+        let mut array = PhpArray::new();
+        for mode in BCMATH_ROUNDING_MODE_CASES {
+            array
+                .append(Value::Object(self.rounding_mode_case_object(mode, span)?))
+                .expect("RoundingMode case count fits in array keys");
+        }
+        Ok(Value::Array(array))
+    }
+
     fn call_bc_binary_decimal(
         &mut self,
         name: &'static str,
@@ -92707,6 +92799,32 @@ impl Interpreter {
             scale: 0,
         };
         Ok(Value::String(result.format_with_scale(scale)))
+    }
+
+    fn call_bcround(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(1..=3).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "bcround()",
+                    ArityExpectation::Between { min: 1, max: 3 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let value = bcmath_number_argument("bcround()", 1, "num", &args[0], span)?;
+        let precision = match args.get(1) {
+            Some(value) => bcmath_precision_argument("bcround()", 2, "precision", value, span)?,
+            None => 0,
+        };
+        let mode = match args.get(2) {
+            Some(value) => bcmath_rounding_mode_argument(value, span)?,
+            None => BcRoundingMode::HalfAwayFromZero,
+        };
+        let result = value.round(precision, mode);
+        let output_scale = precision.max(0) as usize;
+        Ok(Value::String(result.format_with_scale(output_scale)))
     }
 
     fn call_bcsqrt(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -94956,6 +95074,58 @@ enum BcBinaryDecimalOp {
     Div,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum BcRoundingMode {
+    HalfAwayFromZero,
+    HalfTowardsZero,
+    HalfEven,
+    HalfOdd,
+    TowardsZero,
+    AwayFromZero,
+    NegativeInfinity,
+    PositiveInfinity,
+}
+
+impl BcRoundingMode {
+    fn from_case_name(name: &str) -> Option<Self> {
+        match name {
+            "HalfAwayFromZero" => Some(Self::HalfAwayFromZero),
+            "HalfTowardsZero" => Some(Self::HalfTowardsZero),
+            "HalfEven" => Some(Self::HalfEven),
+            "HalfOdd" => Some(Self::HalfOdd),
+            "TowardsZero" => Some(Self::TowardsZero),
+            "AwayFromZero" => Some(Self::AwayFromZero),
+            "NegativeInfinity" => Some(Self::NegativeInfinity),
+            "PositiveInfinity" => Some(Self::PositiveInfinity),
+            _ => None,
+        }
+    }
+
+    fn case_name(self) -> &'static str {
+        match self {
+            Self::HalfAwayFromZero => "HalfAwayFromZero",
+            Self::HalfTowardsZero => "HalfTowardsZero",
+            Self::HalfEven => "HalfEven",
+            Self::HalfOdd => "HalfOdd",
+            Self::TowardsZero => "TowardsZero",
+            Self::AwayFromZero => "AwayFromZero",
+            Self::NegativeInfinity => "NegativeInfinity",
+            Self::PositiveInfinity => "PositiveInfinity",
+        }
+    }
+}
+
+const BCMATH_ROUNDING_MODE_CASES: [BcRoundingMode; 8] = [
+    BcRoundingMode::HalfAwayFromZero,
+    BcRoundingMode::HalfTowardsZero,
+    BcRoundingMode::HalfEven,
+    BcRoundingMode::HalfOdd,
+    BcRoundingMode::TowardsZero,
+    BcRoundingMode::AwayFromZero,
+    BcRoundingMode::NegativeInfinity,
+    BcRoundingMode::PositiveInfinity,
+];
+
 const BCMATH_POW_EXPONENT_LIMIT: u64 = 4096;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -95178,6 +95348,66 @@ impl BcDecimal {
         }
     }
 
+    fn round(&self, precision: i32, mode: BcRoundingMode) -> Self {
+        let drop_count = if precision >= 0 {
+            self.scale.saturating_sub(precision as usize)
+        } else {
+            self.scale.saturating_add(precision.unsigned_abs() as usize)
+        };
+        if drop_count == 0 {
+            let output_scale = precision.max(0) as usize;
+            return Self {
+                negative: self.negative,
+                digits: self.digits_at_scale(output_scale),
+                scale: output_scale,
+            }
+            .normalized();
+        }
+
+        let relation = decimal_dropped_half_relation(&self.digits, drop_count);
+        let has_remainder = relation != BcDroppedHalfRelation::Zero;
+        let mut units = decimal_kept_units(&self.digits, drop_count);
+        let unit_is_odd = units.last().is_some_and(|digit| digit % 2 == 1);
+        let increment = match mode {
+            BcRoundingMode::TowardsZero => false,
+            BcRoundingMode::AwayFromZero => has_remainder,
+            BcRoundingMode::NegativeInfinity => self.negative && has_remainder,
+            BcRoundingMode::PositiveInfinity => !self.negative && has_remainder,
+            BcRoundingMode::HalfAwayFromZero => matches!(
+                relation,
+                BcDroppedHalfRelation::Equal | BcDroppedHalfRelation::Greater
+            ),
+            BcRoundingMode::HalfTowardsZero => relation == BcDroppedHalfRelation::Greater,
+            BcRoundingMode::HalfEven => {
+                relation == BcDroppedHalfRelation::Greater
+                    || (relation == BcDroppedHalfRelation::Equal && unit_is_odd)
+            }
+            BcRoundingMode::HalfOdd => {
+                relation == BcDroppedHalfRelation::Greater
+                    || (relation == BcDroppedHalfRelation::Equal && !unit_is_odd)
+            }
+        };
+        if increment {
+            units = decimal_add_small_abs(&units, 1);
+        }
+
+        let output_scale = precision.max(0) as usize;
+        let digits = if precision < 0 {
+            let mut digits = units;
+            digits.extend(std::iter::repeat(0).take(precision.unsigned_abs() as usize));
+            digits
+        } else {
+            units
+        };
+
+        Self {
+            negative: self.negative,
+            digits,
+            scale: output_scale,
+        }
+        .normalized()
+    }
+
     fn format_with_scale(&self, target_scale: usize) -> String {
         let mut digits = self.digits_at_scale(target_scale);
         if target_scale > 0 && digits.len() <= target_scale {
@@ -95262,6 +95492,46 @@ fn normalize_decimal_digits(digits: &mut Vec<u8>) {
 
 fn digits_are_zero(digits: &[u8]) -> bool {
     digits.iter().all(|digit| *digit == 0)
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum BcDroppedHalfRelation {
+    Zero,
+    Less,
+    Equal,
+    Greater,
+}
+
+fn decimal_kept_units(digits: &[u8], drop_count: usize) -> Vec<u8> {
+    if drop_count >= digits.len() {
+        return vec![0];
+    }
+    let mut units = digits[..digits.len() - drop_count].to_vec();
+    normalize_decimal_digits(&mut units);
+    units
+}
+
+fn decimal_dropped_half_relation(digits: &[u8], drop_count: usize) -> BcDroppedHalfRelation {
+    debug_assert!(drop_count > 0);
+    let mut dropped = Vec::with_capacity(drop_count);
+    if drop_count > digits.len() {
+        dropped.extend(std::iter::repeat(0).take(drop_count - digits.len()));
+        dropped.extend_from_slice(digits);
+    } else {
+        dropped.extend_from_slice(&digits[digits.len() - drop_count..]);
+    }
+
+    if digits_are_zero(&dropped) {
+        return BcDroppedHalfRelation::Zero;
+    }
+
+    let mut half = vec![0; drop_count];
+    half[0] = 5;
+    match decimal_cmp_abs(&dropped, &half) {
+        Ordering::Less => BcDroppedHalfRelation::Less,
+        Ordering::Equal => BcDroppedHalfRelation::Equal,
+        Ordering::Greater => BcDroppedHalfRelation::Greater,
+    }
 }
 
 fn decimal_cmp_abs(left: &[u8], right: &[u8]) -> Ordering {
@@ -95573,6 +95843,144 @@ fn bcmath_scale_error(function: &str, position: usize, parameter: &str, span: Sp
             format!("Argument #{position} (${parameter}) must be between 0 and 2147483647"),
         ),
     )
+}
+
+fn bcmath_precision_argument(
+    function: &str,
+    position: usize,
+    parameter: &str,
+    value: &Value,
+    span: Span,
+) -> CompileResult<i32> {
+    let precision = match value {
+        Value::Null => 0_i64,
+        Value::Bool(value) => i64::from(*value),
+        Value::Int(value) => *value,
+        Value::Float(value) if value.is_finite() && value.fract() == 0.0 => *value as i64,
+        Value::String(text) => parse_bcmath_precision_text(text).ok_or_else(|| {
+            bcmath_precision_error(function, position, parameter, value.type_name(), span)
+        })?,
+        Value::BinaryString(bytes) => std::str::from_utf8(bytes)
+            .ok()
+            .and_then(parse_bcmath_precision_text)
+            .ok_or_else(|| {
+                bcmath_precision_error(function, position, parameter, value.type_name(), span)
+            })?,
+        _ => {
+            return Err(bcmath_precision_error(
+                function,
+                position,
+                parameter,
+                value.type_name(),
+                span,
+            ))
+        }
+    };
+
+    if !(i32::MIN as i64..=i32::MAX as i64).contains(&precision) {
+        return Err(bcmath_precision_error(
+            function,
+            position,
+            parameter,
+            value.type_name(),
+            span,
+        ));
+    }
+    let precision = precision as i32;
+    if precision.unsigned_abs() > 10_000 {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                format!(
+                    "Argument #{position} (${parameter}) absolute precision above 10000 is not supported in the current subset"
+                ),
+            ),
+        ));
+    }
+    Ok(precision)
+}
+
+fn parse_bcmath_precision_text(text: &str) -> Option<i64> {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if let Ok(value) = trimmed.parse::<i64>() {
+        return Some(value);
+    }
+    let value = trimmed.parse::<f64>().ok()?;
+    if value.is_finite() && value.fract() == 0.0 {
+        Some(value as i64)
+    } else {
+        None
+    }
+}
+
+fn bcmath_precision_error(
+    function: &str,
+    position: usize,
+    parameter: &str,
+    type_name: &str,
+    span: Span,
+) -> Diagnostic {
+    runtime_error(
+        span,
+        RuntimeError::unsupported_call(
+            function,
+            format!(
+                "Argument #{position} (${parameter}) must be an integer in the current subset, got {type_name}"
+            ),
+        ),
+    )
+}
+
+fn bcmath_rounding_mode_argument(value: &Value, span: Span) -> CompileResult<BcRoundingMode> {
+    let Value::Object(object) = value else {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "bcround()",
+                format!(
+                    "Argument #3 ($mode) must be of type RoundingMode, {} given",
+                    value.type_name()
+                ),
+            ),
+        ));
+    };
+    if !object.class_name().eq_ignore_ascii_case("RoundingMode") {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "bcround()",
+                format!(
+                    "Argument #3 ($mode) must be of type RoundingMode, {} given",
+                    object.class_name()
+                ),
+            ),
+        ));
+    }
+    let name = object
+        .read_public_property("name")
+        .map_err(|error| runtime_error(span, error))?;
+    let Value::String(name) = name else {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "bcround()",
+                "Argument #3 ($mode) RoundingMode case is missing a string name",
+            ),
+        ));
+    };
+    BcRoundingMode::from_case_name(&name).ok_or_else(|| {
+        runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "bcround()",
+                format!("Argument #3 ($mode) unsupported RoundingMode case {name}"),
+            ),
+        )
+    })
 }
 
 fn bcmath_number_argument(

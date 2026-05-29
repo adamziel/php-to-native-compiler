@@ -539,6 +539,10 @@ pub enum ForeachValueTarget {
         name: String,
         span: Span,
     },
+    List {
+        items: Vec<Option<ForeachValueTarget>>,
+        span: Span,
+    },
     Property {
         object: String,
         property: String,
@@ -555,13 +559,14 @@ impl ForeachValueTarget {
     pub fn variable_name(&self) -> Option<&str> {
         match self {
             Self::Variable { name, .. } => Some(name),
-            Self::Property { .. } | Self::DynamicProperty { .. } => None,
+            Self::List { .. } | Self::Property { .. } | Self::DynamicProperty { .. } => None,
         }
     }
 
     pub fn span(&self) -> Span {
         match self {
             Self::Variable { span, .. }
+            | Self::List { span, .. }
             | Self::Property { span, .. }
             | Self::DynamicProperty { span, .. } => *span,
         }

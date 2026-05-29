@@ -66269,6 +66269,7 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "bcscale",
     "bcceil",
     "bcfloor",
+    "bcround",
     "bcsqrt",
     "version_compare",
     "microtime",
