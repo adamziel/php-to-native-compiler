@@ -70,6 +70,104 @@ echo $again_three["name"], "|", $again_three[5], "|", $again_three[6], "|", $aga
 }
 
 #[test]
+fn array_merge_recursive_recurses_string_key_collisions_and_appends_integer_keys() {
+    let source = r#"<?php
+$left = [];
+$left["name"] = "Ada";
+$left["meta"] = ["lang" => "php", "tags" => ["core"]];
+$left[5] = "five";
+$left["02"] = "zero two";
+$left[] = "left next";
+
+$right = [];
+$right["name"] = "Bea";
+$right["meta"] = ["lang" => "rust", "tags" => ["native"], "extra" => "yes"];
+$right[7] = "seven";
+$right["02"] = "zero two right";
+$right[] = "right next";
+
+$third = [];
+$third["name"] = ["Cy"];
+$third["meta"] = ["tags" => ["compiler"], "extra" => ["third"]];
+$third[10] = "ten";
+
+$result = array_merge_recursive($left, $right, $third);
+echo count($result), "\n";
+echo $result["name"][0], "|", $result["name"][1], "|", $result["name"][2], "\n";
+echo $result["meta"]["lang"][0], "|", $result["meta"]["lang"][1], "\n";
+echo $result["meta"]["tags"][0], "|", $result["meta"]["tags"][1], "|", $result["meta"]["tags"][2], "\n";
+echo $result["meta"]["extra"][0], "|", $result["meta"]["extra"][1], "\n";
+echo $result[0], "|", $result[1], "|", $result["02"][0], "|", $result["02"][1], "|", $result[2], "|", $result[3], "|", $result[4], "\n";
+
+$call = "array_merge_recursive";
+$again = $call($left, $right);
+echo $again["name"][0], "|", $again["name"][1], "|", $again["meta"]["tags"][1], "\n";
+
+$zero = array_merge_recursive();
+echo count($zero), "\n";
+
+$single = array_merge_recursive($left);
+echo count($single), "\n";
+$single[] = "single after";
+echo $single[2], "\n";
+echo $left["name"], "|", $left["meta"]["lang"], "|", $left[5], "|", $left["02"], "|", $left[6], "\n";
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "8
+Ada|Bea|Cy
+php|rust
+core|native|compiler
+yes|third
+five|left next|zero two|zero two right|seven|right next|ten
+Ada|Bea|native
+0
+5
+single after
+Ada|php|five|zero two|left next
+"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn array_merge_recursive_type_errors_use_php_argument_messages() {
+    let source = r#"<?php
+try {
+    array_merge_recursive(42, []);
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    array_merge_recursive([], false);
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "array_merge_recursive(): Argument #1 must be of type array, int given\narray_merge_recursive(): Argument #2 must be of type array, false given\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn emit_ir_rejects_array_merge_recursive_until_native_call_lowering_exists() {
+    let error = emit_ir_source("<?php\necho array_merge_recursive([1], [2]);\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert!(
+        error.message.contains("function calls"),
+        "{}",
+        error.message
+    );
+}
+
+#[test]
 fn array_merge_requires_array_first_argument() {
     let error = runtime_error("<?php\n$right = [];\necho array_merge(42, $right);\n");
 

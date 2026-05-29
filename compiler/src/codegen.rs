@@ -66003,6 +66003,7 @@ fn is_array_builtin(name: &str) -> bool {
             | "array_chunk"
             | "array_pad"
             | "array_merge"
+            | "array_merge_recursive"
             | "array_replace"
             | "array_flip"
             | "array_change_key_case"
@@ -66397,6 +66398,7 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "array_chunk",
     "array_pad",
     "array_merge",
+    "array_merge_recursive",
     "array_replace",
     "array_flip",
     "array_change_key_case",

@@ -29516,6 +29516,14 @@ impl PhpArray {
         array
     }
 
+    pub fn merged_recursive_from<'a>(arrays: impl IntoIterator<Item = &'a Self>) -> Self {
+        let mut array = Self::new();
+        for source in arrays {
+            array.merge_entries_recursive_from(source);
+        }
+        array
+    }
+
     pub fn replaced_with(&self, replacement: &Self) -> Self {
         self.replaced_with_all([replacement])
     }
@@ -29941,6 +29949,53 @@ impl PhpArray {
                 ArrayKey::String(key) => {
                     self.insert(key.clone(), entry.value_cloned());
                 }
+            }
+        }
+    }
+
+    fn merge_entries_recursive_from(&mut self, source: &Self) {
+        for entry in &source.entries {
+            match &entry.key {
+                ArrayKey::Int(_) => {
+                    self.append_slot(entry.slot().clone())
+                        .expect("array length fits in i64");
+                }
+                ArrayKey::String(key) => {
+                    let merged = self
+                        .get_slot(key.clone())
+                        .cloned()
+                        .map(|left| Self::merge_recursive_slots(left, entry.slot().clone()))
+                        .unwrap_or_else(|| entry.slot().clone());
+                    self.insert_slot(key.clone(), merged);
+                }
+            }
+        }
+    }
+
+    fn merge_recursive_slots(left: ArraySlot, right: ArraySlot) -> ArraySlot {
+        match (left.value_cloned(), right.value_cloned()) {
+            (Value::Array(mut left), Value::Array(right)) => {
+                left.merge_entries_recursive_from(&right);
+                ArraySlot::new(Value::Array(left))
+            }
+            (Value::Array(mut left), _) => {
+                left.append(right.value_cloned())
+                    .expect("array length fits in i64");
+                ArraySlot::new(Value::Array(left))
+            }
+            (left_value, Value::Array(right)) => {
+                let mut merged = Self::new();
+                merged.append(left_value).expect("array length fits in i64");
+                merged.merge_entries_recursive_from(&right);
+                ArraySlot::new(Value::Array(merged))
+            }
+            (left_value, right_value) => {
+                let mut merged = Self::new();
+                merged.append(left_value).expect("array length fits in i64");
+                merged
+                    .append(right_value)
+                    .expect("array length fits in i64");
+                ArraySlot::new(Value::Array(merged))
             }
         }
     }
@@ -31993,9 +32048,15 @@ impl PhpClassTable {
         classes
             .set_parent(out_of_range_exception_id, runtime_exception_id)
             .expect("OutOfRangeException should extend RuntimeException");
+        let out_of_bounds_exception_id = classes.declare_class("OutOfBoundsException").expect(
+            "core class table should contain OutOfRangeException before OutOfBoundsException",
+        );
+        classes
+            .set_parent(out_of_bounds_exception_id, runtime_exception_id)
+            .expect("OutOfBoundsException should extend RuntimeException");
         let directory_id = classes
             .declare_class("Directory")
-            .expect("core class table should contain OutOfRangeException before Directory");
+            .expect("core class table should contain OutOfBoundsException before Directory");
         let directory = classes
             .get_mut(directory_id)
             .expect("declared Directory class id should resolve");
@@ -32009,9 +32070,51 @@ impl PhpClassTable {
                 .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
                 .expect("Directory core metadata should not duplicate methods");
         }
+        let spl_fixed_array_id = classes
+            .declare_class("SplFixedArray")
+            .expect("core class table should contain Directory before SplFixedArray");
+        classes
+            .set_interfaces(
+                spl_fixed_array_id,
+                vec![
+                    "Iterator".to_string(),
+                    "ArrayAccess".to_string(),
+                    "Countable".to_string(),
+                ],
+            )
+            .expect("SplFixedArray should implement core SPL interfaces");
+        let spl_fixed_array = classes
+            .get_mut(spl_fixed_array_id)
+            .expect("declared SplFixedArray class id should resolve");
+        for method in [
+            "__construct",
+            "count",
+            "getSize",
+            "setSize",
+            "offsetExists",
+            "offsetGet",
+            "offsetSet",
+            "offsetUnset",
+            "rewind",
+            "valid",
+            "current",
+            "key",
+            "next",
+            "toArray",
+        ] {
+            spl_fixed_array
+                .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("SplFixedArray core metadata should not duplicate methods");
+        }
+        spl_fixed_array
+            .add_method(PhpMethodMetadata::static_method(
+                "fromArray",
+                Visibility::Public,
+            ))
+            .expect("SplFixedArray core metadata should not duplicate static methods");
         let spl_doubly_linked_list_id = classes
             .declare_class("SplDoublyLinkedList")
-            .expect("core class table should contain Directory before SplDoublyLinkedList");
+            .expect("core class table should contain SplFixedArray before SplDoublyLinkedList");
         classes
             .set_interfaces(
                 spl_doubly_linked_list_id,
@@ -78893,7 +78996,13 @@ mod tests {
                 "ArithmeticError",
                 "DivisionByZeroError",
                 "RuntimeException",
+                "OutOfRangeException",
+                "OutOfBoundsException",
                 "Directory",
+                "SplFixedArray",
+                "SplDoublyLinkedList",
+                "SplQueue",
+                "SplStack",
                 "SplObjectStorage",
                 "ReflectionExtension",
                 "ReflectionZendExtension",

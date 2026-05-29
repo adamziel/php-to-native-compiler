@@ -88,13 +88,16 @@ echo "ready\n";
             "DivisionByZeroError",
             "RuntimeException",
             "OutOfRangeException",
+            "OutOfBoundsException",
             "Directory",
+            "SplFixedArray",
             "SplDoublyLinkedList",
             "SplQueue",
             "SplStack",
             "SplObjectStorage",
             "ReflectionExtension",
             "ReflectionZendExtension",
+            "DateTime",
             "Generator",
             "Box",
         ]
@@ -135,6 +138,14 @@ echo "ready\n";
         out_of_range_exception.parent_id(),
         Some(runtime_exception.id())
     );
+    let out_of_bounds_exception = classes.lookup_class("OutOfBoundsException").unwrap();
+    assert_eq!(
+        out_of_bounds_exception.parent_id(),
+        Some(runtime_exception.id())
+    );
+    let spl_fixed_array = classes.lookup_class("SplFixedArray").unwrap();
+    assert!(spl_fixed_array.method("offsetGet").is_some());
+    assert!(spl_fixed_array.method("fromArray").is_some());
     let spl_doubly_linked_list = classes.lookup_class("SplDoublyLinkedList").unwrap();
     assert!(spl_doubly_linked_list.constant("IT_MODE_LIFO").is_some());
     assert_eq!(
@@ -14408,6 +14419,55 @@ echo $store[$first], "\n";
     assert_eq!(
         execution.stdout,
         "one|two\nbool(true)\nbool(false)\nbool(true)\n2|2\n0:one\n1:two\ncopy=2\nafter=0|2\nagain\n"
+    );
+}
+
+#[test]
+fn spl_fixed_array_offsets_iteration_resize_static_constructor_and_errors() {
+    let source = r#"<?php
+class ChildFixedArray extends SplFixedArray {
+    public function offsetGet($index): mixed {
+        return parent::offsetGet($index);
+    }
+    public function count(): int {
+        return parent::count();
+    }
+}
+
+$items = new ChildFixedArray(3);
+$items[0] = "zero";
+$items["1"] = "one";
+$items->offsetSet(2, "two");
+echo $items[0], "|", $items->offsetGet(1), "|", $items["2"], "\n";
+var_dump(isset($items[0]));
+var_dump(isset($items[9]));
+echo count($items), "|", $items->getSize(), "|", $items->count(), "\n";
+foreach ($items as $key => $value) {
+    echo $key, ":", $value, "\n";
+}
+$items->setSize(2);
+echo count($items), "|", $items->offsetExists(2) ? "bad" : "trimmed", "\n";
+$copy = clone $items;
+$copy[1] = "copy";
+echo $items[1], "|", $copy[1], "\n";
+$from = SplFixedArray::fromArray(array(0 => "a", 2 => "c"));
+print_r($from->toArray());
+try {
+    $items[] = "append";
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    echo $items[9];
+} catch (OutOfBoundsException $e) {
+    echo get_class($e), ":", $e->getMessage(), "\n";
+}
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "zero|one|two\nbool(true)\nbool(false)\n3|3|3\n0:zero\n1:one\n2:two\n2|trimmed\none|copy\nArray\n(\n    [0] => a\n    [1] => \n    [2] => c\n)\n[] operator not supported for SplFixedArray\nOutOfBoundsException:Index invalid or out of range\n"
     );
 }
 

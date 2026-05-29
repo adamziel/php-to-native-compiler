@@ -209,6 +209,7 @@ struct Interpreter {
     reflection_zend_extensions: HashMap<i64, ReflectionZendExtensionState>,
     reflection_named_types: HashMap<i64, ReflectionNamedTypeState>,
     reflection_compound_types: HashMap<i64, ReflectionCompoundTypeState>,
+    spl_fixed_arrays: HashMap<i64, SplFixedArrayState>,
     spl_object_storages: HashMap<i64, SplObjectStorageState>,
     spl_doubly_linked_lists: HashMap<i64, SplDoublyLinkedListState>,
     date_time_objects: HashMap<i64, BoundedDateTimeObjectState>,
@@ -477,6 +478,12 @@ struct SplObjectStorageState {
 struct SplObjectStorageEntry {
     object: PhpObject,
     info: Value,
+}
+
+#[derive(Debug, Clone, Default)]
+struct SplFixedArrayState {
+    values: Vec<Value>,
+    cursor: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -10122,6 +10129,7 @@ impl Interpreter {
             reflection_zend_extensions: HashMap::new(),
             reflection_named_types: HashMap::new(),
             reflection_compound_types: HashMap::new(),
+            spl_fixed_arrays: HashMap::new(),
             spl_object_storages: HashMap::new(),
             spl_doubly_linked_lists: HashMap::new(),
             date_time_objects: HashMap::new(),
@@ -10270,6 +10278,24 @@ impl Interpreter {
             .is_some_and(|storage_id| class_id == storage_id)
     }
 
+    fn is_spl_fixed_array_class_id(&self, class_id: ClassId) -> bool {
+        self.classes
+            .lookup_class_id("SplFixedArray")
+            .is_some_and(|fixed_array_id| {
+                class_id == fixed_array_id || self.classes.is_subclass_of(class_id, fixed_array_id)
+            })
+    }
+
+    fn is_spl_fixed_array_object(&self, object: &PhpObject) -> bool {
+        self.is_spl_fixed_array_class_id(object.class_id())
+    }
+
+    fn resolved_method_is_core_spl_fixed_array(&self, class_id: ClassId) -> bool {
+        self.classes
+            .lookup_class_id("SplFixedArray")
+            .is_some_and(|fixed_array_id| class_id == fixed_array_id)
+    }
+
     fn is_spl_doubly_linked_list_class_id(&self, class_id: ClassId) -> bool {
         self.classes
             .lookup_class_id("SplDoublyLinkedList")
@@ -10321,6 +10347,421 @@ impl Interpreter {
         self.classes
             .lookup_class_id("DateTime")
             .is_some_and(|datetime_id| class_id == datetime_id)
+    }
+
+    fn spl_fixed_array_state(
+        &self,
+        object: &PhpObject,
+        method_name: &str,
+        span: Span,
+    ) -> CompileResult<&SplFixedArrayState> {
+        self.spl_fixed_arrays.get(&object.id()).ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("SplFixedArray::{method_name}()"),
+                    "missing SplFixedArray runtime state",
+                ),
+            )
+        })
+    }
+
+    fn spl_fixed_array_state_mut(
+        &mut self,
+        object: &PhpObject,
+        method_name: &str,
+        span: Span,
+    ) -> CompileResult<&mut SplFixedArrayState> {
+        self.spl_fixed_arrays.get_mut(&object.id()).ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("SplFixedArray::{method_name}()"),
+                    "missing SplFixedArray runtime state",
+                ),
+            )
+        })
+    }
+
+    fn spl_fixed_array_size_argument(
+        method_name: &str,
+        args: &[Value],
+        span: Span,
+    ) -> CompileResult<usize> {
+        match args.first() {
+            Some(Value::Int(value)) if *value >= 0 => Ok(*value as usize),
+            Some(Value::Int(_)) => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("SplFixedArray::{method_name}()"),
+                    format!(
+                        "SplFixedArray::{method_name}(): Argument #1 ($size) must be greater than or equal to 0"
+                    ),
+                ),
+            )),
+            Some(other) => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("SplFixedArray::{method_name}()"),
+                    format!(
+                        "SplFixedArray::{method_name}(): Argument #1 ($size) must be of type int, {} given",
+                        other.type_name()
+                    ),
+                ),
+            )),
+            None => Ok(0),
+        }
+    }
+
+    fn spl_fixed_array_numeric_string_index(value: &str) -> Option<i64> {
+        if value.is_empty() {
+            return None;
+        }
+        let digits = value
+            .strip_prefix('-')
+            .or_else(|| value.strip_prefix('+'))
+            .unwrap_or(value);
+        if digits.is_empty() || !digits.as_bytes().iter().all(u8::is_ascii_digit) {
+            return None;
+        }
+        value.parse::<i64>().ok()
+    }
+
+    fn spl_fixed_array_index_value(
+        method_name: &str,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<i64> {
+        match value {
+            Value::Int(value) => Ok(*value),
+            Value::String(value) => {
+                Self::spl_fixed_array_numeric_string_index(value).ok_or_else(|| {
+                    runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("SplFixedArray::{method_name}()"),
+                            "Cannot access offset of type string on SplFixedArray",
+                        ),
+                    )
+                })
+            }
+            other => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("SplFixedArray::{method_name}()"),
+                    format!(
+                        "Cannot access offset of type {} on SplFixedArray",
+                        other.type_name()
+                    ),
+                ),
+            )),
+        }
+    }
+
+    fn spl_fixed_array_index_in_range(
+        method_name: &str,
+        index: i64,
+        len: usize,
+        span: Span,
+    ) -> CompileResult<usize> {
+        if index < 0 || index as usize >= len {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("SplFixedArray::{method_name}()"),
+                    "Index invalid or out of range",
+                ),
+            ));
+        }
+        Ok(index as usize)
+    }
+
+    fn spl_fixed_array_values_to_array(values: &[Value]) -> PhpArray {
+        let mut array = PhpArray::new();
+        for (index, value) in values.iter().enumerate() {
+            array.insert(ArrayKey::Int(index as i64), value.clone());
+        }
+        array
+    }
+
+    fn create_spl_fixed_array_object_with_values(
+        &mut self,
+        values: Vec<Value>,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let class_id = self
+            .classes
+            .lookup_class_id("SplFixedArray")
+            .ok_or_else(|| runtime_error(span, RuntimeError::undefined_class("SplFixedArray")))?;
+        let object_id = self.allocate_object_id();
+        let class = self
+            .classes
+            .get(class_id)
+            .expect("SplFixedArray class id should resolve to class metadata");
+        let inherited_properties = self.inherited_instance_properties(class_id);
+        let mut ancestor_class_names = self.inherited_class_names(class_id);
+        ancestor_class_names.extend(self.class_alias_names(class_id));
+        let interface_names = self.class_implements_interface_names(class_id);
+        let object = PhpObject::from_class_with_relationship_metadata_with_id(
+            class,
+            &inherited_properties,
+            ancestor_class_names,
+            interface_names,
+            object_id,
+        );
+        self.apply_instance_property_defaults(&object, class_id)?;
+        self.spl_fixed_arrays
+            .insert(object.id(), SplFixedArrayState { values, cursor: 0 });
+        self.track_allocated_object(&object);
+        Ok(Value::Object(object))
+    }
+
+    fn call_spl_fixed_array_static_method_with_values(
+        &mut self,
+        method_name: &str,
+        args: Vec<Value>,
+        span: Span,
+    ) -> CompileResult<Value> {
+        match method_name.to_ascii_lowercase().as_str() {
+            "fromarray" => {
+                if !(args.len() == 1 || args.len() == 2) {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::arity_mismatch(
+                            "SplFixedArray::fromArray()",
+                            ArityExpectation::Between { min: 1, max: 2 },
+                            args.len(),
+                        ),
+                    ));
+                }
+                let source = match args.first() {
+                    Some(Value::Array(array)) => array,
+                    Some(other) => {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "SplFixedArray::fromArray()",
+                                format!(
+                                    "SplFixedArray::fromArray(): Argument #1 ($array) must be of type array, {} given",
+                                    other.type_name()
+                                ),
+                            ),
+                        ));
+                    }
+                    None => unreachable!("arity checked"),
+                };
+                let preserve_keys = args.get(1).map_or(true, Value::is_truthy);
+                let values = if preserve_keys {
+                    let mut max_index: Option<usize> = None;
+                    for entry in source.entries() {
+                        let ArrayKey::Int(index) = &entry.key else {
+                            return Err(runtime_error(
+                                span,
+                                RuntimeError::unsupported_call(
+                                    "SplFixedArray::fromArray()",
+                                    "array must contain only positive integer keys",
+                                ),
+                            ));
+                        };
+                        if *index < 0 {
+                            return Err(runtime_error(
+                                span,
+                                RuntimeError::unsupported_call(
+                                    "SplFixedArray::fromArray()",
+                                    "array must contain only positive integer keys",
+                                ),
+                            ));
+                        }
+                        max_index =
+                            Some(max_index.map_or(*index as usize, |max| max.max(*index as usize)));
+                    }
+                    let mut values = vec![Value::Null; max_index.map_or(0, |index| index + 1)];
+                    for entry in source.entries() {
+                        if let ArrayKey::Int(index) = &entry.key {
+                            values[*index as usize] = entry.value_cloned();
+                        }
+                    }
+                    values
+                } else {
+                    source
+                        .entries()
+                        .iter()
+                        .map(ArrayEntry::value_cloned)
+                        .collect()
+                };
+                self.create_spl_fixed_array_object_with_values(values, span)
+            }
+            _ => Err(runtime_error(
+                span,
+                RuntimeError::undefined_function(format!("SplFixedArray::{method_name}()")),
+            )),
+        }
+    }
+
+    fn call_spl_fixed_array_method_with_values(
+        &mut self,
+        object: PhpObject,
+        method_name: &str,
+        args: Vec<Value>,
+        span: Span,
+    ) -> CompileResult<Value> {
+        match method_name.to_ascii_lowercase().as_str() {
+            "__construct" => {
+                if args.len() > 1 {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::arity_mismatch(
+                            "SplFixedArray::__construct()",
+                            ArityExpectation::Between { min: 0, max: 1 },
+                            args.len(),
+                        ),
+                    ));
+                }
+                let size = Self::spl_fixed_array_size_argument("__construct", &args, span)?;
+                let state = self.spl_fixed_array_state_mut(&object, method_name, span)?;
+                state.values = vec![Value::Null; size];
+                state.cursor = 0;
+                Ok(Value::Null)
+            }
+            "count" | "getsize" => {
+                expect_arity(&format!("SplFixedArray::{method_name}"), &args, 0, span)?;
+                let state = self.spl_fixed_array_state(&object, method_name, span)?;
+                Ok(Value::Int(state.values.len() as i64))
+            }
+            "setsize" => {
+                expect_arity("SplFixedArray::setSize", &args, 1, span)?;
+                let size = Self::spl_fixed_array_size_argument("setSize", &args, span)?;
+                let state = self.spl_fixed_array_state_mut(&object, method_name, span)?;
+                state.values.resize(size, Value::Null);
+                if state.cursor > state.values.len() {
+                    state.cursor = state.values.len();
+                }
+                Ok(Value::Null)
+            }
+            "offsetexists" => {
+                expect_arity("SplFixedArray::offsetExists", &args, 1, span)?;
+                let state = self.spl_fixed_array_state(&object, method_name, span)?;
+                let index = Self::spl_fixed_array_index_value(
+                    "offsetExists",
+                    args.first().expect("arity checked"),
+                    span,
+                )?;
+                Ok(Value::Bool(
+                    index >= 0 && (index as usize) < state.values.len(),
+                ))
+            }
+            "offsetget" => {
+                expect_arity("SplFixedArray::offsetGet", &args, 1, span)?;
+                let state = self.spl_fixed_array_state(&object, method_name, span)?;
+                let index = Self::spl_fixed_array_index_value(
+                    "offsetGet",
+                    args.first().expect("arity checked"),
+                    span,
+                )?;
+                let index = Self::spl_fixed_array_index_in_range(
+                    "offsetGet",
+                    index,
+                    state.values.len(),
+                    span,
+                )?;
+                Ok(state.values[index].clone())
+            }
+            "offsetset" => {
+                if args.len() != 2 {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::arity_mismatch(
+                            "SplFixedArray::offsetSet()",
+                            ArityExpectation::Exactly(2),
+                            args.len(),
+                        ),
+                    ));
+                }
+                if matches!(args.first(), Some(Value::Null)) {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "SplFixedArray::offsetSet()",
+                            "[] operator not supported for SplFixedArray",
+                        ),
+                    ));
+                }
+                let state_len = self
+                    .spl_fixed_array_state(&object, method_name, span)?
+                    .values
+                    .len();
+                let index = Self::spl_fixed_array_index_value(
+                    "offsetSet",
+                    args.first().expect("arity checked"),
+                    span,
+                )?;
+                let index =
+                    Self::spl_fixed_array_index_in_range("offsetSet", index, state_len, span)?;
+                let value = args.get(1).cloned().unwrap_or(Value::Null);
+                let state = self.spl_fixed_array_state_mut(&object, method_name, span)?;
+                state.values[index] = value;
+                Ok(Value::Null)
+            }
+            "offsetunset" => {
+                expect_arity("SplFixedArray::offsetUnset", &args, 1, span)?;
+                let state_len = self
+                    .spl_fixed_array_state(&object, method_name, span)?
+                    .values
+                    .len();
+                let index = Self::spl_fixed_array_index_value(
+                    "offsetUnset",
+                    args.first().expect("arity checked"),
+                    span,
+                )?;
+                let index =
+                    Self::spl_fixed_array_index_in_range("offsetUnset", index, state_len, span)?;
+                let state = self.spl_fixed_array_state_mut(&object, method_name, span)?;
+                state.values[index] = Value::Null;
+                Ok(Value::Null)
+            }
+            "rewind" => {
+                expect_arity("SplFixedArray::rewind", &args, 0, span)?;
+                let state = self.spl_fixed_array_state_mut(&object, method_name, span)?;
+                state.cursor = 0;
+                Ok(Value::Null)
+            }
+            "valid" => {
+                expect_arity("SplFixedArray::valid", &args, 0, span)?;
+                let state = self.spl_fixed_array_state(&object, method_name, span)?;
+                Ok(Value::Bool(state.cursor < state.values.len()))
+            }
+            "key" => {
+                expect_arity("SplFixedArray::key", &args, 0, span)?;
+                let state = self.spl_fixed_array_state(&object, method_name, span)?;
+                Ok(Value::Int(state.cursor as i64))
+            }
+            "current" => {
+                expect_arity("SplFixedArray::current", &args, 0, span)?;
+                let state = self.spl_fixed_array_state(&object, method_name, span)?;
+                Ok(state
+                    .values
+                    .get(state.cursor)
+                    .cloned()
+                    .unwrap_or(Value::Null))
+            }
+            "next" => {
+                expect_arity("SplFixedArray::next", &args, 0, span)?;
+                let state = self.spl_fixed_array_state_mut(&object, method_name, span)?;
+                state.cursor = state.cursor.saturating_add(1);
+                Ok(Value::Null)
+            }
+            "toarray" => {
+                expect_arity("SplFixedArray::toArray", &args, 0, span)?;
+                let state = self.spl_fixed_array_state(&object, method_name, span)?;
+                Ok(Value::Array(Self::spl_fixed_array_values_to_array(
+                    &state.values,
+                )))
+            }
+            _ => Err(runtime_error(
+                span,
+                RuntimeError::undefined_function(format!("SplFixedArray::{method_name}()")),
+            )),
+        }
     }
 
     fn by_reference_foreach_variable_root(
@@ -11279,6 +11720,12 @@ impl Interpreter {
         if self.resolved_method_is_core_spl_object_storage(class_id) {
             return self
                 .call_spl_object_storage_method_with_values(object, method_name, Vec::new(), span)
+                .map(|value| (value, None));
+        }
+
+        if self.resolved_method_is_core_spl_fixed_array(class_id) {
+            return self
+                .call_spl_fixed_array_method_with_values(object, method_name, Vec::new(), span)
                 .map(|value| (value, None));
         }
 
@@ -19038,6 +19485,10 @@ impl Interpreter {
             interface_names,
             object_id,
         );
+        if self.is_spl_fixed_array_class_id(class_id) {
+            self.spl_fixed_arrays
+                .insert(object.id(), SplFixedArrayState::default());
+        }
         if self.is_spl_object_storage_class_id(class_id) {
             self.spl_object_storages
                 .insert(object.id(), SplObjectStorageState::default());
@@ -19104,6 +19555,21 @@ impl Interpreter {
 
         if self.resolved_method_is_core_spl_object_storage(constructor_class_id) {
             expect_expr_arity("SplObjectStorage::__construct", args.len(), 0, span)?;
+            self.track_allocated_object(&object);
+            return Ok(Value::Object(object));
+        }
+
+        if self.resolved_method_is_core_spl_fixed_array(constructor_class_id) {
+            let values = args
+                .iter()
+                .map(|arg| self.evaluate(arg, scope))
+                .collect::<CompileResult<Vec<_>>>()?;
+            self.call_spl_fixed_array_method_with_values(
+                object.clone(),
+                "__construct",
+                values,
+                span,
+            )?;
             self.track_allocated_object(&object);
             return Ok(Value::Object(object));
         }
@@ -19757,6 +20223,9 @@ impl Interpreter {
 
         let object_id = self.allocate_object_id();
         let clone = object.shallow_clone_with_id(object_id);
+        if let Some(state) = self.spl_fixed_arrays.get(&object.id()).cloned() {
+            self.spl_fixed_arrays.insert(clone.id(), state);
+        }
         if let Some(state) = self.spl_object_storages.get(&object.id()).cloned() {
             self.spl_object_storages.insert(clone.id(), state);
         }
@@ -41320,6 +41789,12 @@ impl Interpreter {
                 .map(Some);
         }
 
+        if self.resolved_method_is_core_spl_fixed_array(class_id) {
+            return self
+                .call_spl_fixed_array_method_with_values(object, method_name, args, span)
+                .map(Some);
+        }
+
         if self.resolved_method_is_core_spl_doubly_linked_list(class_id) {
             return self
                 .call_spl_doubly_linked_list_method_with_values(object, method_name, args, span)
@@ -41437,6 +41912,12 @@ impl Interpreter {
         if self.resolved_method_is_core_spl_object_storage(class_id) {
             return self
                 .call_spl_object_storage_method_with_values(object, method_name, args, span)
+                .map(Some);
+        }
+
+        if self.resolved_method_is_core_spl_fixed_array(class_id) {
+            return self
+                .call_spl_fixed_array_method_with_values(object, method_name, args, span)
                 .map(Some);
         }
 
@@ -41899,6 +42380,16 @@ impl Interpreter {
                 .collect::<CompileResult<Vec<_>>>()?;
             return self
                 .call_spl_object_storage_method_with_values(object, method_name, values, span)
+                .map(|value| (value, None));
+        }
+
+        if self.resolved_method_is_core_spl_fixed_array(class_id) {
+            let values = args
+                .iter()
+                .map(|arg| self.evaluate(arg, caller_scope))
+                .collect::<CompileResult<Vec<_>>>()?;
+            return self
+                .call_spl_fixed_array_method_with_values(object, method_name, values, span)
                 .map(|value| (value, None));
         }
 
@@ -46253,6 +46744,31 @@ impl Interpreter {
             );
         }
 
+        if self.resolved_method_is_core_spl_fixed_array(class_id) {
+            let this_object = match caller_scope.read_named("this") {
+                Some(Value::Object(object)) => object.clone(),
+                _ => {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{class_name}::{method_name}()"),
+                            "non-static method dispatch through parent:: requires current $this object context",
+                        ),
+                    ));
+                }
+            };
+            let values = args
+                .iter()
+                .map(|arg| self.evaluate(arg, caller_scope))
+                .collect::<CompileResult<Vec<_>>>()?;
+            return self.call_spl_fixed_array_method_with_values(
+                this_object,
+                method_name,
+                values,
+                span,
+            );
+        }
+
         let function = self.method_function(class_id, &class_name, &resolved_method_name, span)?;
         let function = function.as_ref();
         Self::ensure_user_function_expr_arity_unless_spread(function, args, span)?;
@@ -46421,6 +46937,15 @@ impl Interpreter {
                 caller_scope,
             );
         }
+        if self.is_spl_fixed_array_class_id(class_id)
+            && method_name.eq_ignore_ascii_case("fromArray")
+        {
+            let values = args
+                .iter()
+                .map(|arg| self.evaluate(arg, caller_scope))
+                .collect::<CompileResult<Vec<_>>>()?;
+            return self.call_spl_fixed_array_static_method_with_values(method_name, values, span);
+        }
         let Some((
             declaring_class_id,
             declaring_class_name,
@@ -46563,6 +47088,15 @@ impl Interpreter {
                 span,
                 caller_scope,
             );
+        }
+        if self.is_spl_fixed_array_class_id(receiver_class_id)
+            && method_name.eq_ignore_ascii_case("fromArray")
+        {
+            let values = args
+                .iter()
+                .map(|arg| self.evaluate(arg, caller_scope))
+                .collect::<CompileResult<Vec<_>>>()?;
+            return self.call_spl_fixed_array_static_method_with_values(method_name, values, span);
         }
         let Some((
             declaring_class_id,
@@ -49426,6 +49960,13 @@ impl Interpreter {
         scope: &mut SymbolTable,
     ) -> CompileResult<ArrayKey> {
         let key = self.evaluate(expr, scope)?;
+        if let Value::Resource(id) = &key {
+            self.emit_display_warning(
+                format!("Resource ID#{id} used as offset, casting to integer ({id})"),
+                expr.span(),
+            )?;
+            return Ok(ArrayKey::Int(*id));
+        }
         ArrayKey::from_value(&key).map_err(|error| runtime_error(expr.span(), error))
     }
 
@@ -74651,6 +75192,29 @@ impl Interpreter {
 
                 Ok(Value::Array(PhpArray::merged_from(arrays)))
             }
+            "array_merge_recursive" => {
+                let mut arrays = Vec::with_capacity(args.len());
+                for (index, arg) in args.iter().enumerate() {
+                    match arg {
+                        Value::Array(array) => arrays.push(array),
+                        other => {
+                            return Err(runtime_error(
+                                span,
+                                RuntimeError::unsupported_call(
+                                    "array_merge_recursive()",
+                                    format!(
+                                        "Argument #{} must be of type array, {} given",
+                                        index + 1,
+                                        php_type_error_given(other)
+                                    ),
+                                ),
+                            ));
+                        }
+                    }
+                }
+
+                Ok(Value::Array(PhpArray::merged_recursive_from(arrays)))
+            }
             "array_replace" => {
                 if args.is_empty() {
                     return Err(runtime_error(
@@ -80507,11 +81071,11 @@ impl Interpreter {
         scope: &mut SymbolTable,
     ) -> CompileResult<(Value, Option<ArrayKey>)> {
         let key_value = self.evaluate(index, scope)?;
+        if self.is_spl_object_storage_object(object) || self.is_spl_fixed_array_object(object) {
+            return Ok((key_value, None));
+        }
         if matches!(key_value, Value::Null) {
             return Ok((Value::Null, Some(Self::array_access_append_reference_key())));
-        }
-        if self.is_spl_object_storage_object(object) {
-            return Ok((key_value, None));
         }
         let key =
             ArrayKey::from_value(&key_value).map_err(|error| runtime_error(index.span(), error))?;
@@ -80543,6 +81107,14 @@ impl Interpreter {
         {
             if self.resolved_method_is_core_spl_object_storage(class_id) {
                 return self.call_spl_object_storage_method_with_values(
+                    object,
+                    method_name,
+                    args,
+                    span,
+                );
+            }
+            if self.resolved_method_is_core_spl_fixed_array(class_id) {
+                return self.call_spl_fixed_array_method_with_values(
                     object,
                     method_name,
                     args,
@@ -80670,6 +81242,14 @@ impl Interpreter {
                     span,
                 );
             }
+            if self.resolved_method_is_core_spl_fixed_array(class_id) {
+                return self.call_spl_fixed_array_method_with_values(
+                    object,
+                    method_name,
+                    args,
+                    span,
+                );
+            }
             let function =
                 self.method_function(class_id, &class_name, &resolved_method_name, span)?;
             let function = function.as_ref();
@@ -80758,6 +81338,16 @@ impl Interpreter {
             if self.resolved_method_is_core_spl_object_storage(class_id) {
                 return self
                     .call_spl_object_storage_method_with_values(
+                        object,
+                        "offsetGet",
+                        vec![offset_arg],
+                        span,
+                    )
+                    .map(|value| (value, None));
+            }
+            if self.resolved_method_is_core_spl_fixed_array(class_id) {
+                return self
+                    .call_spl_fixed_array_method_with_values(
                         object,
                         "offsetGet",
                         vec![offset_arg],
@@ -80912,6 +81502,10 @@ impl Interpreter {
                 Vec::new(),
                 span,
             );
+        }
+
+        if self.resolved_method_is_core_spl_fixed_array(class_id) {
+            return self.call_spl_fixed_array_method_with_values(object, "count", Vec::new(), span);
         }
 
         let function = self.method_function(class_id, &class_name, &resolved_method_name, span)?;
@@ -89204,6 +89798,45 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
             return Some(("TypeError", message));
         }
 
+        if error.message.ends_with(": Index invalid or out of range")
+            && error
+                .message
+                .starts_with("unsupported call SplFixedArray::")
+        {
+            return Some((
+                "OutOfBoundsException",
+                "Index invalid or out of range".to_string(),
+            ));
+        }
+
+        if error.message
+            == "unsupported call SplFixedArray::offsetSet(): [] operator not supported for SplFixedArray"
+        {
+            return Some((
+                "Error",
+                "[] operator not supported for SplFixedArray".to_string(),
+            ));
+        }
+
+        if let Some(message) = error
+            .message
+            .strip_prefix("unsupported call SplFixedArray::")
+            .and_then(|message| message.split_once(": "))
+            .map(|(_, message)| message.to_string())
+        {
+            if message.contains("must be of type")
+                || message.starts_with("Cannot access offset of type ")
+            {
+                return Some(("TypeError", message));
+            }
+            if message.contains("must be greater than or equal to 0") {
+                return Some(("ValueError", message));
+            }
+            if message == "array must contain only positive integer keys" {
+                return Some(("RuntimeException", message));
+            }
+        }
+
         if let Some(message) = error
             .message
             .strip_prefix("unsupported call SplDoublyLinkedList::")
@@ -89708,7 +90341,7 @@ fn is_call_argument_type_error_message(message: &str) -> bool {
 }
 
 fn is_internal_method_argument_type_error_message(message: &str) -> bool {
-    message.starts_with("SplDoublyLinkedList::")
+    message.starts_with("SplDoublyLinkedList::") || message.starts_with("SplFixedArray::")
 }
 
 fn is_invalid_callback_argument_message(message: &str) -> bool {
@@ -90040,6 +90673,7 @@ fn is_builtin(name: &str) -> bool {
             | "array_chunk"
             | "array_pad"
             | "array_merge"
+            | "array_merge_recursive"
             | "array_replace"
             | "array_flip"
             | "array_fill"
