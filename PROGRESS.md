@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-29 11:44 CEST
+Updated: 2026-05-29 11:50 CEST
 Primary branch: `master`
-Latest source head: `ee58db2b fix: add bounded OPcache introspection`
+Latest source head: `731c73cc fix: add cslash escapes and strcmp builtins`
 
 ## Progress Score
 
@@ -152,13 +152,54 @@ passes that row, and has zero PASS-set regressions.
 | Batch008 checkpoint5 sharded gate | Done | 2180 / 20294 pinned runnable PHPTs passed (10.74%); 0 regressions from Batch007 PASS set; run id `phpt-full-batch008-checkpoint5-sharded-20260529T051801Z-php-src-f97ff59-public-0855b815-source-f408875f` |
 | Batch008 checkpoint10 bug60598 repair sharded gate | Done | 2286 / 20294 pinned runnable PHPTs passed (11.26%); 0 regressions from Batch008 checkpoint5 PASS set; run id `phpt-full-b8c10r2-sharded-20260529T085131Z-php-src-f97ff59-public-39ab1bf8-source-d0155a39` |
 | Batch008 source batch | Complete | Source checkpoints accepted: 10 / 10; checkpoint1 is `strncmp()` / `strncasecmp()` focused source proof; checkpoint2 is bcmath `bcmod()` / `bcpow()` / `bcpowmod()` / `bcsqrt()` focused source proof; checkpoint3 is `tempnam()` / `sys_get_temp_dir()` focused source proof; checkpoint4 is bounded date/timezone focused source proof; checkpoint5 is `SplObjectStorage` identity-map focused source proof; checkpoint5 sharded gate published; checkpoint6 is `strrpos()` / `strripos()` focused source proof; checkpoint7 is `fputcsv()` plus local file stream semantics focused source proof; checkpoint8 is `pathinfo()` / `basename()` / `dirname()` focused source proof; checkpoint9 is `vprintf()` focused source proof; checkpoint10 is `stripos()` focused source proof; checkpoint10 bug60598 repair gate published |
-| Batch009 source burst | Started | Checkpoint1 is p47 `sizeof()` alias / `array_chunk` metadata focused source proof (+25 expected direct rows); checkpoint2 is p43 `fflush()` / `ftruncate()` focused source proof (+15 expected direct rows); checkpoint3 is p42 `fprintf()` / `vfprintf()` focused source proof (+14 expected direct rows); checkpoint4 is p39 OPcache bounded introspection focused source proof (+11 expected direct rows); burst total is +65 expected direct rows; public score remains 2286 / 20294 until the next pinned sharded gate |
+| Batch009 source burst | Gate-ready | Checkpoint1 is p47 `sizeof()` alias / `array_chunk` metadata focused source proof (+25 expected direct rows); checkpoint2 is p43 `fflush()` / `ftruncate()` focused source proof (+15 expected direct rows); checkpoint3 is p42 `fprintf()` / `vfprintf()` focused source proof (+14 expected direct rows); checkpoint4 is p39 OPcache bounded introspection focused source proof (+11 expected direct rows); checkpoint5 is p63 slash/cslash and bounded `strcmp()` focused source proof (+12 expected direct rows); burst total is +77 expected direct rows; public score remains 2286 / 20294 until the next pinned sharded gate |
 
 Focused PHPT history is tracked separately in
 `/home/claude/supervised-php-compiler/state/php-core-suite-focused-history.tsv`.
 Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
+
+Batch009 source burst checkpoint5 is primary-integrated under AO supervision.
+This is focused source proof, not a public percentage change. The public PHPT
+score remains **2286 / 20294 pinned runnable PHPTs = 11.26%** until the next
+supervisor-approved pinned aggregate gate is completed, regression-checked,
+and published here.
+
+- primary source head:
+  `731c73cc fix: add cslash escapes and strcmp builtins`
+- reviewed and integration patch:
+  `/home/claude/supervised-php-compiler/state/patches/ao-integration-batch009-p63-escape-strcmp-string-builtins-f70a4134-20260529.patch`
+- reviewed and integration patch SHA256:
+  `2fa5c498a0155de9c7e43a929e2dfe114ee1f393c13285215c907c40d0d6e8eb`
+- reviewer gate: phpc-7 completed exact SHA proof for p63 slash/cslash string
+  builtins plus bounded `strcmp()` support; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/batch009-review-p63-escape-strcmp-string-builtins-3f66c38a-phpc7-20260529.{status.md,report.md,gates.log}`
+- critic gate: phpc-55 recorded `SAFE-FOR-INTEGRATION` for the exact patch
+  SHA; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/batch009-critic-p63-escape-strcmp-string-builtins-3f66c38a-phpc55-20260529.{status.md,report.md}`
+- handoff gate: p38 completed scratch/no-primary handoff with SHA
+  verification, clean apply, source-equivalence proof, docs/`PROGRESS.md`/
+  examples exclusion, consumed-scope scan, production exact-shape scan, diff
+  check, reverse apply, stack precheck after p39, and exported patch proof;
+  artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/ao-integration-batch009-p63-escape-strcmp-string-builtins-f70a4134-20260529.{status.md,report.md,gates.log}`
+- supervisor focused gates: PASS for SHA verification, clean apply after p39
+  and the p39 `PROGRESS.md` checkpoint, source-equivalence to `ee58db2b` with
+  only root `PROGRESS.md` drift, `git diff --check`, docs/`PROGRESS.md`/
+  examples exclusion, production exact-shape audit, consumed-scope audit,
+  `cargo fmt`, focused Rust `cslashes_builtin` and `strcmp_builtin`, native
+  builtin metadata test, `phpc` binary build, `cargo check`, and focused PHP
+  core slash/cslash PHPT cluster with 12 PASS and 0 FAIL
+- public progress gate: authorized next because Batch009 burst now totals +77
+  expected direct rows; public percentage remains unchanged until that gate is
+  completed, regression-checked, and published
+
+This checkpoint implements generalized bounded escape/unescape behavior for
+`addslashes()`, `stripslashes()`, `addcslashes()`, and `stripcslashes()`, plus
+bounded `strcmp()` support for the current runtime subset. It is not keyed to
+PHPT filenames, expected output, fixture names, public hashes, batch labels, or
+checkpoint markers.
 
 Batch009 source burst checkpoint4 is primary-integrated under AO supervision.
 This is focused source proof, not a public percentage change. The public PHPT
