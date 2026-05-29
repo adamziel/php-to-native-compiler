@@ -6324,6 +6324,26 @@ line("indexed", new ReflectionParameter(array(new Plugin(), "boot"), 2), "");
 }
 
 #[test]
+fn reflection_parameter_exposes_name_property_and_to_string_summary() {
+    let execution = run_source(
+        r#"<?php
+function boot($hook, &$value = "seed", ...$rest) {}
+$function = new ReflectionFunction("boot");
+foreach ($function->getParameters() as $parameter) {
+    echo $parameter->name, "|", $parameter, "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "hook|Parameter #0 [ <required> $hook ]\nvalue|Parameter #1 [ <optional> &$value = 'seed' ]\nrest|Parameter #2 [ <optional> ...$rest ]\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reflection_parameter_reports_bounded_named_type_metadata() {
     let execution = run_source(
         r#"<?php
@@ -7162,6 +7182,70 @@ foreach ($rc->getProperties() as $property) {
     assert_eq!(
         execution.stdout,
         "constants|1|2|4|16\nhas|10\ndirect|ReflectionProperty|name|Plugin|1|1000|1|hook|01\nobject|ReflectionProperty|cache|Base|18|0101|1|warm|01\nget|ReflectionProperty|flag|Plugin|20|0011|1|1|01\nlist|ReflectionProperty|name|Plugin|1|1000|1|hook|01\nlist|ReflectionProperty|items|Plugin|2|0100|1|array:1|01\nlist|ReflectionProperty|flag|Plugin|20|0011|1|1|01\nlist|ReflectionProperty|id|Base|1|1000|1|base|01\nlist|ReflectionProperty|cache|Base|18|0101|1|warm|01\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reflection_property_reports_mangled_name_default_state_and_to_string() {
+    let execution = run_source(
+        r#"<?php
+class Packet {
+    public $id;
+    protected $payload = 4;
+    private static $secret = "seal";
+}
+
+function yn($value) {
+    return $value ? "1" : "0";
+}
+
+function line($property) {
+    echo $property->getName(), "|", $property->class, "|", $property->getMangledName(), "|", yn($property->isDefault()), yn($property->isDynamic()), "|", $property->__toString();
+}
+
+line(new ReflectionProperty(Packet::class, "id"));
+line(new ReflectionProperty(Packet::class, "payload"));
+line(new ReflectionProperty(Packet::class, "secret"));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "id|Packet|id|10|Property [ public $id = NULL ]\npayload|Packet|\0*\0payload|10|Property [ protected $payload = 4 ]\nsecret|Packet|\0Packet\0secret|10|Property [ private static $secret = 'seal' ]\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reflection_class_constant_exposes_name_class_and_deprecated_flag() {
+    let execution = run_source(
+        r#"<?php
+class Packet {
+    #[Deprecated]
+    public const LEGACY = "old";
+    protected const CURRENT = "new";
+}
+
+function yn($value) {
+    return $value ? "1" : "0";
+}
+
+function line($name) {
+    $constant = new ReflectionClassConstant(Packet::class, $name);
+    echo $constant->name, "|", $constant->class, "|", $constant->getName(), "|", yn($constant->isDeprecated()), "\n";
+}
+
+line("LEGACY");
+line("CURRENT");
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "LEGACY|Packet|LEGACY|1\nCURRENT|Packet|CURRENT|0\n"
     );
     assert_eq!(execution.exit_code, 0);
 }

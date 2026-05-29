@@ -31557,8 +31557,12 @@ impl PhpClassTable {
         let reflection_parameter = classes
             .get_mut(reflection_parameter_id)
             .expect("declared ReflectionParameter class id should resolve");
+        reflection_parameter
+            .add_property(PhpPropertyMetadata::instance("name", Visibility::Public))
+            .expect("ReflectionParameter core metadata should not duplicate properties");
         for method in [
             "__construct",
+            "__toString",
             "getName",
             "getPosition",
             "getDeclaringClass",
@@ -31638,6 +31642,11 @@ impl PhpClassTable {
         let reflection_property = classes
             .get_mut(reflection_property_id)
             .expect("declared ReflectionProperty class id should resolve");
+        for property in ["name", "class"] {
+            reflection_property
+                .add_property(PhpPropertyMetadata::instance(property, Visibility::Public))
+                .expect("ReflectionProperty core metadata should not duplicate properties");
+        }
         for constant in ["IS_PUBLIC", "IS_PROTECTED", "IS_PRIVATE", "IS_STATIC"] {
             reflection_property
                 .add_constant(PhpClassConstantMetadata::new(constant, Visibility::Public))
@@ -31645,9 +31654,13 @@ impl PhpClassTable {
         }
         for method in [
             "__construct",
+            "__toString",
             "getName",
             "getDeclaringClass",
             "getModifiers",
+            "getMangledName",
+            "isDefault",
+            "isDynamic",
             "isPublic",
             "isProtected",
             "isPrivate",
@@ -31668,6 +31681,11 @@ impl PhpClassTable {
         let reflection_class_constant = classes
             .get_mut(reflection_class_constant_id)
             .expect("declared ReflectionClassConstant class id should resolve");
+        for property in ["name", "class"] {
+            reflection_class_constant
+                .add_property(PhpPropertyMetadata::instance(property, Visibility::Public))
+                .expect("ReflectionClassConstant core metadata should not duplicate properties");
+        }
         for constant in ["IS_PUBLIC", "IS_PROTECTED", "IS_PRIVATE", "IS_FINAL"] {
             reflection_class_constant
                 .add_constant(PhpClassConstantMetadata::new(constant, Visibility::Public))
@@ -31682,6 +31700,7 @@ impl PhpClassTable {
             "isProtected",
             "isPrivate",
             "isFinal",
+            "isDeprecated",
             "getValue",
             "getAttributes",
         ] {
@@ -35372,6 +35391,19 @@ impl PhpObject {
         self.properties.borrow().clone()
     }
 
+    pub fn initialized_mangled_properties_array(&self) -> PhpArray {
+        let mut array = PhpArray::new();
+        for property in self.properties() {
+            if property.is_initialized() {
+                array.insert(
+                    ArrayKey::String(property.mangled_name()),
+                    property.value_cloned(),
+                );
+            }
+        }
+        array
+    }
+
     pub fn shallow_clone_with_id(&self, id: i64) -> Self {
         Self {
             id,
@@ -38155,10 +38187,7 @@ fn native_value_array_cast(value: &Value) -> RuntimeResult<PhpArray> {
                 .expect("append into a fresh array should not fail");
             Ok(array)
         }
-        Value::Object(_) => Err(RuntimeError::unsupported_call(
-            "(array)",
-            "object-to-array cast property materialization is not implemented",
-        )),
+        Value::Object(object) => Ok(object.initialized_mangled_properties_array()),
         Value::Closure(_) => Err(RuntimeError::unsupported_call(
             "(array)",
             "Closure object-to-array cast behavior is not implemented",
@@ -38239,9 +38268,7 @@ fn native_value_cast_blocker(value: &Value, op: u8) -> Option<String> {
         (NATIVE_VALUE_CAST_INT | NATIVE_VALUE_CAST_FLOAT, Value::Resource(_)) => {
             "resource numeric casts"
         }
-        (NATIVE_VALUE_CAST_ARRAY, Value::Object(_) | Value::Closure(_)) => {
-            "object property materialization"
-        }
+        (NATIVE_VALUE_CAST_ARRAY, Value::Closure(_)) => "Closure object-to-array cast behavior",
         (NATIVE_VALUE_CAST_ARRAY, Value::Resource(_)) => "resource array casts",
         _ => return None,
     };

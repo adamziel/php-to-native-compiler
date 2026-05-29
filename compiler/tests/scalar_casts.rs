@@ -177,24 +177,28 @@ print_r((array) $items);
 }
 
 #[test]
-fn array_casts_reject_unimplemented_object_paths_for_now() {
-    let error = run_source(
+fn array_casts_materialize_initialized_object_properties_with_mangled_keys() {
+    let execution = run_source(
         r#"<?php
 class Box {
     public $name;
+    protected $secret = "S";
+    private $token = "T";
 }
-echo (array) new Box();
+$box = new Box();
+$box->name = "Ada";
+$array = (array) $box;
+$keys = array_keys($array);
+echo count($array), "\n";
+echo strlen($keys[0]), "|", $keys[0], "|", $array[$keys[0]], "\n";
+echo strlen($keys[1]), "|", $array[$keys[1]], "\n";
+echo strlen($keys[2]), "|", $array[$keys[2]], "\n";
 "#,
     )
-    .unwrap_err();
+    .unwrap();
 
-    assert_eq!(error.phase, Phase::Runtime);
-    assert_eq!(error.line, 5);
-    assert_eq!(error.column, 6);
-    assert_eq!(
-        error.message,
-        "unsupported call (array): object-to-array cast property materialization is not implemented"
-    );
+    assert_eq!(execution.stdout, "3\n4|name|Ada\n9|S\n10|T\n");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

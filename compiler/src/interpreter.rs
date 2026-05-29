@@ -33397,10 +33397,13 @@ impl Interpreter {
             .classes
             .get(class_id)
             .expect("core ReflectionParameter class id should resolve");
+        let parameter_name = state.parameter.name.clone();
         self.reflection_parameters.insert(object_id, state);
-        Ok(Value::Object(PhpObject::from_class_with_id(
-            class, object_id,
-        )))
+        let object = PhpObject::from_class_with_id(class, object_id);
+        object
+            .write_public_property("name", Value::String(parameter_name))
+            .map_err(|error| runtime_error(span, error))?;
+        Ok(Value::Object(object))
     }
 
     fn instantiate_reflection_property(
@@ -33459,15 +33462,9 @@ impl Interpreter {
 
                 self.resolve_class_property_metadata(class_id, property_name)
                     .ok_or_else(|| {
-                        runtime_error(
+                        reflection_exception_error(
                             span,
-                            RuntimeError::unsupported_object_instantiation(
-                                "ReflectionProperty",
-                                format!(
-                                    "property {property_name} is not declared on {}",
-                                    class.name
-                                ),
-                            ),
+                            format!("Property {}::${property_name} does not exist", class.name),
                         )
                     })
             }
@@ -33511,10 +33508,17 @@ impl Interpreter {
             .classes
             .get(class_id)
             .expect("core ReflectionProperty class id should resolve");
+        let property_name = state.name.clone();
+        let declaring_class_name = state.declaring_class_name.clone();
         self.reflection_properties.insert(object_id, state);
-        Ok(Value::Object(PhpObject::from_class_with_id(
-            class, object_id,
-        )))
+        let object = PhpObject::from_class_with_id(class, object_id);
+        object
+            .write_public_property("name", Value::String(property_name))
+            .map_err(|error| runtime_error(span, error))?;
+        object
+            .write_public_property("class", Value::String(declaring_class_name))
+            .map_err(|error| runtime_error(span, error))?;
+        Ok(Value::Object(object))
     }
 
     fn instantiate_reflection_class_constant(
@@ -33582,10 +33586,17 @@ impl Interpreter {
             .classes
             .get(class_id)
             .expect("core ReflectionClassConstant class id should resolve");
+        let constant_name = state.name.clone();
+        let declaring_class_name = state.declaring_class_name.clone();
         self.reflection_class_constants.insert(object_id, state);
-        Ok(Value::Object(PhpObject::from_class_with_id(
-            class, object_id,
-        )))
+        let object = PhpObject::from_class_with_id(class, object_id);
+        object
+            .write_public_property("name", Value::String(constant_name))
+            .map_err(|error| runtime_error(span, error))?;
+        object
+            .write_public_property("class", Value::String(declaring_class_name))
+            .map_err(|error| runtime_error(span, error))?;
+        Ok(Value::Object(object))
     }
 
     fn create_reflection_attribute_object(
@@ -39564,6 +39575,52 @@ impl Interpreter {
                 .map(Some);
         }
 
+        if method_name.eq_ignore_ascii_case("__toString") && args.is_empty() {
+            if object
+                .class_name()
+                .eq_ignore_ascii_case("ReflectionParameter")
+            {
+                let state = self
+                    .reflection_parameters
+                    .get(&object.id())
+                    .cloned()
+                    .ok_or_else(|| {
+                        runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "ReflectionParameter::__toString()",
+                                "missing ReflectionParameter runtime metadata",
+                            ),
+                        )
+                    })?;
+                return self
+                    .reflection_parameter_to_string(&state, span)
+                    .map(Value::String)
+                    .map(Some);
+            }
+            if object
+                .class_name()
+                .eq_ignore_ascii_case("ReflectionProperty")
+            {
+                let state = self
+                    .reflection_properties
+                    .get(&object.id())
+                    .cloned()
+                    .ok_or_else(|| {
+                        runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "ReflectionProperty::__toString()",
+                                "missing ReflectionProperty runtime metadata",
+                            ),
+                        )
+                    })?;
+                return Ok(Some(Value::String(
+                    self.reflection_property_to_string(&state),
+                )));
+            }
+        }
+
         let function = self.method_function(class_id, &class_name, &resolved_method_name, span)?;
         let function = function.as_ref();
         ensure_user_function_arity(function, args.len(), span)?;
@@ -42924,6 +42981,11 @@ impl Interpreter {
                     "reinitializing ReflectionParameter objects is not implemented",
                 ),
             )),
+            "__tostring" => {
+                expect_expr_arity("ReflectionParameter::__toString", args.len(), 0, span)?;
+                self.reflection_parameter_to_string(&state, span)
+                    .map(Value::String)
+            }
             "getname" => {
                 expect_expr_arity("ReflectionParameter::getName", args.len(), 0, span)?;
                 Ok(Value::String(state.parameter.name))
@@ -43086,6 +43148,10 @@ impl Interpreter {
                     "reinitializing ReflectionProperty objects is not implemented",
                 ),
             )),
+            "__tostring" => {
+                expect_expr_arity("ReflectionProperty::__toString", args.len(), 0, span)?;
+                Ok(Value::String(self.reflection_property_to_string(&state)))
+            }
             "getname" => {
                 expect_expr_arity("ReflectionProperty::getName", args.len(), 0, span)?;
                 Ok(Value::String(state.name))
@@ -43111,6 +43177,18 @@ impl Interpreter {
             "getmodifiers" => {
                 expect_expr_arity("ReflectionProperty::getModifiers", args.len(), 0, span)?;
                 Ok(Value::Int(reflection_property_modifier_mask(&state)))
+            }
+            "getmangledname" => {
+                expect_expr_arity("ReflectionProperty::getMangledName", args.len(), 0, span)?;
+                Ok(Value::String(reflection_property_mangled_name(&state)))
+            }
+            "isdefault" => {
+                expect_expr_arity("ReflectionProperty::isDefault", args.len(), 0, span)?;
+                Ok(Value::Bool(true))
+            }
+            "isdynamic" => {
+                expect_expr_arity("ReflectionProperty::isDynamic", args.len(), 0, span)?;
+                Ok(Value::Bool(false))
             }
             "ispublic" => {
                 expect_expr_arity("ReflectionProperty::isPublic", args.len(), 0, span)?;
@@ -43244,6 +43322,12 @@ impl Interpreter {
             "isfinal" => {
                 expect_expr_arity("ReflectionClassConstant::isFinal", args.len(), 0, span)?;
                 Ok(Value::Bool(false))
+            }
+            "isdeprecated" => {
+                expect_expr_arity("ReflectionClassConstant::isDeprecated", args.len(), 0, span)?;
+                Ok(Value::Bool(attributes_include_deprecated(
+                    &state.attributes,
+                )))
             }
             "getvalue" => {
                 expect_expr_arity("ReflectionClassConstant::getValue", args.len(), 0, span)?;
@@ -43449,6 +43533,57 @@ impl Interpreter {
                 .cloned()
                 .unwrap_or(Value::Null)
         }
+    }
+
+    fn reflection_property_to_string(&self, state: &ReflectionPropertyState) -> String {
+        let visibility = match state.visibility {
+            Visibility::Public => "public",
+            Visibility::Protected => "protected",
+            Visibility::Private => "private",
+        };
+        let static_marker = if state.is_static { " static" } else { "" };
+        let default = reflection_value_export_short(&self.reflection_property_default_value(state));
+        format!(
+            "Property [ {visibility}{static_marker} ${} = {default} ]\n",
+            state.name
+        )
+    }
+
+    fn reflection_parameter_to_string(
+        &mut self,
+        state: &ReflectionParameterState,
+        _span: Span,
+    ) -> CompileResult<String> {
+        let required = state.parameter.default.is_none() && !state.parameter.is_variadic;
+        let required_marker = if required { "required" } else { "optional" };
+        let type_prefix = state
+            .parameter
+            .type_decl
+            .as_deref()
+            .map(|type_decl| format!("{type_decl} "))
+            .unwrap_or_default();
+        let reference_prefix = if state.parameter.by_reference {
+            "&"
+        } else {
+            ""
+        };
+        let variadic_prefix = if state.parameter.is_variadic {
+            "..."
+        } else {
+            ""
+        };
+        let default = if let Some(default) = state.parameter.default.as_ref() {
+            let mut default_scope = SymbolTable::new();
+            let default = self.evaluate(default, &mut default_scope)?;
+            format!(" = {}", reflection_value_export_short(&default))
+        } else {
+            String::new()
+        };
+
+        Ok(format!(
+            "Parameter #{} [ <{required_marker}> {type_prefix}{reference_prefix}{variadic_prefix}${}{default} ]",
+            state.position, state.parameter.name
+        ))
     }
 
     fn call_reflection_get_attributes(
@@ -75738,13 +75873,9 @@ impl Interpreter {
                         .expect("append into a fresh array should not fail");
                     Ok(Value::Array(array))
                 }
-                Value::Object(_) => Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "(array)",
-                        "object-to-array cast property materialization is not implemented",
-                    ),
-                )),
+                Value::Object(object) => {
+                    Ok(Value::Array(object.initialized_mangled_properties_array()))
+                }
                 Value::Closure(_) => Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
@@ -81424,6 +81555,36 @@ fn reflection_property_modifier_mask(property: &ReflectionPropertyState) -> i64 
         mask |= 16;
     }
     mask
+}
+
+fn reflection_property_mangled_name(property: &ReflectionPropertyState) -> String {
+    match property.visibility {
+        Visibility::Public => property.name.clone(),
+        Visibility::Protected => format!("\0*\0{}", property.name),
+        Visibility::Private => format!("\0{}\0{}", property.declaring_class_name, property.name),
+    }
+}
+
+fn reflection_value_export_short(value: &Value) -> String {
+    match value {
+        Value::Null => "NULL".to_string(),
+        Value::Bool(true) => "true".to_string(),
+        Value::Bool(false) => "false".to_string(),
+        Value::Int(value) => value.to_string(),
+        Value::Float(value) => Value::Float(*value).echo_string(),
+        Value::String(value) => format!("'{}'", reflection_quote_string(value)),
+        Value::BinaryString(value) => String::from_utf8(value.clone())
+            .map(|value| format!("'{}'", reflection_quote_string(&value)))
+            .unwrap_or_else(|_| "''".to_string()),
+        Value::Array(_) => "Array".to_string(),
+        Value::Object(object) => format!("Object({})", object.class_name()),
+        Value::Closure(_) => "Closure".to_string(),
+        Value::Resource(id) => format!("Resource id #{id}"),
+    }
+}
+
+fn reflection_quote_string(value: &str) -> String {
+    value.replace('\\', "\\\\").replace('\'', "\\'")
 }
 
 fn implemented_interface_names(classes: &PhpClassTable, class_id: ClassId) -> Vec<String> {
@@ -101526,8 +101687,9 @@ fn format_var_dump_with_indent(value: &Value, indent: usize, span: Span) -> Comp
         }
         Value::Object(value) => {
             let mut output = format!(
-                "{padding}object({}) ({}) {{\n",
+                "{padding}object({})#{} ({}) {{\n",
                 value.class_name(),
+                value.id(),
                 value.properties().len()
             );
             for property in value.properties() {
