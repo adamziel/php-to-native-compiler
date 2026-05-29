@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-29 04:06 CEST
+Updated: 2026-05-29 04:22 CEST
 Primary branch: `master`
-Latest source head: `b19d2637 fix: add generator rewind iteration semantics`
+Latest source head: `24c7916f fix: add standard stream line read builtins`
 
 ## Progress Score
 
@@ -108,13 +108,41 @@ stable pinned denominator and does not use the raw runner
 | Batch004 source batch | Complete | Batch004 source checkpoints accepted: 10 / 10; checkpoint10 sharded gate published |
 | Batch005 source batch | Complete | Batch005 source checkpoints accepted: 10 / 10; checkpoint10 sharded gate published |
 | Batch006 source batch | Complete | Source checkpoints accepted: 10 / 10; checkpoint10 sharded gate published |
-| Batch007 source batch | In progress | Source checkpoints accepted: 1 / 10; public score unchanged until pinned aggregate gate |
+| Batch007 source batch | In progress | Source checkpoints accepted: 2 / 10; public score unchanged until pinned aggregate gate |
 
 Focused PHPT history is tracked separately in
 `/home/claude/supervised-php-compiler/state/php-core-suite-focused-history.tsv`.
 Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
+
+Batch007 source checkpoint 2 is primary-integrated under AO supervision. This
+is a source checkpoint with focused proof, not a percentage change. The public
+PHPT score remains **1836 / 20294 pinned runnable PHPTs = 9.05%** until the
+next pinned full-suite or supervisor-approved sharded publication gate is
+completed, regression-checked, and published here.
+
+- primary source head:
+  `24c7916f fix: add standard stream line read builtins`
+- reviewed and integration patch:
+  `/home/claude/supervised-php-compiler/state/patches/ao-coder-standard-stream-line-read-successor2-current-02352978-20260529.patch`
+- reviewed and integration patch SHA256:
+  `927b5e59b4eb1c204327f67e804674faec74537c84e6113f2448e74544fd80d0`
+- reviewer gate: phpc-7 recorded `FINAL GO-CANDIDATE /
+  CURRENT-PUBLIC-AE3B / FOCUSED-GATES-PASS / PHPT-PASS`; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/batch007-review-standard-stream-line-read-successor2-ae3b818d-20260529.{status.md,report.md,gates.log}`
+- critic gate: phpc-33 recorded `SAFE-FOR-INTEGRATION /
+  CURRENT-PUBLIC-AE3B818D / READ-ONLY-CRITIC-PASS`; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/batch007-critic-standard-stream-line-read-successor2-ae3b818d-20260529.{status.md,report.md}`
+- supervisor focused gates: PASS for clean apply over public `ae3b818d`,
+  `git diff --cached --check`, PROGRESS/examples exclusion, production
+  exact-shape audit, `cargo fmt --all -- --check`, focused Rust
+  `standard_stream_line_builtins`, focused Rust
+  `stream_resource_builtin::emit_asm_rejects_stream_resources_before_backend_execution`,
+  `cargo build -p phpc`, and the focused 4-file stream line/fgetcsv PHPT
+  cluster with 4 PASS and 0 FAIL
+- public progress gate: not run for this source checkpoint; next public score
+  update waits for the Batch007 pinned aggregate gate
 
 Batch007 source checkpoint 1 is primary-integrated under AO supervision. This
 is a source checkpoint with focused proof, not a percentage change. The public
