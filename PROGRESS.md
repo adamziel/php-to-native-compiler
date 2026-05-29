@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-29 18:44 CEST
+Updated: 2026-05-29 19:05 CEST
 Primary branch: `master`
-Latest source head: `d2c258a9 fix: add ReflectionObject support`
+Latest source head: `a2c62479 fix: add HTML entity string builtins`
 
 ## Progress Score
 
@@ -23,9 +23,10 @@ stream-resource proof covering 16 direct PHPT rows. Batch013 checkpoint2
 source `9ad49e1d` is integrated with a focused p42 explode/implode/join proof
 covering 12 direct PHPT rows. Batch013 checkpoint3 source `d2c258a9` is
 integrated with a focused p39 ReflectionObject proof covering 11 direct PHPT
-rows. Batch013 source progress is now 3 / 10 checkpoints and +39 expected
-direct rows. The public percentage is unchanged until the next pinned
-full-suite publication gate.
+rows. Batch013 checkpoint4 source `a2c62479` is integrated with a focused p7
+HTML entity string builtins proof covering 10 direct PHPT rows. Batch013 source
+progress is now 4 / 10 checkpoints and +49 expected direct rows. The public
+percentage is unchanged until the next pinned full-suite publication gate.
 
 No other percentage is public project progress. Focused PHPT passes, source
 checkpoints, PRs, and docs/status edits are evidence for the next batch, but
