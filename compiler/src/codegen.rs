@@ -66202,6 +66202,7 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "rtrim",
     "strcasecmp",
     "strcoll",
+    "strtr",
     "strcmp",
     "strncmp",
     "strncasecmp",

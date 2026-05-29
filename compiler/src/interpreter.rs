@@ -65837,6 +65837,7 @@ impl Interpreter {
             "rtrim" => call_rtrim(&args, span),
             "strcasecmp" => call_strcasecmp(&args, span),
             "strcoll" => call_strcoll(&args, span),
+            "strtr" => self.call_strtr(&args, span),
             "str_contains" => call_str_contains(&args, span),
             "str_starts_with" => call_str_starts_with(&args, span),
             "str_ends_with" => call_str_ends_with(&args, span),
@@ -76234,6 +76235,14 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_param("string2", "string"),
             ],
         ),
+        "strtr" => (
+            "string",
+            vec![
+                reflection_internal_param("string", "string"),
+                reflection_internal_param("from", "array|string"),
+                reflection_internal_optional_string_param("to", ""),
+            ],
+        ),
         "str_contains" | "str_starts_with" | "str_ends_with" => (
             "bool",
             vec![
@@ -78362,6 +78371,7 @@ fn is_builtin(name: &str) -> bool {
             | "rtrim"
             | "strcasecmp"
             | "strcoll"
+            | "strtr"
             | "str_contains"
             | "str_starts_with"
             | "str_ends_with"
@@ -84927,6 +84937,228 @@ fn call_strcoll(args: &[Value], span: Span) -> CompileResult<Value> {
         std::cmp::Ordering::Equal => 0,
         std::cmp::Ordering::Greater => 1,
     }))
+}
+
+#[derive(Clone)]
+struct StrtrReplacement {
+    from: Vec<u8>,
+    to: Vec<u8>,
+    order: usize,
+}
+
+impl Interpreter {
+    fn call_strtr(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(2..=3).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "strtr()",
+                    ArityExpectation::Between { min: 2, max: 3 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let input =
+            self.strtr_string_argument_bytes(1, "string", "string", "string", &args[0], span)?;
+        if input.is_empty() {
+            return Ok(interpreter_value_from_php_string_bytes(input));
+        }
+
+        if args.len() == 2 {
+            let Value::Array(replacements) = &args[1] else {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "strtr()",
+                        format!(
+                            "Argument #2 ($from) must be of type array, {} given",
+                            php_type_error_given(&args[1])
+                        ),
+                    ),
+                ));
+            };
+
+            let replacements = self.strtr_array_replacements(replacements, span)?;
+            return Ok(interpreter_value_from_php_string_bytes(
+                strtr_replace_pairs(&input, &replacements),
+            ));
+        }
+
+        if matches!(args[1], Value::Array(_)) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "strtr()",
+                    "Argument #2 ($from) must be of type string, array given",
+                ),
+            ));
+        }
+        if matches!(args[2], Value::Array(_)) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "strtr()",
+                    "Argument #3 ($to) must be of type string, array given",
+                ),
+            ));
+        }
+
+        let from =
+            self.strtr_string_argument_bytes(2, "from", "string", "array|string", &args[1], span)?;
+        let to = self.strtr_string_argument_bytes(3, "to", "string", "string", &args[2], span)?;
+        Ok(interpreter_value_from_php_string_bytes(
+            strtr_translate_bytes(&input, &from, &to),
+        ))
+    }
+
+    fn strtr_array_replacements(
+        &mut self,
+        replacements: &PhpArray,
+        span: Span,
+    ) -> CompileResult<Vec<StrtrReplacement>> {
+        let mut pairs = Vec::new();
+        for (order, entry) in replacements.entries().iter().enumerate() {
+            let from = strtr_array_key_bytes(&entry.key);
+            if from.is_empty() {
+                self.emit_display_warning("strtr(): Ignoring replacement of empty string", span)?;
+                continue;
+            }
+
+            let value = entry.value_cloned();
+            let to =
+                self.strtr_string_argument_bytes(2, "from", "string", "string", &value, span)?;
+            pairs.push(StrtrReplacement { from, to, order });
+        }
+
+        pairs.sort_by(|left, right| {
+            right
+                .from
+                .len()
+                .cmp(&left.from.len())
+                .then_with(|| left.order.cmp(&right.order))
+        });
+        Ok(pairs)
+    }
+
+    fn strtr_string_argument_bytes(
+        &mut self,
+        position: usize,
+        name: &str,
+        type_error_type: &str,
+        deprecation_type: &str,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<Vec<u8>> {
+        if matches!(value, Value::Array(_)) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "strtr()",
+                    format!(
+                        "Argument #{position} (${name}) must be of type {type_error_type}, array given"
+                    ),
+                ),
+            ));
+        }
+
+        if matches!(value, Value::Null) {
+            self.emit_display_diagnostic(
+                "Deprecated",
+                PHP_E_DEPRECATED,
+                format!(
+                    "strtr(): Passing null to parameter #{position} (${name}) of type {deprecation_type} is deprecated"
+                ),
+                span,
+            )?;
+        }
+
+        if let Value::Object(object) = value {
+            if let Some(value) =
+                self.object_to_string_with_magic(object.clone(), "strtr()", span)?
+            {
+                return Ok(value.into_bytes());
+            }
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "strtr()",
+                    format!(
+                        "Argument #{position} (${name}) must be of type {type_error_type}, {} given",
+                        php_type_error_given(value)
+                    ),
+                ),
+            ));
+        }
+
+        if matches!(value, Value::Resource(_) | Value::Closure(_)) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "strtr()",
+                    format!(
+                        "Argument #{position} (${name}) must be of type {type_error_type}, {} given",
+                        php_type_error_given(value)
+                    ),
+                ),
+            ));
+        }
+
+        value
+            .try_echo_bytes()
+            .map_err(|error| runtime_error(span, error))
+    }
+}
+
+fn strtr_array_key_bytes(key: &ArrayKey) -> Vec<u8> {
+    match key {
+        ArrayKey::Int(value) => value.to_string().into_bytes(),
+        ArrayKey::String(value) => value.as_bytes().to_vec(),
+    }
+}
+
+fn strtr_translate_bytes(input: &[u8], from: &[u8], to: &[u8]) -> Vec<u8> {
+    let mut map: [Option<u8>; 256] = [None; 256];
+    for (&from, &to) in from.iter().zip(to.iter()) {
+        map[from as usize] = Some(to);
+    }
+
+    input
+        .iter()
+        .map(|byte| map[*byte as usize].unwrap_or(*byte))
+        .collect()
+}
+
+fn strtr_replace_pairs(input: &[u8], replacements: &[StrtrReplacement]) -> Vec<u8> {
+    if replacements.is_empty() {
+        return input.to_vec();
+    }
+
+    let mut output = Vec::with_capacity(input.len());
+    let mut index = 0;
+    while index < input.len() {
+        if let Some(replacement) = replacements
+            .iter()
+            .find(|replacement| input[index..].starts_with(&replacement.from))
+        {
+            output.extend_from_slice(&replacement.to);
+            index += replacement.from.len();
+            continue;
+        }
+
+        output.push(input[index]);
+        index += 1;
+    }
+    output
+}
+
+fn php_type_error_given(value: &Value) -> String {
+    match value {
+        Value::Bool(true) => "true".to_string(),
+        Value::Bool(false) => "false".to_string(),
+        Value::Object(object) => object.class_name().to_string(),
+        other => other.type_name().to_string(),
+    }
 }
 
 fn call_str_contains(args: &[Value], span: Span) -> CompileResult<Value> {
