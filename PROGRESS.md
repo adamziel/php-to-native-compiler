@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-29 04:22 CEST
+Updated: 2026-05-29 04:34 CEST
 Primary branch: `master`
-Latest source head: `24c7916f fix: add standard stream line read builtins`
+Latest source head: `8693281d fix: reject redundant union types`
 
 ## Progress Score
 
@@ -108,13 +108,48 @@ stable pinned denominator and does not use the raw runner
 | Batch004 source batch | Complete | Batch004 source checkpoints accepted: 10 / 10; checkpoint10 sharded gate published |
 | Batch005 source batch | Complete | Batch005 source checkpoints accepted: 10 / 10; checkpoint10 sharded gate published |
 | Batch006 source batch | Complete | Source checkpoints accepted: 10 / 10; checkpoint10 sharded gate published |
-| Batch007 source batch | In progress | Source checkpoints accepted: 2 / 10; public score unchanged until pinned aggregate gate |
+| Batch007 source batch | In progress | Source checkpoints accepted: 3 / 10; public score unchanged until pinned aggregate gate |
 
 Focused PHPT history is tracked separately in
 `/home/claude/supervised-php-compiler/state/php-core-suite-focused-history.tsv`.
 Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
+
+Batch007 source checkpoint 3 is primary-integrated under AO supervision. This
+is a source checkpoint with focused proof, not a percentage change. The public
+PHPT score remains **1836 / 20294 pinned runnable PHPTs = 9.05%** until the
+next pinned full-suite or supervisor-approved sharded publication gate is
+completed, regression-checked, and published here.
+
+- primary source head:
+  `8693281d fix: reject redundant union types`
+- reviewed and integration patch:
+  `/home/claude/supervised-php-compiler/state/patches/ao-coder-type-declarations-union-redundant-types-successor5-16af8d49-20260529.patch`
+- reviewed and integration patch SHA256:
+  `07107370c8ae5870880268b5bf0f3a0d536c6a36ad54dd05ff8df4afc0d5ac5a`
+- reviewer gate: phpc-7 recorded `FINAL GO /
+  FOCUSED-RUST-BUILD-PHPT-PASS`; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/batch007-review-type-declarations-union-redundant-types-successor5-16af8d49-20260529.{status.md,report.md,gates.log}`
+- critic gate: phpc-33 recorded `SAFE-FOR-INTEGRATION /
+  CURRENT-PUBLIC-16AF8D49`; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/batch007-critic-type-declarations-union-redundant-types-successor5-16af8d49-20260529.{status.md,report.md}`
+- supervisor focused gates: PASS for clean apply over public `16af8d49`,
+  `git diff --cached --check`, docs/PROGRESS/examples exclusion, production
+  exact-shape audit, `cargo fmt --all -- --check`, focused Rust
+  `union_redundant_type_syntax`, `cargo build -p phpc --bin phpc`, and the
+  focused 23-file `Zend/tests/type_declarations/union_types/redundant_types`
+  PHPT cluster with 23 PASS and 0 FAIL
+- public progress gate: not run for this source checkpoint; next public score
+  update waits for the Batch007 pinned aggregate gate
+
+This checkpoint generalizes startup diagnostics for redundant union type
+declarations across functions, methods, interfaces, traits, and properties. It
+covers duplicate scalar/class/relative names, `bool|true` / `bool|false`,
+`true|false`, `iterable|array` / `iterable|Traversable`, `object|Class` /
+`object|static`, and nullable `?null` cases. It is not keyed to PHPT filenames,
+expected output, fixture class names, public hashes, batch labels, or
+checkpoint markers.
 
 Batch007 source checkpoint 2 is primary-integrated under AO supervision. This
 is a source checkpoint with focused proof, not a percentage change. The public
