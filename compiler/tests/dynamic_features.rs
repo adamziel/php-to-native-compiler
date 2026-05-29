@@ -1227,6 +1227,28 @@ $callback();
 }
 
 #[test]
+fn dynamic_array_callback_errors_use_dynamic_call_messages() {
+    let execution = run_source(
+        r#"<?php
+foreach ([[ "x" ], [null, "bar"], ["stdClass", null], ["a", "b"]] as $callback) {
+    try {
+        $callback();
+    } catch (Error $e) {
+        echo $e->getMessage(), "\n";
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "Array callback must have exactly two elements\nFirst array member is not a valid class name or object\nSecond array member is not a valid method\nClass \"a\" not found\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn array_object_callables_use_calling_scope_visibility() {
     let execution = run_source(
         r#"<?php

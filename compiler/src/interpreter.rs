@@ -47027,6 +47027,10 @@ impl Interpreter {
     }
 
     fn invalid_array_callback_error(context: &str, callback: &PhpArray, span: Span) -> Diagnostic {
+        if context == "dynamic function call" {
+            return Self::invalid_dynamic_array_callback_error(callback, span);
+        }
+
         let entries = callback.entries();
         if entries.len() != 2 {
             return Self::invalid_callback_error(
@@ -47068,6 +47072,79 @@ impl Interpreter {
         }
 
         Self::invalid_callback_error(context, "array callback must contain indices 0 and 1", span)
+    }
+
+    fn invalid_dynamic_array_callback_error(callback: &PhpArray, span: Span) -> Diagnostic {
+        let entries = callback.entries();
+        if entries.len() != 2 {
+            return Diagnostic::new(
+                Phase::Runtime,
+                span.line,
+                span.column,
+                "Array callback must have exactly two elements",
+            );
+        }
+
+        let target = entries
+            .iter()
+            .find(|entry| matches!(entry.key, ArrayKey::Int(0)))
+            .map(|entry| entry.value());
+        let method = entries
+            .iter()
+            .find(|entry| matches!(entry.key, ArrayKey::Int(1)))
+            .map(|entry| entry.value());
+
+        if target.is_none() || method.is_none() {
+            return Diagnostic::new(
+                Phase::Runtime,
+                span.line,
+                span.column,
+                "Array callback has to contain indices 0 and 1",
+            );
+        }
+
+        match target {
+            Some(Value::String(_) | Value::Object(_)) => {}
+            _ => {
+                return Diagnostic::new(
+                    Phase::Runtime,
+                    span.line,
+                    span.column,
+                    "First array member is not a valid class name or object",
+                );
+            }
+        }
+
+        match method {
+            Some(Value::String(_)) => {}
+            _ => {
+                return Diagnostic::new(
+                    Phase::Runtime,
+                    span.line,
+                    span.column,
+                    "Second array member is not a valid method",
+                );
+            }
+        }
+
+        Diagnostic::new(
+            Phase::Runtime,
+            span.line,
+            span.column,
+            "Array callback has to contain indices 0 and 1",
+        )
+    }
+
+    fn array_callback_class_not_found_error(
+        context: &str,
+        class_name: &str,
+        span: Span,
+    ) -> Diagnostic {
+        if context == "dynamic function call" {
+            runtime_error(span, RuntimeError::undefined_class(class_name))
+        } else {
+            Self::invalid_callback_error(context, format!("class \"{class_name}\" not found"), span)
+        }
     }
 
     fn invalid_callback_visibility_error(
@@ -48017,6 +48094,7 @@ impl Interpreter {
                     args,
                     span,
                     caller_scope,
+                    "dynamic function call",
                 );
             }
             Value::Object(object) => {
@@ -48042,7 +48120,13 @@ impl Interpreter {
 
         if let Some((class_name, method_name)) = static_method_callable_string(&name) {
             let callback = static_method_array_callable_value(class_name, method_name, span)?;
-            return self.call_user_func_array_callable_direct(&callback, args, span, caller_scope);
+            return self.call_user_func_array_callable_direct(
+                &callback,
+                args,
+                span,
+                caller_scope,
+                "dynamic function call",
+            );
         }
 
         self.call_named_function(&name, args, span, caller_scope)
@@ -48075,6 +48159,7 @@ impl Interpreter {
                         args,
                         span,
                         caller_scope,
+                        "dynamic function call",
                     );
                 }
                 self.call_named_function_with_array_copy_source(&name, args, span, caller_scope)
@@ -48092,6 +48177,7 @@ impl Interpreter {
                     args,
                     span,
                     caller_scope,
+                    "dynamic function call",
                 ),
             Value::Object(object) => Err(object_not_callable_error(object.class_name(), span)),
             other => Err(runtime_error(
@@ -49079,6 +49165,7 @@ impl Interpreter {
                     &args[1..],
                     span,
                     caller_scope,
+                    "call_user_func()",
                 );
             }
             Value::Closure(closure) => {
@@ -49115,6 +49202,7 @@ impl Interpreter {
                 &args[1..],
                 span,
                 caller_scope,
+                "call_user_func()",
             );
         }
 
@@ -49173,6 +49261,7 @@ impl Interpreter {
                     &args[1..],
                     span,
                     caller_scope,
+                    "call_user_func()",
                 );
             }
             Value::Closure(closure) => {
@@ -49208,6 +49297,7 @@ impl Interpreter {
                 &args[1..],
                 span,
                 caller_scope,
+                "call_user_func()",
             );
         }
 
@@ -49271,16 +49361,13 @@ impl Interpreter {
         args: &[Expr],
         span: Span,
         caller_scope: &mut SymbolTable,
+        context: &str,
     ) -> CompileResult<Value> {
         let Some((target, method_name)) = array_callable_parts(callback) else {
-            return Err(Self::invalid_array_callback_error(
-                "call_user_func()",
-                callback,
-                span,
-            ));
+            return Err(Self::invalid_array_callback_error(context, callback, span));
         };
         if let Some(resolution) = self.resolve_scoped_array_callable_method(
-            "call_user_func()",
+            context,
             target,
             method_name,
             span,
@@ -49407,11 +49494,7 @@ impl Interpreter {
             }
             Value::String(class_name) => {
                 let class_id = self.classes.lookup_class_id(class_name).ok_or_else(|| {
-                    Self::invalid_callback_error(
-                        "call_user_func()",
-                        format!("class \"{class_name}\" not found"),
-                        span,
-                    )
+                    Self::array_callback_class_not_found_error(context, class_name, span)
                 })?;
                 let receiver_class_name = self
                     .classes
@@ -49514,16 +49597,13 @@ impl Interpreter {
         args: &[Expr],
         span: Span,
         caller_scope: &mut SymbolTable,
+        context: &str,
     ) -> CompileResult<(Value, Option<ArrayCopySource>)> {
         let Some((target, method_name)) = array_callable_parts(callback) else {
-            return Err(Self::invalid_array_callback_error(
-                "call_user_func()",
-                callback,
-                span,
-            ));
+            return Err(Self::invalid_array_callback_error(context, callback, span));
         };
         if let Some(resolution) = self.resolve_scoped_array_callable_method(
-            "call_user_func()",
+            context,
             target,
             method_name,
             span,
@@ -49640,11 +49720,7 @@ impl Interpreter {
             }
             Value::String(class_name) => {
                 let class_id = self.classes.lookup_class_id(class_name).ok_or_else(|| {
-                    Self::invalid_callback_error(
-                        "call_user_func()",
-                        format!("class \"{class_name}\" not found"),
-                        span,
-                    )
+                    Self::array_callback_class_not_found_error(context, class_name, span)
                 })?;
                 let receiver_class_name = self
                     .classes
@@ -86468,6 +86544,12 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
         }
 
         if error.message == "Array callback has to contain indices 0 and 1" {
+            return Some(("Error", error.message.clone()));
+        }
+
+        if error.message == "First array member is not a valid class name or object"
+            || error.message == "Second array member is not a valid method"
+        {
             return Some(("Error", error.message.clone()));
         }
 
