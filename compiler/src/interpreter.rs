@@ -66877,6 +66877,7 @@ impl Interpreter {
             "str_starts_with" => call_str_starts_with(&args, span),
             "str_ends_with" => call_str_ends_with(&args, span),
             "strpos" => call_strpos(&args, span),
+            "stripos" => call_strpos_like(&args, "stripos()", true, span),
             "strrpos" => call_strrpos(&args, "strrpos()", false, span),
             "strripos" => call_strrpos(&args, "strripos()", true, span),
             "strstr" => call_strstr(&args, "strstr()", false, span),
@@ -77443,7 +77444,7 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_param("needle", "string"),
             ],
         ),
-        "strpos" | "strrpos" | "strripos" => (
+        "strpos" | "stripos" | "strrpos" | "strripos" => (
             "int|false",
             vec![
                 reflection_internal_param("haystack", "string"),
@@ -79385,6 +79386,7 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
         | ("str_split()", "Argument #2 ($length) must be greater than 0")
         | ("strncmp()", "Argument #3 ($length) must be greater than or equal to 0")
         | ("strncasecmp()", "Argument #3 ($length) must be greater than or equal to 0")
+        | ("stripos()", "Argument #3 ($offset) must be contained in argument #1 ($haystack)")
         | ("strrpos()", "Argument #3 ($offset) must be contained in argument #1 ($haystack)")
         | ("strripos()", "Argument #3 ($offset) must be contained in argument #1 ($haystack)") => {
             Some(format!("{function}: {message}"))
@@ -79698,6 +79700,7 @@ fn is_builtin(name: &str) -> bool {
             | "str_starts_with"
             | "str_ends_with"
             | "strpos"
+            | "stripos"
             | "strrpos"
             | "strripos"
             | "strstr"
@@ -86868,26 +86871,35 @@ fn call_str_ends_with(args: &[Value], span: Span) -> CompileResult<Value> {
 }
 
 fn call_strpos(args: &[Value], span: Span) -> CompileResult<Value> {
+    call_strpos_like(args, "strpos()", false, span)
+}
+
+fn call_strpos_like(
+    args: &[Value],
+    function: &'static str,
+    case_insensitive: bool,
+    span: Span,
+) -> CompileResult<Value> {
     if !(2..=3).contains(&args.len()) {
         return Err(runtime_error(
             span,
             RuntimeError::arity_mismatch(
-                "strpos()",
+                function,
                 ArityExpectation::Between { min: 2, max: 3 },
                 args.len(),
             ),
         ));
     }
 
-    let haystack = string_contains_argument("strpos()", "haystack", &args[0], span)?;
-    let needle = string_contains_argument("strpos()", "needle", &args[1], span)?;
+    let haystack = string_contains_argument(function, "haystack", &args[0], span)?;
+    let needle = string_contains_argument(function, "needle", &args[1], span)?;
     let offset = match args.get(2) {
         Some(Value::Int(offset)) => *offset,
         Some(other) => {
             return Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
-                    "strpos()",
+                    function,
                     format!(
                         "offset argument must be int in the current subset, got {}",
                         other.type_name()
@@ -86909,8 +86921,12 @@ fn call_strpos(args: &[Value], span: Span) -> CompileResult<Value> {
         return Err(runtime_error(
             span,
             RuntimeError::unsupported_call(
-                "strpos()",
-                "offset must be within the haystack bounds in the current subset",
+                function,
+                if function == "stripos()" {
+                    "Argument #3 ($offset) must be contained in argument #1 ($haystack)"
+                } else {
+                    "offset must be within the haystack bounds in the current subset"
+                },
             ),
         ));
     }
@@ -86920,10 +86936,17 @@ fn call_strpos(args: &[Value], span: Span) -> CompileResult<Value> {
         return Ok(Value::Int(start as i64));
     }
 
-    let needle = needle.as_bytes();
-    Ok(haystack.as_bytes()[start..]
-        .windows(needle.len())
-        .position(|window| window == needle)
+    let haystack_bytes = haystack.as_bytes();
+    let needle_bytes = needle.as_bytes();
+    Ok(haystack_bytes[start..]
+        .windows(needle_bytes.len())
+        .position(|window| {
+            if case_insensitive {
+                window.eq_ignore_ascii_case(needle_bytes)
+            } else {
+                window == needle_bytes
+            }
+        })
         .map(|index| Value::Int((start + index) as i64))
         .unwrap_or(Value::Bool(false)))
 }
