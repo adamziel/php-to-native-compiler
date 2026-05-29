@@ -106,6 +106,29 @@ pub fn class_metadata(program: &Program) -> CompileResult<PhpClassTable> {
         .map(|interpreter| interpreter.classes)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ScopedArrayCallableKind {
+    SelfScope,
+    ParentScope,
+}
+
+impl ScopedArrayCallableKind {
+    fn label(self) -> &'static str {
+        match self {
+            Self::SelfScope => "self",
+            Self::ParentScope => "parent",
+        }
+    }
+}
+
+struct ArrayCallableMethodResolution {
+    declaring_class_id: ClassId,
+    declaring_class_name: String,
+    resolved_method_name: String,
+    this_object: Option<PhpObject>,
+    called_class_id: ClassId,
+}
+
 struct Interpreter {
     functions: HashMap<String, Rc<FunctionDecl>>,
     function_source_files: HashMap<String, Option<String>>,
@@ -46544,6 +46567,335 @@ impl Interpreter {
         self.resolve_instance_method(receiver_class_id, method_name)
     }
 
+    fn scoped_array_callable_method(method_name: &str) -> Option<(ScopedArrayCallableKind, &str)> {
+        if let Some(method) = method_name.strip_prefix("self::") {
+            if !method.is_empty() && !method.contains("::") {
+                return Some((ScopedArrayCallableKind::SelfScope, method));
+            }
+        }
+        if let Some(method) = method_name.strip_prefix("parent::") {
+            if !method.is_empty() && !method.contains("::") {
+                return Some((ScopedArrayCallableKind::ParentScope, method));
+            }
+        }
+        None
+    }
+
+    fn emit_scoped_array_callable_deprecation(
+        &mut self,
+        target_label: &str,
+        method_name: &str,
+        kind: ScopedArrayCallableKind,
+        method_uses_scope: bool,
+        span: Span,
+    ) -> CompileResult<()> {
+        let message = if method_uses_scope {
+            format!("Callables of the form [\"{target_label}\", \"{method_name}\"] are deprecated")
+        } else {
+            format!("Use of \"{}\" in callables is deprecated", kind.label())
+        };
+        self.emit_display_diagnostic("Deprecated", PHP_E_DEPRECATED, message, span)
+    }
+
+    fn current_this_object_for_scoped_array_callable(
+        &self,
+        caller_scope: &SymbolTable,
+        span: Span,
+    ) -> CompileResult<PhpObject> {
+        match caller_scope.read_named("this") {
+            Some(Value::Object(object)) => Ok(object.clone()),
+            _ => Err(this_not_in_object_context_error(span)),
+        }
+    }
+
+    fn invalid_callback_error(context: &str, detail: impl AsRef<str>, span: Span) -> Diagnostic {
+        Diagnostic::new(
+            Phase::Runtime,
+            span.line,
+            span.column,
+            format!(
+                "{context}: Argument #1 ($callback) must be a valid callback, {}",
+                detail.as_ref()
+            ),
+        )
+    }
+
+    fn invalid_array_callback_error(context: &str, callback: &PhpArray, span: Span) -> Diagnostic {
+        let entries = callback.entries();
+        if entries.len() != 2 {
+            return Self::invalid_callback_error(
+                context,
+                "array callback must have exactly two members",
+                span,
+            );
+        }
+
+        let target = entries
+            .iter()
+            .find(|entry| matches!(entry.key, ArrayKey::Int(0)))
+            .map(|entry| entry.value());
+        let method = entries
+            .iter()
+            .find(|entry| matches!(entry.key, ArrayKey::Int(1)))
+            .map(|entry| entry.value());
+
+        match target {
+            Some(Value::String(_) | Value::Object(_)) => {}
+            _ => {
+                return Self::invalid_callback_error(
+                    context,
+                    "first array member is not a valid class name or object",
+                    span,
+                );
+            }
+        }
+
+        match method {
+            Some(Value::String(_)) => {}
+            _ => {
+                return Self::invalid_callback_error(
+                    context,
+                    "second array member is not a valid method",
+                    span,
+                );
+            }
+        }
+
+        Self::invalid_callback_error(context, "array callback must contain indices 0 and 1", span)
+    }
+
+    fn invalid_callback_visibility_error(
+        context: &str,
+        class_name: &str,
+        method_name: &str,
+        visibility: Visibility,
+        span: Span,
+    ) -> Diagnostic {
+        let visibility = match visibility {
+            Visibility::Private => "private",
+            Visibility::Protected => "protected",
+            Visibility::Public => "public",
+        };
+        Self::invalid_callback_error(
+            context,
+            format!("cannot access {visibility} method {class_name}::{method_name}()"),
+            span,
+        )
+    }
+
+    fn resolve_scoped_array_callable_method(
+        &mut self,
+        context: &str,
+        target: &Value,
+        method_name: &str,
+        span: Span,
+        caller_scope: &SymbolTable,
+    ) -> CompileResult<Option<ArrayCallableMethodResolution>> {
+        let target_scope = match target {
+            Value::String(name) if name.eq_ignore_ascii_case("self") => {
+                Some(ScopedArrayCallableKind::SelfScope)
+            }
+            Value::String(name) if name.eq_ignore_ascii_case("parent") => {
+                Some(ScopedArrayCallableKind::ParentScope)
+            }
+            _ => None,
+        };
+        let method_scope = Self::scoped_array_callable_method(method_name);
+        let Some((kind, lookup_method_name, method_uses_scope)) = method_scope
+            .map(|(kind, method)| (kind, method, true))
+            .or_else(|| target_scope.map(|kind| (kind, method_name, false)))
+        else {
+            return Ok(None);
+        };
+
+        let (lookup_class_id, called_class_id, this_object, target_label, allow_non_static) =
+            match target {
+                Value::Object(object) => {
+                    let target_class = self
+                        .classes
+                        .get(object.class_id())
+                        .expect("object class id should resolve to class metadata");
+                    let target_label = target_class.name().to_string();
+                    let lookup_class_id = match kind {
+                        ScopedArrayCallableKind::SelfScope => object.class_id(),
+                        ScopedArrayCallableKind::ParentScope => {
+                            target_class.parent_id().ok_or_else(|| {
+                                runtime_error(
+                                    span,
+                                    RuntimeError::unsupported_call(
+                                        format!("parent::{lookup_method_name}()"),
+                                        "parent callables require a parent class",
+                                    ),
+                                )
+                            })?
+                        }
+                    };
+                    (
+                        lookup_class_id,
+                        object.class_id(),
+                        Some(object.clone()),
+                        target_label,
+                        true,
+                    )
+                }
+                Value::String(class_name) if target_scope.is_some() && !method_uses_scope => {
+                    let current_class_id = self.class_context.last().copied().ok_or_else(|| {
+                        runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                format!("{}::{lookup_method_name}()", kind.label()),
+                                "self and parent callables require method or static class context",
+                            ),
+                        )
+                    })?;
+                    let current_class = self
+                        .classes
+                        .get(current_class_id)
+                        .expect("current class id should resolve to class metadata");
+                    let lookup_class_id = match kind {
+                        ScopedArrayCallableKind::SelfScope => current_class_id,
+                        ScopedArrayCallableKind::ParentScope => {
+                            current_class.parent_id().ok_or_else(|| {
+                                runtime_error(
+                                    span,
+                                    RuntimeError::unsupported_call(
+                                        format!("parent::{lookup_method_name}()"),
+                                        "parent callables require a parent class",
+                                    ),
+                                )
+                            })?
+                        }
+                    };
+                    (
+                        lookup_class_id,
+                        self.called_class_context
+                            .last()
+                            .copied()
+                            .unwrap_or(current_class_id),
+                        None,
+                        class_name.clone(),
+                        true,
+                    )
+                }
+                Value::String(class_name) => {
+                    let class_id = self.classes.lookup_class_id(class_name).ok_or_else(|| {
+                        runtime_error(span, RuntimeError::undefined_class(class_name))
+                    })?;
+                    let target_class = self
+                        .classes
+                        .get(class_id)
+                        .expect("class id should resolve to class metadata");
+                    let target_label = target_class.name().to_string();
+                    let lookup_class_id = match kind {
+                        ScopedArrayCallableKind::SelfScope => class_id,
+                        ScopedArrayCallableKind::ParentScope => {
+                            target_class.parent_id().ok_or_else(|| {
+                                runtime_error(
+                                    span,
+                                    RuntimeError::unsupported_call(
+                                        format!("parent::{lookup_method_name}()"),
+                                        "parent callables require a parent class",
+                                    ),
+                                )
+                            })?
+                        }
+                    };
+                    let called_class_id = match kind {
+                        ScopedArrayCallableKind::SelfScope => class_id,
+                        ScopedArrayCallableKind::ParentScope => lookup_class_id,
+                    };
+                    (lookup_class_id, called_class_id, None, target_label, false)
+                }
+                _ => return Ok(None),
+            };
+
+        self.emit_scoped_array_callable_deprecation(
+            &target_label,
+            method_name,
+            kind,
+            method_uses_scope,
+            span,
+        )?;
+
+        let lookup_class = self
+            .classes
+            .get(lookup_class_id)
+            .expect("lookup class id should resolve to class metadata");
+        let lookup_class_name = lookup_class.name().to_string();
+        let resolved = if matches!(target, Value::Object(_)) {
+            self.resolve_instance_method_for_current_object_scope(
+                lookup_class_id,
+                lookup_method_name,
+            )
+        } else {
+            self.resolve_instance_method(lookup_class_id, lookup_method_name)
+        };
+        let Some((
+            declaring_class_id,
+            declaring_class_name,
+            resolved_method_name,
+            visibility,
+            is_static,
+        )) = resolved
+        else {
+            return Err(Self::invalid_callback_error(
+                context,
+                format!(
+                    "class {lookup_class_name} does not have a method \"{lookup_method_name}\""
+                ),
+                span,
+            ));
+        };
+
+        if visibility != Visibility::Public
+            && self
+                .ensure_instance_method_visible(
+                    declaring_class_id,
+                    &declaring_class_name,
+                    lookup_method_name,
+                    visibility,
+                    span,
+                )
+                .is_err()
+        {
+            let message_class_name =
+                if kind == ScopedArrayCallableKind::ParentScope && method_uses_scope {
+                    &lookup_class_name
+                } else {
+                    &declaring_class_name
+                };
+            return Err(Self::invalid_callback_visibility_error(
+                context,
+                message_class_name,
+                lookup_method_name,
+                visibility,
+                span,
+            ));
+        }
+
+        let this_object = if is_static {
+            None
+        } else if let Some(object) = this_object {
+            Some(object)
+        } else if allow_non_static {
+            Some(self.current_this_object_for_scoped_array_callable(caller_scope, span)?)
+        } else {
+            return Err(non_static_method_called_statically_error(
+                &declaring_class_name,
+                lookup_method_name,
+                span,
+            ));
+        };
+
+        Ok(Some(ArrayCallableMethodResolution {
+            declaring_class_id,
+            declaring_class_name,
+            resolved_method_name,
+            this_object,
+            called_class_id,
+        }))
+    }
+
     fn method_function(
         &self,
         class_id: ClassId,
@@ -48488,12 +48840,63 @@ impl Interpreter {
         caller_scope: &mut SymbolTable,
     ) -> CompileResult<Value> {
         let Some((target, method_name)) = array_callable_parts(callback) else {
-            return Err(array_callable_shape_error(
-                callback,
+            return Err(Self::invalid_array_callback_error(
                 "call_user_func()",
+                callback,
                 span,
             ));
         };
+        if let Some(resolution) = self.resolve_scoped_array_callable_method(
+            "call_user_func()",
+            target,
+            method_name,
+            span,
+            caller_scope,
+        )? {
+            let function = self.method_function(
+                resolution.declaring_class_id,
+                &resolution.declaring_class_name,
+                &resolution.resolved_method_name,
+                span,
+            )?;
+            let function = function.as_ref();
+            if !call_arguments_have_spread(args) {
+                ensure_user_function_arity(function, args.len(), span)?;
+            }
+            if function.returns_by_reference {
+                ensure_supported_reference_return_function_metadata(function, span)?;
+            } else {
+                ensure_supported_function_metadata(function, span)?;
+            }
+            self.ensure_user_function_call_depth(function, span)?;
+            let frame = self.call_user_func_expr_call_frame_bindings(
+                function,
+                args,
+                span,
+                caller_scope,
+                function.returns_by_reference,
+            )?;
+            if function.returns_by_reference {
+                return self.call_reference_return_function_value_with_call_frame(
+                    function,
+                    frame,
+                    resolution.this_object.clone(),
+                    Some(resolution.declaring_class_id),
+                    Some(resolution.called_class_id),
+                    caller_scope,
+                );
+            }
+
+            return self.call_user_function_with_call_frame(
+                function,
+                frame,
+                resolution.this_object,
+                Some(resolution.declaring_class_id),
+                Some(resolution.called_class_id),
+                Some(caller_scope),
+                Vec::new(),
+            );
+        }
 
         match target {
             Value::Object(object) => {
@@ -48571,7 +48974,11 @@ impl Interpreter {
             }
             Value::String(class_name) => {
                 let class_id = self.classes.lookup_class_id(class_name).ok_or_else(|| {
-                    runtime_error(span, RuntimeError::undefined_class(class_name))
+                    Self::invalid_callback_error(
+                        "call_user_func()",
+                        format!("class \"{class_name}\" not found"),
+                        span,
+                    )
                 })?;
                 let receiver_class_name = self
                     .classes
@@ -48676,12 +49083,58 @@ impl Interpreter {
         caller_scope: &mut SymbolTable,
     ) -> CompileResult<(Value, Option<ArrayCopySource>)> {
         let Some((target, method_name)) = array_callable_parts(callback) else {
-            return Err(array_callable_shape_error(
-                callback,
+            return Err(Self::invalid_array_callback_error(
                 "call_user_func()",
+                callback,
                 span,
             ));
         };
+        if let Some(resolution) = self.resolve_scoped_array_callable_method(
+            "call_user_func()",
+            target,
+            method_name,
+            span,
+            caller_scope,
+        )? {
+            let function = self.method_function(
+                resolution.declaring_class_id,
+                &resolution.declaring_class_name,
+                &resolution.resolved_method_name,
+                span,
+            )?;
+            let function = function.as_ref();
+            if function.returns_by_reference {
+                ensure_supported_reference_return_function_metadata(function, span)?;
+                self.ensure_user_function_call_depth(function, span)?;
+                let frame = self.call_user_func_expr_call_frame_bindings(
+                    function,
+                    args,
+                    span,
+                    caller_scope,
+                    true,
+                )?;
+                return self
+                    .call_reference_return_function_value_with_call_frame_and_return_source(
+                        function,
+                        frame,
+                        resolution.this_object.clone(),
+                        Some(resolution.declaring_class_id),
+                        Some(resolution.called_class_id),
+                        caller_scope,
+                        Vec::new(),
+                    );
+            }
+            return self.call_user_func_value_warning_function_with_array_copy_source(
+                function,
+                args,
+                span,
+                caller_scope,
+                resolution.this_object,
+                Some(resolution.declaring_class_id),
+                Some(resolution.called_class_id),
+                Vec::new(),
+            );
+        }
 
         match target {
             Value::Object(object) => {
@@ -48754,7 +49207,11 @@ impl Interpreter {
             }
             Value::String(class_name) => {
                 let class_id = self.classes.lookup_class_id(class_name).ok_or_else(|| {
-                    runtime_error(span, RuntimeError::undefined_class(class_name))
+                    Self::invalid_callback_error(
+                        "call_user_func()",
+                        format!("class \"{class_name}\" not found"),
+                        span,
+                    )
                 })?;
                 let receiver_class_name = self
                     .classes
@@ -49542,6 +49999,11 @@ impl Interpreter {
         argument_array: &PhpArray,
         span: Span,
     ) -> CompileResult<Value> {
+        if key == "str_replace" {
+            return self
+                .call_str_replace_builtin_callback_with_argument_array(argument_array, span);
+        }
+
         if !Self::builtin_callback_has_first_reference_array_param(key) {
             let values =
                 Self::call_user_func_array_builtin_callback_values(key, argument_array, span)?;
@@ -49575,6 +50037,31 @@ impl Interpreter {
             .map(|entry| entry.value_cloned())
             .collect::<Vec<_>>();
         self.call_builtin_callback_with_values(key, positional_args, span, true)
+    }
+
+    fn call_str_replace_builtin_callback_with_argument_array(
+        &mut self,
+        argument_array: &PhpArray,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let function = reflection_internal_function_state("str_replace")
+            .expect("str_replace() reflection metadata is required for callback argument binding");
+        let values = Self::call_user_func_array_values_from_reflection_params(
+            "str_replace",
+            &function.params,
+            argument_array,
+            span,
+        )?;
+        let count_reference = (values.len() >= 4)
+            .then(|| {
+                Self::call_user_func_array_reference_for_reflection_param(
+                    &function.params,
+                    argument_array,
+                    3,
+                )
+            })
+            .flatten();
+        self.call_str_replace_builtin_callback_with_values(values, count_reference, span, true)
     }
 
     fn call_reference_builtin_callback_with_named_argument_array(
@@ -49856,16 +50343,86 @@ impl Interpreter {
         )
     }
 
+    fn call_user_func_array_reference_for_reflection_param(
+        params: &[ReflectionParameterMetadata],
+        argument_array: &PhpArray,
+        param_index: usize,
+    ) -> Option<PhpReferenceCell> {
+        let target_name = params.get(param_index)?.name.as_str();
+        let mut positional_index = 0usize;
+        let mut saw_named = false;
+
+        for entry in argument_array.entries() {
+            match &entry.key {
+                ArrayKey::Int(_) if !saw_named => {
+                    if positional_index == param_index {
+                        return entry.slot().reference_cell();
+                    }
+                    positional_index += 1;
+                }
+                ArrayKey::String(name) => {
+                    saw_named = true;
+                    if name == target_name {
+                        return entry.slot().reference_cell();
+                    }
+                }
+                ArrayKey::Int(_) => {}
+            }
+        }
+
+        None
+    }
+
     fn emit_builtin_callback_reference_value_warning(
         &mut self,
         function: &str,
+        param_index: usize,
+        param_name: &str,
         span: Span,
     ) -> CompileResult<()> {
-        self.emit_warning(
-            function,
-            "Argument #1 ($array) must be passed by reference, value given",
+        self.emit_display_warning(
+            format!(
+                "{function}(): Argument #{} (${}) must be passed by reference, value given",
+                param_index + 1,
+                param_name
+            ),
             span,
         )
+    }
+
+    fn call_str_replace_builtin_callback_with_values(
+        &mut self,
+        args: Vec<Value>,
+        count_reference: Option<PhpReferenceCell>,
+        span: Span,
+        warn_for_reference_value: bool,
+    ) -> CompileResult<Value> {
+        if !(3..=4).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "str_replace()",
+                    ArityExpectation::Between { min: 3, max: 4 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let (result, count) = str_replace_scalar_result(&args[0], &args[1], &args[2], span)?;
+        if args.len() == 4 {
+            if let Some(reference) = count_reference {
+                reference.set_value(Value::Int(count));
+            } else if warn_for_reference_value {
+                self.emit_builtin_callback_reference_value_warning(
+                    "str_replace",
+                    3,
+                    "count",
+                    span,
+                )?;
+            }
+        }
+
+        Ok(Value::String(result))
     }
 
     fn call_builtin_callback_with_values(
@@ -49887,7 +50444,7 @@ impl Interpreter {
                     ));
                 }
                 if warn_for_reference_value {
-                    self.emit_builtin_callback_reference_value_warning(key, span)?;
+                    self.emit_builtin_callback_reference_value_warning(key, 0, "array", span)?;
                 }
                 let mut array = match args.first() {
                     Some(Value::Array(array)) => array.clone(),
@@ -49908,6 +50465,12 @@ impl Interpreter {
                     .map_err(|error| runtime_error(span, error))?;
                 Ok(Value::Bool(true))
             }
+            "str_replace" => self.call_str_replace_builtin_callback_with_values(
+                args,
+                None,
+                span,
+                warn_for_reference_value,
+            ),
             "array_push" => {
                 if args.is_empty() {
                     return Err(runtime_error(
@@ -49920,7 +50483,12 @@ impl Interpreter {
                     ));
                 }
                 if warn_for_reference_value {
-                    self.emit_builtin_callback_reference_value_warning("array_push", span)?;
+                    self.emit_builtin_callback_reference_value_warning(
+                        "array_push",
+                        0,
+                        "array",
+                        span,
+                    )?;
                 }
                 let Value::Array(mut array) = args[0].clone() else {
                     return Err(runtime_error(
@@ -49943,7 +50511,12 @@ impl Interpreter {
             "array_shift" => {
                 expect_arity("array_shift", &args, 1, span)?;
                 if warn_for_reference_value {
-                    self.emit_builtin_callback_reference_value_warning("array_shift", span)?;
+                    self.emit_builtin_callback_reference_value_warning(
+                        "array_shift",
+                        0,
+                        "array",
+                        span,
+                    )?;
                 }
                 let Value::Array(mut array) = args[0].clone() else {
                     return Err(runtime_error(
@@ -49959,7 +50532,7 @@ impl Interpreter {
             "prev" | "reset" | "end" => {
                 expect_arity(key, &args, 1, span)?;
                 if warn_for_reference_value {
-                    self.emit_builtin_callback_reference_value_warning(key, span)?;
+                    self.emit_builtin_callback_reference_value_warning(key, 0, "array", span)?;
                 }
                 let Value::Array(mut array) = args[0].clone() else {
                     return Err(runtime_error(
@@ -49980,7 +50553,12 @@ impl Interpreter {
             "array_pop" => {
                 expect_arity("array_pop", &args, 1, span)?;
                 if warn_for_reference_value {
-                    self.emit_builtin_callback_reference_value_warning("array_pop", span)?;
+                    self.emit_builtin_callback_reference_value_warning(
+                        "array_pop",
+                        0,
+                        "array",
+                        span,
+                    )?;
                 }
                 let Value::Array(mut array) = args[0].clone() else {
                     return Err(runtime_error(
@@ -50005,7 +50583,12 @@ impl Interpreter {
                     ));
                 }
                 if warn_for_reference_value {
-                    self.emit_builtin_callback_reference_value_warning("array_unshift", span)?;
+                    self.emit_builtin_callback_reference_value_warning(
+                        "array_unshift",
+                        0,
+                        "array",
+                        span,
+                    )?;
                 }
                 let Value::Array(mut array) = args[0].clone() else {
                     return Err(runtime_error(
@@ -50033,7 +50616,7 @@ impl Interpreter {
                     ));
                 }
                 if warn_for_reference_value {
-                    self.emit_builtin_callback_reference_value_warning("ksort", span)?;
+                    self.emit_builtin_callback_reference_value_warning("ksort", 0, "array", span)?;
                 }
                 let sort_flags = args.get(1).cloned().unwrap_or(Value::Int(0));
                 if sort_flags != Value::Int(1) {
@@ -50062,7 +50645,7 @@ impl Interpreter {
             "next" => {
                 expect_arity("next", &args, 1, span)?;
                 if warn_for_reference_value {
-                    self.emit_builtin_callback_reference_value_warning("next", span)?;
+                    self.emit_builtin_callback_reference_value_warning("next", 0, "array", span)?;
                 }
                 let Value::Array(mut array) = args[0].clone() else {
                     return Err(runtime_error(
@@ -50318,10 +50901,10 @@ impl Interpreter {
             if !param.by_reference || index >= actual {
                 continue;
             }
-            self.emit_warning(
-                &callable_name(&function.name),
+            self.emit_display_warning(
                 format!(
-                    "Argument #{} (${}) must be passed by reference, value given",
+                    "{}: Argument #{} (${}) must be passed by reference, value given",
+                    callable_name(&function.name),
                     index + 1,
                     param.name
                 ),
@@ -50950,7 +51533,7 @@ impl Interpreter {
             )
             .collect();
 
-        Ok(Self::call_user_func_array_frame_from_value_sources(
+        let frame = Self::call_user_func_array_frame_from_value_sources(
             function,
             values,
             argument_keys,
@@ -50958,7 +51541,9 @@ impl Interpreter {
             array_copy_source_bindings,
             by_value_array_copy_bindings,
             include_reference_params,
-        ))
+        );
+        self.emit_call_frame_value_reference_parameter_warnings(function, &frame, span)?;
+        Ok(frame)
     }
 
     fn call_user_func_array_frame_from_value_sources(
@@ -51049,7 +51634,7 @@ impl Interpreter {
                 argument_expr,
                 span,
                 caller_scope,
-                true,
+                false,
             )?;
             self.ensure_user_function_call_depth(function_ref, span)?;
             return self.call_user_function_with_call_frame_and_array_copy_source(
@@ -51396,6 +51981,59 @@ impl Interpreter {
                 ),
             ));
         };
+        if let Some(resolution) = self.resolve_scoped_array_callable_method(
+            context,
+            target,
+            method_name,
+            span,
+            caller_scope,
+        )? {
+            let function = self.method_function(
+                resolution.declaring_class_id,
+                &resolution.declaring_class_name,
+                &resolution.resolved_method_name,
+                span,
+            )?;
+            let function = function.as_ref();
+            if !function.returns_by_reference {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        callable_name(&function.name),
+                        "function does not return by reference",
+                    ),
+                ));
+            }
+            ensure_user_function_arity(function, args.len(), span)?;
+            ensure_supported_reference_return_function_metadata(function, span)?;
+            let frame = if context == "call_user_func()" {
+                self.call_user_func_expr_call_frame_bindings(
+                    function,
+                    args,
+                    span,
+                    caller_scope,
+                    true,
+                )?
+            } else {
+                self.evaluate_user_function_call_frame_bindings_with_options(
+                    function,
+                    args,
+                    span,
+                    caller_scope,
+                    true,
+                )?
+            };
+            self.ensure_user_function_call_depth(function, span)?;
+            return self.call_reference_return_function_with_call_frame_for_reference_assignment(
+                function,
+                frame,
+                resolution.this_object,
+                Some(resolution.declaring_class_id),
+                Some(resolution.called_class_id),
+                caller_scope,
+                Vec::new(),
+            );
+        }
 
         match target {
             Value::Object(object) => {
@@ -51811,6 +52449,16 @@ impl Interpreter {
                 } else {
                     ensure_supported_function_metadata(function, span)?;
                 }
+                let materialized_argument_array = stored_argument.as_ref().and_then(|stored| {
+                    Self::stored_call_user_func_array_value_argument_array_with_reference_slots(
+                        &stored.root,
+                        argument_array,
+                        caller_scope,
+                    )
+                });
+                let argument_array = materialized_argument_array
+                    .as_ref()
+                    .unwrap_or(argument_array);
                 if Self::call_user_func_array_value_has_string_keys(argument_array) {
                     let (values, argument_keys) = self
                         .evaluate_call_user_func_array_named_value_arguments_with_keys(
@@ -51971,13 +52619,14 @@ impl Interpreter {
 
             if param.by_reference {
                 if !item.by_reference {
-                    return Err(runtime_error(
-                        item.value.span(),
-                        RuntimeError::unsupported_call(
-                            callable_name(&function.name),
-                            "call_user_func_array() reference parameter invocation requires a by-reference array element in the current subset",
-                        ),
-                    ));
+                    values.push(
+                        self.evaluate_by_value_argument_with_cow_source(&item.value, caller_scope)?,
+                    );
+                    reference_bindings.push(ReferenceBinding {
+                        param_name: param.name.clone(),
+                        target: ReferenceBindingTarget::ValueCopy,
+                    });
+                    continue;
                 }
                 if let Expr::Variable(caller_name, _) = &item.value {
                     if let Some(aliases) = caller_scope.array_offset_aliases_for_name(caller_name) {
@@ -52193,6 +52842,11 @@ impl Interpreter {
                 span,
             ));
         };
+        if !include_reference_params
+            && Self::call_user_func_array_has_reached_reference_param(function, argument_array)
+        {
+            return Ok(None);
+        }
 
         if include_reference_params
             && Self::call_user_func_array_has_reached_reference_param_slot(
@@ -52297,6 +52951,90 @@ impl Interpreter {
                         caller_scope,
                     )
             })
+    }
+
+    fn call_user_func_array_has_reached_reference_param(
+        function: &FunctionDecl,
+        argument_array: &PhpArray,
+    ) -> bool {
+        if Self::call_user_func_array_value_has_string_keys(argument_array) {
+            let mut next_positional_index = 0usize;
+            let mut named_seen = false;
+
+            for entry in argument_array.entries() {
+                let param = match &entry.key {
+                    ArrayKey::String(name) => {
+                        named_seen = true;
+                        function.params.iter().find(|param| param.name == *name)
+                    }
+                    ArrayKey::Int(_) => {
+                        if named_seen {
+                            None
+                        } else {
+                            let param = function.params.get(next_positional_index);
+                            next_positional_index += 1;
+                            param
+                        }
+                    }
+                };
+
+                if param.is_some_and(|param| param.by_reference) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        argument_array
+            .entries()
+            .iter()
+            .enumerate()
+            .any(|(index, _)| {
+                Self::positional_argument_param_for_index(function, index)
+                    .is_some_and(|(param, _)| param.by_reference)
+            })
+    }
+
+    fn stored_call_user_func_array_value_argument_array_with_reference_slots(
+        stored_root: &StoredArgumentArrayRoot,
+        argument_array: &PhpArray,
+        caller_scope: &mut SymbolTable,
+    ) -> Option<PhpArray> {
+        let mut materialized = None;
+
+        for entry in argument_array.entries() {
+            if entry.slot().reference_cell().is_some() {
+                continue;
+            }
+
+            let Some(aliases) = Self::stored_call_user_func_array_entry_alias_group(
+                stored_root,
+                &entry.key,
+                caller_scope,
+            ) else {
+                continue;
+            };
+            if !caller_scope.has_bound_array_offset_alias_group(&aliases) {
+                continue;
+            }
+
+            let reference = caller_scope
+                .reference_cell_for_array_offset_alias_group_with_value_promotion(&aliases)
+                .or_else(|| {
+                    caller_scope
+                        .reference_cell_for_array_literal_alias_group_with_value_promotion(&aliases)
+                });
+            let Some(reference) = reference else {
+                continue;
+            };
+
+            materialized
+                .get_or_insert_with(|| argument_array.clone())
+                .insert_reference(entry.key.clone(), reference);
+        }
+
+        materialized
     }
 
     fn stored_call_user_func_array_entry_is_reference_backed(
@@ -52910,13 +53648,14 @@ impl Interpreter {
 
             if param.by_reference {
                 if !item.by_reference {
-                    return Err(runtime_error(
-                        item.value.span(),
-                        RuntimeError::unsupported_call(
-                            callable_name(&function.name),
-                            "call_user_func_array() reference parameter invocation requires a by-reference array element in the current subset",
-                        ),
-                    ));
+                    values_by_param[param_index] = Some(
+                        self.evaluate_by_value_argument_with_cow_source(&item.value, caller_scope)?,
+                    );
+                    reference_bindings.push(ReferenceBinding {
+                        param_name: param.name.clone(),
+                        target: ReferenceBindingTarget::ValueCopy,
+                    });
+                    continue;
                 }
                 if let Expr::Variable(caller_name, _) = &item.value {
                     if let Some(aliases) = caller_scope.array_offset_aliases_for_name(caller_name) {
@@ -53546,17 +54285,11 @@ impl Interpreter {
                     continue;
                 }
 
-                return Err(runtime_error(
-                    argument_expr.span(),
-                    RuntimeError::unsupported_call(
-                        callable_name(&function.name),
-                        if returns_by_reference {
-                            "call_user_func_array() stored reference-return alias binding requires each reached by-reference argument slot to have been assigned by reference in the current subset"
-                        } else {
-                            "call_user_func_array() stored reference parameter invocation requires each reached by-reference argument slot to have been assigned by reference in the current subset"
-                        },
-                    ),
-                ));
+                values.push(entry.value_cloned());
+                reference_bindings.push(ReferenceBinding {
+                    param_name: param.name.clone(),
+                    target: ReferenceBindingTarget::ValueCopy,
+                });
             } else {
                 values.push(entry.value_cloned());
             }
@@ -53706,17 +54439,11 @@ impl Interpreter {
                     continue;
                 }
 
-                return Err(runtime_error(
-                    argument_expr.span(),
-                    RuntimeError::unsupported_call(
-                        callable_name(&function.name),
-                        if returns_by_reference {
-                            "call_user_func_array() stored reference-return alias binding requires each reached by-reference argument slot to have been assigned by reference in the current subset"
-                        } else {
-                            "call_user_func_array() stored reference parameter invocation requires each reached by-reference argument slot to have been assigned by reference in the current subset"
-                        },
-                    ),
-                ));
+                values_by_param[param_index] = Some(entry.value_cloned());
+                reference_bindings.push(ReferenceBinding {
+                    param_name: param.name.clone(),
+                    target: ReferenceBindingTarget::ValueCopy,
+                });
             } else {
                 values_by_param[param_index] = Some(entry.value_cloned());
             }
@@ -56611,6 +57338,14 @@ impl Interpreter {
         include_reference_params: bool,
     ) -> CompileResult<Option<CallFrameArgumentBindings>> {
         if let Expr::Array { items, .. } = argument_expr {
+            if !include_reference_params
+                && items.iter().enumerate().any(|(index, _)| {
+                    Self::positional_argument_param_for_index(function, index)
+                        .is_some_and(|(param, _)| param.by_reference)
+                })
+            {
+                return Ok(None);
+            }
             if !Self::literal_call_user_func_array_can_preserve_copy_sources(items) {
                 return Ok(None);
             }
@@ -69812,7 +70547,10 @@ impl Interpreter {
                 if matches!(&args[0], Value::Array(_)) {
                     return Err(runtime_error(
                         span,
-                        RuntimeError::unsupported_call("strlen()", "arrays are not supported"),
+                        RuntimeError::unsupported_call(
+                            "strlen()",
+                            "Argument #1 ($string) must be of type string, array given",
+                        ),
                     ));
                 }
                 let value = args[0]
@@ -72925,7 +73663,13 @@ impl Interpreter {
                         static_method_array_callable_value(class_name, method_name, span)?;
                     let positional_args =
                         Self::call_user_func_array_positional_values(argument_array, span)?;
-                    return self.call_array_callable_with_values(&callback, positional_args, span);
+                    return self.call_array_callable_with_values_with_context(
+                        &callback,
+                        positional_args,
+                        span,
+                        false,
+                        "call_user_func_array()",
+                    );
                 }
 
                 if let Some(error) = forbidden_dynamic_builtin_call_error(callback_name, span) {
@@ -72951,7 +73695,13 @@ impl Interpreter {
             Value::Array(callback) => {
                 let positional_args =
                     Self::call_user_func_array_positional_values(argument_array, span)?;
-                self.call_array_callable_with_values(callback, positional_args, span)
+                self.call_array_callable_with_values_with_context(
+                    callback,
+                    positional_args,
+                    span,
+                    false,
+                    "call_user_func_array()",
+                )
             }
             Value::Closure(closure) => {
                 let positional_args =
@@ -72984,14 +73734,63 @@ impl Interpreter {
         caller_scope: &mut SymbolTable,
     ) -> CompileResult<Value> {
         let Some((target, method_name)) = array_callable_parts(callback) else {
-            return Err(runtime_error(
+            return Err(Self::invalid_array_callback_error(
+                "call_user_func_array()",
+                callback,
                 span,
-                RuntimeError::unsupported_call(
-                    "call_user_func_array()",
-                    "array callback must be [object-or-class, method] in the current subset",
-                ),
             ));
         };
+        if let Some(resolution) = self.resolve_scoped_array_callable_method(
+            "call_user_func_array()",
+            target,
+            method_name,
+            span,
+            caller_scope,
+        )? {
+            let function = self.method_function(
+                resolution.declaring_class_id,
+                &resolution.declaring_class_name,
+                &resolution.resolved_method_name,
+                span,
+            )?;
+            let function = function.as_ref();
+            if function.returns_by_reference {
+                let frame = self.evaluate_call_user_func_array_call_frame_bindings(
+                    function,
+                    argument_expr,
+                    span,
+                    caller_scope,
+                    true,
+                )?;
+                ensure_supported_reference_return_function_metadata(function, span)?;
+                self.ensure_user_function_call_depth(function, span)?;
+                return self.call_reference_return_function_value_with_call_frame(
+                    function,
+                    frame,
+                    resolution.this_object.clone(),
+                    Some(resolution.declaring_class_id),
+                    Some(resolution.called_class_id),
+                    caller_scope,
+                );
+            }
+            let frame = self.evaluate_call_user_func_array_call_frame_bindings(
+                function,
+                argument_expr,
+                span,
+                caller_scope,
+                false,
+            )?;
+            self.ensure_user_function_call_depth(function, span)?;
+            return self.call_user_function_with_call_frame(
+                function,
+                frame,
+                resolution.this_object,
+                Some(resolution.declaring_class_id),
+                Some(resolution.called_class_id),
+                Some(caller_scope),
+                Vec::new(),
+            );
+        }
 
         match target {
             Value::Object(object) => {
@@ -73071,7 +73870,11 @@ impl Interpreter {
                     unreachable!("array_callable_parts restricts callback targets");
                 };
                 let class_id = self.classes.lookup_class_id(class_name).ok_or_else(|| {
-                    runtime_error(span, RuntimeError::undefined_class(class_name))
+                    Self::invalid_callback_error(
+                        "call_user_func_array()",
+                        format!("class \"{class_name}\" not found"),
+                        span,
+                    )
                 })?;
                 let receiver_class_name = self
                     .classes
@@ -73178,12 +73981,10 @@ impl Interpreter {
         caller_scope: &mut SymbolTable,
     ) -> CompileResult<(Value, Option<ArrayCopySource>)> {
         let Some((target, method_name)) = array_callable_parts(callback) else {
-            return Err(runtime_error(
+            return Err(Self::invalid_array_callback_error(
+                "call_user_func_array()",
+                callback,
                 span,
-                RuntimeError::unsupported_call(
-                    "call_user_func_array()",
-                    "array callback must be [object-or-class, method] in the current subset",
-                ),
             ));
         };
 
@@ -73236,7 +74037,11 @@ impl Interpreter {
             }
             Value::String(class_name) => {
                 let class_id = self.classes.lookup_class_id(class_name).ok_or_else(|| {
-                    runtime_error(span, RuntimeError::undefined_class(class_name))
+                    Self::invalid_callback_error(
+                        "call_user_func_array()",
+                        format!("class \"{class_name}\" not found"),
+                        span,
+                    )
                 })?;
                 let receiver_class_name = self
                     .classes
@@ -73315,7 +74120,13 @@ impl Interpreter {
         args: Vec<Value>,
         span: Span,
     ) -> CompileResult<Value> {
-        self.call_array_callable_with_values_with_arity_policy(callback, args, span, false)
+        self.call_array_callable_with_values_with_context(
+            callback,
+            args,
+            span,
+            false,
+            "call_user_func()",
+        )
     }
 
     fn call_array_map_array_callable_with_values(
@@ -73324,22 +74135,19 @@ impl Interpreter {
         args: Vec<Value>,
         span: Span,
     ) -> CompileResult<Value> {
-        self.call_array_callable_with_values_with_arity_policy(callback, args, span, true)
+        self.call_array_callable_with_values_with_context(callback, args, span, true, "array_map()")
     }
 
-    fn call_array_callable_with_values_with_arity_policy(
+    fn call_array_callable_with_values_with_context(
         &mut self,
         callback: &PhpArray,
         args: Vec<Value>,
         span: Span,
         allow_extra_user_args: bool,
+        context: &str,
     ) -> CompileResult<Value> {
         let Some((target, method_name)) = array_callable_parts(callback) else {
-            return Err(array_callable_shape_error(
-                callback,
-                "call_user_func_array()",
-                span,
-            ));
+            return Err(Self::invalid_array_callback_error(context, callback, span));
         };
 
         match target {
@@ -73395,7 +74203,11 @@ impl Interpreter {
             }
             Value::String(class_name) => {
                 let class_id = self.classes.lookup_class_id(class_name).ok_or_else(|| {
-                    runtime_error(span, RuntimeError::undefined_class(class_name))
+                    Self::invalid_callback_error(
+                        context,
+                        format!("class \"{class_name}\" not found"),
+                        span,
+                    )
                 })?;
                 let receiver_class_name = self
                     .classes
@@ -81022,6 +81834,15 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_optional_null_param("length", "int"),
             ],
         ),
+        "str_replace" => (
+            "array|string",
+            vec![
+                reflection_internal_param("search", "array|string"),
+                reflection_internal_param("replace", "array|string"),
+                reflection_internal_param("subject", "array|string"),
+                reflection_internal_optional_reference_null_param("count"),
+            ],
+        ),
         "printf" => (
             "int",
             vec![
@@ -82655,41 +83476,6 @@ fn non_static_method_called_statically_error(
     )
 }
 
-fn array_callable_shape_error(callback: &PhpArray, context: &str, span: Span) -> Diagnostic {
-    let entries = callback.entries();
-    if entries.len() != 2 {
-        return Diagnostic::new(
-            Phase::Runtime,
-            span.line,
-            span.column,
-            "Array callback must have exactly two elements",
-        );
-    }
-
-    let has_zero = entries
-        .iter()
-        .any(|entry| matches!(entry.key, ArrayKey::Int(0)));
-    let has_one = entries
-        .iter()
-        .any(|entry| matches!(entry.key, ArrayKey::Int(1)));
-    if !has_zero || !has_one {
-        return Diagnostic::new(
-            Phase::Runtime,
-            span.line,
-            span.column,
-            "Array callback has to contain indices 0 and 1",
-        );
-    }
-
-    runtime_error(
-        span,
-        RuntimeError::unsupported_call(
-            context,
-            "array callback must be [object-or-class, method] in the current subset",
-        ),
-    )
-}
-
 fn this_not_in_object_context_error(span: Span) -> Diagnostic {
     Diagnostic::new(
         Phase::Runtime,
@@ -82975,6 +83761,10 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
             && error.message.ends_with(" is not callable")
         {
             return Some(("Error", error.message.clone()));
+        }
+
+        if is_invalid_callback_argument_message(&error.message) {
+            return Some(("TypeError", error.message.clone()));
         }
     }
 
@@ -83342,6 +84132,10 @@ fn call_argument_type_error_message(error: &Diagnostic) -> Option<String> {
 
 fn is_call_argument_type_error_message(message: &str) -> bool {
     message.contains("(): Argument #") && message.contains(" must be of type ")
+}
+
+fn is_invalid_callback_argument_message(message: &str) -> bool {
+    message.contains("(): Argument #1 ($callback) must be a valid callback, ")
 }
 
 fn call_argument_type_error_callable(message: &str) -> Option<&str> {

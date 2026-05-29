@@ -408,6 +408,93 @@ echo call_user_func(array("Milestone1636_Filter", "tag"), $items["payload"]["slo
 }
 
 #[test]
+fn call_user_func_array_literal_values_warn_for_reference_parameters() {
+    let execution = run_source(
+        r#"<?php
+function milestone2305_literal_warning($errno, $errstr) {
+    echo "warning:" . $errno . ":" . (str_contains($errstr, "must be passed by reference") ? "ref" : "other") . "\n";
+    return true;
+}
+
+function milestone2305_literal_pair(&$left, &$right) {
+    $left = "left";
+    $right = "right";
+    return "done";
+}
+
+set_error_handler("milestone2305_literal_warning", E_WARNING);
+$left = "L";
+$right = "R";
+echo call_user_func_array("milestone2305_literal_pair", array($left, $right)), "|", $left, "|", $right, "\n";
+echo call_user_func_array("milestone2305_literal_pair", [$left, $right]), "|", $left, "|", $right;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "warning:2:ref\nwarning:2:ref\ndone|L|R\nwarning:2:ref\nwarning:2:ref\ndone|L|R"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn builtin_callback_reference_value_warnings_are_display_warnings() {
+    let execution = run_source(
+        r#"<?php
+var_dump(call_user_func("sort", []));
+call_user_func_array("str_replace", ["a", "b", "c", new stdClass]);
+$count = 0;
+echo call_user_func_array("str_replace", ["a", "b", "banana", "count" => &$count]), "|", $count;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "Warning: sort(): Argument #1 ($array) must be passed by reference, value given in Command line code on line 2
+bool(true)
+
+Warning: str_replace(): Argument #4 ($count) must be passed by reference, value given in Command line code on line 3
+bbnbnb|3"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn call_user_func_array_callback_shape_errors_are_catchable_type_errors() {
+    let execution = run_source(
+        r#"<?php
+try {
+    call_user_func(array("Foo", "bar"));
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    call_user_func(array(NULL, "bar"));
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    call_user_func(array("stdclass", NULL));
+} catch (TypeError $e) {
+    echo $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "call_user_func(): Argument #1 ($callback) must be a valid callback, class \"Foo\" not found\ncall_user_func(): Argument #1 ($callback) must be a valid callback, first array member is not a valid class name or object\ncall_user_func(): Argument #1 ($callback) must be a valid callback, second array member is not a valid method"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn closures_capture_alias_backed_array_and_property_slots_by_reference() {
     let execution = run_source(
         r#"<?php
@@ -2010,26 +2097,39 @@ echo call_user_func(42);
         "unsupported call call_user_func(): callback must evaluate to string in the current subset, got int"
     );
 
-    let malformed_array_callable = runtime_error(
+    let malformed_array_callable = run_source(
         r#"<?php
-echo call_user_func(["ClassName"]);
+try {
+    call_user_func(["ClassName"]);
+} catch (TypeError $e) {
+    echo $e->getMessage();
+}
 "#,
-    );
-    assert_eq!(malformed_array_callable.line, 2);
-    assert_eq!(malformed_array_callable.column, 6);
+    )
+    .unwrap();
     assert_eq!(
-        malformed_array_callable.message,
-        "unsupported call call_user_func(): array callback must be [object-or-class, method] in the current subset"
+        malformed_array_callable.stdout,
+        "call_user_func(): Argument #1 ($callback) must be a valid callback, array callback must have exactly two members"
     );
+    assert_eq!(malformed_array_callable.stderr, "");
+    assert_eq!(malformed_array_callable.exit_code, 0);
 
-    let unknown = runtime_error(
+    let unknown = run_source(
         r#"<?php
-echo call_user_func("missing_function");
+try {
+    call_user_func("missing_function");
+} catch (Error $e) {
+    echo $e->getMessage();
+}
 "#,
+    )
+    .unwrap();
+    assert_eq!(
+        unknown.stdout,
+        "Call to undefined function missing_function()"
     );
-    assert_eq!(unknown.line, 2);
-    assert_eq!(unknown.column, 6);
-    assert_eq!(unknown.message, "undefined function missing_function()");
+    assert_eq!(unknown.stderr, "");
+    assert_eq!(unknown.exit_code, 0);
 
     let missing_array_arg = runtime_error(
         r#"<?php
@@ -2131,17 +2231,22 @@ call_user_func_array("mutate", $args);
         "unsupported call mutate(): call_user_func_array() stored reference parameter invocation requires each reached by-reference argument slot to have been assigned by reference in the current subset"
     );
 
-    let bad_array_callable = runtime_error(
+    let bad_array_callable = run_source(
         r#"<?php
-echo call_user_func_array(array("ClassName"), array());
+try {
+    call_user_func_array(array("ClassName"), array());
+} catch (TypeError $e) {
+    echo $e->getMessage();
+}
 "#,
-    );
-    assert_eq!(bad_array_callable.line, 2);
-    assert_eq!(bad_array_callable.column, 6);
+    )
+    .unwrap();
     assert_eq!(
-        bad_array_callable.message,
-        "unsupported call call_user_func_array(): array callback must be [object-or-class, method] in the current subset"
+        bad_array_callable.stdout,
+        "call_user_func_array(): Argument #1 ($callback) must be a valid callback, array callback must have exactly two members"
     );
+    assert_eq!(bad_array_callable.stderr, "");
+    assert_eq!(bad_array_callable.exit_code, 0);
 }
 
 #[test]
