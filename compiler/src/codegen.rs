@@ -22199,6 +22199,7 @@ impl CGenerator {
             || method.is_abstract
             || stmt_list_contains_global_import(&method.function.body)
             || method.function.is_nested
+            || method.function.is_generator
             || method.function.returns_by_reference
             || method.function.return_type.is_some()
             || native_user_function_has_malformed_variadic_params(&method.function)
@@ -22224,6 +22225,7 @@ impl CGenerator {
         if method.is_abstract
             || stmt_list_contains_global_import(&method.function.body)
             || method.function.is_nested
+            || method.function.is_generator
             || (method.function.returns_by_reference && method.function.return_type.is_some())
             || !function_reference_return_sources_are_supported(&method.function, |expr| {
                 self.native_reference_return_source_is_supported(expr)
@@ -22466,6 +22468,7 @@ impl CGenerator {
             ));
         }
         if function.is_nested
+            || function.is_generator
             || (function.returns_by_reference && function.return_type.is_some())
             || !function_reference_return_sources_are_supported(function, |expr| {
                 self.native_reference_return_source_is_supported(expr)
@@ -23198,6 +23201,7 @@ impl CGenerator {
             returns_by_reference,
             body: body.to_vec(),
             is_nested: false,
+            is_generator: false,
             end_line: span.line,
             doc_comment: None,
             span,
@@ -23426,6 +23430,7 @@ impl CGenerator {
             returns_by_reference,
             body: body.to_vec(),
             is_nested: false,
+            is_generator: false,
             end_line: span.line,
             doc_comment: None,
             span,
@@ -72105,6 +72110,7 @@ echo " 10" < "zeta";
             returns_by_reference,
             body: Vec::new(),
             is_nested: false,
+            is_generator: false,
             end_line: 1,
             doc_comment: None,
             span: test_span(),

@@ -135,6 +135,8 @@ struct Interpreter {
     active_static_locals: Vec<Vec<String>>,
     active_symbol_roots: Vec<SymbolStorage>,
     active_function_call_arguments: Vec<ActiveFunctionCallArguments>,
+    generator_states: HashMap<i64, GeneratorState>,
+    active_generator_yields: Vec<Vec<PendingGeneratorYield>>,
     global_symbols: SymbolStorage,
     error_reporting_mask: i64,
     error_control_suppression_depth: usize,
@@ -8458,6 +8460,31 @@ struct ActiveFunctionCallArguments {
 }
 
 #[derive(Debug, Clone)]
+struct PendingGeneratorYield {
+    key: Option<Value>,
+    value: Value,
+}
+
+#[derive(Debug, Clone)]
+struct GeneratorYield {
+    key: ArrayKey,
+    value: Value,
+}
+
+#[derive(Debug, Clone)]
+struct GeneratorState {
+    function: FunctionDecl,
+    local_scope: SymbolTable,
+    this_object: Option<PhpObject>,
+    class_context: Option<ClassId>,
+    called_class_context: Option<ClassId>,
+    active_function_arguments: ActiveFunctionCallArguments,
+    yields: Vec<GeneratorYield>,
+    position: usize,
+    started: bool,
+}
+
+#[derive(Debug, Clone)]
 struct EvaluatedCallArgument {
     value: Value,
     reference_binding: Option<ReferenceBinding>,
@@ -8624,6 +8651,7 @@ impl Interpreter {
         let mut static_properties = HashMap::new();
         let instance_property_defaults = HashMap::new();
         let mut classes = PhpClassTable::with_core_classes();
+        seed_interpreter_generator_class(&mut classes)?;
         seed_core_class_constant_runtime_tables(&classes, &mut class_constants);
         for stmt in &program.statements {
             match stmt {
@@ -8764,6 +8792,8 @@ impl Interpreter {
             active_static_locals: Vec::new(),
             active_symbol_roots: Vec::new(),
             active_function_call_arguments: Vec::new(),
+            generator_states: HashMap::new(),
+            active_generator_yields: Vec::new(),
             global_symbols: Rc::new(RefCell::new(HashMap::new())),
             error_reporting_mask: PHP_E_ALL,
             error_control_suppression_depth: 0,
@@ -9815,6 +9845,11 @@ impl Interpreter {
         span: Span,
         caller_scope: &mut SymbolTable,
     ) -> CompileResult<(Value, Option<ArrayCopySource>)> {
+        if object.class_name().eq_ignore_ascii_case("Generator") {
+            return self
+                .call_generator_method_with_values(object, "current", Vec::new(), span)
+                .map(|value| (value, None));
+        }
         let method_name = "current";
         let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
             self.resolve_instance_method(object.class_id(), method_name)
@@ -12114,6 +12149,9 @@ impl Interpreter {
         method_name: &str,
         span: Span,
     ) -> CompileResult<Value> {
+        if object.class_name().eq_ignore_ascii_case("Generator") {
+            return self.call_generator_method_with_values(object, method_name, Vec::new(), span);
+        }
         self.call_magic_instance_method_with_values(object.clone(), method_name, Vec::new(), span)?
             .ok_or_else(|| {
                 runtime_error(
@@ -38054,6 +38092,11 @@ impl Interpreter {
                 .call_core_error_method(object, method_name, args, span)
                 .map(|value| (value, None));
         }
+        if object.class_name().eq_ignore_ascii_case("Generator") {
+            return self
+                .call_generator_method(object, method_name, args, span)
+                .map(|value| (value, None));
+        }
         if object.class_name().eq_ignore_ascii_case("ReflectionClass") {
             return self
                 .call_reflection_class_method(object, method_name, args, span, caller_scope)
@@ -43746,6 +43789,7 @@ impl Interpreter {
                 returns_by_reference,
                 body: body.to_vec(),
                 is_nested: false,
+                is_generator: false,
                 end_line: reflection_closure_end_line(body, span),
                 doc_comment: None,
                 span,
@@ -43827,6 +43871,9 @@ impl Interpreter {
         }
         if key == "empty" || fallback_key.as_deref() == Some("empty") {
             return self.call_empty(args, span, caller_scope);
+        }
+        if key == "__phpc_yield" {
+            return self.call_phpc_yield(args, span, caller_scope);
         }
 
         ensure_no_positional_arguments_after_named_arguments(args)?;
@@ -59991,6 +60038,26 @@ impl Interpreter {
             &local_scope,
         );
 
+        if function.is_generator {
+            let result = self.create_generator_object(
+                function,
+                local_scope,
+                this_object_for_alias_transfer,
+                class_context,
+                called_class_context,
+                active_function_arguments,
+                function.span,
+            );
+            self.function_context.pop();
+            if class_context.is_some() {
+                self.class_context.pop();
+            }
+            if called_class_context.is_some() {
+                self.called_class_context.pop();
+            }
+            return result.map(|value| (value, None));
+        }
+
         self.call_depth += 1;
         self.active_static_locals.push(Vec::new());
         self.active_symbol_roots.push(local_scope.symbols.clone());
@@ -60166,6 +60233,266 @@ impl Interpreter {
             }
             Flow::Throw { object, span } => Err(self.uncaught_throw_error(&object, span)),
             Flow::Exit(_) => Ok((Value::Null, None)),
+            Flow::Goto { label, span } => Err(undefined_goto_label_error(span, &label)),
+        }
+    }
+
+    fn create_generator_object(
+        &mut self,
+        function: &FunctionDecl,
+        local_scope: SymbolTable,
+        this_object: Option<PhpObject>,
+        class_context: Option<ClassId>,
+        called_class_context: Option<ClassId>,
+        active_function_arguments: ActiveFunctionCallArguments,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let class_id = self
+            .classes
+            .lookup_class_id("Generator")
+            .ok_or_else(|| runtime_error(span, RuntimeError::undefined_class("Generator")))?;
+        let object_id = self.allocate_object_id();
+        let object = {
+            let class = self
+                .classes
+                .get(class_id)
+                .expect("interpreter Generator class metadata should resolve");
+            PhpObject::from_class_with_relationship_metadata_with_id(
+                class,
+                &[],
+                Vec::new(),
+                vec!["Iterator".to_string()],
+                object_id,
+            )
+        };
+        self.generator_states.insert(
+            object.id(),
+            GeneratorState {
+                function: function.clone(),
+                local_scope,
+                this_object,
+                class_context,
+                called_class_context,
+                active_function_arguments,
+                yields: Vec::new(),
+                position: 0,
+                started: false,
+            },
+        );
+        Ok(Value::Object(object))
+    }
+
+    fn call_phpc_yield(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        if !(1..=2).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "yield",
+                    ArityExpectation::Between { min: 1, max: 2 },
+                    args.len(),
+                ),
+            ));
+        }
+        let key = if args.len() == 2 {
+            Some(self.evaluate(&args[0], scope)?)
+        } else {
+            None
+        };
+        let value_expr = if args.len() == 2 { &args[1] } else { &args[0] };
+        let value = self.evaluate(value_expr, scope)?;
+        let Some(yields) = self.active_generator_yields.last_mut() else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "yield",
+                    "yield can only execute while a generator is being rewound in the current subset",
+                ),
+            ));
+        };
+        yields.push(PendingGeneratorYield { key, value });
+        Ok(Value::Null)
+    }
+
+    fn call_generator_method(
+        &mut self,
+        object: PhpObject,
+        method_name: &str,
+        args: &[Expr],
+        span: Span,
+    ) -> CompileResult<Value> {
+        expect_expr_arity(&format!("Generator::{method_name}"), args.len(), 0, span)?;
+        self.call_generator_method_with_values(object, method_name, Vec::new(), span)
+    }
+
+    fn call_generator_method_with_values(
+        &mut self,
+        object: PhpObject,
+        method_name: &str,
+        args: Vec<Value>,
+        span: Span,
+    ) -> CompileResult<Value> {
+        if !args.is_empty() {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    format!("Generator::{method_name}()"),
+                    ArityExpectation::Exactly(0),
+                    args.len(),
+                ),
+            ));
+        }
+        match method_name.to_ascii_lowercase().as_str() {
+            "rewind" => self.rewind_generator_object(object, span),
+            "valid" => self.generator_current_state_value(object, span, |state| {
+                Value::Bool(state.position < state.yields.len())
+            }),
+            "current" => self.generator_current_state_value(object, span, |state| {
+                state
+                    .yields
+                    .get(state.position)
+                    .map(|entry| entry.value.clone())
+                    .unwrap_or(Value::Null)
+            }),
+            "key" => self.generator_current_state_value(object, span, |state| {
+                state
+                    .yields
+                    .get(state.position)
+                    .map(|entry| value_from_array_key(&entry.key))
+                    .unwrap_or(Value::Null)
+            }),
+            "next" => {
+                let object_id = object.id();
+                let state = self.generator_states.get_mut(&object_id).ok_or_else(|| {
+                    runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "Generator::next()",
+                            "generator state is missing in the current subset",
+                        ),
+                    )
+                })?;
+                if !state.started {
+                    return self.rewind_generator_object(object, span);
+                }
+                state.position = state.position.saturating_add(1);
+                Ok(Value::Null)
+            }
+            _ => Err(runtime_error(
+                span,
+                RuntimeError::undefined_function(format!("Generator::{method_name}()")),
+            )),
+        }
+    }
+
+    fn generator_current_state_value<F>(
+        &mut self,
+        object: PhpObject,
+        span: Span,
+        make_value: F,
+    ) -> CompileResult<Value>
+    where
+        F: FnOnce(&GeneratorState) -> Value,
+    {
+        if !self
+            .generator_states
+            .get(&object.id())
+            .is_some_and(|state| state.started)
+        {
+            self.rewind_generator_object(object.clone(), span)?;
+        }
+        let state = self.generator_states.get(&object.id()).ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "Generator",
+                    "generator state is missing in the current subset",
+                ),
+            )
+        })?;
+        Ok(make_value(state))
+    }
+
+    fn rewind_generator_object(&mut self, object: PhpObject, span: Span) -> CompileResult<Value> {
+        let object_id = object.id();
+        let mut state = self.generator_states.remove(&object_id).ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "Generator::rewind()",
+                    "generator state is missing in the current subset",
+                ),
+            )
+        })?;
+
+        if state.started {
+            state.position = 0;
+            self.generator_states.insert(object_id, state);
+            return Ok(Value::Null);
+        }
+        state.started = true;
+        state.position = 0;
+        if let Some(this_object) = state.this_object.as_ref() {
+            state
+                .local_scope
+                .write_static("this", Value::Object(this_object.clone()));
+        }
+
+        self.function_context.push(state.function.name.clone());
+        if let Some(class_context) = state.class_context {
+            self.class_context.push(class_context);
+        }
+        if let Some(called_class_context) = state.called_class_context {
+            self.called_class_context.push(called_class_context);
+        }
+        self.call_depth += 1;
+        self.active_static_locals.push(Vec::new());
+        self.active_symbol_roots
+            .push(state.local_scope.symbols.clone());
+        self.active_function_call_arguments
+            .push(state.active_function_arguments.clone());
+        self.active_generator_yields.push(Vec::new());
+
+        let flow = self.execute_statements(&state.function.body, &mut state.local_scope);
+        let pending_yields = self.active_generator_yields.pop().unwrap_or_default();
+        self.active_function_call_arguments.pop();
+
+        let static_names = self.active_static_locals.pop().unwrap_or_default();
+        let function_key = state.function.name.to_ascii_lowercase();
+        for name in static_names {
+            if let Some(value) = state.local_scope.read_named(&name) {
+                self.static_locals
+                    .insert((function_key.clone(), name), value.clone());
+            }
+        }
+        self.active_symbol_roots.pop();
+        self.call_depth -= 1;
+        self.function_context.pop();
+        if state.class_context.is_some() {
+            self.class_context.pop();
+        }
+        if state.called_class_context.is_some() {
+            self.called_class_context.pop();
+        }
+
+        state.yields = materialize_generator_yields(pending_yields, span)?;
+        self.generator_states.insert(object_id, state);
+
+        match flow? {
+            Flow::Normal | Flow::Return(_) | Flow::Exit(_) => Ok(Value::Null),
+            Flow::Break { span, .. } => Err(runtime_error(
+                span,
+                RuntimeError::invalid_loop_control("break cannot be used outside a loop"),
+            )),
+            Flow::Continue { span, .. } => Err(runtime_error(
+                span,
+                RuntimeError::invalid_loop_control("continue cannot be used outside a loop"),
+            )),
+            Flow::Throw { object, span } => Err(self.uncaught_throw_error(&object, span)),
             Flow::Goto { label, span } => Err(undefined_goto_label_error(span, &label)),
         }
     }
@@ -72277,6 +72604,16 @@ fn cast_float_to_int(value: f64, callable: &'static str, span: Span) -> CompileR
     }
 
     Ok(Value::Int(value.trunc() as i64))
+}
+
+fn seed_interpreter_generator_class(classes: &mut PhpClassTable) -> CompileResult<()> {
+    let generator_id = classes
+        .declare_class("Generator")
+        .map_err(Diagnostic::from)?;
+    classes
+        .set_interfaces(generator_id, vec!["Iterator".to_string()])
+        .map_err(Diagnostic::from)?;
+    Ok(())
 }
 
 fn register_class_name(classes: &mut PhpClassTable, class: &ClassDecl) -> CompileResult<ClassId> {
@@ -88977,6 +89314,40 @@ fn value_from_array_key(key: &ArrayKey) -> Value {
     }
 }
 
+fn materialize_generator_yields(
+    pending: Vec<PendingGeneratorYield>,
+    span: Span,
+) -> CompileResult<Vec<GeneratorYield>> {
+    let mut yields = Vec::with_capacity(pending.len());
+    let mut next_auto_key = 0_i64;
+    for pending in pending {
+        let key = match pending.key {
+            Some(value) => {
+                let key =
+                    ArrayKey::from_value(&value).map_err(|error| runtime_error(span, error))?;
+                if let ArrayKey::Int(index) = key {
+                    if index >= next_auto_key {
+                        next_auto_key = index.saturating_add(1);
+                    }
+                    ArrayKey::Int(index)
+                } else {
+                    key
+                }
+            }
+            None => {
+                let key = ArrayKey::Int(next_auto_key);
+                next_auto_key = next_auto_key.saturating_add(1);
+                key
+            }
+        };
+        yields.push(GeneratorYield {
+            key,
+            value: pending.value,
+        });
+    }
+    Ok(yields)
+}
+
 fn format_var_dump(value: &Value, span: Span) -> CompileResult<String> {
     format_var_dump_with_indent(value, 0, span)
 }
@@ -90861,6 +91232,7 @@ echo $items["shared"]["leaf"] . "|" . $shared . "|" . $items["plain"]["leaf"] . 
             returns_by_reference: false,
             body: Vec::new(),
             is_nested: false,
+            is_generator: false,
             end_line: 1,
             doc_comment: None,
             span,
@@ -92206,6 +92578,7 @@ echo $items["shared"]["leaf"] . "|" . $shared . "|" . $items["plain"]["leaf"] . 
             returns_by_reference: false,
             body: Vec::new(),
             is_nested: false,
+            is_generator: false,
             end_line: 1,
             doc_comment: None,
             span,

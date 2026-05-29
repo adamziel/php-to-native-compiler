@@ -898,6 +898,7 @@ pub struct FunctionDecl {
     pub returns_by_reference: bool,
     pub body: Vec<Stmt>,
     pub is_nested: bool,
+    pub is_generator: bool,
     pub end_line: usize,
     pub doc_comment: Option<String>,
     pub span: Span,

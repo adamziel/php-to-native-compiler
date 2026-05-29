@@ -23,6 +23,7 @@ struct Parser {
     current: usize,
     nested_statement_depth: usize,
     function_body_depth: usize,
+    function_generator_stack: Vec<bool>,
     current_namespace: String,
     class_imports: Vec<(String, String)>,
     function_imports: Vec<(String, String)>,
@@ -77,6 +78,7 @@ impl Parser {
             current: 0,
             nested_statement_depth: 0,
             function_body_depth: 0,
+            function_generator_stack: Vec::new(),
             current_namespace: String::new(),
             class_imports: Vec::new(),
             function_imports: Vec::new(),
@@ -213,15 +215,7 @@ impl Parser {
             }
             TokenKind::Identifier(name) if name.eq_ignore_ascii_case("try") => self.parse_try(),
             TokenKind::Identifier(name) if name.eq_ignore_ascii_case("yield") => {
-                let message = if matches!(
-                    &self.peek_next().kind,
-                    TokenKind::Identifier(next) if next.eq_ignore_ascii_case("from")
-                ) {
-                    unsupported_yield_from_message()
-                } else {
-                    unsupported_yield_message()
-                };
-                Err(self.error_at(self.peek().span, message))
+                self.parse_yield_statement()
             }
             TokenKind::Identifier(name) if name.eq_ignore_ascii_case("goto") => self.parse_goto(),
             TokenKind::Identifier(_) if matches!(self.peek_next().kind, TokenKind::Colon) => {
@@ -297,9 +291,17 @@ impl Parser {
             None
         };
         self.function_body_depth += 1;
+        self.function_generator_stack.push(false);
         let body = self.parse_required_block("expected function body");
+        let is_generator = self.function_generator_stack.pop().unwrap_or(false);
         self.function_body_depth -= 1;
         let body = body?;
+        if is_generator && returns_by_reference {
+            return Err(self.error_at(
+                start,
+                "unsupported generator by reference: reference-yield generator state is not implemented",
+            ));
+        }
         let end_line = self.previous().span.line;
 
         Ok(FunctionDecl {
@@ -309,6 +311,7 @@ impl Parser {
             returns_by_reference,
             body,
             is_nested,
+            is_generator,
             end_line,
             doc_comment,
             span: start,
@@ -1312,6 +1315,7 @@ impl Parser {
             returns_by_reference,
             body: Vec::new(),
             is_nested: false,
+            is_generator: false,
             end_line: start.line,
             doc_comment,
             span: start,
@@ -5214,6 +5218,48 @@ impl Parser {
         Ok(Stmt::Expr { expr, span })
     }
 
+    fn parse_yield_statement(&mut self) -> CompileResult<Stmt> {
+        let span = self.advance().span;
+        if self.check(
+            |kind| matches!(kind, TokenKind::Identifier(name) if name.eq_ignore_ascii_case("from")),
+        ) {
+            return Err(self.error_at(span, unsupported_yield_from_message()));
+        }
+        if self.check(|kind| matches!(kind, TokenKind::Ampersand)) {
+            return Err(self.error_at(
+                span,
+                "unsupported yield by reference: generator reference yields require reference-aware generator state",
+            ));
+        }
+        let Some(is_generator) = self.function_generator_stack.last_mut() else {
+            return Err(self.error_at(span, unsupported_yield_message()));
+        };
+        *is_generator = true;
+
+        let mut args = Vec::new();
+        if self.check(|kind| matches!(kind, TokenKind::Semicolon)) {
+            args.push(Expr::Null(span));
+        } else {
+            let first = self.parse_expression()?;
+            if self.match_token(|kind| matches!(kind, TokenKind::FatArrow)) {
+                let value = self.parse_expression()?;
+                args.push(first);
+                args.push(value);
+            } else {
+                args.push(first);
+            }
+        }
+        self.consume_keyword(TokenKind::Semicolon, "expected ';' after yield")?;
+        Ok(Stmt::Expr {
+            expr: Expr::Call {
+                name: "__phpc_yield".to_string(),
+                args,
+                span,
+            },
+            span,
+        })
+    }
+
     fn parse_block_or_statement(&mut self) -> CompileResult<Vec<Stmt>> {
         if self.match_token(|kind| matches!(kind, TokenKind::LBrace)) {
             return self.parse_block_after_open();
@@ -6452,9 +6498,17 @@ impl Parser {
         };
 
         self.function_body_depth += 1;
+        self.function_generator_stack.push(false);
         let body = self.parse_required_block("expected closure body");
+        let is_generator = self.function_generator_stack.pop().unwrap_or(false);
         self.function_body_depth -= 1;
         let body = body?;
+        if is_generator {
+            return Err(self.error_at(
+                span,
+                "unsupported generator closure: generator object execution for closures is not implemented",
+            ));
+        }
 
         Ok(Expr::Closure {
             params,

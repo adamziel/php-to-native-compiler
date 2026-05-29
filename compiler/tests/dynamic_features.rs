@@ -263,6 +263,57 @@ try {
 }
 
 #[test]
+fn generator_rewind_foreach_and_func_get_use_materialized_yields() {
+    let execution = run_source(
+        r#"<?php
+function sample_generator($first, $second = "B") {
+    echo "materialize\n";
+    $first = "changed";
+    yield func_num_args();
+    yield "args" => implode(",", func_get_args());
+    yield "alpha";
+    yield 5 => "five";
+    yield "name" => "named";
+}
+
+echo "before\n";
+$gen = sample_generator("A", "B", "C");
+echo "after-call\n";
+$gen->rewind();
+var_dump($gen->key(), $gen->current(), $gen->valid());
+$gen->next();
+var_dump($gen->key(), $gen->current());
+
+foreach (sample_generator("X") as $key => $value) {
+    echo $key, ":", $value, "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "before\n",
+            "after-call\n",
+            "materialize\n",
+            "int(0)\n",
+            "int(3)\n",
+            "bool(true)\n",
+            "string(4) \"args\"\n",
+            "string(11) \"changed,B,C\"\n",
+            "materialize\n",
+            "0:1\n",
+            "args:changed\n",
+            "1:alpha\n",
+            "5:five\n",
+            "name:named\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn forbidden_scope_introspection_builtins_report_dynamic_call_error() {
     let execution = run_source(
         r#"<?php
