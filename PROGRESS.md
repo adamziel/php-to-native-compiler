@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-29 07:00 CEST
+Updated: 2026-05-29 07:13 CEST
 Primary branch: `master`
-Latest source head: `9a36e227 fix: add tempnam and temp dir semantics`
+Latest source head: `e2474271 fix: add bounded date and timezone builtins`
 
 ## Progress Score
 
@@ -122,13 +122,55 @@ stable pinned denominator and does not use the raw runner
 | Batch006 source batch | Complete | Source checkpoints accepted: 10 / 10; checkpoint10 sharded gate published |
 | Batch007 checkpoint10 sharded gate | Done | 2047 / 20294 pinned runnable PHPTs passed (10.09%); 0 regressions from Batch006 checkpoint10 PASS set; run id `phpt-full-batch007-checkpoint10-sharded-20260529T034255Z-php-src-f97ff59-public-906b4636-source-906b4636-stack10` |
 | Batch007 source batch | Complete | Source checkpoints accepted: 10 / 10; checkpoint10 regression-repair sharded gate published |
-| Batch008 source batch | Started | Source checkpoints accepted: 3 / 10; checkpoint1 is `strncmp()` / `strncasecmp()` focused source proof; checkpoint2 is bcmath `bcmod()` / `bcpow()` / `bcpowmod()` / `bcsqrt()` focused source proof; checkpoint3 is `tempnam()` / `sys_get_temp_dir()` focused source proof; public score unchanged until a pinned aggregate gate |
+| Batch008 source batch | Started | Source checkpoints accepted: 4 / 10; checkpoint1 is `strncmp()` / `strncasecmp()` focused source proof; checkpoint2 is bcmath `bcmod()` / `bcpow()` / `bcpowmod()` / `bcsqrt()` focused source proof; checkpoint3 is `tempnam()` / `sys_get_temp_dir()` focused source proof; checkpoint4 is bounded date/timezone focused source proof; public score unchanged until a pinned aggregate gate |
 
 Focused PHPT history is tracked separately in
 `/home/claude/supervised-php-compiler/state/php-core-suite-focused-history.tsv`.
 Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
+
+Batch008 source checkpoint 4 is primary-integrated under AO supervision. This
+is a source checkpoint with focused proof, not a percentage change. The public
+PHPT score remains **2047 / 20294 pinned runnable PHPTs = 10.09%** until the
+next pinned full-suite or supervisor-approved sharded publication gate is
+completed, regression-checked, and published here.
+
+- primary source head:
+  `e2474271 fix: add bounded date and timezone builtins`
+- reviewed and integration patch:
+  `/home/claude/supervised-php-compiler/state/patches/ao-integration-p46-date-timezone-9de0d35a-20260529.patch`
+- reviewed and integration patch SHA256:
+  `d29a63b896c25126c55f942c3f86059d0e579a60f5971f35b0d306cda987b545`
+- author patch SHA256:
+  `baed2f46fe338c72aca889797772c956aa2891d1c57211d28c5f3e7a4356eca2`
+- reviewer gate: phpc-18 completed current-public `566782de` proof for p46
+  date/timezone builtins; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/batch008-review-p46-date-timezone-566782de-phpc18-20260529.{status.md,report.md}`
+- critic gate: phpc-49 recorded `SAFE-FOR-INTEGRATION` for the exact author
+  patch SHA on current public `566782de`; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/batch008-critic-p46-date-timezone-566782de-phpc49-20260529.{status.md,report.md}`
+- handoff gate: p38 completed scratch/no-primary handoff preflight on public
+  `9de0d35a` with source patch SHA verification, clean 3-way currentization,
+  docs/`PROGRESS.md`/examples exclusion, consumed-scope scan, production
+  exact-shape scan, diff check, and exported patch proof; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/ao-integration-p46-date-timezone-9de0d35a-20260529.{status.md,report.md,gates.log}`
+- supervisor focused gates: PASS for SHA sidecar verification, clean apply
+  over public `9de0d35a`, `git diff --cached --check`, docs/`PROGRESS.md`/
+  examples exclusion, production exact-shape audit with the expected
+  `PHP_DATETIMEZONE_ALL = 2047` PHP constant note, `cargo fmt`, focused Rust
+  `date_time_builtin` and `time_builtins`, runtime metadata test, `phpc`
+  binary build, `cargo check`, and the focused PHP core PHPT cluster under
+  `ext/date/tests` with 15 PASS and 0 FAIL
+- public progress gate: not run for this source checkpoint; Batch008 has
+  4 / 10 source checkpoints and 71 expected direct PHPT rows since the last
+  aggregate gate
+
+This checkpoint implements generalized bounded date/timezone helper support
+and `DateTimeZone` metadata, including `gmdate()`, `gettimeofday()`,
+`microtime()`, `strtotime()`, timezone identifier/name/version helpers, and
+timezone class metadata. It is not keyed to PHPT filenames, expected output,
+fixture names, public hashes, batch labels, or checkpoint markers.
 
 Batch008 source checkpoint 3 is primary-integrated under AO supervision. This
 is a source checkpoint with focused proof, not a percentage change. The public
