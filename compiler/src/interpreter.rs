@@ -19,8 +19,8 @@ use php_runtime::{
 use sha2::Sha256;
 
 use crate::ast::{
-    ArrayItem, AssignTarget, BinaryOp, CastKind, CatchClause, ClassConstantDecl, ClassDecl,
-    ClassMember, ClassMethodDecl, ClassPropertyDecl, ClassVisibility, ClosureCapture,
+    ArrayItem, AssignTarget, AttributeDecl, BinaryOp, CastKind, CatchClause, ClassConstantDecl,
+    ClassDecl, ClassMember, ClassMethodDecl, ClassPropertyDecl, ClassVisibility, ClosureCapture,
     CompoundAssignOp, EnumDecl, Expr, ForAction, ForeachValueTarget, FunctionDecl, FunctionParam,
     IncrementDecrementOp, IncrementDecrementPosition, InterfaceDecl, InterfaceMethodDecl,
     InterpolatedAccessSegment, InterpolatedArrayKey, InterpolatedStringPart, NewClassName, Program,
@@ -173,6 +173,8 @@ struct Interpreter {
     reflection_methods: HashMap<i64, ReflectionMethodState>,
     reflection_parameters: HashMap<i64, ReflectionParameterState>,
     reflection_properties: HashMap<i64, ReflectionPropertyState>,
+    reflection_class_constants: HashMap<i64, ReflectionClassConstantState>,
+    reflection_attributes: HashMap<i64, ReflectionAttributeState>,
     reflection_named_types: HashMap<i64, ReflectionNamedTypeState>,
     reflection_compound_types: HashMap<i64, ReflectionCompoundTypeState>,
     spl_object_storages: HashMap<i64, SplObjectStorageState>,
@@ -285,6 +287,7 @@ struct ResolvedConstant {
     visibility: Visibility,
     value: Expr,
     kind: ConstantOwnerKind,
+    attributes: Vec<AttributeDecl>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -302,6 +305,8 @@ struct MethodSignature {
     start_line: usize,
     end_line: usize,
     doc_comment: Option<String>,
+    attributes: Vec<AttributeDecl>,
+    is_deprecated: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -311,6 +316,7 @@ struct ParameterSignature {
     by_reference: bool,
     is_variadic: bool,
     default: Option<Expr>,
+    attributes: Vec<AttributeDecl>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -446,6 +452,7 @@ struct ReflectionClassState {
     start_line: usize,
     end_line: usize,
     doc_comment: Option<String>,
+    attributes: Vec<AttributeDecl>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -461,11 +468,13 @@ struct ClassLikeSourceMetadata {
     start_line: usize,
     end_line: usize,
     doc_comment: Option<String>,
+    attributes: Vec<AttributeDecl>,
 }
 
 #[derive(Debug, Clone)]
 struct PropertySourceMetadata {
     doc_comment: Option<String>,
+    attributes: Vec<AttributeDecl>,
 }
 
 #[derive(Debug, Clone)]
@@ -481,6 +490,8 @@ struct ReflectionFunctionState {
     return_type: Option<String>,
     returns_by_reference: bool,
     params: Vec<ReflectionParameterMetadata>,
+    is_deprecated: bool,
+    attributes: Vec<AttributeDecl>,
 }
 
 #[derive(Debug, Clone)]
@@ -500,6 +511,8 @@ struct ReflectionMethodState {
     is_final: bool,
     return_type: Option<String>,
     params: Vec<ReflectionParameterMetadata>,
+    is_deprecated: bool,
+    attributes: Vec<AttributeDecl>,
 }
 
 #[derive(Debug, Clone)]
@@ -509,6 +522,7 @@ struct ReflectionParameterMetadata {
     by_reference: bool,
     is_variadic: bool,
     default: Option<Expr>,
+    attributes: Vec<AttributeDecl>,
 }
 
 #[derive(Debug, Clone)]
@@ -527,13 +541,15 @@ enum ReflectionParameterDeclaring {
 #[derive(Debug, Clone)]
 struct ReflectionPropertyState {
     declaring_class_name: String,
-    declaring_class_id: ClassId,
+    declaring_kind: ReflectionClassKind,
+    declaring_class_id: Option<ClassId>,
     name: String,
     doc_comment: Option<String>,
     visibility: Visibility,
     is_static: bool,
     has_default: bool,
     type_decl: Option<String>,
+    attributes: Vec<AttributeDecl>,
 }
 
 #[derive(Debug, Clone)]
@@ -544,6 +560,7 @@ struct ReflectionClassConstantState {
     visibility: Visibility,
     value: Expr,
     kind: ConstantOwnerKind,
+    attributes: Vec<AttributeDecl>,
 }
 
 impl ReflectionClassConstantState {
@@ -555,8 +572,17 @@ impl ReflectionClassConstantState {
             visibility: resolved.visibility,
             value: resolved.value,
             kind: resolved.kind,
+            attributes: resolved.attributes,
         }
     }
+}
+
+#[derive(Debug, Clone)]
+struct ReflectionAttributeState {
+    name: String,
+    target: i64,
+    arguments: Option<String>,
+    is_repeated: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -750,6 +776,824 @@ fn is_auto_global_name(name: &str) -> bool {
         name,
         "_SERVER" | "_COOKIE" | "_GET" | "_POST" | "_REQUEST" | "_FILES" | "_SESSION"
     )
+}
+
+fn implicit_arrow_closure_captures(params: &[FunctionParam], body: &[Stmt]) -> Vec<ClosureCapture> {
+    let excluded = params
+        .iter()
+        .map(|param| param.name.clone())
+        .collect::<HashSet<_>>();
+    let mut seen = HashSet::new();
+    let mut captures = Vec::new();
+    for stmt in body {
+        collect_implicit_arrow_capture_stmt(stmt, &excluded, &mut seen, &mut captures);
+    }
+    captures
+}
+
+fn collect_implicit_arrow_capture_stmt(
+    stmt: &Stmt,
+    excluded: &HashSet<String>,
+    seen: &mut HashSet<String>,
+    captures: &mut Vec<ClosureCapture>,
+) {
+    match stmt {
+        Stmt::Echo { exprs, .. } => {
+            collect_implicit_arrow_capture_exprs(exprs, excluded, seen, captures)
+        }
+        Stmt::Print { expr, .. }
+        | Stmt::Expr { expr, .. }
+        | Stmt::Throw { expr, .. }
+        | Stmt::Require { path: expr, .. }
+        | Stmt::Include { path: expr, .. } => {
+            collect_implicit_arrow_capture_expr(expr, excluded, seen, captures)
+        }
+        Stmt::Assign { target, expr, .. } => {
+            collect_implicit_arrow_capture_assign_target(target, false, excluded, seen, captures);
+            collect_implicit_arrow_capture_expr(expr, excluded, seen, captures);
+        }
+        Stmt::ReferenceAssign { target, source, .. } => {
+            collect_implicit_arrow_capture_assign_target(target, false, excluded, seen, captures);
+            collect_implicit_arrow_capture_reference_source(source, excluded, seen, captures);
+        }
+        Stmt::CompoundAssign { target, expr, .. } => {
+            collect_implicit_arrow_capture_assign_target(target, true, excluded, seen, captures);
+            collect_implicit_arrow_capture_expr(expr, excluded, seen, captures);
+        }
+        Stmt::IncrementDecrement { target, .. } => {
+            collect_implicit_arrow_capture_assign_target(target, true, excluded, seen, captures)
+        }
+        Stmt::NullCoalesceAssign { target, expr, .. } => {
+            collect_implicit_arrow_capture_assign_target(target, true, excluded, seen, captures);
+            collect_implicit_arrow_capture_expr(expr, excluded, seen, captures);
+        }
+        Stmt::If {
+            condition,
+            then_branch,
+            else_branch,
+            ..
+        } => {
+            collect_implicit_arrow_capture_expr(condition, excluded, seen, captures);
+            collect_implicit_arrow_capture_stmts(then_branch, excluded, seen, captures);
+            collect_implicit_arrow_capture_stmts(else_branch, excluded, seen, captures);
+        }
+        Stmt::While {
+            condition, body, ..
+        }
+        | Stmt::DoWhile {
+            condition, body, ..
+        } => {
+            collect_implicit_arrow_capture_expr(condition, excluded, seen, captures);
+            collect_implicit_arrow_capture_stmts(body, excluded, seen, captures);
+        }
+        Stmt::For {
+            initializers,
+            conditions,
+            increments,
+            body,
+            ..
+        } => {
+            collect_implicit_arrow_capture_for_actions(initializers, excluded, seen, captures);
+            collect_implicit_arrow_capture_exprs(conditions, excluded, seen, captures);
+            collect_implicit_arrow_capture_for_actions(increments, excluded, seen, captures);
+            collect_implicit_arrow_capture_stmts(body, excluded, seen, captures);
+        }
+        Stmt::Switch { value, cases, .. } => {
+            collect_implicit_arrow_capture_expr(value, excluded, seen, captures);
+            for case in cases {
+                if let Some(condition) = &case.condition {
+                    collect_implicit_arrow_capture_expr(condition, excluded, seen, captures);
+                }
+                collect_implicit_arrow_capture_stmts(&case.body, excluded, seen, captures);
+            }
+        }
+        Stmt::Foreach {
+            iterable,
+            key,
+            value,
+            body,
+            ..
+        } => {
+            collect_implicit_arrow_capture_expr(iterable, excluded, seen, captures);
+            if let Some(name) = key {
+                seen.insert(name.clone());
+            }
+            if let Some(name) = value.variable_name() {
+                seen.insert(name.to_string());
+            }
+            if let ForeachValueTarget::DynamicProperty { property, .. } = value {
+                collect_implicit_arrow_capture_expr(property, excluded, seen, captures);
+            }
+            collect_implicit_arrow_capture_stmts(body, excluded, seen, captures);
+        }
+        Stmt::UnsetArrayIndex { index, .. } => {
+            collect_implicit_arrow_capture_expr(index, excluded, seen, captures)
+        }
+        Stmt::UnsetNestedArrayIndex { indices, .. } => {
+            collect_implicit_arrow_capture_exprs(indices, excluded, seen, captures);
+        }
+        Stmt::UnsetDynamicObjectProperty { property, .. } => {
+            collect_implicit_arrow_capture_expr(property, excluded, seen, captures)
+        }
+        Stmt::UnsetMany { targets, .. } => {
+            for target in targets {
+                collect_implicit_arrow_capture_unset_target(target, excluded, seen, captures);
+            }
+        }
+        Stmt::ConstDeclaration { declarations, .. } => {
+            for declaration in declarations {
+                collect_implicit_arrow_capture_expr(&declaration.value, excluded, seen, captures);
+            }
+        }
+        Stmt::Return { value, .. } => {
+            if let Some(value) = value {
+                collect_implicit_arrow_capture_expr(value, excluded, seen, captures);
+            }
+        }
+        Stmt::Try {
+            body,
+            catches,
+            finally_body,
+            ..
+        } => {
+            collect_implicit_arrow_capture_stmts(body, excluded, seen, captures);
+            for catch in catches {
+                collect_implicit_arrow_capture_stmts(&catch.body, excluded, seen, captures);
+            }
+            if let Some(finally_body) = finally_body {
+                collect_implicit_arrow_capture_stmts(finally_body, excluded, seen, captures);
+            }
+        }
+        Stmt::StaticLocal { declarations, .. } => {
+            for declaration in declarations {
+                if let Some(default) = &declaration.default {
+                    collect_implicit_arrow_capture_expr(default, excluded, seen, captures);
+                }
+            }
+        }
+        Stmt::Namespace { .. }
+        | Stmt::Use { .. }
+        | Stmt::Goto { .. }
+        | Stmt::Label { .. }
+        | Stmt::UnsetVariable { .. }
+        | Stmt::UnsetObjectProperty { .. }
+        | Stmt::UnsetStaticProperty { .. }
+        | Stmt::UnsetSelfStaticProperty { .. }
+        | Stmt::UnsetParentStaticProperty { .. }
+        | Stmt::UnsetLateStaticProperty { .. }
+        | Stmt::Function(_)
+        | Stmt::Interface(_)
+        | Stmt::Trait(_)
+        | Stmt::Enum(_)
+        | Stmt::Class(_)
+        | Stmt::Break { .. }
+        | Stmt::Continue { .. }
+        | Stmt::Global { .. } => {}
+    }
+}
+
+fn collect_implicit_arrow_capture_stmts(
+    stmts: &[Stmt],
+    excluded: &HashSet<String>,
+    seen: &mut HashSet<String>,
+    captures: &mut Vec<ClosureCapture>,
+) {
+    for stmt in stmts {
+        collect_implicit_arrow_capture_stmt(stmt, excluded, seen, captures);
+    }
+}
+
+fn collect_implicit_arrow_capture_exprs(
+    exprs: &[Expr],
+    excluded: &HashSet<String>,
+    seen: &mut HashSet<String>,
+    captures: &mut Vec<ClosureCapture>,
+) {
+    for expr in exprs {
+        collect_implicit_arrow_capture_expr(expr, excluded, seen, captures);
+    }
+}
+
+fn collect_implicit_arrow_capture_expr(
+    expr: &Expr,
+    excluded: &HashSet<String>,
+    seen: &mut HashSet<String>,
+    captures: &mut Vec<ClosureCapture>,
+) {
+    match expr {
+        Expr::Variable(name, span) => {
+            push_implicit_arrow_capture(name, *span, excluded, seen, captures)
+        }
+        Expr::InterpolatedString { parts, .. } => {
+            for part in parts {
+                collect_implicit_arrow_capture_interpolated_part(part, excluded, seen, captures);
+            }
+        }
+        Expr::ObjectClassNameConstant { target, .. }
+        | Expr::Index { target, .. }
+        | Expr::AppendIndex { target, .. }
+        | Expr::Property { target, .. }
+        | Expr::ObjectStaticClassConstant { target, .. }
+        | Expr::ObjectStaticProperty { target, .. }
+        | Expr::ObjectStaticMethodCall { target, .. }
+        | Expr::Clone { expr: target, .. }
+        | Expr::Unary { expr: target, .. }
+        | Expr::ErrorControl { expr: target, .. }
+        | Expr::Include { path: target, .. }
+        | Expr::Require { path: target, .. }
+        | Expr::Cast { expr: target, .. } => {
+            collect_implicit_arrow_capture_expr(target, excluded, seen, captures);
+            collect_implicit_arrow_capture_expr_tail(expr, excluded, seen, captures);
+        }
+        Expr::DynamicProperty {
+            target, property, ..
+        }
+        | Expr::DynamicObjectStaticProperty {
+            target, property, ..
+        }
+        | Expr::DynamicMethodCall {
+            target,
+            method: property,
+            ..
+        }
+        | Expr::Binary {
+            left: target,
+            right: property,
+            ..
+        } => {
+            collect_implicit_arrow_capture_expr(target, excluded, seen, captures);
+            collect_implicit_arrow_capture_expr(property, excluded, seen, captures);
+            collect_implicit_arrow_capture_expr_tail(expr, excluded, seen, captures);
+        }
+        Expr::DynamicStaticProperty { property, .. }
+        | Expr::DynamicSelfStaticProperty { property, .. }
+        | Expr::DynamicParentStaticProperty { property, .. }
+        | Expr::DynamicLateStaticProperty { property, .. } => {
+            collect_implicit_arrow_capture_expr(property, excluded, seen, captures)
+        }
+        Expr::Array { items, .. } => {
+            for item in items {
+                if let Some(key) = &item.key {
+                    collect_implicit_arrow_capture_expr(key, excluded, seen, captures);
+                }
+                collect_implicit_arrow_capture_expr(&item.value, excluded, seen, captures);
+            }
+        }
+        Expr::MethodCall { target, args, .. } => {
+            collect_implicit_arrow_capture_expr(target, excluded, seen, captures);
+            collect_implicit_arrow_capture_exprs(args, excluded, seen, captures);
+        }
+        Expr::ParentMethodCall { args, .. }
+        | Expr::StaticMethodCall { args, .. }
+        | Expr::SelfMethodCall { args, .. }
+        | Expr::LateStaticMethodCall { args, .. }
+        | Expr::Call { args, .. } => {
+            collect_implicit_arrow_capture_exprs(args, excluded, seen, captures)
+        }
+        Expr::NamedArgument { expr, .. } | Expr::SpreadArgument { expr, .. } => {
+            collect_implicit_arrow_capture_expr(expr, excluded, seen, captures)
+        }
+        Expr::DynamicCall { callee, args, .. } => {
+            collect_implicit_arrow_capture_expr(callee, excluded, seen, captures);
+            collect_implicit_arrow_capture_exprs(args, excluded, seen, captures);
+        }
+        Expr::InstanceOf {
+            expr, class_name, ..
+        } => {
+            collect_implicit_arrow_capture_expr(expr, excluded, seen, captures);
+            collect_implicit_arrow_capture_new_class_name(class_name, excluded, seen, captures);
+        }
+        Expr::Closure {
+            params,
+            captures: closure_captures,
+            body,
+            is_arrow,
+            ..
+        } => {
+            for capture in closure_captures {
+                push_implicit_arrow_capture(&capture.name, capture.span, excluded, seen, captures);
+            }
+            if *is_arrow {
+                let mut nested_excluded = excluded.clone();
+                for param in params {
+                    nested_excluded.insert(param.name.clone());
+                }
+                collect_implicit_arrow_capture_stmts(body, &nested_excluded, seen, captures);
+            }
+        }
+        Expr::New {
+            class_name, args, ..
+        } => {
+            collect_implicit_arrow_capture_new_class_name(class_name, excluded, seen, captures);
+            collect_implicit_arrow_capture_exprs(args, excluded, seen, captures);
+        }
+        Expr::Ternary {
+            condition,
+            if_true,
+            if_false,
+            ..
+        } => {
+            collect_implicit_arrow_capture_expr(condition, excluded, seen, captures);
+            collect_implicit_arrow_capture_expr(if_true, excluded, seen, captures);
+            collect_implicit_arrow_capture_expr(if_false, excluded, seen, captures);
+        }
+        Expr::ShortTernary {
+            condition,
+            if_false,
+            ..
+        } => {
+            collect_implicit_arrow_capture_expr(condition, excluded, seen, captures);
+            collect_implicit_arrow_capture_expr(if_false, excluded, seen, captures);
+        }
+        Expr::Assign { target, expr, .. } => {
+            collect_implicit_arrow_capture_assign_target(target, false, excluded, seen, captures);
+            collect_implicit_arrow_capture_expr(expr, excluded, seen, captures);
+        }
+        Expr::CompoundAssign { target, expr, .. } => {
+            collect_implicit_arrow_capture_assign_target(target, true, excluded, seen, captures);
+            collect_implicit_arrow_capture_expr(expr, excluded, seen, captures);
+        }
+        Expr::NullCoalesceAssign { target, expr, .. } => {
+            collect_implicit_arrow_capture_assign_target(target, true, excluded, seen, captures);
+            collect_implicit_arrow_capture_expr(expr, excluded, seen, captures);
+        }
+        Expr::IncrementDecrement { target, .. } => {
+            collect_implicit_arrow_capture_assign_target(target, true, excluded, seen, captures);
+        }
+        Expr::Null(_)
+        | Expr::Bool(_, _)
+        | Expr::Int(_, _)
+        | Expr::Float(_, _)
+        | Expr::String(_, _)
+        | Expr::MagicLine { .. }
+        | Expr::MagicFile { .. }
+        | Expr::MagicDir { .. }
+        | Expr::MagicFunction { .. }
+        | Expr::MagicClass { .. }
+        | Expr::MagicMethod { .. }
+        | Expr::GlobalConstant { .. }
+        | Expr::ClassNameConstant { .. }
+        | Expr::SelfClassNameConstant { .. }
+        | Expr::ParentClassNameConstant { .. }
+        | Expr::StaticClassNameConstant { .. }
+        | Expr::ClassConstant { .. }
+        | Expr::SelfClassConstant { .. }
+        | Expr::ParentClassConstant { .. }
+        | Expr::LateStaticClassConstant { .. }
+        | Expr::StaticProperty { .. }
+        | Expr::SelfStaticProperty { .. }
+        | Expr::ParentStaticProperty { .. }
+        | Expr::LateStaticProperty { .. } => {}
+    }
+}
+
+fn collect_implicit_arrow_capture_expr_tail(
+    expr: &Expr,
+    excluded: &HashSet<String>,
+    seen: &mut HashSet<String>,
+    captures: &mut Vec<ClosureCapture>,
+) {
+    match expr {
+        Expr::Index { index, .. } => {
+            collect_implicit_arrow_capture_expr(index, excluded, seen, captures)
+        }
+        Expr::ObjectStaticMethodCall { args, .. } | Expr::DynamicMethodCall { args, .. } => {
+            collect_implicit_arrow_capture_exprs(args, excluded, seen, captures)
+        }
+        _ => {}
+    }
+}
+
+fn collect_implicit_arrow_capture_new_class_name(
+    class_name: &NewClassName,
+    excluded: &HashSet<String>,
+    seen: &mut HashSet<String>,
+    captures: &mut Vec<ClosureCapture>,
+) {
+    match class_name {
+        NewClassName::DynamicVariable(name) => {
+            push_implicit_arrow_capture(name, Span::new(0, 0), excluded, seen, captures)
+        }
+        NewClassName::DynamicExpression(expr) => {
+            collect_implicit_arrow_capture_expr(expr, excluded, seen, captures)
+        }
+        NewClassName::Named(_)
+        | NewClassName::SelfClass
+        | NewClassName::ParentClass
+        | NewClassName::StaticClass => {}
+    }
+}
+
+fn collect_implicit_arrow_capture_interpolated_part(
+    part: &InterpolatedStringPart,
+    excluded: &HashSet<String>,
+    seen: &mut HashSet<String>,
+    captures: &mut Vec<ClosureCapture>,
+) {
+    match part {
+        InterpolatedStringPart::Literal(_) => {}
+        InterpolatedStringPart::Variable(name)
+        | InterpolatedStringPart::ArrayOffset { variable: name, .. }
+        | InterpolatedStringPart::ObjectProperty { variable: name, .. }
+        | InterpolatedStringPart::AccessChain { variable: name, .. } => {
+            push_implicit_arrow_capture(name, Span::new(0, 0), excluded, seen, captures);
+        }
+    }
+    if let InterpolatedStringPart::ArrayOffset { key, .. } = part {
+        collect_implicit_arrow_capture_interpolated_array_key(key, excluded, seen, captures);
+    }
+    if let InterpolatedStringPart::AccessChain { segments, .. } = part {
+        for segment in segments {
+            if let InterpolatedAccessSegment::ArrayOffset(key) = segment {
+                collect_implicit_arrow_capture_interpolated_array_key(
+                    key, excluded, seen, captures,
+                );
+            }
+        }
+    }
+}
+
+fn collect_implicit_arrow_capture_interpolated_array_key(
+    key: &InterpolatedArrayKey,
+    excluded: &HashSet<String>,
+    seen: &mut HashSet<String>,
+    captures: &mut Vec<ClosureCapture>,
+) {
+    if let InterpolatedArrayKey::Variable(name) = key {
+        push_implicit_arrow_capture(name, Span::new(0, 0), excluded, seen, captures);
+    }
+}
+
+fn collect_implicit_arrow_capture_for_actions(
+    actions: &[ForAction],
+    excluded: &HashSet<String>,
+    seen: &mut HashSet<String>,
+    captures: &mut Vec<ClosureCapture>,
+) {
+    for action in actions {
+        match action {
+            ForAction::Assign { target, expr } => {
+                collect_implicit_arrow_capture_assign_target(
+                    target, false, excluded, seen, captures,
+                );
+                collect_implicit_arrow_capture_expr(expr, excluded, seen, captures);
+            }
+            ForAction::CompoundAssign { target, expr, .. } => {
+                collect_implicit_arrow_capture_assign_target(
+                    target, true, excluded, seen, captures,
+                );
+                collect_implicit_arrow_capture_expr(expr, excluded, seen, captures);
+            }
+            ForAction::IncrementDecrement { target, .. } => {
+                collect_implicit_arrow_capture_assign_target(
+                    target, true, excluded, seen, captures,
+                );
+            }
+            ForAction::Expr { expr } => {
+                collect_implicit_arrow_capture_expr(expr, excluded, seen, captures);
+            }
+        }
+    }
+}
+
+fn collect_implicit_arrow_capture_assign_target(
+    target: &AssignTarget,
+    root_is_read: bool,
+    excluded: &HashSet<String>,
+    seen: &mut HashSet<String>,
+    captures: &mut Vec<ClosureCapture>,
+) {
+    match target {
+        AssignTarget::Variable { name, span } => {
+            if root_is_read {
+                push_implicit_arrow_capture(name, *span, excluded, seen, captures);
+            }
+        }
+        AssignTarget::List { .. } => {}
+        AssignTarget::ArrayIndex { name, index, span } => {
+            if root_is_read {
+                push_implicit_arrow_capture(name, *span, excluded, seen, captures);
+            }
+            if let Some(index) = index {
+                collect_implicit_arrow_capture_expr(index, excluded, seen, captures);
+            }
+        }
+        AssignTarget::NestedArrayIndex {
+            name,
+            indices,
+            span,
+        }
+        | AssignTarget::NestedArrayAppend {
+            name,
+            indices,
+            span,
+            ..
+        } => {
+            if root_is_read {
+                push_implicit_arrow_capture(name, *span, excluded, seen, captures);
+            }
+            collect_implicit_arrow_capture_exprs(indices, excluded, seen, captures);
+        }
+        AssignTarget::Property { object, span, .. }
+        | AssignTarget::ObjectPropertyArrayIndex { object, span, .. }
+        | AssignTarget::ObjectPropertyArrayAppend { object, span, .. }
+        | AssignTarget::DynamicObjectPropertyArrayIndex { object, span, .. }
+        | AssignTarget::DynamicObjectPropertyArrayAppend { object, span, .. }
+        | AssignTarget::DynamicProperty { object, span, .. } => {
+            push_implicit_arrow_capture(object, *span, excluded, seen, captures);
+            collect_implicit_arrow_capture_assign_target_tail(target, excluded, seen, captures);
+        }
+        AssignTarget::NonDirectProperty { holder, .. }
+        | AssignTarget::NonDirectObjectPropertyArrayIndex { holder, .. }
+        | AssignTarget::NonDirectObjectPropertyArrayAppend { holder, .. }
+        | AssignTarget::ObjectStaticProperty { target: holder, .. } => {
+            collect_implicit_arrow_capture_expr(holder, excluded, seen, captures);
+            collect_implicit_arrow_capture_assign_target_tail(target, excluded, seen, captures);
+        }
+        AssignTarget::NonDirectDynamicProperty {
+            holder, property, ..
+        }
+        | AssignTarget::NonDirectDynamicObjectPropertyArrayIndex {
+            holder, property, ..
+        }
+        | AssignTarget::NonDirectDynamicObjectPropertyArrayAppend {
+            holder, property, ..
+        }
+        | AssignTarget::DynamicObjectStaticProperty {
+            target: holder,
+            property,
+            ..
+        } => {
+            collect_implicit_arrow_capture_expr(holder, excluded, seen, captures);
+            collect_implicit_arrow_capture_expr(property, excluded, seen, captures);
+            collect_implicit_arrow_capture_assign_target_tail(target, excluded, seen, captures);
+        }
+        AssignTarget::StaticPropertyArrayIndex { expr, .. }
+        | AssignTarget::StaticPropertyArrayAppend { expr, .. } => {
+            collect_implicit_arrow_capture_expr(expr, excluded, seen, captures);
+            collect_implicit_arrow_capture_assign_target_tail(target, excluded, seen, captures);
+        }
+        AssignTarget::DynamicStaticProperty { property, .. }
+        | AssignTarget::DynamicSelfStaticProperty { property, .. }
+        | AssignTarget::DynamicParentStaticProperty { property, .. }
+        | AssignTarget::DynamicLateStaticProperty { property, .. } => {
+            collect_implicit_arrow_capture_expr(property, excluded, seen, captures);
+        }
+        AssignTarget::StaticProperty { .. }
+        | AssignTarget::SelfStaticProperty { .. }
+        | AssignTarget::ParentStaticProperty { .. }
+        | AssignTarget::LateStaticProperty { .. } => {}
+    }
+}
+
+fn collect_implicit_arrow_capture_assign_target_tail(
+    target: &AssignTarget,
+    excluded: &HashSet<String>,
+    seen: &mut HashSet<String>,
+    captures: &mut Vec<ClosureCapture>,
+) {
+    match target {
+        AssignTarget::ObjectPropertyArrayIndex { indices, .. }
+        | AssignTarget::NonDirectObjectPropertyArrayIndex { indices, .. }
+        | AssignTarget::StaticPropertyArrayIndex { indices, .. } => {
+            collect_implicit_arrow_capture_exprs(indices, excluded, seen, captures);
+        }
+        AssignTarget::ObjectPropertyArrayAppend {
+            indices,
+            suffix_indices,
+            ..
+        }
+        | AssignTarget::NonDirectObjectPropertyArrayAppend {
+            indices,
+            suffix_indices,
+            ..
+        }
+        | AssignTarget::StaticPropertyArrayAppend {
+            indices,
+            suffix_indices,
+            ..
+        } => {
+            collect_implicit_arrow_capture_exprs(indices, excluded, seen, captures);
+            collect_implicit_arrow_capture_exprs(suffix_indices, excluded, seen, captures);
+        }
+        AssignTarget::DynamicObjectPropertyArrayIndex {
+            property, indices, ..
+        }
+        | AssignTarget::NonDirectDynamicObjectPropertyArrayIndex {
+            property, indices, ..
+        } => {
+            collect_implicit_arrow_capture_expr(property, excluded, seen, captures);
+            collect_implicit_arrow_capture_exprs(indices, excluded, seen, captures);
+        }
+        AssignTarget::DynamicObjectPropertyArrayAppend {
+            property,
+            indices,
+            suffix_indices,
+            ..
+        }
+        | AssignTarget::NonDirectDynamicObjectPropertyArrayAppend {
+            property,
+            indices,
+            suffix_indices,
+            ..
+        } => {
+            collect_implicit_arrow_capture_expr(property, excluded, seen, captures);
+            collect_implicit_arrow_capture_exprs(indices, excluded, seen, captures);
+            collect_implicit_arrow_capture_exprs(suffix_indices, excluded, seen, captures);
+        }
+        AssignTarget::NonDirectDynamicProperty { property, .. }
+        | AssignTarget::DynamicProperty { property, .. }
+        | AssignTarget::DynamicObjectStaticProperty { property, .. } => {
+            collect_implicit_arrow_capture_expr(property, excluded, seen, captures);
+        }
+        _ => {}
+    }
+}
+
+fn collect_implicit_arrow_capture_reference_source(
+    source: &ReferenceSource,
+    excluded: &HashSet<String>,
+    seen: &mut HashSet<String>,
+    captures: &mut Vec<ClosureCapture>,
+) {
+    match source {
+        ReferenceSource::Variable { name, span } => {
+            push_implicit_arrow_capture(name, *span, excluded, seen, captures)
+        }
+        ReferenceSource::ArrayIndex { name, index, span } => {
+            push_implicit_arrow_capture(name, *span, excluded, seen, captures);
+            collect_implicit_arrow_capture_expr(index, excluded, seen, captures);
+        }
+        ReferenceSource::ArrayAppend {
+            name,
+            indices,
+            span,
+        }
+        | ReferenceSource::NestedArrayIndex {
+            name,
+            indices,
+            span,
+        } => {
+            push_implicit_arrow_capture(name, *span, excluded, seen, captures);
+            collect_implicit_arrow_capture_exprs(indices, excluded, seen, captures);
+        }
+        ReferenceSource::ObjectPropertyArrayIndex {
+            object,
+            index,
+            span,
+            ..
+        }
+        | ReferenceSource::DynamicObjectPropertyArrayIndex {
+            object,
+            index,
+            span,
+            ..
+        } => {
+            push_implicit_arrow_capture(object, *span, excluded, seen, captures);
+            collect_implicit_arrow_capture_expr(index, excluded, seen, captures);
+        }
+        ReferenceSource::ObjectPropertyArrayAppend {
+            object,
+            indices,
+            span,
+            ..
+        }
+        | ReferenceSource::DynamicObjectPropertyArrayAppend {
+            object,
+            indices,
+            span,
+            ..
+        }
+        | ReferenceSource::ObjectPropertyNestedArrayIndex {
+            object,
+            indices,
+            span,
+            ..
+        }
+        | ReferenceSource::DynamicObjectPropertyNestedArrayIndex {
+            object,
+            indices,
+            span,
+            ..
+        } => {
+            push_implicit_arrow_capture(object, *span, excluded, seen, captures);
+            collect_implicit_arrow_capture_exprs(indices, excluded, seen, captures);
+        }
+        ReferenceSource::NonDirectObjectPropertyArrayAppend {
+            holder, indices, ..
+        }
+        | ReferenceSource::NonDirectObjectPropertyNestedArrayIndex {
+            holder, indices, ..
+        }
+        | ReferenceSource::ExpressionArrayIndex {
+            target: holder,
+            indices,
+            ..
+        }
+        | ReferenceSource::ExpressionArrayAppend {
+            target: holder,
+            indices,
+            ..
+        } => {
+            collect_implicit_arrow_capture_expr(holder, excluded, seen, captures);
+            collect_implicit_arrow_capture_exprs(indices, excluded, seen, captures);
+        }
+        ReferenceSource::NonDirectDynamicObjectPropertyArrayAppend {
+            holder,
+            property,
+            indices,
+            ..
+        }
+        | ReferenceSource::NonDirectDynamicObjectPropertyNestedArrayIndex {
+            holder,
+            property,
+            indices,
+            ..
+        } => {
+            collect_implicit_arrow_capture_expr(holder, excluded, seen, captures);
+            collect_implicit_arrow_capture_expr(property, excluded, seen, captures);
+            collect_implicit_arrow_capture_exprs(indices, excluded, seen, captures);
+        }
+        ReferenceSource::Property { expr, .. }
+        | ReferenceSource::StaticProperty { expr, .. }
+        | ReferenceSource::StaticPropertyArrayIndex { expr, .. }
+        | ReferenceSource::MethodCall { expr, .. } => {
+            collect_implicit_arrow_capture_expr(expr, excluded, seen, captures);
+        }
+    }
+}
+
+fn collect_implicit_arrow_capture_unset_target(
+    target: &UnsetTarget,
+    excluded: &HashSet<String>,
+    seen: &mut HashSet<String>,
+    captures: &mut Vec<ClosureCapture>,
+) {
+    match target {
+        UnsetTarget::ArrayIndex { index, .. } => {
+            collect_implicit_arrow_capture_expr(index, excluded, seen, captures)
+        }
+        UnsetTarget::NestedArrayIndex { indices, .. }
+        | UnsetTarget::ObjectPropertyArrayIndex { indices, .. }
+        | UnsetTarget::StaticPropertyArrayIndex { indices, .. } => {
+            collect_implicit_arrow_capture_exprs(indices, excluded, seen, captures);
+        }
+        UnsetTarget::DynamicObjectPropertyArrayIndex {
+            property, indices, ..
+        } => {
+            collect_implicit_arrow_capture_expr(property, excluded, seen, captures);
+            collect_implicit_arrow_capture_exprs(indices, excluded, seen, captures);
+        }
+        UnsetTarget::NonDirectObjectPropertyArrayIndex { holder, .. }
+        | UnsetTarget::NonDirectObjectProperty { holder, .. }
+        | UnsetTarget::ObjectStaticProperty { target: holder, .. } => {
+            collect_implicit_arrow_capture_expr(holder, excluded, seen, captures);
+        }
+        UnsetTarget::NonDirectDynamicObjectPropertyArrayIndex {
+            holder,
+            property,
+            indices,
+            ..
+        } => {
+            collect_implicit_arrow_capture_expr(holder, excluded, seen, captures);
+            collect_implicit_arrow_capture_expr(property, excluded, seen, captures);
+            collect_implicit_arrow_capture_exprs(indices, excluded, seen, captures);
+        }
+        UnsetTarget::DynamicObjectProperty { property, .. } => {
+            collect_implicit_arrow_capture_expr(property, excluded, seen, captures);
+        }
+        UnsetTarget::NonDirectDynamicObjectProperty {
+            holder, property, ..
+        } => {
+            collect_implicit_arrow_capture_expr(holder, excluded, seen, captures);
+            collect_implicit_arrow_capture_expr(property, excluded, seen, captures);
+        }
+        UnsetTarget::Variable { .. }
+        | UnsetTarget::ObjectProperty { .. }
+        | UnsetTarget::StaticProperty { .. }
+        | UnsetTarget::SelfStaticProperty { .. }
+        | UnsetTarget::ParentStaticProperty { .. }
+        | UnsetTarget::LateStaticProperty { .. } => {}
+    }
+}
+
+fn push_implicit_arrow_capture(
+    name: &str,
+    span: Span,
+    excluded: &HashSet<String>,
+    seen: &mut HashSet<String>,
+    captures: &mut Vec<ClosureCapture>,
+) {
+    if name == "this" || is_auto_global_name(name) || excluded.contains(name) {
+        return;
+    }
+    if seen.insert(name.to_string()) {
+        captures.push(ClosureCapture {
+            name: name.to_string(),
+            by_reference: false,
+            span,
+        });
+    }
 }
 
 fn globals_offset_name(key: &ArrayKey) -> Option<&str> {
@@ -8968,6 +9812,8 @@ impl Interpreter {
             reflection_methods: HashMap::new(),
             reflection_parameters: HashMap::new(),
             reflection_properties: HashMap::new(),
+            reflection_class_constants: HashMap::new(),
+            reflection_attributes: HashMap::new(),
             reflection_named_types: HashMap::new(),
             reflection_compound_types: HashMap::new(),
             spl_object_storages: HashMap::new(),
@@ -16466,6 +17312,7 @@ impl Interpreter {
                 return_type,
                 returns_by_reference,
                 body,
+                attributes,
                 is_static,
                 span,
                 is_arrow,
@@ -16476,6 +17323,7 @@ impl Interpreter {
                 return_type.as_ref(),
                 *returns_by_reference,
                 body,
+                attributes,
                 *is_static,
                 *is_arrow,
                 *span,
@@ -16638,6 +17486,9 @@ impl Interpreter {
                 ),
             ));
         }
+        if declared_class_name.eq_ignore_ascii_case("Attribute") {
+            return self.instantiate_core_attribute(args, span, scope);
+        }
         if self.abstract_classes.contains(&class_id) {
             return Err(runtime_error(
                 span,
@@ -16661,6 +17512,18 @@ impl Interpreter {
         }
         if declared_class_name.eq_ignore_ascii_case("ReflectionProperty") {
             return self.instantiate_reflection_property(args, span, scope);
+        }
+        if declared_class_name.eq_ignore_ascii_case("ReflectionClassConstant") {
+            return self.instantiate_reflection_class_constant(args, span, scope);
+        }
+        if declared_class_name.eq_ignore_ascii_case("ReflectionAttribute") {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_object_instantiation(
+                    declared_class_name,
+                    "ReflectionAttribute objects are only materialized by supported getAttributes() paths in the current subset",
+                ),
+            ));
         }
         if declared_class_name.eq_ignore_ascii_case("ReflectionType")
             || declared_class_name.eq_ignore_ascii_case("ReflectionNamedType")
@@ -16905,6 +17768,92 @@ impl Interpreter {
                     .to_string())
             }
         }
+    }
+
+    fn instantiate_core_attribute(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        let flags_expr = match args {
+            [] => None,
+            [Expr::NamedArgument { name, expr, span }] if name == "flags" => {
+                Some((expr.as_ref(), *span))
+            }
+            [Expr::NamedArgument { name, span, .. }] => {
+                return Err(runtime_error(
+                    *span,
+                    RuntimeError::unsupported_object_instantiation(
+                        "Attribute",
+                        format!("unknown named argument ${name} for Attribute::__construct()"),
+                    ),
+                ));
+            }
+            [Expr::SpreadArgument { span, .. }] => {
+                return Err(runtime_error(
+                    *span,
+                    RuntimeError::unsupported_object_instantiation(
+                        "Attribute",
+                        "argument unpacking is not implemented for Attribute::__construct()",
+                    ),
+                ));
+            }
+            [expr] => Some((expr, expr.span())),
+            _ => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::arity_mismatch(
+                        "Attribute::__construct()",
+                        ArityExpectation::Between { min: 0, max: 1 },
+                        args.len(),
+                    ),
+                ));
+            }
+        };
+        let flags = if let Some((arg, arg_span)) = flags_expr {
+            match self.evaluate(arg, scope)? {
+                Value::Int(value) => value,
+                other => {
+                    return Err(runtime_error(
+                        arg_span,
+                        RuntimeError::unsupported_object_instantiation(
+                            "Attribute",
+                            format!(
+                                "flags argument must be int in the current subset, got {}",
+                                other.type_name()
+                            ),
+                        ),
+                    ));
+                }
+            }
+        } else {
+            PHP_ATTRIBUTE_TARGET_ALL
+        };
+        if flags & !(PHP_ATTRIBUTE_TARGET_ALL | PHP_ATTRIBUTE_IS_REPEATABLE) != 0 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_object_instantiation(
+                    "Attribute",
+                    "flags argument contains unsupported Attribute target bits",
+                ),
+            ));
+        }
+        let class_id = self
+            .classes
+            .lookup_class_id("Attribute")
+            .ok_or_else(|| runtime_error(span, RuntimeError::undefined_class("Attribute")))?;
+        let object_id = self.allocate_object_id();
+        let class = self
+            .classes
+            .get(class_id)
+            .expect("core Attribute class id should resolve");
+        let object = PhpObject::from_class_with_id(class, object_id);
+        object
+            .write_public_property("flags", Value::Int(flags))
+            .map_err(|error| runtime_error(span, error))?;
+        self.track_allocated_object(&object);
+        Ok(Value::Object(object))
     }
 
     fn resolve_instanceof_class_name(
@@ -31770,6 +32719,9 @@ impl Interpreter {
                 self.trait_source_metadata.get(&name.to_ascii_lowercase())
             }
         };
+        let attributes = metadata
+            .map(|metadata| metadata.attributes.clone())
+            .unwrap_or_else(|| core_class_attributes_for_reflection(&name));
         ReflectionClassState {
             name,
             kind,
@@ -31778,6 +32730,7 @@ impl Interpreter {
             start_line: metadata.map(|metadata| metadata.start_line).unwrap_or(0),
             end_line: metadata.map(|metadata| metadata.end_line).unwrap_or(0),
             doc_comment: metadata.and_then(|metadata| metadata.doc_comment.clone()),
+            attributes,
         }
     }
 
@@ -31792,28 +32745,18 @@ impl Interpreter {
                     .classes
                     .get(object.class_id())
                     .expect("object class id should resolve to class metadata");
+                let metadata = self.class_source_metadata.get(&object.class_id());
                 Ok(ReflectionClassState {
                     name: class.name().to_string(),
                     kind: ReflectionClassKind::Class,
                     class_id: Some(object.class_id()),
-                    file_name: self
-                        .class_source_metadata
-                        .get(&object.class_id())
-                        .and_then(|metadata| metadata.file_name.clone()),
-                    start_line: self
-                        .class_source_metadata
-                        .get(&object.class_id())
-                        .map(|metadata| metadata.start_line)
-                        .unwrap_or(0),
-                    end_line: self
-                        .class_source_metadata
-                        .get(&object.class_id())
-                        .map(|metadata| metadata.end_line)
-                        .unwrap_or(0),
-                    doc_comment: self
-                        .class_source_metadata
-                        .get(&object.class_id())
-                        .and_then(|metadata| metadata.doc_comment.clone()),
+                    file_name: metadata.and_then(|metadata| metadata.file_name.clone()),
+                    start_line: metadata.map(|metadata| metadata.start_line).unwrap_or(0),
+                    end_line: metadata.map(|metadata| metadata.end_line).unwrap_or(0),
+                    doc_comment: metadata.and_then(|metadata| metadata.doc_comment.clone()),
+                    attributes: metadata
+                        .map(|metadata| metadata.attributes.clone())
+                        .unwrap_or_else(|| core_class_attributes_for_reflection(class.name())),
                 })
             }
             Value::String(name) => {
@@ -31821,28 +32764,18 @@ impl Interpreter {
                     self.run_autoload_callbacks(name, AutoloadKind::Any, span)?;
                 }
                 if let Some(class) = self.classes.lookup_class(name) {
+                    let metadata = self.class_source_metadata.get(&class.id());
                     return Ok(ReflectionClassState {
                         name: class.name().to_string(),
                         kind: ReflectionClassKind::Class,
                         class_id: Some(class.id()),
-                        file_name: self
-                            .class_source_metadata
-                            .get(&class.id())
-                            .and_then(|metadata| metadata.file_name.clone()),
-                        start_line: self
-                            .class_source_metadata
-                            .get(&class.id())
-                            .map(|metadata| metadata.start_line)
-                            .unwrap_or(0),
-                        end_line: self
-                            .class_source_metadata
-                            .get(&class.id())
-                            .map(|metadata| metadata.end_line)
-                            .unwrap_or(0),
-                        doc_comment: self
-                            .class_source_metadata
-                            .get(&class.id())
-                            .and_then(|metadata| metadata.doc_comment.clone()),
+                        file_name: metadata.and_then(|metadata| metadata.file_name.clone()),
+                        start_line: metadata.map(|metadata| metadata.start_line).unwrap_or(0),
+                        end_line: metadata.map(|metadata| metadata.end_line).unwrap_or(0),
+                        doc_comment: metadata.and_then(|metadata| metadata.doc_comment.clone()),
+                        attributes: metadata
+                            .map(|metadata| metadata.attributes.clone())
+                            .unwrap_or_else(|| core_class_attributes_for_reflection(class.name())),
                     });
                 }
                 if let Some(interface) = self.interface_lookup.get(&name.to_ascii_lowercase()) {
@@ -31857,6 +32790,9 @@ impl Interpreter {
                         start_line: metadata.map(|metadata| metadata.start_line).unwrap_or(0),
                         end_line: metadata.map(|metadata| metadata.end_line).unwrap_or(0),
                         doc_comment: metadata.and_then(|metadata| metadata.doc_comment.clone()),
+                        attributes: metadata
+                            .map(|metadata| metadata.attributes.clone())
+                            .unwrap_or_default(),
                     });
                 }
                 if let Some(trait_decl) = self.trait_lookup.get(&name.to_ascii_lowercase()) {
@@ -31871,6 +32807,9 @@ impl Interpreter {
                         start_line: metadata.map(|metadata| metadata.start_line).unwrap_or(0),
                         end_line: metadata.map(|metadata| metadata.end_line).unwrap_or(0),
                         doc_comment: metadata.and_then(|metadata| metadata.doc_comment.clone()),
+                        attributes: metadata
+                            .map(|metadata| metadata.attributes.clone())
+                            .unwrap_or_default(),
                     });
                 }
                 Err(runtime_error(
@@ -32128,6 +33067,10 @@ impl Interpreter {
                         .get(&(declaring_class_id, metadata.name().to_ascii_lowercase()))
                         .map(reflection_parameter_metadata_from_signature)
                         .unwrap_or_default(),
+                    is_deprecated: signature.is_some_and(|signature| signature.is_deprecated),
+                    attributes: signature
+                        .map(|signature| signature.attributes.clone())
+                        .unwrap_or_default(),
                 })
             }
             ReflectionClassKind::Interface => {
@@ -32167,6 +33110,8 @@ impl Interpreter {
                             params: reflection_parameter_metadata_from_function_params(
                                 &method.function.params,
                             ),
+                            is_deprecated: attributes_include_deprecated(&method.attributes),
+                            attributes: method.attributes.clone(),
                         });
                     }
                 }
@@ -32213,6 +33158,8 @@ impl Interpreter {
                             params: reflection_parameter_metadata_from_function_params(
                                 &method.function.params,
                             ),
+                            is_deprecated: attributes_include_deprecated(&method.attributes),
+                            attributes: method.attributes.clone(),
                         });
                     }
                 }
@@ -32450,35 +33397,51 @@ impl Interpreter {
         property_name: &str,
         span: Span,
     ) -> CompileResult<ReflectionPropertyState> {
-        let ReflectionClassKind::Class = class.kind else {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_object_instantiation(
-                    "ReflectionProperty",
-                    format!("target {} must name a declared class", class.name),
-                ),
-            ));
-        };
-        let Some(class_id) = class.class_id else {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_object_instantiation(
-                    "ReflectionProperty",
-                    format!("target {} must name a declared class", class.name),
-                ),
-            ));
-        };
+        match class.kind {
+            ReflectionClassKind::Class => {
+                let Some(class_id) = class.class_id else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_object_instantiation(
+                            "ReflectionProperty",
+                            format!("target {} must name a declared class", class.name),
+                        ),
+                    ));
+                };
 
-        self.resolve_class_property_metadata(class_id, property_name)
-            .ok_or_else(|| {
-                runtime_error(
-                    span,
-                    RuntimeError::unsupported_object_instantiation(
-                        "ReflectionProperty",
-                        format!("property {property_name} is not declared on {}", class.name),
-                    ),
-                )
-            })
+                self.resolve_class_property_metadata(class_id, property_name)
+                    .ok_or_else(|| {
+                        runtime_error(
+                            span,
+                            RuntimeError::unsupported_object_instantiation(
+                                "ReflectionProperty",
+                                format!(
+                                    "property {property_name} is not declared on {}",
+                                    class.name
+                                ),
+                            ),
+                        )
+                    })
+            }
+            ReflectionClassKind::Trait => self
+                .resolve_trait_property_metadata(&class.name, property_name, span)?
+                .ok_or_else(|| {
+                    runtime_error(
+                        span,
+                        RuntimeError::unsupported_object_instantiation(
+                            "ReflectionProperty",
+                            format!("property {property_name} is not declared on {}", class.name),
+                        ),
+                    )
+                }),
+            ReflectionClassKind::Interface => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_object_instantiation(
+                    "ReflectionProperty",
+                    format!("target {} must name a declared class or trait", class.name),
+                ),
+            )),
+        }
     }
 
     fn create_reflection_property_object(
@@ -32504,6 +33467,104 @@ impl Interpreter {
         Ok(Value::Object(PhpObject::from_class_with_id(
             class, object_id,
         )))
+    }
+
+    fn instantiate_reflection_class_constant(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        if args.len() != 2 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "ReflectionClassConstant::__construct()",
+                    ArityExpectation::Exactly(2),
+                    args.len(),
+                ),
+            ));
+        }
+
+        let target = self.evaluate(&args[0], scope)?;
+        let constant = self.evaluate(&args[1], scope)?;
+        let Value::String(constant_name) = constant else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_object_instantiation(
+                    "ReflectionClassConstant",
+                    format!(
+                        "constant argument must be string in the current subset, got {}",
+                        constant.type_name()
+                    ),
+                ),
+            ));
+        };
+        let class = self.resolve_reflection_class_target(&target, span)?;
+        let state = self
+            .reflection_class_resolve_constant(&class, &constant_name, span)?
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_object_instantiation(
+                        "ReflectionClassConstant",
+                        format!("constant {constant_name} is not declared on {}", class.name),
+                    ),
+                )
+            })?;
+        self.create_reflection_class_constant_object(state, span)
+    }
+
+    fn create_reflection_class_constant_object(
+        &mut self,
+        state: ReflectionClassConstantState,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let class_id = self
+            .classes
+            .lookup_class_id("ReflectionClassConstant")
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::undefined_class("ReflectionClassConstant core placeholder"),
+                )
+            })?;
+        let object_id = self.allocate_object_id();
+        let class = self
+            .classes
+            .get(class_id)
+            .expect("core ReflectionClassConstant class id should resolve");
+        self.reflection_class_constants.insert(object_id, state);
+        Ok(Value::Object(PhpObject::from_class_with_id(
+            class, object_id,
+        )))
+    }
+
+    fn create_reflection_attribute_object(
+        &mut self,
+        state: ReflectionAttributeState,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let class_id = self
+            .classes
+            .lookup_class_id("ReflectionAttribute")
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::undefined_class("ReflectionAttribute core placeholder"),
+                )
+            })?;
+        let object_id = self.allocate_object_id();
+        let class = self
+            .classes
+            .get(class_id)
+            .expect("core ReflectionAttribute class id should resolve");
+        let object = PhpObject::from_class_with_id(class, object_id);
+        object
+            .write_public_property("name", Value::String(state.name.clone()))
+            .map_err(|error| runtime_error(span, error))?;
+        self.reflection_attributes.insert(object_id, state);
+        Ok(Value::Object(object))
     }
 
     fn create_reflection_named_type_object(
@@ -38822,7 +39883,7 @@ impl Interpreter {
             .eq_ignore_ascii_case("ReflectionParameter")
         {
             return self
-                .call_reflection_parameter_method(object, method_name, args, span)
+                .call_reflection_parameter_method(object, method_name, args, span, caller_scope)
                 .map(|value| (value, None));
         }
         if object
@@ -38831,6 +39892,28 @@ impl Interpreter {
         {
             return self
                 .call_reflection_property_method(object, method_name, args, span, caller_scope)
+                .map(|value| (value, None));
+        }
+        if object
+            .class_name()
+            .eq_ignore_ascii_case("ReflectionClassConstant")
+        {
+            return self
+                .call_reflection_class_constant_method(
+                    object,
+                    method_name,
+                    args,
+                    span,
+                    caller_scope,
+                )
+                .map(|value| (value, None));
+        }
+        if object
+            .class_name()
+            .eq_ignore_ascii_case("ReflectionAttribute")
+        {
+            return self
+                .call_reflection_attribute_method(object, method_name, args, span)
                 .map(|value| (value, None));
         }
         if object
@@ -39044,6 +40127,13 @@ impl Interpreter {
                     .map(Value::String)
                     .unwrap_or(Value::Bool(false)))
             }
+            "getattributes" => self.call_reflection_get_attributes(
+                &state.attributes,
+                PHP_ATTRIBUTE_TARGET_CLASS,
+                args,
+                span,
+                caller_scope,
+            ),
             "innamespace" => {
                 expect_expr_arity("ReflectionClass::inNamespace", args.len(), 0, span)?;
                 Ok(Value::Bool(state.name.contains('\\')))
@@ -39165,6 +40255,11 @@ impl Interpreter {
                             .class_source_metadata
                             .get(&parent_id)
                             .and_then(|metadata| metadata.doc_comment.clone()),
+                        attributes: self
+                            .class_source_metadata
+                            .get(&parent_id)
+                            .map(|metadata| metadata.attributes.clone())
+                            .unwrap_or_default(),
                     },
                     span,
                 )
@@ -39664,6 +40759,7 @@ impl Interpreter {
                     visibility: runtime_visibility(constant_decl.visibility),
                     value: constant_decl.value,
                     kind: ConstantOwnerKind::Class,
+                    attributes: constant_decl.attributes,
                 });
             }
         }
@@ -39728,6 +40824,7 @@ impl Interpreter {
                             visibility: runtime_visibility(constant.visibility),
                             value: constant.value,
                             kind: ConstantOwnerKind::Class,
+                            attributes: constant.attributes,
                         };
                         if reflection_class_constant_matches_filter(&constant_state, filter) {
                             constants.push(constant_state);
@@ -39785,6 +40882,7 @@ impl Interpreter {
             visibility: metadata.visibility(),
             value: constant.value.clone(),
             kind: ConstantOwnerKind::Class,
+            attributes: constant.attributes.clone(),
         })
     }
 
@@ -39824,6 +40922,7 @@ impl Interpreter {
                 visibility: Visibility::Public,
                 value: constant.value.clone(),
                 kind: ConstantOwnerKind::Interface,
+                attributes: constant.attributes.clone(),
             };
             if reflection_class_constant_matches_filter(&constant_state, filter) {
                 constants.push(constant_state);
@@ -40065,6 +41164,10 @@ impl Interpreter {
             params: signature
                 .map(reflection_parameter_metadata_from_signature)
                 .unwrap_or_default(),
+            is_deprecated: signature.is_some_and(|signature| signature.is_deprecated),
+            attributes: signature
+                .map(|signature| signature.attributes.clone())
+                .unwrap_or_default(),
         }
     }
 
@@ -40093,6 +41196,8 @@ impl Interpreter {
                 .as_ref()
                 .map(|decl| decl.text.clone()),
             params: reflection_parameter_metadata_from_function_params(&method.function.params),
+            is_deprecated: attributes_include_deprecated(&method.attributes),
+            attributes: method.attributes.clone(),
         }
     }
 
@@ -40121,6 +41226,8 @@ impl Interpreter {
                 .as_ref()
                 .map(|decl| decl.text.clone()),
             params: reflection_parameter_metadata_from_function_params(&method.function.params),
+            is_deprecated: attributes_include_deprecated(&method.attributes),
+            attributes: method.attributes.clone(),
         }
     }
 
@@ -40142,7 +41249,8 @@ impl Interpreter {
                         .get(&(class.id(), property.name().to_string()));
                     return Some(ReflectionPropertyState {
                         declaring_class_name: class.name().to_string(),
-                        declaring_class_id: class.id(),
+                        declaring_kind: ReflectionClassKind::Class,
+                        declaring_class_id: Some(class.id()),
                         name: property.name().to_string(),
                         doc_comment: source_metadata
                             .and_then(|metadata| metadata.doc_comment.clone()),
@@ -40151,12 +41259,46 @@ impl Interpreter {
                         has_default: self
                             .reflection_property_metadata_has_default(class.id(), property),
                         type_decl: property.type_decl().map(str::to_string),
+                        attributes: source_metadata
+                            .map(|metadata| metadata.attributes.clone())
+                            .unwrap_or_default(),
                     });
                 }
             }
             current = class.parent_id();
         }
         None
+    }
+
+    fn resolve_trait_property_metadata(
+        &self,
+        trait_name: &str,
+        property_name: &str,
+        _span: Span,
+    ) -> CompileResult<Option<ReflectionPropertyState>> {
+        let Some(trait_decl) = self.trait_lookup.get(&trait_name.to_ascii_lowercase()) else {
+            return Ok(None);
+        };
+        let properties = composed_trait_properties_for_trait(
+            trait_decl,
+            &self.trait_lookup,
+            &mut HashSet::new(),
+        )?;
+        Ok(properties
+            .into_iter()
+            .find(|property| property.name == property_name)
+            .map(|property| ReflectionPropertyState {
+                declaring_class_name: trait_name.to_string(),
+                declaring_kind: ReflectionClassKind::Trait,
+                declaring_class_id: None,
+                name: property.name,
+                doc_comment: property.doc_comment,
+                visibility: runtime_visibility(property.visibility),
+                is_static: property.is_static,
+                has_default: property.default.is_some(),
+                type_decl: property.type_decl.map(|decl| decl.text),
+                attributes: property.attributes,
+            }))
     }
 
     fn reflection_class_properties(&self, class_id: ClassId) -> Vec<ReflectionPropertyState> {
@@ -40176,7 +41318,8 @@ impl Interpreter {
                     .get(&(class.id(), property.name().to_string()));
                 properties.push(ReflectionPropertyState {
                     declaring_class_name: class.name().to_string(),
-                    declaring_class_id: class.id(),
+                    declaring_kind: ReflectionClassKind::Class,
+                    declaring_class_id: Some(class.id()),
                     name: property.name().to_string(),
                     doc_comment: source_metadata.and_then(|metadata| metadata.doc_comment.clone()),
                     visibility: property.visibility(),
@@ -40184,6 +41327,9 @@ impl Interpreter {
                     has_default: self
                         .reflection_property_metadata_has_default(class.id(), property),
                     type_decl: property.type_decl().map(str::to_string),
+                    attributes: source_metadata
+                        .map(|metadata| metadata.attributes.clone())
+                        .unwrap_or_default(),
                 });
             }
             current = class.parent_id();
@@ -40335,6 +41481,17 @@ impl Interpreter {
                 expect_expr_arity("ReflectionFunction::returnsReference", args.len(), 0, span)?;
                 Ok(Value::Bool(state.returns_by_reference))
             }
+            "isdeprecated" => {
+                expect_expr_arity("ReflectionFunction::isDeprecated", args.len(), 0, span)?;
+                Ok(Value::Bool(state.is_deprecated))
+            }
+            "getattributes" => self.call_reflection_get_attributes(
+                &state.attributes,
+                PHP_ATTRIBUTE_TARGET_FUNCTION,
+                args,
+                span,
+                caller_scope,
+            ),
             "invoke" => {
                 if let Some(value) = self.invoke_reflection_function_exprs_with_array_copy_source(
                     state.clone(),
@@ -40531,6 +41688,17 @@ impl Interpreter {
                 expect_expr_arity("ReflectionMethod::isConstructor", args.len(), 0, span)?;
                 Ok(Value::Bool(state.name.eq_ignore_ascii_case("__construct")))
             }
+            "isdeprecated" => {
+                expect_expr_arity("ReflectionMethod::isDeprecated", args.len(), 0, span)?;
+                Ok(Value::Bool(state.is_deprecated))
+            }
+            "getattributes" => self.call_reflection_get_attributes(
+                &state.attributes,
+                PHP_ATTRIBUTE_TARGET_METHOD,
+                args,
+                span,
+                caller_scope,
+            ),
             "invoke" => {
                 if args.is_empty() {
                     return Err(runtime_error(
@@ -40673,7 +41841,7 @@ impl Interpreter {
             let Some(function) = self.closure_functions.get(&closure.id()).cloned() else {
                 return Ok(None);
             };
-            if closure.is_arrow() || function.returns_by_reference {
+            if function.returns_by_reference {
                 return Ok(None);
             }
             let function = function.as_ref();
@@ -40730,7 +41898,7 @@ impl Interpreter {
             let Some(function) = self.closure_functions.get(&closure.id()).cloned() else {
                 return Ok(None);
             };
-            if closure.is_arrow() || function.returns_by_reference {
+            if function.returns_by_reference {
                 return Ok(None);
             }
             let function = function.as_ref();
@@ -40854,15 +42022,6 @@ impl Interpreter {
                     ),
                 )
             })?;
-        if closure.is_arrow() {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    context,
-                    "arrow closure invocation is not implemented",
-                ),
-            ));
-        }
         let function = function.as_ref();
         ensure_user_function_arity(function, values.len(), span)?;
         ensure_supported_function_signature(function, values.len(), span)?;
@@ -41003,15 +42162,6 @@ impl Interpreter {
                     ),
                 )
             })?;
-        if closure.is_arrow() {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    context,
-                    "arrow closure invocation is not implemented",
-                ),
-            ));
-        }
         let function = function.as_ref();
         Self::ensure_user_function_expr_arity_unless_spread(function, args, span)?;
         if function.returns_by_reference {
@@ -41078,15 +42228,6 @@ impl Interpreter {
                     ),
                 )
             })?;
-        if closure.is_arrow() {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    context,
-                    "arrow closure invocation is not implemented",
-                ),
-            ));
-        }
         let function = function.as_ref();
         if function.returns_by_reference {
             return self
@@ -41631,6 +42772,7 @@ impl Interpreter {
         method_name: &str,
         args: &[Expr],
         span: Span,
+        caller_scope: &mut SymbolTable,
     ) -> CompileResult<Value> {
         let state = self
             .reflection_parameters
@@ -41772,6 +42914,13 @@ impl Interpreter {
                     state.parameter.default.as_ref(),
                 )))
             }
+            "getattributes" => self.call_reflection_get_attributes(
+                &state.parameter.attributes,
+                PHP_ATTRIBUTE_TARGET_PARAMETER,
+                args,
+                span,
+                caller_scope,
+            ),
             _ => Err(runtime_error(
                 span,
                 RuntimeError::undefined_function(format!("ReflectionParameter::{method_name}()")),
@@ -41825,8 +42974,8 @@ impl Interpreter {
                 self.create_reflection_class_object(
                     self.reflection_class_state_for(
                         state.declaring_class_name,
-                        ReflectionClassKind::Class,
-                        Some(state.declaring_class_id),
+                        state.declaring_kind,
+                        state.declaring_class_id,
                     ),
                     span,
                 )
@@ -41879,11 +43028,111 @@ impl Interpreter {
                 };
                 self.create_reflection_named_type_object(type_state, span)
             }
+            "getattributes" => self.call_reflection_get_attributes(
+                &state.attributes,
+                PHP_ATTRIBUTE_TARGET_PROPERTY,
+                args,
+                span,
+                caller_scope,
+            ),
             "getvalue" => self.reflection_property_get_value(&state, args, span, caller_scope),
             "setvalue" => self.reflection_property_set_value(&state, args, span, caller_scope),
             _ => Err(runtime_error(
                 span,
                 RuntimeError::undefined_function(format!("ReflectionProperty::{method_name}()")),
+            )),
+        }
+    }
+
+    fn call_reflection_class_constant_method(
+        &mut self,
+        object: PhpObject,
+        method_name: &str,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        let state = self
+            .reflection_class_constants
+            .get(&object.id())
+            .cloned()
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        format!("ReflectionClassConstant::{method_name}()"),
+                        "missing ReflectionClassConstant runtime metadata",
+                    ),
+                )
+            })?;
+
+        match method_name.to_ascii_lowercase().as_str() {
+            "__construct" => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "ReflectionClassConstant::__construct()",
+                    "reinitializing ReflectionClassConstant objects is not implemented",
+                ),
+            )),
+            "getname" => {
+                expect_expr_arity("ReflectionClassConstant::getName", args.len(), 0, span)?;
+                Ok(Value::String(state.name))
+            }
+            "getdeclaringclass" => {
+                expect_expr_arity(
+                    "ReflectionClassConstant::getDeclaringClass",
+                    args.len(),
+                    0,
+                    span,
+                )?;
+                self.create_reflection_class_object(
+                    self.reflection_class_state_for(
+                        state.declaring_class_name,
+                        match state.kind {
+                            ConstantOwnerKind::Class => ReflectionClassKind::Class,
+                            ConstantOwnerKind::Interface => ReflectionClassKind::Interface,
+                        },
+                        state.declaring_class_id,
+                    ),
+                    span,
+                )
+            }
+            "getmodifiers" => {
+                expect_expr_arity("ReflectionClassConstant::getModifiers", args.len(), 0, span)?;
+                Ok(Value::Int(reflection_class_constant_modifier_mask(&state)))
+            }
+            "ispublic" => {
+                expect_expr_arity("ReflectionClassConstant::isPublic", args.len(), 0, span)?;
+                Ok(Value::Bool(state.visibility == Visibility::Public))
+            }
+            "isprotected" => {
+                expect_expr_arity("ReflectionClassConstant::isProtected", args.len(), 0, span)?;
+                Ok(Value::Bool(state.visibility == Visibility::Protected))
+            }
+            "isprivate" => {
+                expect_expr_arity("ReflectionClassConstant::isPrivate", args.len(), 0, span)?;
+                Ok(Value::Bool(state.visibility == Visibility::Private))
+            }
+            "isfinal" => {
+                expect_expr_arity("ReflectionClassConstant::isFinal", args.len(), 0, span)?;
+                Ok(Value::Bool(false))
+            }
+            "getvalue" => {
+                expect_expr_arity("ReflectionClassConstant::getValue", args.len(), 0, span)?;
+                self.evaluate_reflection_class_constant_value(&state, span)
+            }
+            "getattributes" => self.call_reflection_get_attributes(
+                &state.attributes,
+                PHP_ATTRIBUTE_TARGET_CLASS_CONSTANT,
+                args,
+                span,
+                caller_scope,
+            ),
+            _ => Err(runtime_error(
+                span,
+                RuntimeError::undefined_function(format!(
+                    "ReflectionClassConstant::{method_name}()"
+                )),
             )),
         }
     }
@@ -41948,8 +43197,17 @@ impl Interpreter {
                     .expect("static ReflectionProperty::setValue has a value argument"),
                 caller_scope,
             )?;
+            let Some(declaring_class_id) = state.declaring_class_id else {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "ReflectionProperty::setValue()",
+                        "trait property value access requires a concrete class target",
+                    ),
+                ));
+            };
             self.write_resolved_static_property(
-                state.declaring_class_id,
+                declaring_class_id,
                 &state.declaring_class_name,
                 &state.name,
                 value,
@@ -41991,8 +43249,17 @@ impl Interpreter {
         state: &ReflectionPropertyState,
         span: Span,
     ) -> CompileResult<Value> {
+        let Some(declaring_class_id) = state.declaring_class_id else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "ReflectionProperty::getValue()",
+                    "trait property value access requires a concrete class target",
+                ),
+            ));
+        };
         self.static_properties
-            .get(&(state.declaring_class_id, state.name.clone()))
+            .get(&(declaring_class_id, state.name.clone()))
             .map(VariableCell::value_cloned)
             .ok_or_else(|| {
                 runtime_error(
@@ -42040,17 +43307,346 @@ impl Interpreter {
     }
 
     fn reflection_property_default_value(&self, state: &ReflectionPropertyState) -> Value {
+        let Some(declaring_class_id) = state.declaring_class_id else {
+            return Value::Null;
+        };
         if state.is_static {
             self.static_properties
-                .get(&(state.declaring_class_id, state.name.clone()))
+                .get(&(declaring_class_id, state.name.clone()))
                 .map(VariableCell::value_cloned)
                 .unwrap_or(Value::Null)
         } else {
             self.instance_property_defaults
-                .get(&(state.declaring_class_id, state.name.clone()))
+                .get(&(declaring_class_id, state.name.clone()))
                 .cloned()
                 .unwrap_or(Value::Null)
         }
+    }
+
+    fn call_reflection_get_attributes(
+        &mut self,
+        attributes: &[AttributeDecl],
+        target: i64,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        if args.len() > 2 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "Reflection::getAttributes()",
+                    ArityExpectation::Between { min: 0, max: 2 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let filter_name = if let Some(arg) = args.first() {
+            match self.evaluate(arg, caller_scope)? {
+                Value::Null => None,
+                Value::String(value) => Some(value),
+                Value::BinaryString(bytes) => Some(String::from_utf8(bytes).map_err(|_| {
+                    runtime_error(
+                        arg.span(),
+                        RuntimeError::unsupported_call(
+                            "Reflection::getAttributes()",
+                            "attribute name filter must be valid UTF-8 in the current subset",
+                        ),
+                    )
+                })?),
+                other => {
+                    return Err(runtime_error(
+                        arg.span(),
+                        RuntimeError::unsupported_call(
+                            "Reflection::getAttributes()",
+                            format!(
+                                "attribute name filter must be string or null in the current subset, got {}",
+                                other.type_name()
+                            ),
+                        ),
+                    ));
+                }
+            }
+        } else {
+            None
+        };
+        let flags = if let Some(arg) = args.get(1) {
+            match self.evaluate(arg, caller_scope)? {
+                Value::Int(value) => value,
+                other => {
+                    return Err(runtime_error(
+                        arg.span(),
+                        RuntimeError::unsupported_call(
+                            "Reflection::getAttributes()",
+                            format!(
+                                "flags argument must be int in the current subset, got {}",
+                                other.type_name()
+                            ),
+                        ),
+                    ));
+                }
+            }
+        } else {
+            0
+        };
+        if flags & !PHP_REFLECTION_ATTRIBUTE_IS_INSTANCEOF != 0 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    reflection_get_attributes_callable_name(target),
+                    "Argument #2 ($flags) must be a valid attribute filter flag",
+                ),
+            ));
+        }
+        if flags == PHP_REFLECTION_ATTRIBUTE_IS_INSTANCEOF {
+            if let Some(filter_name) = filter_name.as_deref() {
+                self.ensure_reflection_attribute_filter_class_exists(filter_name, span)?;
+            }
+        }
+
+        let mut repeated_counts = HashMap::new();
+        for attribute in attributes {
+            *repeated_counts
+                .entry(normalized_attribute_name(&attribute.name))
+                .or_insert(0usize) += 1;
+        }
+
+        let mut reflected = PhpArray::new();
+        for attribute in attributes {
+            if !self.reflection_attribute_matches_filter(
+                &attribute.name,
+                filter_name.as_deref(),
+                flags,
+                span,
+            )? {
+                continue;
+            }
+            let repeated = repeated_counts
+                .get(&normalized_attribute_name(&attribute.name))
+                .copied()
+                .unwrap_or(0)
+                > 1;
+            let object = self.create_reflection_attribute_object(
+                ReflectionAttributeState {
+                    name: attribute.name.clone(),
+                    target,
+                    arguments: attribute.arguments.clone(),
+                    is_repeated: repeated,
+                },
+                span,
+            )?;
+            reflected
+                .append(object)
+                .map_err(|error| runtime_error(span, error))?;
+        }
+        Ok(Value::Array(reflected))
+    }
+
+    fn ensure_reflection_attribute_filter_class_exists(
+        &mut self,
+        filter_name: &str,
+        span: Span,
+    ) -> CompileResult<()> {
+        if !self.class_like_exists(filter_name, AutoloadKind::Any) {
+            self.run_autoload_callbacks(filter_name, AutoloadKind::Any, span)?;
+        }
+        if !self.class_like_exists(filter_name, AutoloadKind::Any) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::undefined_class(filter_name),
+            ));
+        }
+        self.resolve_reflection_class_name_without_autoload(filter_name, span)
+            .map(|_| ())
+    }
+
+    fn reflection_attribute_matches_filter(
+        &mut self,
+        attribute_name: &str,
+        filter_name: Option<&str>,
+        flags: i64,
+        span: Span,
+    ) -> CompileResult<bool> {
+        let Some(filter_name) = filter_name else {
+            return Ok(true);
+        };
+        let attribute_key = normalized_attribute_name(attribute_name);
+        let filter_key = normalized_attribute_name(filter_name);
+        if flags == 0 || attribute_key == filter_key {
+            return Ok(attribute_key == filter_key);
+        }
+
+        if !self.class_like_exists(filter_name, AutoloadKind::Any) {
+            self.run_autoload_callbacks(filter_name, AutoloadKind::Any, span)?;
+        }
+        let filter = self.resolve_reflection_class_name_without_autoload(filter_name, span)?;
+        if !self.class_like_exists(attribute_name, AutoloadKind::Any) {
+            self.run_autoload_callbacks(attribute_name, AutoloadKind::Any, span)?;
+        }
+        let Ok(attribute) =
+            self.resolve_reflection_class_name_without_autoload(attribute_name, span)
+        else {
+            return Ok(false);
+        };
+
+        Ok(self.reflection_class_is_subclass_of(&attribute, &filter))
+    }
+
+    fn call_reflection_attribute_method(
+        &mut self,
+        object: PhpObject,
+        method_name: &str,
+        args: &[Expr],
+        span: Span,
+    ) -> CompileResult<Value> {
+        let state = self
+            .reflection_attributes
+            .get(&object.id())
+            .cloned()
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        format!("ReflectionAttribute::{method_name}()"),
+                        "missing ReflectionAttribute runtime metadata",
+                    ),
+                )
+            })?;
+
+        match method_name.to_ascii_lowercase().as_str() {
+            "getname" => {
+                expect_expr_arity("ReflectionAttribute::getName", args.len(), 0, span)?;
+                Ok(Value::String(state.name))
+            }
+            "gettarget" => {
+                expect_expr_arity("ReflectionAttribute::getTarget", args.len(), 0, span)?;
+                Ok(Value::Int(state.target))
+            }
+            "isrepeated" => {
+                expect_expr_arity("ReflectionAttribute::isRepeated", args.len(), 0, span)?;
+                Ok(Value::Bool(state.is_repeated))
+            }
+            "getarguments" => {
+                expect_expr_arity("ReflectionAttribute::getArguments", args.len(), 0, span)?;
+                self.reflection_attribute_arguments_array(&state, span)
+                    .map(Value::Array)
+            }
+            "newinstance" => {
+                expect_expr_arity("ReflectionAttribute::newInstance", args.len(), 0, span)?;
+                let argument_exprs = Self::reflection_attribute_argument_exprs(
+                    state.arguments.as_deref(),
+                    span,
+                    "ReflectionAttribute::newInstance",
+                )?;
+                let mut attribute_scope = SymbolTable::new();
+                self.instantiate_object(
+                    &NewClassName::Named(state.name),
+                    &argument_exprs,
+                    span,
+                    &mut attribute_scope,
+                )
+            }
+            _ => Err(runtime_error(
+                span,
+                RuntimeError::undefined_function(format!("ReflectionAttribute::{method_name}()")),
+            )),
+        }
+    }
+
+    fn reflection_attribute_arguments_array(
+        &mut self,
+        state: &ReflectionAttributeState,
+        span: Span,
+    ) -> CompileResult<PhpArray> {
+        let argument_exprs = Self::reflection_attribute_argument_exprs(
+            state.arguments.as_deref(),
+            span,
+            "ReflectionAttribute::getArguments",
+        )?;
+        let mut scope = SymbolTable::new();
+        let mut values = PhpArray::new();
+        for argument in argument_exprs {
+            match argument {
+                Expr::NamedArgument { name, expr, .. } => {
+                    let value = self.evaluate(&expr, &mut scope)?;
+                    values.insert(ArrayKey::String(name), value);
+                }
+                Expr::SpreadArgument { span, .. } => {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "ReflectionAttribute::getArguments",
+                            "argument unpacking in attribute constructor arguments is not implemented",
+                        ),
+                    ));
+                }
+                expr => {
+                    let value = self.evaluate(&expr, &mut scope)?;
+                    values
+                        .append(value)
+                        .map_err(|error| runtime_error(expr.span(), error))?;
+                }
+            }
+        }
+        Ok(values)
+    }
+
+    fn reflection_attribute_argument_exprs(
+        arguments: Option<&str>,
+        span: Span,
+        context: &'static str,
+    ) -> CompileResult<Vec<Expr>> {
+        let Some(arguments) = arguments else {
+            return Ok(Vec::new());
+        };
+        let arguments = arguments.trim();
+        if arguments == "()" {
+            return Ok(Vec::new());
+        }
+        if !arguments.starts_with('(') || !arguments.ends_with(')') {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    context,
+                    "attribute arguments must be stored as a balanced parenthesized argument list",
+                ),
+            ));
+        }
+
+        let source = format!("<?php __phpc_attribute_args{arguments};");
+        let program = parse_source(&source).map_err(|error| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    context,
+                    format!("attribute arguments could not be parsed: {}", error.message),
+                ),
+            )
+        })?;
+        let [Stmt::Expr {
+            expr: Expr::Call { name, args, .. },
+            ..
+        }] = program.statements.as_slice()
+        else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    context,
+                    "attribute arguments did not parse as a call argument list",
+                ),
+            ));
+        };
+        if !name.eq_ignore_ascii_case("__phpc_attribute_args") {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    context,
+                    "attribute argument parser produced an unexpected call target",
+                ),
+            ));
+        }
+        Ok(args.clone())
     }
 
     fn call_reflection_named_type_method(
@@ -44153,18 +45749,17 @@ impl Interpreter {
                 .get(current_id)
                 .expect("class id should resolve to class metadata");
             if let Some(metadata) = class.constant(constant) {
-                let value = self
+                let constant_decl = self
                     .class_constants
                     .get(&(current_id, metadata.name().to_string()))
-                    .expect("class constant metadata should have stored value")
-                    .value
-                    .clone();
+                    .expect("class constant metadata should have stored value");
                 return ConstantResolution::Found(ResolvedConstant {
                     declaring_class_id: Some(current_id),
                     declaring_name: class.name().to_string(),
                     visibility: metadata.visibility(),
-                    value,
+                    value: constant_decl.value.clone(),
                     kind: ConstantOwnerKind::Class,
+                    attributes: constant_decl.attributes.clone(),
                 });
             }
             current = class.parent_id();
@@ -44202,6 +45797,7 @@ impl Interpreter {
                     visibility: Visibility::Public,
                     value: constant_decl.value.clone(),
                     kind: ConstantOwnerKind::Interface,
+                    attributes: constant_decl.attributes.clone(),
                 });
                 collect_parent_interface_keys(
                     &self.interface_lookup,
@@ -44239,6 +45835,7 @@ impl Interpreter {
                 visibility: Visibility::Public,
                 value: constant_decl.value.clone(),
                 kind: ConstantOwnerKind::Interface,
+                attributes: constant_decl.attributes.clone(),
             });
         }
 
@@ -45055,11 +46652,21 @@ impl Interpreter {
         return_type: Option<&TypeDecl>,
         returns_by_reference: bool,
         body: &[Stmt],
+        attributes: &[AttributeDecl],
         is_static: bool,
         is_arrow: bool,
         span: Span,
         scope: &mut SymbolTable,
     ) -> CompileResult<Value> {
+        let implicit_arrow_captures = if is_arrow {
+            implicit_arrow_closure_captures(params, body)
+        } else {
+            Vec::new()
+        };
+        let captures: Vec<_> = captures
+            .iter()
+            .chain(implicit_arrow_captures.iter())
+            .collect();
         let mut captured_values = Vec::with_capacity(captures.len());
         let mut alias_captures = Vec::new();
         let mut array_copy_source_captures = Vec::new();
@@ -45114,6 +46721,7 @@ impl Interpreter {
                 return_type,
                 returns_by_reference,
                 body,
+                attributes,
                 self.source_file.clone(),
                 span,
             ),
@@ -45129,6 +46737,7 @@ impl Interpreter {
                 is_nested: false,
                 is_generator: false,
                 end_line: reflection_closure_end_line(body, span),
+                attributes: attributes.to_vec(),
                 doc_comment: None,
                 span,
             }),
@@ -46836,15 +48445,6 @@ impl Interpreter {
                     ),
                 )
             })?;
-        if closure.is_arrow() {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    context,
-                    "arrow closure invocation is not implemented",
-                ),
-            ));
-        }
         let function = function.as_ref();
         Self::ensure_user_function_expr_arity_unless_spread(function, args, span)?;
         if function.returns_by_reference {
@@ -46910,15 +48510,6 @@ impl Interpreter {
                     ),
                 )
             })?;
-        if closure.is_arrow() {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    context,
-                    "arrow closure invocation is not implemented",
-                ),
-            ));
-        }
         let function = function.as_ref();
         if function.returns_by_reference {
             ensure_supported_reference_return_function_metadata(function, span)?;
@@ -48498,15 +50089,6 @@ impl Interpreter {
                     ),
                 )
             })?;
-        if closure.is_arrow() {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "call_user_func_array()",
-                    "arrow closure invocation is not implemented",
-                ),
-            ));
-        }
         let function = function.as_ref();
         if function.returns_by_reference {
             ensure_supported_reference_return_function_metadata(function, span)?;
@@ -48576,15 +50158,6 @@ impl Interpreter {
                     ),
                 )
             })?;
-        if closure.is_arrow() {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "call_user_func_array()",
-                    "arrow closure invocation is not implemented",
-                ),
-            ));
-        }
         let function = function.as_ref();
         if function.returns_by_reference {
             let frame = self.evaluate_call_user_func_array_call_frame_bindings(
@@ -73832,6 +75405,10 @@ fn magic_method_startup_diagnostics(
     }
 
     if !diagnostics.has_fatal() {
+        collect_attribute_unpack_startup_diagnostics(&mut diagnostics, program, source_file);
+    }
+
+    if !diagnostics.has_fatal() {
         collect_class_property_inheritance_startup_diagnostics(
             &mut diagnostics,
             program,
@@ -73884,6 +75461,174 @@ fn magic_method_startup_diagnostics(
     }
 
     diagnostics
+}
+
+fn collect_attribute_unpack_startup_diagnostics(
+    diagnostics: &mut MagicMethodStartupDiagnostics,
+    program: &Program,
+    source_file: Option<&str>,
+) {
+    for stmt in &program.statements {
+        let Some(line) = stmt_attribute_unpack_line(stmt) else {
+            continue;
+        };
+        diagnostics.set_fatal(
+            "Cannot use unpacking in attribute argument list".to_string(),
+            source_file,
+            line,
+        );
+        return;
+    }
+}
+
+fn stmt_attribute_unpack_line(stmt: &Stmt) -> Option<usize> {
+    match stmt {
+        Stmt::Class(class) => {
+            attributes_unpack_line(&class.attributes, class.span.line).or_else(|| {
+                class
+                    .members
+                    .iter()
+                    .find_map(class_member_attribute_unpack_line)
+            })
+        }
+        Stmt::Interface(interface) => {
+            attributes_unpack_line(&interface.attributes, interface.span.line)
+                .or_else(|| {
+                    interface.constants.iter().find_map(|constant| {
+                        attributes_unpack_line(&constant.attributes, constant.span.line)
+                    })
+                })
+                .or_else(|| {
+                    interface.properties.iter().find_map(|property| {
+                        attributes_unpack_line(&property.attributes, property.span.line)
+                    })
+                })
+                .or_else(|| {
+                    interface.methods.iter().find_map(|method| {
+                        attributes_unpack_line(&method.attributes, method.span.line)
+                            .or_else(|| function_attribute_unpack_line(&method.function))
+                    })
+                })
+        }
+        Stmt::Trait(trait_decl) => {
+            attributes_unpack_line(&trait_decl.attributes, trait_decl.span.line)
+                .or_else(|| {
+                    trait_decl.constants.iter().find_map(|constant| {
+                        attributes_unpack_line(&constant.attributes, constant.span.line)
+                    })
+                })
+                .or_else(|| {
+                    trait_decl.properties.iter().find_map(|property| {
+                        attributes_unpack_line(&property.attributes, property.span.line)
+                    })
+                })
+                .or_else(|| {
+                    trait_decl.methods.iter().find_map(|method| {
+                        attributes_unpack_line(&method.attributes, method.span.line)
+                            .or_else(|| function_attribute_unpack_line(&method.function))
+                    })
+                })
+        }
+        Stmt::Enum(enum_decl) => attributes_unpack_line(&enum_decl.attributes, enum_decl.span.line)
+            .or_else(|| {
+                enum_decl
+                    .cases
+                    .iter()
+                    .find_map(|case| attributes_unpack_line(&case.attributes, case.span.line))
+            }),
+        Stmt::Function(function) => function_attribute_unpack_line(function),
+        Stmt::Expr { expr, .. } => expr_attribute_unpack_line(expr),
+        _ => None,
+    }
+}
+
+fn class_member_attribute_unpack_line(member: &ClassMember) -> Option<usize> {
+    match member {
+        ClassMember::Property(property) => {
+            attributes_unpack_line(&property.attributes, property.span.line)
+        }
+        ClassMember::Constant(constant) => {
+            attributes_unpack_line(&constant.attributes, constant.span.line)
+        }
+        ClassMember::Method(method) => attributes_unpack_line(&method.attributes, method.span.line)
+            .or_else(|| function_attribute_unpack_line(&method.function)),
+    }
+}
+
+fn function_attribute_unpack_line(function: &FunctionDecl) -> Option<usize> {
+    attributes_unpack_line(&function.attributes, function.span.line).or_else(|| {
+        function
+            .params
+            .iter()
+            .find_map(|param| attributes_unpack_line(&param.attributes, param.span.line))
+    })
+}
+
+fn expr_attribute_unpack_line(expr: &Expr) -> Option<usize> {
+    match expr {
+        Expr::Closure {
+            attributes,
+            params,
+            span,
+            ..
+        } => attributes_unpack_line(attributes, span.line).or_else(|| {
+            params
+                .iter()
+                .find_map(|param| attributes_unpack_line(&param.attributes, param.span.line))
+        }),
+        _ => None,
+    }
+}
+
+fn attributes_unpack_line(attributes: &[AttributeDecl], line: usize) -> Option<usize> {
+    attributes
+        .iter()
+        .any(|attribute| {
+            attribute
+                .arguments
+                .as_deref()
+                .is_some_and(attribute_arguments_contain_unpack)
+        })
+        .then_some(line)
+}
+
+fn attribute_arguments_contain_unpack(arguments: &str) -> bool {
+    let mut in_single_quote = false;
+    let mut in_double_quote = false;
+    let mut escaped = false;
+    let bytes = arguments.as_bytes();
+    let mut index = 0;
+    while index < bytes.len() {
+        let byte = bytes[index];
+        if in_single_quote {
+            if byte == b'\'' {
+                in_single_quote = false;
+            }
+            index += 1;
+            continue;
+        }
+        if in_double_quote {
+            if escaped {
+                escaped = false;
+            } else if byte == b'\\' {
+                escaped = true;
+            } else if byte == b'"' {
+                in_double_quote = false;
+            }
+            index += 1;
+            continue;
+        }
+        match byte {
+            b'\'' => in_single_quote = true,
+            b'"' => in_double_quote = true,
+            b'.' if bytes.get(index + 1) == Some(&b'.') && bytes.get(index + 2) == Some(&b'.') => {
+                return true;
+            }
+            _ => {}
+        }
+        index += 1;
+    }
+    false
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -76459,7 +78204,7 @@ fn register_class_member_runtime_tables(
         let key = (class_id, method.function.name.to_ascii_lowercase());
         method_signatures.insert(
             key.clone(),
-            method_signature(&method.function, source_file.clone()),
+            method_signature(&method.function, &method.attributes, source_file.clone()),
         );
         if method.is_abstract {
             abstract_methods.insert(key);
@@ -76495,7 +78240,7 @@ fn register_class_member_runtime_tables(
                 let key = (class_id, method.function.name.to_ascii_lowercase());
                 method_signatures.insert(
                     key.clone(),
-                    method_signature(&method.function, source_file.clone()),
+                    method_signature(&method.function, &method.attributes, source_file.clone()),
                 );
                 if method.is_abstract {
                     abstract_methods.insert(key);
@@ -76539,6 +78284,7 @@ fn seed_core_class_constant_runtime_tables(
                 name: name.to_string(),
                 visibility: ClassVisibility::Public,
                 value: Expr::Int(value, span),
+                attributes: Vec::new(),
                 span,
             },
         );
@@ -76567,6 +78313,7 @@ fn seed_core_class_constant_runtime_tables(
                     name: name.to_string(),
                     visibility: ClassVisibility::Public,
                     value: Expr::Int(value, span),
+                    attributes: Vec::new(),
                     span,
                 },
             );
@@ -76590,6 +78337,7 @@ fn seed_core_class_constant_runtime_tables(
                 name: name.to_string(),
                 visibility: ClassVisibility::Public,
                 value: Expr::Int(value, span),
+                attributes: Vec::new(),
                 span,
             },
         );
@@ -76610,6 +78358,65 @@ fn seed_core_class_constant_runtime_tables(
                 name: name.to_string(),
                 visibility: ClassVisibility::Public,
                 value: Expr::Int(value, span),
+                attributes: Vec::new(),
+                span,
+            },
+        );
+    }
+    if let Some(reflection_class_constant_id) = classes.lookup_class_id("ReflectionClassConstant") {
+        for (name, value) in [
+            ("IS_PUBLIC", 1),
+            ("IS_PROTECTED", 2),
+            ("IS_PRIVATE", 4),
+            ("IS_FINAL", 32),
+        ] {
+            let span = Span::new(1, 1);
+            class_constants.insert(
+                (reflection_class_constant_id, name.to_string()),
+                ClassConstantDecl {
+                    name: name.to_string(),
+                    visibility: ClassVisibility::Public,
+                    value: Expr::Int(value, span),
+                    attributes: Vec::new(),
+                    span,
+                },
+            );
+        }
+    }
+    if let Some(attribute_id) = classes.lookup_class_id("Attribute") {
+        for (name, value) in [
+            ("TARGET_CLASS", PHP_ATTRIBUTE_TARGET_CLASS),
+            ("TARGET_FUNCTION", PHP_ATTRIBUTE_TARGET_FUNCTION),
+            ("TARGET_METHOD", PHP_ATTRIBUTE_TARGET_METHOD),
+            ("TARGET_PROPERTY", PHP_ATTRIBUTE_TARGET_PROPERTY),
+            ("TARGET_CLASS_CONSTANT", PHP_ATTRIBUTE_TARGET_CLASS_CONSTANT),
+            ("TARGET_PARAMETER", PHP_ATTRIBUTE_TARGET_PARAMETER),
+            ("TARGET_CONSTANT", PHP_ATTRIBUTE_TARGET_CONSTANT),
+            ("TARGET_ALL", PHP_ATTRIBUTE_TARGET_ALL),
+            ("IS_REPEATABLE", PHP_ATTRIBUTE_IS_REPEATABLE),
+        ] {
+            let span = Span::new(1, 1);
+            class_constants.insert(
+                (attribute_id, name.to_string()),
+                ClassConstantDecl {
+                    name: name.to_string(),
+                    visibility: ClassVisibility::Public,
+                    value: Expr::Int(value, span),
+                    attributes: Vec::new(),
+                    span,
+                },
+            );
+        }
+    }
+    if let Some(reflection_attribute_id) = classes.lookup_class_id("ReflectionAttribute") {
+        let span = Span::new(1, 1);
+        class_constants.insert(
+            (reflection_attribute_id, "IS_INSTANCEOF".to_string()),
+            ClassConstantDecl {
+                name: "IS_INSTANCEOF".to_string(),
+                visibility: ClassVisibility::Public,
+                value: Expr::Int(PHP_REFLECTION_ATTRIBUTE_IS_INSTANCEOF, span),
+                attributes: Vec::new(),
                 span,
             },
         );
@@ -76890,14 +78697,14 @@ fn register_class_members(
     for method in composed_trait_methods(class, trait_lookup)? {
         effective_method_signatures.insert(
             (id, method.function.name.to_ascii_lowercase()),
-            method_signature(&method.function, None),
+            method_signature(&method.function, &method.attributes, None),
         );
     }
     for member in &class.members {
         if let ClassMember::Method(method) = member {
             effective_method_signatures.insert(
                 (id, method.function.name.to_ascii_lowercase()),
-                method_signature(&method.function, None),
+                method_signature(&method.function, &method.attributes, None),
             );
         }
     }
@@ -77207,8 +79014,16 @@ fn interface_method_has_override_attribute(method: &InterfaceMethodDecl) -> bool
         .any(|attribute| attribute_name_is_override(attribute))
 }
 
-fn attribute_name_is_override(attribute: &str) -> bool {
-    attribute.eq_ignore_ascii_case("Override") || attribute.eq_ignore_ascii_case("\\Override")
+fn attribute_name_is_override(attribute: &AttributeDecl) -> bool {
+    attribute.name.eq_ignore_ascii_case("Override")
+        || attribute.name.eq_ignore_ascii_case("\\Override")
+}
+
+fn attributes_include_deprecated(attributes: &[AttributeDecl]) -> bool {
+    attributes.iter().any(|attribute| {
+        attribute.name.eq_ignore_ascii_case("Deprecated")
+            || attribute.name.eq_ignore_ascii_case("\\Deprecated")
+    })
 }
 
 fn direct_class_trait_names(
@@ -77804,7 +79619,7 @@ fn public_method_signature(
                 .function
                 .name
                 .eq_ignore_ascii_case(method_lookup_name)
-                .then(|| method_signature(&method.function, None))
+                .then(|| method_signature(&method.function, &method.attributes, None))
         });
     }
 
@@ -77813,7 +79628,11 @@ fn public_method_signature(
         .cloned()
 }
 
-fn method_signature(function: &FunctionDecl, file_name: Option<String>) -> MethodSignature {
+fn method_signature(
+    function: &FunctionDecl,
+    attributes: &[AttributeDecl],
+    file_name: Option<String>,
+) -> MethodSignature {
     MethodSignature {
         required_params: required_param_count(function),
         return_type: function.return_type.as_ref().map(|decl| decl.text.clone()),
@@ -77821,6 +79640,8 @@ fn method_signature(function: &FunctionDecl, file_name: Option<String>) -> Metho
         start_line: function.span.line,
         end_line: function.end_line,
         doc_comment: function.doc_comment.clone(),
+        attributes: attributes.to_vec(),
+        is_deprecated: attributes_include_deprecated(attributes),
         params: function
             .params
             .iter()
@@ -77830,6 +79651,7 @@ fn method_signature(function: &FunctionDecl, file_name: Option<String>) -> Metho
                 by_reference: param.by_reference,
                 is_variadic: param.is_variadic,
                 default: param.default.clone(),
+                attributes: param.attributes.clone(),
             })
             .collect(),
     }
@@ -77844,6 +79666,7 @@ fn class_like_source_metadata_from_class(
         start_line: class.span.line,
         end_line: class.end_line,
         doc_comment: class.doc_comment.clone(),
+        attributes: class.attributes.clone(),
     }
 }
 
@@ -77856,6 +79679,7 @@ fn class_like_source_metadata_from_interface(
         start_line: interface.span.line,
         end_line: interface.end_line,
         doc_comment: interface.doc_comment.clone(),
+        attributes: interface.attributes.clone(),
     }
 }
 
@@ -77868,12 +79692,14 @@ fn class_like_source_metadata_from_trait(
         start_line: trait_decl.span.line,
         end_line: trait_decl.end_line,
         doc_comment: trait_decl.doc_comment.clone(),
+        attributes: trait_decl.attributes.clone(),
     }
 }
 
 fn property_source_metadata_from_decl(property: &ClassPropertyDecl) -> PropertySourceMetadata {
     PropertySourceMetadata {
         doc_comment: property.doc_comment.clone(),
+        attributes: property.attributes.clone(),
     }
 }
 
@@ -77889,6 +79715,7 @@ fn reflection_parameter_metadata_from_signature(
             by_reference: param.by_reference,
             is_variadic: param.is_variadic,
             default: param.default.clone(),
+            attributes: param.attributes.clone(),
         })
         .collect()
 }
@@ -77904,6 +79731,7 @@ fn reflection_parameter_metadata_from_function_params(
             by_reference: param.by_reference,
             is_variadic: param.is_variadic,
             default: param.default.clone(),
+            attributes: param.attributes.clone(),
         })
         .collect()
 }
@@ -77924,6 +79752,8 @@ fn reflection_function_state_from_decl(
         return_type: function.return_type.as_ref().map(|decl| decl.text.clone()),
         returns_by_reference: function.returns_by_reference,
         params: reflection_parameter_metadata_from_function_params(&function.params),
+        is_deprecated: attributes_include_deprecated(&function.attributes),
+        attributes: function.attributes.clone(),
     }
 }
 
@@ -77933,6 +79763,7 @@ fn reflection_function_state_from_closure(
     return_type: Option<&TypeDecl>,
     returns_by_reference: bool,
     body: &[Stmt],
+    attributes: &[AttributeDecl],
     file_name: Option<String>,
     span: Span,
 ) -> ReflectionFunctionState {
@@ -77948,6 +79779,8 @@ fn reflection_function_state_from_closure(
         return_type: return_type.map(|decl| decl.text.clone()),
         returns_by_reference,
         params: reflection_parameter_metadata_from_function_params(params),
+        is_deprecated: attributes_include_deprecated(attributes),
+        attributes: attributes.to_vec(),
     }
 }
 
@@ -78105,6 +79938,10 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_param("format", "string"),
                 reflection_internal_param("values", "array"),
             ],
+        ),
+        "var_dump" => (
+            "void",
+            vec![reflection_internal_variadic_param("values", "mixed")],
         ),
         "sprintf" => (
             "string",
@@ -78311,6 +80148,8 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
         return_type: Some(return_type.to_string()),
         returns_by_reference: false,
         params,
+        is_deprecated: false,
+        attributes: Vec::new(),
     })
 }
 
@@ -78321,6 +80160,7 @@ fn reflection_internal_untyped_param(name: &str) -> ReflectionParameterMetadata 
         by_reference: false,
         is_variadic: false,
         default: None,
+        attributes: Vec::new(),
     }
 }
 
@@ -78331,6 +80171,7 @@ fn reflection_internal_param(name: &str, type_decl: &str) -> ReflectionParameter
         by_reference: false,
         is_variadic: false,
         default: None,
+        attributes: Vec::new(),
     }
 }
 
@@ -79417,6 +81258,20 @@ fn format_stack_trace_arg(value: &Value) -> String {
     }
 }
 
+fn normalized_attribute_name(name: &str) -> String {
+    name.trim_start_matches('\\').to_ascii_lowercase()
+}
+
+fn core_class_attributes_for_reflection(name: &str) -> Vec<AttributeDecl> {
+    if name.eq_ignore_ascii_case("Attribute") {
+        return vec![AttributeDecl::new(
+            "Attribute".to_string(),
+            Some("(Attribute::TARGET_CLASS)".to_string()),
+        )];
+    }
+    Vec::new()
+}
+
 const POSITIONAL_ARGUMENT_AFTER_NAMED_ARGUMENT_MESSAGE: &str =
     "Cannot use positional argument after named argument";
 
@@ -80064,6 +81919,14 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
         | ("strripos()", "Argument #3 ($offset) must be contained in argument #1 ($haystack)") => {
             Some(format!("{function}: {message}"))
         }
+        (
+            "ReflectionClass::getAttributes()"
+            | "ReflectionFunctionAbstract::getAttributes()"
+            | "ReflectionProperty::getAttributes()"
+            | "ReflectionClassConstant::getAttributes()"
+            | "ReflectionParameter::getAttributes()",
+            "Argument #2 ($flags) must be a valid attribute filter flag",
+        ) => Some(format!("{function}: {message}")),
         (
             "str_pad()",
             "Argument #3 ($pad_string) must not be empty" | "Argument #3 () must not be empty",
@@ -81177,6 +83040,36 @@ const PHP_E_RECOVERABLE_ERROR: i64 = 4096;
 const PHP_E_DEPRECATED: i64 = 8192;
 const PHP_E_USER_DEPRECATED: i64 = 16384;
 const PHP_E_ALL: i64 = 32767;
+const PHP_ATTRIBUTE_TARGET_CLASS: i64 = 1;
+const PHP_ATTRIBUTE_TARGET_FUNCTION: i64 = 2;
+const PHP_ATTRIBUTE_TARGET_METHOD: i64 = 4;
+const PHP_ATTRIBUTE_TARGET_PROPERTY: i64 = 8;
+const PHP_ATTRIBUTE_TARGET_CLASS_CONSTANT: i64 = 16;
+const PHP_ATTRIBUTE_TARGET_PARAMETER: i64 = 32;
+const PHP_ATTRIBUTE_TARGET_CONSTANT: i64 = 64;
+const PHP_ATTRIBUTE_TARGET_ALL: i64 = PHP_ATTRIBUTE_TARGET_CLASS
+    | PHP_ATTRIBUTE_TARGET_FUNCTION
+    | PHP_ATTRIBUTE_TARGET_METHOD
+    | PHP_ATTRIBUTE_TARGET_PROPERTY
+    | PHP_ATTRIBUTE_TARGET_CLASS_CONSTANT
+    | PHP_ATTRIBUTE_TARGET_PARAMETER
+    | PHP_ATTRIBUTE_TARGET_CONSTANT;
+const PHP_ATTRIBUTE_IS_REPEATABLE: i64 = 128;
+const PHP_REFLECTION_ATTRIBUTE_IS_INSTANCEOF: i64 = 2;
+
+fn reflection_get_attributes_callable_name(target: i64) -> &'static str {
+    match target {
+        PHP_ATTRIBUTE_TARGET_CLASS => "ReflectionClass::getAttributes()",
+        PHP_ATTRIBUTE_TARGET_FUNCTION | PHP_ATTRIBUTE_TARGET_METHOD => {
+            "ReflectionFunctionAbstract::getAttributes()"
+        }
+        PHP_ATTRIBUTE_TARGET_PROPERTY => "ReflectionProperty::getAttributes()",
+        PHP_ATTRIBUTE_TARGET_CLASS_CONSTANT => "ReflectionClassConstant::getAttributes()",
+        PHP_ATTRIBUTE_TARGET_PARAMETER => "ReflectionParameter::getAttributes()",
+        _ => "Reflection::getAttributes()",
+    }
+}
+
 const PHP_MYSQLI_REPORT_OFF: i64 = 0;
 const PHP_MYSQLI_REPORT_ERROR: i64 = 1;
 const PHP_MYSQLI_REPORT_STRICT: i64 = 2;
@@ -98816,6 +100709,7 @@ echo $items["shared"]["leaf"] . "|" . $shared . "|" . $items["plain"]["leaf"] . 
             is_nested: false,
             is_generator: false,
             end_line: 1,
+            attributes: Vec::new(),
             doc_comment: None,
             span,
         };
@@ -100162,6 +102056,7 @@ echo $items["shared"]["leaf"] . "|" . $shared . "|" . $items["plain"]["leaf"] . 
             is_nested: false,
             is_generator: false,
             end_line: 1,
+            attributes: Vec::new(),
             doc_comment: None,
             span,
         };

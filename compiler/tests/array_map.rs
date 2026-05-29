@@ -131,18 +131,15 @@ fn array_map_callback_requires_string_callable() {
     assert_eq!(error.column, 6);
     assert_eq!(
         error.message,
-        "unsupported call array_map(): callback must evaluate to string, got int"
+        "unsupported call array_map(): callback must evaluate to string, closure, or array callable in the current subset, got int"
     );
 
-    let closure_error = runtime_error(
-        "<?php\n$items = [\"Ada\"];\n$callback = fn($value) => $value;\necho array_map($callback, $items);\n",
-    );
-    assert_eq!(closure_error.line, 4);
-    assert_eq!(closure_error.column, 6);
-    assert_eq!(
-        closure_error.message,
-        "unsupported call array_map(): callback must evaluate to string, got closure"
-    );
+    let execution = run_source(
+        "<?php\n$items = [\"Ada\"];\n$callback = fn($value) => $value . \"!\";\n$mapped = array_map($callback, $items);\necho $mapped[0];\n",
+    )
+    .unwrap();
+    assert_eq!(execution.stdout, "Ada!");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

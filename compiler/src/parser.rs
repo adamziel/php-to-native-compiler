@@ -1,17 +1,17 @@
 use std::collections::HashMap;
 
 use crate::ast::{
-    ArrayItem, AssignTarget, BinaryOp, CastKind, CatchClause, CatchType, ClassConstantDecl,
-    ClassDecl, ClassMember, ClassMethodDecl, ClassPropertyDecl, ClassVisibility, ClosureCapture,
-    CompoundAssignOp, ConstDeclarator, EnumCaseDecl, EnumDecl, Expr, ForAction, ForeachValueTarget,
-    FunctionDecl, FunctionParam, IncrementDecrementOp, IncrementDecrementPosition, InterfaceDecl,
-    InterfaceMethodDecl, NewClassName, Program, ReferenceSource, Span, StaticLocalDeclarator, Stmt,
-    SwitchCase, TraitDecl, TraitMethodAliasDecl, TraitMethodPrecedenceDecl,
-    TraitMethodVisibilityDecl, TraitUseDecl, TypeDecl, UnaryOp, UnsetTarget, UseImport,
-    UseImportKind,
+    ArrayItem, AssignTarget, AttributeDecl, BinaryOp, CastKind, CatchClause, CatchType,
+    ClassConstantDecl, ClassDecl, ClassMember, ClassMethodDecl, ClassPropertyDecl, ClassVisibility,
+    ClosureCapture, CompoundAssignOp, ConstDeclarator, EnumCaseDecl, EnumDecl, Expr, ForAction,
+    ForeachValueTarget, FunctionDecl, FunctionParam, IncrementDecrementOp,
+    IncrementDecrementPosition, InterfaceDecl, InterfaceMethodDecl, NewClassName, Program,
+    ReferenceSource, Span, StaticLocalDeclarator, Stmt, SwitchCase, TraitDecl,
+    TraitMethodAliasDecl, TraitMethodPrecedenceDecl, TraitMethodVisibilityDecl, TraitUseDecl,
+    TypeDecl, UnaryOp, UnsetTarget, UseImport, UseImportKind,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
-use crate::lexer::{tokenize, Token, TokenKind};
+use crate::lexer::{tokenize, AttributeToken, Token, TokenKind};
 
 pub fn parse_source(source: &str) -> CompileResult<Program> {
     let tokens = tokenize(source)?;
@@ -33,7 +33,7 @@ struct Parser {
     namespace_function_declarations: HashMap<String, Vec<String>>,
     namespace_constant_declarations: HashMap<String, Vec<String>>,
     pending_doc_comment: Option<String>,
-    pending_attributes: Vec<String>,
+    pending_attributes: Vec<AttributeDecl>,
     trace_parse: bool,
 }
 
@@ -110,13 +110,17 @@ impl Parser {
 
     fn consume_doc_comments_and_attributes(&mut self) {
         loop {
-            match &self.peek().kind {
+            match self.peek().kind.clone() {
                 TokenKind::DocComment(comment) => {
-                    self.pending_doc_comment = Some(comment.clone());
+                    self.pending_doc_comment = Some(comment);
                     self.advance();
                 }
-                TokenKind::Attribute(names) => {
-                    self.pending_attributes.extend(names.clone());
+                TokenKind::Attribute(attributes) => {
+                    let resolved: Vec<_> = attributes
+                        .into_iter()
+                        .map(|attribute| self.attribute_decl_from_token(attribute))
+                        .collect();
+                    self.pending_attributes.extend(resolved);
                     self.advance();
                 }
                 _ => break,
@@ -124,7 +128,14 @@ impl Parser {
         }
     }
 
-    fn take_pending_attributes(&mut self) -> Vec<String> {
+    fn attribute_decl_from_token(&self, attribute: AttributeToken) -> AttributeDecl {
+        AttributeDecl::new(
+            self.resolve_class_like_name(&attribute.name),
+            attribute.arguments,
+        )
+    }
+
+    fn take_pending_attributes(&mut self) -> Vec<AttributeDecl> {
         std::mem::take(&mut self.pending_attributes)
     }
 
@@ -144,6 +155,7 @@ impl Parser {
                 | TokenKind::Class
                 | TokenKind::Interface
                 | TokenKind::Trait
+                | TokenKind::Enum
                 | TokenKind::Abstract
                 | TokenKind::Final
                 | TokenKind::Readonly
@@ -279,7 +291,7 @@ impl Parser {
             name
         };
         let doc_comment = self.pending_doc_comment.take();
-        self.pending_attributes.clear();
+        let attributes = self.take_pending_attributes();
         self.consume_keyword(TokenKind::LParen, "expected '(' after function name")?;
         let allow_promoted_properties =
             allow_constructor_property_promotion && name.eq_ignore_ascii_case("__construct");
@@ -307,6 +319,7 @@ impl Parser {
             is_nested,
             is_generator,
             end_line,
+            attributes,
             doc_comment,
             span: start,
         })
@@ -551,7 +564,7 @@ impl Parser {
             .span;
         let span = modifier_span.unwrap_or(class_span);
         let doc_comment = self.pending_doc_comment.take();
-        self.pending_attributes.clear();
+        let attributes = self.take_pending_attributes();
         let is_nested = self.nested_statement_depth > 0;
         let name = self.consume_identifier("expected class name")?;
         let name = self.resolve_declared_class_name(&name);
@@ -578,7 +591,7 @@ impl Parser {
                 self.pending_attributes.clear();
                 trait_uses.extend(self.parse_class_trait_use()?);
             } else {
-                members.push(self.parse_class_member()?);
+                members.extend(self.parse_class_member()?);
             }
         }
         self.consume_keyword(TokenKind::RBrace, "expected '}' after class body")?;
@@ -595,6 +608,7 @@ impl Parser {
             is_readonly,
             is_nested,
             end_line,
+            attributes,
             doc_comment,
             span,
         }))
@@ -637,7 +651,7 @@ impl Parser {
             .consume_keyword(TokenKind::Trait, "expected 'trait'")?
             .span;
         let doc_comment = self.pending_doc_comment.take();
-        self.pending_attributes.clear();
+        let attributes = self.take_pending_attributes();
         if self.nested_statement_depth > 0 || self.function_body_depth > 0 {
             return Err(self.error_at(span, unsupported_nested_trait_declaration_message()));
         }
@@ -672,6 +686,7 @@ impl Parser {
             properties,
             methods,
             end_line,
+            attributes,
             doc_comment,
             span,
         }))
@@ -713,8 +728,8 @@ impl Parser {
     }
 
     fn parse_trait_constant(&mut self) -> CompileResult<ClassConstantDecl> {
+        let attributes = self.take_pending_attributes();
         self.pending_doc_comment = None;
-        self.pending_attributes.clear();
         let modifiers = self.parse_class_member_modifiers()?;
         self.match_identifier("const");
         let const_span = self.previous().span;
@@ -763,6 +778,7 @@ impl Parser {
             name,
             visibility: ClassVisibility::Public,
             value,
+            attributes,
             span: name_span,
         })
     }
@@ -1044,7 +1060,7 @@ impl Parser {
             .consume_keyword(TokenKind::Interface, "expected 'interface'")?
             .span;
         let doc_comment = self.pending_doc_comment.take();
-        self.pending_attributes.clear();
+        let attributes = self.take_pending_attributes();
         if self.nested_statement_depth > 0 || self.function_body_depth > 0 {
             return Err(self.error_at(span, unsupported_nested_interface_declaration_message()));
         }
@@ -1083,14 +1099,15 @@ impl Parser {
             properties,
             methods,
             end_line,
+            attributes,
             doc_comment,
             span,
         }))
     }
 
     fn parse_interface_constant(&mut self) -> CompileResult<ClassConstantDecl> {
+        let attributes = self.take_pending_attributes();
         self.pending_doc_comment = None;
-        self.pending_attributes.clear();
         let modifiers = self.parse_class_member_modifiers()?;
         self.match_identifier("const");
         let const_span = self.previous().span;
@@ -1142,6 +1159,7 @@ impl Parser {
             name,
             visibility: ClassVisibility::Public,
             value,
+            attributes,
             span: name_span,
         })
     }
@@ -1311,6 +1329,7 @@ impl Parser {
             is_nested: false,
             is_generator: false,
             end_line: start.line,
+            attributes: Vec::new(),
             doc_comment,
             span: start,
         })
@@ -1320,6 +1339,8 @@ impl Parser {
         let span = self
             .consume_keyword(TokenKind::Enum, "expected 'enum'")?
             .span;
+        let attributes = self.take_pending_attributes();
+        self.pending_doc_comment = None;
         if self.nested_statement_depth > 0 || self.function_body_depth > 0 {
             return Err(self.error_at(span, unsupported_nested_enum_declaration_message()));
         }
@@ -1341,11 +1362,15 @@ impl Parser {
             self.trace_parse("enum member");
             self.consume_doc_comments_and_attributes();
             self.pending_doc_comment = None;
-            self.pending_attributes.clear();
             cases.push(self.parse_enum_case()?);
         }
         self.consume_keyword(TokenKind::RBrace, "expected '}' after enum body")?;
-        Ok(Stmt::Enum(EnumDecl { name, cases, span }))
+        Ok(Stmt::Enum(EnumDecl {
+            name,
+            cases,
+            attributes,
+            span,
+        }))
     }
 
     fn parse_enum_case(&mut self) -> CompileResult<EnumCaseDecl> {
@@ -1354,16 +1379,21 @@ impl Parser {
         ) {
             return Err(self.error_at(self.peek().span, unsupported_enum_member_message()));
         }
+        let attributes = self.take_pending_attributes();
         let span = self.advance().span;
         let name = self.consume_identifier("expected enum case name")?;
         if self.match_token(|kind| matches!(kind, TokenKind::Equal)) {
             return Err(self.error_at(self.previous().span, unsupported_enum_case_value_message()));
         }
         self.consume_keyword(TokenKind::Semicolon, "expected ';' after enum case")?;
-        Ok(EnumCaseDecl { name, span })
+        Ok(EnumCaseDecl {
+            name,
+            attributes,
+            span,
+        })
     }
 
-    fn parse_class_member(&mut self) -> CompileResult<ClassMember> {
+    fn parse_class_member(&mut self) -> CompileResult<Vec<ClassMember>> {
         let modifiers = self.parse_class_member_modifiers()?;
         let attributes = self.take_pending_attributes();
 
@@ -1390,27 +1420,29 @@ impl Parser {
                     "unsupported class constant declaration: typed class constants are not implemented",
                 ));
             }
-            let (name, name_span) =
-                self.consume_identifier_with_span("expected class constant name after const")?;
-            self.consume_keyword(TokenKind::Equal, "expected '=' after class constant name")?;
-            let value = self.parse_expression()?;
-            self.ensure_supported_const_declaration_expr(&value)?;
-            if self.match_token(|kind| matches!(kind, TokenKind::Comma)) {
-                return Err(self.error_at(
-                    self.previous().span,
-                    "unsupported class constant declaration: multiple class constants in one declaration are not implemented",
-                ));
+            let mut constants = Vec::new();
+            loop {
+                let (name, name_span) =
+                    self.consume_identifier_with_span("expected class constant name after const")?;
+                self.consume_keyword(TokenKind::Equal, "expected '=' after class constant name")?;
+                let value = self.parse_expression()?;
+                self.ensure_supported_const_declaration_expr(&value)?;
+                constants.push(ClassMember::Constant(ClassConstantDecl {
+                    name,
+                    visibility: modifiers.visibility,
+                    value,
+                    attributes: attributes.clone(),
+                    span: name_span,
+                }));
+                if !self.match_token(|kind| matches!(kind, TokenKind::Comma)) {
+                    break;
+                }
             }
             self.consume_keyword(
                 TokenKind::Semicolon,
                 "expected ';' after class constant declaration",
             )?;
-            return Ok(ClassMember::Constant(ClassConstantDecl {
-                name,
-                visibility: modifiers.visibility,
-                value,
-                span: name_span,
-            }));
+            return Ok(constants);
         }
 
         if self.match_token(|kind| matches!(kind, TokenKind::Function)) {
@@ -1431,7 +1463,7 @@ impl Parser {
             } else {
                 self.parse_function_after_keyword(span, false, true)?
             };
-            return Ok(ClassMember::Method(ClassMethodDecl {
+            return Ok(vec![ClassMember::Method(ClassMethodDecl {
                 function,
                 visibility: modifiers.visibility,
                 is_static: modifiers.is_static,
@@ -1439,7 +1471,7 @@ impl Parser {
                 is_final: modifiers.is_final,
                 attributes,
                 span,
-            }));
+            })]);
         }
 
         let doc_comment = self.pending_doc_comment.take();
@@ -1460,24 +1492,34 @@ impl Parser {
             if type_decl.text.contains('|') && type_decl.text.contains('&') {
                 return Err(self.error_at(type_decl.span, unsupported_dnf_type_message()));
             }
-            let (name, span) = self.consume_variable_with_span("expected property name")?;
-            let default = if self.match_token(|kind| matches!(kind, TokenKind::Equal)) {
-                let expr = self.parse_expression()?;
-                if modifiers.is_static {
-                    self.ensure_supported_static_property_default_expr(&expr)?;
+            let mut properties = Vec::new();
+            loop {
+                let (name, span) = self.consume_variable_with_span("expected property name")?;
+                let default = if self.match_token(|kind| matches!(kind, TokenKind::Equal)) {
+                    let expr = self.parse_expression()?;
+                    if modifiers.is_static {
+                        self.ensure_supported_static_property_default_expr(&expr)?;
+                    } else {
+                        self.ensure_supported_instance_property_default_expr(&expr)?;
+                    }
+                    self.ensure_supported_typed_property_default_expr(&type_decl, &expr)?;
+                    Some(expr)
                 } else {
-                    self.ensure_supported_instance_property_default_expr(&expr)?;
+                    None
+                };
+                properties.push(ClassMember::Property(ClassPropertyDecl {
+                    name,
+                    visibility: modifiers.visibility,
+                    is_static: modifiers.is_static,
+                    type_decl: Some(type_decl.clone()),
+                    default,
+                    attributes: attributes.clone(),
+                    doc_comment: doc_comment.clone(),
+                    span,
+                }));
+                if !self.match_token(|kind| matches!(kind, TokenKind::Comma)) {
+                    break;
                 }
-                self.ensure_supported_typed_property_default_expr(&type_decl, &expr)?;
-                Some(expr)
-            } else {
-                None
-            };
-            if self.match_token(|kind| matches!(kind, TokenKind::Comma)) {
-                return Err(self.error_at(
-                    self.previous().span,
-                    unsupported_multiple_properties_message(),
-                ));
             }
             if self.check(|kind| matches!(kind, TokenKind::LBrace)) {
                 return Err(self.error_at(self.peek().span, unsupported_property_hook_message()));
@@ -1486,16 +1528,7 @@ impl Parser {
                 TokenKind::Semicolon,
                 "expected ';' after property declaration",
             )?;
-            return Ok(ClassMember::Property(ClassPropertyDecl {
-                name,
-                visibility: modifiers.visibility,
-                is_static: modifiers.is_static,
-                type_decl: Some(type_decl),
-                default,
-                attributes: attributes.clone(),
-                doc_comment,
-                span,
-            }));
+            return Ok(properties);
         }
 
         if self.check(|kind| matches!(kind, TokenKind::Variable(_))) {
@@ -1507,23 +1540,33 @@ impl Parser {
                     unsupported_abstract_final_property_message(),
                 ));
             }
-            let (name, span) = self.consume_variable_with_span("expected property name")?;
-            let default = if self.match_token(|kind| matches!(kind, TokenKind::Equal)) {
-                let expr = self.parse_expression()?;
-                if modifiers.is_static {
-                    self.ensure_supported_static_property_default_expr(&expr)?;
+            let mut properties = Vec::new();
+            loop {
+                let (name, span) = self.consume_variable_with_span("expected property name")?;
+                let default = if self.match_token(|kind| matches!(kind, TokenKind::Equal)) {
+                    let expr = self.parse_expression()?;
+                    if modifiers.is_static {
+                        self.ensure_supported_static_property_default_expr(&expr)?;
+                    } else {
+                        self.ensure_supported_instance_property_default_expr(&expr)?;
+                    }
+                    Some(expr)
                 } else {
-                    self.ensure_supported_instance_property_default_expr(&expr)?;
+                    None
+                };
+                properties.push(ClassMember::Property(ClassPropertyDecl {
+                    name,
+                    visibility: modifiers.visibility,
+                    is_static: modifiers.is_static,
+                    type_decl: None,
+                    default,
+                    attributes: attributes.clone(),
+                    doc_comment: doc_comment.clone(),
+                    span,
+                }));
+                if !self.match_token(|kind| matches!(kind, TokenKind::Comma)) {
+                    break;
                 }
-                Some(expr)
-            } else {
-                None
-            };
-            if self.match_token(|kind| matches!(kind, TokenKind::Comma)) {
-                return Err(self.error_at(
-                    self.previous().span,
-                    unsupported_multiple_properties_message(),
-                ));
             }
             if self.check(|kind| matches!(kind, TokenKind::LBrace)) {
                 return Err(self.error_at(self.peek().span, unsupported_property_hook_message()));
@@ -1532,16 +1575,7 @@ impl Parser {
                 TokenKind::Semicolon,
                 "expected ';' after property declaration",
             )?;
-            return Ok(ClassMember::Property(ClassPropertyDecl {
-                name,
-                visibility: modifiers.visibility,
-                is_static: modifiers.is_static,
-                type_decl: None,
-                default,
-                attributes,
-                doc_comment,
-                span,
-            }));
+            return Ok(properties);
         }
 
         let token = self.peek().clone();
@@ -6338,6 +6372,32 @@ impl Parser {
             TokenKind::Instanceof => {
                 Err(self.error_at(token.span, unsupported_instanceof_message()))
             }
+            TokenKind::Attribute(attributes) => {
+                let resolved: Vec<_> = attributes
+                    .into_iter()
+                    .map(|attribute| self.attribute_decl_from_token(attribute))
+                    .collect();
+                self.pending_attributes.extend(resolved);
+                self.consume_doc_comments_and_attributes();
+                if self.match_token(|kind| matches!(kind, TokenKind::Function)) {
+                    return self.parse_closure_expression(token.span, false);
+                }
+                if self.match_token(|kind| matches!(kind, TokenKind::Fn)) {
+                    return self.parse_arrow_function_expression(token.span, false);
+                }
+                if self.match_token(|kind| matches!(kind, TokenKind::Static)) {
+                    if self.match_token(|kind| matches!(kind, TokenKind::Function)) {
+                        return self.parse_closure_expression(token.span, true);
+                    }
+                    if self.match_token(|kind| matches!(kind, TokenKind::Fn)) {
+                        return self.parse_arrow_function_expression(token.span, true);
+                    }
+                }
+                Err(self.error_at(
+                    token.span,
+                    "unsupported PHP attribute target: expression attributes are only implemented for closures in the current subset",
+                ))
+            }
             TokenKind::Function => self.parse_closure_expression(token.span, false),
             TokenKind::Fn => self.parse_arrow_function_expression(token.span, false),
             TokenKind::Eval => Err(self.error_at(token.span, unsupported_eval_message())),
@@ -6569,6 +6629,7 @@ impl Parser {
     }
 
     fn parse_closure_expression(&mut self, span: Span, is_static: bool) -> CompileResult<Expr> {
+        let attributes = self.take_pending_attributes();
         let returns_by_reference = self.match_token(|kind| matches!(kind, TokenKind::Ampersand));
 
         self.consume_keyword(TokenKind::LParen, "expected '(' after function")?;
@@ -6625,6 +6686,7 @@ impl Parser {
             return_type,
             returns_by_reference,
             body,
+            attributes,
             is_static,
             is_arrow: false,
             span,
@@ -6636,6 +6698,7 @@ impl Parser {
         span: Span,
         is_static: bool,
     ) -> CompileResult<Expr> {
+        let attributes = self.take_pending_attributes();
         if self.check(|kind| matches!(kind, TokenKind::Ampersand)) {
             let span = self.advance().span;
             return Err(self.error_at(
@@ -6669,6 +6732,7 @@ impl Parser {
                 value: Some(value),
                 span,
             }],
+            attributes,
             is_static,
             is_arrow: true,
             span,

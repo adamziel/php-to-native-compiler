@@ -8,9 +8,15 @@ pub struct Token {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct AttributeToken {
+    pub name: String,
+    pub arguments: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum TokenKind {
     Eof,
-    Attribute(Vec<String>),
+    Attribute(Vec<AttributeToken>),
     Dollar,
     Variable(String),
     Identifier(String),
@@ -403,10 +409,7 @@ impl<'a> Lexer<'a> {
 
         while !self.is_at_end() {
             match self.advance() {
-                '\'' | '"' => self.skip_quoted_attribute_string(start)?,
-                '(' => {
-                    return Err(self.error_at(start, unsupported_attribute_arguments_message()));
-                }
+                '\'' | '"' => self.push_quoted_attribute_string(start, &mut content)?,
                 '[' => {
                     depth += 1;
                     content.push('[');
@@ -414,10 +417,10 @@ impl<'a> Lexer<'a> {
                 ']' => {
                     depth -= 1;
                     if depth == 0 {
-                        let names = parse_simple_attribute_names(&content).ok_or_else(|| {
+                        let attributes = parse_attribute_tokens(&content).ok_or_else(|| {
                             self.error_at(start, unsupported_attribute_syntax_message())
                         })?;
-                        return Ok(TokenKind::Attribute(names));
+                        return Ok(TokenKind::Attribute(attributes));
                     }
                     content.push(']');
                 }
@@ -431,12 +434,18 @@ impl<'a> Lexer<'a> {
         ))
     }
 
-    fn skip_quoted_attribute_string(&mut self, start: Span) -> CompileResult<()> {
+    fn push_quoted_attribute_string(
+        &mut self,
+        start: Span,
+        content: &mut String,
+    ) -> CompileResult<()> {
         let quote = self.chars[self.index - 1];
+        content.push(quote);
         while !self.is_at_end() {
             let ch = self.advance();
+            content.push(ch);
             if ch == '\\' && !self.is_at_end() {
-                self.advance();
+                content.push(self.advance());
                 continue;
             }
             if ch == quote {
@@ -1269,24 +1278,128 @@ fn unsupported_backtick_operator_message() -> &'static str {
     "unsupported backtick execution operator: shell command execution, interpolation, process I/O, error handling, platform behavior, references/copy-on-write, and native lowering are not implemented"
 }
 
-fn unsupported_attribute_arguments_message() -> &'static str {
-    "unsupported PHP attribute arguments: constructor argument evaluation, target validation, reflection visibility, namespace-aware attribute names, repeatability rules, references/copy-on-write, and native lowering are not implemented"
-}
-
 fn unsupported_attribute_syntax_message() -> &'static str {
-    "unsupported PHP attribute syntax: only simple comma-separated attribute names without arguments are implemented"
+    "unsupported PHP attribute syntax: expected comma-separated attribute names with optional balanced constructor arguments"
 }
 
-fn parse_simple_attribute_names(content: &str) -> Option<Vec<String>> {
-    let mut names = Vec::new();
-    for raw_part in content.split(',') {
+fn parse_attribute_tokens(content: &str) -> Option<Vec<AttributeToken>> {
+    let mut attributes = Vec::new();
+    for raw_part in split_top_level_attribute_items(content)? {
         let part = raw_part.trim();
-        if part.is_empty() || !is_simple_attribute_name(part) {
+        if part.is_empty() {
             return None;
         }
-        names.push(part.to_string());
+        let name_end = attribute_name_end(part)?;
+        let name = part[..name_end].trim();
+        if !is_simple_attribute_name(name) {
+            return None;
+        }
+        let rest = part[name_end..].trim();
+        let arguments = if rest.is_empty() {
+            None
+        } else if is_balanced_attribute_arguments(rest) {
+            Some(rest.to_string())
+        } else {
+            return None;
+        };
+        attributes.push(AttributeToken {
+            name: name.to_string(),
+            arguments,
+        });
     }
-    (!names.is_empty()).then_some(names)
+    (!attributes.is_empty()).then_some(attributes)
+}
+
+fn split_top_level_attribute_items(content: &str) -> Option<Vec<&str>> {
+    let mut items = Vec::new();
+    let mut start = 0usize;
+    let mut paren_depth = 0usize;
+    let mut bracket_depth = 0usize;
+    let mut chars = content.char_indices().peekable();
+    while let Some((index, ch)) = chars.next() {
+        match ch {
+            '\'' | '"' => skip_quoted_attribute_chars(&mut chars, ch)?,
+            '(' => paren_depth += 1,
+            ')' => paren_depth = paren_depth.checked_sub(1)?,
+            '[' => bracket_depth += 1,
+            ']' => bracket_depth = bracket_depth.checked_sub(1)?,
+            ',' if paren_depth == 0 && bracket_depth == 0 => {
+                items.push(&content[start..index]);
+                start = index + ch.len_utf8();
+            }
+            _ => {}
+        }
+    }
+    if paren_depth != 0 || bracket_depth != 0 {
+        return None;
+    }
+    items.push(&content[start..]);
+    Some(items)
+}
+
+fn skip_quoted_attribute_chars<I>(chars: &mut std::iter::Peekable<I>, quote: char) -> Option<()>
+where
+    I: Iterator<Item = (usize, char)>,
+{
+    while let Some((_, ch)) = chars.next() {
+        if ch == '\\' {
+            chars.next();
+            continue;
+        }
+        if ch == quote {
+            return Some(());
+        }
+    }
+    None
+}
+
+fn attribute_name_end(part: &str) -> Option<usize> {
+    let mut end = None;
+    for (index, ch) in part.char_indices() {
+        if ch == '\\' || ch == '_' || ch.is_ascii_alphanumeric() {
+            end = Some(index + ch.len_utf8());
+            continue;
+        }
+        break;
+    }
+    end
+}
+
+fn is_balanced_attribute_arguments(arguments: &str) -> bool {
+    if !arguments.starts_with('(') || !arguments.ends_with(')') {
+        return false;
+    }
+    let mut paren_depth = 0usize;
+    let mut bracket_depth = 0usize;
+    let mut chars = arguments.char_indices().peekable();
+    while let Some((_, ch)) = chars.next() {
+        match ch {
+            '\'' | '"' => {
+                if skip_quoted_attribute_chars(&mut chars, ch).is_none() {
+                    return false;
+                }
+            }
+            '(' => paren_depth += 1,
+            ')' => {
+                let Some(next_depth) = paren_depth.checked_sub(1) else {
+                    return false;
+                };
+                paren_depth = next_depth;
+                if paren_depth == 0 && chars.peek().is_some() {
+                    return false;
+                }
+            }
+            '[' => bracket_depth += 1,
+            ']' => {
+                let Some(next_depth) = bracket_depth.checked_sub(1) else {
+                    return false;
+                };
+                bracket_depth = next_depth;
+            }
+            _ => {}
+        }
+    }
+    paren_depth == 0 && bracket_depth == 0
 }
 
 fn is_simple_attribute_name(name: &str) -> bool {

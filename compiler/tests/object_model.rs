@@ -64,7 +64,9 @@ echo "ready\n";
             "mysqli_stmt",
             "PDO",
             "PDOStatement",
+            "DateTimeZone",
             "ReflectionException",
+            "Attribute",
             "ReflectionClass",
             "ReflectionFunction",
             "ReflectionMethod",
@@ -74,12 +76,16 @@ echo "ready\n";
             "ReflectionUnionType",
             "ReflectionIntersectionType",
             "ReflectionProperty",
+            "ReflectionClassConstant",
+            "ReflectionAttribute",
             "TypeError",
+            "ArgumentCountError",
             "ValueError",
             "ArithmeticError",
             "DivisionByZeroError",
             "RuntimeException",
             "SplObjectStorage",
+            "Generator",
             "Box",
         ]
     );
@@ -6412,6 +6418,152 @@ type_line("raw-return", (new ReflectionFunction("raw_hook"))->getReturnType());
     assert_eq!(
         execution.stdout,
         "fn|select_hook|ReflectionFunction|3|2|1|1\nreturn|ReflectionUnionType|1\nparam0|hook|0|ReflectionFunction|select_hook|1|0|1\nparam1|tagged|1|ReflectionFunction|select_hook|1|0|1\nparam2|fallback|2|ReflectionFunction|select_hook|1|1|0\ndirect|tagged|1|ReflectionFunction|select_hook|1|0|1\nraw|0|raw-return|null\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reflection_function_and_method_report_deprecated_attribute_metadata() {
+    let execution = run_source(
+        r#"<?php
+#[Deprecated]
+function old_hook() {}
+
+function current_hook() {}
+
+interface HookContract {
+    #[\Deprecated]
+    public function legacy();
+
+    public function current();
+}
+
+abstract class BaseHook {
+    #[Deprecated]
+    abstract public function abstractLegacy();
+}
+
+class HookRunner extends BaseHook implements HookContract {
+    public function legacy() {}
+    public function current() {}
+    public function abstractLegacy() {}
+}
+
+function yn($value) {
+    return $value ? "1" : "0";
+}
+
+echo "old-fn|", yn((new ReflectionFunction("old_hook"))->isDeprecated()), "\n";
+echo "current-fn|", yn((new ReflectionFunction("current_hook"))->isDeprecated()), "\n";
+echo "interface-legacy|", yn((new ReflectionMethod(HookContract::class, "legacy"))->isDeprecated()), "\n";
+echo "interface-current|", yn((new ReflectionMethod(HookContract::class, "current"))->isDeprecated()), "\n";
+echo "abstract-legacy|", yn((new ReflectionMethod(BaseHook::class, "abstractLegacy"))->isDeprecated()), "\n";
+echo "implementation|", yn((new ReflectionMethod(HookRunner::class, "abstractLegacy"))->isDeprecated());
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "old-fn|1\ncurrent-fn|0\ninterface-legacy|1\ninterface-current|0\nabstract-legacy|1\nimplementation|0"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reflection_get_attributes_reports_declared_targets_and_instances() {
+    let execution = run_source(
+        r#"<?php
+#[Attribute]
+class FirstAttr {
+    public $value;
+    public function __construct($value = "") {
+        $this->value = $value;
+    }
+}
+
+#[Attribute]
+class SecondAttr extends FirstAttr {}
+
+#[FirstAttr("class")]
+class AttributeSubject {
+    #[SecondAttr("property")]
+    public $slot = null;
+
+    #[FirstAttr("method")]
+    public function run(#[SecondAttr("parameter")] $value) {}
+}
+
+#[SecondAttr("function")]
+function attributed_helper() {}
+
+$closure = #[FirstAttr("closure")] function () {};
+
+function attr_line($label, $attrs) {
+    $attr = $attrs[0];
+    $args = $attr->getArguments();
+    $instance = $attr->newInstance();
+    echo $label, "|", count($attrs), "|", $attr->getName(), "|", $attr->getTarget(), "|", $args[0], "|", $instance->value, "\n";
+}
+
+attr_line("class", (new ReflectionClass(AttributeSubject::class))->getAttributes());
+attr_line("function", (new ReflectionFunction("attributed_helper"))->getAttributes());
+attr_line("method", (new ReflectionMethod(AttributeSubject::class, "run"))->getAttributes());
+attr_line("property", (new ReflectionProperty(AttributeSubject::class, "slot"))->getAttributes());
+$params = (new ReflectionMethod(AttributeSubject::class, "run"))->getParameters();
+attr_line("parameter", $params[0]->getAttributes());
+attr_line("closure", (new ReflectionFunction($closure))->getAttributes());
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "class|1|FirstAttr|1|class|class\nfunction|1|SecondAttr|2|function|function\nmethod|1|FirstAttr|4|method|method\nproperty|1|SecondAttr|8|property|property\nparameter|1|SecondAttr|32|parameter|parameter\nclosure|1|FirstAttr|2|closure|closure\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reflection_attribute_filters_repeats_named_args_and_core_attribute_metadata() {
+    let execution = run_source(
+        r#"<?php
+#[Attribute]
+class BaseAttr {}
+
+#[Attribute]
+class ChildAttr extends BaseAttr {
+    public $value;
+    public $named;
+    public function __construct($value = "", $named = "") {
+        $this->value = $value;
+        $this->named = $named;
+    }
+}
+
+#[ChildAttr("one", named: "named-one")]
+#[ChildAttr("two")]
+class FilteredSubject {}
+
+$ref = new ReflectionClass(FilteredSubject::class);
+$all = $ref->getAttributes();
+$exact = $ref->getAttributes(ChildAttr::class);
+$base = $ref->getAttributes(BaseAttr::class, ReflectionAttribute::IS_INSTANCEOF);
+$args = $all[0]->getArguments();
+$instance = $all[0]->newInstance();
+$repeat = $all[0]->isRepeated() ? "1" : "0";
+echo "filtered|", count($all), "|", count($exact), "|", count($base), "|", $repeat, "|", $args[0], "|", $args["named"], "|", $instance->named, "\n";
+
+$core = (new ReflectionClass(Attribute::class))->getAttributes();
+$coreArgs = $core[0]->getArguments();
+echo "core|", count($core), "|", $core[0]->getName(), "|", $core[0]->getTarget(), "|", $coreArgs[0], "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "filtered|2|2|2|1|one|named-one|named-one\ncore|1|Attribute|1|1\n"
     );
     assert_eq!(execution.exit_code, 0);
 }

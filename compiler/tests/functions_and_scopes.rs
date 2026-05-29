@@ -9042,20 +9042,19 @@ echo "after";
 }
 
 #[test]
-fn arrow_function_invocation_has_stable_runtime_boundary() {
-    let error = runtime_error(
+fn arrow_function_invocation_runs_with_parameters_and_implicit_captures() {
+    let execution = run_source(
         r#"<?php
-$fn = fn($value) => $value;
+$prefix = "Dr. ";
+$fn = fn($value) => $prefix . $value;
+$prefix = "Prof. ";
 echo $fn("Ada");
 "#,
-    );
+    )
+    .unwrap();
 
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 6);
-    assert_eq!(
-        error.message,
-        "unsupported call closure: arrow closure invocation is not implemented"
-    );
+    assert_eq!(execution.stdout, "Dr. Ada");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

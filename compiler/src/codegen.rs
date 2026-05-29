@@ -23210,6 +23210,7 @@ impl CGenerator {
             is_nested: false,
             is_generator: false,
             end_line: span.line,
+            attributes: Vec::new(),
             doc_comment: None,
             span,
         };
@@ -23439,6 +23440,7 @@ impl CGenerator {
             is_nested: false,
             is_generator: false,
             end_line: span.line,
+            attributes: Vec::new(),
             doc_comment: None,
             span,
         };
@@ -72194,6 +72196,7 @@ echo " 10" < "zeta";
             is_nested: false,
             is_generator: false,
             end_line: 1,
+            attributes: Vec::new(),
             doc_comment: None,
             span: test_span(),
         }
@@ -72253,6 +72256,7 @@ echo " 10" < "zeta";
             return_type: None,
             returns_by_reference,
             body: Vec::new(),
+            attributes: Vec::new(),
             is_static: false,
             is_arrow: false,
             span: test_span(),

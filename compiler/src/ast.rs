@@ -755,6 +755,18 @@ impl AssignTarget {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AttributeDecl {
+    pub name: String,
+    pub arguments: Option<String>,
+}
+
+impl AttributeDecl {
+    pub fn new(name: String, arguments: Option<String>) -> Self {
+        Self { name, arguments }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct ClassDecl {
     pub name: String,
@@ -767,6 +779,7 @@ pub struct ClassDecl {
     pub is_readonly: bool,
     pub is_nested: bool,
     pub end_line: usize,
+    pub attributes: Vec<AttributeDecl>,
     pub doc_comment: Option<String>,
     pub span: Span,
 }
@@ -779,6 +792,7 @@ pub struct InterfaceDecl {
     pub properties: Vec<ClassPropertyDecl>,
     pub methods: Vec<InterfaceMethodDecl>,
     pub end_line: usize,
+    pub attributes: Vec<AttributeDecl>,
     pub doc_comment: Option<String>,
     pub span: Span,
 }
@@ -787,7 +801,7 @@ pub struct InterfaceDecl {
 pub struct InterfaceMethodDecl {
     pub function: FunctionDecl,
     pub is_static: bool,
-    pub attributes: Vec<String>,
+    pub attributes: Vec<AttributeDecl>,
     pub span: Span,
 }
 
@@ -799,6 +813,7 @@ pub struct TraitDecl {
     pub properties: Vec<ClassPropertyDecl>,
     pub methods: Vec<ClassMethodDecl>,
     pub end_line: usize,
+    pub attributes: Vec<AttributeDecl>,
     pub doc_comment: Option<String>,
     pub span: Span,
 }
@@ -841,12 +856,14 @@ pub struct TraitMethodPrecedenceDecl {
 pub struct EnumDecl {
     pub name: String,
     pub cases: Vec<EnumCaseDecl>,
+    pub attributes: Vec<AttributeDecl>,
     pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct EnumCaseDecl {
     pub name: String,
+    pub attributes: Vec<AttributeDecl>,
     pub span: Span,
 }
 
@@ -862,6 +879,7 @@ pub struct ClassConstantDecl {
     pub name: String,
     pub visibility: ClassVisibility,
     pub value: Expr,
+    pub attributes: Vec<AttributeDecl>,
     pub span: Span,
 }
 
@@ -872,7 +890,7 @@ pub struct ClassPropertyDecl {
     pub is_static: bool,
     pub type_decl: Option<TypeDecl>,
     pub default: Option<Expr>,
-    pub attributes: Vec<String>,
+    pub attributes: Vec<AttributeDecl>,
     pub doc_comment: Option<String>,
     pub span: Span,
 }
@@ -884,7 +902,7 @@ pub struct ClassMethodDecl {
     pub is_static: bool,
     pub is_abstract: bool,
     pub is_final: bool,
-    pub attributes: Vec<String>,
+    pub attributes: Vec<AttributeDecl>,
     pub span: Span,
 }
 
@@ -905,6 +923,7 @@ pub struct FunctionDecl {
     pub is_nested: bool,
     pub is_generator: bool,
     pub end_line: usize,
+    pub attributes: Vec<AttributeDecl>,
     pub doc_comment: Option<String>,
     pub span: Span,
 }
@@ -917,7 +936,7 @@ pub struct FunctionParam {
     pub is_variadic: bool,
     pub default: Option<Expr>,
     pub promotion: Option<ClassVisibility>,
-    pub attributes: Vec<String>,
+    pub attributes: Vec<AttributeDecl>,
     pub span: Span,
 }
 
@@ -1150,6 +1169,7 @@ pub enum Expr {
         return_type: Option<TypeDecl>,
         returns_by_reference: bool,
         body: Vec<Stmt>,
+        attributes: Vec<AttributeDecl>,
         is_static: bool,
         is_arrow: bool,
         span: Span,
