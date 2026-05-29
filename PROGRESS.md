@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-29 05:10 CEST
+Updated: 2026-05-29 05:17 CEST
 Primary branch: `master`
-Latest source head: `7dbbf09f fix: add strtr builtin semantics`
+Latest source head: `d12ef3ec fix: add str_split builtin semantics`
 
 ## Progress Score
 
@@ -108,13 +108,44 @@ stable pinned denominator and does not use the raw runner
 | Batch004 source batch | Complete | Batch004 source checkpoints accepted: 10 / 10; checkpoint10 sharded gate published |
 | Batch005 source batch | Complete | Batch005 source checkpoints accepted: 10 / 10; checkpoint10 sharded gate published |
 | Batch006 source batch | Complete | Source checkpoints accepted: 10 / 10; checkpoint10 sharded gate published |
-| Batch007 source batch | In progress | Source checkpoints accepted: 8 / 10; public score unchanged until pinned aggregate gate |
+| Batch007 source batch | In progress | Source checkpoints accepted: 9 / 10; public score unchanged until pinned aggregate gate |
 
 Focused PHPT history is tracked separately in
 `/home/claude/supervised-php-compiler/state/php-core-suite-focused-history.tsv`.
 Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
+
+Batch007 source checkpoint 9 is primary-integrated under AO supervision. This
+is a source checkpoint with focused proof, not a percentage change. The public
+PHPT score remains **1836 / 20294 pinned runnable PHPTs = 9.05%** until the
+next pinned full-suite or supervisor-approved sharded publication gate is
+completed, regression-checked, and published here.
+
+- primary source head:
+  `d12ef3ec fix: add str_split builtin semantics`
+- reviewed and integration patch:
+  `/home/claude/supervised-php-compiler/state/patches/ao-coder-ext-standard-str-split-string-builtin-4a58fb19-phpc42-20260529.patch`
+- reviewed and integration patch SHA256:
+  `6247541a21f9398e172ed587d97182f74525c645b05b66274371d6312ad99054`
+- reviewer gate: phpc-53 recorded `WAITING-FOR-CARGO-RETRY /
+  CURRENT-PUBLIC-NON-CARGO-PASS / NOT-FINAL` after non-cargo proof and
+  interrupted cargo on `4a58fb19`; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/batch007-review-ext-standard-str-split-string-builtin-4a58fb19-20260529.{status.md,gates.log}`
+- supervisor focused gates: PASS for fresh apply over public `bf8a92e8`,
+  `git diff --cached --check`, docs/PROGRESS/examples exclusion, production
+  exact-shape audit, `cargo fmt --all -- --check`, focused Rust
+  `cargo test -q -p phpc --test str_split_builtin`,
+  `cargo build -q -p phpc --bin phpc`, and the focused 6-file
+  `ext/standard/tests/strings/str_split*` PHPT cluster with 6 PASS and 0 FAIL
+- public progress gate: not run for this source checkpoint; next public score
+  update waits for the Batch007 pinned aggregate gate
+
+This checkpoint implements generalized `str_split()` builtin behavior:
+scalar-to-string conversion, positive-length validation, chunking into PHP
+arrays, ValueError behavior, internal function metadata, and native callable /
+reflection capability paths. It is not keyed to PHPT filenames, expected
+output, fixture names, public hashes, batch labels, or checkpoint markers.
 
 Batch007 source checkpoint 8 is primary-integrated under AO supervision. This
 is a source checkpoint with focused proof, not a percentage change. The public
