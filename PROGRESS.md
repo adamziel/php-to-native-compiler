@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-29 12:36 CEST
+Updated: 2026-05-29 12:37 CEST
 Primary branch: `master`
-Latest source head: `a90ab027 fix: add disk space and executable checks`
+Latest source head: `82781b89 fix: add typed property startup diagnostics`
 
 ## Progress Score
 
@@ -166,13 +166,46 @@ pinned denominator and does not use the raw runner
 | Batch008 source batch | Complete | Source checkpoints accepted: 10 / 10; checkpoint1 is `strncmp()` / `strncasecmp()` focused source proof; checkpoint2 is bcmath `bcmod()` / `bcpow()` / `bcpowmod()` / `bcsqrt()` focused source proof; checkpoint3 is `tempnam()` / `sys_get_temp_dir()` focused source proof; checkpoint4 is bounded date/timezone focused source proof; checkpoint5 is `SplObjectStorage` identity-map focused source proof; checkpoint5 sharded gate published; checkpoint6 is `strrpos()` / `strripos()` focused source proof; checkpoint7 is `fputcsv()` plus local file stream semantics focused source proof; checkpoint8 is `pathinfo()` / `basename()` / `dirname()` focused source proof; checkpoint9 is `vprintf()` focused source proof; checkpoint10 is `stripos()` focused source proof; checkpoint10 bug60598 repair gate published |
 | Batch009 burst1 sharded gate | Done | 2388 / 20294 pinned runnable PHPTs passed (11.77%); 0 regressions from Batch008 checkpoint10 PASS set; run id `phpt-full-batch009-burst1-sharded-20260529T095210Z-php-src-f97ff59-public-e0a15776-source-731c73cc` |
 | Batch009 source burst | Complete | Checkpoint1 is p47 `sizeof()` alias / `array_chunk` metadata focused source proof (+25 expected direct rows); checkpoint2 is p43 `fflush()` / `ftruncate()` focused source proof (+15 expected direct rows); checkpoint3 is p42 `fprintf()` / `vfprintf()` focused source proof (+14 expected direct rows); checkpoint4 is p39 OPcache bounded introspection focused source proof (+11 expected direct rows); checkpoint5 is p63 slash/cslash and bounded `strcmp()` focused source proof (+12 expected direct rows); burst total was +77 expected direct rows; burst1 sharded gate published 2388 / 20294 |
-| Batch010 source burst | Active | Checkpoint1 is p66 `bcround()` / bounded `RoundingMode` focused source proof (+11 expected direct rows); checkpoint2 is p51 generator `yield from` / `Generator::getReturn()` / yielded key preservation focused source proof (+10 expected direct rows); checkpoint3 is p50 `ReflectionAttribute` / `getAttributes()` focused source proof (+10 expected direct rows); checkpoint4 is p43 `disk_free_space()` / `disk_total_space()` / `is_executable()` focused source proof (+12 expected direct rows); burst total is +43 / +75 expected direct rows toward the next supervisor-approved aggregate gate |
+| Batch010 source burst | Active | Checkpoint1 is p66 `bcround()` / bounded `RoundingMode` focused source proof (+11 expected direct rows); checkpoint2 is p51 generator `yield from` / `Generator::getReturn()` / yielded key preservation focused source proof (+10 expected direct rows); checkpoint3 is p50 `ReflectionAttribute` / `getAttributes()` focused source proof (+10 expected direct rows); checkpoint4 is p43 `disk_free_space()` / `disk_total_space()` / `is_executable()` focused source proof (+12 expected direct rows); checkpoint5 is p15 typed-property startup diagnostics focused source proof (+13 expected direct rows); burst total is +56 / +75 expected direct rows toward the next supervisor-approved aggregate gate |
 
 Focused PHPT history is tracked separately in
 `/home/claude/supervised-php-compiler/state/php-core-suite-focused-history.tsv`.
 Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
+
+Batch010 source burst checkpoint5 is primary-integrated under AO supervision.
+This is focused source proof, not a public percentage change. The public PHPT
+score remains **2388 / 20294 pinned runnable PHPTs = 11.77%** until the next
+supervisor-approved pinned aggregate gate is completed, regression-checked,
+and published here.
+
+- primary source head:
+  `82781b89 fix: add typed property startup diagnostics`
+- reviewed and integration patch:
+  `/home/claude/supervised-php-compiler/state/patches/batch009-author-p15-typed-property-diagnostics-73e6ef80-phpc15-20260529.patch`
+- reviewed and integration patch SHA256:
+  `d1992b6ef456718a102b1f5db6894a1252cae88527965566529d0b5e84ed5302`
+- reviewer gate: phpc-32 completed current-head FINAL GO for p15
+  typed-property startup diagnostics; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/batch010-review-p15-typed-property-diagnostics-ccc66817-phpc32-20260529.{status.md,report.md,gates.log}`
+- critic gate: phpc-55 recorded prior exact-patch `SAFE-FOR-INTEGRATION` for
+  the same patch SHA on `73e6ef80`; the current-head reviewer refresh verified
+  that intervening public heads through `ccc66817` were source-equivalent for
+  this scope
+- supervisor focused gates: PASS for SHA verification, clean apply over
+  `ccc66817`, `git diff --check`, docs/`PROGRESS.md`/examples exclusion,
+  production exact-shape audit, consumed-scope audit, `cargo fmt`, focused
+  Rust `typed_property_startup_diagnostics` with 13 / 13 tests passing,
+  `phpc` binary build, `cargo check`, and focused PHP core typed-property PHPT
+  cluster with 13 PASS and 0 FAIL
+- public progress gate: not run for this source checkpoint; focused proof is
+  candidate evidence for the next 75-row burst gate
+
+This checkpoint implements generalized startup diagnostics for typed-property
+inheritance and illegal default values in the current parser/interpreter
+subset. It is not keyed to PHPT filenames, expected output, fixture names,
+public hashes, batch labels, or checkpoint markers.
 
 Batch010 source burst checkpoint4 is primary-integrated under AO supervision.
 This is focused source proof, not a public percentage change. The public PHPT
