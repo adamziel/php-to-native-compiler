@@ -71486,6 +71486,10 @@ fn magic_method_startup_diagnostics(
     }
 
     if !diagnostics.has_fatal() {
+        collect_union_redundant_type_startup_diagnostics(&mut diagnostics, program, source_file);
+    }
+
+    if !diagnostics.has_fatal() {
         collect_parameter_default_startup_diagnostics(&mut diagnostics, program, source_file);
     }
 
@@ -71514,6 +71518,282 @@ fn magic_method_startup_diagnostics(
     }
 
     diagnostics
+}
+
+#[derive(Debug, Clone, Copy)]
+struct TypeDeclarationScope<'a> {
+    class_name: Option<&'a str>,
+    parent_name: Option<&'a str>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum UnionTypePartKind {
+    Bool,
+    True,
+    False,
+    Iterable,
+    Array,
+    Traversable,
+    Object,
+    ClassLike,
+    Other,
+}
+
+#[derive(Debug, Clone)]
+struct UnionTypePart {
+    key: String,
+    display: String,
+    kind: UnionTypePartKind,
+}
+
+fn collect_union_redundant_type_startup_diagnostics(
+    diagnostics: &mut MagicMethodStartupDiagnostics,
+    program: &Program,
+    source_file: Option<&str>,
+) {
+    let no_scope = TypeDeclarationScope {
+        class_name: None,
+        parent_name: None,
+    };
+    for stmt in &program.statements {
+        match stmt {
+            Stmt::Function(function) if !function.is_nested => {
+                if let Some((message, line)) =
+                    function_union_redundant_type_diagnostic(function, no_scope)
+                {
+                    diagnostics.set_fatal(message, source_file, line);
+                    return;
+                }
+            }
+            Stmt::Class(class) if !class.is_nested => {
+                let scope = TypeDeclarationScope {
+                    class_name: Some(&class.name),
+                    parent_name: class.parent.as_deref(),
+                };
+                for member in &class.members {
+                    match member {
+                        ClassMember::Property(property) => {
+                            if let Some((message, line)) = type_decl_union_redundant_type_diagnostic(
+                                property.type_decl.as_ref(),
+                                scope,
+                            ) {
+                                diagnostics.set_fatal(message, source_file, line);
+                                return;
+                            }
+                        }
+                        ClassMember::Method(method) => {
+                            if let Some((message, line)) =
+                                function_union_redundant_type_diagnostic(&method.function, scope)
+                            {
+                                diagnostics.set_fatal(message, source_file, line);
+                                return;
+                            }
+                        }
+                        ClassMember::Constant(_) => {}
+                    }
+                }
+            }
+            Stmt::Interface(interface) => {
+                let scope = TypeDeclarationScope {
+                    class_name: Some(&interface.name),
+                    parent_name: None,
+                };
+                for property in &interface.properties {
+                    if let Some((message, line)) = type_decl_union_redundant_type_diagnostic(
+                        property.type_decl.as_ref(),
+                        scope,
+                    ) {
+                        diagnostics.set_fatal(message, source_file, line);
+                        return;
+                    }
+                }
+                for method in &interface.methods {
+                    if let Some((message, line)) =
+                        function_union_redundant_type_diagnostic(&method.function, scope)
+                    {
+                        diagnostics.set_fatal(message, source_file, line);
+                        return;
+                    }
+                }
+            }
+            Stmt::Trait(trait_decl) => {
+                let scope = TypeDeclarationScope {
+                    class_name: Some(&trait_decl.name),
+                    parent_name: None,
+                };
+                for property in &trait_decl.properties {
+                    if let Some((message, line)) = type_decl_union_redundant_type_diagnostic(
+                        property.type_decl.as_ref(),
+                        scope,
+                    ) {
+                        diagnostics.set_fatal(message, source_file, line);
+                        return;
+                    }
+                }
+                for method in &trait_decl.methods {
+                    if let Some((message, line)) =
+                        function_union_redundant_type_diagnostic(&method.function, scope)
+                    {
+                        diagnostics.set_fatal(message, source_file, line);
+                        return;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn function_union_redundant_type_diagnostic(
+    function: &FunctionDecl,
+    scope: TypeDeclarationScope<'_>,
+) -> Option<(String, usize)> {
+    function
+        .params
+        .iter()
+        .find_map(|param| {
+            type_decl_union_redundant_type_diagnostic(param.type_decl.as_ref(), scope)
+        })
+        .or_else(|| type_decl_union_redundant_type_diagnostic(function.return_type.as_ref(), scope))
+}
+
+fn type_decl_union_redundant_type_diagnostic(
+    type_decl: Option<&TypeDecl>,
+    scope: TypeDeclarationScope<'_>,
+) -> Option<(String, usize)> {
+    let type_decl = type_decl?;
+    union_redundant_type_message(&type_decl.text, scope)
+        .map(|message| (message, type_decl.span.line))
+}
+
+fn union_redundant_type_message(
+    type_decl: &str,
+    scope: TypeDeclarationScope<'_>,
+) -> Option<String> {
+    let text = type_decl.trim();
+    if let Some(nullable) = text.strip_prefix('?') {
+        let nullable = union_type_decl_normalized_name(nullable);
+        if nullable.eq_ignore_ascii_case("null") {
+            return Some("null cannot be marked as nullable".to_string());
+        }
+    }
+    if !text.contains('|') {
+        return None;
+    }
+
+    let parts: Vec<UnionTypePart> = text
+        .split('|')
+        .map(|part| union_type_part(part, scope))
+        .collect();
+
+    if union_parts_contain(&parts, UnionTypePartKind::True)
+        && union_parts_contain(&parts, UnionTypePartKind::False)
+        && !union_parts_contain(&parts, UnionTypePartKind::Bool)
+    {
+        return Some("Type contains both true and false, bool must be used instead".to_string());
+    }
+    if union_parts_contain(&parts, UnionTypePartKind::Bool) {
+        if union_parts_contain(&parts, UnionTypePartKind::True) {
+            return Some("Duplicate type true is redundant".to_string());
+        }
+        if union_parts_contain(&parts, UnionTypePartKind::False) {
+            return Some("Duplicate type false is redundant".to_string());
+        }
+    }
+    if union_parts_contain(&parts, UnionTypePartKind::Iterable) {
+        if union_parts_contain(&parts, UnionTypePartKind::Array) {
+            return Some("Duplicate type array is redundant".to_string());
+        }
+        if union_parts_contain(&parts, UnionTypePartKind::Traversable) {
+            return Some("Duplicate type Traversable is redundant".to_string());
+        }
+    }
+    if union_parts_contain(&parts, UnionTypePartKind::Object) {
+        if let Some(class_part) = parts
+            .iter()
+            .find(|part| matches!(part.kind, UnionTypePartKind::ClassLike))
+        {
+            return Some(format!(
+                "Type {}|object contains both object and a class type, which is redundant",
+                class_part.display
+            ));
+        }
+    }
+
+    let mut seen: Vec<&UnionTypePart> = Vec::new();
+    for part in &parts {
+        if seen.iter().any(|seen_part| seen_part.key == part.key) {
+            return Some(format!("Duplicate type {} is redundant", part.display));
+        }
+        seen.push(part);
+    }
+    None
+}
+
+fn union_parts_contain(parts: &[UnionTypePart], kind: UnionTypePartKind) -> bool {
+    parts.iter().any(|part| part.kind == kind)
+}
+
+fn union_type_part(part: &str, scope: TypeDeclarationScope<'_>) -> UnionTypePart {
+    let normalized = union_type_decl_normalized_name(part);
+    let lower = normalized.to_ascii_lowercase();
+    match lower.as_str() {
+        "bool" | "boolean" => union_builtin_type_part("bool", UnionTypePartKind::Bool),
+        "true" => union_builtin_type_part("true", UnionTypePartKind::True),
+        "false" => union_builtin_type_part("false", UnionTypePartKind::False),
+        "iterable" => union_builtin_type_part("iterable", UnionTypePartKind::Iterable),
+        "array" => union_builtin_type_part("array", UnionTypePartKind::Array),
+        "traversable" => union_builtin_type_part("Traversable", UnionTypePartKind::Traversable),
+        "object" => union_builtin_type_part("object", UnionTypePartKind::Object),
+        "int" | "integer" => union_builtin_type_part("int", UnionTypePartKind::Other),
+        "float" | "double" => union_builtin_type_part("float", UnionTypePartKind::Other),
+        "string" => union_builtin_type_part("string", UnionTypePartKind::Other),
+        "null" => union_builtin_type_part("null", UnionTypePartKind::Other),
+        "callable" => union_builtin_type_part("callable", UnionTypePartKind::Other),
+        "void" => union_builtin_type_part("void", UnionTypePartKind::Other),
+        "never" => union_builtin_type_part("never", UnionTypePartKind::Other),
+        "mixed" => union_builtin_type_part("mixed", UnionTypePartKind::Other),
+        "self" => {
+            let display = scope.class_name.unwrap_or(normalized).to_string();
+            UnionTypePart {
+                key: display.to_ascii_lowercase(),
+                display,
+                kind: UnionTypePartKind::ClassLike,
+            }
+        }
+        "parent" => {
+            let display = scope.parent_name.unwrap_or(normalized).to_string();
+            UnionTypePart {
+                key: display.to_ascii_lowercase(),
+                display,
+                kind: UnionTypePartKind::ClassLike,
+            }
+        }
+        "static" => UnionTypePart {
+            key: "static".to_string(),
+            display: "static".to_string(),
+            kind: UnionTypePartKind::ClassLike,
+        },
+        _ => UnionTypePart {
+            key: normalized.to_ascii_lowercase(),
+            display: normalized.to_string(),
+            kind: UnionTypePartKind::ClassLike,
+        },
+    }
+}
+
+fn union_builtin_type_part(display: &str, kind: UnionTypePartKind) -> UnionTypePart {
+    UnionTypePart {
+        key: display.to_ascii_lowercase(),
+        display: display.to_string(),
+        kind,
+    }
+}
+
+fn union_type_decl_normalized_name(type_name: &str) -> &str {
+    let name = type_name.trim();
+    let name = name.strip_prefix('?').unwrap_or(name);
+    name.strip_prefix('\\').unwrap_or(name)
 }
 
 fn collect_invalid_intersection_type_startup_diagnostics(
