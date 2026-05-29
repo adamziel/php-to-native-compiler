@@ -65992,12 +65992,15 @@ fn is_array_builtin(name: &str) -> bool {
             | "array_flip"
             | "array_change_key_case"
             | "array_column"
+            | "array_fill"
             | "array_fill_keys"
             | "array_combine"
             | "array_intersect_key"
             | "array_diff_key"
             | "array_diff"
+            | "array_diff_assoc"
             | "array_intersect"
+            | "array_intersect_assoc"
             | "array_unique"
             | "array_count_values"
             | "array_sum"
@@ -66353,12 +66356,15 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "array_flip",
     "array_change_key_case",
     "array_column",
+    "array_fill",
     "array_fill_keys",
     "array_combine",
     "array_intersect_key",
     "array_diff_key",
     "array_diff",
+    "array_diff_assoc",
     "array_intersect",
+    "array_intersect_assoc",
     "array_unique",
     "array_count_values",
     "array_sum",

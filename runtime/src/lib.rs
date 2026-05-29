@@ -28334,6 +28334,7 @@ pub struct PhpArray {
 }
 
 const ARRAY_PAD_MAX_PADDING: u64 = 1_048_576;
+const ARRAY_FILL_MAX_COUNT: i64 = 1_048_576;
 const PHP_ARRAY_KEY_INDEX_THRESHOLD: usize = 64;
 
 impl PartialEq for PhpArray {
@@ -29557,6 +29558,33 @@ impl PhpArray {
         Ok(array)
     }
 
+    pub fn filled_from(start_key: i64, count: i64, value: Value) -> RuntimeResult<Self> {
+        if count < 0 {
+            return Err(RuntimeError::unsupported_call(
+                "array_fill()",
+                "Argument #2 ($count) must be greater than or equal to 0",
+            ));
+        }
+        if count > ARRAY_FILL_MAX_COUNT {
+            return Err(RuntimeError::unsupported_call(
+                "array_fill()",
+                "Argument #2 ($count) is too large",
+            ));
+        }
+
+        let mut array = Self::new();
+        for offset in 0..count {
+            let key = start_key.checked_add(offset).ok_or_else(|| {
+                RuntimeError::unsupported_call(
+                    "array_fill()",
+                    "start_index plus count exceeds integer key range in the current subset",
+                )
+            })?;
+            array.insert(key, value.clone());
+        }
+        Ok(array)
+    }
+
     pub fn combined_with(&self, values: &Self) -> RuntimeResult<Self> {
         if self.entries.len() != values.entries.len() {
             return Err(RuntimeError::unsupported_call(
@@ -29653,6 +29681,35 @@ impl PhpArray {
         Ok(array)
     }
 
+    pub fn diff_assoc_with_all<'a>(
+        &self,
+        others: impl IntoIterator<Item = &'a Self>,
+    ) -> RuntimeResult<Self> {
+        let left_values = self
+            .entries
+            .iter()
+            .map(|entry| {
+                let value = entry.value_cloned();
+                array_scalar_string_comparison_value("array_diff_assoc()", &value)
+            })
+            .collect::<RuntimeResult<Vec<_>>>()?;
+        let other_entries = array_assoc_comparison_entries("array_diff_assoc()", others)?;
+
+        let mut array = Self::new();
+        for (entry, left_value) in self.entries.iter().zip(left_values.iter()) {
+            if other_entries.iter().all(|entries| {
+                !entries.iter().any(|(right_key, right_value)| {
+                    right_key == &entry.key && right_value == left_value
+                })
+            }) {
+                array.insert(entry.key.clone(), entry.value_cloned());
+            }
+        }
+        array.inherit_append_cursor_from(self);
+
+        Ok(array)
+    }
+
     pub fn intersect_values_with(&self, right: &Self) -> RuntimeResult<Self> {
         self.intersect_values_with_all([right])
     }
@@ -29685,6 +29742,35 @@ impl PhpArray {
                 .iter()
                 .all(|values| values.iter().any(|right_value| right_value == left_value))
             {
+                array.insert(entry.key.clone(), entry.value_cloned());
+            }
+        }
+        array.inherit_append_cursor_from(self);
+
+        Ok(array)
+    }
+
+    pub fn intersect_assoc_with_all<'a>(
+        &self,
+        others: impl IntoIterator<Item = &'a Self>,
+    ) -> RuntimeResult<Self> {
+        let left_values = self
+            .entries
+            .iter()
+            .map(|entry| {
+                let value = entry.value_cloned();
+                array_scalar_string_comparison_value("array_intersect_assoc()", &value)
+            })
+            .collect::<RuntimeResult<Vec<_>>>()?;
+        let other_entries = array_assoc_comparison_entries("array_intersect_assoc()", others)?;
+
+        let mut array = Self::new();
+        for (entry, left_value) in self.entries.iter().zip(left_values.iter()) {
+            if other_entries.iter().all(|entries| {
+                entries.iter().any(|(right_key, right_value)| {
+                    right_key == &entry.key && right_value == left_value
+                })
+            }) {
                 array.insert(entry.key.clone(), entry.value_cloned());
             }
         }
@@ -30001,6 +30087,28 @@ fn array_scalar_value_supported(callable: &str, value: &Value) -> RuntimeResult<
         | Value::String(_)
         | Value::BinaryString(_) => Ok(()),
     }
+}
+
+fn array_assoc_comparison_entries<'a>(
+    callable: &str,
+    arrays: impl IntoIterator<Item = &'a PhpArray>,
+) -> RuntimeResult<Vec<Vec<(ArrayKey, Vec<u8>)>>> {
+    arrays
+        .into_iter()
+        .map(|array| {
+            array
+                .entries
+                .iter()
+                .map(|entry| {
+                    let value = entry.value_cloned();
+                    Ok((
+                        entry.key.clone(),
+                        array_scalar_string_comparison_value(callable, &value)?,
+                    ))
+                })
+                .collect::<RuntimeResult<Vec<_>>>()
+        })
+        .collect()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

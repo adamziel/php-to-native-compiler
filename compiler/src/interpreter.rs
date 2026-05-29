@@ -71823,6 +71823,16 @@ impl Interpreter {
                     )),
                 }
             }
+            "array_fill" => {
+                expect_arity(name, &args, 3, span)?;
+                let start_key =
+                    php_internal_int_argument("array_fill()", 1, "start_index", &args[0], span)?;
+                let count =
+                    php_internal_int_argument("array_fill()", 2, "count", &args[1], span)?;
+                PhpArray::filled_from(start_key, count, args[2].clone())
+                    .map(Value::Array)
+                    .map_err(|error| runtime_error(span, error))
+            }
             "array_fill_keys" => {
                 expect_arity(name, &args, 2, span)?;
                 match &args[0] {
@@ -71978,6 +71988,45 @@ impl Interpreter {
                     .map(Value::Array)
                     .map_err(|error| runtime_error(span, error))
             }
+            "array_diff_assoc" => {
+                if args.len() < 2 {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::arity_mismatch(
+                            "array_diff_assoc()",
+                            ArityExpectation::AtLeast(2),
+                            args.len(),
+                        ),
+                    ));
+                }
+
+                let mut arrays = Vec::with_capacity(args.len());
+                for (index, arg) in args.iter().enumerate() {
+                    match arg {
+                        Value::Array(array) => arrays.push(array),
+                        other => {
+                            return Err(runtime_error(
+                                span,
+                                RuntimeError::unsupported_call(
+                                    "array_diff_assoc()",
+                                    format!(
+                                        "{} must be array, got {}",
+                                        positional_argument_label(index),
+                                        other.type_name()
+                                    ),
+                                ),
+                            ));
+                        }
+                    }
+                }
+
+                let (left, others) = arrays
+                    .split_first()
+                    .expect("array_diff_assoc requires at least two arrays");
+                left.diff_assoc_with_all(others.iter().copied())
+                    .map(Value::Array)
+                    .map_err(|error| runtime_error(span, error))
+            }
             "array_intersect" => {
                 if args.len() < 2 {
                     return Err(runtime_error(
@@ -72014,6 +72063,45 @@ impl Interpreter {
                     .split_first()
                     .expect("array_intersect requires at least two arrays");
                 left.intersect_values_with_all(others.iter().copied())
+                    .map(Value::Array)
+                    .map_err(|error| runtime_error(span, error))
+            }
+            "array_intersect_assoc" => {
+                if args.len() < 2 {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::arity_mismatch(
+                            "array_intersect_assoc()",
+                            ArityExpectation::AtLeast(2),
+                            args.len(),
+                        ),
+                    ));
+                }
+
+                let mut arrays = Vec::with_capacity(args.len());
+                for (index, arg) in args.iter().enumerate() {
+                    match arg {
+                        Value::Array(array) => arrays.push(array),
+                        other => {
+                            return Err(runtime_error(
+                                span,
+                                RuntimeError::unsupported_call(
+                                    "array_intersect_assoc()",
+                                    format!(
+                                        "{} must be array, got {}",
+                                        positional_argument_label(index),
+                                        other.type_name()
+                                    ),
+                                ),
+                            ));
+                        }
+                    }
+                }
+
+                let (left, others) = arrays
+                    .split_first()
+                    .expect("array_intersect_assoc requires at least two arrays");
+                left.intersect_assoc_with_all(others.iter().copied())
                     .map(Value::Array)
                     .map_err(|error| runtime_error(span, error))
             }
@@ -82399,6 +82487,21 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_param("array", "array"),
             ],
         ),
+        "array_fill" => (
+            "array",
+            vec![
+                reflection_internal_param("start_index", "int"),
+                reflection_internal_param("count", "int"),
+                reflection_internal_param("value", "mixed"),
+            ],
+        ),
+        "array_diff_assoc" | "array_intersect_assoc" => (
+            "array",
+            vec![
+                reflection_internal_param("array", "array"),
+                reflection_internal_variadic_param("arrays", "array"),
+            ],
+        ),
         "array_pop" => (
             "mixed",
             vec![reflection_internal_reference_param("array", "array")],
@@ -84445,6 +84548,8 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
     let (function, message) = unsupported.split_once(": ")?;
     match (function, message) {
         ("str_repeat()", "Argument #2 ($times) must be greater than or equal to 0")
+        | ("array_fill()", "Argument #2 ($count) must be greater than or equal to 0")
+        | ("array_fill()", "Argument #2 ($count) is too large")
         | ("chunk_split()", "Argument #2 ($length) must be greater than 0")
         | ("str_split()", "Argument #2 ($length) must be greater than 0")
         | ("strncmp()", "Argument #3 ($length) must be greater than or equal to 0")
@@ -84945,12 +85050,15 @@ fn is_builtin(name: &str) -> bool {
             | "array_merge"
             | "array_replace"
             | "array_flip"
+            | "array_fill"
             | "array_fill_keys"
             | "array_combine"
             | "array_intersect_key"
             | "array_diff_key"
             | "array_diff"
+            | "array_diff_assoc"
             | "array_intersect"
+            | "array_intersect_assoc"
             | "array_unique"
             | "array_count_values"
             | "array_sum"
