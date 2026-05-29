@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-29 08:25 CEST
+Updated: 2026-05-29 08:42 CEST
 Primary branch: `master`
-Latest source head: `0cc3315f fix: add fputcsv and local file semantics`
+Latest source head: `0314134d fix: add pathinfo basename dirname semantics`
 
 ## Progress Score
 
@@ -135,7 +135,7 @@ stable pinned denominator and does not use the raw runner
 | Batch007 checkpoint10 sharded gate | Done | 2047 / 20294 pinned runnable PHPTs passed (10.09%); 0 regressions from Batch006 checkpoint10 PASS set; run id `phpt-full-batch007-checkpoint10-sharded-20260529T034255Z-php-src-f97ff59-public-906b4636-source-906b4636-stack10` |
 | Batch007 source batch | Complete | Source checkpoints accepted: 10 / 10; checkpoint10 regression-repair sharded gate published |
 | Batch008 checkpoint5 sharded gate | Done | 2180 / 20294 pinned runnable PHPTs passed (10.74%); 0 regressions from Batch007 PASS set; run id `phpt-full-batch008-checkpoint5-sharded-20260529T051801Z-php-src-f97ff59-public-0855b815-source-f408875f` |
-| Batch008 source batch | Started | Source checkpoints accepted: 7 / 10; checkpoint1 is `strncmp()` / `strncasecmp()` focused source proof; checkpoint2 is bcmath `bcmod()` / `bcpow()` / `bcpowmod()` / `bcsqrt()` focused source proof; checkpoint3 is `tempnam()` / `sys_get_temp_dir()` focused source proof; checkpoint4 is bounded date/timezone focused source proof; checkpoint5 is `SplObjectStorage` identity-map focused source proof; checkpoint5 sharded gate published; checkpoint6 is `strrpos()` / `strripos()` focused source proof; checkpoint7 is `fputcsv()` plus local file stream semantics focused source proof |
+| Batch008 source batch | Started | Source checkpoints accepted: 8 / 10; checkpoint1 is `strncmp()` / `strncasecmp()` focused source proof; checkpoint2 is bcmath `bcmod()` / `bcpow()` / `bcpowmod()` / `bcsqrt()` focused source proof; checkpoint3 is `tempnam()` / `sys_get_temp_dir()` focused source proof; checkpoint4 is bounded date/timezone focused source proof; checkpoint5 is `SplObjectStorage` identity-map focused source proof; checkpoint5 sharded gate published; checkpoint6 is `strrpos()` / `strripos()` focused source proof; checkpoint7 is `fputcsv()` plus local file stream semantics focused source proof; checkpoint8 is `pathinfo()` / `basename()` / `dirname()` focused source proof |
 
 Focused PHPT history is tracked separately in
 `/home/claude/supervised-php-compiler/state/php-core-suite-focused-history.tsv`.
@@ -143,45 +143,46 @@ Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
 
-Batch008 source checkpoint 7 is primary-integrated under AO supervision. This
+Batch008 source checkpoint 8 is primary-integrated under AO supervision. This
 is focused source proof, not a public percentage change. The public PHPT score
 remains **2180 / 20294 pinned runnable PHPTs = 10.74%** until the next
 supervisor-approved pinned aggregate gate is completed, regression-checked,
 and published here.
 
 - primary source head:
-  `0cc3315f fix: add fputcsv and local file semantics`
+  `0314134d fix: add pathinfo basename dirname semantics`
 - reviewed and integration patch:
-  `/home/claude/supervised-php-compiler/state/patches/ao-integration-p43-fputcsv-successor3-678f8702-20260529.patch`
+  `/home/claude/supervised-php-compiler/state/patches/ao-integration-p43-pathinfo-basename-dirname-2055c6e7-20260529.patch`
 - reviewed and integration patch SHA256:
-  `25867856657028c82c425b22b99e9edb55043e3a5d7e6c582c685d2776179026`
-- reviewer gate: phpc-52 completed current-public `678f8702` proof for p43
-  `fputcsv()` successor3; artifacts:
-  `/home/claude/supervised-php-compiler/state/workers/batch008-review-p43-fputcsv-successor3-678f8702-phpc52-20260529.{status.md,report.md,gates.log}`
-- critic gate: phpc-33 recorded `SAFE-FOR-INTEGRATION` for the exact patch
-  SHA on current public `678f8702`; artifacts:
-  `/home/claude/supervised-php-compiler/state/workers/batch008-critic-p43-fputcsv-successor3-678f8702-phpc33-20260529.{status.md,report.md}`
+  `05db171af9f32da038c440c51c65bb1e4af78f3b3ca5a8e46888c778ff1ee7c8`
+- reviewer gate: phpc-18 completed current-public `2055c6e7` proof for p43
+  `pathinfo()` / `basename()` / `dirname()`; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/batch008-review-p43-pathinfo-basename-dirname-2055c6e7-phpc18-20260529.{status.md,report.md,gates.log}`
+- critic gate: phpc-54 recorded `SAFE-FOR-INTEGRATION` for the exact patch
+  SHA on current public `2055c6e7`; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/batch008-critic-p43-pathinfo-basename-dirname-2055c6e7-phpc54-20260529.{status.md,report.md}`
 - handoff gate: p38 completed scratch/no-primary handoff preflight on public
-  `678f8702` with SHA verification, clean apply, docs/`PROGRESS.md`/
+  `2055c6e7` with SHA verification, clean apply, docs/`PROGRESS.md`/
   examples exclusion, consumed-scope scan, production exact-shape scan, diff
   check, reverse-apply check, and exported patch proof; artifacts:
-  `/home/claude/supervised-php-compiler/state/workers/ao-integration-p43-fputcsv-successor3-678f8702-20260529.{status.md,report.md,gates.log}`
+  `/home/claude/supervised-php-compiler/state/workers/ao-integration-p43-pathinfo-basename-dirname-2055c6e7-20260529.{status.md,report.md,gates.log}`
 - supervisor focused gates: PASS for SHA sidecar verification, clean apply
-  over public `678f8702`, `git diff --cached --check`, docs/`PROGRESS.md`/
+  over public `2055c6e7`, `git diff --cached --check`, docs/`PROGRESS.md`/
   examples exclusion, production exact-shape audit, consumed-scope audit,
-  `cargo fmt`, focused Rust `standard_file_csv_split_builtins` and
-  `stream_resource_builtin`, `phpc` binary build, `cargo check`, and the
-  focused PHP core PHPT cluster under `ext/standard/tests/file` with 12 PASS
-  and 0 FAIL
+  `cargo fmt`, focused Rust `path_builtins` and
+  `object_model legacy_var_properties_are_public_untyped_slots`, `phpc`
+  binary build, `cargo check`, and the focused PHP core PHPT path/basename/
+  dirname cluster with 10 PASS and 0 FAIL
 - public progress gate: not run for this source checkpoint; focused proof is
   candidate evidence only
 
-This checkpoint implements generalized bounded support for `fputcsv()` and
-local writable file stream semantics needed by the pinned PHPT cluster,
-including CSV separator/enclosure/escape validation, field serialization,
-line-ending handling, byte-count returns, and native stream-resource rejection
-guards. It is not keyed to PHPT filenames, expected output, fixture names,
-public hashes, batch labels, or checkpoint markers.
+This checkpoint implements generalized bounded support for path parsing helpers
+`pathinfo()`, `basename()`, and `dirname()`, including scalar/null string
+conversion, PATHINFO flag validation, suffix stripping, extension/filename
+derivation, repeated slash handling, level validation for `dirname()`, and
+dynamic callable / reflection metadata. It is not keyed to PHPT filenames,
+expected output, fixture names, public hashes, batch labels, or checkpoint
+markers.
 
 Batch008 source checkpoint 5 is primary-integrated under AO supervision and
 published through a supervisor-approved sharded publication gate. The public
