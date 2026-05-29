@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-29 12:57 CEST
+Updated: 2026-05-29 13:01 CEST
 Primary branch: `master`
-Latest source head: `f03a2e26 fix: add strrchr builtin`
+Latest source head: `5e0a6d49 fix: add bcmath number and divmod support`
 
 ## Progress Score
 
@@ -166,13 +166,48 @@ pinned denominator and does not use the raw runner
 | Batch008 source batch | Complete | Source checkpoints accepted: 10 / 10; checkpoint1 is `strncmp()` / `strncasecmp()` focused source proof; checkpoint2 is bcmath `bcmod()` / `bcpow()` / `bcpowmod()` / `bcsqrt()` focused source proof; checkpoint3 is `tempnam()` / `sys_get_temp_dir()` focused source proof; checkpoint4 is bounded date/timezone focused source proof; checkpoint5 is `SplObjectStorage` identity-map focused source proof; checkpoint5 sharded gate published; checkpoint6 is `strrpos()` / `strripos()` focused source proof; checkpoint7 is `fputcsv()` plus local file stream semantics focused source proof; checkpoint8 is `pathinfo()` / `basename()` / `dirname()` focused source proof; checkpoint9 is `vprintf()` focused source proof; checkpoint10 is `stripos()` focused source proof; checkpoint10 bug60598 repair gate published |
 | Batch009 burst1 sharded gate | Done | 2388 / 20294 pinned runnable PHPTs passed (11.77%); 0 regressions from Batch008 checkpoint10 PASS set; run id `phpt-full-batch009-burst1-sharded-20260529T095210Z-php-src-f97ff59-public-e0a15776-source-731c73cc` |
 | Batch009 source burst | Complete | Checkpoint1 is p47 `sizeof()` alias / `array_chunk` metadata focused source proof (+25 expected direct rows); checkpoint2 is p43 `fflush()` / `ftruncate()` focused source proof (+15 expected direct rows); checkpoint3 is p42 `fprintf()` / `vfprintf()` focused source proof (+14 expected direct rows); checkpoint4 is p39 OPcache bounded introspection focused source proof (+11 expected direct rows); checkpoint5 is p63 slash/cslash and bounded `strcmp()` focused source proof (+12 expected direct rows); burst total was +77 expected direct rows; burst1 sharded gate published 2388 / 20294 |
-| Batch010 source batch | Active | Checkpoint1 is p66 `bcround()` / bounded `RoundingMode` focused source proof (+11 expected direct rows); checkpoint2 is p51 generator `yield from` / `Generator::getReturn()` / yielded key preservation focused source proof (+10 expected direct rows); checkpoint3 is p50 `ReflectionAttribute` / `getAttributes()` focused source proof (+10 expected direct rows); checkpoint4 is p43 `disk_free_space()` / `disk_total_space()` / `is_executable()` focused source proof (+12 expected direct rows); checkpoint5 is p15 typed-property startup diagnostics focused source proof (+13 expected direct rows); checkpoint6 is p42 selected `strspn()` / `strcspn()` focused source proof (+11 expected direct rows); checkpoint7 is p39 `ReflectionFunction` / `ReflectionMethod` metadata focused source proof (+10 expected direct rows); checkpoint8 is p42 selected `strrchr()` focused source proof (+10 expected direct rows); batch total is 8 / 10 checkpoints and +87 expected direct rows toward the next pinned full-suite gate |
+| Batch010 source batch | Active | Checkpoint1 is p66 `bcround()` / bounded `RoundingMode` focused source proof (+11 expected direct rows); checkpoint2 is p51 generator `yield from` / `Generator::getReturn()` / yielded key preservation focused source proof (+10 expected direct rows); checkpoint3 is p50 `ReflectionAttribute` / `getAttributes()` focused source proof (+10 expected direct rows); checkpoint4 is p43 `disk_free_space()` / `disk_total_space()` / `is_executable()` focused source proof (+12 expected direct rows); checkpoint5 is p15 typed-property startup diagnostics focused source proof (+13 expected direct rows); checkpoint6 is p42 selected `strspn()` / `strcspn()` focused source proof (+11 expected direct rows); checkpoint7 is p39 `ReflectionFunction` / `ReflectionMethod` metadata focused source proof (+10 expected direct rows); checkpoint8 is p42 selected `strrchr()` focused source proof (+10 expected direct rows); checkpoint9 is p66 `bcdivmod()` / `BcMath\Number` focused source proof (+22 expected direct rows); batch total is 9 / 10 checkpoints and +109 expected direct rows toward the next pinned full-suite gate |
 
 Focused PHPT history is tracked separately in
 `/home/claude/supervised-php-compiler/state/php-core-suite-focused-history.tsv`.
 Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
+
+Batch010 source batch checkpoint9 is primary-integrated under AO supervision.
+This is focused source proof, not a public percentage change. The public PHPT
+score remains **2388 / 20294 pinned runnable PHPTs = 11.77%** until the next
+10-checkpoint batch gate is completed, regression-checked, and published here.
+
+- primary source head:
+  `5e0a6d49 fix: add bcmath number and divmod support`
+- reviewed and integration patch:
+  `/home/claude/supervised-php-compiler/state/patches/batch010-author-p66-bcmath-number-divmod-bafde04c-phpc66-20260529.patch`
+- reviewed and integration patch SHA256:
+  `ca5d3231befc15611f475d0f36c7a303c9d0ef33d5d2663d0eda63b546910642`
+- reviewer gate: phpc-52 completed current-public FINAL GO for p66
+  `bcdivmod()` / `BcMath\Number` on `6e90925a`; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/batch010-review-p66-bcmath-number-divmod-6e90925a-plus22-phpc52-20260529.{status.md,report.md,gates.log}`
+- critic gate: phpc-55 recorded current-public `SAFE-FOR-INTEGRATION` for
+  the same patch SHA on `6e90925a`
+- handoff gate: p38 completed scratch/no-primary handoff with SHA
+  verification, clean apply/index, source-equivalence proof, exclusions,
+  diff check, production exact-shape scan, consumed-scope scan, and reverse
+  apply proof; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/ao-integration-batch010-p66-bcmath-number-divmod-6e90925a-20260529.{status.md,report.md,gates.log}`
+- supervisor focused gates: PASS for SHA verification, clean apply over
+  `41f8eb91`, `git diff --check`, patch-scope docs/`PROGRESS.md`/examples
+  exclusion, production exact-shape audit, consumed-scope audit, `cargo fmt`,
+  focused Rust bcmath/runtime gates, `phpc` binary build, `cargo check`, and
+  focused PHP core bcmath Number/divmod PHPT cluster with 22 PASS and 0 FAIL
+- public progress gate: not run for this source checkpoint; focused proof is
+  candidate evidence for the next 10-checkpoint batch gate
+
+This checkpoint implements generalized residual bcmath support for
+`bcdivmod()` and the current `BcMath\Number` object method subset through the
+interpreter/runtime metadata and existing decimal helpers. It is not keyed to
+PHPT filenames, expected output, fixture names, public hashes, batch labels,
+or checkpoint markers.
 
 Batch010 source batch checkpoint8 is primary-integrated under AO supervision.
 This is focused source proof, not a public percentage change. The public PHPT
