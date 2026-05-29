@@ -174,6 +174,7 @@ struct Interpreter {
     reflection_properties: HashMap<i64, ReflectionPropertyState>,
     reflection_named_types: HashMap<i64, ReflectionNamedTypeState>,
     reflection_compound_types: HashMap<i64, ReflectionCompoundTypeState>,
+    spl_object_storages: HashMap<i64, SplObjectStorageState>,
     source_file: Option<String>,
     main_source_file: Option<String>,
     max_execution_steps: Option<usize>,
@@ -421,6 +422,18 @@ struct MysqliResultState {
     row_cursor: usize,
     field_cursor: usize,
     last_lengths: Option<Vec<usize>>,
+}
+
+#[derive(Debug, Clone, Default)]
+struct SplObjectStorageState {
+    entries: Vec<SplObjectStorageEntry>,
+    cursor: usize,
+}
+
+#[derive(Debug, Clone)]
+struct SplObjectStorageEntry {
+    object: PhpObject,
+    info: Value,
 }
 
 #[derive(Debug, Clone)]
@@ -1617,6 +1630,8 @@ const CORE_INTERFACE_NAMES: &[&str] = &[
     "ArrayAccess",
     "Countable",
     "Stringable",
+    "SplObserver",
+    "SplSubject",
 ];
 
 fn is_core_interface_name(name: &str) -> bool {
@@ -8855,6 +8870,7 @@ impl Interpreter {
             reflection_properties: HashMap::new(),
             reflection_named_types: HashMap::new(),
             reflection_compound_types: HashMap::new(),
+            spl_object_storages: HashMap::new(),
             main_source_file: source_file.clone(),
             source_file,
             max_execution_steps: options.max_execution_steps,
@@ -8977,6 +8993,24 @@ impl Interpreter {
             || self
                 .classes
                 .implements_interface(class_id, "IteratorAggregate")
+    }
+
+    fn is_spl_object_storage_class_id(&self, class_id: ClassId) -> bool {
+        self.classes
+            .lookup_class_id("SplObjectStorage")
+            .is_some_and(|storage_id| {
+                class_id == storage_id || self.classes.is_subclass_of(class_id, storage_id)
+            })
+    }
+
+    fn is_spl_object_storage_object(&self, object: &PhpObject) -> bool {
+        self.is_spl_object_storage_class_id(object.class_id())
+    }
+
+    fn resolved_method_is_core_spl_object_storage(&self, class_id: ClassId) -> bool {
+        self.classes
+            .lookup_class_id("SplObjectStorage")
+            .is_some_and(|storage_id| class_id == storage_id)
     }
 
     fn by_reference_foreach_variable_root(
@@ -9898,6 +9932,12 @@ impl Interpreter {
         }
 
         self.ensure_instance_method_visible(class_id, &class_name, method_name, visibility, span)?;
+
+        if self.resolved_method_is_core_spl_object_storage(class_id) {
+            return self
+                .call_spl_object_storage_method_with_values(object, method_name, Vec::new(), span)
+                .map(|value| (value, None));
+        }
 
         let function = self.method_function(class_id, &class_name, &resolved_method_name, span)?;
         let function = function.as_ref();
@@ -11033,14 +11073,8 @@ impl Interpreter {
                 Ok((value, None))
             }
             Value::Object(object) => {
-                let key_value = self.evaluate(index, scope)?;
-                let (offset_arg, copy_source_key) = if matches!(key_value, Value::Null) {
-                    (Value::Null, Some(Self::array_access_append_reference_key()))
-                } else {
-                    let key = ArrayKey::from_value(&key_value)
-                        .map_err(|error| runtime_error(index.span(), error))?;
-                    (Self::array_key_value(Some(key.clone())), Some(key))
-                };
+                let (offset_arg, copy_source_key) =
+                    self.array_access_offset_arg_for_object_index(&object, index, scope)?;
                 let (value, executed_source) = self
                     .call_array_access_offset_get_with_array_copy_source(
                         object.clone(),
@@ -12186,6 +12220,354 @@ impl Interpreter {
                     )),
                 )
             })
+    }
+
+    fn spl_object_storage_state(
+        &self,
+        object: &PhpObject,
+        method_name: &str,
+        span: Span,
+    ) -> CompileResult<&SplObjectStorageState> {
+        self.spl_object_storages.get(&object.id()).ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("SplObjectStorage::{method_name}()"),
+                    "missing SplObjectStorage runtime state",
+                ),
+            )
+        })
+    }
+
+    fn spl_object_storage_state_mut(
+        &mut self,
+        object: &PhpObject,
+        method_name: &str,
+        span: Span,
+    ) -> CompileResult<&mut SplObjectStorageState> {
+        self.spl_object_storages
+            .get_mut(&object.id())
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        format!("SplObjectStorage::{method_name}()"),
+                        "missing SplObjectStorage runtime state",
+                    ),
+                )
+            })
+    }
+
+    fn spl_object_storage_object_argument(
+        method_name: &str,
+        args: &[Value],
+        index: usize,
+        span: Span,
+    ) -> CompileResult<PhpObject> {
+        match args.get(index) {
+            Some(Value::Object(object)) => Ok(object.clone()),
+            Some(other) => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("SplObjectStorage::{method_name}()"),
+                    format!(
+                        "SplObjectStorage::{method_name}(): Argument #{} ($object) must be of type object, {} given",
+                        index + 1,
+                        other.type_name()
+                    ),
+                ),
+            )),
+            None => Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    format!("SplObjectStorage::{method_name}()"),
+                    ArityExpectation::AtLeast(index + 1),
+                    args.len(),
+                ),
+            )),
+        }
+    }
+
+    fn spl_object_storage_argument(
+        &self,
+        method_name: &str,
+        args: &[Value],
+        index: usize,
+        span: Span,
+    ) -> CompileResult<PhpObject> {
+        let object = Self::spl_object_storage_object_argument(method_name, args, index, span)?;
+        if self.is_spl_object_storage_object(&object) {
+            Ok(object)
+        } else {
+            Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("SplObjectStorage::{method_name}()"),
+                    format!(
+                        "argument #{} must be a SplObjectStorage instance, got {}",
+                        index + 1,
+                        object.class_name()
+                    ),
+                ),
+            ))
+        }
+    }
+
+    fn spl_object_storage_insert_or_update(
+        state: &mut SplObjectStorageState,
+        object: PhpObject,
+        info: Value,
+    ) {
+        if let Some(entry) = state
+            .entries
+            .iter_mut()
+            .find(|entry| entry.object.id() == object.id())
+        {
+            entry.info = info;
+        } else {
+            state.entries.push(SplObjectStorageEntry { object, info });
+        }
+    }
+
+    fn spl_object_storage_remove(state: &mut SplObjectStorageState, object_id: i64) {
+        if let Some(index) = state
+            .entries
+            .iter()
+            .position(|entry| entry.object.id() == object_id)
+        {
+            state.entries.remove(index);
+            if state.cursor > index {
+                state.cursor -= 1;
+            }
+            if state.cursor > state.entries.len() {
+                state.cursor = state.entries.len();
+            }
+        }
+    }
+
+    fn call_spl_object_storage_method_with_values(
+        &mut self,
+        object: PhpObject,
+        method_name: &str,
+        args: Vec<Value>,
+        span: Span,
+    ) -> CompileResult<Value> {
+        match method_name.to_ascii_lowercase().as_str() {
+            "__construct" => {
+                expect_arity("SplObjectStorage::__construct", &args, 0, span)?;
+                Ok(Value::Null)
+            }
+            "attach" | "offsetset" => {
+                if !(args.len() == 1 || args.len() == 2) {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::arity_mismatch(
+                            format!("SplObjectStorage::{method_name}()"),
+                            ArityExpectation::Between { min: 1, max: 2 },
+                            args.len(),
+                        ),
+                    ));
+                }
+                let stored_object =
+                    Self::spl_object_storage_object_argument(method_name, &args, 0, span)?;
+                let info = args.get(1).cloned().unwrap_or(Value::Null);
+                let state = self.spl_object_storage_state_mut(&object, method_name, span)?;
+                Self::spl_object_storage_insert_or_update(state, stored_object, info);
+                Ok(Value::Null)
+            }
+            "detach" | "offsetunset" => {
+                expect_arity(&format!("SplObjectStorage::{method_name}"), &args, 1, span)?;
+                let stored_object =
+                    Self::spl_object_storage_object_argument(method_name, &args, 0, span)?;
+                let state = self.spl_object_storage_state_mut(&object, method_name, span)?;
+                Self::spl_object_storage_remove(state, stored_object.id());
+                Ok(Value::Null)
+            }
+            "contains" | "offsetexists" => {
+                expect_arity(&format!("SplObjectStorage::{method_name}"), &args, 1, span)?;
+                let stored_object =
+                    Self::spl_object_storage_object_argument(method_name, &args, 0, span)?;
+                let state = self.spl_object_storage_state(&object, method_name, span)?;
+                Ok(Value::Bool(
+                    state
+                        .entries
+                        .iter()
+                        .any(|entry| entry.object.id() == stored_object.id()),
+                ))
+            }
+            "offsetget" => {
+                expect_arity("SplObjectStorage::offsetGet", &args, 1, span)?;
+                let stored_object =
+                    Self::spl_object_storage_object_argument(method_name, &args, 0, span)?;
+                let state = self.spl_object_storage_state(&object, method_name, span)?;
+                state
+                    .entries
+                    .iter()
+                    .find(|entry| entry.object.id() == stored_object.id())
+                    .map(|entry| entry.info.clone())
+                    .ok_or_else(|| {
+                        runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "SplObjectStorage::offsetGet()",
+                                "Object not found",
+                            ),
+                        )
+                    })
+            }
+            "count" => {
+                expect_arity("SplObjectStorage::count", &args, 0, span)?;
+                let state = self.spl_object_storage_state(&object, method_name, span)?;
+                Ok(Value::Int(state.entries.len() as i64))
+            }
+            "rewind" => {
+                expect_arity("SplObjectStorage::rewind", &args, 0, span)?;
+                let state = self.spl_object_storage_state_mut(&object, method_name, span)?;
+                state.cursor = 0;
+                Ok(Value::Null)
+            }
+            "valid" => {
+                expect_arity("SplObjectStorage::valid", &args, 0, span)?;
+                let state = self.spl_object_storage_state(&object, method_name, span)?;
+                Ok(Value::Bool(state.cursor < state.entries.len()))
+            }
+            "key" => {
+                expect_arity("SplObjectStorage::key", &args, 0, span)?;
+                let state = self.spl_object_storage_state(&object, method_name, span)?;
+                Ok(Value::Int(state.cursor as i64))
+            }
+            "current" => {
+                expect_arity("SplObjectStorage::current", &args, 0, span)?;
+                let state = self.spl_object_storage_state(&object, method_name, span)?;
+                state
+                    .entries
+                    .get(state.cursor)
+                    .map(|entry| Value::Object(entry.object.clone()))
+                    .ok_or_else(|| {
+                        runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "SplObjectStorage::current()",
+                                "Called current() on invalid iterator",
+                            ),
+                        )
+                    })
+            }
+            "next" => {
+                expect_arity("SplObjectStorage::next", &args, 0, span)?;
+                let state = self.spl_object_storage_state_mut(&object, method_name, span)?;
+                state.cursor = state.cursor.saturating_add(1);
+                Ok(Value::Null)
+            }
+            "getinfo" => {
+                expect_arity("SplObjectStorage::getInfo", &args, 0, span)?;
+                let state = self.spl_object_storage_state(&object, method_name, span)?;
+                Ok(state
+                    .entries
+                    .get(state.cursor)
+                    .map(|entry| entry.info.clone())
+                    .unwrap_or(Value::Null))
+            }
+            "setinfo" => {
+                expect_arity("SplObjectStorage::setInfo", &args, 1, span)?;
+                let info = args.first().cloned().unwrap_or(Value::Null);
+                let state = self.spl_object_storage_state_mut(&object, method_name, span)?;
+                if let Some(entry) = state.entries.get_mut(state.cursor) {
+                    entry.info = info;
+                }
+                Ok(Value::Null)
+            }
+            "gethash" => {
+                expect_arity("SplObjectStorage::getHash", &args, 1, span)?;
+                let stored_object =
+                    Self::spl_object_storage_object_argument(method_name, &args, 0, span)?;
+                Ok(Value::String(stored_object.id().to_string()))
+            }
+            "addall" => {
+                expect_arity("SplObjectStorage::addAll", &args, 1, span)?;
+                let other = self.spl_object_storage_argument(method_name, &args, 0, span)?;
+                let other_state = self
+                    .spl_object_storage_state(&other, method_name, span)?
+                    .clone();
+                let state = self.spl_object_storage_state_mut(&object, method_name, span)?;
+                for entry in other_state.entries {
+                    Self::spl_object_storage_insert_or_update(
+                        state,
+                        entry.object.clone(),
+                        entry.info.clone(),
+                    );
+                }
+                Ok(Value::Null)
+            }
+            "removeall" => {
+                expect_arity("SplObjectStorage::removeAll", &args, 1, span)?;
+                let other = self.spl_object_storage_argument(method_name, &args, 0, span)?;
+                let other_ids = self
+                    .spl_object_storage_state(&other, method_name, span)?
+                    .entries
+                    .iter()
+                    .map(|entry| entry.object.id())
+                    .collect::<HashSet<_>>();
+                let state = self.spl_object_storage_state_mut(&object, method_name, span)?;
+                state
+                    .entries
+                    .retain(|entry| !other_ids.contains(&entry.object.id()));
+                if state.cursor > state.entries.len() {
+                    state.cursor = state.entries.len();
+                }
+                Ok(Value::Null)
+            }
+            "removeallexcept" => {
+                expect_arity("SplObjectStorage::removeAllExcept", &args, 1, span)?;
+                let other = self.spl_object_storage_argument(method_name, &args, 0, span)?;
+                let other_ids = self
+                    .spl_object_storage_state(&other, method_name, span)?
+                    .entries
+                    .iter()
+                    .map(|entry| entry.object.id())
+                    .collect::<HashSet<_>>();
+                let state = self.spl_object_storage_state_mut(&object, method_name, span)?;
+                state
+                    .entries
+                    .retain(|entry| other_ids.contains(&entry.object.id()));
+                if state.cursor > state.entries.len() {
+                    state.cursor = state.entries.len();
+                }
+                Ok(Value::Null)
+            }
+            "seek" => {
+                expect_arity("SplObjectStorage::seek", &args, 1, span)?;
+                let position = match args.first() {
+                    Some(Value::Int(value)) => *value,
+                    Some(other) => {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "SplObjectStorage::seek()",
+                                format!("position must be int, got {}", other.type_name()),
+                            ),
+                        ));
+                    }
+                    None => 0,
+                };
+                let state = self.spl_object_storage_state_mut(&object, method_name, span)?;
+                if position < 0 || position as usize >= state.entries.len() {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "SplObjectStorage::seek()",
+                            format!("Seek position {position} is out of range"),
+                        ),
+                    ));
+                }
+                state.cursor = position as usize;
+                Ok(Value::Null)
+            }
+            _ => Err(runtime_error(
+                span,
+                RuntimeError::undefined_function(format!("SplObjectStorage::{method_name}()")),
+            )),
+        }
     }
 
     fn execute_foreach_iterator_by_value(
@@ -14418,8 +14800,14 @@ impl Interpreter {
             interface_names,
             object_id,
         );
+        let protected_class_ids = self.protected_class_ids_for_context(class_id);
         object
-            .write_public_property("message", Value::String(message))
+            .write_property_from_context(
+                "message",
+                Value::String(message),
+                Some(class_id),
+                &protected_class_ids,
+            )
             .map_err(|error| runtime_error(Span { line: 0, column: 0 }, error))?;
         self.track_allocated_object(&object);
         Ok(object)
@@ -15108,6 +15496,19 @@ impl Interpreter {
         span: Span,
         scope: &mut SymbolTable,
     ) -> CompileResult<()> {
+        if let Some(Value::Object(object)) = scope.read_named(name) {
+            if self.is_spl_object_storage_object(&object) {
+                let offset_arg = self.evaluate(index, scope)?;
+                self.call_array_access_method_with_caller_scope(
+                    object,
+                    "offsetUnset",
+                    vec![offset_arg],
+                    span,
+                    scope,
+                )?;
+                return Ok(());
+            }
+        }
         let key = self.evaluate_array_key(index, scope)?;
         let foreach_detach = self
             .active_foreach_references
@@ -16152,6 +16553,10 @@ impl Interpreter {
             interface_names,
             object_id,
         );
+        if self.is_spl_object_storage_class_id(class_id) {
+            self.spl_object_storages
+                .insert(object.id(), SplObjectStorageState::default());
+        }
         self.apply_instance_property_defaults(&object, class_id)?;
         let Some((
             constructor_class_id,
@@ -16194,6 +16599,12 @@ impl Interpreter {
                     "static constructors are not implemented",
                 ),
             ));
+        }
+
+        if self.resolved_method_is_core_spl_object_storage(constructor_class_id) {
+            expect_expr_arity("SplObjectStorage::__construct", args.len(), 0, span)?;
+            self.track_allocated_object(&object);
+            return Ok(Value::Object(object));
         }
 
         if !self.can_call_constructor(constructor_class_id, constructor_visibility) {
@@ -16741,6 +17152,9 @@ impl Interpreter {
 
         let object_id = self.allocate_object_id();
         let clone = object.shallow_clone_with_id(object_id);
+        if let Some(state) = self.spl_object_storages.get(&object.id()).cloned() {
+            self.spl_object_storages.insert(clone.id(), state);
+        }
 
         if let Some((class_id, class_name, method_name, visibility, is_static)) =
             self.resolve_instance_method(object.class_id(), "__clone")
@@ -24603,6 +25017,25 @@ impl Interpreter {
                 self.evaluate_list_assignment(names, expr, *span, scope)
             }
             AssignTarget::ArrayIndex { name, index, span } => {
+                if let (Some(index), Some(Value::Object(object))) =
+                    (index.as_ref(), scope.read_named(name))
+                {
+                    if self.is_spl_object_storage_object(&object) {
+                        let (value, _source) =
+                            self.evaluate_value_with_array_copy_source(expr, scope)?;
+                        let value = scope
+                            .value_with_object_property_aliases_from_array_copy(value, None, false);
+                        let offset_arg = self.evaluate(index, scope)?;
+                        self.call_array_access_method_with_caller_scope(
+                            object,
+                            "offsetSet",
+                            vec![offset_arg, value.clone()],
+                            *span,
+                            scope,
+                        )?;
+                        return Ok(value);
+                    }
+                }
                 let key = match index {
                     Some(index) => Some(self.evaluate_array_key(index, scope)?),
                     None => None,
@@ -30122,6 +30555,41 @@ impl Interpreter {
                 index: Some(index),
                 span,
             } => {
+                if let Some(Value::Object(object)) = scope.read_named(name) {
+                    if self.is_spl_object_storage_object(&object) {
+                        let offset_arg = self.evaluate(index, scope)?;
+                        let exists = self
+                            .call_array_access_method_with_caller_scope(
+                                object.clone(),
+                                "offsetExists",
+                                vec![offset_arg.clone()],
+                                *span,
+                                scope,
+                            )?
+                            .is_truthy();
+                        if exists {
+                            let current = self.call_array_access_method_with_caller_scope(
+                                object.clone(),
+                                "offsetGet",
+                                vec![offset_arg.clone()],
+                                *span,
+                                scope,
+                            )?;
+                            if !matches!(current, Value::Null) {
+                                return Ok(current);
+                            }
+                        }
+                        let value = self.evaluate(expr, scope)?;
+                        self.call_array_access_method_with_caller_scope(
+                            object,
+                            "offsetSet",
+                            vec![offset_arg, value.clone()],
+                            *span,
+                            scope,
+                        )?;
+                        return Ok(value);
+                    }
+                }
                 let key = self.evaluate_array_key(index, scope)?;
                 let should_assign = match scope.read_named(name) {
                     Some(Value::Array(array)) => match array.get_cloned(key.clone()) {
@@ -36876,14 +37344,8 @@ impl Interpreter {
                 Ok((value, None))
             }
             Value::Object(object) => {
-                let key_value = self.evaluate(index, scope)?;
-                let (offset_arg, copy_source_key) = if matches!(key_value, Value::Null) {
-                    (Value::Null, Some(Self::array_access_append_reference_key()))
-                } else {
-                    let key = ArrayKey::from_value(&key_value)
-                        .map_err(|error| runtime_error(index.span(), error))?;
-                    (Self::array_key_value(Some(key.clone())), Some(key))
-                };
+                let (offset_arg, copy_source_key) =
+                    self.array_access_offset_arg_for_object_index(&object, index, scope)?;
                 let (value, executed_source) = self
                     .call_array_access_offset_get_with_array_copy_source(
                         object.clone(),
@@ -37297,6 +37759,31 @@ impl Interpreter {
         scope: &mut SymbolTable,
     ) -> CompileResult<Option<Value>> {
         if let Expr::Variable(name, _) = target {
+            if let Some(Value::Object(object)) = scope.read_named(name) {
+                if self.is_spl_object_storage_object(&object) {
+                    let offset_arg = self.evaluate(index, scope)?;
+                    let exists = self
+                        .call_array_access_method_with_caller_scope(
+                            object.clone(),
+                            "offsetExists",
+                            vec![offset_arg.clone()],
+                            index.span(),
+                            scope,
+                        )?
+                        .is_truthy();
+                    if !exists {
+                        return Ok(None);
+                    }
+                    return Ok(Some(self.call_array_access_method_with_caller_scope(
+                        object,
+                        "offsetGet",
+                        vec![offset_arg],
+                        index.span(),
+                        scope,
+                    )?)
+                    .filter(|value| !matches!(value, Value::Null)));
+                }
+            }
             let key = self.evaluate_array_key(index, scope)?;
             return match scope.read_named(name) {
                 Some(Value::Array(array)) => Ok(array
@@ -37789,6 +38276,12 @@ impl Interpreter {
 
         self.ensure_instance_method_visible(class_id, &class_name, method_name, visibility, span)?;
 
+        if self.resolved_method_is_core_spl_object_storage(class_id) {
+            return self
+                .call_spl_object_storage_method_with_values(object, method_name, args, span)
+                .map(Some);
+        }
+
         let function = self.method_function(class_id, &class_name, &resolved_method_name, span)?;
         let function = function.as_ref();
         ensure_user_function_arity(function, args.len(), span)?;
@@ -37850,6 +38343,12 @@ impl Interpreter {
         }
 
         self.ensure_instance_method_visible(class_id, &class_name, method_name, visibility, span)?;
+
+        if self.resolved_method_is_core_spl_object_storage(class_id) {
+            return self
+                .call_spl_object_storage_method_with_values(object, method_name, args, span)
+                .map(Some);
+        }
 
         let function = self.method_function(class_id, &class_name, &resolved_method_name, span)?;
         let function = function.as_ref();
@@ -38111,7 +38610,9 @@ impl Interpreter {
                 ));
             }
         };
-        if object.is_instance_of_class_name("Error") {
+        if object.is_instance_of_class_name("Error")
+            || object.is_instance_of_class_name("Exception")
+        {
             return self
                 .call_core_error_method(object, method_name, args, span)
                 .map(|value| (value, None));
@@ -38231,6 +38732,16 @@ impl Interpreter {
 
         self.ensure_instance_method_visible(class_id, &class_name, method_name, visibility, span)?;
 
+        if self.resolved_method_is_core_spl_object_storage(class_id) {
+            let values = args
+                .iter()
+                .map(|arg| self.evaluate(arg, caller_scope))
+                .collect::<CompileResult<Vec<_>>>()?;
+            return self
+                .call_spl_object_storage_method_with_values(object, method_name, values, span)
+                .map(|value| (value, None));
+        }
+
         let function = self.method_function(class_id, &class_name, &resolved_method_name, span)?;
         let function = function.as_ref();
         Self::ensure_user_function_expr_arity_unless_spread(function, args, span)?;
@@ -38284,9 +38795,14 @@ impl Interpreter {
         match method_name.to_ascii_lowercase().as_str() {
             "getmessage" => {
                 expect_expr_arity("Error::getMessage", args.len(), 0, span)?;
+                let protected_class_ids = self.protected_class_ids_for_context(object.class_id());
                 Ok(object
-                    .read_current_public_property("message")
-                    .unwrap_or_else(|| Value::String(String::new())))
+                    .read_property_from_context(
+                        "message",
+                        Some(object.class_id()),
+                        &protected_class_ids,
+                    )
+                    .unwrap_or_else(|_| Value::String(String::new())))
             }
             _ => Err(runtime_error(
                 span,
@@ -41689,6 +42205,31 @@ impl Interpreter {
         };
 
         self.ensure_instance_method_visible(class_id, &class_name, method_name, visibility, span)?;
+
+        if self.resolved_method_is_core_spl_object_storage(class_id) {
+            let this_object = match caller_scope.read_named("this") {
+                Some(Value::Object(object)) => object.clone(),
+                _ => {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{class_name}::{method_name}()"),
+                            "non-static method dispatch through parent:: requires current $this object context",
+                        ),
+                    ));
+                }
+            };
+            let values = args
+                .iter()
+                .map(|arg| self.evaluate(arg, caller_scope))
+                .collect::<CompileResult<Vec<_>>>()?;
+            return self.call_spl_object_storage_method_with_values(
+                this_object,
+                method_name,
+                values,
+                span,
+            );
+        }
 
         let function = self.method_function(class_id, &class_name, &resolved_method_name, span)?;
         let function = function.as_ref();
@@ -61377,6 +61918,19 @@ impl Interpreter {
         let Some(type_decl) = function.return_type.as_ref() else {
             return Ok(value);
         };
+        if type_decl_is_exact(type_decl, "void") {
+            return if matches!(value, Value::Null) {
+                Ok(Value::Null)
+            } else {
+                Err(runtime_error(
+                    function.span,
+                    RuntimeError::unsupported_call(
+                        callable_name(&function.name),
+                        format!("return value expects void, got {}", value.type_name()),
+                    ),
+                ))
+            };
+        }
         if type_decl_is_exact(type_decl, "mixed") {
             return Ok(value);
         }
@@ -66228,6 +66782,14 @@ impl Interpreter {
             "rand" => call_rand(&args, span),
             "uniqid" => call_uniqid(&args, span),
             "hash_hmac" => call_hash_hmac(&args, span),
+            "gc_enable" => {
+                expect_arity(name, &args, 0, span)?;
+                Ok(Value::Bool(true))
+            }
+            "gc_collect_cycles" => {
+                expect_arity(name, &args, 0, span)?;
+                Ok(Value::Int(0))
+            }
             "count" => {
                 expect_arity(name, &args, 1, span)?;
                 match &args[0] {
@@ -70397,6 +70959,21 @@ impl Interpreter {
     ) -> CompileResult<bool> {
         if let Some((name, indices)) = Self::collect_direct_variable_array_index_path(target, index)
         {
+            if indices.len() == 1 {
+                if let Some(Value::Object(object)) = caller_scope.read_named(name) {
+                    if self.is_spl_object_storage_object(&object) {
+                        let offset_arg = self.evaluate(indices[0], caller_scope)?;
+                        let value = self.call_array_access_method_with_caller_scope(
+                            object,
+                            "offsetExists",
+                            vec![offset_arg],
+                            target.span(),
+                            caller_scope,
+                        )?;
+                        return Ok(value.is_truthy());
+                    }
+                }
+            }
             let mut keys = Vec::with_capacity(indices.len());
             for index in indices {
                 keys.push(self.evaluate_array_key(index, caller_scope)?);
@@ -70957,6 +71534,33 @@ impl Interpreter {
     ) -> CompileResult<bool> {
         if let Some((name, indices)) = Self::collect_direct_variable_array_index_path(target, index)
         {
+            if indices.len() == 1 {
+                if let Some(Value::Object(object)) = caller_scope.read_named(name) {
+                    if self.is_spl_object_storage_object(&object) {
+                        let offset_arg = self.evaluate(indices[0], caller_scope)?;
+                        let exists = self
+                            .call_array_access_method_with_caller_scope(
+                                object.clone(),
+                                "offsetExists",
+                                vec![offset_arg.clone()],
+                                target.span(),
+                                caller_scope,
+                            )?
+                            .is_truthy();
+                        if !exists {
+                            return Ok(true);
+                        }
+                        let value = self.call_array_access_method_with_caller_scope(
+                            object,
+                            "offsetGet",
+                            vec![offset_arg],
+                            target.span(),
+                            caller_scope,
+                        )?;
+                        return Ok(!value.is_truthy());
+                    }
+                }
+            }
             let mut keys = Vec::with_capacity(indices.len());
             for index in indices {
                 keys.push(self.evaluate_array_key(index, caller_scope)?);
@@ -71192,6 +71796,24 @@ impl Interpreter {
         }
     }
 
+    fn array_access_offset_arg_for_object_index(
+        &mut self,
+        object: &PhpObject,
+        index: &Expr,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<(Value, Option<ArrayKey>)> {
+        let key_value = self.evaluate(index, scope)?;
+        if matches!(key_value, Value::Null) {
+            return Ok((Value::Null, Some(Self::array_access_append_reference_key())));
+        }
+        if self.is_spl_object_storage_object(object) {
+            return Ok((key_value, None));
+        }
+        let key =
+            ArrayKey::from_value(&key_value).map_err(|error| runtime_error(index.span(), error))?;
+        Ok((Self::array_key_value(Some(key.clone())), Some(key)))
+    }
+
     fn call_array_access_method(
         &mut self,
         object: PhpObject,
@@ -71215,6 +71837,14 @@ impl Interpreter {
         if let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
             self.resolve_instance_method(object.class_id(), method_name)
         {
+            if self.resolved_method_is_core_spl_object_storage(class_id) {
+                return self.call_spl_object_storage_method_with_values(
+                    object,
+                    method_name,
+                    args,
+                    span,
+                );
+            }
             let function =
                 self.method_function(class_id, &class_name, &resolved_method_name, span)?;
             let function = function.as_ref();
@@ -71328,6 +71958,14 @@ impl Interpreter {
         if let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
             self.resolve_instance_method(object.class_id(), method_name)
         {
+            if self.resolved_method_is_core_spl_object_storage(class_id) {
+                return self.call_spl_object_storage_method_with_values(
+                    object,
+                    method_name,
+                    args,
+                    span,
+                );
+            }
             let function =
                 self.method_function(class_id, &class_name, &resolved_method_name, span)?;
             let function = function.as_ref();
@@ -71413,6 +72051,16 @@ impl Interpreter {
         if let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
             self.resolve_instance_method(object.class_id(), "offsetGet")
         {
+            if self.resolved_method_is_core_spl_object_storage(class_id) {
+                return self
+                    .call_spl_object_storage_method_with_values(
+                        object,
+                        "offsetGet",
+                        vec![offset_arg],
+                        span,
+                    )
+                    .map(|value| (value, None));
+            }
             let function =
                 self.method_function(class_id, &class_name, &resolved_method_name, span)?;
             let function = function.as_ref();
@@ -71552,6 +72200,15 @@ impl Interpreter {
         }
 
         self.ensure_instance_method_visible(class_id, &class_name, "count", visibility, span)?;
+
+        if self.resolved_method_is_core_spl_object_storage(class_id) {
+            return self.call_spl_object_storage_method_with_values(
+                object,
+                "count",
+                Vec::new(),
+                span,
+            );
+        }
 
         let function = self.method_function(class_id, &class_name, &resolved_method_name, span)?;
         let function = function.as_ref();
@@ -78245,6 +78902,25 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
             _ => {}
         }
 
+        if error.message
+            == "unsupported call SplObjectStorage::current(): Called current() on invalid iterator"
+        {
+            return Some((
+                "RuntimeException",
+                "Called current() on invalid iterator".to_string(),
+            ));
+        }
+
+        if let Some(message) = error
+            .message
+            .strip_prefix("unsupported call SplObjectStorage::")
+            .and_then(|message| message.split_once(": "))
+            .map(|(_, message)| message.to_string())
+            .filter(|message| message.contains("must be of type object"))
+        {
+            return Some(("TypeError", message));
+        }
+
         if error.message.starts_with("Object of type ")
             && error.message.ends_with(" is not callable")
         {
@@ -78755,6 +79431,8 @@ fn is_builtin(name: &str) -> bool {
             | "rand"
             | "uniqid"
             | "hash_hmac"
+            | "gc_enable"
+            | "gc_collect_cycles"
             | "count"
             | "constant"
             | "defined"
@@ -93295,7 +93973,7 @@ fn type_text_is_runtime_enforceable_for_call(text: &str) -> bool {
         .to_ascii_lowercase();
     !matches!(
         normalized.as_str(),
-        "callable" | "iterable" | "never" | "parent" | "resource" | "self" | "static" | "void"
+        "callable" | "iterable" | "never" | "parent" | "resource" | "self" | "static"
     )
 }
 
@@ -93369,6 +94047,16 @@ fn syntax_only_magic_array_access_type_metadata_is_supported(function: &Function
             optional_type_is(return_type, "void")
                 && optional_type_is(param_type(0), "mixed")
                 && all_remaining_untyped_or_mixed(1)
+        }
+        "rewind" | "next" => optional_type_is(return_type, "void") && function.params.is_empty(),
+        "valid" => optional_type_is(return_type, "bool") && function.params.is_empty(),
+        "key" => {
+            (optional_type_is(return_type, "int") || optional_type_is(return_type, "mixed"))
+                && function.params.is_empty()
+        }
+        "current" => {
+            (optional_type_is(return_type, "object") || optional_type_is(return_type, "mixed"))
+                && function.params.is_empty()
         }
         _ => false,
     }

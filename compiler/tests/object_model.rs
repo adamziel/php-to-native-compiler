@@ -79,6 +79,7 @@ echo "ready\n";
             "ArithmeticError",
             "DivisionByZeroError",
             "RuntimeException",
+            "SplObjectStorage",
             "Box",
         ]
     );
@@ -13976,4 +13977,46 @@ try {
         .stdout
         .contains("\nStack trace:\n#0 {main}\n  thrown in /tmp/finally_override.php on line "));
     assert!(!execution.stdout.contains("inner"));
+}
+
+#[test]
+fn spl_object_storage_identity_map_offsets_iteration_and_clone() {
+    let source = r#"<?php
+class ChildStorage extends SplObjectStorage {
+    public function current(): object {
+        return parent::current();
+    }
+}
+
+$store = new ChildStorage();
+$first = new stdClass();
+$second = new stdClass();
+$missing = new stdClass();
+
+$store[$first] = "one";
+$store->attach($second, "two");
+echo $store->offsetGet($first), "|", $store[$second], "\n";
+var_dump(isset($store[$first]));
+var_dump(isset($store[$missing]));
+var_dump(empty($store[$missing]));
+echo count($store), "|", $store->count(), "\n";
+
+foreach ($store as $key => $object) {
+    echo $key, ":", $store->offsetGet($object), "\n";
+}
+
+$copy = clone $store;
+echo "copy=", count($copy), "\n";
+$store->removeAll($copy);
+echo "after=", count($store), "|", count($copy), "\n";
+
+$store[$first] ??= "again";
+echo $store[$first], "\n";
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "one|two\nbool(true)\nbool(false)\nbool(true)\n2|2\n0:one\n1:two\ncopy=2\nafter=0|2\nagain\n"
+    );
 }

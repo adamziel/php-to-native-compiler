@@ -31137,6 +31137,12 @@ impl PhpClassTable {
                     ))
                     .expect("Exception core metadata should not duplicate constructor state");
             }
+            exception
+                .add_method(PhpMethodMetadata::instance(
+                    "getMessage",
+                    Visibility::Public,
+                ))
+                .expect("Exception core metadata should not duplicate getMessage");
         }
         let error_id = classes
             .declare_class("Error")
@@ -31496,6 +31502,49 @@ impl PhpClassTable {
         classes
             .set_parent(runtime_exception_id, exception_id)
             .expect("RuntimeException should extend Exception");
+        let spl_object_storage_id = classes
+            .declare_class("SplObjectStorage")
+            .expect("core class table should contain RuntimeException before SplObjectStorage");
+        classes
+            .set_interfaces(
+                spl_object_storage_id,
+                vec![
+                    "Iterator".to_string(),
+                    "ArrayAccess".to_string(),
+                    "Countable".to_string(),
+                ],
+            )
+            .expect("SplObjectStorage should implement core SPL interfaces");
+        let spl_object_storage = classes
+            .get_mut(spl_object_storage_id)
+            .expect("declared SplObjectStorage class id should resolve");
+        for method in [
+            "__construct",
+            "attach",
+            "detach",
+            "contains",
+            "count",
+            "offsetExists",
+            "offsetGet",
+            "offsetSet",
+            "offsetUnset",
+            "getInfo",
+            "setInfo",
+            "getHash",
+            "rewind",
+            "valid",
+            "current",
+            "key",
+            "next",
+            "addAll",
+            "removeAll",
+            "removeAllExcept",
+            "seek",
+        ] {
+            spl_object_storage
+                .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("SplObjectStorage core metadata should not duplicate methods");
+        }
         classes
     }
 
@@ -38751,6 +38800,8 @@ fn native_core_interface_canonical_name_bytes(name: &[u8]) -> Option<Vec<u8>> {
         b"ArrayAccess",
         b"Countable",
         b"Stringable",
+        b"SplObserver",
+        b"SplSubject",
     ];
 
     let lookup_key = native_class_metadata_lookup_key(name);
@@ -78149,6 +78200,7 @@ mod tests {
                 "ArithmeticError",
                 "DivisionByZeroError",
                 "RuntimeException",
+                "SplObjectStorage",
             ]
         );
         let mut normalized_class_names = class_names
