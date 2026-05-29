@@ -2,10 +2,10 @@ use std::cell::RefCell;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs;
-use std::io::{Read, Seek, SeekFrom, Write};
+use std::io::{ErrorKind, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use hmac::{Hmac, Mac};
 use php_runtime::{
@@ -137,6 +137,7 @@ struct Interpreter {
     active_function_call_arguments: Vec<ActiveFunctionCallArguments>,
     global_symbols: SymbolStorage,
     error_reporting_mask: i64,
+    error_control_suppression_depth: usize,
     ignore_user_abort: bool,
     ini_values: HashMap<String, String>,
     error_handlers: Vec<ErrorHandlerRegistration>,
@@ -8765,6 +8766,7 @@ impl Interpreter {
             active_function_call_arguments: Vec::new(),
             global_symbols: Rc::new(RefCell::new(HashMap::new())),
             error_reporting_mask: PHP_E_ALL,
+            error_control_suppression_depth: 0,
             ignore_user_abort: false,
             ini_values: HashMap::new(),
             error_handlers: Vec::new(),
@@ -10847,9 +10849,9 @@ impl Interpreter {
             } if matches!(op, BinaryOp::NullCoalesce) => {
                 self.evaluate_null_coalescing_with_array_copy_source(left, right, *span, scope)
             }
-            Expr::ErrorControl { expr, .. } => {
-                self.evaluate_value_with_array_copy_source(expr, scope)
-            }
+            Expr::ErrorControl { expr, .. } => self.with_error_control_suppression(|this| {
+                this.evaluate_value_with_array_copy_source(expr, scope)
+            }),
             Expr::Cast { kind, expr, span } => {
                 let (value, source) = self.evaluate_value_with_array_copy_source(expr, scope)?;
                 let value = self.apply_cast(*kind, value, *span)?;
@@ -12808,6 +12810,21 @@ impl Interpreter {
         self.emit_runtime_diagnostic(function, "Warning", PHP_E_WARNING, message, span)
     }
 
+    fn with_error_control_suppression<T>(
+        &mut self,
+        evaluate: impl FnOnce(&mut Self) -> CompileResult<T>,
+    ) -> CompileResult<T> {
+        let previous_depth = self.error_control_suppression_depth;
+        self.error_control_suppression_depth = previous_depth + 1;
+        let result = evaluate(self);
+        self.error_control_suppression_depth = previous_depth;
+        result
+    }
+
+    fn diagnostics_are_suppressed(&self) -> bool {
+        self.error_control_suppression_depth > 0
+    }
+
     fn emit_notice(
         &mut self,
         function: &str,
@@ -12861,6 +12878,9 @@ impl Interpreter {
             .source_file
             .clone()
             .unwrap_or_else(|| "Command line code".to_string());
+        if self.diagnostics_are_suppressed() {
+            return Ok(());
+        }
         if self.call_error_handler_for_diagnostic(level, &message, &file, span)? {
             return Ok(());
         }
@@ -13050,6 +13070,9 @@ impl Interpreter {
             .source_file
             .clone()
             .unwrap_or_else(|| "Command line code".to_string());
+        if self.diagnostics_are_suppressed() {
+            return Ok(());
+        }
         if self.call_error_handler_for_diagnostic(level, &message, &file, span)? {
             return Ok(());
         }
@@ -15827,7 +15850,9 @@ impl Interpreter {
                 let value = self.evaluate(expr, scope)?;
                 self.apply_unary(*op, value, *span)
             }
-            Expr::ErrorControl { expr, .. } => self.evaluate(expr, scope),
+            Expr::ErrorControl { expr, .. } => {
+                self.with_error_control_suppression(|this| this.evaluate(expr, scope))
+            }
             Expr::Include { path, once, span } => {
                 let (flow, value) = self.evaluate_file_include(path, *once, false, *span, scope)?;
                 match flow {
@@ -60673,6 +60698,65 @@ impl Interpreter {
         }
     }
 
+    fn filesystem_scalar_path_argument(
+        &mut self,
+        function: &str,
+        label: &str,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<Option<String>> {
+        match value {
+            Value::String(path) => Ok(Some(path.clone())),
+            Value::BinaryString(bytes) => {
+                let path = tree_walk_binary_string_utf8(bytes, "filesystem path", span)?;
+                Ok(Some(path.to_string()))
+            }
+            Value::Null | Value::Bool(_) | Value::Int(_) | Value::Float(_) => {
+                Ok(Some(value.echo_string()))
+            }
+            other => {
+                self.emit_filesystem_display_warning(
+                    function,
+                    format!(
+                        "{label} argument must be a valid filesystem path, got {}",
+                        other.type_name()
+                    ),
+                    span,
+                )?;
+                Ok(None)
+            }
+        }
+    }
+
+    fn emit_filesystem_display_warning(
+        &mut self,
+        function: &str,
+        message: impl AsRef<str>,
+        span: Span,
+    ) -> CompileResult<()> {
+        self.emit_display_warning(format!("{function}(): {}", message.as_ref()), span)
+    }
+
+    fn filesystem_io_warning_message(error: &std::io::Error) -> String {
+        match error.kind() {
+            ErrorKind::NotFound => "No such file or directory".to_string(),
+            ErrorKind::AlreadyExists => "File exists".to_string(),
+            ErrorKind::PermissionDenied => "Permission denied".to_string(),
+            ErrorKind::InvalidInput => "Invalid argument".to_string(),
+            _ => match error.raw_os_error() {
+                Some(1) => "Operation not permitted".to_string(),
+                Some(2) => "No such file or directory".to_string(),
+                Some(13) => "Permission denied".to_string(),
+                Some(17) => "File exists".to_string(),
+                Some(20) => "Not a directory".to_string(),
+                Some(21) => "Is a directory".to_string(),
+                Some(22) => "Invalid argument".to_string(),
+                Some(39) => "Directory not empty".to_string(),
+                _ => error.to_string(),
+            },
+        }
+    }
+
     fn filesystem_flags_argument(
         &self,
         function: &str,
@@ -60881,6 +60965,216 @@ impl Interpreter {
         Ok(Value::String(
             filesystem_file_type_name(&file_type).to_string(),
         ))
+    }
+
+    fn call_readlink(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("readlink", args, 1, span)?;
+        let Some(path) =
+            self.filesystem_scalar_path_argument("readlink", "path", &args[0], span)?
+        else {
+            return Ok(Value::Bool(false));
+        };
+        let filesystem_path =
+            self.resolve_local_filesystem_operation_path("readlink", &path, false, span)?;
+        if !self.enforce_bounded_open_basedir("readlink()", &path, &filesystem_path, span)? {
+            return Ok(Value::Bool(false));
+        }
+        match fs::read_link(&filesystem_path) {
+            Ok(target) => {
+                let target = target.into_os_string().into_string().map_err(|_| {
+                    runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "readlink()",
+                            "link target must be valid UTF-8 in the current subset",
+                        ),
+                    )
+                })?;
+                Ok(Value::String(target))
+            }
+            Err(error) => {
+                self.emit_filesystem_display_warning(
+                    "readlink",
+                    Self::filesystem_io_warning_message(&error),
+                    span,
+                )?;
+                Ok(Value::Bool(false))
+            }
+        }
+    }
+
+    fn call_symlink(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("symlink", args, 2, span)?;
+        let target = self.filesystem_path_argument("symlink", "target", &args[0], span)?;
+        let link = self.filesystem_path_argument("symlink", "link", &args[1], span)?;
+        if target.contains("://") {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "symlink()",
+                    "stream-wrapper targets are not supported in the current subset",
+                ),
+            ));
+        }
+        let target_path = PathBuf::from(&target);
+        let link_path =
+            self.resolve_local_filesystem_operation_path("symlink", &link, false, span)?;
+        if !self.enforce_bounded_open_basedir("symlink()", &target, &target_path, span)?
+            || !self.enforce_bounded_open_basedir("symlink()", &link, &link_path, span)?
+        {
+            return Ok(Value::Bool(false));
+        }
+        match create_bounded_symlink(&target_path, &link_path) {
+            Ok(()) => {
+                self.clear_stat_cache_filesystem_path(&link_path);
+                self.cache_bounded_realpath_entry_for_local_path(&link_path);
+                Ok(Value::Bool(true))
+            }
+            Err(error) => {
+                self.emit_filesystem_display_warning(
+                    "symlink",
+                    Self::filesystem_io_warning_message(&error),
+                    span,
+                )?;
+                Ok(Value::Bool(false))
+            }
+        }
+    }
+
+    fn call_link(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("link", args, 2, span)?;
+        let target = self.filesystem_path_argument("link", "target", &args[0], span)?;
+        let link = self.filesystem_path_argument("link", "link", &args[1], span)?;
+        let target_path =
+            self.resolve_local_filesystem_operation_path("link", &target, false, span)?;
+        let link_path = self.resolve_local_filesystem_operation_path("link", &link, false, span)?;
+        if !self.enforce_bounded_open_basedir("link()", &target, &target_path, span)?
+            || !self.enforce_bounded_open_basedir("link()", &link, &link_path, span)?
+        {
+            return Ok(Value::Bool(false));
+        }
+        match fs::hard_link(&target_path, &link_path) {
+            Ok(()) => {
+                self.clear_stat_cache_filesystem_path(&target_path);
+                self.clear_stat_cache_filesystem_path(&link_path);
+                self.cache_bounded_realpath_entry_for_local_path(&link_path);
+                Ok(Value::Bool(true))
+            }
+            Err(error) => {
+                self.emit_filesystem_display_warning(
+                    "link",
+                    Self::filesystem_io_warning_message(&error),
+                    span,
+                )?;
+                Ok(Value::Bool(false))
+            }
+        }
+    }
+
+    fn call_linkinfo(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("linkinfo", args, 1, span)?;
+        let path = self.filesystem_path_argument("linkinfo", "path", &args[0], span)?;
+        let filesystem_path =
+            self.resolve_local_filesystem_operation_path("linkinfo", &path, false, span)?;
+        if !self.enforce_bounded_open_basedir("linkinfo()", &path, &filesystem_path, span)? {
+            return Ok(Value::Int(-1));
+        }
+        match self.cached_filesystem_metadata(&filesystem_path, false) {
+            Some(metadata) => Ok(Value::Int(filesystem_linkinfo_value(&metadata))),
+            None => {
+                self.emit_filesystem_display_warning(
+                    "linkinfo",
+                    "No such file or directory",
+                    span,
+                )?;
+                Ok(Value::Int(-1))
+            }
+        }
+    }
+
+    fn call_touch(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if args.is_empty() || args.len() > 3 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "touch()",
+                    ArityExpectation::Between { min: 1, max: 3 },
+                    args.len(),
+                ),
+            ));
+        }
+        let path = self.filesystem_path_argument("touch", "filename", &args[0], span)?;
+        for (index, value) in args.iter().enumerate().skip(1) {
+            if !matches!(value, Value::Int(_) | Value::Null) {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "touch()",
+                        format!(
+                            "timestamp argument {} must be int or null in the current subset, got {}",
+                            index,
+                            value.type_name()
+                        ),
+                    ),
+                ));
+            }
+        }
+        let filesystem_path =
+            self.resolve_local_filesystem_operation_path("touch", &path, false, span)?;
+        if !self.enforce_bounded_open_basedir("touch()", &path, &filesystem_path, span)? {
+            return Ok(Value::Bool(false));
+        }
+        match fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&filesystem_path)
+        {
+            Ok(_) => {
+                self.clear_stat_cache_filesystem_path(&filesystem_path);
+                self.cache_bounded_realpath_entry_for_local_path(&filesystem_path);
+                Ok(Value::Bool(true))
+            }
+            Err(error) => {
+                self.emit_filesystem_display_warning(
+                    "touch",
+                    Self::filesystem_io_warning_message(&error),
+                    span,
+                )?;
+                Ok(Value::Bool(false))
+            }
+        }
+    }
+
+    fn call_sleep(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("sleep", args, 1, span)?;
+        let seconds = match args[0] {
+            Value::Int(seconds) if seconds >= 0 => seconds as u64,
+            Value::Int(_) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "sleep()",
+                        "seconds argument must be non-negative in the current subset",
+                    ),
+                ));
+            }
+            ref other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "sleep()",
+                        format!(
+                            "seconds argument must be int in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+        };
+        if seconds > 0 {
+            std::thread::sleep(Duration::from_secs(seconds));
+        }
+        Ok(Value::Int(0))
     }
 
     fn file_put_contents_data_bytes(
@@ -65618,6 +65912,12 @@ impl Interpreter {
             "lstat" => self.call_stat_path_builtin(&args, "lstat", false, span),
             "fileperms" => self.call_fileperms(&args, span),
             "chmod" => self.call_chmod(&args, span),
+            "touch" => self.call_touch(&args, span),
+            "sleep" => self.call_sleep(&args, span),
+            "readlink" => self.call_readlink(&args, span),
+            "symlink" => self.call_symlink(&args, span),
+            "link" => self.call_link(&args, span),
+            "linkinfo" => self.call_linkinfo(&args, span),
             "file_exists" => {
                 expect_arity(name, &args, 1, span)?;
                 match &args[0] {
@@ -75838,6 +76138,12 @@ fn is_builtin(name: &str) -> bool {
             | "lstat"
             | "fileperms"
             | "chmod"
+            | "touch"
+            | "sleep"
+            | "readlink"
+            | "symlink"
+            | "link"
+            | "linkinfo"
             | "file_exists"
             | "file_get_contents"
             | "fopen"
@@ -85383,6 +85689,31 @@ fn filesystem_mode_bits(metadata: &fs::Metadata) -> i64 {
     } else {
         0o666
     }
+}
+
+#[cfg(unix)]
+fn filesystem_linkinfo_value(metadata: &fs::Metadata) -> i64 {
+    use std::os::unix::fs::MetadataExt;
+
+    metadata.dev() as i64
+}
+
+#[cfg(not(unix))]
+fn filesystem_linkinfo_value(_metadata: &fs::Metadata) -> i64 {
+    0
+}
+
+#[cfg(unix)]
+fn create_bounded_symlink(target: &Path, link: &Path) -> std::io::Result<()> {
+    std::os::unix::fs::symlink(target, link)
+}
+
+#[cfg(not(unix))]
+fn create_bounded_symlink(_target: &Path, _link: &Path) -> std::io::Result<()> {
+    Err(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "symlink creation is not implemented on this platform in the current subset",
+    ))
 }
 
 #[cfg(unix)]

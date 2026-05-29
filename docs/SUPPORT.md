@@ -2360,13 +2360,13 @@
   lazy branch/fallback evaluation, condition-value reuse for short ternary,
   parenthesized nested ternaries, mixes with `??`, and assignment-expression
   branches over the documented direct-target subset
-- PHP error-control syntax `@expr` as a transparent runtime wrapper. The
-  operand evaluates normally and existing runtime diagnostics are still
-  reported; warning/notice/deprecation suppression is not implemented.
-  Native lowering rejects `@expr` through a dedicated codegen diagnostic until
-  generated code has diagnostic severity, warning/notice/deprecation
-  suppression, `error_reporting()` mask interaction, recoverable expression
-  values, and exact native diagnostics.
+- PHP error-control syntax `@expr` as a bounded runtime diagnostic-suppression
+  wrapper. The operand evaluates normally while current interpreter warnings,
+  notices, and deprecations emitted through the shared diagnostic path are
+  suppressed. Native lowering rejects `@expr` through a dedicated codegen
+  diagnostic until generated code has diagnostic severity,
+  warning/notice/deprecation suppression, `error_reporting()` mask interaction,
+  recoverable expression values, and exact native diagnostics.
 - `if` / `elseif` / `else`, including alternate
   `if (...) : ... elseif (...) : ... else: ... endif;` syntax
 - `while`
@@ -10729,9 +10729,10 @@
 - PHP's warning-and-continue behavior for undefined variables; plain reads fail
   with a runtime error in the current subset, while `isset($name)` remains the
   supported presence check
-- actual PHP error-control behavior for `@expr`, including suppressing
-  warnings/notices/deprecations, recoverable diagnostic severity, expression
-  recovery values, and `error_reporting()` mask interactions
+- full PHP error-control behavior for `@expr` beyond the bounded interpreter
+  diagnostic-suppression slice, including exact recoverable diagnostic
+  severity, expression recovery values, and `error_reporting()` mask
+  interactions
 - PHP `Throwable`/`Error` objects, stack traces, recoverable warnings, notices,
   and user error handlers
 - Preserving partial stdout emitted before a runtime failure; the current
@@ -10748,3 +10749,14 @@ Unsupported code should fail with an explicit parse, runtime, or codegen error.
   stat-warning behavior required by their focused PHPT clusters. Stream-wrapper
   metadata paths and platform-specific ACL/owner name resolution remain
   unsupported.
+- Additional local filesystem link helpers in `phpc run`: `readlink()` returns
+  UTF-8 local symlink targets and reports invalid local paths as inline PHP
+  warnings plus `false`; `symlink()` creates bounded local symbolic links,
+  `link()` creates bounded local hard links, and `linkinfo()` returns bounded
+  local link device metadata or `-1` with an inline PHP warning when metadata is
+  unavailable. These helpers are limited to local filesystem paths;
+  stream-wrapper link targets remain unsupported.
+- Bounded prerequisites for standard filesystem PHPTs: `touch()` creates or
+  opens local files and clears the stat cache, while `sleep()` accepts
+  non-negative integer seconds and returns `0`. Explicit `touch()` timestamp
+  mutation and interrupted sleeps remain unsupported.
