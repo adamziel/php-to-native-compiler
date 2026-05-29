@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-29 11:00 CEST
+Updated: 2026-05-29 11:09 CEST
 Primary branch: `master`
-Latest source head: `39ab1bf8 fix: optimize global array object retention`
+Latest source head: `6276265c fix: add sizeof alias and array chunk metadata`
 
 ## Progress Score
 
@@ -152,12 +152,51 @@ passes that row, and has zero PASS-set regressions.
 | Batch008 checkpoint5 sharded gate | Done | 2180 / 20294 pinned runnable PHPTs passed (10.74%); 0 regressions from Batch007 PASS set; run id `phpt-full-batch008-checkpoint5-sharded-20260529T051801Z-php-src-f97ff59-public-0855b815-source-f408875f` |
 | Batch008 checkpoint10 bug60598 repair sharded gate | Done | 2286 / 20294 pinned runnable PHPTs passed (11.26%); 0 regressions from Batch008 checkpoint5 PASS set; run id `phpt-full-b8c10r2-sharded-20260529T085131Z-php-src-f97ff59-public-39ab1bf8-source-d0155a39` |
 | Batch008 source batch | Complete | Source checkpoints accepted: 10 / 10; checkpoint1 is `strncmp()` / `strncasecmp()` focused source proof; checkpoint2 is bcmath `bcmod()` / `bcpow()` / `bcpowmod()` / `bcsqrt()` focused source proof; checkpoint3 is `tempnam()` / `sys_get_temp_dir()` focused source proof; checkpoint4 is bounded date/timezone focused source proof; checkpoint5 is `SplObjectStorage` identity-map focused source proof; checkpoint5 sharded gate published; checkpoint6 is `strrpos()` / `strripos()` focused source proof; checkpoint7 is `fputcsv()` plus local file stream semantics focused source proof; checkpoint8 is `pathinfo()` / `basename()` / `dirname()` focused source proof; checkpoint9 is `vprintf()` focused source proof; checkpoint10 is `stripos()` focused source proof; checkpoint10 bug60598 repair gate published |
+| Batch009 source burst | Started | Checkpoint1 is p47 `sizeof()` alias / `array_chunk` metadata focused source proof, expected +25 direct PHPT rows; public score remains 2286 / 20294 until the next pinned sharded gate |
 
 Focused PHPT history is tracked separately in
 `/home/claude/supervised-php-compiler/state/php-core-suite-focused-history.tsv`.
 Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
+
+Batch009 source burst checkpoint1 is primary-integrated under AO supervision.
+This is focused source proof, not a public percentage change. The public PHPT
+score remains **2286 / 20294 pinned runnable PHPTs = 11.26%** until the next
+supervisor-approved pinned aggregate gate is completed, regression-checked,
+and published here.
+
+- primary source head:
+  `6276265c fix: add sizeof alias and array chunk metadata`
+- reviewed and integration patch:
+  `/home/claude/supervised-php-compiler/state/patches/ao-integration-batch009-p47-sizeof-alias-39ab1bf8-20260529.patch`
+- reviewed and integration patch SHA256:
+  `2c684c3b0019a104bad1a3a86aa42d2c37ded4baedfc9cb9d5f204eb3c119b5c`
+- reviewer gate: phpc-32 completed current-public proof for p47
+  `sizeof()` / array residuals; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/batch009-review-p47-sizeof-alias-39ab1bf8-phpc32-20260529.{status.md,report.md,gates.log}`
+- critic gate: phpc-54, phpc-33, and phpc-55 recorded
+  `SAFE-FOR-INTEGRATION` for the exact patch SHA; artifacts include:
+  `/home/claude/supervised-php-compiler/state/workers/batch009-critic-p47-sizeof-alias-39ab1bf8-phpc54-20260529.status.md`
+- handoff gate: p38 completed scratch/no-primary handoff with SHA
+  verification, clean apply, docs/`PROGRESS.md`/examples exclusion,
+  consumed-scope scan, production exact-shape scan, diff check, reverse apply,
+  and exported patch proof; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/ao-integration-batch009-p47-sizeof-alias-39ab1bf8-20260529.{status.md,report.md,gates.log}`
+- supervisor focused gates: PASS for SHA sidecar verification, clean apply
+  over public `c9a12517`, source-equivalence to `39ab1bf8` with only root
+  `PROGRESS.md` drift, `git diff --check`, docs/`PROGRESS.md`/examples
+  exclusion, production exact-shape audit, consumed-scope audit, `cargo fmt`,
+  focused Rust `sizeof_builtin`, native builtin metadata and dynamic binding
+  tests, `phpc` binary build, `cargo check`, and the focused PHP core
+  `array_chunk_variation8..32` cluster with 25 PASS and 0 FAIL
+- public progress gate: not run for this source checkpoint; focused proof is
+  candidate evidence for the next 75-row burst gate
+
+This checkpoint implements generalized `sizeof()` alias metadata and argument
+binding support for array-counting paths used by the current `array_chunk()`
+PHPT cluster. It is not keyed to PHPT filenames, expected output, fixture
+names, public hashes, batch labels, or checkpoint markers.
 
 Batch008 checkpoint10 bug60598 repair is primary-integrated under AO
 supervision and published through a supervisor-approved short-run-root sharded
