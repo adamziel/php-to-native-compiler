@@ -3366,7 +3366,10 @@ stream-context resource without applying wrapper-specific context behavior.
 Local open failures,
 including missing read targets, emit a bounded `E_WARNING`, return `false`,
 and continue through the current request-local warning-handler stack before
-the stderr fallback. `stream_context_create()`
+the stderr fallback. The same shared local filesystem policy guard handles
+bounded `open_basedir` denials for covered local metadata and mutation helpers
+by emitting PHP-shaped display warnings and returning each helper's `false`
+failure value. `stream_context_create()`
 allocates a request-local context resource that stores array options and the
 bounded params slice for `notification` plus `options`.
 `stream_context_get_options()` returns those stored options, and

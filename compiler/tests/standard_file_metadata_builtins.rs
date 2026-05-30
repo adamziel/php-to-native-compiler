@@ -150,6 +150,47 @@ var_dump(touch(""));
     assert_eq!(execution.exit_code, 0);
 }
 
+#[test]
+fn open_basedir_denials_use_php_display_warning_shape() {
+    let fixture = TempFsFixture::new("open-basedir-display");
+    fs::create_dir(fixture.root.join("allowed")).expect("allowed directory is created");
+    fs::create_dir(fixture.root.join("denied")).expect("denied directory is created");
+    fs::write(fixture.root.join("denied/file.txt"), "payload")
+        .expect("denied fixture file is created");
+    let root = php_string(&fixture.root);
+    let source = format!(
+        r#"<?php
+$root = {root};
+$allowed = $root . "/allowed";
+$denied = "../denied/file.txt";
+chdir($allowed);
+ini_set("open_basedir", ".");
+var_dump(filetype($denied));
+var_dump(lstat($denied));
+var_dump(fileatime($denied));
+var_dump(touch($denied));
+"#,
+        root = root
+    );
+
+    let execution = run_source(&source).unwrap();
+
+    assert_eq!(
+        execution
+            .stdout
+            .matches(
+                "open_basedir restriction in effect. File(../denied/file.txt) is not within the allowed path(s): (.)"
+            )
+            .count(),
+        4,
+        "{}",
+        execution.stdout
+    );
+    assert_eq!(execution.stdout.matches("bool(false)").count(), 4);
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
 struct TempFsFixture {
     root: PathBuf,
 }

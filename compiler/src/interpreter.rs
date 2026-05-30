@@ -19454,9 +19454,11 @@ impl Interpreter {
             return Ok(true);
         }
 
-        self.emit_warning(
-            function,
-            format!("{display_path}: open_basedir restriction in effect"),
+        let allowed_paths = self.ini_value("open_basedir").unwrap_or_default();
+        self.emit_display_warning(
+            format!(
+                "{function}: open_basedir restriction in effect. File({display_path}) is not within the allowed path(s): ({allowed_paths})"
+            ),
             span,
         )?;
         Ok(false)

@@ -4953,7 +4953,8 @@
   returns `false` with a PHP-shaped display warning for failed opens; `unlink()`,
   `mkdir()`, `rmdir()`, `copy()`,
   `rename()`, and `chdir()` perform host-local operations with bounded
-  `open_basedir` checks; `copy()` rejects directory sources, existing
+  `open_basedir` checks that return `false` and emit PHP-shaped display
+  warnings for denied paths; `copy()` rejects directory sources, existing
   directory destinations, and same-source/destination local file paths with
   PHP-style `false`/warning behavior while preserving the source file; and
   `scandir()` returns a PHP array for local
@@ -4965,7 +4966,8 @@
   wrappers other
   than local `file://`, sockets and actual network transport resources,
   advisory locking effects, non-UTF-8 output payloads,
-  recursive array-to-string parity, exact warning text/`TypeError`/`ValueError`
+  recursive array-to-string parity, exact warning text outside the covered
+  missing-path and `open_basedir` denial slices, `TypeError`/`ValueError`
   timing, ownership/time mutation, full stat-cache invalidation, and
   native lowering unsupported. `is_uploaded_file($path)` and
   `move_uploaded_file($from, $to)` use only the request-local upload
@@ -4994,7 +4996,8 @@
   `clearstatcache(false, $path)` removes the matching entry. This is a
   bounded WordPress request/filesystem metadata slice, not full PHP filesystem
   support: include-path lookup, stream wrappers, full PHP stat-cache breadth,
-  `open_basedir`, warning text parity outside the bounded missing-path slice,
+  `open_basedir` policy beyond the shared local allow-list check, warning text
+  parity outside the bounded missing-path and `open_basedir` denial slices,
   non-string coercions, non-UTF-8 paths,
   oversized file handling beyond the current signed 64-bit integer subset,
   partial-output behavior, and native lowering remain unsupported.
@@ -5005,7 +5008,9 @@
   metadata reads share the same bounded `clearstatcache()`-managed cache as
   `filesize()`. This is a bounded WordPress request/filesystem stat metadata
   slice, not full PHP filesystem support: include-path lookup, stream
-  wrappers, full PHP stat-cache breadth, `open_basedir`, warning behavior,
+  wrappers, full PHP stat-cache breadth, `open_basedir` policy beyond the
+  shared local allow-list check, warning behavior outside the bounded
+  missing-path and `open_basedir` denial slices,
   non-string coercions, non-UTF-8 paths, pre-Unix-epoch timestamps, oversized
   timestamps beyond the current signed 64-bit integer subset, partial-output
   behavior, and native lowering remain unsupported.

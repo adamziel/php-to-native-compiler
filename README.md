@@ -150,9 +150,10 @@ non-negative length reads over those UTF-8 payloads. Local absolute `file://`
 URLs with an empty host or `localhost` are also accepted by the current
 include/require resolver after the same bounded UTF-8 percent-decoding.
 When `ini_set("open_basedir", $path)` configures a non-empty
-request-local allow-list, local `file_get_contents()` and `fopen()` paths,
-including local `file://` URLs, are checked against those bounded directories
-before opening; denied reads emit a bounded `E_WARNING`, return `false`, and
+request-local allow-list, local `file_get_contents()`/`fopen()` paths,
+covered local metadata/mutation helpers, and local `file://` URLs are checked
+against those bounded directories before opening or inspecting; denied
+operations emit a bounded PHP-style display `E_WARNING`, return `false`, and
 do not populate the realpath cache.
 Missing local files and negative offsets before the start of those payloads
 emit bounded PHP-style `E_WARNING` events, return `false`, and continue; the
@@ -188,7 +189,7 @@ option merging, broader wrapper metadata,
 binary byte fidelity, directory entry ordering fidelity, multipart upload
 parsing, runtime temporary upload creation, host upload validation,
 permissions/locking, realpath-cache ancestor entries and broader
-`open_basedir` policy beyond local `file_get_contents()`/`fopen()`,
+`open_basedir` policy beyond covered local filesystem helpers,
 stat-cache/realpath-cache state beyond those local read paths, closure shutdown
 callback execution,
 invokable-object shutdown callbacks, exact warning text and error-handler
