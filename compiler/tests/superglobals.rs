@@ -60,6 +60,23 @@ echo constant("PHP_SAPI");
 }
 
 #[test]
+fn php_binary_is_available_as_current_cli_runtime_constant() {
+    let execution = run_source(
+        r#"<?php
+echo defined("PHP_BINARY") ? "defined" : "missing";
+echo "|";
+echo PHP_BINARY !== "" ? "non-empty" : "empty";
+echo "|";
+echo constant("PHP_BINARY") === PHP_BINARY ? "same" : "different";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "defined|non-empty|same");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn php_sapi_name_returns_current_cli_runtime_sapi() {
     let execution = run_source(
         r#"<?php

@@ -28,6 +28,7 @@ fn htmlentities_and_entity_decode_cover_core_entities_and_selected_latin1() {
 $input = "<>\"&åÄ";
 echo htmlentities($input, ENT_COMPAT, "UTF-8"), "\n";
 echo html_entity_decode("&lt;&gt;&quot;&amp;&aring;&Auml;", ENT_COMPAT, "UTF-8"), "\n";
+echo html_entity_decode("&amp;lt;", ENT_COMPAT, "koi8-r"), "\n";
 echo html_entity_decode("&#x24; &#36; &apos;", ENT_QUOTES | ENT_HTML5, "UTF-8"), "\n";
 echo html_entity_decode("&apos;", ENT_QUOTES | ENT_HTML401, "UTF-8"), "\n";
 "#,
@@ -36,7 +37,7 @@ echo html_entity_decode("&apos;", ENT_QUOTES | ENT_HTML401, "UTF-8"), "\n";
 
     assert_eq!(
         execution.stdout,
-        "&lt;&gt;&quot;&amp;&aring;&Auml;\n<>\"&åÄ\n$ $ '\n&apos;\n"
+        "&lt;&gt;&quot;&amp;&aring;&Auml;\n<>\"&åÄ\n&lt;\n$ $ '\n&apos;\n"
     );
     assert_eq!(execution.exit_code, 0);
 }

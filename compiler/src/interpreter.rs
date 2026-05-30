@@ -97783,6 +97783,7 @@ const BUILTIN_GLOBAL_CONSTANT_NAMES: &[&str] = &[
     "NAN",
     "M_PI",
     "PHP_SAPI",
+    "PHP_BINARY",
     "PHP_OS",
     "PHP_OS_FAMILY",
     "PHP_EOL",
@@ -98008,6 +98009,7 @@ fn builtin_global_constant_value(name: &str) -> Option<Value> {
         "NAN" => Some(Value::Float(f64::NAN)),
         "M_PI" => Some(Value::Float(std::f64::consts::PI)),
         "PHP_SAPI" => Some(Value::String("cli".to_string())),
+        "PHP_BINARY" => Some(Value::String(php_binary_constant_value())),
         "PHP_OS" => Some(Value::String("Linux".to_string())),
         "PHP_OS_FAMILY" => Some(Value::String("Linux".to_string())),
         "PHP_EOL" => Some(Value::String("\n".to_string())),
@@ -98232,6 +98234,23 @@ fn builtin_global_constant_value(name: &str) -> Option<Value> {
         "MYSQLI_REFRESH_BACKUP_LOG" => Some(Value::Int(PHP_MYSQLI_REFRESH_BACKUP_LOG)),
         _ => None,
     }
+}
+
+fn php_binary_constant_value() -> String {
+    std::env::var("TEST_PHP_EXECUTABLE")
+        .ok()
+        .filter(|value| !value.is_empty())
+        .or_else(|| {
+            std::env::var("PHPC_BIN")
+                .ok()
+                .filter(|value| !value.is_empty())
+        })
+        .or_else(|| {
+            std::env::current_exe()
+                .ok()
+                .map(|path| path.to_string_lossy().into_owned())
+        })
+        .unwrap_or_else(|| "phpc".to_string())
 }
 
 fn is_supported_runtime_constant_name(name: &str) -> bool {
@@ -106003,6 +106022,7 @@ fn html_charset_is_supported(bytes: &[u8]) -> bool {
             | "ISO885915"
             | "SJIS"
             | "SHIFTJIS"
+            | "KOI8R"
             | "EUCJP"
             | "1251"
             | "CP1251"
