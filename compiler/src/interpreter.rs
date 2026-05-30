@@ -112177,7 +112177,13 @@ impl Interpreter {
 
 impl SprintfPlaceholder {
     fn effective_width_pad(&self, _precision: SprintfPrecision) -> char {
-        if self.left_align {
+        if self.left_align
+            && self.pad == '0'
+            && matches!(
+                self.kind,
+                SprintfPlaceholderKind::Int | SprintfPlaceholderKind::Unsigned
+            )
+        {
             return ' ';
         }
         self.pad
@@ -117401,6 +117407,13 @@ impl BoundedTimezone {
                     -14_400
                 }
             }
+            "US/Alaska" => {
+                if bounded_month_is_in_dst_window(month, day, 3, 8, 11, 7) {
+                    -28_800
+                } else {
+                    -32_400
+                }
+            }
             "America/Los_Angeles" => {
                 if bounded_month_is_in_dst_window(month, day, 3, 8, 11, 7) {
                     -25_200
@@ -117409,11 +117422,20 @@ impl BoundedTimezone {
                 }
             }
             "America/Indiana/Knox" => -18_000,
+            "America/Montevideo" => -10_800,
             "America/Sao_Paulo" => {
                 if month >= 11 || month <= 2 {
                     -7_200
                 } else {
                     -10_800
+                }
+            }
+            "Africa/Casablanca" => 0,
+            "Europe/Moscow" => {
+                if bounded_month_is_in_dst_window(month, day, 3, 27, 10, 31) {
+                    14_400
+                } else {
+                    10_800
                 }
             }
             "Europe/Amsterdam" | "Europe/Rome" => {
@@ -117430,6 +117452,10 @@ impl BoundedTimezone {
                     7_200
                 }
             }
+            "Asia/Hong_Kong" => 28_800,
+            "Australia/Brisbane" => 36_000,
+            "Pacific/Samoa" => -39_600,
+            "Pacific/Wallis" => 43_200,
             _ => {
                 let _ = year;
                 0
@@ -117447,13 +117473,21 @@ impl BoundedTimezone {
             "Europe/London" => 0,
             "Europe/Berlin" | "Europe/Oslo" => 3_600,
             "America/Halifax" => -14_400,
+            "US/Alaska" => -32_400,
             "America/Los_Angeles" => -28_800,
             "America/Indiana/Knox" => -18_000,
+            "America/Montevideo" => -10_800,
             "America/Sao_Paulo" => -10_800,
+            "Africa/Casablanca" => 0,
+            "Europe/Moscow" => 10_800,
             "Europe/Amsterdam" | "Europe/Rome" => 3_600,
             "Europe/Kyiv" => 7_200,
             "Asia/Jerusalem" => 7_200,
             "Asia/Calcutta" | "Asia/Kolkata" => 19_800,
+            "Asia/Hong_Kong" => 28_800,
+            "Australia/Brisbane" => 36_000,
+            "Pacific/Samoa" => -39_600,
+            "Pacific/Wallis" => 43_200,
             _ => self.offset_for_local_date(1970, 1, 1),
         }
     }
@@ -117520,6 +117554,13 @@ impl BoundedTimezone {
                     "AST"
                 }
             }
+            "US/Alaska" => {
+                if self.is_dst(parts) {
+                    "AKDT"
+                } else {
+                    "AKST"
+                }
+            }
             "America/Los_Angeles" => {
                 if self.is_dst(parts) {
                     "PDT"
@@ -117527,11 +117568,20 @@ impl BoundedTimezone {
                     "PST"
                 }
             }
+            "America/Montevideo" => "UYT",
             "America/Sao_Paulo" => {
                 if self.is_dst(parts) {
                     "-02"
                 } else {
                     "-03"
+                }
+            }
+            "Africa/Casablanca" => "GMT",
+            "Europe/Moscow" => {
+                if self.is_dst(parts) {
+                    "MSD"
+                } else {
+                    "MSK"
                 }
             }
             "Europe/Amsterdam" | "Europe/Rome" => {
@@ -117548,6 +117598,10 @@ impl BoundedTimezone {
                     "EET"
                 }
             }
+            "Asia/Hong_Kong" => "HKT",
+            "Australia/Brisbane" => "AEST",
+            "Pacific/Samoa" => "SST",
+            "Pacific/Wallis" => "+12",
             _ => "UTC",
         };
         abbreviation.to_string()
@@ -117578,21 +117632,29 @@ fn bounded_timezone_from_name(name: &str) -> Option<BoundedTimezone> {
         "Asia/Jerusalem" => "Asia/Jerusalem",
         "Asia/Calcutta" => "Asia/Calcutta",
         "Asia/Kolkata" => "Asia/Kolkata",
+        "Asia/Hong_Kong" => "Asia/Hong_Kong",
+        "Australia/Brisbane" => "Australia/Brisbane",
+        "Pacific/Samoa" => "Pacific/Samoa",
+        "Pacific/Wallis" => "Pacific/Wallis",
+        "Africa/Casablanca" => "Africa/Casablanca",
         "America/Chicago" => "America/Chicago",
         "America/Halifax" => "America/Halifax",
         "America/Los_Angeles" => "America/Los_Angeles",
         "America/Indiana/Knox" => "America/Indiana/Knox",
+        "America/Montevideo" => "America/Montevideo",
         "America/Sao_Paulo" => "America/Sao_Paulo",
         "Europe/Amsterdam" => "Europe/Amsterdam",
         "Europe/Berlin" => "Europe/Berlin",
         "Europe/Kyiv" => "Europe/Kyiv",
         "Europe/London" => "Europe/London",
+        "Europe/Moscow" => "Europe/Moscow",
         "Europe/Oslo" => "Europe/Oslo",
         "Europe/Rome" => "Europe/Rome",
         "CET" => "Europe/Berlin",
         "CEST" => "Europe/Berlin",
         "EST" | "EDT" => "America/New_York",
         "PST" | "PDT" => "America/Los_Angeles",
+        "US/Alaska" => "US/Alaska",
         "US/Eastern" => "US/Eastern",
         "America/New_York" => "America/New_York",
         _ => return None,
@@ -117729,15 +117791,19 @@ fn call_timezone_name_from_abbr(args: &[Value], span: Span) -> CompileResult<Val
 
 const BOUNDED_TIMEZONE_IDENTIFIERS: &[(&str, i64, bool)] = &[
     ("Africa/Abidjan", PHP_DATETIMEZONE_AFRICA, false),
+    ("Africa/Casablanca", PHP_DATETIMEZONE_AFRICA, false),
     ("America/Chicago", PHP_DATETIMEZONE_AMERICA, false),
     ("America/Halifax", PHP_DATETIMEZONE_AMERICA, false),
     ("America/Indiana/Knox", PHP_DATETIMEZONE_AMERICA, false),
     ("America/Los_Angeles", PHP_DATETIMEZONE_AMERICA, false),
+    ("America/Montevideo", PHP_DATETIMEZONE_AMERICA, false),
     ("America/New_York", PHP_DATETIMEZONE_AMERICA, false),
     ("America/Sao_Paulo", PHP_DATETIMEZONE_AMERICA, false),
     ("Asia/Calcutta", PHP_DATETIMEZONE_ASIA, false),
+    ("Asia/Hong_Kong", PHP_DATETIMEZONE_ASIA, false),
     ("Asia/Jerusalem", PHP_DATETIMEZONE_ASIA, false),
     ("Asia/Kolkata", PHP_DATETIMEZONE_ASIA, false),
+    ("Australia/Brisbane", PHP_DATETIMEZONE_AUSTRALIA, false),
     ("Etc/GMT", PHP_DATETIMEZONE_UTC, false),
     ("Etc/UTC", PHP_DATETIMEZONE_UTC, false),
     ("Etc/Universal", PHP_DATETIMEZONE_UTC, false),
@@ -117746,11 +117812,15 @@ const BOUNDED_TIMEZONE_IDENTIFIERS: &[(&str, i64, bool)] = &[
     ("Europe/Berlin", PHP_DATETIMEZONE_EUROPE, false),
     ("Europe/Kyiv", PHP_DATETIMEZONE_EUROPE, false),
     ("Europe/London", PHP_DATETIMEZONE_EUROPE, false),
+    ("Europe/Moscow", PHP_DATETIMEZONE_EUROPE, false),
     ("Europe/Oslo", PHP_DATETIMEZONE_EUROPE, false),
     ("Europe/Rome", PHP_DATETIMEZONE_EUROPE, false),
     ("GMT", PHP_DATETIMEZONE_UTC, false),
     ("GMT0", PHP_DATETIMEZONE_UTC, false),
+    ("Pacific/Samoa", PHP_DATETIMEZONE_PACIFIC, true),
+    ("Pacific/Wallis", PHP_DATETIMEZONE_PACIFIC, false),
     ("UTC", PHP_DATETIMEZONE_UTC, false),
+    ("US/Alaska", PHP_DATETIMEZONE_AMERICA, true),
     ("US/Eastern", PHP_DATETIMEZONE_AMERICA, true),
     ("Zulu", PHP_DATETIMEZONE_UTC, false),
 ];
@@ -119537,6 +119607,13 @@ fn ini_option_is_runtime_mutable(normalized_name: &str) -> bool {
     !matches!(normalized_name, "max_memory_limit")
 }
 
+fn normalize_phpt_ini_override_value(normalized_name: &str, value: &str) -> String {
+    if normalized_name == "date.timezone" {
+        return value.trim().trim_end_matches(';').trim_end().to_string();
+    }
+    value.to_string()
+}
+
 fn phpc_phpt_ini_overrides_from_env() -> HashMap<String, String> {
     let mut values = HashMap::new();
     let Ok(flags) = std::env::var("PHPC_PHPT_INI_FLAGS") else {
@@ -119556,7 +119633,9 @@ fn phpc_phpt_ini_overrides_from_env() -> HashMap<String, String> {
             continue;
         };
         if !name.is_empty() {
-            values.insert(normalize_ini_name(name), value.to_string());
+            let normalized_name = normalize_ini_name(name);
+            let normalized_value = normalize_phpt_ini_override_value(&normalized_name, value);
+            values.insert(normalized_name, normalized_value);
         }
     }
     values

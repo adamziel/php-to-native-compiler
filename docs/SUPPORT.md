@@ -5147,10 +5147,13 @@
   nesting semantics, output-started interaction with headers, fatal-error
   cleanup, exact warning behavior, and native lowering remain unsupported.
   `date_default_timezone_set($timezoneId)` accepts one string argument, returns
-  `true` for `UTC`, and returns `false` for other identifiers without PHP's
-  notice machinery. Full timezone database validation, global timezone state,
-  `date_default_timezone_get()`, date extension integration, ini interactions,
-  warning behavior, exact diagnostics, and native lowering remain unsupported.
+  `true` for the bounded timezone identifiers used by the current date PHPT
+  subset, updates `date_default_timezone_get()` and date/time formatting state,
+  and returns `false` with a PHP-shaped notice for unknown identifiers.
+  `date.timezone` PHPT INI overrides seed the same bounded timezone state,
+  including PHPT-style trailing semicolon syntax. Full timezone database
+  validation, all historical transition rules, exact diagnostics, and native
+  lowering remain unsupported.
   `header($header, $replace = true, $response_code = 0)` accepts a string
   header line plus optional bool replacement flag and optional integer response
   code, records the raw header line in deterministic in-process CLI request

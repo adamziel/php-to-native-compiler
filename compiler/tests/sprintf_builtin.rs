@@ -181,6 +181,23 @@ var_dump(sprintf("%c", 0xd2));
 }
 
 #[test]
+fn sprintf_left_aligned_zero_padding_matches_php_by_placeholder_kind() {
+    let execution = run_source(
+        r#"<?php
+echo sprintf("%-05.2f|%-07.2f|%-07.2F|%+-07.2f", 3.4, -5.6, 3.4, 3.4), "\n";
+echo sprintf("%-07.2d|%-07s|%-'#7.2f", 1234, "xy", 3.4);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "3.400|-5.6000|3.40000|+3.4000\n1234   |xy00000|3.40###"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn json_encode_covers_current_formatter_descriptor_values() {
     let execution = run_source(
         r#"<?php

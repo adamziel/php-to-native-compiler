@@ -105,7 +105,7 @@ echo date_default_timezone_get(), "\n";
 
     assert_eq!(
         execution.stdout,
-        "bool(true)\nUTC|2/177/am/0/0/1151366400\nbool(true)\nAsia/Jerusalem|2/177/am/3/10800/1151366400\nbool(true)\nAmerica/Chicago|1/176/pm/19/-18000/1151366400\nbool(true)\nEurope/London|2/177/am/1/3600/1151366400\nbool(false)\nEurope/London\n"
+        "bool(true)\nUTC|2/177/am/0/0/1151366400\nbool(true)\nAsia/Jerusalem|2/177/am/3/10800/1151366400\nbool(true)\nAmerica/Chicago|1/176/pm/19/-18000/1151366400\nbool(true)\nEurope/London|2/177/am/1/3600/1151366400\n\nNotice: date_default_timezone_set(): Timezone ID 'Not/AZone' is invalid in Command line code on line 8\nbool(false)\nEurope/London\n"
     );
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);

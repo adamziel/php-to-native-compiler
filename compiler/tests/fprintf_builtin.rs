@@ -28,6 +28,22 @@ echo stream_get_contents($stream), "|", $left, "|", $right;
 }
 
 #[test]
+fn fprintf_left_aligned_zero_padded_float_writes_php_width_output() {
+    let execution = run_source(
+        r#"<?php
+$stream = fopen("php://memory", "w+");
+$length = fprintf($stream, "%-07.2f|%-07.2d", 3.4, 1234);
+rewind($stream);
+echo stream_get_contents($stream), "|", $length;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "3.40000|1234   |15");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn fprintf_and_vfprintf_are_available_through_string_valued_calls() {
     let execution = run_source(
         r#"<?php

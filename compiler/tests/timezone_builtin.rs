@@ -51,6 +51,36 @@ echo date_default_timezone_set("Nope/Zone") ? "valid" : "invalid";
 }
 
 #[test]
+fn date_default_timezone_set_accepts_bounded_regression_aliases() {
+    let execution = run_source(
+        r#"<?php
+$zones = [
+    "Pacific/Samoa",
+    "US/Alaska",
+    "America/Montevideo",
+    "Africa/Casablanca",
+    "Europe/Moscow",
+    "Asia/Hong_Kong",
+    "Australia/Brisbane",
+    "Pacific/Wallis",
+];
+foreach ($zones as $zone) {
+    echo date_default_timezone_set($zone) ? date_default_timezone_get() : "invalid";
+    echo "|";
+}
+echo date_default_timezone_get(), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "Pacific/Samoa|US/Alaska|America/Montevideo|Africa/Casablanca|Europe/Moscow|Asia/Hong_Kong|Australia/Brisbane|Pacific/Wallis|Pacific/Wallis\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn phpt_ini_date_timezone_initializes_default_timezone_and_startup_warnings() {
     let _guard = env_lock();
     let previous = env::var_os("PHPC_PHPT_INI_FLAGS");
@@ -64,6 +94,16 @@ echo date_default_timezone_get(), "|", date("T", strtotime("2020-01-01 00:00:00"
     .unwrap();
     assert_eq!(rome.stdout, "Europe/Rome|CET\n");
     assert_eq!(rome.exit_code, 0);
+
+    set_env_var("PHPC_PHPT_INI_FLAGS", "-d date.timezone=UTC;");
+    let semicolon = run_source(
+        r#"<?php
+echo ini_get("date.timezone"), "|", date_default_timezone_get(), "\n";
+"#,
+    )
+    .unwrap();
+    assert_eq!(semicolon.stdout, "UTC|UTC\n");
+    assert_eq!(semicolon.exit_code, 0);
 
     set_env_var("PHPC_PHPT_INI_FLAGS", "-d date.timezone=Incorrect/Zone");
     let invalid = run_source(
