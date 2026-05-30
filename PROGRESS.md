@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-30 22:17 CEST
+Updated: 2026-05-31 00:29 CEST
 Primary branch: `master`
-Latest source head: `a9a9d271 fix: add connection state builtins`
+Latest source head: `2120d9a2 fix: repair Batch018 gate regressions`
 
 ## Progress Score
 
@@ -13,7 +13,7 @@ Progress is the pinned php-src PHPT full-suite pass rate:
 
 `passed runnable PHPTs / total runnable PHPTs`
 
-Current score: **4132 / 20294 pinned runnable PHPTs = 20.36%**.
+Current score: **4178 / 20294 pinned runnable PHPTs = 20.59%**.
 
 ## PHPT Goal Checklist
 
@@ -54,6 +54,7 @@ Current score: **4132 / 20294 pinned runnable PHPTs = 20.36%**.
 | Batch016 selected integration | 3868 / 20294 | 19.06% | 0 semantic; 6 platform-SKIPIF adjudicated |
 | Batch016 regression7 repair | 4048 / 20294 | 19.95% | 0 |
 | Batch017 checkpoint10 | 4132 / 20294 | 20.36% | 0; 10 raw invalid-marker hits adjudicated as failed-row output |
+| Batch018 repair01 | 4178 / 20294 | 20.59% | 0; 4 raw invalid-marker hits adjudicated as failed-row/expected output |
 
 The Batch013 checkpoint10 source `fc2788a7` is integrated and published by a
 pinned sharded full-suite gate on public `b3e42ce1`. The gate recorded 3170
@@ -241,6 +242,20 @@ adjudication recorded those as failed PHPT row output involving `PHP_BINARY`
 or permission-behavior rows, not harness setup failure, missing `PHPC_BIN`, or
 uppercase `run-tests.php -P` bypass. Evidence lives under
 `/home/claude/supervised-php-compiler/state/logs/phpt-full-batch017-checkpoint10-publication-sharded-20260530T2208Z-php-src-f97ff59-public-981003bf-source-a9a9d271`.
+
+The Batch018 repair01 sharded publication gate on the same php-src pin, run
+`phpt-full-batch018-repair01-sharded-20260531T0014Z-php-src-f97ff59-public-2c27cb71-source-2120d9a2`,
+recorded 4178 / 20294 pinned runnable PHPTs = 20.59%. Raw runner counts were
+`4178 PASS / 14355 FAIL / 2702 SKIP / 12 XFAIL / 1082 BORK / 2 WARN` across
+18547 runnable rows. Source `2120d9a2` repaired the Batch018 checkpoint10
+`bug43927.phpt` PASS regression and added the runtime `PHP_BINARY` constant
+needed by several PHPT rows. The PASS-set comparison found zero
+latest-published PASS regressions. The raw invalid-marker scan found four
+hits; supervisor adjudication recorded these as literal permission-denied
+PHPT output in failed or expected-output rows, not harness setup failure,
+missing `PHPC_BIN`, missing `PHP_BINARY`, or uppercase `run-tests.php -P`
+bypass. Evidence lives under
+`/home/claude/supervised-php-compiler/state/logs/phpt-full-batch018-repair01-sharded-20260531T0014Z-php-src-f97ff59-public-2c27cb71-source-2120d9a2`.
 
 No other percentage is public project progress. Focused PHPT passes, source
 checkpoints, PRs, and docs/status edits are evidence for the next batch, but
