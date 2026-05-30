@@ -77278,6 +77278,8 @@ impl Interpreter {
             "chr" => self.call_chr(&args, span),
             "bin2hex" => call_bin2hex(&args, span),
             "hex2bin" => self.call_hex2bin(&args, span),
+            "pack" => call_pack(&args, span),
+            "unpack" => call_unpack(&args, span),
             "ord" => self.call_ord(&args, span),
             "dechex" => self.call_int_base_string_builtin("dechex()", &args, 16, span),
             "decbin" => self.call_int_base_string_builtin("decbin()", &args, 2, span),
@@ -91085,6 +91087,21 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
             "string|false",
             vec![reflection_internal_param("string", "string")],
         ),
+        "pack" => (
+            "string",
+            vec![
+                reflection_internal_param("format", "string"),
+                reflection_internal_variadic_param("values", "mixed"),
+            ],
+        ),
+        "unpack" => (
+            "array|false",
+            vec![
+                reflection_internal_param("format", "string"),
+                reflection_internal_param("string", "string"),
+                reflection_internal_optional_int_param("offset", 0),
+            ],
+        ),
         "ord" => (
             "int",
             vec![reflection_internal_param("character", "string")],
@@ -94739,6 +94756,8 @@ fn is_builtin(name: &str) -> bool {
             | "chr"
             | "bin2hex"
             | "hex2bin"
+            | "pack"
+            | "unpack"
             | "ord"
             | "dechex"
             | "decbin"
@@ -102038,6 +102057,298 @@ fn call_bin2hex(args: &[Value], span: Span) -> CompileResult<Value> {
         .map_err(|error| runtime_error(span, error))?;
 
     Ok(Value::String(hex_bytes(&value)))
+}
+
+#[derive(Clone, Copy, Debug)]
+enum PackRepeat {
+    Count(usize),
+    Star,
+}
+
+#[derive(Clone, Debug)]
+struct PackFormatItem {
+    code: u8,
+    repeat: PackRepeat,
+    name: Option<String>,
+}
+
+fn call_pack(args: &[Value], span: Span) -> CompileResult<Value> {
+    if args.is_empty() {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "pack()",
+                ArityExpectation::Between {
+                    min: 1,
+                    max: usize::MAX,
+                },
+                0,
+            ),
+        ));
+    }
+
+    let format = string_compare_argument_bytes("pack()", "format", &args[0], span)?;
+    let items = parse_pack_format_items("pack()", &format, false, span)?;
+    let mut output = Vec::new();
+    let mut value_index = 1usize;
+
+    for item in items {
+        match item.code {
+            b'x' => {
+                let count = match item.repeat {
+                    PackRepeat::Count(count) => count,
+                    PackRepeat::Star => {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "pack()",
+                                "Type x does not support the * repeater in the current subset",
+                            ),
+                        ));
+                    }
+                };
+                output.extend(std::iter::repeat(0).take(count));
+            }
+            b'H' | b'h' => {
+                let Some(value) = args.get(value_index) else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "pack()",
+                            "not enough arguments for H/h format values in the current subset",
+                        ),
+                    ));
+                };
+                value_index += 1;
+                let value = string_compare_argument_bytes("pack()", "value", value, span)?;
+                let nibble_count = match item.repeat {
+                    PackRepeat::Star => value.len(),
+                    PackRepeat::Count(count) => count,
+                };
+                if value.len() < nibble_count {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "pack()",
+                            "H/h format values shorter than the requested repeater are not implemented",
+                        ),
+                    ));
+                }
+                output.extend(pack_hex_nibbles(
+                    &value[..nibble_count],
+                    item.code == b'H',
+                    span,
+                )?);
+            }
+            _ => unreachable!("parse_pack_format_items filters unsupported pack format codes"),
+        }
+    }
+
+    Ok(interpreter_value_from_php_string_bytes(output))
+}
+
+fn call_unpack(args: &[Value], span: Span) -> CompileResult<Value> {
+    if !(2..=3).contains(&args.len()) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "unpack()",
+                ArityExpectation::Between { min: 2, max: 3 },
+                args.len(),
+            ),
+        ));
+    }
+    if args.len() == 3 {
+        let offset = integer_argument_current_subset("unpack()", "offset", &args[2], span)?;
+        if offset != 0 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "unpack()",
+                    "non-zero offsets are not implemented for bounded H/h unpack()",
+                ),
+            ));
+        }
+    }
+
+    let format = string_compare_argument_bytes("unpack()", "format", &args[0], span)?;
+    let data = string_compare_argument_bytes("unpack()", "string", &args[1], span)?;
+    let items = parse_pack_format_items("unpack()", &format, true, span)?;
+    if items.len() != 1 {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "unpack()",
+                "multiple format segments are not implemented for bounded H/h unpack()",
+            ),
+        ));
+    }
+    let mut array = PhpArray::new();
+    let mut next_key = 1_i64;
+
+    for item in items {
+        let nibble_count = match item.repeat {
+            PackRepeat::Star => data.len() * 2,
+            PackRepeat::Count(count) => count,
+        };
+        if nibble_count > data.len() * 2 {
+            return Ok(Value::Bool(false));
+        }
+        let value = unpack_hex_nibbles(&data, nibble_count, item.code == b'H');
+        if let Some(name) = item.name {
+            array.insert(name, Value::String(value));
+        } else {
+            array.insert(next_key, Value::String(value));
+            next_key += 1;
+        }
+    }
+
+    Ok(Value::Array(array))
+}
+
+fn parse_pack_format_items(
+    function: &str,
+    format: &[u8],
+    allow_names: bool,
+    span: Span,
+) -> CompileResult<Vec<PackFormatItem>> {
+    let mut items = Vec::new();
+    let mut index = 0usize;
+    while index < format.len() {
+        let code = format[index];
+        index += 1;
+        if matches!(code, b' ' | b'\t' | b'\r' | b'\n') {
+            continue;
+        }
+        let supported = if allow_names {
+            matches!(code, b'H' | b'h')
+        } else {
+            matches!(code, b'x' | b'H' | b'h')
+        };
+        if !supported {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function,
+                    format!(
+                        "pack/unpack format code {} is not implemented in the current subset",
+                        code as char
+                    ),
+                ),
+            ));
+        }
+
+        let repeat = if format.get(index) == Some(&b'*') {
+            index += 1;
+            PackRepeat::Star
+        } else {
+            let start = index;
+            while format.get(index).is_some_and(|byte| byte.is_ascii_digit()) {
+                index += 1;
+            }
+            if start == index {
+                PackRepeat::Count(1)
+            } else {
+                let count = std::str::from_utf8(&format[start..index])
+                    .ok()
+                    .and_then(|digits| digits.parse::<usize>().ok())
+                    .ok_or_else(|| {
+                        runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                function,
+                                "format repeaters must fit in usize in the current subset",
+                            ),
+                        )
+                    })?;
+                PackRepeat::Count(count)
+            }
+        };
+
+        let name = if allow_names {
+            let start = index;
+            while index < format.len() && format[index] != b'/' {
+                index += 1;
+            }
+            let name = (start != index)
+                .then(|| String::from_utf8_lossy(&format[start..index]).into_owned());
+            if index < format.len() && format[index] == b'/' {
+                index += 1;
+            }
+            name
+        } else {
+            None
+        };
+
+        items.push(PackFormatItem { code, repeat, name });
+    }
+
+    if items.is_empty() {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                "empty pack/unpack formats are not implemented in the current subset",
+            ),
+        ));
+    }
+
+    Ok(items)
+}
+
+fn pack_hex_nibbles(input: &[u8], high_first: bool, span: Span) -> CompileResult<Vec<u8>> {
+    let mut output = Vec::with_capacity((input.len() + 1) / 2);
+    for chunk in input.chunks(2) {
+        let first = decode_hex_digit(chunk[0]).ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "pack()",
+                    "H/h format values must contain only hexadecimal characters",
+                ),
+            )
+        })?;
+        let second = match chunk.get(1) {
+            Some(byte) => decode_hex_digit(*byte).ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "pack()",
+                        "H/h format values must contain only hexadecimal characters",
+                    ),
+                )
+            })?,
+            None => 0,
+        };
+        let byte = if high_first {
+            (first << 4) | second
+        } else {
+            first | (second << 4)
+        };
+        output.push(byte);
+    }
+    Ok(output)
+}
+
+fn unpack_hex_nibbles(input: &[u8], nibble_count: usize, high_first: bool) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut output = String::with_capacity(nibble_count);
+    for index in 0..nibble_count {
+        let byte = input[index / 2];
+        let nibble = if high_first {
+            if index % 2 == 0 {
+                byte >> 4
+            } else {
+                byte & 0x0f
+            }
+        } else if index % 2 == 0 {
+            byte & 0x0f
+        } else {
+            byte >> 4
+        };
+        output.push(HEX[nibble as usize] as char);
+    }
+    output
 }
 
 fn call_base64_decode(args: &[Value], span: Span) -> CompileResult<Value> {

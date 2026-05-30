@@ -66,10 +66,14 @@ var_dump(hex2bin("AH"));
 }
 
 #[test]
-fn string_residual_metadata_is_available_for_capability_checks() {
+fn bounded_pack_unpack_hex_and_padding_formats_preserve_bytes() {
     let execution = run_source(
         r#"<?php
-foreach (["strrev", "str_rot13", "hex2bin", "ord", "quotemeta", "nl2br", "ucfirst", "lcfirst", "ucwords"] as $name) {
+echo bin2hex(pack("x")), "\n";
+echo bin2hex(pack("H3", "181")), ":", unpack("H3", pack("H3", "181"))[1], "\n";
+echo bin2hex(pack("H*", "a")), ":", unpack("H*", pack("H*", "a"))[1], "\n";
+echo bin2hex(pack("h3", "181")), ":", unpack("h3", pack("h3", "181"))[1], "\n";
+foreach (["pack", "unpack"] as $name) {
     echo function_exists($name) ? "1" : "0";
     echo is_callable($name) ? "1" : "0";
     $fn = new ReflectionFunction($name);
@@ -81,7 +85,28 @@ foreach (["strrev", "str_rot13", "hex2bin", "ord", "quotemeta", "nl2br", "ucfirs
 
     assert_eq!(
         execution.stdout,
-        "11:1/1;11:1/1;11:1/1;11:1/1;11:1/1;11:1/2;11:1/1;11:1/1;11:1/2;"
+        "00\n1810:181\na0:a0\n8101:181\n11:1/2;11:2/3;"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn string_residual_metadata_is_available_for_capability_checks() {
+    let execution = run_source(
+        r#"<?php
+foreach (["strrev", "str_rot13", "hex2bin", "pack", "unpack", "ord", "quotemeta", "nl2br", "ucfirst", "lcfirst", "ucwords"] as $name) {
+    echo function_exists($name) ? "1" : "0";
+    echo is_callable($name) ? "1" : "0";
+    $fn = new ReflectionFunction($name);
+    echo ":", $fn->getNumberOfRequiredParameters(), "/", $fn->getNumberOfParameters(), ";";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "11:1/1;11:1/1;11:1/1;11:1/2;11:2/3;11:1/1;11:1/1;11:1/2;11:1/1;11:1/1;11:1/2;"
     );
     assert_eq!(execution.exit_code, 0);
 }
