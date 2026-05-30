@@ -16537,6 +16537,40 @@ impl Interpreter {
                     &state.timezone,
                 )))
             }
+            "gettimestamp" => {
+                expect_expr_arity("DateTime::getTimestamp", args.len(), 0, span)?;
+                let state = self.date_time_objects.get(&object.id()).ok_or_else(|| {
+                    runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "DateTime::getTimestamp()",
+                            "DateTime object is not initialized in the current subset",
+                        ),
+                    )
+                })?;
+                Ok(Value::Int(state.timestamp))
+            }
+            "settimestamp" => {
+                expect_expr_arity("DateTime::setTimestamp", args.len(), 1, span)?;
+                let value = self.evaluate(&args[0], caller_scope)?;
+                let timestamp =
+                    required_date_int_arg("DateTime::setTimestamp()", &value, "timestamp", span)?;
+                let timezone = self
+                    .date_time_objects
+                    .get(&object.id())
+                    .map(|state| state.timezone.clone())
+                    .ok_or_else(|| {
+                        runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "DateTime::setTimestamp()",
+                                "DateTime object is not initialized in the current subset",
+                            ),
+                        )
+                    })?;
+                self.assign_datetime_object_state(&object, timestamp, timezone, span)?;
+                Ok(Value::Object(object))
+            }
             _ => Err(runtime_error(
                 span,
                 RuntimeError::undefined_function(format!("DateTime::{method_name}()")),
@@ -16578,6 +16612,42 @@ impl Interpreter {
             state.timestamp,
             &state.timezone,
         )))
+    }
+
+    fn call_date_timestamp_get(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("date_timestamp_get", args, 1, span)?;
+        let object = self.datetime_object_argument("date_timestamp_get()", args, 0, span)?;
+        let state = self.date_time_objects.get(&object.id()).ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "date_timestamp_get()",
+                    "DateTime object is not initialized in the current subset",
+                ),
+            )
+        })?;
+        Ok(Value::Int(state.timestamp))
+    }
+
+    fn call_date_timestamp_set(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("date_timestamp_set", args, 2, span)?;
+        let object = self.datetime_object_argument("date_timestamp_set()", args, 0, span)?;
+        let timestamp = required_date_int_arg("date_timestamp_set()", &args[1], "timestamp", span)?;
+        let timezone = self
+            .date_time_objects
+            .get(&object.id())
+            .map(|state| state.timezone.clone())
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "date_timestamp_set()",
+                        "DateTime object is not initialized in the current subset",
+                    ),
+                )
+            })?;
+        self.assign_datetime_object_state(&object, timestamp, timezone, span)?;
+        Ok(Value::Object(object))
     }
 
     fn call_date_offset_get(&self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -77674,6 +77744,8 @@ impl Interpreter {
             "date_sun_info" => self.call_date_sun_info(&args, span),
             "date_create" => self.call_date_create(&args, span),
             "date_format" => self.call_date_format(&args, span),
+            "date_timestamp_get" => self.call_date_timestamp_get(&args, span),
+            "date_timestamp_set" => self.call_date_timestamp_set(&args, span),
             "date_offset_get" => self.call_date_offset_get(&args, span),
             "date_timezone_get" => self.call_date_timezone_get(&args, span),
             "idate" => self.call_idate(&args, span),
@@ -95151,6 +95223,8 @@ fn is_builtin(name: &str) -> bool {
             | "date_sun_info"
             | "date_create"
             | "date_format"
+            | "date_timestamp_get"
+            | "date_timestamp_set"
             | "date_offset_get"
             | "date_timezone_get"
             | "idate"
@@ -115962,7 +116036,7 @@ impl BoundedTimezone {
 
     fn numeric_fixed_offset(offset: i64) -> Self {
         Self {
-            name: format_timezone_offset(offset, false),
+            name: format_timezone_offset(offset, true),
             fixed_offset: Some(offset),
         }
     }
@@ -116399,7 +116473,7 @@ fn bounded_datetime_timezone_hint(
     default_timezone: &BoundedTimezone,
 ) -> BoundedTimezone {
     let trimmed = input.trim();
-    if trimmed.starts_with('@') {
+    if parse_bounded_at_timestamp(trimmed).is_some() {
         return BoundedTimezone::numeric_fixed_offset(0);
     }
     if let Some(zone) = bounded_timezone_from_name(trimmed) {
@@ -116414,6 +116488,16 @@ fn bounded_datetime_timezone_hint(
         if trimmed.len() > suffix_len {
             let suffix = &trimmed[trimmed.len() - suffix_len..];
             if matches!(suffix.as_bytes().first(), Some(b'+') | Some(b'-')) {
+                if let Some(zone) = bounded_timezone_from_name(suffix) {
+                    return zone;
+                }
+            }
+        }
+    }
+    for suffix_len in [4_usize, 3] {
+        if trimmed.len() > suffix_len {
+            let suffix = &trimmed[trimmed.len() - suffix_len..];
+            if suffix.chars().all(|ch| ch.is_ascii_alphabetic()) {
                 if let Some(zone) = bounded_timezone_from_name(suffix) {
                     return zone;
                 }
@@ -116734,23 +116818,8 @@ fn parse_bounded_strtotime(input: &str, default_timezone: &BoundedTimezone) -> O
     if trimmed.is_empty() {
         return None;
     }
-    if let Some(rest) = trimmed.strip_prefix('@') {
-        let mut end = 0;
-        for (index, ch) in rest.char_indices() {
-            if index == 0 && (ch == '-' || ch == '+') {
-                end = ch.len_utf8();
-                continue;
-            }
-            if ch.is_ascii_digit() {
-                end = index + ch.len_utf8();
-                continue;
-            }
-            break;
-        }
-        if end == 0 || rest[..end].chars().all(|ch| ch == '-' || ch == '+') {
-            return None;
-        }
-        return rest[..end].parse::<i64>().ok();
+    if let Some(timestamp) = parse_bounded_at_timestamp(trimmed) {
+        return Some(timestamp);
     }
 
     if trimmed.len() == 14 && trimmed.chars().all(|ch| ch.is_ascii_digit()) {
@@ -116784,6 +116853,26 @@ fn parse_bounded_strtotime(input: &str, default_timezone: &BoundedTimezone) -> O
     }
 
     parse_bounded_textual_datetime(trimmed, default_timezone)
+}
+
+fn parse_bounded_at_timestamp(input: &str) -> Option<i64> {
+    let rest = input.strip_prefix('@')?;
+    let mut end = 0;
+    for (index, ch) in rest.char_indices() {
+        if index == 0 && (ch == '-' || ch == '+') {
+            end = ch.len_utf8();
+            continue;
+        }
+        if ch.is_ascii_digit() {
+            end = index + ch.len_utf8();
+            continue;
+        }
+        break;
+    }
+    if end == 0 || rest[..end].chars().all(|ch| ch == '-' || ch == '+') {
+        return None;
+    }
+    rest[..end].parse::<i64>().ok()
 }
 
 fn parse_bounded_numeric_datetime(input: &str, default_timezone: &BoundedTimezone) -> Option<i64> {
@@ -116850,6 +116939,16 @@ fn split_bounded_datetime_timezone(input: &str) -> (&str, Option<i64>) {
         if matches!(suffix.as_bytes().first(), Some(b'+') | Some(b'-')) && &suffix[3..4] == ":" {
             if let Some(offset) = parse_timezone_offset_token(suffix) {
                 return (&input[..input.len() - 6], Some(offset));
+            }
+        }
+    }
+    for suffix_len in [4_usize, 3] {
+        if input.len() > suffix_len {
+            let suffix = &input[input.len() - suffix_len..];
+            if suffix.chars().all(|ch| ch.is_ascii_alphabetic()) {
+                if let Some(offset) = parse_timezone_offset_token(suffix) {
+                    return (&input[..input.len() - suffix_len], Some(offset));
+                }
             }
         }
     }

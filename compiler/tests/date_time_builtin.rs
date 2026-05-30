@@ -23,6 +23,40 @@ echo idate("B", mktime(0, 0, 0, 6, 27, 2006)), "\n";
 }
 
 #[test]
+fn datetime_timestamp_helpers_get_and_set_bounded_state() {
+    let execution = run_source(
+        r#"<?php
+date_default_timezone_set("UTC");
+$date = date_create("1970-01-01T00:00:00UTC");
+var_dump(date_timestamp_get($date));
+var_dump($date->getTimeStamp() === 0);
+date_timestamp_set($date, 1234567890);
+echo date_format($date, "B => (U) => T Y-M-d H:i:s"), "\n";
+date_default_timezone_set("Europe/Oslo");
+$at = new DateTime("@1217184864");
+echo $at->format("Y-m-d H:i e"), "\n";
+$local = new DateTime();
+$local->setTimestamp(1217184864);
+echo $local->format("Y-m-d H:i e"), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "int(0)\n",
+            "bool(true)\n",
+            "021 => (1234567890) => UTC 2009-Feb-13 23:31:30\n",
+            "2008-07-27 18:54 +00:00\n",
+            "2008-07-27 20:54 Europe/Oslo\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn date_default_timezone_state_applies_bounded_offsets() {
     let execution = run_source(
         r#"<?php

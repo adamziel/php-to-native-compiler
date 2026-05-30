@@ -66388,6 +66388,8 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "date_sun_info",
     "date_create",
     "date_format",
+    "date_timestamp_get",
+    "date_timestamp_set",
     "date_offset_get",
     "date_timezone_get",
     "idate",
