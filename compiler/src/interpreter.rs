@@ -78354,6 +78354,7 @@ impl Interpreter {
             "getprotobynumber" => call_getprotobynumber(&args, span),
             "getservbyname" => call_getservbyname(&args, span),
             "getservbyport" => call_getservbyport(&args, span),
+            "get_current_user" => call_get_current_user(&args, self.main_source_file.as_deref(), span),
             "php_uname" => call_php_uname(&args, span),
             "php_sapi_name" => call_php_sapi_name(&args, span),
             "phpversion" => call_phpversion(&args, span),
@@ -93057,6 +93058,7 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
             ],
         ),
         "connection_aborted" | "connection_status" => ("int", vec![]),
+        "get_current_user" => ("string", vec![]),
         "php_uname" => (
             "string",
             vec![reflection_internal_optional_string_param("mode", "a")],
@@ -96243,6 +96245,7 @@ fn is_builtin(name: &str) -> bool {
             | "getprotobynumber"
             | "getservbyname"
             | "getservbyport"
+            | "get_current_user"
             | "php_uname"
             | "php_sapi_name"
             | "phpversion"
@@ -115210,6 +115213,63 @@ fn call_php_uname(args: &[Value], span: Span) -> CompileResult<Value> {
         }
     };
     Ok(Value::String(value))
+}
+
+fn call_get_current_user(
+    args: &[Value],
+    main_source_file: Option<&str>,
+    span: Span,
+) -> CompileResult<Value> {
+    expect_arity("get_current_user", args, 0, span)?;
+    Ok(Value::String(current_user_name(main_source_file)))
+}
+
+fn current_user_name(main_source_file: Option<&str>) -> String {
+    if let Some(source_file) = main_source_file {
+        let path = local_filesystem_metadata_path(source_file);
+        if let Ok(metadata) = fs::metadata(path) {
+            if let Some(name) = username_for_file_metadata(&metadata) {
+                return name;
+            }
+        }
+    }
+
+    std::env::var("USER")
+        .ok()
+        .filter(|value| !value.is_empty())
+        .or_else(|| {
+            std::env::var("LOGNAME")
+                .ok()
+                .filter(|value| !value.is_empty())
+        })
+        .unwrap_or_default()
+}
+
+#[cfg(unix)]
+fn username_for_file_metadata(metadata: &fs::Metadata) -> Option<String> {
+    use std::os::unix::fs::MetadataExt;
+
+    username_for_uid(metadata.uid())
+}
+
+#[cfg(not(unix))]
+fn username_for_file_metadata(_metadata: &fs::Metadata) -> Option<String> {
+    None
+}
+
+#[cfg(unix)]
+fn username_for_uid(uid: u32) -> Option<String> {
+    let passwd = fs::read_to_string("/etc/passwd").ok()?;
+    passwd.lines().find_map(|line| {
+        let mut parts = line.split(':');
+        let name = parts.next()?;
+        if name.is_empty() {
+            return None;
+        }
+        parts.next()?;
+        let entry_uid = parts.next()?.parse::<u32>().ok()?;
+        (entry_uid == uid).then(|| name.to_string())
+    })
 }
 
 fn call_php_sapi_name(args: &[Value], span: Span) -> CompileResult<Value> {
