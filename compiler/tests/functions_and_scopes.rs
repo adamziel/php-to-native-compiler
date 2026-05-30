@@ -1317,10 +1317,30 @@ echo __NAMESPACE__;
 }
 
 #[test]
-fn magic_trait_constant_is_rejected_until_trait_context_tracking_exists() {
-    let error = parse_error(
+fn magic_trait_constant_is_empty_outside_trait_methods() {
+    let execution = run_source(
         r#"<?php
 class Box {
+    public function label() {
+        return __TRAIT__;
+    }
+}
+$box = new Box();
+echo "[", __TRAIT__, "]\n";
+echo "[", $box->label(), "]";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "[]\n[]");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn magic_trait_constant_in_trait_method_is_rejected_until_trait_context_tracking_exists() {
+    let error = parse_error(
+        r#"<?php
+trait Label {
     public function label() {
         return __TRAIT__;
     }

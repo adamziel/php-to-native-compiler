@@ -23,6 +23,10 @@
   method context and to an empty string outside class context. `__METHOD__`
   evaluates to `Class::method` in the current method context, to the current
   function name in function context, and to an empty string outside a function.
+  `__TRAIT__` evaluates to an empty string outside trait-originated methods;
+  trait-originated `__TRAIT__` still fails at parse time until original trait
+  method context tracking is implemented. `__NAMESPACE__` evaluates to the
+  current namespace name, or an empty string in global namespace.
 - static variables backed by per-scope materialized symbol tables
 - direct variable removal: `unset($name)` removes static variables from the
   current scope and treats undefined names as no-ops; when a removed direct
@@ -5634,8 +5638,9 @@
   `strict_types` type-enforcement semantics, tick handlers and execution hooks,
   and source encoding, lexer decoding, and runtime text handling are not
   implemented.
-- explicit parse diagnostics for unsupported magic constants such as
-  `__CLASS__`, `__TRAIT__`, and `__NAMESPACE__`
+- explicit parse diagnostics for unsupported magic-constant contexts such as
+  trait-originated `__TRAIT__` before original trait method context tracking
+  exists
 - narrow `require`, `require_once`, `include`, and `include_once` execution
   for local string paths in statement and expression position, including
   constant/string concatenation, bounded `set_include_path()` path-list
@@ -8069,11 +8074,11 @@
   values when a method class context exists, to the current function name in
   function context, and to an empty string outside a function. `__CLASS__`
   evaluates to the current class name when a method class context exists, and
-  to an empty string outside class context. `__TRAIT__` fails with a stable
-  parse diagnostic tied to the
-  current missing trait declaration/use and trait-context tracking boundary.
-  `__NAMESPACE__` fails with a stable parse diagnostic tied to the current
-  missing namespace-aware name-resolution boundary. DNF-shaped parenthesized
+  to an empty string outside class context. `__TRAIT__` evaluates to an empty
+  string outside trait-originated methods and still fails with a stable parse
+  diagnostic inside trait-originated method bodies until original trait method
+  context tracking exists. `__NAMESPACE__` evaluates to the current namespace
+  name, or an empty string in global namespace. DNF-shaped parenthesized
   type declarations, `mixed`, `void`/`never`, class/interface type names, coercive versus
   strict typing, variance, static local behavior outside the bounded
   declaration/default subset, reference-backed static locals,
@@ -9995,15 +10000,16 @@
   dynamic initialization expressions, references, variable variables,
   recursion/reentrancy edge behavior, included-file edge cases, exact PHP
   diagnostics, reflection behavior, and native lowering
-- magic constants other than `__LINE__`, `__FILE__`, `__DIR__`,
-  `__FUNCTION__`, `__CLASS__`, and `__METHOD__`, such as `__TRAIT__` and
-  `__NAMESPACE__`; `__TRAIT__` specifically fails because original trait
-  method context tracking through class composition is not implemented, and
-  `__NAMESPACE__` specifically fails because namespace-aware name resolution is
-  not implemented. `__FUNCTION__`, `__CLASS__`, and `__METHOD__` are limited to
-  current user-function and declared-method contexts plus top-level
-  empty-string behavior, plus the bounded static trait-method reflection
-  invocation context documented above; closure context, broader trait-method context,
+- magic constants outside the bounded runtime set. `__TRAIT__` is supported
+  only for non-trait-originated code where PHP returns an empty string; it
+  still fails in trait-originated method bodies because original trait method
+  context tracking through class composition is not implemented. `__NAMESPACE__`
+  is supported for the current parsed namespace name, but broader namespace
+  name-resolution behavior remains bounded. `__FUNCTION__`, `__CLASS__`, and
+  `__METHOD__` are limited to current user-function and declared-method
+  contexts plus top-level empty-string behavior, plus the bounded static
+  trait-method reflection invocation context documented above; closure context,
+  broader trait-method context,
   anonymous-class exact names, original-name/case fidelity beyond the current
   declaration metadata, and exact namespace/source mapping are not implemented.
   `__FILE__` currently

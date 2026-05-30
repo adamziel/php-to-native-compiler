@@ -23,6 +23,7 @@ struct Parser {
     current: usize,
     nested_statement_depth: usize,
     function_body_depth: usize,
+    trait_method_body_depth: usize,
     function_generator_stack: Vec<bool>,
     current_namespace: String,
     class_imports: Vec<(String, String)>,
@@ -78,6 +79,7 @@ impl Parser {
             current: 0,
             nested_statement_depth: 0,
             function_body_depth: 0,
+            trait_method_body_depth: 0,
             function_generator_stack: Vec::new(),
             current_namespace: String::new(),
             class_imports: Vec::new(),
@@ -887,7 +889,10 @@ impl Parser {
             )?;
             function
         } else {
-            self.parse_function_after_keyword(span, false, false)?
+            self.trait_method_body_depth += 1;
+            let function = self.parse_function_after_keyword(span, false, false);
+            self.trait_method_body_depth -= 1;
+            function?
         };
         Ok(ClassMethodDecl {
             function,
@@ -6506,6 +6511,15 @@ impl Parser {
                     }
                     if magic_name == "__METHOD__" {
                         return Ok(Expr::MagicMethod { span: token.span });
+                    }
+                    if magic_name == "__TRAIT__" {
+                        if self.trait_method_body_depth > 0 {
+                            return Err(self.error_at(
+                                token.span,
+                                unsupported_magic_constant_message(magic_name),
+                            ));
+                        }
+                        return Ok(Expr::String(String::new(), token.span));
                     }
                     if magic_name == "__NAMESPACE__" {
                         return Ok(Expr::String(self.current_namespace.clone(), token.span));
