@@ -52,15 +52,29 @@ fn array_flip_requires_array_argument() {
 }
 
 #[test]
-fn array_flip_rejects_unsupported_value_types() {
-    let error = runtime_error("<?php\n$items = [\"ok\", true];\necho array_flip($items);\n");
+fn array_flip_warns_and_skips_unsupported_value_types() {
+    let execution = run_source(
+        r#"<?php
+$items = ["ok" => "name", "skip_bool" => true, "skip_null" => null, "keep" => 7];
+$flipped = array_flip($items);
+print_r($flipped);
+"#,
+    )
+    .unwrap();
 
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 6);
     assert_eq!(
-        error.message,
-        "unsupported call array_flip(): values must be int or string in the current subset, got bool"
+        execution
+            .stdout
+            .matches(
+                "Warning: array_flip(): Can only flip string and integer values, entry skipped"
+            )
+            .count(),
+        2
     );
+    assert!(execution.stdout.contains("    [name] => ok"));
+    assert!(execution.stdout.contains("    [7] => keep"));
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

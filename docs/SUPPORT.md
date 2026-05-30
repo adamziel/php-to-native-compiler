@@ -6501,8 +6501,10 @@
   integer and string array values into result keys using the current array-key
   normalization rules, writes each original integer/string key as the result
   value, overwrites duplicate flipped keys with later values without moving the
-  first flipped-key slot, and is available through string-valued dynamic
-  function calls. `array_fill_keys($keys, $value)` accepts an array of
+  first flipped-key slot, skips unsupported non-int/string values with one
+  warning per skipped entry, returns the partial flipped array, and is
+  available through string-valued dynamic function calls.
+  `array_fill_keys($keys, $value)` accepts an array of
   null/boolean/integer/string/integral-finite-float key values, creates a new
   ordered array using those values as normalized result keys, stores the
   supplied value in each result slot, and overwrites duplicate result keys with
@@ -9109,11 +9111,12 @@
   string key rules, and writes each original integer/string key as the result
   value. Duplicate flipped keys are overwritten by later source entries without
   moving the first flipped-key position. Unsupported source values such as
-  `null`, booleans, floats, arrays, objects, and future resources fail with a
-  stable project diagnostic instead of PHP's warning-and-skip behavior.
-  References, copy-on-write containers, exact native warning/`TypeError`
-  behavior, and native lowering are not implemented. `array_flip` is also
-  available through string-valued dynamic function calls.
+  `null`, booleans, floats, arrays, objects, and resources are skipped with a
+  warning per skipped entry, and supported entries before and after skipped
+  values remain in the partial result. References, copy-on-write containers,
+  exact native warning/`TypeError` objects, and native lowering are not
+  implemented. `array_flip` is also available through string-valued dynamic
+  function calls.
   `array_change_key_case($array)` and
   `array_change_key_case($array, CASE_LOWER)` return a new ordered array with
   ASCII string keys lowercased and integer keys preserved.
@@ -9406,9 +9409,8 @@
   `SORT_REGULAR`/`SORT_NUMERIC`/`SORT_STRING`, `array_unique` non-scalar
   value comparison
   behavior, exact native
-  `TypeError` objects, and native lowering, `array_flip`
-  warning-and-skip behavior
-  for unsupported source values, and `array_fill_keys` warning/stringification
+  `TypeError` objects, and native lowering, `array_flip` exact native
+  warning/`TypeError` objects, and `array_fill_keys` warning/stringification
   behavior for unsupported key values, `array_count_values` warning-and-skip
   behavior for unsupported values, `array_sum` PHP warning recovery for
   unsupported values, `array_product` PHP warning recovery for unsupported
@@ -10370,9 +10372,8 @@
   warning-and-string-conversion behavior for arrays and objects,
   reference/copy-on-write behavior, object/resource values, and native
   lowering
-- `array_flip` warning-and-skip behavior for unsupported source values,
-  reference/copy-on-write behavior, exact native warning/`TypeError` objects,
-  resource values, and native lowering
+- `array_flip` reference/copy-on-write behavior, exact native
+  warning/`TypeError` objects, and native lowering
 - `array_change_key_case` Unicode/locale-aware casing, non-int case coercions,
   reference/copy-on-write behavior, exact native warning/`TypeError` objects,
   resource keys, and native lowering

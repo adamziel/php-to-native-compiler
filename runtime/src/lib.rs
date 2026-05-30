@@ -29723,6 +29723,20 @@ impl PhpArray {
         Ok(array)
     }
 
+    pub fn flipped_skipping_unsupported_values(&self) -> (Self, usize) {
+        let mut array = Self::new();
+        let mut skipped = 0;
+        for entry in &self.entries {
+            match array_flip_key_from_supported_value(entry.value()) {
+                Some(key) => {
+                    array.insert(key, array_key_to_value(&entry.key));
+                }
+                None => skipped += 1,
+            }
+        }
+        (array, skipped)
+    }
+
     pub fn keys_with_ascii_case(&self, case: ArrayKeyCase) -> Self {
         let mut array = Self::new();
         for entry in &self.entries {
@@ -30429,16 +30443,22 @@ fn array_key_to_value(key: &ArrayKey) -> Value {
 }
 
 fn array_flip_key_from_value(value: &Value) -> RuntimeResult<ArrayKey> {
-    match value {
-        Value::Int(value) => Ok(ArrayKey::Int(*value)),
-        Value::String(value) => Ok(ArrayKey::string(value.clone())),
-        other => Err(RuntimeError::unsupported_call(
+    array_flip_key_from_supported_value(value).ok_or_else(|| {
+        RuntimeError::unsupported_call(
             "array_flip()",
             format!(
                 "values must be int or string in the current subset, got {}",
-                other.type_name()
+                value.type_name()
             ),
-        )),
+        )
+    })
+}
+
+fn array_flip_key_from_supported_value(value: &Value) -> Option<ArrayKey> {
+    match value {
+        Value::Int(value) => Some(ArrayKey::Int(*value)),
+        Value::String(value) => Some(ArrayKey::string(value.clone())),
+        _ => None,
     }
 }
 
@@ -77260,6 +77280,29 @@ mod tests {
         assert_eq!(
             error.message(),
             "unsupported call array_flip(): values must be int or string in the current subset, got bool"
+        );
+    }
+
+    #[test]
+    fn array_flip_skip_helper_counts_and_omits_unsupported_values() {
+        let mut array = PhpArray::new();
+        array.insert("name-key", Value::String("name".to_string()));
+        array.insert("skip-bool", Value::Bool(true));
+        array.insert("int-key", Value::Int(7));
+        array.insert("skip-null", Value::Null);
+
+        let (mut flipped, skipped) = array.flipped_skipping_unsupported_values();
+        let entries = flipped.entries();
+
+        assert_eq!(skipped, 2);
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].key, ArrayKey::String("name".to_string()));
+        assert_eq!(entries[0].value(), &Value::String("name-key".to_string()));
+        assert_eq!(entries[1].key, ArrayKey::Int(7));
+        assert_eq!(entries[1].value(), &Value::String("int-key".to_string()));
+        assert_eq!(
+            flipped.append(Value::String("after".to_string())).unwrap(),
+            ArrayKey::Int(8)
         );
     }
 

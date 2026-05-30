@@ -78981,10 +78981,7 @@ impl Interpreter {
             "array_flip" => {
                 expect_arity(name, &args, 1, span)?;
                 match &args[0] {
-                    Value::Array(array) => array
-                        .flipped()
-                        .map(Value::Array)
-                        .map_err(|error| runtime_error(span, error)),
+                    Value::Array(array) => self.call_array_flip(array, span),
                     other => Err(runtime_error(
                         span,
                         RuntimeError::unsupported_call(
@@ -82722,6 +82719,17 @@ impl Interpreter {
             product = multiply_array_numeric_numbers(product, value);
         }
         Ok(array_numeric_number_to_value(product))
+    }
+
+    fn call_array_flip(&mut self, array: &PhpArray, span: Span) -> CompileResult<Value> {
+        let (flipped, skipped) = array.flipped_skipping_unsupported_values();
+        for _ in 0..skipped {
+            self.emit_display_warning(
+                "array_flip(): Can only flip string and integer values, entry skipped",
+                span,
+            )?;
+        }
+        Ok(Value::Array(flipped))
     }
 
     fn call_array_count_values(&mut self, array: &PhpArray, span: Span) -> CompileResult<Value> {
