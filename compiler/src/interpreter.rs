@@ -74453,7 +74453,13 @@ impl Interpreter {
         let escape =
             csv_single_character_argument("fgetcsv()", "escape", args.get(4), '\\', true, span)?;
 
-        let Some(line) = self.read_stream_line_for_csv("fgetcsv", &args[0], max_bytes, span)?
+        let Some(line) = self.read_stream_line_for_csv(
+            "fgetcsv",
+            &args[0],
+            max_bytes,
+            Some((delimiter, enclosure, escape)),
+            span,
+        )?
         else {
             return Ok(Value::Bool(false));
         };
@@ -74642,6 +74648,7 @@ impl Interpreter {
         function: &str,
         value: &Value,
         max_bytes: Option<usize>,
+        csv_boundary: Option<(char, char, Option<char>)>,
         span: Span,
     ) -> CompileResult<Option<String>> {
         match self.stream_mut(function, value, span)? {
@@ -74660,15 +74667,24 @@ impl Interpreter {
                     return Ok(None);
                 }
                 let start = utf8_boundary_at_or_before(&stream.buffer, stream.position);
-                let limit = max_bytes
+                let hard_limit = max_bytes
                     .map(|length| utf8_boundary_at_or_before(&stream.buffer, start + length))
                     .unwrap_or(stream.buffer.len())
                     .min(stream.buffer.len());
-                let slice = &stream.buffer[start..limit];
-                let end = match slice.find('\n') {
-                    Some(index) => start + index + 1,
-                    None => limit,
-                };
+                let mut end = start;
+                while end < hard_limit {
+                    let slice = &stream.buffer[end..hard_limit];
+                    end = match slice.find('\n') {
+                        Some(index) => end + index + 1,
+                        None => hard_limit,
+                    };
+                    let record = &stream.buffer[start..end];
+                    if csv_boundary.is_none_or(|(delimiter, enclosure, escape)| {
+                        csv_record_is_complete(record, delimiter, enclosure, escape)
+                    }) {
+                        break;
+                    }
+                }
                 stream.position = end;
                 stream.eof = false;
                 Ok(Some(stream.buffer[start..end].to_string()))
@@ -74703,7 +74719,21 @@ impl Interpreter {
                     stream.eof = false;
                     buffer.push(byte[0]);
                     if byte[0] == b'\n' {
-                        break;
+                        if let Some((delimiter, enclosure, escape)) = csv_boundary {
+                            match std::str::from_utf8(&buffer) {
+                                Ok(record)
+                                    if csv_record_is_complete(
+                                        record, delimiter, enclosure, escape,
+                                    ) =>
+                                {
+                                    break;
+                                }
+                                Ok(_) => {}
+                                Err(_) => break,
+                            }
+                        } else {
+                            break;
+                        }
                     }
                 }
                 if buffer.is_empty() && stream.eof {
@@ -74751,7 +74781,7 @@ impl Interpreter {
                 ),
             ));
         }
-        self.read_stream_line_for_csv("fscanf", value, None, span)
+        self.read_stream_line_for_csv("fscanf", value, None, None, span)
     }
 
     fn call_fscanf(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -96359,13 +96389,65 @@ fn csv_record_without_line_ending(line: &str) -> &str {
         .unwrap_or(line)
 }
 
+fn csv_record_is_complete(
+    line: &str,
+    delimiter: char,
+    enclosure: char,
+    escape: Option<char>,
+) -> bool {
+    !csv_record_enclosure_state(line, delimiter, enclosure, escape)
+}
+
+fn csv_record_enclosure_state(
+    line: &str,
+    delimiter: char,
+    enclosure: char,
+    escape: Option<char>,
+) -> bool {
+    let mut chars = line.chars().peekable();
+    let mut in_enclosure = false;
+    let mut at_field_start = true;
+
+    while let Some(character) = chars.next() {
+        if in_enclosure {
+            if Some(character) == escape {
+                let _ = chars.next();
+            } else if character == enclosure {
+                if chars.peek().is_some_and(|next| *next == enclosure) {
+                    let _ = chars.next();
+                } else {
+                    in_enclosure = false;
+                }
+            }
+            continue;
+        }
+
+        if at_field_start && character == enclosure {
+            in_enclosure = true;
+            at_field_start = false;
+        } else if character == delimiter {
+            at_field_start = true;
+        } else if at_field_start && matches!(character, ' ' | '\t') {
+            continue;
+        } else {
+            at_field_start = false;
+        }
+    }
+
+    in_enclosure
+}
+
 fn parse_bounded_csv_record(
     line: &str,
     delimiter: char,
     enclosure: char,
     escape: Option<char>,
 ) -> Vec<String> {
-    let record = csv_record_without_line_ending(line);
+    let record = if csv_record_is_complete(line, delimiter, enclosure, escape) {
+        csv_record_without_line_ending(line)
+    } else {
+        line
+    };
     let mut fields = Vec::new();
     let mut field = String::new();
     let mut chars = record.chars().peekable();
@@ -96396,11 +96478,15 @@ fn parse_bounded_csv_record(
         }
 
         if at_field_start && character == enclosure {
+            field.clear();
             in_enclosure = true;
             at_field_start = false;
         } else if character == delimiter {
             fields.push(std::mem::take(&mut field));
             at_field_start = true;
+        } else if at_field_start && matches!(character, ' ' | '\t') {
+            field.push(character);
+            continue;
         } else {
             field.push(character);
             at_field_start = false;
