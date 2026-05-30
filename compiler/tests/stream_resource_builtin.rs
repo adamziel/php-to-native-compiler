@@ -810,6 +810,32 @@ fclose($read);
 }
 
 #[test]
+fn fstat_on_closed_stream_raises_catchable_type_error() {
+    let path = temp_stream_path("phpc-stream-resource-fstat-closed.txt");
+    let source = format!(
+        r#"<?php
+$stream = fopen("{}", "w");
+echo fstat($stream)["size"];
+fclose($stream);
+try {{
+    fstat($stream);
+}} catch (TypeError $e) {{
+    echo "|", $e->getMessage();
+}}
+"#,
+        path.display()
+    );
+    let execution = run_source(&source).unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "0|fstat(): Argument #1 ($stream) must be an open stream resource"
+    );
+    assert_eq!(execution.exit_code, 0);
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn stream_metadata_accepts_uppercase_file_url_and_closed_meta_errors_are_type_errors() {
     let path = temp_stream_path("phpc-stream-resource-file-url.txt");
     let uri = format!("File://{}", path.display());

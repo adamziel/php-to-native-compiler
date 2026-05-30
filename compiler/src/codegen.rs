@@ -66275,6 +66275,7 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "trim",
     "ltrim",
     "rtrim",
+    "chop",
     "strcasecmp",
     "strcoll",
     "strtr",
@@ -67219,6 +67220,7 @@ fn native_dynamic_callable_builtin_canonical_name(name: &str) -> Option<&'static
         "trim" => Some("trim"),
         "ltrim" => Some("ltrim"),
         "rtrim" => Some("rtrim"),
+        "chop" => Some("chop"),
         "sort" => Some("sort"),
         "rsort" => Some("rsort"),
         "asort" => Some("asort"),
@@ -67478,10 +67480,10 @@ fn native_builtin_signature_for_name(name: &str) -> Option<CNativeBuiltinSignatu
             returns_by_reference: false,
             source_call_support: RuntimeCallableValue,
         },
-        "trim" | "ltrim" | "rtrim" => CNativeBuiltinSignature {
+        "trim" | "ltrim" | "rtrim" | "chop" => CNativeBuiltinSignature {
             canonical_name: match name.to_ascii_lowercase().as_str() {
                 "ltrim" => "ltrim",
-                "rtrim" => "rtrim",
+                "rtrim" | "chop" => "rtrim",
                 _ => "trim",
             },
             required_arg_count: 1,
@@ -74740,6 +74742,13 @@ echo " 10" < "zeta";
         assert_eq!(rtrim.fixed_param_names, trim.fixed_param_names);
         assert_eq!(rtrim.fixed_param_defaults, trim.fixed_param_defaults);
         assert_eq!(rtrim.source_call_support, trim.source_call_support);
+
+        let chop = native_builtin_signature_for_name("chop")
+            .expect("chop should share trim-family signature metadata");
+        assert_eq!(chop.canonical_name, "rtrim");
+        assert_eq!(chop.fixed_param_names, trim.fixed_param_names);
+        assert_eq!(chop.fixed_param_defaults, trim.fixed_param_defaults);
+        assert_eq!(chop.source_call_support, trim.source_call_support);
     }
 
     #[test]

@@ -93,6 +93,28 @@ echo $call(\"example.test///\", \"/\");\n",
 }
 
 #[test]
+fn chop_alias_executes_rtrim_semantics_and_metadata() {
+    let execution = run_source(
+        "<?php\n\
+echo function_exists(\"chop\") ? \"yes\" : \"no\";\n\
+echo \"|\";\n\
+echo is_callable(\"chop\") ? \"callable\" : \"missing\";\n\
+echo \"|\";\n\
+echo chop(\"hello world\\t\\n\\r\\0\\x0B  \"), \"|\";\n\
+echo chop(\"hello123\", \"0..9\"), \"|\";\n\
+$call = \"chop\";\n\
+echo $call(\"example.test///\", \"/\");\n",
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "yes|callable|hello world|hello|example.test"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn trim_rejects_forms_outside_supported_mask_semantics() {
     let array_arg = run_source("<?php\ntrim(['ABC']);\n").unwrap_err();
     assert_eq!(array_arg.phase, Phase::Runtime);
@@ -254,6 +276,26 @@ echo is_callable(\"rtrim\") ? \"1\" : \"0\";\n",
     assert!(!ir.contains("is_callable"), "{ir}");
 
     let error = emit_ir_source("<?php\nrtrim('/wp/', '/');\n").unwrap_err();
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+}
+
+#[test]
+fn emit_ir_folds_chop_metadata_but_rejects_direct_calls() {
+    let ir = emit_ir_source(
+        "<?php\n\
+echo function_exists(\"chop\") ? \"1\" : \"0\";\n\
+echo is_callable(\"chop\") ? \"1\" : \"0\";\n",
+    )
+    .unwrap();
+
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 2, "{ir}");
+    assert!(!ir.contains("function_exists"), "{ir}");
+    assert!(!ir.contains("is_callable"), "{ir}");
+
+    let error = emit_ir_source("<?php\nchop('/wp/', '/');\n").unwrap_err();
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.line, 2);
     assert_eq!(error.column, 1);

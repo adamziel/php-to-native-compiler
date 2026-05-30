@@ -157,6 +157,25 @@ echo empty($bag->items[3][0]) ? "object-missing-empty" : "object-missing-set";
 }
 
 #[test]
+fn empty_accepts_direct_call_expression_values() {
+    let source = r#"<?php
+function blank() {
+    return "";
+}
+function filled() {
+    return "value";
+}
+echo empty(blank()) ? "blank-empty" : "blank-set";
+echo "|";
+echo empty(filled()) ? "filled-empty" : "filled-set";
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(execution.stdout, "blank-empty|filled-set");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn complex_empty_operands_remain_explicitly_unsupported() {
     let error =
         runtime_error("<?php\nfunction items() { return [[1]]; }\necho empty(items()[0]);\n");

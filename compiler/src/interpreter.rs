@@ -74741,6 +74741,9 @@ impl Interpreter {
 
     fn call_fstat(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("fstat", args, 1, span)?;
+        if matches!(&args[0], Value::Resource(id) if self.directories.contains_key(id)) {
+            return Ok(Value::Bool(false));
+        }
         match self.stream_mut("fstat", &args[0], span)? {
             StreamResource::Memory(stream) => Ok(Value::Array(memory_stream_stat_array(
                 stream.buffer.len() as i64,
@@ -75580,9 +75583,15 @@ impl Interpreter {
                 ),
             ));
         }
-        let pattern = self.filesystem_path_argument("glob", "pattern", &args[0], span)?;
+        let pattern = glob_pattern_argument(&args[0], span)?;
         if pattern.contains('\0') {
-            return Ok(Value::Bool(false));
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "glob()",
+                    "Argument #1 ($pattern) must not contain any null bytes",
+                ),
+            ));
         }
         if pattern.contains("://") {
             return Err(runtime_error(
@@ -77162,6 +77171,7 @@ impl Interpreter {
             "trim" => call_trim(&args, span),
             "ltrim" => call_ltrim(&args, span),
             "rtrim" => call_rtrim(&args, span),
+            "chop" => call_chop(&args, span),
             "strcmp" => call_strcmp(&args, span),
             "strcasecmp" => call_strcasecmp(&args, span),
             "strncmp" => call_strncmp(&args, span),
@@ -83808,6 +83818,7 @@ impl Interpreter {
             Expr::LateStaticProperty { property, span } => {
                 self.is_late_static_property_empty(property, *span)
             }
+            Expr::Call { .. } => Ok(!self.evaluate(arg, caller_scope)?.is_truthy()),
             _ => Err(runtime_error(
                 arg.span(),
                 RuntimeError::unsupported_call(
@@ -91024,7 +91035,7 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
             "string",
             vec![reflection_internal_param("string", "string")],
         ),
-        "trim" | "ltrim" | "rtrim" => (
+        "trim" | "ltrim" | "rtrim" | "chop" => (
             "string",
             vec![
                 reflection_internal_param("string", "string"),
@@ -94138,6 +94149,9 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
         ("glob()", "Argument #2 ($flags) must be a valid flag value") => {
             Some("glob(): Argument #2 ($flags) must be a valid flag value".to_string())
         }
+        ("glob()", "Argument #1 ($pattern) must not contain any null bytes") => {
+            Some("glob(): Argument #1 ($pattern) must not contain any null bytes".to_string())
+        }
         ("fputcsv()", "separator argument must contain exactly one character") => {
             Some("fputcsv(): Argument #3 ($separator) must be a single character".to_string())
         }
@@ -94235,6 +94249,7 @@ fn builtin_resource_type_error_message(error: &Diagnostic) -> Option<String> {
         || reason == "fseek(): Argument #1 ($stream) must be an open stream resource"
         || reason == "rewind(): Argument #1 ($stream) must be an open stream resource"
         || reason == "fflush(): Argument #1 ($stream) must be an open stream resource"
+        || reason == "fstat(): Argument #1 ($stream) must be an open stream resource"
         || reason == "ftruncate(): Argument #1 ($stream) must be an open stream resource"
         || reason == "flock(): Argument #1 ($stream) must be an open stream resource"
         || reason == "stream_supports_lock(): Argument #1 ($stream) must be an open stream resource"
@@ -94498,6 +94513,7 @@ fn is_builtin(name: &str) -> bool {
             | "trim"
             | "ltrim"
             | "rtrim"
+            | "chop"
             | "strcmp"
             | "strcasecmp"
             | "strncmp"
@@ -95582,6 +95598,26 @@ fn php_array_from_strings(values: impl IntoIterator<Item = String>) -> PhpArray 
     array
 }
 
+fn glob_pattern_argument(value: &Value, span: Span) -> CompileResult<String> {
+    match value {
+        Value::String(pattern) => Ok(pattern.clone()),
+        Value::BinaryString(bytes) => {
+            Ok(tree_walk_binary_string_utf8(bytes, "glob pattern", span)?.to_string())
+        }
+        Value::Null | Value::Bool(_) | Value::Int(_) | Value::Float(_) => Ok(value.echo_string()),
+        other => Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "glob()",
+                format!(
+                    "Argument #1 ($pattern) must be of type string, {} given",
+                    php_type_error_given(other)
+                ),
+            ),
+        )),
+    }
+}
+
 fn split_php_glob_pattern(pattern: &str) -> (String, String, String) {
     match pattern.rfind('/') {
         Some(index) => {
@@ -95625,6 +95661,7 @@ fn php_glob_component_matches(pattern: &str, name: &str, flags: i64) -> bool {
         &name_chars,
         0,
         flags & PHP_GLOB_NOESCAPE != 0,
+        flags & PHP_GLOB_BRACE != 0,
     )
 }
 
@@ -95634,6 +95671,7 @@ fn php_glob_component_matches_at(
     name: &[char],
     name_index: usize,
     no_escape: bool,
+    brace_enabled: bool,
 ) -> bool {
     if pattern_index == pattern.len() {
         return name_index == name.len();
@@ -95648,7 +95686,14 @@ fn php_glob_component_matches_at(
                 return true;
             }
             (name_index..=name.len()).any(|index| {
-                php_glob_component_matches_at(pattern, pattern_index + 1, name, index, no_escape)
+                php_glob_component_matches_at(
+                    pattern,
+                    pattern_index + 1,
+                    name,
+                    index,
+                    no_escape,
+                    brace_enabled,
+                )
             })
         }
         '?' => {
@@ -95659,6 +95704,7 @@ fn php_glob_component_matches_at(
                     name,
                     name_index + 1,
                     no_escape,
+                    brace_enabled,
                 )
         }
         '[' => {
@@ -95672,6 +95718,7 @@ fn php_glob_component_matches_at(
                         name,
                         name_index + 1,
                         no_escape,
+                        brace_enabled,
                     )
             } else {
                 name_index < name.len()
@@ -95682,6 +95729,36 @@ fn php_glob_component_matches_at(
                         name,
                         name_index + 1,
                         no_escape,
+                        brace_enabled,
+                    )
+            }
+        }
+        '{' if brace_enabled => {
+            if let Some((alternatives, next_pattern_index)) =
+                php_glob_brace_alternatives(pattern, pattern_index)
+            {
+                alternatives.into_iter().any(|alternative| {
+                    let mut expanded = alternative;
+                    expanded.extend_from_slice(&pattern[next_pattern_index..]);
+                    php_glob_component_matches_at(
+                        &expanded,
+                        0,
+                        name,
+                        name_index,
+                        no_escape,
+                        brace_enabled,
+                    )
+                })
+            } else {
+                name_index < name.len()
+                    && name[name_index] == '{'
+                    && php_glob_component_matches_at(
+                        pattern,
+                        pattern_index + 1,
+                        name,
+                        name_index + 1,
+                        no_escape,
+                        brace_enabled,
                     )
             }
         }
@@ -95694,6 +95771,7 @@ fn php_glob_component_matches_at(
                     name,
                     name_index + 1,
                     no_escape,
+                    brace_enabled,
                 )
         }
         literal => {
@@ -95705,9 +95783,27 @@ fn php_glob_component_matches_at(
                     name,
                     name_index + 1,
                     no_escape,
+                    brace_enabled,
                 )
         }
     }
+}
+
+fn php_glob_brace_alternatives(pattern: &[char], start: usize) -> Option<(Vec<Vec<char>>, usize)> {
+    let mut alternatives = vec![Vec::new()];
+    let mut index = start + 1;
+    while index < pattern.len() {
+        match pattern[index] {
+            '}' => return Some((alternatives, index + 1)),
+            ',' => alternatives.push(Vec::new()),
+            ch => alternatives
+                .last_mut()
+                .expect("at least one brace alternative is present")
+                .push(ch),
+        }
+        index += 1;
+    }
+    None
 }
 
 fn php_glob_bracket_class_matches(
@@ -104698,6 +104794,10 @@ fn call_ltrim(args: &[Value], span: Span) -> CompileResult<Value> {
 
 fn call_rtrim(args: &[Value], span: Span) -> CompileResult<Value> {
     trim_family_call(args, span, "rtrim()", TrimMode::Right)
+}
+
+fn call_chop(args: &[Value], span: Span) -> CompileResult<Value> {
+    trim_family_call(args, span, "chop()", TrimMode::Right)
 }
 
 fn call_strcasecmp(args: &[Value], span: Span) -> CompileResult<Value> {
