@@ -24,7 +24,28 @@ echo $call("sha256", uniqid("salt", true), "salt", false);
 
     assert_eq!(
         execution.stdout,
-        "hash|uniqid|salt0000000000000.00000000|5031fe3d989c6d1537a013fa6e739da23463fdaec3b70137d828e36ace221bd0|f6c29b25691f1dd772918c472442f9d68531bf0204f0cac62f6e122ab66ce4b0"
+        "hash|uniqid|salt0000000000000.000000000|5031fe3d989c6d1537a013fa6e739da23463fdaec3b70137d828e36ace221bd0|a7afc0875fafe2923927b020bdb1a243deb47ffd9d2429731c87e88dc3cf2d4f"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn uniqid_more_entropy_matches_php_shaped_lengths() {
+    let execution = run_source(
+        r#"<?php
+echo strlen(uniqid()), ":", uniqid(), "\n";
+echo strlen(uniqid('', true)), ":", uniqid('', true), "\n";
+echo strlen(uniqid(99999, true)), ":", uniqid(99999, true), "\n";
+echo strlen(uniqid(10.5e2, true)), ":", uniqid(10.5e2, true), "\n";
+echo strlen(uniqid(true, true)), ":", uniqid(true, true), "\n";
+echo strlen(uniqid(false, true)), ":", uniqid(false, true), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "13:0000000000000\n23:0000000000000.000000000\n28:999990000000000000.000000000\n27:10500000000000000.000000000\n24:10000000000000.000000000\n23:0000000000000.000000000\n"
     );
     assert_eq!(execution.exit_code, 0);
 }

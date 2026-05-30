@@ -115879,7 +115879,7 @@ fn call_uniqid(args: &[Value], span: Span) -> CompileResult<Value> {
 
     let mut value = format!("{prefix}0000000000000");
     if more_entropy {
-        value.push_str(".00000000");
+        value.push_str(".000000000");
     }
     Ok(Value::String(value))
 }

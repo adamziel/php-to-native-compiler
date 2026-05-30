@@ -3671,7 +3671,8 @@
   remain unsupported.
   `uniqid($prefix = '', $more_entropy = false)` supports scalar/null
   string-convertible prefixes and a boolean entropy flag, returning a
-  deterministic ID for the reached WordPress placeholder hash path.
+  deterministic PHP-shaped ID for the reached WordPress placeholder hash path,
+  including the nine-digit suffix used by the `more_entropy=true` form.
   `hash_hmac('sha256', $data, $key, false)` supports scalar/null
   string-convertible data and key values and returns lowercase hex output.
   Other algorithms, `hash()`, `hash_equals()`, `hash_hmac_algos()`, raw binary
