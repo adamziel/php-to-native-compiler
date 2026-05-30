@@ -17512,6 +17512,9 @@ impl Interpreter {
                 if is_positional_argument_after_named_argument_error(&error) {
                     return self.fatal_runtime_message_execution(&error, &error.message);
                 }
+                if is_first_class_callable_creation_fatal_error(&error) {
+                    return self.fatal_runtime_message_execution(&error, &error.message);
+                }
                 if let Some((error_class_name, error_message)) =
                     catchable_php_error_class_and_message(&error)
                 {
@@ -52536,6 +52539,15 @@ impl Interpreter {
         let fallback_key = name
             .rsplit_once('\\')
             .map(|(_, suffix)| suffix.to_ascii_lowercase());
+        if key.starts_with("__phpc_first_class_") {
+            return self.call_first_class_callable_helper(&key, args, span, caller_scope);
+        }
+        if let Some(helper_key) = fallback_key
+            .as_deref()
+            .filter(|key| key.starts_with("__phpc_first_class_"))
+        {
+            return self.call_first_class_callable_helper(helper_key, args, span, caller_scope);
+        }
         if key == "isset" || fallback_key.as_deref() == Some("isset") {
             return self.call_isset(args, span, caller_scope);
         }
@@ -52554,6 +52566,354 @@ impl Interpreter {
         self.call_direct_named_function(name, args, span, caller_scope)
     }
 
+    fn call_first_class_callable_helper(
+        &mut self,
+        key: &str,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        match key {
+            "__phpc_first_class_function" => {
+                let name = self.first_class_helper_string_arg(args, 0, span, caller_scope)?;
+                self.ensure_first_class_function_callable(&name, span)?;
+                Ok(Value::String(name))
+            }
+            "__phpc_first_class_dynamic" => {
+                let value = self.first_class_helper_value_arg(args, 0, span, caller_scope)?;
+                self.first_class_callable_from_value(value, span)
+            }
+            "__phpc_first_class_method" => {
+                let target = self.first_class_helper_value_arg(args, 0, span, caller_scope)?;
+                let method = self.first_class_helper_string_arg(args, 1, span, caller_scope)?;
+                self.first_class_callable_from_method_value(target, &method, span)
+            }
+            "__phpc_first_class_dynamic_method" => {
+                let target = self.first_class_helper_value_arg(args, 0, span, caller_scope)?;
+                let method_value =
+                    self.first_class_helper_value_arg(args, 1, span, caller_scope)?;
+                let method = Self::dynamic_static_method_name_from_value(method_value, span)?;
+                self.first_class_callable_from_method_value(target, &method, span)
+            }
+            "__phpc_first_class_static_method" => {
+                let class_name = self.first_class_helper_string_arg(args, 0, span, caller_scope)?;
+                let method = self.first_class_helper_string_arg(args, 1, span, caller_scope)?;
+                self.first_class_callable_from_static_method_name(&class_name, &method, span)
+            }
+            "__phpc_first_class_object_static_method" => {
+                let target = self.first_class_helper_value_arg(args, 0, span, caller_scope)?;
+                let method = self.first_class_helper_string_arg(args, 1, span, caller_scope)?;
+                self.first_class_callable_from_object_static_method_value(target, &method, span)
+            }
+            "__phpc_first_class_self_method" => {
+                let method = self.first_class_helper_string_arg(args, 0, span, caller_scope)?;
+                let class_id = self.class_context.last().copied().ok_or_else(|| {
+                    runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("self::{method}"),
+                            "self first-class callables require method or static class context",
+                        ),
+                    )
+                })?;
+                let class_name = self
+                    .classes
+                    .get(class_id)
+                    .expect("current class id should resolve")
+                    .name()
+                    .to_string();
+                self.first_class_callable_from_static_method_name(&class_name, &method, span)
+            }
+            "__phpc_first_class_parent_method" => {
+                let method = self.first_class_helper_string_arg(args, 0, span, caller_scope)?;
+                let current_class_id = self.class_context.last().copied().ok_or_else(|| {
+                    runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("parent::{method}"),
+                            "parent first-class callables require method or static class context",
+                        ),
+                    )
+                })?;
+                let parent_id = self
+                    .classes
+                    .get(current_class_id)
+                    .expect("current class id should resolve")
+                    .parent_id()
+                    .ok_or_else(|| {
+                        runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                format!("parent::{method}"),
+                                "parent first-class callables require a parent class",
+                            ),
+                        )
+                    })?;
+                let class_name = self
+                    .classes
+                    .get(parent_id)
+                    .expect("parent class id should resolve")
+                    .name()
+                    .to_string();
+                self.first_class_callable_from_static_method_name(&class_name, &method, span)
+            }
+            "__phpc_first_class_late_static_method" => {
+                let method = self.first_class_helper_string_arg(args, 0, span, caller_scope)?;
+                let class_id = self
+                    .called_class_context
+                    .last()
+                    .copied()
+                    .or_else(|| self.class_context.last().copied())
+                    .ok_or_else(|| {
+                        runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                format!("static::{method}"),
+                                "static first-class callables require method or static class context",
+                            ),
+                        )
+                    })?;
+                let class_name = self
+                    .classes
+                    .get(class_id)
+                    .expect("called class id should resolve")
+                    .name()
+                    .to_string();
+                self.first_class_callable_from_static_method_name(&class_name, &method, span)
+            }
+            "__phpc_first_class_new" => Err(Diagnostic::new(
+                Phase::Runtime,
+                span.line,
+                span.column,
+                FIRST_CLASS_CALLABLE_NEW_FATAL_MESSAGE,
+            )),
+            "__phpc_first_class_invalid_placeholder" => Err(Diagnostic::new(
+                Phase::Runtime,
+                span.line,
+                span.column,
+                FIRST_CLASS_CALLABLE_INVALID_PLACEHOLDER_FATAL_MESSAGE,
+            )),
+            _ => Err(runtime_error(
+                span,
+                RuntimeError::undefined_function(format!("{key}()")),
+            )),
+        }
+    }
+
+    fn first_class_helper_value_arg(
+        &mut self,
+        args: &[Expr],
+        index: usize,
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        let Some(arg) = args.get(index) else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "first-class callable helper",
+                    ArityExpectation::AtLeast(index + 1),
+                    args.len(),
+                ),
+            ));
+        };
+        self.evaluate(arg, caller_scope)
+    }
+
+    fn first_class_helper_string_arg(
+        &mut self,
+        args: &[Expr],
+        index: usize,
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<String> {
+        match self.first_class_helper_value_arg(args, index, span, caller_scope)? {
+            Value::String(value) => Ok(value),
+            other => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "first-class callable helper",
+                    format!("expected string metadata, got {}", other.type_name()),
+                ),
+            )),
+        }
+    }
+
+    fn ensure_first_class_function_callable(&self, name: &str, span: Span) -> CompileResult<()> {
+        if self.lookup_function(name).is_some() {
+            return Ok(());
+        }
+        if let Some((class_name, method_name)) = static_method_callable_string(name) {
+            let class_id = self
+                .classes
+                .lookup_class_id(class_name)
+                .ok_or_else(|| runtime_error(span, RuntimeError::undefined_class(class_name)))?;
+            self.ensure_first_class_static_method_callable(class_id, method_name, span)?;
+            return Ok(());
+        }
+        Err(runtime_error(
+            span,
+            RuntimeError::undefined_function(callable_name(name)),
+        ))
+    }
+
+    fn first_class_callable_from_value(
+        &mut self,
+        value: Value,
+        span: Span,
+    ) -> CompileResult<Value> {
+        match value {
+            Value::String(name) => {
+                self.ensure_first_class_function_callable(&name, span)?;
+                Ok(Value::String(name))
+            }
+            Value::Closure(closure) => Ok(Value::Closure(closure)),
+            Value::Array(callback) => {
+                if array_callable_parts(&callback).is_none() {
+                    return Err(Self::invalid_dynamic_array_callback_error(&callback, span));
+                }
+                Ok(Value::Array(callback))
+            }
+            Value::Object(object) => Err(object_not_callable_error(object.class_name(), span)),
+            other => Err(first_class_value_not_callable_error(&other, span)),
+        }
+    }
+
+    fn first_class_callable_from_method_value(
+        &mut self,
+        target: Value,
+        method_name: &str,
+        span: Span,
+    ) -> CompileResult<Value> {
+        if method_name.eq_ignore_ascii_case("__invoke") {
+            if let Value::Closure(closure) = target {
+                return Ok(Value::Closure(closure));
+            }
+        }
+        let Value::Object(object) = target else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{method_name}"),
+                    "first-class method callable target must be an object",
+                ),
+            ));
+        };
+        self.ensure_first_class_object_method_callable(&object, method_name, span)?;
+        self.array_callable_value(Value::Object(object), method_name, span)
+    }
+
+    fn first_class_callable_from_static_method_name(
+        &mut self,
+        class_name: &str,
+        method_name: &str,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let class_id = self
+            .classes
+            .lookup_class_id(class_name)
+            .ok_or_else(|| runtime_error(span, RuntimeError::undefined_class(class_name)))?;
+        self.ensure_first_class_static_method_callable(class_id, method_name, span)?;
+        self.array_callable_value(Value::String(class_name.to_string()), method_name, span)
+    }
+
+    fn first_class_callable_from_object_static_method_value(
+        &mut self,
+        target: Value,
+        method_name: &str,
+        span: Span,
+    ) -> CompileResult<Value> {
+        match target {
+            Value::Object(object) => {
+                let class_name = object.class_name().to_string();
+                self.first_class_callable_from_static_method_name(&class_name, method_name, span)
+            }
+            Value::String(class_name) => {
+                self.first_class_callable_from_static_method_name(&class_name, method_name, span)
+            }
+            _ => Err(class_name_must_be_valid_object_or_string_error(span)),
+        }
+    }
+
+    fn ensure_first_class_object_method_callable(
+        &self,
+        object: &PhpObject,
+        method_name: &str,
+        span: Span,
+    ) -> CompileResult<()> {
+        let receiver_class_name = object.class_name().to_string();
+        if let Some((class_id, class_name, _resolved_method_name, visibility, _is_static)) =
+            self.resolve_instance_method_for_current_object_scope(object.class_id(), method_name)
+        {
+            return self.ensure_instance_method_visible(
+                class_id,
+                &class_name,
+                method_name,
+                visibility,
+                span,
+            );
+        }
+        if has_public_non_static_magic_call(&self.classes, object.class_id()) {
+            return Ok(());
+        }
+        Err(runtime_error(
+            span,
+            RuntimeError::undefined_function(format!("{receiver_class_name}::{method_name}()")),
+        ))
+    }
+
+    fn ensure_first_class_static_method_callable(
+        &self,
+        class_id: ClassId,
+        method_name: &str,
+        span: Span,
+    ) -> CompileResult<()> {
+        let receiver_class = self.classes.get(class_id).expect("class id should resolve");
+        let receiver_class_name = receiver_class.name().to_string();
+        let Some((declaring_class_id, declaring_class_name, _resolved, visibility, is_static)) =
+            self.resolve_instance_method(class_id, method_name)
+        else {
+            if has_public_static_magic_call_static(&self.classes, class_id) {
+                return Ok(());
+            }
+            return Err(runtime_error(
+                span,
+                RuntimeError::undefined_function(format!("{receiver_class_name}::{method_name}()")),
+            ));
+        };
+        self.ensure_instance_method_visible(
+            declaring_class_id,
+            &declaring_class_name,
+            method_name,
+            visibility,
+            span,
+        )?;
+        if !is_static {
+            return Err(non_static_method_called_statically_error(
+                &declaring_class_name,
+                method_name,
+                span,
+            ));
+        }
+        Ok(())
+    }
+
+    fn array_callable_value(
+        &self,
+        target: Value,
+        method_name: &str,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let mut callback = PhpArray::new();
+        callback
+            .append(target)
+            .map_err(|error| runtime_error(span, error))?;
+        callback
+            .append(Value::String(method_name.to_string()))
+            .map_err(|error| runtime_error(span, error))?;
+        Ok(Value::Array(callback))
+    }
+
     fn call_function_with_array_copy_source(
         &mut self,
         name: &str,
@@ -52565,6 +52925,19 @@ impl Interpreter {
         let fallback_key = name
             .rsplit_once('\\')
             .map(|(_, suffix)| suffix.to_ascii_lowercase());
+        if key.starts_with("__phpc_first_class_") {
+            return self
+                .call_first_class_callable_helper(&key, args, span, caller_scope)
+                .map(|value| (value, None));
+        }
+        if let Some(helper_key) = fallback_key
+            .as_deref()
+            .filter(|key| key.starts_with("__phpc_first_class_"))
+        {
+            return self
+                .call_first_class_callable_helper(helper_key, args, span, caller_scope)
+                .map(|value| (value, None));
+        }
         if key == "isset"
             || fallback_key.as_deref() == Some("isset")
             || key == "empty"
@@ -54286,12 +54659,21 @@ impl Interpreter {
                         method_name,
                     )
                 else {
-                    return Err(runtime_error(
+                    return match self.call_missing_instance_method_via_magic(
+                        object.clone(),
+                        method_name,
+                        args,
                         span,
-                        RuntimeError::undefined_function(format!(
-                            "{receiver_class_name}::{method_name}()"
+                        caller_scope,
+                    )? {
+                        Some(value) => Ok(value),
+                        None => Err(runtime_error(
+                            span,
+                            RuntimeError::undefined_function(format!(
+                                "{receiver_class_name}::{method_name}()"
+                            )),
                         )),
-                    ));
+                    };
                 };
                 self.ensure_instance_method_visible(
                     class_id,
@@ -54517,12 +54899,21 @@ impl Interpreter {
                         method_name,
                     )
                 else {
-                    return Err(runtime_error(
+                    return match self.call_missing_instance_method_via_magic(
+                        object.clone(),
+                        method_name,
+                        args,
                         span,
-                        RuntimeError::undefined_function(format!(
-                            "{receiver_class_name}::{method_name}()"
+                        caller_scope,
+                    )? {
+                        Some(value) => Ok((value, None)),
+                        None => Err(runtime_error(
+                            span,
+                            RuntimeError::undefined_function(format!(
+                                "{receiver_class_name}::{method_name}()"
+                            )),
                         )),
-                    ));
+                    };
                 };
                 self.ensure_instance_method_visible(
                     class_id,
@@ -94903,6 +95294,9 @@ fn php_version_string() -> String {
 
 const POSITIONAL_ARGUMENT_AFTER_NAMED_ARGUMENT_MESSAGE: &str =
     "Cannot use positional argument after named argument";
+const FIRST_CLASS_CALLABLE_NEW_FATAL_MESSAGE: &str = "Cannot create Closure for new expression";
+const FIRST_CLASS_CALLABLE_INVALID_PLACEHOLDER_FATAL_MESSAGE: &str =
+    "Cannot create a Closure for call expression with more than one argument, or non-variadic placeholders";
 
 fn positional_argument_after_named_argument_error(span: Span) -> Diagnostic {
     Diagnostic::new(
@@ -94916,6 +95310,15 @@ fn positional_argument_after_named_argument_error(span: Span) -> Diagnostic {
 fn is_positional_argument_after_named_argument_error(error: &Diagnostic) -> bool {
     error.phase == Phase::Runtime
         && error.message == POSITIONAL_ARGUMENT_AFTER_NAMED_ARGUMENT_MESSAGE
+}
+
+fn is_first_class_callable_creation_fatal_error(error: &Diagnostic) -> bool {
+    error.phase == Phase::Runtime
+        && matches!(
+            error.message.as_str(),
+            FIRST_CLASS_CALLABLE_NEW_FATAL_MESSAGE
+                | FIRST_CLASS_CALLABLE_INVALID_PLACEHOLDER_FATAL_MESSAGE
+        )
 }
 
 fn ensure_no_positional_arguments_after_named_arguments(args: &[Expr]) -> CompileResult<()> {
@@ -95125,6 +95528,18 @@ fn object_not_callable_error(class_name: &str, span: Span) -> Diagnostic {
         span.line,
         span.column,
         format!("Object of type {class_name} is not callable"),
+    )
+}
+
+fn first_class_value_not_callable_error(value: &Value, span: Span) -> Diagnostic {
+    Diagnostic::new(
+        Phase::Runtime,
+        span.line,
+        span.column,
+        format!(
+            "Value of type {} is not callable",
+            php_type_error_given(value)
+        ),
     )
 }
 
@@ -95660,6 +96075,12 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
         }
 
         if error.message.starts_with("Object of type ")
+            && error.message.ends_with(" is not callable")
+        {
+            return Some(("Error", error.message.clone()));
+        }
+
+        if error.message.starts_with("Value of type ")
             && error.message.ends_with(" is not callable")
         {
             return Some(("Error", error.message.clone()));

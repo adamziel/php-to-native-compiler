@@ -9045,6 +9045,127 @@ echo is_callable($fn) ? "callable" : "not-callable";
 }
 
 #[test]
+fn first_class_callable_method_and_static_acquisition_dispatches() {
+    let execution = run_source(
+        r#"<?php
+class FirstClassCallableBox {
+    public function instance() {
+        return "instance";
+    }
+
+    public static function named() {
+        return "static";
+    }
+}
+
+$box = new FirstClassCallableBox;
+$instance = $box->instance(...);
+$static = FirstClassCallableBox::named(...);
+echo $instance(), "|", $static();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "instance|static");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn first_class_callable_closure_acquisition_preserves_closure_identity() {
+    let execution = run_source(
+        r#"<?php
+$fn = function () {
+    return "ok";
+};
+$direct = $fn(...);
+$invoke = $fn->__invoke(...);
+var_dump($fn === $direct);
+echo $invoke();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "bool(true)\nok");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn first_class_callable_magic_methods_dispatch_after_acquisition() {
+    let execution = run_source(
+        r#"<?php
+class FirstClassCallableMagicBase {
+    public function __call($method, $args) {
+        return $method;
+    }
+
+    public static function __callStatic($method, $args) {
+        return static::class . "::" . $method;
+    }
+}
+
+class FirstClassCallableMagicChild extends FirstClassCallableMagicBase {}
+
+$object = new FirstClassCallableMagicBase;
+$instance = $object->anythingInstance(...);
+$static = FirstClassCallableMagicBase::anythingStatic(...);
+$lateStatic = FirstClassCallableMagicChild::anythingStatic(...);
+echo $instance(), "\n";
+echo $static(), "\n";
+echo $lateStatic();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "anythingInstance\nFirstClassCallableMagicBase::anythingStatic\nFirstClassCallableMagicChild::anythingStatic"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn first_class_callable_errors_are_runtime_errors() {
+    let new_execution = run_source(
+        r#"<?php
+class FirstClassCallableNewTarget {}
+new FirstClassCallableNewTarget(...);
+"#,
+    )
+    .unwrap();
+    assert_eq!(
+        new_execution.stdout,
+        "Fatal error: Cannot create Closure for new expression in Command line code on line 3"
+    );
+    assert_eq!(new_execution.exit_code, 255);
+
+    let placeholder_execution = run_source(
+        r#"<?php
+function first_class_callable_placeholder_target() {}
+first_class_callable_placeholder_target(?);
+"#,
+    )
+    .unwrap();
+    assert_eq!(
+        placeholder_execution.stdout,
+        "Fatal error: Cannot create a Closure for call expression with more than one argument, or non-variadic placeholders in Command line code on line 3"
+    );
+    assert_eq!(placeholder_execution.exit_code, 255);
+
+    let execution = run_source(
+        r#"<?php
+try {
+    $fn = 123;
+    $fn(...);
+} catch (Error $e) {
+    echo $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
+    assert_eq!(execution.stdout, "Value of type int is not callable");
+}
+
+#[test]
 fn arrow_function_values_can_be_assigned_without_invocation() {
     let execution = run_source(
         r#"<?php

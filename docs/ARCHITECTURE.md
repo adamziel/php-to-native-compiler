@@ -3614,9 +3614,19 @@ Variable-variable execution and `eval` remain design boundaries; direct
 Namespace declarations and top-level class `use` import declarations execute
 as metadata/no-op statements in `phpc run`, but the native path still rejects
 namespace declarations/imports before scalar folding or backend execution.
-First-class callable syntax such as `strlen(...)` and `$callback(...)` also
-stops at a stable parse diagnostic until Closure creation and callable object
-semantics exist.
+First-class callable syntax has a bounded interpreter acquisition path for
+current callable values. Named functions such as `strlen(...)` and dynamic
+string callables produce the same callable string value consumed by the
+existing dynamic-call dispatcher, closure values such as `$closure(...)` and
+`$closure->__invoke(...)` return the current closure value, and object/static
+method forms such as `$object->method(...)` or `ClassName::method(...)`
+produce the existing two-element array-callable shape after validating the
+current declared or magic callability slice. This is intentionally not full PHP
+`Closure` object parity yet: private-scope method closures, callable
+reflection identity, `Closure::fromCallable()`, constexpr closure object
+dumping, autoload/namespace breadth, and native lowering remain unsupported.
+`new ClassName(...)` and non-variadic placeholders such as `foo(?)` lower to
+the matching bounded fatal diagnostics.
 Call-site argument unpacking such as `handler(...$args)` stops at a dedicated
 parse diagnostic until iterable expansion order, string-keyed named-argument
 interaction, by-reference argument propagation, variadic collection, duplicate
@@ -3677,10 +3687,13 @@ does not resolve classes or methods and is not callable dispatch. Normal
 `is_callable([$receiver, $method])` resolution checks the same shape against
 current declared method metadata: object receivers are true for public declared
 methods, and class-string receivers are true for public static declared
-methods. Array/object callable dynamic invocation, private/protected
-caller-context method callability, method calls, first-class callable syntax,
-and namespace/autoload-aware callable resolution are still outside the
-implemented dynamic-call subset. Constant names that are lexed as language keywords or
+methods. Array/object callable dynamic invocation is supported by the current
+dynamic-call path for the documented two-element callable shape, including
+public object methods and public static class-string methods, and first-class
+callable acquisition now reuses that same shape for method forms. Broader
+private/protected caller-context method callability, full PHP `Closure` object
+semantics for first-class callables, and namespace/autoload-aware callable
+resolution are still outside the implemented dynamic-call subset. Constant names that are lexed as language keywords or
 literals cannot be read bare, and case-insensitive legacy constants, extension
 constants, namespace-qualified constants, nested or namespace-aware `const`
 declarations, dynamic `const` values, class constants through

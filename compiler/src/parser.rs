@@ -6239,6 +6239,18 @@ impl Parser {
 
             if self.match_token(|kind| matches!(kind, TokenKind::LParen)) {
                 let span = expr.span();
+                if self.match_first_class_callable_placeholder_after_open() {
+                    expr = Expr::Call {
+                        name: "__phpc_first_class_dynamic".to_string(),
+                        args: vec![expr],
+                        span,
+                    };
+                    continue;
+                }
+                if self.match_non_variadic_first_class_placeholder_after_open() {
+                    expr = Self::first_class_callable_invalid_placeholder_expr(span);
+                    continue;
+                }
                 let args = self.parse_call_arguments_after_open()?;
                 expr = Expr::DynamicCall {
                     callee: Box::new(expr),
@@ -6254,6 +6266,18 @@ impl Parser {
                     let property = self.parse_dynamic_property_name_expr(operator_span)?;
                     if self.match_token(|kind| matches!(kind, TokenKind::LParen)) {
                         let span = expr.span();
+                        if self.match_first_class_callable_placeholder_after_open() {
+                            expr = Expr::Call {
+                                name: "__phpc_first_class_dynamic_method".to_string(),
+                                args: vec![expr, property],
+                                span,
+                            };
+                            continue;
+                        }
+                        if self.match_non_variadic_first_class_placeholder_after_open() {
+                            expr = Self::first_class_callable_invalid_placeholder_expr(span);
+                            continue;
+                        }
                         let args = self.parse_call_arguments_after_open()?;
                         expr = Expr::DynamicMethodCall {
                             target: Box::new(expr),
@@ -6275,6 +6299,18 @@ impl Parser {
                 let (member, _) = self.consume_object_property_name(operator_span)?;
                 if self.match_token(|kind| matches!(kind, TokenKind::LParen)) {
                     let span = expr.span();
+                    if self.match_first_class_callable_placeholder_after_open() {
+                        expr = Expr::Call {
+                            name: "__phpc_first_class_method".to_string(),
+                            args: vec![expr, Expr::String(member, operator_span)],
+                            span,
+                        };
+                        continue;
+                    }
+                    if self.match_non_variadic_first_class_placeholder_after_open() {
+                        expr = Self::first_class_callable_invalid_placeholder_expr(span);
+                        continue;
+                    }
                     let args = self.parse_call_arguments_after_open()?;
                     expr = Expr::MethodCall {
                         target: Box::new(expr),
@@ -6311,6 +6347,18 @@ impl Parser {
                         self.advance();
                         self.consume_keyword(TokenKind::LParen, "expected '(' after method name")?;
                         let span = expr.span();
+                        if self.match_first_class_callable_placeholder_after_open() {
+                            expr = Expr::Call {
+                                name: "__phpc_first_class_object_static_method".to_string(),
+                                args: vec![expr, Expr::String(method, operator_span)],
+                                span,
+                            };
+                            continue;
+                        }
+                        if self.match_non_variadic_first_class_placeholder_after_open() {
+                            expr = Self::first_class_callable_invalid_placeholder_expr(span);
+                            continue;
+                        }
                         let args = self.parse_call_arguments_after_open()?;
                         expr = Expr::ObjectStaticMethodCall {
                             target: Box::new(expr),
@@ -6843,6 +6891,18 @@ impl Parser {
                 {
                     self.advance();
                     self.consume_keyword(TokenKind::LParen, "expected '(' after method name")?;
+                    if self.match_first_class_callable_placeholder_after_open() {
+                        return Ok(Expr::Call {
+                            name: "__phpc_first_class_parent_method".to_string(),
+                            args: vec![Expr::String(method, operator_span)],
+                            span: operator_span,
+                        });
+                    }
+                    if self.match_non_variadic_first_class_placeholder_after_open() {
+                        return Ok(Self::first_class_callable_invalid_placeholder_expr(
+                            operator_span,
+                        ));
+                    }
                     let args = self.parse_call_arguments_after_open()?;
                     Ok(Expr::ParentMethodCall {
                         method,
@@ -6910,6 +6970,18 @@ impl Parser {
                 {
                     self.advance();
                     self.consume_keyword(TokenKind::LParen, "expected '(' after method name")?;
+                    if self.match_first_class_callable_placeholder_after_open() {
+                        return Ok(Expr::Call {
+                            name: "__phpc_first_class_self_method".to_string(),
+                            args: vec![Expr::String(method, operator_span)],
+                            span: operator_span,
+                        });
+                    }
+                    if self.match_non_variadic_first_class_placeholder_after_open() {
+                        return Ok(Self::first_class_callable_invalid_placeholder_expr(
+                            operator_span,
+                        ));
+                    }
                     let args = self.parse_call_arguments_after_open()?;
                     Ok(Expr::SelfMethodCall {
                         method,
@@ -6977,6 +7049,18 @@ impl Parser {
                 {
                     self.advance();
                     self.consume_keyword(TokenKind::LParen, "expected '(' after method name")?;
+                    if self.match_first_class_callable_placeholder_after_open() {
+                        return Ok(Expr::Call {
+                            name: "__phpc_first_class_late_static_method".to_string(),
+                            args: vec![Expr::String(method, operator_span)],
+                            span: operator_span,
+                        });
+                    }
+                    if self.match_non_variadic_first_class_placeholder_after_open() {
+                        return Ok(Self::first_class_callable_invalid_placeholder_expr(
+                            operator_span,
+                        ));
+                    }
                     let args = self.parse_call_arguments_after_open()?;
                     Ok(Expr::LateStaticMethodCall {
                         method,
@@ -7050,6 +7134,26 @@ impl Parser {
             TokenKind::Identifier(method) if matches!(self.peek_next().kind, TokenKind::LParen) => {
                 self.advance();
                 self.consume_keyword(TokenKind::LParen, "expected '(' after method name")?;
+                if self.match_first_class_callable_placeholder_after_open() {
+                    return Ok(Expr::Call {
+                        name: "__phpc_first_class_static_method".to_string(),
+                        args: vec![
+                            Expr::String(
+                                receiver
+                                    .expect("named static receiver should exist")
+                                    .to_string(),
+                                operator_span,
+                            ),
+                            Expr::String(method, operator_span),
+                        ],
+                        span: operator_span,
+                    });
+                }
+                if self.match_non_variadic_first_class_placeholder_after_open() {
+                    return Ok(Self::first_class_callable_invalid_placeholder_expr(
+                        operator_span,
+                    ));
+                }
                 let args = self.parse_call_arguments_after_open()?;
                 Ok(Expr::StaticMethodCall {
                     class_name: receiver
@@ -7152,6 +7256,16 @@ impl Parser {
             _ => return Err(self.error_at(token.span, "expected class name after 'new'")),
         };
         let args = if self.match_token(|kind| matches!(kind, TokenKind::LParen)) {
+            if self.match_first_class_callable_placeholder_after_open() {
+                return Ok(Expr::Call {
+                    name: "__phpc_first_class_new".to_string(),
+                    args: Vec::new(),
+                    span,
+                });
+            }
+            if self.match_non_variadic_first_class_placeholder_after_open() {
+                return Ok(Self::first_class_callable_invalid_placeholder_expr(span));
+            }
             self.parse_call_arguments_after_open()?
         } else {
             Vec::new()
@@ -7366,17 +7480,54 @@ impl Parser {
         name: String,
         span: Span,
     ) -> CompileResult<Expr> {
+        if self.match_first_class_callable_placeholder_after_open() {
+            let callable = name.strip_prefix('\\').unwrap_or(&name).to_string();
+            return Ok(Expr::Call {
+                name: "__phpc_first_class_function".to_string(),
+                args: vec![Expr::String(callable, span)],
+                span,
+            });
+        }
+        if self.match_non_variadic_first_class_placeholder_after_open() {
+            return Ok(Self::first_class_callable_invalid_placeholder_expr(span));
+        }
+
+        let args = self.parse_call_arguments_after_open()?;
+        Ok(Expr::Call { name, args, span })
+    }
+
+    fn match_first_class_callable_placeholder_after_open(&mut self) -> bool {
         if matches!(self.peek().kind, TokenKind::Ellipsis)
             && matches!(self.peek_next().kind, TokenKind::RParen)
         {
             self.advance();
             self.advance();
-            let callable = name.strip_prefix('\\').unwrap_or(&name).to_string();
-            return Ok(Expr::String(callable, span));
+            true
+        } else {
+            false
         }
+    }
 
-        let args = self.parse_call_arguments_after_open()?;
-        Ok(Expr::Call { name, args, span })
+    fn match_non_variadic_first_class_placeholder_after_open(&mut self) -> bool {
+        if !matches!(self.peek().kind, TokenKind::Question) {
+            return false;
+        }
+        self.advance();
+        while !matches!(self.peek().kind, TokenKind::RParen | TokenKind::Eof) {
+            self.advance();
+        }
+        if matches!(self.peek().kind, TokenKind::RParen) {
+            self.advance();
+        }
+        true
+    }
+
+    fn first_class_callable_invalid_placeholder_expr(span: Span) -> Expr {
+        Expr::Call {
+            name: "__phpc_first_class_invalid_placeholder".to_string(),
+            args: Vec::new(),
+            span,
+        }
     }
 
     fn parse_call_argument_after_open(&mut self) -> CompileResult<Expr> {

@@ -3320,9 +3320,10 @@
   missing/inaccessible methods when the class declares or inherits public
   static `__callStatic`. This `is_callable()` magic-method introspection does
   not broaden the currently executable array-callback dispatch subset.
-  Callable-name output, object `__invoke` callables, private/protected
-  caller-context method callability,
-  `__callStatic` parity for declared public non-static methods, first-class callable syntax,
+  Callable-name output, object `__invoke` callables outside the bounded
+  closure first-class callable slice, private/protected caller-context method
+  callability, `__callStatic` parity for declared public non-static methods,
+  full PHP `Closure` object parity for first-class callables,
   namespace/autoload behavior, exact native `TypeError` behavior, native
   lowering, and the environment-specific legacy `is_real` alias are not
   implemented.
@@ -5632,7 +5633,6 @@
   arguments such as `handler(&$value)`, reference expressions, function-scope
   reference parameter invocation, reference returns, type declaration
   enforcement, named arguments such as `call(name: $value)`,
-  first-class callable syntax such as `strlen(...)` and `$callback(...)`,
   static arrow functions such as `static fn () => 1`,
   `declare(strict_types=1)`, `declare(ticks=1)`, and
   `declare(encoding="UTF-8")`. Declare behavior remains unsupported:
@@ -8047,9 +8047,8 @@
   outside the bounded final-parameter by-value slice and call-site argument
   unpacking such as `handler(...$args)`, call-time by-reference arguments such
   as `handler(&$value)`, reference returns, reference expressions, named
-  arguments, first-class callable syntax such as
-  `strlen(...)` and `$callback(...)`, static arrow functions such as
-  `static fn () => 1`, empty call arguments, and `declare(strict_types=1)` are
+  arguments, static arrow functions such as `static fn () => 1`, empty call
+  arguments, and `declare(strict_types=1)` are
   rejected with stable parse diagnostics. Function-local `static` declarations
   are supported for the current bounded direct-variable storage slice:
   `static $name;` and `static $name = value;` initialize per-function storage
@@ -8058,7 +8057,17 @@
   documented constant-expression/default-value subset. Dynamic initializers,
   references, variable variables, recursion/reentrancy edge behavior,
   included-file edge cases, exact PHP diagnostics, reflection behavior, and
-  native lowering remain unsupported. The `__LINE__` magic constant evaluates
+  native lowering remain unsupported. First-class callable syntax has a bounded
+  interpreter slice for current callable values: named functions and dynamic
+  string callables produce callable strings, closure values preserve the same
+  closure identity for `$closure(...)` and `$closure->__invoke(...)`, and
+  object/static method forms produce the existing public/magic two-element
+  array-callable shape. `new ClassName(...)` and non-variadic placeholders such
+  as `foo(?)` report bounded fatal diagnostics. Full PHP `Closure` object
+  parity for method/function first-class callables, private-scope method
+  closures, first-class callable reflection identity, `Closure::fromCallable()`,
+  constexpr closure object dumping, autoload/namespace breadth, and native
+  lowering remain unsupported. The `__LINE__` magic constant evaluates
   to the source line of the
   expression token in ordinary expressions, default parameter values, and
   top-level `const` declarations. The `__FILE__` magic constant evaluates to
@@ -8087,8 +8096,8 @@
   `__FILE__`/`__DIR__` paths matching PHP exactly, eval/include source mapping,
   namespace and trait magic constants, closure invocation and capture binding,
   closure function-name context, magic
-  constant native lowering, array callables, object/method callables,
-  first-class callable syntax, namespace-qualified callable
+  constant native lowering, private/protected object/method callable scope,
+  full first-class callable `Closure` object parity, namespace-qualified callable
   resolution, autoload interaction, and native lowering for type declarations
   are unsupported.
 - Builtins: `strlen`, `strtolower`, `strtoupper`, `str_increment`,
@@ -10826,10 +10835,11 @@
   semantics, `Traversable` forwarding, and native lowering
 - executable attribute declarations and reflection metadata beyond the current
   syntax-only skip boundary
-- `is_callable` callable-name output parameter, array/object callable dynamic
-  invocation, object `__invoke` callables, private/protected caller-context
-  method callability, inherited/trait/interface method lookup, first-class
-  callable syntax, namespace/autoload-aware resolution, exact native
+- `is_callable` callable-name output parameter, object `__invoke` callables
+  outside the bounded closure first-class callable slice, private/protected
+  caller-context method callability, inherited/trait/interface method lookup,
+  full PHP `Closure` object parity for first-class callables,
+  namespace/autoload-aware resolution, exact native
   `TypeError` behavior, and native lowering beyond direct known string
   builtin/missing-name folding with optional known boolean syntax-only flags
   and direct non-string scalar/null false folding
