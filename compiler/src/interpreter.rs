@@ -78337,11 +78337,11 @@ impl Interpreter {
             "lcfirst" => call_lcfirst(&args, span),
             "ucwords" => call_ucwords(&args, span),
             "quotemeta" => call_quotemeta(&args, span),
-            "htmlspecialchars" => call_htmlspecialchars(&args, span),
-            "htmlentities" => call_htmlentities(&args, span),
+            "htmlspecialchars" => call_htmlspecialchars(self, &args, span),
+            "htmlentities" => call_htmlentities(self, &args, span),
             "htmlspecialchars_decode" => call_htmlspecialchars_decode(&args, span),
-            "html_entity_decode" => call_html_entity_decode(&args, span),
-            "get_html_translation_table" => call_get_html_translation_table(&args, span),
+            "html_entity_decode" => call_html_entity_decode(self, &args, span),
+            "get_html_translation_table" => call_get_html_translation_table(self, &args, span),
             "strip_tags" => call_strip_tags(&args, span),
             "nl2br" => call_nl2br(&args, span),
             "str_repeat" => call_str_repeat(&args, span),
@@ -105944,7 +105944,8 @@ fn html_default_flags(
     }
 }
 
-fn html_ignore_encoding_arg(
+fn html_validate_encoding_arg(
+    interpreter: &mut Interpreter,
     args: &[Value],
     index: usize,
     function: &str,
@@ -105952,13 +105953,55 @@ fn html_ignore_encoding_arg(
 ) -> CompileResult<()> {
     if let Some(value) = args.get(index) {
         if !matches!(value, Value::Null) {
-            let _ = string_compare_argument_bytes(function, "encoding", value, span)?;
+            let bytes = string_compare_argument_bytes(function, "encoding", value, span)?;
+            if !html_charset_is_supported(&bytes) {
+                interpreter.emit_display_warning(
+                    format!(
+                        "{function}: Charset \"{}\" is not supported, assuming UTF-8",
+                        String::from_utf8_lossy(&bytes)
+                    ),
+                    span,
+                )?;
+            }
         }
     }
     Ok(())
 }
 
-fn call_htmlspecialchars(args: &[Value], span: Span) -> CompileResult<Value> {
+fn html_charset_is_supported(bytes: &[u8]) -> bool {
+    let normalized: String = bytes
+        .iter()
+        .filter_map(|byte| match *byte {
+            b'-' | b'_' | b' ' => None,
+            byte => Some(byte.to_ascii_uppercase() as char),
+        })
+        .collect();
+
+    matches!(
+        normalized.as_str(),
+        "" | "UTF8"
+            | "ISO88591"
+            | "ISO885915"
+            | "SJIS"
+            | "SHIFTJIS"
+            | "EUCJP"
+            | "1251"
+            | "CP1251"
+            | "WINDOWS1251"
+            | "1252"
+            | "CP1252"
+            | "WINDOWS1252"
+            | "866"
+            | "CP866"
+            | "IBM866"
+    )
+}
+
+fn call_htmlspecialchars(
+    interpreter: &mut Interpreter,
+    args: &[Value],
+    span: Span,
+) -> CompileResult<Value> {
     if !(1..=4).contains(&args.len()) {
         return Err(runtime_error(
             span,
@@ -105972,14 +106015,18 @@ fn call_htmlspecialchars(args: &[Value], span: Span) -> CompileResult<Value> {
 
     let value = string_compare_argument_bytes("htmlspecialchars()", "string", &args[0], span)?;
     let flags = html_default_flags(args, 1, "htmlspecialchars()", span)?;
-    html_ignore_encoding_arg(args, 2, "htmlspecialchars()", span)?;
+    html_validate_encoding_arg(interpreter, args, 2, "htmlspecialchars()", span)?;
     let double_encode = args.get(3).map(Value::is_truthy).unwrap_or(true);
     Ok(interpreter_value_from_php_string_bytes(
         htmlspecialchars_encode_bytes(&value, flags, double_encode),
     ))
 }
 
-fn call_htmlentities(args: &[Value], span: Span) -> CompileResult<Value> {
+fn call_htmlentities(
+    interpreter: &mut Interpreter,
+    args: &[Value],
+    span: Span,
+) -> CompileResult<Value> {
     if !(1..=4).contains(&args.len()) {
         return Err(runtime_error(
             span,
@@ -105993,7 +106040,7 @@ fn call_htmlentities(args: &[Value], span: Span) -> CompileResult<Value> {
 
     let value = string_compare_argument_bytes("htmlentities()", "string", &args[0], span)?;
     let flags = html_default_flags(args, 1, "htmlentities()", span)?;
-    html_ignore_encoding_arg(args, 2, "htmlentities()", span)?;
+    html_validate_encoding_arg(interpreter, args, 2, "htmlentities()", span)?;
     let double_encode = args.get(3).map(Value::is_truthy).unwrap_or(true);
     Ok(interpreter_value_from_php_string_bytes(
         htmlentities_encode_bytes(&value, flags, double_encode),
@@ -106020,7 +106067,11 @@ fn call_htmlspecialchars_decode(args: &[Value], span: Span) -> CompileResult<Val
     )))
 }
 
-fn call_html_entity_decode(args: &[Value], span: Span) -> CompileResult<Value> {
+fn call_html_entity_decode(
+    interpreter: &mut Interpreter,
+    args: &[Value],
+    span: Span,
+) -> CompileResult<Value> {
     if !(1..=3).contains(&args.len()) {
         return Err(runtime_error(
             span,
@@ -106034,13 +106085,17 @@ fn call_html_entity_decode(args: &[Value], span: Span) -> CompileResult<Value> {
 
     let value = string_compare_argument_bytes("html_entity_decode()", "string", &args[0], span)?;
     let flags = html_default_flags(args, 1, "html_entity_decode()", span)?;
-    html_ignore_encoding_arg(args, 2, "html_entity_decode()", span)?;
+    html_validate_encoding_arg(interpreter, args, 2, "html_entity_decode()", span)?;
     Ok(interpreter_value_from_php_string_bytes(html_decode_bytes(
         &value, flags, true,
     )))
 }
 
-fn call_get_html_translation_table(args: &[Value], span: Span) -> CompileResult<Value> {
+fn call_get_html_translation_table(
+    interpreter: &mut Interpreter,
+    args: &[Value],
+    span: Span,
+) -> CompileResult<Value> {
     if args.len() > 3 {
         return Err(runtime_error(
             span,
@@ -106059,7 +106114,7 @@ fn call_get_html_translation_table(args: &[Value], span: Span) -> CompileResult<
         None => PHP_HTML_SPECIALCHARS,
     };
     let flags = html_default_flags(args, 1, "get_html_translation_table()", span)?;
-    html_ignore_encoding_arg(args, 2, "get_html_translation_table()", span)?;
+    html_validate_encoding_arg(interpreter, args, 2, "get_html_translation_table()", span)?;
     if table != PHP_HTML_SPECIALCHARS && table != PHP_HTML_ENTITIES {
         return Err(runtime_error(
             span,

@@ -42,6 +42,35 @@ echo html_entity_decode("&apos;", ENT_QUOTES | ENT_HTML401, "UTF-8"), "\n";
 }
 
 #[test]
+fn htmlspecialchars_reports_unsupported_charsets_and_uses_utf8_fallback() {
+    let execution = run_source(
+        r#"<?php
+var_dump(htmlspecialchars("<>", ENT_COMPAT, 1));
+var_dump(htmlspecialchars("<>", ENT_COMPAT, 1252));
+var_dump(htmlspecialchars("<>", ENT_COMPAT, 866));
+var_dump(htmlspecialchars("<>", ENT_COMPAT, "SJIS"));
+var_dump(htmlspecialchars("<>", ENT_COMPAT, str_repeat("a", 12)));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "Warning: htmlspecialchars(): Charset \"1\" is not supported, assuming UTF-8 in Command line code on line 2\n",
+            "string(8) \"&lt;&gt;\"\n",
+            "string(8) \"&lt;&gt;\"\n",
+            "string(8) \"&lt;&gt;\"\n",
+            "string(8) \"&lt;&gt;\"\n",
+            "\nWarning: htmlspecialchars(): Charset \"aaaaaaaaaaaa\" is not supported, assuming UTF-8 in Command line code on line 6\n",
+            "string(8) \"&lt;&gt;\"\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn html_translation_table_metadata_and_constants_are_available() {
     let execution = run_source(
         r#"<?php

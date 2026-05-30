@@ -3053,8 +3053,11 @@
   `htmlspecialchars_decode`, `html_entity_decode`, and
   `get_html_translation_table` cover the current byte-string special-character
   subset, quote-style flags, double-encode preservation, selected Latin-1
-  named entities, internal metadata, and the `HTML_*` / `ENT_*` constants.
-  Full HTML4/HTML5 translation tables, all legacy encodings, invalid Unicode
+  named entities, bounded charset validation with UTF-8 fallback warnings,
+  internal metadata, and the `HTML_*` / `ENT_*` constants. Recognized charset
+  names are limited to the current UTF-8, ISO-8859-1/15, Shift-JIS, EUC-JP,
+  Windows-1251/1252, and IBM866 spellings reached by PHPT coverage. Full
+  HTML4/HTML5 translation tables, all legacy encodings, invalid Unicode
   substitution/disallowed-character parity, and native lowering remain
   unsupported.
 - exact uppercase PHP error mask constants `E_ERROR`, `E_WARNING`, `E_PARSE`,
