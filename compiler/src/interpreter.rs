@@ -62737,6 +62737,62 @@ impl Interpreter {
         self.lookup_function_exact(suffix)
     }
 
+    fn call_get_defined_constants(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if args.len() > 1 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "get_defined_constants()",
+                    ArityExpectation::Between { min: 0, max: 1 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let categorize = match args.first() {
+            Some(Value::Bool(value)) => *value,
+            Some(other) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "get_defined_constants()",
+                        format!(
+                            "categorize argument must be bool in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+            None => false,
+        };
+
+        let constants = self.defined_constants_array();
+        if categorize {
+            let mut categories = PhpArray::new();
+            categories.insert("Core".to_string(), Value::Array(constants));
+            Ok(Value::Array(categories))
+        } else {
+            Ok(Value::Array(constants))
+        }
+    }
+
+    fn defined_constants_array(&self) -> PhpArray {
+        let mut constants = PhpArray::new();
+        for name in builtin_global_constant_names() {
+            if let Some(value) = builtin_global_constant_value(name) {
+                constants.insert((*name).to_string(), value);
+            }
+        }
+
+        let mut runtime_constants = self.constants.values.iter().collect::<Vec<_>>();
+        runtime_constants.sort_by(|(left, _), (right, _)| left.cmp(right));
+        for (name, value) in runtime_constants {
+            constants.insert(name.clone(), value.clone());
+        }
+
+        constants
+    }
+
     fn call_user_function(
         &mut self,
         function: Rc<FunctionDecl>,
@@ -78000,6 +78056,8 @@ impl Interpreter {
             )),
             "parse_url" => call_parse_url(&args, span),
             "urlencode" => call_urlencode(&args, span),
+            "rawurlencode" => call_rawurlencode(&args, span),
+            "rawurldecode" => call_rawurldecode(&args, span),
             "preg_match" => call_preg_match(&args, span),
             "preg_replace" => call_preg_replace(&args, span),
             "preg_split" => call_preg_split(&args, span),
@@ -78382,6 +78440,7 @@ impl Interpreter {
                     )),
                 }
             }
+            "get_defined_constants" => self.call_get_defined_constants(&args, span),
             "array_key_exists" | "key_exists" => {
                 self.call_array_key_exists(name, &args, span)
             }
@@ -95824,6 +95883,8 @@ fn is_builtin(name: &str) -> bool {
             | "parse_str"
             | "parse_url"
             | "urlencode"
+            | "rawurlencode"
+            | "rawurldecode"
             | "preg_match"
             | "preg_replace"
             | "preg_split"
@@ -95955,6 +96016,7 @@ fn is_builtin(name: &str) -> bool {
             | "sizeof"
             | "constant"
             | "defined"
+            | "get_defined_constants"
             | "array_key_exists"
             | "key_exists"
             | "array_values"
@@ -97233,6 +97295,227 @@ fn php_glob_bracket_class_matches(
         index += 1;
     }
     None
+}
+
+const BUILTIN_GLOBAL_CONSTANT_NAMES: &[&str] = &[
+    "PHP_VERSION",
+    "PHP_VERSION_ID",
+    "PHP_INT_SIZE",
+    "PHP_INT_MAX",
+    "PHP_INT_MIN",
+    "INF",
+    "NAN",
+    "M_PI",
+    "PHP_SAPI",
+    "PHP_OS",
+    "PHP_OS_FAMILY",
+    "PHP_EOL",
+    "STDIN",
+    "STDOUT",
+    "STDERR",
+    "DIRECTORY_SEPARATOR",
+    "PATH_SEPARATOR",
+    "FILE_USE_INCLUDE_PATH",
+    "FILE_IGNORE_NEW_LINES",
+    "FILE_SKIP_EMPTY_LINES",
+    "FILE_APPEND",
+    "LOCK_SH",
+    "LOCK_EX",
+    "LOCK_UN",
+    "LOCK_NB",
+    "STREAM_FILTER_READ",
+    "STREAM_FILTER_WRITE",
+    "STREAM_FILTER_ALL",
+    "PATHINFO_DIRNAME",
+    "PATHINFO_BASENAME",
+    "PATHINFO_EXTENSION",
+    "PATHINFO_FILENAME",
+    "PATHINFO_ALL",
+    "PHP_URL_SCHEME",
+    "PHP_URL_HOST",
+    "PHP_URL_PORT",
+    "PHP_URL_USER",
+    "PHP_URL_PASS",
+    "PHP_URL_PATH",
+    "PHP_URL_QUERY",
+    "PHP_URL_FRAGMENT",
+    "SCANDIR_SORT_ASCENDING",
+    "SCANDIR_SORT_DESCENDING",
+    "SCANDIR_SORT_NONE",
+    "GLOB_ERR",
+    "GLOB_MARK",
+    "GLOB_NOSORT",
+    "GLOB_NOCHECK",
+    "GLOB_NOESCAPE",
+    "GLOB_BRACE",
+    "GLOB_ONLYDIR",
+    "STR_PAD_LEFT",
+    "STR_PAD_RIGHT",
+    "STR_PAD_BOTH",
+    "INPUT_POST",
+    "INPUT_GET",
+    "INPUT_COOKIE",
+    "FILTER_VALIDATE_INT",
+    "FILTER_VALIDATE_BOOLEAN",
+    "FILTER_VALIDATE_BOOL",
+    "FILTER_VALIDATE_FLOAT",
+    "FILTER_VALIDATE_REGEXP",
+    "FILTER_VALIDATE_DOMAIN",
+    "FILTER_VALIDATE_URL",
+    "FILTER_VALIDATE_EMAIL",
+    "FILTER_VALIDATE_IP",
+    "FILTER_VALIDATE_MAC",
+    "FILTER_DEFAULT",
+    "FILTER_UNSAFE_RAW",
+    "FILTER_SANITIZE_STRING",
+    "FILTER_SANITIZE_STRIPPED",
+    "FILTER_SANITIZE_ENCODED",
+    "FILTER_SANITIZE_SPECIAL_CHARS",
+    "FILTER_SANITIZE_FULL_SPECIAL_CHARS",
+    "FILTER_SANITIZE_EMAIL",
+    "FILTER_SANITIZE_URL",
+    "FILTER_SANITIZE_NUMBER_INT",
+    "FILTER_SANITIZE_NUMBER_FLOAT",
+    "FILTER_SANITIZE_ADD_SLASHES",
+    "FILTER_CALLBACK",
+    "FILTER_REQUIRE_ARRAY",
+    "FILTER_FORCE_ARRAY",
+    "FILTER_NULL_ON_FAILURE",
+    "HTML_SPECIALCHARS",
+    "HTML_ENTITIES",
+    "ENT_COMPAT",
+    "ENT_QUOTES",
+    "ENT_NOQUOTES",
+    "ENT_IGNORE",
+    "ENT_SUBSTITUTE",
+    "ENT_DISALLOWED",
+    "ENT_HTML401",
+    "ENT_XML1",
+    "ENT_XHTML",
+    "ENT_HTML5",
+    "LC_CTYPE",
+    "LC_NUMERIC",
+    "LC_TIME",
+    "LC_COLLATE",
+    "LC_MONETARY",
+    "LC_MESSAGES",
+    "LC_ALL",
+    "CAL_GREGORIAN",
+    "CAL_JULIAN",
+    "CAL_JEWISH",
+    "CAL_FRENCH",
+    "CAL_NUM_CALS",
+    "CAL_DOW_DAYNO",
+    "CAL_DOW_LONG",
+    "CAL_DOW_SHORT",
+    "CAL_MONTH_GREGORIAN_SHORT",
+    "CAL_MONTH_GREGORIAN_LONG",
+    "CAL_MONTH_JULIAN_SHORT",
+    "CAL_MONTH_JULIAN_LONG",
+    "CAL_MONTH_JEWISH",
+    "CAL_MONTH_FRENCH",
+    "DATE_ATOM",
+    "DATE_COOKIE",
+    "DATE_ISO8601",
+    "DATE_ISO8601_EXPANDED",
+    "DATE_RFC822",
+    "DATE_RFC850",
+    "DATE_RFC1036",
+    "DATE_RFC1123",
+    "DATE_RFC7231",
+    "DATE_RFC2822",
+    "DATE_RFC3339",
+    "DATE_RFC3339_EXTENDED",
+    "DATE_RSS",
+    "DATE_W3C",
+    "SUNFUNCS_RET_TIMESTAMP",
+    "SUNFUNCS_RET_STRING",
+    "SUNFUNCS_RET_DOUBLE",
+    "PHP_SESSION_DISABLED",
+    "PHP_SESSION_NONE",
+    "PHP_SESSION_ACTIVE",
+    "E_ERROR",
+    "E_WARNING",
+    "E_PARSE",
+    "E_NOTICE",
+    "E_CORE_ERROR",
+    "E_CORE_WARNING",
+    "E_COMPILE_ERROR",
+    "E_COMPILE_WARNING",
+    "E_USER_ERROR",
+    "E_USER_WARNING",
+    "E_USER_NOTICE",
+    "E_STRICT",
+    "E_RECOVERABLE_ERROR",
+    "E_DEPRECATED",
+    "E_USER_DEPRECATED",
+    "E_ALL",
+    "COUNT_NORMAL",
+    "COUNT_RECURSIVE",
+    "CASE_LOWER",
+    "CASE_UPPER",
+    "ARRAY_FILTER_USE_BOTH",
+    "ARRAY_FILTER_USE_KEY",
+    "PREG_SPLIT_DELIM_CAPTURE",
+    "SORT_REGULAR",
+    "SORT_NUMERIC",
+    "SORT_STRING",
+    "SORT_DESC",
+    "SORT_ASC",
+    "SORT_LOCALE_STRING",
+    "SORT_NATURAL",
+    "SORT_FLAG_CASE",
+    "STREAM_IS_URL",
+    "SEEK_SET",
+    "SEEK_CUR",
+    "SEEK_END",
+    "MYSQLI_REPORT_OFF",
+    "MYSQLI_REPORT_ERROR",
+    "MYSQLI_REPORT_STRICT",
+    "MYSQLI_ASSOC",
+    "MYSQLI_NUM",
+    "MYSQLI_BOTH",
+    "MYSQLI_ASYNC",
+    "MYSQLI_CLIENT_SSL",
+    "MYSQLI_CLIENT_COMPRESS",
+    "MYSQLI_CLIENT_INTERACTIVE",
+    "MYSQLI_CLIENT_IGNORE_SPACE",
+    "MYSQLI_CLIENT_NO_SCHEMA",
+    "MYSQLI_CLIENT_FOUND_ROWS",
+    "MYSQLI_CLIENT_SSL_VERIFY_SERVER_CERT",
+    "MYSQLI_CLIENT_SSL_DONT_VERIFY_SERVER_CERT",
+    "MYSQLI_CLIENT_CAN_HANDLE_EXPIRED_PASSWORDS",
+    "MYSQLI_OPT_CONNECT_TIMEOUT",
+    "MYSQLI_OPT_LOCAL_INFILE",
+    "MYSQLI_OPT_LOAD_DATA_LOCAL_DIR",
+    "MYSQLI_INIT_COMMAND",
+    "MYSQLI_OPT_READ_TIMEOUT",
+    "MYSQLI_OPT_NET_CMD_BUFFER_SIZE",
+    "MYSQLI_OPT_NET_READ_BUFFER_SIZE",
+    "MYSQLI_OPT_INT_AND_FLOAT_NATIVE",
+    "MYSQLI_OPT_SSL_VERIFY_SERVER_CERT",
+    "MYSQLI_OPT_CAN_HANDLE_EXPIRED_PASSWORDS",
+    "MYSQLI_STMT_ATTR_UPDATE_MAX_LENGTH",
+    "MYSQLI_STMT_ATTR_CURSOR_TYPE",
+    "MYSQLI_STMT_ATTR_PREFETCH_ROWS",
+    "MYSQLI_CURSOR_TYPE_NO_CURSOR",
+    "MYSQLI_CURSOR_TYPE_READ_ONLY",
+    "MYSQLI_CURSOR_TYPE_FOR_UPDATE",
+    "MYSQLI_CURSOR_TYPE_SCROLLABLE",
+    "MYSQLI_REFRESH_GRANT",
+    "MYSQLI_REFRESH_LOG",
+    "MYSQLI_REFRESH_TABLES",
+    "MYSQLI_REFRESH_HOSTS",
+    "MYSQLI_REFRESH_STATUS",
+    "MYSQLI_REFRESH_THREADS",
+    "MYSQLI_REFRESH_SLAVE",
+    "MYSQLI_REFRESH_REPLICA",
+    "MYSQLI_REFRESH_MASTER",
+    "MYSQLI_REFRESH_BACKUP_LOG",
+];
+
+fn builtin_global_constant_names() -> &'static [&'static str] {
+    BUILTIN_GLOBAL_CONSTANT_NAMES
 }
 
 fn builtin_global_constant_value(name: &str) -> Option<Value> {
@@ -110350,6 +110633,20 @@ fn call_urlencode(args: &[Value], span: Span) -> CompileResult<Value> {
     Ok(Value::String(form_urlencode_component(&value)))
 }
 
+fn call_rawurlencode(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("rawurlencode", args, 1, span)?;
+    let value = string_compare_argument_bytes("rawurlencode()", "string", &args[0], span)?;
+    Ok(Value::String(raw_urlencode_bytes(&value)))
+}
+
+fn call_rawurldecode(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("rawurldecode", args, 1, span)?;
+    let value = string_compare_argument_bytes("rawurldecode()", "string", &args[0], span)?;
+    Ok(interpreter_value_from_php_string_bytes(
+        raw_urldecode_bytes(&value),
+    ))
+}
+
 fn form_urlencode_component(value: &str) -> String {
     let mut encoded = String::with_capacity(value.len());
     for byte in value.bytes() {
@@ -110362,6 +110659,39 @@ fn form_urlencode_component(value: &str) -> String {
         }
     }
     encoded
+}
+
+fn raw_urlencode_bytes(value: &[u8]) -> String {
+    let mut encoded = String::with_capacity(value.len());
+    for &byte in value {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'~') {
+            encoded.push(byte as char);
+        } else {
+            encoded.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    encoded
+}
+
+fn raw_urldecode_bytes(value: &[u8]) -> Vec<u8> {
+    let mut decoded = Vec::with_capacity(value.len());
+    let mut index = 0;
+    while index < value.len() {
+        if value[index] == b'%' && index + 2 < value.len() {
+            if let (Some(high), Some(low)) = (
+                hex_digit_value(value[index + 1]),
+                hex_digit_value(value[index + 2]),
+            ) {
+                decoded.push((high << 4) | low);
+                index += 3;
+                continue;
+            }
+        }
+
+        decoded.push(value[index]);
+        index += 1;
+    }
+    decoded
 }
 
 fn str_replace_scalar_result(

@@ -1681,6 +1681,87 @@ echo check_defined_inside_function(), "\n";
 }
 
 #[test]
+fn get_defined_constants_exports_builtin_and_runtime_constant_keys() {
+    let execution = run_source(
+        r#"<?php
+$before = get_defined_constants();
+echo isset($before["PHP_URL_SCHEME"]) ? $before["PHP_URL_SCHEME"] : "missing";
+echo "|", isset($before["PHP_URL_FRAGMENT"]) ? $before["PHP_URL_FRAGMENT"] : "missing", "\n";
+echo gettype(get_defined_constants(true)), "|", gettype($before), "\n";
+define("USER_CONSTANT", "test");
+$after = get_defined_constants(false);
+echo array_key_exists("USER_CONSTANT", $after) ? $after["USER_CONSTANT"] : "missing";
+echo "|", count($after) === count($before) + 1 ? "grew" : "stale";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "0|7\narray|array\ntest|grew");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn get_defined_constants_exports_supported_builtin_constant_registry() {
+    let execution = run_source(
+        r#"<?php
+$constants = get_defined_constants();
+$names = [
+    "INPUT_POST",
+    "INPUT_GET",
+    "INPUT_COOKIE",
+    "FILTER_VALIDATE_INT",
+    "FILTER_VALIDATE_BOOLEAN",
+    "FILTER_VALIDATE_BOOL",
+    "FILTER_VALIDATE_FLOAT",
+    "FILTER_VALIDATE_REGEXP",
+    "FILTER_VALIDATE_DOMAIN",
+    "FILTER_VALIDATE_URL",
+    "FILTER_VALIDATE_EMAIL",
+    "FILTER_VALIDATE_IP",
+    "FILTER_VALIDATE_MAC",
+    "FILTER_DEFAULT",
+    "FILTER_UNSAFE_RAW",
+    "FILTER_SANITIZE_STRING",
+    "FILTER_SANITIZE_STRIPPED",
+    "FILTER_SANITIZE_ENCODED",
+    "FILTER_SANITIZE_SPECIAL_CHARS",
+    "FILTER_SANITIZE_FULL_SPECIAL_CHARS",
+    "FILTER_SANITIZE_EMAIL",
+    "FILTER_SANITIZE_URL",
+    "FILTER_SANITIZE_NUMBER_INT",
+    "FILTER_SANITIZE_NUMBER_FLOAT",
+    "FILTER_SANITIZE_ADD_SLASHES",
+    "FILTER_CALLBACK",
+    "FILTER_REQUIRE_ARRAY",
+    "FILTER_FORCE_ARRAY",
+    "FILTER_NULL_ON_FAILURE",
+    "COUNT_NORMAL",
+    "COUNT_RECURSIVE",
+];
+
+foreach ($names as $name) {
+    echo $name, ":";
+    echo defined($name) ? "defined" : "missing";
+    echo ":";
+    echo array_key_exists($name, $constants) ? "listed" : "unlisted";
+    echo ":";
+    echo $constants[$name] === constant($name) ? "same" : "different";
+    echo "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    for line in execution.stdout.lines() {
+        assert!(
+            line.ends_with(":defined:listed:same"),
+            "unexpected constant registry line: {line}"
+        );
+    }
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn defined_builtin_requires_string_names_and_supported_names() {
     let non_string = runtime_error(
         r#"<?php

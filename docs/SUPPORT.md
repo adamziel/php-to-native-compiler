@@ -2676,11 +2676,14 @@
   result arrays, selected component extraction, empty query/fragment strings,
   user/password authority parts, host/port parsing with range checks,
   relative `//host` URLs, common `file://` empty-authority paths, and PHP-style
-  `false` for the covered malformed host/port cases. Exact RFC/WHATWG
+  `false` for the covered malformed host/port cases. `PHP_URL_*` constants are
+  visible through bare reads, `defined()`, `constant()`, and
+  `get_defined_constants()` alongside the existing supported builtin constants.
+  `rawurlencode()` and `rawurldecode()` support RFC3986 byte-oriented percent
+  encoding and decoding for the current string subset. Exact RFC/WHATWG
   validation, broader IPv6 and platform-specific file URL edge cases, binary
   byte fidelity outside UTF-8 strings, URL normalization, IDNA, percent-decoding
-  of components, `get_defined_constants()` enumeration of these constants, and
-  native lowering remain unsupported.
+  of parsed URL components, and native lowering remain unsupported.
 - `$_FILES` is seeded as a bounded root superglobal for `phpc run`. By default
   it is an empty ordered array. When `PHPC_FILES` is set, the runtime treats it
   as an explicit URL-encoded upload metadata seed with `$_FILES`-style keys

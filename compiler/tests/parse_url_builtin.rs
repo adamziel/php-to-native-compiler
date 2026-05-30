@@ -42,6 +42,26 @@ echo parse_url("www.php.net:80/index.php?x=1#frag", PHP_URL_FRAGMENT), "\n";
 }
 
 #[test]
+fn raw_url_encoding_matches_rfc3986_percent_boundaries() {
+    let execution = run_source(
+        r#"<?php
+echo rawurlencode("A1_-.~ +/%"), "\n";
+echo rawurldecode("%41%31%5F%2D%2E%7E%20%2B%2F%25"), "\n";
+echo bin2hex(rawurldecode("%00%FF%7E")), "\n";
+echo function_exists("rawurlencode") ? "fn" : "missing";
+echo "|", is_callable("rawurldecode") ? "callable" : "missing";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "A1_-.~%20%2B%2F%25\nA1_-.~ +/%\n00ff7e\nfn|callable"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn parse_url_matches_bounded_edge_cases_from_url_phpts() {
     let execution = run_source(
         r#"<?php
