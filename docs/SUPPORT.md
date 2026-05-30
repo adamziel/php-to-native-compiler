@@ -3125,6 +3125,7 @@
 - builtins for the documented subset: `strlen`, `strtolower`, `trim`, `ltrim`,
   `rtrim`, `strcasecmp`, `strncmp`, `strncasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`, `strspn`, `strcspn`, `strpbrk`, `strpos`, `stripos`, `strrpos`, `strripos`, `strstr`, `strchr`, `stristr`, `strtok`, `substr`,
   `wordwrap`, `str_word_count`, `strnatcmp`, `strnatcasecmp`,
+  `similar_text`,
   `convert_uuencode`, `convert_uudecode`,
   `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `substr_replace`, `substr_count`, `str_getcsv`, `parse_str`,
   `error_reporting`, `ignore_user_abort`, `printf`, `fprintf`, `sprintf`, `vsprintf`, `vprintf`, `vfprintf`, `call_user_func`, `call_user_func_array`,
@@ -3544,13 +3545,19 @@
   the extra character list.
   `strnatcmp()` and `strnatcasecmp()` support scalar/null string-convertible
   operands using the current byte-oriented natural comparison, with ASCII case
-  folding for the case-insensitive form. `convert_uuencode()` and
+  folding for the case-insensitive form. `similar_text($string1, $string2,
+  &$percent = null)` supports scalar/null string-convertible operands and the
+  PHP byte-oriented recursive longest-common-substring similarity count. Direct
+  calls may pass a direct variable as the optional percent output; the
+  interpreter writes the computed float percentage to that variable. This is a
+  bounded output-parameter path, not true PHP references. `convert_uuencode()` and
   `convert_uudecode()` support the bounded uuencode/uudecode byte format used
   by the focused standard-library rows. Locale-aware word rules, Unicode word
   segmentation, arbitrary binary edge parity, exact natural-sort parity for
-  every PHP numeric-string corner, malformed uuencoded diagnostics beyond the
-  bounded warning/false recovery, object/resource coercions, references/COW,
-  and native lowering remain unsupported.
+  every PHP numeric-string corner, `similar_text()` array/object/resource
+  operands, non-variable or indirect percent outputs, malformed uuencoded
+  diagnostics beyond the bounded warning/false recovery, object/resource
+  coercions, references/COW, and native lowering remain unsupported.
   `substr_replace($string, $replace, $offset, $length = null)` supports scalar
   string subjects and array subjects. Array subject mode preserves source keys
   and applies array replacement/offset/length arguments by insertion-order
@@ -5417,8 +5424,8 @@
   non-array `array_reverse` operands,
   non-bool `array_reverse` preserve-key
   flag values, non-array `array_slice` operands, non-int `array_slice`
-  offsets, non-int/non-null `array_slice` lengths, non-bool `array_slice`
-  preserve-key flag values, non-array `array_chunk` operands,
+  offsets, invalid `array_slice` nullable-int lengths, invalid
+  `array_slice` bool preserve-key flag values, non-array `array_chunk` operands,
   non-int/non-positive `array_chunk` lengths, non-bool `array_chunk`
   preserve-key flag values, non-array `array_pad` operands, non-int
   `array_pad` lengths, oversized `array_pad` padding requests, non-array
@@ -6441,13 +6448,17 @@
   that insertion-order offset to the end, supports negative offsets counted
   back from the end, reindexes integer-keyed entries from zero, preserves
   string keys, and is available through string-valued dynamic function calls.
-  `array_slice($array, $offset, $length)` accepts integer lengths, including
-  positive lengths, zero, and negative lengths counted back from the end of the
-  input array, while using the same default integer-key reindexing and
-  string-key preservation. `array_slice($array, $offset, null)` treats the
-  null length as a to-end slice. `array_slice($array, $offset, $length, true)`
+  `array_slice($array, $offset, $length)` accepts nullable PHP-internal integer
+  lengths, including integer, boolean, finite-float, and numeric-string values
+  that truncate inside the 64-bit PHP integer range. Positive lengths limit the
+  number of returned entries, zero returns an empty array, and negative lengths
+  are counted back from the end of the input array, while using the same
+  default integer-key reindexing and string-key preservation.
+  `array_slice($array, $offset, null)` treats the null length as a to-end slice.
+  `array_slice($array, $offset, $length, true)`
   and `array_slice($array, $offset, null, true)` preserve integer and string
-  keys; boolean `false` uses the default integer-key reindexing path.
+  keys; boolean `false` and scalar values that coerce to false use the default
+  integer-key reindexing path.
   `array_chunk($array, $length)` accepts arrays and positive integer lengths,
   splits values in insertion order into nested arrays of that size, reindexes
   every inner chunk from integer key zero, returns an empty array for empty
@@ -6764,8 +6775,8 @@
   non-bool `array_keys` strict-mode flag values,
   non-array `array_reverse` operands, non-bool
   `array_reverse` preserve-key flag values, non-array `array_slice`
-  operands, non-int `array_slice` offsets, non-int/non-null `array_slice`
-  lengths, non-bool `array_slice` preserve-key flag values, non-array
+  operands, non-int `array_slice` offsets, invalid `array_slice`
+  nullable-int lengths, invalid `array_slice` bool preserve-key flag values, non-array
   `array_chunk` operands, non-int/non-positive `array_chunk` lengths,
   non-bool `array_chunk` preserve-key flag values, non-array `array_pad`
   operands, non-int `array_pad` lengths, oversized `array_pad` padding
@@ -7285,7 +7296,7 @@
   Direct `function_exists($name)` calls fold in native output when `$name` is
   an already-lowerable string value with a uniform known answer in the current
   documented builtin table: documented callable builtins, including
-  `strtolower`, `trim`, `ltrim`, `rtrim`, `strncmp`, `strncasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`, `strspn`, `strcspn`, `strpbrk`, `strpos`, `stripos`, `strrpos`, `strripos`, `strstr`, `strchr`, `stristr`, `strtok`, `substr`, `substr_replace`, `substr_count`, `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`,
+  `strtolower`, `trim`, `ltrim`, `rtrim`, `strncmp`, `strncasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`, `strspn`, `strcspn`, `strpbrk`, `strpos`, `stripos`, `strrpos`, `strripos`, `strstr`, `strchr`, `stristr`, `strtok`, `substr`, `substr_replace`, `substr_count`, `similar_text`, `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`,
   `error_reporting`, `min`, `rand`, `uniqid`, `hash_hmac`, `md5`, `basename`, `dirname`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`, `str_getcsv`, `parse_str`,
   `file_put_contents`, `readfile`, `unlink`, `mkdir`, `rmdir`, `copy`, `rename`, `chdir`, `scandir`, `stat`, `lstat`, `fileperms`, `chmod`,
   `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_params`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `stream_context_set_params`, `fwrite`, `fscanf`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fflush`, `ftruncate`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`,
@@ -7692,7 +7703,7 @@
   Dynamic function calls are supported only when the callee expression evaluates
   to a string that case-insensitively resolves exactly to a user-defined function or to
   one of the documented callable builtins: `strlen`, `strtolower`, `trim`, `ltrim`, `rtrim`, `strcasecmp`, `strncmp`, `strncasecmp`,
-  `str_contains`, `str_starts_with`, `str_ends_with`, `strspn`, `strcspn`, `strpbrk`, `strpos`, `stripos`, `strrpos`, `strripos`, `strstr`, `strchr`, `stristr`, `strtok`, `substr`, `wordwrap`, `str_word_count`, `strnatcmp`, `strnatcasecmp`, `convert_uuencode`, `convert_uudecode`, `substr_replace`, `substr_count`, `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `str_getcsv`, `error_reporting`,
+  `str_contains`, `str_starts_with`, `str_ends_with`, `strspn`, `strcspn`, `strpbrk`, `strpos`, `stripos`, `strrpos`, `strripos`, `strstr`, `strchr`, `stristr`, `strtok`, `substr`, `wordwrap`, `str_word_count`, `strnatcmp`, `strnatcasecmp`, `similar_text`, `convert_uuencode`, `convert_uudecode`, `substr_replace`, `substr_count`, `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `str_getcsv`, `error_reporting`,
   `printf`, `fprintf`, `sprintf`, `vsprintf`, `vprintf`, `vfprintf`, `call_user_func`, `call_user_func_array`, `implode`, `basename`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`,
   `file_put_contents`, `readfile`, `unlink`, `mkdir`, `rmdir`, `copy`, `rename`, `chdir`, `scandir`, `stat`, `lstat`, `fileperms`, `chmod`,
   `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_params`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `stream_context_set_params`, `fwrite`, `fscanf`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fflush`, `ftruncate`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`, `disk_free_space`, `diskfreespace`, `disk_total_space`, `clearstatcache`, `realpath`, `realpath_cache_get`, `realpath_cache_size`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_executable`, `is_link`, `abs`,
@@ -7929,7 +7940,7 @@
   resolution, autoload interaction, and native lowering for type declarations
   are unsupported.
 - Builtins: `strlen`, `strtolower`, `trim`, `ltrim`, `rtrim`, `strcasecmp`, `strncmp`, `strncasecmp`, `str_contains`,
-  `str_starts_with`, `str_ends_with`, `strspn`, `strcspn`, `strpbrk`, `strpos`, `stripos`, `strrpos`, `strripos`, `strstr`, `strchr`, `stristr`, `strtok`, `substr`, `substr_replace`, `substr_count`, `str_replace`, `str_getcsv`, `parse_str`, `printf`, `fprintf`, `sprintf`, `vsprintf`, `vprintf`, `vfprintf`,
+  `str_starts_with`, `str_ends_with`, `strspn`, `strcspn`, `strpbrk`, `strpos`, `stripos`, `strrpos`, `strripos`, `strstr`, `strchr`, `stristr`, `strtok`, `substr`, `substr_replace`, `substr_count`, `similar_text`, `str_replace`, `str_getcsv`, `parse_str`, `printf`, `fprintf`, `sprintf`, `vsprintf`, `vprintf`, `vfprintf`,
   `call_user_func`, `call_user_func_array`, `implode`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`,
   `file_put_contents`, `readfile`, `unlink`, `mkdir`, `rmdir`, `copy`, `rename`, `chdir`, `scandir`, `stat`, `lstat`, `fileperms`, `chmod`,
   `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_params`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `stream_context_set_params`, `fwrite`, `fscanf`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fflush`, `ftruncate`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`, `disk_free_space`, `diskfreespace`, `disk_total_space`, `clearstatcache`, `realpath`, `realpath_cache_get`, `realpath_cache_size`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_executable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_length`, `ob_list_handlers`, `ob_get_status`, `ob_get_clean`, `ob_get_flush`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `date_default_timezone_set`, `abs`, `microtime`, `ini_get`, `min`, `isset`, `empty`, `count`,
@@ -8975,17 +8986,22 @@
   entries from that insertion-order offset to the end, supports negative
   offsets counted back from the end, reindexes integer-keyed entries from zero,
   preserves string keys, and is available through string-valued dynamic
-  function calls. `array_slice($array, $offset, $length)` also accepts integer
-  lengths, with positive lengths limiting the number of returned entries, zero
-  returning an empty array, and negative lengths excluding entries from the end
-  of the input array. `array_slice($array, $offset, null)` treats the null
-  length as a to-end slice. `array_slice($array, $offset, $length, true)` and
+  function calls. `array_slice($array, $offset, $length)` also accepts
+  nullable PHP-internal integer lengths, including integer, boolean,
+  finite-float, and numeric-string values that truncate inside the 64-bit PHP
+  integer range, with positive lengths limiting the number of returned entries,
+  zero returning an empty array, and negative lengths excluding entries from the
+  end of the input array.
+  `array_slice($array, $offset, null)` treats the null length as a to-end
+  slice. `array_slice($array, $offset, $length, true)` and
   `array_slice($array, $offset, null, true)` preserve integer and string keys,
-  while boolean `false` uses the default integer-key reindexing path. Non-bool
-  preserve-key coercion, non-int offset coercion, non-int/non-null length
-  coercion, references, copy-on-write containers, object handle identity
-  preservation, resource values, exact native `TypeError` objects, and native
-  lowering are not implemented.
+  while boolean `false` and scalar values that coerce to false use the default
+  integer-key reindexing path. Non-int offset coercion, PHP deprecation
+  warnings for weak length or bool-flag coercions, references,
+  copy-on-write containers, object handle identity preservation, resource
+  values, exact native `TypeError` objects, and native lowering are not
+  implemented; out-of-range finite floats and numeric strings are rejected by
+  the current internal-argument boundary.
   `array_chunk($array, $length)` accepts arrays and positive integer lengths,
   splits entries in insertion order, reindexes each inner chunk from integer
   key zero regardless of original integer or string keys, returns an empty
@@ -10345,10 +10361,10 @@
 - `array_reverse` non-bool `preserve_keys` coercion, reference/copy-on-write
   behavior, object handle identity preservation, resource values, and native
   lowering
-- `array_slice` non-bool `preserve_keys` coercion, non-int offset coercion,
-  non-int/non-null length coercion, reference/copy-on-write behavior, object
-  handle identity preservation, resource values, exact native `TypeError`
-  objects, and native lowering
+- `array_slice` non-int offset coercion, PHP deprecation warnings for weak
+  nullable-int length or bool `preserve_keys` coercions,
+  reference/copy-on-write behavior, object handle identity preservation,
+  resource values, exact native `TypeError` objects, and native lowering
 - `array_chunk` non-bool `preserve_keys` coercion, non-int/non-positive length
   coercion, exact native `ValueError`/`TypeError` objects,
   reference/copy-on-write behavior, object handle identity preservation,
@@ -10706,6 +10722,10 @@
 - `strpbrk()` outside the current scalar/null string-convertible byte-search
   subset: array/object/resource operands, locale or Unicode-aware matching,
   exact binary string edge cases beyond represented runtime bytes, and native
+  lowering beyond function-table introspection
+- `similar_text()` outside the current scalar/null string-convertible byte
+  similarity subset: array/object/resource operands, non-variable or indirect
+  percent output targets, exact PHP reference binding semantics, and native
   lowering beyond function-table introspection
 - `str_getcsv()` outside the current one-record string parser with one-byte
   separator/enclosure and empty or one-byte escape arguments: broader CSV

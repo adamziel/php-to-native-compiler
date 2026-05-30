@@ -52908,6 +52908,9 @@ impl Interpreter {
                 if key == "str_replace" {
                     return self.call_str_replace_with_optional_count(args, span, caller_scope);
                 }
+                if key == "similar_text" {
+                    return self.call_similar_text_direct(args, span, caller_scope);
+                }
                 if key == "parse_str" {
                     return self.call_parse_str_direct(args, span, caller_scope);
                 }
@@ -53084,6 +53087,9 @@ impl Interpreter {
                 }
                 if key == "str_replace" {
                     return self.call_str_replace_with_optional_count(args, span, caller_scope);
+                }
+                if key == "similar_text" {
+                    return self.call_similar_text_direct(args, span, caller_scope);
                 }
                 if key == "parse_str" {
                     return self.call_parse_str_direct(args, span, caller_scope);
@@ -60616,6 +60622,43 @@ impl Interpreter {
         }
 
         Ok(Value::String(result))
+    }
+
+    fn call_similar_text_direct(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        if !(2..=3).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "similar_text()",
+                    ArityExpectation::Between { min: 2, max: 3 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let first = self.evaluate(&args[0], caller_scope)?;
+        let second = self.evaluate(&args[1], caller_scope)?;
+        let (similarity, percent) = similar_text_result(&first, &second, span)?;
+
+        if args.len() == 3 {
+            let Expr::Variable(percent_name, _) = &args[2] else {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "similar_text()",
+                        "percent output must be a direct variable in the current subset",
+                    ),
+                ));
+            };
+            caller_scope.write_static(percent_name, Value::Float(percent));
+        }
+
+        Ok(Value::Int(similarity as i64))
     }
 
     fn call_parse_str_direct(
@@ -77970,6 +78013,7 @@ impl Interpreter {
             "sha1" => call_sha1(&args, span),
             "sha1_file" => self.call_sha1_file(&args, span),
             "levenshtein" => call_levenshtein(&args, span),
+            "similar_text" => call_similar_text(&args, span),
             "soundex" => call_soundex(&args, span),
             "count_chars" => call_count_chars(&args, span),
             "base64_encode" => call_base64_encode(&args, span),
@@ -78769,49 +78813,27 @@ impl Interpreter {
                 [Value::Array(array), Value::Int(offset)] => {
                     Ok(Value::Array(array.sliced_from_offset(*offset)))
                 }
-                [Value::Array(array), Value::Int(offset), Value::Int(length)] => {
-                    Ok(Value::Array(array.sliced(*offset, Some(*length))))
+                [Value::Array(array), Value::Int(offset), length] => {
+                    let length =
+                        php_internal_nullable_int_argument("array_slice()", 3, "length", length, span)?;
+                    Ok(Value::Array(array.sliced(*offset, length)))
                 }
-                [Value::Array(array), Value::Int(offset), Value::Null] => {
-                    Ok(Value::Array(array.sliced(*offset, None)))
-                }
-                [Value::Array(array), Value::Int(offset), Value::Int(length), Value::Bool(true)] => {
-                    Ok(Value::Array(
-                        array.sliced_preserving_keys(*offset, Some(*length)),
-                    ))
-                }
-                [Value::Array(array), Value::Int(offset), Value::Null, Value::Bool(true)] => {
-                    Ok(Value::Array(array.sliced_preserving_keys(*offset, None)))
-                }
-                [Value::Array(array), Value::Int(offset), Value::Int(length), Value::Bool(false)] => {
-                    Ok(Value::Array(array.sliced(*offset, Some(*length))))
-                }
-                [Value::Array(array), Value::Int(offset), Value::Null, Value::Bool(false)] => {
-                    Ok(Value::Array(array.sliced(*offset, None)))
-                }
-                [Value::Array(_), Value::Int(_), Value::Int(_) | Value::Null, other] => {
-                    Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            "array_slice()",
-                            format!(
-                                "preserve_keys argument must be bool in the current subset, got {}",
-                                other.type_name()
-                            ),
-                        ),
-                    ))
-                }
-                [Value::Array(_), Value::Int(_), other]
-                | [Value::Array(_), Value::Int(_), other, _] => Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
+                [Value::Array(array), Value::Int(offset), length, preserve_keys] => {
+                    let length =
+                        php_internal_nullable_int_argument("array_slice()", 3, "length", length, span)?;
+                    let preserve_keys = php_internal_bool_argument(
                         "array_slice()",
-                        format!(
-                            "length argument must be int or null in the current subset, got {}",
-                            other.type_name()
-                        ),
-                    ),
-                )),
+                        4,
+                        "preserve_keys",
+                        preserve_keys,
+                        span,
+                    )?;
+                    if preserve_keys {
+                        Ok(Value::Array(array.sliced_preserving_keys(*offset, length)))
+                    } else {
+                        Ok(Value::Array(array.sliced(*offset, length)))
+                    }
+                }
                 [Value::Array(_), other, ..] if !matches!(other, Value::Int(_)) => {
                     Err(runtime_error(
                         span,
@@ -92089,6 +92111,14 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_optional_int_param("deletion_cost", 1),
             ],
         ),
+        "similar_text" => (
+            "int",
+            vec![
+                reflection_internal_param("string1", "string"),
+                reflection_internal_param("string2", "string"),
+                reflection_internal_optional_reference_null_param("percent"),
+            ],
+        ),
         "soundex" => (
             "string",
             vec![reflection_internal_param("string", "string")],
@@ -95822,6 +95852,7 @@ fn is_builtin(name: &str) -> bool {
             | "sha1"
             | "sha1_file"
             | "levenshtein"
+            | "similar_text"
             | "soundex"
             | "count_chars"
             | "base64_encode"
@@ -102998,6 +103029,20 @@ fn php_internal_int_type_error(
     )
 }
 
+fn php_internal_coerced_int(value: &Value) -> Option<i64> {
+    match value {
+        Value::Null => Some(0),
+        Value::Bool(value) => Some(i64::from(*value)),
+        Value::Int(value) => Some(*value),
+        Value::Float(value) => php_float_to_internal_i64(*value),
+        Value::String(value) => parse_php_internal_integer_string(value),
+        Value::BinaryString(value) => std::str::from_utf8(value)
+            .ok()
+            .and_then(parse_php_internal_integer_string),
+        Value::Array(_) | Value::Object(_) | Value::Closure(_) | Value::Resource(_) => None,
+    }
+}
+
 fn php_internal_int_argument(
     function: &str,
     position: usize,
@@ -103005,20 +103050,77 @@ fn php_internal_int_argument(
     value: &Value,
     span: Span,
 ) -> CompileResult<i64> {
-    let parsed = match value {
-        Value::Null => Some(0),
-        Value::Bool(value) => Some(i64::from(*value)),
-        Value::Int(value) => Some(*value),
-        Value::Float(value) if php_float_fits_i64(*value) => Some(value.trunc() as i64),
-        Value::Float(_) => None,
-        Value::String(value) => parse_supported_integer_string(value),
-        Value::BinaryString(value) => std::str::from_utf8(value)
-            .ok()
-            .and_then(parse_supported_integer_string),
-        Value::Array(_) | Value::Object(_) | Value::Closure(_) | Value::Resource(_) => None,
-    };
+    php_internal_coerced_int(value)
+        .ok_or_else(|| php_internal_int_type_error(function, position, name, value, span))
+}
 
-    parsed.ok_or_else(|| php_internal_int_type_error(function, position, name, value, span))
+fn php_internal_nullable_int_type_error(
+    function: &str,
+    position: usize,
+    name: &str,
+    value: &Value,
+    span: Span,
+) -> Diagnostic {
+    runtime_error(
+        span,
+        RuntimeError::unsupported_call(
+            function,
+            format!(
+                "Argument #{position} (${name}) must be of type ?int, {} given",
+                value.type_name()
+            ),
+        ),
+    )
+}
+
+fn php_internal_nullable_int_argument(
+    function: &str,
+    position: usize,
+    name: &str,
+    value: &Value,
+    span: Span,
+) -> CompileResult<Option<i64>> {
+    if matches!(value, Value::Null) {
+        return Ok(None);
+    }
+
+    php_internal_coerced_int(value)
+        .map(Some)
+        .ok_or_else(|| php_internal_nullable_int_type_error(function, position, name, value, span))
+}
+
+fn php_internal_bool_type_error(
+    function: &str,
+    position: usize,
+    name: &str,
+    value: &Value,
+    span: Span,
+) -> Diagnostic {
+    runtime_error(
+        span,
+        RuntimeError::unsupported_call(
+            function,
+            format!(
+                "Argument #{position} (${name}) must be of type bool, {} given",
+                php_type_error_given(value)
+            ),
+        ),
+    )
+}
+
+fn php_internal_bool_argument(
+    function: &str,
+    position: usize,
+    name: &str,
+    value: &Value,
+    span: Span,
+) -> CompileResult<bool> {
+    match value {
+        Value::Array(_) | Value::Object(_) | Value::Closure(_) | Value::Resource(_) => Err(
+            php_internal_bool_type_error(function, position, name, value, span),
+        ),
+        _ => Ok(value.is_truthy()),
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -103061,8 +103163,28 @@ fn count_php_array(array: &PhpArray, mode: CountMode) -> i64 {
     count
 }
 
-fn php_float_fits_i64(value: f64) -> bool {
-    value.is_finite() && value >= i64::MIN as f64 && value <= i64::MAX as f64
+fn parse_php_internal_integer_string(value: &str) -> Option<i64> {
+    let value = value.trim();
+    if value.is_empty() {
+        return None;
+    }
+
+    value.parse::<i64>().ok().or_else(|| {
+        value
+            .parse::<f64>()
+            .ok()
+            .and_then(php_float_to_internal_i64)
+    })
+}
+
+fn php_float_to_internal_i64(value: f64) -> Option<i64> {
+    const I64_MAX_EXCLUSIVE_AS_F64: f64 = 9_223_372_036_854_775_808.0;
+
+    if value.is_finite() && value >= i64::MIN as f64 && value < I64_MAX_EXCLUSIVE_AS_F64 {
+        Some(value.trunc() as i64)
+    } else {
+        None
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -105073,6 +105195,86 @@ fn levenshtein_overflow(span: Span) -> Diagnostic {
             "distance overflowed the current integer subset",
         ),
     )
+}
+
+fn call_similar_text(args: &[Value], span: Span) -> CompileResult<Value> {
+    if !(2..=3).contains(&args.len()) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "similar_text()",
+                ArityExpectation::Between { min: 2, max: 3 },
+                args.len(),
+            ),
+        ));
+    }
+
+    if args.len() == 3 {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "similar_text()",
+                "percent output requires a direct similar_text() call with a direct variable in the current subset",
+            ),
+        ));
+    }
+
+    let (similarity, _) = similar_text_result(&args[0], &args[1], span)?;
+    Ok(Value::Int(similarity as i64))
+}
+
+fn similar_text_result(first: &Value, second: &Value, span: Span) -> CompileResult<(usize, f64)> {
+    let first = string_compare_argument_bytes("similar_text()", "string1", first, span)?;
+    let second = string_compare_argument_bytes("similar_text()", "string2", second, span)?;
+    let similarity = php_similar_text_bytes(&first, &second);
+    let combined_len = first.len() + second.len();
+    let percent = if combined_len == 0 {
+        0.0
+    } else {
+        (similarity as f64) * 200.0 / (combined_len as f64)
+    };
+    Ok((similarity, percent))
+}
+
+fn php_similar_text_bytes(first: &[u8], second: &[u8]) -> usize {
+    let mut best_len = 0_usize;
+    let mut best_first = 0_usize;
+    let mut best_second = 0_usize;
+
+    for first_index in 0..first.len() {
+        for second_index in 0..second.len() {
+            let mut len = 0_usize;
+            while first_index + len < first.len()
+                && second_index + len < second.len()
+                && first[first_index + len] == second[second_index + len]
+            {
+                len += 1;
+            }
+
+            if len > best_len {
+                best_len = len;
+                best_first = first_index;
+                best_second = second_index;
+            }
+        }
+    }
+
+    if best_len == 0 {
+        return 0;
+    }
+
+    let mut similarity = best_len;
+    if best_first > 0 && best_second > 0 {
+        similarity += php_similar_text_bytes(&first[..best_first], &second[..best_second]);
+    }
+
+    let first_tail = best_first + best_len;
+    let second_tail = best_second + best_len;
+    if first_tail < first.len() && second_tail < second.len() {
+        similarity += php_similar_text_bytes(&first[first_tail..], &second[second_tail..]);
+    }
+
+    similarity
 }
 
 fn call_soundex(args: &[Value], span: Span) -> CompileResult<Value> {

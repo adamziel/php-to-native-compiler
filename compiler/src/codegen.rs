@@ -66276,6 +66276,7 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "sha1_file",
     "quoted_printable_decode",
     "quoted_printable_encode",
+    "similar_text",
     "soundex",
     "count_chars",
     "strrev",
