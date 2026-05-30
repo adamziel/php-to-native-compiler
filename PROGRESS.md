@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-30 08:24 CEST
+Updated: 2026-05-30 18:18 CEST
 Primary branch: `master`
-Latest source head: `ad335dfa fix: integrate batch016 PHPT semantics stack`
+Latest source head: `1c4aec15 fix: repair publication regression rows`
 
 ## Progress Score
 
@@ -13,7 +13,7 @@ Progress is the pinned php-src PHPT full-suite pass rate:
 
 `passed runnable PHPTs / total runnable PHPTs`
 
-Current score: **3868 / 20294 pinned runnable PHPTs = 19.06%**.
+Current score: **4048 / 20294 pinned runnable PHPTs = 19.95%**.
 
 ## PHPT Goal Checklist
 
@@ -52,6 +52,7 @@ Current score: **3868 / 20294 pinned runnable PHPTs = 19.06%**.
 | Batch014 regression repair | 3378 / 20294 | 16.65% | 0 |
 | Batch015 checkpoint9 | 3646 / 20294 | 17.97% | 0 semantic; `bug75679.phpt` long-root path guard |
 | Batch016 selected integration | 3868 / 20294 | 19.06% | 0 semantic; 6 platform-SKIPIF adjudicated |
+| Batch016 regression7 repair | 4048 / 20294 | 19.95% | 0 |
 
 The Batch013 checkpoint10 source `fc2788a7` is integrated and published by a
 pinned sharded full-suite gate on public `b3e42ce1`. The gate recorded 3170
@@ -196,6 +197,19 @@ adjudicated as non-semantic platform-SKIPIF changes under the selected
 64-bit `PHP_INT_SIZE=8` route; no wrapper, fixture, SKIPIF, row-name, or
 docs-only substitute was accepted. Evidence lives under
 `/home/claude/supervised-php-compiler/state/logs/phpt-full-batch016-selected-split-repair-sharded-isolated-20260530T050659Z-php-src-f97ff59-public-e147c033-source-e147c033`.
+
+The Batch016 regression7 repair gate on the same php-src pin, run
+`phpt-full-current-publication-sharded-20260530T160853Z-php-src-f97ff59-public-1c4aec15-source-1c4aec15`,
+recorded 4048 / 20294 pinned runnable PHPTs = 19.95%. Raw runner counts were
+`4048 PASS / 14470 FAIL / 2695 SKIP / 12 XFAIL / 1105 BORK / 1 WARN` across
+18531 runnable rows, with zero invalid proof marker hits and zero
+latest-published PASS regressions. Source `1c4aec15` integrates the focused
+repair for the seven `eb233180` publication blockers:
+`date_sunrise_variation7.phpt`, `date_sunrise_variation8.phpt`,
+`date_sunset_variation7.phpt`, `date_sunset_variation8.phpt`,
+`timezone_version_get.phpt`, `fprintf_variation_001.phpt`, and
+`sprintf_f.phpt`. Evidence lives under
+`/home/claude/supervised-php-compiler/state/logs/phpt-full-current-publication-sharded-20260530T160853Z-php-src-f97ff59-public-1c4aec15-source-1c4aec15`.
 
 No other percentage is public project progress. Focused PHPT passes, source
 checkpoints, PRs, and docs/status edits are evidence for the next batch, but
