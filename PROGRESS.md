@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-30 01:42 CEST
+Updated: 2026-05-30 08:24 CEST
 Primary branch: `master`
-Latest source head: `73358122 fix: repair array_multisort metadata`
+Latest source head: `ad335dfa fix: integrate batch016 PHPT semantics stack`
 
 ## Progress Score
 
@@ -13,7 +13,7 @@ Progress is the pinned php-src PHPT full-suite pass rate:
 
 `passed runnable PHPTs / total runnable PHPTs`
 
-Current score: **3646 / 20294 pinned runnable PHPTs = 17.97%**.
+Current score: **3868 / 20294 pinned runnable PHPTs = 19.06%**.
 
 ## PHPT Goal Checklist
 
@@ -51,6 +51,7 @@ Current score: **3646 / 20294 pinned runnable PHPTs = 17.97%**.
 | Batch013 checkpoint10 | 3170 / 20294 | 15.62% | 0 |
 | Batch014 regression repair | 3378 / 20294 | 16.65% | 0 |
 | Batch015 checkpoint9 | 3646 / 20294 | 17.97% | 0 semantic; `bug75679.phpt` long-root path guard |
+| Batch016 selected integration | 3868 / 20294 | 19.06% | 0 semantic; 6 platform-SKIPIF adjudicated |
 
 The Batch013 checkpoint10 source `fc2788a7` is integrated and published by a
 pinned sharded full-suite gate on public `b3e42ce1`. The gate recorded 3170
@@ -179,6 +180,22 @@ logged at
 This is treated as the existing long-root path-length harness guard, not a
 semantic latest-published PASS regression. Evidence lives under
 `/home/claude/supervised-php-compiler/state/logs/phpt-full-batch015-publication-sharded-20260529T233235Z-php-src-f97ff59-public-73358122-source-73358122`.
+
+The Batch016 selected integration gate on the same php-src pin, run
+`phpt-full-batch016-selected-split-repair-sharded-isolated-20260530T050659Z-php-src-f97ff59-public-e147c033-source-e147c033`,
+recorded 3868 / 20294 pinned runnable PHPTs = 19.06%. Raw runner counts were
+`3868 PASS / 14693 FAIL / 2694 SKIP / 15 XFAIL / 1061 BORK` across 18576
+runnable rows, with zero invalid proof marker hits. The selected integration
+commit `ad335dfa` matches the full-suite gate stack exactly:
+`b0586552c25d58b05182f93a563439bf6a5d17945c093512a6d7d1a69d7bd901`.
+The PASS-set comparison reported six latest-published PASS-to-SKIP rows:
+`fscanf_variation39.phpt`, `fscanf_variation55.phpt`,
+`fscanf_variation9.phpt`, `chunk_split_variation1_32bit.phpt`,
+`sscanf_basic6.phpt`, and `str_pad_variation5.phpt`. These six were
+adjudicated as non-semantic platform-SKIPIF changes under the selected
+64-bit `PHP_INT_SIZE=8` route; no wrapper, fixture, SKIPIF, row-name, or
+docs-only substitute was accepted. Evidence lives under
+`/home/claude/supervised-php-compiler/state/logs/phpt-full-batch016-selected-split-repair-sharded-isolated-20260530T050659Z-php-src-f97ff59-public-e147c033-source-e147c033`.
 
 No other percentage is public project progress. Focused PHPT passes, source
 checkpoints, PRs, and docs/status edits are evidence for the next batch, but
