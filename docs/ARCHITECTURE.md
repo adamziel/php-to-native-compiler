@@ -2948,6 +2948,10 @@ native lowering are not modeled.
 returns the same deterministic `cli` string as `PHP_SAPI`. It intentionally
 does not query the host PHP binary, web-server SAPI, CGI/FPM state, or native
 runtime state.
+`getmypid()` is an interpreter-only process identity boundary that returns the
+current `phpc run` process id and exposes metadata/folded callable membership
+to native output. Direct native calls reject until generated code has a
+process/runtime identity ABI.
 `get_current_user()` is an interpreter-only local script ownership boundary
 for focused CLI compatibility. It returns the current main source file owner
 name when local metadata and the bounded `/etc/passwd` lookup are available,
@@ -3907,7 +3911,7 @@ argument semantics for string keys. A named internal-function slice re-enters
 the existing builtin dispatcher for `strlen`, `strtolower`, `trim`, `ltrim`,
 `rtrim`, `strcasecmp`, `strncmp`, `strncasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`,
 `strpos`, `substr`, `sprintf`, `implode`, `basename`, `dirname`, `defined`,
-`function_exists`, `count`, `sizeof`, `get_current_user`, and `php_sapi_name`. Closure expressions also register a
+`function_exists`, `count`, `sizeof`, `get_current_user`, `getmypid`, and `php_sapi_name`. Closure expressions also register a
 request-local `ReflectionFunction` metadata snapshot, parsed body, and captured
 by-value snapshot keyed by closure id, so direct closure invocation,
 closure-valued `call_user_func()`/`call_user_func_array()` callbacks, and

@@ -66438,6 +66438,7 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "getservbyname",
     "getservbyport",
     "get_current_user",
+    "getmypid",
     "php_uname",
     "php_sapi_name",
     "phpversion",

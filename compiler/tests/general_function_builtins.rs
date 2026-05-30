@@ -21,7 +21,13 @@ echo phpversion("standard");
 echo "|";
 var_dump(phpversion("not_loaded"));
 echo "|";
-foreach (["php_uname", "phpversion"] as $call) {
+$pid = getmypid();
+echo is_int($pid) && $pid > 0 && $pid === getmypid() ? "pid" : "bad";
+echo "|";
+$pid_fn = new ReflectionFunction("getmypid");
+echo $pid_fn->getNumberOfRequiredParameters(), "/", $pid_fn->getNumberOfParameters();
+echo "|";
+foreach (["getmypid", "php_uname", "phpversion"] as $call) {
     echo function_exists($call) ? "1" : "0";
     echo is_callable($call) ? "1" : "0";
 }
@@ -31,10 +37,23 @@ foreach (["php_uname", "phpversion"] as $call) {
 
     assert_eq!(
         execution.stdout,
-        "asnrvm|default|8.3.0|8.3.0|bool(false)\n|1111"
+        "asnrvm|default|8.3.0|8.3.0|bool(false)\n|pid|0/0|111111"
     );
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn getmypid_rejects_arguments() {
+    let error = run_source("<?php\ngetmypid(1);\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Runtime);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "arity mismatch for getmypid(): expected 0 argument(s), got 1"
+    );
 }
 
 #[test]
@@ -68,11 +87,12 @@ fn emit_ir_folds_platform_metadata_but_rejects_direct_calls() {
         r#"<?php
 echo function_exists("php_uname") ? "1" : "0";
 echo is_callable("phpversion") ? "1" : "0";
+echo function_exists("getmypid") ? "1" : "0";
 "#,
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 2, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 3, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
 
@@ -83,6 +103,12 @@ echo is_callable("phpversion") ? "1" : "0";
     assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
 
     let error = emit_ir_source("<?php\necho phpversion();\n").unwrap_err();
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 6);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source("<?php\necho getmypid();\n").unwrap_err();
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.line, 2);
     assert_eq!(error.column, 6);

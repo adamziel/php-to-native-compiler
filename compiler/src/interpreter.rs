@@ -78422,6 +78422,7 @@ impl Interpreter {
             "getservbyname" => call_getservbyname(&args, span),
             "getservbyport" => call_getservbyport(&args, span),
             "get_current_user" => call_get_current_user(&args, self.main_source_file.as_deref(), span),
+            "getmypid" => call_getmypid(&args, span),
             "php_uname" => call_php_uname(&args, span),
             "php_sapi_name" => call_php_sapi_name(&args, span),
             "phpversion" => call_phpversion(&args, span),
@@ -93143,6 +93144,7 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
         ),
         "connection_aborted" | "connection_status" => ("int", vec![]),
         "get_current_user" => ("string", vec![]),
+        "getmypid" => ("int|false", vec![]),
         "php_uname" => (
             "string",
             vec![reflection_internal_optional_string_param("mode", "a")],
@@ -96344,6 +96346,7 @@ fn is_builtin(name: &str) -> bool {
             | "getservbyname"
             | "getservbyport"
             | "get_current_user"
+            | "getmypid"
             | "php_uname"
             | "php_sapi_name"
             | "phpversion"
@@ -115508,6 +115511,11 @@ fn username_for_uid(uid: u32) -> Option<String> {
 fn call_php_sapi_name(args: &[Value], span: Span) -> CompileResult<Value> {
     expect_arity("php_sapi_name", args, 0, span)?;
     Ok(Value::String("cli".to_string()))
+}
+
+fn call_getmypid(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("getmypid", args, 0, span)?;
+    Ok(Value::Int(std::process::id() as i64))
 }
 
 fn call_connection_aborted(args: &[Value], span: Span) -> CompileResult<Value> {
