@@ -3416,13 +3416,13 @@
   diagnostics, and native lowering remain unsupported.
   `substr_count($haystack, $needle, $offset = 0, $length = null)` supports
   scalar/null string-convertible haystack and needle arguments, optional
-  integer offset and length slicing, negative offsets and lengths within the
-  current bounds rules, non-overlapping byte-position counts, and zero when the
-  searched slice is shorter than the needle. Empty needles are a current
-  runtime boundary instead of PHP-exact `ValueError`; broad scalar coercions,
-  array/object/resource coercions, exact PHP diagnostics, encoding-sensitive
-  edge cases beyond represented runtime strings, and native lowering remain
-  unsupported.
+  int-compatible offset and nullable length slicing, negative offsets and
+  lengths within PHP's current bounds rules, non-overlapping byte-position
+  counts, and zero when the searched slice is shorter than the needle. Empty
+  needles and out-of-bounds offset/length windows use the current PHP
+  catchable `ValueError` messages. Array/object/resource operands, broader
+  exact diagnostics, encoding-sensitive edge cases beyond represented runtime
+  bytes, and native lowering remain unsupported.
   `preg_match($pattern, $subject, $matches = null)` supports two scalar/null
   string-convertible arguments and an optional third direct-variable matches
   output argument. The current regex slice supports
@@ -8434,10 +8434,10 @@
   above; direct native `substr(...)` calls still reject under the function-call
   boundary, while native function-table introspection recognizes the name.
   `substr_count` accepts the same current scalar/null string-convertible
-  haystack and needle subset plus optional integer offset and length arguments
-  as the builtin section above; direct native `substr_count(...)` calls still
-  reject under the function-call boundary, while native function-table
-  introspection recognizes the name.
+  haystack and needle subset plus optional int-compatible offset and nullable
+  length arguments as the builtin section above; direct native
+  `substr_count(...)` calls still reject under the function-call boundary,
+  while native function-table introspection recognizes the name.
   `min` accepts the same current integer-only variadic subset as the builtin
   section above; direct native `min(...)` calls still reject under the
   function-call boundary, while native function-table introspection recognizes
@@ -10816,10 +10816,11 @@
   length coercions, object/resource operands, invalid UTF-8 byte ranges, exact
   PHP diagnostics, and native lowering beyond function-table introspection
 - `substr_count()` outside the current scalar/null string-convertible haystack
-  and needle plus optional integer offset/length subset: PHP-exact empty-needle
-  `ValueError`, broad scalar coercions, array/object/resource coercions,
-  encoding-sensitive edge cases beyond represented runtime strings, exact PHP
-  diagnostics, and native lowering beyond function-table introspection
+  and needle plus optional int-compatible offset and nullable length subset:
+  array/object/resource operands, encoding-sensitive edge cases beyond
+  represented runtime bytes, exact PHP diagnostics beyond empty-needle and
+  offset/length bounds `ValueError`, and native lowering beyond function-table
+  introspection
 - `preg_match()` outside the current slash-delimited literal
   contains/prefix/suffix/exact pattern subset, the two exact WordPress db-host
   named-capture patterns, the exact WordPress table-prefix validation pattern

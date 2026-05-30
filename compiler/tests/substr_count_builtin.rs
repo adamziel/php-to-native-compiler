@@ -23,11 +23,19 @@ echo "|";
 echo substr_count("abc", "needle", 3);
 echo "|";
 echo substr_count(12121, 21);
+echo "|";
+echo substr_count("this is a string", "t", "5", "10");
+echo "|";
+$bytes = chr(128) . chr(129) . chr(128) . chr(0) . chr(255) . chr(254) . chr(255);
+echo substr_count($bytes, chr(128)) . ":" . substr_count($bytes, chr(255)) . ":" . substr_count($bytes, chr(0));
+echo "|";
+$long = str_repeat("abcacbabca", 100);
+echo substr_count($long, "bca", -200, -50);
 "#,
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "1|3|2|1|1|2|1|0|2");
+    assert_eq!(execution.stdout, "1|3|2|1|1|2|1|0|2|1|2:2:1|30");
     assert_eq!(execution.exit_code, 0);
 }
 
@@ -51,13 +59,19 @@ echo $call("a:b:c", ":");
 
 #[test]
 fn substr_count_rejects_forms_outside_current_subset() {
-    let empty_needle = run_source("<?php\nsubstr_count('abc', '');\n").unwrap_err();
-    assert_eq!(empty_needle.phase, Phase::Runtime);
-    assert_eq!(empty_needle.line, 2);
-    assert_eq!(empty_needle.column, 1);
+    let empty_needle = run_source(
+        r#"<?php
+try {
+    substr_count('abc', '');
+} catch (ValueError $e) {
+    echo $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
     assert_eq!(
-        empty_needle.message,
-        "unsupported call substr_count(): empty needles are not supported in the current subset"
+        empty_needle.stdout,
+        "substr_count(): Argument #2 ($needle) must not be empty"
     );
 
     let array_haystack = run_source("<?php\nsubstr_count(['abc'], 'a');\n").unwrap_err();
@@ -69,31 +83,64 @@ fn substr_count_rejects_forms_outside_current_subset() {
         "unsupported call substr_count(): haystack argument arrays are not implemented in the current subset"
     );
 
-    let bad_offset = run_source("<?php\nsubstr_count('abc', 'a', '1');\n").unwrap_err();
-    assert_eq!(bad_offset.phase, Phase::Runtime);
-    assert_eq!(bad_offset.line, 2);
-    assert_eq!(bad_offset.column, 1);
+    let bad_offset = run_source(
+        r#"<?php
+try {
+    substr_count('abc', 'a', 'bad');
+} catch (TypeError $e) {
+    echo $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
     assert_eq!(
-        bad_offset.message,
-        "unsupported call substr_count(): offset argument must be int in the current subset, got string"
+        bad_offset.stdout,
+        "substr_count(): Argument #3 ($offset) must be of type int, string given"
     );
 
-    let bad_length = run_source("<?php\nsubstr_count('abc', 'a', 0, '2');\n").unwrap_err();
-    assert_eq!(bad_length.phase, Phase::Runtime);
-    assert_eq!(bad_length.line, 2);
-    assert_eq!(bad_length.column, 1);
+    let bad_length = run_source(
+        r#"<?php
+try {
+    substr_count('abc', 'a', 0, 'bad');
+} catch (TypeError $e) {
+    echo $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
     assert_eq!(
-        bad_length.message,
-        "unsupported call substr_count(): length argument must be int in the current subset, got string"
+        bad_length.stdout,
+        "substr_count(): Argument #4 ($length) must be of type int, string given"
     );
 
-    let out_of_bounds = run_source("<?php\nsubstr_count('abc', 'a', 1, 5);\n").unwrap_err();
-    assert_eq!(out_of_bounds.phase, Phase::Runtime);
-    assert_eq!(out_of_bounds.line, 2);
-    assert_eq!(out_of_bounds.column, 1);
+    let out_of_bounds = run_source(
+        r#"<?php
+try {
+    substr_count('abc', 'a', 1, 5);
+} catch (ValueError $e) {
+    echo $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
     assert_eq!(
-        out_of_bounds.message,
-        "unsupported call substr_count(): length must keep the searched slice within the haystack bounds in the current subset"
+        out_of_bounds.stdout,
+        "substr_count(): Argument #4 ($length) must be contained in argument #1 ($haystack)"
+    );
+
+    let offset_out_of_bounds = run_source(
+        r#"<?php
+try {
+    substr_count('abc', 'a', -20);
+} catch (ValueError $e) {
+    echo $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
+    assert_eq!(
+        offset_out_of_bounds.stdout,
+        "substr_count(): Argument #3 ($offset) must be contained in argument #1 ($haystack)"
     );
 
     let too_few = run_source("<?php\nsubstr_count('abc');\n").unwrap_err();

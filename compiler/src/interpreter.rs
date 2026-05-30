@@ -95380,6 +95380,15 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
         | ("str_word_count()", "Argument #2 ($format) must be a valid format value")
         | ("parse_str()", "Argument #1 ($string) must not contain any null bytes")
         | ("strpbrk()", "Argument #2 ($characters) must be a non-empty string")
+        | ("substr_count()", "Argument #2 ($needle) must not be empty")
+        | (
+            "substr_count()",
+            "Argument #3 ($offset) must be contained in argument #1 ($haystack)",
+        )
+        | (
+            "substr_count()",
+            "Argument #4 ($length) must be contained in argument #1 ($haystack)",
+        )
         | ("base_convert()", "Argument #2 ($from_base) must be between 2 and 36 (inclusive)")
         | ("base_convert()", "Argument #3 ($to_base) must be between 2 and 36 (inclusive)")
         | ("strncmp()", "Argument #3 ($length) must be greater than or equal to 0")
@@ -108498,32 +108507,20 @@ fn call_substr_count(args: &[Value], span: Span) -> CompileResult<Value> {
         ));
     }
 
-    let haystack = string_contains_argument("substr_count()", "haystack", &args[0], span)?;
-    let needle = string_contains_argument("substr_count()", "needle", &args[1], span)?;
+    let haystack = string_compare_argument_bytes("substr_count()", "haystack", &args[0], span)?;
+    let needle = string_compare_argument_bytes("substr_count()", "needle", &args[1], span)?;
     if needle.is_empty() {
         return Err(runtime_error(
             span,
             RuntimeError::unsupported_call(
                 "substr_count()",
-                "empty needles are not supported in the current subset",
+                "Argument #2 ($needle) must not be empty",
             ),
         ));
     }
 
     let offset = match args.get(2) {
-        Some(Value::Int(offset)) => *offset,
-        Some(other) => {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "substr_count()",
-                    format!(
-                        "offset argument must be int in the current subset, got {}",
-                        other.type_name()
-                    ),
-                ),
-            ));
-        }
+        Some(value) => php_internal_int_argument("substr_count()", 3, "offset", value, span)?,
         None => 0,
     };
     let haystack_len = haystack.len() as i64;
@@ -108537,40 +108534,33 @@ fn call_substr_count(args: &[Value], span: Span) -> CompileResult<Value> {
             span,
             RuntimeError::unsupported_call(
                 "substr_count()",
-                "offset must be within the haystack bounds in the current subset",
+                "Argument #3 ($offset) must be contained in argument #1 ($haystack)",
             ),
         ));
     }
 
     let end = match args.get(3) {
-        Some(Value::Int(length)) if *length >= 0 => start + *length,
-        Some(Value::Int(length)) => haystack_len + *length,
-        Some(other) => {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "substr_count()",
-                    format!(
-                        "length argument must be int in the current subset, got {}",
-                        other.type_name()
-                    ),
-                ),
-            ));
+        Some(Value::Null) | None => haystack_len,
+        Some(value) => {
+            let length = php_internal_int_argument("substr_count()", 4, "length", value, span)?;
+            if length >= 0 {
+                start.checked_add(length).unwrap_or(i64::MAX)
+            } else {
+                haystack_len.checked_add(length).unwrap_or(i64::MIN)
+            }
         }
-        None => haystack_len,
     };
     if end < start || end > haystack_len {
         return Err(runtime_error(
             span,
             RuntimeError::unsupported_call(
                 "substr_count()",
-                "length must keep the searched slice within the haystack bounds in the current subset",
+                "Argument #4 ($length) must be contained in argument #1 ($haystack)",
             ),
         ));
     }
 
-    let haystack = &haystack.as_bytes()[start as usize..end as usize];
-    let needle = needle.as_bytes();
+    let haystack = &haystack[start as usize..end as usize];
     if needle.len() > haystack.len() {
         return Ok(Value::Int(0));
     }
