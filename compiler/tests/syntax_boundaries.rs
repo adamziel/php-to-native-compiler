@@ -12,10 +12,17 @@ const LLVM_INTERFACE_REJECTION: &str = "LLVM interface lowering rejects interfac
 const LLVM_TRAIT_REJECTION: &str = "LLVM trait lowering rejects trait declarations until native trait tables, class trait-use composition, conflict resolution, aliasing, relationship metadata, autoload interaction, and exact native error behavior exist; phpc run handles current trait metadata behavior";
 const LLVM_ENUM_REJECTION: &str = "LLVM enum lowering rejects enum declarations until native class/enum tables, enum case objects, backed enum values, interface implementation, relationship queries, autoload interaction, and exact native error behavior exist; phpc run handles current enum metadata behavior";
 const LLVM_FUNCTION_DECLARATION_REJECTION: &str = "LLVM user-function lowering rejects function declarations and return statements until native function symbol tables, stack-frame layout, default parameter binding, recursion guards, return-value flow, and exact native error behavior exist; phpc run handles current user-function declaration and return behavior";
+const LLVM_MATCH_REJECTION: &str = "LLVM match expression lowering rejects match expressions until native strict arm comparison, default/exhaustiveness handling, value evaluation order, references/copy-on-write, and exact native error behavior exist; phpc run handles current match expression behavior";
 
 fn parse_error(source: &str) -> php_compiler::error::Diagnostic {
     let error = run_source(source).unwrap_err();
     assert_eq!(error.phase, Phase::Parse);
+    error
+}
+
+fn runtime_error(source: &str) -> php_compiler::error::Diagnostic {
+    let error = run_source(source).unwrap_err();
+    assert_eq!(error.phase, Phase::Runtime);
     error
 }
 
@@ -442,43 +449,39 @@ fn emit_ir_rejects_yield_from_syntax_at_codegen_boundary() {
 }
 
 #[test]
-fn unsupported_match_expression_has_stable_parse_errors() {
-    let cases = [
-        (
-            "<?php\n$value = match ($status) {\n    200 => 'ok',\n    default => 'other',\n};\n",
-            2,
-            10,
-        ),
-        (
-            "<?php\nMATCH ($status) {\n    200 => 'ok',\n    default => 'other',\n};\n",
-            2,
-            1,
-        ),
-    ];
+fn match_expression_executes_current_strict_runtime_subset() {
+    let execution = run_source(
+        r#"<?php
+$status = 200;
+$probe = 0;
+echo match ($status) {
+    '200' => $probe = 99,
+    201, 200 => 'ok',
+    default => 'other',
+}, "\n";
+echo MATCH ("x") {
+    "y" => "bad",
+    default => "default",
+}, "\n";
+echo $probe, "\n";
+"#,
+    )
+    .unwrap();
 
-    for (source, line, column) in cases {
-        let error = parse_error(source);
-        assert_eq!(error.line, line);
-        assert_eq!(error.column, column);
-        assert_eq!(
-            error.message,
-            "unsupported match expression: strict arm matching, default/exhaustiveness handling, throw arms, value evaluation order, references/copy-on-write, and native lowering are not implemented"
-        );
-    }
+    assert_eq!(execution.stdout, "ok\ndefault\n0\n");
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
-fn emit_ir_rejects_match_expression_at_parse_boundary() {
+fn emit_ir_rejects_match_expression_at_codegen_boundary() {
     let error = php_compiler::emit_ir_source(
-        "<?php\n$value = match ($status) {\n    default => 'other',\n};\n",
+        "<?php\n$value = match (200) {\n    default => 'other',\n};\n",
     )
     .unwrap_err();
 
-    assert_eq!(error.phase, Phase::Parse);
-    assert_eq!(
-        error.message,
-        "unsupported match expression: strict arm matching, default/exhaustiveness handling, throw arms, value evaluation order, references/copy-on-write, and native lowering are not implemented"
-    );
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.message, LLVM_MATCH_REJECTION);
 }
 
 #[test]
@@ -1970,50 +1973,43 @@ fn emit_ir_rejects_compound_assignment_at_codegen_boundary() {
 }
 
 #[test]
-fn unsupported_increment_decrement_operators_have_stable_parse_errors() {
-    let cases = [
-        (
-            "<?php\n$values = [[1]];\n++$values[0][0];\n",
-            3,
-            1,
-            "unsupported increment/decrement target: only direct static variables, direct array/object offsets, direct object properties, direct object-property array offsets, and supported static properties are implemented for integer and float values; append offsets and nested variable targets are not implemented",
-        ),
-        (
-            "<?php\n$values = [[1]];\n$values[0][0]--;\n",
-            3,
-            1,
-            "unsupported increment/decrement target: only direct static variables, direct array/object offsets, direct object properties, direct object-property array offsets, and supported static properties are implemented for integer and float values; append offsets and nested variable targets are not implemented",
-        ),
-        (
-            "<?php\n$values = [[1]];\necho ++$values[0][0];\n",
-            3,
-            6,
-            "unsupported increment/decrement target: only direct static variables, direct array/object offsets, direct object properties, direct object-property array offsets, and supported static properties are implemented for integer and float values; append offsets and nested variable targets are not implemented",
-        ),
-        (
-            "<?php\n$values = [[1]];\necho $values[0][0]--;\n",
-            3,
-            6,
-            "unsupported increment/decrement target: only direct static variables, direct array/object offsets, direct object properties, direct object-property array offsets, and supported static properties are implemented for integer and float values; append offsets and nested variable targets are not implemented",
-        ),
-        (
-            "<?php\n$value = 1;\necho ++$value++;\n",
-            3,
-            6,
-            "unsupported increment/decrement expression: chained increment/decrement expressions are not implemented",
-        ),
+fn unsupported_increment_decrement_operators_have_stable_parse_and_runtime_errors() {
+    let runtime_cases = [
+        ("<?php\n$values = [[1]];\n++$values[0][0];\n", 3, 1),
+        ("<?php\n$values = [[1]];\n$values[0][0]--;\n", 3, 1),
+        ("<?php\n$values = [[1]];\necho ++$values[0][0];\n", 3, 6),
+        ("<?php\n$values = [[1]];\necho $values[0][0]--;\n", 3, 6),
     ];
 
-    for (source, line, column, message) in cases {
-        let error = parse_error(source);
+    for (source, line, column) in runtime_cases {
+        let error = runtime_error(source);
         assert_eq!(error.line, line);
         assert_eq!(error.column, column);
-        assert_eq!(error.message, message);
+        assert_eq!(
+            error.message,
+            "unsupported call increment/decrement: nested array targets are not implemented"
+        );
     }
+
+    let chained = parse_error("<?php\n$value = 1;\necho ++$value++;\n");
+    assert_eq!(chained.line, 3);
+    assert_eq!(chained.column, 6);
+    assert_eq!(
+        chained.message,
+        "unsupported increment/decrement expression: chained increment/decrement expressions are not implemented"
+    );
+
+    let parenthesized = parse_error("<?php\n$value = 1;\n(++$value)++;\n");
+    assert_eq!(parenthesized.line, 3);
+    assert_eq!(parenthesized.column, 2);
+    assert_eq!(
+        parenthesized.message,
+        "unsupported increment/decrement target: only direct static variables, direct array/object offsets, append offsets, direct object properties, direct object-property array offsets, and supported static properties are implemented for integer, float, string, and append-null values; append suffixes and nested variable targets are not implemented"
+    );
 }
 
 #[test]
-fn unsupported_for_header_increment_decrement_targets_have_stable_parse_errors() {
+fn unsupported_for_header_increment_decrement_targets_have_stable_runtime_errors() {
     let cases = [
         (
             "<?php\n$values = [[1]];\nfor (++$values[0][0]; false; ) {}\n",
@@ -2028,12 +2024,12 @@ fn unsupported_for_header_increment_decrement_targets_have_stable_parse_errors()
     ];
 
     for (source, line, column) in cases {
-        let error = parse_error(source);
+        let error = runtime_error(source);
         assert_eq!(error.line, line);
         assert_eq!(error.column, column);
         assert_eq!(
             error.message,
-            "unsupported increment/decrement target: only direct static variables, direct array/object offsets, direct object properties, direct object-property array offsets, and supported static properties are implemented for integer and float values; append offsets and nested variable targets are not implemented"
+            "unsupported call increment/decrement: nested array targets are not implemented"
         );
     }
 }

@@ -5,8 +5,8 @@ use crate::ast::{
     ClassConstantDecl, ClassDecl, ClassMember, ClassMethodDecl, ClassPropertyDecl, ClassVisibility,
     ClosureCapture, CompoundAssignOp, ConstDeclarator, EnumCaseDecl, EnumDecl, Expr, ForAction,
     ForeachValueTarget, FunctionDecl, FunctionParam, IncrementDecrementOp,
-    IncrementDecrementPosition, InterfaceDecl, InterfaceMethodDecl, NewClassName, Program,
-    ReferenceSource, Span, StaticLocalDeclarator, Stmt, SwitchCase, TraitDecl,
+    IncrementDecrementPosition, InterfaceDecl, InterfaceMethodDecl, MatchArm, NewClassName,
+    Program, ReferenceSource, Span, StaticLocalDeclarator, Stmt, SwitchCase, TraitDecl,
     TraitMethodAliasDecl, TraitMethodPrecedenceDecl, TraitMethodVisibilityDecl, TraitUseDecl,
     TypeDecl, UnaryOp, UnsetTarget, UseImport, UseImportKind,
 };
@@ -186,7 +186,7 @@ impl Parser {
             TokenKind::Foreach => self.parse_foreach(),
             TokenKind::For => self.parse_for(),
             TokenKind::Switch => self.parse_switch(),
-            TokenKind::Match => self.parse_unsupported_match_expression(),
+            TokenKind::Match => self.parse_assignment_or_expression_statement(),
             TokenKind::Break => self.parse_break(),
             TokenKind::Continue => self.parse_continue(),
             TokenKind::Throw => self.parse_throw(),
@@ -210,7 +210,7 @@ impl Parser {
                 self.parse_switch()
             }
             TokenKind::Identifier(name) if name.eq_ignore_ascii_case("match") => {
-                self.parse_unsupported_match_expression()
+                self.parse_assignment_or_expression_statement()
             }
             TokenKind::Identifier(name) if name.eq_ignore_ascii_case("break") => self.parse_break(),
             TokenKind::Identifier(name) if name.eq_ignore_ascii_case("continue") => {
@@ -1988,11 +1988,6 @@ impl Parser {
     fn parse_unexpected_finally(&mut self) -> CompileResult<Stmt> {
         let span = self.advance().span;
         Err(self.error_at(span, "unexpected finally: finally must follow a try block"))
-    }
-
-    fn parse_unsupported_match_expression(&mut self) -> CompileResult<Stmt> {
-        let span = self.advance().span;
-        Err(self.error_at(span, unsupported_match_expression_message()))
     }
 
     fn parse_goto(&mut self) -> CompileResult<Stmt> {
@@ -6473,9 +6468,7 @@ impl Parser {
             TokenKind::Switch => {
                 Err(self.error_at(token.span, unsupported_switch_expression_message()))
             }
-            TokenKind::Match => {
-                Err(self.error_at(token.span, unsupported_match_expression_message()))
-            }
+            TokenKind::Match => self.parse_match_expression(token.span),
             TokenKind::Break => {
                 Err(self.error_at(token.span, unsupported_break_expression_message()))
             }
@@ -6536,7 +6529,7 @@ impl Parser {
                     return Err(self.error_at(token.span, unsupported_switch_expression_message()));
                 }
                 if name.eq_ignore_ascii_case("match") {
-                    return Err(self.error_at(token.span, unsupported_match_expression_message()));
+                    return self.parse_match_expression(token.span);
                 }
                 if name.eq_ignore_ascii_case("break") {
                     return Err(self.error_at(token.span, unsupported_break_expression_message()));
@@ -7268,6 +7261,63 @@ impl Parser {
         Ok(Expr::Array { items, span })
     }
 
+    fn parse_match_expression(&mut self, span: Span) -> CompileResult<Expr> {
+        self.consume_keyword(TokenKind::LParen, "expected '(' after match")?;
+        let subject = self.parse_expression()?;
+        self.consume_keyword(TokenKind::RParen, "expected ')' after match subject")?;
+        self.consume_keyword(TokenKind::LBrace, "expected '{' before match arms")?;
+
+        let mut arms = Vec::new();
+        let mut saw_default = false;
+        if !self.match_token(|kind| matches!(kind, TokenKind::RBrace)) {
+            loop {
+                let arm_span = self.peek().span;
+                let conditions = if self.match_identifier("default") {
+                    if saw_default {
+                        return Err(self.error_at(
+                                arm_span,
+                                "unsupported match expression: duplicate default arms are not implemented",
+                            ));
+                    }
+                    saw_default = true;
+                    Vec::new()
+                } else {
+                    let mut conditions = vec![self.parse_expression()?];
+                    while self.match_token(|kind| matches!(kind, TokenKind::Comma)) {
+                        if self.check(|kind| matches!(kind, TokenKind::FatArrow)) {
+                            break;
+                        }
+                        conditions.push(self.parse_expression()?);
+                    }
+                    conditions
+                };
+
+                self.consume_keyword(TokenKind::FatArrow, "expected '=>' in match arm")?;
+                let result = self.parse_expression()?;
+                arms.push(MatchArm {
+                    conditions,
+                    result,
+                    span: arm_span,
+                });
+
+                if !self.match_token(|kind| matches!(kind, TokenKind::Comma)) {
+                    break;
+                }
+                if self.check(|kind| matches!(kind, TokenKind::RBrace)) {
+                    break;
+                }
+            }
+
+            self.consume_keyword(TokenKind::RBrace, "expected '}' after match arms")?;
+        }
+
+        Ok(Expr::Match {
+            subject: Box::new(subject),
+            arms,
+            span,
+        })
+    }
+
     fn reject_unsupported_array_item_syntax(&self) -> CompileResult<()> {
         let token = self.peek();
         match &token.kind {
@@ -7439,6 +7489,7 @@ impl Parser {
             | Expr::Assign { .. }
             | Expr::CompoundAssign { .. }
             | Expr::NullCoalesceAssign { .. }
+            | Expr::Match { .. }
             | Expr::IncrementDecrement { .. }
             | Expr::Include { .. }
             | Expr::Require { .. }
@@ -7532,6 +7583,7 @@ impl Parser {
             | Expr::Assign { .. }
             | Expr::CompoundAssign { .. }
             | Expr::NullCoalesceAssign { .. }
+            | Expr::Match { .. }
             | Expr::IncrementDecrement { .. }
             | Expr::Include { .. }
             | Expr::Require { .. }
@@ -7661,6 +7713,13 @@ impl Parser {
             } => {
                 Self::expr_contains_assignment(condition)
                     || Self::expr_contains_assignment(if_false)
+            }
+            Expr::Match { subject, arms, .. } => {
+                Self::expr_contains_assignment(subject)
+                    || arms.iter().any(|arm| {
+                        arm.conditions.iter().any(Self::expr_contains_assignment)
+                            || Self::expr_contains_assignment(&arm.result)
+                    })
             }
             Expr::Unary { expr, .. }
             | Expr::ErrorControl { expr, .. }
@@ -7834,6 +7893,15 @@ impl Parser {
                 Self::expr_contains_unsupported_assignment_rhs(condition)
                     || Self::expr_contains_unsupported_assignment_rhs(if_false)
             }
+            Expr::Match { subject, arms, .. } => {
+                Self::expr_contains_unsupported_assignment_rhs(subject)
+                    || arms.iter().any(|arm| {
+                        arm.conditions
+                            .iter()
+                            .any(Self::expr_contains_unsupported_assignment_rhs)
+                            || Self::expr_contains_unsupported_assignment_rhs(&arm.result)
+                    })
+            }
             Expr::Unary { expr, .. }
             | Expr::ErrorControl { expr, .. }
             | Expr::Cast { expr, .. } => Self::expr_contains_unsupported_assignment_rhs(expr),
@@ -7949,6 +8017,16 @@ impl Parser {
                 ..
             } => Self::find_append_index_span(condition)
                 .or_else(|| Self::find_append_index_span(if_false)),
+            Expr::Match { subject, arms, .. } => {
+                Self::find_append_index_span(subject).or_else(|| {
+                    arms.iter().find_map(|arm| {
+                        arm.conditions
+                            .iter()
+                            .find_map(Self::find_append_index_span)
+                            .or_else(|| Self::find_append_index_span(&arm.result))
+                    })
+                })
+            }
             Expr::Unary { expr, .. }
             | Expr::ErrorControl { expr, .. }
             | Expr::Cast { expr, .. } => Self::find_append_index_span(expr),
@@ -8975,10 +9053,6 @@ fn unsupported_yield_from_message() -> &'static str {
     "unsupported yield from expression: generator delegation requires Traversable iteration, yielded key/value forwarding, send/throw propagation, generator return values, references/copy-on-write, and native lowering"
 }
 
-fn unsupported_match_expression_message() -> &'static str {
-    "unsupported match expression: strict arm matching, default/exhaustiveness handling, throw arms, value evaluation order, references/copy-on-write, and native lowering are not implemented"
-}
-
 fn unsupported_goto_message() -> &'static str {
     "unsupported goto: goto statements and labels are not implemented"
 }
@@ -9024,7 +9098,7 @@ fn unsupported_increment_decrement_expression_message() -> &'static str {
 }
 
 fn unsupported_increment_decrement_target_message() -> &'static str {
-    "unsupported increment/decrement target: only direct static variables, direct array/object offsets, append offsets, direct object properties, direct object-property array offsets, and supported static properties are implemented for integer, float, and append-null values; append suffixes and nested variable targets are not implemented"
+    "unsupported increment/decrement target: only direct static variables, direct array/object offsets, append offsets, direct object properties, direct object-property array offsets, and supported static properties are implemented for integer, float, string, and append-null values; append suffixes and nested variable targets are not implemented"
 }
 
 fn unsupported_bracketed_namespace_message() -> &'static str {

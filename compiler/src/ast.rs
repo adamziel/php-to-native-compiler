@@ -966,6 +966,13 @@ pub struct ArrayItem {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct MatchArm {
+    pub conditions: Vec<Expr>,
+    pub result: Expr,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
     Null(Span),
     Bool(bool, Span),
@@ -1229,6 +1236,11 @@ pub enum Expr {
         if_false: Box<Expr>,
         span: Span,
     },
+    Match {
+        subject: Box<Expr>,
+        arms: Vec<MatchArm>,
+        span: Span,
+    },
     Assign {
         target: Box<AssignTarget>,
         expr: Box<Expr>,
@@ -1359,6 +1371,7 @@ impl Expr {
             | Expr::Cast { span, .. }
             | Expr::Ternary { span, .. }
             | Expr::ShortTernary { span, .. }
+            | Expr::Match { span, .. }
             | Expr::Assign { span, .. }
             | Expr::CompoundAssign { span, .. }
             | Expr::NullCoalesceAssign { span, .. }

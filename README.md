@@ -292,7 +292,12 @@ incorrect native code.
   `(array)` casts over documented
   current value boundaries, ternaries, increments/decrements, and PHP
   error-control syntax `@expr` as a transparent runtime wrapper without
-  warning/notice suppression
+  warning/notice suppression. Runtime increment/decrement includes current
+  string `++`/`--` behavior for numeric strings, PHP-shaped float promotion at
+  signed 64-bit overflow, and terminal ASCII-alphanumeric string increments.
+  PHP 8 `match` expressions execute in the
+  runtime path for the current strict-comparison expression subset; native
+  lowering rejects them until exact native match semantics are implemented.
 - `if`, loops, `switch`, `break`/`continue` including positive integer literal
   loop-depth arguments, bounded `goto`/label execution,
   `foreach`, and user functions with local scopes, bounded function-local
@@ -575,6 +580,8 @@ incorrect native code.
   string, path, formatting, and metadata builtins, with name,
   file/start/end/doc-comment, parameter-list, return-type, and
   by-reference-return inspection plus by-value `invoke()`/`invokeArgs()`,
+  including the current ASCII-only `str_increment`/`str_decrement` runtime
+  subset,
   `ReflectionMethod`
   metadata objects with declaring-class, visibility, static, final, abstract,
   constructor, modifier-mask, class-method file/start/end/doc-comment source

@@ -254,67 +254,119 @@ fn array_offset_increment_decrement_reports_non_array_targets() {
 }
 
 #[test]
-fn array_offset_increment_decrement_rejects_non_numeric_current_gap() {
-    let error = runtime_error("<?php\n$items = ['value' => 'az'];\n$items['value']++;\n");
+fn array_offset_increment_decrement_updates_string_values() {
+    let execution = run_source(
+        "<?php\n$items = ['value' => 'az'];\n$items['value']++;\necho $items['value'], \"\\n\";\n",
+    )
+    .unwrap();
 
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 1);
+    assert_eq!(execution.stdout, "ba\n");
+}
+
+#[test]
+fn object_property_increment_decrement_updates_string_values() {
+    let execution = run_source(
+        "<?php\nclass Box { public $value; }\n$box = new Box();\n$box->value = 'Zz';\n$box->value++;\necho $box->value, \"\\n\";\n",
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "AAa\n");
+}
+
+#[test]
+fn direct_variable_increment_decrement_updates_string_values() {
+    let execution = run_source(
+        r#"<?php
+foreach (["az", "Zz", "9Z", "foo1.txt", "foo!", "", "5e6", " 5 "] as $value) {
+    $copy = $value;
+    @$copy++;
+    echo $copy, "|";
+}
+echo "\n";
+foreach (["az", "10", "5e6", ""] as $value) {
+    $copy = $value;
+    @$copy--;
+    echo $copy, "|";
+}
+echo "\n";
+"#,
+    )
+    .unwrap();
+
     assert_eq!(
-        error.message,
-        "unsupported call increment/decrement: only int and float variables, array/object offsets, object properties, or static properties are implemented, got string"
+        execution.stdout,
+        "ba|AAa|10A|foo1.txu|foo!|1|5000001|6|\naz|9|4999999|-1|\n"
     );
 }
 
 #[test]
-fn object_property_increment_decrement_rejects_non_numeric_current_gap() {
-    let error = runtime_error(
-        "<?php\nclass Box { public $value; }\n$box = new Box();\n$box->value = 'az';\n$box->value++;\n",
-    );
+fn increment_decrement_promotes_integer_boundaries() {
+    let execution = run_source(
+        r#"<?php
+$value = "9223372036854775807";
+$value++;
+echo gettype($value), ":", $value > 0 ? "positive" : "not-positive", "\n";
+$value = "-9223372036854775808";
+$value--;
+echo gettype($value), ":", $value < 0 ? "negative" : "not-negative", "\n";
+$value = PHP_INT_MAX;
+$value++;
+echo gettype($value), ":", $value > 0 ? "positive" : "not-positive", "\n";
+$value = PHP_INT_MIN;
+$value--;
+echo gettype($value), ":", $value < 0 ? "negative" : "not-negative", "\n";
+$value = "9223372036854775806";
+$value++;
+echo gettype($value), ":", $value === PHP_INT_MAX ? "max" : "bad", "\n";
+$value = "-9223372036854775807";
+$value--;
+echo gettype($value), ":", $value === PHP_INT_MIN ? "min" : "bad", "\n";
+"#,
+    )
+    .unwrap();
 
-    assert_eq!(error.line, 5);
-    assert_eq!(error.column, 1);
     assert_eq!(
-        error.message,
-        "unsupported call increment/decrement: only int and float variables, array/object offsets, object properties, or static properties are implemented, got string"
+        execution.stdout,
+        "double:positive\n\
+double:negative\n\
+double:positive\n\
+double:negative\n\
+integer:max\n\
+integer:min\n"
     );
 }
 
 #[test]
-fn increment_decrement_rejects_non_numeric_current_gap() {
-    let error = runtime_error("<?php\n$value = 'az';\n++$value;\n");
+fn expression_increment_decrement_returns_string_values() {
+    let execution = run_source("<?php\n$value = 'az';\necho ++$value, ':', $value, \"\\n\";\necho $value++, ':', $value, \"\\n\";\n")
+        .unwrap();
 
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 1);
-    assert_eq!(
-        error.message,
-        "unsupported call increment/decrement: only int and float variables, array/object offsets, object properties, or static properties are implemented, got string"
-    );
+    assert_eq!(execution.stdout, "ba:ba\nba:bb\n");
 }
 
 #[test]
-fn expression_increment_decrement_rejects_non_numeric_current_gap() {
-    let error = runtime_error("<?php\n$value = 'az';\necho ++$value;\n");
+fn empty_string_decrement_matches_string_values_legacy_integer_promotion() {
+    let execution = run_source(
+        r#"<?php
+$value = "";
+echo --$value, ":", gettype($value), "\n";
+$value = "";
+echo $value--, ":", gettype($value), ":", $value, ":", gettype($value), "\n";
+"#,
+    )
+    .unwrap();
 
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 6);
-    assert_eq!(
-        error.message,
-        "unsupported call increment/decrement: only int and float variables, array/object offsets, object properties, or static properties are implemented, got string"
-    );
+    assert_eq!(execution.stdout, "-1:integer\n:integer:-1:integer\n");
 }
 
 #[test]
-fn for_header_increment_decrement_rejects_non_numeric_current_gap() {
-    let error = runtime_error(
-        "<?php\n$value = 'az';\n$go = true;\nfor (; $go; ++$value) {\n    $go = false;\n}\n",
-    );
+fn for_header_increment_decrement_updates_string_values() {
+    let execution = run_source(
+        "<?php\n$value = 'az';\n$go = true;\nfor (; $go; ++$value) {\n    echo $value, \"\\n\";\n    $go = false;\n}\necho $value, \"\\n\";\n",
+    )
+    .unwrap();
 
-    assert_eq!(error.line, 4);
-    assert_eq!(error.column, 13);
-    assert_eq!(
-        error.message,
-        "unsupported call increment/decrement: only int and float variables, array/object offsets, object properties, or static properties are implemented, got string"
-    );
+    assert_eq!(execution.stdout, "az\nba\n");
 }
 
 #[test]

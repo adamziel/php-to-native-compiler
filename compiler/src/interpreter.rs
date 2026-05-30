@@ -10,12 +10,13 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use hmac::{Hmac, Mac};
 use md5::{Digest as Md5Digest, Md5};
 use php_runtime::{
-    coerce_property_value_with_object_type_resolver, ArityExpectation, ArrayColumnKey, ArrayEntry,
-    ArrayKey, ArrayKeyCase, ArraySlot, ClassId, ClassMemberKind, Comparison, ObjectProperty,
-    PhpArray, PhpArraySortOperation, PhpClassConstantMetadata, PhpClassTable, PhpClosure,
-    PhpClosureCapture, PhpMethodMetadata, PhpObject, PhpObjectPropertyInitializer,
-    PhpPropertyMetadata, PhpReferenceCell, PhpReferenceCellId, RuntimeError, RuntimeErrorKind,
-    RuntimeResult, Value, Visibility,
+    classify_php_numeric_string, coerce_property_value_with_object_type_resolver, ArityExpectation,
+    ArrayColumnKey, ArrayEntry, ArrayKey, ArrayKeyCase, ArraySlot, ClassId, ClassMemberKind,
+    Comparison, ObjectProperty, PhpArray, PhpArraySortOperation, PhpClassConstantMetadata,
+    PhpClassTable, PhpClosure, PhpClosureCapture, PhpMethodMetadata,
+    PhpNumericStringClassification, PhpObject, PhpObjectPropertyInitializer, PhpPropertyMetadata,
+    PhpReferenceCell, PhpReferenceCellId, RuntimeError, RuntimeErrorKind, RuntimeResult, Value,
+    Visibility,
 };
 use sha2::Sha256;
 
@@ -24,9 +25,9 @@ use crate::ast::{
     ClassDecl, ClassMember, ClassMethodDecl, ClassPropertyDecl, ClassVisibility, ClosureCapture,
     CompoundAssignOp, EnumDecl, Expr, ForAction, ForeachValueTarget, FunctionDecl, FunctionParam,
     IncrementDecrementOp, IncrementDecrementPosition, InterfaceDecl, InterfaceMethodDecl,
-    InterpolatedAccessSegment, InterpolatedArrayKey, InterpolatedStringPart, NewClassName, Program,
-    ReferenceSource, Span, StaticLocalDeclarator, Stmt, SwitchCase, TraitDecl, TraitUseDecl,
-    TypeDecl, UnaryOp, UnsetTarget,
+    InterpolatedAccessSegment, InterpolatedArrayKey, InterpolatedStringPart, MatchArm,
+    NewClassName, Program, ReferenceSource, Span, StaticLocalDeclarator, Stmt, SwitchCase,
+    TraitDecl, TraitUseDecl, TypeDecl, UnaryOp, UnsetTarget,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 use crate::parser::parse_source;
@@ -1315,6 +1316,15 @@ fn collect_implicit_arrow_capture_expr(
         } => {
             collect_implicit_arrow_capture_expr(condition, excluded, seen, captures);
             collect_implicit_arrow_capture_expr(if_false, excluded, seen, captures);
+        }
+        Expr::Match { subject, arms, .. } => {
+            collect_implicit_arrow_capture_expr(subject, excluded, seen, captures);
+            for arm in arms {
+                for condition in &arm.conditions {
+                    collect_implicit_arrow_capture_expr(condition, excluded, seen, captures);
+                }
+                collect_implicit_arrow_capture_expr(&arm.result, excluded, seen, captures);
+            }
         }
         Expr::Assign { target, expr, .. } => {
             collect_implicit_arrow_capture_assign_target(target, false, excluded, seen, captures);
@@ -20869,6 +20879,11 @@ impl Interpreter {
                     self.evaluate(if_false, scope)
                 }
             }
+            Expr::Match {
+                subject,
+                arms,
+                span,
+            } => self.evaluate_match_expression(subject, arms, *span, scope),
             Expr::Assign { target, expr, .. } => self.evaluate_assignment(target, expr, scope),
             Expr::CompoundAssign {
                 target,
@@ -20926,6 +20941,46 @@ impl Interpreter {
                 self.apply_binary(*op, left, right, *span)
             }
         }
+    }
+
+    fn evaluate_match_expression(
+        &mut self,
+        subject: &Expr,
+        arms: &[MatchArm],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        let subject_value = self.evaluate(subject, scope)?;
+        let mut default_result = None;
+
+        for arm in arms {
+            if arm.conditions.is_empty() {
+                default_result = Some(&arm.result);
+                continue;
+            }
+
+            for condition in &arm.conditions {
+                let condition_value = self.evaluate(condition, scope)?;
+                let matches = subject_value
+                    .php_identical_checked(&condition_value)
+                    .map_err(|error| runtime_error(arm.span, error))?;
+                if matches {
+                    return self.evaluate(&arm.result, scope);
+                }
+            }
+        }
+
+        if let Some(result) = default_result {
+            return self.evaluate(result, scope);
+        }
+
+        Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "match",
+                "Unhandled match case is not implemented in the current subset",
+            ),
+        ))
     }
 
     fn binary_rhs_assignment_mutates_left_variable(left: &Expr, right: &Expr) -> bool {
@@ -21029,6 +21084,15 @@ impl Interpreter {
             } => {
                 Self::expr_assigns_to_direct_variable(condition, name)
                     || Self::expr_assigns_to_direct_variable(if_false, name)
+            }
+            Expr::Match { subject, arms, .. } => {
+                Self::expr_assigns_to_direct_variable(subject, name)
+                    || arms.iter().any(|arm| {
+                        arm.conditions
+                            .iter()
+                            .any(|condition| Self::expr_assigns_to_direct_variable(condition, name))
+                            || Self::expr_assigns_to_direct_variable(&arm.result, name)
+                    })
             }
             Expr::InstanceOf {
                 expr, class_name, ..
@@ -35500,23 +35564,20 @@ impl Interpreter {
         span: Span,
     ) -> CompileResult<Value> {
         Ok(match (value, op) {
-            (Value::Int(value), IncrementDecrementOp::Increment) => {
-                Value::Int(value.wrapping_add(1))
-            }
-            (Value::Int(value), IncrementDecrementOp::Decrement) => {
-                Value::Int(value.wrapping_sub(1))
-            }
+            (Value::Int(value), op) => increment_decrement_integer_value(value, op),
             (Value::Float(value), IncrementDecrementOp::Increment) => Value::Float(value + 1.0),
             (Value::Float(value), IncrementDecrementOp::Decrement) => Value::Float(value - 1.0),
             (Value::Null, IncrementDecrementOp::Increment) => Value::Int(1),
             (Value::Null, IncrementDecrementOp::Decrement) => Value::Null,
+            (Value::String(value), op) => increment_decrement_string_value(value.into_bytes(), op),
+            (Value::BinaryString(value), op) => increment_decrement_string_value(value, op),
             (other, _) => {
                 return Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
                         "increment/decrement",
                         format!(
-                            "only int and float variables, array/object offsets, object properties, or static properties are implemented, got {}",
+                            "only int, float, null, and string variables, array/object offsets, object properties, or static properties are implemented, got {}",
                             other.type_name()
                         ),
                     ),
@@ -78228,6 +78289,8 @@ impl Interpreter {
             "stripcslashes" => self.call_stripcslashes(&args, span),
             "strtolower" => call_strtolower(&args, span),
             "strtoupper" => call_strtoupper(&args, span),
+            "str_increment" => call_str_increment(&args, span),
+            "str_decrement" => call_str_decrement(&args, span),
             "trim" => call_trim(&args, span),
             "ltrim" => call_ltrim(&args, span),
             "rtrim" => call_rtrim(&args, span),
@@ -92442,7 +92505,7 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_param("characters", "string"),
             ],
         ),
-        "strtolower" | "strtoupper" => (
+        "strtolower" | "strtoupper" | "str_increment" | "str_decrement" => (
             "string",
             vec![reflection_internal_param("string", "string")],
         ),
@@ -95565,6 +95628,16 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
         )
         | ("explode()", "Argument #1 ($separator) must not be empty")
         | ("str_repeat()", "Argument #2 ($times) must be greater than or equal to 0")
+        | ("str_increment()", "Argument #1 ($string) must not be empty")
+        | (
+            "str_increment()",
+            "Argument #1 ($string) must be composed only of alphanumeric ASCII characters",
+        )
+        | ("str_decrement()", "Argument #1 ($string) must not be empty")
+        | (
+            "str_decrement()",
+            "Argument #1 ($string) must be composed only of alphanumeric ASCII characters",
+        )
         | ("array_fill()", "Argument #2 ($count) must be greater than or equal to 0")
         | ("array_fill()", "Argument #2 ($count) is too large")
         | ("array_rand()", "Argument #1 ($array) must not be empty")
@@ -95649,6 +95722,12 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
         ("parse_url()", message)
             if message
                 .starts_with("Argument #2 ($component) must be a valid URL component identifier, ") =>
+        {
+            Some(format!("{function}: {message}"))
+        }
+        ("str_decrement()", message)
+            if message.starts_with("Argument #1 ($string) \"")
+                && message.ends_with("\" is out of decrement range") =>
         {
             Some(format!("{function}: {message}"))
         }
@@ -96108,6 +96187,8 @@ fn is_builtin(name: &str) -> bool {
             | "stripcslashes"
             | "strtolower"
             | "strtoupper"
+            | "str_increment"
+            | "str_decrement"
             | "trim"
             | "ltrim"
             | "rtrim"
@@ -107470,6 +107551,220 @@ fn call_strtoupper(args: &[Value], span: Span) -> CompileResult<Value> {
     Ok(interpreter_value_from_php_string_bytes(
         value.iter().map(u8::to_ascii_uppercase).collect::<Vec<_>>(),
     ))
+}
+
+fn call_str_increment(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("str_increment", args, 1, span)?;
+
+    let bytes = str_increment_decrement_argument_bytes("str_increment()", &args[0], span)?;
+    Ok(interpreter_value_from_php_string_bytes(
+        php_str_increment_bytes(&bytes),
+    ))
+}
+
+fn call_str_decrement(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("str_decrement", args, 1, span)?;
+
+    let bytes = str_increment_decrement_argument_bytes("str_decrement()", &args[0], span)?;
+    let decremented = php_str_decrement_bytes(&bytes).ok_or_else(|| {
+        runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "str_decrement()",
+                format!(
+                    "Argument #1 ($string) \"{}\" is out of decrement range",
+                    String::from_utf8_lossy(&bytes)
+                ),
+            ),
+        )
+    })?;
+    Ok(interpreter_value_from_php_string_bytes(decremented))
+}
+
+fn str_increment_decrement_argument_bytes(
+    function: &'static str,
+    value: &Value,
+    span: Span,
+) -> CompileResult<Vec<u8>> {
+    if matches!(value, Value::Array(_)) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(function, "arrays are not supported"),
+        ));
+    }
+
+    let bytes = value
+        .try_echo_bytes()
+        .map_err(|error| runtime_error(span, error))?;
+    if bytes.is_empty() {
+        return Err(str_increment_decrement_value_error(
+            function,
+            "Argument #1 ($string) must not be empty",
+            span,
+        ));
+    }
+    if !bytes.iter().all(u8::is_ascii_alphanumeric) {
+        return Err(str_increment_decrement_value_error(
+            function,
+            "Argument #1 ($string) must be composed only of alphanumeric ASCII characters",
+            span,
+        ));
+    }
+    Ok(bytes)
+}
+
+fn str_increment_decrement_value_error(
+    function: &'static str,
+    message: &'static str,
+    span: Span,
+) -> Diagnostic {
+    runtime_error(span, RuntimeError::unsupported_call(function, message))
+}
+
+fn increment_decrement_integer_value(value: i64, op: IncrementDecrementOp) -> Value {
+    match op {
+        IncrementDecrementOp::Increment => value
+            .checked_add(1)
+            .map(Value::Int)
+            .unwrap_or_else(|| Value::Float(value as f64 + 1.0)),
+        IncrementDecrementOp::Decrement => value
+            .checked_sub(1)
+            .map(Value::Int)
+            .unwrap_or_else(|| Value::Float(value as f64 - 1.0)),
+    }
+}
+
+fn increment_decrement_string_value(bytes: Vec<u8>, op: IncrementDecrementOp) -> Value {
+    if bytes.is_empty() && matches!(op, IncrementDecrementOp::Decrement) {
+        return Value::Int(-1);
+    }
+
+    if let Ok(value) = std::str::from_utf8(&bytes) {
+        match classify_php_numeric_string(value) {
+            PhpNumericStringClassification::Integer(value) => {
+                return increment_decrement_integer_value(value, op);
+            }
+            PhpNumericStringClassification::Float(value) => {
+                return match op {
+                    IncrementDecrementOp::Increment => Value::Float(value + 1.0),
+                    IncrementDecrementOp::Decrement => Value::Float(value - 1.0),
+                };
+            }
+            PhpNumericStringClassification::LeadingNumeric
+            | PhpNumericStringClassification::NonNumeric => {}
+        }
+    }
+
+    match op {
+        IncrementDecrementOp::Increment => {
+            interpreter_value_from_php_string_bytes(php_legacy_string_increment_bytes(&bytes))
+        }
+        IncrementDecrementOp::Decrement => interpreter_value_from_php_string_bytes(bytes),
+    }
+}
+
+fn php_legacy_string_increment_bytes(bytes: &[u8]) -> Vec<u8> {
+    if bytes.is_empty() {
+        return b"1".to_vec();
+    }
+
+    let Some(&last) = bytes.last() else {
+        return b"1".to_vec();
+    };
+    if !last.is_ascii_alphanumeric() {
+        return bytes.to_vec();
+    }
+
+    let mut result = bytes.to_vec();
+    let mut index = result.len();
+
+    while index > 0 && result[index - 1].is_ascii_alphanumeric() {
+        index -= 1;
+        match result[index] {
+            b'0'..=b'8' | b'a'..=b'y' | b'A'..=b'Y' => {
+                result[index] += 1;
+                return result;
+            }
+            b'9' => result[index] = b'0',
+            b'z' => result[index] = b'a',
+            b'Z' => result[index] = b'A',
+            _ => unreachable!("loop only visits ASCII alphanumeric bytes"),
+        }
+    }
+
+    if index == 0 {
+        let prefix = match bytes[0] {
+            b'0'..=b'9' => b'1',
+            b'a'..=b'z' => b'a',
+            b'A'..=b'Z' => b'A',
+            _ => unreachable!("ASCII alphanumeric suffix starts at byte 0"),
+        };
+        result.insert(0, prefix);
+    }
+
+    result
+}
+
+fn php_str_increment_bytes(bytes: &[u8]) -> Vec<u8> {
+    let mut result = bytes.to_vec();
+    let mut carry = true;
+
+    for byte in result.iter_mut().rev() {
+        match *byte {
+            b'0'..=b'8' | b'a'..=b'y' | b'A'..=b'Y' => {
+                *byte += 1;
+                carry = false;
+                break;
+            }
+            b'9' => *byte = b'0',
+            b'z' => *byte = b'a',
+            b'Z' => *byte = b'A',
+            _ => unreachable!("str_increment argument was validated as ASCII alphanumeric"),
+        }
+    }
+
+    if carry {
+        let prefix = match bytes[0] {
+            b'0'..=b'9' => b'1',
+            b'a'..=b'z' => b'a',
+            b'A'..=b'Z' => b'A',
+            _ => unreachable!("str_increment argument was validated as ASCII alphanumeric"),
+        };
+        result.insert(0, prefix);
+    }
+
+    result
+}
+
+fn php_str_decrement_bytes(bytes: &[u8]) -> Option<Vec<u8>> {
+    if bytes.is_empty() || bytes[0] == b'0' {
+        return None;
+    }
+
+    let mut result = bytes.to_vec();
+
+    for index in (0..result.len()).rev() {
+        match result[index] {
+            b'1'..=b'9' | b'b'..=b'z' | b'B'..=b'Z' => {
+                result[index] -= 1;
+                if result.len() > 1 && result[0] == b'0' {
+                    result.remove(0);
+                }
+                return Some(result);
+            }
+            b'0' => result[index] = b'9',
+            b'a' => result[index] = b'z',
+            b'A' => result[index] = b'Z',
+            _ => unreachable!("str_decrement argument was validated as ASCII alphanumeric"),
+        }
+    }
+
+    if bytes.len() == 1 {
+        return None;
+    }
+
+    result.remove(0);
+    (!result.is_empty()).then_some(result)
 }
 
 const PHP_DEFAULT_TRIM_MASK_BYTES: &[u8] = b" \n\r\t\x0b\0";

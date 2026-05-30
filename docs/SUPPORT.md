@@ -2210,8 +2210,9 @@
   and writing the result back through `offsetSet($key, $value)`. Direct
   `++$holder->bag[$key]`, `$holder->bag[$key]++`,
   `--$holder->bag[$key]`, and `$holder->bag[$key]--` are supported for
-  current integer and float values by reading through `offsetGet($key)` and
-  applying the update to PHP's current by-value temporary result without
+  current integer, float, null, and string values by reading through
+  `offsetGet($key)` and applying the update to PHP's current by-value
+  temporary result without
   dispatching `offsetSet($key, $value)`. Nested `ArrayAccess` chains beyond
   the focused magic-property mixed append route above, append paths below
   plain arrays returned by magic `__get()` beyond the direct
@@ -2265,8 +2266,9 @@
   applying the current compound-assignment helper, and writing the result back
   through `offsetSet($key, $value)`. Direct `++$object[$key]`,
   `$object[$key]++`, `--$object[$key]`, and `$object[$key]--` are supported
-  for current integer and float values by reading through `offsetGet($key)`
-  and applying the update to PHP's current by-value temporary result without
+  for current integer, float, null, and string values by reading through
+  `offsetGet($key)` and applying the update to PHP's current by-value
+  temporary result without
   dispatching `offsetSet($key, $value)`. By-reference `offsetGet()` mutation
   and broader indirect-modification fidelity outside the documented by-value
   reference-source slice remain unsupported.
@@ -2309,21 +2311,21 @@
   expression position, and C-style `for` initializer/increment slots:
   `++$array[$key]`, `$array[$key]++`, `--$array[$key]`, and
   `$array[$key]--` for existing integer/string keyed entries whose current
-  values are integers or floats. In expressions, pre forms return the updated
-  value and post forms return the previous value.
+  values are integers, floats, null, or strings. In expressions, pre forms
+  return the updated value and post forms return the previous value.
 - direct public object-property pre/post increment and decrement in statement
   position, expression position, and C-style `for` initializer/increment
   slots: `++$object->property`, `$object->property++`,
   `--$object->property`, and `$object->property--` for existing declared
   public property slots, private slots owned by the active declaring class, and
-  protected slots owned by the active class or an ancestor whose current values
-  are integers or floats. In expressions, pre forms return the updated value and post forms
-  return the previous value.
+  protected slots owned by the active class or an ancestor whose current
+  values are integers, floats, null, or strings. In expressions, pre forms
+  return the updated value and post forms return the previous value.
 - direct static-variable pre/post increment and decrement in statement
   position, expression position, and C-style `for` initializer/increment
-  slots: `++$name`, `$name++`, `--$name`, and `$name--` for existing integer
-  and float variables only. In expressions, pre forms return the updated
-  value and post forms return the previous value.
+  slots: `++$name`, `$name++`, `--$name`, and `$name--` for existing integer,
+  float, null, and string variables. In expressions, pre forms return the
+  updated value and post forms return the previous value.
 - arithmetic: `+`, `-`, `*`, `/` with scalar coercions for `null`, booleans,
   integers, floats, and well-formed numeric strings; modulo `%` over the
   current integer-coercion subset for `null`, booleans, integers, floats, and
@@ -2363,6 +2365,24 @@
   lazy branch/fallback evaluation, condition-value reuse for short ternary,
   parenthesized nested ternaries, mixes with `??`, and assignment-expression
   branches over the documented direct-target subset
+- pre/post increment/decrement over direct variables, direct array/object
+  offsets, direct object properties, and supported static properties includes
+  current int, float, null, and string values. String `++` follows PHP's
+  legacy terminal ASCII-alphanumeric run behavior, including numeric-string
+  increment when the whole string is numeric; string `--` decrements numeric
+  strings and leaves non-numeric strings unchanged. Integer values, including
+  whole numeric strings classified as integers, promote to float at the signed
+  64-bit increment/decrement overflow boundary instead of wrapping. Native
+  lowering still rejects string increment/decrement until the same runtime
+  semantics and diagnostics are available in generated code.
+- PHP 8 `match` expressions over the current expression/value subset in
+  `phpc run`: the subject is evaluated once, arms are checked left to right
+  with strict identity (`===`), comma-separated arm conditions and `default`
+  arms are supported, and only the selected result expression is evaluated.
+  Native lowering rejects `match` expressions until strict native arm
+  comparison, default/exhaustiveness behavior, references/copy-on-write, and
+  exact native diagnostics exist; `throw` arms and exact `UnhandledMatchError`
+  objects remain outside the current subset.
 - PHP error-control syntax `@expr` as a bounded runtime diagnostic-suppression
   wrapper. The operand evaluates normally while current interpreter warnings,
   notices, and deprecations emitted through the shared diagnostic path are
@@ -3208,7 +3228,7 @@
   `setcookie`, `setrawcookie`,
   `session_start`, `session_status`, `session_cache_limiter`,
   `session_cache_expire`, `session_id`, `session_write_close`,
-  `abs`, `assert`,
+  `abs`, `str_increment`, `str_decrement`, `assert`,
   `get_class`, `is_object`, `get_debug_type`, `class_exists`,
   `interface_exists`, `trait_exists`, `enum_exists`,
   `property_exists`, `method_exists`, `class_implements`, `class_uses`, `class_parents`, `is_a`, `get_class_methods`, `get_class_vars`,
@@ -3329,6 +3349,14 @@
   bytes, preserving non-ASCII bytes. Locale-sensitive case mapping, full
   Unicode case folding, array/object/resource coercions, exact PHP diagnostics,
   and unsupported dynamic value-model edges remain unsupported.
+  `str_increment($string)` and `str_decrement($string)` support exactly one
+  scalar/null string-convertible runtime byte string that is non-empty and
+  composed only of ASCII alphanumeric bytes. They implement PHP's digit,
+  lowercase, and uppercase carry/borrow behavior for direct and dynamic
+  `phpc run` calls, including catchable `ValueError` diagnostics for empty
+  values, non-ASCII/non-alphanumeric bytes, decrement inputs that start with
+  `0`, and decrement underflow. Locale/Unicode-aware character classes,
+  array/object/resource coercions, and native lowering remain unsupported.
   `trim($value)` supports exactly one scalar/null string-convertible argument
   and trims PHP's default whitespace characters for represented runtime
   strings. Custom character masks, binary/null-byte string edge cases beyond
@@ -5585,9 +5613,10 @@
   `Traversable` iteration, yielded key/value forwarding, send/throw
   propagation, generator return values, references/copy-on-write, and native
   lowering
-- explicit parse diagnostics for unsupported PHP 8 `match` expressions,
-  naming missing strict arm matching, default/exhaustiveness handling, throw
-  arms, value evaluation order, references/copy-on-write, and native lowering
+- PHP 8 `match` expressions execute through the runtime path for the current
+  strict-comparison expression subset. Duplicate default arms are rejected
+  with a parse diagnostic; `throw` arms, exact `UnhandledMatchError` objects,
+  references/copy-on-write, and native lowering remain unsupported.
 - bounded `goto target;` statements and `target:` labels in the current
   statement runtime; labels in the active statement list can be reached from
   nested statements that propagate the jump outward
@@ -7726,7 +7755,8 @@
   global builtin/user-function table.
   Dynamic function calls are supported only when the callee expression evaluates
   to a string that case-insensitively resolves exactly to a user-defined function or to
-  one of the documented callable builtins: `strlen`, `strtolower`, `strtoupper`, `trim`, `ltrim`, `rtrim`, `strcasecmp`, `strncmp`, `strncasecmp`,
+  one of the documented callable builtins: `strlen`, `strtolower`, `strtoupper`,
+  `str_increment`, `str_decrement`, `trim`, `ltrim`, `rtrim`, `strcasecmp`, `strncmp`, `strncasecmp`,
   `str_contains`, `str_starts_with`, `str_ends_with`, `strspn`, `strcspn`, `strpbrk`, `strpos`, `stripos`, `strrpos`, `strripos`, `strstr`, `strchr`, `stristr`, `strtok`, `substr`, `wordwrap`, `str_word_count`, `strnatcmp`, `strnatcasecmp`, `similar_text`, `convert_uuencode`, `convert_uudecode`, `substr_replace`, `substr_count`, `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `str_getcsv`, `error_reporting`,
   `printf`, `fprintf`, `sprintf`, `vsprintf`, `vprintf`, `vfprintf`, `call_user_func`, `call_user_func_array`, `implode`, `basename`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`,
   `file_put_contents`, `readfile`, `unlink`, `mkdir`, `rmdir`, `copy`, `rename`, `chdir`, `scandir`, `stat`, `lstat`, `fileperms`, `chmod`,
@@ -7963,7 +7993,8 @@
   first-class callable syntax, namespace-qualified callable
   resolution, autoload interaction, and native lowering for type declarations
   are unsupported.
-- Builtins: `strlen`, `strtolower`, `strtoupper`, `trim`, `ltrim`, `rtrim`, `strcasecmp`, `strncmp`, `strncasecmp`, `str_contains`,
+- Builtins: `strlen`, `strtolower`, `strtoupper`, `str_increment`,
+  `str_decrement`, `trim`, `ltrim`, `rtrim`, `strcasecmp`, `strncmp`, `strncasecmp`, `str_contains`,
   `str_starts_with`, `str_ends_with`, `strspn`, `strcspn`, `strpbrk`, `strpos`, `stripos`, `strrpos`, `strripos`, `strstr`, `strchr`, `stristr`, `strtok`, `substr`, `substr_replace`, `substr_count`, `similar_text`, `str_replace`, `str_getcsv`, `parse_str`, `printf`, `fprintf`, `sprintf`, `vsprintf`, `vprintf`, `vfprintf`,
   `call_user_func`, `call_user_func_array`, `implode`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`,
   `file_put_contents`, `readfile`, `unlink`, `mkdir`, `rmdir`, `copy`, `rename`, `chdir`, `scandir`, `stat`, `lstat`, `fileperms`, `chmod`,
@@ -8771,7 +8802,8 @@
   `false` when none was captured. Function return type objects use the same
   simple named, bounded union, and pure intersection reflection type objects
   as the method path. The bounded internal target slice also accepts
-  `new ReflectionFunction(...)` for `strlen`, `strtolower`, `strtoupper`, `trim`, `ltrim`,
+  `new ReflectionFunction(...)` for `strlen`, `strtolower`, `strtoupper`,
+  `str_increment`, `str_decrement`, `trim`, `ltrim`,
   `rtrim`, `strcasecmp`, `strncmp`, `strncasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`,
   `strpos`, `stripos`, `strrpos`, `strripos`, `substr`, `printf`, `fprintf`, `sprintf`, `vprintf`, `vfprintf`, `implode`, `basename`, `dirname`, `defined`,
   `function_exists`, `is_array`, `is_object`, `is_string`, `is_scalar`,
@@ -10569,7 +10601,8 @@
   invocation through `invoke()` and `invokeArgs()`. Interface and trait method source-file paths
   remain unsupported. `ReflectionFunction` currently supports declared
   user-function metadata named by string, plus bounded internal metadata and
-  by-value invocation for `strlen`, `strtolower`, `strtoupper`, `trim`, `ltrim`, `rtrim`,
+  by-value invocation for `strlen`, `strtolower`, `strtoupper`,
+  `str_increment`, `str_decrement`, `trim`, `ltrim`, `rtrim`,
   `strcasecmp`, `strncmp`, `strncasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`, `strpos`, `stripos`, `strrpos`, `strripos`,
   `substr`, `printf`, `fprintf`, `sprintf`, `vprintf`, `vfprintf`, `implode`, `basename`, `dirname`, `defined`,
   `function_exists`, and `php_sapi_name`. Closure metadata is supported for
@@ -10812,6 +10845,11 @@
   lvalue targets, full internal array-pointer semantics, object operands,
   `reset()`/`end()`/`prev()` interaction, references/copy-on-write, exact
   warnings/errors, and native lowering beyond function-table introspection
+- `str_increment()` and `str_decrement()` outside the current one-argument
+  scalar/null byte-string subset: Unicode or locale-aware alphanumeric
+  classes, non-ASCII bytes, empty strings, non-alphanumeric bytes,
+  `str_decrement()` inputs that start with `0`, decrement underflow,
+  array/object/resource coercions, and native lowering
 - `str_contains()` outside the current exact-two-argument scalar/null
   string-convertible subset: binary string edge cases beyond valid UTF-8
   runtime strings, array/object/resource coercions, exact PHP diagnostics, and

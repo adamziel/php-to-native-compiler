@@ -9,8 +9,8 @@ use crate::ast::{
     ClassMethodDecl, ClassVisibility, ClosureCapture, CompoundAssignOp, ConstDeclarator, Expr,
     ForAction, FunctionDecl, FunctionParam, IncrementDecrementOp, IncrementDecrementPosition,
     InterfaceDecl, InterfaceMethodDecl, InterpolatedAccessSegment, InterpolatedArrayKey,
-    InterpolatedStringPart, NewClassName, Program, ReferenceSource, Span, Stmt, SwitchCase,
-    TraitDecl, TypeDecl, UnaryOp, UnsetTarget,
+    InterpolatedStringPart, MatchArm, NewClassName, Program, ReferenceSource, Span, Stmt,
+    SwitchCase, TraitDecl, TypeDecl, UnaryOp, UnsetTarget,
 };
 use crate::call_arguments::{
     normalize_call_arguments, CallArgument, CallArgumentNormalizationError, CallArgumentParameter,
@@ -89,6 +89,8 @@ const NATIVE_DECLARED_CLASS_PROPERTY_PROTECTED: u8 = 2;
 const NATIVE_DECLARED_CLASS_PROPERTY_PRIVATE: u8 = 3;
 const LLVM_CONDITIONAL_REJECTION: &str = "LLVM conditional lowering rejects unsupported conditional expressions or operands until native PHP truthiness, null-aware lookup, branch side-effect ordering, and exact native error behavior exist; phpc run handles current conditional expression behavior";
 const ASSEMBLY_CONDITIONAL_REJECTION: &str = "assembly conditional lowering rejects unsupported conditional expressions or operands until native PHP truthiness, null-aware lookup, branch side-effect ordering, and exact native error behavior exist; phpc run handles current conditional expression behavior";
+const LLVM_MATCH_REJECTION: &str = "LLVM match expression lowering rejects match expressions until native strict arm comparison, default/exhaustiveness handling, value evaluation order, references/copy-on-write, and exact native error behavior exist; phpc run handles current match expression behavior";
+const ASSEMBLY_MATCH_REJECTION: &str = "assembly match expression lowering rejects match expressions until native strict arm comparison, default/exhaustiveness handling, value evaluation order, references/copy-on-write, and exact native error behavior exist; phpc run handles current match expression behavior";
 const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
 const ASSEMBLY_FUNCTION_CALL_REJECTION: &str = "assembly function-call lowering rejects function calls outside the bounded generated-C user-function frame subset, including unknown user functions, callable builtins outside define()/constant()/defined(), arity-mismatched direct calls, unsupported by-reference argument binding, and unsupported dynamic string-valued calls, until full callable lookup, full arity/type diagnostics, callbacks, and cleanup handoff exist; generated-native C lowers supported by-value fixed/default/variadic direct, supported direct and compiler-known single-target by-reference frames, finite known-string dynamic, and runtime string-valued dynamic user-function frames";
 const NAMED_ARGUMENT_UNSUPPORTED_CALL_FAMILY_REJECTION: &str = "named argument lowering is only implemented for compiler-known generated-C user-function, constructor, and selected method/static source-call carriers; builtins, dynamic callables, and unsupported call families remain blocked until each consumer binds through shared source-order/parameter-order call-argument normalization";
@@ -2206,6 +2208,15 @@ fn llvm_expr_call_results_are_lowerable(expr: &Expr, allow_scalar_results: bool)
             llvm_expr_call_results_are_lowerable(condition, allow_scalar_results)
                 && llvm_expr_call_results_are_lowerable(if_false, allow_scalar_results)
         }
+        Expr::Match { subject, arms, .. } => {
+            let lowerable =
+                |expr: &Expr| llvm_expr_call_results_are_lowerable(expr, allow_scalar_results);
+            lowerable(subject)
+                && arms.iter().all(|arm| {
+                    arm.conditions.iter().all(|condition| lowerable(condition))
+                        && lowerable(&arm.result)
+                })
+        }
         Expr::Assign { target, expr, .. }
         | Expr::CompoundAssign { target, expr, .. }
         | Expr::NullCoalesceAssign { target, expr, .. } => {
@@ -2514,6 +2525,15 @@ fn native_expr_call_result_operation(
             ..
         } => native_expr_call_result_operation(condition, blocker)
             .or_else(|| native_expr_call_result_operation(if_false, blocker)),
+        Expr::Match { subject, arms, .. } => native_expr_call_result_operation(subject, blocker)
+            .or_else(|| {
+                arms.iter().find_map(|arm| {
+                    arm.conditions
+                        .iter()
+                        .find_map(|condition| native_expr_call_result_operation(condition, blocker))
+                        .or_else(|| native_expr_call_result_operation(&arm.result, blocker))
+                })
+            }),
         Expr::Assign { target, .. }
             if native_array_append_assignment_target_materializes_rhs_value(target)
                 || is_object_public_property_assign_target(target) =>
@@ -3231,7 +3251,8 @@ fn native_conditional_rhs_needs_cleanup_boundary(expr: &Expr) -> bool {
         | Expr::NullCoalesceAssign { .. }
         | Expr::IncrementDecrement { .. }
         | Expr::Ternary { .. }
-        | Expr::ShortTernary { .. } => true,
+        | Expr::ShortTernary { .. }
+        | Expr::Match { .. } => true,
         Expr::Index { target, index, .. } => {
             native_conditional_rhs_needs_cleanup_boundary(target)
                 || native_conditional_rhs_needs_cleanup_boundary(index)
@@ -4482,6 +4503,21 @@ fn array_item_contains_exit_construct(item: &ArrayItem) -> bool {
         || expr_contains_exit_construct(&item.value)
 }
 
+fn match_arm_exprs_contain<F>(arms: &[MatchArm], contains: &F) -> bool
+where
+    F: Fn(&Expr) -> bool,
+{
+    arms.iter()
+        .any(|arm| arm.conditions.iter().any(contains) || contains(&arm.result))
+}
+
+fn match_expr_contains<F>(subject: &Expr, arms: &[MatchArm], contains: &F) -> bool
+where
+    F: Fn(&Expr) -> bool,
+{
+    contains(subject) || match_arm_exprs_contain(arms, contains)
+}
+
 fn assign_target_contains_exit_construct(target: &AssignTarget) -> bool {
     match target {
         AssignTarget::ArrayIndex { index, .. } => {
@@ -4912,6 +4948,9 @@ fn expr_contains_exit_construct(expr: &Expr) -> bool {
             if_false,
             ..
         } => expr_contains_exit_construct(condition) || expr_contains_exit_construct(if_false),
+        Expr::Match { subject, arms, .. } => {
+            match_expr_contains(subject, arms, &expr_contains_exit_construct)
+        }
         Expr::Assign { target, expr, .. }
         | Expr::CompoundAssign { target, expr, .. }
         | Expr::NullCoalesceAssign { target, expr, .. } => {
@@ -6212,6 +6251,15 @@ fn collect_direct_call_names_from_expr(expr: &Expr, names: &mut Vec<String>) {
             collect_direct_call_names_from_expr(condition, names);
             collect_direct_call_names_from_expr(if_false, names);
         }
+        Expr::Match { subject, arms, .. } => {
+            collect_direct_call_names_from_expr(subject, names);
+            for arm in arms {
+                for condition in &arm.conditions {
+                    collect_direct_call_names_from_expr(condition, names);
+                }
+                collect_direct_call_names_from_expr(&arm.result, names);
+            }
+        }
         Expr::Assign { target, expr, .. }
         | Expr::CompoundAssign { target, expr, .. }
         | Expr::NullCoalesceAssign { target, expr, .. } => {
@@ -6990,6 +7038,15 @@ fn collect_native_arrow_capture_candidates_from_expr(
             collect_native_arrow_capture_candidates_from_expr(condition, captures);
             collect_native_arrow_capture_candidates_from_expr(if_false, captures);
         }
+        Expr::Match { subject, arms, .. } => {
+            collect_native_arrow_capture_candidates_from_expr(subject, captures);
+            for arm in arms {
+                for condition in &arm.conditions {
+                    collect_native_arrow_capture_candidates_from_expr(condition, captures);
+                }
+                collect_native_arrow_capture_candidates_from_expr(&arm.result, captures);
+            }
+        }
         Expr::Assign { target, expr, .. }
         | Expr::CompoundAssign { target, expr, .. }
         | Expr::NullCoalesceAssign { target, expr, .. } => {
@@ -7178,6 +7235,9 @@ fn native_expr_contains_call_result(expr: &Expr) -> bool {
         } => {
             native_expr_contains_call_result(condition)
                 || native_expr_contains_call_result(if_false)
+        }
+        Expr::Match { subject, arms, .. } => {
+            match_expr_contains(subject, arms, &native_expr_contains_call_result)
         }
         Expr::Assign { target, expr, .. }
         | Expr::CompoundAssign { target, expr, .. }
@@ -8283,6 +8343,9 @@ fn expr_contains_globals_access(expr: &Expr) -> bool {
             if_false,
             ..
         } => expr_contains_globals_access(condition) || expr_contains_globals_access(if_false),
+        Expr::Match { subject, arms, .. } => {
+            match_expr_contains(subject, arms, &expr_contains_globals_access)
+        }
         Expr::Assign { target, expr, .. }
         | Expr::CompoundAssign { target, expr, .. }
         | Expr::NullCoalesceAssign { target, expr, .. } => {
@@ -8812,6 +8875,9 @@ fn expr_contains_request_state_access(expr: &Expr) -> bool {
         } => {
             expr_contains_request_state_access(condition)
                 || expr_contains_request_state_access(if_false)
+        }
+        Expr::Match { subject, arms, .. } => {
+            match_expr_contains(subject, arms, &expr_contains_request_state_access)
         }
         Expr::Assign { target, expr, .. }
         | Expr::CompoundAssign { target, expr, .. }
@@ -12056,6 +12122,7 @@ impl LlvmGenerator {
                 if_false,
                 span,
             } => self.emit_short_ternary(condition, if_false, *span),
+            Expr::Match { span, .. } => Err(self.unsupported(*span, LLVM_MATCH_REJECTION)),
             Expr::Binary {
                 left,
                 op,
@@ -20152,6 +20219,15 @@ fn collect_loop_assigned_direct_variables_from_expr(expr: &Expr, names: &mut BTr
         } => {
             collect_loop_assigned_direct_variables_from_expr(condition, names);
             collect_loop_assigned_direct_variables_from_expr(if_false, names);
+        }
+        Expr::Match { subject, arms, .. } => {
+            collect_loop_assigned_direct_variables_from_expr(subject, names);
+            for arm in arms {
+                for condition in &arm.conditions {
+                    collect_loop_assigned_direct_variables_from_expr(condition, names);
+                }
+                collect_loop_assigned_direct_variables_from_expr(&arm.result, names);
+            }
         }
         Expr::Assign { target, expr, .. }
         | Expr::CompoundAssign { target, expr, .. }
@@ -43398,6 +43474,7 @@ impl CGenerator {
                 if_false,
                 span,
             } => self.emit_short_ternary(condition, if_false, *span),
+            Expr::Match { span, .. } => Err(self.unsupported(*span, ASSEMBLY_MATCH_REJECTION)),
             Expr::Binary {
                 left,
                 op,
@@ -48822,6 +48899,9 @@ impl CGenerator {
                 self.expr_requires_destructor_observable_cleanup_boundary(condition)
                     || self.expr_requires_destructor_observable_cleanup_boundary(if_false)
             }
+            Expr::Match { subject, arms, .. } => match_expr_contains(subject, arms, &|expr| {
+                self.expr_requires_destructor_observable_cleanup_boundary(expr)
+            }),
             Expr::Assign { target, expr, .. }
             | Expr::CompoundAssign { target, expr, .. }
             | Expr::NullCoalesceAssign { target, expr, .. } => {
@@ -65430,6 +65510,9 @@ fn native_foreach_expr_may_mutate_storage(expr: &Expr) -> bool {
         } => {
             native_foreach_expr_may_mutate_storage(condition)
                 || native_foreach_expr_may_mutate_storage(if_false)
+        }
+        Expr::Match { subject, arms, .. } => {
+            match_expr_contains(subject, arms, &native_foreach_expr_may_mutate_storage)
         }
         Expr::Null(_)
         | Expr::Bool(_, _)
