@@ -76,14 +76,40 @@ fn byte_string_helpers_support_binary_chr_and_bin2hex_inputs() {
 echo bin2hex(chr(0)), "|";
 echo bin2hex(chr(128)), "|";
 echo bin2hex(chr(255)), "|";
-echo bin2hex(chr(256)), "|";
+echo bin2hex(chr(1)), "|";
 $binary = chr(0) . chr(255);
 echo bin2hex(str_repeat($binary, 2));
 "#,
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "00|80|ff|00|00ff00ff");
+    assert_eq!(execution.stdout, "00|80|ff|01|00ff00ff");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn chr_out_of_range_values_emit_php_deprecation_and_wrap_modulo_256() {
+    let execution = run_source(
+        r#"<?php
+var_dump("\xFF" == chr(-1));
+var_dump("\0" == chr(256));
+"#,
+    )
+    .unwrap();
+
+    let message = "Deprecated: chr(): Providing a value not in-between 0 and 255 is deprecated, this is because a byte value must be in the [0, 255] interval. The value used will be constrained using % 256";
+    assert_eq!(
+        execution.stdout.matches(message).count(),
+        2,
+        "{:?}",
+        execution.stdout
+    );
+    assert_eq!(
+        execution.stdout.matches("bool(true)").count(),
+        2,
+        "{:?}",
+        execution.stdout
+    );
     assert_eq!(execution.exit_code, 0);
 }
 

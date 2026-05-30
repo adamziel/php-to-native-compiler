@@ -103606,6 +103606,15 @@ impl Interpreter {
         }
 
         let codepoint = integer_argument_current_subset("chr()", "codepoint", &args[0], span)?;
+        if !(0..=255).contains(&codepoint) {
+            self.emit_display_diagnostic(
+                "Deprecated",
+                PHP_E_DEPRECATED,
+                "chr(): Providing a value not in-between 0 and 255 is deprecated, this is because a byte value must be in the [0, 255] interval. The value used will be constrained using % 256",
+                span,
+            )?;
+        }
+
         Ok(interpreter_value_from_php_string_bytes(vec![
             codepoint.rem_euclid(256) as u8,
         ]))

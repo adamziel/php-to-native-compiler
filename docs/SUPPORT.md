@@ -3122,7 +3122,7 @@
   targets, non-object property targets, and missing property names fail with
   stable runtime diagnostics instead of materializing objects or dynamic
   properties
-- builtins for the documented subset: `strlen`, `strtolower`, `trim`, `ltrim`,
+- builtins for the documented subset: `strlen`, `chr`, `strtolower`, `trim`, `ltrim`,
   `rtrim`, `strcasecmp`, `strncmp`, `strncasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`, `strspn`, `strcspn`, `strpbrk`, `strpos`, `stripos`, `strrpos`, `strripos`, `strstr`, `strchr`, `stristr`, `strtok`, `substr`,
   `wordwrap`, `str_word_count`, `strnatcmp`, `strnatcasecmp`,
   `similar_text`,
@@ -3302,6 +3302,11 @@
   locale behavior, broad argument reordering, object/resource conversions,
   exact warning behavior, partial-output behavior, and native lowering remain
   unsupported.
+  `chr($codepoint)` accepts integer-compatible values, returns the low byte
+  using PHP's modulo-256 behavior, and emits PHP's deprecation diagnostic when
+  the integer is outside the `[0, 255]` byte range. Array/object/resource
+  coercions, exact diagnostics for every unsupported scalar conversion, and
+  native lowering remain unsupported.
   `strtolower($value)` supports exactly one scalar/null string-convertible
   argument and applies ASCII lowercase mapping over the current runtime UTF-8
   string value. Locale-sensitive case mapping, full Unicode case folding,
