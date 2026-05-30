@@ -50,3 +50,20 @@ echo sin("3.141592653589793") < 0.000000000000001 ? "numeric-string" : "bad";
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);
 }
+
+#[test]
+fn elementary_math_builtins_cover_sqrt_ceil_and_floor() {
+    let execution = run_source(
+        r#"<?php
+echo sqrt(9.0), "\n";
+echo ceil(0.5), ":", ceil("-10.5"), ":", ceil("3.95E3"), "\n";
+echo floor(-0.5), ":", floor("10.5"), ":", floor("039"), "\n";
+echo function_exists("ceil") && function_exists("floor") && function_exists("sqrt") ? "exists" : "missing";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "3\n1:-10:3950\n-1:10:39\nexists");
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}

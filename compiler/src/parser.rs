@@ -5590,6 +5590,15 @@ impl Parser {
         allow_append_read: bool,
     ) -> CompileResult<Expr> {
         let expr = self.parse_non_assignment_expression_with_ternary(allow_ternary)?;
+        self.complete_assignment_expression_from_left(expr, allow_ternary, allow_append_read)
+    }
+
+    fn complete_assignment_expression_from_left(
+        &mut self,
+        expr: Expr,
+        allow_ternary: bool,
+        allow_append_read: bool,
+    ) -> CompileResult<Expr> {
         if let Some(op) = self.match_compound_assignment_operator() {
             let operator_span = self.previous().span;
             let target = self
@@ -5708,6 +5717,18 @@ impl Parser {
             expr: Box::new(value),
             span,
         })
+    }
+
+    fn complete_binary_rhs_assignment_expression(&mut self, expr: Expr) -> CompileResult<Expr> {
+        if self.check(|kind| matches!(kind, TokenKind::Equal))
+            || self.check_compound_assignment_operator()
+            || (self.check(|kind| matches!(kind, TokenKind::QuestionQuestion))
+                && matches!(self.peek_next().kind, TokenKind::Equal))
+        {
+            self.complete_assignment_expression_from_left(expr, true, false)
+        } else {
+            Ok(expr)
+        }
     }
 
     fn parse_non_assignment_expression_with_ternary(
@@ -5900,6 +5921,7 @@ impl Parser {
                 break;
             };
             let right = self.parse_comparison()?;
+            let right = self.complete_binary_rhs_assignment_expression(right)?;
             let span = expr.span();
             expr = Expr::Binary {
                 left: Box::new(expr),
@@ -5936,6 +5958,7 @@ impl Parser {
                 break;
             };
             let right = self.parse_concat()?;
+            let right = self.complete_binary_rhs_assignment_expression(right)?;
             let span = expr.span();
             expr = Expr::Binary {
                 left: Box::new(expr),
@@ -5957,6 +5980,7 @@ impl Parser {
                 break;
             }
             let right = self.parse_shift()?;
+            let right = self.complete_binary_rhs_assignment_expression(right)?;
             let span = expr.span();
             expr = Expr::Binary {
                 left: Box::new(expr),
@@ -5982,6 +6006,7 @@ impl Parser {
                 break;
             };
             let right = self.parse_additive()?;
+            let right = self.complete_binary_rhs_assignment_expression(right)?;
             let span = expr.span();
             expr = Expr::Binary {
                 left: Box::new(expr),
@@ -6007,6 +6032,7 @@ impl Parser {
                 break;
             };
             let right = self.parse_multiplicative()?;
+            let right = self.complete_binary_rhs_assignment_expression(right)?;
             let span = expr.span();
             expr = Expr::Binary {
                 left: Box::new(expr),
@@ -6037,6 +6063,7 @@ impl Parser {
                 break;
             };
             let right = self.parse_unary()?;
+            let right = self.complete_binary_rhs_assignment_expression(right)?;
             let span = expr.span();
             expr = Expr::Binary {
                 left: Box::new(expr),

@@ -45,6 +45,28 @@ if (($count = $count + 1) === 1) {
 }
 
 #[test]
+fn binary_rhs_assignment_expressions_follow_php_precedence() {
+    let execution = run_source(
+        r#"<?php
+$a = 1;
+var_dump($a + $a = $a);
+var_dump($a);
+
+function add_overflow($a) {
+    var_dump($a+$a=$a+$a=$a+$a=$a);
+}
+add_overflow(PHP_INT_MAX);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "int(2)\nint(1)\nfloat(7.378697629483821E+19)\n"
+    );
+}
+
+#[test]
 fn direct_array_offset_assignment_expressions_return_assigned_values() {
     let execution = run_source(
         r#"<?php

@@ -20751,11 +20751,162 @@ impl Interpreter {
                     let right = self.evaluate(right, scope)?.is_truthy();
                     return Ok(Value::Bool(left ^ right));
                 }
-                let left = self.evaluate(left, scope)?;
-                let right = self.evaluate(right, scope)?;
+                let (left, right) =
+                    if Self::binary_rhs_assignment_mutates_left_variable(left, right) {
+                        let right = self.evaluate(right, scope)?;
+                        let left = self.evaluate(left, scope)?;
+                        (left, right)
+                    } else {
+                        let left = self.evaluate(left, scope)?;
+                        let right = self.evaluate(right, scope)?;
+                        (left, right)
+                    };
                 self.apply_binary(*op, left, right, *span)
             }
         }
+    }
+
+    fn binary_rhs_assignment_mutates_left_variable(left: &Expr, right: &Expr) -> bool {
+        let Expr::Variable(name, _) = left else {
+            return false;
+        };
+
+        Self::expr_assigns_to_direct_variable(right, name)
+    }
+
+    fn expr_assigns_to_direct_variable(expr: &Expr, name: &str) -> bool {
+        match expr {
+            Expr::Assign { target, expr, .. }
+            | Expr::CompoundAssign { target, expr, .. }
+            | Expr::NullCoalesceAssign { target, expr, .. } => {
+                Self::assign_target_mutates_direct_variable(target, name)
+                    || Self::expr_assigns_to_direct_variable(expr, name)
+            }
+            Expr::Binary { left, right, .. } => {
+                Self::expr_assigns_to_direct_variable(left, name)
+                    || Self::expr_assigns_to_direct_variable(right, name)
+            }
+            Expr::Unary { expr, .. }
+            | Expr::ErrorControl { expr, .. }
+            | Expr::Cast { expr, .. }
+            | Expr::Include { path: expr, .. }
+            | Expr::Require { path: expr, .. }
+            | Expr::NamedArgument { expr, .. }
+            | Expr::SpreadArgument { expr, .. }
+            | Expr::Clone { expr, .. }
+            | Expr::AppendIndex { target: expr, .. } => {
+                Self::expr_assigns_to_direct_variable(expr, name)
+            }
+            Expr::Index { target, index, .. } => {
+                Self::expr_assigns_to_direct_variable(target, name)
+                    || Self::expr_assigns_to_direct_variable(index, name)
+            }
+            Expr::Property { target, .. }
+            | Expr::MethodCall { target, .. }
+            | Expr::DynamicCall { callee: target, .. }
+            | Expr::ObjectStaticProperty { target, .. }
+            | Expr::ObjectStaticClassConstant { target, .. }
+            | Expr::ObjectClassNameConstant { target, .. } => {
+                Self::expr_assigns_to_direct_variable(target, name)
+            }
+            Expr::DynamicProperty {
+                target, property, ..
+            }
+            | Expr::DynamicObjectStaticProperty {
+                target, property, ..
+            } => {
+                Self::expr_assigns_to_direct_variable(target, name)
+                    || Self::expr_assigns_to_direct_variable(property, name)
+            }
+            Expr::DynamicMethodCall {
+                target,
+                method,
+                args,
+                ..
+            } => {
+                Self::expr_assigns_to_direct_variable(target, name)
+                    || Self::expr_assigns_to_direct_variable(method, name)
+                    || args
+                        .iter()
+                        .any(|arg| Self::expr_assigns_to_direct_variable(arg, name))
+            }
+            Expr::Call { args, .. }
+            | Expr::ParentMethodCall { args, .. }
+            | Expr::StaticMethodCall { args, .. }
+            | Expr::SelfMethodCall { args, .. }
+            | Expr::LateStaticMethodCall { args, .. }
+            | Expr::New { args, .. } => args
+                .iter()
+                .any(|arg| Self::expr_assigns_to_direct_variable(arg, name)),
+            Expr::ObjectStaticMethodCall { target, args, .. } => {
+                Self::expr_assigns_to_direct_variable(target, name)
+                    || args
+                        .iter()
+                        .any(|arg| Self::expr_assigns_to_direct_variable(arg, name))
+            }
+            Expr::Array { items, .. } => items.iter().any(|item| {
+                item.key
+                    .as_ref()
+                    .is_some_and(|key| Self::expr_assigns_to_direct_variable(key, name))
+                    || Self::expr_assigns_to_direct_variable(&item.value, name)
+            }),
+            Expr::Ternary {
+                condition,
+                if_true,
+                if_false,
+                ..
+            } => {
+                Self::expr_assigns_to_direct_variable(condition, name)
+                    || Self::expr_assigns_to_direct_variable(if_true, name)
+                    || Self::expr_assigns_to_direct_variable(if_false, name)
+            }
+            Expr::ShortTernary {
+                condition,
+                if_false,
+                ..
+            } => {
+                Self::expr_assigns_to_direct_variable(condition, name)
+                    || Self::expr_assigns_to_direct_variable(if_false, name)
+            }
+            Expr::InstanceOf {
+                expr, class_name, ..
+            } => {
+                Self::expr_assigns_to_direct_variable(expr, name)
+                    || Self::new_class_name_assigns_to_direct_variable(class_name, name)
+            }
+            Expr::Closure { params, .. } => params
+                .iter()
+                .filter_map(|param| param.default.as_ref())
+                .any(|default| Self::expr_assigns_to_direct_variable(default, name)),
+            Expr::IncrementDecrement { target, .. } => {
+                Self::assign_target_mutates_direct_variable(target, name)
+            }
+            _ => false,
+        }
+    }
+
+    fn new_class_name_assigns_to_direct_variable(class_name: &NewClassName, name: &str) -> bool {
+        match class_name {
+            NewClassName::DynamicExpression(expr) => {
+                Self::expr_assigns_to_direct_variable(expr, name)
+            }
+            NewClassName::Named(_)
+            | NewClassName::DynamicVariable(_)
+            | NewClassName::SelfClass
+            | NewClassName::ParentClass
+            | NewClassName::StaticClass => false,
+        }
+    }
+
+    fn assign_target_mutates_direct_variable(target: &AssignTarget, name: &str) -> bool {
+        matches!(
+            target,
+            AssignTarget::Variable { name: target, .. }
+                | AssignTarget::ArrayIndex { name: target, .. }
+                | AssignTarget::NestedArrayIndex { name: target, .. }
+                | AssignTarget::NestedArrayAppend { name: target, .. }
+                if target == name
+        )
     }
 
     fn instantiate_object(
@@ -77368,6 +77519,23 @@ impl Interpreter {
                 Ok(Value::String(dirname_path(path, levels)))
             }
             "abs" => call_abs(&args, span),
+            "ceil" => self.call_php_unary_float_math_with_param_type(
+                "ceil",
+                "ceil()",
+                "int|float",
+                &args,
+                f64::ceil,
+                span,
+            ),
+            "floor" => self.call_php_unary_float_math_with_param_type(
+                "floor",
+                "floor()",
+                "int|float",
+                &args,
+                f64::floor,
+                span,
+            ),
+            "sqrt" => self.call_php_unary_float_math("sqrt", "sqrt()", &args, f64::sqrt, span),
             "sin" => self.call_php_unary_float_math("sin", "sin()", &args, f64::sin, span),
             "cos" => self.call_php_unary_float_math("cos", "cos()", &args, f64::cos, span),
             "tan" => self.call_php_unary_float_math("tan", "tan()", &args, f64::tan, span),
@@ -91330,8 +91498,11 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_optional_int_param("levels", 1),
             ],
         ),
-        "sin" | "cos" | "tan" | "asin" | "acos" | "atan" | "sinh" | "cosh" | "tanh" | "log10"
-        | "deg2rad" | "rad2deg" => ("float", vec![reflection_internal_param("num", "float")]),
+        "ceil" | "floor" => ("float", vec![reflection_internal_param("num", "int|float")]),
+        "sqrt" | "sin" | "cos" | "tan" | "asin" | "acos" | "atan" | "sinh" | "cosh" | "tanh"
+        | "log10" | "deg2rad" | "rad2deg" => {
+            ("float", vec![reflection_internal_param("num", "float")])
+        }
         "bcadd" | "bcsub" | "bcmul" | "bcdiv" => (
             "string",
             vec![
@@ -94683,6 +94854,9 @@ fn is_builtin(name: &str) -> bool {
             | "pathinfo"
             | "dirname"
             | "abs"
+            | "ceil"
+            | "floor"
+            | "sqrt"
             | "sin"
             | "cos"
             | "tan"
@@ -111970,14 +112144,29 @@ impl Interpreter {
         operation: fn(f64) -> f64,
         span: Span,
     ) -> CompileResult<Value> {
+        self.call_php_unary_float_math_with_param_type(
+            arity_name, function, "float", args, operation, span,
+        )
+    }
+
+    fn call_php_unary_float_math_with_param_type(
+        &mut self,
+        arity_name: &'static str,
+        function: &'static str,
+        parameter_type: &'static str,
+        args: &[Value],
+        operation: fn(f64) -> f64,
+        span: Span,
+    ) -> CompileResult<Value> {
         expect_arity(arity_name, args, 1, span)?;
-        let number = self.php_math_float_argument(function, &args[0], span)?;
+        let number = self.php_math_float_argument(function, parameter_type, &args[0], span)?;
         Ok(Value::Float(operation(number)))
     }
 
     fn php_math_float_argument(
         &mut self,
         function: &'static str,
+        parameter_type: &'static str,
         value: &Value,
         span: Span,
     ) -> CompileResult<f64> {
@@ -111987,7 +112176,7 @@ impl Interpreter {
                     "Deprecated",
                     PHP_E_DEPRECATED,
                     format!(
-                        "{function}: Passing null to parameter #1 ($num) of type float is deprecated"
+                        "{function}: Passing null to parameter #1 ($num) of type {parameter_type} is deprecated"
                     ),
                     span,
                 )?;
@@ -111996,21 +112185,30 @@ impl Interpreter {
             Value::Bool(value) => Ok(f64::from(u8::from(*value))),
             Value::Int(value) => Ok(*value as f64),
             Value::Float(value) => Ok(*value),
-            Value::String(value) => parse_sprintf_numeric_string(value)
-                .ok_or_else(|| php_math_argument_type_error(function, "string", span)),
+            Value::String(value) => parse_sprintf_numeric_string(value).ok_or_else(|| {
+                php_math_argument_type_error(function, parameter_type, "string", span)
+            }),
             Value::BinaryString(value) => std::str::from_utf8(value)
                 .ok()
                 .and_then(parse_sprintf_numeric_string)
-                .ok_or_else(|| php_math_argument_type_error(function, "string", span)),
-            Value::Array(_) | Value::Object(_) | Value::Closure(_) | Value::Resource(_) => Err(
-                php_math_argument_type_error(function, php_type_error_given(value), span),
-            ),
+                .ok_or_else(|| {
+                    php_math_argument_type_error(function, parameter_type, "string", span)
+                }),
+            Value::Array(_) | Value::Object(_) | Value::Closure(_) | Value::Resource(_) => {
+                Err(php_math_argument_type_error(
+                    function,
+                    parameter_type,
+                    php_type_error_given(value),
+                    span,
+                ))
+            }
         }
     }
 }
 
 fn php_math_argument_type_error(
     function: &str,
+    parameter_type: &str,
     given: impl Into<String>,
     span: Span,
 ) -> Diagnostic {
@@ -112019,7 +112217,7 @@ fn php_math_argument_type_error(
         RuntimeError::unsupported_call(
             function,
             format!(
-                "Argument #1 ($num) must be of type float, {} given",
+                "Argument #1 ($num) must be of type {parameter_type}, {} given",
                 given.into()
             ),
         ),
