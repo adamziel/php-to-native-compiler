@@ -78663,10 +78663,9 @@ impl Interpreter {
             "array_combine" => {
                 expect_arity(name, &args, 2, span)?;
                 match args.as_slice() {
-                    [Value::Array(keys), Value::Array(values)] => keys
-                        .combined_with(values)
-                        .map(Value::Array)
-                        .map_err(|error| runtime_error(span, error)),
+                    [Value::Array(keys), Value::Array(values)] => {
+                        self.call_array_combine(keys, values, span)
+                    }
                     [Value::Array(_), other] => Err(runtime_error(
                         span,
                         RuntimeError::unsupported_call(
@@ -84245,6 +84244,65 @@ impl Interpreter {
         }
 
         !current.is_truthy()
+    }
+
+    fn call_array_combine(
+        &mut self,
+        keys: &PhpArray,
+        values: &PhpArray,
+        span: Span,
+    ) -> CompileResult<Value> {
+        if keys.len() != values.len() {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "array_combine()",
+                    "Argument #1 ($keys) and argument #2 ($values) must have the same number of elements",
+                ),
+            ));
+        }
+
+        let mut array = PhpArray::new();
+        for (key_entry, value_entry) in keys.entries().iter().zip(values.entries().iter()) {
+            let key_value = key_entry.value_cloned();
+            let key = self.array_combine_key_from_value(key_value, span)?;
+            array.insert(key, value_entry.value_cloned());
+        }
+        Ok(Value::Array(array))
+    }
+
+    fn array_combine_key_from_value(
+        &mut self,
+        value: Value,
+        span: Span,
+    ) -> CompileResult<ArrayKey> {
+        match value {
+            Value::Object(object) => {
+                if object.class_name().eq_ignore_ascii_case("BcMath\\Number") {
+                    return self
+                        .bcmath_number_object_string(&object, span)
+                        .map(ArrayKey::string);
+                }
+                if let Some(output) =
+                    self.object_to_string_with_magic(object.clone(), "array_combine()", span)?
+                {
+                    Ok(ArrayKey::string(output))
+                } else {
+                    Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "array_combine()",
+                            format!(
+                                "Object of class {} could not be converted to string",
+                                object.class_name()
+                            ),
+                        ),
+                    ))
+                }
+            }
+            other => php_runtime::array_combine_key_from_value(&other)
+                .map_err(|error| runtime_error(span, error)),
+        }
     }
 
     fn call_empty(
@@ -94697,7 +94755,11 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
             Some(format!("{function}: {message}"))
         }
         ("array_multisort()", "Array sizes are inconsistent") => Some(message.to_string()),
-        ("explode()", "Argument #1 ($separator) must not be empty")
+        (
+            "array_combine()",
+            "Argument #1 ($keys) and argument #2 ($values) must have the same number of elements",
+        )
+        | ("explode()", "Argument #1 ($separator) must not be empty")
         | ("str_repeat()", "Argument #2 ($times) must be greater than or equal to 0")
         | ("array_fill()", "Argument #2 ($count) must be greater than or equal to 0")
         | ("array_fill()", "Argument #2 ($count) is too large")

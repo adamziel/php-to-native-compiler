@@ -29693,17 +29693,14 @@ impl PhpArray {
         if self.entries.len() != values.entries.len() {
             return Err(RuntimeError::unsupported_call(
                 "array_combine()",
-                format!(
-                    "keys and values must have the same number of elements in the current subset, got {} and {}",
-                    self.entries.len(),
-                    values.entries.len()
-                ),
+                "Argument #1 ($keys) and argument #2 ($values) must have the same number of elements",
             ));
         }
 
         let mut array = Self::new();
         for (key_entry, value_entry) in self.entries.iter().zip(values.entries.iter()) {
-            let key = array_combine_key_from_value(key_entry.value())?;
+            let key_value = key_entry.value_cloned();
+            let key = array_combine_key_from_value(&key_value)?;
             array.insert(key, value_entry.value_cloned());
         }
         Ok(array)
@@ -30389,32 +30386,24 @@ fn array_fill_key_from_value(value: &Value) -> RuntimeResult<ArrayKey> {
     }
 }
 
-fn array_combine_key_from_value(value: &Value) -> RuntimeResult<ArrayKey> {
+pub fn array_combine_key_from_value(value: &Value) -> RuntimeResult<ArrayKey> {
     match value {
-        Value::Null => Ok(ArrayKey::String(String::new())),
-        Value::Bool(false) => Ok(ArrayKey::String(String::new())),
-        Value::Bool(true) => Ok(ArrayKey::string("1")),
-        Value::Int(value) => Ok(ArrayKey::Int(*value)),
-        Value::Float(value)
-            if value.is_finite()
-                && value.fract() == 0.0
-                && *value >= i64::MIN as f64
-                && *value < i64::MAX as f64 =>
-        {
-            Ok(ArrayKey::Int(*value as i64))
-        }
-        Value::Float(_) => Err(RuntimeError::unsupported_call(
-            "array_combine()",
-            "lossy or non-finite float key values are not supported; only null, bool, int, string, and integral finite float key values are implemented",
-        )),
-        Value::String(value) => Ok(ArrayKey::string(value.clone())),
-        other => Err(RuntimeError::unsupported_call(
-            "array_combine()",
-            format!(
-                "key values must be null, bool, int, string, or integral finite float in the current subset, got {}",
-                other.type_name()
+        Value::Array(_) | Value::Object(_) | Value::Closure(_) => Err(
+            RuntimeError::unsupported_call(
+                "array_combine()",
+                format!(
+                    "key values must be null, bool, int, float, string, binary string, resource, or object with __toString() in the current subset, got {}",
+                    value.type_name()
+                ),
             ),
-        )),
+        ),
+        Value::Null
+        | Value::Bool(_)
+        | Value::Int(_)
+        | Value::String(_)
+        | Value::Resource(_) => Ok(ArrayKey::string(value.echo_string())),
+        Value::BinaryString(value) => Ok(ArrayKey::String(binary_string_array_key(value))),
+        Value::Float(value) => Ok(ArrayKey::string(format_php_float_for_string_key(*value))),
     }
 }
 
@@ -44139,6 +44128,52 @@ fn format_php_float(value: f64) -> String {
         "0".to_string()
     } else {
         formatted
+    }
+}
+
+fn format_php_float_for_string_key(value: f64) -> String {
+    if value.is_nan() || value.is_infinite() {
+        return format_php_float(value);
+    }
+    if value == 0.0 {
+        return if value.is_sign_negative() {
+            "-0".to_string()
+        } else {
+            "0".to_string()
+        };
+    }
+
+    const PHP_DEFAULT_PRECISION: i32 = 14;
+    let exponent = value.abs().log10().floor() as i32;
+    if !(-4..PHP_DEFAULT_PRECISION).contains(&exponent) {
+        let mut formatted = format!("{:.13E}", value);
+        let Some((mantissa, exponent)) = formatted.split_once('E') else {
+            trim_float_decimal_suffix(&mut formatted);
+            return formatted;
+        };
+        let mut mantissa = mantissa.to_string();
+        trim_float_decimal_suffix(&mut mantissa);
+        if !mantissa.contains('.') {
+            mantissa.push_str(".0");
+        }
+        let exponent = exponent.parse::<i32>().unwrap_or(0);
+        return format!("{mantissa}E{exponent:+}");
+    }
+
+    let decimals = (PHP_DEFAULT_PRECISION - 1 - exponent).max(0) as usize;
+    let mut formatted = format!("{:.*}", decimals, value);
+    trim_float_decimal_suffix(&mut formatted);
+    formatted
+}
+
+fn trim_float_decimal_suffix(value: &mut String) {
+    if value.contains('.') {
+        while value.ends_with('0') {
+            value.pop();
+        }
+        if value.ends_with('.') {
+            value.pop();
+        }
     }
 }
 
@@ -77364,31 +77399,125 @@ mod tests {
     }
 
     #[test]
-    fn array_combine_accepts_integral_finite_float_key_values() {
+    fn array_combine_accepts_php_string_key_value_coercions() {
         let mut keys = PhpArray::new();
+        keys.append(Value::Float(-0.0)).unwrap();
+        keys.append(Value::Float(0.0)).unwrap();
         keys.append(Value::Float(1.0)).unwrap();
-        keys.append(Value::Float(2.0)).unwrap();
-        keys.append(Value::Float(-3.0)).unwrap();
+        keys.append(Value::Float(1.5)).unwrap();
+        keys.append(Value::Float(-3.25)).unwrap();
+        keys.append(Value::Float(f64::INFINITY)).unwrap();
+        keys.append(Value::Float(f64::NEG_INFINITY)).unwrap();
+        keys.append(Value::Float(f64::NAN)).unwrap();
+        keys.append(Value::Float(4.89999922839999)).unwrap();
+        keys.append(Value::Resource(7)).unwrap();
         keys.append(Value::String("04".to_string())).unwrap();
 
         let mut values = PhpArray::new();
+        values
+            .append(Value::String("negative zero".to_string()))
+            .unwrap();
+        values.append(Value::String("zero".to_string())).unwrap();
         values.append(Value::String("one".to_string())).unwrap();
-        values.append(Value::String("two".to_string())).unwrap();
-        values.append(Value::String("minus".to_string())).unwrap();
+        values
+            .append(Value::String("one point five".to_string()))
+            .unwrap();
+        values
+            .append(Value::String("negative fraction".to_string()))
+            .unwrap();
+        values
+            .append(Value::String("infinity".to_string()))
+            .unwrap();
+        values
+            .append(Value::String("negative infinity".to_string()))
+            .unwrap();
+        values
+            .append(Value::String("not a number".to_string()))
+            .unwrap();
+        values
+            .append(Value::String("php precision".to_string()))
+            .unwrap();
+        values
+            .append(Value::String("resource".to_string()))
+            .unwrap();
         values.append(Value::String("leading".to_string())).unwrap();
 
         let combined = keys.combined_with(&values).unwrap();
         let entries = combined.entries();
 
-        assert_eq!(entries.len(), 4);
-        assert_eq!(entries[0].key, ArrayKey::Int(1));
-        assert_eq!(entries[0].value(), &Value::String("one".to_string()));
-        assert_eq!(entries[1].key, ArrayKey::Int(2));
-        assert_eq!(entries[1].value(), &Value::String("two".to_string()));
-        assert_eq!(entries[2].key, ArrayKey::Int(-3));
-        assert_eq!(entries[2].value(), &Value::String("minus".to_string()));
-        assert_eq!(entries[3].key, ArrayKey::String("04".to_string()));
-        assert_eq!(entries[3].value(), &Value::String("leading".to_string()));
+        assert_eq!(entries.len(), 11);
+        assert_eq!(entries[0].key, ArrayKey::String("-0".to_string()));
+        assert_eq!(
+            entries[0].value(),
+            &Value::String("negative zero".to_string())
+        );
+        assert_eq!(entries[1].key, ArrayKey::Int(0));
+        assert_eq!(entries[1].value(), &Value::String("zero".to_string()));
+        assert_eq!(entries[2].key, ArrayKey::Int(1));
+        assert_eq!(entries[2].value(), &Value::String("one".to_string()));
+        assert_eq!(entries[3].key, ArrayKey::String("1.5".to_string()));
+        assert_eq!(
+            entries[3].value(),
+            &Value::String("one point five".to_string())
+        );
+        assert_eq!(entries[4].key, ArrayKey::String("-3.25".to_string()));
+        assert_eq!(
+            entries[4].value(),
+            &Value::String("negative fraction".to_string())
+        );
+        assert_eq!(entries[5].key, ArrayKey::String("INF".to_string()));
+        assert_eq!(entries[5].value(), &Value::String("infinity".to_string()));
+        assert_eq!(entries[6].key, ArrayKey::String("-INF".to_string()));
+        assert_eq!(
+            entries[6].value(),
+            &Value::String("negative infinity".to_string())
+        );
+        assert_eq!(entries[7].key, ArrayKey::String("NAN".to_string()));
+        assert_eq!(
+            entries[7].value(),
+            &Value::String("not a number".to_string())
+        );
+        assert_eq!(entries[8].key, ArrayKey::String("4.8999992284".to_string()));
+        assert_eq!(
+            entries[8].value(),
+            &Value::String("php precision".to_string())
+        );
+        assert_eq!(
+            entries[9].key,
+            ArrayKey::String("Resource id #7".to_string())
+        );
+        assert_eq!(entries[9].value(), &Value::String("resource".to_string()));
+        assert_eq!(entries[10].key, ArrayKey::String("04".to_string()));
+        assert_eq!(entries[10].value(), &Value::String("leading".to_string()));
+    }
+
+    #[test]
+    fn array_combine_preserves_distinct_binary_string_key_bytes() {
+        let first = Value::BinaryString(vec![0x8e]);
+        let second = Value::BinaryString(vec![0xf7]);
+        let first_key = ArrayKey::from_value(&first).unwrap();
+        let second_key = ArrayKey::from_value(&second).unwrap();
+
+        let mut keys = PhpArray::new();
+        keys.append(first).unwrap();
+        keys.append(second).unwrap();
+
+        let mut values = PhpArray::new();
+        values.append(Value::String("first".to_string())).unwrap();
+        values.append(Value::String("second".to_string())).unwrap();
+
+        let combined = keys.combined_with(&values).unwrap();
+
+        assert_eq!(combined.entries().len(), 2);
+        assert_ne!(first_key, second_key);
+        assert_eq!(
+            combined.get_cloned(first_key),
+            Some(Value::String("first".to_string()))
+        );
+        assert_eq!(
+            combined.get_cloned(second_key),
+            Some(Value::String("second".to_string()))
+        );
     }
 
     #[test]
@@ -77403,7 +77532,7 @@ mod tests {
         let error = keys.combined_with(&values).unwrap_err();
         assert_eq!(
             error.message(),
-            "unsupported call array_combine(): keys and values must have the same number of elements in the current subset, got 2 and 1"
+            "unsupported call array_combine(): Argument #1 ($keys) and argument #2 ($values) must have the same number of elements"
         );
 
         let mut bad_keys = PhpArray::new();
@@ -77420,24 +77549,13 @@ mod tests {
             &RuntimeErrorKind::UnsupportedCall {
                 callable: "array_combine()".to_string(),
                 reason:
-                    "key values must be null, bool, int, string, or integral finite float in the current subset, got array"
+                    "key values must be null, bool, int, float, string, binary string, resource, or object with __toString() in the current subset, got array"
                         .to_string(),
             }
         );
         assert_eq!(
             error.message(),
-            "unsupported call array_combine(): key values must be null, bool, int, string, or integral finite float in the current subset, got array"
-        );
-
-        let mut bad_keys = PhpArray::new();
-        bad_keys.append(Value::Float(1.5)).unwrap();
-        let mut values = PhpArray::new();
-        values.append(Value::String("lossy".to_string())).unwrap();
-
-        let error = bad_keys.combined_with(&values).unwrap_err();
-        assert_eq!(
-            error.message(),
-            "unsupported call array_combine(): lossy or non-finite float key values are not supported; only null, bool, int, string, and integral finite float key values are implemented"
+            "unsupported call array_combine(): key values must be null, bool, int, float, string, binary string, resource, or object with __toString() in the current subset, got array"
         );
     }
 

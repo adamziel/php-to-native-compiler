@@ -76,25 +76,31 @@ echo $again[""], "|", $again[1], "|", $again["01"];
 }
 
 #[test]
-fn array_combine_accepts_integral_float_key_value_coercions() {
+fn array_combine_accepts_float_object_resource_key_value_coercions() {
     let source = r#"<?php
-$keys = [1.0, 2.0, -3.0, "04"];
-$values = ["one", "two", "minus", "leading"];
+class classA {
+    public function __toString() {
+        return "Class A object";
+    }
+}
 
+$fp = fopen("php://memory", "w+");
+$keys = [-0.0, 0.0, 1.0, 1.5, 2.25, new classA(), $fp, true, false, null, "04"];
+$values = ["negative zero", "zero", "one", "one point five", "two point two five", "object", "resource", "true key", "false key", "null key", "leading"];
 $combined = array_combine($keys, $values);
 print_r($combined);
 echo count($combined), "\n";
-echo $combined[1], "|", $combined[2], "|", $combined[-3], "|", $combined["04"], "\n";
+echo $combined["-0"], "|", $combined[0], "|", $combined[1], "|", $combined["1.5"], "|", $combined["2.25"], "|", $combined["Class A object"], "|", $combined["Resource id #1"], "|", $combined[""], "|", $combined["04"], "\n";
 
 $call = "array_combine";
-$again = $call([0.0, 1.0], ["zero", "one again"]);
-echo $again[0], "|", $again[1];
+$again = $call([-0.0, 0.0, 1.25], ["negative zero", "zero", "fraction"]);
+echo $again["-0"], "|", $again[0], "|", $again["1.25"];
 "#;
 
     let execution = run_source(source).unwrap();
     assert_eq!(
         execution.stdout,
-        "Array\n(\n    [1] => one\n    [2] => two\n    [-3] => minus\n    [04] => leading\n)\n4\none|two|minus|leading\nzero|one again"
+        "Array\n(\n    [-0] => negative zero\n    [0] => zero\n    [1] => true key\n    [1.5] => one point five\n    [2.25] => two point two five\n    [Class A object] => object\n    [Resource id #1] => resource\n    [] => null key\n    [04] => leading\n)\n9\nnegative zero|zero|true key|one point five|two point two five|object|resource|null key|leading\nnegative zero|zero|fraction"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -124,17 +130,35 @@ fn array_combine_requires_array_second_argument() {
 }
 
 #[test]
-fn array_combine_rejects_length_mismatches() {
-    let error = runtime_error(
+fn array_combine_uncaught_length_mismatches_report_value_error() {
+    let execution = run_source(
         "<?php\n$keys = [\"one\", \"two\"];\n$values = [1];\necho array_combine($keys, $values);\n",
-    );
+    )
+    .unwrap();
 
-    assert_eq!(error.line, 4);
-    assert_eq!(error.column, 6);
     assert_eq!(
-        error.message,
-        "unsupported call array_combine(): keys and values must have the same number of elements in the current subset, got 2 and 1"
+        execution.stdout,
+        "Fatal error: Uncaught ValueError: array_combine(): Argument #1 ($keys) and argument #2 ($values) must have the same number of elements in Command line code:4\nStack trace:\n#0 {main}\n  thrown in Command line code on line 4"
     );
+    assert_eq!(execution.exit_code, 255);
+}
+
+#[test]
+fn array_combine_length_mismatches_are_catchable_value_errors() {
+    let source = r#"<?php
+try {
+    var_dump(array_combine([], [1]));
+} catch (ValueError $e) {
+    echo $e->getMessage();
+}
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "array_combine(): Argument #1 ($keys) and argument #2 ($values) must have the same number of elements"
+    );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
@@ -147,21 +171,7 @@ fn array_combine_rejects_unsupported_key_value_types() {
     assert_eq!(error.column, 6);
     assert_eq!(
         error.message,
-        "unsupported call array_combine(): key values must be null, bool, int, string, or integral finite float in the current subset, got array"
-    );
-}
-
-#[test]
-fn array_combine_rejects_lossy_float_key_value_coercions() {
-    let error = runtime_error(
-        "<?php\n$keys = [1.5];\n$values = [\"lossy\"];\necho array_combine($keys, $values);\n",
-    );
-
-    assert_eq!(error.line, 4);
-    assert_eq!(error.column, 6);
-    assert_eq!(
-        error.message,
-        "unsupported call array_combine(): lossy or non-finite float key values are not supported; only null, bool, int, string, and integral finite float key values are implemented"
+        "unsupported call array_combine(): key values must be null, bool, int, float, string, binary string, resource, or object with __toString() in the current subset, got array"
     );
 }
 
