@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-30 18:18 CEST
+Updated: 2026-05-30 22:04 CEST
 Primary branch: `master`
-Latest source head: `1c4aec15 fix: repair publication regression rows`
+Latest source head: `a9a9d271 fix: add connection state builtins`
 
 ## Progress Score
 
@@ -210,6 +210,24 @@ repair for the seven `eb233180` publication blockers:
 `timezone_version_get.phpt`, `fprintf_variation_001.phpt`, and
 `sprintf_f.phpt`. Evidence lives under
 `/home/claude/supervised-php-compiler/state/logs/phpt-full-current-publication-sharded-20260530T160853Z-php-src-f97ff59-public-1c4aec15-source-1c4aec15`.
+
+Since that latest full-suite publication gate, the public branch has advanced
+through focused, source-only semantic checkpoints. These commits are evidence
+for the next batch gate but do not change the public percentage until a pinned
+full-suite run completes and is regression-checked:
+
+- `913c4f01` adds generalized PHP version function semantics.
+- `86418b99` adds array slice and `similar_text()` semantics.
+- `2c3a3248` adds `chr()` out-of-range diagnostics.
+- `c77e47c8` supports `substr_count()` bounds and related string search
+  semantics.
+- `7502c01b` supports `strtoupper()` semantics.
+- `1cb70235` preserves binary concat bytes for `strrev()`.
+- `80cc9119` supports scalar-key formatting for `array_fill_keys()`.
+- `03529aac` adds `str_getcsv()` named-argument coverage plus service/protocol
+  semantics.
+- `5623e0b4` repairs generalized string increment/decrement semantics.
+- `a9a9d271` adds bounded CLI-normal connection-state builtins and constants.
 
 No other percentage is public project progress. Focused PHPT passes, source
 checkpoints, PRs, and docs/status edits are evidence for the next batch, but
