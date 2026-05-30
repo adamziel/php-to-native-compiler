@@ -52992,6 +52992,7 @@ impl Interpreter {
                     return self.call_sscanf_direct(args, span, caller_scope);
                 }
                 let values = self.evaluate_builtin_value_call_arguments(
+                    &key,
                     &callable_name(name),
                     args,
                     caller_scope,
@@ -53172,6 +53173,7 @@ impl Interpreter {
                     return self.call_sscanf_direct(args, span, caller_scope);
                 }
                 let values = self.evaluate_builtin_value_call_arguments(
+                    &key,
                     &callable_name(name),
                     args,
                     caller_scope,
@@ -53634,10 +53636,23 @@ impl Interpreter {
 
     fn evaluate_builtin_value_call_arguments(
         &mut self,
+        key: &str,
         callable: &str,
         args: &[Expr],
         caller_scope: &mut SymbolTable,
     ) -> CompileResult<Vec<Value>> {
+        if args
+            .iter()
+            .any(|arg| matches!(arg, Expr::NamedArgument { .. }))
+        {
+            return self.evaluate_named_builtin_value_call_arguments(
+                key,
+                callable,
+                args,
+                caller_scope,
+            );
+        }
+
         let mut values = Vec::with_capacity(args.len());
         let mut saw_spread = false;
 
@@ -53699,6 +53714,159 @@ impl Interpreter {
                 }
             }
         }
+
+        Ok(values)
+    }
+
+    fn evaluate_named_builtin_value_call_arguments(
+        &mut self,
+        key: &str,
+        callable: &str,
+        args: &[Expr],
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Vec<Value>> {
+        let Some(function) = reflection_internal_function_state(key) else {
+            return Err(runtime_error(
+                args.first().map_or(Span::new(0, 0), Expr::span),
+                RuntimeError::unsupported_call(
+                    callable,
+                    "direct named builtin arguments require parameter metadata in the current subset",
+                ),
+            ));
+        };
+
+        if function.params.iter().any(|param| param.by_reference) {
+            return Err(runtime_error(
+                args.first().map_or(Span::new(0, 0), Expr::span),
+                RuntimeError::unsupported_call(
+                    callable,
+                    "direct named arguments for reference-taking builtins are not implemented in the current subset",
+                ),
+            ));
+        }
+
+        let params = &function.params;
+        let variadic_index = params.iter().position(|param| param.is_variadic);
+        let mut positional_index = 0usize;
+        let mut saw_named = false;
+        let mut values_by_param = vec![None; params.len()];
+        let mut variadic_values = Vec::new();
+
+        for arg in args {
+            match arg {
+                Expr::NamedArgument { name, expr, span } => {
+                    saw_named = true;
+                    let Some(param_index) = params.iter().position(|param| param.name == *name)
+                    else {
+                        return Err(runtime_error(
+                            *span,
+                            RuntimeError::unsupported_call(
+                                callable,
+                                format!(
+                                    "named argument ${name} does not match a declared builtin parameter in the current subset"
+                                ),
+                            ),
+                        ));
+                    };
+                    if params[param_index].is_variadic {
+                        return Err(runtime_error(
+                            *span,
+                            RuntimeError::unsupported_call(
+                                callable,
+                                "direct named arguments for variadic builtin parameters are not implemented in the current subset",
+                            ),
+                        ));
+                    }
+                    if param_index < positional_index || values_by_param[param_index].is_some() {
+                        return Err(runtime_error(
+                            *span,
+                            RuntimeError::unsupported_call(
+                                callable,
+                                format!("Named parameter ${name} overwrites previous argument"),
+                            ),
+                        ));
+                    }
+                    values_by_param[param_index] =
+                        Some(self.evaluate_by_value_argument_with_cow_source(expr, caller_scope)?);
+                }
+                Expr::SpreadArgument { span, .. } => {
+                    return Err(runtime_error(
+                        *span,
+                        RuntimeError::unsupported_call(
+                            callable,
+                            "argument unpacking mixed with named builtin arguments is not implemented in the current subset",
+                        ),
+                    ));
+                }
+                expr => {
+                    if saw_named {
+                        return Err(positional_argument_after_named_argument_error(expr.span()));
+                    }
+                    if variadic_index
+                        .map(|index| positional_index >= index)
+                        .unwrap_or(false)
+                    {
+                        variadic_values.push(
+                            self.evaluate_by_value_argument_with_cow_source(expr, caller_scope)?,
+                        );
+                        positional_index += 1;
+                        continue;
+                    }
+                    let Some(slot) = values_by_param.get_mut(positional_index) else {
+                        return Err(runtime_error(
+                            expr.span(),
+                            RuntimeError::arity_mismatch(
+                                callable,
+                                Self::reflection_params_arity_expectation(params),
+                                args.len(),
+                            ),
+                        ));
+                    };
+                    *slot =
+                        Some(self.evaluate_by_value_argument_with_cow_source(expr, caller_scope)?);
+                    positional_index += 1;
+                }
+            }
+        }
+
+        let highest_supplied_index = values_by_param.iter().rposition(|value| value.is_some());
+        let mut values = Vec::new();
+        for (index, param) in params.iter().enumerate() {
+            if param.is_variadic {
+                break;
+            }
+            if let Some(value) = values_by_param[index].take() {
+                values.push(value);
+                continue;
+            }
+            if param.default.is_none() {
+                return Err(runtime_error(
+                    args.first().map_or(Span::new(0, 0), Expr::span),
+                    RuntimeError::arity_mismatch(
+                        callable,
+                        Self::reflection_params_arity_expectation(params),
+                        args.len(),
+                    ),
+                ));
+            }
+            if highest_supplied_index.is_some_and(|highest| index < highest) {
+                let Some(default) = param
+                    .default
+                    .as_ref()
+                    .and_then(Self::reflection_parameter_default_value)
+                else {
+                    return Err(runtime_error(
+                        args.first().map_or(Span::new(0, 0), Expr::span),
+                        RuntimeError::unsupported_call(
+                            callable,
+                            "direct named builtin defaults are not representable in the current subset",
+                        ),
+                    ));
+                };
+                values.push(default);
+            }
+        }
+        values.extend(variadic_values);
 
         Ok(values)
     }
@@ -55057,7 +55225,8 @@ impl Interpreter {
         caller_scope: &mut SymbolTable,
     ) -> CompileResult<Value> {
         let callable = format!("{key}()");
-        let values = self.evaluate_builtin_value_call_arguments(&callable, args, caller_scope)?;
+        let values =
+            self.evaluate_builtin_value_call_arguments(key, &callable, args, caller_scope)?;
         self.call_builtin_callback_with_values(key, values, span, true)
     }
 
@@ -78116,6 +78285,10 @@ impl Interpreter {
             )),
             "error_reporting" => self.call_error_reporting(args, span),
             "ignore_user_abort" => self.call_ignore_user_abort(args, span),
+            "getprotobyname" => call_getprotobyname(&args, span),
+            "getprotobynumber" => call_getprotobynumber(&args, span),
+            "getservbyname" => call_getservbyname(&args, span),
+            "getservbyport" => call_getservbyport(&args, span),
             "php_uname" => call_php_uname(&args, span),
             "php_sapi_name" => call_php_sapi_name(&args, span),
             "phpversion" => call_phpversion(&args, span),
@@ -92796,6 +92969,28 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_optional_reference_null_param("callable_name"),
             ],
         ),
+        "getprotobyname" => (
+            "int|false",
+            vec![reflection_internal_param("protocol", "string")],
+        ),
+        "getprotobynumber" => (
+            "string|false",
+            vec![reflection_internal_param("protocol", "int")],
+        ),
+        "getservbyname" => (
+            "int|false",
+            vec![
+                reflection_internal_param("service", "string"),
+                reflection_internal_param("protocol", "string"),
+            ],
+        ),
+        "getservbyport" => (
+            "string|false",
+            vec![
+                reflection_internal_param("port", "int"),
+                reflection_internal_param("protocol", "string"),
+            ],
+        ),
         "php_uname" => (
             "string",
             vec![reflection_internal_optional_string_param("mode", "a")],
@@ -95358,6 +95553,12 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
             "Argument #1 ($mode) must be a single character"
             | "Argument #1 ($mode) must be one of \"a\", \"m\", \"n\", \"r\", \"s\", or \"v\"",
         ) => Some(format!("{function}: {message}")),
+        ("getprotobyname()" | "getservbyname()" | "getservbyport()", message)
+            if message.starts_with("Argument #")
+                && message.ends_with(" must not contain any null bytes") =>
+        {
+            Some(format!("{function}: {message}"))
+        }
         (
             "array_combine()",
             "Argument #1 ($keys) and argument #2 ($values) must have the same number of elements",
@@ -95952,6 +96153,10 @@ fn is_builtin(name: &str) -> bool {
             | "compact"
             | "error_reporting"
             | "ignore_user_abort"
+            | "getprotobyname"
+            | "getprotobynumber"
+            | "getservbyname"
+            | "getservbyport"
             | "php_uname"
             | "php_sapi_name"
             | "phpversion"
@@ -96542,14 +96747,14 @@ fn csv_record_enclosure_state(
 
     while let Some(character) = chars.next() {
         if in_enclosure {
-            if Some(character) == escape {
-                let _ = chars.next();
-            } else if character == enclosure {
+            if character == enclosure {
                 if chars.peek().is_some_and(|next| *next == enclosure) {
                     let _ = chars.next();
                 } else {
                     in_enclosure = false;
                 }
+            } else if Some(character) == escape {
+                let _ = chars.next();
             }
             continue;
         }
@@ -96588,19 +96793,19 @@ fn parse_bounded_csv_record(
 
     while let Some(character) = chars.next() {
         if in_enclosure {
-            if Some(character) == escape {
-                if let Some(next) = chars.next() {
-                    field.push(character);
-                    field.push(next);
-                } else {
-                    field.push(character);
-                }
-            } else if character == enclosure {
+            if character == enclosure {
                 if chars.peek().is_some_and(|next| *next == enclosure) {
                     field.push(enclosure);
                     chars.next();
                 } else {
                     in_enclosure = false;
+                }
+            } else if Some(character) == escape {
+                if let Some(next) = chars.next() {
+                    field.push(character);
+                    field.push(next);
+                } else {
+                    field.push(character);
                 }
             } else {
                 field.push(character);
@@ -109160,6 +109365,10 @@ enum BoundedPregPattern {
         ends_with_anchor: bool,
         class: BoundedPregCharacterClass,
     },
+    LiteralWhitespaceLiteral {
+        left: String,
+        right: String,
+    },
     ByteExpression {
         starts_with_anchor: bool,
         ends_with_anchor: bool,
@@ -109292,6 +109501,12 @@ impl BoundedPregPattern {
             }
         }
 
+        if !starts_with_anchor && !ends_with_anchor {
+            if let Some((left, right)) = parse_bounded_preg_literal_whitespace_literal(body)? {
+                return Ok(Self::LiteralWhitespaceLiteral { left, right });
+            }
+        }
+
         if let Some(expression) = parse_bounded_preg_byte_expression(body)? {
             return Ok(Self::ByteExpression {
                 starts_with_anchor,
@@ -109316,6 +109531,7 @@ impl BoundedPregPattern {
             | Self::Suffix(literal)
             | Self::Exact(literal) => !literal.is_empty(),
             Self::CharacterClass { .. } => true,
+            Self::LiteralWhitespaceLiteral { left, right } => !left.is_empty() || !right.is_empty(),
             Self::ByteExpression { expression, .. } => expression.min_len() > 0,
             Self::WordPressDbHostIpv4
             | Self::WordPressDbHostIpv6
@@ -109334,6 +109550,7 @@ impl BoundedPregPattern {
             Self::Suffix(literal) => subject.ends_with(literal),
             Self::Exact(literal) => subject == literal,
             Self::CharacterClass { .. } => self.captures(subject).is_some(),
+            Self::LiteralWhitespaceLiteral { .. } => self.captures(subject).is_some(),
             Self::ByteExpression { .. } => self.captures(subject).is_some(),
             Self::WordPressDbHostIpv4
             | Self::WordPressDbHostIpv6
@@ -109382,6 +109599,10 @@ impl BoundedPregPattern {
                 *ends_with_anchor,
                 class,
             ),
+            Self::LiteralWhitespaceLiteral { left, right } => {
+                bounded_preg_literal_whitespace_literal_match(subject, 0, left, right)
+                    .map(|matched| matched.captures)
+            }
             Self::ByteExpression {
                 starts_with_anchor,
                 ends_with_anchor,
@@ -109447,6 +109668,9 @@ impl BoundedPregPattern {
                 *ends_with_anchor,
                 class,
             ),
+            Self::LiteralWhitespaceLiteral { left, right } => {
+                bounded_preg_literal_whitespace_literal_match(subject, start, left, right)
+            }
             Self::ByteExpression {
                 starts_with_anchor,
                 ends_with_anchor,
@@ -109477,6 +109701,80 @@ fn preg_match_single_capture(value: &str) -> PhpArray {
     let mut matches = PhpArray::new();
     matches.insert(0, Value::String(value.to_string()));
     matches
+}
+
+fn parse_bounded_preg_literal_whitespace_literal(
+    body: &str,
+) -> Result<Option<(String, String)>, String> {
+    let Some((left, right)) = body.split_once("\\s+") else {
+        return Ok(None);
+    };
+    if right.contains("\\s+") {
+        return Ok(None);
+    }
+
+    Ok(Some((
+        decode_bounded_preg_literal(left)?,
+        decode_bounded_preg_literal(right)?,
+    )))
+}
+
+fn bounded_preg_literal_whitespace_literal_match(
+    subject: &str,
+    start: usize,
+    left: &str,
+    right: &str,
+) -> Option<BoundedPregMatch> {
+    if start > subject.len() || !subject.is_char_boundary(start) {
+        return None;
+    }
+
+    let mut search_start = start;
+    while search_start <= subject.len() {
+        let match_start = if left.is_empty() {
+            search_start
+        } else {
+            search_start + subject[search_start..].find(left)?
+        };
+        let whitespace_start = match_start + left.len();
+        if let Some(whitespace_end) = consume_ascii_whitespace_run(subject, whitespace_start) {
+            if subject[whitespace_end..].starts_with(right) {
+                let end = whitespace_end + right.len();
+                return Some(BoundedPregMatch {
+                    start: match_start,
+                    end,
+                    captures: preg_match_single_capture(&subject[match_start..end]),
+                });
+            }
+        }
+
+        if match_start >= subject.len() {
+            return None;
+        }
+        search_start = match_start
+            + subject[match_start..]
+                .chars()
+                .next()
+                .map(char::len_utf8)
+                .unwrap_or(1);
+    }
+
+    None
+}
+
+fn consume_ascii_whitespace_run(subject: &str, start: usize) -> Option<usize> {
+    if start > subject.len() || !subject.is_char_boundary(start) {
+        return None;
+    }
+
+    let mut end = start;
+    for (relative, ch) in subject[start..].char_indices() {
+        if !ch.is_ascii_whitespace() {
+            break;
+        }
+        end = start + relative + ch.len_utf8();
+    }
+    (end > start).then_some(end)
 }
 
 fn parse_bounded_preg_character_class(
@@ -114418,6 +114716,130 @@ impl Interpreter {
         }
 
         Ok(Value::Bool(self.output_start.is_some()))
+    }
+}
+
+fn call_getprotobyname(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("getprotobyname", args, 1, span)?;
+    let protocol =
+        network_database_string_argument("getprotobyname()", 1, "protocol", &args[0], span)?;
+    Ok(bounded_protocol_number(&protocol)
+        .map(Value::Int)
+        .unwrap_or(Value::Bool(false)))
+}
+
+fn call_getprotobynumber(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("getprotobynumber", args, 1, span)?;
+    let protocol = php_internal_int_argument("getprotobynumber()", 1, "protocol", &args[0], span)?;
+    Ok(bounded_protocol_name(protocol)
+        .map(|name| Value::String(name.to_string()))
+        .unwrap_or(Value::Bool(false)))
+}
+
+fn call_getservbyname(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("getservbyname", args, 2, span)?;
+    let service =
+        network_database_string_argument("getservbyname()", 1, "service", &args[0], span)?;
+    let protocol =
+        network_database_string_argument("getservbyname()", 2, "protocol", &args[1], span)?;
+
+    Ok(bounded_service_port(&service, &protocol)
+        .map(Value::Int)
+        .unwrap_or(Value::Bool(false)))
+}
+
+fn call_getservbyport(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("getservbyport", args, 2, span)?;
+    let port = php_internal_int_argument("getservbyport()", 1, "port", &args[0], span)?;
+    let protocol =
+        network_database_string_argument("getservbyport()", 2, "protocol", &args[1], span)?;
+
+    if !(0..=65535).contains(&port) {
+        return Ok(Value::Bool(false));
+    }
+
+    Ok(bounded_service_name(port, &protocol)
+        .map(|service| Value::String(service.to_string()))
+        .unwrap_or(Value::Bool(false)))
+}
+
+fn network_database_string_argument(
+    function: &str,
+    position: usize,
+    name: &str,
+    value: &Value,
+    span: Span,
+) -> CompileResult<String> {
+    let value = value
+        .try_echo_string()
+        .map_err(|error| runtime_error(span, error))?;
+    if value.contains('\0') {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                format!("Argument #{position} (${name}) must not contain any null bytes"),
+            ),
+        ));
+    }
+    Ok(value)
+}
+
+fn bounded_protocol_number(protocol: &str) -> Option<i64> {
+    match protocol.to_ascii_lowercase().as_str() {
+        "icmp" => Some(1),
+        "tcp" => Some(6),
+        "udp" => Some(17),
+        _ => None,
+    }
+}
+
+fn bounded_protocol_name(protocol: i64) -> Option<&'static str> {
+    match protocol {
+        1 => Some("icmp"),
+        6 => Some("tcp"),
+        17 => Some("udp"),
+        _ => None,
+    }
+}
+
+fn bounded_service_port(service: &str, protocol: &str) -> Option<i64> {
+    if protocol != "tcp" {
+        return None;
+    }
+
+    match service {
+        "ftp" => Some(21),
+        "ssh" => Some(22),
+        "telnet" => Some(23),
+        "smtp" => Some(25),
+        "nicname" => Some(43),
+        "gopher" => Some(70),
+        "finger" => Some(79),
+        "http" | "www" => Some(80),
+        "pop3" => Some(110),
+        "imap" => Some(143),
+        _ => None,
+    }
+}
+
+fn bounded_service_name(port: i64, protocol: &str) -> Option<&'static str> {
+    if protocol != "tcp" {
+        return None;
+    }
+
+    match port {
+        21 => Some("ftp"),
+        22 => Some("ssh"),
+        23 => Some("telnet"),
+        25 => Some("smtp"),
+        43 => Some("nicname"),
+        70 => Some("gopher"),
+        79 => Some("finger"),
+        80 => Some("http"),
+        110 => Some("pop3"),
+        143 => Some("imap"),
+        _ => None,
     }
 }
 

@@ -3010,6 +3010,15 @@
 - `phpversion()` with no arguments, `null`, `standard`, or a known loaded
   extension name, returning the current deterministic `PHP_VERSION`
   compatibility string. Unknown extension names return `false`.
+- Bounded network database helpers: `getprotobyname()`/`getprotobynumber()`
+  recognize the deterministic `icmp`, `tcp`, and `udp` protocol slice, and
+  `getservbyname()`/`getservbyport()` recognize a deterministic TCP service
+  slice for `ftp`, `ssh`, `telnet`, `smtp`, `nicname`, `gopher`, `finger`,
+  `http`/`www`, `pop3`, and `imap`. Unknown names, protocols, and out-of-range
+  ports return `false`. Protocol lookup names are ASCII-case-insensitive, while
+  service lookup names and the service lookup protocol are case-sensitive in
+  the current bounded table. String-valued dynamic calls, `function_exists()`,
+  `is_callable()`, and `ReflectionFunction` metadata recognize these builtins.
 - HTML entity builtins `htmlspecialchars`, `htmlentities`,
   `htmlspecialchars_decode`, `html_entity_decode`, and
   `get_html_translation_table` cover the current byte-string special-character
@@ -3523,8 +3532,11 @@
   `str_getcsv($string, $separator = ",", $enclosure = "\"", $escape = "\\")`
   reuses the bounded CSV record parser for one string record, one-byte
   separator/enclosure arguments, and an empty or one-byte escape argument.
-  Empty input returns an array containing `null`, matching the covered PHP
-  shape. `parse_str($string, $result)` is supported only as a direct call with
+  Direct calls may use named arguments for supported by-value builtin
+  parameter names, so skipped optional CSV arguments are filled from the
+  internal metadata defaults. Empty input returns an array containing `null`,
+  matching the covered PHP shape. `parse_str($string, $result)` is supported
+  only as a direct call with
   a direct result variable; it uses the bounded URL-encoded parser and current
   `arg_separator.input` value, rejects raw NUL bytes with the PHP `ValueError`
   message, writes the parsed ordered array to the result variable, and returns
@@ -10743,8 +10755,9 @@
   lowering beyond function-table introspection
 - `str_getcsv()` outside the current one-record string parser with one-byte
   separator/enclosure and empty or one-byte escape arguments: broader CSV
-  dialect parity, named arguments, binary edge cases beyond represented
-  runtime strings, exact diagnostics, and native lowering beyond function-table
+  dialect parity, named arguments beyond direct by-value calls with declared
+  internal parameter names, binary edge cases beyond represented runtime
+  strings, exact diagnostics, and native lowering beyond function-table
   introspection
 - `parse_str()` outside the current direct-call direct-result-variable
   URL-encoded parser subset: dynamic/callback invocation, non-variable output
@@ -11021,6 +11034,12 @@
   `cli` result: host PHP SAPI discovery, web-server/CGI/FPM SAPI states,
   request-specific SAPI switching, exact diagnostics, and native lowering
   beyond function-table introspection
+- Network database behavior beyond the deterministic protocol and TCP service
+  slices listed above: reading host `/etc/protocols` or `/etc/services`,
+  service aliases beyond `http`/`www`, UDP service lookups, platform-specific
+  resolver/database differences, exact service database case rules outside the
+  documented bounded table, exact warnings/diagnostics for all invalid argument
+  shapes, and native lowering beyond function-table introspection
 - `abs()` behavior beyond the current integer and finite-float subset:
   integer-minimum overflow, numeric string coercion, bool/null coercion,
   array/object/resource operands, NaN/infinity behavior, exact diagnostics, and

@@ -80,6 +80,51 @@ try {
 }
 
 #[test]
+fn str_getcsv_accepts_direct_named_escape_and_fills_defaults() {
+    let execution = run_source(
+        r#"<?php
+var_dump(str_getcsv('"f", "o", ""', escape: ''));
+var_dump(str_getcsv('foo||bar', '|', escape: ''));
+var_dump(str_getcsv('.foo..bar.', '.', '.', '.'));
+var_dump(str_getcsv('', escape: ''));
+echo str_pad("x", length: 3, pad_type: STR_PAD_LEFT), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "array(3) {\n",
+            "  [0]=>\n",
+            "  string(1) \"f\"\n",
+            "  [1]=>\n",
+            "  string(1) \"o\"\n",
+            "  [2]=>\n",
+            "  string(0) \"\"\n",
+            "}\n",
+            "array(3) {\n",
+            "  [0]=>\n",
+            "  string(3) \"foo\"\n",
+            "  [1]=>\n",
+            "  string(0) \"\"\n",
+            "  [2]=>\n",
+            "  string(3) \"bar\"\n",
+            "}\n",
+            "array(1) {\n",
+            "  [0]=>\n",
+            "  string(7) \"foo.bar\"\n",
+            "}\n",
+            "array(1) {\n",
+            "  [0]=>\n",
+            "  NULL\n",
+            "}\n",
+            "  x\n",
+        )
+    );
+}
+
+#[test]
 fn strpbrk_returns_suffix_from_first_matching_byte() {
     let execution = run_source(
         r#"<?php
