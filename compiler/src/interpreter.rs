@@ -73159,6 +73159,67 @@ impl Interpreter {
         Ok(sha1_output_value(&contents, raw_output))
     }
 
+    fn call_md5_file(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(1..=2).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "md5_file()",
+                    ArityExpectation::Between { min: 1, max: 2 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        if matches!(args[0], Value::Null) {
+            self.emit_display_diagnostic(
+                "Deprecated",
+                PHP_E_DEPRECATED,
+                "md5_file(): Passing null to parameter #1 ($filename) of type string is deprecated",
+                span,
+            )?;
+        }
+        let path = self.filesystem_filename_argument("md5_file", &args[0], span)?;
+        let raw_output = digest_binary_argument("md5_file()", args.get(1), span)?;
+        if !self.ensure_stream_wrapper_can_open_path("md5_file()", &path, span)? {
+            return Ok(Value::Bool(false));
+        }
+        let filesystem_path = if let Some(file_url_path) = bounded_local_file_url_path(&path) {
+            file_url_path.map_err(|message| {
+                runtime_error(span, RuntimeError::unsupported_call("md5_file()", message))
+            })?
+        } else if path.contains("://") {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "md5_file()",
+                    "only local file:// URLs and local file paths are supported in the current stream-wrapper subset",
+                ),
+            ));
+        } else {
+            self.resolve_file_get_contents_path(&path, false)
+        };
+        if !self.enforce_bounded_open_basedir("md5_file()", &path, &filesystem_path, span)? {
+            return Ok(Value::Bool(false));
+        }
+
+        let contents = match fs::read(&filesystem_path) {
+            Ok(contents) => contents,
+            Err(error) => {
+                self.emit_display_warning(
+                    format!(
+                        "md5_file({path}): Failed to open stream: {}",
+                        php_filesystem_open_error_message(&error)
+                    ),
+                    span,
+                )?;
+                return Ok(Value::Bool(false));
+            }
+        };
+        self.cache_bounded_realpath_entry_for_local_path(&filesystem_path);
+        Ok(md5_output_value(&contents, raw_output))
+    }
+
     fn call_readfile(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         if args.is_empty() || args.len() > 3 {
             return Err(runtime_error(
@@ -78240,6 +78301,7 @@ impl Interpreter {
             "base_convert" => self.call_base_convert(&args, span),
             "crc32" => call_crc32(&args, span),
             "md5" => call_md5(&args, span),
+            "md5_file" => self.call_md5_file(&args, span),
             "sha1" => call_sha1(&args, span),
             "sha1_file" => self.call_sha1_file(&args, span),
             "levenshtein" => call_levenshtein(&args, span),
@@ -92327,6 +92389,13 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_optional_bool_param("binary", false),
             ],
         ),
+        "md5_file" => (
+            "string|false",
+            vec![
+                reflection_internal_param("filename", "string"),
+                reflection_internal_optional_bool_param("binary", false),
+            ],
+        ),
         "sha1" => (
             "string",
             vec![
@@ -95783,13 +95852,15 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
             Some(format!("{function}: {message}"))
         }
         (
-            "file_get_contents()" | "file_put_contents()" | "readfile()" | "sha1_file()",
+            "file_get_contents()" | "file_put_contents()" | "readfile()" | "md5_file()"
+            | "sha1_file()",
             "Argument #1 ($filename) must not contain any null bytes",
         ) => {
             Some(format!("{function}: {message}"))
         }
         (
-            "file_get_contents()" | "file_put_contents()" | "readfile()" | "sha1_file()",
+            "file_get_contents()" | "file_put_contents()" | "readfile()" | "md5_file()"
+            | "sha1_file()",
             "Path must not be empty",
         ) => Some("Path must not be empty".to_string()),
         (
@@ -96144,6 +96215,7 @@ fn is_builtin(name: &str) -> bool {
             | "base_convert"
             | "crc32"
             | "md5"
+            | "md5_file"
             | "sha1"
             | "sha1_file"
             | "levenshtein"
@@ -105261,11 +105333,15 @@ fn call_md5(args: &[Value], span: Span) -> CompileResult<Value> {
         None => false,
     };
 
-    let digest = Md5::digest(&value);
+    Ok(md5_output_value(&value, raw_output))
+}
+
+fn md5_output_value(value: &[u8], raw_output: bool) -> Value {
+    let digest = Md5::digest(value);
     if raw_output {
-        Ok(Value::BinaryString(digest.to_vec()))
+        Value::BinaryString(digest.to_vec())
     } else {
-        Ok(Value::String(hex_bytes(&digest)))
+        Value::String(hex_bytes(&digest))
     }
 }
 

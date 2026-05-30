@@ -2679,14 +2679,15 @@ WordPress `wpdb::placeholder_escape()` salt path. The current slice accepts no
 arguments and returns a fixed integer so compatibility probes are reproducible;
 PHP random-state compatibility, min/max forms, seeding, cryptographic
 randomness, and native lowering remain out of scope.
-`uniqid()`, `hash_hmac()`, and `md5()` are interpreter-only deterministic hash
-boundaries for the same placeholder-escape path and focused file-content
-checks. `uniqid()` returns a fixed prefix-based ID, `hash_hmac()` currently
-supports lowercase hex HMAC-SHA256 through the `hmac` and `sha2` crates, and
-`md5()` supports scalar/null string-convertible input with lowercase hex or
-raw binary output through the `md-5` crate. Broader hash algorithms, streaming
-hash contexts, exact entropy/time behavior, FIPS/provider policy, and native
-lowering remain out of scope.
+`uniqid()`, `hash_hmac()`, `md5()`, and `md5_file()` are interpreter-only
+deterministic hash boundaries for the same placeholder-escape path and focused
+file-content checks. `uniqid()` returns a fixed prefix-based ID,
+`hash_hmac()` currently supports lowercase hex HMAC-SHA256 through the `hmac`
+and `sha2` crates, `md5()` supports scalar/null string-convertible input with
+lowercase hex or raw binary output through the `md-5` crate, and `md5_file()`
+uses the bounded local-file path policy shared with `sha1_file()`. Broader hash
+algorithms, streaming hash contexts, exact entropy/time behavior,
+FIPS/provider policy, and native lowering remain out of scope.
 `strcasecmp()` is an interpreter-only bounded string comparison builtin for
 current scalar/null string-convertible values. It compares valid UTF-8 runtime
 strings by bytes with ASCII case folding and returns only sign values. Native

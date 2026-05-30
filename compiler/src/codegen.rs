@@ -66355,6 +66355,8 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "hexdec",
     "base_convert",
     "crc32",
+    "md5",
+    "md5_file",
     "sha1",
     "sha1_file",
     "quoted_printable_decode",

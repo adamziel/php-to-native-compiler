@@ -3172,7 +3172,7 @@
   `disk_free_space`, `diskfreespace`, `disk_total_space`, `clearstatcache`, `realpath`, `realpath_cache_get`, `realpath_cache_size`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_executable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_length`, `ob_list_handlers`, `ob_get_status`, `ob_get_clean`, `ob_get_flush`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `date_default_timezone_set`,
   `version_compare`, `microtime`, `ini_get`, `ini_set`,
   `get_include_path`, `set_include_path`, `min`, `rand`, `array_rand`, `uniqid`,
-  `hash_hmac`, `md5`, `get_current_user`, `isset`, `empty`, `count`, `sizeof`, `compact`, `define`, `constant`, `defined`,
+  `hash_hmac`, `md5`, `md5_file`, `get_current_user`, `isset`, `empty`, `count`, `sizeof`, `compact`, `define`, `constant`, `defined`,
   `array_key_exists`, `key_exists`, `array_key_first`, `array_key_last`, `current`,
   `array_is_list`, `array_values`, `array_keys`, `array_rand`, `array_reverse`, `array_slice`, `array_chunk`,
   `array_pad`, `array_merge`, `array_replace`, `array_combine`,
@@ -3662,10 +3662,14 @@
   remain unsupported.
   `md5($string, $binary = false)` supports scalar/null string-convertible
   inputs, lowercase hex output, and the raw 16-byte binary-string result when
-  the second argument is truthy. Array string operands and array binary flags
-  use the current PHP-shaped type diagnostics; object/resource coercions,
-  non-bool exact flag diagnostics beyond current truthiness, FIPS/provider
-  policy, streaming hash contexts, and native lowering remain unsupported.
+  the second argument is truthy. `md5_file($filename, $binary = false)` hashes
+  bounded local paths and local `file://` URLs through the same filesystem
+  policy as `sha1_file()`, returning lowercase hex, raw binary output, or
+  `false` with a PHP-shaped warning when the file cannot be opened. Array
+  string operands and array binary flags use the current PHP-shaped type
+  diagnostics; object/resource coercions, non-bool exact flag diagnostics
+  beyond current truthiness, FIPS/provider policy, streaming hash contexts,
+  remote stream wrappers, and native lowering remain unsupported.
   `call_user_func($callback, ...$args)` supports string callbacks resolving to
   current user functions or documented callable builtins and forwards evaluated
   positional values through the current value-call path. Array callables,
@@ -7361,7 +7365,7 @@
   an already-lowerable string value with a uniform known answer in the current
   documented builtin table: documented callable builtins, including
   `strtolower`, `strtoupper`, `trim`, `ltrim`, `rtrim`, `strncmp`, `strncasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`, `strspn`, `strcspn`, `strpbrk`, `strpos`, `stripos`, `strrpos`, `strripos`, `strstr`, `strchr`, `stristr`, `strtok`, `substr`, `substr_replace`, `substr_count`, `similar_text`, `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`,
-  `error_reporting`, `min`, `rand`, `uniqid`, `hash_hmac`, `md5`, `get_current_user`, `basename`, `dirname`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`, `str_getcsv`, `parse_str`,
+  `error_reporting`, `min`, `rand`, `uniqid`, `hash_hmac`, `md5`, `md5_file`, `get_current_user`, `basename`, `dirname`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`, `str_getcsv`, `parse_str`,
   `file_put_contents`, `readfile`, `unlink`, `mkdir`, `rmdir`, `copy`, `rename`, `chdir`, `scandir`, `stat`, `lstat`, `fileperms`, `chmod`,
   `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_params`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `stream_context_set_params`, `fwrite`, `fscanf`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fflush`, `ftruncate`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`,
   `disk_free_space`, `diskfreespace`, `disk_total_space`, `realpath`, `realpath_cache_get`, `realpath_cache_size`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_executable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`,
@@ -7780,7 +7784,7 @@
   `array_intersect_key`, `array_diff_key`, `array_diff`, `array_intersect`,
   `array_unique`, `array_flip`, `array_fill_keys`, `array_count_values`,
   `array_sum`, `array_product`, `array_reduce`, `array_filter`, `array_map`,
-  `array_push`, `array_unshift`, `array_shift`, `array_pop`, `ksort`, `in_array`, `array_search`, `rand`, `uniqid`, `hash_hmac`, `md5`, `gettype`, `is_null`, `is_bool`, `is_int`,
+  `array_push`, `array_unshift`, `array_shift`, `array_pop`, `ksort`, `in_array`, `array_search`, `rand`, `uniqid`, `hash_hmac`, `md5`, `md5_file`, `gettype`, `is_null`, `is_bool`, `is_int`,
   `is_integer`, `is_long`, `is_float`, `is_double`, `is_string`, `is_array`,
   `is_scalar`, `is_numeric`, `is_countable`, `is_iterable`, `is_callable`,
   `function_exists`, `basename`, `dirname`, `extension_loaded`, `ob_start`,
@@ -8022,7 +8026,7 @@
   `is_null`, `is_bool`, `is_int`, `is_integer`, `is_long`, `is_float`,
   `is_double`, `is_string`, `is_array`, `is_scalar`, `is_numeric`,
   `is_countable`, `is_iterable`, `is_callable`, `function_exists`, `rand`,
-  `uniqid`, `hash_hmac`, `md5`,
+  `uniqid`, `hash_hmac`, `md5`, `md5_file`,
   `basename`, `dirname`, `extension_loaded`, `mysqli_connect`, `mysqli_real_connect`,
   `mysqli_get_server_info`, `mysqli_get_server_version`,
   `mysqli_get_host_info`, `mysqli_get_client_info`,
