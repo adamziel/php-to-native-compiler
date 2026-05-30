@@ -95,6 +95,28 @@ var_dump(strtotime("mayy 2 2009"));
 }
 
 #[test]
+fn datetime_fixed_offset_abbreviations_match_bounded_timelib_rows() {
+    let execution = run_source(
+        r#"<?php
+date_default_timezone_set("GMT");
+$date = date_create("2005-07-18 22:10:00 +0400");
+echo $date->format("D, d M Y H:i:s T"), "\n";
+$date = date_create("@1121710200 +0912");
+echo $date->format("D, d M Y H:i:s T"), "\n";
+echo date_format(date_create("2005-07-18 22:10:00 GMT"), "T"), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "Mon, 18 Jul 2005 22:10:00 GMT+0400\nMon, 18 Jul 2005 18:10:00 GMT+0000\nGMT\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn timezone_metadata_helpers_cover_current_public_rows() {
     let execution = run_source(
         r#"<?php

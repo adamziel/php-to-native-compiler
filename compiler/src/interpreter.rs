@@ -85315,7 +85315,54 @@ impl Interpreter {
                 .map(Value::Bool),
         };
 
-        result.map_err(|error| runtime_error(span, error))
+        result.map_err(|error| {
+            if let Some(message) =
+                Self::binary_arithmetic_unsupported_operand_types_message(op, &left, &right, &error)
+            {
+                Diagnostic::new(Phase::Runtime, span.line, span.column, message)
+            } else {
+                runtime_error(span, error)
+            }
+        })
+    }
+
+    fn binary_arithmetic_unsupported_operand_types_message(
+        op: BinaryOp,
+        left: &Value,
+        right: &Value,
+        error: &RuntimeError,
+    ) -> Option<String> {
+        let operator = Self::binary_arithmetic_operator_symbol(op)?;
+        let RuntimeErrorKind::InvalidArithmetic { reason, .. } = error.kind() else {
+            return None;
+        };
+        if !matches!(
+            reason.as_str(),
+            "string is not numeric"
+                | "arrays are not numeric"
+                | "objects are not numeric"
+                | "closures are not numeric"
+                | "resources are not numeric"
+        ) {
+            return None;
+        }
+
+        Some(format!(
+            "Unsupported operand types: {} {operator} {}",
+            left.type_name(),
+            right.type_name()
+        ))
+    }
+
+    fn binary_arithmetic_operator_symbol(op: BinaryOp) -> Option<&'static str> {
+        match op {
+            BinaryOp::Add => Some("+"),
+            BinaryOp::Sub => Some("-"),
+            BinaryOp::Mul => Some("*"),
+            BinaryOp::Div => Some("/"),
+            BinaryOp::Mod => Some("%"),
+            _ => None,
+        }
     }
 
     fn apply_leading_numeric_string_add(
@@ -115397,6 +115444,13 @@ impl BoundedTimezone {
         }
     }
 
+    fn numeric_fixed_offset(offset: i64) -> Self {
+        Self {
+            name: format_timezone_offset(offset, false),
+            fixed_offset: Some(offset),
+        }
+    }
+
     fn offset_at_timestamp(&self, timestamp: i64) -> i64 {
         if let Some(offset) = self.fixed_offset {
             return offset;
@@ -115506,11 +115560,14 @@ impl BoundedTimezone {
         }
     }
 
-    fn abbreviation(&self, parts: &BoundedDateTimeParts) -> &'static str {
-        if self.fixed_offset.is_some() {
-            return "GMT";
+    fn abbreviation(&self, parts: &BoundedDateTimeParts) -> String {
+        if let Some(offset) = self.fixed_offset {
+            if matches!(self.name.as_bytes().first(), Some(b'+') | Some(b'-')) {
+                return format!("GMT{}", format_timezone_offset(offset, false));
+            }
+            return self.name.to_ascii_uppercase();
         }
-        match self.name.as_str() {
+        let abbreviation = match self.name.as_str() {
             "GMT0" | "GMT" | "Africa/Abidjan" => "GMT",
             "UTC" | "Etc/UTC" | "Etc/Universal" | "Etc/Zulu" => "UTC",
             "Etc/GMT" => "GMT",
@@ -115594,7 +115651,8 @@ impl BoundedTimezone {
                 }
             }
             _ => "UTC",
-        }
+        };
+        abbreviation.to_string()
     }
 
     fn is_dst(&self, parts: &BoundedDateTimeParts) -> bool {
@@ -115825,6 +115883,9 @@ fn bounded_datetime_timezone_hint(
     default_timezone: &BoundedTimezone,
 ) -> BoundedTimezone {
     let trimmed = input.trim();
+    if trimmed.starts_with('@') {
+        return BoundedTimezone::numeric_fixed_offset(0);
+    }
     if let Some(zone) = bounded_timezone_from_name(trimmed) {
         return zone;
     }
@@ -115896,12 +115957,13 @@ fn bounded_timezone_transitions_array(name: &str, start: i64, end: i64) -> PhpAr
     };
     if timezone.name != "Europe/London" {
         let offset = timezone.offset_at_timestamp(start.max(0));
+        let abbreviation = timezone.abbreviation(&bounded_datetime_parts(start.max(0), offset));
         array
             .append(Value::Array(bounded_timezone_transition_entry(
                 start.max(0),
                 offset,
                 false,
-                timezone.abbreviation(&bounded_datetime_parts(start.max(0), offset)),
+                &abbreviation,
             )))
             .expect("bounded timezone transition append should not exhaust integer keys");
         return array;
@@ -116668,7 +116730,7 @@ fn format_bounded_strftime_token(
         'y' => zero_pad(positive_mod(parts.year, 100), 2),
         'Y' => zero_pad(parts.year, 4),
         'z' => format_timezone_offset(parts.offset, false),
-        'Z' => timezone.abbreviation(parts).to_string(),
+        'Z' => timezone.abbreviation(parts),
         other => format!("%{other}"),
     }
 }
@@ -116782,7 +116844,7 @@ fn format_bounded_date_token(
         }
         'O' => format_timezone_offset(parts.offset, false),
         'P' => format_timezone_offset(parts.offset, true),
-        'T' => timezone.abbreviation(parts).to_string(),
+        'T' => timezone.abbreviation(parts),
         'Z' => parts.offset.to_string(),
         'c' => format!(
             "{}-{}-{}T{}:{}:{}{}",

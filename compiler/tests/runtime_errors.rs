@@ -270,14 +270,30 @@ fn invalid_arithmetic_has_stable_runtime_error() {
 }
 
 #[test]
-fn non_numeric_string_arithmetic_has_stable_runtime_error() {
-    let error = runtime_error("<?php\necho \"abc\" + 1;\n");
+fn non_numeric_string_arithmetic_is_catchable_type_error() {
+    let execution = run_source(
+        "<?php\ntry { echo \"abc\" + 1; } catch (TypeError $e) { echo $e->getMessage(); }\n",
+    )
+    .unwrap();
+    assert_eq!(execution.stdout, "Unsupported operand types: string + int");
 
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 6);
-    assert_eq!(
-        error.message,
-        "invalid arithmetic for +: string is not numeric"
+    let execution =
+        run_source("<?php\nfunction add_bad($value) { echo $value + 1; }\nadd_bad(\"abc\");\n")
+            .unwrap();
+    assert_eq!(execution.exit_code, 255);
+    assert!(
+        execution
+            .stdout
+            .contains("Fatal error: Uncaught TypeError: Unsupported operand types: string + int"),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution
+            .stdout
+            .contains("Stack trace:\n#0 Command line code(3): add_bad('abc')"),
+        "{}",
+        execution.stdout
     );
 }
 
