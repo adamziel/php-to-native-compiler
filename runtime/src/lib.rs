@@ -30468,23 +30468,12 @@ fn array_fill_key_from_value(value: &Value) -> RuntimeResult<ArrayKey> {
         Value::Bool(false) => Ok(ArrayKey::String(String::new())),
         Value::Bool(true) => Ok(ArrayKey::string("1")),
         Value::Int(value) => Ok(ArrayKey::Int(*value)),
-        Value::Float(value)
-            if value.is_finite()
-                && value.fract() == 0.0
-                && *value >= i64::MIN as f64
-                && *value < i64::MAX as f64 =>
-        {
-            Ok(ArrayKey::Int(*value as i64))
-        }
-        Value::Float(_) => Err(RuntimeError::unsupported_call(
-            "array_fill_keys()",
-            "lossy or non-finite float key values are not supported; only null, bool, int, string, and integral finite float key values are implemented",
-        )),
+        Value::Float(value) => Ok(ArrayKey::string(format_php_float_for_string_key(*value))),
         Value::String(value) => Ok(ArrayKey::string(value.clone())),
         other => Err(RuntimeError::unsupported_call(
             "array_fill_keys()",
             format!(
-                "key values must be null, bool, int, string, or integral finite float in the current subset, got {}",
+                "key values must be null, bool, int, float, or string in the current subset, got {}",
                 other.type_name()
             ),
         )),
@@ -77527,6 +77516,34 @@ mod tests {
     }
 
     #[test]
+    fn array_fill_keys_stringifies_float_key_values() {
+        let mut keys = PhpArray::new();
+        keys.append(Value::Float(-0.0)).unwrap();
+        keys.append(Value::Float(0.0)).unwrap();
+        keys.append(Value::Float(1.0)).unwrap();
+        keys.append(Value::Float(1.5)).unwrap();
+        keys.append(Value::Float(-3.25)).unwrap();
+        keys.append(Value::Float(f64::INFINITY)).unwrap();
+        keys.append(Value::Float(f64::NEG_INFINITY)).unwrap();
+        keys.append(Value::Float(f64::NAN)).unwrap();
+
+        let filled = keys
+            .filled_keys(Value::String("filled".to_string()))
+            .unwrap();
+        let entries = filled.entries();
+
+        assert_eq!(entries.len(), 8);
+        assert_eq!(entries[0].key, ArrayKey::String("-0".to_string()));
+        assert_eq!(entries[1].key, ArrayKey::Int(0));
+        assert_eq!(entries[2].key, ArrayKey::Int(1));
+        assert_eq!(entries[3].key, ArrayKey::String("1.5".to_string()));
+        assert_eq!(entries[4].key, ArrayKey::String("-3.25".to_string()));
+        assert_eq!(entries[5].key, ArrayKey::String("INF".to_string()));
+        assert_eq!(entries[6].key, ArrayKey::String("-INF".to_string()));
+        assert_eq!(entries[7].key, ArrayKey::String("NAN".to_string()));
+    }
+
+    #[test]
     fn array_fill_keys_rejects_unsupported_key_value_types() {
         let mut keys = PhpArray::new();
         keys.insert("ok", Value::String("name".to_string()));
@@ -77540,23 +77557,13 @@ mod tests {
             &RuntimeErrorKind::UnsupportedCall {
                 callable: "array_fill_keys()".to_string(),
                 reason:
-                    "key values must be null, bool, int, string, or integral finite float in the current subset, got array"
+                    "key values must be null, bool, int, float, or string in the current subset, got array"
                     .to_string(),
             }
         );
         assert_eq!(
             error.message(),
-            "unsupported call array_fill_keys(): key values must be null, bool, int, string, or integral finite float in the current subset, got array"
-        );
-
-        let mut keys = PhpArray::new();
-        keys.append(Value::Float(1.5)).unwrap();
-        let error = keys
-            .filled_keys(Value::String("filled".to_string()))
-            .unwrap_err();
-        assert_eq!(
-            error.message(),
-            "unsupported call array_fill_keys(): lossy or non-finite float key values are not supported; only null, bool, int, string, and integral finite float key values are implemented"
+            "unsupported call array_fill_keys(): key values must be null, bool, int, float, or string in the current subset, got array"
         );
     }
 

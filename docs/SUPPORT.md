@@ -5457,7 +5457,6 @@
   `array_unique` value comparisons, unsupported `array_unique` sort flags,
   non-array `array_flip` operands, unsupported non-int/string
   `array_flip` values, non-array `array_fill_keys` operands, unsupported
-  lossy or non-finite float `array_fill_keys` key values, unsupported
   non-null/bool/int/string/float `array_fill_keys` key values, non-array
   `array_count_values` operands,
   unsupported non-int/string
@@ -6541,11 +6540,13 @@
   warning per skipped entry, returns the partial flipped array, and is
   available through string-valued dynamic function calls.
   `array_fill_keys($keys, $value)` accepts an array of
-  null/boolean/integer/string/integral-finite-float key values, creates a new
-  ordered array using those values as normalized result keys, stores the
-  supplied value in each result slot, and overwrites duplicate result keys with
-  later entries without moving the first key position. It is also available
-  through string-valued dynamic function calls. `array_count_values($array)` accepts arrays whose values are integers
+  null/boolean/integer/float/string key values, stringifies those scalar key
+  values through the PHP scalar key path, preserves the `-0.0` float key as
+  the string `"-0"`, creates a new ordered array using the normalized result
+  keys, stores the supplied value in each result slot, and overwrites duplicate
+  result keys with later entries without moving the first key position. It is
+  also available through string-valued dynamic function calls.
+  `array_count_values($array)` accepts arrays whose values are integers
   or strings, counts values in insertion order using the current array-key
   normalization rules for string values, stores integer counts as result
   values, and is available through string-valued dynamic function calls.
@@ -6809,7 +6810,6 @@
   `array_unique` value comparisons, unsupported `array_unique` sort flags,
   non-array `array_flip` operands, unsupported non-int/string
   `array_flip` values, non-array `array_fill_keys` operands, unsupported
-  lossy or non-finite float `array_fill_keys` key values, unsupported
   non-null/bool/int/string/float `array_fill_keys` key values, non-array
   `array_count_values` operands,
   unsupported non-int/string
@@ -9196,19 +9196,18 @@
   references/copy-on-write, exact native `TypeError`/warning behavior,
   resource values, and native lowering are not implemented.
   `array_fill_keys($keys, $value)` accepts arrays only for the first argument,
-  maps null and false key values to the empty string key, maps true key values
-  through the string `"1"` key normalization path, uses integer and integral
-  finite float key values directly as integer result keys, normalizes string
-  key values through the current PHP-style decimal string key rules, and
+  stringifies null, boolean, integer, float, and string key values through the
+  PHP scalar key path, preserves `-0.0` as the string key `"-0"`, normalizes
+  decimal string results through the current PHP-style array-key rules, and
   stores the supplied value in every result slot using the current cloned
   `Value` model. Duplicate result keys are overwritten by later key entries
-  without moving the first result-key position. Lossy finite floats,
-  non-finite floats, arrays, objects, and future resources fail with a stable
-  project diagnostic instead of PHP's warning-and-skip behavior. References,
-  copy-on-write containers, object handle identity for object fill values,
-  exact native warning/`TypeError` behavior, and native lowering are not
-  implemented. `array_fill_keys` is also available through string-valued
-  dynamic function calls.
+  without moving the first result-key position. Arrays, objects, and future
+  resources fail with a stable project diagnostic instead of PHP's
+  warning/stringification behavior. References, copy-on-write containers,
+  object handle identity for object fill values, exact native
+  warning/`TypeError` behavior, and native lowering are not implemented.
+  `array_fill_keys` is also available through string-valued dynamic function
+  calls.
   `array_count_values($array)` accepts arrays only, uses integer values
   directly as result keys, normalizes string values through the current
   PHP-style decimal string key rules, and stores integer occurrence counts as
@@ -10428,11 +10427,10 @@
   visibility-context behavior for non-public properties,
   reference/copy-on-write behavior, exact native `TypeError`/warning objects,
   resource values, and native lowering
-- `array_fill_keys` lossy or non-finite float stringification,
-  warning-and-skip behavior for unsupported key values, array/object/resource
-  key values, reference/copy-on-write behavior, object handle identity for
-  object fill values, exact native warning/`TypeError` objects, resource
-  values, and native lowering
+- `array_fill_keys` warning/stringification behavior for unsupported
+  array/object/resource key values, reference/copy-on-write behavior, object
+  handle identity for object fill values, exact native warning/`TypeError`
+  objects, resource values, and native lowering
 - `array_count_values` warning-and-skip behavior for unsupported values,
   reference/copy-on-write behavior, exact native warning/`TypeError` objects,
   resource values, and native lowering

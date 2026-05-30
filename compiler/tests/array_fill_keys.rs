@@ -83,20 +83,26 @@ fn array_fill_keys_rejects_unsupported_key_value_types() {
     assert_eq!(error.column, 6);
     assert_eq!(
         error.message,
-        "unsupported call array_fill_keys(): key values must be null, bool, int, string, or integral finite float in the current subset, got array"
+        "unsupported call array_fill_keys(): key values must be null, bool, int, float, or string in the current subset, got array"
     );
 }
 
 #[test]
-fn array_fill_keys_rejects_lossy_float_key_values() {
-    let error = runtime_error("<?php\n$keys = [1.5];\necho array_fill_keys($keys, \"value\");\n");
+fn array_fill_keys_stringifies_float_key_values() {
+    let source = r#"<?php
+$keys = [-0.0, 0.0, 1.0, 1.5, -3.25, INF, -INF, NAN];
+$filled = array_fill_keys($keys, "x");
+print_r($filled);
+echo count($filled), "\n";
+echo $filled["-0"], "|", $filled[0], "|", $filled[1], "|", $filled["1.5"], "|", $filled["-3.25"], "|", $filled["INF"], "|", $filled["-INF"], "|", $filled["NAN"];
+"#;
 
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 6);
+    let execution = run_source(source).unwrap();
     assert_eq!(
-        error.message,
-        "unsupported call array_fill_keys(): lossy or non-finite float key values are not supported; only null, bool, int, string, and integral finite float key values are implemented"
+        execution.stdout,
+        "Array\n(\n    [-0] => x\n    [0] => x\n    [1] => x\n    [1.5] => x\n    [-3.25] => x\n    [INF] => x\n    [-INF] => x\n    [NAN] => x\n)\n8\nx|x|x|x|x|x|x|x"
     );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
