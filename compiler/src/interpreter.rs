@@ -78400,6 +78400,7 @@ impl Interpreter {
                 ),
             )),
             "parse_url" => call_parse_url(&args, span),
+            "http_build_query" => call_http_build_query(&args, span),
             "urlencode" => call_urlencode(&args, span),
             "rawurlencode" => call_rawurlencode(&args, span),
             "rawurldecode" => call_rawurldecode(&args, span),
@@ -96348,6 +96349,7 @@ fn is_builtin(name: &str) -> bool {
             | "str_getcsv"
             | "parse_str"
             | "parse_url"
+            | "http_build_query"
             | "urlencode"
             | "rawurlencode"
             | "rawurldecode"
@@ -97446,6 +97448,8 @@ const PHP_URL_PASS: i64 = 4;
 const PHP_URL_PATH: i64 = 5;
 const PHP_URL_QUERY: i64 = 6;
 const PHP_URL_FRAGMENT: i64 = 7;
+const PHP_QUERY_RFC1738: i64 = 1;
+const PHP_QUERY_RFC3986: i64 = 2;
 const PHP_SCANDIR_SORT_ASCENDING: i64 = 0;
 const PHP_SCANDIR_SORT_DESCENDING: i64 = 1;
 const PHP_SCANDIR_SORT_NONE: i64 = 2;
@@ -97848,6 +97852,8 @@ const BUILTIN_GLOBAL_CONSTANT_NAMES: &[&str] = &[
     "PHP_URL_PATH",
     "PHP_URL_QUERY",
     "PHP_URL_FRAGMENT",
+    "PHP_QUERY_RFC1738",
+    "PHP_QUERY_RFC3986",
     "SCANDIR_SORT_ASCENDING",
     "SCANDIR_SORT_DESCENDING",
     "SCANDIR_SORT_NONE",
@@ -98075,6 +98081,8 @@ fn builtin_global_constant_value(name: &str) -> Option<Value> {
         "PHP_URL_PATH" => Some(Value::Int(PHP_URL_PATH)),
         "PHP_URL_QUERY" => Some(Value::Int(PHP_URL_QUERY)),
         "PHP_URL_FRAGMENT" => Some(Value::Int(PHP_URL_FRAGMENT)),
+        "PHP_QUERY_RFC1738" => Some(Value::Int(PHP_QUERY_RFC1738)),
+        "PHP_QUERY_RFC3986" => Some(Value::Int(PHP_QUERY_RFC3986)),
         "SCANDIR_SORT_ASCENDING" => Some(Value::Int(PHP_SCANDIR_SORT_ASCENDING)),
         "SCANDIR_SORT_DESCENDING" => Some(Value::Int(PHP_SCANDIR_SORT_DESCENDING)),
         "SCANDIR_SORT_NONE" => Some(Value::Int(PHP_SCANDIR_SORT_NONE)),
@@ -111872,6 +111880,175 @@ fn call_urlencode(args: &[Value], span: Span) -> CompileResult<Value> {
     expect_arity("urlencode", args, 1, span)?;
     let value = string_contains_argument("urlencode()", "string", &args[0], span)?;
     Ok(Value::String(form_urlencode_component(&value)))
+}
+
+#[derive(Clone, Copy)]
+enum HttpQueryEncoding {
+    Rfc1738,
+    Rfc3986,
+}
+
+fn call_http_build_query(args: &[Value], span: Span) -> CompileResult<Value> {
+    if !(1..=4).contains(&args.len()) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "http_build_query()",
+                ArityExpectation::Between { min: 1, max: 4 },
+                args.len(),
+            ),
+        ));
+    }
+
+    let root = match &args[0] {
+        Value::Array(array) => array.clone(),
+        Value::Object(object) => public_object_properties_for_http_query(object),
+        other => {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "http_build_query()",
+                    format!(
+                        "data argument must be array or object in the current subset, got {}",
+                        other.type_name()
+                    ),
+                ),
+            ));
+        }
+    };
+
+    let numeric_prefix = match args.get(1) {
+        Some(value) => {
+            string_contains_argument("http_build_query()", "numeric_prefix", value, span)?
+        }
+        None => String::new(),
+    };
+    let separator = match args.get(2) {
+        Some(Value::Null) | None => "&".to_string(),
+        Some(value) => {
+            string_contains_argument("http_build_query()", "arg_separator", value, span)?
+        }
+    };
+    let encoding = match args.get(3) {
+        None => HttpQueryEncoding::Rfc1738,
+        Some(value) => {
+            let encoding_type =
+                php_internal_int_argument("http_build_query()", 4, "encoding_type", value, span)?;
+            match encoding_type {
+                PHP_QUERY_RFC1738 => HttpQueryEncoding::Rfc1738,
+                PHP_QUERY_RFC3986 => HttpQueryEncoding::Rfc3986,
+                other => {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "http_build_query()",
+                            format!(
+                                "encoding_type must be PHP_QUERY_RFC1738 or PHP_QUERY_RFC3986 in the current subset, got {other}"
+                            ),
+                        ),
+                    ));
+                }
+            }
+        }
+    };
+
+    let mut pairs = Vec::new();
+    for entry in root.entries() {
+        let key = http_query_top_level_key(&entry.key, &numeric_prefix);
+        collect_http_query_pairs(key, &entry.value_cloned(), &mut pairs, encoding, span)?;
+    }
+
+    Ok(Value::String(pairs.join(&separator)))
+}
+
+fn public_object_properties_for_http_query(object: &PhpObject) -> PhpArray {
+    let mut array = PhpArray::new();
+    for property in object.properties() {
+        if property.visibility() == Visibility::Public && property.is_initialized() {
+            array.insert(
+                ArrayKey::String(property.name().to_string()),
+                property.value_cloned(),
+            );
+        }
+    }
+    array
+}
+
+fn http_query_top_level_key(key: &ArrayKey, numeric_prefix: &str) -> String {
+    match key {
+        ArrayKey::Int(value) => format!("{numeric_prefix}{value}"),
+        ArrayKey::String(value) => value.clone(),
+    }
+}
+
+fn http_query_child_key(parent: &str, key: &ArrayKey) -> String {
+    format!("{parent}[{}]", key.display_key())
+}
+
+fn collect_http_query_pairs(
+    key: String,
+    value: &Value,
+    pairs: &mut Vec<String>,
+    encoding: HttpQueryEncoding,
+    span: Span,
+) -> CompileResult<()> {
+    match value {
+        Value::Null | Value::Resource(_) => Ok(()),
+        Value::Array(array) => {
+            for entry in array.entries() {
+                collect_http_query_pairs(
+                    http_query_child_key(&key, &entry.key),
+                    &entry.value_cloned(),
+                    pairs,
+                    encoding,
+                    span,
+                )?;
+            }
+            Ok(())
+        }
+        Value::Object(object) => {
+            let array = public_object_properties_for_http_query(object);
+            for entry in array.entries() {
+                collect_http_query_pairs(
+                    http_query_child_key(&key, &entry.key),
+                    &entry.value_cloned(),
+                    pairs,
+                    encoding,
+                    span,
+                )?;
+            }
+            Ok(())
+        }
+        Value::Closure(_) => Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "http_build_query()",
+                "closure values are not supported in query data in the current subset",
+            ),
+        )),
+        _ => {
+            let encoded_key = http_query_encode_component(&key, encoding);
+            let encoded_value =
+                http_query_encode_component(&http_query_scalar_string(value), encoding);
+            pairs.push(format!("{encoded_key}={encoded_value}"));
+            Ok(())
+        }
+    }
+}
+
+fn http_query_scalar_string(value: &Value) -> String {
+    match value {
+        Value::Bool(false) => "0".to_string(),
+        Value::Bool(true) => "1".to_string(),
+        _ => value.echo_string(),
+    }
+}
+
+fn http_query_encode_component(value: &str, encoding: HttpQueryEncoding) -> String {
+    match encoding {
+        HttpQueryEncoding::Rfc1738 => form_urlencode_component(value),
+        HttpQueryEncoding::Rfc3986 => raw_urlencode_bytes(value.as_bytes()),
+    }
 }
 
 fn call_rawurlencode(args: &[Value], span: Span) -> CompileResult<Value> {
