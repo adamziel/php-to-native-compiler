@@ -66001,6 +66001,8 @@ fn is_array_builtin(name: &str) -> bool {
             | "array_values"
             | "array_key_first"
             | "array_key_last"
+            | "array_first"
+            | "array_last"
             | "current"
             | "key"
             | "next"
@@ -66408,6 +66410,8 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "array_values",
     "array_key_first",
     "array_key_last",
+    "array_first",
+    "array_last",
     "current",
     "key",
     "next",

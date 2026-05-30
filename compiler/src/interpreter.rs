@@ -75493,13 +75493,15 @@ impl Interpreter {
         }
     }
 
-    fn format_var_dump(&self, value: &Value, span: Span) -> CompileResult<String> {
+    fn format_var_dump_bytes(&self, value: &Value, span: Span) -> CompileResult<Vec<u8>> {
         if let Value::Object(object) = value {
             if self.is_spl_object_storage_object(object) {
-                return self.format_spl_object_storage_var_dump(object, 0, span);
+                return self
+                    .format_spl_object_storage_var_dump(object, 0, span)
+                    .map(String::into_bytes);
             }
         }
-        format_var_dump_with_resource_type(value, span, |id| self.resource_type_label(id))
+        format_var_dump_bytes_with_resource_type(value, span, |id| self.resource_type_label(id))
     }
 
     fn format_spl_object_storage_var_dump(
@@ -77654,6 +77656,40 @@ impl Interpreter {
                         span,
                         RuntimeError::unsupported_call(
                             "array_key_last()",
+                            format!("argument must be array, got {}", other.type_name()),
+                        ),
+                    )),
+                }
+            }
+            "array_first" => {
+                expect_arity(name, &args, 1, span)?;
+                match &args[0] {
+                    Value::Array(array) => Ok(array
+                        .entries()
+                        .first()
+                        .map(|entry| entry.value_cloned())
+                        .unwrap_or(Value::Null)),
+                    other => Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "array_first()",
+                            format!("argument must be array, got {}", other.type_name()),
+                        ),
+                    )),
+                }
+            }
+            "array_last" => {
+                expect_arity(name, &args, 1, span)?;
+                match &args[0] {
+                    Value::Array(array) => Ok(array
+                        .entries()
+                        .last()
+                        .map(|entry| entry.value_cloned())
+                        .unwrap_or(Value::Null)),
+                    other => Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "array_last()",
                             format!("argument must be array, got {}", other.type_name()),
                         ),
                     )),
@@ -80528,8 +80564,8 @@ impl Interpreter {
             },
             "var_dump" => {
                 for value in &args {
-                    let output = self.format_var_dump(value, span)?;
-                    self.append_output_at(&output, span);
+                    let output = self.format_var_dump_bytes(value, span)?;
+                    self.append_output_bytes_at(&output, span);
                 }
                 Ok(Value::Null)
             }
@@ -94672,6 +94708,8 @@ fn is_builtin(name: &str) -> bool {
             | "array_values"
             | "array_key_first"
             | "array_key_last"
+            | "array_first"
+            | "array_last"
             | "current"
             | "key"
             | "prev"
@@ -108941,7 +108979,7 @@ fn json_encode_value(value: &Value, span: Span) -> CompileResult<String> {
                 if index > 0 {
                     output.push(',');
                 }
-                output.push_str(&json_encode_value(entry.value(), span)?);
+                output.push_str(&json_encode_value(&entry.value_cloned(), span)?);
             }
             output.push(']');
             output
@@ -108958,7 +108996,7 @@ fn json_encode_value(value: &Value, span: Span) -> CompileResult<String> {
                 };
                 output.push_str(&json_quote_string(&key));
                 output.push(':');
-                output.push_str(&json_encode_value(entry.value(), span)?);
+                output.push_str(&json_encode_value(&entry.value_cloned(), span)?);
             }
             output.push('}');
             output
@@ -109742,6 +109780,9 @@ impl Interpreter {
 
 impl SprintfPlaceholder {
     fn effective_width_pad(&self, _precision: SprintfPrecision) -> char {
+        if self.left_align {
+            return ' ';
+        }
         self.pad
     }
 }
@@ -109827,7 +109868,9 @@ impl Interpreter {
             Value::Null => Ok(0),
             Value::Bool(value) => Ok(i64::from(*value)),
             Value::Int(value) => Ok(*value),
-            Value::Float(value) if value.is_finite() => Ok(*value as i64),
+            Value::Float(value) if value.is_finite() => {
+                self.sprintf_float_to_int_argument(*value, span)
+            }
             Value::String(value) => Ok(parse_sprintf_numeric_string(value).unwrap_or(0.0) as i64),
             Value::BinaryString(value) => Ok(std::str::from_utf8(value)
                 .ok()
@@ -109860,6 +109903,23 @@ impl Interpreter {
                 ),
             )),
         }
+    }
+
+    fn sprintf_float_to_int_argument(&mut self, value: f64, span: Span) -> CompileResult<i64> {
+        if value >= i64::MIN as f64 && value < 9_223_372_036_854_775_808.0 {
+            return Ok(value as i64);
+        }
+
+        self.emit_display_warning(
+            format!(
+                "The float {} is not representable as an int, cast occurred",
+                php_default_precision_float_string(value)
+            ),
+            span,
+        )?;
+
+        let modulo = value.trunc().rem_euclid(18_446_744_073_709_551_616.0);
+        Ok((modulo as u64) as i64)
     }
 
     fn sprintf_float_argument(
@@ -118208,15 +118268,15 @@ fn materialize_generator_yields(
     Ok(yields)
 }
 
-fn format_var_dump_with_resource_type<F>(
+fn format_var_dump_bytes_with_resource_type<F>(
     value: &Value,
     span: Span,
     resource_type: F,
-) -> CompileResult<String>
+) -> CompileResult<Vec<u8>>
 where
     F: Fn(i64) -> &'static str,
 {
-    format_var_dump_with_indent(value, 0, span, &resource_type)
+    format_var_dump_bytes_with_indent(value, 0, span, &resource_type)
 }
 
 fn format_var_dump_with_indent<F>(
@@ -118292,6 +118352,73 @@ where
     })
 }
 
+fn format_var_dump_bytes_with_indent<F>(
+    value: &Value,
+    indent: usize,
+    span: Span,
+    resource_type: &F,
+) -> CompileResult<Vec<u8>>
+where
+    F: Fn(i64) -> &'static str,
+{
+    let padding = "  ".repeat(indent);
+    match value {
+        Value::BinaryString(value) => {
+            let mut output = format!("{padding}string({}) \"", value.len()).into_bytes();
+            output.extend_from_slice(value);
+            output.extend_from_slice(b"\"\n");
+            Ok(output)
+        }
+        Value::Array(value) => {
+            let mut output = format!("{padding}array({}) {{\n", value.len()).into_bytes();
+            for entry in value.entries() {
+                output.extend_from_slice(
+                    format!("{padding}  [{}]=>\n", format_var_dump_key(&entry.key)).as_bytes(),
+                );
+                output.extend_from_slice(&format_var_dump_array_entry_bytes(
+                    entry,
+                    indent + 1,
+                    span,
+                    resource_type,
+                )?);
+            }
+            output.extend_from_slice(format!("{padding}}}\n").as_bytes());
+            Ok(output)
+        }
+        Value::Object(value) => {
+            let properties = display_object_properties(value);
+            let mut output = format!(
+                "{padding}object({})#{} ({}) {{\n",
+                value.class_name(),
+                value.id(),
+                properties.len()
+            )
+            .into_bytes();
+            for property in properties {
+                output.extend_from_slice(
+                    format!(
+                        "{padding}  [{}]=>\n",
+                        format_var_dump_object_property(&property)
+                    )
+                    .as_bytes(),
+                );
+                let property_value = property.value_cloned();
+                output.extend_from_slice(&format_var_dump_bytes_with_indent(
+                    &property_value,
+                    indent + 1,
+                    span,
+                    resource_type,
+                )?);
+            }
+            output.extend_from_slice(format!("{padding}}}\n").as_bytes());
+            Ok(output)
+        }
+        _ => {
+            format_var_dump_with_indent(value, indent, span, resource_type).map(String::into_bytes)
+        }
+    }
+}
+
 fn format_var_dump_array_entry<F>(
     entry: &ArrayEntry,
     indent: usize,
@@ -118307,6 +118434,26 @@ where
         let padding = "  ".repeat(indent);
         if output.starts_with(&padding) {
             output.insert(padding.len(), '&');
+        }
+    }
+    Ok(output)
+}
+
+fn format_var_dump_array_entry_bytes<F>(
+    entry: &ArrayEntry,
+    indent: usize,
+    span: Span,
+    resource_type: &F,
+) -> CompileResult<Vec<u8>>
+where
+    F: Fn(i64) -> &'static str,
+{
+    let value = entry.value_cloned();
+    let mut output = format_var_dump_bytes_with_indent(&value, indent, span, resource_type)?;
+    if entry.slot().is_reference() {
+        let padding = "  ".repeat(indent).into_bytes();
+        if output.starts_with(&padding) {
+            output.insert(padding.len(), b'&');
         }
     }
     Ok(output)

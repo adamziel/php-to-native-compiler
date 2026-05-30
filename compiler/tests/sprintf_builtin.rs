@@ -142,6 +142,45 @@ echo sprintf("%b|%u|%x|%X|%o", -1, -1, -2, -2, -1);
 }
 
 #[test]
+fn sprintf_formatter_residuals_cover_padding_float_overflow_and_binary_var_dump() {
+    let execution = run_source(
+        r#"<?php
+echo sprintf("%-07.2d", 1234), "\n";
+echo vprintf("%10.4u", [10e20]), "\n";
+var_dump(sprintf("%c", 0xd2));
+"#,
+    )
+    .unwrap();
+
+    assert!(
+        execution.stdout.contains("1234   \n"),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution
+            .stdout
+            .contains("Warning: The float 1.0E+21 is not representable as an int, cast occurred"),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution.stdout.contains("3875820019684212736"),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution
+            .stdout_bytes
+            .windows(b"string(1) \"\xd2\"\n".len())
+            .any(|window| window == b"string(1) \"\xd2\"\n"),
+        "{:?}",
+        execution.stdout_bytes
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn json_encode_covers_current_formatter_descriptor_values() {
     let execution = run_source(
         r#"<?php
