@@ -66365,6 +66365,7 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "soundex",
     "count_chars",
     "strrev",
+    "str_shuffle",
     "str_rot13",
     "ucfirst",
     "lcfirst",

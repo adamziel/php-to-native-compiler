@@ -116,7 +116,7 @@ foreach (["pack", "unpack"] as $name) {
 fn string_residual_metadata_is_available_for_capability_checks() {
     let execution = run_source(
         r#"<?php
-foreach (["strrev", "str_rot13", "hex2bin", "pack", "unpack", "ord", "quotemeta", "nl2br", "ucfirst", "lcfirst", "ucwords"] as $name) {
+foreach (["strrev", "str_shuffle", "str_rot13", "hex2bin", "pack", "unpack", "ord", "quotemeta", "nl2br", "ucfirst", "lcfirst", "ucwords"] as $name) {
     echo function_exists($name) ? "1" : "0";
     echo is_callable($name) ? "1" : "0";
     $fn = new ReflectionFunction($name);
@@ -128,8 +128,34 @@ foreach (["strrev", "str_rot13", "hex2bin", "pack", "unpack", "ord", "quotemeta"
 
     assert_eq!(
         execution.stdout,
-        "11:1/1;11:1/1;11:1/1;11:1/2;11:2/3;11:1/1;11:1/1;11:1/2;11:1/1;11:1/1;11:1/2;"
+        "11:1/1;11:1/1;11:1/1;11:1/1;11:1/2;11:2/3;11:1/1;11:1/1;11:1/2;11:1/1;11:1/1;11:1/2;"
     );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn str_shuffle_preserves_bytes_and_cycles_small_permutations() {
+    let execution = run_source(
+        r#"<?php
+$seen = [];
+for ($i = 0; $i < 30; $i++) {
+    $value = str_shuffle("abcd");
+    if (!is_string($value) || strlen($value) !== 4) {
+        echo "bad";
+    }
+    $seen[$value] = true;
+}
+echo count($seen), "|";
+$binary = str_shuffle("A" . chr(0) . "B");
+echo strlen($binary), ":", substr_count($binary, "A"), ":", substr_count($binary, chr(0)), ":", substr_count($binary, "B"), "|";
+$call = "str_shuffle";
+echo strlen($call("abc"));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "24|3:1:1:1|3");
+    assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);
 }
 
@@ -138,13 +164,14 @@ fn emit_ir_folds_string_residual_function_metadata() {
     let ir = emit_ir_source(
         r#"<?php
 echo function_exists("strrev") ? "1" : "0";
+echo function_exists("str_shuffle") ? "1" : "0";
 echo function_exists("hex2bin") ? "1" : "0";
 echo is_callable("ucwords") ? "1" : "0";
 "#,
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 3, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 4, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("ucwords"), "{ir}");
 }

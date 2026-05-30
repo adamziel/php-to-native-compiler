@@ -3161,7 +3161,7 @@
   properties
 - builtins for the documented subset: `strlen`, `chr`, `strtolower`, `strtoupper`, `trim`, `ltrim`,
   `rtrim`, `strcasecmp`, `strncmp`, `strncasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`, `strspn`, `strcspn`, `strpbrk`, `strpos`, `stripos`, `strrpos`, `strripos`, `strstr`, `strchr`, `stristr`, `strtok`, `substr`,
-  `wordwrap`, `str_word_count`, `strnatcmp`, `strnatcasecmp`,
+  `str_shuffle`, `wordwrap`, `str_word_count`, `strnatcmp`, `strnatcasecmp`,
   `similar_text`,
   `convert_uuencode`, `convert_uudecode`,
   `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `substr_replace`, `substr_compare`, `substr_count`, `str_getcsv`, `parse_str`,
@@ -3609,13 +3609,16 @@
   Array/object/resource coercions, empty delimiter diagnostics, broader binary
   edge cases, request isolation beyond one interpreter execution, and native
   lowering remain unsupported.
-  `wordwrap()` supports scalar/null string-convertible input, integer width,
-  non-empty string break values, and the `cut_long_words` flag over current
-  byte strings. `str_word_count()` supports formats `0`, `1`, and `2` with the
-  current ASCII letter rules, literal extra character bytes, and PHP-shaped
-  apostrophe/hyphen word-run handling, including whole-string leading
-  apostrophe/hyphen and trailing hyphen boundaries unless those bytes are in
-  the extra character list.
+  `str_shuffle()` supports scalar/null string-convertible input and returns a
+  deterministic byte permutation sequence that preserves the input byte
+  multiset and cycles through all small-string permutations. It is not
+  PHP-random-state compatible. `wordwrap()` supports scalar/null
+  string-convertible input, integer width, non-empty string break values, and
+  the `cut_long_words` flag over current byte strings. `str_word_count()`
+  supports formats `0`, `1`, and `2` with the current ASCII letter rules,
+  literal extra character bytes, and PHP-shaped apostrophe/hyphen word-run
+  handling, including whole-string leading apostrophe/hyphen and trailing
+  hyphen boundaries unless those bytes are in the extra character list.
   `strnatcmp()` and `strnatcasecmp()` support scalar/null string-convertible
   operands using the current byte-oriented natural comparison, with ASCII case
   folding for the case-insensitive form. `similar_text($string1, $string2,
@@ -7787,7 +7790,7 @@
   to a string that case-insensitively resolves exactly to a user-defined function or to
   one of the documented callable builtins: `strlen`, `strtolower`, `strtoupper`,
   `str_increment`, `str_decrement`, `trim`, `ltrim`, `rtrim`, `strcasecmp`, `strncmp`, `strncasecmp`,
-  `str_contains`, `str_starts_with`, `str_ends_with`, `strspn`, `strcspn`, `strpbrk`, `strpos`, `stripos`, `strrpos`, `strripos`, `strstr`, `strchr`, `stristr`, `strtok`, `substr`, `wordwrap`, `str_word_count`, `strnatcmp`, `strnatcasecmp`, `similar_text`, `convert_uuencode`, `convert_uudecode`, `substr_replace`, `substr_compare`, `substr_count`, `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `str_getcsv`, `error_reporting`,
+  `str_contains`, `str_starts_with`, `str_ends_with`, `strspn`, `strcspn`, `strpbrk`, `strpos`, `stripos`, `strrpos`, `strripos`, `strstr`, `strchr`, `stristr`, `strtok`, `substr`, `str_shuffle`, `wordwrap`, `str_word_count`, `strnatcmp`, `strnatcasecmp`, `similar_text`, `convert_uuencode`, `convert_uudecode`, `substr_replace`, `substr_compare`, `substr_count`, `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `str_getcsv`, `error_reporting`,
   `printf`, `fprintf`, `sprintf`, `vsprintf`, `vprintf`, `vfprintf`, `call_user_func`, `call_user_func_array`, `implode`, `basename`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`,
   `file_put_contents`, `readfile`, `unlink`, `mkdir`, `rmdir`, `copy`, `rename`, `chdir`, `scandir`, `stat`, `lstat`, `fileperms`, `chmod`,
   `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_params`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `stream_context_set_params`, `fwrite`, `fscanf`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fflush`, `ftruncate`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`, `disk_free_space`, `diskfreespace`, `disk_total_space`, `clearstatcache`, `realpath`, `realpath_cache_get`, `realpath_cache_size`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_executable`, `is_link`, `abs`,
@@ -8853,7 +8856,7 @@
   `new ReflectionFunction(...)` for `strlen`, `strtolower`, `strtoupper`,
   `str_increment`, `str_decrement`, `trim`, `ltrim`,
   `rtrim`, `strcasecmp`, `strncmp`, `strncasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`,
-  `strpos`, `stripos`, `strrpos`, `strripos`, `substr`, `printf`, `fprintf`, `sprintf`, `vprintf`, `vfprintf`, `implode`, `basename`, `dirname`, `defined`,
+  `strpos`, `stripos`, `strrpos`, `strripos`, `substr`, `str_shuffle`, `printf`, `fprintf`, `sprintf`, `vprintf`, `vfprintf`, `implode`, `basename`, `dirname`, `defined`,
   `function_exists`, `is_array`, `is_object`, `is_string`, `is_scalar`,
   `count`, `sizeof`, `array_key_exists`, `is_callable`, `get_current_user`, and `php_sapi_name`, exposes
   their name, false file/start/end/doc-comment metadata, current
@@ -10652,7 +10655,7 @@
   by-value invocation for `strlen`, `strtolower`, `strtoupper`,
   `str_increment`, `str_decrement`, `trim`, `ltrim`, `rtrim`,
   `strcasecmp`, `strncmp`, `strncasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`, `strpos`, `stripos`, `strrpos`, `strripos`,
-  `substr`, `printf`, `fprintf`, `sprintf`, `vprintf`, `vfprintf`, `implode`, `basename`, `dirname`, `defined`,
+  `substr`, `str_shuffle`, `printf`, `fprintf`, `sprintf`, `vprintf`, `vfprintf`, `implode`, `basename`, `dirname`, `defined`,
   `function_exists`, `get_current_user`, and `php_sapi_name`. Closure metadata is supported for
   current closure values. The supported
   metadata methods are the name, file/start/end/doc-comment, parameter-list,

@@ -5,6 +5,7 @@ use std::fs;
 use std::io::{ErrorKind, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use hmac::{Hmac, Mac};
@@ -78330,6 +78331,7 @@ impl Interpreter {
                 self.call_ctype("ctype_xdigit()", &args, ctype_byte_is_xdigit, span)
             }
             "strrev" => call_strrev(&args, span),
+            "str_shuffle" => call_str_shuffle(&args, span),
             "str_rot13" => call_str_rot13(&args, span),
             "ucfirst" => call_ucfirst(&args, span),
             "lcfirst" => call_lcfirst(&args, span),
@@ -92468,7 +92470,7 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
         "ctype_alnum" | "ctype_alpha" | "ctype_cntrl" | "ctype_digit" | "ctype_graph"
         | "ctype_lower" | "ctype_print" | "ctype_punct" | "ctype_space" | "ctype_upper"
         | "ctype_xdigit" => ("bool", vec![reflection_internal_param("text", "mixed")]),
-        "strrev" | "str_rot13" | "ucfirst" | "lcfirst" | "quotemeta" => (
+        "strrev" | "str_shuffle" | "str_rot13" | "ucfirst" | "lcfirst" | "quotemeta" => (
             "string",
             vec![reflection_internal_param("string", "string")],
         ),
@@ -96262,6 +96264,7 @@ fn is_builtin(name: &str) -> bool {
             | "ctype_upper"
             | "ctype_xdigit"
             | "strrev"
+            | "str_shuffle"
             | "str_rot13"
             | "ucfirst"
             | "lcfirst"
@@ -105306,6 +105309,53 @@ fn call_strrev(args: &[Value], span: Span) -> CompileResult<Value> {
     let mut value = string_compare_argument_bytes("strrev()", "string", &args[0], span)?;
     value.reverse();
     Ok(interpreter_value_from_php_string_bytes(value))
+}
+
+static STR_SHUFFLE_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+fn call_str_shuffle(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("str_shuffle", args, 1, span)?;
+
+    let value = string_compare_argument_bytes("str_shuffle()", "string", &args[0], span)?;
+    Ok(interpreter_value_from_php_string_bytes(shuffle_bytes(
+        value,
+    )))
+}
+
+fn shuffle_bytes(mut value: Vec<u8>) -> Vec<u8> {
+    let len = value.len();
+    if len <= 1 {
+        return value;
+    }
+
+    let counter = STR_SHUFFLE_COUNTER.fetch_add(1, AtomicOrdering::Relaxed);
+    if len <= 8 {
+        let mut factorial = 1_u64;
+        for n in 2..=len as u64 {
+            factorial *= n;
+        }
+
+        let mut rank = counter % factorial;
+        let mut remaining = value;
+        let mut output = Vec::with_capacity(len);
+        for divisor in (1..=len).rev() {
+            let fact = (1..divisor as u64).product::<u64>().max(1);
+            let index = (rank / fact) as usize;
+            rank %= fact;
+            output.push(remaining.remove(index));
+        }
+        return output;
+    }
+
+    let mut state = counter ^ ((len as u64) << 32) ^ 0x9e37_79b9_7f4a_7c15;
+    for index in (1..len).rev() {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        let swap_with = (state as usize) % (index + 1);
+        value.swap(index, swap_with);
+    }
+    value
 }
 
 fn call_str_rot13(args: &[Value], span: Span) -> CompileResult<Value> {
