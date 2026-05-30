@@ -66271,6 +66271,8 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "hexdec",
     "base_convert",
     "crc32",
+    "sha1",
+    "sha1_file",
     "soundex",
     "count_chars",
     "strrev",

@@ -72269,6 +72269,67 @@ impl Interpreter {
         Ok(Value::Int(data.len() as i64))
     }
 
+    fn call_sha1_file(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(1..=2).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "sha1_file()",
+                    ArityExpectation::Between { min: 1, max: 2 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        if matches!(args[0], Value::Null) {
+            self.emit_display_diagnostic(
+                "Deprecated",
+                PHP_E_DEPRECATED,
+                "sha1_file(): Passing null to parameter #1 ($filename) of type string is deprecated",
+                span,
+            )?;
+        }
+        let path = self.filesystem_filename_argument("sha1_file", &args[0], span)?;
+        let raw_output = digest_binary_argument("sha1_file()", args.get(1), span)?;
+        if !self.ensure_stream_wrapper_can_open_path("sha1_file()", &path, span)? {
+            return Ok(Value::Bool(false));
+        }
+        let filesystem_path = if let Some(file_url_path) = bounded_local_file_url_path(&path) {
+            file_url_path.map_err(|message| {
+                runtime_error(span, RuntimeError::unsupported_call("sha1_file()", message))
+            })?
+        } else if path.contains("://") {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "sha1_file()",
+                    "only local file:// URLs and local file paths are supported in the current stream-wrapper subset",
+                ),
+            ));
+        } else {
+            self.resolve_file_get_contents_path(&path, false)
+        };
+        if !self.enforce_bounded_open_basedir("sha1_file()", &path, &filesystem_path, span)? {
+            return Ok(Value::Bool(false));
+        }
+
+        let contents = match fs::read(&filesystem_path) {
+            Ok(contents) => contents,
+            Err(error) => {
+                self.emit_display_warning(
+                    format!(
+                        "sha1_file({path}): Failed to open stream: {}",
+                        php_filesystem_open_error_message(&error)
+                    ),
+                    span,
+                )?;
+                return Ok(Value::Bool(false));
+            }
+        };
+        self.cache_bounded_realpath_entry_for_local_path(&filesystem_path);
+        Ok(sha1_output_value(&contents, raw_output))
+    }
+
     fn call_readfile(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         if args.is_empty() || args.len() > 3 {
             return Err(runtime_error(
@@ -77319,6 +77380,8 @@ impl Interpreter {
             "base_convert" => self.call_base_convert(&args, span),
             "crc32" => call_crc32(&args, span),
             "md5" => call_md5(&args, span),
+            "sha1" => call_sha1(&args, span),
+            "sha1_file" => self.call_sha1_file(&args, span),
             "levenshtein" => call_levenshtein(&args, span),
             "soundex" => call_soundex(&args, span),
             "count_chars" => call_count_chars(&args, span),
@@ -91152,6 +91215,20 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_optional_bool_param("binary", false),
             ],
         ),
+        "sha1" => (
+            "string",
+            vec![
+                reflection_internal_param("string", "string"),
+                reflection_internal_optional_bool_param("binary", false),
+            ],
+        ),
+        "sha1_file" => (
+            "string|false",
+            vec![
+                reflection_internal_param("filename", "string"),
+                reflection_internal_optional_bool_param("binary", false),
+            ],
+        ),
         "levenshtein" => (
             "int",
             vec![
@@ -94429,14 +94506,15 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
             Some(format!("{function}: {message}"))
         }
         (
-            "file_get_contents()" | "file_put_contents()" | "readfile()",
+            "file_get_contents()" | "file_put_contents()" | "readfile()" | "sha1_file()",
             "Argument #1 ($filename) must not contain any null bytes",
         ) => {
             Some(format!("{function}: {message}"))
         }
-        ("file_get_contents()" | "file_put_contents()" | "readfile()", "Path must not be empty") => {
-            Some("Path must not be empty".to_string())
-        }
+        (
+            "file_get_contents()" | "file_put_contents()" | "readfile()" | "sha1_file()",
+            "Path must not be empty",
+        ) => Some("Path must not be empty".to_string()),
         (
             "file_get_contents()",
             "Argument #5 ($length) must be greater than or equal to 0",
@@ -94785,6 +94863,8 @@ fn is_builtin(name: &str) -> bool {
             | "base_convert"
             | "crc32"
             | "md5"
+            | "sha1"
+            | "sha1_file"
             | "levenshtein"
             | "soundex"
             | "count_chars"
@@ -103225,6 +103305,125 @@ fn call_md5(args: &[Value], span: Span) -> CompileResult<Value> {
     } else {
         Ok(Value::String(hex_bytes(&digest)))
     }
+}
+
+fn call_sha1(args: &[Value], span: Span) -> CompileResult<Value> {
+    if !(1..=2).contains(&args.len()) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "sha1()",
+                ArityExpectation::Between { min: 1, max: 2 },
+                args.len(),
+            ),
+        ));
+    }
+
+    let value = string_compare_argument_bytes("sha1()", "string", &args[0], span)?;
+    let raw_output = digest_binary_argument("sha1()", args.get(1), span)?;
+    Ok(sha1_output_value(&value, raw_output))
+}
+
+fn digest_binary_argument(
+    function: &str,
+    value: Option<&Value>,
+    span: Span,
+) -> CompileResult<bool> {
+    match value {
+        Some(Value::Array(_)) => Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                "Argument #2 ($binary) must be of type bool, array given",
+            ),
+        )),
+        Some(value) => Ok(value.is_truthy()),
+        None => Ok(false),
+    }
+}
+
+fn sha1_output_value(value: &[u8], raw_output: bool) -> Value {
+    let digest = sha1_digest_bytes(value);
+    if raw_output {
+        Value::BinaryString(digest.to_vec())
+    } else {
+        Value::String(hex_bytes(&digest))
+    }
+}
+
+fn sha1_digest_bytes(value: &[u8]) -> [u8; 20] {
+    let bit_len = (value.len() as u64).wrapping_mul(8);
+    let mut message = Vec::with_capacity((value.len() + 9).div_ceil(64) * 64);
+    message.extend_from_slice(value);
+    message.push(0x80);
+    while message.len() % 64 != 56 {
+        message.push(0);
+    }
+    message.extend_from_slice(&bit_len.to_be_bytes());
+
+    let mut h0 = 0x6745_2301u32;
+    let mut h1 = 0xefcd_ab89u32;
+    let mut h2 = 0x98ba_dcfeu32;
+    let mut h3 = 0x1032_5476u32;
+    let mut h4 = 0xc3d2_e1f0u32;
+
+    for chunk in message.chunks_exact(64) {
+        let mut words = [0u32; 80];
+        for (index, word) in words.iter_mut().take(16).enumerate() {
+            let offset = index * 4;
+            *word = u32::from_be_bytes([
+                chunk[offset],
+                chunk[offset + 1],
+                chunk[offset + 2],
+                chunk[offset + 3],
+            ]);
+        }
+        for index in 16..80 {
+            words[index] =
+                (words[index - 3] ^ words[index - 8] ^ words[index - 14] ^ words[index - 16])
+                    .rotate_left(1);
+        }
+
+        let mut a = h0;
+        let mut b = h1;
+        let mut c = h2;
+        let mut d = h3;
+        let mut e = h4;
+
+        for (index, word) in words.iter().enumerate() {
+            let (f, k) = match index {
+                0..=19 => ((b & c) | ((!b) & d), 0x5a82_7999),
+                20..=39 => (b ^ c ^ d, 0x6ed9_eba1),
+                40..=59 => ((b & c) | (b & d) | (c & d), 0x8f1b_bcdc),
+                _ => (b ^ c ^ d, 0xca62_c1d6),
+            };
+            let temp = a
+                .rotate_left(5)
+                .wrapping_add(f)
+                .wrapping_add(e)
+                .wrapping_add(k)
+                .wrapping_add(*word);
+            e = d;
+            d = c;
+            c = b.rotate_left(30);
+            b = a;
+            a = temp;
+        }
+
+        h0 = h0.wrapping_add(a);
+        h1 = h1.wrapping_add(b);
+        h2 = h2.wrapping_add(c);
+        h3 = h3.wrapping_add(d);
+        h4 = h4.wrapping_add(e);
+    }
+
+    let mut digest = [0u8; 20];
+    digest[0..4].copy_from_slice(&h0.to_be_bytes());
+    digest[4..8].copy_from_slice(&h1.to_be_bytes());
+    digest[8..12].copy_from_slice(&h2.to_be_bytes());
+    digest[12..16].copy_from_slice(&h3.to_be_bytes());
+    digest[16..20].copy_from_slice(&h4.to_be_bytes());
+    digest
 }
 
 fn php_crc32_bytes(bytes: &[u8]) -> i64 {
