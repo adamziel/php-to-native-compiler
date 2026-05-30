@@ -66034,6 +66034,7 @@ fn is_array_builtin(name: &str) -> bool {
             | "array_rand"
             | "array_reverse"
             | "array_slice"
+            | "array_splice"
             | "array_chunk"
             | "array_pad"
             | "array_merge"
@@ -66450,6 +66451,7 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "array_rand",
     "array_reverse",
     "array_slice",
+    "array_splice",
     "array_chunk",
     "array_pad",
     "array_merge",

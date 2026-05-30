@@ -11,11 +11,11 @@ use hmac::{Hmac, Mac};
 use md5::{Digest as Md5Digest, Md5};
 use php_runtime::{
     coerce_property_value_with_object_type_resolver, ArityExpectation, ArrayColumnKey, ArrayEntry,
-    ArrayKey, ArrayKeyCase, ClassId, ClassMemberKind, Comparison, ObjectProperty, PhpArray,
-    PhpArraySortOperation, PhpClassConstantMetadata, PhpClassTable, PhpClosure, PhpClosureCapture,
-    PhpMethodMetadata, PhpObject, PhpObjectPropertyInitializer, PhpPropertyMetadata,
-    PhpReferenceCell, PhpReferenceCellId, RuntimeError, RuntimeErrorKind, RuntimeResult, Value,
-    Visibility,
+    ArrayKey, ArrayKeyCase, ArraySlot, ClassId, ClassMemberKind, Comparison, ObjectProperty,
+    PhpArray, PhpArraySortOperation, PhpClassConstantMetadata, PhpClassTable, PhpClosure,
+    PhpClosureCapture, PhpMethodMetadata, PhpObject, PhpObjectPropertyInitializer,
+    PhpPropertyMetadata, PhpReferenceCell, PhpReferenceCellId, RuntimeError, RuntimeErrorKind,
+    RuntimeResult, Value, Visibility,
 };
 use sha2::Sha256;
 
@@ -24838,9 +24838,10 @@ impl Interpreter {
                 ..
             } => {
                 let key = self.evaluate_array_key(index, scope)?;
-                self.evaluate_direct_array_access_reference_source_alias(
+                self.evaluate_direct_array_offset_reference_source_alias(
                     array_name,
                     vec![key],
+                    false,
                     span,
                     scope,
                 )
@@ -24854,8 +24855,8 @@ impl Interpreter {
                     .iter()
                     .map(|index| self.evaluate_array_key(index, scope))
                     .collect::<CompileResult<Vec<_>>>()?;
-                self.evaluate_direct_array_access_reference_source_alias(
-                    array_name, keys, span, scope,
+                self.evaluate_direct_array_offset_reference_source_alias(
+                    array_name, keys, false, span, scope,
                 )
             }
             ReferenceSource::ObjectPropertyArrayIndex {
@@ -25211,6 +25212,57 @@ impl Interpreter {
             span,
             scope,
         )
+    }
+
+    fn evaluate_direct_array_offset_reference_source_alias(
+        &mut self,
+        array_name: &str,
+        keys: Vec<ArrayKey>,
+        is_append: bool,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Option<(ArrayOffsetAlias, Value)>> {
+        if keys.is_empty() {
+            return Ok(None);
+        }
+        if let Some(alias) = self.evaluate_direct_array_access_reference_source_alias(
+            array_name,
+            keys.clone(),
+            span,
+            scope,
+        )? {
+            return Ok(Some(alias));
+        }
+
+        self.reject_array_access_reference_source_if_needed(array_name, span, scope)?;
+        self.reject_direct_scalar_string_reference_source_if_needed(
+            array_name, &keys, is_append, span, scope,
+        )?;
+
+        let alias = if array_name == "GLOBALS" {
+            let (global_name, keys) = SymbolTable::split_globals_reference_path(keys, span)?;
+            ArrayOffsetAlias {
+                root: ArrayOffsetAliasRoot::GlobalArray { name: global_name },
+                keys,
+            }
+        } else {
+            ArrayOffsetAlias {
+                root: ArrayOffsetAliasRoot::StaticArray {
+                    name: array_name.to_string(),
+                },
+                keys,
+            }
+        };
+        scope.materialize_array_offset_alias(&alias, span)?;
+        let value = scope.read_array_offset_alias(&alias).ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::invalid_array_access(
+                    "cannot bind missing direct array-offset reference source".to_string(),
+                ),
+            )
+        })?;
+        Ok(Some((alias, value)))
     }
 
     fn evaluate_direct_array_access_reference_source_alias(
@@ -52907,6 +52959,9 @@ impl Interpreter {
                 if key == "array_pop" {
                     return self.call_array_pop(args, span, caller_scope);
                 }
+                if key == "array_splice" {
+                    return self.call_array_splice(args, span, caller_scope);
+                }
                 if key == "array_walk" {
                     return self.call_array_walk(false, args, span, caller_scope);
                 }
@@ -53080,6 +53135,9 @@ impl Interpreter {
                 }
                 if key == "array_pop" {
                     return self.call_array_pop(args, span, caller_scope);
+                }
+                if key == "array_splice" {
+                    return self.call_array_splice(args, span, caller_scope);
                 }
                 if key == "array_walk" {
                     return self.call_array_walk(false, args, span, caller_scope);
@@ -55359,6 +55417,7 @@ impl Interpreter {
                 | "array_unshift"
                 | "array_shift"
                 | "array_pop"
+                | "array_splice"
                 | "next"
                 | "prev"
                 | "reset"
@@ -55627,6 +55686,49 @@ impl Interpreter {
                     .map_err(|error| runtime_error(span, error))?;
                 Ok(Value::Int(len))
             }
+            "array_splice" => {
+                if !(2..=4).contains(&args.len()) {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::arity_mismatch(
+                            "array_splice()",
+                            ArityExpectation::Between { min: 2, max: 4 },
+                            args.len(),
+                        ),
+                    ));
+                }
+                if warn_for_reference_value {
+                    self.emit_builtin_callback_reference_value_warning(
+                        "array_splice",
+                        0,
+                        "array",
+                        span,
+                    )?;
+                }
+                let Value::Array(mut array) = args[0].clone() else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "array_splice()",
+                            format!("first argument must be array, got {}", args[0].type_name()),
+                        ),
+                    ));
+                };
+                let offset = Self::array_splice_offset_from_value(&args[1], span)?;
+                let length = match args.get(2) {
+                    Some(value) => Self::array_splice_length_from_value(value, span)?,
+                    None => None,
+                };
+                let replacement = args
+                    .get(3)
+                    .cloned()
+                    .map(Self::array_splice_replacement_slots)
+                    .unwrap_or_default();
+                let removed = array
+                    .splice_slots(offset, length, &replacement)
+                    .map_err(|error| runtime_error(span, error))?;
+                Ok(Value::Array(removed))
+            }
             "ksort" => {
                 if !(1..=2).contains(&args.len()) {
                     return Err(runtime_error(
@@ -55845,6 +55947,44 @@ impl Interpreter {
                     .map_err(|error| runtime_error(span, error))?;
                 reference.set_value(array_value);
                 Ok(Value::Int(len))
+            }
+            "array_splice" => {
+                if !(1..=3).contains(&rest.len()) {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::arity_mismatch(
+                            "array_splice()",
+                            ArityExpectation::Between { min: 2, max: 4 },
+                            rest.len() + 1,
+                        ),
+                    ));
+                }
+                let mut array_value = reference.value_cloned();
+                let type_name = array_value.type_name();
+                let Value::Array(array) = &mut array_value else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "array_splice()",
+                            format!("first argument must be array, got {type_name}"),
+                        ),
+                    ));
+                };
+                let offset = Self::array_splice_offset_from_value(&rest[0], span)?;
+                let length = match rest.get(1) {
+                    Some(value) => Self::array_splice_length_from_value(value, span)?,
+                    None => None,
+                };
+                let replacement = rest
+                    .get(2)
+                    .cloned()
+                    .map(Self::array_splice_replacement_slots)
+                    .unwrap_or_default();
+                let removed = array
+                    .splice_slots(offset, length, &replacement)
+                    .map_err(|error| runtime_error(span, error))?;
+                reference.set_value(array_value);
+                Ok(Value::Array(removed))
             }
             "ksort" => {
                 if rest.len() > 1 {
@@ -62126,6 +62266,204 @@ impl Interpreter {
             span,
             caller_scope,
         )
+    }
+
+    fn call_array_splice(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        if !(2..=4).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "array_splice()",
+                    ArityExpectation::Between { min: 2, max: 4 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let Some((array_name, keys)) =
+            self.direct_variable_array_path_from_expr(&args[0], caller_scope)?
+        else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "array_splice()",
+                    "first argument must be a direct variable array path in the current subset",
+                ),
+            ));
+        };
+
+        let (offset, length, replacement) = self.array_splice_operands(args, span, caller_scope)?;
+        self.call_direct_array_splice(
+            &array_name,
+            &keys,
+            offset,
+            length,
+            &replacement,
+            span,
+            caller_scope,
+        )
+    }
+
+    fn call_direct_array_splice(
+        &mut self,
+        root_name: &str,
+        keys: &[ArrayKey],
+        offset: i64,
+        length: Option<i64>,
+        replacement: &[ArraySlot],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        Self::promote_array_splice_target_alias_group(root_name, keys, caller_scope);
+        let mut root_value = caller_scope.read_static(root_name, span)?;
+        let type_name = root_value.type_name();
+        let Value::Array(root_array) = &mut root_value else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "array_splice()",
+                    format!("argument must be array, got {type_name}"),
+                ),
+            ));
+        };
+
+        let removed =
+            Self::apply_direct_array_splice(root_array, keys, offset, length, replacement, span)?;
+        caller_scope.write_static(root_name, root_value);
+        caller_scope.sync_array_offset_aliases_for_root_path(
+            &ArrayOffsetAliasRoot::StaticArray {
+                name: root_name.to_string(),
+            },
+            keys,
+        );
+        Ok(Value::Array(removed))
+    }
+
+    fn promote_array_splice_target_alias_group(
+        root_name: &str,
+        keys: &[ArrayKey],
+        caller_scope: &mut SymbolTable,
+    ) {
+        let aliases = if keys.is_empty() {
+            caller_scope.array_offset_aliases_for_name(root_name)
+        } else {
+            caller_scope.array_offset_alias_group_for_stored_array_path(root_name, keys)
+        };
+        if let Some(aliases) = aliases {
+            caller_scope.reference_cell_for_array_offset_alias_group_with_value_promotion(&aliases);
+        }
+    }
+
+    fn apply_direct_array_splice(
+        array: &mut PhpArray,
+        keys: &[ArrayKey],
+        offset: i64,
+        length: Option<i64>,
+        replacement: &[ArraySlot],
+        span: Span,
+    ) -> CompileResult<PhpArray> {
+        let Some((key, rest)) = keys.split_first() else {
+            return array
+                .splice_slots(offset, length, replacement)
+                .map_err(|error| runtime_error(span, error));
+        };
+
+        let Some(slot) = array.get_slot_mut(key.clone()) else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::undefined_array_key(key.diagnostic_key()),
+            ));
+        };
+        let mut child = slot.value_cloned();
+        let type_name = child.type_name();
+        let Value::Array(child_array) = &mut child else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "array_splice()",
+                    format!("argument must be array, got {type_name}"),
+                ),
+            ));
+        };
+
+        let removed =
+            Self::apply_direct_array_splice(child_array, rest, offset, length, replacement, span)?;
+        slot.set_value(child);
+        Ok(removed)
+    }
+
+    fn array_splice_operands(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<(i64, Option<i64>, Vec<ArraySlot>)> {
+        let offset = self.evaluate_by_value_argument_with_cow_source(&args[1], caller_scope)?;
+        let offset = Self::array_splice_offset_from_value(&offset, span)?;
+        let length = if let Some(length) = args.get(2) {
+            let length = self.evaluate_by_value_argument_with_cow_source(length, caller_scope)?;
+            Self::array_splice_length_from_value(&length, span)?
+        } else {
+            None
+        };
+        let replacement = if let Some(replacement) = args.get(3) {
+            let replacement =
+                self.evaluate_by_value_argument_with_cow_source(replacement, caller_scope)?;
+            Self::array_splice_replacement_slots(replacement)
+        } else {
+            Vec::new()
+        };
+        Ok((offset, length, replacement))
+    }
+
+    fn array_splice_offset_from_value(value: &Value, span: Span) -> CompileResult<i64> {
+        match value {
+            Value::Int(offset) => Ok(*offset),
+            other => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "array_splice()",
+                    format!(
+                        "offset argument must be int in the current subset, got {}",
+                        other.type_name()
+                    ),
+                ),
+            )),
+        }
+    }
+
+    fn array_splice_length_from_value(value: &Value, span: Span) -> CompileResult<Option<i64>> {
+        match value {
+            Value::Int(length) => Ok(Some(*length)),
+            Value::Null => Ok(None),
+            other => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "array_splice()",
+                    format!(
+                        "length argument must be int or null in the current subset, got {}",
+                        other.type_name()
+                    ),
+                ),
+            )),
+        }
+    }
+
+    fn array_splice_replacement_slots(value: Value) -> Vec<ArraySlot> {
+        match value {
+            Value::Null => Vec::new(),
+            Value::Array(array) => array
+                .entries()
+                .iter()
+                .map(|entry| entry.slot().clone())
+                .collect(),
+            other => vec![ArraySlot::new(other)],
+        }
     }
 
     fn call_array_pop(
@@ -92186,6 +92524,15 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
             "mixed",
             vec![reflection_internal_reference_param("array", "array")],
         ),
+        "array_splice" => (
+            "array",
+            vec![
+                reflection_internal_reference_param("array", "array"),
+                reflection_internal_param("offset", "int"),
+                reflection_internal_optional_null_param("length", "int"),
+                reflection_internal_optional_empty_array_param("replacement", "mixed"),
+            ],
+        ),
         "array_multisort" => (
             "bool",
             vec![
@@ -92359,6 +92706,24 @@ fn reflection_internal_optional_null_param(
 ) -> ReflectionParameterMetadata {
     let mut param = reflection_internal_param(name, type_decl);
     param.default = Some(Expr::Null(Span::new(0, 0)));
+    param
+}
+
+fn reflection_internal_optional_untyped_param(name: &str) -> ReflectionParameterMetadata {
+    let mut param = reflection_internal_untyped_param(name);
+    param.default = Some(Expr::Null(Span::new(0, 0)));
+    param
+}
+
+fn reflection_internal_optional_empty_array_param(
+    name: &str,
+    type_decl: &str,
+) -> ReflectionParameterMetadata {
+    let mut param = reflection_internal_param(name, type_decl);
+    param.default = Some(Expr::Array {
+        items: Vec::new(),
+        span: Span::new(0, 0),
+    });
     param
 }
 
@@ -95525,6 +95890,7 @@ fn is_builtin(name: &str) -> bool {
             | "array_unshift"
             | "array_shift"
             | "array_pop"
+            | "array_splice"
             | "next"
             | "in_array"
             | "array_search"
@@ -111682,7 +112048,8 @@ impl Interpreter {
             if index > 0 {
                 output.extend_from_slice(&separator);
             }
-            output.extend(self.implode_piece_bytes(function, entry.value(), span)?);
+            let value = entry.value_cloned();
+            output.extend(self.implode_piece_bytes(function, &value, span)?);
         }
 
         Ok(interpreter_value_from_php_string_bytes(output))

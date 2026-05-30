@@ -29230,6 +29230,91 @@ impl PhpArray {
         shifted.into_value()
     }
 
+    pub fn splice_values(
+        &mut self,
+        offset: i64,
+        length: Option<i64>,
+        replacement: &[Value],
+    ) -> RuntimeResult<Self> {
+        let replacement_slots: Vec<ArraySlot> =
+            replacement.iter().cloned().map(ArraySlot::new).collect();
+        self.splice_slots(offset, length, &replacement_slots)
+    }
+
+    pub fn splice_slots(
+        &mut self,
+        offset: i64,
+        length: Option<i64>,
+        replacement: &[ArraySlot],
+    ) -> RuntimeResult<Self> {
+        let len = i64::try_from(self.entries.len()).expect("array length fits in i64");
+        let start = if offset >= 0 {
+            offset.min(len)
+        } else {
+            len.saturating_add(offset).max(0)
+        };
+        let end = match length {
+            Some(length) if length >= 0 => start.saturating_add(length).min(len),
+            Some(length) => len.saturating_add(length).max(0).min(len),
+            None => len,
+        }
+        .max(start);
+
+        let start = usize::try_from(start).expect("non-negative splice start fits in usize");
+        let end = usize::try_from(end).expect("non-negative splice end fits in usize");
+        let entries = std::mem::take(&mut self.entries);
+        self.invalidate_key_index();
+        let mut result = Self::new();
+        let mut removed = Self::new();
+        let mut inserted_replacement = false;
+
+        for (index, entry) in entries.into_iter().enumerate() {
+            if index == start {
+                Self::append_splice_replacement_slots(&mut result, replacement)?;
+                inserted_replacement = true;
+            }
+
+            if (start..end).contains(&index) {
+                Self::append_splice_preserving_string_key(&mut removed, entry)?;
+            } else {
+                Self::append_splice_preserving_string_key(&mut result, entry)?;
+            }
+        }
+
+        if !inserted_replacement {
+            Self::append_splice_replacement_slots(&mut result, replacement)?;
+        }
+
+        *self = result;
+        Ok(removed)
+    }
+
+    fn append_splice_replacement_slots(
+        array: &mut Self,
+        replacement: &[ArraySlot],
+    ) -> RuntimeResult<()> {
+        for slot in replacement {
+            array.append_slot(slot.clone())?;
+        }
+        Ok(())
+    }
+
+    fn append_splice_preserving_string_key(
+        array: &mut Self,
+        entry: ArrayEntry,
+    ) -> RuntimeResult<()> {
+        let ArrayEntry { key, slot } = entry;
+        match key {
+            ArrayKey::Int(_) => {
+                array.append_slot(slot)?;
+            }
+            ArrayKey::String(key) => {
+                array.insert_slot(key, slot);
+            }
+        }
+        Ok(())
+    }
+
     pub fn keys_reindexed(&self) -> Self {
         let mut array = Self::new();
         for (index, entry) in self.entries.iter().enumerate() {
@@ -75910,6 +75995,104 @@ mod tests {
 
         array.append(Value::String("tail".to_string())).unwrap();
         assert_eq!(array.entries()[5].key, ArrayKey::Int(4));
+    }
+
+    #[test]
+    fn array_splice_mutates_array_and_returns_removed_values_with_php_key_modes() {
+        let mut array = PhpArray::new();
+        array.insert("a", Value::Int(1));
+        array.insert(2, Value::Int(2));
+        array.insert("b", Value::Int(3));
+        array.insert(4, Value::Int(4));
+        array.insert(5, Value::Int(5));
+
+        let replacement = [Value::Int(9), Value::Int(8)];
+        let removed = array.splice_values(1, Some(2), &replacement).unwrap();
+
+        assert_eq!(
+            removed
+                .entries()
+                .iter()
+                .map(|entry| entry.key.clone())
+                .collect::<Vec<_>>(),
+            vec![ArrayKey::Int(0), ArrayKey::String("b".to_string())]
+        );
+        assert_eq!(
+            array_key_values(&removed),
+            vec![Value::Int(2), Value::Int(3)]
+        );
+        assert_eq!(
+            array
+                .entries()
+                .iter()
+                .map(|entry| entry.key.clone())
+                .collect::<Vec<_>>(),
+            vec![
+                ArrayKey::String("a".to_string()),
+                ArrayKey::Int(0),
+                ArrayKey::Int(1),
+                ArrayKey::Int(2),
+                ArrayKey::Int(3)
+            ]
+        );
+        assert_eq!(
+            array_key_values(&array),
+            vec![
+                Value::Int(1),
+                Value::Int(9),
+                Value::Int(8),
+                Value::Int(4),
+                Value::Int(5)
+            ]
+        );
+        assert_eq!(array.append(Value::Int(6)).unwrap(), ArrayKey::Int(4));
+    }
+
+    #[test]
+    fn array_splice_supports_negative_offset_negative_length_and_preserves_references() {
+        let reference = PhpReferenceCell::new(Value::String("ref".to_string()));
+        let mut array = PhpArray::new();
+        array.append(Value::String("a".to_string())).unwrap();
+        array.append(Value::String("b".to_string())).unwrap();
+        array.append_reference(reference.clone()).unwrap();
+        array.append(Value::String("d".to_string())).unwrap();
+
+        let removed = array.splice_values(-2, Some(-1), &[]).unwrap();
+        let copied_reference = removed
+            .get_slot(0)
+            .and_then(ArraySlot::reference_cell)
+            .expect("array_splice should preserve reference-backed removed slots");
+        assert!(copied_reference.shares_reference_with(&reference));
+
+        reference.set_value(Value::String("changed".to_string()));
+        assert_eq!(
+            removed.get_cloned(0),
+            Some(Value::String("changed".to_string()))
+        );
+        let entries = array.entries();
+        assert_eq!(entries.len(), 3);
+        assert_eq!(entries[0].value(), &Value::String("a".to_string()));
+        assert_eq!(entries[1].value(), &Value::String("b".to_string()));
+        assert_eq!(entries[2].value(), &Value::String("d".to_string()));
+    }
+
+    #[test]
+    fn array_splice_replacement_slots_preserve_reference_cells() {
+        let reference = PhpReferenceCell::new(Value::Int(3));
+        let mut array = PhpArray::new();
+        array.append(Value::Int(1)).unwrap();
+        array.append(Value::Int(2)).unwrap();
+
+        array
+            .splice_slots(
+                1,
+                Some(1),
+                &[ArraySlot::from_reference_cell(reference.clone())],
+            )
+            .unwrap();
+        reference.set_value(Value::Int(30));
+
+        assert_eq!(array.get_cloned(1), Some(Value::Int(30)));
     }
 
     #[test]
