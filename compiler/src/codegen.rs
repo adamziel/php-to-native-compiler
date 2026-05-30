@@ -6896,6 +6896,7 @@ fn collect_native_arrow_capture_candidates_from_expr(
                 match part {
                     InterpolatedStringPart::Literal(_) => {}
                     InterpolatedStringPart::Variable(name)
+                    | InterpolatedStringPart::DeprecatedDollarBraceVariable(name)
                     | InterpolatedStringPart::ArrayOffset { variable: name, .. }
                     | InterpolatedStringPart::ObjectProperty { variable: name, .. } => {
                         captures.push((name.clone(), *span));
@@ -8402,6 +8403,7 @@ fn new_class_name_contains_globals_access(class_name: &NewClassName) -> bool {
 fn interpolated_string_part_contains_globals_access(part: &InterpolatedStringPart) -> bool {
     match part {
         InterpolatedStringPart::Variable(name)
+        | InterpolatedStringPart::DeprecatedDollarBraceVariable(name)
         | InterpolatedStringPart::ArrayOffset { variable: name, .. }
         | InterpolatedStringPart::ObjectProperty { variable: name, .. }
         | InterpolatedStringPart::AccessChain { variable: name, .. } => {
@@ -8938,6 +8940,7 @@ fn new_class_name_contains_request_state_access(class_name: &NewClassName) -> bo
 fn interpolated_string_part_contains_request_state_access(part: &InterpolatedStringPart) -> bool {
     match part {
         InterpolatedStringPart::Variable(name)
+        | InterpolatedStringPart::DeprecatedDollarBraceVariable(name)
         | InterpolatedStringPart::ArrayOffset { variable: name, .. }
         | InterpolatedStringPart::ObjectProperty { variable: name, .. }
         | InterpolatedStringPart::AccessChain { variable: name, .. } => {

@@ -978,18 +978,21 @@ resolution, union/intersection canonicalization, built-in/internal interface inh
 diagnostics, and native lowering remain explicit boundaries.
 
 Double-quoted string interpolation is represented explicitly in the AST for
-the current simple `$name`, `{$name}`, array-offset, object-property, and
-chained access slices instead of being rewritten to ordinary string
-concatenation. The runtime evaluates those parts left to right through the
-active symbol table and PHP-shaped echo-string conversion. Native lowering
+the current simple `$name`, `{$name}`, deprecated `${name}`, array-offset,
+object-property, and chained access slices instead of being rewritten to
+ordinary string concatenation. The interpreter emits PHP's compile-time
+deprecation diagnostic for `${name}` and then evaluates those parts left to
+right through the active symbol table and PHP-shaped echo-string conversion;
+undefined simple interpolation variables warn and contribute an empty string.
+Native lowering
 rejects ordinary interpolated strings with a dedicated codegen diagnostic until
 native interpolation part evaluation, PHP-shaped string conversion,
 array/object lookup, `__toString` dispatch, runtime string allocation,
 references/copy-on-write, and exact native diagnostics exist. Interpolated
 `defined("SODIUM_$constant")` names continue to use the global-constant native
 boundary until native constant tables and runtime string lookup semantics
-exist. `${...}`, dynamic properties, static properties, and arbitrary complex
-expressions remain lexer boundaries.
+exist. Variable variables, complex `${...}` forms, dynamic properties, static
+properties, and arbitrary complex expressions remain lexer boundaries.
 
 PHP error-control syntax is represented as an explicit AST wrapper for
 `@expr`. The interpreter currently evaluates the wrapped expression normally
@@ -4275,8 +4278,9 @@ remain explicit unsupported zones.
 
 Heredoc and nowdoc syntax is tokenized directly in the lexer for the current
 unindented identifier-label subset. Heredoc reuses the existing double-quoted
-interpolation parts, while nowdoc emits a literal string. The lexer trims the
-line ending immediately before the terminator to match PHP's runtime value.
+interpolation parts, including simple deprecated `${name}` diagnostics, while
+nowdoc emits a literal string. The lexer trims the line ending immediately
+before the terminator to match PHP's runtime value.
 Indentation stripping, broader quoted-label forms, malformed-label recovery,
 exact diagnostics, and native lowering remain explicit boundaries.
 

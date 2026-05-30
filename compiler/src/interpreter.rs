@@ -1415,6 +1415,7 @@ fn collect_implicit_arrow_capture_interpolated_part(
     match part {
         InterpolatedStringPart::Literal(_) => {}
         InterpolatedStringPart::Variable(name)
+        | InterpolatedStringPart::DeprecatedDollarBraceVariable(name)
         | InterpolatedStringPart::ArrayOffset { variable: name, .. }
         | InterpolatedStringPart::ObjectProperty { variable: name, .. }
         | InterpolatedStringPart::AccessChain { variable: name, .. } => {
@@ -1443,6 +1444,730 @@ fn collect_implicit_arrow_capture_interpolated_array_key(
 ) {
     if let InterpolatedArrayKey::Variable(name) = key {
         push_implicit_arrow_capture(name, Span::new(0, 0), excluded, seen, captures);
+    }
+}
+
+fn collect_deprecated_dollar_brace_interpolation_spans(program: &Program) -> Vec<Span> {
+    let mut spans = Vec::new();
+    collect_deprecated_dollar_brace_interpolation_stmt_spans(&program.statements, &mut spans);
+    spans
+}
+
+fn collect_deprecated_dollar_brace_interpolation_stmt_spans(stmts: &[Stmt], spans: &mut Vec<Span>) {
+    for stmt in stmts {
+        match stmt {
+            Stmt::Echo { exprs, .. } => {
+                collect_deprecated_dollar_brace_interpolation_exprs(exprs, spans)
+            }
+            Stmt::Print { expr, .. }
+            | Stmt::Expr { expr, .. }
+            | Stmt::Throw { expr, .. }
+            | Stmt::Require { path: expr, .. }
+            | Stmt::Include { path: expr, .. } => {
+                collect_deprecated_dollar_brace_interpolation_expr_spans(expr, spans)
+            }
+            Stmt::Assign { target, expr, .. } => {
+                collect_deprecated_dollar_brace_interpolation_assign_target_spans(target, spans);
+                collect_deprecated_dollar_brace_interpolation_expr_spans(expr, spans);
+            }
+            Stmt::ReferenceAssign { target, source, .. } => {
+                collect_deprecated_dollar_brace_interpolation_assign_target_spans(target, spans);
+                collect_deprecated_dollar_brace_interpolation_reference_source_spans(source, spans);
+            }
+            Stmt::CompoundAssign { target, expr, .. } => {
+                collect_deprecated_dollar_brace_interpolation_assign_target_spans(target, spans);
+                collect_deprecated_dollar_brace_interpolation_expr_spans(expr, spans);
+            }
+            Stmt::IncrementDecrement { target, .. } => {
+                collect_deprecated_dollar_brace_interpolation_assign_target_spans(target, spans)
+            }
+            Stmt::NullCoalesceAssign { target, expr, .. } => {
+                collect_deprecated_dollar_brace_interpolation_assign_target_spans(target, spans);
+                collect_deprecated_dollar_brace_interpolation_expr_spans(expr, spans);
+            }
+            Stmt::If {
+                condition,
+                then_branch,
+                else_branch,
+                ..
+            } => {
+                collect_deprecated_dollar_brace_interpolation_expr_spans(condition, spans);
+                collect_deprecated_dollar_brace_interpolation_stmt_spans(then_branch, spans);
+                collect_deprecated_dollar_brace_interpolation_stmt_spans(else_branch, spans);
+            }
+            Stmt::While {
+                condition, body, ..
+            }
+            | Stmt::DoWhile {
+                condition, body, ..
+            } => {
+                collect_deprecated_dollar_brace_interpolation_expr_spans(condition, spans);
+                collect_deprecated_dollar_brace_interpolation_stmt_spans(body, spans);
+            }
+            Stmt::For {
+                initializers,
+                conditions,
+                increments,
+                body,
+                ..
+            } => {
+                collect_deprecated_dollar_brace_interpolation_for_action_spans(initializers, spans);
+                collect_deprecated_dollar_brace_interpolation_exprs(conditions, spans);
+                collect_deprecated_dollar_brace_interpolation_for_action_spans(increments, spans);
+                collect_deprecated_dollar_brace_interpolation_stmt_spans(body, spans);
+            }
+            Stmt::Switch { value, cases, .. } => {
+                collect_deprecated_dollar_brace_interpolation_expr_spans(value, spans);
+                for case in cases {
+                    if let Some(condition) = &case.condition {
+                        collect_deprecated_dollar_brace_interpolation_expr_spans(condition, spans);
+                    }
+                    collect_deprecated_dollar_brace_interpolation_stmt_spans(&case.body, spans);
+                }
+            }
+            Stmt::Foreach {
+                iterable,
+                value,
+                body,
+                ..
+            } => {
+                collect_deprecated_dollar_brace_interpolation_expr_spans(iterable, spans);
+                collect_deprecated_dollar_brace_interpolation_foreach_value_target_spans(
+                    value, spans,
+                );
+                collect_deprecated_dollar_brace_interpolation_stmt_spans(body, spans);
+            }
+            Stmt::UnsetArrayIndex { index, .. } => {
+                collect_deprecated_dollar_brace_interpolation_expr_spans(index, spans)
+            }
+            Stmt::UnsetNestedArrayIndex { indices, .. } => {
+                collect_deprecated_dollar_brace_interpolation_exprs(indices, spans);
+            }
+            Stmt::UnsetDynamicObjectProperty { property, .. } => {
+                collect_deprecated_dollar_brace_interpolation_expr_spans(property, spans)
+            }
+            Stmt::UnsetMany { targets, .. } => {
+                for target in targets {
+                    collect_deprecated_dollar_brace_interpolation_unset_target_spans(target, spans);
+                }
+            }
+            Stmt::ConstDeclaration { declarations, .. } => {
+                for declaration in declarations {
+                    collect_deprecated_dollar_brace_interpolation_expr_spans(
+                        &declaration.value,
+                        spans,
+                    );
+                }
+            }
+            Stmt::Function(function) => {
+                collect_deprecated_dollar_brace_interpolation_function_spans(function, spans);
+            }
+            Stmt::Interface(interface) => {
+                for constant in &interface.constants {
+                    collect_deprecated_dollar_brace_interpolation_expr_spans(
+                        &constant.value,
+                        spans,
+                    );
+                }
+                for property in &interface.properties {
+                    if let Some(default) = &property.default {
+                        collect_deprecated_dollar_brace_interpolation_expr_spans(default, spans);
+                    }
+                }
+                for method in &interface.methods {
+                    collect_deprecated_dollar_brace_interpolation_function_spans(
+                        &method.function,
+                        spans,
+                    );
+                }
+            }
+            Stmt::Trait(trait_decl) => {
+                for constant in &trait_decl.constants {
+                    collect_deprecated_dollar_brace_interpolation_expr_spans(
+                        &constant.value,
+                        spans,
+                    );
+                }
+                for property in &trait_decl.properties {
+                    if let Some(default) = &property.default {
+                        collect_deprecated_dollar_brace_interpolation_expr_spans(default, spans);
+                    }
+                }
+                for method in &trait_decl.methods {
+                    collect_deprecated_dollar_brace_interpolation_function_spans(
+                        &method.function,
+                        spans,
+                    );
+                }
+            }
+            Stmt::Class(class) => {
+                for member in &class.members {
+                    match member {
+                        ClassMember::Property(property) => {
+                            if let Some(default) = &property.default {
+                                collect_deprecated_dollar_brace_interpolation_expr_spans(
+                                    default, spans,
+                                );
+                            }
+                        }
+                        ClassMember::Constant(constant) => {
+                            collect_deprecated_dollar_brace_interpolation_expr_spans(
+                                &constant.value,
+                                spans,
+                            );
+                        }
+                        ClassMember::Method(method) => {
+                            collect_deprecated_dollar_brace_interpolation_function_spans(
+                                &method.function,
+                                spans,
+                            );
+                        }
+                    }
+                }
+            }
+            Stmt::Return { value, .. } => {
+                if let Some(value) = value {
+                    collect_deprecated_dollar_brace_interpolation_expr_spans(value, spans);
+                }
+            }
+            Stmt::Try {
+                body,
+                catches,
+                finally_body,
+                ..
+            } => {
+                collect_deprecated_dollar_brace_interpolation_stmt_spans(body, spans);
+                for catch in catches {
+                    collect_deprecated_dollar_brace_interpolation_stmt_spans(&catch.body, spans);
+                }
+                if let Some(finally_body) = finally_body {
+                    collect_deprecated_dollar_brace_interpolation_stmt_spans(finally_body, spans);
+                }
+            }
+            Stmt::StaticLocal { declarations, .. } => {
+                for declaration in declarations {
+                    if let Some(default) = &declaration.default {
+                        collect_deprecated_dollar_brace_interpolation_expr_spans(default, spans);
+                    }
+                }
+            }
+            Stmt::Namespace { .. }
+            | Stmt::Use { .. }
+            | Stmt::Goto { .. }
+            | Stmt::Label { .. }
+            | Stmt::UnsetVariable { .. }
+            | Stmt::UnsetObjectProperty { .. }
+            | Stmt::UnsetStaticProperty { .. }
+            | Stmt::UnsetSelfStaticProperty { .. }
+            | Stmt::UnsetParentStaticProperty { .. }
+            | Stmt::UnsetLateStaticProperty { .. }
+            | Stmt::Enum(_)
+            | Stmt::Break { .. }
+            | Stmt::Continue { .. }
+            | Stmt::Global { .. } => {}
+        }
+    }
+}
+
+fn collect_deprecated_dollar_brace_interpolation_function_spans(
+    function: &FunctionDecl,
+    spans: &mut Vec<Span>,
+) {
+    for param in &function.params {
+        if let Some(default) = &param.default {
+            collect_deprecated_dollar_brace_interpolation_expr_spans(default, spans);
+        }
+    }
+    collect_deprecated_dollar_brace_interpolation_stmt_spans(&function.body, spans);
+}
+
+fn collect_deprecated_dollar_brace_interpolation_exprs(exprs: &[Expr], spans: &mut Vec<Span>) {
+    for expr in exprs {
+        collect_deprecated_dollar_brace_interpolation_expr_spans(expr, spans);
+    }
+}
+
+fn collect_deprecated_dollar_brace_interpolation_expr_spans(expr: &Expr, spans: &mut Vec<Span>) {
+    match expr {
+        Expr::InterpolatedString { parts, span } => {
+            for part in parts {
+                if matches!(
+                    part,
+                    InterpolatedStringPart::DeprecatedDollarBraceVariable(_)
+                ) {
+                    spans.push(*span);
+                }
+            }
+        }
+        Expr::ObjectClassNameConstant { target, .. }
+        | Expr::Index { target, .. }
+        | Expr::AppendIndex { target, .. }
+        | Expr::Property { target, .. }
+        | Expr::ObjectStaticClassConstant { target, .. }
+        | Expr::ObjectStaticProperty { target, .. }
+        | Expr::Clone { expr: target, .. }
+        | Expr::Unary { expr: target, .. }
+        | Expr::ErrorControl { expr: target, .. }
+        | Expr::Include { path: target, .. }
+        | Expr::Require { path: target, .. }
+        | Expr::Cast { expr: target, .. } => {
+            collect_deprecated_dollar_brace_interpolation_expr_spans(target, spans);
+            collect_deprecated_dollar_brace_interpolation_expr_tail_spans(expr, spans);
+        }
+        Expr::DynamicProperty {
+            target, property, ..
+        }
+        | Expr::DynamicObjectStaticProperty {
+            target, property, ..
+        }
+        | Expr::DynamicMethodCall {
+            target,
+            method: property,
+            ..
+        }
+        | Expr::Binary {
+            left: target,
+            right: property,
+            ..
+        } => {
+            collect_deprecated_dollar_brace_interpolation_expr_spans(target, spans);
+            collect_deprecated_dollar_brace_interpolation_expr_spans(property, spans);
+            collect_deprecated_dollar_brace_interpolation_expr_tail_spans(expr, spans);
+        }
+        Expr::DynamicStaticProperty { property, .. }
+        | Expr::DynamicSelfStaticProperty { property, .. }
+        | Expr::DynamicParentStaticProperty { property, .. }
+        | Expr::DynamicLateStaticProperty { property, .. } => {
+            collect_deprecated_dollar_brace_interpolation_expr_spans(property, spans)
+        }
+        Expr::Array { items, .. } => {
+            for item in items {
+                if let Some(key) = &item.key {
+                    collect_deprecated_dollar_brace_interpolation_expr_spans(key, spans);
+                }
+                collect_deprecated_dollar_brace_interpolation_expr_spans(&item.value, spans);
+            }
+        }
+        Expr::MethodCall { target, args, .. } => {
+            collect_deprecated_dollar_brace_interpolation_expr_spans(target, spans);
+            collect_deprecated_dollar_brace_interpolation_exprs(args, spans);
+        }
+        Expr::ObjectStaticMethodCall { target, args, .. } => {
+            collect_deprecated_dollar_brace_interpolation_expr_spans(target, spans);
+            collect_deprecated_dollar_brace_interpolation_exprs(args, spans);
+        }
+        Expr::ParentMethodCall { args, .. }
+        | Expr::StaticMethodCall { args, .. }
+        | Expr::SelfMethodCall { args, .. }
+        | Expr::LateStaticMethodCall { args, .. }
+        | Expr::Call { args, .. } => {
+            collect_deprecated_dollar_brace_interpolation_exprs(args, spans)
+        }
+        Expr::NamedArgument { expr, .. } | Expr::SpreadArgument { expr, .. } => {
+            collect_deprecated_dollar_brace_interpolation_expr_spans(expr, spans)
+        }
+        Expr::DynamicCall { callee, args, .. } => {
+            collect_deprecated_dollar_brace_interpolation_expr_spans(callee, spans);
+            collect_deprecated_dollar_brace_interpolation_exprs(args, spans);
+        }
+        Expr::InstanceOf {
+            expr, class_name, ..
+        } => {
+            collect_deprecated_dollar_brace_interpolation_expr_spans(expr, spans);
+            collect_deprecated_dollar_brace_interpolation_new_class_name_spans(class_name, spans);
+        }
+        Expr::Closure { params, body, .. } => {
+            for param in params {
+                if let Some(default) = &param.default {
+                    collect_deprecated_dollar_brace_interpolation_expr_spans(default, spans);
+                }
+            }
+            collect_deprecated_dollar_brace_interpolation_stmt_spans(body, spans);
+        }
+        Expr::New {
+            class_name, args, ..
+        } => {
+            collect_deprecated_dollar_brace_interpolation_new_class_name_spans(class_name, spans);
+            collect_deprecated_dollar_brace_interpolation_exprs(args, spans);
+        }
+        Expr::Ternary {
+            condition,
+            if_true,
+            if_false,
+            ..
+        } => {
+            collect_deprecated_dollar_brace_interpolation_expr_spans(condition, spans);
+            collect_deprecated_dollar_brace_interpolation_expr_spans(if_true, spans);
+            collect_deprecated_dollar_brace_interpolation_expr_spans(if_false, spans);
+        }
+        Expr::ShortTernary {
+            condition,
+            if_false,
+            ..
+        } => {
+            collect_deprecated_dollar_brace_interpolation_expr_spans(condition, spans);
+            collect_deprecated_dollar_brace_interpolation_expr_spans(if_false, spans);
+        }
+        Expr::Match { subject, arms, .. } => {
+            collect_deprecated_dollar_brace_interpolation_expr_spans(subject, spans);
+            for arm in arms {
+                for condition in &arm.conditions {
+                    collect_deprecated_dollar_brace_interpolation_expr_spans(condition, spans);
+                }
+                collect_deprecated_dollar_brace_interpolation_expr_spans(&arm.result, spans);
+            }
+        }
+        Expr::Assign { target, expr, .. }
+        | Expr::CompoundAssign { target, expr, .. }
+        | Expr::NullCoalesceAssign { target, expr, .. } => {
+            collect_deprecated_dollar_brace_interpolation_assign_target_spans(target, spans);
+            collect_deprecated_dollar_brace_interpolation_expr_spans(expr, spans);
+        }
+        Expr::IncrementDecrement { target, .. } => {
+            collect_deprecated_dollar_brace_interpolation_assign_target_spans(target, spans);
+        }
+        Expr::Null(_)
+        | Expr::Bool(_, _)
+        | Expr::Int(_, _)
+        | Expr::Float(_, _)
+        | Expr::String(_, _)
+        | Expr::Variable(_, _)
+        | Expr::MagicLine { .. }
+        | Expr::MagicFile { .. }
+        | Expr::MagicDir { .. }
+        | Expr::MagicFunction { .. }
+        | Expr::MagicClass { .. }
+        | Expr::MagicMethod { .. }
+        | Expr::GlobalConstant { .. }
+        | Expr::ClassNameConstant { .. }
+        | Expr::SelfClassNameConstant { .. }
+        | Expr::ParentClassNameConstant { .. }
+        | Expr::StaticClassNameConstant { .. }
+        | Expr::ClassConstant { .. }
+        | Expr::SelfClassConstant { .. }
+        | Expr::ParentClassConstant { .. }
+        | Expr::LateStaticClassConstant { .. }
+        | Expr::StaticProperty { .. }
+        | Expr::SelfStaticProperty { .. }
+        | Expr::ParentStaticProperty { .. }
+        | Expr::LateStaticProperty { .. } => {}
+    }
+}
+
+fn collect_deprecated_dollar_brace_interpolation_expr_tail_spans(
+    expr: &Expr,
+    spans: &mut Vec<Span>,
+) {
+    match expr {
+        Expr::Index { index, .. } => {
+            collect_deprecated_dollar_brace_interpolation_expr_spans(index, spans)
+        }
+        Expr::ObjectStaticMethodCall { args, .. } | Expr::DynamicMethodCall { args, .. } => {
+            collect_deprecated_dollar_brace_interpolation_exprs(args, spans)
+        }
+        _ => {}
+    }
+}
+
+fn collect_deprecated_dollar_brace_interpolation_assign_target_spans(
+    target: &AssignTarget,
+    spans: &mut Vec<Span>,
+) {
+    match target {
+        AssignTarget::List { .. }
+        | AssignTarget::Variable { .. }
+        | AssignTarget::Property { .. }
+        | AssignTarget::StaticProperty { .. }
+        | AssignTarget::SelfStaticProperty { .. }
+        | AssignTarget::ParentStaticProperty { .. }
+        | AssignTarget::LateStaticProperty { .. }
+        | AssignTarget::UnsupportedExpression { .. } => {}
+        AssignTarget::ArrayIndex { index, .. } => {
+            if let Some(index) = index {
+                collect_deprecated_dollar_brace_interpolation_expr_spans(index, spans);
+            }
+        }
+        AssignTarget::NestedArrayIndex { indices, .. }
+        | AssignTarget::ObjectPropertyArrayIndex { indices, .. }
+        | AssignTarget::StaticPropertyArrayIndex { indices, .. } => {
+            collect_deprecated_dollar_brace_interpolation_exprs(indices, spans);
+        }
+        AssignTarget::NestedArrayAppend {
+            indices,
+            suffix_indices,
+            ..
+        }
+        | AssignTarget::ObjectPropertyArrayAppend {
+            indices,
+            suffix_indices,
+            ..
+        }
+        | AssignTarget::StaticPropertyArrayAppend {
+            indices,
+            suffix_indices,
+            ..
+        } => {
+            collect_deprecated_dollar_brace_interpolation_exprs(indices, spans);
+            collect_deprecated_dollar_brace_interpolation_exprs(suffix_indices, spans);
+        }
+        AssignTarget::NonDirectProperty { holder, .. }
+        | AssignTarget::ObjectStaticProperty { target: holder, .. } => {
+            collect_deprecated_dollar_brace_interpolation_expr_spans(holder, spans);
+        }
+        AssignTarget::NonDirectDynamicProperty {
+            holder, property, ..
+        }
+        | AssignTarget::DynamicObjectStaticProperty {
+            target: holder,
+            property,
+            ..
+        } => {
+            collect_deprecated_dollar_brace_interpolation_expr_spans(holder, spans);
+            collect_deprecated_dollar_brace_interpolation_expr_spans(property, spans);
+        }
+        AssignTarget::DynamicObjectPropertyArrayIndex {
+            property, indices, ..
+        } => {
+            collect_deprecated_dollar_brace_interpolation_expr_spans(property, spans);
+            collect_deprecated_dollar_brace_interpolation_exprs(indices, spans);
+        }
+        AssignTarget::NonDirectObjectPropertyArrayIndex {
+            holder, indices, ..
+        } => {
+            collect_deprecated_dollar_brace_interpolation_expr_spans(holder, spans);
+            collect_deprecated_dollar_brace_interpolation_exprs(indices, spans);
+        }
+        AssignTarget::NonDirectObjectPropertyArrayAppend {
+            holder,
+            indices,
+            suffix_indices,
+            ..
+        } => {
+            collect_deprecated_dollar_brace_interpolation_expr_spans(holder, spans);
+            collect_deprecated_dollar_brace_interpolation_exprs(indices, spans);
+            collect_deprecated_dollar_brace_interpolation_exprs(suffix_indices, spans);
+        }
+        AssignTarget::NonDirectDynamicObjectPropertyArrayIndex {
+            holder,
+            property,
+            indices,
+            ..
+        } => {
+            collect_deprecated_dollar_brace_interpolation_expr_spans(holder, spans);
+            collect_deprecated_dollar_brace_interpolation_expr_spans(property, spans);
+            collect_deprecated_dollar_brace_interpolation_exprs(indices, spans);
+        }
+        AssignTarget::NonDirectDynamicObjectPropertyArrayAppend {
+            holder,
+            property,
+            indices,
+            suffix_indices,
+            ..
+        } => {
+            collect_deprecated_dollar_brace_interpolation_expr_spans(holder, spans);
+            collect_deprecated_dollar_brace_interpolation_expr_spans(property, spans);
+            collect_deprecated_dollar_brace_interpolation_exprs(indices, spans);
+            collect_deprecated_dollar_brace_interpolation_exprs(suffix_indices, spans);
+        }
+        AssignTarget::DynamicObjectPropertyArrayAppend {
+            property,
+            indices,
+            suffix_indices,
+            ..
+        } => {
+            collect_deprecated_dollar_brace_interpolation_expr_spans(property, spans);
+            collect_deprecated_dollar_brace_interpolation_exprs(indices, spans);
+            collect_deprecated_dollar_brace_interpolation_exprs(suffix_indices, spans);
+        }
+        AssignTarget::DynamicProperty { property, .. }
+        | AssignTarget::DynamicStaticProperty { property, .. }
+        | AssignTarget::DynamicSelfStaticProperty { property, .. }
+        | AssignTarget::DynamicParentStaticProperty { property, .. }
+        | AssignTarget::DynamicLateStaticProperty { property, .. } => {
+            collect_deprecated_dollar_brace_interpolation_expr_spans(property, spans);
+        }
+    }
+}
+
+fn collect_deprecated_dollar_brace_interpolation_reference_source_spans(
+    source: &ReferenceSource,
+    spans: &mut Vec<Span>,
+) {
+    match source {
+        ReferenceSource::Variable { .. } => {}
+        ReferenceSource::ArrayIndex { index, .. }
+        | ReferenceSource::ObjectPropertyArrayIndex { index, .. }
+        | ReferenceSource::Property { expr: index, .. }
+        | ReferenceSource::StaticProperty { expr: index, .. }
+        | ReferenceSource::MethodCall { expr: index, .. } => {
+            collect_deprecated_dollar_brace_interpolation_expr_spans(index, spans);
+        }
+        ReferenceSource::DynamicObjectPropertyArrayIndex {
+            property, index, ..
+        } => {
+            collect_deprecated_dollar_brace_interpolation_expr_spans(property, spans);
+            collect_deprecated_dollar_brace_interpolation_expr_spans(index, spans);
+        }
+        ReferenceSource::ArrayAppend { indices, .. }
+        | ReferenceSource::NestedArrayIndex { indices, .. }
+        | ReferenceSource::ObjectPropertyArrayAppend { indices, .. }
+        | ReferenceSource::ObjectPropertyNestedArrayIndex { indices, .. } => {
+            collect_deprecated_dollar_brace_interpolation_exprs(indices, spans);
+        }
+        ReferenceSource::DynamicObjectPropertyArrayAppend {
+            property, indices, ..
+        }
+        | ReferenceSource::DynamicObjectPropertyNestedArrayIndex {
+            property, indices, ..
+        } => {
+            collect_deprecated_dollar_brace_interpolation_expr_spans(property, spans);
+            collect_deprecated_dollar_brace_interpolation_exprs(indices, spans);
+        }
+        ReferenceSource::NonDirectObjectPropertyArrayAppend {
+            holder, indices, ..
+        }
+        | ReferenceSource::NonDirectObjectPropertyNestedArrayIndex {
+            holder, indices, ..
+        } => {
+            collect_deprecated_dollar_brace_interpolation_expr_spans(holder, spans);
+            collect_deprecated_dollar_brace_interpolation_exprs(indices, spans);
+        }
+        ReferenceSource::NonDirectDynamicObjectPropertyArrayAppend {
+            holder,
+            property,
+            indices,
+            ..
+        }
+        | ReferenceSource::NonDirectDynamicObjectPropertyNestedArrayIndex {
+            holder,
+            property,
+            indices,
+            ..
+        } => {
+            collect_deprecated_dollar_brace_interpolation_expr_spans(holder, spans);
+            collect_deprecated_dollar_brace_interpolation_expr_spans(property, spans);
+            collect_deprecated_dollar_brace_interpolation_exprs(indices, spans);
+        }
+        ReferenceSource::StaticPropertyArrayIndex { expr, indices, .. }
+        | ReferenceSource::ExpressionArrayIndex {
+            target: expr,
+            indices,
+            ..
+        }
+        | ReferenceSource::ExpressionArrayAppend {
+            target: expr,
+            indices,
+            ..
+        } => {
+            collect_deprecated_dollar_brace_interpolation_expr_spans(expr, spans);
+            collect_deprecated_dollar_brace_interpolation_exprs(indices, spans);
+        }
+    }
+}
+
+fn collect_deprecated_dollar_brace_interpolation_foreach_value_target_spans(
+    target: &ForeachValueTarget,
+    spans: &mut Vec<Span>,
+) {
+    match target {
+        ForeachValueTarget::Variable { .. } | ForeachValueTarget::Property { .. } => {}
+        ForeachValueTarget::List { items, .. } => {
+            for item in items.iter().flatten() {
+                collect_deprecated_dollar_brace_interpolation_foreach_value_target_spans(
+                    item, spans,
+                );
+            }
+        }
+        ForeachValueTarget::DynamicProperty { property, .. } => {
+            collect_deprecated_dollar_brace_interpolation_expr_spans(property, spans);
+        }
+    }
+}
+
+fn collect_deprecated_dollar_brace_interpolation_unset_target_spans(
+    target: &UnsetTarget,
+    spans: &mut Vec<Span>,
+) {
+    match target {
+        UnsetTarget::Variable { .. }
+        | UnsetTarget::ObjectProperty { .. }
+        | UnsetTarget::StaticProperty { .. }
+        | UnsetTarget::SelfStaticProperty { .. }
+        | UnsetTarget::ParentStaticProperty { .. }
+        | UnsetTarget::LateStaticProperty { .. } => {}
+        UnsetTarget::ArrayIndex { index, .. } => {
+            collect_deprecated_dollar_brace_interpolation_expr_spans(index, spans);
+        }
+        UnsetTarget::NestedArrayIndex { indices, .. }
+        | UnsetTarget::ObjectPropertyArrayIndex { indices, .. }
+        | UnsetTarget::StaticPropertyArrayIndex { indices, .. } => {
+            collect_deprecated_dollar_brace_interpolation_exprs(indices, spans);
+        }
+        UnsetTarget::DynamicObjectPropertyArrayIndex {
+            property, indices, ..
+        } => {
+            collect_deprecated_dollar_brace_interpolation_expr_spans(property, spans);
+            collect_deprecated_dollar_brace_interpolation_exprs(indices, spans);
+        }
+        UnsetTarget::NonDirectObjectPropertyArrayIndex {
+            holder, indices, ..
+        } => {
+            collect_deprecated_dollar_brace_interpolation_expr_spans(holder, spans);
+            collect_deprecated_dollar_brace_interpolation_exprs(indices, spans);
+        }
+        UnsetTarget::NonDirectDynamicObjectPropertyArrayIndex {
+            holder,
+            property,
+            indices,
+            ..
+        } => {
+            collect_deprecated_dollar_brace_interpolation_expr_spans(holder, spans);
+            collect_deprecated_dollar_brace_interpolation_expr_spans(property, spans);
+            collect_deprecated_dollar_brace_interpolation_exprs(indices, spans);
+        }
+        UnsetTarget::DynamicObjectProperty { property, .. }
+        | UnsetTarget::NonDirectObjectProperty {
+            holder: property, ..
+        }
+        | UnsetTarget::NonDirectDynamicObjectProperty { property, .. }
+        | UnsetTarget::ObjectStaticProperty {
+            target: property, ..
+        } => {
+            collect_deprecated_dollar_brace_interpolation_expr_spans(property, spans);
+        }
+    }
+}
+
+fn collect_deprecated_dollar_brace_interpolation_for_action_spans(
+    actions: &[ForAction],
+    spans: &mut Vec<Span>,
+) {
+    for action in actions {
+        match action {
+            ForAction::Assign { target, expr } => {
+                collect_deprecated_dollar_brace_interpolation_assign_target_spans(target, spans);
+                collect_deprecated_dollar_brace_interpolation_expr_spans(expr, spans);
+            }
+            ForAction::CompoundAssign { target, expr, .. } => {
+                collect_deprecated_dollar_brace_interpolation_assign_target_spans(target, spans);
+                collect_deprecated_dollar_brace_interpolation_expr_spans(expr, spans);
+            }
+            ForAction::IncrementDecrement { target, .. } => {
+                collect_deprecated_dollar_brace_interpolation_assign_target_spans(target, spans);
+            }
+            ForAction::Expr { expr } => {
+                collect_deprecated_dollar_brace_interpolation_expr_spans(expr, spans);
+            }
+        }
+    }
+}
+
+fn collect_deprecated_dollar_brace_interpolation_new_class_name_spans(
+    class_name: &NewClassName,
+    spans: &mut Vec<Span>,
+) {
+    if let NewClassName::DynamicExpression(expr) = class_name {
+        collect_deprecated_dollar_brace_interpolation_expr_spans(expr, spans);
     }
 }
 
@@ -17503,6 +18228,7 @@ impl Interpreter {
 
     fn run(&mut self, program: &Program) -> CompileResult<Execution> {
         let mut scope = SymbolTable::from_root(self.global_symbols.clone());
+        self.emit_deprecated_dollar_brace_interpolation_diagnostics(program)?;
         let flow = match self.execute_statements(&program.statements, &mut scope) {
             Ok(flow) => flow,
             Err(error) => {
@@ -17676,6 +18402,21 @@ impl Interpreter {
 
     fn emit_display_warning(&mut self, message: impl AsRef<str>, span: Span) -> CompileResult<()> {
         self.emit_display_diagnostic("Warning", PHP_E_WARNING, message, span)
+    }
+
+    fn emit_deprecated_dollar_brace_interpolation_diagnostics(
+        &mut self,
+        program: &Program,
+    ) -> CompileResult<()> {
+        for span in collect_deprecated_dollar_brace_interpolation_spans(program) {
+            self.emit_display_diagnostic(
+                "Deprecated",
+                PHP_E_DEPRECATED,
+                "Using ${var} in strings is deprecated, use {$var} instead",
+                span,
+            )?;
+        }
+        Ok(())
     }
 
     fn emit_undefined_variable_warning(&mut self, name: &str, span: Span) -> CompileResult<()> {
@@ -19419,6 +20160,7 @@ impl Interpreter {
         let previous_source_file = self.source_file.clone();
         self.source_file = Some(included_file);
         let flow = (|| {
+            self.emit_deprecated_dollar_brace_interpolation_diagnostics(&program)?;
             self.register_included_declarations(&program)?;
             self.execute_statements(&program.statements, scope)
         })();
@@ -43596,13 +44338,16 @@ impl Interpreter {
                     Err(error) => Err(runtime_error(span, error)),
                 }
             }
-            other => Err(runtime_error(
-                span,
-                RuntimeError::invalid_property_access(format!(
-                    "cannot read property ${property} from {}",
-                    other.type_name()
-                )),
-            )),
+            other => {
+                self.emit_display_warning(
+                    format!(
+                        "Attempt to read property \"{property}\" on {}",
+                        other.type_name()
+                    ),
+                    span,
+                )?;
+                Ok(Value::Null)
+            }
         }
     }
 
@@ -43698,13 +44443,16 @@ impl Interpreter {
                     Err(error) => Err(runtime_error(span, error)),
                 }
             }
-            other => Err(runtime_error(
-                span,
-                RuntimeError::invalid_property_access(format!(
-                    "cannot read property ${property} from {}",
-                    other.type_name()
-                )),
-            )),
+            other => {
+                self.emit_display_warning(
+                    format!(
+                        "Attempt to read property \"{property}\" on {}",
+                        other.type_name()
+                    ),
+                    span,
+                )?;
+                Ok((Value::Null, None))
+            }
         }
     }
 
@@ -44395,11 +45143,13 @@ impl Interpreter {
         let object = match target_value {
             Value::Object(object) => object,
             other => {
-                return Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        format!("{method_name}()"),
-                        format!("receiver must be object, got {}", other.type_name()),
+                return Err(Diagnostic::new(
+                    Phase::Runtime,
+                    span.line,
+                    span.column,
+                    format!(
+                        "Call to a member function {method_name}() on {}",
+                        other.type_name()
                     ),
                 ));
             }
@@ -49776,7 +50526,11 @@ impl Interpreter {
                     output.extend(php_string_literal_bytes(value));
                 }
                 InterpolatedStringPart::Variable(name) => {
-                    let value = scope.read_static(name, span)?;
+                    let value = self.read_interpolated_variable(scope, name, span)?;
+                    output.extend(self.value_to_echo_bytes(value, span)?);
+                }
+                InterpolatedStringPart::DeprecatedDollarBraceVariable(name) => {
+                    let value = self.read_interpolated_variable(scope, name, span)?;
                     output.extend(self.value_to_echo_bytes(value, span)?);
                 }
                 InterpolatedStringPart::ArrayOffset { variable, key } => {
@@ -49797,6 +50551,20 @@ impl Interpreter {
             }
         }
         Ok(interpreter_value_from_php_string_bytes(output))
+    }
+
+    fn read_interpolated_variable(
+        &mut self,
+        scope: &SymbolTable,
+        name: &str,
+        span: Span,
+    ) -> CompileResult<Value> {
+        if let Some(value) = scope.read_named(name) {
+            return Ok(value);
+        }
+
+        self.emit_undefined_variable_warning(name, span)?;
+        Ok(Value::Null)
     }
 
     fn evaluate_interpolated_access_chain(
@@ -95811,6 +96579,10 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
         if error.message.starts_with("Non-static method ")
             && error.message.ends_with(" cannot be called statically")
         {
+            return Some(("Error", error.message.clone()));
+        }
+
+        if error.message.starts_with("Call to a member function ") {
             return Some(("Error", error.message.clone()));
         }
 

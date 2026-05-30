@@ -12,8 +12,8 @@
 - decimal, legacy-octal, and hexadecimal integer literals in the current signed 64-bit subset
 - float literals
 - single-quoted and double-quoted string literals with basic escapes; double
-  quoted strings additionally support simple `$name` and `{$name}`
-  interpolation over the current variable table
+  quoted strings additionally support simple `$name`, `{$name}`, and
+  deprecated `${name}` interpolation over the current variable table
 - `null`, `true`, and `false`
 - magic constants `__LINE__`, evaluated from the expression token's source
   line, `__FILE__`, evaluated from the current `phpc run` input path when one
@@ -5778,15 +5778,18 @@
   promoted constructor property parameters,
   and broader late-bound `static::` member forms
 - explicit lex diagnostics for unsupported variable-variable syntax such as
-  `$$name` and `${...}`
+  `$$name` and complex `${...}` forms
 - double-quoted string interpolation for simple `$name`, braced `{$name}`,
+  deprecated `${name}` with the current compile-time deprecation diagnostic,
   direct array offsets such as `{$items['name']}`, `{$items[$key]}`, and
   `$items[name]`, direct object properties such as `{$partial->id}`, and
   chained property/offset reads such as
   `{$block->context['displayLayout']['columns']}`. Array keys may currently be
   string literals, integer literals, bare string keys, or variable keys that
-  coerce through the current array-key rules. Dynamic property names, static
-  properties, `${...}`, variable variables, arbitrary expression
+  coerce through the current array-key rules. Undefined simple interpolation
+  variables emit the current PHP-shaped warning and interpolate as an empty
+  string. Dynamic property names, static properties, variable variables,
+  arbitrary expression
   interpolation, exact diagnostics, and native lowering remain unsupported.
 - simple no-argument PHP attributes such as `#[ReturnTypeWillChange]` are
   accepted and ignored as syntax-only metadata before functions, classes,
@@ -9710,8 +9713,8 @@
   native lowering are unsupported. Object string conversion is supported only
   for the documented direct `__toString()` echo/print/cast/concat/`.=` slice
   plus the current double-quoted string and heredoc interpolation evaluator;
-  `${...}` interpolation, dynamic/static property interpolation, arbitrary
-  expression interpolation, exact non-string-return `TypeError` objects,
+  complex `${...}` interpolation, dynamic/static property interpolation,
+  arbitrary expression interpolation, exact non-string-return `TypeError` objects,
   recursion edge cases, and native lowering remain unsupported.
 - Constructor boundary: public instance `__construct` methods, including
   inherited public constructors and explicit public/protected
