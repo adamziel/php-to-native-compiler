@@ -14720,6 +14720,44 @@ foreach ($it as $key => $value) {
 }
 
 #[test]
+fn array_object_nested_storage_mutations_reach_inner_array_object() {
+    let source = r#"<?php
+$base = new ArrayObject(array(1 => "one", 2 => "two", 3 => "three"));
+$base[] = "four";
+$copy = new ArrayObject($base);
+$copy[] = "five";
+$copy[6] = "six";
+unset($copy[2]);
+
+foreach ($base as $key => $value) {
+    echo $key, "=", $value, "\n";
+}
+print_r($copy->getArrayCopy());
+
+$it = new ArrayIterator(new stdClass());
+try {
+    $it->append("bad");
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert!(execution.stdout.contains(
+        "Deprecated: ArrayObject::__construct(): Using an object as a backing array for ArrayObject is deprecated"
+    ));
+    assert!(execution.stdout.contains(
+        "Deprecated: ArrayIterator::__construct(): Using an object as a backing array for ArrayIterator is deprecated"
+    ));
+    assert!(execution.stdout.contains(
+        "1=one\n3=three\n4=four\n5=five\n6=six\nArray\n(\n    [1] => one\n    [3] => three\n    [4] => four\n    [5] => five\n    [6] => six\n)\n"
+    ));
+    assert!(execution.stdout.ends_with(
+        "Cannot append properties to objects, use ArrayIterator::offsetSet() instead\n"
+    ));
+}
+
+#[test]
 fn array_object_array_as_props_and_iterator_class_metadata() {
     let source = r#"<?php
 class ChildArrayObject extends ArrayObject {

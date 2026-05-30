@@ -11268,10 +11268,11 @@ impl Interpreter {
         let mut state = self
             .array_object_state(object, "ARRAY_AS_PROPS", span)?
             .clone();
-        Self::array_object_write_storage_key(
+        self.array_object_write_storage_key(
             &mut state.storage,
             Some(ArrayKey::String(property.to_string())),
             value,
+            object.class_name(),
             "ARRAY_AS_PROPS",
             span,
         )?;
@@ -11289,9 +11290,10 @@ impl Interpreter {
         let mut state = self
             .array_object_state(object, "ARRAY_AS_PROPS", span)?
             .clone();
-        Self::array_object_unset_storage_key(
+        self.array_object_unset_storage_key(
             &mut state.storage,
             &ArrayKey::String(property.to_string()),
+            object.class_name(),
             "ARRAY_AS_PROPS",
             span,
         )?;
@@ -11317,9 +11319,11 @@ impl Interpreter {
     }
 
     fn array_object_write_storage_key(
+        &mut self,
         storage: &mut Value,
         key: Option<ArrayKey>,
         value: Value,
+        class_name: &str,
         method_name: &str,
         span: Span,
     ) -> CompileResult<()> {
@@ -11334,13 +11338,29 @@ impl Interpreter {
                 }
                 Ok(())
             }
+            Value::Object(object) if self.is_array_object_storage_object(object) => {
+                let mut state = self.array_object_state(object, method_name, span)?.clone();
+                self.array_object_write_storage_key(
+                    &mut state.storage,
+                    key,
+                    value,
+                    class_name,
+                    method_name,
+                    span,
+                )?;
+                self.sync_array_object_properties(object, &state, span)?;
+                self.array_objects.insert(object.id(), state);
+                Ok(())
+            }
             Value::Object(object) => {
                 let key = key.ok_or_else(|| {
                     runtime_error(
                         span,
                         RuntimeError::unsupported_call(
-                            format!("ArrayObject::{method_name}()"),
-                            "Cannot append properties to objects, use ArrayObject::offsetSet() instead",
+                            format!("{class_name}::{method_name}()"),
+                            format!(
+                                "Cannot append properties to objects, use {class_name}::offsetSet() instead"
+                            ),
                         ),
                     )
                 })?;
@@ -11354,7 +11374,7 @@ impl Interpreter {
             other => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
-                    format!("ArrayObject::{method_name}()"),
+                    format!("{class_name}::{method_name}()"),
                     format!(
                         "ArrayObject storage must be array or object in the current subset, got {}",
                         other.type_name()
@@ -11365,14 +11385,29 @@ impl Interpreter {
     }
 
     fn array_object_unset_storage_key(
+        &mut self,
         storage: &mut Value,
         key: &ArrayKey,
+        class_name: &str,
         method_name: &str,
         span: Span,
     ) -> CompileResult<()> {
         match storage {
             Value::Array(array) => {
                 array.remove(key.clone());
+                Ok(())
+            }
+            Value::Object(object) if self.is_array_object_storage_object(object) => {
+                let mut state = self.array_object_state(object, method_name, span)?.clone();
+                self.array_object_unset_storage_key(
+                    &mut state.storage,
+                    key,
+                    class_name,
+                    method_name,
+                    span,
+                )?;
+                self.sync_array_object_properties(object, &state, span)?;
+                self.array_objects.insert(object.id(), state);
                 Ok(())
             }
             Value::Object(object) => object
@@ -11386,7 +11421,7 @@ impl Interpreter {
             other => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
-                    format!("ArrayObject::{method_name}()"),
+                    format!("{class_name}::{method_name}()"),
                     format!(
                         "ArrayObject storage must be array or object in the current subset, got {}",
                         other.type_name()
@@ -11729,10 +11764,11 @@ impl Interpreter {
                 };
                 let value = args.get(1).cloned().unwrap_or(Value::Null);
                 let mut state = self.array_object_state(&object, method_name, span)?.clone();
-                Self::array_object_write_storage_key(
+                self.array_object_write_storage_key(
                     &mut state.storage,
                     key,
                     value,
+                    class_name,
                     method_name,
                     span,
                 )?;
@@ -11744,10 +11780,11 @@ impl Interpreter {
                 expect_arity(&format!("{class_name}::append"), &args, 1, span)?;
                 let value = args.first().cloned().unwrap_or(Value::Null);
                 let mut state = self.array_object_state(&object, method_name, span)?.clone();
-                Self::array_object_write_storage_key(
+                self.array_object_write_storage_key(
                     &mut state.storage,
                     None,
                     value,
+                    class_name,
                     method_name,
                     span,
                 )?;
@@ -11763,7 +11800,13 @@ impl Interpreter {
                     span,
                 )?;
                 let mut state = self.array_object_state(&object, method_name, span)?.clone();
-                Self::array_object_unset_storage_key(&mut state.storage, &key, method_name, span)?;
+                self.array_object_unset_storage_key(
+                    &mut state.storage,
+                    &key,
+                    class_name,
+                    method_name,
+                    span,
+                )?;
                 if state.cursor
                     > self
                         .array_object_storage_to_array(&state.storage, method_name, span)?
@@ -95540,6 +95583,11 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
                 }
                 if reason.contains(" expects at most ") || reason.contains(" expects at least ") {
                     return Some(("ArgumentCountError", reason.to_string()));
+                }
+                if reason.starts_with("Cannot append properties to objects, use ")
+                    && reason.ends_with("::offsetSet() instead")
+                {
+                    return Some(("Error", reason.to_string()));
                 }
                 if reason.contains(" must be of type ")
                     || reason.contains(" must be a class name derived from ArrayIterator")
