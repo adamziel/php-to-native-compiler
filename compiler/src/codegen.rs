@@ -66415,6 +66415,7 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "strtok",
     "substr",
     "substr_replace",
+    "substr_compare",
     "substr_count",
     "str_replace",
     "str_getcsv",

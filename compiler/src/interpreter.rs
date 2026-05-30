@@ -78383,6 +78383,7 @@ impl Interpreter {
             "str_word_count" => call_str_word_count(&args, span),
             "substr" => call_substr(&args, span),
             "substr_replace" => call_substr_replace(&args, span),
+            "substr_compare" => call_substr_compare(&args, span),
             "substr_count" => call_substr_count(&args, span),
             "str_replace" => call_str_replace(&args, span),
             "str_getcsv" => call_str_getcsv(&args, span),
@@ -92689,6 +92690,16 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_optional_null_param("length", "array|int"),
             ],
         ),
+        "substr_compare" => (
+            "int",
+            vec![
+                reflection_internal_param("haystack", "string"),
+                reflection_internal_param("needle", "string"),
+                reflection_internal_param("offset", "int"),
+                reflection_internal_optional_null_param("length", "int"),
+                reflection_internal_optional_bool_param("case_insensitive", false),
+            ],
+        ),
         "str_replace" => (
             "array|string",
             vec![
@@ -95738,6 +95749,14 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
             "substr_count()",
             "Argument #4 ($length) must be contained in argument #1 ($haystack)",
         )
+        | (
+            "substr_compare()",
+            "Argument #3 ($offset) must be contained in argument #1 ($haystack)",
+        )
+        | (
+            "substr_compare()",
+            "Argument #4 ($length) must be greater than or equal to 0",
+        )
         | ("base_convert()", "Argument #2 ($from_base) must be between 2 and 36 (inclusive)")
         | ("base_convert()", "Argument #3 ($to_base) must be between 2 and 36 (inclusive)")
         | ("strncmp()", "Argument #3 ($length) must be greater than or equal to 0")
@@ -95759,6 +95778,7 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
             | "stream_context_set_options()",
             "Options should have the form [\"wrappername\"][\"optionname\"] = $value",
         )
+        | ("strpos()", "Argument #3 ($offset) must be contained in argument #1 ($haystack)")
         | ("stripos()", "Argument #3 ($offset) must be contained in argument #1 ($haystack)")
         | ("strrpos()", "Argument #3 ($offset) must be contained in argument #1 ($haystack)")
         | ("strripos()", "Argument #3 ($offset) must be contained in argument #1 ($haystack)")
@@ -96296,6 +96316,7 @@ fn is_builtin(name: &str) -> bool {
             | "str_word_count"
             | "substr"
             | "substr_replace"
+            | "substr_compare"
             | "substr_count"
             | "str_replace"
             | "str_getcsv"
@@ -108534,11 +108555,7 @@ fn call_strpos_like(
             span,
             RuntimeError::unsupported_call(
                 function,
-                if function == "stripos()" {
-                    "Argument #3 ($offset) must be contained in argument #1 ($haystack)"
-                } else {
-                    "offset must be within the haystack bounds in the current subset"
-                },
+                "Argument #3 ($offset) must be contained in argument #1 ($haystack)",
             ),
         ));
     }
@@ -108878,6 +108895,94 @@ fn call_substr_replace(args: &[Value], span: Span) -> CompileResult<Value> {
                 length,
             )))
         }
+    }
+}
+
+fn call_substr_compare(args: &[Value], span: Span) -> CompileResult<Value> {
+    if !(3..=5).contains(&args.len()) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "substr_compare()",
+                ArityExpectation::Between { min: 3, max: 5 },
+                args.len(),
+            ),
+        ));
+    }
+
+    let haystack = string_compare_argument_bytes("substr_compare()", "haystack", &args[0], span)?;
+    let needle = string_compare_argument_bytes("substr_compare()", "needle", &args[1], span)?;
+    let offset = php_internal_int_argument("substr_compare()", 3, "offset", &args[2], span)?;
+    let length = match args.get(3) {
+        Some(Value::Null) | None => None,
+        Some(value) => {
+            let length = php_internal_int_argument("substr_compare()", 4, "length", value, span)?;
+            if length < 0 {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "substr_compare()",
+                        "Argument #4 ($length) must be greater than or equal to 0",
+                    ),
+                ));
+            }
+            Some(length as usize)
+        }
+    };
+    let case_insensitive = args.get(4).is_some_and(Value::is_truthy);
+
+    let haystack_len = haystack.len() as i64;
+    let start = if offset >= 0 {
+        offset
+    } else {
+        haystack_len.saturating_add(offset).max(0)
+    };
+    if start > haystack_len {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "substr_compare()",
+                "Argument #3 ($offset) must be contained in argument #1 ($haystack)",
+            ),
+        ));
+    }
+
+    let start = start as usize;
+    let mut left = &haystack[start..];
+    let mut right = needle.as_slice();
+    if let Some(length) = length {
+        left = &left[..left.len().min(length)];
+        right = &right[..right.len().min(length)];
+    }
+
+    Ok(Value::Int(php_substr_compare_bytes(
+        left,
+        right,
+        case_insensitive,
+    )))
+}
+
+fn php_substr_compare_bytes(left: &[u8], right: &[u8], case_insensitive: bool) -> i64 {
+    for (&left, &right) in left.iter().zip(right.iter()) {
+        let left = if case_insensitive {
+            left.to_ascii_lowercase()
+        } else {
+            left
+        };
+        let right = if case_insensitive {
+            right.to_ascii_lowercase()
+        } else {
+            right
+        };
+        if left != right {
+            return if left < right { -1 } else { 1 };
+        }
+    }
+
+    match left.len().cmp(&right.len()) {
+        std::cmp::Ordering::Less => -1,
+        std::cmp::Ordering::Equal => 0,
+        std::cmp::Ordering::Greater => 1,
     }
 }
 

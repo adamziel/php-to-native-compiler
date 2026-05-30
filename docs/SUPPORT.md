@@ -3164,7 +3164,7 @@
   `wordwrap`, `str_word_count`, `strnatcmp`, `strnatcasecmp`,
   `similar_text`,
   `convert_uuencode`, `convert_uudecode`,
-  `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `substr_replace`, `substr_count`, `str_getcsv`, `parse_str`,
+  `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `substr_replace`, `substr_compare`, `substr_count`, `str_getcsv`, `parse_str`,
   `error_reporting`, `ignore_user_abort`, `printf`, `fprintf`, `sprintf`, `vsprintf`, `vprintf`, `vfprintf`, `call_user_func`, `call_user_func_array`,
   `implode`, `basename`, `dirname`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`,
   `file_put_contents`, `readfile`, `unlink`, `mkdir`, `rmdir`, `copy`, `rename`, `chdir`, `scandir`, `stat`, `lstat`, `fileperms`, `chmod`,
@@ -3439,10 +3439,11 @@
   string-convertible haystack and needle arguments, an optional integer offset,
   byte-position matching over the current runtime string bytes, empty needles
   returning the effective offset, negative offsets measured from the end of the
-  haystack, and `false` for no match. Offset coercions beyond integers,
-  PHP-exact `ValueError` diagnostics, array/object/resource coercions,
-  encoding-sensitive edge cases beyond represented runtime strings, and native
-  lowering remain unsupported.
+  haystack, catchable `ValueError` handling for offsets outside the haystack
+  bounds, and `false` for no match. Offset coercions beyond integers,
+  array/object/resource coercions, encoding-sensitive edge cases beyond
+  represented runtime strings, exact diagnostics beyond the documented offset
+  bounds message, and native lowering remain unsupported.
   `stripos($haystack, $needle, $offset = 0)` supports scalar/null
   string-convertible haystack and needle arguments, an optional integer offset,
   forward byte-position matching over the current runtime string bytes, empty
@@ -3469,6 +3470,15 @@
   resulting runtime string remains valid UTF-8. Float/string offset and length
   coercions, object/resource operands, invalid UTF-8 byte ranges, exact PHP
   diagnostics, and native lowering remain unsupported.
+  `substr_compare($haystack, $needle, $offset, $length = null,
+  $case_insensitive = false)` supports scalar/null string-convertible haystack
+  and needle arguments, int-compatible offsets, nullable non-negative lengths,
+  negative offsets clamped to the start when they precede the haystack, offsets
+  at the end of the haystack, optional ASCII-only case-insensitive comparison,
+  and PHP-shaped catchable `ValueError` messages for positive offsets outside
+  the haystack and negative lengths. Array/object/resource operands, locale or
+  Unicode case folding, exact diagnostics beyond the documented offset/length
+  messages, and native lowering remain unsupported.
   `substr_count($haystack, $needle, $offset = 0, $length = null)` supports
   scalar/null string-convertible haystack and needle arguments, optional
   int-compatible offset and nullable length slicing, negative offsets and
@@ -7364,7 +7374,7 @@
   Direct `function_exists($name)` calls fold in native output when `$name` is
   an already-lowerable string value with a uniform known answer in the current
   documented builtin table: documented callable builtins, including
-  `strtolower`, `strtoupper`, `trim`, `ltrim`, `rtrim`, `strncmp`, `strncasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`, `strspn`, `strcspn`, `strpbrk`, `strpos`, `stripos`, `strrpos`, `strripos`, `strstr`, `strchr`, `stristr`, `strtok`, `substr`, `substr_replace`, `substr_count`, `similar_text`, `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`,
+  `strtolower`, `strtoupper`, `trim`, `ltrim`, `rtrim`, `strncmp`, `strncasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`, `strspn`, `strcspn`, `strpbrk`, `strpos`, `stripos`, `strrpos`, `strripos`, `strstr`, `strchr`, `stristr`, `strtok`, `substr`, `substr_replace`, `substr_compare`, `substr_count`, `similar_text`, `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`,
   `error_reporting`, `min`, `rand`, `uniqid`, `hash_hmac`, `md5`, `md5_file`, `get_current_user`, `basename`, `dirname`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`, `str_getcsv`, `parse_str`,
   `file_put_contents`, `readfile`, `unlink`, `mkdir`, `rmdir`, `copy`, `rename`, `chdir`, `scandir`, `stat`, `lstat`, `fileperms`, `chmod`,
   `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_params`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `stream_context_set_params`, `fwrite`, `fscanf`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fflush`, `ftruncate`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`,
@@ -7772,7 +7782,7 @@
   to a string that case-insensitively resolves exactly to a user-defined function or to
   one of the documented callable builtins: `strlen`, `strtolower`, `strtoupper`,
   `str_increment`, `str_decrement`, `trim`, `ltrim`, `rtrim`, `strcasecmp`, `strncmp`, `strncasecmp`,
-  `str_contains`, `str_starts_with`, `str_ends_with`, `strspn`, `strcspn`, `strpbrk`, `strpos`, `stripos`, `strrpos`, `strripos`, `strstr`, `strchr`, `stristr`, `strtok`, `substr`, `wordwrap`, `str_word_count`, `strnatcmp`, `strnatcasecmp`, `similar_text`, `convert_uuencode`, `convert_uudecode`, `substr_replace`, `substr_count`, `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `str_getcsv`, `error_reporting`,
+  `str_contains`, `str_starts_with`, `str_ends_with`, `strspn`, `strcspn`, `strpbrk`, `strpos`, `stripos`, `strrpos`, `strripos`, `strstr`, `strchr`, `stristr`, `strtok`, `substr`, `wordwrap`, `str_word_count`, `strnatcmp`, `strnatcasecmp`, `similar_text`, `convert_uuencode`, `convert_uudecode`, `substr_replace`, `substr_compare`, `substr_count`, `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `str_getcsv`, `error_reporting`,
   `printf`, `fprintf`, `sprintf`, `vsprintf`, `vprintf`, `vfprintf`, `call_user_func`, `call_user_func_array`, `implode`, `basename`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`,
   `file_put_contents`, `readfile`, `unlink`, `mkdir`, `rmdir`, `copy`, `rename`, `chdir`, `scandir`, `stat`, `lstat`, `fileperms`, `chmod`,
   `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_params`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `stream_context_set_params`, `fwrite`, `fscanf`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fflush`, `ftruncate`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`, `disk_free_space`, `diskfreespace`, `disk_total_space`, `clearstatcache`, `realpath`, `realpath_cache_get`, `realpath_cache_size`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_executable`, `is_link`, `abs`,
@@ -8010,7 +8020,7 @@
   are unsupported.
 - Builtins: `strlen`, `strtolower`, `strtoupper`, `str_increment`,
   `str_decrement`, `trim`, `ltrim`, `rtrim`, `strcasecmp`, `strncmp`, `strncasecmp`, `str_contains`,
-  `str_starts_with`, `str_ends_with`, `strspn`, `strcspn`, `strpbrk`, `strpos`, `stripos`, `strrpos`, `strripos`, `strstr`, `strchr`, `stristr`, `strtok`, `substr`, `substr_replace`, `substr_count`, `similar_text`, `str_replace`, `str_getcsv`, `parse_str`, `printf`, `fprintf`, `sprintf`, `vsprintf`, `vprintf`, `vfprintf`,
+  `str_starts_with`, `str_ends_with`, `strspn`, `strcspn`, `strpbrk`, `strpos`, `stripos`, `strrpos`, `strripos`, `strstr`, `strchr`, `stristr`, `strtok`, `substr`, `substr_replace`, `substr_compare`, `substr_count`, `similar_text`, `str_replace`, `str_getcsv`, `parse_str`, `printf`, `fprintf`, `sprintf`, `vsprintf`, `vprintf`, `vfprintf`,
   `call_user_func`, `call_user_func_array`, `implode`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`,
   `file_put_contents`, `readfile`, `unlink`, `mkdir`, `rmdir`, `copy`, `rename`, `chdir`, `scandir`, `stat`, `lstat`, `fileperms`, `chmod`,
   `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_params`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `stream_context_set_params`, `fwrite`, `fscanf`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fflush`, `ftruncate`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`, `disk_free_space`, `diskfreespace`, `disk_total_space`, `clearstatcache`, `realpath`, `realpath_cache_get`, `realpath_cache_size`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_executable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_length`, `ob_list_handlers`, `ob_get_status`, `ob_get_clean`, `ob_get_flush`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `date_default_timezone_set`, `abs`, `microtime`, `ini_get`, `min`, `get_current_user`, `isset`, `empty`, `count`,
@@ -8508,6 +8518,12 @@
   integer offset, and optional integer length subset as the builtin section
   above; direct native `substr(...)` calls still reject under the function-call
   boundary, while native function-table introspection recognizes the name.
+  `substr_compare` accepts the same current scalar/null string-convertible
+  haystack and needle subset plus int-compatible offset, nullable non-negative
+  length, and optional boolean case-insensitive flag as the builtin section
+  above; direct native `substr_compare(...)` calls still reject under the
+  function-call boundary, while native function-table introspection recognizes
+  the name.
   `substr_count` accepts the same current scalar/null string-convertible
   haystack and needle subset plus optional int-compatible offset and nullable
   length arguments as the builtin section above; direct native
@@ -10891,10 +10907,10 @@
   native lowering beyond function-table introspection
 - `strpos()`/`stripos()` outside the current scalar/null string-convertible
   haystack and needle plus optional integer offset subset: PHP-exact offset
-  coercions and `ValueError` diagnostics, array/object/resource coercions,
-  non-ASCII case-folding parity for `stripos()`, encoding-sensitive edge cases
-  beyond represented runtime strings, and native lowering beyond function-table
-  introspection
+  coercions and diagnostics beyond the covered offset-bounds `ValueError`,
+  array/object/resource coercions, non-ASCII case-folding parity for
+  `stripos()`, encoding-sensitive edge cases beyond represented runtime
+  strings, and native lowering beyond function-table introspection
 - `strrpos()`/`strripos()` outside the current scalar/null string-convertible
   haystack and needle plus optional integer offset subset: PHP-exact offset
   coercions beyond integer values, non-ASCII case folding for `strripos()`,
@@ -10905,6 +10921,12 @@
   integer offset and optional integer length subset: float/string offset and
   length coercions, object/resource operands, invalid UTF-8 byte ranges, exact
   PHP diagnostics, and native lowering beyond function-table introspection
+- `substr_compare()` outside the current scalar/null string-convertible
+  haystack and needle plus int-compatible offset, nullable non-negative length,
+  and optional boolean case-insensitive flag subset: array/object/resource
+  operands, locale/Unicode case folding, exact diagnostics beyond the covered
+  offset/length `ValueError` messages, and native lowering beyond
+  function-table introspection
 - `substr_count()` outside the current scalar/null string-convertible haystack
   and needle plus optional int-compatible offset and nullable length subset:
   array/object/resource operands, encoding-sensitive edge cases beyond

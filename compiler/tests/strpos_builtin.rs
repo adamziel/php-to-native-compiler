@@ -93,15 +93,6 @@ fn strpos_rejects_forms_outside_current_subset() {
         "unsupported call strpos(): offset argument must be int in the current subset, got string"
     );
 
-    let out_of_bounds = run_source("<?php\nstrpos('abc', 'a', 4);\n").unwrap_err();
-    assert_eq!(out_of_bounds.phase, Phase::Runtime);
-    assert_eq!(out_of_bounds.line, 2);
-    assert_eq!(out_of_bounds.column, 1);
-    assert_eq!(
-        out_of_bounds.message,
-        "unsupported call strpos(): offset must be within the haystack bounds in the current subset"
-    );
-
     let too_few = run_source("<?php\nstrpos('abc');\n").unwrap_err();
     assert_eq!(too_few.phase, Phase::Runtime);
     assert_eq!(too_few.line, 2);
@@ -110,6 +101,28 @@ fn strpos_rejects_forms_outside_current_subset() {
         too_few.message,
         "arity mismatch for strpos(): expected 2 to 3 argument(s), got 1"
     );
+}
+
+#[test]
+fn strpos_reports_php_shaped_offset_value_errors() {
+    let execution = run_source(
+        r#"<?php
+foreach ([4, -4] as $offset) {
+    try {
+        strpos("abc", "a", $offset);
+    } catch (ValueError $exception) {
+        echo $exception->getMessage(), "\n";
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "strpos(): Argument #3 ($offset) must be contained in argument #1 ($haystack)\nstrpos(): Argument #3 ($offset) must be contained in argument #1 ($haystack)\n"
+    );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
