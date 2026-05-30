@@ -24,6 +24,28 @@ echo ucwords("test(braced)words", "()");
 }
 
 #[test]
+fn compound_concat_preserves_binary_string_bytes_for_string_helpers() {
+    let execution = run_source(
+        r#"<?php
+$i = 0;
+$str = "";
+while ($i < 256) {
+    $str .= chr($i++);
+}
+var_dump(md5(strrev($str)));
+var_dump(strrev(""));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "string(32) \"ec6df70f2569891eae50321a9179eb82\"\nstring(0) \"\"\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn ord_and_hex2bin_emit_php_shaped_warnings() {
     let execution = run_source(
         r#"<?php

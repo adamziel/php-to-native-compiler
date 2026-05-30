@@ -2330,7 +2330,10 @@
   well-formed numeric strings, returning integer remainders and reporting a
   stable modulo-by-zero diagnostic
 - unary `-` and `!`
-- string concatenation: `.`
+- string concatenation: `.` and concat compound assignment `.=` use the same
+  PHP-shaped byte conversion path, so binary string values that are not valid
+  UTF-8 remain binary strings instead of being forced through text output
+  conversion
 - loose comparisons: `==`, `!=`, `<`, `<=`, `>`, `>=` across the current
   scalar values (`null`, booleans, integers, floats, and strings)
 - strict identity comparisons: `===` and `!==` across the current scalar

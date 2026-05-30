@@ -35221,9 +35221,9 @@ impl Interpreter {
         span: Span,
     ) -> CompileResult<Value> {
         if matches!(op, CompoundAssignOp::Concat) {
-            let left = self.value_to_echo_string(left, span)?;
-            let right = self.value_to_echo_string(right, span)?;
-            return Ok(Value::String(format!("{left}{right}")));
+            let mut bytes = self.value_to_echo_bytes(left, span)?;
+            bytes.extend(self.value_to_echo_bytes(right, span)?);
+            return Ok(interpreter_value_from_php_string_bytes(bytes));
         }
 
         let value = match op {
