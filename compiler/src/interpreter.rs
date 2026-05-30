@@ -72440,6 +72440,61 @@ impl Interpreter {
         }
     }
 
+    fn call_chown_or_chgrp(
+        &mut self,
+        args: &[Value],
+        function: &str,
+        value_label: &str,
+        span: Span,
+    ) -> CompileResult<Value> {
+        expect_arity(function, args, 2, span)?;
+        let path = self.filesystem_path_argument(function, "filename", &args[0], span)?;
+        match &args[1] {
+            Value::Int(_) | Value::String(_) => {}
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        format!("{function}()"),
+                        format!(
+                            "{value_label} argument must be int or string in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+        }
+        let filesystem_path =
+            self.resolve_local_filesystem_operation_path(function, &path, false, span)?;
+        if !self.enforce_bounded_open_basedir(
+            &format!("{function}()"),
+            &path,
+            &filesystem_path,
+            span,
+        )? {
+            return Ok(Value::Bool(false));
+        }
+        match fs::metadata(&filesystem_path) {
+            Ok(_) => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{function}()"),
+                    "ownership mutation is not supported for existing files in the current subset",
+                ),
+            )),
+            Err(error) => {
+                self.emit_display_warning(
+                    format!(
+                        "{function}(): {}",
+                        Self::filesystem_io_warning_message(&error)
+                    ),
+                    span,
+                )?;
+                Ok(Value::Bool(false))
+            }
+        }
+    }
+
     fn call_file_metadata_int_builtin(
         &mut self,
         args: &[Value],
@@ -80671,6 +80726,8 @@ impl Interpreter {
                 filesystem_group_value,
                 span,
             ),
+            "chown" => self.call_chown_or_chgrp(&args, "chown", "user", span),
+            "chgrp" => self.call_chown_or_chgrp(&args, "chgrp", "group", span),
             "filetype" => self.call_filetype(&args, span),
             "is_executable" => self.call_is_executable(&args, span),
             "disk_free_space" => {
@@ -97017,6 +97074,8 @@ fn is_builtin(name: &str) -> bool {
             | "fileowner"
             | "filegroup"
             | "filetype"
+            | "chown"
+            | "chgrp"
             | "is_executable"
             | "disk_free_space"
             | "diskfreespace"

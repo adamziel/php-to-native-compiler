@@ -3271,6 +3271,14 @@ signed 64-bit integer subset, and native filesystem lowering remain out of
 scope. Native function-table
 introspection recognizes the name, while direct native calls reject under the
 function-call boundary.
+The adjacent interpreter-only metadata helpers `fileinode()`, `fileowner()`,
+`filegroup()`, `fileatime()`, `filectime()`, and `is_executable()` share the
+same local-path and request-local `open_basedir` check. Denied metadata paths
+emit PHP-shaped display warnings and return `false`; successful metadata reads
+stay host-local and bounded. `chown()` and `chgrp()` currently share only the
+local path/open_basedir/missing-file recovery part of that boundary and reject
+actual ownership changes on existing files until a native host ownership policy
+exists.
 `realpath()` is interpreter-only for one string local path. It uses the same
 process-path-then-repo-root relative path policy as the metadata builtins,
 returns a UTF-8 resolved host path for existing local paths, and returns
