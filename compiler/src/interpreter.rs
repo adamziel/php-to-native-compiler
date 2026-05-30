@@ -228,6 +228,7 @@ struct Interpreter {
     request_time: i64,
     request_time_seeded: bool,
     default_timezone: String,
+    default_timezone_explicit: bool,
     request_body: String,
     include_path: String,
     execution_steps: usize,
@@ -10134,7 +10135,9 @@ impl Interpreter {
             }
         }
 
-        let ini_values = phpc_phpt_ini_overrides_from_env();
+        let mut ini_values = phpc_phpt_ini_overrides_from_env();
+        let (default_timezone, timezone_startup_warning) =
+            initial_default_timezone_from_ini(&mut ini_values);
         let error_reporting_mask = ini_values
             .get("error_reporting")
             .and_then(|value| parse_ini_error_reporting_mask(value))
@@ -10229,7 +10232,8 @@ impl Interpreter {
                 .request_time
                 .unwrap_or(SESSION_CACHE_REFERENCE_TIMESTAMP),
             request_time_seeded: options.request_time.is_some(),
-            default_timezone: "UTC".to_string(),
+            default_timezone,
+            default_timezone_explicit: false,
             request_body: options.request_body.unwrap_or_default(),
             include_path: ".".to_string(),
             execution_steps: 0,
@@ -10270,6 +10274,9 @@ impl Interpreter {
             stderr: String::new(),
             exit_signal: None,
         };
+        if let Some(message) = timezone_startup_warning {
+            interpreter.emit_startup_warning(message);
+        }
         interpreter.uploaded_file_paths =
             uploaded_file_paths_from_metadata_pairs(options.upload_files.as_deref().unwrap_or(""));
         interpreter.initialize_superglobals(
@@ -17496,6 +17503,16 @@ impl Interpreter {
         span: Span,
     ) -> CompileResult<()> {
         self.emit_runtime_diagnostic(function, "Warning", PHP_E_WARNING, message, span)
+    }
+
+    fn emit_startup_warning(&mut self, message: impl AsRef<str>) {
+        if self.error_reporting_mask & PHP_E_WARNING == 0 {
+            return;
+        }
+        self.append_output(&format!(
+            "Warning: PHP Startup: {} in Unknown on line 0\n",
+            message.as_ref()
+        ));
     }
 
     fn with_error_control_suppression<T>(
@@ -114353,9 +114370,14 @@ impl Interpreter {
         match &args[0] {
             Value::String(name) => {
                 let Some(timezone) = bounded_timezone_from_name(name) else {
+                    self.emit_display_notice(
+                        format!("date_default_timezone_set(): Timezone ID '{name}' is invalid"),
+                        span,
+                    )?;
                     return Ok(Value::Bool(false));
                 };
                 self.default_timezone = timezone.name;
+                self.default_timezone_explicit = true;
                 Ok(Value::Bool(true))
             }
             other => Err(runtime_error(
@@ -116001,6 +116023,31 @@ impl Interpreter {
 
         if normalized_name == "include_path" {
             self.include_path = value.clone();
+        }
+
+        if normalized_name == "date.timezone" {
+            let Some(timezone) = (!value.is_empty())
+                .then(|| bounded_timezone_from_name(&value))
+                .flatten()
+            else {
+                let fallback = bounded_timezone_from_name(&previous)
+                    .map(|timezone| timezone.name)
+                    .unwrap_or_else(|| self.default_timezone.clone());
+                self.emit_display_warning(
+                    format!(
+                        "ini_set(): Invalid date.timezone value '{value}', using '{}' instead",
+                        fallback
+                    ),
+                    span,
+                )?;
+                return Ok(Value::Bool(false));
+            };
+            self.ini_values
+                .insert(normalized_name, timezone.name.clone());
+            if !self.default_timezone_explicit {
+                self.default_timezone = timezone.name;
+            }
+            return Ok(Value::String(previous));
         }
 
         self.ini_values.insert(normalized_name, value);
@@ -118154,6 +118201,7 @@ fn compat_ini_value(normalized_name: &str) -> Option<&'static str> {
         "date.default_longitude" => Some("35.2333"),
         "date.sunrise_zenith" => Some("90.833333"),
         "date.sunset_zenith" => Some("90.833333"),
+        "date.timezone" => Some("UTC"),
         "default_mimetype" => Some("text/html"),
         "disable_functions" => Some(""),
         "display_errors" => Some(""),
@@ -118206,6 +118254,29 @@ fn phpc_phpt_ini_overrides_from_env() -> HashMap<String, String> {
         }
     }
     values
+}
+
+fn initial_default_timezone_from_ini(
+    ini_values: &mut HashMap<String, String>,
+) -> (String, Option<String>) {
+    let Some(value) = ini_values.get("date.timezone") else {
+        return ("UTC".to_string(), None);
+    };
+    if let Some(timezone) = (!value.is_empty())
+        .then(|| bounded_timezone_from_name(value))
+        .flatten()
+    {
+        ini_values.insert("date.timezone".to_string(), timezone.name.clone());
+        return (timezone.name, None);
+    }
+    let invalid_value = value.clone();
+    ini_values.insert("date.timezone".to_string(), "UTC".to_string());
+    (
+        "UTC".to_string(),
+        Some(format!(
+            "Invalid date.timezone value '{invalid_value}', using 'UTC' instead"
+        )),
+    )
 }
 
 #[derive(Clone, Copy)]
