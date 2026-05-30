@@ -3000,6 +3000,13 @@
 - `php_sapi_name()` with no arguments, returning the same current
   deterministic `cli` SAPI string as `PHP_SAPI`. String-valued dynamic calls,
   `function_exists()`, and `is_callable()` recognize the builtin.
+- `php_uname()` with no arguments or one mode string among `a`, `s`, `n`, `r`,
+  `v`, and `m`, returning deterministic CLI-compatible platform strings for
+  the current compatibility target. Invalid empty, multi-character, or unknown
+  modes raise catchable `ValueError` diagnostics.
+- `phpversion()` with no arguments, `null`, `standard`, or a known loaded
+  extension name, returning the current deterministic `PHP_VERSION`
+  compatibility string. Unknown extension names return `false`.
 - HTML entity builtins `htmlspecialchars`, `htmlentities`,
   `htmlspecialchars_decode`, `html_entity_decode`, and
   `get_html_translation_table` cover the current byte-string special-character

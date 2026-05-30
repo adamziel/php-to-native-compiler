@@ -78071,7 +78071,9 @@ impl Interpreter {
             )),
             "error_reporting" => self.call_error_reporting(args, span),
             "ignore_user_abort" => self.call_ignore_user_abort(args, span),
+            "php_uname" => call_php_uname(&args, span),
             "php_sapi_name" => call_php_sapi_name(&args, span),
+            "phpversion" => call_phpversion(&args, span),
             "json_encode" => call_json_encode(&args, span),
             "printf" => self.call_printf(&args, span),
             "fprintf" => self.call_fprintf(&args, span),
@@ -92763,7 +92765,18 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_optional_reference_null_param("callable_name"),
             ],
         ),
+        "php_uname" => (
+            "string",
+            vec![reflection_internal_optional_string_param("mode", "a")],
+        ),
         "php_sapi_name" => ("string", vec![]),
+        "phpversion" => (
+            "string|false",
+            vec![reflection_internal_optional_null_param(
+                "extension",
+                "?string",
+            )],
+        ),
         _ => return None,
     };
 
@@ -95310,6 +95323,11 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
         }
         ("array_multisort()", "Array sizes are inconsistent") => Some(message.to_string()),
         (
+            "php_uname()",
+            "Argument #1 ($mode) must be a single character"
+            | "Argument #1 ($mode) must be one of \"a\", \"m\", \"n\", \"r\", \"s\", or \"v\"",
+        ) => Some(format!("{function}: {message}")),
+        (
             "array_combine()",
             "Argument #1 ($keys) and argument #2 ($values) must have the same number of elements",
         )
@@ -95892,7 +95910,9 @@ fn is_builtin(name: &str) -> bool {
             | "compact"
             | "error_reporting"
             | "ignore_user_abort"
+            | "php_uname"
             | "php_sapi_name"
+            | "phpversion"
             | "json_encode"
             | "printf"
             | "fprintf"
@@ -114179,9 +114199,104 @@ impl Interpreter {
     }
 }
 
+fn call_php_uname(args: &[Value], span: Span) -> CompileResult<Value> {
+    if args.len() > 1 {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "php_uname()",
+                ArityExpectation::Between { min: 0, max: 1 },
+                args.len(),
+            ),
+        ));
+    }
+
+    let mode = match args.first() {
+        Some(value) => value
+            .try_echo_string()
+            .map_err(|error| runtime_error(span, error))?,
+        None => "a".to_string(),
+    };
+    let mut chars = mode.chars();
+    let Some(mode) = chars.next() else {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "php_uname()",
+                "Argument #1 ($mode) must be a single character",
+            ),
+        ));
+    };
+    if chars.next().is_some() {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "php_uname()",
+                "Argument #1 ($mode) must be a single character",
+            ),
+        ));
+    }
+
+    let system = "Linux";
+    let node = "phpc";
+    let release = "0.0.0";
+    let version = "#1 phpc";
+    let machine = std::env::consts::ARCH;
+    let value = match mode {
+        'a' => format!("{system} {node} {release} {version} {machine}"),
+        's' => system.to_string(),
+        'n' => node.to_string(),
+        'r' => release.to_string(),
+        'v' => version.to_string(),
+        'm' => machine.to_string(),
+        _ => {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "php_uname()",
+                    "Argument #1 ($mode) must be one of \"a\", \"m\", \"n\", \"r\", \"s\", or \"v\"",
+                ),
+            ));
+        }
+    };
+    Ok(Value::String(value))
+}
+
 fn call_php_sapi_name(args: &[Value], span: Span) -> CompileResult<Value> {
     expect_arity("php_sapi_name", args, 0, span)?;
     Ok(Value::String("cli".to_string()))
+}
+
+fn call_phpversion(args: &[Value], span: Span) -> CompileResult<Value> {
+    if args.len() > 1 {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "phpversion()",
+                ArityExpectation::Between { min: 0, max: 1 },
+                args.len(),
+            ),
+        ));
+    }
+
+    let version = php_version_string();
+    let Some(extension) = args.first() else {
+        return Ok(Value::String(version));
+    };
+    let extension = match extension {
+        Value::Null => return Ok(Value::String(version)),
+        value => value
+            .try_echo_string()
+            .map_err(|error| runtime_error(span, error))?,
+    };
+    if extension.eq_ignore_ascii_case("standard")
+        || is_compat_loaded_extension_name(&extension)
+        || reflection_extension_metadata(&extension).is_some()
+    {
+        Ok(Value::String(version))
+    } else {
+        Ok(Value::Bool(false))
+    }
 }
 
 fn call_abs(args: &[Value], span: Span) -> CompileResult<Value> {
