@@ -66246,6 +66246,8 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "dechex",
     "decbin",
     "decoct",
+    "bindec",
+    "octdec",
     "hexdec",
     "base_convert",
     "crc32",

@@ -66,6 +66,31 @@ fn array_sum_warns_for_non_scalar_values() {
 }
 
 #[test]
+fn array_sum_warns_for_resources_and_reduce_catches_resource_addition_type_error() {
+    let source = r#"<?php
+$input = [10, STDERR];
+
+echo "array_sum() version:\n";
+var_dump(array_sum($input));
+
+echo "array_reduce() version:\n";
+try {
+    var_dump(array_reduce($input, fn($carry, $value) => $carry + $value, 0));
+} catch (TypeError $e) {
+    echo $e->getMessage();
+}
+"#;
+
+    let execution = run_source(source).unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "array_sum() version:\n\nWarning: array_sum(): Addition is not supported on type resource in Command line code on line 5\nint(13)\narray_reduce() version:\nUnsupported operand types: int + resource"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn emit_ir_rejects_array_sum_until_native_call_lowering_exists() {
     let error = emit_ir_source("<?php\necho array_sum([1]);\n").unwrap_err();
 

@@ -1152,10 +1152,15 @@ impl<'a> Lexer<'a> {
             return Ok(TokenKind::Float(value));
         }
 
-        let value = text
-            .parse::<i64>()
-            .map_err(|_| self.error_at(span, format!("invalid integer literal '{text}'")))?;
-        Ok(TokenKind::Int(value))
+        match text.parse::<i64>() {
+            Ok(value) => Ok(TokenKind::Int(value)),
+            Err(_) => {
+                let value = text.parse::<f64>().map_err(|_| {
+                    self.error_at(span, format!("invalid integer literal '{text}'"))
+                })?;
+                Ok(TokenKind::Float(value))
+            }
+        }
     }
 
     fn lex_leading_dot_number(&mut self, span: Span) -> CompileResult<TokenKind> {

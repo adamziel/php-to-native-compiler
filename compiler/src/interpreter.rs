@@ -77131,6 +77131,20 @@ impl Interpreter {
             "dechex" => self.call_int_base_string_builtin("dechex()", &args, 16, span),
             "decbin" => self.call_int_base_string_builtin("decbin()", &args, 2, span),
             "decoct" => self.call_int_base_string_builtin("decoct()", &args, 8, span),
+            "bindec" => self.call_string_base_int_builtin(
+                "bindec()",
+                "binary_string",
+                &args,
+                2,
+                span,
+            ),
+            "octdec" => self.call_string_base_int_builtin(
+                "octdec()",
+                "octal_string",
+                &args,
+                8,
+                span,
+            ),
             "hexdec" => self.call_hexdec(&args, span),
             "base_convert" => self.call_base_convert(&args, span),
             "crc32" => call_crc32(&args, span),
@@ -77138,6 +77152,7 @@ impl Interpreter {
             "levenshtein" => call_levenshtein(&args, span),
             "soundex" => call_soundex(&args, span),
             "count_chars" => call_count_chars(&args, span),
+            "base64_encode" => call_base64_encode(&args, span),
             "base64_decode" => call_base64_decode(&args, span),
             "convert_uuencode" => call_convert_uuencode(&args, span),
             "convert_uudecode" => self.call_convert_uudecode(&args, span),
@@ -85006,6 +85021,10 @@ impl Interpreter {
             return Ok(result);
         }
 
+        if let Some(error) = resource_arithmetic_type_error(op, &left, &right, span) {
+            return Err(error);
+        }
+
         let result: RuntimeResult<Value> = match op {
             BinaryOp::Add => left.php_add(&right),
             BinaryOp::Sub => left.php_sub(&right),
@@ -90903,6 +90922,14 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
             vec![reflection_internal_param("character", "string")],
         ),
         "dechex" | "decbin" | "decoct" => ("string", vec![reflection_internal_param("num", "int")]),
+        "bindec" => (
+            "int|float",
+            vec![reflection_internal_param("binary_string", "string")],
+        ),
+        "octdec" => (
+            "int|float",
+            vec![reflection_internal_param("octal_string", "string")],
+        ),
         "hexdec" => (
             "int|float",
             vec![reflection_internal_param("hex_string", "string")],
@@ -90943,6 +90970,10 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_param("string", "string"),
                 reflection_internal_optional_int_param("mode", 0),
             ],
+        ),
+        "base64_encode" => (
+            "string",
+            vec![reflection_internal_param("string", "string")],
         ),
         "base64_decode" => (
             "string|false",
@@ -93166,6 +93197,35 @@ fn array_multisort_value_error(span: Span, message: impl Into<String>) -> Diagno
     )
 }
 
+fn resource_arithmetic_type_error(
+    op: BinaryOp,
+    left: &Value,
+    right: &Value,
+    span: Span,
+) -> Option<Diagnostic> {
+    let symbol = match op {
+        BinaryOp::Add => "+",
+        BinaryOp::Sub => "-",
+        BinaryOp::Mul => "*",
+        BinaryOp::Div => "/",
+        BinaryOp::Mod => "%",
+        _ => return None,
+    };
+    if !matches!(left, Value::Resource(_)) && !matches!(right, Value::Resource(_)) {
+        return None;
+    }
+    Some(Diagnostic::new(
+        Phase::Runtime,
+        span.line,
+        span.column,
+        format!(
+            "Unsupported operand types: {} {symbol} {}",
+            left.type_name(),
+            right.type_name()
+        ),
+    ))
+}
+
 fn runtime_error(span: Span, error: RuntimeError) -> Diagnostic {
     Diagnostic::new(Phase::Runtime, span.line, span.column, error.message())
 }
@@ -93448,6 +93508,10 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
             && error.message.ends_with(" cannot be called statically")
         {
             return Some(("Error", error.message.clone()));
+        }
+
+        if error.message.starts_with("Unsupported operand types: ") {
+            return Some(("TypeError", error.message.clone()));
         }
 
         if error.message == "Array callback must have exactly two elements" {
@@ -94508,6 +94572,8 @@ fn is_builtin(name: &str) -> bool {
             | "dechex"
             | "decbin"
             | "decoct"
+            | "bindec"
+            | "octdec"
             | "hexdec"
             | "base_convert"
             | "crc32"
@@ -94515,6 +94581,7 @@ fn is_builtin(name: &str) -> bool {
             | "levenshtein"
             | "soundex"
             | "count_chars"
+            | "base64_encode"
             | "base64_decode"
             | "convert_uuencode"
             | "convert_uudecode"
@@ -101819,6 +101886,40 @@ fn call_base64_decode(args: &[Value], span: Span) -> CompileResult<Value> {
     }
 }
 
+fn call_base64_encode(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("base64_encode", args, 1, span)?;
+    let value = string_compare_argument_bytes("base64_encode()", "string", &args[0], span)?;
+    Ok(interpreter_value_from_php_string_bytes(
+        base64_encode_bytes(&value),
+    ))
+}
+
+fn base64_encode_bytes(input: &[u8]) -> Vec<u8> {
+    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+    let mut output = Vec::with_capacity(((input.len() + 2) / 3) * 4);
+    for chunk in input.chunks(3) {
+        let first = chunk[0];
+        let second = chunk.get(1).copied().unwrap_or(0);
+        let third = chunk.get(2).copied().unwrap_or(0);
+        let triple = ((first as u32) << 16) | ((second as u32) << 8) | third as u32;
+
+        output.push(TABLE[((triple >> 18) & 0x3f) as usize]);
+        output.push(TABLE[((triple >> 12) & 0x3f) as usize]);
+        if chunk.len() >= 2 {
+            output.push(TABLE[((triple >> 6) & 0x3f) as usize]);
+        } else {
+            output.push(b'=');
+        }
+        if chunk.len() == 3 {
+            output.push(TABLE[(triple & 0x3f) as usize]);
+        } else {
+            output.push(b'=');
+        }
+    }
+    output
+}
+
 fn base64_decode_bytes(input: &[u8], strict: bool) -> Option<Vec<u8>> {
     let mut symbols = Vec::with_capacity(input.len());
     let mut padding = 0usize;
@@ -102136,7 +102237,44 @@ impl Interpreter {
         }
     }
 
+    fn call_string_base_int_builtin(
+        &mut self,
+        function: &'static str,
+        parameter: &'static str,
+        args: &[Value],
+        base: u32,
+        span: Span,
+    ) -> CompileResult<Value> {
+        expect_arity(function.trim_end_matches("()"), args, 1, span)?;
+        let input = self.php_basedec_string_argument(function, parameter, &args[0], span)?;
+        let (value, ignored_invalid) = parse_php_base_string(&input, base);
+        if ignored_invalid {
+            self.emit_display_diagnostic(
+                "Deprecated",
+                PHP_E_DEPRECATED,
+                "Invalid characters passed for attempted conversion, these have been ignored",
+                span,
+            )?;
+        }
+
+        if value <= i64::MAX as u128 {
+            Ok(Value::Int(value as i64))
+        } else {
+            Ok(Value::Float(value as f64))
+        }
+    }
+
     fn php_hexdec_string_argument(&mut self, value: &Value, span: Span) -> CompileResult<String> {
+        self.php_basedec_string_argument("hexdec()", "hex_string", value, span)
+    }
+
+    fn php_basedec_string_argument(
+        &mut self,
+        function: &'static str,
+        parameter: &'static str,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<String> {
         match value {
             Value::String(value) => Ok(value.clone()),
             Value::BinaryString(bytes) => Ok(String::from_utf8_lossy(bytes).into_owned()),
@@ -102149,9 +102287,9 @@ impl Interpreter {
                 Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
-                        "hexdec()",
+                        function,
                         format!(
-                            "Argument #1 ($hex_string) must be of type string, {} given",
+                            "Argument #1 (${parameter}) must be of type string, {} given",
                             php_type_error_given(value)
                         ),
                     ),
@@ -102396,7 +102534,7 @@ fn normalize_php_scientific_float(mut value: String) -> String {
             mantissa.pop();
         }
         if mantissa.ends_with('.') {
-            mantissa.pop();
+            mantissa.push('0');
         }
     }
 

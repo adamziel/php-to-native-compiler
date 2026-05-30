@@ -87,6 +87,30 @@ var_dump(base64_decode("aGVsbG8gd29ybGQh*", true));
 }
 
 #[test]
+fn base64_encode_round_trips_binary_strings_and_exposes_metadata() {
+    let execution = run_source(
+        r#"<?php
+$payload = "Hello World" . chr(0) . chr(255);
+$encoded = base64_encode($payload);
+echo $encoded, "\n";
+echo base64_decode($encoded) === $payload ? "roundtrip" : "bad", "\n";
+echo base64_encode("f"), "|", base64_encode("fo"), "|", base64_encode("foo"), "\n";
+echo function_exists("base64_encode") ? "fn" : "missing";
+echo is_callable("base64_encode") ? ":callable:" : ":missing:";
+$reflection = new ReflectionFunction("base64_encode");
+echo $reflection->getNumberOfRequiredParameters(), "/", $reflection->getNumberOfParameters(), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "SGVsbG8gV29ybGQA/w==\nroundtrip\nZg==|Zm8=|Zm9v\nfn:callable:1/1\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn ctype_non_string_non_int_arguments_emit_deprecation_and_return_false() {
     let execution = run_source(
         r#"<?php
