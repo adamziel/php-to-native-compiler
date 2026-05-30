@@ -80144,6 +80144,22 @@ impl Interpreter {
                 };
                 Ok(Value::String(self.resource_type_label(id).to_string()))
             }
+            "get_resource_id" => {
+                expect_arity(name, &args, 1, span)?;
+                let Value::Resource(id) = args[0] else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "get_resource_id()",
+                            format!(
+                                "get_resource_id(): Argument #1 ($resource) must be of type resource, {} given",
+                                php_type_error_given(&args[0])
+                            ),
+                        ),
+                    ));
+                };
+                Ok(Value::Int(id))
+            }
             "get_debug_type" => {
                 expect_arity(name, &args, 1, span)?;
                 let type_name = match &args[0] {
@@ -91816,6 +91832,10 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
             "string",
             vec![reflection_internal_param("resource", "resource")],
         ),
+        "get_resource_id" => (
+            "int",
+            vec![reflection_internal_param("resource", "resource")],
+        ),
         "setlocale" => (
             "string|false",
             vec![
@@ -95277,6 +95297,7 @@ fn is_builtin(name: &str) -> bool {
             | "is_iterable"
             | "is_resource"
             | "get_resource_type"
+            | "get_resource_id"
             | "is_callable"
             | "function_exists"
             | "extension_loaded"

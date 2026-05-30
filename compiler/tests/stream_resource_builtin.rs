@@ -38,6 +38,24 @@ echo fclose($memory) ? "closed" : "open";
 }
 
 #[test]
+fn get_resource_id_matches_integer_cast_for_open_and_closed_resources() {
+    let execution = run_source(
+        r#"<?php
+$stream = fopen("php://memory", "w+");
+echo function_exists("get_resource_id") ? "exists" : "missing";
+echo "|";
+var_dump(get_resource_id($stream) === (int) $stream);
+fclose($stream);
+var_dump(get_resource_id($stream) === (int) $stream);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "exists|bool(true)\nbool(true)\n");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn php_input_stream_resource_reads_seeded_request_body() {
     let program = parse(
         r#"<?php
