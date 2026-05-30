@@ -71,6 +71,30 @@ echo $call($path) === $contents ? "repeat" : "different";
 }
 
 #[test]
+fn file_get_contents_preserves_local_binary_bytes_and_byte_offsets() {
+    let path = std::env::temp_dir().join(format!(
+        "{}-{}-phpc-file-get-contents-binary.bin",
+        std::process::id(),
+        line!()
+    ));
+    fs::write(&path, [0x61, 0xbd, 0x63]).expect("temporary binary file can be seeded");
+    let source = format!(
+        r#"<?php
+$path = "{}";
+echo bin2hex(file_get_contents($path));
+echo "|";
+echo bin2hex(file_get_contents($path, false, null, 1, 1));
+"#,
+        path.display()
+    );
+    let execution = run_source(&source).unwrap();
+
+    assert_eq!(execution.stdout, "61bd63|bd");
+    assert_eq!(execution.exit_code, 0);
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn file_get_contents_supports_bounded_use_include_path_lookup() {
     let execution = run_source_with_source_file(
         r#"<?php

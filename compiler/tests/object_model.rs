@@ -6525,6 +6525,150 @@ line("direct", new ReflectionParameter(array(new Plugin(), "boot"), "count"), ""
 }
 
 #[test]
+fn reflection_named_type_and_function_objects_stringify() {
+    let execution = run_source(
+        r#"<?php
+class Test {}
+function typed(?Traversable $iterator): ?string {}
+function object_type(?Test $test): ?Test {}
+function described($test, $test2 = null) {}
+
+function type_line($label, $type) {
+    echo $label, "|", $type->getName(), "|", (string) $type, "\n";
+}
+
+$function = new ReflectionFunction("typed");
+type_line("param-internal", $function->getParameters()[0]->getType());
+type_line("return-internal", $function->getReturnType());
+
+$function = new ReflectionFunction("object_type");
+type_line("param-user", $function->getParameters()[0]->getType());
+type_line("return-user", $function->getReturnType());
+
+echo "function-start\n", (new ReflectionFunction("described")), "\nfunction-end";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "param-internal|Traversable|?Traversable\nreturn-internal|string|?string\nparam-user|Test|?Test\nreturn-user|Test|?Test\nfunction-start\nFunction [ <user> function described ] {\n\n  - Parameters [2] {\n    Parameter #0 [ <required> $test ]\n    Parameter #1 [ <optional> $test2 = NULL ]\n  }\n}\n\nfunction-end"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reflection_parameter_reports_default_constant_and_pass_by_value_metadata() {
+    let execution = run_source(
+        r#"<?php
+define("APP_CONST", "app");
+
+class OtherDefaults {
+    const VALUE = "other";
+}
+
+class Defaults {
+    const VALUE = "self";
+    public function method($plain = 1, $global = APP_CONST, $self = self::VALUE, $other = OtherDefaults::VALUE) {}
+}
+
+function user_params(&$array1, $array2) {}
+
+function yn($value) {
+    return $value ? "1" : "0";
+}
+
+function constant_line($parameter) {
+    echo $parameter->getName(), "|", yn($parameter->isDefaultValueConstant());
+    if ($parameter->isDefaultValueConstant()) {
+        echo "|", $parameter->getDefaultValueConstantName();
+    }
+    echo "\n";
+}
+
+foreach ((new ReflectionMethod(Defaults::class, "method"))->getParameters() as $parameter) {
+    constant_line($parameter);
+}
+
+foreach ((new ReflectionFunction("user_params"))->getParameters() as $parameter) {
+    echo "user|", $parameter->getName(), "|", yn($parameter->isPassedByReference()), "|", yn($parameter->canBePassedByValue()), "\n";
+}
+foreach ((new ReflectionFunction("array_multisort"))->getParameters() as $parameter) {
+    echo "multi|", $parameter->getName(), "|", yn($parameter->isPassedByReference()), "|", yn($parameter->canBePassedByValue()), "\n";
+}
+foreach ((new ReflectionFunction("sort"))->getParameters() as $parameter) {
+    echo "sort|", $parameter->getName(), "|", yn($parameter->isPassedByReference()), "|", yn($parameter->canBePassedByValue()), "\n";
+}
+
+try {
+    (new ReflectionFunction("user_params"))->getParameters()[0]->getDefaultValueConstantName();
+} catch (ReflectionException $e) {
+    echo "missing|", $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "plain|0\nglobal|1|APP_CONST\nself|1|self::VALUE\nother|1|OtherDefaults::VALUE\nuser|array1|1|0\nuser|array2|0|1\nmulti|array|1|1\nmulti|rest|1|1\nsort|array|1|0\nsort|flags|0|1\nmissing|Internal error: Failed to retrieve the default value"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reflection_parameter_constructor_reinitializes_and_reports_catchable_errors() {
+    let execution = run_source(
+        r#"<?php
+class EmptyClass {}
+
+$closure = function (int $x): void {};
+$parameter = new ReflectionParameter($closure, "x");
+echo "first|", $parameter->name, "|", $parameter->getType()->getName(), "\n";
+$parameter->__construct("ord", "character");
+echo "second|", $parameter->name, "|", $parameter->getType()->getName(), "\n";
+
+try {
+    new ReflectionParameter(array("MissingClass", "missing"), 0);
+} catch (ReflectionException $e) {
+    echo "missing-class|", $e->getMessage(), "\n";
+}
+
+try {
+    new ReflectionParameter(array("EmptyClass", "missing"), 0);
+} catch (ReflectionException $e) {
+    echo "missing-method|", $e->getMessage(), "\n";
+}
+
+try {
+    new ReflectionParameter(array(new EmptyClass, "missing"), 0);
+} catch (ReflectionException $e) {
+    echo "missing-object-method|", $e->getMessage(), "\n";
+}
+
+try {
+    new ReflectionParameter(array("EmptyClass", "missing"));
+} catch (TypeError $e) {
+    echo "arity|", $e->getMessage(), "\n";
+}
+
+try {
+    new ReflectionParameter(0, 0);
+} catch (ReflectionException $e) {
+    echo "bad-function|", $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "first|x|int\nsecond|character|string\nmissing-class|Class \"MissingClass\" does not exist\nmissing-method|Method EmptyClass::missing() does not exist\nmissing-object-method|Method EmptyClass::missing() does not exist\narity|ReflectionParameter::__construct() expects exactly 2 arguments, 1 given\nbad-function|ReflectionParameter::__construct(): Argument #1 ($function) must be a string, an array(class, method), or a callable object, int given"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reflection_method_and_parameter_report_bounded_compound_type_metadata() {
     let execution = run_source(
         r#"<?php
@@ -14572,6 +14716,65 @@ foreach ($it as $key => $value) {
     assert_eq!(
         execution.stdout,
         "bool(true)\n4|1\nb:2\na:1\n0:3\n1|copy\n0=3\na=1\nb=2\nx:ex\ny:why\n"
+    );
+}
+
+#[test]
+fn array_object_array_as_props_and_iterator_class_metadata() {
+    let source = r#"<?php
+class ChildArrayObject extends ArrayObject {
+    public $p = "object";
+    private $x = "secret";
+
+    static function inside($value) {
+        return $value->x;
+    }
+}
+
+class ChildArrayIterator extends ArrayIterator {
+    function rewind(): void {
+        parent::rewind();
+    }
+
+    function valid(): bool {
+        return parent::valid();
+    }
+
+    function current(): mixed {
+        return parent::current();
+    }
+
+    function key(): string|int|null {
+        return parent::key();
+    }
+
+    function next(): void {
+        parent::next();
+    }
+}
+
+$ao = new ChildArrayObject(array("p" => "array", "x" => "public"));
+$ao->setFlags(ArrayObject::ARRAY_AS_PROPS);
+echo $ao->p, "\n";
+unset($ao->p);
+echo $ao->p, "\n";
+$ao->p = "changed";
+echo $ao["p"], "\n";
+echo ChildArrayObject::inside($ao), "\n";
+echo $ao->x, "\n";
+
+$iterable = new ArrayObject(array("a" => 1), 0, "ChildArrayIterator");
+echo $iterable->getIteratorClass(), "\n";
+echo get_class($iterable->getIterator()), "\n";
+foreach ($iterable as $key => $value) {
+    echo $key, "=", $value, "\n";
+}
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "object\narray\nchanged\nsecret\npublic\nChildArrayIterator\nChildArrayIterator\na=1\n"
     );
 }
 

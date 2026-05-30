@@ -776,7 +776,7 @@ impl Parser {
             ));
         }
         let (name, name_span) =
-            self.consume_identifier_with_span("expected trait constant name after const")?;
+            self.consume_class_constant_name_with_span("expected trait constant name after const")?;
         self.consume_keyword(TokenKind::Equal, "expected '=' after trait constant name")?;
         let value = self.parse_expression()?;
         self.ensure_supported_const_declaration_expr(&value)?;
@@ -1153,8 +1153,9 @@ impl Parser {
                 "unsupported interface constant declaration: typed interface constants are not implemented",
             ));
         }
-        let (name, name_span) =
-            self.consume_identifier_with_span("expected interface constant name after const")?;
+        let (name, name_span) = self.consume_class_constant_name_with_span(
+            "expected interface constant name after const",
+        )?;
         self.consume_keyword(
             TokenKind::Equal,
             "expected '=' after interface constant name",
@@ -1438,8 +1439,9 @@ impl Parser {
             }
             let mut constants = Vec::new();
             loop {
-                let (name, name_span) =
-                    self.consume_identifier_with_span("expected class constant name after const")?;
+                let (name, name_span) = self.consume_class_constant_name_with_span(
+                    "expected class constant name after const",
+                )?;
                 self.consume_keyword(TokenKind::Equal, "expected '=' after class constant name")?;
                 let value = self.parse_expression()?;
                 self.ensure_supported_const_declaration_expr(&value)?;
@@ -6821,6 +6823,16 @@ impl Parser {
                         span: operator_span,
                     })
                 }
+                kind if class_constant_keyword_name(&kind).is_some() => {
+                    let constant = class_constant_keyword_name(&kind)
+                        .expect("guard checked class constant keyword")
+                        .to_string();
+                    self.advance();
+                    Ok(Expr::ParentClassConstant {
+                        constant,
+                        span: operator_span,
+                    })
+                }
                 _ => Err(self.error_at(
                     operator_span,
                     format!(
@@ -6878,6 +6890,16 @@ impl Parser {
                         span: operator_span,
                     })
                 }
+                kind if class_constant_keyword_name(&kind).is_some() => {
+                    let constant = class_constant_keyword_name(&kind)
+                        .expect("guard checked class constant keyword")
+                        .to_string();
+                    self.advance();
+                    Ok(Expr::SelfClassConstant {
+                        constant,
+                        span: operator_span,
+                    })
+                }
                 _ => Err(self.error_at(
                     operator_span,
                     format!(
@@ -6932,6 +6954,16 @@ impl Parser {
                 TokenKind::Class => {
                     self.advance();
                     Ok(Expr::StaticClassNameConstant {
+                        span: operator_span,
+                    })
+                }
+                kind if class_constant_keyword_name(&kind).is_some() => {
+                    let constant = class_constant_keyword_name(&kind)
+                        .expect("guard checked class constant keyword")
+                        .to_string();
+                    self.advance();
+                    Ok(Expr::LateStaticClassConstant {
+                        constant,
                         span: operator_span,
                     })
                 }
@@ -7004,6 +7036,19 @@ impl Parser {
                     class_name: receiver
                         .expect("named static receiver should exist")
                         .to_string(),
+                    span: operator_span,
+                })
+            }
+            kind if class_constant_keyword_name(&kind).is_some() => {
+                let constant = class_constant_keyword_name(&kind)
+                    .expect("guard checked class constant keyword")
+                    .to_string();
+                self.advance();
+                Ok(Expr::ClassConstant {
+                    class_name: receiver
+                        .expect("named static receiver should exist")
+                        .to_string(),
+                    constant,
                     span: operator_span,
                 })
             }
@@ -7319,7 +7364,10 @@ impl Parser {
             Expr::MagicDir { .. } => Ok(()),
             Expr::MagicFunction { .. } => Ok(()),
             Expr::MagicClass { .. } | Expr::MagicMethod { .. } => Ok(()),
-            Expr::SelfClassConstant { .. } => Ok(()),
+            Expr::ClassConstant { .. }
+            | Expr::SelfClassConstant { .. }
+            | Expr::ParentClassConstant { .. }
+            | Expr::LateStaticClassConstant { .. } => Ok(()),
             Expr::Variable(_, _)
             | Expr::InterpolatedString { .. }
             | Expr::Cast { .. }
@@ -7327,10 +7375,7 @@ impl Parser {
             | Expr::ParentClassNameConstant { .. }
             | Expr::StaticClassNameConstant { .. }
             | Expr::ObjectClassNameConstant { .. }
-            | Expr::ClassConstant { .. }
             | Expr::ObjectStaticClassConstant { .. }
-            | Expr::ParentClassConstant { .. }
-            | Expr::LateStaticClassConstant { .. }
             | Expr::StaticProperty { .. }
             | Expr::DynamicStaticProperty { .. }
             | Expr::ObjectStaticProperty { .. }
@@ -8240,6 +8285,19 @@ impl Parser {
         }
     }
 
+    fn consume_class_constant_name_with_span(
+        &mut self,
+        message: &str,
+    ) -> CompileResult<(String, Span)> {
+        let token = self.advance().clone();
+        match token.kind {
+            TokenKind::Identifier(name) => Ok((name, token.span)),
+            kind => class_constant_keyword_name(&kind)
+                .map(|name| (name.to_string(), token.span))
+                .ok_or_else(|| self.error_at(token.span, message)),
+        }
+    }
+
     fn consume_variable(&mut self, message: &str) -> CompileResult<String> {
         self.consume_variable_with_span(message)
             .map(|(name, _span)| name)
@@ -8750,6 +8808,13 @@ fn keyword_identifier_name(kind: &TokenKind) -> Option<&'static str> {
         TokenKind::True => Some("true"),
         TokenKind::False => Some("false"),
         _ => None,
+    }
+}
+
+fn class_constant_keyword_name(kind: &TokenKind) -> Option<&'static str> {
+    match kind {
+        TokenKind::Class | TokenKind::Null | TokenKind::True | TokenKind::False => None,
+        _ => keyword_identifier_name(kind),
     }
 }
 

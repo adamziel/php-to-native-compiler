@@ -137,6 +137,7 @@ struct Lexer<'a> {
     byte_index: usize,
     line: usize,
     column: usize,
+    at_initial_php_boundary: bool,
 }
 
 impl<'a> Lexer<'a> {
@@ -148,19 +149,30 @@ impl<'a> Lexer<'a> {
             byte_index: 0,
             line: 1,
             column: 1,
+            at_initial_php_boundary: true,
         }
     }
 
     fn tokenize(mut self) -> CompileResult<Vec<Token>> {
         let mut tokens = Vec::new();
+        self.skip_initial_shebang_line();
 
         while !self.is_at_end() {
+            if self.at_initial_php_boundary && !self.starts_with("<?") {
+                let span = self.span();
+                if let Some(kind) = self.lex_initial_inline_html_before_open_tag() {
+                    tokens.push(Token { kind, span });
+                    continue;
+                }
+            }
+
             self.skip_whitespace_and_comments()?;
             if self.is_at_end() {
                 break;
             }
 
             if self.matches_php_open_tag() {
+                self.at_initial_php_boundary = false;
                 continue;
             }
 
@@ -169,6 +181,7 @@ impl<'a> Lexer<'a> {
             }
 
             if self.starts_with("?>") {
+                self.at_initial_php_boundary = false;
                 let span = self.span();
                 if should_insert_close_tag_statement_terminator(&tokens) {
                     tokens.push(Token {
@@ -335,6 +348,7 @@ impl<'a> Lexer<'a> {
                 }
             };
 
+            self.at_initial_php_boundary = false;
             tokens.push(Token { kind, span });
         }
 
@@ -509,6 +523,35 @@ impl<'a> Lexer<'a> {
             None
         } else {
             Some(TokenKind::InlineHtml(html))
+        }
+    }
+
+    fn lex_initial_inline_html_before_open_tag(&mut self) -> Option<TokenKind> {
+        if !self.source[self.byte_index()..].contains("<?") {
+            return None;
+        }
+
+        let mut html = String::new();
+        while !self.is_at_end() && !self.starts_with("<?") {
+            html.push(self.advance());
+        }
+
+        if html.is_empty() {
+            None
+        } else {
+            Some(TokenKind::InlineHtml(html))
+        }
+    }
+
+    fn skip_initial_shebang_line(&mut self) {
+        if self.index != 0 || !self.starts_with("#!") {
+            return;
+        }
+
+        while !self.is_at_end() {
+            if self.advance() == '\n' {
+                break;
+            }
         }
     }
 
@@ -1162,7 +1205,7 @@ impl<'a> Lexer<'a> {
             }
         }
 
-        match text.as_str() {
+        match text.to_ascii_lowercase().as_str() {
             "echo" => TokenKind::Echo,
             "print" => TokenKind::Print,
             "function" => TokenKind::Function,

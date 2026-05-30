@@ -1,5 +1,6 @@
 use std::env;
 use std::fs;
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 
@@ -252,7 +253,9 @@ fn command_run(args: &[String]) -> CompileResult<u8> {
     let execution =
         run_program_with_source_file_and_options(&program, input.display().to_string(), options)
             .map_err(|error| error.with_file(&input))?;
-    print!("{}", execution.stdout);
+    io::stdout()
+        .write_all(&execution.stdout_bytes)
+        .map_err(|error| Diagnostic::new(Phase::Io, 0, 0, error.to_string()))?;
     eprint!("{}", execution.stderr);
     Ok(execution.exit_code as u8)
 }

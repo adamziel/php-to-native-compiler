@@ -53,7 +53,7 @@ fn array_pop_rejects_forms_outside_current_subset() {
     assert_eq!(non_variable.column, 1);
     assert_eq!(
         non_variable.message,
-        "unsupported call array_pop(): argument must be a direct variable array in the current subset"
+        "unsupported call array_pop(): argument must be a direct variable array path in the current subset"
     );
 
     let non_array = run_source("<?php\n$value = 1;\narray_pop($value);\n").unwrap_err();
@@ -80,6 +80,32 @@ echo call_user_func("array_pop", $items), "|", count($items);
     .unwrap();
     assert_eq!(value_call.stdout, "warning|tail|1");
     assert_eq!(value_call.exit_code, 0);
+}
+
+#[test]
+fn array_pop_resets_pointer_and_catches_max_int_append_error() {
+    let execution = run_source(
+        r#"<?php
+$items = array(1, 2, 3, 4, 5);
+next($items);
+next($items);
+echo array_pop($items), "|", current($items), "|";
+$array = array(PHP_INT_MAX => "max");
+try {
+    array_push($array, "new");
+} catch (Error $e) {
+    echo $e->getMessage(), "|";
+}
+echo count($array), "|", $array[PHP_INT_MAX];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "5|1|Cannot add element to the array as the next element is already occupied|1|max"
+    );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

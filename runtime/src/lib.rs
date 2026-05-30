@@ -29201,11 +29201,7 @@ impl PhpArray {
             self.next_auto_index -= 1;
             self.auto_index_exhausted = false;
         }
-        if self.entries.is_empty() {
-            self.cursor = 0;
-        } else if self.cursor >= self.entries.len() as isize {
-            self.cursor = self.entries.len() as isize - 1;
-        }
+        self.cursor = 0;
 
         entry.into_value()
     }
@@ -31630,7 +31626,7 @@ impl PhpClassTable {
             let exception = classes
                 .get_mut(exception_id)
                 .expect("core Exception class id should resolve");
-            for property in ["message", "code", "previous"] {
+            for property in ["message", "code", "previous", "line"] {
                 exception
                     .add_property(PhpPropertyMetadata::instance(
                         property,
@@ -31651,9 +31647,11 @@ impl PhpClassTable {
         let error = classes
             .get_mut(error_id)
             .expect("core Error class id should resolve");
-        error
-            .add_property(PhpPropertyMetadata::instance("message", Visibility::Public))
-            .expect("Error core metadata should not duplicate message");
+        for property in ["message", "line"] {
+            error
+                .add_property(PhpPropertyMetadata::instance(property, Visibility::Public))
+                .expect("Error core metadata should not duplicate properties");
+        }
         classes
             .declare_class("stdClass")
             .expect("core class table should contain Exception and Error before stdClass");
@@ -31847,6 +31845,7 @@ impl PhpClassTable {
             .expect("declared ReflectionClass class id should resolve");
         for method in [
             "__construct",
+            "__toString",
             "getName",
             "getShortName",
             "getFileName",
@@ -31905,6 +31904,7 @@ impl PhpClassTable {
             .expect("declared ReflectionFunction class id should resolve");
         for method in [
             "__construct",
+            "__toString",
             "getName",
             "getShortName",
             "getNamespaceName",
@@ -32006,7 +32006,10 @@ impl PhpClassTable {
             "isOptional",
             "isDefaultValueAvailable",
             "getDefaultValue",
+            "isDefaultValueConstant",
+            "getDefaultValueConstantName",
             "isPassedByReference",
+            "canBePassedByValue",
             "isVariadic",
             "hasType",
             "getType",
@@ -32037,7 +32040,7 @@ impl PhpClassTable {
         let reflection_named_type = classes
             .get_mut(reflection_named_type_id)
             .expect("declared ReflectionNamedType class id should resolve");
-        for method in ["getName", "isBuiltin"] {
+        for method in ["__toString", "getName", "isBuiltin"] {
             reflection_named_type
                 .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
                 .expect("ReflectionNamedType core metadata should not duplicate methods");
@@ -32323,6 +32326,7 @@ impl PhpClassTable {
             "getArrayCopy",
             "getFlags",
             "getIterator",
+            "getIteratorClass",
             "key",
             "ksort",
             "natcasesort",
@@ -32334,6 +32338,7 @@ impl PhpClassTable {
             "offsetUnset",
             "rewind",
             "setFlags",
+            "setIteratorClass",
             "valid",
         ] {
             array_object
@@ -32375,6 +32380,7 @@ impl PhpClassTable {
             "current",
             "getArrayCopy",
             "getFlags",
+            "getIteratorClass",
             "key",
             "ksort",
             "natcasesort",
@@ -32387,6 +32393,7 @@ impl PhpClassTable {
             "rewind",
             "seek",
             "setFlags",
+            "setIteratorClass",
             "valid",
         ] {
             array_iterator
@@ -36153,7 +36160,7 @@ impl PhpObject {
     pub fn initialized_mangled_properties_array(&self) -> PhpArray {
         let mut array = PhpArray::new();
         for property in self.properties() {
-            if property.is_initialized() {
+            if property.is_initialized() && !property.is_unset() {
                 array.insert(
                     ArrayKey::String(property.mangled_name()),
                     property.value_cloned(),
@@ -36375,6 +36382,26 @@ impl PhpObject {
         Ok(property.unset)
     }
 
+    pub fn is_unset_untyped_declared_property_from_context(
+        &self,
+        name: &str,
+        current_class_id: Option<ClassId>,
+        protected_class_ids: &[ClassId],
+    ) -> RuntimeResult<bool> {
+        let properties = self.properties.borrow();
+        let Some(property) = self.context_property_or_none(
+            &properties,
+            name,
+            current_class_id,
+            protected_class_ids,
+        )?
+        else {
+            return Ok(false);
+        };
+
+        Ok(property.unset && property.type_decl.is_none())
+    }
+
     pub fn has_uninitialized_declared_property_from_context(
         &self,
         name: &str,
@@ -36424,7 +36451,9 @@ impl PhpObject {
             .borrow()
             .iter()
             .find(|property| property.name == name && property.visibility == Visibility::Public)
-            .and_then(|property| property.initialized.then(|| property.value_cloned()))
+            .and_then(|property| {
+                (property.initialized && !property.unset).then(|| property.value_cloned())
+            })
     }
 
     pub fn is_public_property_empty(&self, name: &str) -> RuntimeResult<bool> {
@@ -36575,6 +36604,41 @@ impl PhpObject {
     fn allows_dynamic_public_properties(&self) -> bool {
         self.class_name.eq_ignore_ascii_case("stdClass")
             || self.class_name.eq_ignore_ascii_case("wpdb")
+            || self.is_instance_of_class_name("ArrayObject")
+            || self.is_instance_of_class_name("ArrayIterator")
+    }
+
+    pub fn replace_public_properties_from_array(&self, array: &PhpArray) -> RuntimeResult<()> {
+        let mut properties = self.properties.borrow_mut();
+        let original = properties.clone();
+        properties.retain(|property| property.visibility != Visibility::Public);
+
+        for entry in array.entries() {
+            let name = match &entry.key {
+                ArrayKey::Int(value) => value.to_string(),
+                ArrayKey::String(value) => value.clone(),
+            };
+            let mut property = original
+                .iter()
+                .rev()
+                .find(|property| property.name == name && property.visibility == Visibility::Public)
+                .cloned()
+                .unwrap_or_else(|| ObjectProperty {
+                    declaring_class_id: self.class_id,
+                    declaring_class_name: self.class_name.clone(),
+                    name: name.clone(),
+                    visibility: Visibility::Public,
+                    type_decl: None,
+                    storage: ObjectPropertyStorage::Value(PhpValueCell::new(Value::Null)),
+                    initialized: true,
+                    unset: false,
+                });
+            property.set_value(entry.value_cloned());
+            property.initialized = true;
+            properties.push(property);
+        }
+
+        Ok(())
     }
 
     pub fn write_property_from_context(
@@ -36984,6 +37048,10 @@ impl ObjectProperty {
         self.initialized
     }
 
+    pub fn is_unset(&self) -> bool {
+        self.unset
+    }
+
     pub fn mangled_name(&self) -> String {
         match self.visibility {
             Visibility::Public => self.name.clone(),
@@ -37005,6 +37073,12 @@ impl ObjectProperty {
     }
 
     fn initialized_value_cloned(&self) -> RuntimeResult<Value> {
+        if self.unset {
+            return Err(RuntimeError::undefined_property(
+                self.declaring_class_name.clone(),
+                self.name.clone(),
+            ));
+        }
         if self.initialized {
             Ok(self.value_cloned())
         } else {

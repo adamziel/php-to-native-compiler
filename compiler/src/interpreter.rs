@@ -52,6 +52,7 @@ const COMPACT_MAX_ARRAY_DEPTH: usize = 64;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Execution {
     pub stdout: String,
+    pub stdout_bytes: Vec<u8>,
     pub stderr: String,
     pub exit_code: i32,
 }
@@ -234,7 +235,6 @@ struct Interpreter {
     next_object_id: i64,
     allocated_objects: Vec<PhpObject>,
     finalized_objects: HashSet<i64>,
-    next_closure_id: i64,
     next_resource_id: i64,
     streams: HashMap<i64, StreamResource>,
     stream_contexts: HashMap<i64, StreamContextResource>,
@@ -264,6 +264,7 @@ struct Interpreter {
     session_cache_expire: i64,
     session_store: HashMap<String, PhpArray>,
     stdout: String,
+    stdout_bytes: Vec<u8>,
     stderr: String,
     exit_signal: Option<i32>,
 }
@@ -624,8 +625,10 @@ struct ReflectionParameterMetadata {
     name: String,
     type_decl: Option<String>,
     by_reference: bool,
+    can_be_passed_by_value: bool,
     is_variadic: bool,
     default: Option<Expr>,
+    default_constant_name: Option<String>,
     attributes: Vec<AttributeDecl>,
 }
 
@@ -749,6 +752,7 @@ struct FileStream {
     writable: bool,
     append: bool,
     eof: bool,
+    metadata_unread_bytes: i64,
     uri: String,
     read_filter_rot13: bool,
     metadata_mode: String,
@@ -939,6 +943,41 @@ enum ArrayUserCompareKeyMode {
     Ignored,
     Native,
     Callback,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DirectArrayPathMutation {
+    Push,
+    Pop,
+    Shift,
+    Unshift,
+    Next,
+    Prev,
+    Reset,
+    End,
+}
+
+impl DirectArrayPathMutation {
+    fn callable(self) -> &'static str {
+        match self {
+            Self::Push => "array_push()",
+            Self::Pop => "array_pop()",
+            Self::Shift => "array_shift()",
+            Self::Unshift => "array_unshift()",
+            Self::Next => "next()",
+            Self::Prev => "prev()",
+            Self::Reset => "reset()",
+            Self::End => "end()",
+        }
+    }
+
+    fn removed_key(self, array: &PhpArray) -> Option<ArrayKey> {
+        match self {
+            Self::Pop => array.entries().last().map(|entry| entry.key.clone()),
+            Self::Shift => array.entries().first().map(|entry| entry.key.clone()),
+            _ => None,
+        }
+    }
 }
 
 fn is_auto_global_name(name: &str) -> bool {
@@ -1833,7 +1872,10 @@ fn open_basedir_check_path(path: &Path) -> PathBuf {
 }
 
 fn bounded_local_file_url_path(path: &str) -> Option<Result<PathBuf, String>> {
-    let rest = path.strip_prefix("file://")?;
+    let (protocol, rest) = path.split_once("://")?;
+    if !protocol.eq_ignore_ascii_case("file") {
+        return None;
+    }
     let encoded_path_part = if let Some(localhost_path) = rest.strip_prefix("localhost/") {
         format!("/{localhost_path}")
     } else if rest.starts_with('/') {
@@ -10194,7 +10236,6 @@ impl Interpreter {
             next_object_id: 1,
             allocated_objects: Vec::new(),
             finalized_objects: HashSet::new(),
-            next_closure_id: 1,
             next_resource_id: 1,
             streams: HashMap::new(),
             stream_contexts: HashMap::new(),
@@ -10224,6 +10265,7 @@ impl Interpreter {
             session_cache_expire: 180,
             session_store: HashMap::new(),
             stdout: String::new(),
+            stdout_bytes: Vec::new(),
             stderr: String::new(),
             exit_signal: None,
         };
@@ -10870,6 +10912,56 @@ impl Interpreter {
         })
     }
 
+    fn array_object_inherited_flags(&self, storage: &Value) -> Option<i64> {
+        let Value::Object(object) = storage else {
+            return None;
+        };
+        if !self.is_array_object_storage_object(object) {
+            return None;
+        }
+        self.array_objects
+            .get(&object.id())
+            .map(|state| state.flags)
+    }
+
+    fn array_object_inherited_iterator_class(&self, storage: &Value) -> Option<String> {
+        let Value::Object(object) = storage else {
+            return None;
+        };
+        if !self.is_array_object_storage_object(object) {
+            return None;
+        }
+        self.array_objects
+            .get(&object.id())
+            .map(|state| state.iterator_class.clone())
+    }
+
+    fn validate_array_object_iterator_class(
+        &self,
+        class_name: &str,
+        iterator_class: &str,
+        span: Span,
+    ) -> CompileResult<String> {
+        let normalized = iterator_class.strip_prefix('\\').unwrap_or(iterator_class);
+        let valid = self
+            .classes
+            .lookup_class_id(normalized)
+            .is_some_and(|class_id| self.is_array_iterator_class_id(class_id));
+        if valid {
+            return Ok(normalized.to_string());
+        }
+
+        Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                format!("{class_name}::__construct()"),
+                format!(
+                    "Argument #3 ($iteratorClass) must be a class name derived from ArrayIterator, {iterator_class} given"
+                ),
+            ),
+        ))
+    }
+
     fn array_object_constructor_storage(
         &mut self,
         class_name: &str,
@@ -10879,26 +10971,19 @@ impl Interpreter {
         if args.len() > 3 {
             return Err(runtime_error(
                 span,
-                RuntimeError::arity_mismatch(
+                RuntimeError::unsupported_call(
                     format!("{class_name}::__construct()"),
-                    ArityExpectation::Between { min: 0, max: 3 },
-                    args.len(),
+                    format!(
+                        "{class_name}::__construct() expects at most 3 arguments, {} given",
+                        args.len()
+                    ),
                 ),
             ));
         }
 
         let storage = match args.first() {
             Some(Value::Array(array)) => Value::Array(array.clone()),
-            Some(Value::Object(object)) => {
-                self.emit_deprecated(
-                    &format!("{class_name}::__construct()"),
-                    format!(
-                        "{class_name}::__construct(): Using an object as a backing array for {class_name} is deprecated, as it allows violating class constraints and invariants"
-                    ),
-                    span,
-                )?;
-                Value::Object(object.clone())
-            }
+            Some(Value::Object(object)) => Value::Object(object.clone()),
             Some(other) => {
                 return Err(runtime_error(
                     span,
@@ -10928,11 +11013,13 @@ impl Interpreter {
                     ),
                 ));
             }
-            None => 0,
+            None => self.array_object_inherited_flags(&storage).unwrap_or(0),
         };
 
         let iterator_class = match args.get(2) {
-            Some(Value::String(name)) if !name.is_empty() => name.clone(),
+            Some(Value::String(name)) if !name.is_empty() => {
+                self.validate_array_object_iterator_class(class_name, name, span)?
+            }
             Some(other) => {
                 return Err(runtime_error(
                     span,
@@ -10945,8 +11032,21 @@ impl Interpreter {
                     ),
                 ));
             }
-            None => "ArrayIterator".to_string(),
+            None => self
+                .array_object_inherited_iterator_class(&storage)
+                .unwrap_or_else(|| "ArrayIterator".to_string()),
         };
+
+        if matches!(storage, Value::Object(_)) {
+            self.emit_display_diagnostic(
+                "Deprecated",
+                PHP_E_DEPRECATED,
+                format!(
+                    "{class_name}::__construct(): Using an object as a backing array for {class_name} is deprecated, as it allows violating class constraints and invariants"
+                ),
+                span,
+            )?;
+        }
 
         Ok((storage, flags, iterator_class))
     }
@@ -10954,7 +11054,10 @@ impl Interpreter {
     fn public_object_properties_array(object: &PhpObject) -> PhpArray {
         let mut array = PhpArray::new();
         for property in object.properties() {
-            if property.visibility() == Visibility::Public && property.is_initialized() {
+            if property.visibility() == Visibility::Public
+                && property.is_initialized()
+                && !property.is_unset()
+            {
                 array.insert(
                     ArrayKey::String(property.name().to_string()),
                     property.value_cloned(),
@@ -11035,6 +11138,146 @@ impl Interpreter {
                 ),
             )),
         }
+    }
+
+    fn array_object_array_as_props_enabled(&self, object: &PhpObject) -> bool {
+        self.array_objects.get(&object.id()).is_some_and(|state| {
+            state.flags & ARRAY_OBJECT_ARRAY_AS_PROPS == ARRAY_OBJECT_ARRAY_AS_PROPS
+        })
+    }
+
+    fn array_object_property_should_use_storage(
+        &self,
+        object: &PhpObject,
+        property: &str,
+        current_class_id: Option<ClassId>,
+        protected_class_ids: &[ClassId],
+        span: Span,
+    ) -> CompileResult<bool> {
+        if !self.array_object_array_as_props_enabled(object) {
+            return Ok(false);
+        }
+
+        match object.property_visibility_from_context(
+            property,
+            current_class_id,
+            protected_class_ids,
+        ) {
+            Ok(_) => object
+                .is_unset_property_from_context(property, current_class_id, protected_class_ids)
+                .map_err(|error| runtime_error(span, error)),
+            Err(error) if Self::is_magic_get_fallback_property_error(&error) => Ok(true),
+            Err(error) => Err(runtime_error(span, error)),
+        }
+    }
+
+    fn emit_array_object_dynamic_property_deprecation_if_needed(
+        &mut self,
+        object: &PhpObject,
+        property: &str,
+        current_class_id: Option<ClassId>,
+        protected_class_ids: &[ClassId],
+        span: Span,
+    ) -> CompileResult<()> {
+        if !self.is_array_object_storage_object(object)
+            || self.array_object_array_as_props_enabled(object)
+        {
+            return Ok(());
+        }
+
+        match object.property_visibility_from_context(
+            property,
+            current_class_id,
+            protected_class_ids,
+        ) {
+            Ok(_) => Ok(()),
+            Err(error) if Self::is_undefined_property_error(&error) => self
+                .emit_display_diagnostic(
+                    "Deprecated",
+                    PHP_E_DEPRECATED,
+                    format!(
+                        "Creation of dynamic property {}::${property} is deprecated",
+                        object.class_name()
+                    ),
+                    span,
+                ),
+            Err(_) => Ok(()),
+        }
+    }
+
+    fn array_object_read_property_from_storage(
+        &mut self,
+        object: &PhpObject,
+        property: &str,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let key = ArrayKey::String(property.to_string());
+        let state = self.array_object_state(object, "ARRAY_AS_PROPS", span)?;
+        match self.array_object_read_storage_key(&state.storage, &key, "ARRAY_AS_PROPS", span)? {
+            Some(value) => Ok(value),
+            None => {
+                self.emit_display_warning(
+                    format!("Undefined array key {}", key.diagnostic_key()),
+                    span,
+                )?;
+                Ok(Value::Null)
+            }
+        }
+    }
+
+    fn array_object_property_storage_is_set(
+        &self,
+        object: &PhpObject,
+        property: &str,
+        span: Span,
+    ) -> CompileResult<bool> {
+        let key = ArrayKey::String(property.to_string());
+        let state = self.array_object_state(object, "ARRAY_AS_PROPS", span)?;
+        Ok(self
+            .array_object_read_storage_key(&state.storage, &key, "ARRAY_AS_PROPS", span)?
+            .is_some_and(|value| !matches!(value, Value::Null)))
+    }
+
+    fn array_object_write_property_to_storage(
+        &mut self,
+        object: &PhpObject,
+        property: &str,
+        value: Value,
+        span: Span,
+    ) -> CompileResult<()> {
+        let mut state = self
+            .array_object_state(object, "ARRAY_AS_PROPS", span)?
+            .clone();
+        Self::array_object_write_storage_key(
+            &mut state.storage,
+            Some(ArrayKey::String(property.to_string())),
+            value,
+            "ARRAY_AS_PROPS",
+            span,
+        )?;
+        self.sync_array_object_properties(object, &state, span)?;
+        self.array_objects.insert(object.id(), state);
+        Ok(())
+    }
+
+    fn array_object_unset_property_from_storage(
+        &mut self,
+        object: &PhpObject,
+        property: &str,
+        span: Span,
+    ) -> CompileResult<()> {
+        let mut state = self
+            .array_object_state(object, "ARRAY_AS_PROPS", span)?
+            .clone();
+        Self::array_object_unset_storage_key(
+            &mut state.storage,
+            &ArrayKey::String(property.to_string()),
+            "ARRAY_AS_PROPS",
+            span,
+        )?;
+        self.sync_array_object_properties(object, &state, span)?;
+        self.array_objects.insert(object.id(), state);
+        Ok(())
     }
 
     fn array_object_offset_key(
@@ -11173,15 +11416,29 @@ impl Interpreter {
         iterator_class: String,
         span: Span,
     ) -> CompileResult<Value> {
+        let declared_iterator_class = iterator_class.strip_prefix('\\').unwrap_or(&iterator_class);
         let class_id = self
             .classes
-            .lookup_class_id("ArrayIterator")
-            .ok_or_else(|| runtime_error(span, RuntimeError::undefined_class("ArrayIterator")))?;
+            .lookup_class_id(declared_iterator_class)
+            .ok_or_else(|| {
+                runtime_error(span, RuntimeError::undefined_class(declared_iterator_class))
+            })?;
+        if !self.is_array_iterator_class_id(class_id) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "ArrayObject::getIterator()",
+                    format!(
+                        "iterator class must be ArrayIterator or a subclass, {declared_iterator_class} given"
+                    ),
+                ),
+            ));
+        }
         let object_id = self.allocate_object_id();
         let class = self
             .classes
             .get(class_id)
-            .expect("ArrayIterator class id should resolve to class metadata");
+            .expect("iterator class id should resolve to class metadata");
         let inherited_properties = self.inherited_instance_properties(class_id);
         let mut ancestor_class_names = self.inherited_class_names(class_id);
         ancestor_class_names.extend(self.class_alias_names(class_id));
@@ -11358,11 +11615,41 @@ impl Interpreter {
                 self.array_objects.insert(object.id(), state);
                 Ok(Value::Null)
             }
+            "getiteratorclass" => {
+                expect_arity(&format!("{class_name}::getIteratorClass"), &args, 0, span)?;
+                let state = self.array_object_state(&object, method_name, span)?;
+                Ok(Value::String(state.iterator_class.clone()))
+            }
+            "setiteratorclass" => {
+                expect_arity(&format!("{class_name}::setIteratorClass"), &args, 1, span)?;
+                let iterator_class = match args.first() {
+                    Some(Value::String(name)) if !name.is_empty() => {
+                        self.validate_array_object_iterator_class(class_name, name, span)?
+                    }
+                    Some(other) => {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                format!("{class_name}::setIteratorClass()"),
+                                format!(
+                                    "{class_name}::setIteratorClass(): Argument #1 ($iteratorClass) must be of type string, {} given",
+                                    other.type_name()
+                                ),
+                            ),
+                        ));
+                    }
+                    None => "ArrayIterator".to_string(),
+                };
+                let mut state = self.array_object_state(&object, method_name, span)?.clone();
+                state.iterator_class = iterator_class;
+                self.array_objects.insert(object.id(), state);
+                Ok(Value::Null)
+            }
             "getiterator" => {
                 expect_arity("ArrayObject::getIterator", &args, 0, span)?;
                 let state = self.array_object_state(&object, method_name, span)?.clone();
                 self.create_array_iterator_object_with_storage(
-                    state.storage,
+                    Value::Object(object.clone()),
                     state.flags,
                     state.iterator_class,
                     span,
@@ -11565,18 +11852,33 @@ impl Interpreter {
                     None
                 };
                 let mut state = self.array_object_state(&object, method_name, span)?.clone();
-                let Value::Array(array) = &mut state.storage else {
-                    return Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            format!("{class_name}::{method_name}()"),
-                            "sorting ArrayObject object-backed storage is not implemented in the current subset",
-                        ),
-                    ));
-                };
-                array
-                    .sort_for_php_builtin(operation, flag)
-                    .map_err(|error| runtime_error(span, error))?;
+                match &mut state.storage {
+                    Value::Array(array) => {
+                        array
+                            .sort_for_php_builtin(operation, flag)
+                            .map_err(|error| runtime_error(span, error))?;
+                    }
+                    Value::Object(storage_object)
+                        if !self.is_array_object_storage_object(storage_object) =>
+                    {
+                        let mut array = Self::public_object_properties_array(storage_object);
+                        array
+                            .sort_for_php_builtin(operation, flag)
+                            .map_err(|error| runtime_error(span, error))?;
+                        storage_object
+                            .replace_public_properties_from_array(&array)
+                            .map_err(|error| runtime_error(span, error))?;
+                    }
+                    _ => {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                format!("{class_name}::{method_name}()"),
+                                "sorting nested ArrayObject-backed storage is not implemented in the current subset",
+                            ),
+                        ));
+                    }
+                }
                 state.cursor = 0;
                 self.sync_array_object_properties(&object, &state, span)?;
                 self.array_objects.insert(object.id(), state);
@@ -12643,8 +12945,13 @@ impl Interpreter {
         self.call_depth += 1;
         self.active_static_locals.push(Vec::new());
         self.active_symbol_roots.push(local_scope.symbols.clone());
+        let active_function_arguments =
+            Self::active_function_call_arguments_for_func_get(function, &[], &[], &local_scope);
+        self.active_function_call_arguments
+            .push(active_function_arguments);
         let flow =
             self.execute_statements_with_array_copy_return_source(&function.body, &mut local_scope);
+        self.active_function_call_arguments.pop();
         let static_names = self.active_static_locals.pop().unwrap_or_default();
         let function_key = function.name.to_ascii_lowercase();
         for name in static_names {
@@ -13035,7 +13342,8 @@ impl Interpreter {
         let Some(error_class_id) = self.classes.lookup_class_id(error_class_name) else {
             return Ok(None);
         };
-        let error_object = self.create_core_error_object(error_message, error_class_id)?;
+        let error_object =
+            self.create_core_error_object(error_message, error_class_id, error.line)?;
         for catch in catches {
             if !self.catch_matches_class(error_class_id, catch)? {
                 continue;
@@ -17026,6 +17334,7 @@ impl Interpreter {
                 self.flush_output_buffers();
                 Ok(Execution {
                     stdout: self.stdout.clone(),
+                    stdout_bytes: self.execution_stdout_bytes(),
                     stderr: self.stderr.clone(),
                     exit_code: self.exit_signal.unwrap_or(0),
                 })
@@ -17036,6 +17345,7 @@ impl Interpreter {
                 self.flush_output_buffers();
                 Ok(Execution {
                     stdout: self.stdout.clone(),
+                    stdout_bytes: self.execution_stdout_bytes(),
                     stderr: self.stderr.clone(),
                     exit_code: self.exit_signal.unwrap_or(code),
                 })
@@ -17098,6 +17408,16 @@ impl Interpreter {
         self.append_output_from(output, Some(span));
     }
 
+    fn append_output_bytes_at(&mut self, output: &[u8], span: Span) {
+        if let Some(buffer) = self.output_buffers.last_mut() {
+            buffer.push_str(&String::from_utf8_lossy(output));
+        } else {
+            self.mark_output_bytes_started(output, Some(span));
+            self.stdout.push_str(&String::from_utf8_lossy(output));
+            self.stdout_bytes.extend_from_slice(output);
+        }
+    }
+
     fn emit_warning(
         &mut self,
         function: &str,
@@ -17141,6 +17461,18 @@ impl Interpreter {
 
     fn emit_undefined_variable_warning(&mut self, name: &str, span: Span) -> CompileResult<()> {
         self.emit_display_warning(format!("Undefined variable ${name}"), span)
+    }
+
+    fn emit_undefined_property_warning(
+        &mut self,
+        class_name: &str,
+        property: &str,
+        span: Span,
+    ) -> CompileResult<()> {
+        self.emit_display_warning(
+            format!("Undefined property: {class_name}::${property}"),
+            span,
+        )
     }
 
     fn materialize_or_read_reference_argument_cell(
@@ -17599,6 +17931,7 @@ impl Interpreter {
         } else {
             self.mark_output_started(output, span);
             self.stdout.push_str(output);
+            self.stdout_bytes.extend_from_slice(output.as_bytes());
         }
     }
 
@@ -17615,7 +17948,20 @@ impl Interpreter {
         } else {
             self.mark_output_started(output, Some(span));
             self.stdout.push_str(output);
+            self.stdout_bytes.extend_from_slice(output.as_bytes());
         }
+    }
+
+    fn push_unbuffered_stdout_text(&mut self, output: &str) {
+        self.stdout.push_str(output);
+        self.stdout_bytes.extend_from_slice(output.as_bytes());
+    }
+
+    fn push_unbuffered_stdout_char(&mut self, ch: char) {
+        self.stdout.push(ch);
+        let mut buffer = [0; 4];
+        self.stdout_bytes
+            .extend_from_slice(ch.encode_utf8(&mut buffer).as_bytes());
     }
 
     fn mark_output_started(&mut self, output: &str, span: Option<Span>) {
@@ -17626,6 +17972,24 @@ impl Interpreter {
         let line = span.map(|span| span.line).unwrap_or(0);
         let file = self.source_file.clone().unwrap_or_default();
         self.output_start = Some(OutputStart { file, line });
+    }
+
+    fn mark_output_bytes_started(&mut self, output: &[u8], span: Option<Span>) {
+        if output.is_empty() || self.output_start.is_some() {
+            return;
+        }
+
+        let line = span.map(|span| span.line).unwrap_or(0);
+        let file = self.source_file.clone().unwrap_or_default();
+        self.output_start = Some(OutputStart { file, line });
+    }
+
+    fn execution_stdout_bytes(&self) -> Vec<u8> {
+        if self.stdout_bytes.is_empty() {
+            self.stdout.as_bytes().to_vec()
+        } else {
+            self.stdout_bytes.clone()
+        }
     }
 
     fn header_output_started_warning(&self) -> Option<String> {
@@ -18288,7 +18652,8 @@ impl Interpreter {
         let Some(error_class_id) = self.classes.lookup_class_id(error_class_name) else {
             return Ok(None);
         };
-        let error_object = self.create_core_error_object(error_message, error_class_id)?;
+        let error_object =
+            self.create_core_error_object(error_message, error_class_id, error.line)?;
         for catch in catches {
             if !self.catch_matches_class(error_class_id, catch)? {
                 continue;
@@ -18413,6 +18778,7 @@ impl Interpreter {
         self.flush_output_buffers();
         Ok(Execution {
             stdout: self.stdout.clone(),
+            stdout_bytes: self.execution_stdout_bytes(),
             stderr: self.stderr.clone(),
             exit_code: self.exit_signal.unwrap_or(255),
         })
@@ -18425,16 +18791,15 @@ impl Interpreter {
             .source_file
             .clone()
             .unwrap_or_else(|| "Command line code".to_string());
-        if !self.stdout.is_empty() && !self.stdout.ends_with('\n') {
-            self.stdout.push('\n');
-        }
+        let stack_trace = self.formatted_pending_uncaught_call_trace(&file);
+        self.push_uncaught_fatal_separator();
         let message_suffix = if message.is_empty() {
             String::new()
         } else {
             format!(": {message}")
         };
-        self.stdout.push_str(&format!(
-            "Fatal error: Uncaught {class_name}{message_suffix} in {file}:{}\nStack trace:\n#0 {{main}}\n  thrown in {file} on line {}",
+        self.push_unbuffered_stdout_text(&format!(
+            "Fatal error: Uncaught {class_name}{message_suffix} in {file}:{}\nStack trace:\n{stack_trace}\n  thrown in {file} on line {}",
             span.line, span.line
         ));
     }
@@ -18485,6 +18850,7 @@ impl Interpreter {
         self.flush_output_buffers();
         Ok(Execution {
             stdout: self.stdout.clone(),
+            stdout_bytes: self.execution_stdout_bytes(),
             stderr: self.stderr.clone(),
             exit_code: self.exit_signal.unwrap_or(255),
         })
@@ -18503,6 +18869,7 @@ impl Interpreter {
         self.flush_output_buffers();
         Ok(Execution {
             stdout: self.stdout.clone(),
+            stdout_bytes: self.execution_stdout_bytes(),
             stderr: self.stderr.clone(),
             exit_code: self.exit_signal.unwrap_or(255),
         })
@@ -18520,6 +18887,7 @@ impl Interpreter {
         self.flush_output_buffers();
         Ok(Execution {
             stdout: self.stdout.clone(),
+            stdout_bytes: self.execution_stdout_bytes(),
             stderr: self.stderr.clone(),
             exit_code: self.exit_signal.unwrap_or(255),
         })
@@ -18532,7 +18900,7 @@ impl Interpreter {
             .or_else(|| error.file.as_ref().map(|file| file.display().to_string()))
             .unwrap_or_else(|| "Command line code".to_string());
         self.push_uncaught_fatal_separator();
-        self.stdout.push_str(&format!(
+        self.push_unbuffered_stdout_text(&format!(
             "Fatal error: {message} in {file} on line {}",
             error.line
         ));
@@ -18552,7 +18920,7 @@ impl Interpreter {
         let line = error.line;
         let stack_trace = self.formatted_pending_uncaught_call_trace(&file);
         self.push_uncaught_fatal_separator();
-        self.stdout.push_str(&format!(
+        self.push_unbuffered_stdout_text(&format!(
             "Fatal error: Uncaught {error_class_name}: {error_message} in {file}:{line}\nStack trace:\n{stack_trace}\n  thrown in {file} on line {line}"
         ));
     }
@@ -18562,11 +18930,11 @@ impl Interpreter {
             return;
         }
         if !self.stdout.ends_with('\n') {
-            self.stdout.push('\n');
+            self.push_unbuffered_stdout_char('\n');
             return;
         }
         if !self.stdout.ends_with("\n\n") {
-            self.stdout.push('\n');
+            self.push_unbuffered_stdout_char('\n');
         }
     }
 
@@ -18647,7 +19015,7 @@ impl Interpreter {
         let line = error.line;
         let callable = call_argument_type_error_callable(error_message).unwrap_or("{main}");
         self.push_uncaught_fatal_separator();
-        self.stdout.push_str(&format!(
+        self.push_unbuffered_stdout_text(&format!(
             "Fatal error: Uncaught {error_class_name}: {error_message}, called in {file}:{line}\nStack trace:\n#0 {file}({line}): {callable}\n#1 {{main}}\n  thrown in {file} on line {line}"
         ));
     }
@@ -18656,6 +19024,7 @@ impl Interpreter {
         &mut self,
         message: String,
         class_id: ClassId,
+        line: usize,
     ) -> CompileResult<PhpObject> {
         let inherited_properties = self.inherited_instance_properties(class_id);
         let mut ancestor_class_names = self.inherited_class_names(class_id);
@@ -18678,6 +19047,14 @@ impl Interpreter {
             .write_property_from_context(
                 "message",
                 Value::String(message),
+                Some(class_id),
+                &protected_class_ids,
+            )
+            .map_err(|error| runtime_error(Span { line: 0, column: 0 }, error))?;
+        object
+            .write_property_from_context(
+                "line",
+                Value::Int(line as i64),
                 Some(class_id),
                 &protected_class_ids,
             )
@@ -19283,6 +19660,17 @@ impl Interpreter {
             &protected_class_ids,
         );
         scope.pre_replace_holder_storage(&boundary);
+        if self.array_object_property_should_use_storage(
+            &object,
+            property,
+            current_class_id,
+            &protected_class_ids,
+            span,
+        )? {
+            self.array_object_unset_property_from_storage(&object, property, span)?;
+            scope.post_replace_holder_storage(&boundary);
+            return Ok(());
+        }
         let found = object
             .unset_property_from_context(property, current_class_id, &protected_class_ids)
             .map_err(|error| runtime_error(span, error))?;
@@ -21368,6 +21756,14 @@ impl Interpreter {
             .map_err(|error| runtime_error(span, error))?;
         object
             .write_property_from_context("previous", previous, Some(class_id), &protected_class_ids)
+            .map_err(|error| runtime_error(span, error))?;
+        object
+            .write_property_from_context(
+                "line",
+                Value::Int(span.line as i64),
+                Some(class_id),
+                &protected_class_ids,
+            )
             .map_err(|error| runtime_error(span, error))?;
         Ok(())
     }
@@ -29945,6 +30341,22 @@ impl Interpreter {
                         scope.pre_replace_holder_storage(&boundary);
                         let alias_fallbacks =
                             scope.public_object_property_root_alias_fallbacks(object, property);
+                        if self.array_object_property_should_use_storage(
+                            &object_value,
+                            property,
+                            current_class_id,
+                            &protected_class_ids,
+                            *span,
+                        )? {
+                            self.array_object_write_property_to_storage(
+                                &object_value,
+                                property,
+                                value.clone(),
+                                *span,
+                            )?;
+                            scope.post_replace_holder_storage(&boundary);
+                            return Ok(value);
+                        }
                         if object_value
                             .is_unset_property_from_context(
                                 property,
@@ -29984,6 +30396,13 @@ impl Interpreter {
                             }
                         }
 
+                        self.emit_array_object_dynamic_property_deprecation_if_needed(
+                            &object_value,
+                            property,
+                            current_class_id,
+                            &protected_class_ids,
+                            *span,
+                        )?;
                         match object_value
                             .write_property_from_context_with_object_type_resolver_returning_value(
                                 property,
@@ -30060,7 +30479,7 @@ impl Interpreter {
                                     );
                                 match self
                                     .call_magic_instance_method_with_values_and_caller_scope_and_arg_sources(
-                                    object_value,
+                                    object_value.clone(),
                                     "__set",
                                     vec![Value::String(property.clone()), method_value],
                                     *span,
@@ -30068,6 +30487,12 @@ impl Interpreter {
                                     indexed_copy_source_bindings,
                                 )? {
                                     Some(_) => Ok(value),
+                                    None if self.is_array_object_storage_object(&object_value) => {
+                                        object_value
+                                            .write_dynamic_public_property(property, value.clone())
+                                            .map_err(|error| runtime_error(*span, error))?;
+                                        Ok(value)
+                                    }
                                     None => Err(runtime_error(*span, error)),
                                 }
                             }
@@ -30928,6 +31353,22 @@ impl Interpreter {
                         scope.pre_replace_holder_storage(&boundary);
                         let alias_fallbacks =
                             scope.public_object_property_root_alias_fallbacks(object, &property);
+                        if self.array_object_property_should_use_storage(
+                            &object_value,
+                            &property,
+                            current_class_id,
+                            &protected_class_ids,
+                            *span,
+                        )? {
+                            self.array_object_write_property_to_storage(
+                                &object_value,
+                                &property,
+                                value.clone(),
+                                *span,
+                            )?;
+                            scope.post_replace_holder_storage(&boundary);
+                            return Ok(value);
+                        }
                         if object_value
                             .is_unset_property_from_context(
                                 &property,
@@ -30967,6 +31408,13 @@ impl Interpreter {
                             }
                         }
 
+                        self.emit_array_object_dynamic_property_deprecation_if_needed(
+                            &object_value,
+                            &property,
+                            current_class_id,
+                            &protected_class_ids,
+                            *span,
+                        )?;
                         let stored_value = match object_value
                             .write_property_from_context_with_object_type_resolver_returning_value(
                                 &property,
@@ -34032,13 +34480,13 @@ impl Interpreter {
                 Some(Value::Object(value)) => {
                     let (current_class_id, protected_class_ids) =
                         self.current_property_access_context();
-                    let left = value
-                        .read_property_from_context(
-                            property,
-                            current_class_id,
-                            &protected_class_ids,
-                        )
-                        .map_err(|error| runtime_error(span, error))?;
+                    let left = self.read_object_property_for_read_modify_write(
+                        &value,
+                        property,
+                        current_class_id,
+                        &protected_class_ids,
+                        span,
+                    )?;
                     Ok((
                         CompoundAssignmentPlace::ObjectProperty {
                             object: object.clone(),
@@ -34136,6 +34584,35 @@ impl Interpreter {
                     value,
                 ))
             }
+        }
+    }
+
+    fn read_object_property_for_read_modify_write(
+        &mut self,
+        object: &PhpObject,
+        property: &str,
+        current_class_id: Option<ClassId>,
+        protected_class_ids: &[ClassId],
+        span: Span,
+    ) -> CompileResult<Value> {
+        match object.read_property_from_context(property, current_class_id, protected_class_ids) {
+            Ok(value) => Ok(value),
+            Err(error) if Self::is_undefined_property_error(&error) => {
+                if object
+                    .is_unset_untyped_declared_property_from_context(
+                        property,
+                        current_class_id,
+                        protected_class_ids,
+                    )
+                    .map_err(|error| runtime_error(span, error))?
+                {
+                    self.emit_undefined_property_warning(object.class_name(), property, span)?;
+                    Ok(Value::Null)
+                } else {
+                    Err(runtime_error(span, error))
+                }
+            }
+            Err(error) => Err(runtime_error(span, error)),
         }
     }
 
@@ -34575,13 +35052,13 @@ impl Interpreter {
                 Some(Value::Object(value)) => {
                     let (current_class_id, protected_class_ids) =
                         self.current_property_access_context();
-                    let left = value
-                        .read_property_from_context(
-                            property,
-                            current_class_id,
-                            &protected_class_ids,
-                        )
-                        .map_err(|error| runtime_error(span, error))?;
+                    let left = self.read_object_property_for_read_modify_write(
+                        &value,
+                        property,
+                        current_class_id,
+                        &protected_class_ids,
+                        span,
+                    )?;
                     Ok((
                         CompoundAssignmentPlace::ObjectProperty {
                             object: object.clone(),
@@ -34654,6 +35131,8 @@ impl Interpreter {
             }
             (Value::Float(value), IncrementDecrementOp::Increment) => Value::Float(value + 1.0),
             (Value::Float(value), IncrementDecrementOp::Decrement) => Value::Float(value - 1.0),
+            (Value::Null, IncrementDecrementOp::Increment) => Value::Int(1),
+            (Value::Null, IncrementDecrementOp::Decrement) => Value::Null,
             (other, _) => {
                 return Err(runtime_error(
                     span,
@@ -36345,13 +36824,11 @@ impl Interpreter {
         scope: &mut SymbolTable,
     ) -> CompileResult<Value> {
         if args.len() != 2 {
-            return Err(runtime_error(
+            return Err(reflection_constructor_exact_argument_count_error(
+                "ReflectionParameter",
+                2,
+                args.len(),
                 span,
-                RuntimeError::arity_mismatch(
-                    "ReflectionParameter::__construct()",
-                    ArityExpectation::Exactly(2),
-                    args.len(),
-                ),
             ));
         }
 
@@ -36373,22 +36850,25 @@ impl Interpreter {
                 .map(ReflectionParameterDeclaring::Function);
         }
 
+        if let Value::Closure(_) = target {
+            return self
+                .resolve_reflection_function_target(target, span)
+                .map(ReflectionParameterDeclaring::Function);
+        }
+
         let Value::Array(callable) = target else {
-            return Err(runtime_error(
+            return Err(reflection_exception_error(
                 span,
-                RuntimeError::unsupported_object_instantiation(
-                    "ReflectionParameter",
-                    format!("function argument only supports user function strings and [object-or-class, method] array callables in the current subset, got {}", target.type_name()),
+                format!(
+                    "ReflectionParameter::__construct(): Argument #1 ($function) must be a string, an array(class, method), or a callable object, {} given",
+                    php_type_error_given(target)
                 ),
             ));
         };
         if callable.len() != 2 {
-            return Err(runtime_error(
+            return Err(reflection_exception_error(
                 span,
-                RuntimeError::unsupported_object_instantiation(
-                    "ReflectionParameter",
-                    "function argument array callable must contain exactly object-or-class and method entries",
-                ),
+                "ReflectionParameter::__construct(): Argument #1 ($function) must be a string, an array(class, method), or a callable object, array given",
             ));
         }
         let receiver = callable.get(0).ok_or_else(|| {
@@ -36409,20 +36889,41 @@ impl Interpreter {
                 ),
             )
         })?;
-        let Value::String(method_name) = method else {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_object_instantiation(
-                    "ReflectionParameter",
-                    format!(
-                        "array callable method entry must be string in the current subset, got {}",
-                        method.type_name()
-                    ),
-                ),
-            ));
+        let method_name = match method {
+            Value::String(method_name) => method_name.clone(),
+            Value::Object(object) => self
+                .object_to_string_with_magic(
+                    object.clone(),
+                    "ReflectionParameter::__construct()",
+                    span,
+                )?
+                .ok_or_else(|| {
+                    reflection_exception_error(
+                        span,
+                        format!("Method name must be a string, {} given", method.type_name()),
+                    )
+                })?,
+            _ => {
+                return Err(reflection_exception_error(
+                    span,
+                    format!("Method name must be a string, {} given", method.type_name()),
+                ));
+            }
         };
-        let class = self.resolve_reflection_class_target(receiver, span)?;
-        self.resolve_reflection_method_target(&class, method_name, span)
+        let class = self
+            .resolve_reflection_class_target(receiver, span)
+            .map_err(|_| {
+                let target = reflection_class_target_string(receiver)
+                    .unwrap_or_else(|| receiver.type_name().to_string());
+                reflection_exception_error(span, format!("Class \"{target}\" does not exist"))
+            })?;
+        self.resolve_reflection_method_target(&class, &method_name, span)
+            .map_err(|_| {
+                reflection_exception_error(
+                    span,
+                    format!("Method {}::{}() does not exist", class.name, method_name),
+                )
+            })
             .map(ReflectionParameterDeclaring::Method)
     }
 
@@ -36513,13 +37014,23 @@ impl Interpreter {
             .classes
             .get(class_id)
             .expect("core ReflectionParameter class id should resolve");
-        let parameter_name = state.parameter.name.clone();
-        self.reflection_parameters.insert(object_id, state);
         let object = PhpObject::from_class_with_id(class, object_id);
+        self.assign_reflection_parameter_state(&object, state, span)?;
+        Ok(Value::Object(object))
+    }
+
+    fn assign_reflection_parameter_state(
+        &mut self,
+        object: &PhpObject,
+        state: ReflectionParameterState,
+        span: Span,
+    ) -> CompileResult<()> {
+        let parameter_name = state.parameter.name.clone();
         object
             .write_public_property("name", Value::String(parameter_name))
             .map_err(|error| runtime_error(span, error))?;
-        Ok(Value::Object(object))
+        self.reflection_parameters.insert(object.id(), state);
+        Ok(())
     }
 
     fn instantiate_reflection_property(
@@ -42546,13 +43057,51 @@ impl Interpreter {
                     current_class_id,
                     &protected_class_ids,
                 ) {
-                    Ok(value) => Ok(value),
-                    Err(error) if Self::is_magic_get_fallback_property_error(&error) => self
-                        .call_magic_get_property_value_with_array_copy_source(
-                            object, property, span, scope,
+                    Ok(value) => {
+                        if self.array_object_property_should_use_storage(
+                            &object,
+                            property,
+                            current_class_id,
+                            &protected_class_ids,
+                            span,
+                        )? {
+                            return self
+                                .array_object_read_property_from_storage(&object, property, span);
+                        }
+                        Ok(value)
+                    }
+                    Err(error) if Self::is_magic_get_fallback_property_error(&error) => {
+                        if self.array_object_property_should_use_storage(
+                            &object,
+                            property,
+                            current_class_id,
+                            &protected_class_ids,
+                            span,
+                        )? {
+                            return self
+                                .array_object_read_property_from_storage(&object, property, span);
+                        }
+                        self.call_magic_get_property_value_with_array_copy_source(
+                            object.clone(),
+                            property,
+                            span,
+                            scope,
                         )?
                         .map(|(value, _)| value)
-                        .ok_or_else(|| runtime_error(span, error)),
+                        .map(Ok)
+                        .unwrap_or_else(|| {
+                            if Self::is_undefined_property_error(&error) {
+                                self.emit_undefined_property_warning(
+                                    object.class_name(),
+                                    property,
+                                    span,
+                                )?;
+                                Ok(Value::Null)
+                            } else {
+                                Err(runtime_error(span, error))
+                            }
+                        })
+                    }
                     Err(error) => Err(runtime_error(span, error)),
                 }
             }
@@ -42585,6 +43134,20 @@ impl Interpreter {
                     &protected_class_ids,
                 ) {
                     Ok(value) => {
+                        if self.array_object_property_should_use_storage(
+                            &object,
+                            property,
+                            current_class_id,
+                            &protected_class_ids,
+                            span,
+                        )? {
+                            return Ok((
+                                self.array_object_read_property_from_storage(
+                                    &object, property, span,
+                                )?,
+                                None,
+                            ));
+                        }
                         let source = if matches!(value, Value::Array(_)) {
                             scope
                                 .object_property_array_copy_source_for_path(&object, property, &[])
@@ -42606,11 +43169,41 @@ impl Interpreter {
                         );
                         Ok((value, source))
                     }
-                    Err(error) if Self::is_magic_get_fallback_property_error(&error) => self
-                        .call_magic_get_property_value_with_array_copy_source(
-                            object, property, span, scope,
+                    Err(error) if Self::is_magic_get_fallback_property_error(&error) => {
+                        if self.array_object_property_should_use_storage(
+                            &object,
+                            property,
+                            current_class_id,
+                            &protected_class_ids,
+                            span,
+                        )? {
+                            return Ok((
+                                self.array_object_read_property_from_storage(
+                                    &object, property, span,
+                                )?,
+                                None,
+                            ));
+                        }
+                        self.call_magic_get_property_value_with_array_copy_source(
+                            object.clone(),
+                            property,
+                            span,
+                            scope,
                         )?
-                        .ok_or_else(|| runtime_error(span, error)),
+                        .map(Ok)
+                        .unwrap_or_else(|| {
+                            if Self::is_undefined_property_error(&error) {
+                                self.emit_undefined_property_warning(
+                                    object.class_name(),
+                                    property,
+                                    span,
+                                )?;
+                                Ok((Value::Null, None))
+                            } else {
+                                Err(runtime_error(span, error))
+                            }
+                        })
+                    }
                     Err(error) => Err(runtime_error(span, error)),
                 }
             }
@@ -42852,6 +43445,28 @@ impl Interpreter {
         if method_name.eq_ignore_ascii_case("__toString") && args.is_empty() {
             if object
                 .class_name()
+                .eq_ignore_ascii_case("ReflectionFunction")
+            {
+                let state = self
+                    .reflection_functions
+                    .get(&object.id())
+                    .cloned()
+                    .ok_or_else(|| {
+                        runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "ReflectionFunction::__toString()",
+                                "missing ReflectionFunction runtime metadata",
+                            ),
+                        )
+                    })?;
+                return self
+                    .reflection_function_to_string(&state, span)
+                    .map(Value::String)
+                    .map(Some);
+            }
+            if object
+                .class_name()
                 .eq_ignore_ascii_case("ReflectionParameter")
             {
                 let state = self
@@ -42892,6 +43507,25 @@ impl Interpreter {
                 return Ok(Some(Value::String(
                     self.reflection_property_to_string(&state),
                 )));
+            }
+            if object
+                .class_name()
+                .eq_ignore_ascii_case("ReflectionNamedType")
+            {
+                let state = self
+                    .reflection_named_types
+                    .get(&object.id())
+                    .cloned()
+                    .ok_or_else(|| {
+                        runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "ReflectionNamedType::__toString()",
+                                "missing ReflectionNamedType runtime metadata",
+                            ),
+                        )
+                    })?;
+                return Ok(Some(Value::String(reflection_named_type_to_string(&state))));
             }
         }
 
@@ -43094,13 +43728,51 @@ impl Interpreter {
                     current_class_id,
                     &protected_class_ids,
                 ) {
-                    Ok(value) => Ok(value),
-                    Err(error) if Self::is_magic_get_fallback_property_error(&error) => self
-                        .call_magic_get_property_value_with_array_copy_source(
-                            object, &property, span, scope,
+                    Ok(value) => {
+                        if self.array_object_property_should_use_storage(
+                            &object,
+                            &property,
+                            current_class_id,
+                            &protected_class_ids,
+                            span,
+                        )? {
+                            return self
+                                .array_object_read_property_from_storage(&object, &property, span);
+                        }
+                        Ok(value)
+                    }
+                    Err(error) if Self::is_magic_get_fallback_property_error(&error) => {
+                        if self.array_object_property_should_use_storage(
+                            &object,
+                            &property,
+                            current_class_id,
+                            &protected_class_ids,
+                            span,
+                        )? {
+                            return self
+                                .array_object_read_property_from_storage(&object, &property, span);
+                        }
+                        self.call_magic_get_property_value_with_array_copy_source(
+                            object.clone(),
+                            &property,
+                            span,
+                            scope,
                         )?
                         .map(|(value, _)| value)
-                        .ok_or_else(|| runtime_error(span, error)),
+                        .map(Ok)
+                        .unwrap_or_else(|| {
+                            if Self::is_undefined_property_error(&error) {
+                                self.emit_undefined_property_warning(
+                                    object.class_name(),
+                                    &property,
+                                    span,
+                                )?;
+                                Ok(Value::Null)
+                            } else {
+                                Err(runtime_error(span, error))
+                            }
+                        })
+                    }
                     Err(error) => Err(runtime_error(span, error)),
                 }
             }
@@ -43529,6 +44201,17 @@ impl Interpreter {
             "getmessage" => {
                 expect_expr_arity("Error::getMessage", args.len(), 0, span)?;
                 Ok(Value::String(self.throwable_message_for_fatal(&object)))
+            }
+            "getline" => {
+                expect_expr_arity("Error::getLine", args.len(), 0, span)?;
+                let protected_class_ids = self.protected_class_ids_for_context(object.class_id());
+                object
+                    .read_property_from_context(
+                        "line",
+                        Some(object.class_id()),
+                        &protected_class_ids,
+                    )
+                    .map_err(|error| runtime_error(span, error))
             }
             _ => Err(runtime_error(
                 span,
@@ -44894,6 +45577,11 @@ impl Interpreter {
                     "reinitializing ReflectionFunction objects is not implemented",
                 ),
             )),
+            "__tostring" => {
+                expect_expr_arity("ReflectionFunction::__toString", args.len(), 0, span)?;
+                self.reflection_function_to_string(&state, span)
+                    .map(Value::String)
+            }
             "getname" => {
                 expect_expr_arity("ReflectionFunction::getName", args.len(), 0, span)?;
                 Ok(Value::String(state.name))
@@ -45074,6 +45762,41 @@ impl Interpreter {
                 RuntimeError::undefined_function(format!("ReflectionFunction::{method_name}()")),
             )),
         }
+    }
+
+    fn reflection_function_to_string(
+        &mut self,
+        state: &ReflectionFunctionState,
+        span: Span,
+    ) -> CompileResult<String> {
+        let kind = if state.is_internal {
+            "internal"
+        } else {
+            "user"
+        };
+        let mut output = format!("Function [ <{kind}> function {} ] {{\n", state.name);
+        if !state.is_internal {
+            if let Some(file_name) = state.file_name.as_deref() {
+                output.push_str(&format!(
+                    "  @@ {file_name} {} - {}\n",
+                    state.start_line, state.end_line
+                ));
+            }
+            output.push('\n');
+        }
+        output.push_str(&format!("  - Parameters [{}] {{\n", state.params.len()));
+        for (position, parameter) in state.params.iter().cloned().enumerate() {
+            let parameter_state = ReflectionParameterState {
+                declaring: ReflectionParameterDeclaring::Function(state.clone()),
+                parameter,
+                position,
+            };
+            output.push_str("    ");
+            output.push_str(&self.reflection_parameter_to_string(&parameter_state, span)?);
+            output.push('\n');
+        }
+        output.push_str("  }\n}\n");
+        Ok(output)
     }
 
     fn call_reflection_method_method(
@@ -46383,13 +47106,24 @@ impl Interpreter {
             })?;
 
         match method_name.to_ascii_lowercase().as_str() {
-            "__construct" => Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "ReflectionParameter::__construct()",
-                    "reinitializing ReflectionParameter objects is not implemented",
-                ),
-            )),
+            "__construct" => {
+                if args.len() != 2 {
+                    return Err(reflection_constructor_exact_argument_count_error(
+                        "ReflectionParameter",
+                        2,
+                        args.len(),
+                        span,
+                    ));
+                }
+                let function_target = self.evaluate(&args[0], caller_scope)?;
+                let parameter_target = self.evaluate(&args[1], caller_scope)?;
+                let declaring =
+                    self.resolve_reflection_parameter_function_target(&function_target, span)?;
+                let state =
+                    self.resolve_reflection_parameter_target(declaring, &parameter_target, span)?;
+                self.assign_reflection_parameter_state(&object, state, span)?;
+                Ok(Value::Null)
+            }
             "__tostring" => {
                 expect_expr_arity("ReflectionParameter::__toString", args.len(), 0, span)?;
                 self.reflection_parameter_to_string(&state, span)
@@ -46471,6 +47205,30 @@ impl Interpreter {
                 let mut default_scope = SymbolTable::new();
                 self.evaluate(&default, &mut default_scope)
             }
+            "isdefaultvalueconstant" => {
+                expect_expr_arity(
+                    "ReflectionParameter::isDefaultValueConstant",
+                    args.len(),
+                    0,
+                    span,
+                )?;
+                Ok(Value::Bool(state.parameter.default_constant_name.is_some()))
+            }
+            "getdefaultvalueconstantname" => {
+                expect_expr_arity(
+                    "ReflectionParameter::getDefaultValueConstantName",
+                    args.len(),
+                    0,
+                    span,
+                )?;
+                match state.parameter.default_constant_name {
+                    Some(name) => Ok(Value::String(name)),
+                    None => Err(reflection_exception_error(
+                        span,
+                        "Internal error: Failed to retrieve the default value",
+                    )),
+                }
+            }
             "ispassedbyreference" => {
                 expect_expr_arity(
                     "ReflectionParameter::isPassedByReference",
@@ -46479,6 +47237,15 @@ impl Interpreter {
                     span,
                 )?;
                 Ok(Value::Bool(state.parameter.by_reference))
+            }
+            "canbepassedbyvalue" => {
+                expect_expr_arity(
+                    "ReflectionParameter::canBePassedByValue",
+                    args.len(),
+                    0,
+                    span,
+                )?;
+                Ok(Value::Bool(state.parameter.can_be_passed_by_value))
             }
             "isvariadic" => {
                 expect_expr_arity("ReflectionParameter::isVariadic", args.len(), 0, span)?;
@@ -47509,6 +48276,10 @@ impl Interpreter {
             })?;
 
         match method_name.to_ascii_lowercase().as_str() {
+            "__tostring" => {
+                expect_expr_arity("ReflectionNamedType::__toString", args.len(), 0, span)?;
+                Ok(Value::String(reflection_named_type_to_string(&state)))
+            }
             "getname" => {
                 expect_expr_arity("ReflectionNamedType::getName", args.len(), 0, span)?;
                 Ok(Value::String(state.name))
@@ -47849,6 +48620,31 @@ impl Interpreter {
                 .map(|arg| self.evaluate(arg, caller_scope))
                 .collect::<CompileResult<Vec<_>>>()?;
             return self.call_spl_fixed_array_method_with_values(
+                this_object,
+                method_name,
+                values,
+                span,
+            );
+        }
+
+        if self.resolved_method_is_core_array_object(class_id) {
+            let this_object = match caller_scope.read_named("this") {
+                Some(Value::Object(object)) => object.clone(),
+                _ => {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{class_name}::{method_name}()"),
+                            "non-static method dispatch through parent:: requires current $this object context",
+                        ),
+                    ));
+                }
+            };
+            let values = args
+                .iter()
+                .map(|arg| self.evaluate(arg, caller_scope))
+                .collect::<CompileResult<Vec<_>>>()?;
+            return self.call_array_object_method_with_values(
                 this_object,
                 method_name,
                 values,
@@ -51153,8 +51949,7 @@ impl Interpreter {
             }
         }
 
-        let id = self.next_closure_id;
-        self.next_closure_id += 1;
+        let id = self.allocate_object_id();
         self.closure_reflection_functions.insert(
             id,
             reflection_function_state_from_closure(
@@ -53481,10 +54276,8 @@ impl Interpreter {
             .clone()
             .unwrap_or_else(|| "Command line code".to_string());
         let callable = function.name.trim_start_matches('\\');
-        if !self.stdout.is_empty() && !self.stdout.ends_with('\n') {
-            self.stdout.push('\n');
-        }
-        self.stdout.push_str(&format!(
+        self.push_uncaught_fatal_separator();
+        self.push_unbuffered_stdout_text(&format!(
             "Fatal error: Uncaught Error: {callable}(): Argument #{} (${}) could not be passed by reference in {file}:{}\nStack trace:\n#0 {{main}}\n  thrown in {file} on line {}",
             param_index + 1,
             param.name,
@@ -60445,6 +61238,279 @@ impl Interpreter {
         sorted
     }
 
+    fn direct_variable_array_path_from_expr(
+        &mut self,
+        expr: &Expr,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Option<(String, Vec<ArrayKey>)>> {
+        let mut indices = Vec::new();
+        let Some(name) = Self::collect_direct_variable_array_path_expr(expr, &mut indices) else {
+            return Ok(None);
+        };
+        let keys = indices
+            .into_iter()
+            .map(|index| self.evaluate_array_key(index, scope))
+            .collect::<CompileResult<Vec<_>>>()?;
+        Ok(Some((name.to_string(), keys)))
+    }
+
+    fn collect_direct_variable_array_path_expr<'a>(
+        expr: &'a Expr,
+        indices: &mut Vec<&'a Expr>,
+    ) -> Option<&'a str> {
+        match expr {
+            Expr::Variable(name, _) => Some(name),
+            Expr::Index { target, index, .. } => {
+                let name = Self::collect_direct_variable_array_path_expr(target, indices)?;
+                indices.push(index);
+                Some(name)
+            }
+            _ => None,
+        }
+    }
+
+    fn evaluate_array_mutation_value_arguments(
+        &mut self,
+        callable: &str,
+        args: &[Expr],
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Vec<Value>> {
+        let mut values = Vec::with_capacity(args.len());
+        let mut saw_spread = false;
+
+        for arg in args {
+            match arg {
+                Expr::SpreadArgument { expr, span } => {
+                    saw_spread = true;
+                    let value =
+                        self.evaluate_by_value_argument_with_cow_source(expr, caller_scope)?;
+                    let Value::Array(array) = value else {
+                        return Err(runtime_error(
+                            *span,
+                            RuntimeError::unsupported_call(
+                                callable,
+                                format!(
+                                    "argument unpacking requires an array in the current subset, got {}",
+                                    value.type_name()
+                                ),
+                            ),
+                        ));
+                    };
+                    for entry in array.entries() {
+                        if matches!(entry.key, ArrayKey::String(_)) {
+                            return Err(runtime_error(
+                                *span,
+                                RuntimeError::unsupported_call(
+                                    callable,
+                                    "string-keyed argument unpacking for array mutation builtins is not implemented in the current subset",
+                                ),
+                            ));
+                        }
+                        values.push(entry.value_cloned());
+                    }
+                }
+                Expr::NamedArgument { name, span, .. } => {
+                    return Err(runtime_error(
+                        *span,
+                        RuntimeError::unsupported_call(
+                            callable,
+                            format!(
+                                "named argument ${name} for array mutation builtins is not implemented in the current subset"
+                            ),
+                        ),
+                    ));
+                }
+                expr => {
+                    if saw_spread {
+                        return Err(runtime_error(
+                            expr.span(),
+                            RuntimeError::unsupported_call(
+                                callable,
+                                "positional arguments after argument unpacking are not implemented in the current subset",
+                            ),
+                        ));
+                    }
+                    values
+                        .push(self.evaluate_by_value_argument_with_cow_source(expr, caller_scope)?);
+                }
+            }
+        }
+
+        Ok(values)
+    }
+
+    fn direct_array_path_target_array(value: &Value, keys: &[ArrayKey]) -> Option<PhpArray> {
+        if keys.is_empty() {
+            let Value::Array(array) = value else {
+                return None;
+            };
+            return Some(array.clone());
+        }
+
+        match Self::array_path_value(value, keys)? {
+            Value::Array(array) => Some(array),
+            _ => None,
+        }
+    }
+
+    fn detach_removed_direct_array_path_aliases(
+        &mut self,
+        root_name: &str,
+        keys: &[ArrayKey],
+        operation: DirectArrayPathMutation,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<()> {
+        let root_value = scope.read_static(root_name, span)?;
+        let Some(target_array) = Self::direct_array_path_target_array(&root_value, keys) else {
+            return Ok(());
+        };
+        let Some(removed_key) = operation.removed_key(&target_array) else {
+            return Ok(());
+        };
+
+        let mut removed_path = keys.to_vec();
+        removed_path.push(removed_key);
+        scope.detach_array_offset_aliases_for_unset_paths(&[ArrayOffsetAlias {
+            root: ArrayOffsetAliasRoot::StaticArray {
+                name: root_name.to_string(),
+            },
+            keys: removed_path,
+        }]);
+        Ok(())
+    }
+
+    fn call_direct_array_path_mutation(
+        &mut self,
+        root_name: &str,
+        keys: &[ArrayKey],
+        operation: DirectArrayPathMutation,
+        values: &[Value],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        self.detach_removed_direct_array_path_aliases(
+            root_name,
+            keys,
+            operation,
+            span,
+            caller_scope,
+        )?;
+
+        let mut root_value = caller_scope.read_static(root_name, span)?;
+        let type_name = root_value.type_name();
+        let Value::Array(root_array) = &mut root_value else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    operation.callable(),
+                    format!("argument must be array, got {type_name}"),
+                ),
+            ));
+        };
+
+        let result =
+            self.apply_direct_array_path_mutation(root_array, keys, operation, values, span)?;
+        caller_scope.write_static(root_name, root_value);
+        caller_scope.sync_array_offset_aliases_for_root_path(
+            &ArrayOffsetAliasRoot::StaticArray {
+                name: root_name.to_string(),
+            },
+            keys,
+        );
+        Ok(result)
+    }
+
+    fn apply_direct_array_path_mutation(
+        &mut self,
+        array: &mut PhpArray,
+        keys: &[ArrayKey],
+        operation: DirectArrayPathMutation,
+        values: &[Value],
+        span: Span,
+    ) -> CompileResult<Value> {
+        let Some((key, rest)) = keys.split_first() else {
+            return self.apply_array_mutation_to_array(array, operation, values, span);
+        };
+
+        let Some(slot) = array.get_slot_mut(key.clone()) else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::undefined_array_key(key.diagnostic_key()),
+            ));
+        };
+        let mut child = slot.value_cloned();
+        let type_name = child.type_name();
+        let Value::Array(child_array) = &mut child else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    operation.callable(),
+                    format!("argument must be array, got {type_name}"),
+                ),
+            ));
+        };
+
+        let result =
+            self.apply_direct_array_path_mutation(child_array, rest, operation, values, span)?;
+        slot.set_value(child);
+        Ok(result)
+    }
+
+    fn apply_array_mutation_to_array(
+        &mut self,
+        array: &mut PhpArray,
+        operation: DirectArrayPathMutation,
+        values: &[Value],
+        span: Span,
+    ) -> CompileResult<Value> {
+        match operation {
+            DirectArrayPathMutation::Push => {
+                for value in values {
+                    array
+                        .append(value.clone())
+                        .map_err(|error| runtime_error(span, error))?;
+                }
+                Ok(Value::Int(
+                    i64::try_from(array.len()).expect("array length fits in i64"),
+                ))
+            }
+            DirectArrayPathMutation::Pop => Ok(array.pop_value()),
+            DirectArrayPathMutation::Shift => Ok(array.shift_value()),
+            DirectArrayPathMutation::Unshift => array
+                .unshift_values(values)
+                .map(Value::Int)
+                .map_err(|error| runtime_error(span, error)),
+            DirectArrayPathMutation::Next => Ok(array.next_value()),
+            DirectArrayPathMutation::Prev => Ok(array.prev_value()),
+            DirectArrayPathMutation::Reset => Ok(array.reset_value()),
+            DirectArrayPathMutation::End => Ok(array.end_value()),
+        }
+    }
+
+    fn call_array_shift_value_fallback(
+        &mut self,
+        expr: &Expr,
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        let value = self.evaluate(expr, caller_scope)?;
+        self.emit_reference_call_value_fallback_notice(
+            ReferenceCallValueFallback::Parameter,
+            span,
+        )?;
+        let Value::Array(mut array) = value else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "array_shift()",
+                    format!("argument must be array, got {}", value.type_name()),
+                ),
+            ));
+        };
+        Ok(array.shift_value())
+    }
+
     fn call_array_push(
         &mut self,
         args: &[Expr],
@@ -60462,41 +61528,28 @@ impl Interpreter {
             ));
         }
 
-        let Expr::Variable(array_name, _) = &args[0] else {
+        let Some((array_name, keys)) =
+            self.direct_variable_array_path_from_expr(&args[0], caller_scope)?
+        else {
             return Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
                     "array_push()",
-                    "first argument must be a direct variable array in the current subset",
+                    "first argument must be a direct variable array path in the current subset",
                 ),
             ));
         };
 
-        let mut values = Vec::with_capacity(args.len().saturating_sub(1));
-        for arg in &args[1..] {
-            values.push(self.evaluate_by_value_argument_with_cow_source(arg, caller_scope)?);
-        }
-
-        let mut array_value = caller_scope.read_static(array_name, span)?;
-        let type_name = array_value.type_name();
-        let Value::Array(array) = &mut array_value else {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "array_push()",
-                    format!("first argument must be array, got {type_name}"),
-                ),
-            ));
-        };
-
-        for value in values {
-            array
-                .append(value)
-                .map_err(|error| runtime_error(span, error))?;
-        }
-        let len = i64::try_from(array.len()).expect("array length fits in i64");
-        caller_scope.write_static(array_name, array_value);
-        Ok(Value::Int(len))
+        let values =
+            self.evaluate_array_mutation_value_arguments("array_push()", &args[1..], caller_scope)?;
+        self.call_direct_array_path_mutation(
+            &array_name,
+            &keys,
+            DirectArrayPathMutation::Push,
+            &values,
+            span,
+            caller_scope,
+        )
     }
 
     fn call_array_shift(
@@ -60516,31 +61569,20 @@ impl Interpreter {
             ));
         }
 
-        let Expr::Variable(array_name, _) = &args[0] else {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "array_shift()",
-                    "argument must be a direct variable array in the current subset",
-                ),
-            ));
+        let Some((array_name, keys)) =
+            self.direct_variable_array_path_from_expr(&args[0], caller_scope)?
+        else {
+            return self.call_array_shift_value_fallback(&args[0], span, caller_scope);
         };
 
-        let mut array_value = caller_scope.read_static(array_name, span)?;
-        let type_name = array_value.type_name();
-        let Value::Array(array) = &mut array_value else {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "array_shift()",
-                    format!("argument must be array, got {type_name}"),
-                ),
-            ));
-        };
-
-        let value = array.shift_value();
-        caller_scope.write_static(array_name, array_value);
-        Ok(value)
+        self.call_direct_array_path_mutation(
+            &array_name,
+            &keys,
+            DirectArrayPathMutation::Shift,
+            &[],
+            span,
+            caller_scope,
+        )
     }
 
     fn call_array_pointer_mutation(
@@ -60561,36 +61603,33 @@ impl Interpreter {
             ));
         }
 
-        let Expr::Variable(array_name, _) = &args[0] else {
-            return Err(runtime_error(
+        if let Some((array_name, keys)) =
+            self.direct_variable_array_path_from_expr(&args[0], caller_scope)?
+        {
+            let operation = match key {
+                "next" => DirectArrayPathMutation::Next,
+                "prev" => DirectArrayPathMutation::Prev,
+                "reset" => DirectArrayPathMutation::Reset,
+                "end" => DirectArrayPathMutation::End,
+                _ => unreachable!("array pointer mutation dispatch validates key"),
+            };
+            return self.call_direct_array_path_mutation(
+                &array_name,
+                &keys,
+                operation,
+                &[],
                 span,
-                RuntimeError::unsupported_call(
-                    format!("{key}()"),
-                    "argument must be a direct variable array in the current subset",
-                ),
-            ));
-        };
+                caller_scope,
+            );
+        }
 
-        let mut array_value = caller_scope.read_static(array_name, span)?;
-        let type_name = array_value.type_name();
-        let Value::Array(array) = &mut array_value else {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    format!("{key}()"),
-                    format!("argument must be array, got {type_name}"),
-                ),
-            ));
-        };
-        let value = match key {
-            "next" => array.next_value(),
-            "prev" => array.prev_value(),
-            "reset" => array.reset_value(),
-            "end" => array.end_value(),
-            _ => unreachable!("array pointer mutation dispatch validates key"),
-        };
-        caller_scope.write_static(array_name, array_value);
-        Ok(value)
+        Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                format!("{key}()"),
+                "argument must be a direct variable array path in the current subset",
+            ),
+        ))
     }
 
     fn call_ksort(
@@ -60734,40 +61773,31 @@ impl Interpreter {
             ));
         }
 
-        let Expr::Variable(array_name, _) = &args[0] else {
+        let Some((array_name, keys)) =
+            self.direct_variable_array_path_from_expr(&args[0], caller_scope)?
+        else {
             return Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
                     "array_unshift()",
-                    "first argument must be a direct variable array in the current subset",
+                    "first argument must be a direct variable array path in the current subset",
                 ),
             ));
         };
 
-        let mut values = Vec::with_capacity(args.len().saturating_sub(1));
-        for arg in &args[1..] {
-            values.push(self.evaluate_by_value_argument_with_cow_source(arg, caller_scope)?);
-        }
-
-        let mut array_value = caller_scope.read_static(array_name, span)?;
-        let Value::Array(array) = &mut array_value else {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "array_unshift()",
-                    format!(
-                        "first argument must be array, got {}",
-                        array_value.type_name()
-                    ),
-                ),
-            ));
-        };
-
-        let len = array
-            .unshift_values(&values)
-            .map_err(|error| runtime_error(span, error))?;
-        caller_scope.write_static(array_name, array_value);
-        Ok(Value::Int(len))
+        let values = self.evaluate_array_mutation_value_arguments(
+            "array_unshift()",
+            &args[1..],
+            caller_scope,
+        )?;
+        self.call_direct_array_path_mutation(
+            &array_name,
+            &keys,
+            DirectArrayPathMutation::Unshift,
+            &values,
+            span,
+            caller_scope,
+        )
     }
 
     fn call_array_pop(
@@ -60787,30 +61817,26 @@ impl Interpreter {
             ));
         }
 
-        let Expr::Variable(array_name, _) = &args[0] else {
+        let Some((array_name, keys)) =
+            self.direct_variable_array_path_from_expr(&args[0], caller_scope)?
+        else {
             return Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
                     "array_pop()",
-                    "argument must be a direct variable array in the current subset",
+                    "argument must be a direct variable array path in the current subset",
                 ),
             ));
         };
 
-        let mut array_value = caller_scope.read_static(array_name, span)?;
-        let Value::Array(array) = &mut array_value else {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "array_pop()",
-                    format!("argument must be array, got {}", array_value.type_name()),
-                ),
-            ));
-        };
-
-        let value = array.pop_value();
-        caller_scope.write_static(array_name, array_value);
-        Ok(value)
+        self.call_direct_array_path_mutation(
+            &array_name,
+            &keys,
+            DirectArrayPathMutation::Pop,
+            &[],
+            span,
+            caller_scope,
+        )
     }
 
     fn call_next(
@@ -60826,22 +61852,20 @@ impl Interpreter {
             ));
         }
 
+        if let Some((array_name, keys)) =
+            self.direct_variable_array_path_from_expr(&args[0], caller_scope)?
+        {
+            return self.call_direct_array_path_mutation(
+                &array_name,
+                &keys,
+                DirectArrayPathMutation::Next,
+                &[],
+                span,
+                caller_scope,
+            );
+        }
+
         match &args[0] {
-            Expr::Variable(array_name, _) => {
-                let mut array_value = caller_scope.read_static(array_name, span)?;
-                let Value::Array(array) = &mut array_value else {
-                    return Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            "next()",
-                            format!("argument must be array, got {}", array_value.type_name()),
-                        ),
-                    ));
-                };
-                let value = array.next_value();
-                caller_scope.write_static(array_name, array_value);
-                Ok(value)
-            }
             Expr::Index {
                 target,
                 index,
@@ -64761,7 +65785,8 @@ impl Interpreter {
         let Some(error_class_id) = self.classes.lookup_class_id(error_class_name) else {
             return Ok(None);
         };
-        let error_object = self.create_core_error_object(error_message, error_class_id)?;
+        let error_object =
+            self.create_core_error_object(error_message, error_class_id, error.line)?;
         for catch in catches {
             if !self.catch_matches_class(error_class_id, catch)? {
                 continue;
@@ -69862,8 +70887,14 @@ impl Interpreter {
                 }),
             );
         } else {
-            let filesystem_path = file_url_path
-                .unwrap_or_else(|| self.resolve_file_get_contents_path(path, use_include_path));
+            let filesystem_path = file_url_path.unwrap_or_else(|| {
+                let literal_path = Path::new(path);
+                if stream_mode.create && !literal_path.is_absolute() && !literal_path.exists() {
+                    PathBuf::from(path)
+                } else {
+                    self.resolve_file_get_contents_path(path, use_include_path)
+                }
+            });
             if !self.enforce_bounded_open_basedir("fopen()", path, &filesystem_path, span)? {
                 return Ok(Value::Bool(false));
             }
@@ -69897,6 +70928,7 @@ impl Interpreter {
                 writable: stream_mode.writable,
                 append: stream_mode.append,
                 eof: false,
+                metadata_unread_bytes: 0,
                 uri: path.to_string(),
                 read_filter_rot13: false,
                 metadata_mode: mode.to_string(),
@@ -72191,8 +73223,8 @@ impl Interpreter {
                 RuntimeError::unsupported_call(
                     format!("{function}()"),
                     format!(
-                        "stream argument must be resource in the current subset, got {}",
-                        value.type_name()
+                        "Argument #1 ($stream) must be of type resource, {} given",
+                        php_type_error_given(value)
                     ),
                 ),
             ));
@@ -72301,6 +73333,15 @@ impl Interpreter {
                         })?;
                         stream.eof = read < length;
                         bytes.truncate(read);
+                        if read == 0 {
+                            stream.metadata_unread_bytes = 0;
+                        } else {
+                            update_local_file_stream_unread_bytes(
+                                stream,
+                                format!("{function}()"),
+                                span,
+                            )?;
+                        }
                         bytes
                     }
                     None => {
@@ -72315,6 +73356,7 @@ impl Interpreter {
                             )
                         })?;
                         stream.eof = true;
+                        stream.metadata_unread_bytes = 0;
                         bytes
                     }
                 };
@@ -72345,30 +73387,20 @@ impl Interpreter {
                 ),
             ));
         }
-        let data = match &args[1] {
-            Value::String(data) => data.clone(),
-            Value::BinaryString(bytes) => {
-                tree_walk_binary_string_utf8(bytes, "fwrite()", span)?.to_string()
-            }
-            Value::Null | Value::Bool(_) | Value::Int(_) | Value::Float(_) => args[1].echo_string(),
-            other => {
-                return Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "fwrite()",
-                        format!(
-                            "data argument must be string in the current subset, got {}",
-                            other.type_name()
-                        ),
-                    ),
-                ));
-            }
-        };
-        let data = match args.get(2) {
-            Some(Value::Int(length)) if *length <= 0 => "",
+        if matches!(args[1], Value::Array(_)) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "fwrite()",
+                    "data argument must be string in the current subset, got array",
+                ),
+            ));
+        }
+        let mut data = self.value_to_echo_bytes(args[1].clone(), span)?;
+        match args.get(2) {
+            Some(Value::Int(length)) if *length <= 0 => data.clear(),
             Some(Value::Int(length)) => {
-                let length = utf8_boundary_at_or_before(&data, *length as usize);
-                &data[..length]
+                data.truncate(*length as usize);
             }
             Some(other) => {
                 return Err(runtime_error(
@@ -72382,7 +73414,7 @@ impl Interpreter {
                     ),
                 ));
             }
-            None => data.as_str(),
+            None => {}
         };
         let stream_id = self.stream_resource_id("fwrite", &args[0], span)?;
         if !self.stream_is_writable(stream_id) {
@@ -72403,18 +73435,20 @@ impl Interpreter {
                         .buffer
                         .push_str(&"\0".repeat(stream.position - stream.buffer.len()));
                 }
+                let data = String::from_utf8_lossy(&data);
                 let end = stream.position + data.len();
                 if end <= stream.buffer.len() {
-                    stream.buffer.replace_range(stream.position..end, data);
+                    stream.buffer.replace_range(stream.position..end, &data);
                 } else if stream.position < stream.buffer.len() {
-                    stream.buffer.replace_range(stream.position.., data);
+                    stream.buffer.replace_range(stream.position.., &data);
                 } else {
-                    stream.buffer.push_str(data);
+                    stream.buffer.push_str(&data);
                 }
                 stream.position = end;
                 stream.eof = false;
             }
             StreamResource::File(stream) => {
+                stream.metadata_unread_bytes = 0;
                 let logical_position = if stream.append {
                     Some(stream.file.stream_position().map_err(|error| {
                         runtime_error(
@@ -72439,7 +73473,7 @@ impl Interpreter {
                         )
                     })?;
                 }
-                stream.file.write_all(data.as_bytes()).map_err(|error| {
+                stream.file.write_all(&data).map_err(|error| {
                     runtime_error(
                         span,
                         RuntimeError::unsupported_call(
@@ -72516,9 +73550,11 @@ impl Interpreter {
                 })?;
                 if read == 0 {
                     stream.eof = true;
+                    stream.metadata_unread_bytes = 0;
                     return Ok(Value::Bool(false));
                 }
                 stream.eof = false;
+                update_local_file_stream_unread_bytes(stream, "fgetc()", span)?;
                 let contents = String::from_utf8(buffer[..read].to_vec()).map_err(|error| {
                     runtime_error(
                         span,
@@ -72623,8 +73659,10 @@ impl Interpreter {
                     }
                 }
                 if buffer.is_empty() && stream.eof {
+                    stream.metadata_unread_bytes = 0;
                     return Ok(Value::Bool(false));
                 }
+                update_local_file_stream_unread_bytes(stream, "fgets()", span)?;
                 let contents = String::from_utf8(buffer).map_err(|error| {
                     runtime_error(
                         span,
@@ -72799,6 +73837,7 @@ impl Interpreter {
                         ),
                     ));
                 }
+                stream.metadata_unread_bytes = 0;
                 let logical_position = if stream.append {
                     Some(stream.file.stream_position().map_err(|error| {
                         runtime_error(
@@ -72931,8 +73970,10 @@ impl Interpreter {
                     }
                 }
                 if buffer.is_empty() && stream.eof {
+                    stream.metadata_unread_bytes = 0;
                     return Ok(None);
                 }
+                update_local_file_stream_unread_bytes(stream, format!("{function}()"), span)?;
                 let contents = String::from_utf8(buffer).map_err(|error| {
                     runtime_error(
                         span,
@@ -73036,10 +74077,14 @@ impl Interpreter {
         let Some(line) = self.read_stream_line_for_scanf(stream, span)? else {
             return Ok(Value::Bool(false));
         };
-        if parsed.assignable_count() > 0 && line_without_ending(&line).is_empty() {
+        let line = line_without_ending(&line);
+        if line.starts_with('\0') {
             return Ok(Value::Null);
         }
-        let result = parsed.scan_line(line_without_ending(&line));
+        if parsed.whitespace_only_line_returns_null(line) {
+            return Ok(Value::Null);
+        }
+        let result = parsed.scan_line(line);
         Ok(scanf_values_to_array(result.values))
     }
 
@@ -73130,6 +74175,11 @@ impl Interpreter {
                 })?;
                 stream.eof = read < length;
                 buffer.truncate(read);
+                if read == 0 {
+                    stream.metadata_unread_bytes = 0;
+                } else {
+                    update_local_file_stream_unread_bytes(stream, "fread()", span)?;
+                }
                 let contents = String::from_utf8(buffer).map_err(|error| {
                     runtime_error(
                         span,
@@ -73173,6 +74223,7 @@ impl Interpreter {
                     )
                 })?;
                 stream.eof = false;
+                stream.metadata_unread_bytes = 0;
             }
         }
         Ok(Value::Bool(true))
@@ -73562,6 +74613,7 @@ impl Interpreter {
                 match stream.file.seek(seek_from) {
                     Ok(_) => {
                         stream.eof = false;
+                        stream.metadata_unread_bytes = 0;
                         Ok(Value::Int(0))
                     }
                     Err(_) => Ok(Value::Int(-1)),
@@ -73666,6 +74718,7 @@ impl Interpreter {
                 if !stream.writable {
                     return Ok(Value::Bool(false));
                 }
+                stream.metadata_unread_bytes = 0;
                 stream.file.flush().map_err(|error| {
                     runtime_error(
                         span,
@@ -73831,6 +74884,19 @@ impl Interpreter {
         }
 
         Ok(Value::Array(wrappers))
+    }
+
+    fn call_stream_get_transports(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("stream_get_transports", args, 0, span)?;
+
+        let mut transports = PhpArray::new();
+        for transport in ["tcp", "udp", "unix", "udg"] {
+            transports
+                .append(Value::String(transport.to_string()))
+                .map_err(|error| runtime_error(span, error))?;
+        }
+
+        Ok(Value::Array(transports))
     }
 
     fn call_stream_wrapper_register(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -74026,6 +75092,20 @@ impl Interpreter {
 
     fn call_stream_get_meta_data(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("stream_get_meta_data", args, 1, span)?;
+        if let Value::Resource(id) = args[0] {
+            if self.directories.contains_key(&id) {
+                let mut metadata = PhpArray::new();
+                metadata.insert("timed_out", Value::Bool(false));
+                metadata.insert("blocked", Value::Bool(true));
+                metadata.insert("eof", Value::Bool(false));
+                metadata.insert("wrapper_type", Value::String("plainfile".to_string()));
+                metadata.insert("stream_type", Value::String("dir".to_string()));
+                metadata.insert("mode", Value::String("r".to_string()));
+                metadata.insert("unread_bytes", Value::Int(0));
+                metadata.insert("seekable", Value::Bool(true));
+                return Ok(Value::Array(metadata));
+            }
+        }
         match self.stream_mut("stream_get_meta_data", &args[0], span)? {
             StreamResource::Memory(stream) => {
                 let mut metadata = PhpArray::new();
@@ -74059,7 +75139,7 @@ impl Interpreter {
                 metadata.insert("wrapper_type", Value::String("plainfile".to_string()));
                 metadata.insert("stream_type", Value::String("STDIO".to_string()));
                 metadata.insert("mode", Value::String(stream.metadata_mode.clone()));
-                metadata.insert("unread_bytes", Value::Int(0));
+                metadata.insert("unread_bytes", Value::Int(stream.metadata_unread_bytes));
                 metadata.insert("seekable", Value::Bool(true));
                 metadata.insert("uri", Value::String(stream.uri.clone()));
                 Ok(Value::Array(metadata))
@@ -74430,7 +75510,11 @@ impl Interpreter {
         let entry_padding = "  ".repeat(indent + 2);
         let pair_padding = "  ".repeat(indent + 3);
         let state = self.spl_object_storage_state(object, "var_dump", span)?;
-        let properties = object.properties();
+        let properties: Vec<_> = object
+            .properties()
+            .into_iter()
+            .filter(|property| !property.is_unset())
+            .collect();
         let mut output = format!(
             "{padding}object({})#{} ({}) {{\n",
             object.class_name(),
@@ -75779,15 +76863,15 @@ impl Interpreter {
         let format = self.sprintf_format_argument("printf()", &args[0], span)?;
 
         let output = self.bounded_sprintf("printf()", &format, &args[1..], span)?;
-        let length = output.as_bytes().len() as i64;
-        self.append_output_at(&output, span);
+        let length = output.byte_len();
+        self.append_output_bytes_at(&output.bytes, span);
         Ok(Value::Int(length))
     }
 
     fn call_vprintf(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         let output = self.call_vsprintf(args, "vprintf()", span)?;
-        let length = output.as_bytes().len() as i64;
-        self.append_output_at(&output, span);
+        let length = output.byte_len();
+        self.append_output_bytes_at(&output.bytes, span);
         Ok(Value::Int(length))
     }
 
@@ -75802,16 +76886,16 @@ impl Interpreter {
         let format = self.sprintf_format_argument("fprintf()", &args[1], span)?;
 
         let output = self.bounded_sprintf("fprintf()", &format, &args[2..], span)?;
-        let length = output.as_bytes().len() as i64;
-        self.write_stream_string("fprintf", &args[0], &output, span)?;
+        let length = output.byte_len();
+        self.write_stream_bytes("fprintf", &args[0], &output.bytes, span)?;
         Ok(Value::Int(length))
     }
 
     fn call_vfprintf(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
-        expect_arity("vfprintf()", args, 3, span)?;
+        expect_arity("vfprintf", args, 3, span)?;
         let output = self.call_vsprintf(&args[1..], "vfprintf()", span)?;
-        let length = output.as_bytes().len() as i64;
-        self.write_stream_string("vfprintf", &args[0], &output, span)?;
+        let length = output.byte_len();
+        self.write_stream_bytes("vfprintf", &args[0], &output.bytes, span)?;
         Ok(Value::Int(length))
     }
 
@@ -75820,6 +76904,16 @@ impl Interpreter {
         function: &'static str,
         stream_value: &Value,
         data: &str,
+        span: Span,
+    ) -> CompileResult<()> {
+        self.write_stream_bytes(function, stream_value, data.as_bytes(), span)
+    }
+
+    fn write_stream_bytes(
+        &mut self,
+        function: &'static str,
+        stream_value: &Value,
+        data: &[u8],
         span: Span,
     ) -> CompileResult<()> {
         match self.stream_mut(function, stream_value, span)? {
@@ -75841,13 +76935,14 @@ impl Interpreter {
                         .buffer
                         .push_str(&"\0".repeat(stream.position - stream.buffer.len()));
                 }
+                let data = String::from_utf8_lossy(data);
                 let end = stream.position + data.len();
                 if end <= stream.buffer.len() {
-                    stream.buffer.replace_range(stream.position..end, data);
+                    stream.buffer.replace_range(stream.position..end, &data);
                 } else if stream.position < stream.buffer.len() {
-                    stream.buffer.replace_range(stream.position.., data);
+                    stream.buffer.replace_range(stream.position.., &data);
                 } else {
-                    stream.buffer.push_str(data);
+                    stream.buffer.push_str(&data);
                 }
                 stream.position = end;
                 stream.eof = false;
@@ -75862,6 +76957,7 @@ impl Interpreter {
                         ),
                     ));
                 }
+                stream.metadata_unread_bytes = 0;
                 let logical_position = if stream.append {
                     Some(stream.file.stream_position().map_err(|error| {
                         runtime_error(
@@ -75886,7 +76982,7 @@ impl Interpreter {
                         )
                     })?;
                 }
-                stream.file.write_all(data.as_bytes()).map_err(|error| {
+                stream.file.write_all(data).map_err(|error| {
                     runtime_error(
                         span,
                         RuntimeError::unsupported_call(
@@ -76025,6 +77121,8 @@ impl Interpreter {
             "soundex" => call_soundex(&args, span),
             "count_chars" => call_count_chars(&args, span),
             "base64_decode" => call_base64_decode(&args, span),
+            "convert_uuencode" => call_convert_uuencode(&args, span),
+            "convert_uudecode" => self.call_convert_uudecode(&args, span),
             "ctype_alnum" => self.call_ctype("ctype_alnum()", &args, ctype_byte_is_alnum, span),
             "ctype_alpha" => self.call_ctype("ctype_alpha()", &args, ctype_byte_is_alpha, span),
             "ctype_cntrl" => self.call_ctype("ctype_cntrl()", &args, ctype_byte_is_cntrl, span),
@@ -76053,6 +77151,7 @@ impl Interpreter {
             "nl2br" => call_nl2br(&args, span),
             "str_repeat" => call_str_repeat(&args, span),
             "str_pad" => call_str_pad(&args, span),
+            "wordwrap" => call_wordwrap(&args, span),
             "chunk_split" => call_chunk_split(&args, span),
             "str_split" => call_str_split(&args, span),
             "addslashes" => self.call_addslashes(&args, span),
@@ -76068,6 +77167,8 @@ impl Interpreter {
             "strncmp" => call_strncmp(&args, span),
             "strncasecmp" => call_strncasecmp(&args, span),
             "strcoll" => call_strcoll(&args, span),
+            "strnatcmp" => self.call_strnatcmp(&args, "strnatcmp()", false, span),
+            "strnatcasecmp" => self.call_strnatcmp(&args, "strnatcasecmp()", true, span),
             "strtr" => self.call_strtr(&args, span),
             "str_contains" => call_str_contains(&args, span),
             "str_starts_with" => call_str_starts_with(&args, span),
@@ -76084,6 +77185,7 @@ impl Interpreter {
             "strrchr" => call_strrchr(&args, span),
             "stristr" => call_strstr(&args, "stristr()", true, span),
             "strtok" => call_strtok_builtin(self, &args, span),
+            "str_word_count" => call_str_word_count(&args, span),
             "substr" => call_substr(&args, span),
             "substr_replace" => call_substr_replace(&args, span),
             "substr_count" => call_substr_count(&args, span),
@@ -76096,6 +77198,7 @@ impl Interpreter {
                     "direct result variable binding is required in the current subset",
                 ),
             )),
+            "parse_url" => call_parse_url(&args, span),
             "urlencode" => call_urlencode(&args, span),
             "preg_match" => call_preg_match(&args, span),
             "preg_replace" => call_preg_replace(&args, span),
@@ -77685,6 +78788,16 @@ impl Interpreter {
                     ),
                 )),
             },
+            "strval" => self.call_strval(&args, span),
+            "boolval" => {
+                expect_arity(name, &args, 1, span)?;
+                Ok(Value::Bool(args[0].is_truthy()))
+            }
+            "intval" => self.call_intval(&args, span),
+            "floatval" | "doubleval" => {
+                expect_arity(name, &args, 1, span)?;
+                self.float_cast_value(args[0].clone(), "(float)", span)
+            }
             "gettype" => {
                 expect_arity(name, &args, 1, span)?;
                 Ok(Value::String(args[0].gettype_name().to_string()))
@@ -78072,12 +79185,12 @@ impl Interpreter {
                         if stream_path_protocol(&path).eq_ignore_ascii_case("data") {
                             return match parse_data_url_stream(&path) {
                                 Ok(stream) => match bounded_file_get_contents_slice(
-                                    &stream.contents,
+                                    stream.contents.as_bytes(),
                                     offset,
                                     max_length,
                                 ) {
                                     FileGetContentsRead::Contents(contents) => {
-                                        Ok(Value::String(contents))
+                                        Ok(interpreter_value_from_php_string_bytes(contents))
                                     }
                                     FileGetContentsRead::WarningFalse(message) => {
                                         self.emit_warning("file_get_contents()", message, span)?;
@@ -78097,12 +79210,12 @@ impl Interpreter {
                         }
                         if path == "php://input" {
                             return match bounded_file_get_contents_slice(
-                                &self.request_body,
+                                self.request_body.as_bytes(),
                                 offset,
                                 max_length,
                             ) {
                                 FileGetContentsRead::Contents(contents) => {
-                                    Ok(Value::String(contents))
+                                    Ok(interpreter_value_from_php_string_bytes(contents))
                                 }
                                 FileGetContentsRead::WarningFalse(message) => {
                                     self.emit_warning("file_get_contents()", message, span)?;
@@ -78115,12 +79228,12 @@ impl Interpreter {
                                 return Ok(Value::Bool(false));
                             }
                             return match bounded_file_get_contents_slice(
-                                &self.request_body,
+                                self.request_body.as_bytes(),
                                 offset,
                                 max_length,
                             ) {
                                 FileGetContentsRead::Contents(contents) => {
-                                    Ok(Value::String(contents))
+                                    Ok(interpreter_value_from_php_string_bytes(contents))
                                 }
                                 FileGetContentsRead::WarningFalse(_) => Ok(Value::Bool(false)),
                             };
@@ -78154,7 +79267,7 @@ impl Interpreter {
                         )? {
                             return Ok(Value::Bool(false));
                         }
-                        let contents = match fs::read_to_string(&filesystem_path) {
+                        let contents = match fs::read(&filesystem_path) {
                             Ok(contents) => contents,
                             Err(error) => {
                                 self.emit_display_warning(
@@ -78169,7 +79282,9 @@ impl Interpreter {
                         };
                         self.cache_bounded_realpath_entry_for_local_path(&filesystem_path);
                         match bounded_file_get_contents_slice(&contents, offset, max_length) {
-                            FileGetContentsRead::Contents(contents) => Ok(Value::String(contents)),
+                            FileGetContentsRead::Contents(contents) => {
+                                Ok(interpreter_value_from_php_string_bytes(contents))
+                            }
                             FileGetContentsRead::WarningFalse(message) => {
                                 self.emit_warning("file_get_contents()", message, span)?;
                                 Ok(Value::Bool(false))
@@ -78212,6 +79327,7 @@ impl Interpreter {
             "fstat" => self.call_fstat(&args, span),
             "stream_get_meta_data" => self.call_stream_get_meta_data(&args, span),
             "stream_get_wrappers" => self.call_stream_get_wrappers(&args, span),
+            "stream_get_transports" => self.call_stream_get_transports(&args, span),
             "stream_wrapper_register" => self.call_stream_wrapper_register(&args, span),
             "stream_wrapper_unregister" => self.call_stream_wrapper_unregister(&args, span),
             "stream_wrapper_restore" => self.call_stream_wrapper_restore(&args, span),
@@ -82297,26 +83413,33 @@ impl Interpreter {
             Some(Value::Object(object)) => {
                 let (current_class_id, protected_class_ids) =
                     self.current_property_access_context();
-                match object
-                    .read_property_for_isset_from_context(
-                        property,
-                        current_class_id,
-                        &protected_class_ids,
-                    )
-                    .map_err(|error| runtime_error(span, error))?
-                {
-                    Some(value) => Ok(!matches!(value, Value::Null)),
-                    None if object
-                        .has_uninitialized_declared_property_from_context(
-                            property,
-                            current_class_id,
-                            &protected_class_ids,
-                        )
-                        .map_err(|error| runtime_error(span, error))? =>
+                if self.array_object_property_should_use_storage(
+                    &object,
+                    property,
+                    current_class_id,
+                    &protected_class_ids,
+                    span,
+                )? {
+                    return self.array_object_property_storage_is_set(&object, property, span);
+                }
+                match object.read_property_for_isset_from_context(
+                    property,
+                    current_class_id,
+                    &protected_class_ids,
+                ) {
+                    Ok(Some(value)) => Ok(!matches!(value, Value::Null)),
+                    Ok(None)
+                        if object
+                            .has_uninitialized_declared_property_from_context(
+                                property,
+                                current_class_id,
+                                &protected_class_ids,
+                            )
+                            .map_err(|error| runtime_error(span, error))? =>
                     {
                         Ok(false)
                     }
-                    None => Ok(self
+                    Ok(None) => Ok(self
                         .call_magic_property_method_with_caller_scope(
                             object,
                             "__isset",
@@ -82325,6 +83448,16 @@ impl Interpreter {
                             caller_scope,
                         )?
                         .is_some_and(|value| value.is_truthy())),
+                    Err(error) if Self::is_magic_get_fallback_property_error(&error) => Ok(self
+                        .call_magic_property_method_with_caller_scope(
+                            object,
+                            "__isset",
+                            property,
+                            span,
+                            caller_scope,
+                        )?
+                        .is_some_and(|value| value.is_truthy())),
+                    Err(error) => Err(runtime_error(span, error)),
                 }
             }
             Some(_) | None => Ok(false),
@@ -83615,49 +84748,174 @@ impl Interpreter {
             .map_err(|error| runtime_error(span, error))
     }
 
-    fn value_to_string_cast(&mut self, value: Value, span: Span) -> CompileResult<String> {
+    fn call_strval(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("strval", args, 1, span)?;
+        self.value_to_string_cast_value(args[0].clone(), "strval()", span)
+    }
+
+    fn call_intval(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(1..=2).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "intval()",
+                    ArityExpectation::Between { min: 1, max: 2 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        if let Some(base) = args.get(1) {
+            let Value::Int(base) = base else {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "intval()",
+                        format!(
+                            "base argument must be int in the current subset, got {}",
+                            base.type_name()
+                        ),
+                    ),
+                ));
+            };
+            if *base != 0 && !(2..=36).contains(base) {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "intval()",
+                        "base argument must be between 2 and 36, or 0 for prefix detection",
+                    ),
+                ));
+            }
+
+            return match &args[0] {
+                Value::String(value) => cast_string_to_int_with_base(value, *base, span),
+                Value::BinaryString(value) => {
+                    cast_binary_string_to_int_with_base(value, *base, span)
+                }
+                value => self.int_cast_value(value.clone(), "(int)", span),
+            };
+        }
+
+        self.int_cast_value(args[0].clone(), "(int)", span)
+    }
+
+    fn value_to_string_cast_value(
+        &mut self,
+        value: Value,
+        callable: &'static str,
+        span: Span,
+    ) -> CompileResult<Value> {
         match value {
             Value::Null | Value::Bool(_) | Value::Int(_) | Value::Float(_) | Value::String(_) => {
-                Ok(value.echo_string())
+                Ok(Value::String(value.echo_string()))
             }
-            Value::BinaryString(value) => {
-                tree_walk_binary_string_utf8(&value, "(string)", span).map(str::to_owned)
+            Value::BinaryString(value) => Ok(Value::BinaryString(value)),
+            Value::Array(_) => {
+                self.emit_display_warning("Array to string conversion", span)?;
+                Ok(Value::String("Array".to_string()))
             }
-            Value::Array(_) => Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "(string)",
-                    "array-to-string cast warning behavior is not implemented",
-                ),
-            )),
             Value::Object(object) => {
                 if object.class_name().eq_ignore_ascii_case("BcMath\\Number") {
-                    return self.bcmath_number_object_string(&object, span);
+                    return self
+                        .bcmath_number_object_string(&object, span)
+                        .map(Value::String);
                 }
                 if let Some(output) =
                     self.object_to_string_with_magic(object.clone(), "(string)", span)?
                 {
-                    Ok(output)
+                    Ok(Value::String(output))
                 } else {
-                    Value::Object(object)
-                        .try_echo_string()
-                        .map_err(|error| runtime_error(span, error))
+                    Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            callable,
+                            format!(
+                                "Object of class {} could not be converted to string",
+                                object.class_name()
+                            ),
+                        ),
+                    ))
                 }
             }
             Value::Closure(_) => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
-                    "(string)",
+                    callable,
                     "Closure __toString() and cast error behavior are not implemented",
                 ),
             )),
-            Value::Resource(_) => Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "(string)",
-                    "resource-to-string cast warning behavior is not implemented",
-                ),
-            )),
+            Value::Resource(id) => Ok(Value::String(format!("Resource id #{id}"))),
+        }
+    }
+
+    fn int_cast_value(
+        &mut self,
+        value: Value,
+        callable: &'static str,
+        span: Span,
+    ) -> CompileResult<Value> {
+        match value {
+            Value::Null => Ok(Value::Int(0)),
+            Value::Bool(value) => Ok(Value::Int(if value { 1 } else { 0 })),
+            Value::Int(value) => Ok(Value::Int(value)),
+            Value::Float(value) => cast_float_to_int(value, callable, span),
+            Value::String(value) => cast_string_to_int(&value, span),
+            Value::BinaryString(value) => cast_binary_string_to_int(&value, span),
+            Value::Array(value) => Ok(Value::Int(if value.is_empty() { 0 } else { 1 })),
+            Value::Object(object) => {
+                self.emit_display_warning(
+                    format!(
+                        "Object of class {} could not be converted to int",
+                        object.class_name()
+                    ),
+                    span,
+                )?;
+                Ok(Value::Int(1))
+            }
+            Value::Closure(_) => {
+                self.emit_display_warning(
+                    "Object of class Closure could not be converted to int",
+                    span,
+                )?;
+                Ok(Value::Int(1))
+            }
+            Value::Resource(id) => Ok(Value::Int(id)),
+        }
+    }
+
+    fn float_cast_value(
+        &mut self,
+        value: Value,
+        _callable: &'static str,
+        span: Span,
+    ) -> CompileResult<Value> {
+        match value {
+            Value::Null => Ok(Value::Float(0.0)),
+            Value::Bool(value) => Ok(Value::Float(if value { 1.0 } else { 0.0 })),
+            Value::Int(value) => Ok(Value::Float(value as f64)),
+            Value::Float(value) => Ok(Value::Float(value)),
+            Value::String(value) => cast_string_to_float(&value, span),
+            Value::BinaryString(value) => cast_binary_string_to_float(&value, span),
+            Value::Array(value) => Ok(Value::Float(if value.is_empty() { 0.0 } else { 1.0 })),
+            Value::Object(object) => {
+                self.emit_display_warning(
+                    format!(
+                        "Object of class {} could not be converted to float",
+                        object.class_name()
+                    ),
+                    span,
+                )?;
+                Ok(Value::Float(1.0))
+            }
+            Value::Closure(_) => {
+                self.emit_display_warning(
+                    "Object of class Closure could not be converted to float",
+                    span,
+                )?;
+                Ok(Value::Float(1.0))
+            }
+            Value::Resource(id) => Ok(Value::Float(id as f64)),
         }
     }
 
@@ -83688,6 +84946,10 @@ impl Interpreter {
                     }));
                 }
             }
+        }
+
+        if let Some(result) = self.apply_leading_numeric_string_add(op, &left, &right, span)? {
+            return Ok(result);
         }
 
         let result: RuntimeResult<Value> = match op {
@@ -83733,6 +84995,33 @@ impl Interpreter {
         result.map_err(|error| runtime_error(span, error))
     }
 
+    fn apply_leading_numeric_string_add(
+        &mut self,
+        op: BinaryOp,
+        left: &Value,
+        right: &Value,
+        span: Span,
+    ) -> CompileResult<Option<Value>> {
+        if !matches!(op, BinaryOp::Add) {
+            return Ok(None);
+        }
+
+        let Some(left) = arithmetic_number_with_optional_leading_numeric(left) else {
+            return Ok(None);
+        };
+        let Some(right) = arithmetic_number_with_optional_leading_numeric(right) else {
+            return Ok(None);
+        };
+        if !left.leading_numeric && !right.leading_numeric {
+            return Ok(None);
+        }
+
+        self.emit_display_warning("A non-numeric value encountered", span)?;
+        Ok(Some(array_numeric_number_to_value(
+            add_array_numeric_numbers(left.number, right.number),
+        )))
+    }
+
     fn apply_unary(&self, op: UnaryOp, value: Value, span: Span) -> CompileResult<Value> {
         let result: RuntimeResult<Value> = match op {
             UnaryOp::Plus => Value::Int(0).php_add(&value),
@@ -83746,80 +85035,10 @@ impl Interpreter {
 
     fn apply_cast(&mut self, kind: CastKind, value: Value, span: Span) -> CompileResult<Value> {
         match kind {
-            CastKind::String => self.value_to_string_cast(value, span).map(Value::String),
-            CastKind::Int => match value {
-                Value::Null => Ok(Value::Int(0)),
-                Value::Bool(value) => Ok(Value::Int(if value { 1 } else { 0 })),
-                Value::Int(value) => Ok(Value::Int(value)),
-                Value::Float(value) => cast_float_to_int(value, "(int)", span),
-                Value::String(value) => cast_string_to_int(&value, span),
-                Value::BinaryString(value) => cast_binary_string_to_int(&value, span),
-                Value::Array(_) => Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "(int)",
-                        "array-to-int cast behavior is not implemented",
-                    ),
-                )),
-                Value::Object(_) => Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "(int)",
-                        "object-to-int cast behavior is not implemented",
-                    ),
-                )),
-                Value::Closure(_) => Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "(int)",
-                        "Closure object-to-int cast behavior is not implemented",
-                    ),
-                )),
-                Value::Resource(_) => Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "(int)",
-                        "resource-to-int cast behavior is not implemented",
-                    ),
-                )),
-            },
+            CastKind::String => self.value_to_string_cast_value(value, "(string)", span),
+            CastKind::Int => self.int_cast_value(value, "(int)", span),
             CastKind::Bool => Ok(Value::Bool(value.is_truthy())),
-            CastKind::Float => match value {
-                Value::Null => Ok(Value::Float(0.0)),
-                Value::Bool(value) => Ok(Value::Float(if value { 1.0 } else { 0.0 })),
-                Value::Int(value) => Ok(Value::Float(value as f64)),
-                Value::Float(value) => Ok(Value::Float(value)),
-                Value::String(value) => cast_string_to_float(&value, span),
-                Value::BinaryString(value) => cast_binary_string_to_float(&value, span),
-                Value::Array(_) => Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "(float)",
-                        "array-to-float cast behavior is not implemented",
-                    ),
-                )),
-                Value::Object(_) => Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "(float)",
-                        "object-to-float cast behavior is not implemented",
-                    ),
-                )),
-                Value::Closure(_) => Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "(float)",
-                        "Closure object-to-float cast behavior is not implemented",
-                    ),
-                )),
-                Value::Resource(_) => Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "(float)",
-                        "resource-to-float cast behavior is not implemented",
-                    ),
-                )),
-            },
+            CastKind::Float => self.float_cast_value(value, "(float)", span),
             CastKind::Array => match value {
                 Value::Null => Ok(Value::Array(PhpArray::new())),
                 Value::Array(value) => Ok(Value::Array(value)),
@@ -83911,7 +85130,7 @@ impl Interpreter {
 }
 
 fn cast_string_to_int(value: &str, span: Span) -> CompileResult<Value> {
-    let trimmed = value.trim_matches(|ch: char| ch.is_ascii_whitespace());
+    let trimmed = value.trim_matches(is_php_numeric_whitespace);
     if trimmed.is_empty() {
         return Ok(Value::Int(0));
     }
@@ -83951,10 +85170,113 @@ fn cast_binary_string_to_int(value: &[u8], span: Span) -> CompileResult<Value> {
     }
 }
 
+fn cast_string_to_int_with_base(value: &str, base: i64, span: Span) -> CompileResult<Value> {
+    let Ok(base) = u32::try_from(base) else {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "intval()",
+                "base argument must be between 2 and 36, or 0 for prefix detection",
+            ),
+        ));
+    };
+
+    let trimmed = value.trim_matches(is_php_numeric_whitespace);
+    if trimmed.is_empty() {
+        return Ok(Value::Int(0));
+    }
+
+    let bytes = trimmed.as_bytes();
+    let mut index = 0;
+    let sign = match bytes.first() {
+        Some(b'-') => {
+            index = 1;
+            -1i128
+        }
+        Some(b'+') => {
+            index = 1;
+            1i128
+        }
+        _ => 1i128,
+    };
+
+    let mut radix = base;
+    if radix == 0 {
+        if bytes
+            .get(index..index + 2)
+            .is_some_and(|prefix| prefix.eq_ignore_ascii_case(b"0x"))
+        {
+            radix = 16;
+            index += 2;
+        } else if bytes
+            .get(index..index + 2)
+            .is_some_and(|prefix| prefix.eq_ignore_ascii_case(b"0b"))
+        {
+            radix = 2;
+            index += 2;
+        } else if bytes.get(index) == Some(&b'0') {
+            radix = 8;
+            index += 1;
+        } else {
+            radix = 10;
+        }
+    } else if radix == 16
+        && bytes
+            .get(index..index + 2)
+            .is_some_and(|prefix| prefix.eq_ignore_ascii_case(b"0x"))
+    {
+        index += 2;
+    } else if radix == 2
+        && bytes
+            .get(index..index + 2)
+            .is_some_and(|prefix| prefix.eq_ignore_ascii_case(b"0b"))
+    {
+        index += 2;
+    }
+
+    let mut parsed_any = false;
+    let mut magnitude: i128 = 0;
+    while let Some(&byte) = bytes.get(index) {
+        let Some(digit) = (byte as char).to_digit(radix) else {
+            break;
+        };
+        parsed_any = true;
+        magnitude = magnitude
+            .saturating_mul(radix as i128)
+            .saturating_add(digit as i128);
+        index += 1;
+    }
+
+    if !parsed_any {
+        return Ok(Value::Int(0));
+    }
+
+    let signed = magnitude.saturating_mul(sign);
+    let clamped = signed.clamp(i64::MIN as i128, i64::MAX as i128);
+    Ok(Value::Int(clamped as i64))
+}
+
+fn cast_binary_string_to_int_with_base(
+    value: &[u8],
+    base: i64,
+    span: Span,
+) -> CompileResult<Value> {
+    match std::str::from_utf8(value) {
+        Ok(value) => cast_string_to_int_with_base(value, base, span),
+        Err(_) => Ok(Value::Int(0)),
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 enum ArrayNumericNumber {
     Int(i64),
     Float(f64),
+}
+
+#[derive(Debug, Clone, Copy)]
+struct LeadingNumericArithmeticNumber {
+    number: ArrayNumericNumber,
+    leading_numeric: bool,
 }
 
 impl ArrayNumericNumber {
@@ -83989,7 +85311,7 @@ impl ArrayNumericOperation {
 }
 
 fn parse_array_numeric_string(value: &str) -> Option<ArrayNumericNumber> {
-    let trimmed = value.trim_matches(|ch: char| ch.is_ascii_whitespace());
+    let trimmed = value.trim_matches(is_php_numeric_whitespace);
     if trimmed.is_empty() || !starts_with_numeric_prefix(trimmed) {
         return None;
     }
@@ -84001,6 +85323,68 @@ fn parse_array_numeric_string(value: &str) -> Option<ArrayNumericNumber> {
         }
     }
     number.parse::<f64>().ok().map(ArrayNumericNumber::Float)
+}
+
+fn arithmetic_number_with_optional_leading_numeric(
+    value: &Value,
+) -> Option<LeadingNumericArithmeticNumber> {
+    match value {
+        Value::Null => Some(LeadingNumericArithmeticNumber {
+            number: ArrayNumericNumber::Int(0),
+            leading_numeric: false,
+        }),
+        Value::Bool(false) => Some(LeadingNumericArithmeticNumber {
+            number: ArrayNumericNumber::Int(0),
+            leading_numeric: false,
+        }),
+        Value::Bool(true) => Some(LeadingNumericArithmeticNumber {
+            number: ArrayNumericNumber::Int(1),
+            leading_numeric: false,
+        }),
+        Value::Int(value) => Some(LeadingNumericArithmeticNumber {
+            number: ArrayNumericNumber::Int(*value),
+            leading_numeric: false,
+        }),
+        Value::Float(value) => Some(LeadingNumericArithmeticNumber {
+            number: ArrayNumericNumber::Float(*value),
+            leading_numeric: false,
+        }),
+        Value::String(value) => arithmetic_string_number_with_optional_leading_numeric(value),
+        Value::BinaryString(value) => std::str::from_utf8(value)
+            .ok()
+            .and_then(arithmetic_string_number_with_optional_leading_numeric),
+        Value::Array(_) | Value::Object(_) | Value::Closure(_) | Value::Resource(_) => None,
+    }
+}
+
+fn arithmetic_string_number_with_optional_leading_numeric(
+    value: &str,
+) -> Option<LeadingNumericArithmeticNumber> {
+    let trimmed = value.trim_matches(is_php_numeric_whitespace);
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    if !trimmed.contains(['.', 'e', 'E']) {
+        if let Ok(value) = trimmed.parse::<i64>() {
+            return Some(LeadingNumericArithmeticNumber {
+                number: ArrayNumericNumber::Int(value),
+                leading_numeric: false,
+            });
+        }
+    }
+    if let Ok(value) = trimmed.parse::<f64>() {
+        return Some(LeadingNumericArithmeticNumber {
+            number: ArrayNumericNumber::Float(value),
+            leading_numeric: false,
+        });
+    }
+
+    let number = parse_array_numeric_string(trimmed)?;
+    Some(LeadingNumericArithmeticNumber {
+        number,
+        leading_numeric: true,
+    })
 }
 
 fn add_array_numeric_numbers(
@@ -84083,6 +85467,10 @@ fn leading_numeric_prefix(value: &str) -> Option<&str> {
     }
 }
 
+fn is_php_numeric_whitespace(ch: char) -> bool {
+    matches!(ch, ' ' | '\t' | '\n' | '\r' | '\u{0c}' | '\u{0b}')
+}
+
 fn consume_ascii_digits_bytes(bytes: &[u8], index: &mut usize) -> usize {
     let start = *index;
     while matches!(bytes.get(*index), Some(b'0'..=b'9')) {
@@ -84092,7 +85480,7 @@ fn consume_ascii_digits_bytes(bytes: &[u8], index: &mut usize) -> usize {
 }
 
 fn cast_string_to_float(value: &str, span: Span) -> CompileResult<Value> {
-    let trimmed = value.trim_matches(|ch: char| ch.is_ascii_whitespace());
+    let trimmed = value.trim_matches(is_php_numeric_whitespace);
     if trimmed.is_empty() {
         return Ok(Value::Float(0.0));
     }
@@ -84110,14 +85498,19 @@ fn cast_string_to_float(value: &str, span: Span) -> CompileResult<Value> {
         ));
     }
 
-    if starts_with_numeric_prefix(trimmed) {
-        return Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                "(float)",
-                "leading-numeric string cast behavior is not implemented",
-            ),
-        ));
+    if let Some(prefix) = leading_numeric_prefix(trimmed) {
+        if let Ok(value) = prefix.parse::<f64>() {
+            if value.is_finite() {
+                return Ok(Value::Float(value));
+            }
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "(float)",
+                    "non-finite float string cast behavior is not implemented",
+                ),
+            ));
+        }
     }
 
     Ok(Value::Float(0.0))
@@ -84202,6 +85595,7 @@ impl MagicMethodStartupDiagnostics {
         stderr.push_str(fatal);
         Some(Execution {
             stdout: String::new(),
+            stdout_bytes: Vec::new(),
             stderr,
             exit_code: 255,
         })
@@ -89332,8 +90726,13 @@ fn reflection_parameter_metadata_from_signature(
             name: param.name.clone(),
             type_decl: param.type_decl.clone(),
             by_reference: param.by_reference,
+            can_be_passed_by_value: !param.by_reference,
             is_variadic: param.is_variadic,
             default: param.default.clone(),
+            default_constant_name: param
+                .default
+                .as_ref()
+                .and_then(reflection_default_constant_name),
             attributes: param.attributes.clone(),
         })
         .collect()
@@ -89348,11 +90747,31 @@ fn reflection_parameter_metadata_from_function_params(
             name: param.name.clone(),
             type_decl: param.type_decl.as_ref().map(|decl| decl.text.clone()),
             by_reference: param.by_reference,
+            can_be_passed_by_value: !param.by_reference,
             is_variadic: param.is_variadic,
             default: param.default.clone(),
+            default_constant_name: param
+                .default
+                .as_ref()
+                .and_then(reflection_default_constant_name),
             attributes: param.attributes.clone(),
         })
         .collect()
+}
+
+fn reflection_default_constant_name(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::GlobalConstant { name, .. } => Some(name.clone()),
+        Expr::ClassConstant {
+            class_name,
+            constant,
+            ..
+        } => Some(format!("{class_name}::{constant}")),
+        Expr::SelfClassConstant { constant, .. } => Some(format!("self::{constant}")),
+        Expr::ParentClassConstant { constant, .. } => Some(format!("parent::{constant}")),
+        Expr::LateStaticClassConstant { constant, .. } => Some(format!("static::{constant}")),
+        _ => None,
+    }
 }
 
 fn reflection_function_state_from_decl(
@@ -89478,6 +90897,14 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_optional_bool_param("strict", false),
             ],
         ),
+        "convert_uuencode" => (
+            "string",
+            vec![reflection_internal_param("string", "string")],
+        ),
+        "convert_uudecode" => (
+            "string|false",
+            vec![reflection_internal_param("data", "string")],
+        ),
         "ctype_alnum" | "ctype_alpha" | "ctype_cntrl" | "ctype_digit" | "ctype_graph"
         | "ctype_lower" | "ctype_print" | "ctype_punct" | "ctype_space" | "ctype_upper"
         | "ctype_xdigit" => ("bool", vec![reflection_internal_param("text", "mixed")]),
@@ -89546,6 +90973,15 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_optional_int_param("pad_type", PHP_STR_PAD_RIGHT),
             ],
         ),
+        "wordwrap" => (
+            "string",
+            vec![
+                reflection_internal_param("string", "string"),
+                reflection_internal_optional_int_param("width", 75),
+                reflection_internal_optional_string_param("break", "\n"),
+                reflection_internal_optional_bool_param("cut_long_words", false),
+            ],
+        ),
         "chunk_split" => (
             "string",
             vec![
@@ -89596,6 +91032,13 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
             ],
         ),
         "strcmp" | "strcasecmp" | "strcoll" => (
+            "int",
+            vec![
+                reflection_internal_param("string1", "string"),
+                reflection_internal_param("string2", "string"),
+            ],
+        ),
+        "strnatcmp" | "strnatcasecmp" => (
             "int",
             vec![
                 reflection_internal_param("string1", "string"),
@@ -89664,6 +91107,14 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_optional_null_param("token", "string"),
             ],
         ),
+        "str_word_count" => (
+            "array|int",
+            vec![
+                reflection_internal_param("string", "string"),
+                reflection_internal_optional_int_param("format", 0),
+                reflection_internal_optional_string_param("characters", ""),
+            ],
+        ),
         "substr" => (
             "string",
             vec![
@@ -89704,6 +91155,13 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
             vec![
                 reflection_internal_param("string", "string"),
                 reflection_internal_untyped_reference_param("result"),
+            ],
+        ),
+        "parse_url" => (
+            "array|int|string|null|false",
+            vec![
+                reflection_internal_param("url", "string"),
+                reflection_internal_optional_int_param("component", -1),
             ],
         ),
         "json_encode" => (
@@ -89858,6 +91316,16 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_optional_null_param("scale", "int"),
             ],
         ),
+        "strval" => ("string", vec![reflection_internal_param("value", "mixed")]),
+        "boolval" => ("bool", vec![reflection_internal_param("value", "mixed")]),
+        "intval" => (
+            "int",
+            vec![
+                reflection_internal_param("value", "mixed"),
+                reflection_internal_optional_int_param("base", 10),
+            ],
+        ),
+        "floatval" | "doubleval" => ("float", vec![reflection_internal_param("value", "mixed")]),
         "defined" => (
             "bool",
             vec![reflection_internal_param("constant_name", "string")],
@@ -89896,6 +91364,7 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
             vec![reflection_internal_param("assignment", "string")],
         ),
         "stream_get_wrappers" => ("array", vec![]),
+        "stream_get_transports" => ("array", vec![]),
         "stream_wrapper_register" => (
             "bool",
             vec![
@@ -89979,8 +91448,8 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
         "array_multisort" => (
             "bool",
             vec![
-                reflection_internal_reference_untyped_param("array"),
-                reflection_internal_variadic_reference_untyped_param("rest"),
+                reflection_internal_reference_value_ok_untyped_param("array"),
+                reflection_internal_variadic_reference_value_ok_untyped_param("rest"),
             ],
         ),
         "sort" => (
@@ -90068,8 +91537,10 @@ fn reflection_internal_untyped_param(name: &str) -> ReflectionParameterMetadata 
         name: name.to_string(),
         type_decl: None,
         by_reference: false,
+        can_be_passed_by_value: true,
         is_variadic: false,
         default: None,
+        default_constant_name: None,
         attributes: Vec::new(),
     }
 }
@@ -90085,8 +91556,10 @@ fn reflection_internal_param(name: &str, type_decl: &str) -> ReflectionParameter
         name: name.to_string(),
         type_decl: Some(type_decl.to_string()),
         by_reference: false,
+        can_be_passed_by_value: true,
         is_variadic: false,
         default: None,
+        default_constant_name: None,
         attributes: Vec::new(),
     }
 }
@@ -90094,10 +91567,11 @@ fn reflection_internal_param(name: &str, type_decl: &str) -> ReflectionParameter
 fn reflection_internal_reference_param(name: &str, type_decl: &str) -> ReflectionParameterMetadata {
     let mut param = reflection_internal_param(name, type_decl);
     param.by_reference = true;
+    param.can_be_passed_by_value = false;
     param
 }
 
-fn reflection_internal_reference_untyped_param(name: &str) -> ReflectionParameterMetadata {
+fn reflection_internal_reference_value_ok_untyped_param(name: &str) -> ReflectionParameterMetadata {
     let mut param = reflection_internal_untyped_param(name);
     param.by_reference = true;
     param
@@ -90115,6 +91589,7 @@ fn reflection_internal_optional_param(
     default: Expr,
 ) -> ReflectionParameterMetadata {
     let mut param = reflection_internal_param(name, type_decl);
+    param.default_constant_name = reflection_default_constant_name(&default);
     param.default = Some(default);
     param
 }
@@ -90149,6 +91624,7 @@ fn reflection_internal_optional_null_param(
 fn reflection_internal_optional_reference_null_param(name: &str) -> ReflectionParameterMetadata {
     let mut param = reflection_internal_untyped_param(name);
     param.by_reference = true;
+    param.can_be_passed_by_value = false;
     param.default = Some(Expr::Null(Span::new(0, 0)));
     param
 }
@@ -90159,8 +91635,10 @@ fn reflection_internal_variadic_param(name: &str, type_decl: &str) -> Reflection
     param
 }
 
-fn reflection_internal_variadic_reference_untyped_param(name: &str) -> ReflectionParameterMetadata {
-    let mut param = reflection_internal_reference_untyped_param(name);
+fn reflection_internal_variadic_reference_value_ok_untyped_param(
+    name: &str,
+) -> ReflectionParameterMetadata {
+    let mut param = reflection_internal_reference_value_ok_untyped_param(name);
     param.is_variadic = true;
     param
 }
@@ -90180,6 +91658,17 @@ fn reflection_declaring_name(declaring: &ReflectionParameterDeclaring) -> String
         ReflectionParameterDeclaring::Method(method) => {
             format!("{}::{}()", method.declaring_class_name, method.name)
         }
+    }
+}
+
+fn reflection_named_type_to_string(state: &ReflectionNamedTypeState) -> String {
+    if state.allows_null
+        && !state.name.eq_ignore_ascii_case("mixed")
+        && !state.name.eq_ignore_ascii_case("null")
+    {
+        format!("?{}", state.name)
+    } else {
+        state.name.clone()
     }
 }
 
@@ -91218,6 +92707,14 @@ fn reflection_method_name_parts(name: &str, span: Span) -> CompileResult<(String
     Ok((class_name.to_string(), method_name.to_string()))
 }
 
+fn reflection_class_target_string(value: &Value) -> Option<String> {
+    match value {
+        Value::String(name) => Some(name.clone()),
+        Value::Object(object) => Some(object.class_name().to_string()),
+        _ => None,
+    }
+}
+
 fn reflection_exception_error(span: Span, message: impl Into<String>) -> Diagnostic {
     Diagnostic::new(
         Phase::Runtime,
@@ -91407,11 +92904,27 @@ fn reflection_constructor_argument_count_error(
     actual: usize,
     span: Span,
 ) -> Diagnostic {
+    reflection_constructor_exact_argument_count_error(class_name, 1, actual, span)
+}
+
+fn reflection_constructor_exact_argument_count_error(
+    class_name: &'static str,
+    expected: usize,
+    actual: usize,
+    span: Span,
+) -> Diagnostic {
+    let noun = if expected == 1 {
+        "argument"
+    } else {
+        "arguments"
+    };
     runtime_error(
         span,
         RuntimeError::unsupported_call(
             format!("{class_name}::__construct()"),
-            format!("{class_name}::__construct() expects exactly 1 argument, {actual} given"),
+            format!(
+                "{class_name}::__construct() expects exactly {expected} {noun}, {actual} given"
+            ),
         ),
     )
 }
@@ -91860,6 +93373,10 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
         return Some(("ArgumentCountError", message));
     }
 
+    if let Some(message) = vfprintf_exact_argument_count_error_message(error) {
+        return Some(("TypeError", message));
+    }
+
     if let Some(message) = reflection_constructor_argument_count_error_message(error) {
         return Some(("TypeError", message));
     }
@@ -91897,6 +93414,19 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
             return Some(("Error", error.message.clone()));
         }
 
+        if let Some(property) = error
+            .message
+            .strip_prefix("unsupported object property access: non-public property ")
+            .and_then(|message| {
+                message.strip_suffix(" requires same-class method context in the current subset")
+            })
+        {
+            return Some((
+                "Error",
+                format!("Cannot access private property {property}"),
+            ));
+        }
+
         if error.message == "Method name must be a string"
             || error.message == "Class name must be a valid object or a string"
         {
@@ -91915,6 +93445,13 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
             | "unsupported call BcMath\\Number::div(): Division by zero"
             | "unsupported call BcMath\\Number::divmod(): Division by zero" => {
                 return Some(("DivisionByZeroError", "Division by zero".to_string()));
+            }
+            "invalid array key: cannot append after maximum integer key" => {
+                return Some((
+                    "Error",
+                    "Cannot add element to the array as the next element is already occupied"
+                        .to_string(),
+                ));
             }
             "unsupported call bcmod(): Modulo by zero"
             | "unsupported call bcpowmod(): Modulo by zero"
@@ -92075,7 +93612,12 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
                 if reason.contains(" expects exactly ") {
                     return Some(("ArgumentCountError", reason.to_string()));
                 }
-                if reason.contains(" must be of type ") {
+                if reason.contains(" expects at most ") || reason.contains(" expects at least ") {
+                    return Some(("ArgumentCountError", reason.to_string()));
+                }
+                if reason.contains(" must be of type ")
+                    || reason.contains(" must be a class name derived from ArrayIterator")
+                {
                     let class_name = if prefix.contains("ArrayIterator") {
                         "ArrayIterator"
                     } else {
@@ -92097,6 +93639,16 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
             .strip_prefix("unsupported call sprintf(): Object of class ")
         {
             return Some(("Error", format!("Object of class {message}")));
+        }
+
+        for prefix in ["unsupported call (string): ", "unsupported call strval(): "] {
+            if let Some(message) = error.message.strip_prefix(prefix) {
+                if message.starts_with("Object of class ")
+                    && message.ends_with(" could not be converted to string")
+                {
+                    return Some(("Error", message.to_string()));
+                }
+            }
         }
 
         if is_invalid_callback_argument_message(&error.message) {
@@ -92277,6 +93829,22 @@ fn sprintf_argument_count_error_message(error: &Diagnostic) -> Option<String> {
     None
 }
 
+fn vfprintf_exact_argument_count_error_message(error: &Diagnostic) -> Option<String> {
+    if error.phase != Phase::Runtime {
+        return None;
+    }
+    let actual = error
+        .message
+        .strip_prefix("arity mismatch for vfprintf(): expected 3 argument(s), got ")
+        .and_then(|actual| actual.parse::<usize>().ok())?;
+    if actual == 3 {
+        return None;
+    }
+    Some(format!(
+        "vfprintf() expects exactly 3 arguments, {actual} given"
+    ))
+}
+
 fn reflection_constructor_argument_count_error_message(error: &Diagnostic) -> Option<String> {
     if error.phase != Phase::Runtime {
         return None;
@@ -92286,8 +93854,12 @@ fn reflection_constructor_argument_count_error_message(error: &Diagnostic) -> Op
         .strip_prefix("unsupported call ")?
         .split_once(": ")
         .map(|(_, message)| message)?;
-    for class_name in ["ReflectionExtension", "ReflectionZendExtension"] {
-        let prefix = format!("{class_name}::__construct() expects exactly 1 argument, ");
+    for (class_name, expected) in [
+        ("ReflectionExtension", 1usize),
+        ("ReflectionZendExtension", 1usize),
+        ("ReflectionParameter", 2usize),
+    ] {
+        let prefix = format!("{class_name}::__construct() expects exactly {expected} argument");
         if message.starts_with(&prefix) && message.ends_with(" given") {
             return Some(message.to_string());
         }
@@ -92420,6 +93992,12 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
         )
         | ("chunk_split()", "Argument #2 ($length) must be greater than 0")
         | ("str_split()", "Argument #2 ($length) must be greater than 0")
+        | ("wordwrap()", "Argument #3 ($break) must not be empty")
+        | (
+            "wordwrap()",
+            "Argument #4 ($cut_long_words) cannot be true when argument #2 ($width) is 0",
+        )
+        | ("str_word_count()", "Argument #2 ($format) must be a valid format value")
         | ("parse_str()", "Argument #1 ($string) must not contain any null bytes")
         | ("strpbrk()", "Argument #2 ($characters) must be a non-empty string")
         | ("base_convert()", "Argument #2 ($from_base) must be between 2 and 36 (inclusive)")
@@ -92475,6 +94053,12 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
             "str_pad(): Argument #4 ($pad_type) must be STR_PAD_LEFT, STR_PAD_RIGHT, or STR_PAD_BOTH"
                 .to_string(),
         ),
+        ("parse_url()", message)
+            if message
+                .starts_with("Argument #2 ($component) must be a valid URL component identifier, ") =>
+        {
+            Some(format!("{function}: {message}"))
+        }
         (
             "sprintf()" | "printf()" | "vsprintf()" | "vprintf()" | "fprintf()" | "vfprintf()",
             "Missing format specifier at end of string"
@@ -92483,7 +94067,8 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
             | "Precision must be between 0 and 2147483647"
             | "Precision -1 is only supported for %g, %G, %h and %H"
             | "Width must be an integer"
-            | "Width must be between 0 and 2147483647",
+            | "Width must be between 0 and 2147483647"
+            | "Argument number specifier must be greater than zero and less than 2147483647",
         ) => Some(message.to_string()),
         ("sprintf()" | "printf()" | "vsprintf()" | "vprintf()" | "fprintf()" | "vfprintf()", message)
             if message.starts_with("Unknown format specifier ") =>
@@ -92653,6 +94238,7 @@ fn builtin_resource_type_error_message(error: &Diagnostic) -> Option<String> {
         || reason == "ftruncate(): Argument #1 ($stream) must be an open stream resource"
         || reason == "flock(): Argument #1 ($stream) must be an open stream resource"
         || reason == "stream_supports_lock(): Argument #1 ($stream) must be an open stream resource"
+        || reason == "stream_get_meta_data(): Argument #1 ($stream) must be an open stream resource"
         || reason == "fscanf(): supplied resource is not a valid File-Handle resource"
         || reason == "No resource supplied"
         || reason == "readdir(): Argument #1 ($dir_handle) must be an open stream resource"
@@ -92872,6 +94458,8 @@ fn is_builtin(name: &str) -> bool {
             | "soundex"
             | "count_chars"
             | "base64_decode"
+            | "convert_uuencode"
+            | "convert_uudecode"
             | "ctype_alnum"
             | "ctype_alpha"
             | "ctype_cntrl"
@@ -92898,6 +94486,7 @@ fn is_builtin(name: &str) -> bool {
             | "nl2br"
             | "str_repeat"
             | "str_pad"
+            | "wordwrap"
             | "chunk_split"
             | "str_split"
             | "range"
@@ -92914,6 +94503,8 @@ fn is_builtin(name: &str) -> bool {
             | "strncmp"
             | "strncasecmp"
             | "strcoll"
+            | "strnatcmp"
+            | "strnatcasecmp"
             | "strtr"
             | "str_contains"
             | "str_starts_with"
@@ -92930,12 +94521,14 @@ fn is_builtin(name: &str) -> bool {
             | "strrchr"
             | "stristr"
             | "strtok"
+            | "str_word_count"
             | "substr"
             | "substr_replace"
             | "substr_count"
             | "str_replace"
             | "str_getcsv"
             | "parse_str"
+            | "parse_url"
             | "urlencode"
             | "preg_match"
             | "preg_replace"
@@ -93126,6 +94719,11 @@ fn is_builtin(name: &str) -> bool {
             | "next"
             | "in_array"
             | "array_search"
+            | "strval"
+            | "boolval"
+            | "intval"
+            | "floatval"
+            | "doubleval"
             | "gettype"
             | "is_null"
             | "is_bool"
@@ -93314,6 +94912,7 @@ fn is_builtin(name: &str) -> bool {
             | "fstat"
             | "stream_get_meta_data"
             | "stream_get_wrappers"
+            | "stream_get_transports"
             | "stream_wrapper_register"
             | "stream_wrapper_unregister"
             | "stream_wrapper_restore"
@@ -93905,6 +95504,14 @@ const PHP_PATHINFO_EXTENSION: i64 = 4;
 const PHP_PATHINFO_FILENAME: i64 = 8;
 const PHP_PATHINFO_ALL: i64 =
     PHP_PATHINFO_DIRNAME | PHP_PATHINFO_BASENAME | PHP_PATHINFO_EXTENSION | PHP_PATHINFO_FILENAME;
+const PHP_URL_SCHEME: i64 = 0;
+const PHP_URL_HOST: i64 = 1;
+const PHP_URL_PORT: i64 = 2;
+const PHP_URL_USER: i64 = 3;
+const PHP_URL_PASS: i64 = 4;
+const PHP_URL_PATH: i64 = 5;
+const PHP_URL_QUERY: i64 = 6;
+const PHP_URL_FRAGMENT: i64 = 7;
 const PHP_SCANDIR_SORT_ASCENDING: i64 = 0;
 const PHP_SCANDIR_SORT_DESCENDING: i64 = 1;
 const PHP_SCANDIR_SORT_NONE: i64 = 2;
@@ -94157,6 +95764,7 @@ fn builtin_global_constant_value(name: &str) -> Option<Value> {
     match name {
         "PHP_VERSION" => Some(Value::String("8.3.0".to_string())),
         "PHP_VERSION_ID" => Some(Value::Int(80300)),
+        "PHP_INT_SIZE" => Some(Value::Int(8)),
         "PHP_INT_MAX" => Some(Value::Int(i64::MAX)),
         "PHP_INT_MIN" => Some(Value::Int(i64::MIN)),
         "INF" => Some(Value::Float(f64::INFINITY)),
@@ -94187,6 +95795,14 @@ fn builtin_global_constant_value(name: &str) -> Option<Value> {
         "PATHINFO_EXTENSION" => Some(Value::Int(PHP_PATHINFO_EXTENSION)),
         "PATHINFO_FILENAME" => Some(Value::Int(PHP_PATHINFO_FILENAME)),
         "PATHINFO_ALL" => Some(Value::Int(PHP_PATHINFO_ALL)),
+        "PHP_URL_SCHEME" => Some(Value::Int(PHP_URL_SCHEME)),
+        "PHP_URL_HOST" => Some(Value::Int(PHP_URL_HOST)),
+        "PHP_URL_PORT" => Some(Value::Int(PHP_URL_PORT)),
+        "PHP_URL_USER" => Some(Value::Int(PHP_URL_USER)),
+        "PHP_URL_PASS" => Some(Value::Int(PHP_URL_PASS)),
+        "PHP_URL_PATH" => Some(Value::Int(PHP_URL_PATH)),
+        "PHP_URL_QUERY" => Some(Value::Int(PHP_URL_QUERY)),
+        "PHP_URL_FRAGMENT" => Some(Value::Int(PHP_URL_FRAGMENT)),
         "SCANDIR_SORT_ASCENDING" => Some(Value::Int(PHP_SCANDIR_SORT_ASCENDING)),
         "SCANDIR_SORT_DESCENDING" => Some(Value::Int(PHP_SCANDIR_SORT_DESCENDING)),
         "SCANDIR_SORT_NONE" => Some(Value::Int(PHP_SCANDIR_SORT_NONE)),
@@ -100140,6 +101756,107 @@ fn base64_decode_value(byte: u8) -> Option<u8> {
     }
 }
 
+fn call_convert_uuencode(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("convert_uuencode", args, 1, span)?;
+    let value = string_compare_argument_bytes("convert_uuencode()", "string", &args[0], span)?;
+    Ok(interpreter_value_from_php_string_bytes(uuencode_bytes(
+        &value,
+    )))
+}
+
+impl Interpreter {
+    fn call_convert_uudecode(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("convert_uudecode", args, 1, span)?;
+        let value = string_compare_argument_bytes("convert_uudecode()", "data", &args[0], span)?;
+        match uudecode_bytes(&value) {
+            Some(decoded) => Ok(interpreter_value_from_php_string_bytes(decoded)),
+            None => {
+                self.emit_display_warning(
+                    "convert_uudecode(): Argument #1 ($data) is not a valid uuencoded string",
+                    span,
+                )?;
+                Ok(Value::Bool(false))
+            }
+        }
+    }
+}
+
+fn uuencode_char(value: u8) -> u8 {
+    let value = value & 0x3f;
+    if value == 0 {
+        b'`'
+    } else {
+        value + 32
+    }
+}
+
+fn uudecode_char(byte: u8) -> Option<u8> {
+    match byte {
+        b'`' | b' ' => Some(0),
+        33..=96 => Some((byte - 32) & 0x3f),
+        _ => None,
+    }
+}
+
+fn uuencode_bytes(value: &[u8]) -> Vec<u8> {
+    let mut output = Vec::new();
+    for chunk in value.chunks(45) {
+        output.push(uuencode_char(chunk.len() as u8));
+        for triple in chunk.chunks(3) {
+            let a = triple.first().copied().unwrap_or(0);
+            let b = triple.get(1).copied().unwrap_or(0);
+            let c = triple.get(2).copied().unwrap_or(0);
+            output.push(uuencode_char(a >> 2));
+            output.push(uuencode_char(((a << 4) | (b >> 4)) & 0x3f));
+            output.push(uuencode_char(((b << 2) | (c >> 6)) & 0x3f));
+            output.push(uuencode_char(c & 0x3f));
+        }
+        output.push(b'\n');
+    }
+    output.extend_from_slice(b"`\n");
+    output
+}
+
+fn uudecode_bytes(value: &[u8]) -> Option<Vec<u8>> {
+    if value.is_empty() {
+        return None;
+    }
+
+    let mut output = Vec::new();
+    let mut saw_terminator = false;
+    for raw_line in value.split(|byte| *byte == b'\n') {
+        let line = raw_line.strip_suffix(b"\r").unwrap_or(raw_line);
+        if line.is_empty() {
+            continue;
+        }
+        let expected_len = uudecode_char(line[0])? as usize;
+        if expected_len == 0 {
+            saw_terminator = true;
+            break;
+        }
+
+        let mut line_output = Vec::new();
+        for encoded in line[1..].chunks(4) {
+            if encoded.len() < 4 {
+                break;
+            }
+            let a = uudecode_char(encoded[0])?;
+            let b = uudecode_char(encoded[1])?;
+            let c = uudecode_char(encoded[2])?;
+            let d = uudecode_char(encoded[3])?;
+            line_output.push((a << 2) | (b >> 4));
+            line_output.push((b << 4) | (c >> 2));
+            line_output.push((c << 6) | d);
+        }
+        if line_output.len() < expected_len {
+            return None;
+        }
+        output.extend_from_slice(&line_output[..expected_len]);
+    }
+
+    (saw_terminator || !output.is_empty()).then_some(output)
+}
+
 fn base64_decode_ignored_whitespace(byte: u8) -> bool {
     matches!(byte, b' ' | b'\t' | b'\n' | b'\r')
 }
@@ -101956,6 +103673,400 @@ fn call_str_pad(args: &[Value], span: Span) -> CompileResult<Value> {
     Ok(interpreter_value_from_php_string_bytes(output))
 }
 
+fn call_wordwrap(args: &[Value], span: Span) -> CompileResult<Value> {
+    if !(1..=4).contains(&args.len()) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "wordwrap()",
+                ArityExpectation::Between { min: 1, max: 4 },
+                args.len(),
+            ),
+        ));
+    }
+
+    let value = string_compare_argument_bytes("wordwrap()", "string", &args[0], span)?;
+    let width = match args.get(1) {
+        Some(width) => php_internal_int_argument("wordwrap()", 2, "width", width, span)?,
+        None => 75,
+    };
+    let break_string = match args.get(2) {
+        Some(value) => string_compare_argument_bytes("wordwrap()", "break", value, span)?,
+        None => b"\n".to_vec(),
+    };
+    if break_string.is_empty() {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call("wordwrap()", "Argument #3 ($break) must not be empty"),
+        ));
+    }
+    let cut = args.get(3).is_some_and(Value::is_truthy);
+    if width == 0 && cut {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "wordwrap()",
+                "Argument #4 ($cut_long_words) cannot be true when argument #2 ($width) is 0",
+            ),
+        ));
+    }
+
+    let output = if width <= 0 {
+        wordwrap_zero_or_negative_width(&value, &break_string, cut)
+    } else {
+        wordwrap_positive_width(&value, width as usize, &break_string, cut)
+    };
+    Ok(interpreter_value_from_php_string_bytes(output))
+}
+
+fn wordwrap_zero_or_negative_width(value: &[u8], break_string: &[u8], cut: bool) -> Vec<u8> {
+    if cut {
+        let mut output = Vec::new();
+        for &byte in value {
+            output.extend_from_slice(break_string);
+            if byte != b' ' {
+                output.push(byte);
+            }
+        }
+        return output;
+    }
+
+    let mut output = Vec::with_capacity(value.len());
+    let mut index = 0;
+    while index < value.len() {
+        if value[index] == b' ' {
+            while index < value.len() && value[index] == b' ' {
+                index += 1;
+            }
+            if !output.is_empty() && index < value.len() {
+                output.extend_from_slice(break_string);
+            }
+        } else {
+            output.push(value[index]);
+            index += 1;
+        }
+    }
+    output
+}
+
+fn wordwrap_positive_width(value: &[u8], width: usize, break_string: &[u8], cut: bool) -> Vec<u8> {
+    let mut output = Vec::new();
+    let mut start = 0;
+
+    while value.len().saturating_sub(start) > width {
+        let limit = start + width;
+        if let Some(existing_break) =
+            wordwrap_existing_break_at_or_before_limit(value, start, limit, break_string)
+        {
+            output.extend_from_slice(&value[start..existing_break]);
+            output.extend_from_slice(break_string);
+            start = existing_break + break_string.len();
+            continue;
+        }
+
+        if let Some(space) = wordwrap_last_space_after_start(value, start, limit) {
+            output.extend_from_slice(&value[start..space]);
+            output.extend_from_slice(break_string);
+            start = space + 1;
+            continue;
+        }
+
+        if cut {
+            output.extend_from_slice(&value[start..limit]);
+            output.extend_from_slice(break_string);
+            start = limit;
+            continue;
+        }
+
+        let Some(space) = value[limit..]
+            .iter()
+            .position(|byte| *byte == b' ')
+            .map(|offset| limit + offset)
+        else {
+            break;
+        };
+        output.extend_from_slice(&value[start..space]);
+        output.extend_from_slice(break_string);
+        start = space + 1;
+    }
+
+    output.extend_from_slice(&value[start..]);
+    output
+}
+
+fn wordwrap_existing_break_at_or_before_limit(
+    value: &[u8],
+    start: usize,
+    limit: usize,
+    break_string: &[u8],
+) -> Option<usize> {
+    (start..=limit).find(|index| value[*index..].starts_with(break_string))
+}
+
+fn wordwrap_last_space_after_start(value: &[u8], start: usize, limit: usize) -> Option<usize> {
+    value[start + 1..=limit]
+        .iter()
+        .rposition(|byte| *byte == b' ')
+        .map(|offset| start + 1 + offset)
+}
+
+fn call_str_word_count(args: &[Value], span: Span) -> CompileResult<Value> {
+    if !(1..=3).contains(&args.len()) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "str_word_count()",
+                ArityExpectation::Between { min: 1, max: 3 },
+                args.len(),
+            ),
+        ));
+    }
+
+    let value = string_compare_argument_bytes("str_word_count()", "string", &args[0], span)?;
+    let format = match args.get(1) {
+        Some(value) => php_internal_int_argument("str_word_count()", 2, "format", value, span)?,
+        None => 0,
+    };
+    if !matches!(format, 0..=2) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "str_word_count()",
+                "Argument #2 ($format) must be a valid format value",
+            ),
+        ));
+    }
+    let charlist = match args.get(2) {
+        Some(value) => {
+            string_compare_argument_bytes("str_word_count()", "characters", value, span)?
+        }
+        None => Vec::new(),
+    };
+
+    let words = str_word_count_words(&value, &charlist);
+    match format {
+        0 => Ok(Value::Int(words.len() as i64)),
+        1 => {
+            let mut array = PhpArray::new();
+            for (_, word) in words {
+                array
+                    .append(interpreter_value_from_php_string_bytes(word))
+                    .map_err(|error| runtime_error(span, error))?;
+            }
+            Ok(Value::Array(array))
+        }
+        2 => {
+            let mut array = PhpArray::new();
+            for (offset, word) in words {
+                array.insert(offset as i64, interpreter_value_from_php_string_bytes(word));
+            }
+            Ok(Value::Array(array))
+        }
+        _ => unreachable!("str_word_count format was validated"),
+    }
+}
+
+fn str_word_count_words(value: &[u8], charlist: &[u8]) -> Vec<(usize, Vec<u8>)> {
+    let mut words = Vec::new();
+    if value.is_empty() {
+        return words;
+    }
+
+    let mut index = 0;
+    let mut end = value.len();
+    if (value[index] == b'\'' || value[index] == b'-')
+        && !str_word_count_charlist_contains(charlist, value[index])
+    {
+        index += 1;
+    }
+    if index < end && value[end - 1] == b'-' && !str_word_count_charlist_contains(charlist, b'-') {
+        end -= 1;
+    }
+
+    while index < end {
+        let start = index;
+        while index < end && str_word_count_is_word_byte(value[index], charlist) {
+            index += 1;
+        }
+        if index > start {
+            words.push((start, value[start..index].to_vec()));
+        }
+        index += 1;
+    }
+
+    words
+}
+
+fn str_word_count_is_word_byte(byte: u8, charlist: &[u8]) -> bool {
+    str_word_count_is_base_word_byte(byte)
+        || str_word_count_charlist_contains(charlist, byte)
+        || byte == b'\''
+        || byte == b'-'
+}
+
+fn str_word_count_is_base_word_byte(byte: u8) -> bool {
+    byte.is_ascii_alphabetic()
+}
+
+fn str_word_count_charlist_contains(charlist: &[u8], byte: u8) -> bool {
+    charlist.contains(&byte)
+}
+
+impl Interpreter {
+    fn call_strnatcmp(
+        &mut self,
+        args: &[Value],
+        function: &'static str,
+        case_insensitive: bool,
+        span: Span,
+    ) -> CompileResult<Value> {
+        expect_arity(function.trim_end_matches("()"), args, 2, span)?;
+        let left = self.value_to_echo_bytes(args[0].clone(), span)?;
+        let right = self.value_to_echo_bytes(args[1].clone(), span)?;
+        Ok(Value::Int(i64::from(natural_compare_bytes(
+            &left,
+            &right,
+            case_insensitive,
+        ))))
+    }
+}
+
+fn natural_compare_bytes(left: &[u8], right: &[u8], case_insensitive: bool) -> i32 {
+    let mut left_index = 0;
+    let mut right_index = 0;
+
+    while left_index < left.len() || right_index < right.len() {
+        if left_index == left.len() || right_index == right.len() {
+            return compare_usize(left.len() - left_index, right.len() - right_index);
+        }
+
+        while left_index < left.len() && left[left_index].is_ascii_whitespace() {
+            left_index += 1;
+        }
+        while right_index < right.len() && right[right_index].is_ascii_whitespace() {
+            right_index += 1;
+        }
+
+        if left_index == left.len() || right_index == right.len() {
+            return compare_usize(left.len() - left_index, right.len() - right_index);
+        }
+
+        let left_byte = left[left_index];
+        let right_byte = right[right_index];
+        if left_byte.is_ascii_digit() && right_byte.is_ascii_digit() {
+            let sign = if left_byte == b'0' || right_byte == b'0' {
+                natural_compare_left_aligned_number(left, right, left_index, right_index)
+            } else {
+                natural_compare_right_aligned_number(left, right, left_index, right_index)
+            };
+            if sign != 0 {
+                return sign;
+            }
+            left_index = natural_digit_run_end(left, left_index);
+            right_index = natural_digit_run_end(right, right_index);
+            continue;
+        }
+
+        let left_cmp = natural_compare_fold_byte(left_byte, case_insensitive);
+        let right_cmp = natural_compare_fold_byte(right_byte, case_insensitive);
+        if left_cmp != right_cmp {
+            return compare_u8(left_cmp, right_cmp);
+        }
+
+        left_index += 1;
+        right_index += 1;
+    }
+
+    0
+}
+
+fn natural_compare_left_aligned_number(
+    left: &[u8],
+    right: &[u8],
+    mut left_index: usize,
+    mut right_index: usize,
+) -> i32 {
+    while left_index < left.len()
+        && right_index < right.len()
+        && left[left_index].is_ascii_digit()
+        && right[right_index].is_ascii_digit()
+    {
+        if left[left_index] != right[right_index] {
+            return compare_u8(left[left_index], right[right_index]);
+        }
+        left_index += 1;
+        right_index += 1;
+    }
+
+    let left_has_digits = left_index < left.len() && left[left_index].is_ascii_digit();
+    let right_has_digits = right_index < right.len() && right[right_index].is_ascii_digit();
+    compare_bool(left_has_digits, right_has_digits)
+}
+
+fn natural_compare_right_aligned_number(
+    left: &[u8],
+    right: &[u8],
+    left_index: usize,
+    right_index: usize,
+) -> i32 {
+    let left_end = natural_digit_run_end(left, left_index);
+    let right_end = natural_digit_run_end(right, right_index);
+    let left_digits = left_end - left_index;
+    let right_digits = right_end - right_index;
+    if left_digits != right_digits {
+        return compare_usize(left_digits, right_digits);
+    }
+
+    for offset in 0..left_digits {
+        let left_byte = left[left_index + offset];
+        let right_byte = right[right_index + offset];
+        if left_byte != right_byte {
+            return compare_u8(left_byte, right_byte);
+        }
+    }
+
+    0
+}
+
+fn natural_digit_run_end(value: &[u8], mut index: usize) -> usize {
+    while index < value.len() && value[index].is_ascii_digit() {
+        index += 1;
+    }
+    index
+}
+
+fn natural_compare_fold_byte(byte: u8, case_insensitive: bool) -> u8 {
+    if case_insensitive {
+        byte.to_ascii_lowercase()
+    } else {
+        byte
+    }
+}
+
+fn compare_u8(left: u8, right: u8) -> i32 {
+    match left.cmp(&right) {
+        std::cmp::Ordering::Less => -1,
+        std::cmp::Ordering::Equal => 0,
+        std::cmp::Ordering::Greater => 1,
+    }
+}
+
+fn compare_usize(left: usize, right: usize) -> i32 {
+    match left.cmp(&right) {
+        std::cmp::Ordering::Less => -1,
+        std::cmp::Ordering::Equal => 0,
+        std::cmp::Ordering::Greater => 1,
+    }
+}
+
+fn compare_bool(left: bool, right: bool) -> i32 {
+    match (left, right) {
+        (false, true) => -1,
+        (true, false) => 1,
+        _ => 0,
+    }
+}
+
 fn call_chunk_split(args: &[Value], span: Span) -> CompileResult<Value> {
     if !(1..=3).contains(&args.len()) {
         return Err(runtime_error(
@@ -102915,9 +105026,11 @@ fn strtr_replace_pairs(input: &[u8], replacements: &[StrtrReplacement]) -> Vec<u
 
 fn php_type_error_given(value: &Value) -> String {
     match value {
+        Value::Null => "null".to_string(),
         Value::Bool(true) => "true".to_string(),
         Value::Bool(false) => "false".to_string(),
         Value::Object(object) => object.class_name().to_string(),
+        Value::Closure(_) => "Closure".to_string(),
         other => other.type_name().to_string(),
     }
 }
@@ -105630,6 +107743,402 @@ fn call_str_replace(args: &[Value], span: Span) -> CompileResult<Value> {
     Ok(Value::String(result))
 }
 
+#[derive(Debug, Clone, Default)]
+struct ParsedUrlParts {
+    scheme: Option<String>,
+    host: Option<String>,
+    port: Option<i64>,
+    user: Option<String>,
+    pass: Option<String>,
+    path: Option<String>,
+    query: Option<String>,
+    fragment: Option<String>,
+}
+
+fn call_parse_url(args: &[Value], span: Span) -> CompileResult<Value> {
+    if !(1..=2).contains(&args.len()) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "parse_url()",
+                ArityExpectation::Between { min: 1, max: 2 },
+                args.len(),
+            ),
+        ));
+    }
+
+    let url = string_contains_argument("parse_url()", "url", &args[0], span)?;
+    let component = match args.get(1) {
+        Some(value) => Some(php_internal_int_argument(
+            "parse_url()",
+            2,
+            "component",
+            value,
+            span,
+        )?),
+        None => None,
+    };
+
+    if let Some(component) = component {
+        if component > PHP_URL_FRAGMENT {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "parse_url()",
+                    format!(
+                        "Argument #2 ($component) must be a valid URL component identifier, {component} given"
+                    ),
+                ),
+            ));
+        }
+    }
+
+    let Some(parts) = parse_php_url_parts(&url) else {
+        return Ok(Value::Bool(false));
+    };
+
+    match component {
+        Some(component) if component >= 0 => Ok(parse_url_component_value(&parts, component)),
+        _ => Ok(Value::Array(parse_url_parts_array(parts))),
+    }
+}
+
+fn parse_url_component_value(parts: &ParsedUrlParts, component: i64) -> Value {
+    match component {
+        PHP_URL_SCHEME => parts
+            .scheme
+            .as_ref()
+            .map(|value| Value::String(value.clone())),
+        PHP_URL_HOST => parts
+            .host
+            .as_ref()
+            .map(|value| Value::String(value.clone())),
+        PHP_URL_PORT => parts.port.map(Value::Int),
+        PHP_URL_USER => parts
+            .user
+            .as_ref()
+            .map(|value| Value::String(value.clone())),
+        PHP_URL_PASS => parts
+            .pass
+            .as_ref()
+            .map(|value| Value::String(value.clone())),
+        PHP_URL_PATH => parts
+            .path
+            .as_ref()
+            .map(|value| Value::String(value.clone())),
+        PHP_URL_QUERY => parts
+            .query
+            .as_ref()
+            .map(|value| Value::String(value.clone())),
+        PHP_URL_FRAGMENT => parts
+            .fragment
+            .as_ref()
+            .map(|value| Value::String(value.clone())),
+        _ => None,
+    }
+    .unwrap_or(Value::Null)
+}
+
+fn parse_url_parts_array(parts: ParsedUrlParts) -> PhpArray {
+    let mut array = PhpArray::new();
+    if let Some(value) = parts.scheme {
+        array.insert("scheme", Value::String(value));
+    }
+    if let Some(value) = parts.host {
+        array.insert("host", Value::String(value));
+    }
+    if let Some(value) = parts.port {
+        array.insert("port", Value::Int(value));
+    }
+    if let Some(value) = parts.user {
+        array.insert("user", Value::String(value));
+    }
+    if let Some(value) = parts.pass {
+        array.insert("pass", Value::String(value));
+    }
+    if let Some(value) = parts.path {
+        array.insert("path", Value::String(value));
+    }
+    if let Some(value) = parts.query {
+        array.insert("query", Value::String(value));
+    }
+    if let Some(value) = parts.fragment {
+        array.insert("fragment", Value::String(value));
+    }
+    array
+}
+
+fn parse_php_url_parts(url: &str) -> Option<ParsedUrlParts> {
+    if url == ":" {
+        return None;
+    }
+
+    let (without_fragment, fragment) = parse_url_split_once(url, '#');
+    let (before_query, query) = parse_url_split_once(without_fragment, '?');
+    let had_query_or_fragment = query.is_some() || fragment.is_some();
+
+    if let Some(after_authority) = before_query.strip_prefix("//") {
+        return parse_url_with_authority(None, after_authority, query, fragment);
+    }
+
+    if let Some(colon) = parse_url_scheme_colon(before_query, had_query_or_fragment) {
+        let scheme = before_query[..colon].to_string();
+        let after_scheme = &before_query[colon + 1..];
+        if let Some(after_authority) = after_scheme.strip_prefix("//") {
+            return parse_url_with_authority(Some(scheme), after_authority, query, fragment);
+        }
+
+        let mut parts = ParsedUrlParts {
+            scheme: Some(scheme),
+            query,
+            fragment,
+            ..ParsedUrlParts::default()
+        };
+        if !after_scheme.is_empty() {
+            parts.path = Some(after_scheme.to_string());
+        }
+        return Some(parts);
+    }
+
+    if let Some(parts) = parse_url_without_scheme_host_port(
+        before_query,
+        query.clone(),
+        fragment.clone(),
+        had_query_or_fragment,
+    ) {
+        return Some(parts);
+    }
+
+    Some(ParsedUrlParts {
+        path: Some(before_query.to_string()),
+        query,
+        fragment,
+        ..ParsedUrlParts::default()
+    })
+}
+
+fn parse_url_split_once(input: &str, delimiter: char) -> (&str, Option<String>) {
+    match input.find(delimiter) {
+        Some(index) => (
+            &input[..index],
+            Some(input[index + delimiter.len_utf8()..].to_string()),
+        ),
+        None => (input, None),
+    }
+}
+
+fn parse_url_scheme_colon(input: &str, had_query_or_fragment: bool) -> Option<usize> {
+    let colon = input.find(':')?;
+    let scheme = &input[..colon];
+    if !parse_url_scheme_candidate(scheme) {
+        return None;
+    }
+    if parse_url_host_port_candidate_without_scheme(input, had_query_or_fragment) {
+        return None;
+    }
+    Some(colon)
+}
+
+fn parse_url_scheme_candidate(value: &str) -> bool {
+    !value.is_empty()
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'-' | b'.'))
+}
+
+fn parse_url_host_port_candidate_without_scheme(input: &str, had_query_or_fragment: bool) -> bool {
+    let Some(colon) = input.find(':') else {
+        return false;
+    };
+    let host = &input[..colon];
+    if !host.contains('.') {
+        return false;
+    }
+    let after_colon = &input[colon + 1..];
+    let digit_count = after_colon.bytes().take_while(u8::is_ascii_digit).count();
+    if digit_count == 0 {
+        return false;
+    }
+    let after_digits = &after_colon[digit_count..];
+    after_digits.starts_with('/') || (after_digits.is_empty() && !had_query_or_fragment)
+}
+
+fn parse_url_without_scheme_host_port(
+    input: &str,
+    query: Option<String>,
+    fragment: Option<String>,
+    had_query_or_fragment: bool,
+) -> Option<ParsedUrlParts> {
+    if !parse_url_host_port_candidate_without_scheme(input, had_query_or_fragment) {
+        return None;
+    }
+
+    let slash = input.find('/');
+    let (authority, path) = match slash {
+        Some(index) => (&input[..index], Some(input[index..].to_string())),
+        None => (input, None),
+    };
+    let authority = parse_url_authority(authority)?;
+    Some(ParsedUrlParts {
+        host: authority.host,
+        port: authority.port,
+        user: authority.user,
+        pass: authority.pass,
+        path,
+        query,
+        fragment,
+        ..ParsedUrlParts::default()
+    })
+}
+
+fn parse_url_with_authority(
+    scheme: Option<String>,
+    authority_and_path: &str,
+    query: Option<String>,
+    fragment: Option<String>,
+) -> Option<ParsedUrlParts> {
+    let slash = authority_and_path.find('/');
+    let (authority, raw_path) = match slash {
+        Some(index) => (
+            &authority_and_path[..index],
+            Some(&authority_and_path[index..]),
+        ),
+        None => (authority_and_path, None),
+    };
+
+    if scheme
+        .as_deref()
+        .is_some_and(|scheme| scheme.eq_ignore_ascii_case("file"))
+        && authority.is_empty()
+    {
+        return Some(ParsedUrlParts {
+            scheme,
+            path: raw_path.map(parse_url_file_empty_authority_path),
+            query,
+            fragment,
+            ..ParsedUrlParts::default()
+        });
+    }
+
+    let parsed_authority = parse_url_authority(authority)?;
+    Some(ParsedUrlParts {
+        scheme,
+        host: parsed_authority.host,
+        port: parsed_authority.port,
+        user: parsed_authority.user,
+        pass: parsed_authority.pass,
+        path: raw_path.map(str::to_string),
+        query,
+        fragment,
+    })
+}
+
+fn parse_url_file_empty_authority_path(path: &str) -> String {
+    let bytes = path.as_bytes();
+    if bytes.len() >= 3 && bytes[0] == b'/' && bytes[2] == b':' {
+        path[1..].to_string()
+    } else {
+        path.to_string()
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+struct ParsedUrlAuthority {
+    host: Option<String>,
+    port: Option<i64>,
+    user: Option<String>,
+    pass: Option<String>,
+}
+
+fn parse_url_authority(authority: &str) -> Option<ParsedUrlAuthority> {
+    if authority.is_empty() {
+        return None;
+    }
+
+    let (userinfo, host_port) = match authority.rfind('@') {
+        Some(index) => {
+            let userinfo = &authority[..index];
+            if userinfo.is_empty() {
+                return None;
+            }
+            (Some(userinfo), &authority[index + 1..])
+        }
+        None => (None, authority),
+    };
+    if host_port.is_empty() {
+        return None;
+    }
+
+    let (host, port) = parse_url_host_port(host_port)?;
+    if host.is_empty() || host == "?" {
+        return None;
+    }
+
+    let (user, pass) = match userinfo {
+        Some(userinfo) => match userinfo.split_once(':') {
+            Some((user, pass)) => {
+                if user.is_empty() && pass.is_empty() {
+                    return None;
+                }
+                (Some(user.to_string()), Some(pass.to_string()))
+            }
+            None => (Some(userinfo.to_string()), None),
+        },
+        None => (None, None),
+    };
+
+    Some(ParsedUrlAuthority {
+        host: Some(host),
+        port,
+        user,
+        pass,
+    })
+}
+
+fn parse_url_host_port(value: &str) -> Option<(String, Option<i64>)> {
+    if value.starts_with('[') {
+        let end = value.find(']')?;
+        let host = value[..=end].to_string();
+        let rest = &value[end + 1..];
+        let port = if let Some(port) = rest.strip_prefix(':') {
+            if port.is_empty() {
+                None
+            } else {
+                Some(parse_url_port(port)?)
+            }
+        } else if rest.is_empty() {
+            None
+        } else {
+            return None;
+        };
+        return Some((host, port));
+    }
+
+    let Some(colon) = value.rfind(':') else {
+        return Some((value.to_string(), None));
+    };
+    let host = &value[..colon];
+    let port_text = &value[colon + 1..];
+    if port_text.is_empty() {
+        return Some((host.to_string(), None));
+    }
+    let port = parse_url_port(port_text)?;
+    Some((host.to_string(), Some(port)))
+}
+
+fn parse_url_port(value: &str) -> Option<i64> {
+    let digit_count = value.bytes().take_while(u8::is_ascii_digit).count();
+    if digit_count == 0 {
+        return None;
+    }
+    let rest = &value[digit_count..];
+    if !(rest.is_empty() || rest.starts_with('.')) {
+        return None;
+    }
+    let port = value[..digit_count].parse::<i64>().ok()?;
+    (0..=65_535).contains(&port).then_some(port)
+}
+
 fn call_urlencode(args: &[Value], span: Span) -> CompileResult<Value> {
     expect_arity("urlencode", args, 1, span)?;
     let value = string_contains_argument("urlencode()", "string", &args[0], span)?;
@@ -105791,23 +108300,60 @@ impl FscanfFormat {
         self.assignable_count
     }
 
+    fn whitespace_only_line_returns_null(&self, line: &str) -> bool {
+        if line.chars().any(|ch| !ch.is_whitespace()) {
+            return false;
+        }
+
+        let mut has_leading_format_whitespace = false;
+        for item in &self.items {
+            match item {
+                FscanfItem::Whitespace => has_leading_format_whitespace = true,
+                FscanfItem::Literal(_) => return false,
+                FscanfItem::Conversion(conversion) => {
+                    return has_leading_format_whitespace
+                        || matches!(
+                            conversion.kind,
+                            FscanfConversionKind::String
+                                | FscanfConversionKind::SignedDecimal
+                                | FscanfConversionKind::UnsignedDecimal
+                                | FscanfConversionKind::Octal
+                                | FscanfConversionKind::Hex
+                                | FscanfConversionKind::Float
+                        );
+                }
+            }
+        }
+        false
+    }
+
     fn scan_line(&self, line: &str) -> FscanfScanResult {
         let input: Vec<char> = line.chars().collect();
         let mut position = 0_usize;
         let mut values = Vec::with_capacity(self.assignable_count);
+        let mut whitespace_directive_at_end = false;
 
         for item in &self.items {
             match item {
-                FscanfItem::Whitespace => skip_scanf_input_whitespace(&input, &mut position),
+                FscanfItem::Whitespace => {
+                    skip_scanf_input_whitespace(&input, &mut position);
+                    whitespace_directive_at_end = position >= input.len();
+                }
                 FscanfItem::Literal(expected) => {
                     if input.get(position) == Some(expected) {
                         position += 1;
+                        whitespace_directive_at_end = false;
                     } else {
                         break;
                     }
                 }
                 FscanfItem::Conversion(conversion) => {
-                    let scanned = conversion.scan(&input, &mut position);
+                    let scanned = if whitespace_directive_at_end {
+                        None
+                    } else {
+                        conversion.scan(&input, &mut position)
+                    };
+                    whitespace_directive_at_end = false;
                     if !conversion.suppressed {
                         values.push(scanned.clone());
                     }
@@ -106071,13 +108617,20 @@ fn scan_fscanf_string(input: &[char], position: &mut usize, width: Option<usize>
 
 fn scan_fscanf_char(input: &[char], position: &mut usize, width: Option<usize>) -> Option<Value> {
     if *position >= input.len() {
-        return None;
+        return Some(Value::String(String::new()));
+    }
+    if input[*position].is_whitespace() {
+        *position += 1;
+        return Some(Value::String(String::new()));
     }
     let width = width.unwrap_or(1);
     let start = *position;
-    let end = (*position + width).min(input.len());
-    *position = end;
-    Some(Value::String(input[start..end].iter().collect()))
+    let mut consumed = 0_usize;
+    while *position < input.len() && consumed < width && !input[*position].is_whitespace() {
+        *position += 1;
+        consumed += 1;
+    }
+    Some(Value::String(input[start..*position].iter().collect()))
 }
 
 fn scan_fscanf_integer(
@@ -106112,7 +108665,7 @@ fn scan_fscanf_integer(
     }
     let digits: String = input[digits_start..*position].iter().collect();
     let magnitude = i128::from_str_radix(&digits, radix).ok()?;
-    Some(Value::Int(clamp_i128_to_i64(sign * magnitude)))
+    Some(Value::Int(clamp_i128_to_i32(sign * magnitude)))
 }
 
 fn scan_fscanf_unsigned_decimal(
@@ -106143,12 +108696,12 @@ fn scan_fscanf_unsigned_decimal(
     }
     let digits: String = input[digits_start..*position].iter().collect();
     let magnitude = i128::from_str_radix(&digits, 10).ok()?;
-    if negative {
-        let wrapped = (0_u128.wrapping_sub(magnitude as u128) & 0xffff_ffff) as u64;
-        Some(Value::String(wrapped.to_string()))
+    let wrapped = if negative {
+        (0_u128.wrapping_sub(magnitude as u128) & 0xffff_ffff) as u32
     } else {
-        Some(Value::Int(clamp_i128_to_i64(magnitude)))
-    }
+        magnitude.min(u32::MAX as i128) as u32
+    };
+    Some(scanf_unsigned_decimal_value(wrapped))
 }
 
 fn scan_fscanf_hex(input: &[char], position: &mut usize, width: Option<usize>) -> Option<Value> {
@@ -106184,7 +108737,7 @@ fn scan_fscanf_hex(input: &[char], position: &mut usize, width: Option<usize>) -
     }
     let digits: String = input[digits_start..*position].iter().collect();
     let magnitude = i128::from_str_radix(&digits, 16).ok()?;
-    Some(Value::Int(clamp_i128_to_i64(sign * magnitude)))
+    Some(Value::Int(clamp_i128_to_i32(sign * magnitude)))
 }
 
 fn scan_fscanf_float(input: &[char], position: &mut usize, width: Option<usize>) -> Option<Value> {
@@ -106254,8 +108807,16 @@ fn scan_fscanf_scanset(
     (*position > start).then(|| Value::String(input[start..*position].iter().collect()))
 }
 
-fn clamp_i128_to_i64(value: i128) -> i64 {
-    value.clamp(i64::MIN as i128, i64::MAX as i128) as i64
+fn clamp_i128_to_i32(value: i128) -> i64 {
+    value.clamp(i32::MIN as i128, i32::MAX as i128) as i64
+}
+
+fn scanf_unsigned_decimal_value(value: u32) -> Value {
+    if value <= i32::MAX as u32 {
+        Value::Int(value as i64)
+    } else {
+        Value::String(value.to_string())
+    }
 }
 
 fn call_json_encode(args: &[Value], span: Span) -> CompileResult<Value> {
@@ -106356,12 +108917,12 @@ impl Interpreter {
 
         let format = self.sprintf_format_argument("sprintf()", &args[0], span)?;
         self.bounded_sprintf("sprintf()", &format, &args[1..], span)
-            .map(Value::String)
+            .map(SprintfOutput::into_value)
     }
 
     fn call_vsprintf_value(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         self.call_vsprintf(args, "vsprintf()", span)
-            .map(Value::String)
+            .map(SprintfOutput::into_value)
     }
 
     fn call_vsprintf(
@@ -106369,7 +108930,7 @@ impl Interpreter {
         args: &[Value],
         function: &'static str,
         span: Span,
-    ) -> CompileResult<String> {
+    ) -> CompileResult<SprintfOutput> {
         expect_arity(function, args, 2, span)?;
 
         let format = self.sprintf_format_argument(function, &args[0], span)?;
@@ -106380,8 +108941,9 @@ impl Interpreter {
                 RuntimeError::unsupported_call(
                     function,
                     format!(
-                        "values argument must be array in the current subset, got {}",
-                        args[1].type_name()
+                        "Argument #{} ($values) must be of type array, {} given",
+                        sprintf_values_argument_number(function),
+                        php_type_error_given(&args[1])
                     ),
                 ),
             ));
@@ -106448,6 +109010,7 @@ enum SprintfPlaceholderKind {
     Int,
     Binary,
     Char,
+    Percent,
     Unsigned,
     Octal,
     HexLower,
@@ -106459,6 +109022,24 @@ enum SprintfPlaceholderKind {
     GeneralUpper,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SprintfOutput {
+    bytes: Vec<u8>,
+}
+
+impl SprintfOutput {
+    fn byte_len(&self) -> i64 {
+        self.bytes.len() as i64
+    }
+
+    fn into_value(self) -> Value {
+        match String::from_utf8(self.bytes) {
+            Ok(value) => Value::String(value),
+            Err(error) => Value::BinaryString(error.into_bytes()),
+        }
+    }
+}
+
 impl Interpreter {
     fn bounded_sprintf(
         &mut self,
@@ -106466,8 +109047,8 @@ impl Interpreter {
         format: &str,
         args: &[Value],
         span: Span,
-    ) -> CompileResult<String> {
-        let mut output = String::new();
+    ) -> CompileResult<SprintfOutput> {
+        let mut output = Vec::new();
         let bytes = format.as_bytes();
         let mut index = 0;
         let mut next_arg = 0;
@@ -106476,14 +109057,14 @@ impl Interpreter {
         while index < bytes.len() {
             if bytes[index] != b'%' {
                 let ch = format[index..].chars().next().expect("index is in bounds");
-                output.push(ch);
+                output.extend_from_slice(ch.to_string().as_bytes());
                 index += ch.len_utf8();
                 continue;
             }
 
             index += 1;
             if index < bytes.len() && bytes[index] == b'%' {
-                output.push('%');
+                output.push(b'%');
                 index += 1;
                 continue;
             }
@@ -106511,16 +109092,10 @@ impl Interpreter {
                 required_arg_count,
                 span,
             )?;
-            output.push_str(&self.format_sprintf_value(
-                function,
-                &placeholder,
-                value,
-                args,
-                span,
-            )?);
+            output.extend(self.format_sprintf_value(function, &placeholder, value, args, span)?);
         }
 
-        Ok(output)
+        Ok(SprintfOutput { bytes: output })
     }
 
     fn sprintf_format_argument(
@@ -106536,20 +109111,16 @@ impl Interpreter {
             }
             Value::Null | Value::Bool(_) | Value::Int(_) => Ok(value.echo_string()),
             Value::Float(value) => Ok(php_default_precision_float_string(*value)),
-            Value::Array(_) => Err(sprintf_format_type_error(function, "array", span)),
-            Value::Resource(_) => Err(sprintf_format_type_error(function, "resource", span)),
-            Value::Closure(_) => Err(sprintf_format_type_error(function, "Closure", span)),
+            Value::Array(_) | Value::Resource(_) | Value::Closure(_) => {
+                Err(sprintf_format_type_error(function, value, span))
+            }
             Value::Object(object) => {
                 if let Some(output) =
                     self.object_to_string_with_magic(object.clone(), function, span)?
                 {
                     Ok(output)
                 } else {
-                    Err(sprintf_format_type_error(
-                        function,
-                        object.class_name(),
-                        span,
-                    ))
+                    Err(sprintf_format_type_error(function, value, span))
                 }
             }
         }
@@ -106602,12 +109173,14 @@ fn parse_sprintf_placeholder(
         let position = format[digits_start..index]
             .parse::<usize>()
             .map_err(|_| SprintfParseError::Unsupported)?;
+        if position == 0 || position > i32::MAX as usize {
+            return Err(SprintfParseError::ValueError(
+                "Argument number specifier must be greater than zero and less than 2147483647"
+                    .to_string(),
+            ));
+        }
         index += 1;
-        Some(
-            position
-                .checked_sub(1)
-                .ok_or(SprintfParseError::Unsupported)?,
-        )
+        Some(position - 1)
     } else {
         index = digits_start;
         None
@@ -106705,8 +109278,22 @@ fn parse_sprintf_placeholder(
                 break;
             }
             b's' | b'd' | b'b' | b'c' | b'u' | b'o' | b'x' | b'X' | b'f' | b'F' | b'e' | b'E'
-            | b'g' | b'G' => break,
-            _ => return Err(SprintfParseError::Unsupported),
+            | b'g' | b'G' | b'%' => break,
+            b'$' => {
+                return Err(SprintfParseError::ValueError(
+                    "Argument number specifier must be greater than zero and less than 2147483647"
+                        .to_string(),
+                ))
+            }
+            _ => {
+                let ch = format[index..]
+                    .chars()
+                    .next()
+                    .ok_or(SprintfParseError::MissingFormatSpecifier)?;
+                return Err(SprintfParseError::ValueError(format!(
+                    "Unknown format specifier \"{ch}\""
+                )));
+            }
         }
     }
 
@@ -106718,6 +109305,7 @@ fn parse_sprintf_placeholder(
         b'd' => SprintfPlaceholderKind::Int,
         b'b' => SprintfPlaceholderKind::Binary,
         b'c' => SprintfPlaceholderKind::Char,
+        b'%' => SprintfPlaceholderKind::Percent,
         b'u' => SprintfPlaceholderKind::Unsigned,
         b'o' => SprintfPlaceholderKind::Octal,
         b'x' => SprintfPlaceholderKind::HexLower,
@@ -106795,12 +109383,14 @@ fn parse_sprintf_star_arg(
         let position = format[digits_start..*index]
             .parse::<usize>()
             .map_err(|_| SprintfParseError::Unsupported)?;
+        if position == 0 || position > i32::MAX as usize {
+            return Err(SprintfParseError::ValueError(
+                "Argument number specifier must be greater than zero and less than 2147483647"
+                    .to_string(),
+            ));
+        }
         *index += 1;
-        return Ok(SprintfArgRef::Positional(
-            position
-                .checked_sub(1)
-                .ok_or(SprintfParseError::Unsupported)?,
-        ));
+        return Ok(SprintfArgRef::Positional(position - 1));
     }
 
     let arg = *next_arg;
@@ -106816,7 +109406,7 @@ impl Interpreter {
         value: &Value,
         args: &[Value],
         span: Span,
-    ) -> CompileResult<String> {
+    ) -> CompileResult<Vec<u8>> {
         let width = self.resolve_sprintf_width(function, placeholder, args, span)?;
         let precision = self.resolve_sprintf_precision(function, placeholder, args, span)?;
 
@@ -106838,52 +109428,51 @@ impl Interpreter {
                 } else {
                     ""
                 };
-                format_integral_sprintf_digits(
-                    sign,
-                    value.unsigned_abs().to_string(),
-                    precision.digits(),
-                )
+                format_integral_sprintf_digits(sign, value.unsigned_abs().to_string(), None)
             }
             SprintfPlaceholderKind::Binary => {
                 let value = self.sprintf_int_argument(function, value, span)?;
-                format_integral_sprintf_digits(
-                    "",
-                    format!("{:b}", value as u64),
-                    precision.digits(),
-                )
+                if precision.digits().is_some() {
+                    String::new()
+                } else {
+                    format_integral_sprintf_digits("", format!("{:b}", value as u64), None)
+                }
             }
             SprintfPlaceholderKind::Char => {
                 let value = self.sprintf_int_argument(function, value, span)?;
                 let byte = value.rem_euclid(256) as u8;
-                char::from(byte).to_string()
+                return Ok(vec![byte]);
+            }
+            SprintfPlaceholderKind::Percent => {
+                return Ok(vec![b'%']);
             }
             SprintfPlaceholderKind::Unsigned => {
                 let value = self.sprintf_int_argument(function, value, span)?;
-                format_integral_sprintf_digits("", (value as u64).to_string(), precision.digits())
+                format_integral_sprintf_digits("", (value as u64).to_string(), None)
             }
             SprintfPlaceholderKind::Octal => {
                 let value = self.sprintf_int_argument(function, value, span)?;
-                format_integral_sprintf_digits(
-                    "",
-                    format!("{:o}", value as u64),
-                    precision.digits(),
-                )
+                if precision.digits().is_some() {
+                    String::new()
+                } else {
+                    format_integral_sprintf_digits("", format!("{:o}", value as u64), None)
+                }
             }
             SprintfPlaceholderKind::HexLower => {
                 let value = self.sprintf_int_argument(function, value, span)?;
-                format_integral_sprintf_digits(
-                    "",
-                    format!("{:x}", value as u64),
-                    precision.digits(),
-                )
+                if precision.digits().is_some() {
+                    String::new()
+                } else {
+                    format_integral_sprintf_digits("", format!("{:x}", value as u64), None)
+                }
             }
             SprintfPlaceholderKind::HexUpper => {
                 let value = self.sprintf_int_argument(function, value, span)?;
-                format_integral_sprintf_digits(
-                    "",
-                    format!("{:X}", value as u64),
-                    precision.digits(),
-                )
+                if precision.digits().is_some() {
+                    String::new()
+                } else {
+                    format_integral_sprintf_digits("", format!("{:X}", value as u64), None)
+                }
             }
             SprintfPlaceholderKind::Float => {
                 let value = self.sprintf_float_argument(function, value, span)?;
@@ -106928,7 +109517,8 @@ impl Interpreter {
             width,
             placeholder.left_align,
             placeholder.effective_width_pad(precision),
-        ))
+        )
+        .into_bytes())
     }
 
     fn resolve_sprintf_width(
@@ -107051,20 +109641,8 @@ impl Interpreter {
 }
 
 impl SprintfPlaceholder {
-    fn effective_width_pad(&self, precision: SprintfPrecision) -> char {
-        match self.kind {
-            SprintfPlaceholderKind::Int
-            | SprintfPlaceholderKind::Binary
-            | SprintfPlaceholderKind::Unsigned
-            | SprintfPlaceholderKind::Octal
-            | SprintfPlaceholderKind::HexLower
-            | SprintfPlaceholderKind::HexUpper
-                if precision.digits().is_some() =>
-            {
-                ' '
-            }
-            _ => self.pad,
-        }
+    fn effective_width_pad(&self, _precision: SprintfPrecision) -> char {
+        self.pad
     }
 }
 
@@ -107155,7 +109733,7 @@ impl Interpreter {
                 .ok()
                 .and_then(parse_sprintf_numeric_string)
                 .unwrap_or(0.0) as i64),
-            Value::Array(value) => Ok(value.len() as i64),
+            Value::Array(value) => Ok(i64::from(!value.is_empty())),
             Value::Resource(id) => Ok(*id),
             Value::Object(object) => {
                 self.emit_display_warning(
@@ -107200,7 +109778,7 @@ impl Interpreter {
                 .ok()
                 .and_then(parse_sprintf_numeric_string)
                 .unwrap_or(0.0),
-            Value::Array(value) => value.len() as f64,
+            Value::Array(value) => f64::from(u8::from(!value.is_empty())),
             Value::Resource(id) => *id as f64,
             Value::Object(object) => {
                 self.emit_display_warning(
@@ -107293,7 +109871,7 @@ fn consume_ascii_digits_from(bytes: &[u8], index: &mut usize) -> usize {
 fn sprintf_parse_diagnostic(
     function: &'static str,
     format: &str,
-    placeholder_start: usize,
+    _placeholder_start: usize,
     index: usize,
     error: SprintfParseError,
     span: Span,
@@ -107304,20 +109882,11 @@ fn sprintf_parse_diagnostic(
         }
         SprintfParseError::ValueError(message) => message,
         SprintfParseError::Unsupported => {
-            let placeholder_end = if index < format.len() {
-                index
-                    + format[index..]
-                        .chars()
-                        .next()
-                        .expect("index is in bounds")
-                        .len_utf8()
+            if let Some(specifier) = format[index..].chars().next() {
+                format!("Unknown format specifier \"{specifier}\"")
             } else {
-                index
-            };
-            format!(
-                "unsupported format placeholder {} in the current subset",
-                &format[placeholder_start..placeholder_end.min(format.len())]
-            )
+                "Missing format specifier at end of string".to_string()
+            }
         }
     };
     runtime_error(span, RuntimeError::unsupported_call(function, message))
@@ -107380,14 +109949,32 @@ fn sprintf_required_argument_count(format: &str) -> Option<usize> {
     Some(max_arg.map_or(1, |index| index + 2))
 }
 
-fn sprintf_format_type_error(function: &'static str, given: &str, span: Span) -> Diagnostic {
+fn sprintf_format_type_error(function: &'static str, value: &Value, span: Span) -> Diagnostic {
     runtime_error(
         span,
         RuntimeError::unsupported_call(
             function,
-            format!("Argument #1 ($format) must be of type string, {given} given"),
+            format!(
+                "Argument #{} ($format) must be of type string, {} given",
+                sprintf_format_argument_number(function),
+                php_type_error_given(value)
+            ),
         ),
     )
+}
+
+fn sprintf_format_argument_number(function: &str) -> usize {
+    match function {
+        "fprintf()" | "vfprintf()" => 2,
+        _ => 1,
+    }
+}
+
+fn sprintf_values_argument_number(function: &str) -> usize {
+    match function {
+        "vfprintf()" => 3,
+        _ => 2,
+    }
 }
 
 fn object_to_string_error(class_name: &str, span: Span) -> Diagnostic {
@@ -107715,8 +110302,15 @@ fn php_default_precision_float_string(value: f64) -> String {
 
 fn trim_php_float_string(value: &str) -> String {
     if let Some((mantissa, exponent)) = value.split_once('E') {
-        let mantissa = trim_decimal_suffix(mantissa);
+        let had_decimal = mantissa.contains('.');
+        let mut mantissa = trim_decimal_suffix(mantissa);
+        if had_decimal && !mantissa.contains('.') {
+            mantissa.push_str(".0");
+        }
         let exponent = exponent.parse::<i32>().unwrap_or(0);
+        if exponent >= 0 {
+            return format!("{mantissa}E+{exponent}");
+        }
         return format!("{mantissa}E{exponent}");
     }
 
@@ -108579,6 +111173,34 @@ fn stream_metadata_mode(path: &str, mode: &str) -> String {
     }
 }
 
+fn update_local_file_stream_unread_bytes(
+    stream: &mut FileStream,
+    function: impl Into<String>,
+    span: Span,
+) -> CompileResult<()> {
+    let function = function.into();
+    let position = stream.file.stream_position().map_err(|error| {
+        runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function.clone(),
+                format!("local file stream position failed: {error}"),
+            ),
+        )
+    })?;
+    let length = stream.file.metadata().map_err(|error| {
+        runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                format!("local file stream metadata failed: {error}"),
+            ),
+        )
+    })?;
+    stream.metadata_unread_bytes = length.len().saturating_sub(position) as i64;
+    Ok(())
+}
+
 fn stream_stat_array(values: [i64; 13]) -> PhpArray {
     let mut stats = PhpArray::new();
     for (index, value) in values.iter().enumerate() {
@@ -108939,12 +111561,12 @@ fn apply_ascii_rot13_bytes_in_place(value: &mut [u8]) {
 }
 
 enum FileGetContentsRead {
-    Contents(String),
+    Contents(Vec<u8>),
     WarningFalse(String),
 }
 
 fn bounded_file_get_contents_slice(
-    contents: &str,
+    contents: &[u8],
     offset: Option<i64>,
     max_length: Option<i64>,
 ) -> FileGetContentsRead {
@@ -108963,9 +111585,7 @@ fn bounded_file_get_contents_slice(
         Some(max_length) => raw_start.saturating_add(max_length).min(len),
         None => len,
     };
-    let start = utf8_boundary_at_or_before(contents, raw_start as usize);
-    let end = utf8_boundary_at_or_before(contents, raw_end as usize);
-    FileGetContentsRead::Contents(contents[start..end].to_string())
+    FileGetContentsRead::Contents(contents[raw_start as usize..raw_end as usize].to_vec())
 }
 
 impl Interpreter {
@@ -115347,7 +117967,9 @@ fn syntax_only_magic_array_access_type_metadata_is_supported(function: &Function
         "rewind" | "next" => optional_type_is(return_type, "void") && function.params.is_empty(),
         "valid" => optional_type_is(return_type, "bool") && function.params.is_empty(),
         "key" => {
-            (optional_type_is(return_type, "int") || optional_type_is(return_type, "mixed"))
+            (optional_type_is(return_type, "int")
+                || optional_type_is(return_type, "mixed")
+                || optional_type_is(return_type, "string|int|null"))
                 && function.params.is_empty()
         }
         "current" => {
@@ -115514,8 +118136,8 @@ where
         Value::Float(value) => format!("{padding}float({})\n", format_var_dump_float(*value)),
         Value::String(value) => format!("{padding}string({}) \"{}\"\n", value.len(), value),
         Value::BinaryString(value) => {
-            let value = tree_walk_binary_string_utf8(value, "var_dump()", span)?;
-            format!("{padding}string({}) \"{}\"\n", value.len(), value)
+            let display = String::from_utf8_lossy(value);
+            format!("{padding}string({}) \"{}\"\n", value.len(), display)
         }
         Value::Array(value) => {
             let mut output = format!("{padding}array({}) {{\n", value.len());
@@ -115535,13 +118157,14 @@ where
             output
         }
         Value::Object(value) => {
+            let properties = display_object_properties(value);
             let mut output = format!(
                 "{padding}object({})#{} ({}) {{\n",
                 value.class_name(),
                 value.id(),
-                value.properties().len()
+                properties.len()
             );
-            for property in value.properties() {
+            for property in properties {
                 output.push_str(&format!(
                     "{padding}  [{}]=>\n",
                     format_var_dump_object_property(&property)
@@ -115656,7 +118279,7 @@ fn format_print_r_object(object: &PhpObject, indent: usize) -> String {
 
     output.push_str(&format!("{} Object\n", object.class_name()));
     output.push_str(&format!("{padding}(\n"));
-    for property in object.properties() {
+    for property in display_object_properties(object) {
         output.push_str(&format!(
             "{child_padding}[{}] => ",
             format_print_r_object_property(&property)
@@ -115841,7 +118464,7 @@ fn format_var_export_object(
         format!("{padding}\\{class_name}::__set_state(array(\n")
     };
 
-    for property in object.properties() {
+    for property in display_object_properties(object) {
         if !property.is_initialized() {
             continue;
         }
@@ -115868,6 +118491,36 @@ fn format_var_export_object(
         output.push_str(&format!("{padding}))"));
     }
     Ok(output)
+}
+
+fn display_object_properties(object: &PhpObject) -> Vec<ObjectProperty> {
+    let mut indexed_properties: Vec<_> = object
+        .properties()
+        .into_iter()
+        .enumerate()
+        .filter(|(_, property)| !property.is_unset())
+        .collect();
+
+    if object.is_instance_of_class_name("ArrayObject")
+        || object.is_instance_of_class_name("ArrayIterator")
+    {
+        indexed_properties.sort_by_key(|(index, property)| {
+            let is_core_storage = property.name() == "storage"
+                && property.visibility() == Visibility::Private
+                && (property
+                    .declaring_class_name()
+                    .eq_ignore_ascii_case("ArrayObject")
+                    || property
+                        .declaring_class_name()
+                        .eq_ignore_ascii_case("ArrayIterator"));
+            (is_core_storage, *index)
+        });
+    }
+
+    indexed_properties
+        .into_iter()
+        .map(|(_, property)| property)
+        .collect()
 }
 
 fn format_var_dump_object_property(property: &ObjectProperty) -> String {
@@ -115901,6 +118554,50 @@ mod tests {
         assert_eq!(format_var_dump_float(1.0e17), "1.0E+17");
         assert_eq!(format_var_dump_float(1.0e-5), "1.0E-5");
         assert_eq!(format_var_dump_float(0.0001), "0.0001");
+    }
+
+    #[test]
+    fn fatal_text_after_prior_stdout_is_preserved_in_stdout_bytes() {
+        let source = concat!(
+            "<?php\n",
+            "echo \"foo\\n\";\n",
+            "$wrongClassname = 'B';\n",
+            "echo $wrongClassname::$b;\n",
+        );
+        let program = parse_source(source).unwrap();
+        let execution = run_program_with_source_file(&program, "fatal-bytes.php").unwrap();
+        let stdout_bytes = String::from_utf8(execution.stdout_bytes.clone()).unwrap();
+
+        assert_eq!(execution.exit_code, 255);
+        assert_eq!(execution.stderr, "");
+        assert_eq!(stdout_bytes, execution.stdout);
+        assert!(stdout_bytes
+            .contains("Fatal error: Uncaught Error: Class \"B\" not found in fatal-bytes.php:4"));
+    }
+
+    #[test]
+    fn initial_shebang_line_is_not_emitted_as_inline_html() {
+        let source = concat!(
+            "#!php\n",
+            "<?php\n",
+            "\n",
+            "error_reporting(E_ALL);\n",
+            "\n",
+            "echo $foo;\n",
+            "\n",
+            "?>\n",
+        );
+        let program = parse_source(source).unwrap();
+        let execution = run_program_with_source_file(&program, "shebang.php").unwrap();
+        let stdout_bytes = String::from_utf8(execution.stdout_bytes.clone()).unwrap();
+
+        assert_eq!(execution.exit_code, 0);
+        assert_eq!(execution.stderr, "");
+        assert_eq!(
+            execution.stdout,
+            "Warning: Undefined variable $foo in shebang.php on line 6\n"
+        );
+        assert_eq!(stdout_bytes, execution.stdout);
     }
 
     #[test]

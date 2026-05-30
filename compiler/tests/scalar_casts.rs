@@ -1,7 +1,7 @@
 use php_compiler::error::Phase;
 use php_compiler::{emit_asm_source, emit_ir_source, run_source};
 
-const LLVM_CAST_REJECTION: &str = "LLVM cast lowering rejects (string), (int)/(integer), (bool)/(boolean), (float)/(double), and (array) casts plus strval(), boolval(), floatval(), and doubleval() until native PHP scalar conversion, array materialization, warning/recovery behavior, object/resource handling, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded cast behavior";
+const LLVM_CAST_REJECTION: &str = "LLVM cast lowering rejects (string), (int)/(integer), (bool)/(boolean), (float)/(double), (array), and (object) casts plus strval(), boolval(), floatval(), and doubleval() until native PHP scalar conversion, array/object materialization, warning/recovery behavior, object/resource handling, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded cast behavior";
 
 #[test]
 fn string_casts_execute_for_current_scalar_and_null_subset() {
@@ -98,29 +98,46 @@ echo ((double) "2.25") === 2.25 ? "double" : "other";
 }
 
 #[test]
-fn string_casts_reject_array_and_object_warning_paths_for_now() {
-    let error = run_source("<?php\necho (string) [1];\n").unwrap_err();
+fn string_casts_execute_array_object_and_resource_warning_paths() {
+    let execution = run_source(
+        r#"<?php
+class StringableBox { public function __toString() { return "box"; } }
+echo (string) [1], "|", strval(new StringableBox()), "|", strval(STDIN), "\n";
+try {
+    strval(new stdClass());
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
 
-    assert_eq!(error.phase, Phase::Runtime);
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 6);
-    assert_eq!(
-        error.message,
-        "unsupported call (string): array-to-string cast warning behavior is not implemented"
-    );
+    assert!(execution
+        .stdout
+        .contains("Warning: Array to string conversion"));
+    assert!(execution.stdout.contains("Array|box|Resource id #"));
+    assert!(execution
+        .stdout
+        .contains("Object of class stdClass could not be converted to string"));
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
-fn int_casts_reject_unimplemented_warning_paths_for_now() {
-    let error = run_source("<?php\necho (int) [1];\n").unwrap_err();
+fn int_casts_execute_array_object_and_resource_warning_paths() {
+    let execution = run_source(
+        r#"<?php
+class CountableBox {}
+echo (int) [], "|", (int) [1], "|", (int) STDERR, "|", (int) new CountableBox(), "\n";
+"#,
+    )
+    .unwrap();
 
-    assert_eq!(error.phase, Phase::Runtime);
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 6);
-    assert_eq!(
-        error.message,
-        "unsupported call (int): array-to-int cast behavior is not implemented"
-    );
+    assert!(execution
+        .stdout
+        .contains("Warning: Object of class CountableBox could not be converted to int"));
+    assert!(execution.stdout.contains("0|1|3|"));
+    assert!(execution.stdout.ends_with("1\n"));
+    assert_eq!(execution.exit_code, 0);
 
     let error = run_source("<?php\necho (int) \"9223372036854775808x\";\n").unwrap_err();
 
@@ -134,26 +151,46 @@ fn int_casts_reject_unimplemented_warning_paths_for_now() {
 }
 
 #[test]
-fn float_casts_reject_unimplemented_warning_paths_for_now() {
-    let error = run_source("<?php\necho (float) [1];\n").unwrap_err();
+fn float_casts_execute_array_resource_and_leading_numeric_paths() {
+    let execution = run_source(
+        r#"<?php
+class FloatBox {}
+echo (float) [], "|", (float) [1], "|", (float) STDERR, "|", (float) "42abc", "|";
+echo "10.0 dollar" + 1, "|", "10.0 dollar" + 1.0, "|", (float) new FloatBox(), "\n";
+"#,
+    )
+    .unwrap();
 
-    assert_eq!(error.phase, Phase::Runtime);
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 6);
+    assert!(execution
+        .stdout
+        .contains("Warning: A non-numeric value encountered"));
+    assert!(execution
+        .stdout
+        .contains("Warning: Object of class FloatBox could not be converted to float"));
+    assert!(execution.stdout.contains("0|1|3|42|"));
+    assert!(execution.stdout.contains("11|"));
+    assert!(execution.stdout.ends_with("1\n"));
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn scalar_conversion_builtins_execute_current_cast_subset() {
+    let execution = run_source(
+        "<?php\n\
+echo strval(\"A\"), \"|\", (boolval(\"0\") ? \"true\" : \"false\"), \"|\";\n\
+echo intval(\"0b101\", 0), \"|\", intval(\"0b101\", 2), \"|\", intval(\"0b101\"), \"|\";\n\
+echo floatval(\"10.2 dollars\"), \"|\", doubleval(true), \"\\n\";\n\
+echo bin2hex(strval(\"\\x80\\xff\")), \"\\n\";\n\
+echo function_exists(\"intval\") ? \"exists\" : \"missing\", \"|\";\n\
+echo is_callable(\"floatval\") ? \"callable\" : \"not-callable\", \"\\n\";\n",
+    )
+    .unwrap();
+
     assert_eq!(
-        error.message,
-        "unsupported call (float): array-to-float cast behavior is not implemented"
+        execution.stdout,
+        "A|false|5|5|0|10.2|1\n80ff\nexists|callable\n"
     );
-
-    let error = run_source("<?php\necho (float) \"42abc\";\n").unwrap_err();
-
-    assert_eq!(error.phase, Phase::Runtime);
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 6);
-    assert_eq!(
-        error.message,
-        "unsupported call (float): leading-numeric string cast behavior is not implemented"
-    );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
@@ -203,14 +240,14 @@ echo strlen($keys[2]), "|", $array[$keys[2]], "\n";
 
 #[test]
 fn remaining_casts_have_stable_parse_error() {
-    let error = run_source("<?php\necho (object) \"1\";\n").unwrap_err();
+    let error = run_source("<?php\necho (unset) \"1\";\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Parse);
     assert_eq!(error.line, 2);
     assert_eq!(error.column, 6);
     assert_eq!(
         error.message,
-        "unsupported cast expression: only (string), (int), (bool), (float), and (array) casts are implemented"
+        "unsupported cast expression: only (string), (int), (bool), (float), (array), and (object) casts are implemented"
     );
 }
 

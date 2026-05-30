@@ -37,6 +37,23 @@ echo $call($mixed);
 }
 
 #[test]
+fn array_product_consumes_64_bit_unsigned_sprintf_values() {
+    let execution = run_source(
+        r#"<?php
+var_dump(array_product([2, sprintf("%u", -1)]));
+var_dump(array_product([8.993, 7443241, 988, sprintf("%u", -1) + 0.44]));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "float(3.6893488147419103E+19)\nfloat(1.219953680144986E+30)\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn array_product_requires_array_argument() {
     let error = runtime_error("<?php\necho array_product(42);\n");
 

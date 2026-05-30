@@ -144,6 +144,18 @@ object-property array sources such as `factory()->items["slot"]` and
 non-direct magic `__get()` append sources such as
 `$holders["box"]->missing[]`.
 
+Small array mutation builtins in the interpreter use a shared direct variable
+array-path mutation helper. The helper evaluates a variable-root path such as
+`$array[$key]["child"]`, mutates the selected `PhpArray`, and writes the
+updated value back through the root symbol while preserving reference-backed
+slots via slot setters. `array_push()`, `array_unshift()`, `array_pop()`,
+`array_shift()`, and `next()` use this path; pop/shift detach aliases for the
+removed leaf before mutation. `array_shift()` additionally has a bounded
+by-value expression fallback that emits PHP's reference notice and shifts a
+temporary copy. Object-property array roots for push/pop/shift/unshift, broad
+lvalues, string-keyed unpacking, and native lowering remain outside this
+interpreter path.
+
 Nested append assignment reuses the same assignment-value metadata path before
 storing the appended value. When the RHS is a proven copied-source array from a
 direct by-value `ArrayAccess::offsetGet()`, visible magic `__get()`, or
@@ -1011,6 +1023,13 @@ finally-during-exit ordering, output buffers, SAPI interaction, and native
 termination lowering remain future runtime work. Native `--emit-ir` and
 `--emit-asm` reject `exit()`/`die()` through a dedicated termination diagnostic
 instead of the generic function-call boundary.
+
+Interpreter executions now carry both a lossy UTF-8 `stdout` string snapshot
+for existing Rust assertions and a raw `stdout_bytes` buffer for CLI output.
+Unbuffered output paths append to both buffers, while `phpc run` writes the raw
+bytes to the host stdout handle. This keeps reached formatter cases such as
+`vprintf("%c", [191])` byte-shaped for PHPT without changing the string-facing
+test convenience API.
 
 Cast expressions are represented as `Expr::Cast` with a small `CastKind`
 covering `(string)`, `(int)/(integer)`, `(bool)/(boolean)`, and
@@ -2697,6 +2716,14 @@ interpreter-only bounded string replacement-by-offset builtin for scalar
 subjects plus current array subject/replacement/offset/length forms. It
 preserves array keys, applies per-position array arguments by insertion order,
 and keeps broader coercion/reference/COW behavior outside native lowering.
+The current string residual slice also keeps `wordwrap()`,
+`str_word_count()`, `strnatcmp()`, `strnatcasecmp()`,
+`convert_uuencode()`, and `convert_uudecode()` on the interpreter path. These
+helpers operate over the runtime's current byte-string representation and
+publish reflection metadata. The `str_word_count()` scanner follows the
+current bounded PHP-shaped ASCII apostrophe/hyphen run boundary, while native
+lowering remains blocked until locale/binary parity, diagnostics,
+references/COW, and native string allocation semantics are modeled.
 `call_user_func()` is an interpreter-only bounded callable dispatcher for
 string callbacks resolving to current user functions or documented callable
 builtins, plus current ordinary closure values. For string user-functions and
@@ -3361,10 +3388,18 @@ resource set, returning `-1` without moving the stream for other integer
 reads. `fstat()` exposes buffer size for memory/temp/input handles and host
 metadata for local files;
 `stream_get_meta_data()` exposes deterministic wrapper/type/mode/URI,
-seekable, unread-byte, and EOF metadata. Local file reads remain UTF-8 text
-reads. This gives WordPress-style temporary request, cache-file stream, and
-directory-scanning paths an executable path without claiming full PHP
-resources: sockets, HTTP/FTP/phar wrappers, filters, context option effects
+seekable, unread-byte, and EOF metadata. For local file streams, unread-byte
+metadata follows the current bounded read-buffer model: it starts at `0`,
+updates to the remaining host-file bytes after a successful read, and resets
+to `0` after seek, rewind, write, or truncate operations. Directory resources
+expose a bounded
+`plainfile`/`dir` metadata shape through the same function.
+`stream_get_transports()` reports the current bounded built-in transport-name
+capability list without creating socket or network resources. Local file reads
+remain UTF-8 text reads. This gives WordPress-style temporary request,
+cache-file stream, and directory-scanning paths an executable path without
+claiming full PHP resources: sockets,
+HTTP/FTP/phar wrappers, filters, context option effects
 beyond persistence, broader wrapper/status metadata APIs, exact host
 directory iteration order,
 binary/non-UTF-8 byte strings, real SAPI body stream lifetime, writable
@@ -3850,8 +3885,9 @@ state as the property type metadata slice.
 state pattern for declared user functions named by string. It stores parsed
 user-function metadata for `getName()`, source file, start/end lines, direct
 docblock text, parameter counts, `getParameters()`, `hasReturnType()`,
-`getReturnType()`, and `returnsReference()`. Source paths are tracked beside
-registered function declarations because the AST remains source-text scoped;
+`getReturnType()`, `returnsReference()`, and `__toString()`. Source paths are
+tracked beside registered function declarations because the AST remains
+source-text scoped;
 included files record the include source path at declaration-registration time.
 The lexer preserves bounded `/** ... */` doc-comment tokens so the parser can
 attach a directly preceding docblock to a function declaration.
@@ -3914,20 +3950,23 @@ parameters reached from `ReflectionMethod::getParameters()`,
 `ReflectionFunction::getParameters()`,
 `new ReflectionParameter([$object_or_class, $method], $parameter)`, or
 `new ReflectionParameter($function, $parameter)` for declared user function
-strings. Parameter objects store copied function or method metadata plus the selected parsed parameter
-metadata, so the interpreter can answer names, positions, declaring
+strings, supported internal functions, or current closure values. Parameter
+objects store copied function or method metadata plus the selected parsed
+parameter metadata, so the interpreter can answer names, positions, declaring
 class/function, optional/default availability and values, by-reference flags,
-variadic flags, type-presence checks, nullability checks, and simple named
-type metadata. `ReflectionParameter::getType()` now materializes a
-request-local `ReflectionNamedType` object for a single parsed named type, or
-a request-local `ReflectionUnionType`/`ReflectionIntersectionType` object for
+`canBePassedByValue()`, variadic flags, default constant-name metadata,
+type-presence checks, nullability checks, and simple named type metadata.
+`ReflectionParameter::__construct()` can replace that request-local state on
+an existing object. `ReflectionParameter::getType()` now materializes a
+request-local `ReflectionNamedType` object for a single parsed named type, or a
+request-local `ReflectionUnionType`/`ReflectionIntersectionType` object for
 bounded union and pure intersection parameter types, and stores the copied
-type names, nullable flags, and builtin flags in the interpreter. Untyped
-parameters return `null`. It does not expose
-attributes, files, line numbers, doc comments, extension/internal metadata,
-closure parameter targets, invocation-time reference binding, exact exception
-objects, DNF type objects, runtime argument/return type enforcement, or native
-lowering.
+type names, nullable flags, builtin flags, and `__toString()` rendering in the
+interpreter. Untyped parameters return `null`. It does not expose files, line
+numbers, doc comments, extension/internal metadata beyond the named bounded
+internal-function slice, invocation-time reference binding, full callable-object
+constructor targets, deprecated `getClass()` behavior, DNF type objects,
+runtime argument/return type enforcement, or native lowering.
 `ReflectionProperty` uses a core placeholder class plus request-local state for
 the selected declaring class id/name, property name, visibility, static flag,
 directly preceding property doc-comment text, and optional property type

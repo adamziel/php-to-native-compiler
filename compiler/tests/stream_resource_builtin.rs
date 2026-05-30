@@ -5,7 +5,7 @@ use php_compiler::error::Phase;
 use php_compiler::interpreter::{run_program_with_options, RunOptions};
 use php_compiler::{emit_asm_source, emit_ir_source, parse, run_source};
 
-const LLVM_STREAM_RESOURCE_REJECTION: &str = "LLVM stream-resource lowering rejects fopen(), tmpfile(), stream_context_create(), stream_context_get_options(), stream_context_get_params(), stream_context_get_default(), stream_context_set_default(), stream_context_set_option(), stream_context_set_options(), stream_context_set_params(), fwrite()/fputs(), fgetc(), fgets(), fgetcsv(), fputcsv(), fscanf(), fread(), rewind(), stream_get_contents(), fpassthru(), stream_copy_to_stream(), stream_filter_append(), stream_is_local(), stream_supports_lock(), flock(), feof(), ftell(), fseek(), fstat(), stream_get_meta_data(), stream_get_wrappers(), stream_wrapper_register(), stream_wrapper_unregister(), stream_wrapper_restore(), fclose(), dir(), opendir(), readdir(), rewinddir(), closedir(), glob(), is_uploaded_file(), and move_uploaded_file() until native PHP resource handles, stream wrapper state, stream context state, stream wrapper registry state, stream filter state, stream lock state, upload provenance state, directory/glob state, binary string byte fidelity, warning plus false recovery, references/copy-on-write, and exact native stream diagnostics exist; phpc run handles current bounded php://memory, php://temp, php://input, data://, local file stream resources, stream wrapper capability metadata, stream context resources, selected read filters, local directory handles, bounded local glob patterns, and PHPC_FILES upload provenance";
+const LLVM_STREAM_RESOURCE_REJECTION: &str = "LLVM stream-resource lowering rejects fopen(), tmpfile(), stream_context_create(), stream_context_get_options(), stream_context_get_params(), stream_context_get_default(), stream_context_set_default(), stream_context_set_option(), stream_context_set_options(), stream_context_set_params(), fwrite()/fputs(), fgetc(), fgets(), fgetcsv(), fputcsv(), fscanf(), fread(), rewind(), stream_get_contents(), fpassthru(), stream_copy_to_stream(), stream_filter_append(), stream_is_local(), stream_supports_lock(), flock(), feof(), ftell(), fseek(), fstat(), stream_get_meta_data(), stream_get_wrappers(), stream_get_transports(), stream_wrapper_register(), stream_wrapper_unregister(), stream_wrapper_restore(), fclose(), dir(), opendir(), readdir(), rewinddir(), closedir(), glob(), is_uploaded_file(), and move_uploaded_file() until native PHP resource handles, stream wrapper state, stream context state, stream wrapper registry state, stream transport state, stream filter state, stream lock state, upload provenance state, directory/glob state, binary string byte fidelity, warning plus false recovery, references/copy-on-write, and exact native stream diagnostics exist; phpc run handles current bounded php://memory, php://temp, php://input, data://, local file stream resources, stream wrapper and transport capability metadata, stream context resources, selected read filters, local directory handles, bounded local glob patterns, and PHPC_FILES upload provenance";
 
 #[test]
 fn php_memory_and_temp_stream_resources_round_trip_buffer_contents() {
@@ -770,12 +770,32 @@ echo $file_meta["seekable"] ? "seekable" : "fixed";
 echo ":";
 echo $file_meta["uri"] === $path ? "same-uri" : "other-uri";
 echo ":";
+echo $file_meta["unread_bytes"];
+echo ":";
+rewind($file);
+fread($file, 4);
+$file_meta_after_read = stream_get_meta_data($file);
+echo $file_meta_after_read["unread_bytes"];
+echo ":";
 echo $file_stat["size"];
 echo ":";
 echo $file_stat[7];
 echo ":";
 echo $file_stat["mode"] > 0 ? "mode" : "no-mode";
 fclose($file);
+$read = fopen($path, "r");
+$read_meta_initial = stream_get_meta_data($read);
+fread($read, 4);
+$read_meta_after_read = stream_get_meta_data($read);
+fseek($read, 0);
+$read_meta_after_seek = stream_get_meta_data($read);
+echo "|";
+echo $read_meta_initial["unread_bytes"];
+echo ":";
+echo $read_meta_after_read["unread_bytes"];
+echo ":";
+echo $read_meta_after_seek["unread_bytes"];
+fclose($read);
 "#,
         path.display()
     );
@@ -783,10 +803,87 @@ fclose($file);
 
     assert_eq!(
         execution.stdout,
-        "PHP:MEMORY:w+b:php://memory:3:3:eof|TEMP:w+b:10|plainfile:STDIO:w+:seekable:same-uri:12:12:mode"
+        "PHP:MEMORY:w+b:php://memory:3:3:eof|TEMP:w+b:10|plainfile:STDIO:w+:seekable:same-uri:0:8:12:12:mode|0:8:0"
     );
     assert_eq!(execution.exit_code, 0);
     let _ = fs::remove_file(path);
+}
+
+#[test]
+fn stream_metadata_accepts_uppercase_file_url_and_closed_meta_errors_are_type_errors() {
+    let path = temp_stream_path("phpc-stream-resource-file-url.txt");
+    let uri = format!("File://{}", path.display());
+    let source = format!(
+        r#"<?php
+$stream = fopen("{}", "w+");
+$meta = stream_get_meta_data($stream);
+echo $meta["uri"] === "{}" ? "uri-kept" : $meta["uri"];
+fclose($stream);
+echo "|";
+try {{
+    stream_get_meta_data($stream);
+}} catch (TypeError $e) {{
+    echo $e->getMessage();
+}}
+"#,
+        uri, uri
+    );
+    let execution = run_source(&source).unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "uri-kept|stream_get_meta_data(): Argument #1 ($stream) must be an open stream resource"
+    );
+    assert_eq!(execution.exit_code, 0);
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn stream_get_transports_reports_bounded_builtin_transport_names() {
+    let execution = run_source(
+        r#"<?php
+$transports = stream_get_transports();
+echo is_array($transports) ? "array" : "not-array";
+echo "|";
+echo in_array("tcp", $transports, true) ? "tcp" : "missing";
+echo ":";
+echo in_array("udp", $transports, true) ? "udp" : "missing";
+echo ":";
+echo in_array("unix", $transports, true) ? "unix" : "missing";
+echo ":";
+echo in_array("udg", $transports, true) ? "udg" : "missing";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "array|tcp:udp:unix:udg");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn stream_get_meta_data_reports_bounded_directory_resource_metadata() {
+    let path = std::env::temp_dir();
+    let source = format!(
+        r#"<?php
+$dir = opendir("{}");
+$meta = stream_get_meta_data($dir);
+echo $meta["wrapper_type"];
+echo ":";
+echo $meta["stream_type"];
+echo ":";
+echo $meta["mode"];
+echo ":";
+echo $meta["seekable"] ? "seekable" : "fixed";
+echo ":";
+echo array_key_exists("uri", $meta) ? "uri" : "no-uri";
+closedir($dir);
+"#,
+        path.display()
+    );
+    let execution = run_source(&source).unwrap();
+
+    assert_eq!(execution.stdout, "plainfile:dir:r:seekable:no-uri");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
@@ -1169,6 +1266,7 @@ echo defined("SEEK_END") ? "1" : "0";
 echo function_exists("fstat") ? "1" : "0";
 echo is_callable("stream_get_meta_data") ? "1" : "0";
 echo function_exists("stream_get_wrappers") ? "1" : "0";
+echo function_exists("stream_get_transports") ? "1" : "0";
 echo function_exists("opendir") ? "1" : "0";
 echo is_callable("readdir") ? "1" : "0";
 echo function_exists("is_uploaded_file") ? "1" : "0";
@@ -1177,7 +1275,7 @@ echo is_callable("move_uploaded_file") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 25, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 26, "{ir}");
 
     let error = emit_ir_source("<?php\nis_uploaded_file('/tmp/phpc-upload');\n").unwrap_err();
     assert_eq!(error.phase, Phase::Codegen);

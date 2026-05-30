@@ -101,3 +101,63 @@ echo is_callable("ucwords") ? "1" : "0";
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("ucwords"), "{ir}");
 }
+
+#[test]
+fn string_wordwrap_uuencode_and_natural_compare_builtins_cover_phpt_families() {
+    let execution = run_source(
+        r#"<?php
+echo convert_uudecode(convert_uuencode("Cat\nDog")) === "Cat\nDog" ? "uu" : "bad";
+echo "|", wordwrap("The quick brown fox", 9, "|");
+echo "|", implode(",", str_word_count("Hello fri3nd, you're looking good", 1, "3"));
+echo "|", strnatcmp("img2", "img10") < 0 ? "nat" : "bad";
+echo "|", strnatcasecmp("A10", "a2") > 0 ? "case" : "bad";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "uu|The quick|brown fox|Hello,fri3nd,you're,looking,good|nat|case"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn string_wordwrap_uuencode_and_natural_compare_metadata_is_available() {
+    let execution = run_source(
+        r#"<?php
+$names = ["convert_uuencode", "convert_uudecode", "wordwrap", "str_word_count", "strnatcmp", "strnatcasecmp"];
+foreach ($names as $name) {
+    $reflection = new ReflectionFunction($name);
+    echo $reflection->getName(), ":", $reflection->getNumberOfRequiredParameters(), "/", $reflection->getNumberOfParameters(), ";";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "convert_uuencode:1/1;convert_uudecode:1/1;wordwrap:1/4;str_word_count:1/3;strnatcmp:2/2;strnatcasecmp:2/2;"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn str_word_count_matches_ascii_hyphen_boundaries() {
+    let execution = run_source(
+        r#"<?php
+echo implode(",", str_word_count("foo--bar", 1)), "\n";
+echo implode(",", str_word_count("foo - bar", 1)), "\n";
+echo implode(",", str_word_count("foo- -bar", 1)), "\n";
+echo implode(",", str_word_count("foo-1bar", 1)), "\n";
+echo implode(",", str_word_count("-foo-", 1)), "|", implode(",", str_word_count("-foo-", 1, "-"));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "foo--bar\nfoo,-,bar\nfoo-,-bar\nfoo-,bar\nfoo|-foo-"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
