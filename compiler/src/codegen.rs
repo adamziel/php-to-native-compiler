@@ -67108,6 +67108,8 @@ fn native_builtin_global_constant_c_value(name: &str) -> Option<CValue> {
         "E_DEPRECATED" => Some(CValue::Int("8192".to_string())),
         "E_USER_DEPRECATED" => Some(CValue::Int("16384".to_string())),
         "E_ALL" => Some(CValue::Int("32767".to_string())),
+        "COUNT_NORMAL" => Some(CValue::Int("0".to_string())),
+        "COUNT_RECURSIVE" => Some(CValue::Int("1".to_string())),
         "CASE_LOWER" => Some(CValue::Int("0".to_string())),
         "CASE_UPPER" => Some(CValue::Int("1".to_string())),
         "ARRAY_FILTER_USE_BOTH" => Some(CValue::Int("1".to_string())),

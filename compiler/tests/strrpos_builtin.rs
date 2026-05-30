@@ -52,6 +52,22 @@ echo strripos("abc", "Z") === false ? "miss" : "bad";
 }
 
 #[test]
+fn reverse_position_builtins_preserve_binary_byte_offsets_for_non_utf8_strings() {
+    let execution = run_source(
+        r#"<?php
+$payload = chr(0) . chr(128) . chr(129) . chr(234) . chr(235) . chr(254) . chr(255);
+echo strrpos($payload, chr(128)), "|";
+echo strrpos($payload, chr(255), -1), "|";
+echo strripos($payload, chr(254));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "1|6|5");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reverse_position_builtins_handle_empty_needles_and_catchable_offset_errors() {
     let execution = run_source(
         r#"<?php

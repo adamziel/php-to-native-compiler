@@ -77832,44 +77832,7 @@ impl Interpreter {
                 expect_arity(name, &args, 0, span)?;
                 Ok(Value::Int(0))
             }
-            "count" | "sizeof" => {
-                expect_arity(name, &args, 1, span)?;
-                let call_label = if name.eq_ignore_ascii_case("sizeof") {
-                    "sizeof()"
-                } else {
-                    "count()"
-                };
-                match &args[0] {
-                    Value::Array(value) => Ok(Value::Int(value.len() as i64)),
-                    Value::Object(object)
-                        if self
-                            .classes
-                            .implements_interface(object.class_id(), "Countable") =>
-                    {
-                        let value = self.call_countable_count_method(object.clone(), span)?;
-                        match value {
-                            Value::Int(count) => Ok(Value::Int(count)),
-                            other => Err(runtime_error(
-                                span,
-                                RuntimeError::unsupported_call(
-                                    "Countable::count()",
-                                    format!(
-                                        "count method must return int in the current subset, got {}",
-                                        other.type_name()
-                                    ),
-                                ),
-                            )),
-                        }
-                    }
-                    _ => Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            call_label,
-                            "only arrays and Countable objects are supported",
-                        ),
-                    )),
-                }
-            }
+            "count" | "sizeof" => self.call_count_or_sizeof(name, &args, span),
             "range" => call_range(&args, span),
             "constant" => {
                 expect_arity(name, &args, 1, span)?;
@@ -84948,6 +84911,65 @@ impl Interpreter {
                         .implements_interface(class_id, "IteratorAggregate")
             }
             _ => false,
+        }
+    }
+
+    fn call_count_or_sizeof(
+        &mut self,
+        name: &str,
+        args: &[Value],
+        span: Span,
+    ) -> CompileResult<Value> {
+        let call_label = if name.eq_ignore_ascii_case("sizeof") {
+            "sizeof()"
+        } else {
+            "count()"
+        };
+
+        if !(1..=2).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    call_label,
+                    ArityExpectation::Between { min: 1, max: 2 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let mode = count_mode_argument(call_label, args.get(1), span)?;
+        match &args[0] {
+            Value::Array(value) => Ok(Value::Int(count_php_array(value, mode))),
+            Value::Object(object)
+                if self
+                    .classes
+                    .implements_interface(object.class_id(), "Countable") =>
+            {
+                let value = self.call_countable_count_method(object.clone(), span)?;
+                match value {
+                    Value::Int(count) => Ok(Value::Int(count)),
+                    other => Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "Countable::count()",
+                            format!(
+                                "count method must return int in the current subset, got {}",
+                                other.type_name()
+                            ),
+                        ),
+                    )),
+                }
+            }
+            other => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    call_label,
+                    format!(
+                        "Argument #1 ($value) must be of type Countable|array, {} given",
+                        other.type_name()
+                    ),
+                ),
+            )),
         }
     }
 
@@ -94608,6 +94630,8 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
         | ("strncmp()", "Argument #3 ($length) must be greater than or equal to 0")
         | ("strncasecmp()", "Argument #3 ($length) must be greater than or equal to 0")
         | ("count_chars()", "Argument #2 ($mode) must be between 0 and 4 (inclusive)")
+        | ("count()", "Argument #2 ($mode) must be either COUNT_NORMAL or COUNT_RECURSIVE")
+        | ("sizeof()", "Argument #2 ($mode) must be either COUNT_NORMAL or COUNT_RECURSIVE")
         | ("ftruncate()", "Argument #2 ($size) must be greater than or equal to 0")
         | ("stream_get_contents()", "Argument #2 ($length) must be greater than or equal to -1")
         | (
@@ -96120,6 +96144,8 @@ const PHP_MYSQLI_REFRESH_ALL_SUPPORTED: i64 = PHP_MYSQLI_REFRESH_GRANT
 const PHP_SESSION_DISABLED: i64 = 0;
 const PHP_SESSION_NONE: i64 = 1;
 const PHP_SESSION_ACTIVE: i64 = 2;
+const PHP_COUNT_NORMAL: i64 = 0;
+const PHP_COUNT_RECURSIVE: i64 = 1;
 const PHP_FILE_USE_INCLUDE_PATH: i64 = 1;
 const PHP_FILE_IGNORE_NEW_LINES: i64 = 2;
 const PHP_FILE_SKIP_EMPTY_LINES: i64 = 4;
@@ -96657,6 +96683,8 @@ fn builtin_global_constant_value(name: &str) -> Option<Value> {
         "E_DEPRECATED" => Some(Value::Int(PHP_E_DEPRECATED)),
         "E_USER_DEPRECATED" => Some(Value::Int(PHP_E_USER_DEPRECATED)),
         "E_ALL" => Some(Value::Int(PHP_E_ALL)),
+        "COUNT_NORMAL" => Some(Value::Int(PHP_COUNT_NORMAL)),
+        "COUNT_RECURSIVE" => Some(Value::Int(PHP_COUNT_RECURSIVE)),
         "CASE_LOWER" => Some(Value::Int(0)),
         "CASE_UPPER" => Some(Value::Int(1)),
         "ARRAY_FILTER_USE_BOTH" => Some(Value::Int(1)),
@@ -101982,6 +102010,46 @@ fn php_internal_int_argument(
     parsed.ok_or_else(|| php_internal_int_type_error(function, position, name, value, span))
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CountMode {
+    Normal,
+    Recursive,
+}
+
+fn count_mode_argument(
+    function: &str,
+    value: Option<&Value>,
+    span: Span,
+) -> CompileResult<CountMode> {
+    let Some(value) = value else {
+        return Ok(CountMode::Normal);
+    };
+
+    match php_internal_int_argument(function, 2, "mode", value, span)? {
+        PHP_COUNT_NORMAL => Ok(CountMode::Normal),
+        PHP_COUNT_RECURSIVE => Ok(CountMode::Recursive),
+        _ => Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                "Argument #2 ($mode) must be either COUNT_NORMAL or COUNT_RECURSIVE",
+            ),
+        )),
+    }
+}
+
+fn count_php_array(array: &PhpArray, mode: CountMode) -> i64 {
+    let mut count = array.len() as i64;
+    if mode == CountMode::Recursive {
+        for entry in array.entries() {
+            if let Value::Array(nested) = entry.value() {
+                count += count_php_array(nested, mode);
+            }
+        }
+    }
+    count
+}
+
 fn php_float_fits_i64(value: f64) -> bool {
     value.is_finite() && value >= i64::MIN as f64 && value <= i64::MAX as f64
 }
@@ -106418,8 +106486,8 @@ fn call_strpos_like(
         ));
     }
 
-    let haystack = string_contains_argument(function, "haystack", &args[0], span)?;
-    let needle = string_contains_argument(function, "needle", &args[1], span)?;
+    let haystack = string_compare_argument_bytes(function, "haystack", &args[0], span)?;
+    let needle = string_compare_argument_bytes(function, "needle", &args[1], span)?;
     let offset = match args.get(2) {
         Some(Value::Int(offset)) => *offset,
         Some(other) => {
@@ -106463,15 +106531,13 @@ fn call_strpos_like(
         return Ok(Value::Int(start as i64));
     }
 
-    let haystack_bytes = haystack.as_bytes();
-    let needle_bytes = needle.as_bytes();
-    Ok(haystack_bytes[start..]
-        .windows(needle_bytes.len())
+    Ok(haystack[start..]
+        .windows(needle.len())
         .position(|window| {
             if case_insensitive {
-                window.eq_ignore_ascii_case(needle_bytes)
+                window.eq_ignore_ascii_case(&needle)
             } else {
-                window == needle_bytes
+                window == needle
             }
         })
         .map(|index| Value::Int((start + index) as i64))
@@ -106495,8 +106561,8 @@ fn call_strrpos(
         ));
     }
 
-    let haystack = string_contains_argument(function, "haystack", &args[0], span)?;
-    let needle = string_contains_argument(function, "needle", &args[1], span)?;
+    let haystack = string_compare_argument_bytes(function, "haystack", &args[0], span)?;
+    let needle = string_compare_argument_bytes(function, "needle", &args[1], span)?;
     let offset = match args.get(2) {
         Some(Value::Int(offset)) => *offset,
         Some(other) => {
@@ -106527,8 +106593,6 @@ fn call_strrpos(
         return Ok(Value::Int(position));
     }
 
-    let haystack = haystack.as_bytes();
-    let needle = needle.as_bytes();
     if needle.len() > haystack.len() {
         return Ok(Value::Bool(false));
     }
@@ -106545,7 +106609,7 @@ fn call_strrpos(
     let found = (min_start..=max_start).rev().find(|&index| {
         let window = &haystack[index..index + needle.len()];
         if case_insensitive {
-            window.eq_ignore_ascii_case(needle)
+            window.eq_ignore_ascii_case(&needle)
         } else {
             window == needle
         }

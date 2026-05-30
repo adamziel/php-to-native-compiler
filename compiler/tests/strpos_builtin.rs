@@ -49,6 +49,22 @@ echo $call("abc", "b") === 1 ? "found" : "missing";
 }
 
 #[test]
+fn strpos_preserves_binary_byte_offsets_for_non_utf8_strings() {
+    let execution = run_source(
+        r#"<?php
+$payload = chr(0) . chr(128) . chr(129) . chr(234) . chr(235) . chr(254) . chr(255);
+echo strpos($payload, chr(128)), "|";
+echo strpos($payload, chr(255), 3), "|";
+echo strpos($payload, chr(0));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "1|6|0");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn strpos_rejects_forms_outside_current_subset() {
     let array_haystack = run_source("<?php\nstrpos(['abc'], 'a');\n").unwrap_err();
     assert_eq!(array_haystack.phase, Phase::Runtime);
@@ -119,7 +135,7 @@ echo is_callable("strpos") ? "1" : "0";
     );
     assert!(routed.contains("i8 0, ptr %"), "{routed}");
     assert!(
-        routed.contains("phpc_native_value_format_stdout_with_diagnostic"),
+        routed.contains("phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free"),
         "{routed}"
     );
     assert!(
