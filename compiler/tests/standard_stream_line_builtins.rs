@@ -72,6 +72,12 @@ $row = fgetcsv($memory, 1024, "-", "-", escape: "\\");
 echo $row[0] . ":" . $row[1] . ":" . $row[2] . ":" . ftell($memory) . "\n";
 var_dump(fgetcsv($memory));
 fclose($memory);
+$escaped = fopen("php://memory", "w+");
+fwrite($escaped, "\"a\\\"b\",tail\n");
+rewind($escaped);
+$row = fgetcsv($escaped, 0, ",", "\"", escape: "\\");
+echo $row[0] . ":" . $row[1] . ":" . ftell($escaped) . "\n";
+fclose($escaped);
 $path = {path};
 file_put_contents($path, "^alpha^ ^beta^\n");
 $file = fopen($path, "r");
@@ -94,6 +100,7 @@ unlink($path);
             "water=fruit::30\n",
             "water-fruit:air::52\n",
             "bool(false)\n",
+            "a\\\"b:tail:12\n",
             "alpha:beta:15\n",
         )
     );

@@ -73690,6 +73690,7 @@ impl Interpreter {
 
         let max_bytes = match args.get(1) {
             Some(Value::Int(length)) if *length > 0 => Some(*length as usize),
+            Some(Value::Int(0)) => None,
             Some(Value::Null) | None => None,
             Some(Value::Int(_)) => {
                 return Err(runtime_error(
@@ -73794,7 +73795,13 @@ impl Interpreter {
 
         let mut field_values = Vec::with_capacity(fields.len());
         for entry in fields.entries() {
-            field_values.push(self.value_to_echo_string(entry.value_cloned(), span)?);
+            let value = entry.value_cloned();
+            if matches!(value, Value::Array(_)) {
+                self.emit_display_warning("Array to string conversion", span)?;
+                field_values.push("Array".to_string());
+            } else {
+                field_values.push(self.value_to_echo_string(value, span)?);
+            }
         }
         let line = format_csv_record(&field_values, delimiter, enclosure, escape, &eol);
         match self.stream_mut("fputcsv", &args[0], span)? {
@@ -95160,6 +95167,7 @@ fn parse_bounded_csv_record(
         if in_enclosure {
             if Some(character) == escape {
                 if let Some(next) = chars.next() {
+                    field.push(character);
                     field.push(next);
                 } else {
                     field.push(character);
@@ -95206,22 +95214,23 @@ fn format_csv_record(
         if index > 0 {
             output.push(delimiter);
         }
-        let should_enclose = field.is_empty()
-            || field.chars().any(|ch| {
-                ch == delimiter
-                    || ch == enclosure
-                    || matches!(ch, '\n' | '\r' | '\t' | ' ')
-                    || Some(ch) == escape
-            });
+        let should_enclose = field.chars().any(|ch| {
+            ch == delimiter
+                || ch == enclosure
+                || matches!(ch, '\n' | '\r' | '\t' | ' ')
+                || Some(ch) == escape
+        });
         if should_enclose {
             output.push(enclosure);
+            let mut previous_was_escape = false;
             for ch in field.chars() {
-                if ch == enclosure {
+                if ch == enclosure && !previous_was_escape {
                     output.push(enclosure);
                     output.push(enclosure);
                 } else {
                     output.push(ch);
                 }
+                previous_was_escape = Some(ch) == escape;
             }
             output.push(enclosure);
         } else {
@@ -118670,17 +118679,17 @@ fn format_var_export_array(array: &PhpArray, indent: usize, span: Span) -> Compi
     let mut output = format!("{padding}array (\n");
     for entry in array.entries() {
         let key = format_var_export_array_key(&entry.key);
-        let value = entry.value();
-        match value {
+        let value = entry.value_cloned();
+        match &value {
             Value::Array(_) | Value::Object(_) => {
                 output.push_str(&format!("{child_padding}{key} => \n"));
-                output.push_str(&format_var_export_with_indent(value, indent + 1, span)?);
+                output.push_str(&format_var_export_with_indent(&value, indent + 1, span)?);
                 output.push_str(",\n");
             }
             _ => {
                 output.push_str(&format!(
                     "{child_padding}{key} => {},\n",
-                    format_var_export_with_indent(value, indent + 1, span)?
+                    format_var_export_with_indent(&value, indent + 1, span)?
                 ));
             }
         }

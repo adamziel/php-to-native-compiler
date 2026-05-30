@@ -73,11 +73,24 @@ echo "|";
 echo fputcsv($disabled, array("a\\b"), escape: "") . "|";
 rewind($disabled);
 echo stream_get_contents($disabled);
+$escapedQuote = fopen("php://memory", "w+");
+echo "|";
+echo fputcsv($escapedQuote, array("a\\\"b"), escape: "\\") . "|";
+rewind($escapedQuote);
+echo stream_get_contents($escapedQuote);
+$empty = fopen("php://memory", "w+");
+echo "|";
+echo fputcsv($empty, array("")) . "|";
+rewind($empty);
+echo bin2hex(stream_get_contents($empty));
 "##,
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "6|\"a\\b\"\n|6|\"a#b\"\n|4|a\\b\n");
+    assert_eq!(
+        execution.stdout,
+        "6|\"a\\b\"\n|6|\"a#b\"\n|4|a\\b\n|7|\"a\\\"b\"\n|1|0a"
+    );
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);
 }
