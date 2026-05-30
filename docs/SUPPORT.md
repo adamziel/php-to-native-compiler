@@ -3471,6 +3471,15 @@
   coercions beyond integers, non-ASCII case folding, array/object/resource
   coercions, encoding-sensitive edge cases beyond represented runtime strings,
   and native lowering remain unsupported.
+  `strstr($haystack, $needle, $before_needle = false)`, alias
+  `strchr(...)`, and `stristr(...)` support scalar/null and stringable-object
+  haystack/needle conversion over the current runtime bytes, empty needles,
+  optional bool-compatible `before_needle` coercion, byte-preserving returned
+  substrings, and `false` for no match. `stristr()` applies ASCII-only case
+  folding while preserving the original haystack bytes in the returned
+  substring. Array/closure/resource operands, non-stringable objects,
+  non-ASCII case-folding parity, exact diagnostics outside the covered null
+  deprecation and type-error paths, and native lowering remain unsupported.
   `substr($string, $offset, $length = null)` supports scalar/null
   string-convertible input, integer offsets, and optional integer lengths.
   Positive and negative offsets, positive and negative lengths, and
@@ -10949,6 +10958,12 @@
   array/object/resource coercions, encoding-sensitive edge cases beyond
   represented runtime strings, and native lowering beyond function-table
   introspection
+- `strstr()`/`strchr()`/`stristr()` outside the current scalar/null or
+  stringable-object haystack and needle plus optional bool-compatible
+  `before_needle` subset: array/closure/resource operands, non-stringable
+  objects, non-ASCII case folding for `stristr()`, exact diagnostics outside
+  the covered null deprecation and argument type-error paths, and native
+  lowering beyond function-table introspection
 - `substr()` outside the current scalar/null string-convertible input plus
   integer offset and optional integer length subset: float/string offset and
   length coercions, object/resource operands, invalid UTF-8 byte ranges, exact

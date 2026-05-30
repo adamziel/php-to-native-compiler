@@ -78379,10 +78379,10 @@ impl Interpreter {
             "stripos" => call_strpos_like(&args, "stripos()", true, span),
             "strrpos" => call_strrpos(&args, "strrpos()", false, span),
             "strripos" => call_strrpos(&args, "strripos()", true, span),
-            "strstr" => call_strstr(&args, "strstr()", false, span),
-            "strchr" => call_strstr(&args, "strchr()", false, span),
+            "strstr" => call_strstr(self, &args, "strstr()", false, span),
+            "strchr" => call_strstr(self, &args, "strchr()", false, span),
             "strrchr" => call_strrchr(&args, span),
-            "stristr" => call_strstr(&args, "stristr()", true, span),
+            "stristr" => call_strstr(self, &args, "stristr()", true, span),
             "strtok" => call_strtok_builtin(self, &args, span),
             "str_word_count" => call_str_word_count(&args, span),
             "substr" => call_substr(&args, span),
@@ -108784,6 +108784,7 @@ fn call_strrpos(
 }
 
 fn call_strstr(
+    interpreter: &mut Interpreter,
     args: &[Value],
     function: &'static str,
     case_insensitive: bool,
@@ -108800,51 +108801,82 @@ fn call_strstr(
         ));
     }
 
-    let haystack = string_contains_argument(function, "haystack", &args[0], span)?;
-    let needle = string_contains_argument(function, "needle", &args[1], span)?;
-    if needle.is_empty() {
-        return Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                function,
-                "empty needles are not supported in the current subset",
-            ),
-        ));
-    }
+    let haystack =
+        interpreter.strstr_string_argument_bytes(function, 1, "haystack", &args[0], span)?;
+    let needle = interpreter.strstr_string_argument_bytes(function, 2, "needle", &args[1], span)?;
     let before_needle = match args.get(2) {
-        Some(Value::Bool(value)) => *value,
-        Some(Value::Null) | None => false,
-        Some(other) => {
+        Some(value) => php_internal_bool_argument(function, 3, "before_needle", value, span)?,
+        None => false,
+    };
+
+    let index = if needle.is_empty() {
+        Some(0)
+    } else {
+        haystack.windows(needle.len()).position(|window| {
+            if case_insensitive {
+                window.eq_ignore_ascii_case(&needle)
+            } else {
+                window == needle
+            }
+        })
+    };
+    let Some(index) = index else {
+        return Ok(Value::Bool(false));
+    };
+
+    let output = if before_needle {
+        haystack[..index].to_vec()
+    } else {
+        haystack[index..].to_vec()
+    };
+    Ok(interpreter_value_from_php_string_bytes(output))
+}
+
+impl Interpreter {
+    fn strstr_string_argument_bytes(
+        &mut self,
+        function: &'static str,
+        position: usize,
+        name: &str,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<Vec<u8>> {
+        if matches!(value, Value::Null) {
+            self.emit_display_diagnostic(
+                "Deprecated",
+                PHP_E_DEPRECATED,
+                format!(
+                    "{function}: Passing null to parameter #{position} (${name}) of type string is deprecated"
+                ),
+                span,
+            )?;
+        }
+
+        if let Value::Object(object) = value {
+            if let Some(value) = self.object_to_string_with_magic(object.clone(), function, span)? {
+                return Ok(value.into_bytes());
+            }
+        }
+
+        if matches!(
+            value,
+            Value::Array(_) | Value::Object(_) | Value::Closure(_) | Value::Resource(_)
+        ) {
             return Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
                     function,
                     format!(
-                        "before_needle argument must be bool in the current subset, got {}",
-                        other.type_name()
+                        "Argument #{position} (${name}) must be of type string, {} given",
+                        php_type_error_given(value)
                     ),
                 ),
             ));
         }
-    };
 
-    let haystack_search = if case_insensitive {
-        haystack.to_ascii_lowercase()
-    } else {
-        haystack.clone()
-    };
-    let needle_search = if case_insensitive {
-        needle.to_ascii_lowercase()
-    } else {
-        needle
-    };
-    let Some(index) = haystack_search.find(&needle_search) else {
-        return Ok(Value::Bool(false));
-    };
-    if before_needle {
-        Ok(Value::String(haystack[..index].to_string()))
-    } else {
-        Ok(Value::String(haystack[index..].to_string()))
+        value
+            .try_echo_bytes()
+            .map_err(|error| runtime_error(span, error))
     }
 }
 
