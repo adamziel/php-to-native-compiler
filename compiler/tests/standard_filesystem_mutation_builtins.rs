@@ -90,6 +90,45 @@ rmdir($root . "/cwd");
 }
 
 #[test]
+fn scandir_reports_php_warnings_and_catchable_invalid_sort_order() {
+    let fixture = TempFsFixture::new("scandir-errors");
+    let missing = php_string(&fixture.root.join("missing"));
+    let source = format!(
+        r#"<?php
+echo "probe";
+var_dump(scandir({missing}));
+try {{
+    scandir({missing}, -1);
+}} catch (ValueError $e) {{
+    echo "|" . $e->getMessage();
+}}
+"#,
+        missing = missing
+    );
+
+    let execution = run_source(&source).unwrap();
+
+    assert!(execution.stdout.starts_with("probe\nWarning: scandir("));
+    assert!(
+        execution
+            .stdout
+            .contains("): Failed to open directory: No such file or directory"),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution
+            .stdout
+            .contains("Warning: scandir(): (errno 2): No such file or directory"),
+        "{}",
+        execution.stdout
+    );
+    assert!(execution.stdout.contains("bool(false)\n|scandir(): Argument #2 ($sorting_order) must be one of the SCANDIR_SORT_ASCENDING, SCANDIR_SORT_DESCENDING, or SCANDIR_SORT_NONE constants"));
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn filesystem_stat_string_and_resource_boundaries_cover_file_dir_phpt_cluster() {
     let fixture = TempFsFixture::new("stat");
     let root = php_string(&fixture.root);

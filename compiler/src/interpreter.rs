@@ -72770,7 +72770,7 @@ impl Interpreter {
                 span,
                 RuntimeError::unsupported_call(
                     "scandir()",
-                    "sorting_order must be SCANDIR_SORT_ASCENDING, SCANDIR_SORT_DESCENDING, or SCANDIR_SORT_NONE in the current subset",
+                    "Argument #2 ($sorting_order) must be one of the SCANDIR_SORT_ASCENDING, SCANDIR_SORT_DESCENDING, or SCANDIR_SORT_NONE constants",
                 ),
             ));
         }
@@ -72782,28 +72782,15 @@ impl Interpreter {
         if !self.enforce_bounded_open_basedir("scandir()", &path, &directory_path, span)? {
             return Ok(Value::Bool(false));
         }
-        let Ok(metadata) = fs::metadata(&directory_path) else {
-            self.emit_warning(
-                "scandir()",
-                format!("{path}: No such file or directory"),
-                span,
-            )?;
-            return Ok(Value::Bool(false));
-        };
-        if !metadata.is_dir() {
-            self.emit_warning("scandir()", format!("{path}: Not a directory"), span)?;
-            return Ok(Value::Bool(false));
-        }
         let mut entries = vec![".".to_string(), "..".to_string()];
-        for entry in fs::read_dir(&directory_path).map_err(|error| {
-            runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "scandir()",
-                    format!("local directory read failed: {error}"),
-                ),
-            )
-        })? {
+        let directory = match fs::read_dir(&directory_path) {
+            Ok(directory) => directory,
+            Err(error) => {
+                self.emit_scandir_open_warnings(&path, &error, span)?;
+                return Ok(Value::Bool(false));
+            }
+        };
+        for entry in directory {
             let entry = entry.map_err(|error| {
                 runtime_error(
                     span,
@@ -72835,6 +72822,20 @@ impl Interpreter {
             let _ = result.append(Value::String(entry));
         }
         Ok(Value::Array(result))
+    }
+
+    fn emit_scandir_open_warnings(
+        &mut self,
+        path: &str,
+        error: &std::io::Error,
+        span: Span,
+    ) -> CompileResult<()> {
+        self.emit_display_warning(
+            format!("scandir({path}): Failed to open directory: {error}"),
+            span,
+        )?;
+        let errno = error.raw_os_error().unwrap_or(0);
+        self.emit_display_warning(format!("scandir(): (errno {errno}): {error}"), span)
     }
 
     fn call_stream_context_create(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -94623,6 +94624,10 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
         ("glob()", "Argument #1 ($pattern) must not contain any null bytes") => {
             Some("glob(): Argument #1 ($pattern) must not contain any null bytes".to_string())
         }
+        (
+            "scandir()",
+            "Argument #2 ($sorting_order) must be one of the SCANDIR_SORT_ASCENDING, SCANDIR_SORT_DESCENDING, or SCANDIR_SORT_NONE constants",
+        ) => Some(format!("{function}: {message}")),
         ("fputcsv()", "separator argument must contain exactly one character") => {
             Some("fputcsv(): Argument #3 ($separator) must be a single character".to_string())
         }
