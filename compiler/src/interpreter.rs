@@ -72250,7 +72250,7 @@ impl Interpreter {
         if use_include_path {
             Ok(self.resolve_file_get_contents_path(path, true))
         } else {
-            Ok(PathBuf::from(path))
+            Ok(lexically_normalized_filesystem_path(Path::new(path)))
         }
     }
 
@@ -73281,8 +73281,10 @@ impl Interpreter {
 
         let path = self.filesystem_path_argument("file", "filename", &args[0], span)?;
         let flags = self.filesystem_flags_argument("file", "flags", args.get(1), span)?;
-        let allowed_flags =
-            PHP_FILE_USE_INCLUDE_PATH | PHP_FILE_IGNORE_NEW_LINES | PHP_FILE_SKIP_EMPTY_LINES;
+        let allowed_flags = PHP_FILE_USE_INCLUDE_PATH
+            | PHP_FILE_IGNORE_NEW_LINES
+            | PHP_FILE_SKIP_EMPTY_LINES
+            | PHP_FILE_NO_DEFAULT_CONTEXT;
         if flags & !allowed_flags != 0 {
             return Err(runtime_error(
                 span,
@@ -73310,11 +73312,10 @@ impl Interpreter {
         let contents = match fs::read_to_string(&filesystem_path) {
             Ok(contents) => contents,
             Err(error) => {
-                self.emit_warning(
-                    "file()",
+                self.emit_display_warning(
                     format!(
-                        "{path}: Failed to open stream: {}",
-                        Self::filesystem_io_warning_message(&error)
+                        "file({path}): Failed to open stream: {}",
+                        php_filesystem_open_error_message(&error)
                     ),
                     span,
                 )?;
@@ -97039,6 +97040,9 @@ fn parse_bounded_csv_record(
         }
     }
 
+    if in_enclosure && escape == Some('\0') {
+        field.push('\0');
+    }
     fields.push(field);
     fields
 }
@@ -97108,6 +97112,29 @@ fn file_lines_array(contents: &str, flags: i64, span: Span) -> CompileResult<Php
     }
 
     Ok(array)
+}
+
+fn lexically_normalized_filesystem_path(path: &Path) -> PathBuf {
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                if !normalized.pop() {
+                    normalized.push("..");
+                }
+            }
+            std::path::Component::Normal(part) => normalized.push(part),
+            std::path::Component::RootDir => normalized.push(component.as_os_str()),
+            std::path::Component::Prefix(prefix) => normalized.push(prefix.as_os_str()),
+        }
+    }
+
+    if normalized.as_os_str().is_empty() {
+        PathBuf::from(".")
+    } else {
+        normalized
+    }
 }
 
 fn dirname_path(path: &str, levels: i64) -> String {
@@ -97395,6 +97422,7 @@ const PHP_COUNT_RECURSIVE: i64 = 1;
 const PHP_FILE_USE_INCLUDE_PATH: i64 = 1;
 const PHP_FILE_IGNORE_NEW_LINES: i64 = 2;
 const PHP_FILE_SKIP_EMPTY_LINES: i64 = 4;
+const PHP_FILE_NO_DEFAULT_CONTEXT: i64 = 16;
 const PHP_LOCK_SH: i64 = 1;
 const PHP_LOCK_EX: i64 = 2;
 const PHP_LOCK_UN: i64 = 3;
@@ -97798,6 +97826,7 @@ const BUILTIN_GLOBAL_CONSTANT_NAMES: &[&str] = &[
     "FILE_USE_INCLUDE_PATH",
     "FILE_IGNORE_NEW_LINES",
     "FILE_SKIP_EMPTY_LINES",
+    "FILE_NO_DEFAULT_CONTEXT",
     "FILE_APPEND",
     "LOCK_SH",
     "LOCK_EX",
@@ -98024,6 +98053,7 @@ fn builtin_global_constant_value(name: &str) -> Option<Value> {
         "FILE_USE_INCLUDE_PATH" => Some(Value::Int(PHP_FILE_USE_INCLUDE_PATH)),
         "FILE_IGNORE_NEW_LINES" => Some(Value::Int(PHP_FILE_IGNORE_NEW_LINES)),
         "FILE_SKIP_EMPTY_LINES" => Some(Value::Int(PHP_FILE_SKIP_EMPTY_LINES)),
+        "FILE_NO_DEFAULT_CONTEXT" => Some(Value::Int(PHP_FILE_NO_DEFAULT_CONTEXT)),
         "FILE_APPEND" => Some(Value::Int(PHP_FILE_APPEND)),
         "LOCK_SH" => Some(Value::Int(PHP_LOCK_SH)),
         "LOCK_EX" => Some(Value::Int(PHP_LOCK_EX)),

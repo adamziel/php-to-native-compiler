@@ -67122,6 +67122,7 @@ fn native_builtin_global_constant_c_value(name: &str) -> Option<CValue> {
         "FILE_USE_INCLUDE_PATH" => Some(CValue::Int("1".to_string())),
         "FILE_IGNORE_NEW_LINES" => Some(CValue::Int("2".to_string())),
         "FILE_SKIP_EMPTY_LINES" => Some(CValue::Int("4".to_string())),
+        "FILE_NO_DEFAULT_CONTEXT" => Some(CValue::Int("16".to_string())),
         "LOCK_EX" => Some(CValue::Int("2".to_string())),
         "FILE_APPEND" => Some(CValue::Int("8".to_string())),
         "HTML_SPECIALCHARS" => Some(CValue::Int("0".to_string())),

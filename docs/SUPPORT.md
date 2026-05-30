@@ -3601,8 +3601,8 @@
   Direct calls may use named arguments for supported by-value builtin
   parameter names, so skipped optional CSV arguments are filled from the
   internal metadata defaults. Empty input returns an array containing `null`,
-  matching the covered PHP shape. `parse_str($string, $result)` is supported
-  only as a direct call with
+  and the covered NUL-escape EOF edge keeps PHP's binary string shape.
+  `parse_str($string, $result)` is supported only as a direct call with
   a direct result variable; it uses the bounded URL-encoded parser and current
   `arg_separator.input` value, rejects raw NUL bytes with the PHP `ValueError`
   message, writes the parsed ordered array to the result variable, and returns
@@ -11340,7 +11340,9 @@ Unsupported code should fail with an explicit parse, runtime, or codegen error.
   temporary-name entropy/truncation diagnostics remain unsupported.
 - Additional bounded local file/CSV helpers in `phpc run`: `file()` reads local
   filesystem paths into line arrays with `FILE_USE_INCLUDE_PATH`,
-  `FILE_IGNORE_NEW_LINES`, and `FILE_SKIP_EMPTY_LINES`; `fputs()` aliases the
+  `FILE_IGNORE_NEW_LINES`, `FILE_SKIP_EMPTY_LINES`, and no-op
+  `FILE_NO_DEFAULT_CONTEXT`, and performs bounded lexical `.`/`..` path
+  normalization before local opens; `fputs()` aliases the
   existing `fwrite()` stream write subset; `fputcsv()` writes local/php memory
   stream CSV records with single-character separator/enclosure and
   empty-or-single-character escape settings, including direct named-argument
