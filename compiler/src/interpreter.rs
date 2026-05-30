@@ -77888,6 +77888,8 @@ impl Interpreter {
             "count_chars" => call_count_chars(&args, span),
             "base64_encode" => call_base64_encode(&args, span),
             "base64_decode" => call_base64_decode(&args, span),
+            "quoted_printable_decode" => self.call_quoted_printable_decode(&args, span),
+            "quoted_printable_encode" => self.call_quoted_printable_encode(&args, span),
             "convert_uuencode" => call_convert_uuencode(&args, span),
             "convert_uudecode" => self.call_convert_uudecode(&args, span),
             "ctype_alnum" => self.call_ctype("ctype_alnum()", &args, ctype_byte_is_alnum, span),
@@ -92010,6 +92012,10 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_optional_bool_param("strict", false),
             ],
         ),
+        "quoted_printable_decode" | "quoted_printable_encode" => (
+            "string",
+            vec![reflection_internal_param("string", "string")],
+        ),
         "convert_uuencode" => (
             "string",
             vec![reflection_internal_param("string", "string")],
@@ -95705,6 +95711,8 @@ fn is_builtin(name: &str) -> bool {
             | "count_chars"
             | "base64_encode"
             | "base64_decode"
+            | "quoted_printable_decode"
+            | "quoted_printable_encode"
             | "convert_uuencode"
             | "convert_uudecode"
             | "ctype_alnum"
@@ -103525,6 +103533,175 @@ fn base64_decode_value(byte: u8) -> Option<u8> {
         b'+' => Some(62),
         b'/' => Some(63),
         _ => None,
+    }
+}
+
+impl Interpreter {
+    fn call_quoted_printable_decode(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("quoted_printable_decode", args, 1, span)?;
+        let value = self.quoted_printable_string_argument_bytes(
+            "quoted_printable_decode()",
+            &args[0],
+            span,
+        )?;
+        Ok(interpreter_value_from_php_string_bytes(
+            quoted_printable_decode_bytes(&value),
+        ))
+    }
+
+    fn call_quoted_printable_encode(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("quoted_printable_encode", args, 1, span)?;
+        let value = self.quoted_printable_string_argument_bytes(
+            "quoted_printable_encode()",
+            &args[0],
+            span,
+        )?;
+        Ok(interpreter_value_from_php_string_bytes(
+            quoted_printable_encode_bytes(&value),
+        ))
+    }
+
+    fn quoted_printable_string_argument_bytes(
+        &mut self,
+        function: &'static str,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<Vec<u8>> {
+        if let Value::Object(object) = value {
+            if let Some(value) = self.object_to_string_with_magic(object.clone(), function, span)? {
+                return Ok(value.into_bytes());
+            }
+        }
+
+        if matches!(
+            value,
+            Value::Array(_) | Value::Object(_) | Value::Closure(_) | Value::Resource(_)
+        ) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function,
+                    format!(
+                        "Argument #1 ($string) must be of type string, {} given",
+                        php_type_error_given(value)
+                    ),
+                ),
+            ));
+        }
+
+        value
+            .try_echo_bytes()
+            .map_err(|error| runtime_error(span, error))
+    }
+}
+
+fn quoted_printable_decode_bytes(value: &[u8]) -> Vec<u8> {
+    let mut output = Vec::with_capacity(value.len());
+    let mut index = 0;
+    while index < value.len() {
+        if value[index] == b'=' {
+            if let (Some(high), Some(low)) = (
+                value.get(index + 1).and_then(|byte| hex_digit_value(*byte)),
+                value.get(index + 2).and_then(|byte| hex_digit_value(*byte)),
+            ) {
+                output.push((high << 4) | low);
+                index += 3;
+                continue;
+            }
+
+            let mut soft_break_index = index + 1;
+            while matches!(value.get(soft_break_index), Some(b' ' | b'\t')) {
+                soft_break_index += 1;
+            }
+
+            match value.get(soft_break_index) {
+                None => {
+                    index = soft_break_index;
+                    continue;
+                }
+                Some(b'\n') => {
+                    index = soft_break_index + 1;
+                    continue;
+                }
+                Some(b'\r') => {
+                    index = soft_break_index + 1;
+                    if value.get(index) == Some(&b'\n') {
+                        index += 1;
+                    }
+                    continue;
+                }
+                _ => {}
+            }
+        }
+
+        output.push(value[index]);
+        index += 1;
+    }
+    output
+}
+
+fn quoted_printable_encode_bytes(value: &[u8]) -> Vec<u8> {
+    let mut output = Vec::new();
+    let mut line_len = 0usize;
+    let mut index = 0usize;
+
+    while index < value.len() {
+        let byte = value[index];
+        if byte == b'\r' && value.get(index + 1) == Some(&b'\n') {
+            output.extend_from_slice(b"\r\n");
+            line_len = 0;
+            index += 2;
+            continue;
+        }
+
+        let unit = quoted_printable_encode_unit(byte, value.get(index + 1) == Some(&b'\r'));
+        if line_len + unit.len() > quoted_printable_wrap_limit(byte) {
+            output.extend_from_slice(b"=\r\n");
+            line_len = 0;
+        }
+        output.extend_from_slice(&unit);
+        line_len += unit.len();
+        index += 1;
+    }
+
+    output
+}
+
+fn quoted_printable_encode_unit(byte: u8, before_carriage_return: bool) -> Vec<u8> {
+    if byte == b' ' && !before_carriage_return {
+        return vec![byte];
+    }
+
+    if quoted_printable_plain_byte(byte) {
+        return vec![byte];
+    }
+
+    vec![
+        b'=',
+        upper_hex_digit(byte >> 4),
+        upper_hex_digit(byte & 0x0f),
+    ]
+}
+
+fn quoted_printable_plain_byte(byte: u8) -> bool {
+    matches!(byte, b'!'..=b'<' | b'>'..=b'~')
+}
+
+fn quoted_printable_wrap_limit(byte: u8) -> usize {
+    match byte {
+        0xC0..=0xDF => 72,
+        0xE0..=0xEF => 69,
+        0xF0..=0xF7 => 66,
+        0x80..=0xBF => 72,
+        _ => 75,
+    }
+}
+
+fn upper_hex_digit(value: u8) -> u8 {
+    match value {
+        0..=9 => b'0' + value,
+        10..=15 => b'A' + (value - 10),
+        _ => unreachable!("hex digit nibble must be in range"),
     }
 }
 
