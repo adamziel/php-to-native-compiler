@@ -78347,6 +78347,8 @@ impl Interpreter {
                 ),
             )),
             "error_reporting" => self.call_error_reporting(args, span),
+            "connection_aborted" => call_connection_aborted(&args, span),
+            "connection_status" => call_connection_status(&args, span),
             "ignore_user_abort" => self.call_ignore_user_abort(args, span),
             "getprotobyname" => call_getprotobyname(&args, span),
             "getprotobynumber" => call_getprotobynumber(&args, span),
@@ -93054,6 +93056,7 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_param("protocol", "string"),
             ],
         ),
+        "connection_aborted" | "connection_status" => ("int", vec![]),
         "php_uname" => (
             "string",
             vec![reflection_internal_optional_string_param("mode", "a")],
@@ -96233,6 +96236,8 @@ fn is_builtin(name: &str) -> bool {
             | "preg_replace_callback"
             | "compact"
             | "error_reporting"
+            | "connection_aborted"
+            | "connection_status"
             | "ignore_user_abort"
             | "getprotobyname"
             | "getprotobynumber"
@@ -97658,6 +97663,9 @@ const BUILTIN_GLOBAL_CONSTANT_NAMES: &[&str] = &[
     "PHP_OS",
     "PHP_OS_FAMILY",
     "PHP_EOL",
+    "CONNECTION_NORMAL",
+    "CONNECTION_ABORTED",
+    "CONNECTION_TIMEOUT",
     "STDIN",
     "STDOUT",
     "STDERR",
@@ -97880,6 +97888,9 @@ fn builtin_global_constant_value(name: &str) -> Option<Value> {
         "PHP_OS" => Some(Value::String("Linux".to_string())),
         "PHP_OS_FAMILY" => Some(Value::String("Linux".to_string())),
         "PHP_EOL" => Some(Value::String("\n".to_string())),
+        "CONNECTION_NORMAL" => Some(Value::Int(0)),
+        "CONNECTION_ABORTED" => Some(Value::Int(1)),
+        "CONNECTION_TIMEOUT" => Some(Value::Int(2)),
         "STDIN" => Some(Value::Resource(1)),
         "STDOUT" => Some(Value::Resource(2)),
         "STDERR" => Some(Value::Resource(3)),
@@ -115204,6 +115215,16 @@ fn call_php_uname(args: &[Value], span: Span) -> CompileResult<Value> {
 fn call_php_sapi_name(args: &[Value], span: Span) -> CompileResult<Value> {
     expect_arity("php_sapi_name", args, 0, span)?;
     Ok(Value::String("cli".to_string()))
+}
+
+fn call_connection_aborted(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("connection_aborted", args, 0, span)?;
+    Ok(Value::Int(0))
+}
+
+fn call_connection_status(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("connection_status", args, 0, span)?;
+    Ok(Value::Int(0))
 }
 
 fn call_phpversion(args: &[Value], span: Span) -> CompileResult<Value> {

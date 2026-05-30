@@ -3311,6 +3311,12 @@
   placeholder state using PHP truthiness. Real client disconnect state,
   web-server/SAPI connection-abort behavior, warning/`TypeError` fidelity, and
   native lowering remain unsupported.
+  `connection_status()` and `connection_aborted()` expose the current bounded
+  CLI-normal connection state. `CONNECTION_NORMAL`, `CONNECTION_ABORTED`, and
+  `CONNECTION_TIMEOUT` are defined with the standard integer values; the
+  current CLI state is always normal, so both status and aborted calls return
+  `0`. Real client disconnects, timeout transitions, request finishing, and
+  web-server/SAPI connection lifecycle state remain unsupported.
   `printf($format, ...$values)`, `fprintf($stream, $format, ...$values)`,
   `sprintf($format, ...$values)`, `vsprintf($format, $values)`,
   `vprintf($format, $values)`, and `vfprintf($stream, $format, $values)` support
@@ -8416,6 +8422,12 @@
   state subset as the builtin section above; direct native
   `ignore_user_abort(...)` calls still reject under the function-call
   boundary, while native function-table introspection recognizes the name.
+  `connection_aborted` and `connection_status` accept the same current
+  CLI-normal state subset as the builtin section above; direct native
+  `connection_aborted(...)` and `connection_status(...)` calls still reject
+  under the function-call boundary, while native function-table introspection
+  recognizes the names and native constant folding recognizes the connection
+  state constants.
   `strtolower` accepts the same current scalar/null string-convertible subset
   as the builtin section above; direct native `strtolower(...)` calls lower
   through the current ASCII byte operation, while native function-table
@@ -11102,6 +11114,11 @@
   real client disconnect state, SAPI/web-server connection-abort behavior,
   request finishing, exact warning/`TypeError` behavior, and native lowering
   beyond function-table introspection
+- `connection_status()`/`connection_aborted()` behavior beyond the current
+  deterministic CLI-normal placeholder: real client disconnect state,
+  timeout/aborted state transitions, request finishing, SAPI/web-server
+  lifecycle integration, exact warning/`TypeError` behavior, and native
+  lowering beyond function-table introspection
 - `$_SERVER` behavior beyond the current deterministic CLI seed and direct
   root-symbol routing: real SAPI request population, environment imports,
   complete server key catalogs, `$GLOBALS` aliasing, references/copy-on-write,

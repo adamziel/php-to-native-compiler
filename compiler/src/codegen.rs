@@ -66426,6 +66426,8 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "preg_replace_callback",
     "compact",
     "error_reporting",
+    "connection_aborted",
+    "connection_status",
     "ignore_user_abort",
     "getprotobyname",
     "getprotobynumber",
@@ -67104,6 +67106,9 @@ fn native_builtin_global_constant_c_value(name: &str) -> Option<CValue> {
         "PHP_OS" => Some(CValue::String("Linux".to_string())),
         "PHP_OS_FAMILY" => Some(CValue::String("Linux".to_string())),
         "PHP_EOL" => Some(CValue::String("\n".to_string())),
+        "CONNECTION_NORMAL" => Some(CValue::Int("0".to_string())),
+        "CONNECTION_ABORTED" => Some(CValue::Int("1".to_string())),
+        "CONNECTION_TIMEOUT" => Some(CValue::Int("2".to_string())),
         "PATH_SEPARATOR" => Some(CValue::String(
             if cfg!(windows) { ";" } else { ":" }.to_string(),
         )),
