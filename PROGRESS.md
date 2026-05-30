@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-30 22:04 CEST
+Updated: 2026-05-30 22:17 CEST
 Primary branch: `master`
 Latest source head: `a9a9d271 fix: add connection state builtins`
 
@@ -13,7 +13,7 @@ Progress is the pinned php-src PHPT full-suite pass rate:
 
 `passed runnable PHPTs / total runnable PHPTs`
 
-Current score: **4048 / 20294 pinned runnable PHPTs = 19.95%**.
+Current score: **4132 / 20294 pinned runnable PHPTs = 20.36%**.
 
 ## PHPT Goal Checklist
 
@@ -53,6 +53,7 @@ Current score: **4048 / 20294 pinned runnable PHPTs = 19.95%**.
 | Batch015 checkpoint9 | 3646 / 20294 | 17.97% | 0 semantic; `bug75679.phpt` long-root path guard |
 | Batch016 selected integration | 3868 / 20294 | 19.06% | 0 semantic; 6 platform-SKIPIF adjudicated |
 | Batch016 regression7 repair | 4048 / 20294 | 19.95% | 0 |
+| Batch017 checkpoint10 | 4132 / 20294 | 20.36% | 0; 10 raw invalid-marker hits adjudicated as failed-row output |
 
 The Batch013 checkpoint10 source `fc2788a7` is integrated and published by a
 pinned sharded full-suite gate on public `b3e42ce1`. The gate recorded 3170
@@ -228,6 +229,18 @@ full-suite run completes and is regression-checked:
   semantics.
 - `5623e0b4` repairs generalized string increment/decrement semantics.
 - `a9a9d271` adds bounded CLI-normal connection-state builtins and constants.
+
+The Batch017 checkpoint10 sharded publication gate on the same php-src pin,
+run
+`phpt-full-batch017-checkpoint10-publication-sharded-20260530T2208Z-php-src-f97ff59-public-981003bf-source-a9a9d271`,
+recorded 4132 / 20294 pinned runnable PHPTs = 20.36%. Raw runner counts were
+`4132 PASS / 14404 FAIL / 2702 SKIP / 12 XFAIL / 1080 BORK / 1 WARN` across
+18549 runnable rows. The PASS-set comparison found zero latest-published PASS
+regressions. The raw invalid-marker scan found ten hits; supervisor
+adjudication recorded those as failed PHPT row output involving `PHP_BINARY`
+or permission-behavior rows, not harness setup failure, missing `PHPC_BIN`, or
+uppercase `run-tests.php -P` bypass. Evidence lives under
+`/home/claude/supervised-php-compiler/state/logs/phpt-full-batch017-checkpoint10-publication-sharded-20260530T2208Z-php-src-f97ff59-public-981003bf-source-a9a9d271`.
 
 No other percentage is public project progress. Focused PHPT passes, source
 checkpoints, PRs, and docs/status edits are evidence for the next batch, but
