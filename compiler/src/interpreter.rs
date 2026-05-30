@@ -1552,6 +1552,7 @@ fn collect_implicit_arrow_capture_assign_target(
         | AssignTarget::SelfStaticProperty { .. }
         | AssignTarget::ParentStaticProperty { .. }
         | AssignTarget::LateStaticProperty { .. } => {}
+        AssignTarget::UnsupportedExpression { .. } => {}
     }
 }
 
@@ -31731,6 +31732,10 @@ impl Interpreter {
                 let value = self.evaluate(expr, scope)?;
                 self.write_late_static_property(&property, value, *span)
             }
+            AssignTarget::UnsupportedExpression { message, span } => Err(runtime_error(
+                *span,
+                RuntimeError::unsupported_call("assignment expression target", message),
+            )),
         }
     }
 
@@ -34735,6 +34740,10 @@ impl Interpreter {
                     value,
                 ))
             }
+            AssignTarget::UnsupportedExpression { message, span } => Err(runtime_error(
+                *span,
+                RuntimeError::unsupported_call("compound assignment target", message),
+            )),
         }
     }
 
@@ -35265,6 +35274,10 @@ impl Interpreter {
                     value,
                 ))
             }
+            AssignTarget::UnsupportedExpression { message, span } => Err(runtime_error(
+                *span,
+                RuntimeError::unsupported_call("increment/decrement target", message),
+            )),
         }
     }
 
@@ -35655,6 +35668,10 @@ impl Interpreter {
                 };
                 self.evaluate_null_coalesce_assignment(&target, expr, scope)
             }
+            AssignTarget::UnsupportedExpression { message, span } => Err(runtime_error(
+                *span,
+                RuntimeError::unsupported_call("??= target", message),
+            )),
         }
     }
 

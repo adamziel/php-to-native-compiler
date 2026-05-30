@@ -421,6 +421,10 @@ pub enum AssignTarget {
         property: Expr,
         span: Span,
     },
+    UnsupportedExpression {
+        message: String,
+        span: Span,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -749,8 +753,9 @@ impl AssignTarget {
             | AssignTarget::DynamicSelfStaticProperty { span, .. }
             | AssignTarget::ParentStaticProperty { span, .. }
             | AssignTarget::DynamicParentStaticProperty { span, .. }
-            | AssignTarget::LateStaticProperty { span, .. } => *span,
-            AssignTarget::DynamicLateStaticProperty { span, .. } => *span,
+            | AssignTarget::LateStaticProperty { span, .. }
+            | AssignTarget::DynamicLateStaticProperty { span, .. }
+            | AssignTarget::UnsupportedExpression { span, .. } => *span,
         }
     }
 }

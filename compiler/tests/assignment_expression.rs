@@ -519,6 +519,38 @@ fn assignment_expression_rejects_complex_targets() {
 }
 
 #[test]
+fn assignment_expression_defers_unsupported_targets_until_execution() {
+    let execution = run_source(
+        r#"<?php
+function dormant_assignment_target() {
+    $j = 2;
+    for (; $a = $j - 7 + $y = $a - 7; $a = $a + 1 / 3) {
+        echo "unreachable\n";
+    }
+}
+echo "DONE\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "DONE\n");
+
+    let error = run_source(
+        r#"<?php
+$j = 2;
+echo (($j - 7 + $y) = $a - 7);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Runtime);
+    assert_eq!(error.line, 3);
+    assert!(error
+        .message
+        .contains("unsupported assignment expression target"));
+}
+
+#[test]
 fn append_offsets_remain_unsupported_as_reads() {
     let cases = [
         ("<?php\n$items = [];\necho $items[];\n", 3, 6),

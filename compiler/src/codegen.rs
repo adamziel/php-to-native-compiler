@@ -2427,7 +2427,8 @@ fn llvm_assign_target_call_results_are_lowerable(
         | AssignTarget::DynamicParentStaticProperty { .. }
         | AssignTarget::LateStaticProperty { .. }
         | AssignTarget::DynamicObjectStaticProperty { .. }
-        | AssignTarget::DynamicLateStaticProperty { .. } => true,
+        | AssignTarget::DynamicLateStaticProperty { .. }
+        | AssignTarget::UnsupportedExpression { .. } => true,
     }
 }
 
@@ -4572,7 +4573,8 @@ fn assign_target_contains_exit_construct(target: &AssignTarget) -> bool {
         | AssignTarget::DynamicParentStaticProperty { .. }
         | AssignTarget::LateStaticProperty { .. }
         | AssignTarget::DynamicObjectStaticProperty { .. }
-        | AssignTarget::DynamicLateStaticProperty { .. } => false,
+        | AssignTarget::DynamicLateStaticProperty { .. }
+        | AssignTarget::UnsupportedExpression { .. } => false,
     }
 }
 
@@ -4730,7 +4732,8 @@ where
         | AssignTarget::DynamicParentStaticProperty { .. }
         | AssignTarget::LateStaticProperty { .. }
         | AssignTarget::DynamicObjectStaticProperty { .. }
-        | AssignTarget::DynamicLateStaticProperty { .. } => false,
+        | AssignTarget::DynamicLateStaticProperty { .. }
+        | AssignTarget::UnsupportedExpression { .. } => false,
     }
 }
 
@@ -6056,7 +6059,8 @@ fn collect_direct_call_names_from_assign_target(target: &AssignTarget, names: &m
         | AssignTarget::DynamicParentStaticProperty { .. }
         | AssignTarget::LateStaticProperty { .. }
         | AssignTarget::DynamicObjectStaticProperty { .. }
-        | AssignTarget::DynamicLateStaticProperty { .. } => {}
+        | AssignTarget::DynamicLateStaticProperty { .. }
+        | AssignTarget::UnsupportedExpression { .. } => {}
     }
 }
 
@@ -6616,7 +6620,8 @@ fn collect_native_arrow_capture_candidates_from_assign_target(
         | AssignTarget::DynamicParentStaticProperty { .. }
         | AssignTarget::LateStaticProperty { .. }
         | AssignTarget::DynamicObjectStaticProperty { .. }
-        | AssignTarget::DynamicLateStaticProperty { .. } => {}
+        | AssignTarget::DynamicLateStaticProperty { .. }
+        | AssignTarget::UnsupportedExpression { .. } => {}
     }
 }
 
@@ -7337,7 +7342,8 @@ fn native_assign_target_contains_call_result(target: &AssignTarget) -> bool {
         | AssignTarget::DynamicParentStaticProperty { .. }
         | AssignTarget::LateStaticProperty { .. }
         | AssignTarget::DynamicObjectStaticProperty { .. }
-        | AssignTarget::DynamicLateStaticProperty { .. } => false,
+        | AssignTarget::DynamicLateStaticProperty { .. }
+        | AssignTarget::UnsupportedExpression { .. } => false,
     }
 }
 
@@ -7536,7 +7542,8 @@ fn native_assignment_target_call_result_callee(target: &AssignTarget) -> Option<
         | AssignTarget::ParentStaticProperty { .. }
         | AssignTarget::DynamicParentStaticProperty { .. }
         | AssignTarget::LateStaticProperty { .. }
-        | AssignTarget::DynamicLateStaticProperty { .. } => None,
+        | AssignTarget::DynamicLateStaticProperty { .. }
+        | AssignTarget::UnsupportedExpression { .. } => None,
     }
 }
 
@@ -7695,7 +7702,8 @@ fn native_assignment_target_lvalue_operands(target: &AssignTarget) -> Vec<(&Expr
         | AssignTarget::ParentStaticProperty { .. }
         | AssignTarget::DynamicParentStaticProperty { .. }
         | AssignTarget::LateStaticProperty { .. }
-        | AssignTarget::DynamicLateStaticProperty { .. } => {}
+        | AssignTarget::DynamicLateStaticProperty { .. }
+        | AssignTarget::UnsupportedExpression { .. } => {}
     }
     operands
 }
@@ -8449,7 +8457,8 @@ fn assign_target_contains_globals_access(target: &AssignTarget) -> bool {
         | AssignTarget::DynamicParentStaticProperty { .. }
         | AssignTarget::LateStaticProperty { .. }
         | AssignTarget::DynamicObjectStaticProperty { .. }
-        | AssignTarget::DynamicLateStaticProperty { .. } => false,
+        | AssignTarget::DynamicLateStaticProperty { .. }
+        | AssignTarget::UnsupportedExpression { .. } => false,
     }
 }
 
@@ -8982,7 +8991,8 @@ fn assign_target_contains_request_state_access(target: &AssignTarget) -> bool {
         | AssignTarget::DynamicParentStaticProperty { .. }
         | AssignTarget::LateStaticProperty { .. }
         | AssignTarget::DynamicObjectStaticProperty { .. }
-        | AssignTarget::DynamicLateStaticProperty { .. } => false,
+        | AssignTarget::DynamicLateStaticProperty { .. }
+        | AssignTarget::UnsupportedExpression { .. } => false,
     }
 }
 
@@ -9367,7 +9377,8 @@ fn request_assign_target_array_key_consumer_access(
         | AssignTarget::ParentStaticProperty { .. }
         | AssignTarget::DynamicParentStaticProperty { .. }
         | AssignTarget::LateStaticProperty { .. }
-        | AssignTarget::DynamicLateStaticProperty { .. } => None,
+        | AssignTarget::DynamicLateStaticProperty { .. }
+        | AssignTarget::UnsupportedExpression { .. } => None,
     }
 }
 
@@ -13660,6 +13671,9 @@ impl LlvmGenerator {
             | AssignTarget::DynamicParentStaticProperty { span, .. }
             | AssignTarget::DynamicLateStaticProperty { span, .. } => {
                 Err(self.unsupported(*span, LLVM_STATIC_MEMBER_REJECTION))
+            }
+            AssignTarget::UnsupportedExpression { span, .. } => {
+                Err(self.unsupported(*span, LLVM_MUTATION_REJECTION))
             }
         }
     }
@@ -19878,7 +19892,8 @@ fn collect_loop_assigned_direct_variables_from_assign_target(
         | AssignTarget::DynamicParentStaticProperty { .. }
         | AssignTarget::LateStaticProperty { .. }
         | AssignTarget::DynamicObjectStaticProperty { .. }
-        | AssignTarget::DynamicLateStaticProperty { .. } => {}
+        | AssignTarget::DynamicLateStaticProperty { .. }
+        | AssignTarget::UnsupportedExpression { .. } => {}
         AssignTarget::ArrayIndex { index, .. } => {
             if let Some(index) = index {
                 collect_loop_assigned_direct_variables_from_expr(index, names);
@@ -26933,7 +26948,8 @@ impl CGenerator {
             | AssignTarget::ParentStaticProperty { .. }
             | AssignTarget::DynamicParentStaticProperty { .. }
             | AssignTarget::LateStaticProperty { .. }
-            | AssignTarget::DynamicLateStaticProperty { .. } => Ok(None),
+            | AssignTarget::DynamicLateStaticProperty { .. }
+            | AssignTarget::UnsupportedExpression { .. } => Ok(None),
         }
     }
 
@@ -34233,7 +34249,8 @@ impl CGenerator {
             | AssignTarget::ParentStaticProperty { .. }
             | AssignTarget::DynamicParentStaticProperty { .. }
             | AssignTarget::LateStaticProperty { .. }
-            | AssignTarget::DynamicLateStaticProperty { .. } => Ok(None),
+            | AssignTarget::DynamicLateStaticProperty { .. }
+            | AssignTarget::UnsupportedExpression { .. } => Ok(None),
         }
     }
 
@@ -57517,6 +57534,9 @@ impl CGenerator {
             | AssignTarget::DynamicParentStaticProperty { span, .. }
             | AssignTarget::DynamicLateStaticProperty { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_STATIC_MEMBER_REJECTION))
+            }
+            AssignTarget::UnsupportedExpression { span, .. } => {
+                Err(self.unsupported(*span, ASSEMBLY_MUTATION_REJECTION))
             }
         }
     }

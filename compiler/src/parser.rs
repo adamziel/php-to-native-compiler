@@ -3542,6 +3542,7 @@ impl Parser {
                     | AssignTarget::DynamicProperty { .. }
                     | AssignTarget::NonDirectProperty { .. }
                     | AssignTarget::NonDirectDynamicProperty { .. }
+                    | AssignTarget::UnsupportedExpression { .. }
                     | AssignTarget::ArrayIndex { index: None, .. } => {
                         return Err(self.error_at(
                             operator_span,
@@ -4197,6 +4198,7 @@ impl Parser {
             | AssignTarget::StaticPropertyArrayAppend { .. }
             | AssignTarget::DynamicObjectPropertyArrayAppend { .. }
             | AssignTarget::NestedArrayAppend { .. }
+            | AssignTarget::UnsupportedExpression { .. }
             | AssignTarget::ArrayIndex { index: None, .. } => {
                 Err(unsupported_compound_assignment_target_message())
             }
@@ -4239,7 +4241,8 @@ impl Parser {
             | AssignTarget::ObjectPropertyArrayAppend { .. }
             | AssignTarget::StaticPropertyArrayAppend { .. }
             | AssignTarget::DynamicObjectPropertyArrayAppend { .. }
-            | AssignTarget::NestedArrayAppend { .. } => {
+            | AssignTarget::NestedArrayAppend { .. }
+            | AssignTarget::UnsupportedExpression { .. } => {
                 Err(unsupported_increment_decrement_target_message())
             }
         }
@@ -4940,7 +4943,10 @@ impl Parser {
                 })
             }
             Expr::Array { .. } => Err(unsupported_array_destructuring_assignment_message()),
-            _ => Err(unsupported_assignment_expression_target_message()),
+            other => Ok(AssignTarget::UnsupportedExpression {
+                message: unsupported_assignment_expression_target_message().to_string(),
+                span: other.span(),
+            }),
         }
     }
 
