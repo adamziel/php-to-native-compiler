@@ -11,10 +11,10 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use hmac::{Hmac, Mac};
 use md5::{Digest as Md5Digest, Md5};
 use php_runtime::{
-    classify_php_numeric_string, coerce_property_value_with_object_type_resolver, ArityExpectation,
-    ArrayColumnKey, ArrayEntry, ArrayKey, ArrayKeyCase, ArraySlot, ClassId, ClassMemberKind,
-    Comparison, ObjectProperty, PhpArray, PhpArraySortOperation, PhpClassConstantMetadata,
-    PhpClassTable, PhpClosure, PhpClosureCapture, PhpMethodMetadata,
+    classify_php_numeric_string, coerce_property_value_with_object_type_resolver, ArithmeticOp,
+    ArityExpectation, ArrayColumnKey, ArrayEntry, ArrayKey, ArrayKeyCase, ArraySlot, ClassId,
+    ClassMemberKind, Comparison, ObjectProperty, PhpArray, PhpArraySortOperation,
+    PhpClassConstantMetadata, PhpClassTable, PhpClosure, PhpClosureCapture, PhpMethodMetadata,
     PhpNumericStringClassification, PhpObject, PhpObjectPropertyInitializer, PhpPropertyMetadata,
     PhpReferenceCell, PhpReferenceCellId, RuntimeError, RuntimeErrorKind, RuntimeResult, Value,
     Visibility,
@@ -86403,7 +86403,13 @@ impl Interpreter {
             }
         }
 
-        if let Some(result) = self.apply_leading_numeric_string_add(op, &left, &right, span)? {
+        if let Some(result) =
+            self.apply_leading_numeric_string_arithmetic(op, &left, &right, span)?
+        {
+            return Ok(result);
+        }
+
+        if let Some(result) = self.apply_leading_numeric_string_shift(op, &left, &right, span)? {
             return Ok(result);
         }
 
@@ -86497,18 +86503,23 @@ impl Interpreter {
             BinaryOp::Mul => Some("*"),
             BinaryOp::Div => Some("/"),
             BinaryOp::Mod => Some("%"),
+            BinaryOp::ShiftLeft => Some("<<"),
+            BinaryOp::ShiftRight => Some(">>"),
             _ => None,
         }
     }
 
-    fn apply_leading_numeric_string_add(
+    fn apply_leading_numeric_string_arithmetic(
         &mut self,
         op: BinaryOp,
         left: &Value,
         right: &Value,
         span: Span,
     ) -> CompileResult<Option<Value>> {
-        if !matches!(op, BinaryOp::Add) {
+        if !matches!(
+            op,
+            BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div | BinaryOp::Mod
+        ) {
             return Ok(None);
         }
 
@@ -86523,12 +86534,70 @@ impl Interpreter {
         }
 
         self.emit_display_warning("A non-numeric value encountered", span)?;
-        Ok(Some(array_numeric_number_to_value(
-            add_array_numeric_numbers(left.number, right.number),
-        )))
+        let result = match op {
+            BinaryOp::Add => Ok(array_numeric_number_to_value(add_array_numeric_numbers(
+                left.number,
+                right.number,
+            ))),
+            BinaryOp::Sub => Ok(array_numeric_number_to_value(
+                subtract_array_numeric_numbers(left.number, right.number),
+            )),
+            BinaryOp::Mul => Ok(array_numeric_number_to_value(
+                multiply_array_numeric_numbers(left.number, right.number),
+            )),
+            BinaryOp::Div => divide_array_numeric_numbers(left.number, right.number),
+            BinaryOp::Mod => modulo_array_numeric_numbers(left.number, right.number),
+            _ => unreachable!("operator was filtered above"),
+        }
+        .map_err(|error| runtime_error(span, error))?;
+        Ok(Some(result))
     }
 
-    fn apply_unary(&self, op: UnaryOp, value: Value, span: Span) -> CompileResult<Value> {
+    fn apply_leading_numeric_string_shift(
+        &mut self,
+        op: BinaryOp,
+        left: &Value,
+        right: &Value,
+        span: Span,
+    ) -> CompileResult<Option<Value>> {
+        if !matches!(op, BinaryOp::ShiftLeft | BinaryOp::ShiftRight) {
+            return Ok(None);
+        }
+
+        let Some(left) = arithmetic_number_with_optional_leading_numeric(left) else {
+            return Ok(None);
+        };
+        let Some(right) = arithmetic_number_with_optional_leading_numeric(right) else {
+            return Ok(None);
+        };
+        if !left.leading_numeric && !right.leading_numeric {
+            return Ok(None);
+        }
+
+        self.emit_display_warning("A non-numeric value encountered", span)?;
+        let left = Value::Int(left.number.as_int_for_operator());
+        let right = Value::Int(right.number.as_int_for_operator());
+        let result = match op {
+            BinaryOp::ShiftLeft => left.php_shift_left(&right),
+            BinaryOp::ShiftRight => left.php_shift_right(&right),
+            _ => unreachable!("operator was filtered above"),
+        }
+        .map_err(|error| runtime_error(span, error))?;
+        Ok(Some(result))
+    }
+
+    fn apply_unary(&mut self, op: UnaryOp, value: Value, span: Span) -> CompileResult<Value> {
+        if matches!(op, UnaryOp::Negate) {
+            if let Some(number) = arithmetic_number_with_optional_leading_numeric(&value) {
+                if number.leading_numeric {
+                    self.emit_display_warning("A non-numeric value encountered", span)?;
+                    return Ok(array_numeric_number_to_value(negate_array_numeric_number(
+                        number.number,
+                    )));
+                }
+            }
+        }
+
         let result: RuntimeResult<Value> = match op {
             UnaryOp::Plus => Value::Int(0).php_add(&value),
             UnaryOp::Negate => value.php_negate(),
@@ -86536,7 +86605,21 @@ impl Interpreter {
             UnaryOp::BitwiseNot => value.php_bitwise_not(),
         };
 
-        result.map_err(|error| runtime_error(span, error))
+        result.map_err(|error| {
+            if matches!(op, UnaryOp::Negate) {
+                if let RuntimeErrorKind::InvalidArithmetic { reason, .. } = error.kind() {
+                    if reason == "string is not numeric" {
+                        return Diagnostic::new(
+                            Phase::Runtime,
+                            span.line,
+                            span.column,
+                            format!("Unsupported operand types: {} * int", value.type_name()),
+                        );
+                    }
+                }
+            }
+            runtime_error(span, error)
+        })
     }
 
     fn apply_cast(&mut self, kind: CastKind, value: Value, span: Span) -> CompileResult<Value> {
@@ -86792,6 +86875,13 @@ impl ArrayNumericNumber {
             Self::Float(value) => value,
         }
     }
+
+    fn as_int_for_operator(self) -> i64 {
+        match self {
+            Self::Int(value) => value,
+            Self::Float(value) => value as i64,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -86906,6 +86996,19 @@ fn add_array_numeric_numbers(
     }
 }
 
+fn subtract_array_numeric_numbers(
+    left: ArrayNumericNumber,
+    right: ArrayNumericNumber,
+) -> ArrayNumericNumber {
+    match (left, right) {
+        (ArrayNumericNumber::Int(left), ArrayNumericNumber::Int(right)) => left
+            .checked_sub(right)
+            .map(ArrayNumericNumber::Int)
+            .unwrap_or_else(|| ArrayNumericNumber::Float(left as f64 - right as f64)),
+        (left, right) => ArrayNumericNumber::Float(left.as_float() - right.as_float()),
+    }
+}
+
 fn multiply_array_numeric_numbers(
     left: ArrayNumericNumber,
     right: ArrayNumericNumber,
@@ -86916,6 +87019,54 @@ fn multiply_array_numeric_numbers(
             .map(ArrayNumericNumber::Int)
             .unwrap_or_else(|| ArrayNumericNumber::Float(left as f64 * right as f64)),
         (left, right) => ArrayNumericNumber::Float(left.as_float() * right.as_float()),
+    }
+}
+
+fn divide_array_numeric_numbers(
+    left: ArrayNumericNumber,
+    right: ArrayNumericNumber,
+) -> RuntimeResult<Value> {
+    if right.as_float() == 0.0 {
+        return Err(RuntimeError::invalid_arithmetic(
+            ArithmeticOp::Divide,
+            "division by zero",
+        ));
+    }
+
+    match (left, right) {
+        (ArrayNumericNumber::Int(i64::MIN), ArrayNumericNumber::Int(-1)) => {
+            Ok(Value::Float(i64::MIN as f64 / -1.0))
+        }
+        (ArrayNumericNumber::Int(left), ArrayNumericNumber::Int(right)) if left % right == 0 => {
+            Ok(Value::Int(left / right))
+        }
+        (left, right) => Ok(Value::Float(left.as_float() / right.as_float())),
+    }
+}
+
+fn modulo_array_numeric_numbers(
+    left: ArrayNumericNumber,
+    right: ArrayNumericNumber,
+) -> RuntimeResult<Value> {
+    let left = left.as_int_for_operator();
+    let right = right.as_int_for_operator();
+    if right == 0 {
+        return Err(RuntimeError::invalid_arithmetic(
+            ArithmeticOp::Modulo,
+            "modulo by zero",
+        ));
+    }
+    if left == i64::MIN && right == -1 {
+        return Ok(Value::Int(0));
+    }
+
+    Ok(Value::Int(left % right))
+}
+
+fn negate_array_numeric_number(number: ArrayNumericNumber) -> ArrayNumericNumber {
+    match number {
+        ArrayNumericNumber::Int(value) => ArrayNumericNumber::Int(value.wrapping_neg()),
+        ArrayNumericNumber::Float(value) => ArrayNumericNumber::Float(-value),
     }
 }
 
@@ -95175,6 +95326,19 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
         }
 
         match error.message.as_str() {
+            "invalid arithmetic for /: division by zero" => {
+                return Some(("DivisionByZeroError", "Division by zero".to_string()));
+            }
+            "invalid arithmetic for %: modulo by zero" => {
+                return Some(("DivisionByZeroError", "Modulo by zero".to_string()));
+            }
+            "invalid arithmetic for <<: bit shift by negative number"
+            | "invalid arithmetic for >>: bit shift by negative number" => {
+                return Some((
+                    "ArithmeticError",
+                    "Bit shift by negative number".to_string(),
+                ));
+            }
             "invalid arithmetic for *: resources are not numeric" => {
                 return Some((
                     "TypeError",

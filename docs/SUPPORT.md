@@ -2327,11 +2327,15 @@
   float, null, and string variables. In expressions, pre forms return the
   updated value and post forms return the previous value.
 - arithmetic: `+`, `-`, `*`, `/` with scalar coercions for `null`, booleans,
-  integers, floats, and well-formed numeric strings; modulo `%` over the
-  current integer-coercion subset for `null`, booleans, integers, floats, and
-  well-formed numeric strings, returning integer remainders and reporting a
-  stable modulo-by-zero diagnostic
-- unary `-` and `!`
+  integers, floats, well-formed numeric strings, and bounded leading-numeric
+  string prefixes with PHP's warning/recovery behavior in the interpreter;
+  modulo `%` over the current integer-coercion subset for `null`, booleans,
+  integers, floats, well-formed numeric strings, and bounded leading-numeric
+  prefixes, returning integer remainders and reporting catchable modulo-by-zero
+  diagnostics
+- unary `-` and `!`; unary minus accepts the same bounded numeric string and
+  leading-numeric string subset as arithmetic, while non-numeric strings
+  produce a catchable `TypeError`
 - string concatenation: `.` and concat compound assignment `.=` use the same
   PHP-shaped byte conversion path, so binary string values that are not valid
   UTF-8 remain binary strings instead of being forced through text output
@@ -2352,7 +2356,9 @@
   over the current integer/string subset: binary integer-like operands produce
   integer results after current scalar-to-int coercion, unary `~` accepts
   integer operands, shift operators coerce both operands through the same
-  scalar-to-int path and reject negative shift counts, string operands use
+  scalar-to-int path, recover bounded leading-numeric string prefixes in the
+  interpreter, and reject negative shift counts with a catchable
+  `ArithmeticError`, string operands use
   bytewise PHP behavior for `&`, `|`, `^`, and `~` when the resulting runtime
   string remains valid UTF-8, and bitwise precedence is additive before
   shifts, then concatenation, comparisons/equality before `&`, then `^`, then
@@ -6784,9 +6790,10 @@
   render without flattening or requiring direct value borrows.
 - Type coercion: scalar arithmetic supports `null`, booleans, integers, floats,
   and well-formed numeric strings with optional sign, decimal point, exponent,
-  and surrounding ASCII whitespace. Addition also recovers bounded
-  leading-numeric string operands with PHP's warning text for the current
-  interpreter path. Other non-numeric strings fail with a stable runtime error.
+  and surrounding ASCII whitespace. Interpreter arithmetic, unary minus,
+  modulo, and shift operands also recover bounded leading-numeric string
+  prefixes with PHP's warning text. Other non-numeric strings fail with a
+  catchable PHP-shaped error in covered operator contexts.
   Truthiness is implemented for current scalar, array, object, and resource
   values.
 - Cast expressions and conversion builtins: `(string)` and `strval()` convert
@@ -9697,11 +9704,10 @@
   calls outside active child instance context, named arguments,
   references/copy-on-write, exact PHP `Error`/`TypeError` object behavior, and
   native lowering remain unsupported.
-- Scalar arithmetic gaps: leading numeric strings with trailing non-numeric
-  characters, such as `"10 apples"`, are rejected instead of warning and
-  continuing with the leading number. PHP's warning/notice recovery mode,
-  locale-sensitive numeric parsing, and exact integer-overflow promotion rules
-  are not implemented. Native arithmetic lowers same-type integer or same-type
+- Scalar arithmetic gaps: PHP's broader warning/notice recovery modes,
+  locale-sensitive numeric parsing, non-finite numeric strings, object/resource
+  numeric coercion hooks, and every integer-overflow promotion edge remain
+  outside the current subset. Native arithmetic lowers same-type integer or same-type
   float operands for `+`, `-`, and `*`, plus integer `%` when the divisor is a
   statically known positive integer. Integer modulo by one also folds after
   both operands lower when the dividend is intentionally untracked, such as an

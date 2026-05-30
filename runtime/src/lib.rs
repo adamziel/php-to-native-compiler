@@ -38455,10 +38455,10 @@ impl Value {
             Value::Bool(false) => Ok(0),
             Value::Bool(true) => Ok(1),
             Value::Int(value) => Ok(*value),
-            Value::Float(value) => Ok(*value as i64),
+            Value::Float(value) => Ok(php_float_to_operator_int(*value)),
             Value::String(value) => match parse_numeric_string(value) {
                 Some(Number::Int(value)) => Ok(value),
-                Some(Number::Float(value)) => Ok(value as i64),
+                Some(Number::Float(value)) => Ok(php_float_to_operator_int(value)),
                 None => Err(RuntimeError::invalid_arithmetic(
                     operation,
                     "string is not numeric",
@@ -38466,7 +38466,7 @@ impl Value {
             },
             Value::BinaryString(value) => match parse_numeric_string_bytes(value) {
                 Some(Number::Int(value)) => Ok(value),
-                Some(Number::Float(value)) => Ok(value as i64),
+                Some(Number::Float(value)) => Ok(php_float_to_operator_int(value)),
                 None => Err(RuntimeError::invalid_arithmetic(
                     operation,
                     "string is not numeric",
@@ -43621,7 +43621,7 @@ impl Number {
     fn as_int(&self) -> i64 {
         match self {
             Number::Int(value) => *value,
-            Number::Float(value) => *value as i64,
+            Number::Float(value) => php_float_to_operator_int(*value),
         }
     }
 
@@ -43630,6 +43630,20 @@ impl Number {
             Number::Int(value) => value.to_string(),
             Number::Float(value) => format_php_float(value),
         }
+    }
+}
+
+fn php_float_to_operator_int(value: f64) -> i64 {
+    if !value.is_finite() {
+        return 0;
+    }
+
+    let truncated = value.trunc();
+    const PHP_INT_64_ABS_LIMIT: f64 = 9_223_372_036_854_775_808.0;
+    if truncated >= PHP_INT_64_ABS_LIMIT || truncated <= -PHP_INT_64_ABS_LIMIT {
+        i64::MIN
+    } else {
+        truncated as i64
     }
 }
 
@@ -44217,7 +44231,7 @@ fn format_php_float(value: f64) -> String {
         };
     }
 
-    let formatted = format!("{}", value);
+    let formatted = format_php_finite_float_default_precision(value, false);
     if formatted == "-0" {
         "0".to_string()
     } else {
@@ -44229,8 +44243,12 @@ fn format_php_float_for_string_key(value: f64) -> String {
     if value.is_nan() || value.is_infinite() {
         return format_php_float(value);
     }
+    format_php_finite_float_default_precision(value, true)
+}
+
+fn format_php_finite_float_default_precision(value: f64, preserve_negative_zero: bool) -> String {
     if value == 0.0 {
-        return if value.is_sign_negative() {
+        return if preserve_negative_zero && value.is_sign_negative() {
             "-0".to_string()
         } else {
             "0".to_string()
