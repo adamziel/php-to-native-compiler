@@ -139,6 +139,56 @@ var_dump(sleep(0));
     assert_eq!(execution.exit_code, 0);
 }
 
+#[test]
+fn linkinfo_reports_permission_denied_for_unsearchable_parent() {
+    let fixture = TempFsFixture::new("permission-denied");
+    let root = php_string(&fixture.root);
+    let source = format!(
+        r#"<?php
+$root = {root};
+$dir = $root . "/blocked";
+$target = $dir . "/target.txt";
+$link = $dir . "/link.txt";
+mkdir($dir);
+var_dump(chmod($dir, 0000));
+var_dump(symlink($target, $link));
+var_dump(linkinfo($link));
+var_dump(link($target, $link));
+var_dump(is_link($link));
+chmod($dir, 0777);
+rmdir($dir);
+"#,
+        root = root
+    );
+
+    let execution = run_source(&source).unwrap();
+
+    assert!(
+        execution
+            .stdout
+            .contains("Warning: symlink(): Permission denied"),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution
+            .stdout
+            .contains("Warning: linkinfo(): Permission denied"),
+        "{}",
+        execution.stdout
+    );
+    assert!(execution.stdout.contains("int(-1)"), "{}", execution.stdout);
+    assert!(
+        execution
+            .stdout
+            .contains("Warning: link(): Permission denied"),
+        "{}",
+        execution.stdout
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
 struct TempFsFixture {
     root: PathBuf,
 }

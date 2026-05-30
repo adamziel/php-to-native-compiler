@@ -72723,12 +72723,12 @@ impl Interpreter {
         if !self.enforce_bounded_open_basedir("linkinfo()", &path, &filesystem_path, span)? {
             return Ok(Value::Int(-1));
         }
-        match self.cached_filesystem_metadata(&filesystem_path, false) {
-            Some(metadata) => Ok(Value::Int(filesystem_linkinfo_value(&metadata))),
-            None => {
+        match fs::symlink_metadata(&filesystem_path) {
+            Ok(metadata) => Ok(Value::Int(filesystem_linkinfo_value(&metadata))),
+            Err(error) => {
                 self.emit_filesystem_display_warning(
                     "linkinfo",
-                    "No such file or directory",
+                    Self::filesystem_io_warning_message(&error),
                     span,
                 )?;
                 Ok(Value::Int(-1))
@@ -73379,6 +73379,15 @@ impl Interpreter {
             ));
         }
         let path = self.filesystem_path_argument("mkdir", "path", &args[0], span)?;
+        if path.contains('\0') {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "mkdir()",
+                    "Argument #1 ($directory) must not contain any null bytes",
+                ),
+            ));
+        }
         let mode = match args.get(1) {
             Some(Value::Int(mode)) => *mode,
             Some(Value::Null) | None => 0o777,
@@ -73432,7 +73441,12 @@ impl Interpreter {
                 Ok(Value::Bool(true))
             }
             Err(error) => {
-                self.emit_warning("mkdir()", format!("{path}: {error}"), span)?;
+                let message = Self::filesystem_io_warning_message(&error);
+                if error.kind() == ErrorKind::PermissionDenied {
+                    self.emit_filesystem_display_warning("mkdir", message, span)?;
+                } else {
+                    self.emit_warning("mkdir()", format!("{path}: {message}"), span)?;
+                }
                 Ok(Value::Bool(false))
             }
         }
@@ -73479,6 +73493,15 @@ impl Interpreter {
             ));
         }
         let path = self.filesystem_path_argument("rmdir", "path", &args[0], span)?;
+        if path.contains('\0') {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "rmdir()",
+                    "Argument #1 ($directory) must not contain any null bytes",
+                ),
+            ));
+        }
         if let Some(context) = args.get(1) {
             self.expect_optional_stream_context_resource("rmdir", context, span)?;
         }
@@ -73493,7 +73516,13 @@ impl Interpreter {
                 Ok(Value::Bool(true))
             }
             Err(error) => {
-                self.emit_warning("rmdir()", format!("{path}: {error}"), span)?;
+                self.emit_display_warning(
+                    format!(
+                        "rmdir({path}): {}",
+                        Self::filesystem_io_warning_message(&error)
+                    ),
+                    span,
+                )?;
                 Ok(Value::Bool(false))
             }
         }
@@ -80283,15 +80312,7 @@ impl Interpreter {
                             ));
                         }
                         let metadata_path = local_filesystem_metadata_path(path);
-                        Ok(Value::Bool(metadata_path.try_exists().map_err(|error| {
-                            runtime_error(
-                                span,
-                                RuntimeError::unsupported_call(
-                                    "file_exists()",
-                                    format!("filesystem metadata lookup failed: {error}"),
-                                ),
-                            )
-                        })?))
+                        Ok(Value::Bool(metadata_path.try_exists().unwrap_or(false)))
                     }
                     other => Err(runtime_error(
                         span,
@@ -96079,6 +96100,10 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
         ) => Some(format!("{function}: {message}")),
         (
             "disk_free_space()" | "diskfreespace()" | "disk_total_space()",
+            "Argument #1 ($directory) must not contain any null bytes",
+        ) => Some(format!("{function}: {message}")),
+        (
+            "mkdir()" | "rmdir()",
             "Argument #1 ($directory) must not contain any null bytes",
         ) => Some(format!("{function}: {message}")),
         ("linkinfo()", "Argument #1 ($path) must not be empty") => {
