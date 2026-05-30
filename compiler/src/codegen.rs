@@ -66460,6 +66460,7 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "tempnam",
     "sys_get_temp_dir",
     "abs",
+    "number_format",
     "bcadd",
     "bcsub",
     "bcmul",

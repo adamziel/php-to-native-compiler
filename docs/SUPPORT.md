@@ -3241,7 +3241,7 @@
   `setcookie`, `setrawcookie`,
   `session_start`, `session_status`, `session_cache_limiter`,
   `session_cache_expire`, `session_id`, `session_write_close`,
-  `abs`, `str_increment`, `str_decrement`, `assert`,
+  `abs`, `number_format`, `str_increment`, `str_decrement`, `assert`,
   `get_class`, `is_object`, `get_debug_type`, `class_exists`,
   `interface_exists`, `trait_exists`, `enum_exists`,
   `property_exists`, `method_exists`, `class_implements`, `class_uses`, `class_parents`, `is_a`, `get_class_methods`, `get_class_vars`,
@@ -5445,6 +5445,17 @@
   Integer-minimum overflow, numeric string coercion, bool/null coercion,
   array/object/resource operands, NaN/infinity behavior, exact diagnostics, and
   native lowering remain unsupported.
+  `number_format($num, $decimals = 0, $decimal_separator = ".", $thousands_separator = ",")`
+  accepts current finite numeric scalar values, full typed numeric strings,
+  optional integer decimals including negative decimal positions, and
+  scalar/null separators, returning grouped PHP-style decimal text.
+  Multi-character decimal and thousands separators are preserved. Integer
+  inputs and integer-shaped numeric strings keep exact 64-bit integer
+  precision for grouping and negative-decimal rounding. String arguments with
+  trailing non-whitespace bytes after a numeric prefix are rejected instead of
+  prefix-parsed. Non-finite values, enormous precision beyond the bounded
+  formatter, locale-aware grouping, exact PHP diagnostics for all coercions,
+  and native lowering remain unsupported.
   `extension_loaded($name)` accepts string extension names and currently
   answers from a deterministic bounded compiler/runtime compatibility registry.
   It returns `true` for `json`, `hash`, `pdo`, and `pdo_mysql`, and `false`
@@ -7803,7 +7814,7 @@
   `printf`, `fprintf`, `sprintf`, `vsprintf`, `vprintf`, `vfprintf`, `call_user_func`, `call_user_func_array`, `implode`, `basename`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`,
   `file_put_contents`, `readfile`, `unlink`, `mkdir`, `rmdir`, `copy`, `rename`, `chdir`, `scandir`, `stat`, `lstat`, `fileperms`, `chmod`,
   `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_params`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `stream_context_set_params`, `fwrite`, `fscanf`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fflush`, `ftruncate`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`, `disk_free_space`, `diskfreespace`, `disk_total_space`, `clearstatcache`, `realpath`, `realpath_cache_get`, `realpath_cache_size`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_executable`, `is_link`, `abs`,
-  `microtime`, `ini_get`, `min`, `get_current_user`, `getmypid`, `count`, `compact`,
+  `number_format`, `microtime`, `ini_get`, `min`, `get_current_user`, `getmypid`, `count`, `compact`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `current`, `next`, `array_is_list`,
   `array_values`, `array_keys`, `array_reverse`, `array_slice`, `array_chunk`,
   `array_pad`, `array_merge`, `array_replace`, `array_combine`, `define`,
@@ -8040,7 +8051,7 @@
   `str_starts_with`, `str_ends_with`, `strspn`, `strcspn`, `strpbrk`, `strpos`, `stripos`, `strrpos`, `strripos`, `strstr`, `strchr`, `stristr`, `strtok`, `substr`, `substr_replace`, `substr_compare`, `substr_count`, `similar_text`, `str_replace`, `str_getcsv`, `parse_str`, `printf`, `fprintf`, `sprintf`, `vsprintf`, `vprintf`, `vfprintf`,
   `call_user_func`, `call_user_func_array`, `implode`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`,
   `file_put_contents`, `readfile`, `unlink`, `mkdir`, `rmdir`, `copy`, `rename`, `chdir`, `scandir`, `stat`, `lstat`, `fileperms`, `chmod`,
-  `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_params`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `stream_context_set_params`, `fwrite`, `fscanf`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fflush`, `ftruncate`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`, `disk_free_space`, `diskfreespace`, `disk_total_space`, `clearstatcache`, `realpath`, `realpath_cache_get`, `realpath_cache_size`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_executable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_length`, `ob_list_handlers`, `ob_get_status`, `ob_get_clean`, `ob_get_flush`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `date_default_timezone_set`, `abs`, `microtime`, `ini_get`, `min`, `get_current_user`, `isset`, `empty`, `count`,
+  `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_params`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `stream_context_set_params`, `fwrite`, `fscanf`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fflush`, `ftruncate`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`, `disk_free_space`, `diskfreespace`, `disk_total_space`, `clearstatcache`, `realpath`, `realpath_cache_get`, `realpath_cache_size`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_executable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_length`, `ob_list_handlers`, `ob_get_status`, `ob_get_clean`, `ob_get_flush`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `date_default_timezone_set`, `abs`, `number_format`, `microtime`, `ini_get`, `min`, `get_current_user`, `isset`, `empty`, `count`,
   `define`, `constant`,
   `defined`, `array_key_exists`, `array_key_first`, `array_key_last`,
   `current`, `array_is_list`, `array_values`, `array_keys`, `array_reverse`,
@@ -8446,6 +8457,10 @@
   section above; direct native `abs(...)` calls still reject under the
   function-call boundary, while native function-table introspection recognizes
   the name.
+  `number_format` accepts the same current bounded finite numeric formatting
+  subset as the builtin section above; direct native `number_format(...)` calls
+  still reject under the function-call boundary, while native function-table
+  introspection recognizes the name.
   `microtime` accepts the same current `microtime(true)` subset as the builtin
   section above; direct native `microtime(...)` calls still reject under the
   function-call boundary, while native function-table introspection recognizes
@@ -8865,7 +8880,7 @@
   `new ReflectionFunction(...)` for `strlen`, `strtolower`, `strtoupper`,
   `str_increment`, `str_decrement`, `trim`, `ltrim`,
   `rtrim`, `strcasecmp`, `strncmp`, `strncasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`,
-  `strpos`, `stripos`, `strrpos`, `strripos`, `substr`, `str_shuffle`, `printf`, `fprintf`, `sprintf`, `vprintf`, `vfprintf`, `implode`, `basename`, `dirname`, `defined`,
+  `strpos`, `stripos`, `strrpos`, `strripos`, `substr`, `str_shuffle`, `printf`, `fprintf`, `sprintf`, `vprintf`, `vfprintf`, `implode`, `basename`, `dirname`, `number_format`, `defined`,
   `function_exists`, `is_array`, `is_object`, `is_string`, `is_scalar`,
   `count`, `sizeof`, `array_key_exists`, `is_callable`, `get_current_user`, `getmypid`, and `php_sapi_name`, exposes
   their name, false file/start/end/doc-comment metadata, current
@@ -10664,7 +10679,7 @@
   by-value invocation for `strlen`, `strtolower`, `strtoupper`,
   `str_increment`, `str_decrement`, `trim`, `ltrim`, `rtrim`,
   `strcasecmp`, `strncmp`, `strncasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`, `strpos`, `stripos`, `strrpos`, `strripos`,
-  `substr`, `str_shuffle`, `printf`, `fprintf`, `sprintf`, `vprintf`, `vfprintf`, `implode`, `basename`, `dirname`, `defined`,
+  `substr`, `str_shuffle`, `printf`, `fprintf`, `sprintf`, `vprintf`, `vfprintf`, `implode`, `basename`, `dirname`, `number_format`, `defined`,
   `function_exists`, `get_current_user`, `getmypid`, and `php_sapi_name`. Closure metadata is supported for
   current closure values. The supported
   metadata methods are the name, file/start/end/doc-comment, parameter-list,
@@ -11153,6 +11168,11 @@
   integer-minimum overflow, numeric string coercion, bool/null coercion,
   array/object/resource operands, NaN/infinity behavior, exact diagnostics, and
   native lowering beyond function-table introspection
+- `number_format()` behavior beyond the current finite scalar formatting
+  subset: non-finite values, precision beyond the bounded formatter,
+  locale-aware grouping, exact PHP diagnostics for every coercion, resource
+  and object conversions, and native lowering beyond function-table
+  introspection
 - session behavior beyond the current in-memory CLI request slice:
   persistence across requests, file locking, save handlers, session module INI
   configuration, `session_name()`, `session_destroy()`, `session_abort()`,

@@ -78563,6 +78563,7 @@ impl Interpreter {
                 span,
             ),
             "sqrt" => self.call_php_unary_float_math("sqrt", "sqrt()", &args, f64::sqrt, span),
+            "number_format" => self.call_number_format(&args, span),
             "sin" => self.call_php_unary_float_math("sin", "sin()", &args, f64::sin, span),
             "cos" => self.call_php_unary_float_math("cos", "cos()", &args, f64::cos, span),
             "tan" => self.call_php_unary_float_math("tan", "tan()", &args, f64::tan, span),
@@ -92823,6 +92824,23 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
         | "log10" | "deg2rad" | "rad2deg" => {
             ("float", vec![reflection_internal_param("num", "float")])
         }
+        "number_format" => (
+            "string",
+            vec![
+                reflection_internal_param("num", "float"),
+                reflection_internal_optional_int_param("decimals", 0),
+                reflection_internal_optional_param(
+                    "decimal_separator",
+                    "?string",
+                    Expr::String(".".to_string(), Span::new(0, 0)),
+                ),
+                reflection_internal_optional_param(
+                    "thousands_separator",
+                    "?string",
+                    Expr::String(",".to_string(), Span::new(0, 0)),
+                ),
+            ],
+        ),
         "bcadd" | "bcsub" | "bcmul" | "bcdiv" => (
             "string",
             vec![
@@ -96372,6 +96390,7 @@ fn is_builtin(name: &str) -> bool {
             | "ceil"
             | "floor"
             | "sqrt"
+            | "number_format"
             | "sin"
             | "cos"
             | "tan"
@@ -115650,6 +115669,99 @@ fn call_abs(args: &[Value], span: Span) -> CompileResult<Value> {
 }
 
 impl Interpreter {
+    fn call_number_format(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(1..=4).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "number_format()",
+                    ArityExpectation::Between { min: 1, max: 4 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let number = self.php_number_format_argument(&args[0], span)?;
+        let decimals = match args.get(1) {
+            Some(value) => {
+                php_internal_int_argument("number_format()", 2, "decimals", value, span)?
+            }
+            None => 0,
+        };
+        let decimal_separator = match args.get(2) {
+            Some(Value::Null) | None => ".".to_string(),
+            Some(value) => {
+                string_builtin_argument("number_format()", "decimal_separator", value, span)?
+            }
+        };
+        let thousands_separator = match args.get(3) {
+            Some(Value::Null) | None => ",".to_string(),
+            Some(value) => {
+                string_builtin_argument("number_format()", "thousands_separator", value, span)?
+            }
+        };
+
+        Ok(Value::String(format_number_format_value(
+            number,
+            decimals,
+            &decimal_separator,
+            &thousands_separator,
+        )))
+    }
+
+    fn php_number_format_argument(
+        &mut self,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<NumberFormatValue> {
+        match value {
+            Value::Null => {
+                self.emit_display_diagnostic(
+                    "Deprecated",
+                    PHP_E_DEPRECATED,
+                    "number_format(): Passing null to parameter #1 ($num) of type float is deprecated",
+                    span,
+                )?;
+                Ok(NumberFormatValue::Integer(0))
+            }
+            Value::Bool(value) => Ok(NumberFormatValue::Integer(i64::from(u8::from(*value)))),
+            Value::Int(value) => Ok(NumberFormatValue::Integer(*value)),
+            Value::Float(value) if value.is_finite() => Ok(NumberFormatValue::Float(*value)),
+            Value::Float(_) => Err(php_math_argument_type_error(
+                "number_format()",
+                "float",
+                "float",
+                span,
+            )),
+            Value::String(value) => parse_number_format_integer_string(value)
+                .map(NumberFormatValue::Integer)
+                .or_else(|| parse_number_format_float_string(value).map(NumberFormatValue::Float))
+                .ok_or_else(|| {
+                    php_math_argument_type_error("number_format()", "float", "string", span)
+                }),
+            Value::BinaryString(value) => std::str::from_utf8(value)
+                .ok()
+                .and_then(|value| {
+                    parse_number_format_integer_string(value)
+                        .map(NumberFormatValue::Integer)
+                        .or_else(|| {
+                            parse_number_format_float_string(value).map(NumberFormatValue::Float)
+                        })
+                })
+                .ok_or_else(|| {
+                    php_math_argument_type_error("number_format()", "float", "string", span)
+                }),
+            Value::Array(_) | Value::Object(_) | Value::Closure(_) | Value::Resource(_) => {
+                Err(php_math_argument_type_error(
+                    "number_format()",
+                    "float",
+                    php_type_error_given(value),
+                    span,
+                ))
+            }
+        }
+    }
+
     fn call_php_unary_float_math(
         &mut self,
         arity_name: &'static str,
@@ -115718,6 +115830,194 @@ impl Interpreter {
             }
         }
     }
+}
+
+#[derive(Clone, Copy, Debug)]
+enum NumberFormatValue {
+    Integer(i64),
+    Float(f64),
+}
+
+fn format_number_format_value(
+    number: NumberFormatValue,
+    decimals: i64,
+    decimal_separator: &str,
+    thousands_separator: &str,
+) -> String {
+    match number {
+        NumberFormatValue::Integer(number) => {
+            format_number_format_integer(number, decimals, decimal_separator, thousands_separator)
+        }
+        NumberFormatValue::Float(number) => {
+            format_number_format_float(number, decimals, decimal_separator, thousands_separator)
+        }
+    }
+}
+
+fn format_number_format_integer(
+    number: i64,
+    decimals: i64,
+    decimal_separator: &str,
+    thousands_separator: &str,
+) -> String {
+    let decimals = decimals.clamp(i32::MIN as i64, 100);
+    let mut abs = u128::from(number.unsigned_abs());
+    if decimals < 0 {
+        abs = round_number_format_integer_abs(abs, decimals.saturating_neg() as u32);
+    }
+
+    let negative = number < 0 && abs != 0;
+    let integer = number_format_group_integer(&abs.to_string(), thousands_separator);
+    let sign = if negative { "-" } else { "" };
+    if decimals <= 0 {
+        return format!("{sign}{integer}");
+    }
+
+    format!(
+        "{sign}{integer}{decimal_separator}{fraction:0width$}",
+        fraction = 0,
+        width = decimals as usize
+    )
+}
+
+fn round_number_format_integer_abs(number: u128, places: u32) -> u128 {
+    if number == 0 {
+        return 0;
+    }
+
+    let digits = number_format_decimal_digit_count(number);
+    if places > digits {
+        return 0;
+    }
+
+    let Some(scale) = 10_u128.checked_pow(places) else {
+        return 0;
+    };
+    let quotient = number / scale;
+    let remainder = number % scale;
+    let rounded = quotient + u128::from(remainder >= (scale + 1) / 2);
+    rounded.saturating_mul(scale)
+}
+
+fn number_format_decimal_digit_count(mut number: u128) -> u32 {
+    let mut digits = 1;
+    while number >= 10 {
+        number /= 10;
+        digits += 1;
+    }
+    digits
+}
+
+fn format_number_format_float(
+    number: f64,
+    decimals: i64,
+    decimal_separator: &str,
+    thousands_separator: &str,
+) -> String {
+    let decimals = decimals.clamp(i32::MIN as i64, 100) as i32;
+    let abs = number.abs();
+    let integer_like_abs = abs.trunc() as u128;
+    let signed_long_abs_limit = if number.is_sign_negative() {
+        (i64::MAX as u128) + 1
+    } else {
+        i64::MAX as u128
+    };
+    if decimals < 0 && abs >= 9_007_199_254_740_992.0 && integer_like_abs <= signed_long_abs_limit {
+        let abs =
+            round_number_format_integer_abs(integer_like_abs, decimals.saturating_neg() as u32);
+        let negative = number.is_sign_negative() && abs != 0;
+        let integer = number_format_group_integer(&abs.to_string(), thousands_separator);
+        let sign = if negative { "-" } else { "" };
+        return format!("{sign}{integer}");
+    }
+
+    let rounded = round_number_format_value(number, decimals);
+    let negative = rounded.is_sign_negative() && rounded != 0.0;
+    let abs = rounded.abs();
+    let integer = abs.trunc() as u128;
+    let integer = number_format_group_integer(&integer.to_string(), thousands_separator);
+
+    let sign = if negative { "-" } else { "" };
+    if decimals <= 0 {
+        return format!("{sign}{integer}");
+    }
+
+    let scale = 10_f64.powi(decimals);
+    let fraction = ((abs - abs.trunc()) * scale).round() as u128;
+    format!(
+        "{sign}{integer}{decimal_separator}{fraction:0width$}",
+        width = decimals as usize
+    )
+}
+
+fn parse_number_format_integer_string(value: &str) -> Option<i64> {
+    let value = value.trim_matches(|character: char| character.is_ascii_whitespace());
+    let (negative, digits) = match value.as_bytes().first().copied() {
+        Some(b'-') => (true, &value[1..]),
+        Some(b'+') => (false, &value[1..]),
+        Some(_) => (false, value),
+        None => return None,
+    };
+    if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+
+    let magnitude = digits.parse::<u128>().ok()?;
+    if negative {
+        if magnitude == (i64::MAX as u128) + 1 {
+            Some(i64::MIN)
+        } else {
+            i64::try_from(magnitude).ok().map(|value| -value)
+        }
+    } else {
+        i64::try_from(magnitude).ok()
+    }
+}
+
+fn parse_number_format_float_string(value: &str) -> Option<f64> {
+    let value = value.trim_matches(|character: char| character.is_ascii_whitespace());
+    if value.is_empty() {
+        return None;
+    }
+
+    let parsed = value.parse::<f64>().ok()?;
+    parsed.is_finite().then_some(parsed)
+}
+
+fn round_number_format_value(number: f64, decimals: i32) -> f64 {
+    if decimals >= 0 {
+        let scale = 10_f64.powi(decimals);
+        if !scale.is_finite() {
+            return 0.0;
+        }
+        (number * scale).round() / scale
+    } else {
+        let scale = 10_f64.powi(decimals.saturating_neg());
+        if !scale.is_finite() {
+            return 0.0;
+        }
+        (number / scale).round() * scale
+    }
+}
+
+fn number_format_group_integer(digits: &str, separator: &str) -> String {
+    if digits.len() <= 3 || separator.is_empty() {
+        return digits.to_string();
+    }
+
+    let first_group_len = match digits.len() % 3 {
+        0 => 3,
+        len => len,
+    };
+    let mut output = String::new();
+    output.push_str(&digits[..first_group_len]);
+    let mut index = first_group_len;
+    while index < digits.len() {
+        output.push_str(separator);
+        output.push_str(&digits[index..index + 3]);
+        index += 3;
+    }
+    output
 }
 
 fn php_math_argument_type_error(
