@@ -78897,10 +78897,7 @@ impl Interpreter {
             "array_count_values" => {
                 expect_arity(name, &args, 1, span)?;
                 match &args[0] {
-                    Value::Array(array) => array
-                        .count_values()
-                        .map(Value::Array)
-                        .map_err(|error| runtime_error(span, error)),
+                    Value::Array(array) => self.call_array_count_values(array, span),
                     other => Err(runtime_error(
                         span,
                         RuntimeError::unsupported_call(
@@ -82224,6 +82221,38 @@ impl Interpreter {
             product = multiply_array_numeric_numbers(product, value);
         }
         Ok(array_numeric_number_to_value(product))
+    }
+
+    fn call_array_count_values(&mut self, array: &PhpArray, span: Span) -> CompileResult<Value> {
+        let mut counted = PhpArray::new();
+        for entry in array.entries() {
+            let Some(key) = Self::array_count_values_key_from_value(entry.value()) else {
+                self.emit_display_warning(
+                    "array_count_values(): Can only count string and integer values, entry skipped",
+                    span,
+                )?;
+                continue;
+            };
+
+            if let Some(slot) = counted.get_slot_mut(key.clone()) {
+                let Value::Int(count) = slot.value_mut() else {
+                    unreachable!("array_count_values stores integer counts")
+                };
+                *count = count.checked_add(1).expect("array value count fits in i64");
+            } else {
+                counted.insert(key, Value::Int(1));
+            }
+        }
+
+        Ok(Value::Array(counted))
+    }
+
+    fn array_count_values_key_from_value(value: &Value) -> Option<ArrayKey> {
+        match value {
+            Value::Int(value) => Some(ArrayKey::Int(*value)),
+            Value::String(value) => Some(ArrayKey::string(value.clone())),
+            _ => None,
+        }
     }
 
     fn array_numeric_value_for_sum_product(
