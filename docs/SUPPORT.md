@@ -2597,10 +2597,14 @@
   type metadata includes `mixed`, `null`, `true`, `false`, `bool`, `int`,
   `float`, `string`, `array`, `object`, nullable forms, unions,
   intersections, and class/interface object names visible on runtime object
-  metadata. Scalar parameters and returns use the current weak coercion model.
-  Typed by-reference parameters, `void`, `never`, `callable`, `iterable`,
-  `self`, `parent`, `static`, `resource`, exact `TypeError` objects/text,
-  `strict_types`, and native lowering remain unsupported.
+  metadata. Scalar parameters and returns use the current weak coercion model,
+  and return-type mismatches in this subset report PHP-shaped `TypeError`
+  messages. `void` return types reject value returns at declaration startup;
+  `never` return types are accepted for bodies that throw before returning and
+  reject explicit value returns at declaration startup. Typed by-reference
+  parameters, `callable`, `iterable`, `self`, `parent`, `static`, `resource`,
+  `strict_types`, throw expressions, broader `never` implicit-return
+  diagnostics, and native lowering remain unsupported.
 - recursive user-function calls up to a fixed 64-frame user-function call-depth
   guard
 - `return`
@@ -7967,8 +7971,9 @@
   which fail with a stable parse diagnostic. Invoked by-value call paths
   enforce the bounded scalar/array/object/class subset documented above.
   Typed by-reference parameters, unsupported pseudo-types, exact `TypeError`
-  behavior, `strict_types`, variance beyond existing metadata compatibility
-  checks, and native lowering for type enforcement are not implemented.
+  behavior beyond the documented return-type mismatch slice, `strict_types`,
+  variance beyond existing metadata compatibility checks, and native lowering
+  for type enforcement are not implemented.
   Reference parameter declarations are accepted as metadata, and the current
   direct user-function/method paths plus direct ordinary closure invocation can
   bind the documented direct-variable and direct array-offset argument shapes.
@@ -8092,8 +8097,8 @@
   diagnostic inside trait-originated method bodies until original trait method
   context tracking exists. `__NAMESPACE__` evaluates to the current namespace
   name, or an empty string in global namespace. DNF-shaped parenthesized
-  type declarations, `mixed`, `void`/`never`, class/interface type names, coercive versus
-  strict typing, variance, static local behavior outside the bounded
+  type declarations, class/interface type names beyond the documented runtime
+  object checks, coercive versus strict typing, variance, static local behavior outside the bounded
   declaration/default subset, reference-backed static locals,
   recursion/reentrancy edge behavior, canonical absolute
   `__FILE__`/`__DIR__` paths matching PHP exactly, eval/include source mapping,

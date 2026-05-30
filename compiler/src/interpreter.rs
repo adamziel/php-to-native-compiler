@@ -19925,7 +19925,8 @@ impl Interpreter {
 
     fn record_pending_uncaught_call_frame(
         &mut self,
-        function: &FunctionDecl,
+        function_name: String,
+        function_line: usize,
         call_span: Span,
         args: &[Value],
         error: &Diagnostic,
@@ -19935,11 +19936,34 @@ impl Interpreter {
         }
         self.pending_uncaught_call_frames
             .push(PendingUncaughtCallFrame {
-                function_name: function.name.clone(),
-                function_line: function.span.line,
+                function_name,
+                function_line,
                 call_line: call_span.line,
                 args: args.to_vec(),
             });
+    }
+
+    fn pending_uncaught_user_call_callable(
+        &self,
+        function: &FunctionDecl,
+        this_object: Option<&PhpObject>,
+        class_context: Option<ClassId>,
+    ) -> String {
+        if function.name == "{closure}" {
+            return function.name.clone();
+        }
+
+        if let Some(object) = this_object {
+            return format!("{}->{}", object.class_name(), function.name);
+        }
+
+        if let Some(class_id) = class_context {
+            if let Some(class) = self.classes.get(class_id) {
+                return format!("{}::{}", class.name(), function.name);
+            }
+        }
+
+        function.name.clone()
     }
 
     fn record_pending_uncaught_internal_call_frame(
@@ -64728,6 +64752,9 @@ impl Interpreter {
         }
 
         let trace_args = frame.values.clone();
+        let trace_callable =
+            self.pending_uncaught_user_call_callable(function, this_object.as_ref(), class_context);
+        let trace_function_line = function.span.line;
         let result = self.call_user_function_with_checked_values_and_locals_with_array_copy_source_and_arg_sources(
             function,
             frame.values,
@@ -64742,7 +64769,13 @@ impl Interpreter {
             frame.array_copy_source_bindings,
         );
         if let Err(error) = &result {
-            self.record_pending_uncaught_call_frame(function, span, &trace_args, error);
+            self.record_pending_uncaught_call_frame(
+                trace_callable,
+                trace_function_line,
+                span,
+                &trace_args,
+                error,
+            );
         }
         result
     }
@@ -72088,7 +72121,7 @@ impl Interpreter {
         let (flow, array_copy_source) = flow?;
         match flow {
             Flow::Normal => self
-                .coerce_call_return_value(function, Value::Null)
+                .coerce_call_return_value(function, class_context, Value::Null, true)
                 .map(|value| (value, None)),
             Flow::Break { span, .. } => Err(runtime_error(
                 span,
@@ -72112,7 +72145,7 @@ impl Interpreter {
                         )
                     })
                     .unwrap_or(value);
-                let value = self.coerce_call_return_value(function, value)?;
+                let value = self.coerce_call_return_value(function, class_context, value, false)?;
                 let array_copy_source = if matches!(value, Value::Array(_)) {
                     array_copy_source
                 } else {
@@ -72712,28 +72745,73 @@ impl Interpreter {
     fn coerce_call_return_value(
         &self,
         function: &FunctionDecl,
+        class_context: Option<ClassId>,
         value: Value,
+        missing_return: bool,
     ) -> CompileResult<Value> {
         let Some(type_decl) = function.return_type.as_ref() else {
             return Ok(value);
         };
+        let callable = self.return_type_callable_name(function, class_context);
+        if type_decl_is_exact(type_decl, "never") {
+            return Err(Diagnostic::new(
+                Phase::Runtime,
+                function.span.line,
+                function.span.column,
+                format!("{callable}: A never-returning function must not return"),
+            ));
+        }
         if type_decl_is_exact(type_decl, "void") {
             return if matches!(value, Value::Null) {
                 Ok(Value::Null)
             } else {
-                Err(runtime_error(
-                    function.span,
-                    RuntimeError::unsupported_call(
-                        callable_name(&function.name),
-                        format!("return value expects void, got {}", value.type_name()),
-                    ),
+                Err(Diagnostic::new(
+                    Phase::Runtime,
+                    function.span.line,
+                    function.span.column,
+                    format!("{callable}: A void function must not return a value"),
                 ))
             };
         }
         if type_decl_is_exact(type_decl, "mixed") {
             return Ok(value);
         }
-        self.coerce_call_value_for_type_decl(function, type_decl, "return value", value)
+        self.coerce_call_value_for_type_decl(function, type_decl, "return value", value.clone())
+            .map_err(|_| {
+                Diagnostic::new(
+                    Phase::Runtime,
+                    function.span.line,
+                    function.span.column,
+                    format!(
+                        "{callable}: Return value must be of type {}, {} returned",
+                        type_decl.text,
+                        Self::returned_type_name(&value, missing_return)
+                    ),
+                )
+            })
+    }
+
+    fn return_type_callable_name(
+        &self,
+        function: &FunctionDecl,
+        class_context: Option<ClassId>,
+    ) -> String {
+        if let Some(class_id) = class_context {
+            if let Some(class) = self.classes.get(class_id) {
+                return format!("{}::{}()", class.name(), function.name);
+            }
+        }
+        callable_name(&function.name)
+    }
+
+    fn returned_type_name(value: &Value, missing_return: bool) -> String {
+        if missing_return {
+            "none".to_string()
+        } else if let Value::Object(object) = value {
+            object.class_name().to_string()
+        } else {
+            value.type_name().to_string()
+        }
     }
 
     fn coerce_call_value_for_type_decl(
@@ -90067,10 +90145,11 @@ fn collect_typed_return_without_value_startup_diagnostics(
     for stmt in &program.statements {
         match stmt {
             Stmt::Function(function) if !function.is_nested => {
-                if let Some((message, line)) = typed_return_without_value_startup_diagnostic(
+                if let Some((message, line)) = typed_return_startup_diagnostic(
                     function.return_type.as_ref(),
                     &function.body,
                     function.is_generator,
+                    false,
                 ) {
                     diagnostics.set_fatal(message, source_file, line);
                     return;
@@ -90081,10 +90160,11 @@ fn collect_typed_return_without_value_startup_diagnostics(
                     let ClassMember::Method(method) = member else {
                         continue;
                     };
-                    if let Some((message, line)) = typed_return_without_value_startup_diagnostic(
+                    if let Some((message, line)) = typed_return_startup_diagnostic(
                         method.function.return_type.as_ref(),
                         &method.function.body,
                         method.function.is_generator,
+                        true,
                     ) {
                         diagnostics.set_fatal(message, source_file, line);
                         return;
@@ -90093,10 +90173,11 @@ fn collect_typed_return_without_value_startup_diagnostics(
             }
             Stmt::Trait(trait_decl) => {
                 for method in &trait_decl.methods {
-                    if let Some((message, line)) = typed_return_without_value_startup_diagnostic(
+                    if let Some((message, line)) = typed_return_startup_diagnostic(
                         method.function.return_type.as_ref(),
                         &method.function.body,
                         method.function.is_generator,
+                        true,
                     ) {
                         diagnostics.set_fatal(message, source_file, line);
                         return;
@@ -90109,16 +90190,32 @@ fn collect_typed_return_without_value_startup_diagnostics(
     }
 }
 
-fn typed_return_without_value_startup_diagnostic(
+fn typed_return_startup_diagnostic(
     return_type: Option<&TypeDecl>,
     body: &[Stmt],
     is_generator: bool,
+    is_method: bool,
 ) -> Option<(String, usize)> {
     if is_generator {
         return None;
     }
     let return_type = return_type?;
     if type_decl_is_exact(return_type, "void") {
+        if let Some((span, is_null)) = return_with_value_span(body) {
+            return Some((
+                void_return_with_value_message(is_method, is_null),
+                span.line,
+            ));
+        }
+        return None;
+    }
+    if type_decl_is_exact(return_type, "never") {
+        if let Some((span, _)) = return_with_value_span(body) {
+            return Some((
+                "A never-returning function must not return".to_string(),
+                span.line,
+            ));
+        }
         return None;
     }
     let span = return_without_value_span(body)?;
@@ -90126,6 +90223,17 @@ fn typed_return_without_value_startup_diagnostic(
         typed_return_without_value_message(&return_type.text),
         span.line,
     ))
+}
+
+fn void_return_with_value_message(is_method: bool, is_null: bool) -> String {
+    let callable_kind = if is_method { "method" } else { "function" };
+    if is_null {
+        format!(
+            "A void {callable_kind} must not return a value (did you mean \"return;\" instead of \"return null;\"?)"
+        )
+    } else {
+        format!("A void {callable_kind} must not return a value")
+    }
 }
 
 fn typed_return_without_value_message(return_type: &str) -> String {
@@ -90149,6 +90257,70 @@ fn return_type_allows_null(return_type: &str) -> bool {
         let part = part.trim().strip_prefix('\\').unwrap_or(part.trim());
         part.eq_ignore_ascii_case("null")
     })
+}
+
+fn return_with_value_span(statements: &[Stmt]) -> Option<(Span, bool)> {
+    for stmt in statements {
+        match stmt {
+            Stmt::Return {
+                value: Some(value),
+                span,
+            } => return Some((*span, matches!(value, Expr::Null(_)))),
+            Stmt::If {
+                then_branch,
+                else_branch,
+                ..
+            } => {
+                if let Some(found) = return_with_value_span(then_branch)
+                    .or_else(|| return_with_value_span(else_branch))
+                {
+                    return Some(found);
+                }
+            }
+            Stmt::While { body, .. }
+            | Stmt::DoWhile { body, .. }
+            | Stmt::For { body, .. }
+            | Stmt::Foreach { body, .. } => {
+                if let Some(found) = return_with_value_span(body) {
+                    return Some(found);
+                }
+            }
+            Stmt::Switch { cases, .. } => {
+                for case in cases {
+                    if let Some(found) = return_with_value_span(&case.body) {
+                        return Some(found);
+                    }
+                }
+            }
+            Stmt::Try {
+                body,
+                catches,
+                finally_body,
+                ..
+            } => {
+                if let Some(found) = return_with_value_span(body) {
+                    return Some(found);
+                }
+                for catch in catches {
+                    if let Some(found) = return_with_value_span(&catch.body) {
+                        return Some(found);
+                    }
+                }
+                if let Some(finally_body) = finally_body {
+                    if let Some(found) = return_with_value_span(finally_body) {
+                        return Some(found);
+                    }
+                }
+            }
+            Stmt::Function(_)
+            | Stmt::Class(_)
+            | Stmt::Interface(_)
+            | Stmt::Trait(_)
+            | Stmt::Enum(_) => {}
+            _ => {}
+        }
+    }
+    None
 }
 
 fn return_without_value_span(statements: &[Stmt]) -> Option<Span> {
@@ -96571,6 +96743,10 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
         return Some(("TypeError", message));
     }
 
+    if let Some(message) = return_type_error_message(error) {
+        return Some(("TypeError", message));
+    }
+
     if error.phase == Phase::Runtime {
         if let Some(message) = error.message.strip_prefix("ReflectionException: ") {
             return Some(("ReflectionException", message.to_string()));
@@ -96924,6 +97100,18 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
     }
 
     None
+}
+
+fn return_type_error_message(error: &Diagnostic) -> Option<String> {
+    if error.phase != Phase::Runtime {
+        return None;
+    }
+
+    let message = error.message.as_str();
+    (message.contains("(): Return value must be of type ")
+        || message.ends_with(": A void function must not return a value")
+        || message.ends_with(": A never-returning function must not return"))
+    .then(|| error.message.clone())
 }
 
 fn catchable_uncaught_throw_class_and_message(
@@ -124597,7 +124785,7 @@ fn type_text_is_runtime_enforceable_for_call(text: &str) -> bool {
         .to_ascii_lowercase();
     !matches!(
         normalized.as_str(),
-        "callable" | "iterable" | "never" | "parent" | "resource" | "self" | "static"
+        "callable" | "iterable" | "parent" | "resource" | "self" | "static"
     )
 }
 
