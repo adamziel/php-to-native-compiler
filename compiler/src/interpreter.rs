@@ -48,6 +48,7 @@ const SPL_STACK_ITERATOR_MODE: i64 = SPL_QUEUE_ITERATOR_MODE | SPL_DLL_IT_MODE_L
 const ARRAY_OBJECT_STD_PROP_LIST: i64 = 1;
 const ARRAY_OBJECT_ARRAY_AS_PROPS: i64 = 2;
 const COMPACT_MAX_ARRAY_DEPTH: usize = 64;
+const PHP_FIRST_USER_RESOURCE_ID: i64 = 4;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Execution {
@@ -10241,7 +10242,7 @@ impl Interpreter {
             next_object_id: 1,
             allocated_objects: Vec::new(),
             finalized_objects: HashSet::new(),
-            next_resource_id: 1,
+            next_resource_id: PHP_FIRST_USER_RESOURCE_ID,
             streams: HashMap::new(),
             stream_contexts: HashMap::new(),
             default_stream_context_id: None,
@@ -71441,6 +71442,9 @@ impl Interpreter {
         if let Some(context) = args.get(3) {
             self.expect_optional_stream_context_resource("fopen", context, span)?;
         }
+        if !matches!(args.get(3), Some(Value::Resource(_))) {
+            self.ensure_default_stream_context();
+        }
 
         if !self.ensure_stream_wrapper_can_open_path("fopen()", path, span)? {
             return Ok(Value::Bool(false));
@@ -78349,19 +78353,7 @@ impl Interpreter {
                 }
             }
             "array_key_exists" | "key_exists" => {
-                expect_arity(name, &args, 2, span)?;
-                let key = ArrayKey::from_array_key_exists_value(&args[0])
-                    .map_err(|error| runtime_error(span, error))?;
-                match &args[1] {
-                    Value::Array(array) => Ok(Value::Bool(array.contains_key(key))),
-                    other => Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            "array_key_exists()",
-                            format!("second argument must be array, got {}", other.type_name()),
-                        ),
-                    )),
-                }
+                self.call_array_key_exists(name, &args, span)
             }
             "array_values" => {
                 expect_arity(name, &args, 1, span)?;
@@ -85796,6 +85788,87 @@ impl Interpreter {
                 ),
             )),
             Value::Resource(id) => Ok(Value::String(format!("Resource id #{id}"))),
+        }
+    }
+
+    fn call_array_key_exists(
+        &mut self,
+        name: &str,
+        args: &[Value],
+        span: Span,
+    ) -> CompileResult<Value> {
+        expect_arity(name, args, 2, span)?;
+        let key = self.array_key_exists_key_from_value(&args[0], span)?;
+        match &args[1] {
+            Value::Array(array) => Ok(Value::Bool(array.contains_key(key))),
+            other => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "array_key_exists()",
+                    format!(
+                        "Argument #2 ($array) must be of type array, {} given",
+                        php_type_error_given(other)
+                    ),
+                ),
+            )),
+        }
+    }
+
+    fn array_key_exists_key_from_value(
+        &mut self,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<ArrayKey> {
+        match value {
+            Value::Null => {
+                self.emit_display_diagnostic(
+                    "Deprecated",
+                    PHP_E_DEPRECATED,
+                    "Using null as the key parameter for array_key_exists() is deprecated, use an empty string instead",
+                    span,
+                )?;
+                Ok(ArrayKey::String(String::new()))
+            }
+            Value::Bool(false) => Ok(ArrayKey::Int(0)),
+            Value::Bool(true) => Ok(ArrayKey::Int(1)),
+            Value::Int(value) => Ok(ArrayKey::Int(*value)),
+            Value::Float(value) => {
+                let Some(key) = php_base_conversion_float_to_i64(*value) else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::invalid_array_key(
+                            "lossy or non-finite float keys are not supported for array_key_exists(); only null, bool, int, string, and finite float key values are implemented",
+                        ),
+                    ));
+                };
+                if value.trunc() != *value {
+                    self.emit_display_diagnostic(
+                        "Deprecated",
+                        PHP_E_DEPRECATED,
+                        format!(
+                            "Implicit conversion from float {} to int loses precision",
+                            format_php_precision_float(*value, self.php_scalar_precision())
+                        ),
+                        span,
+                    )?;
+                }
+                Ok(ArrayKey::Int(key))
+            }
+            Value::String(value) => Ok(ArrayKey::string(value.clone())),
+            Value::BinaryString(value) => {
+                Ok(ArrayKey::from_value(&Value::BinaryString(value.clone()))
+                    .map_err(|error| runtime_error(span, error))?)
+            }
+            Value::Resource(id) => {
+                self.emit_display_warning(
+                    format!("Resource ID#{id} used as offset, casting to integer ({id})"),
+                    span,
+                )?;
+                Ok(ArrayKey::Int(*id))
+            }
+            Value::Array(_) => Err(array_offset_type_error("array", span)),
+            Value::Object(object) => Err(array_offset_type_error(object.class_name(), span)),
+            Value::Closure(_) => Err(array_offset_type_error("Closure", span)),
         }
     }
 
@@ -94251,6 +94324,15 @@ fn runtime_error(span: Span, error: RuntimeError) -> Diagnostic {
     Diagnostic::new(Phase::Runtime, span.line, span.column, error.message())
 }
 
+fn array_offset_type_error(type_name: &str, span: Span) -> Diagnostic {
+    Diagnostic::new(
+        Phase::Runtime,
+        span.line,
+        span.column,
+        format!("Cannot access offset of type {type_name} on array"),
+    )
+}
+
 fn object_not_callable_error(class_name: &str, span: Span) -> Diagnostic {
     Diagnostic::new(
         Phase::Runtime,
@@ -94570,6 +94652,12 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
             || error.message == "Class name must be a valid object or a string"
         {
             return Some(("Error", error.message.clone()));
+        }
+
+        if error.message.starts_with("Cannot access offset of type ")
+            && error.message.ends_with(" on array")
+        {
+            return Some(("TypeError", error.message.clone()));
         }
 
         match error.message.as_str() {

@@ -31513,19 +31513,19 @@ impl ArrayKey {
             Value::Int(value) => Ok(Self::Int(*value)),
             Value::Float(value)
                 if value.is_finite()
-                    && value.fract() == 0.0
-                    && *value >= i64::MIN as f64
-                    && *value < i64::MAX as f64 =>
+                    && value.trunc() >= i64::MIN as f64
+                    && value.trunc() < i64::MAX as f64 =>
             {
-                Ok(Self::Int(*value as i64))
+                Ok(Self::Int(value.trunc() as i64))
             }
             Value::Float(_) => Err(RuntimeError::invalid_array_key(
-                "lossy or non-finite float keys are not supported for array_key_exists(); only null, bool, int, string, and integral finite float keys are implemented",
+                "non-finite float keys are not supported for array_key_exists(); only null, bool, int, string, resource, and finite float keys are implemented",
             )),
             Value::String(value) => Ok(Self::string(value.clone())),
             Value::BinaryString(value) => Ok(Self::String(binary_string_array_key(value))),
+            Value::Resource(id) => Ok(Self::Int(*id)),
             other => Err(RuntimeError::invalid_array_key(format!(
-                "{} keys are not supported for array_key_exists(); only null, bool, int, string, and integral finite float keys are implemented",
+                "{} keys are not supported for array_key_exists(); only null, bool, int, string, resource, and finite float keys are implemented",
                 other.type_name()
             ))),
         }
@@ -79162,18 +79162,20 @@ mod tests {
             ArrayKey::from_array_key_exists_value(&Value::Float(-2.0)).unwrap(),
             ArrayKey::Int(-2)
         );
-
-        let float_error = ArrayKey::from_array_key_exists_value(&Value::Float(1.5)).unwrap_err();
         assert_eq!(
-            float_error.message(),
-            "invalid array key: lossy or non-finite float keys are not supported for array_key_exists(); only null, bool, int, string, and integral finite float keys are implemented"
+            ArrayKey::from_array_key_exists_value(&Value::Float(1.5)).unwrap(),
+            ArrayKey::Int(1)
+        );
+        assert_eq!(
+            ArrayKey::from_array_key_exists_value(&Value::Resource(3)).unwrap(),
+            ArrayKey::Int(3)
         );
 
         let error =
             ArrayKey::from_array_key_exists_value(&Value::Array(PhpArray::new())).unwrap_err();
         assert_eq!(
             error.message(),
-            "invalid array key: array keys are not supported for array_key_exists(); only null, bool, int, string, and integral finite float keys are implemented"
+            "invalid array key: array keys are not supported for array_key_exists(); only null, bool, int, string, resource, and finite float keys are implemented"
         );
     }
 
@@ -79314,19 +79316,14 @@ mod tests {
         assert!(diagnostic.is_null());
 
         let fractional_key = NativeValueHandle::from_value(Value::Float(1.5));
-        assert!(!unsafe {
+        assert!(unsafe {
             phpc_native_value_array_key_exists_value_with_diagnostic(
                 fractional_key,
                 array_handle,
                 &mut diagnostic,
             )
         });
-        assert_eq!(
-            native_diagnostic_message_for_test(diagnostic),
-            "invalid array key: lossy or non-finite float keys are not supported for array_key_exists(); only null, bool, int, string, and integral finite float keys are implemented"
-        );
-        unsafe { phpc_native_diagnostic_free(diagnostic) };
-        diagnostic = NativeDiagnosticHandle::null();
+        assert!(diagnostic.is_null());
 
         let scalar_owner = NativeValueHandle::from_value(Value::Int(42));
         assert!(!unsafe {

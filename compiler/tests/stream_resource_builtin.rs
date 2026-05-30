@@ -1024,6 +1024,43 @@ echo file_get_contents("{}", false, $replacement);
 }
 
 #[test]
+fn stream_context_resource_ids_follow_lazy_default_order() {
+    let create_before_default = run_source(
+        r#"<?php
+$created = stream_context_create();
+$default = stream_context_get_default();
+echo get_resource_id($created), ":", get_resource_id($default);
+"#,
+    )
+    .unwrap();
+    assert_eq!(create_before_default.stdout, "4:5");
+    assert_eq!(create_before_default.exit_code, 0);
+
+    let explicit_context_fopen = run_source(
+        r#"<?php
+$context = stream_context_create();
+$stream = fopen("php://memory", "r", false, $context);
+$default = stream_context_get_default();
+echo get_resource_id($context), ":", get_resource_id($stream), ":", get_resource_id($default);
+"#,
+    )
+    .unwrap();
+    assert_eq!(explicit_context_fopen.stdout, "4:5:6");
+    assert_eq!(explicit_context_fopen.exit_code, 0);
+
+    let implicit_context_fopen = run_source(
+        r#"<?php
+$stream = fopen("php://memory", "r");
+$default = stream_context_get_default();
+echo get_resource_id($default), ":", get_resource_id($stream);
+"#,
+    )
+    .unwrap();
+    assert_eq!(implicit_context_fopen.stdout, "4:5");
+    assert_eq!(implicit_context_fopen.exit_code, 0);
+}
+
+#[test]
 fn stream_context_params_persist_notification_and_merge_option_params() {
     let execution = run_source(
         r#"<?php
