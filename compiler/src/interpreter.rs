@@ -49659,36 +49659,34 @@ impl Interpreter {
         span: Span,
         scope: &SymbolTable,
     ) -> CompileResult<Value> {
-        let mut output = String::new();
+        let mut output = Vec::new();
         for part in parts {
             match part {
-                InterpolatedStringPart::Literal(value) => output.push_str(value),
+                InterpolatedStringPart::Literal(value) => {
+                    output.extend(php_string_literal_bytes(value));
+                }
                 InterpolatedStringPart::Variable(name) => {
                     let value = scope.read_static(name, span)?;
-                    let text = self.value_to_echo_string(value, span)?;
-                    output.push_str(&text);
+                    output.extend(self.value_to_echo_bytes(value, span)?);
                 }
                 InterpolatedStringPart::ArrayOffset { variable, key } => {
                     let value =
                         self.evaluate_interpolated_array_offset(variable, key, span, scope)?;
-                    let text = self.value_to_echo_string(value, span)?;
-                    output.push_str(&text);
+                    output.extend(self.value_to_echo_bytes(value, span)?);
                 }
                 InterpolatedStringPart::ObjectProperty { variable, property } => {
                     let value = self
                         .evaluate_interpolated_object_property(variable, property, span, scope)?;
-                    let text = self.value_to_echo_string(value, span)?;
-                    output.push_str(&text);
+                    output.extend(self.value_to_echo_bytes(value, span)?);
                 }
                 InterpolatedStringPart::AccessChain { variable, segments } => {
                     let value =
                         self.evaluate_interpolated_access_chain(variable, segments, span, scope)?;
-                    let text = self.value_to_echo_string(value, span)?;
-                    output.push_str(&text);
+                    output.extend(self.value_to_echo_bytes(value, span)?);
                 }
             }
         }
-        Ok(php_string_literal_value(&output))
+        Ok(interpreter_value_from_php_string_bytes(output))
     }
 
     fn evaluate_interpolated_access_chain(
@@ -106446,10 +106444,12 @@ fn call_strtolower(args: &[Value], span: Span) -> CompileResult<Value> {
     }
 
     let value = args[0]
-        .try_echo_string()
+        .try_echo_bytes()
         .map_err(|error| runtime_error(span, error))?;
 
-    Ok(Value::String(value.to_ascii_lowercase()))
+    Ok(interpreter_value_from_php_string_bytes(
+        value.iter().map(u8::to_ascii_lowercase).collect::<Vec<_>>(),
+    ))
 }
 
 const PHP_DEFAULT_TRIM_MASK_BYTES: &[u8] = b" \n\r\t\x0b\0";
@@ -106465,6 +106465,19 @@ fn interpreter_value_from_php_string_bytes(bytes: Vec<u8>) -> Value {
     String::from_utf8(bytes)
         .map(Value::String)
         .unwrap_or_else(|error| Value::BinaryString(error.into_bytes()))
+}
+
+fn php_string_literal_bytes(value: &str) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(value.len());
+    for ch in value.chars() {
+        if let Some(byte) = php_escaped_byte_sentinel_value(ch) {
+            bytes.push(byte);
+        } else {
+            let mut buffer = [0_u8; 4];
+            bytes.extend_from_slice(ch.encode_utf8(&mut buffer).as_bytes());
+        }
+    }
+    bytes
 }
 
 const PHP_ESCAPED_BYTE_SENTINEL_BASE: u32 = 0xE000;
@@ -106487,16 +106500,7 @@ fn php_string_literal_value(value: &str) -> Value {
         return Value::String(value.to_string());
     }
 
-    let mut bytes = Vec::with_capacity(value.len());
-    for ch in value.chars() {
-        if let Some(byte) = php_escaped_byte_sentinel_value(ch) {
-            bytes.push(byte);
-        } else {
-            let mut buffer = [0_u8; 4];
-            bytes.extend_from_slice(ch.encode_utf8(&mut buffer).as_bytes());
-        }
-    }
-    interpreter_value_from_php_string_bytes(bytes)
+    interpreter_value_from_php_string_bytes(php_string_literal_bytes(value))
 }
 
 fn trim_mask_parse_error(name: &str, reason: &str) -> RuntimeError {

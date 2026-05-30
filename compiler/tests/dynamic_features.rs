@@ -1806,6 +1806,38 @@ echo "|columns-{$partial->context['displayLayout']['columns']}";
 }
 
 #[test]
+fn non_variable_dollar_runs_in_interpolated_strings_are_literal() {
+    let execution = run_source(
+        r#"<?php
+echo "$$$$$$!!!!@@@@@@@ ABCDEF !!!***", "\n";
+echo "cost $$";
+$byte = chr(128);
+echo "\n", bin2hex("$byte");
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "$$$$$$!!!!@@@@@@@ ABCDEF !!!***\ncost $$\n80"
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let variable_variable = lex_error(
+        r#"<?php
+$name = "value";
+echo "$$name";
+"#,
+    );
+    assert_eq!(variable_variable.line, 3);
+    assert_eq!(variable_variable.column, 6);
+    assert_eq!(
+        variable_variable.message,
+        "unsupported string interpolation: only simple $name, {$name}, array offsets, and object properties in double-quoted strings are implemented; ${...}, dynamic properties, static properties, arbitrary expressions, and complex interpolation are not implemented"
+    );
+}
+
+#[test]
 fn remaining_complex_string_interpolation_forms_keep_named_boundaries() {
     let dollar_brace = lex_error(
         r#"<?php

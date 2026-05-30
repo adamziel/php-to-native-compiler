@@ -19,6 +19,22 @@ echo strtolower(42);
 }
 
 #[test]
+fn strtolower_lowercases_ascii_bytes_and_preserves_non_utf8_bytes() {
+    let execution = run_source(
+        r#"<?php
+$value = chr(65) . chr(128) . chr(90);
+echo bin2hex(strtolower($value)), "|";
+$byte = chr(128);
+echo bin2hex(strtolower("$byte"));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "61807a|80");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn strtolower_is_available_through_string_valued_calls() {
     let execution = run_source(
         r#"<?php

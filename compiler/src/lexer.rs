@@ -633,8 +633,15 @@ impl<'a> Lexer<'a> {
                     continue;
                 }
 
-                if matches!(self.peek_next(), Some('$' | '{')) {
-                    return Err(self.error_at(span, unsupported_string_interpolation_message()));
+                match self.peek_next() {
+                    Some('$') if self.dollar_run_is_literal() => {
+                        value.push(self.advance());
+                        continue;
+                    }
+                    Some('$' | '{') => {
+                        return Err(self.error_at(span, unsupported_string_interpolation_message()));
+                    }
+                    _ => {}
                 }
             }
 
@@ -755,8 +762,15 @@ impl<'a> Lexer<'a> {
                     continue;
                 }
 
-                if matches!(self.peek_next(), Some('$' | '{')) {
-                    return Err(self.error_at(span, unsupported_string_interpolation_message()));
+                match self.peek_next() {
+                    Some('$') if self.dollar_run_is_literal() => {
+                        value.push(self.advance());
+                        continue;
+                    }
+                    Some('$' | '{') => {
+                        return Err(self.error_at(span, unsupported_string_interpolation_message()));
+                    }
+                    _ => {}
                 }
             }
 
@@ -1299,6 +1313,18 @@ impl<'a> Lexer<'a> {
 
     fn peek_next(&self) -> Option<char> {
         self.chars.get(self.index + 1).copied()
+    }
+
+    fn dollar_run_is_literal(&self) -> bool {
+        let mut lookahead = self.index;
+        while matches!(self.chars.get(lookahead), Some('$')) {
+            lookahead += 1;
+        }
+
+        !matches!(
+            self.chars.get(lookahead).copied(),
+            Some(next) if is_identifier_start(next) || next == '{'
+        )
     }
 
     fn is_at_end(&self) -> bool {
