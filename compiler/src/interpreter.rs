@@ -16578,6 +16578,24 @@ impl Interpreter {
                 self.assign_datetime_object_state(&object, timestamp, timezone, span)?;
                 Ok(Value::Object(object))
             }
+            "modify" => {
+                expect_expr_arity("DateTime::modify", args.len(), 1, span)?;
+                let value = self.evaluate(&args[0], caller_scope)?;
+                let Value::String(modifier) = value else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "DateTime::modify()",
+                            format!(
+                                "modifier argument must be string in the current subset, got {}",
+                                value.type_name()
+                            ),
+                        ),
+                    ));
+                };
+                self.modify_datetime_object(&object, &modifier, "DateTime::modify()", span)?;
+                Ok(Value::Object(object))
+            }
             _ => Err(runtime_error(
                 span,
                 RuntimeError::undefined_function(format!("DateTime::{method_name}()")),
@@ -16599,6 +16617,61 @@ impl Interpreter {
         let object = self.create_datetime_object_from_values(args, span)?;
         self.track_allocated_object(&object);
         Ok(Value::Object(object))
+    }
+
+    fn call_date_modify(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("date_modify", args, 2, span)?;
+        let object = self.datetime_object_argument("date_modify()", args, 0, span)?;
+        let modifier = match &args[1] {
+            Value::String(value) => value,
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "date_modify()",
+                        format!(
+                            "modifier argument must be string in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+        };
+        self.modify_datetime_object(&object, modifier, "date_modify()", span)?;
+        Ok(Value::Object(object))
+    }
+
+    fn modify_datetime_object(
+        &mut self,
+        object: &PhpObject,
+        modifier: &str,
+        function: &'static str,
+        span: Span,
+    ) -> CompileResult<()> {
+        let state = self
+            .date_time_objects
+            .get(&object.id())
+            .cloned()
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        function,
+                        "DateTime object is not initialized in the current subset",
+                    ),
+                )
+            })?;
+        let timestamp = apply_bounded_datetime_modifier(state.timestamp, &state.timezone, modifier)
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        function,
+                        format!("modifier {modifier:?} is not implemented in the current subset"),
+                    ),
+                )
+            })?;
+        self.assign_datetime_object_state(object, timestamp, state.timezone, span)
     }
 
     fn call_date_format(&self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -77760,6 +77833,7 @@ impl Interpreter {
             "date_sunset" => self.call_date_sunrise_sunset(&args, span, true),
             "date_sun_info" => self.call_date_sun_info(&args, span),
             "date_create" => self.call_date_create(&args, span),
+            "date_modify" => self.call_date_modify(&args, span),
             "date_format" => self.call_date_format(&args, span),
             "date_timestamp_get" => self.call_date_timestamp_get(&args, span),
             "date_timestamp_set" => self.call_date_timestamp_set(&args, span),
@@ -95263,6 +95337,7 @@ fn is_builtin(name: &str) -> bool {
             | "date_sunset"
             | "date_sun_info"
             | "date_create"
+            | "date_modify"
             | "date_format"
             | "date_timestamp_get"
             | "date_timestamp_set"
@@ -116966,6 +117041,102 @@ fn parse_bounded_strtotime(input: &str, default_timezone: &BoundedTimezone) -> O
     parse_bounded_textual_datetime(trimmed, default_timezone)
 }
 
+fn apply_bounded_datetime_modifier(
+    timestamp: i64,
+    timezone: &BoundedTimezone,
+    modifier: &str,
+) -> Option<i64> {
+    let trimmed = modifier.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if let Some(timestamp) = apply_bounded_weekday_modifier(timestamp, timezone, trimmed) {
+        return Some(timestamp);
+    }
+    apply_bounded_unit_modifier(timestamp, timezone, trimmed)
+}
+
+fn apply_bounded_weekday_modifier(
+    timestamp: i64,
+    timezone: &BoundedTimezone,
+    modifier: &str,
+) -> Option<i64> {
+    let mut tokens = modifier.split_whitespace();
+    let direction = tokens.next()?.to_ascii_lowercase();
+    let weekday = tokens.next()?;
+    if tokens.next().is_some() {
+        return None;
+    }
+    let target = weekday_number_from_name(weekday)?;
+    let offset = timezone.offset_at_timestamp(timestamp);
+    let parts = bounded_datetime_parts(timestamp, offset);
+    let delta_days = match direction.as_str() {
+        "next" => {
+            let mut delta = target - parts.weekday;
+            if delta <= 0 {
+                delta += 7;
+            }
+            delta
+        }
+        "last" => {
+            let mut delta = target - parts.weekday;
+            if delta >= 0 {
+                delta -= 7;
+            }
+            delta
+        }
+        _ => return None,
+    };
+    apply_bounded_local_seconds(timestamp, timezone, delta_days * 86_400)
+}
+
+fn apply_bounded_unit_modifier(
+    timestamp: i64,
+    timezone: &BoundedTimezone,
+    modifier: &str,
+) -> Option<i64> {
+    let mut tokens = modifier.split_whitespace().peekable();
+    let mut total_seconds = 0_i64;
+    while let Some(token) = tokens.next() {
+        let (count, unit_token) = if token == "+" || token == "-" {
+            let sign = if token == "-" { -1 } else { 1 };
+            let number = parse_ascii_i64(tokens.next()?)?;
+            (sign * number, tokens.next()?)
+        } else {
+            let (sign, digits) = match token.as_bytes().first()? {
+                b'+' => (1, &token[1..]),
+                b'-' => (-1, &token[1..]),
+                _ => (1, token),
+            };
+            let number = parse_ascii_i64(digits)?;
+            (sign * number, tokens.next()?)
+        };
+        let unit_seconds = match unit_token.to_ascii_lowercase().as_str() {
+            "second" | "seconds" => 1,
+            "minute" | "minutes" => 60,
+            "hour" | "hours" => 3_600,
+            "day" | "days" => 86_400,
+            "week" | "weeks" => 604_800,
+            _ => return None,
+        };
+        total_seconds = total_seconds.checked_add(count.checked_mul(unit_seconds)?)?;
+    }
+    apply_bounded_local_seconds(timestamp, timezone, total_seconds)
+}
+
+fn apply_bounded_local_seconds(
+    timestamp: i64,
+    timezone: &BoundedTimezone,
+    seconds: i64,
+) -> Option<i64> {
+    let local = timestamp
+        .checked_add(timezone.offset_at_timestamp(timestamp))?
+        .checked_add(seconds)?;
+    let parts = bounded_datetime_parts(local, 0);
+    let offset = timezone.offset_for_local_date(parts.year, parts.month, parts.day);
+    local.checked_sub(offset)
+}
+
 fn parse_bounded_at_timestamp(input: &str) -> Option<i64> {
     let rest = input.strip_prefix('@')?;
     let mut end = 0;
@@ -117175,6 +117346,19 @@ fn month_number_from_name(name: &str) -> Option<i64> {
         "oct" | "october" => Some(10),
         "nov" | "november" => Some(11),
         "dec" | "december" => Some(12),
+        _ => None,
+    }
+}
+
+fn weekday_number_from_name(name: &str) -> Option<i64> {
+    match name.to_ascii_lowercase().as_str() {
+        "sun" | "sunday" => Some(0),
+        "mon" | "monday" => Some(1),
+        "tue" | "tuesday" => Some(2),
+        "wed" | "wednesday" => Some(3),
+        "thu" | "thursday" => Some(4),
+        "fri" | "friday" => Some(5),
+        "sat" | "saturday" => Some(6),
         _ => None,
     }
 }

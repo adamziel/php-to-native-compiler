@@ -57,6 +57,37 @@ echo $local->format("Y-m-d H:i e"), "\n";
 }
 
 #[test]
+fn date_modify_mutates_bounded_datetime_relative_forms() {
+    let execution = run_source(
+        r#"<?php
+date_default_timezone_set("Europe/London");
+$datetime = date_create("2009-01-31 14:28:41");
+date_modify($datetime, "+1 day");
+echo date_format($datetime, "D, d M Y"), "\n";
+$datetime->modify("+1 week 2 days 4 hours 2 seconds");
+echo date_format($datetime, "D, d M Y H:i:s"), "\n";
+date_modify($datetime, "next Thursday");
+echo date_format($datetime, "D, d M Y"), "\n";
+$datetime->modify("last Sunday");
+echo date_format($datetime, "D, d M Y"), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "Sun, 01 Feb 2009\n",
+            "Tue, 10 Feb 2009 18:28:43\n",
+            "Thu, 12 Feb 2009\n",
+            "Sun, 08 Feb 2009\n"
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn date_default_timezone_state_applies_bounded_offsets() {
     let execution = run_source(
         r#"<?php
