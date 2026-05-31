@@ -177,7 +177,7 @@ impl Parser {
             }
             TokenKind::Namespace => self.parse_namespace(),
             TokenKind::Use => self.parse_use_declaration(),
-            TokenKind::Declare => self.parse_unsupported_declare(),
+            TokenKind::Declare => self.parse_declare(),
             TokenKind::Eval => self.parse_unsupported_eval(),
             TokenKind::InlineHtml(_) => self.parse_inline_html(),
             TokenKind::Echo => self.parse_echo(),
@@ -1700,33 +1700,101 @@ impl Parser {
         })
     }
 
-    fn parse_unsupported_declare(&mut self) -> CompileResult<Stmt> {
+    fn parse_declare(&mut self) -> CompileResult<Stmt> {
         let span = self
             .consume_keyword(TokenKind::Declare, "expected 'declare'")?
             .span;
-        let message = match (
-            &self.peek().kind,
-            &self.peek_next().kind,
-            &self.peek_n(2).kind,
-        ) {
-            (TokenKind::LParen, TokenKind::Identifier(name), TokenKind::Equal)
-                if name.eq_ignore_ascii_case("strict_types") =>
-            {
-                "unsupported declare directive: strict_types is not implemented"
-            }
-            (TokenKind::LParen, TokenKind::Identifier(name), TokenKind::Equal)
-                if name.eq_ignore_ascii_case("ticks") =>
-            {
-                "unsupported declare directive: ticks requires tick handlers and execution hooks, which are not implemented"
-            }
-            (TokenKind::LParen, TokenKind::Identifier(name), TokenKind::Equal)
-                if name.eq_ignore_ascii_case("encoding") =>
-            {
-                "unsupported declare directive: encoding requires source encoding, lexer decoding, and runtime text handling, which are not implemented"
-            }
-            _ => "unsupported declare directive: declare semantics are not implemented",
+        self.consume_keyword(TokenKind::LParen, "expected '(' after declare")?;
+        let directive = match self.advance().clone() {
+            Token {
+                kind: TokenKind::Identifier(name),
+                ..
+            } => name,
+            token => return Err(self.error_at(token.span, "expected declare directive name")),
         };
-        Err(self.error_at(span, message))
+        self.consume_keyword(TokenKind::Equal, "expected '=' after declare directive")?;
+
+        let directive_key = directive.to_ascii_lowercase();
+        match directive_key.as_str() {
+            "strict_types" => match self.advance().clone() {
+                Token {
+                    kind: TokenKind::Int(0 | 1),
+                    ..
+                } => {}
+                token => {
+                    return Err(self.error_at(
+                        token.span,
+                        "unsupported declare directive: strict_types must be 0 or 1",
+                    ));
+                }
+            },
+            "encoding" => match self.advance().clone() {
+                Token {
+                    kind: TokenKind::StringLiteral(_),
+                    ..
+                } => {}
+                token => {
+                    return Err(self.error_at(
+                        token.span,
+                        "unsupported declare directive: encoding expects a string literal",
+                    ));
+                }
+            },
+            "ticks" => {
+                return Err(self.error_at(
+                    span,
+                    "unsupported declare directive: ticks requires tick handlers and execution hooks, which are not implemented",
+                ));
+            }
+            _ => {
+                return Err(self.error_at(
+                    span,
+                    "unsupported declare directive: declare semantics are not implemented",
+                ));
+            }
+        }
+
+        self.consume_keyword(TokenKind::RParen, "expected ')' after declare directive")?;
+
+        if self.match_token(|kind| matches!(kind, TokenKind::LBrace)) {
+            self.skip_declare_block_after_open(span)?;
+            if directive_key == "strict_types" {
+                return Ok(Stmt::Expr {
+                    expr: Expr::Call {
+                        name: "__phpc_declare_strict_types_block_error".to_string(),
+                        args: Vec::new(),
+                        span,
+                    },
+                    span,
+                });
+            }
+            return Err(self.error_at(
+                span,
+                "unsupported declare directive: block declare mode is not implemented for this directive",
+            ));
+        }
+
+        self.consume_keyword(TokenKind::Semicolon, "expected ';' after declare")?;
+        Ok(Stmt::Expr {
+            expr: Expr::Null(span),
+            span,
+        })
+    }
+
+    fn skip_declare_block_after_open(&mut self, span: Span) -> CompileResult<()> {
+        let mut depth = 1usize;
+        while depth > 0 {
+            let token = self.advance().clone();
+            match token.kind {
+                TokenKind::LBrace => depth += 1,
+                TokenKind::RBrace => depth -= 1,
+                TokenKind::Eof => {
+                    return Err(self.error_at(span, "expected '}' after declare block"));
+                }
+                _ => {}
+            }
+        }
+        Ok(())
     }
 
     fn parse_namespace(&mut self) -> CompileResult<Stmt> {

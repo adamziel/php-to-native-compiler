@@ -21,6 +21,11 @@ execution path, and a narrow LLVM IR text emitter for simple straight-line code.
 The interpreter runs top-level statements in a global symbol table and creates a
 fresh local symbol table for each user-function call. Before a user-function
 body is entered, direct calls validate supported by-reference argument sources;
+the parser keeps bounded file-scope `declare(strict_types=0|1);` and
+`declare(encoding="...");` directives as no-op interpreter statements, and
+routes strict-types block mode to a PHP-shaped fatal diagnostic without
+claiming actual strict scalar call enforcement, tick handlers, or source
+transcoding.
 definite value expressions passed to by-reference parameters produce a bounded
 PHP fatal `Error` and stop argument/callee evaluation rather than entering
 the legacy unsupported-reference path. Local scopes can import

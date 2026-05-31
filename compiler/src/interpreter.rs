@@ -18235,6 +18235,9 @@ impl Interpreter {
                 if let Some(message) = fatal_memory_error_message(&error) {
                     return self.fatal_runtime_message_execution(&error, &message);
                 }
+                if let Some(message) = fatal_declare_error_message(&error) {
+                    return self.fatal_runtime_message_execution(&error, &message);
+                }
                 if is_positional_argument_after_named_argument_error(&error) {
                     return self.fatal_runtime_message_execution(&error, &error.message);
                 }
@@ -53351,6 +53354,15 @@ impl Interpreter {
         }
         if key == "__phpc_yield_from" {
             return self.call_phpc_yield_from(args, span, caller_scope);
+        }
+        if key == "__phpc_declare_strict_types_block_error" {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "declare",
+                    "strict_types declaration must not use block mode",
+                ),
+            ));
         }
 
         ensure_no_positional_arguments_after_named_arguments(args)?;
@@ -97701,6 +97713,14 @@ fn fatal_memory_error_message(error: &Diagnostic) -> Option<String> {
     message
         .starts_with("Allowed memory size of ")
         .then(|| message.to_string())
+}
+
+fn fatal_declare_error_message(error: &Diagnostic) -> Option<String> {
+    if error.phase != Phase::Runtime {
+        return None;
+    }
+    let message = error.message.strip_prefix("unsupported call declare: ")?;
+    (message == "strict_types declaration must not use block mode").then(|| message.to_string())
 }
 
 fn typed_property_reference_type_error_message(error: &Diagnostic) -> Option<String> {

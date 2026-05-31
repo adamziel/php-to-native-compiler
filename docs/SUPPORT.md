@@ -7,6 +7,12 @@
   current PHP-compatible single-newline consumption immediately after `?>`.
   Short echo tags such as `<?= $value ?>` remain unsupported and stop at a
   dedicated lex boundary before execution.
+- Bounded `declare` directives: file-scope `declare(strict_types=0|1);` and
+  `declare(encoding="...");` parse as interpreter no-ops so source ordering
+  around namespaces can proceed. `declare(strict_types=...) { ... }` reports
+  PHP's fatal block-mode diagnostic. Actual strict scalar call enforcement,
+  tick handlers, source transcoding, and broader declare block semantics
+  remain unsupported.
 - `echo` statements with one or more comma-separated expressions
 - `print` statements
 - decimal, legacy-octal, and hexadecimal integer literals in the current signed 64-bit subset
