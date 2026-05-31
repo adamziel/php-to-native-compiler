@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-31 02:38 CEST
+Updated: 2026-05-31 04:27 CEST
 Primary branch: `master`
-Latest source head: `f89214c4 fix: repair filesystem path regressions`
+Latest source head: `4e7a7a41 fix: repair mysqli subclass construction`
 
 ## Progress Score
 
@@ -13,7 +13,7 @@ Progress is the pinned php-src PHPT full-suite pass rate:
 
 `passed runnable PHPTs / total runnable PHPTs`
 
-Current score: **4321 / 20294 pinned runnable PHPTs = 21.29%**.
+Current score: **4425 / 20294 pinned runnable PHPTs = 21.80%**.
 
 ## PHPT Goal Checklist
 
@@ -56,6 +56,14 @@ Current score: **4321 / 20294 pinned runnable PHPTs = 21.29%**.
 | Batch017 checkpoint10 | 4132 / 20294 | 20.36% | 0; 10 raw invalid-marker hits adjudicated as failed-row output |
 | Batch018 repair01 | 4178 / 20294 | 20.59% | 0; 4 raw invalid-marker hits adjudicated as failed-row/expected output |
 | Batch019 repair02 | 4321 / 20294 | 21.29% | 0 semantic; `bug75679.phpt` and `open_basedir_filemtime.phpt` adjudicated by same-binary focused proof |
+| Batch020 repair01 | 4425 / 20294 | 21.80% | 0; 1 raw sockets invalid-marker hit adjudicated as failed-row expected output |
+
+Batch020 repair01 source `4e7a7a41` is integrated in the supervisor staging
+line and validated by a pinned sharded full-suite gate plus serialized
+`open_basedir` rows. The gate recorded 4425 passed pinned runnable PHPTs,
+zero latest-published PASS regressions against the Batch019 repair02 PASS
+baseline, and one raw invalid-marker hit from a literal sockets expected-output
+`Permission denied` warning in a failed row.
 
 The Batch013 checkpoint10 source `fc2788a7` is integrated and published by a
 pinned sharded full-suite gate on public `b3e42ce1`. The gate recorded 3170
