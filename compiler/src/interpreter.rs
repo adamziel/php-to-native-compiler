@@ -80737,9 +80737,13 @@ impl Interpreter {
             "setlocale" => self.call_setlocale(&args, span),
             "getenv" => self.call_getenv(&args, span),
             "putenv" => self.call_putenv(&args, span),
+            "get_cfg_var" => self.call_get_cfg_var(&args, span),
+            "get_loaded_extensions" => self.call_get_loaded_extensions(&args, span),
             "ini_get" => self.call_ini_get(&args, span),
             "ini_get_all" => self.call_ini_get_all(&args, span),
             "ini_set" => self.call_ini_set(&args, span),
+            "parse_ini_file" => self.call_parse_ini_file(&args, span),
+            "parse_ini_string" => self.call_parse_ini_string(&args, span),
             "opcache_get_configuration" => self.call_opcache_get_configuration(&args, span),
             "opcache_get_status" => self.call_opcache_get_status(&args, span),
             "opcache_is_script_cached" => self.call_opcache_is_script_cached(&args, span),
@@ -99053,9 +99057,13 @@ fn is_builtin(name: &str) -> bool {
             | "setlocale"
             | "getenv"
             | "putenv"
+            | "get_cfg_var"
+            | "get_loaded_extensions"
             | "ini_get"
             | "ini_get_all"
             | "ini_set"
+            | "parse_ini_file"
+            | "parse_ini_string"
             | "opcache_get_configuration"
             | "opcache_get_status"
             | "opcache_is_script_cached"
@@ -100153,6 +100161,9 @@ const PHP_STANDARD_STRING_MEMORY_LIMIT_BYTES: usize = 128 * 1024 * 1024;
 const PHP_INPUT_POST: i64 = 0;
 const PHP_INPUT_GET: i64 = 1;
 const PHP_INPUT_COOKIE: i64 = 2;
+const PHP_INI_SCANNER_NORMAL: i64 = 0;
+const PHP_INI_SCANNER_RAW: i64 = 1;
+const PHP_INI_SCANNER_TYPED: i64 = 2;
 const PHP_FILTER_VALIDATE_INT: i64 = 257;
 const PHP_FILTER_VALIDATE_BOOL: i64 = 258;
 const PHP_FILTER_VALIDATE_FLOAT: i64 = 259;
@@ -100567,6 +100578,9 @@ const BUILTIN_GLOBAL_CONSTANT_NAMES: &[&str] = &[
     "INPUT_POST",
     "INPUT_GET",
     "INPUT_COOKIE",
+    "INI_SCANNER_NORMAL",
+    "INI_SCANNER_RAW",
+    "INI_SCANNER_TYPED",
     "FILTER_VALIDATE_INT",
     "FILTER_VALIDATE_BOOLEAN",
     "FILTER_VALIDATE_BOOL",
@@ -100888,6 +100902,9 @@ fn builtin_global_constant_value(name: &str) -> Option<Value> {
         "INPUT_POST" => Some(Value::Int(PHP_INPUT_POST)),
         "INPUT_GET" => Some(Value::Int(PHP_INPUT_GET)),
         "INPUT_COOKIE" => Some(Value::Int(PHP_INPUT_COOKIE)),
+        "INI_SCANNER_NORMAL" => Some(Value::Int(PHP_INI_SCANNER_NORMAL)),
+        "INI_SCANNER_RAW" => Some(Value::Int(PHP_INI_SCANNER_RAW)),
+        "INI_SCANNER_TYPED" => Some(Value::Int(PHP_INI_SCANNER_TYPED)),
         "FILTER_VALIDATE_INT" => Some(Value::Int(PHP_FILTER_VALIDATE_INT)),
         "FILTER_VALIDATE_BOOLEAN" => Some(Value::Int(PHP_FILTER_VALIDATE_BOOL)),
         "FILTER_VALIDATE_BOOL" => Some(Value::Int(PHP_FILTER_VALIDATE_BOOL)),
@@ -123623,6 +123640,117 @@ impl Interpreter {
         self.opcache_ini_bool("opcache.enable") && self.opcache_ini_bool("opcache.enable_cli")
     }
 
+    fn call_get_cfg_var(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("get_cfg_var", args, 1, span)?;
+        let name = string_builtin_argument("get_cfg_var()", "option", &args[0], span)?;
+        let normalized = normalize_ini_name(&name);
+        Ok(startup_ini_value(&normalized)
+            .map(Value::String)
+            .unwrap_or(Value::Bool(false)))
+    }
+
+    fn call_get_loaded_extensions(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if args.len() > 1 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "get_loaded_extensions()",
+                    ArityExpectation::Between { min: 0, max: 1 },
+                    args.len(),
+                ),
+            ));
+        }
+        if let Some(Value::Bool(true)) = args.first() {
+            return Ok(Value::Array(PhpArray::new()));
+        }
+        if let Some(value) = args.first() {
+            if !matches!(value, Value::Bool(_)) {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "get_loaded_extensions()",
+                        format!(
+                            "zend_extensions argument must be bool in the current subset, got {}",
+                            value.type_name()
+                        ),
+                    ),
+                ));
+            }
+        }
+
+        let mut extensions = PhpArray::new();
+        for (index, extension) in COMPAT_LOADED_EXTENSIONS.iter().enumerate() {
+            extensions.insert(index as i64, Value::String((*extension).to_string()));
+        }
+        Ok(Value::Array(extensions))
+    }
+
+    fn call_parse_ini_file(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if args.is_empty() || args.len() > 3 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "parse_ini_file()",
+                    ArityExpectation::Between { min: 1, max: 3 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let filename = string_builtin_argument("parse_ini_file()", "filename", &args[0], span)?;
+        let process_sections = parse_ini_process_sections_argument(args.get(1), span)?;
+        let scanner_mode = parse_ini_scanner_mode_argument(args.get(2), span)?;
+        let path = local_filesystem_metadata_path(&filename);
+        let contents = match fs::read_to_string(&path) {
+            Ok(contents) => contents,
+            Err(error) => {
+                self.emit_display_warning(
+                    format!(
+                        "parse_ini_file({filename}): Failed to open stream: {}",
+                        error
+                    ),
+                    span,
+                )?;
+                return Ok(Value::Bool(false));
+            }
+        };
+        self.parse_ini_contents_value(&contents, process_sections, scanner_mode, span)
+    }
+
+    fn call_parse_ini_string(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if args.is_empty() || args.len() > 3 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "parse_ini_string()",
+                    ArityExpectation::Between { min: 1, max: 3 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let contents = string_builtin_argument("parse_ini_string()", "ini_string", &args[0], span)?;
+        let process_sections = parse_ini_process_sections_argument(args.get(1), span)?;
+        let scanner_mode = parse_ini_scanner_mode_argument(args.get(2), span)?;
+        self.parse_ini_contents_value(&contents, process_sections, scanner_mode, span)
+    }
+
+    fn parse_ini_contents_value(
+        &mut self,
+        contents: &str,
+        process_sections: bool,
+        scanner_mode: i64,
+        span: Span,
+    ) -> CompileResult<Value> {
+        match parse_bounded_ini(contents, process_sections, scanner_mode) {
+            Ok(array) => Ok(Value::Array(array)),
+            Err(message) => {
+                self.emit_display_warning(message, span)?;
+                Ok(Value::Bool(false))
+            }
+        }
+    }
+
     fn opcache_directive_value(&self, name: &str) -> Value {
         match name {
             "opcache.enable"
@@ -123738,26 +123866,46 @@ impl Interpreter {
             None => true,
         };
 
+        let mut options = PhpArray::new();
         if extension.is_some_and(|extension| {
-            !extension.eq_ignore_ascii_case("zend opcache")
-                && !extension.eq_ignore_ascii_case("opcache")
+            extension.eq_ignore_ascii_case("zend opcache")
+                || extension.eq_ignore_ascii_case("opcache")
         }) {
+            for directive in OPCACHE_DIRECTIVES {
+                let value = self.opcache_ini_value(directive).unwrap_or_default();
+                options.insert(
+                    (*directive).to_string(),
+                    ini_get_all_entry(value.clone(), value.clone(), Some(value), details),
+                );
+            }
+            return Ok(Value::Array(options));
+        }
+
+        if extension.is_some() {
             return Ok(Value::Array(PhpArray::new()));
         }
 
-        let mut options = PhpArray::new();
+        let startup_values = phpc_phpt_ini_overrides_from_env();
+        for directive in COMPAT_INI_DIRECTIVES {
+            let global_value = startup_values
+                .get(*directive)
+                .cloned()
+                .or_else(|| compat_ini_value(directive).map(str::to_string))
+                .unwrap_or_default();
+            let local_value = self.ini_value(directive).unwrap_or_default();
+            let builtin_default_value =
+                compat_ini_builtin_default_value(directive).map(str::to_string);
+            options.insert(
+                (*directive).to_string(),
+                ini_get_all_entry(global_value, local_value, builtin_default_value, details),
+            );
+        }
         for directive in OPCACHE_DIRECTIVES {
             let value = self.opcache_ini_value(directive).unwrap_or_default();
-            let option = if details {
-                let mut details_array = PhpArray::new();
-                details_array.insert("global_value".to_string(), Value::String(value.clone()));
-                details_array.insert("local_value".to_string(), Value::String(value));
-                details_array.insert("access".to_string(), Value::Int(7));
-                Value::Array(details_array)
-            } else {
-                Value::String(value)
-            };
-            options.insert((*directive).to_string(), option);
+            options.insert(
+                (*directive).to_string(),
+                ini_get_all_entry(value.clone(), value.clone(), Some(value), details),
+            );
         }
         Ok(Value::Array(options))
     }
@@ -126245,6 +126393,43 @@ const OPCACHE_DIRECTIVES: &[&str] = &[
     "opcache.jit_blacklist_side_trace",
 ];
 
+const COMPAT_LOADED_EXTENSIONS: &[&str] = &["bcmath", "filter", "json", "hash", "pdo", "pdo_mysql"];
+
+const COMPAT_INI_DIRECTIVES: &[&str] = &[
+    "arg_separator.input",
+    "arg_separator.output",
+    "bcmath.scale",
+    "date.default_latitude",
+    "date.default_longitude",
+    "date.sunrise_zenith",
+    "date.sunset_zenith",
+    "date.timezone",
+    "default_mimetype",
+    "disable_functions",
+    "display_errors",
+    "error_append_string",
+    "error_log",
+    "error_prepend_string",
+    "html_errors",
+    "mail.add_x_header",
+    "max_execution_time",
+    "mbstring.func_overload",
+    "memory_limit",
+    "mysqli.default_port",
+    "mysqlnd.collect_statistics",
+    "open_basedir",
+    "output_handler",
+    "post_max_size",
+    "precision",
+    "sendmail_from",
+    "sendmail_path",
+    "session.save_path",
+    "upload_max_filesize",
+    "upload_tmp_dir",
+    "user_agent",
+    "zlib.output_compression",
+];
+
 fn is_opcache_ini_option(normalized_name: &str) -> bool {
     OPCACHE_DIRECTIVES.contains(&normalized_name)
 }
@@ -126408,6 +126593,224 @@ fn normalize_ini_name(name: &str) -> String {
     name.to_ascii_lowercase()
 }
 
+fn parse_ini_process_sections_argument(value: Option<&Value>, span: Span) -> CompileResult<bool> {
+    match value {
+        Some(Value::Bool(value)) => Ok(*value),
+        Some(Value::Null) | None => Ok(false),
+        Some(other) => Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "parse_ini_*()",
+                format!(
+                    "process_sections argument must be bool in the current subset, got {}",
+                    other.type_name()
+                ),
+            ),
+        )),
+    }
+}
+
+fn parse_ini_scanner_mode_argument(value: Option<&Value>, span: Span) -> CompileResult<i64> {
+    match value {
+        Some(Value::Int(mode))
+            if matches!(
+                *mode,
+                PHP_INI_SCANNER_NORMAL | PHP_INI_SCANNER_RAW | PHP_INI_SCANNER_TYPED
+            ) =>
+        {
+            Ok(*mode)
+        }
+        Some(Value::Null) | None => Ok(PHP_INI_SCANNER_NORMAL),
+        Some(other) => Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "parse_ini_*()",
+                format!(
+                    "scanner_mode argument must be a supported INI_SCANNER_* int in the current subset, got {}",
+                    other.type_name()
+                ),
+            ),
+        )),
+    }
+}
+
+struct BoundedIniScalar {
+    value: String,
+    quoted: bool,
+}
+
+fn parse_bounded_ini(
+    contents: &str,
+    process_sections: bool,
+    scanner_mode: i64,
+) -> Result<PhpArray, String> {
+    let mut root = PhpArray::new();
+    let mut current_section: Option<(String, PhpArray)> = None;
+
+    for (index, raw_line) in contents.lines().enumerate() {
+        let line = raw_line.trim();
+        if line.is_empty() || line.starts_with(';') || line.starts_with('#') {
+            continue;
+        }
+
+        if line.starts_with('[') && line.ends_with(']') {
+            if process_sections {
+                if let Some((section, values)) = current_section.take() {
+                    root.insert(section, Value::Array(values));
+                }
+                current_section =
+                    Some((line[1..line.len() - 1].trim().to_string(), PhpArray::new()));
+            }
+            continue;
+        }
+
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        let key = key.trim().to_string();
+        let value = parse_bounded_ini_value(value.trim(), index + 1, scanner_mode)?;
+        if process_sections {
+            if let Some((_, values)) = current_section.as_mut() {
+                values.insert(key, value);
+            } else {
+                root.insert(key, value);
+            }
+        } else {
+            root.insert(key, value);
+        }
+    }
+
+    if let Some((section, values)) = current_section {
+        root.insert(section, Value::Array(values));
+    }
+
+    Ok(root)
+}
+
+fn parse_bounded_ini_value(value: &str, line: usize, scanner_mode: i64) -> Result<Value, String> {
+    let scalar = parse_bounded_ini_scalar(value, line)?;
+    if scanner_mode == PHP_INI_SCANNER_TYPED && !scalar.quoted {
+        Ok(parse_bounded_ini_typed_scalar(&scalar.value))
+    } else {
+        Ok(Value::String(scalar.value))
+    }
+}
+
+fn parse_bounded_ini_scalar(value: &str, line: usize) -> Result<BoundedIniScalar, String> {
+    if value.starts_with('"') {
+        if value.ends_with('"') && value.len() >= 2 {
+            return Ok(BoundedIniScalar {
+                value: value[1..value.len() - 1].to_string(),
+                quoted: true,
+            });
+        }
+        return Err(format!(
+            "syntax error, unexpected end of file, expecting TC_DOLLAR_CURLY or TC_QUOTED_STRING or '\"' in Unknown on line {line}\n"
+        ));
+    }
+    if let Some(open) = value.find("${") {
+        let interpolation = &value[open + 2..];
+        if interpolation.contains(":-") {
+            return Err(format!(
+                "syntax error, unexpected TC_FALLBACK, expecting TC_VARNAME in Unknown on line {line}\n"
+            ));
+        }
+        if !interpolation.contains('}') {
+            return Err(format!(
+                "syntax error, unexpected end of file, expecting TC_FALLBACK or '}}' in Unknown on line {line}\n"
+            ));
+        }
+    }
+    if value.starts_with('\'') && value.ends_with('\'') && value.len() >= 2 {
+        return Ok(BoundedIniScalar {
+            value: value.trim_matches('\'').to_string(),
+            quoted: true,
+        });
+    }
+
+    Ok(BoundedIniScalar {
+        value: value.trim_matches('\'').to_string(),
+        quoted: false,
+    })
+}
+
+fn parse_bounded_ini_typed_scalar(value: &str) -> Value {
+    match value.to_ascii_lowercase().as_str() {
+        "true" | "on" | "yes" => return Value::Bool(true),
+        "false" | "off" | "no" | "none" => return Value::Bool(false),
+        "null" => return Value::Null,
+        _ => {}
+    }
+
+    if is_ini_typed_int_literal(value) {
+        if let Ok(parsed) = value.parse::<i64>() {
+            return Value::Int(parsed);
+        }
+    }
+
+    if is_ini_typed_float_literal(value) {
+        if let Ok(parsed) = value.parse::<f64>() {
+            if parsed.is_finite() {
+                return Value::Float(parsed);
+            }
+        }
+    }
+
+    Value::String(value.to_string())
+}
+
+fn is_ini_typed_int_literal(value: &str) -> bool {
+    let digits = value.strip_prefix('-').unwrap_or(value);
+    !digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit())
+}
+
+fn is_ini_typed_float_literal(value: &str) -> bool {
+    if value.starts_with('-') || value.starts_with('+') {
+        return false;
+    }
+
+    let Some((left, right)) = value.split_once('.') else {
+        return false;
+    };
+    if value.matches('.').count() != 1 {
+        return false;
+    }
+
+    let left_digits = left.bytes().all(|byte| byte.is_ascii_digit());
+    let right_digits = right.bytes().all(|byte| byte.is_ascii_digit());
+    left_digits && right_digits && (!left.is_empty() || !right.is_empty())
+}
+
+fn ini_get_all_entry(
+    global_value: String,
+    local_value: String,
+    builtin_default_value: Option<String>,
+    details: bool,
+) -> Value {
+    if !details {
+        return Value::String(local_value);
+    }
+
+    let mut entry = PhpArray::new();
+    entry.insert("global_value".to_string(), Value::String(global_value));
+    entry.insert("local_value".to_string(), Value::String(local_value));
+    entry.insert("access".to_string(), Value::Int(7));
+    entry.insert(
+        "builtin_default_value".to_string(),
+        builtin_default_value
+            .map(Value::String)
+            .unwrap_or(Value::Null),
+    );
+    Value::Array(entry)
+}
+
+fn compat_ini_builtin_default_value(normalized_name: &str) -> Option<&'static str> {
+    match normalized_name {
+        "error_append_string" | "error_prepend_string" => None,
+        _ => compat_ini_value(normalized_name),
+    }
+}
+
 fn parse_ini_error_reporting_mask(value: &str) -> Option<i64> {
     let mut tokens = value.split('&');
     let first = parse_error_reporting_term(tokens.next()?.trim())?;
@@ -126471,6 +126874,7 @@ fn compat_ini_value(normalized_name: &str) -> Option<&'static str> {
         "open_basedir" => Some(""),
         "output_handler" => Some(""),
         "post_max_size" => Some("8M"),
+        "precision" => Some("14"),
         "sendmail_from" => Some(""),
         "sendmail_path" => Some(""),
         "session.save_path" => Some(""),
@@ -126480,6 +126884,15 @@ fn compat_ini_value(normalized_name: &str) -> Option<&'static str> {
         "zlib.output_compression" => Some("0"),
         _ => None,
     }
+}
+
+fn startup_ini_value(normalized_name: &str) -> Option<String> {
+    let mut startup_values = phpc_phpt_ini_overrides_from_env();
+    initial_default_timezone_from_ini(&mut startup_values);
+    startup_values
+        .get(normalized_name)
+        .cloned()
+        .or_else(|| compat_ini_value(normalized_name).map(str::to_string))
 }
 
 fn ini_option_is_runtime_mutable(normalized_name: &str) -> bool {
