@@ -1,10 +1,12 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-31 13:23 CEST
+Updated: 2026-05-31 15:20 CEST
 
 Primary/public branch: `origin/master`
-Primary/public head: `7b6eb826 docs: publish batch022 PHPT gate score`
-Published source head for current score: `69c5111f fix: add JSON core semantics`
+Publication base before this update:
+`54829387 docs: simplify PHPT progress report`
+Published source head for current score:
+`54f3c2c3 fix: preserve strictness provenance in magic typed properties`
 
 This file is the public PHPT-suite progress report. AO workers and the
 supervisor must update this file before claiming public progress.
@@ -16,21 +18,22 @@ Pinned PHPT metric:
 The pinned php-src suite uses the stable public denominator `20294`. Raw
 runner denominators that exclude BORKED rows are not public progress.
 
-Current public score: **4949 / 20294 pinned runnable PHPTs = 24.39%**.
+Current public score: **5173 / 20294 pinned runnable PHPTs = 25.49%**.
 
 ## Current Public Gate
 
-Published gate: Batch022 repair02.
+Published gate: Batch023 repair01.
 
 - Gate run:
-  `phpt-full-batch022-repair02-sharded-serialized-openbasedir-20260531T0839Z-php-src-f97ff59-public-5530d1da-source-69c5111f`
-- Source: `69c5111f fix: add JSON core semantics`
-- Score: **4949 / 20294 pinned runnable PHPTs = 24.39%**
+  `phpt-full-batch023-repair01-sharded-serialized-openbasedir-20260531T1308Z-php-src-f97ff59-public-54829387-source-54f3c2c3`
+- Source: `54f3c2c3 fix: preserve strictness provenance in magic typed properties`
+- Score: **5173 / 20294 pinned runnable PHPTs = 25.49%**
 - Regression result: zero latest-published PASS regressions against the
-  Batch021 regression-repair PASS baseline.
+  Batch022 repair02 PASS baseline.
 - Gate notes: the full `open_basedir_*` family was serialized; the known
   sockets expected-output marker was adjudicated as failed-row output, not a
-  harness marker failure.
+  harness marker failure. The previously blocking
+  `strnatcmp_leftalign.phpt` and `typed_properties_009.phpt` rows now pass.
 
 No focused PHPT run, source checkpoint, status note, PR, or candidate gate
 changes the public score until it is parsed, regression-checked against the
@@ -38,9 +41,8 @@ latest published PASS set, and recorded here.
 
 ## Blocked / Unpublished Candidates
 
-- Batch023 checkpoint10 is unpublished and blocked. Do not publish or quote
-  its candidate score as current progress. The blocking regressions are
-  `strnatcmp_leftalign.phpt` and `typed_properties_009.phpt`.
+- Batch023 checkpoint10 was superseded by Batch023 repair01. Its candidate
+  score is no longer current public progress.
 
 ## Score History
 
@@ -70,7 +72,8 @@ latest published PASS set, and recorded here.
 | Batch019 repair02 | 4321 / 20294 | 21.29% | 0 semantic regressions; `bug75679.phpt` and `open_basedir_filemtime.phpt` adjudicated |
 | Batch020 repair01 | 4425 / 20294 | 21.80% | 0 PASS regressions; sockets marker adjudicated |
 | Batch021 regression repair | 4685 / 20294 | 23.09% | 0 PASS regressions; sockets marker adjudicated |
-| Batch022 repair02 | 4949 / 20294 | 24.39% | 0 PASS regressions; current public score |
+| Batch022 repair02 | 4949 / 20294 | 24.39% | 0 PASS regressions; sockets marker adjudicated |
+| Batch023 repair01 | 5173 / 20294 | 25.49% | 0 PASS regressions; current public score |
 
 ## Operating Rules / Gates
 
@@ -95,7 +98,9 @@ latest published PASS set, and recorded here.
   `f97ff597429a2fe633665a7e02d97c8077f9f90f`
 - PHPT wrapper:
   `/home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper`
-- Current Batch022 gate evidence:
+- Current Batch023 gate evidence:
+  `/home/claude/supervised-php-compiler/state/logs/phpt-full-batch023-repair01-sharded-serialized-openbasedir-20260531T1308Z-php-src-f97ff59-public-54829387-source-54f3c2c3`
+- Previous Batch022 baseline evidence:
   `/home/claude/supervised-php-compiler/state/logs/phpt-full-batch022-repair02-sharded-serialized-openbasedir-20260531T0839Z-php-src-f97ff59-public-5530d1da-source-69c5111f`
 - Previous Batch021 baseline evidence:
   `/home/claude/supervised-php-compiler/state/logs/phpt-full-batch021-regression-repair-sharded-serialized-openbasedir-20260531T0838Z-php-src-f97ff59-public-049ff7b5-source-7e9c4fd8`
