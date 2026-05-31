@@ -62,6 +62,34 @@ const PHP_EXTR_PREFIX_IF_EXISTS: i64 = 5;
 const PHP_EXTR_IF_EXISTS: i64 = 6;
 const PHP_EXTR_REFS: i64 = 256;
 const PHP_FIRST_USER_RESOURCE_ID: i64 = 4;
+const PHP_JSON_HEX_TAG: i64 = 1;
+const PHP_JSON_HEX_AMP: i64 = 2;
+const PHP_JSON_HEX_APOS: i64 = 4;
+const PHP_JSON_HEX_QUOT: i64 = 8;
+const PHP_JSON_FORCE_OBJECT: i64 = 16;
+const PHP_JSON_NUMERIC_CHECK: i64 = 32;
+const PHP_JSON_UNESCAPED_SLASHES: i64 = 64;
+const PHP_JSON_PRETTY_PRINT: i64 = 128;
+const PHP_JSON_UNESCAPED_UNICODE: i64 = 256;
+const PHP_JSON_PARTIAL_OUTPUT_ON_ERROR: i64 = 512;
+const PHP_JSON_PRESERVE_ZERO_FRACTION: i64 = 1024;
+const PHP_JSON_UNESCAPED_LINE_TERMINATORS: i64 = 2048;
+const PHP_JSON_INVALID_UTF8_IGNORE: i64 = 1_048_576;
+const PHP_JSON_INVALID_UTF8_SUBSTITUTE: i64 = 2_097_152;
+const PHP_JSON_THROW_ON_ERROR: i64 = 4_194_304;
+const PHP_JSON_OBJECT_AS_ARRAY: i64 = 1;
+const PHP_JSON_BIGINT_AS_STRING: i64 = 2;
+const PHP_JSON_ERROR_NONE: i64 = 0;
+const PHP_JSON_ERROR_DEPTH: i64 = 1;
+const PHP_JSON_ERROR_STATE_MISMATCH: i64 = 2;
+const PHP_JSON_ERROR_CTRL_CHAR: i64 = 3;
+const PHP_JSON_ERROR_SYNTAX: i64 = 4;
+const PHP_JSON_ERROR_UTF8: i64 = 5;
+const PHP_JSON_ERROR_RECURSION: i64 = 6;
+const PHP_JSON_ERROR_INF_OR_NAN: i64 = 7;
+const PHP_JSON_ERROR_UNSUPPORTED_TYPE: i64 = 8;
+const PHP_JSON_ERROR_INVALID_PROPERTY_NAME: i64 = 9;
+const PHP_JSON_ERROR_UTF16: i64 = 10;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Execution {
@@ -199,6 +227,8 @@ struct Interpreter {
     autoload_callbacks: Vec<AutoloadCallback>,
     autoload_extensions: String,
     active_autoloads: HashSet<String>,
+    json_last_error: i64,
+    json_last_error_message: String,
     mysqli_report_mode: i64,
     mysqli_results: HashMap<i64, MysqliResultState>,
     mysqli_pending_results: HashMap<i64, MysqliPendingResultState>,
@@ -11023,6 +11053,8 @@ impl Interpreter {
             autoload_callbacks: Vec::new(),
             autoload_extensions: ".inc,.php".to_string(),
             active_autoloads: HashSet::new(),
+            json_last_error: PHP_JSON_ERROR_NONE,
+            json_last_error_message: json_error_base_message(PHP_JSON_ERROR_NONE).to_string(),
             mysqli_report_mode: PHP_MYSQLI_REPORT_ERROR | PHP_MYSQLI_REPORT_STRICT,
             mysqli_results: HashMap::new(),
             mysqli_pending_results: HashMap::new(),
@@ -82384,7 +82416,10 @@ impl Interpreter {
             "php_uname" => call_php_uname(&args, span),
             "php_sapi_name" => call_php_sapi_name(&args, span),
             "phpversion" => call_phpversion(&args, span),
-            "json_encode" => call_json_encode(&args, span),
+            "json_encode" => self.call_json_encode(&args, span),
+            "json_decode" => self.call_json_decode(&args, span),
+            "json_last_error" => self.call_json_last_error(&args, span),
+            "json_last_error_msg" => self.call_json_last_error_msg(&args, span),
             "printf" => self.call_printf(&args, span),
             "fprintf" => self.call_fprintf(&args, span),
             "sprintf" => self.call_sprintf(&args, span),
@@ -97561,8 +97596,23 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
         ),
         "json_encode" => (
             "string|false",
-            vec![reflection_internal_param("value", "mixed")],
+            vec![
+                reflection_internal_param("value", "mixed"),
+                reflection_internal_optional_int_param("flags", 0),
+                reflection_internal_optional_int_param("depth", 512),
+            ],
         ),
+        "json_decode" => (
+            "mixed",
+            vec![
+                reflection_internal_param("json", "string"),
+                reflection_internal_optional_null_param("associative", "bool"),
+                reflection_internal_optional_int_param("depth", 512),
+                reflection_internal_optional_int_param("flags", 0),
+            ],
+        ),
+        "json_last_error" => ("int", vec![]),
+        "json_last_error_msg" => ("string", vec![]),
         "printf" => (
             "int",
             vec![
@@ -101599,6 +101649,9 @@ fn is_builtin(name: &str) -> bool {
             | "php_sapi_name"
             | "phpversion"
             | "json_encode"
+            | "json_decode"
+            | "json_last_error"
+            | "json_last_error_msg"
             | "printf"
             | "fprintf"
             | "vprintf"
@@ -103254,6 +103307,34 @@ const BUILTIN_GLOBAL_CONSTANT_NAMES: &[&str] = &[
     "INI_SCANNER_NORMAL",
     "INI_SCANNER_RAW",
     "INI_SCANNER_TYPED",
+    "JSON_HEX_TAG",
+    "JSON_HEX_AMP",
+    "JSON_HEX_APOS",
+    "JSON_HEX_QUOT",
+    "JSON_FORCE_OBJECT",
+    "JSON_NUMERIC_CHECK",
+    "JSON_UNESCAPED_SLASHES",
+    "JSON_PRETTY_PRINT",
+    "JSON_UNESCAPED_UNICODE",
+    "JSON_PARTIAL_OUTPUT_ON_ERROR",
+    "JSON_PRESERVE_ZERO_FRACTION",
+    "JSON_UNESCAPED_LINE_TERMINATORS",
+    "JSON_INVALID_UTF8_IGNORE",
+    "JSON_INVALID_UTF8_SUBSTITUTE",
+    "JSON_THROW_ON_ERROR",
+    "JSON_OBJECT_AS_ARRAY",
+    "JSON_BIGINT_AS_STRING",
+    "JSON_ERROR_NONE",
+    "JSON_ERROR_DEPTH",
+    "JSON_ERROR_STATE_MISMATCH",
+    "JSON_ERROR_CTRL_CHAR",
+    "JSON_ERROR_SYNTAX",
+    "JSON_ERROR_UTF8",
+    "JSON_ERROR_RECURSION",
+    "JSON_ERROR_INF_OR_NAN",
+    "JSON_ERROR_UNSUPPORTED_TYPE",
+    "JSON_ERROR_INVALID_PROPERTY_NAME",
+    "JSON_ERROR_UTF16",
     "FILTER_VALIDATE_INT",
     "FILTER_VALIDATE_BOOLEAN",
     "FILTER_VALIDATE_BOOL",
@@ -103603,6 +103684,36 @@ fn builtin_global_constant_value(name: &str) -> Option<Value> {
         "INI_SCANNER_NORMAL" => Some(Value::Int(PHP_INI_SCANNER_NORMAL)),
         "INI_SCANNER_RAW" => Some(Value::Int(PHP_INI_SCANNER_RAW)),
         "INI_SCANNER_TYPED" => Some(Value::Int(PHP_INI_SCANNER_TYPED)),
+        "JSON_HEX_TAG" => Some(Value::Int(PHP_JSON_HEX_TAG)),
+        "JSON_HEX_AMP" => Some(Value::Int(PHP_JSON_HEX_AMP)),
+        "JSON_HEX_APOS" => Some(Value::Int(PHP_JSON_HEX_APOS)),
+        "JSON_HEX_QUOT" => Some(Value::Int(PHP_JSON_HEX_QUOT)),
+        "JSON_FORCE_OBJECT" => Some(Value::Int(PHP_JSON_FORCE_OBJECT)),
+        "JSON_NUMERIC_CHECK" => Some(Value::Int(PHP_JSON_NUMERIC_CHECK)),
+        "JSON_UNESCAPED_SLASHES" => Some(Value::Int(PHP_JSON_UNESCAPED_SLASHES)),
+        "JSON_PRETTY_PRINT" => Some(Value::Int(PHP_JSON_PRETTY_PRINT)),
+        "JSON_UNESCAPED_UNICODE" => Some(Value::Int(PHP_JSON_UNESCAPED_UNICODE)),
+        "JSON_PARTIAL_OUTPUT_ON_ERROR" => Some(Value::Int(PHP_JSON_PARTIAL_OUTPUT_ON_ERROR)),
+        "JSON_PRESERVE_ZERO_FRACTION" => Some(Value::Int(PHP_JSON_PRESERVE_ZERO_FRACTION)),
+        "JSON_UNESCAPED_LINE_TERMINATORS" => Some(Value::Int(PHP_JSON_UNESCAPED_LINE_TERMINATORS)),
+        "JSON_INVALID_UTF8_IGNORE" => Some(Value::Int(PHP_JSON_INVALID_UTF8_IGNORE)),
+        "JSON_INVALID_UTF8_SUBSTITUTE" => Some(Value::Int(PHP_JSON_INVALID_UTF8_SUBSTITUTE)),
+        "JSON_THROW_ON_ERROR" => Some(Value::Int(PHP_JSON_THROW_ON_ERROR)),
+        "JSON_OBJECT_AS_ARRAY" => Some(Value::Int(PHP_JSON_OBJECT_AS_ARRAY)),
+        "JSON_BIGINT_AS_STRING" => Some(Value::Int(PHP_JSON_BIGINT_AS_STRING)),
+        "JSON_ERROR_NONE" => Some(Value::Int(PHP_JSON_ERROR_NONE)),
+        "JSON_ERROR_DEPTH" => Some(Value::Int(PHP_JSON_ERROR_DEPTH)),
+        "JSON_ERROR_STATE_MISMATCH" => Some(Value::Int(PHP_JSON_ERROR_STATE_MISMATCH)),
+        "JSON_ERROR_CTRL_CHAR" => Some(Value::Int(PHP_JSON_ERROR_CTRL_CHAR)),
+        "JSON_ERROR_SYNTAX" => Some(Value::Int(PHP_JSON_ERROR_SYNTAX)),
+        "JSON_ERROR_UTF8" => Some(Value::Int(PHP_JSON_ERROR_UTF8)),
+        "JSON_ERROR_RECURSION" => Some(Value::Int(PHP_JSON_ERROR_RECURSION)),
+        "JSON_ERROR_INF_OR_NAN" => Some(Value::Int(PHP_JSON_ERROR_INF_OR_NAN)),
+        "JSON_ERROR_UNSUPPORTED_TYPE" => Some(Value::Int(PHP_JSON_ERROR_UNSUPPORTED_TYPE)),
+        "JSON_ERROR_INVALID_PROPERTY_NAME" => {
+            Some(Value::Int(PHP_JSON_ERROR_INVALID_PROPERTY_NAME))
+        }
+        "JSON_ERROR_UTF16" => Some(Value::Int(PHP_JSON_ERROR_UTF16)),
         "FILTER_VALIDATE_INT" => Some(Value::Int(PHP_FILTER_VALIDATE_INT)),
         "FILTER_VALIDATE_BOOLEAN" => Some(Value::Int(PHP_FILTER_VALIDATE_BOOL)),
         "FILTER_VALIDATE_BOOL" => Some(Value::Int(PHP_FILTER_VALIDATE_BOOL)),
@@ -120485,66 +120596,363 @@ fn scanf_unsigned_decimal_value(value: u32) -> Value {
     }
 }
 
-fn call_json_encode(args: &[Value], span: Span) -> CompileResult<Value> {
-    expect_arity("json_encode()", args, 1, span)?;
-    json_encode_value(&args[0], span).map(Value::String)
+#[derive(Debug, Clone, Copy)]
+struct JsonEncodeOptions {
+    flags: i64,
+    depth: i64,
 }
 
-fn json_encode_value(value: &Value, span: Span) -> CompileResult<String> {
-    Ok(match value {
-        Value::Null => "null".to_string(),
-        Value::Bool(value) => value.to_string(),
-        Value::Int(value) => value.to_string(),
-        Value::Float(value) => php_default_precision_float_string(*value),
-        Value::String(value) => json_quote_string(value),
-        Value::BinaryString(value) => {
-            let value = tree_walk_binary_string_utf8(value, "json_encode()", span)?;
-            json_quote_string(value)
+impl JsonEncodeOptions {
+    fn has_flag(self, flag: i64) -> bool {
+        self.flags & flag != 0
+    }
+
+    fn partial_output(self) -> bool {
+        self.has_flag(PHP_JSON_PARTIAL_OUTPUT_ON_ERROR)
+    }
+}
+
+#[derive(Debug, Default)]
+struct JsonEncodeState {
+    active_objects: HashSet<i64>,
+    active_references: HashSet<i64>,
+    error_code: Option<i64>,
+    error_message: Option<String>,
+}
+
+impl JsonEncodeState {
+    fn record_error(&mut self, code: i64, message: impl Into<String>) {
+        if self.error_code.is_none() {
+            self.error_code = Some(code);
+            self.error_message = Some(message.into());
         }
-        Value::Array(array) if json_array_is_list(array) => {
-            let mut output = String::from("[");
-            for (index, entry) in array.entries().iter().enumerate() {
-                if index > 0 {
-                    output.push(',');
-                }
-                output.push_str(&json_encode_value(&entry.value_cloned(), span)?);
+    }
+}
+
+#[derive(Debug, Clone)]
+enum JsonParsedValue {
+    Null,
+    Bool(bool),
+    Int(i64),
+    Float(f64),
+    String(String),
+    Array(Vec<JsonParsedValue>),
+    Object(Vec<(String, JsonParsedValue)>),
+}
+
+#[derive(Debug, Clone)]
+struct JsonDecodeError {
+    code: i64,
+    message: String,
+}
+
+struct JsonParser<'a> {
+    chars: Vec<char>,
+    position: usize,
+    max_depth: i64,
+    bigint_as_string: bool,
+    _marker: std::marker::PhantomData<&'a str>,
+}
+
+impl<'a> JsonParser<'a> {
+    fn new(input: &'a str, max_depth: i64, bigint_as_string: bool) -> Self {
+        Self {
+            chars: input.chars().collect(),
+            position: 0,
+            max_depth,
+            bigint_as_string,
+            _marker: std::marker::PhantomData,
+        }
+    }
+
+    fn parse(mut self) -> Result<JsonParsedValue, JsonDecodeError> {
+        self.skip_whitespace();
+        if self.is_eof() {
+            return Err(self.error(PHP_JSON_ERROR_SYNTAX, "Syntax error"));
+        }
+        let value = self.parse_value(1)?;
+        self.skip_whitespace();
+        if self.is_eof() {
+            Ok(value)
+        } else {
+            Err(self.error(PHP_JSON_ERROR_SYNTAX, "Syntax error"))
+        }
+    }
+
+    fn parse_value(&mut self, depth: i64) -> Result<JsonParsedValue, JsonDecodeError> {
+        if depth > self.max_depth {
+            return Err(self.error(PHP_JSON_ERROR_DEPTH, "Maximum stack depth exceeded"));
+        }
+        match self.peek() {
+            Some('n') => self.parse_literal("null", JsonParsedValue::Null),
+            Some('t') => self.parse_literal("true", JsonParsedValue::Bool(true)),
+            Some('f') => self.parse_literal("false", JsonParsedValue::Bool(false)),
+            Some('"') => self.parse_string().map(JsonParsedValue::String),
+            Some('[') => self.parse_array(depth),
+            Some('{') => self.parse_object(depth),
+            Some('-' | '0'..='9') => self.parse_number(),
+            Some(ch) if ch.is_control() => Err(self.error(
+                PHP_JSON_ERROR_CTRL_CHAR,
+                "Control character error, possibly incorrectly encoded",
+            )),
+            _ => Err(self.error(PHP_JSON_ERROR_SYNTAX, "Syntax error")),
+        }
+    }
+
+    fn parse_literal(
+        &mut self,
+        literal: &str,
+        value: JsonParsedValue,
+    ) -> Result<JsonParsedValue, JsonDecodeError> {
+        for expected in literal.chars() {
+            if self.next() != Some(expected) {
+                return Err(self.error(PHP_JSON_ERROR_SYNTAX, "Syntax error"));
             }
-            output.push(']');
-            output
         }
-        Value::Array(array) => {
-            let mut output = String::from("{");
-            for (index, entry) in array.entries().iter().enumerate() {
-                if index > 0 {
-                    output.push(',');
-                }
-                let key = match &entry.key {
-                    ArrayKey::Int(value) => value.to_string(),
-                    ArrayKey::String(value) => value.clone(),
-                };
-                output.push_str(&json_quote_string(&key));
-                output.push(':');
-                output.push_str(&json_encode_value(&entry.value_cloned(), span)?);
+        Ok(value)
+    }
+
+    fn parse_array(&mut self, depth: i64) -> Result<JsonParsedValue, JsonDecodeError> {
+        self.expect_char('[')?;
+        self.skip_whitespace();
+        let mut values = Vec::new();
+        if self.consume_if(']') {
+            return Ok(JsonParsedValue::Array(values));
+        }
+        loop {
+            self.skip_whitespace();
+            values.push(self.parse_value(depth + 1)?);
+            self.skip_whitespace();
+            if self.consume_if(']') {
+                break;
             }
-            output.push('}');
-            output
+            self.expect_char(',')?;
         }
-        Value::Object(object) if object.properties().is_empty() => "{}".to_string(),
-        Value::Object(object) => {
-            let mut output = String::from("{");
-            for (index, property) in object.properties().iter().enumerate() {
-                if index > 0 {
-                    output.push(',');
-                }
-                output.push_str(&json_quote_string(property.name()));
-                output.push(':');
-                output.push_str(&json_encode_value(&property.value_cloned(), span)?);
+        Ok(JsonParsedValue::Array(values))
+    }
+
+    fn parse_object(&mut self, depth: i64) -> Result<JsonParsedValue, JsonDecodeError> {
+        self.expect_char('{')?;
+        self.skip_whitespace();
+        let mut values = Vec::new();
+        if self.consume_if('}') {
+            return Ok(JsonParsedValue::Object(values));
+        }
+        loop {
+            self.skip_whitespace();
+            if self.peek() != Some('"') {
+                return Err(self.error(PHP_JSON_ERROR_SYNTAX, "Syntax error"));
             }
-            output.push('}');
-            output
+            let key = self.parse_string()?;
+            self.skip_whitespace();
+            self.expect_char(':')?;
+            self.skip_whitespace();
+            let value = self.parse_value(depth + 1)?;
+            values.push((key, value));
+            self.skip_whitespace();
+            if self.consume_if('}') {
+                break;
+            }
+            self.expect_char(',')?;
         }
-        Value::Resource(_) | Value::Closure(_) => "null".to_string(),
-    })
+        Ok(JsonParsedValue::Object(values))
+    }
+
+    fn parse_number(&mut self) -> Result<JsonParsedValue, JsonDecodeError> {
+        let start = self.position;
+        if self.consume_if('-') && self.is_eof() {
+            return Err(self.error(PHP_JSON_ERROR_SYNTAX, "Syntax error"));
+        }
+        match self.peek() {
+            Some('0') => {
+                self.position += 1;
+                if matches!(self.peek(), Some('0'..='9')) {
+                    return Err(self.error(PHP_JSON_ERROR_SYNTAX, "Syntax error"));
+                }
+            }
+            Some('1'..='9') => {
+                while matches!(self.peek(), Some('0'..='9')) {
+                    self.position += 1;
+                }
+            }
+            _ => return Err(self.error(PHP_JSON_ERROR_SYNTAX, "Syntax error")),
+        }
+        let mut float_syntax = false;
+        if self.consume_if('.') {
+            float_syntax = true;
+            let digits_start = self.position;
+            while matches!(self.peek(), Some('0'..='9')) {
+                self.position += 1;
+            }
+            if self.position == digits_start {
+                return Err(self.error(PHP_JSON_ERROR_SYNTAX, "Syntax error"));
+            }
+        }
+        if matches!(self.peek(), Some('e' | 'E')) {
+            float_syntax = true;
+            self.position += 1;
+            if matches!(self.peek(), Some('+' | '-')) {
+                self.position += 1;
+            }
+            let digits_start = self.position;
+            while matches!(self.peek(), Some('0'..='9')) {
+                self.position += 1;
+            }
+            if self.position == digits_start {
+                return Err(self.error(PHP_JSON_ERROR_SYNTAX, "Syntax error"));
+            }
+        }
+        let token: String = self.chars[start..self.position].iter().collect();
+        if !float_syntax {
+            if let Ok(value) = token.parse::<i64>() {
+                return Ok(JsonParsedValue::Int(value));
+            }
+            if self.bigint_as_string {
+                return Ok(JsonParsedValue::String(token));
+            }
+        }
+        token
+            .parse::<f64>()
+            .ok()
+            .filter(|value| value.is_finite())
+            .map(JsonParsedValue::Float)
+            .ok_or_else(|| self.error(PHP_JSON_ERROR_SYNTAX, "Syntax error"))
+    }
+
+    fn parse_string(&mut self) -> Result<String, JsonDecodeError> {
+        self.expect_char('"')?;
+        let mut output = String::new();
+        loop {
+            let Some(ch) = self.next() else {
+                return Err(self.error(PHP_JSON_ERROR_SYNTAX, "Syntax error"));
+            };
+            match ch {
+                '"' => return Ok(output),
+                '\\' => output.push(self.parse_escape()?),
+                ch if ch.is_control() => {
+                    return Err(self.error(
+                        PHP_JSON_ERROR_CTRL_CHAR,
+                        "Control character error, possibly incorrectly encoded",
+                    ));
+                }
+                ch => output.push(ch),
+            }
+        }
+    }
+
+    fn parse_escape(&mut self) -> Result<char, JsonDecodeError> {
+        match self.next() {
+            Some('"') => Ok('"'),
+            Some('\\') => Ok('\\'),
+            Some('/') => Ok('/'),
+            Some('b') => Ok('\u{0008}'),
+            Some('f') => Ok('\u{000c}'),
+            Some('n') => Ok('\n'),
+            Some('r') => Ok('\r'),
+            Some('t') => Ok('\t'),
+            Some('u') => self.parse_unicode_escape(),
+            _ => Err(self.error(PHP_JSON_ERROR_SYNTAX, "Syntax error")),
+        }
+    }
+
+    fn parse_unicode_escape(&mut self) -> Result<char, JsonDecodeError> {
+        let high = self.parse_hex_quad()?;
+        if (0xd800..=0xdbff).contains(&high) {
+            let save = self.position;
+            if self.consume_if('\\') && self.consume_if('u') {
+                let low = self.parse_hex_quad()?;
+                if (0xdc00..=0xdfff).contains(&low) {
+                    let code = 0x10000 + (((high - 0xd800) << 10) | (low - 0xdc00));
+                    return char::from_u32(code).ok_or_else(|| {
+                        self.error(
+                            PHP_JSON_ERROR_UTF16,
+                            "Single unpaired UTF-16 surrogate in unicode escape",
+                        )
+                    });
+                }
+            }
+            self.position = save;
+            return Err(self.error(
+                PHP_JSON_ERROR_UTF16,
+                "Single unpaired UTF-16 surrogate in unicode escape",
+            ));
+        }
+        if (0xdc00..=0xdfff).contains(&high) {
+            return Err(self.error(
+                PHP_JSON_ERROR_UTF16,
+                "Single unpaired UTF-16 surrogate in unicode escape",
+            ));
+        }
+        char::from_u32(high).ok_or_else(|| {
+            self.error(
+                PHP_JSON_ERROR_UTF16,
+                "Single unpaired UTF-16 surrogate in unicode escape",
+            )
+        })
+    }
+
+    fn parse_hex_quad(&mut self) -> Result<u32, JsonDecodeError> {
+        let mut value = 0_u32;
+        for _ in 0..4 {
+            let Some(ch) = self.next() else {
+                return Err(self.error(PHP_JSON_ERROR_SYNTAX, "Syntax error"));
+            };
+            let Some(digit) = ch.to_digit(16) else {
+                return Err(self.error(PHP_JSON_ERROR_SYNTAX, "Syntax error"));
+            };
+            value = (value << 4) | digit;
+        }
+        Ok(value)
+    }
+
+    fn skip_whitespace(&mut self) {
+        while matches!(self.peek(), Some(' ' | '\t' | '\n' | '\r')) {
+            self.position += 1;
+        }
+    }
+
+    fn expect_char(&mut self, expected: char) -> Result<(), JsonDecodeError> {
+        if self.next() == Some(expected) {
+            Ok(())
+        } else {
+            let code = if expected == ',' || expected == ':' {
+                PHP_JSON_ERROR_STATE_MISMATCH
+            } else {
+                PHP_JSON_ERROR_SYNTAX
+            };
+            Err(self.error(code, json_error_base_message(code)))
+        }
+    }
+
+    fn consume_if(&mut self, expected: char) -> bool {
+        if self.peek() == Some(expected) {
+            self.position += 1;
+            true
+        } else {
+            false
+        }
+    }
+
+    fn peek(&self) -> Option<char> {
+        self.chars.get(self.position).copied()
+    }
+
+    fn next(&mut self) -> Option<char> {
+        let ch = self.peek()?;
+        self.position += 1;
+        Some(ch)
+    }
+
+    fn is_eof(&self) -> bool {
+        self.position >= self.chars.len()
+    }
+
+    fn error(&self, code: i64, message: &str) -> JsonDecodeError {
+        JsonDecodeError {
+            code,
+            message: json_error_message_at(code, message, self.position),
+        }
+    }
 }
 
 fn json_array_is_list(array: &PhpArray) -> bool {
@@ -120555,16 +120963,71 @@ fn json_array_is_list(array: &PhpArray) -> bool {
         .all(|(index, entry)| matches!(entry.key, ArrayKey::Int(key) if key == index as i64))
 }
 
-fn json_quote_string(value: &str) -> String {
+fn json_error_base_message(code: i64) -> &'static str {
+    match code {
+        PHP_JSON_ERROR_NONE => "No error",
+        PHP_JSON_ERROR_DEPTH => "Maximum stack depth exceeded",
+        PHP_JSON_ERROR_STATE_MISMATCH => "State mismatch (invalid or malformed JSON)",
+        PHP_JSON_ERROR_CTRL_CHAR => "Control character error, possibly incorrectly encoded",
+        PHP_JSON_ERROR_SYNTAX => "Syntax error",
+        PHP_JSON_ERROR_UTF8 => "Malformed UTF-8 characters, possibly incorrectly encoded",
+        PHP_JSON_ERROR_RECURSION => "Recursion detected",
+        PHP_JSON_ERROR_INF_OR_NAN => "Inf and NaN cannot be JSON encoded",
+        PHP_JSON_ERROR_UNSUPPORTED_TYPE => "Type is not supported",
+        PHP_JSON_ERROR_INVALID_PROPERTY_NAME => "The decoded property name is invalid",
+        PHP_JSON_ERROR_UTF16 => "Single unpaired UTF-16 surrogate in unicode escape",
+        _ => "Unknown error",
+    }
+}
+
+fn json_error_message_at(code: i64, base: &str, position: usize) -> String {
+    match code {
+        PHP_JSON_ERROR_DEPTH
+        | PHP_JSON_ERROR_STATE_MISMATCH
+        | PHP_JSON_ERROR_CTRL_CHAR
+        | PHP_JSON_ERROR_SYNTAX
+        | PHP_JSON_ERROR_INVALID_PROPERTY_NAME
+        | PHP_JSON_ERROR_UTF16 => format!("{base} near location 1:{}", position + 1),
+        _ => base.to_string(),
+    }
+}
+
+fn json_key_string(key: &ArrayKey) -> String {
+    match key {
+        ArrayKey::Int(value) => value.to_string(),
+        ArrayKey::String(value) => value.clone(),
+    }
+}
+
+fn json_quote_string(value: &str, options: JsonEncodeOptions) -> String {
     let mut output = String::from("\"");
     for ch in value.chars() {
         match ch {
+            '"' if options.has_flag(PHP_JSON_HEX_QUOT) => output.push_str("\\u0022"),
             '"' => output.push_str("\\\""),
             '\\' => output.push_str("\\\\"),
+            '/' if !options.has_flag(PHP_JSON_UNESCAPED_SLASHES) => output.push_str("\\/"),
+            '\u{0008}' => output.push_str("\\b"),
+            '\u{000c}' => output.push_str("\\f"),
             '\n' => output.push_str("\\n"),
             '\r' => output.push_str("\\r"),
             '\t' => output.push_str("\\t"),
+            '<' if options.has_flag(PHP_JSON_HEX_TAG) => output.push_str("\\u003C"),
+            '>' if options.has_flag(PHP_JSON_HEX_TAG) => output.push_str("\\u003E"),
+            '&' if options.has_flag(PHP_JSON_HEX_AMP) => output.push_str("\\u0026"),
+            '\'' if options.has_flag(PHP_JSON_HEX_APOS) => output.push_str("\\u0027"),
             ch if ch < ' ' => output.push_str(&format!("\\u{:04x}", ch as u32)),
+            ch if ch as u32 > 0x7f && !options.has_flag(PHP_JSON_UNESCAPED_UNICODE) => {
+                let code = ch as u32;
+                if code <= 0xffff {
+                    output.push_str(&format!("\\u{code:04x}"));
+                } else {
+                    let shifted = code - 0x10000;
+                    let high = 0xd800 + (shifted >> 10);
+                    let low = 0xdc00 + (shifted & 0x3ff);
+                    output.push_str(&format!("\\u{high:04x}\\u{low:04x}"));
+                }
+            }
             ch => output.push(ch),
         }
     }
@@ -120572,7 +121035,519 @@ fn json_quote_string(value: &str) -> String {
     output
 }
 
+fn json_numeric_check_string(value: &str) -> Option<String> {
+    match classify_php_numeric_string(value) {
+        PhpNumericStringClassification::Integer(value) => Some(value.to_string()),
+        PhpNumericStringClassification::Float(value) if value.is_finite() => {
+            Some(php_default_precision_float_string(value))
+        }
+        _ => None,
+    }
+}
+
+fn json_indent(depth: i64) -> String {
+    " ".repeat(depth.saturating_mul(4) as usize)
+}
+
+fn json_join_array(values: Vec<String>, options: JsonEncodeOptions, depth: i64) -> String {
+    if values.is_empty() {
+        return "[]".to_string();
+    }
+    if !options.has_flag(PHP_JSON_PRETTY_PRINT) {
+        return format!("[{}]", values.join(","));
+    }
+    let child_indent = json_indent(depth);
+    let parent_indent = json_indent(depth - 1);
+    let mut output = String::from("[\n");
+    for (index, value) in values.iter().enumerate() {
+        if index > 0 {
+            output.push_str(",\n");
+        }
+        output.push_str(&child_indent);
+        output.push_str(value);
+    }
+    output.push('\n');
+    output.push_str(&parent_indent);
+    output.push(']');
+    output
+}
+
+fn json_join_object(
+    pairs: Vec<(String, String)>,
+    options: JsonEncodeOptions,
+    depth: i64,
+) -> String {
+    if pairs.is_empty() {
+        return "{}".to_string();
+    }
+    if !options.has_flag(PHP_JSON_PRETTY_PRINT) {
+        let members = pairs
+            .into_iter()
+            .map(|(key, value)| format!("{key}:{value}"))
+            .collect::<Vec<_>>()
+            .join(",");
+        return format!("{{{members}}}");
+    }
+    let child_indent = json_indent(depth);
+    let parent_indent = json_indent(depth - 1);
+    let mut output = String::from("{\n");
+    for (index, (key, value)) in pairs.iter().enumerate() {
+        if index > 0 {
+            output.push_str(",\n");
+        }
+        output.push_str(&child_indent);
+        output.push_str(key);
+        output.push_str(": ");
+        output.push_str(value);
+    }
+    output.push('\n');
+    output.push_str(&parent_indent);
+    output.push('}');
+    output
+}
+
 impl Interpreter {
+    fn call_json_encode(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(1..=3).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "json_encode()",
+                    ArityExpectation::Between { min: 1, max: 3 },
+                    args.len(),
+                ),
+            ));
+        }
+        let flags = args
+            .get(1)
+            .map(|value| php_internal_int_argument("json_encode()", 2, "flags", value, span))
+            .transpose()?
+            .unwrap_or(0);
+        let depth = args
+            .get(2)
+            .map(|value| php_internal_int_argument("json_encode()", 3, "depth", value, span))
+            .transpose()?
+            .unwrap_or(512);
+        let options = JsonEncodeOptions { flags, depth };
+        let mut state = JsonEncodeState::default();
+        let encoded = if depth < 1 {
+            state.record_error(
+                PHP_JSON_ERROR_DEPTH,
+                json_error_base_message(PHP_JSON_ERROR_DEPTH),
+            );
+            Err(PHP_JSON_ERROR_DEPTH)
+        } else {
+            self.json_encode_value(&args[0], options, &mut state, 1, span)
+        };
+
+        match encoded {
+            Ok(encoded) => {
+                self.set_json_last_error(
+                    state.error_code.unwrap_or(PHP_JSON_ERROR_NONE),
+                    state.error_message.unwrap_or_else(|| {
+                        json_error_base_message(PHP_JSON_ERROR_NONE).to_string()
+                    }),
+                );
+                Ok(Value::String(encoded))
+            }
+            Err(code) => {
+                self.set_json_last_error(
+                    code,
+                    state
+                        .error_message
+                        .unwrap_or_else(|| json_error_base_message(code).to_string()),
+                );
+                Ok(Value::Bool(false))
+            }
+        }
+    }
+
+    fn json_encode_value(
+        &mut self,
+        value: &Value,
+        options: JsonEncodeOptions,
+        state: &mut JsonEncodeState,
+        depth: i64,
+        span: Span,
+    ) -> Result<String, i64> {
+        if depth > options.depth {
+            state.record_error(
+                PHP_JSON_ERROR_DEPTH,
+                json_error_base_message(PHP_JSON_ERROR_DEPTH),
+            );
+            return if options.partial_output() {
+                Ok("null".to_string())
+            } else {
+                Err(PHP_JSON_ERROR_DEPTH)
+            };
+        }
+
+        match value {
+            Value::Null => Ok("null".to_string()),
+            Value::Bool(value) => Ok(value.to_string()),
+            Value::Int(value) => Ok(value.to_string()),
+            Value::Float(value) if value.is_finite() => {
+                let mut encoded = php_default_precision_float_string(*value);
+                if options.has_flag(PHP_JSON_PRESERVE_ZERO_FRACTION)
+                    && !encoded.contains('.')
+                    && !encoded.contains('E')
+                    && !encoded.contains('e')
+                {
+                    encoded.push_str(".0");
+                }
+                Ok(encoded)
+            }
+            Value::Float(_) => self.json_encode_error(PHP_JSON_ERROR_INF_OR_NAN, options, state),
+            Value::String(value) => {
+                if options.has_flag(PHP_JSON_NUMERIC_CHECK) {
+                    if let Some(encoded) = json_numeric_check_string(value) {
+                        return Ok(encoded);
+                    }
+                }
+                Ok(json_quote_string(value, options))
+            }
+            Value::BinaryString(value) => match std::str::from_utf8(value) {
+                Ok(value) => {
+                    if options.has_flag(PHP_JSON_NUMERIC_CHECK) {
+                        if let Some(encoded) = json_numeric_check_string(value) {
+                            return Ok(encoded);
+                        }
+                    }
+                    Ok(json_quote_string(value, options))
+                }
+                Err(_) => self.json_encode_error(PHP_JSON_ERROR_UTF8, options, state),
+            },
+            Value::Array(array) => self.json_encode_array(array, options, state, depth, span),
+            Value::Object(object) => self.json_encode_object(object, options, state, depth, span),
+            Value::Resource(_) | Value::Closure(_) => {
+                self.json_encode_error(PHP_JSON_ERROR_UNSUPPORTED_TYPE, options, state)
+            }
+        }
+    }
+
+    fn json_encode_array(
+        &mut self,
+        array: &PhpArray,
+        options: JsonEncodeOptions,
+        state: &mut JsonEncodeState,
+        depth: i64,
+        span: Span,
+    ) -> Result<String, i64> {
+        let encode_as_list = json_array_is_list(array) && !options.has_flag(PHP_JSON_FORCE_OBJECT);
+        if encode_as_list {
+            let mut values = Vec::new();
+            for entry in array.entries() {
+                values.push(self.json_encode_slot_value(
+                    entry.slot(),
+                    options,
+                    state,
+                    depth + 1,
+                    span,
+                )?);
+            }
+            return Ok(json_join_array(values, options, depth));
+        }
+
+        let mut pairs = Vec::new();
+        for entry in array.entries() {
+            let key = json_key_string(&entry.key);
+            let value =
+                self.json_encode_slot_value(entry.slot(), options, state, depth + 1, span)?;
+            pairs.push((json_quote_string(&key, options), value));
+        }
+        Ok(json_join_object(pairs, options, depth))
+    }
+
+    fn json_encode_slot_value(
+        &mut self,
+        slot: &ArraySlot,
+        options: JsonEncodeOptions,
+        state: &mut JsonEncodeState,
+        depth: i64,
+        span: Span,
+    ) -> Result<String, i64> {
+        if let Some(reference_id) = slot.reference_cell_id() {
+            if !state.active_references.insert(reference_id.as_i64()) {
+                state.record_error(
+                    PHP_JSON_ERROR_RECURSION,
+                    json_error_base_message(PHP_JSON_ERROR_RECURSION),
+                );
+                return if options.partial_output() {
+                    Ok("null".to_string())
+                } else {
+                    Err(PHP_JSON_ERROR_RECURSION)
+                };
+            }
+            let result = self.json_encode_value(&slot.value_cloned(), options, state, depth, span);
+            state.active_references.remove(&reference_id.as_i64());
+            return result;
+        }
+
+        self.json_encode_value(&slot.value_cloned(), options, state, depth, span)
+    }
+
+    fn json_encode_object(
+        &mut self,
+        object: &PhpObject,
+        options: JsonEncodeOptions,
+        state: &mut JsonEncodeState,
+        depth: i64,
+        span: Span,
+    ) -> Result<String, i64> {
+        if !state.active_objects.insert(object.id()) {
+            state.record_error(
+                PHP_JSON_ERROR_RECURSION,
+                json_error_base_message(PHP_JSON_ERROR_RECURSION),
+            );
+            return if options.partial_output() {
+                Ok("null".to_string())
+            } else {
+                Err(PHP_JSON_ERROR_RECURSION)
+            };
+        }
+
+        if let Some(serialized) = self
+            .call_magic_instance_method_with_values(
+                object.clone(),
+                "jsonSerialize",
+                Vec::new(),
+                span,
+            )
+            .map_err(|_| PHP_JSON_ERROR_UNSUPPORTED_TYPE)?
+        {
+            let result = self.json_encode_value(&serialized, options, state, depth + 1, span);
+            state.active_objects.remove(&object.id());
+            return result;
+        }
+
+        let mut pairs = Vec::new();
+        for property in object.properties() {
+            if property.visibility() != Visibility::Public
+                || !property.is_initialized()
+                || property.is_unset()
+            {
+                continue;
+            }
+            let encoded =
+                self.json_encode_value(&property.value_cloned(), options, state, depth + 1, span)?;
+            pairs.push((json_quote_string(property.name(), options), encoded));
+        }
+        state.active_objects.remove(&object.id());
+        Ok(json_join_object(pairs, options, depth))
+    }
+
+    fn json_encode_error(
+        &self,
+        code: i64,
+        options: JsonEncodeOptions,
+        state: &mut JsonEncodeState,
+    ) -> Result<String, i64> {
+        state.record_error(code, json_error_base_message(code));
+        if options.partial_output() {
+            Ok("null".to_string())
+        } else {
+            Err(code)
+        }
+    }
+
+    fn call_json_decode(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(1..=4).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "json_decode()",
+                    ArityExpectation::Between { min: 1, max: 4 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let mut input = match &args[0] {
+            Value::Null => {
+                self.emit_display_diagnostic(
+                    "Deprecated",
+                    PHP_E_DEPRECATED,
+                    "json_decode(): Passing null to parameter #1 ($json) of type string is deprecated",
+                    span,
+                )?;
+                String::new()
+            }
+            Value::Bool(false) => String::new(),
+            Value::Bool(true) => "1".to_string(),
+            Value::Int(value) => value.to_string(),
+            Value::Float(value) => php_default_precision_float_string(*value),
+            Value::String(value) => value.clone(),
+            Value::BinaryString(value) => match std::str::from_utf8(value) {
+                Ok(value) => value.to_string(),
+                Err(_) => {
+                    self.set_json_last_error(
+                        PHP_JSON_ERROR_UTF8,
+                        json_error_base_message(PHP_JSON_ERROR_UTF8).to_string(),
+                    );
+                    return Ok(Value::Null);
+                }
+            },
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "json_decode()",
+                        format!(
+                            "json argument must be scalar in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+        };
+
+        if input
+            .chars()
+            .any(|ch| ch.is_control() && !matches!(ch, '\t' | '\n' | '\r'))
+        {
+            self.set_json_last_error(
+                PHP_JSON_ERROR_CTRL_CHAR,
+                json_error_base_message(PHP_JSON_ERROR_CTRL_CHAR).to_string(),
+            );
+            return Ok(Value::Null);
+        }
+
+        let assoc_arg = args.get(1);
+        let flags = args
+            .get(3)
+            .map(|value| php_internal_int_argument("json_decode()", 4, "flags", value, span))
+            .transpose()?
+            .unwrap_or(0);
+        let assoc = if flags & PHP_JSON_OBJECT_AS_ARRAY != 0 {
+            true
+        } else {
+            assoc_arg
+                .filter(|value| !matches!(value, Value::Null))
+                .is_some_and(Value::is_truthy)
+        };
+        let depth = args
+            .get(2)
+            .filter(|value| !matches!(value, Value::Null))
+            .map(|value| php_internal_int_argument("json_decode()", 3, "depth", value, span))
+            .transpose()?
+            .unwrap_or(512);
+
+        if depth < 1 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "json_decode()",
+                    "Argument #3 ($depth) must be greater than 0",
+                ),
+            ));
+        }
+        if depth > i32::MAX as i64 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "json_decode()",
+                    "Argument #3 ($depth) must be less than 2147483647",
+                ),
+            ));
+        }
+
+        let bigint_as_string = flags & PHP_JSON_BIGINT_AS_STRING != 0;
+        let parsed = JsonParser::new(&input, depth, bigint_as_string).parse();
+        match parsed {
+            Ok(value) => {
+                self.set_json_last_error(
+                    PHP_JSON_ERROR_NONE,
+                    json_error_base_message(PHP_JSON_ERROR_NONE).to_string(),
+                );
+                let value = self.json_parsed_to_value(value, assoc, span)?;
+                input.clear();
+                Ok(value)
+            }
+            Err(error) => {
+                self.set_json_last_error(error.code, error.message);
+                Ok(Value::Null)
+            }
+        }
+    }
+
+    fn json_parsed_to_value(
+        &mut self,
+        value: JsonParsedValue,
+        assoc: bool,
+        span: Span,
+    ) -> CompileResult<Value> {
+        Ok(match value {
+            JsonParsedValue::Null => Value::Null,
+            JsonParsedValue::Bool(value) => Value::Bool(value),
+            JsonParsedValue::Int(value) => Value::Int(value),
+            JsonParsedValue::Float(value) => Value::Float(value),
+            JsonParsedValue::String(value) => Value::String(value),
+            JsonParsedValue::Array(values) => {
+                let mut array = PhpArray::new();
+                for value in values {
+                    array
+                        .append(self.json_parsed_to_value(value, assoc, span)?)
+                        .map_err(|error| runtime_error(span, error))?;
+                }
+                Value::Array(array)
+            }
+            JsonParsedValue::Object(entries) if assoc => {
+                let mut array = PhpArray::new();
+                for (key, value) in entries {
+                    array.insert(key, self.json_parsed_to_value(value, assoc, span)?);
+                }
+                Value::Array(array)
+            }
+            JsonParsedValue::Object(entries) => {
+                if entries.iter().any(|(key, _)| key.contains('\0')) {
+                    self.set_json_last_error(
+                        PHP_JSON_ERROR_INVALID_PROPERTY_NAME,
+                        json_error_base_message(PHP_JSON_ERROR_INVALID_PROPERTY_NAME).to_string(),
+                    );
+                    return Ok(Value::Null);
+                }
+                let class_id = self.classes.lookup_class_id("stdClass").ok_or_else(|| {
+                    runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "json_decode()",
+                            "stdClass metadata is missing",
+                        ),
+                    )
+                })?;
+                let object_id = self.allocate_object_id();
+                let class = self
+                    .classes
+                    .get(class_id)
+                    .expect("stdClass id should resolve to metadata");
+                let object = PhpObject::from_class_with_id(class, object_id);
+                for (key, value) in entries {
+                    let value = self.json_parsed_to_value(value, assoc, span)?;
+                    object
+                        .write_dynamic_public_property(&key, value)
+                        .map_err(|error| runtime_error(span, error))?;
+                }
+                self.allocated_objects.push(object.clone());
+                Value::Object(object)
+            }
+        })
+    }
+
+    fn call_json_last_error(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("json_last_error()", args, 0, span)?;
+        Ok(Value::Int(self.json_last_error))
+    }
+
+    fn call_json_last_error_msg(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("json_last_error_msg()", args, 0, span)?;
+        Ok(Value::String(self.json_last_error_message.clone()))
+    }
+
+    fn set_json_last_error(&mut self, code: i64, message: String) {
+        self.json_last_error = code;
+        self.json_last_error_message = message;
+    }
+
     fn call_sprintf(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         if args.is_empty() {
             return Err(runtime_error(
