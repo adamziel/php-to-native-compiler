@@ -80050,7 +80050,7 @@ impl Interpreter {
             "get_html_translation_table" => call_get_html_translation_table(self, &args, span),
             "strip_tags" => call_strip_tags(&args, span),
             "nl2br" => call_nl2br(&args, span),
-            "str_repeat" => call_str_repeat(&args, span),
+            "str_repeat" => call_str_repeat(&args, span, self.standard_string_memory_limit_bytes()),
             "str_pad" => call_str_pad(&args, span),
             "wordwrap" => call_wordwrap(&args, span),
             "chunk_split" => call_chunk_split(&args, span),
@@ -109519,7 +109519,7 @@ fn call_nl2br(args: &[Value], span: Span) -> CompileResult<Value> {
     Ok(interpreter_value_from_php_string_bytes(output))
 }
 
-fn call_str_repeat(args: &[Value], span: Span) -> CompileResult<Value> {
+fn call_str_repeat(args: &[Value], span: Span, memory_limit_bytes: usize) -> CompileResult<Value> {
     expect_arity("str_repeat", args, 2, span)?;
 
     if matches!(args[0], Value::Array(_)) {
@@ -109557,12 +109557,15 @@ fn call_str_repeat(args: &[Value], span: Span) -> CompileResult<Value> {
             ),
         )
     })?;
-    if output_len > PHP_STANDARD_STRING_MEMORY_LIMIT_BYTES {
+    if output_len > memory_limit_bytes {
         return Err(runtime_error(
             span,
             RuntimeError::unsupported_call(
                 "str_repeat()",
-                "result length above the standard string memory limit is not supported in the current subset",
+                format!(
+                    "Allowed memory size of {} bytes exhausted (tried to allocate {} bytes)",
+                    memory_limit_bytes, output_len
+                ),
             ),
         ));
     }
@@ -122140,6 +122143,15 @@ impl Interpreter {
             .get(&normalized)
             .cloned()
             .or_else(|| compat_ini_value(&normalized).map(str::to_string))
+    }
+
+    fn standard_string_memory_limit_bytes(&self) -> usize {
+        self.ini_value("memory_limit")
+            .as_deref()
+            .and_then(parse_ini_size_bytes)
+            .and_then(|value| usize::try_from(value).ok())
+            .filter(|value| *value > 0)
+            .unwrap_or(PHP_STANDARD_STRING_MEMORY_LIMIT_BYTES)
     }
 }
 
