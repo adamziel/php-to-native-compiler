@@ -366,6 +366,7 @@ enum ConstantOwnerKind {
 struct MethodSignature {
     required_params: usize,
     params: Vec<ParameterSignature>,
+    static_variables: Vec<(String, Option<Expr>)>,
     return_type: Option<String>,
     returns_by_reference: bool,
     file_name: Option<String>,
@@ -608,6 +609,7 @@ struct ReflectionFunctionState {
     return_type: Option<String>,
     returns_by_reference: bool,
     params: Vec<ReflectionParameterMetadata>,
+    static_variables: Vec<(String, Option<Expr>)>,
     is_deprecated: bool,
     attributes: Vec<AttributeDecl>,
 }
@@ -631,6 +633,7 @@ struct ReflectionMethodState {
     return_type: Option<String>,
     returns_by_reference: bool,
     params: Vec<ReflectionParameterMetadata>,
+    static_variables: Vec<(String, Option<Expr>)>,
     is_deprecated: bool,
     attributes: Vec<AttributeDecl>,
 }
@@ -39163,13 +39166,15 @@ impl Interpreter {
                     )
                 })
             }
-            None => Err(runtime_error(
-                span,
-                RuntimeError::unsupported_object_instantiation(
-                    "ReflectionFunction",
-                    format!("function {name} is not declared in the current subset"),
-                ),
-            )),
+            None => reflection_internal_function_state(name).ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_object_instantiation(
+                        "ReflectionFunction",
+                        format!("function {name} is not declared in the current subset"),
+                    ),
+                )
+            }),
         }
     }
 
@@ -39319,6 +39324,14 @@ impl Interpreter {
                 let signature_key = (declaring_class_id, metadata.name().to_ascii_lowercase());
                 let signature = self.method_signatures.get(&signature_key);
                 let is_internal = signature.is_none();
+                let params = signature
+                    .map(reflection_parameter_metadata_from_signature)
+                    .unwrap_or_else(|| {
+                        reflection_internal_method_params(&declaring_class_name, metadata.name())
+                    });
+                let static_variables = signature
+                    .map(|signature| signature.static_variables.clone())
+                    .unwrap_or_default();
                 Ok(ReflectionMethodState {
                     reflected_class_id: Some(class_id),
                     declaring_class_name,
@@ -39338,9 +39351,8 @@ impl Interpreter {
                     returns_by_reference: signature
                         .map(|signature| signature.returns_by_reference)
                         .unwrap_or(false),
-                    params: signature
-                        .map(reflection_parameter_metadata_from_signature)
-                        .unwrap_or_default(),
+                    params,
+                    static_variables,
                     is_deprecated: signature.is_some_and(|signature| signature.is_deprecated),
                     attributes: signature
                         .map(|signature| signature.attributes.clone())
@@ -39388,6 +39400,9 @@ impl Interpreter {
                             returns_by_reference: method.function.returns_by_reference,
                             params: reflection_parameter_metadata_from_function_params(
                                 &method.function.params,
+                            ),
+                            static_variables: reflection_static_variables_from_body(
+                                &method.function.body,
                             ),
                             is_deprecated: attributes_include_deprecated(&method.attributes),
                             attributes: method.attributes.clone(),
@@ -39441,6 +39456,9 @@ impl Interpreter {
                             returns_by_reference: method.function.returns_by_reference,
                             params: reflection_parameter_metadata_from_function_params(
                                 &method.function.params,
+                            ),
+                            static_variables: reflection_static_variables_from_body(
+                                &method.function.body,
                             ),
                             is_deprecated: attributes_include_deprecated(&method.attributes),
                             attributes: method.attributes.clone(),
@@ -48146,9 +48164,18 @@ impl Interpreter {
         let signature_key = (declaring_class_id, method.name().to_ascii_lowercase());
         let signature = self.method_signatures.get(&signature_key);
         let is_internal = signature.is_none();
+        let declaring_class_name = declaring_class.name().to_string();
+        let params = signature
+            .map(reflection_parameter_metadata_from_signature)
+            .unwrap_or_else(|| {
+                reflection_internal_method_params(&declaring_class_name, method.name())
+            });
+        let static_variables = signature
+            .map(|signature| signature.static_variables.clone())
+            .unwrap_or_default();
         ReflectionMethodState {
             reflected_class_id: Some(reflected_class_id),
-            declaring_class_name: declaring_class.name().to_string(),
+            declaring_class_name,
             declaring_kind: ReflectionClassKind::Class,
             declaring_class_id: Some(declaring_class_id),
             name: method.name().to_string(),
@@ -48165,9 +48192,8 @@ impl Interpreter {
             returns_by_reference: signature
                 .map(|signature| signature.returns_by_reference)
                 .unwrap_or(false),
-            params: signature
-                .map(reflection_parameter_metadata_from_signature)
-                .unwrap_or_default(),
+            params,
+            static_variables,
             is_deprecated: signature.is_some_and(|signature| signature.is_deprecated),
             attributes: signature
                 .map(|signature| signature.attributes.clone())
@@ -48205,6 +48231,7 @@ impl Interpreter {
                 .map(|decl| decl.text.clone()),
             returns_by_reference: method.function.returns_by_reference,
             params: reflection_parameter_metadata_from_function_params(&method.function.params),
+            static_variables: reflection_static_variables_from_body(&method.function.body),
             is_deprecated: attributes_include_deprecated(&method.attributes),
             attributes: method.attributes.clone(),
         }
@@ -48240,6 +48267,7 @@ impl Interpreter {
                 .map(|decl| decl.text.clone()),
             returns_by_reference: method.function.returns_by_reference,
             params: reflection_parameter_metadata_from_function_params(&method.function.params),
+            static_variables: reflection_static_variables_from_body(&method.function.body),
             is_deprecated: attributes_include_deprecated(&method.attributes),
             attributes: method.attributes.clone(),
         }
@@ -48365,6 +48393,22 @@ impl Interpreter {
                     .instance_property_defaults
                     .contains_key(&(declaring_class_id, property.name().to_string()))
         }
+    }
+
+    fn reflection_static_variables_array(
+        &mut self,
+        variables: &[(String, Option<Expr>)],
+    ) -> CompileResult<Value> {
+        let mut array = PhpArray::new();
+        let mut default_scope = SymbolTable::new();
+        for (name, default) in variables {
+            let value = match default {
+                Some(default) => self.evaluate(default, &mut default_scope)?,
+                None => Value::Null,
+            };
+            array.insert(ArrayKey::String(name.clone()), value);
+        }
+        Ok(Value::Array(array))
     }
 
     fn call_reflection_function_method(
@@ -48514,6 +48558,30 @@ impl Interpreter {
                         .count() as i64,
                 ))
             }
+            "getstaticvariables" => {
+                expect_expr_arity(
+                    "ReflectionFunction::getStaticVariables",
+                    args.len(),
+                    0,
+                    span,
+                )?;
+                self.reflection_static_variables_array(&state.static_variables)
+            }
+            "getclosure" => {
+                expect_expr_arity("ReflectionFunction::getClosure", args.len(), 0, span)?;
+                if state.is_closure {
+                    let Some(closure_id) = state.closure_id else {
+                        return Ok(Value::Null);
+                    };
+                    return Ok(self
+                        .closure_values
+                        .get(&closure_id)
+                        .cloned()
+                        .map(Value::Closure)
+                        .unwrap_or(Value::Null));
+                }
+                Ok(Value::String(state.name))
+            }
             "hasreturntype" => {
                 expect_expr_arity("ReflectionFunction::hasReturnType", args.len(), 0, span)?;
                 Ok(Value::Bool(state.return_type.is_some()))
@@ -48619,6 +48687,67 @@ impl Interpreter {
         Ok(output)
     }
 
+    fn reflection_method_to_string(
+        &mut self,
+        state: &ReflectionMethodState,
+        span: Span,
+    ) -> CompileResult<String> {
+        let kind = if state.is_internal {
+            "internal:Reflection".to_string()
+        } else if let (Some(reflected_class_id), Some(declaring_class_id)) =
+            (state.reflected_class_id, state.declaring_class_id)
+        {
+            if reflected_class_id != declaring_class_id {
+                format!("user, inherits {}", state.declaring_class_name)
+            } else {
+                "user".to_string()
+            }
+        } else {
+            "user".to_string()
+        };
+        let traits = if state.name.eq_ignore_ascii_case("__construct") {
+            format!("{kind}, ctor")
+        } else {
+            kind
+        };
+        let abstract_prefix = if state.is_abstract { "abstract " } else { "" };
+        let final_prefix = if state.is_final { "final " } else { "" };
+        let static_prefix = if state.is_static { "static " } else { "" };
+        let visibility = match state.visibility {
+            Visibility::Public => "public",
+            Visibility::Protected => "protected",
+            Visibility::Private => "private",
+        };
+        let mut output = format!(
+            "Method [ <{traits}> {abstract_prefix}{final_prefix}{static_prefix}{visibility} method {} ] {{\n",
+            state.name
+        );
+        if !state.is_internal {
+            if let Some(file_name) = state.file_name.as_deref() {
+                output.push_str(&format!(
+                    "  @@ {file_name} {} - {}\n",
+                    state.start_line, state.end_line
+                ));
+            }
+        }
+        if !state.params.is_empty() {
+            output.push_str(&format!("\n  - Parameters [{}] {{\n", state.params.len()));
+            for (position, parameter) in state.params.iter().cloned().enumerate() {
+                let parameter_state = ReflectionParameterState {
+                    declaring: ReflectionParameterDeclaring::Method(state.clone()),
+                    parameter,
+                    position,
+                };
+                output.push_str("    ");
+                output.push_str(&self.reflection_parameter_to_string(&parameter_state, span)?);
+                output.push('\n');
+            }
+            output.push_str("  }\n");
+        }
+        output.push_str("}\n");
+        Ok(output)
+    }
+
     fn call_reflection_method_method(
         &mut self,
         object: PhpObject,
@@ -48649,6 +48778,11 @@ impl Interpreter {
                     "reinitializing ReflectionMethod objects is not implemented",
                 ),
             )),
+            "__tostring" => {
+                expect_expr_arity("ReflectionMethod::__toString", args.len(), 0, span)?;
+                self.reflection_method_to_string(&state, span)
+                    .map(Value::String)
+            }
             "getname" => {
                 expect_expr_arity("ReflectionMethod::getName", args.len(), 0, span)?;
                 Ok(Value::String(state.name))
@@ -48738,6 +48872,10 @@ impl Interpreter {
                         .count() as i64,
                 ))
             }
+            "getstaticvariables" => {
+                expect_expr_arity("ReflectionMethod::getStaticVariables", args.len(), 0, span)?;
+                self.reflection_static_variables_array(&state.static_variables)
+            }
             "hasreturntype" => {
                 expect_expr_arity("ReflectionMethod::hasReturnType", args.len(), 0, span)?;
                 Ok(Value::Bool(state.return_type.is_some()))
@@ -48812,6 +48950,63 @@ impl Interpreter {
             "returnsreference" => {
                 expect_expr_arity("ReflectionMethod::returnsReference", args.len(), 0, span)?;
                 Ok(Value::Bool(state.returns_by_reference))
+            }
+            "setaccessible" => {
+                expect_expr_arity("ReflectionMethod::setAccessible", args.len(), 1, span)?;
+                let _ = self.evaluate(&args[0], caller_scope)?;
+                self.emit_display_diagnostic(
+                    "Deprecated",
+                    PHP_E_DEPRECATED,
+                    "Method ReflectionMethod::setAccessible() is deprecated since 8.5, as it has no effect since PHP 8.1",
+                    span,
+                )?;
+                Ok(Value::Null)
+            }
+            "getclosure" => {
+                if args.len() > 1 {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::arity_mismatch(
+                            "ReflectionMethod::getClosure()",
+                            ArityExpectation::Between { min: 0, max: 1 },
+                            args.len(),
+                        ),
+                    ));
+                }
+                let mut callable = PhpArray::new();
+                if state.is_static {
+                    callable.insert(
+                        ArrayKey::Int(0),
+                        Value::String(state.declaring_class_name.clone()),
+                    );
+                    callable.insert(ArrayKey::Int(1), Value::String(state.name.clone()));
+                    return Ok(Value::Array(callable));
+                }
+                let Some(target_expr) = args.first() else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "ReflectionMethod::getClosure",
+                            "non-static method closure requires an object in the current subset",
+                        ),
+                    ));
+                };
+                let target = self.evaluate(target_expr, caller_scope)?;
+                let Value::Object(object) = target else {
+                    return Err(runtime_error(
+                        target_expr.span(),
+                        RuntimeError::unsupported_call(
+                            "ReflectionMethod::getClosure",
+                            format!(
+                                "non-static method closure requires object, got {}",
+                                target.type_name()
+                            ),
+                        ),
+                    ));
+                };
+                callable.insert(ArrayKey::Int(0), Value::Object(object));
+                callable.insert(ArrayKey::Int(1), Value::String(state.name.clone()));
+                Ok(Value::Array(callable))
             }
             "invoke" => {
                 if args.is_empty() {
@@ -96480,6 +96675,7 @@ fn method_signature(
 ) -> MethodSignature {
     MethodSignature {
         required_params: required_param_count(function),
+        static_variables: reflection_static_variables_from_body(&function.body),
         return_type: function.return_type.as_ref().map(|decl| decl.text.clone()),
         returns_by_reference: function.returns_by_reference,
         file_name,
@@ -96605,6 +96801,56 @@ fn reflection_parameter_metadata_from_function_params(
         .collect()
 }
 
+fn reflection_static_variables_from_body(body: &[Stmt]) -> Vec<(String, Option<Expr>)> {
+    fn collect_from_statements(body: &[Stmt], out: &mut Vec<(String, Option<Expr>)>) {
+        for stmt in body {
+            match stmt {
+                Stmt::StaticLocal { declarations, .. } => {
+                    for declaration in declarations {
+                        out.push((declaration.name.clone(), declaration.default.clone()));
+                    }
+                }
+                Stmt::If {
+                    then_branch,
+                    else_branch,
+                    ..
+                } => {
+                    collect_from_statements(then_branch, out);
+                    collect_from_statements(else_branch, out);
+                }
+                Stmt::While { body, .. }
+                | Stmt::DoWhile { body, .. }
+                | Stmt::Foreach { body, .. } => collect_from_statements(body, out),
+                Stmt::For { body, .. } => collect_from_statements(body, out),
+                Stmt::Switch { cases, .. } => {
+                    for case in cases {
+                        collect_from_statements(&case.body, out);
+                    }
+                }
+                Stmt::Try {
+                    body,
+                    catches,
+                    finally_body,
+                    ..
+                } => {
+                    collect_from_statements(body, out);
+                    for catch in catches {
+                        collect_from_statements(&catch.body, out);
+                    }
+                    if let Some(finally_body) = finally_body {
+                        collect_from_statements(finally_body, out);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    let mut variables = Vec::new();
+    collect_from_statements(body, &mut variables);
+    variables
+}
+
 fn reflection_default_constant_name(expr: &Expr) -> Option<String> {
     match expr {
         Expr::GlobalConstant { name, .. } => Some(name.clone()),
@@ -96629,6 +96875,7 @@ fn reflection_function_state_from_decl(
         is_internal: false,
         is_closure: false,
         closure_id: None,
+        static_variables: reflection_static_variables_from_body(&function.body),
         file_name,
         start_line: function.span.line,
         end_line: function.end_line,
@@ -96656,6 +96903,7 @@ fn reflection_function_state_from_closure(
         is_internal: false,
         is_closure: true,
         closure_id: Some(closure_id),
+        static_variables: reflection_static_variables_from_body(body),
         file_name,
         start_line: span.line,
         end_line: reflection_closure_end_line(body, span),
@@ -97582,6 +97830,7 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 "?string",
             )],
         ),
+        "extract" => ("int", vec![]),
         _ => return None,
     };
 
@@ -97590,6 +97839,7 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
         is_internal: true,
         is_closure: false,
         closure_id: None,
+        static_variables: Vec::new(),
         file_name: None,
         start_line: 0,
         end_line: 0,
@@ -97629,6 +97879,21 @@ fn reflection_internal_untyped_reference_param(name: &str) -> ReflectionParamete
     let mut param = reflection_internal_untyped_param(name);
     param.by_reference = true;
     param
+}
+
+fn reflection_internal_method_params(
+    class_name: &str,
+    method_name: &str,
+) -> Vec<ReflectionParameterMetadata> {
+    if class_name.eq_ignore_ascii_case("ReflectionProperty")
+        && method_name.eq_ignore_ascii_case("__construct")
+    {
+        return vec![
+            reflection_internal_param("class", "object|string"),
+            reflection_internal_param("property", "string"),
+        ];
+    }
+    Vec::new()
 }
 
 fn reflection_internal_param(name: &str, type_decl: &str) -> ReflectionParameterMetadata {

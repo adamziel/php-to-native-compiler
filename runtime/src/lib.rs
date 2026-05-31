@@ -32155,9 +32155,13 @@ impl PhpClassTable {
             "getParameters",
             "getNumberOfParameters",
             "getNumberOfRequiredParameters",
+            "getStaticVariables",
+            "getClosure",
             "hasReturnType",
             "getReturnType",
             "returnsReference",
+            "invoke",
+            "invokeArgs",
         ] {
             reflection_function
                 .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
@@ -32183,6 +32187,7 @@ impl PhpClassTable {
         }
         for method in [
             "__construct",
+            "__toString",
             "getName",
             "getFileName",
             "getStartLine",
@@ -32193,6 +32198,7 @@ impl PhpClassTable {
             "getParameters",
             "getNumberOfParameters",
             "getNumberOfRequiredParameters",
+            "getStaticVariables",
             "hasReturnType",
             "getReturnType",
             "isPublic",
@@ -32208,6 +32214,10 @@ impl PhpClassTable {
             "isInternal",
             "isUserDefined",
             "returnsReference",
+            "setAccessible",
+            "getClosure",
+            "invoke",
+            "invokeArgs",
         ] {
             reflection_method
                 .add_method(PhpMethodMetadata::instance(method, Visibility::Public))

@@ -6461,6 +6461,61 @@ try {
 }
 
 #[test]
+fn reflection_function_and_method_report_static_variables() {
+    let execution = run_source(
+        r#"<?php
+function user_statics() {
+    static $c;
+    static $a = 1, $b = "hello";
+}
+
+class Plugin {
+    public function boot() {
+        static $seen = 2;
+        static $empty;
+    }
+
+    public static function ping() {
+        echo "method-closure-static\n";
+    }
+
+    public function label($value = "bound") {
+        echo "method-closure-", $value, "\n";
+    }
+}
+
+function dump_array($label, $values) {
+    echo $label, "\n";
+    foreach ($values as $key => $value) {
+        echo $key, "=", ($value === null ? "NULL" : $value), "\n";
+    }
+}
+
+function callback_line($value) {
+    echo "function-closure-", $value, "\n";
+}
+
+dump_array("function", (new ReflectionFunction("user_statics"))->getStaticVariables());
+dump_array("method", (new ReflectionMethod(Plugin::class, "boot"))->getStaticVariables());
+echo "extract|", (new ReflectionFunction("extract"))->isInternal() ? "internal" : "user", "|", (new ReflectionFunction("extract"))->getStartLine() === false ? "no-line" : "line", "\n";
+$functionClosure = (new ReflectionFunction("callback_line"))->getClosure();
+$functionClosure("ok");
+$staticClosure = (new ReflectionMethod(Plugin::class, "ping"))->getClosure();
+$staticClosure();
+$methodClosure = (new ReflectionMethod(Plugin::class, "label"))->getClosure(new Plugin());
+$methodClosure();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "function\nc=NULL\na=1\nb=hello\nmethod\nseen=2\nempty=NULL\nextract|internal|no-line\nfunction-closure-ok\nmethod-closure-static\nmethod-closure-bound\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reflection_parameter_reports_bounded_method_parameter_metadata() {
     let execution = run_source(
         r#"<?php
