@@ -47224,13 +47224,23 @@ impl Interpreter {
         args: &[Expr],
         span: Span,
     ) -> CompileResult<Value> {
+        self.call_core_error_method_with_arg_count(&object, method_name, args.len(), span)
+    }
+
+    fn call_core_error_method_with_arg_count(
+        &mut self,
+        object: &PhpObject,
+        method_name: &str,
+        arg_count: usize,
+        span: Span,
+    ) -> CompileResult<Value> {
         match method_name.to_ascii_lowercase().as_str() {
             "getmessage" => {
-                expect_expr_arity("Error::getMessage", args.len(), 0, span)?;
-                Ok(Value::String(self.throwable_message_for_fatal(&object)))
+                expect_expr_arity("Error::getMessage", arg_count, 0, span)?;
+                Ok(Value::String(self.throwable_message_for_fatal(object)))
             }
             "getcode" => {
-                expect_expr_arity("Error::getCode", args.len(), 0, span)?;
+                expect_expr_arity("Error::getCode", arg_count, 0, span)?;
                 let protected_class_ids = self.protected_class_ids_for_context(object.class_id());
                 object
                     .read_property_from_context(
@@ -47241,7 +47251,7 @@ impl Interpreter {
                     .map_err(|error| runtime_error(span, error))
             }
             "getline" => {
-                expect_expr_arity("Error::getLine", args.len(), 0, span)?;
+                expect_expr_arity("Error::getLine", arg_count, 0, span)?;
                 let protected_class_ids = self.protected_class_ids_for_context(object.class_id());
                 object
                     .read_property_from_context(
@@ -52605,7 +52615,11 @@ impl Interpreter {
                             ),
                         ));
                     };
-                    if object.is_instance_of_class_name("PhpToken")
+                    if object.is_instance_of_class_name("Error")
+                        || object.is_instance_of_class_name("Exception")
+                    {
+                        self.call_core_error_method_with_arg_count(&object, method, 0, span)?
+                    } else if object.is_instance_of_class_name("PhpToken")
                         && php_token_core_instance_method(method)
                     {
                         self.call_php_token_method_with_values(object, method, Vec::new(), span)?
@@ -83142,6 +83156,7 @@ impl Interpreter {
             "phpversion" => call_phpversion(&args, span),
             "json_encode" => self.call_json_encode(&args, span),
             "json_decode" => self.call_json_decode(&args, span),
+            "json_validate" => self.call_json_validate(&args, span),
             "json_last_error" => self.call_json_last_error(&args, span),
             "json_last_error_msg" => self.call_json_last_error_msg(&args, span),
             "printf" => self.call_printf(&args, span),
@@ -98763,6 +98778,14 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_optional_int_param("flags", 0),
             ],
         ),
+        "json_validate" => (
+            "bool",
+            vec![
+                reflection_internal_param("json", "string"),
+                reflection_internal_optional_int_param("depth", 512),
+                reflection_internal_optional_int_param("flags", 0),
+            ],
+        ),
         "json_last_error" => ("int", vec![]),
         "json_last_error_msg" => ("string", vec![]),
         "set_time_limit" => ("bool", vec![reflection_internal_param("seconds", "int")]),
@@ -102239,6 +102262,12 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
         | ("extract()", "Argument #2 ($flags) must be a valid extract type")
         | ("extract()", "Argument #3 ($prefix) is required when using this extract type")
         | ("extract()", "Argument #3 ($prefix) must be a valid identifier")
+        | ("json_validate()", "Argument #2 ($depth) must be greater than 0")
+        | ("json_validate()", "Argument #2 ($depth) must be less than 2147483647")
+        | (
+            "json_validate()",
+            "Argument #3 ($flags) must be a valid flag (allowed flags: JSON_INVALID_UTF8_IGNORE)",
+        )
         | ("ftruncate()", "Argument #2 ($size) must be greater than or equal to 0")
         | ("stream_get_contents()", "Argument #2 ($length) must be greater than or equal to -1")
         | (
@@ -102898,6 +102927,7 @@ fn is_builtin(name: &str) -> bool {
             | "phpversion"
             | "json_encode"
             | "json_decode"
+            | "json_validate"
             | "json_last_error"
             | "json_last_error_msg"
             | "set_time_limit"
@@ -122162,7 +122192,10 @@ impl<'a> JsonParser<'a> {
     fn parse(mut self) -> Result<JsonParsedValue, JsonDecodeError> {
         self.skip_whitespace();
         if self.is_eof() {
-            return Err(self.error(PHP_JSON_ERROR_SYNTAX, "Syntax error"));
+            return Err(JsonDecodeError {
+                code: PHP_JSON_ERROR_SYNTAX,
+                message: json_error_base_message(PHP_JSON_ERROR_SYNTAX).to_string(),
+            });
         }
         let value = self.parse_value(1)?;
         self.skip_whitespace();
@@ -122255,7 +122288,7 @@ impl<'a> JsonParser<'a> {
     fn parse_number(&mut self) -> Result<JsonParsedValue, JsonDecodeError> {
         let start = self.position;
         if self.consume_if('-') && self.is_eof() {
-            return Err(self.error(PHP_JSON_ERROR_SYNTAX, "Syntax error"));
+            return Err(self.error_at(PHP_JSON_ERROR_SYNTAX, "Syntax error", start));
         }
         match self.peek() {
             Some('0') => {
@@ -122442,9 +122475,13 @@ impl<'a> JsonParser<'a> {
     }
 
     fn error(&self, code: i64, message: &str) -> JsonDecodeError {
+        self.error_at(code, message, self.position)
+    }
+
+    fn error_at(&self, code: i64, message: &str, position: usize) -> JsonDecodeError {
         JsonDecodeError {
             code,
-            message: json_error_message_at(code, message, self.position),
+            message: json_error_message_at(code, message, position),
         }
     }
 }
@@ -122484,6 +122521,41 @@ fn json_error_message_at(code: i64, base: &str, position: usize) -> String {
         | PHP_JSON_ERROR_UTF16 => format!("{base} near location 1:{}", position + 1),
         _ => base.to_string(),
     }
+}
+
+fn json_invalid_utf8_string_token_position(bytes: &[u8], invalid_at: usize) -> usize {
+    let mut in_string = false;
+    let mut escaped = false;
+    let mut string_start = invalid_at;
+
+    for (index, byte) in bytes.iter().take(invalid_at).copied().enumerate() {
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if byte == b'\\' {
+                escaped = true;
+            } else if byte == b'"' {
+                in_string = false;
+            }
+        } else if byte == b'"' {
+            in_string = true;
+            string_start = index;
+        }
+    }
+
+    if in_string {
+        string_start
+    } else {
+        invalid_at
+    }
+}
+
+fn json_utf8_error_message_at(position: usize) -> String {
+    format!(
+        "{} near location 1:{}",
+        json_error_base_message(PHP_JSON_ERROR_UTF8),
+        position + 1
+    )
 }
 
 fn json_key_string(key: &ArrayKey) -> String {
@@ -123025,6 +123097,115 @@ impl Interpreter {
                 Value::Object(object)
             }
         })
+    }
+
+    fn call_json_validate(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(1..=3).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "json_validate()",
+                    ArityExpectation::Between { min: 1, max: 3 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let depth = args
+            .get(1)
+            .map(|value| php_internal_int_argument("json_validate()", 2, "depth", value, span))
+            .transpose()?
+            .unwrap_or(512);
+        let flags = args
+            .get(2)
+            .map(|value| php_internal_int_argument("json_validate()", 3, "flags", value, span))
+            .transpose()?
+            .unwrap_or(0);
+
+        if depth == 0 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "json_validate()",
+                    "Argument #2 ($depth) must be greater than 0",
+                ),
+            ));
+        }
+        if depth > i32::MAX as i64 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "json_validate()",
+                    "Argument #2 ($depth) must be less than 2147483647",
+                ),
+            ));
+        }
+        if flags & !PHP_JSON_INVALID_UTF8_IGNORE != 0 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "json_validate()",
+                    "Argument #3 ($flags) must be a valid flag (allowed flags: JSON_INVALID_UTF8_IGNORE)",
+                ),
+            ));
+        }
+
+        let ignore_invalid_utf8 = flags & PHP_JSON_INVALID_UTF8_IGNORE != 0;
+        let input = match &args[0] {
+            Value::Null => String::new(),
+            Value::Bool(false) => String::new(),
+            Value::Bool(true) => "1".to_string(),
+            Value::Int(value) => value.to_string(),
+            Value::Float(value) => php_default_precision_float_string(*value),
+            Value::String(value) => value.clone(),
+            Value::BinaryString(value) => match std::str::from_utf8(value) {
+                Ok(value) => value.to_string(),
+                Err(_) if ignore_invalid_utf8 => String::from_utf8_lossy(value).into_owned(),
+                Err(error) => {
+                    let token_position =
+                        json_invalid_utf8_string_token_position(value, error.valid_up_to());
+                    self.set_json_last_error(
+                        PHP_JSON_ERROR_UTF8,
+                        json_utf8_error_message_at(token_position),
+                    );
+                    return Ok(Value::Bool(false));
+                }
+            },
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "json_validate()",
+                        format!(
+                            "Argument #1 ($json) must be of type string, {} given",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+        };
+
+        let parse_depth = if depth < 0 { 512 } else { depth };
+        match JsonParser::new(&input, parse_depth, false).parse() {
+            Ok(_) => {
+                self.set_json_last_error(
+                    PHP_JSON_ERROR_NONE,
+                    json_error_base_message(PHP_JSON_ERROR_NONE).to_string(),
+                );
+                Ok(Value::Bool(true))
+            }
+            Err(mut error) => {
+                if error.code == PHP_JSON_ERROR_DEPTH {
+                    error.message = json_error_message_at(
+                        PHP_JSON_ERROR_DEPTH,
+                        json_error_base_message(PHP_JSON_ERROR_DEPTH),
+                        0,
+                    );
+                }
+                self.set_json_last_error(error.code, error.message);
+                Ok(Value::Bool(false))
+            }
+        }
     }
 
     fn call_json_last_error(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {

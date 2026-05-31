@@ -11527,12 +11527,13 @@ Unsupported code should fail with an explicit parse, runtime, or codegen error.
   CSV, binary invalid-UTF-8 records, exact CSV edge diagnostics, and native
   lowering remain unsupported.
 - Bounded JSON helpers in `phpc run`: `json_encode()`, `json_decode()`,
-  `json_last_error()`, and `json_last_error_msg()` cover scalar, array, and
-  public-property object values, `stdClass` decode results, associative decode
-  mode, selected JSON constants, bigint-as-string decode, numeric-string
-  encoding, unicode and hex string escaping, pretty-print formatting, partial
-  output for unsupported values, depth checks, and request-local last-error
-  state. Full `JsonSerializable` parity, exact exception propagation for every
-  serializer shape, complete UTF-16/UTF-8 diagnostics, exact diagnostic
-  locations, every JSON option interaction, all other json extension functions,
-  and native lowering remain unsupported.
+  `json_validate()`, `json_last_error()`, and `json_last_error_msg()` cover
+  scalar, array, and public-property object values, `stdClass` decode results,
+  associative decode mode, selected JSON constants, bigint-as-string decode,
+  numeric-string encoding, unicode and hex string escaping, pretty-print
+  formatting, partial output for unsupported values, validation depth and
+  `JSON_INVALID_UTF8_IGNORE` checks, and request-local last-error state. Full
+  `JsonSerializable` parity, exact exception propagation for every serializer
+  shape, complete UTF-16/UTF-8 diagnostics, exact diagnostic locations, every
+  JSON option interaction, remaining json extension functions, and native
+  lowering remain unsupported.

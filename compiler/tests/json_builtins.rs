@@ -114,3 +114,51 @@ var_dump(json_decode('{"foo":"bar"}', null, 512, JSON_OBJECT_AS_ARRAY));
     );
     assert_eq!(execution.exit_code, 0);
 }
+
+#[test]
+fn json_validate_tracks_state_depth_flags_and_utf8() {
+    let execution = run_source(
+        "<?php\n\
+var_dump(json_validate('{\"ok\":true}'));\n\
+var_dump(json_last_error(), json_last_error_msg());\n\
+var_dump(json_validate('-'));\n\
+var_dump(json_last_error(), json_last_error_msg());\n\
+var_dump(json_validate('', -1));\n\
+var_dump(json_last_error(), json_last_error_msg());\n\
+try { json_validate('-', 0); } catch (Error $e) { echo $e->getCode(), '|', $e->getMessage(), \"\\n\"; }\n\
+var_dump(json_last_error(), json_last_error_msg());\n\
+try { json_validate('-', 512, JSON_BIGINT_AS_STRING); } catch (Error $e) { echo $e->getCode(), '|', $e->getMessage(), \"\\n\"; }\n\
+$bad = \"\\\"a\\xb0b\\\"\";\n\
+var_dump(json_validate($bad));\n\
+var_dump(json_last_error(), json_last_error_msg());\n\
+var_dump(json_validate($bad, 512, JSON_INVALID_UTF8_IGNORE));\n\
+var_dump(json_last_error(), json_last_error_msg());\n",
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "bool(true)\n",
+            "int(0)\n",
+            "string(8) \"No error\"\n",
+            "bool(false)\n",
+            "int(4)\n",
+            "string(30) \"Syntax error near location 1:1\"\n",
+            "bool(false)\n",
+            "int(4)\n",
+            "string(12) \"Syntax error\"\n",
+            "0|json_validate(): Argument #2 ($depth) must be greater than 0\n",
+            "int(4)\n",
+            "string(12) \"Syntax error\"\n",
+            "0|json_validate(): Argument #3 ($flags) must be a valid flag (allowed flags: JSON_INVALID_UTF8_IGNORE)\n",
+            "bool(false)\n",
+            "int(5)\n",
+            "string(74) \"Malformed UTF-8 characters, possibly incorrectly encoded near location 1:1\"\n",
+            "bool(true)\n",
+            "int(0)\n",
+            "string(8) \"No error\"\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
