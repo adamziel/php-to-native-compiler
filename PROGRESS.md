@@ -3,7 +3,7 @@
 Updated: 2026-05-31 16:03 CEST
 
 Primary/public branch: `origin/master`
-Current public branch head:
+Latest source-bearing public head:
 `7fdd2f668f5f61a788e53292b42f32e682cbc72a fix: cover URI WhatWG residuals`
 
 Semantic source for current published score:
