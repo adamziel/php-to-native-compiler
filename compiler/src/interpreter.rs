@@ -305,6 +305,7 @@ struct Interpreter {
     response_status_code: Option<i64>,
     output_buffers: Vec<String>,
     output_start: Option<OutputStart>,
+    strict_types_stack: Vec<bool>,
     session_status: i64,
     session_id: String,
     session_cache_limiter: String,
@@ -11134,6 +11135,7 @@ impl Interpreter {
             response_status_code: None,
             output_buffers: Vec::new(),
             output_start: None,
+            strict_types_stack: Vec::new(),
             session_status: PHP_SESSION_NONE,
             session_id: String::new(),
             session_cache_limiter: "nocache".to_string(),
@@ -13927,8 +13929,9 @@ impl Interpreter {
             Self::active_function_call_arguments_for_func_get(function, &[], &[], &local_scope);
         self.active_function_call_arguments
             .push(active_function_arguments);
-        let flow =
-            self.execute_statements_with_array_copy_return_source(&function.body, &mut local_scope);
+        let flow = self.with_strict_types_scope(function.strict_types, |this| {
+            this.execute_statements_with_array_copy_return_source(&function.body, &mut local_scope)
+        });
         self.active_function_call_arguments.pop();
         let static_names = self.active_static_locals.pop().unwrap_or_default();
         let function_key = function.name.to_ascii_lowercase();
@@ -18423,7 +18426,9 @@ impl Interpreter {
     fn run(&mut self, program: &Program) -> CompileResult<Execution> {
         let mut scope = SymbolTable::from_root(self.global_symbols.clone());
         self.emit_deprecated_dollar_brace_interpolation_diagnostics(program)?;
-        let flow = match self.execute_statements(&program.statements, &mut scope) {
+        let flow = match self.with_strict_types_scope(program.strict_types, |this| {
+            this.execute_statements(&program.statements, &mut scope)
+        }) {
             Ok(flow) => flow,
             Err(error) => {
                 if let Some(message) = fatal_memory_error_message(&error) {
@@ -18577,6 +18582,21 @@ impl Interpreter {
         self.error_control_suppression_depth = previous_depth + 1;
         let result = evaluate(self);
         self.error_control_suppression_depth = previous_depth;
+        result
+    }
+
+    fn current_strict_types(&self) -> bool {
+        self.strict_types_stack.last().copied().unwrap_or(false)
+    }
+
+    fn with_strict_types_scope<T>(
+        &mut self,
+        strict_types: bool,
+        evaluate: impl FnOnce(&mut Self) -> CompileResult<T>,
+    ) -> CompileResult<T> {
+        self.strict_types_stack.push(strict_types);
+        let result = evaluate(self);
+        self.strict_types_stack.pop();
         result
     }
 
@@ -20451,7 +20471,9 @@ impl Interpreter {
         let flow = (|| {
             self.emit_deprecated_dollar_brace_interpolation_diagnostics(&program)?;
             self.register_included_declarations(&program)?;
-            self.execute_statements(&program.statements, scope)
+            self.with_strict_types_scope(program.strict_types, |this| {
+                this.execute_statements(&program.statements, scope)
+            })
         })();
         self.source_file = previous_source_file;
 
@@ -27189,7 +27211,7 @@ impl Interpreter {
                     match self.call_magic_get_property_value_with_array_copy_source(
                         object, property, span, scope,
                     )? {
-                        Some((Value::Object(array_access_object), _))
+                        Some((Value::Object(array_access_object), _, _))
                             if self.classes.implements_interface(
                                 array_access_object.class_id(),
                                 "ArrayAccess",
@@ -32047,11 +32069,12 @@ impl Interpreter {
                             *span,
                         )?;
                         match object_value
-                            .write_property_from_context_with_object_type_resolver_returning_value(
+                            .write_property_from_context_with_object_type_resolver_returning_value_strict(
                                 property,
                                 value.clone(),
                                 current_class_id,
                                 &protected_class_ids,
+                                self.current_strict_types(),
                                 |object, type_name| {
                                     self.object_satisfies_live_property_type(object, type_name)
                                 },
@@ -33059,11 +33082,12 @@ impl Interpreter {
                             *span,
                         )?;
                         let stored_value = match object_value
-                            .write_property_from_context_with_object_type_resolver_returning_value(
+                            .write_property_from_context_with_object_type_resolver_returning_value_strict(
                                 &property,
                                 value.clone(),
                                 current_class_id,
                                 &protected_class_ids,
+                                self.current_strict_types(),
                                 |object, type_name| {
                                     self.object_satisfies_live_property_type(object, type_name)
                                 },
@@ -34348,7 +34372,7 @@ impl Interpreter {
                 .call_magic_get_property_value_with_array_copy_source(
                     holder, property, span, scope,
                 )?
-                .map(|(value, source)| {
+                .map(|(value, source, _)| {
                     let source = if matches!(value, Value::Array(_)) {
                         source
                     } else {
@@ -34659,7 +34683,7 @@ impl Interpreter {
                 .call_magic_get_property_value_with_array_copy_source(
                     holder, property, span, scope,
                 )?
-                .map(|(value, source)| {
+                .map(|(value, source, _)| {
                     let source = if matches!(value, Value::Array(_)) {
                         source
                     } else {
@@ -46044,7 +46068,23 @@ impl Interpreter {
                         }
                         Ok(value)
                     }
-                    Err(error) if Self::is_magic_get_fallback_property_error(&error) => {
+                    Err(error)
+                        if Self::is_magic_get_fallback_property_error_for_object(
+                            &object,
+                            property,
+                            current_class_id,
+                            &protected_class_ids,
+                            &error,
+                        ) =>
+                    {
+                        let type_check_unset_typed =
+                            Self::is_unset_typed_property_read_error_for_object(
+                                &object,
+                                property,
+                                current_class_id,
+                                &protected_class_ids,
+                                &error,
+                            );
                         if self.array_object_property_should_use_storage(
                             &object,
                             property,
@@ -46061,7 +46101,24 @@ impl Interpreter {
                             span,
                             scope,
                         )?
-                        .map(|(value, _)| value)
+                        .map(|(value, _, magic_strict_types)| {
+                            if type_check_unset_typed {
+                                self.coerce_magic_get_unset_typed_property_value(
+                                    &object,
+                                    property,
+                                    current_class_id,
+                                    &protected_class_ids,
+                                    value,
+                                    None,
+                                    magic_strict_types,
+                                    span,
+                                )
+                                .map(|(value, _)| value)
+                            } else {
+                                Ok(value)
+                            }
+                        })
+                        .transpose()?
                         .map(Ok)
                         .unwrap_or_else(|| {
                             if Self::is_undefined_property_error(&error) {
@@ -46146,7 +46203,23 @@ impl Interpreter {
                         );
                         Ok((value, source))
                     }
-                    Err(error) if Self::is_magic_get_fallback_property_error(&error) => {
+                    Err(error)
+                        if Self::is_magic_get_fallback_property_error_for_object(
+                            &object,
+                            property,
+                            current_class_id,
+                            &protected_class_ids,
+                            &error,
+                        ) =>
+                    {
+                        let type_check_unset_typed =
+                            Self::is_unset_typed_property_read_error_for_object(
+                                &object,
+                                property,
+                                current_class_id,
+                                &protected_class_ids,
+                                &error,
+                            );
                         if self.array_object_property_should_use_storage(
                             &object,
                             property,
@@ -46167,6 +46240,23 @@ impl Interpreter {
                             span,
                             scope,
                         )?
+                        .map(|(value, source, magic_strict_types)| {
+                            if type_check_unset_typed {
+                                self.coerce_magic_get_unset_typed_property_value(
+                                    &object,
+                                    property,
+                                    current_class_id,
+                                    &protected_class_ids,
+                                    value,
+                                    source,
+                                    magic_strict_types,
+                                    span,
+                                )
+                            } else {
+                                Ok((value, source))
+                            }
+                        })
+                        .transpose()?
                         .map(Ok)
                         .unwrap_or_else(|| {
                             if Self::is_undefined_property_error(&error) {
@@ -46213,7 +46303,7 @@ impl Interpreter {
                     span,
                     caller_scope,
                 )
-                .map(|value| value.map(|(value, _)| value));
+                .map(|value| value.map(|(value, _, _)| value));
         }
 
         let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
@@ -46259,7 +46349,7 @@ impl Interpreter {
         property: &str,
         span: Span,
         caller_scope: &mut SymbolTable,
-    ) -> CompileResult<Option<(Value, Option<ArrayCopySource>)>> {
+    ) -> CompileResult<Option<(Value, Option<ArrayCopySource>, bool)>> {
         let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
             self.resolve_instance_method(object.class_id(), "__get")
         else {
@@ -46286,6 +46376,7 @@ impl Interpreter {
         let called_class_id = object.class_id();
         let args = vec![Value::String(property.to_string())];
         if function.returns_by_reference {
+            let strict_types = function.strict_types;
             ensure_supported_reference_return_function_metadata(function, span)?;
             let binding = self
                 .call_reference_return_function_with_checked_values_for_reference_assignment(
@@ -46303,9 +46394,10 @@ impl Interpreter {
             );
             let value =
                 self.read_reference_return_binding_value(function, &binding, caller_scope)?;
-            return Ok(Some((value, source)));
+            return Ok(Some((value, source, strict_types)));
         }
 
+        let strict_types = function.strict_types;
         ensure_supported_magic_array_access_function_signature(function, 1, span)?;
         self.call_user_function_with_this_and_array_copy_source(
             function,
@@ -46315,6 +46407,7 @@ impl Interpreter {
             Some(called_class_id),
             caller_scope,
         )
+        .map(|(value, source)| (value, source, strict_types))
         .map(Some)
     }
 
@@ -46705,6 +46798,67 @@ impl Interpreter {
         )
     }
 
+    fn is_magic_get_fallback_property_error_for_object(
+        object: &PhpObject,
+        property: &str,
+        current_class_id: Option<ClassId>,
+        protected_class_ids: &[ClassId],
+        error: &RuntimeError,
+    ) -> bool {
+        Self::is_magic_get_fallback_property_error(error)
+            || Self::is_unset_typed_property_read_error_for_object(
+                object,
+                property,
+                current_class_id,
+                protected_class_ids,
+                error,
+            )
+    }
+
+    fn is_unset_typed_property_read_error_for_object(
+        object: &PhpObject,
+        property: &str,
+        current_class_id: Option<ClassId>,
+        protected_class_ids: &[ClassId],
+        error: &RuntimeError,
+    ) -> bool {
+        matches!(
+            error.kind(),
+            RuntimeErrorKind::UninitializedTypedProperty { .. }
+        ) && object
+            .is_unset_property_from_context(property, current_class_id, protected_class_ids)
+            .unwrap_or(false)
+    }
+
+    fn coerce_magic_get_unset_typed_property_value(
+        &self,
+        object: &PhpObject,
+        property: &str,
+        current_class_id: Option<ClassId>,
+        protected_class_ids: &[ClassId],
+        value: Value,
+        source: Option<ArrayCopySource>,
+        strict_scalars: bool,
+        span: Span,
+    ) -> CompileResult<(Value, Option<ArrayCopySource>)> {
+        let value = object
+            .coerce_unset_typed_property_read_value_from_context_with_object_type_resolver(
+                property,
+                value,
+                current_class_id,
+                protected_class_ids,
+                strict_scalars,
+                |object, type_name| self.object_satisfies_live_property_type(object, type_name),
+            )
+            .map_err(|error| runtime_error(span, error))?;
+        let source = if matches!(value, Value::Array(_)) {
+            source
+        } else {
+            None
+        };
+        Ok((value, source))
+    }
+
     fn evaluate_dynamic_property_read(
         &mut self,
         target: &Expr,
@@ -46737,7 +46891,23 @@ impl Interpreter {
                         }
                         Ok(value)
                     }
-                    Err(error) if Self::is_magic_get_fallback_property_error(&error) => {
+                    Err(error)
+                        if Self::is_magic_get_fallback_property_error_for_object(
+                            &object,
+                            &property,
+                            current_class_id,
+                            &protected_class_ids,
+                            &error,
+                        ) =>
+                    {
+                        let type_check_unset_typed =
+                            Self::is_unset_typed_property_read_error_for_object(
+                                &object,
+                                &property,
+                                current_class_id,
+                                &protected_class_ids,
+                                &error,
+                            );
                         if self.array_object_property_should_use_storage(
                             &object,
                             &property,
@@ -46754,7 +46924,24 @@ impl Interpreter {
                             span,
                             scope,
                         )?
-                        .map(|(value, _)| value)
+                        .map(|(value, _, magic_strict_types)| {
+                            if type_check_unset_typed {
+                                self.coerce_magic_get_unset_typed_property_value(
+                                    &object,
+                                    &property,
+                                    current_class_id,
+                                    &protected_class_ids,
+                                    value,
+                                    None,
+                                    magic_strict_types,
+                                    span,
+                                )
+                                .map(|(value, _)| value)
+                            } else {
+                                Ok(value)
+                            }
+                        })
+                        .transpose()?
                         .map(Ok)
                         .unwrap_or_else(|| {
                             if Self::is_undefined_property_error(&error) {
@@ -53355,6 +53542,7 @@ impl Interpreter {
             value,
             declaring_class_name,
             property,
+            self.current_strict_types(),
             |object, type_name| self.object_satisfies_live_property_type(object, type_name),
         )
         .map_err(|error| runtime_error(span, error))
@@ -55298,6 +55486,7 @@ impl Interpreter {
                 return_type: return_type.cloned(),
                 returns_by_reference,
                 body: body.to_vec(),
+                strict_types: self.current_strict_types(),
                 is_nested: false,
                 is_generator: false,
                 end_line: reflection_closure_end_line(body, span),
@@ -55437,7 +55626,9 @@ impl Interpreter {
         let program = parse_source(&format!("<?php {source}"))?;
         self.emit_deprecated_dollar_brace_interpolation_diagnostics(&program)?;
         self.register_included_declarations(&program)?;
-        match self.execute_statements(&program.statements, caller_scope)? {
+        match self.with_strict_types_scope(program.strict_types, |this| {
+            this.execute_statements(&program.statements, caller_scope)
+        })? {
             Flow::Normal => Ok(Value::Null),
             Flow::Return(value) => Ok(value),
             Flow::Exit(code) => {
@@ -69484,8 +69675,9 @@ impl Interpreter {
         self.active_symbol_roots.push(local_scope.symbols.clone());
         self.active_function_call_arguments
             .push(active_function_arguments);
-        let result =
-            self.execute_reference_return_assignment_statements(function, &mut local_scope);
+        let result = self.with_strict_types_scope(function.strict_types, |this| {
+            this.execute_reference_return_assignment_statements(function, &mut local_scope)
+        });
         self.active_function_call_arguments.pop();
         let returned_value_copy_param_cell = match result.as_ref() {
             Ok(ReferenceReturnLocalBinding::ArrayOffset { root_name, keys })
@@ -70325,8 +70517,9 @@ impl Interpreter {
         self.active_symbol_roots.push(local_scope.symbols.clone());
         self.active_function_call_arguments
             .push(active_function_arguments);
-        let local_binding_result =
-            self.execute_reference_return_assignment_statements(function, &mut local_scope);
+        let local_binding_result = self.with_strict_types_scope(function.strict_types, |this| {
+            this.execute_reference_return_assignment_statements(function, &mut local_scope)
+        });
         self.active_function_call_arguments.pop();
         let result = local_binding_result.and_then(|binding| {
             self.reference_return_local_binding_cell(
@@ -74868,8 +75061,9 @@ impl Interpreter {
         self.active_symbol_roots.push(local_scope.symbols.clone());
         self.active_function_call_arguments
             .push(active_function_arguments);
-        let flow =
-            self.execute_statements_with_array_copy_return_source(&function.body, &mut local_scope);
+        let flow = self.with_strict_types_scope(function.strict_types, |this| {
+            this.execute_statements_with_array_copy_return_source(&function.body, &mut local_scope)
+        });
         self.active_function_call_arguments.pop();
         let writeback_result = if matches!(
             &flow,
@@ -75410,7 +75604,10 @@ impl Interpreter {
             .push(state.active_function_arguments.clone());
         self.active_generator_yields.push(Vec::new());
 
-        let flow = self.execute_statements(&state.function.body, &mut state.local_scope);
+        let strict_types = state.function.strict_types;
+        let flow = self.with_strict_types_scope(strict_types, |this| {
+            this.execute_statements(&state.function.body, &mut state.local_scope)
+        });
         let pending_yields = self.active_generator_yields.pop().unwrap_or_default();
         self.active_function_call_arguments.pop();
 
@@ -75607,6 +75804,7 @@ impl Interpreter {
             value,
             &function.name,
             &format!("parameter ${}", param.name),
+            self.current_strict_types(),
             |object, type_name| self.object_satisfies_live_property_type(object, type_name),
         )
         .map_err(|_| {
@@ -75710,6 +75908,7 @@ impl Interpreter {
             value,
             &function.name,
             label,
+            function.strict_types,
             |object, type_name| self.object_satisfies_live_property_type(object, type_name),
         )
         .map_err(|_| {
@@ -89852,7 +90051,7 @@ impl Interpreter {
                 span,
                 caller_scope,
             )?
-            .map(|(value, _)| value)
+            .map(|(value, _, _)| value)
         else {
             return Ok(false);
         };
@@ -90504,7 +90703,7 @@ impl Interpreter {
                 span,
                 caller_scope,
             )?
-            .map(|(value, _)| value)
+            .map(|(value, _, _)| value)
         else {
             return Ok(true);
         };
@@ -102542,6 +102741,21 @@ fn typed_property_reference_type_error_message(error: &Diagnostic) -> Option<Str
         && message.contains(" of type ")
     {
         return Some(message.to_string());
+    }
+    if message.starts_with("Cannot assign ")
+        && message.contains(" to property ")
+        && message.contains(" of type ")
+    {
+        return Some(message.to_string());
+    }
+    if let Some(rest) = message.strip_prefix("typed property ") {
+        if let Some((property, rest)) = rest.split_once(" expects ") {
+            if let Some((type_decl, actual)) = rest.rsplit_once(", got ") {
+                return Some(format!(
+                    "Cannot assign {actual} to property {property} of type {type_decl}"
+                ));
+            }
+        }
     }
     None
 }
@@ -115009,10 +115223,10 @@ impl Interpreter {
 }
 
 fn natural_compare_bytes(left: &[u8], right: &[u8], case_insensitive: bool) -> i32 {
-    let mut left_index = 0;
-    let mut right_index = 0;
+    let mut left_index = natural_skip_initial_leading_zeroes(left);
+    let mut right_index = natural_skip_initial_leading_zeroes(right);
 
-    while left_index < left.len() || right_index < right.len() {
+    loop {
         if left_index == left.len() || right_index == right.len() {
             return compare_usize(left.len() - left_index, right.len() - right_index);
         }
@@ -115032,20 +115246,26 @@ fn natural_compare_bytes(left: &[u8], right: &[u8], case_insensitive: bool) -> i
         let right_byte = right[right_index];
         if left_byte.is_ascii_digit() && right_byte.is_ascii_digit() {
             let sign = if left_byte == b'0' || right_byte == b'0' {
-                natural_compare_left_aligned_number(left, right, left_index, right_index)
+                natural_compare_left_aligned_number(left, right, &mut left_index, &mut right_index)
             } else {
-                natural_compare_right_aligned_number(left, right, left_index, right_index)
+                natural_compare_right_aligned_number(left, right, &mut left_index, &mut right_index)
             };
             if sign != 0 {
                 return sign;
             }
-            left_index = natural_digit_run_end(left, left_index);
-            right_index = natural_digit_run_end(right, right_index);
-            continue;
+            if left_index == left.len() && right_index == right.len() {
+                return 0;
+            }
+            if left_index == left.len() {
+                return -1;
+            }
+            if right_index == right.len() {
+                return 1;
+            }
         }
 
-        let left_cmp = natural_compare_fold_byte(left_byte, case_insensitive);
-        let right_cmp = natural_compare_fold_byte(right_byte, case_insensitive);
+        let left_cmp = natural_compare_fold_byte(left[left_index], case_insensitive);
+        let right_cmp = natural_compare_fold_byte(right[right_index], case_insensitive);
         if left_cmp != right_cmp {
             return compare_u8(left_cmp, right_cmp);
         }
@@ -115053,78 +115273,63 @@ fn natural_compare_bytes(left: &[u8], right: &[u8], case_insensitive: bool) -> i
         left_index += 1;
         right_index += 1;
     }
-
-    0
 }
 
 fn natural_compare_left_aligned_number(
     left: &[u8],
     right: &[u8],
-    left_index: usize,
-    right_index: usize,
+    left_index: &mut usize,
+    right_index: &mut usize,
 ) -> i32 {
-    let left_end = natural_digit_run_end(left, left_index);
-    let right_end = natural_digit_run_end(right, right_index);
-    let left_digits = &left[left_index..left_end];
-    let right_digits = &right[right_index..right_end];
-    let left_sig_start = left_digits
-        .iter()
-        .position(|byte| *byte != b'0')
-        .unwrap_or(left_digits.len());
-    let right_sig_start = right_digits
-        .iter()
-        .position(|byte| *byte != b'0')
-        .unwrap_or(right_digits.len());
-    let left_sig = &left_digits[left_sig_start..];
-    let right_sig = &right_digits[right_sig_start..];
+    loop {
+        let left_digit = left.get(*left_index).copied().filter(u8::is_ascii_digit);
+        let right_digit = right.get(*right_index).copied().filter(u8::is_ascii_digit);
 
-    match (left_sig.is_empty(), right_sig.is_empty()) {
-        (true, true) => return compare_usize(right_digits.len(), left_digits.len()),
-        (true, false) => return -1,
-        (false, true) => return 1,
-        (false, false) => {}
-    }
-
-    match left_sig.len().cmp(&right_sig.len()) {
-        Ordering::Less => return -1,
-        Ordering::Greater => return 1,
-        Ordering::Equal => {}
-    }
-
-    match left_sig.cmp(right_sig) {
-        Ordering::Less => -1,
-        Ordering::Greater => 1,
-        Ordering::Equal => compare_usize(right_digits.len(), left_digits.len()),
+        match (left_digit, right_digit) {
+            (None, None) => return 0,
+            (None, Some(_)) => return -1,
+            (Some(_), None) => return 1,
+            (Some(left_digit), Some(right_digit)) => {
+                if left_digit != right_digit {
+                    return compare_u8(left_digit, right_digit);
+                }
+                *left_index += 1;
+                *right_index += 1;
+            }
+        }
     }
 }
 
 fn natural_compare_right_aligned_number(
     left: &[u8],
     right: &[u8],
-    left_index: usize,
-    right_index: usize,
+    left_index: &mut usize,
+    right_index: &mut usize,
 ) -> i32 {
-    let left_end = natural_digit_run_end(left, left_index);
-    let right_end = natural_digit_run_end(right, right_index);
-    let left_digits = left_end - left_index;
-    let right_digits = right_end - right_index;
-    if left_digits != right_digits {
-        return compare_usize(left_digits, right_digits);
-    }
+    let mut bias = 0;
 
-    for offset in 0..left_digits {
-        let left_byte = left[left_index + offset];
-        let right_byte = right[right_index + offset];
-        if left_byte != right_byte {
-            return compare_u8(left_byte, right_byte);
+    loop {
+        let left_digit = left.get(*left_index).copied().filter(u8::is_ascii_digit);
+        let right_digit = right.get(*right_index).copied().filter(u8::is_ascii_digit);
+
+        match (left_digit, right_digit) {
+            (None, None) => return bias,
+            (None, Some(_)) => return -1,
+            (Some(_), None) => return 1,
+            (Some(left_digit), Some(right_digit)) => {
+                if bias == 0 && left_digit != right_digit {
+                    bias = compare_u8(left_digit, right_digit);
+                }
+                *left_index += 1;
+                *right_index += 1;
+            }
         }
     }
-
-    0
 }
 
-fn natural_digit_run_end(value: &[u8], mut index: usize) -> usize {
-    while index < value.len() && value[index].is_ascii_digit() {
+fn natural_skip_initial_leading_zeroes(value: &[u8]) -> usize {
+    let mut index = 0;
+    while index + 1 < value.len() && value[index] == b'0' && value[index + 1].is_ascii_digit() {
         index += 1;
     }
     index
@@ -138309,6 +138514,7 @@ echo $items["shared"]["leaf"] . "|" . $shared . "|" . $items["plain"]["leaf"] . 
         let mut interpreter = Interpreter::from_program(
             &Program {
                 statements: Vec::new(),
+                strict_types: false,
             },
             None,
             RunOptions::default(),
@@ -139005,6 +139211,7 @@ echo $items["shared"]["leaf"] . "|" . $shared . "|" . $items["plain"]["leaf"] . 
         let interpreter = Interpreter::from_program(
             &Program {
                 statements: Vec::new(),
+                strict_types: false,
             },
             None,
             RunOptions::default(),
@@ -139101,6 +139308,7 @@ echo $items["shared"]["leaf"] . "|" . $shared . "|" . $items["plain"]["leaf"] . 
         let mut interpreter = Interpreter::from_program(
             &Program {
                 statements: Vec::new(),
+                strict_types: false,
             },
             None,
             RunOptions::default(),
@@ -139161,6 +139369,7 @@ echo $items["shared"]["leaf"] . "|" . $shared . "|" . $items["plain"]["leaf"] . 
         let mut interpreter = Interpreter::from_program(
             &Program {
                 statements: Vec::new(),
+                strict_types: false,
             },
             None,
             RunOptions::default(),
@@ -139201,6 +139410,7 @@ echo $items["shared"]["leaf"] . "|" . $shared . "|" . $items["plain"]["leaf"] . 
             return_type: None,
             returns_by_reference: false,
             body: Vec::new(),
+            strict_types: false,
             is_nested: false,
             is_generator: false,
             end_line: 1,
@@ -139303,6 +139513,7 @@ echo $items["shared"]["leaf"] . "|" . $shared . "|" . $items["plain"]["leaf"] . 
         let interpreter = Interpreter::from_program(
             &Program {
                 statements: Vec::new(),
+                strict_types: false,
             },
             None,
             RunOptions::default(),
@@ -139596,6 +139807,7 @@ echo $items["shared"]["leaf"] . "|" . $shared . "|" . $items["plain"]["leaf"] . 
         let mut interpreter = Interpreter::from_program(
             &Program {
                 statements: Vec::new(),
+                strict_types: false,
             },
             None,
             RunOptions::default(),
@@ -139663,6 +139875,7 @@ echo $items["shared"]["leaf"] . "|" . $shared . "|" . $items["plain"]["leaf"] . 
         let mut interpreter = Interpreter::from_program(
             &Program {
                 statements: Vec::new(),
+                strict_types: false,
             },
             None,
             RunOptions::default(),
@@ -139729,6 +139942,7 @@ echo $items["shared"]["leaf"] . "|" . $shared . "|" . $items["plain"]["leaf"] . 
         let mut interpreter = Interpreter::from_program(
             &Program {
                 statements: Vec::new(),
+                strict_types: false,
             },
             None,
             RunOptions::default(),
@@ -139797,6 +140011,7 @@ echo $items["shared"]["leaf"] . "|" . $shared . "|" . $items["plain"]["leaf"] . 
         let mut interpreter = Interpreter::from_program(
             &Program {
                 statements: Vec::new(),
+                strict_types: false,
             },
             None,
             RunOptions::default(),
@@ -139873,6 +140088,7 @@ echo $items["shared"]["leaf"] . "|" . $shared . "|" . $items["plain"]["leaf"] . 
         let mut interpreter = Interpreter::from_program(
             &Program {
                 statements: Vec::new(),
+                strict_types: false,
             },
             None,
             RunOptions::default(),
@@ -139950,6 +140166,7 @@ echo $items["shared"]["leaf"] . "|" . $shared . "|" . $items["plain"]["leaf"] . 
         let mut interpreter = Interpreter::from_program(
             &Program {
                 statements: Vec::new(),
+                strict_types: false,
             },
             None,
             RunOptions::default(),
@@ -140017,6 +140234,7 @@ echo $items["shared"]["leaf"] . "|" . $shared . "|" . $items["plain"]["leaf"] . 
         let mut interpreter = Interpreter::from_program(
             &Program {
                 statements: Vec::new(),
+                strict_types: false,
             },
             None,
             RunOptions::default(),
@@ -140269,6 +140487,7 @@ echo $items["shared"]["leaf"] . "|" . $shared . "|" . $items["plain"]["leaf"] . 
         let mut interpreter = Interpreter::from_program(
             &Program {
                 statements: Vec::new(),
+                strict_types: false,
             },
             None,
             RunOptions::default(),
@@ -140333,6 +140552,7 @@ echo $items["shared"]["leaf"] . "|" . $shared . "|" . $items["plain"]["leaf"] . 
         let mut interpreter = Interpreter::from_program(
             &Program {
                 statements: Vec::new(),
+                strict_types: false,
             },
             None,
             RunOptions::default(),
@@ -140473,6 +140693,7 @@ echo $items["shared"]["leaf"] . "|" . $shared . "|" . $items["plain"]["leaf"] . 
         let interpreter = Interpreter::from_program(
             &Program {
                 statements: Vec::new(),
+                strict_types: false,
             },
             None,
             RunOptions::default(),
@@ -140548,6 +140769,7 @@ echo $items["shared"]["leaf"] . "|" . $shared . "|" . $items["plain"]["leaf"] . 
             return_type: None,
             returns_by_reference: false,
             body: Vec::new(),
+            strict_types: false,
             is_nested: false,
             is_generator: false,
             end_line: 1,

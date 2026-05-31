@@ -35,6 +35,7 @@ struct Parser {
     namespace_constant_declarations: HashMap<String, Vec<String>>,
     pending_doc_comment: Option<String>,
     pending_attributes: Vec<AttributeDecl>,
+    strict_types: bool,
     trace_parse: bool,
 }
 
@@ -91,6 +92,7 @@ impl Parser {
             namespace_constant_declarations: HashMap::new(),
             pending_doc_comment: None,
             pending_attributes: Vec::new(),
+            strict_types: false,
             trace_parse: std::env::var_os("PHPC_TRACE_PARSE").is_some(),
         }
     }
@@ -107,7 +109,10 @@ impl Parser {
             }
             statements.push(self.parse_statement()?);
         }
-        Ok(Program { statements })
+        Ok(Program {
+            statements,
+            strict_types: self.strict_types,
+        })
     }
 
     fn consume_doc_comments_and_attributes(&mut self) {
@@ -318,6 +323,7 @@ impl Parser {
             return_type,
             returns_by_reference,
             body,
+            strict_types: self.strict_types,
             is_nested,
             is_generator,
             end_line,
@@ -1348,6 +1354,7 @@ impl Parser {
             return_type,
             returns_by_reference,
             body: Vec::new(),
+            strict_types: self.strict_types,
             is_nested: false,
             is_generator: false,
             end_line: start.line,
@@ -1715,12 +1722,12 @@ impl Parser {
         self.consume_keyword(TokenKind::Equal, "expected '=' after declare directive")?;
 
         let directive_key = directive.to_ascii_lowercase();
-        match directive_key.as_str() {
+        let strict_types_value = match directive_key.as_str() {
             "strict_types" => match self.advance().clone() {
                 Token {
-                    kind: TokenKind::Int(0 | 1),
+                    kind: TokenKind::Int(value @ (0 | 1)),
                     ..
-                } => {}
+                } => Some(value == 1),
                 token => {
                     return Err(self.error_at(
                         token.span,
@@ -1732,7 +1739,7 @@ impl Parser {
                 Token {
                     kind: TokenKind::StringLiteral(_),
                     ..
-                } => {}
+                } => None,
                 token => {
                     return Err(self.error_at(
                         token.span,
@@ -1752,7 +1759,7 @@ impl Parser {
                     "unsupported declare directive: declare semantics are not implemented",
                 ));
             }
-        }
+        };
 
         self.consume_keyword(TokenKind::RParen, "expected ')' after declare directive")?;
 
@@ -1775,6 +1782,9 @@ impl Parser {
         }
 
         self.consume_keyword(TokenKind::Semicolon, "expected ';' after declare")?;
+        if let Some(strict_types) = strict_types_value {
+            self.strict_types = strict_types;
+        }
         Ok(Stmt::Expr {
             expr: Expr::Null(span),
             span,

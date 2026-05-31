@@ -23328,6 +23328,7 @@ impl CGenerator {
             return_type: return_type.cloned(),
             returns_by_reference,
             body: body.to_vec(),
+            strict_types: false,
             is_nested: false,
             is_generator: false,
             end_line: span.line,
@@ -23558,6 +23559,7 @@ impl CGenerator {
             return_type,
             returns_by_reference,
             body: body.to_vec(),
+            strict_types: false,
             is_nested: false,
             is_generator: false,
             end_line: span.line,
@@ -72541,6 +72543,7 @@ echo " 10" < "zeta";
             return_type: None,
             returns_by_reference,
             body: Vec::new(),
+            strict_types: false,
             is_nested: false,
             is_generator: false,
             end_line: 1,
@@ -75710,7 +75713,10 @@ echo $call("Ada");
             ..CGenerator::default()
         };
         let output = generator
-            .emit_program(&Program { statements: vec![] })
+            .emit_program(&Program {
+                statements: vec![],
+                strict_types: false,
+            })
             .expect("empty program with native callable helpers should emit");
 
         for expected in [
@@ -75735,7 +75741,10 @@ echo $call("Ada");
             ..CGenerator::default()
         };
         let output = generator
-            .emit_program(&Program { statements: vec![] })
+            .emit_program(&Program {
+                statements: vec![],
+                strict_types: false,
+            })
             .expect("empty program with native callable and diagnostic helpers should emit");
 
         assert!(output.contains(
@@ -76131,7 +76140,10 @@ echo $call("Ada");
             ..CGenerator::default()
         };
         let output = generator
-            .emit_program(&Program { statements: vec![] })
+            .emit_program(&Program {
+                statements: vec![],
+                strict_types: false,
+            })
             .expect("empty program with native callable helpers should emit");
 
         for expected in [

@@ -197,6 +197,25 @@ echo "|", strnatcasecmp("A10", "a2") > 0 ? "case" : "bad";
 }
 
 #[test]
+fn strnatcmp_left_aligned_leading_zero_runs_match_php() {
+    let execution = run_source(
+        r#"<?php
+echo strnatcmp(" 00", " 0"), "|";
+echo strnatcmp(" 0", " 00"), "|";
+echo strnatcmp("a0002", "a002"), "|";
+echo strnatcmp("a2", "a02"), "|";
+echo strnatcmp("0002", "002"), "|";
+echo strnatcasecmp("A001", "a01");
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "1|-1|-1|1|0|-1");
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn string_wordwrap_uuencode_and_natural_compare_metadata_is_available() {
     let execution = run_source(
         r#"<?php

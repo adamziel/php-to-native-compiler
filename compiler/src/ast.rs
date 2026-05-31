@@ -13,6 +13,7 @@ impl Span {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Program {
     pub statements: Vec<Stmt>,
+    pub strict_types: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -925,6 +926,7 @@ pub struct FunctionDecl {
     pub return_type: Option<TypeDecl>,
     pub returns_by_reference: bool,
     pub body: Vec<Stmt>,
+    pub strict_types: bool,
     pub is_nested: bool,
     pub is_generator: bool,
     pub end_line: usize,

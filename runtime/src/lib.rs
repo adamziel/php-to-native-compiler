@@ -6630,6 +6630,7 @@ unsafe fn native_value_coerce_call_type_result(
         value,
         callable,
         label,
+        false,
         |object, type_name| object.is_instance_of_class_name(type_name),
     )
     .map_err(|_| {
@@ -6673,6 +6674,7 @@ unsafe fn native_value_coerce_variadic_collection_type_result(
             value,
             callable,
             label,
+            false,
             |object, type_name| object.is_instance_of_class_name(type_name),
         )
         .map_err(|_| {
@@ -19181,8 +19183,8 @@ fn ascii_case_insensitive_compare_bytes(left: &[u8], right: &[u8]) -> i64 {
 }
 
 fn php_strnatcmp_bytes(left: &[u8], right: &[u8], case_insensitive: bool) -> i64 {
-    let mut left_index = 0;
-    let mut right_index = 0;
+    let mut left_index = skip_initial_natural_compare_zeroes(left);
+    let mut right_index = skip_initial_natural_compare_zeroes(right);
 
     loop {
         left_index = skip_natural_compare_spaces(left, left_index);
@@ -19196,17 +19198,35 @@ fn php_strnatcmp_bytes(left: &[u8], right: &[u8], case_insensitive: bool) -> i64
                 if left_byte.is_ascii_digit() && right_byte.is_ascii_digit() =>
             {
                 let ordering = if left_byte == b'0' || right_byte == b'0' {
-                    compare_left_aligned_digit_runs(&left[left_index..], &right[right_index..])
+                    compare_left_aligned_digit_runs(left, right, &mut left_index, &mut right_index)
                 } else {
-                    compare_right_aligned_digit_runs(&left[left_index..], &right[right_index..])
+                    compare_right_aligned_digit_runs(left, right, &mut left_index, &mut right_index)
                 };
 
                 if ordering != 0 {
                     return ordering;
                 }
 
-                left_index = skip_natural_compare_digits(left, left_index);
-                right_index = skip_natural_compare_digits(right, right_index);
+                if left_index == left.len() && right_index == right.len() {
+                    return 0;
+                }
+                if left_index == left.len() {
+                    return -1;
+                }
+                if right_index == right.len() {
+                    return 1;
+                }
+
+                let left_byte = natural_compare_byte(left[left_index], case_insensitive);
+                let right_byte = natural_compare_byte(right[right_index], case_insensitive);
+                match left_byte.cmp(&right_byte) {
+                    Ordering::Less => return -1,
+                    Ordering::Greater => return 1,
+                    Ordering::Equal => {
+                        left_index += 1;
+                        right_index += 1;
+                    }
+                }
             }
             (None, None) => return 0,
             (None, Some(_)) => return -1,
@@ -19228,15 +19248,16 @@ fn php_strnatcmp_bytes(left: &[u8], right: &[u8], case_insensitive: bool) -> i64
     }
 }
 
-fn skip_natural_compare_spaces(bytes: &[u8], mut index: usize) -> usize {
-    while bytes.get(index).is_some_and(u8::is_ascii_whitespace) {
+fn skip_initial_natural_compare_zeroes(bytes: &[u8]) -> usize {
+    let mut index = 0;
+    while index + 1 < bytes.len() && bytes[index] == b'0' && bytes[index + 1].is_ascii_digit() {
         index += 1;
     }
     index
 }
 
-fn skip_natural_compare_digits(bytes: &[u8], mut index: usize) -> usize {
-    while bytes.get(index).is_some_and(u8::is_ascii_digit) {
+fn skip_natural_compare_spaces(bytes: &[u8], mut index: usize) -> usize {
+    while bytes.get(index).is_some_and(u8::is_ascii_whitespace) {
         index += 1;
     }
     index
@@ -19250,55 +19271,46 @@ fn natural_compare_byte(byte: u8, case_insensitive: bool) -> u8 {
     }
 }
 
-fn compare_left_aligned_digit_runs(left: &[u8], right: &[u8]) -> i64 {
-    compare_leading_zero_digit_runs(left, right)
-}
+fn compare_left_aligned_digit_runs(
+    left: &[u8],
+    right: &[u8],
+    left_index: &mut usize,
+    right_index: &mut usize,
+) -> i64 {
+    loop {
+        let left_digit = left.get(*left_index).copied().filter(u8::is_ascii_digit);
+        let right_digit = right.get(*right_index).copied().filter(u8::is_ascii_digit);
 
-fn compare_leading_zero_digit_runs(left: &[u8], right: &[u8]) -> i64 {
-    let left_end = left.iter().take_while(|byte| byte.is_ascii_digit()).count();
-    let right_end = right
-        .iter()
-        .take_while(|byte| byte.is_ascii_digit())
-        .count();
-    let left_digits = &left[..left_end];
-    let right_digits = &right[..right_end];
-    let left_sig_start = left_digits
-        .iter()
-        .position(|byte| *byte != b'0')
-        .unwrap_or(left_digits.len());
-    let right_sig_start = right_digits
-        .iter()
-        .position(|byte| *byte != b'0')
-        .unwrap_or(right_digits.len());
-    let left_sig = &left_digits[left_sig_start..];
-    let right_sig = &right_digits[right_sig_start..];
-
-    match (left_sig.is_empty(), right_sig.is_empty()) {
-        (true, true) => return compare_usize_as_i64(right_digits.len(), left_digits.len()),
-        (true, false) => return -1,
-        (false, true) => return 1,
-        (false, false) => {}
-    }
-
-    match left_sig.len().cmp(&right_sig.len()) {
-        Ordering::Less => return -1,
-        Ordering::Greater => return 1,
-        Ordering::Equal => {}
-    }
-
-    match left_sig.cmp(right_sig) {
-        Ordering::Less => -1,
-        Ordering::Greater => 1,
-        Ordering::Equal => compare_usize_as_i64(right_digits.len(), left_digits.len()),
+        match (left_digit, right_digit) {
+            (None, None) => return 0,
+            (None, Some(_)) => return -1,
+            (Some(_), None) => return 1,
+            (Some(left_digit), Some(right_digit)) => {
+                match left_digit.cmp(&right_digit) {
+                    Ordering::Less => return -1,
+                    Ordering::Greater => return 1,
+                    Ordering::Equal => {}
+                }
+                *left_index += 1;
+                *right_index += 1;
+            }
+        }
     }
 }
 
-fn compare_right_aligned_digit_runs(left: &[u8], right: &[u8]) -> i64 {
+fn compare_right_aligned_digit_runs(
+    left: &[u8],
+    right: &[u8],
+    left_index: &mut usize,
+    right_index: &mut usize,
+) -> i64 {
     let mut bias = 0;
-    let mut index = 0;
 
     loop {
-        match (left.get(index).copied(), right.get(index).copied()) {
+        match (
+            left.get(*left_index).copied(),
+            right.get(*right_index).copied(),
+        ) {
             (Some(left), Some(right)) if left.is_ascii_digit() && right.is_ascii_digit() => {
                 if bias == 0 {
                     match left.cmp(&right) {
@@ -19307,20 +19319,13 @@ fn compare_right_aligned_digit_runs(left: &[u8], right: &[u8]) -> i64 {
                         Ordering::Equal => {}
                     }
                 }
-                index += 1;
+                *left_index += 1;
+                *right_index += 1;
             }
             (Some(left), _) if left.is_ascii_digit() => return 1,
             (_, Some(right)) if right.is_ascii_digit() => return -1,
             _ => return bias,
         }
-    }
-}
-
-fn compare_usize_as_i64(left: usize, right: usize) -> i64 {
-    match left.cmp(&right) {
-        Ordering::Less => -1,
-        Ordering::Equal => 0,
-        Ordering::Greater => 1,
     }
 }
 
@@ -31351,6 +31356,7 @@ impl PhpReferenceCell {
                 value,
                 &constraint.class_name,
                 &constraint.property_name,
+                false,
                 &object_type_resolver,
             )
             .map_err(|_| {
@@ -34254,6 +34260,7 @@ where
         value,
         class_name,
         property_name,
+        false,
         object_type_resolver,
     )
 }
@@ -36934,6 +36941,49 @@ impl PhpObject {
         Ok(property.unset && property.type_decl.is_none())
     }
 
+    pub fn coerce_unset_typed_property_read_value_from_context_with_object_type_resolver<F>(
+        &self,
+        name: &str,
+        value: Value,
+        current_class_id: Option<ClassId>,
+        protected_class_ids: &[ClassId],
+        strict_scalars: bool,
+        object_type_resolver: F,
+    ) -> RuntimeResult<Value>
+    where
+        F: Fn(&PhpObject, &str) -> bool,
+    {
+        let properties = self.properties.borrow();
+        let Some(property) = self.context_property_or_none(
+            &properties,
+            name,
+            current_class_id,
+            protected_class_ids,
+        )?
+        else {
+            return Ok(value);
+        };
+        let Some(type_decl) = property.type_decl.as_deref() else {
+            return Ok(value);
+        };
+
+        let actual = value.type_name().to_string();
+        coerce_property_value_with_object_type_resolver(
+            type_decl,
+            value,
+            &property.declaring_class_name,
+            &property.name,
+            strict_scalars,
+            object_type_resolver,
+        )
+        .map_err(|_| {
+            RuntimeError::invalid_property_access(format!(
+                "Cannot assign {actual} to property {}::${} of type {}",
+                property.declaring_class_name, property.name, type_decl
+            ))
+        })
+    }
+
     pub fn has_uninitialized_declared_property_from_context(
         &self,
         name: &str,
@@ -37291,11 +37341,12 @@ impl PhpObject {
     where
         F: Fn(&PhpObject, &str) -> bool,
     {
-        self.write_property_from_context_with_object_type_resolver_returning_value(
+        self.write_property_from_context_with_object_type_resolver_returning_value_strict(
             name,
             value,
             current_class_id,
             protected_class_ids,
+            false,
             object_type_resolver,
         )
         .map(|_| ())
@@ -37307,6 +37358,28 @@ impl PhpObject {
         value: Value,
         current_class_id: Option<ClassId>,
         protected_class_ids: &[ClassId],
+        object_type_resolver: F,
+    ) -> RuntimeResult<Value>
+    where
+        F: Fn(&PhpObject, &str) -> bool,
+    {
+        self.write_property_from_context_with_object_type_resolver_returning_value_strict(
+            name,
+            value,
+            current_class_id,
+            protected_class_ids,
+            false,
+            object_type_resolver,
+        )
+    }
+
+    pub fn write_property_from_context_with_object_type_resolver_returning_value_strict<F>(
+        &self,
+        name: &str,
+        value: Value,
+        current_class_id: Option<ClassId>,
+        protected_class_ids: &[ClassId],
+        strict_scalars: bool,
         object_type_resolver: F,
     ) -> RuntimeResult<Value>
     where
@@ -37329,6 +37402,7 @@ impl PhpObject {
         let value = coerce_typed_property_value_with_object_type_resolver(
             property,
             value,
+            strict_scalars,
             &object_type_resolver,
         )?;
         property.set_value(value.clone());
@@ -37812,6 +37886,7 @@ fn coerce_typed_property_value(property: &ObjectProperty, value: Value) -> Runti
 fn coerce_typed_property_value_with_object_type_resolver<F>(
     property: &ObjectProperty,
     value: Value,
+    strict_scalars: bool,
     object_type_resolver: &F,
 ) -> RuntimeResult<Value>
 where
@@ -37825,6 +37900,7 @@ where
         value,
         &property.declaring_class_name,
         &property.name,
+        strict_scalars,
         object_type_resolver,
     )
 }
@@ -37840,6 +37916,7 @@ pub fn coerce_property_value(
         value,
         class_name,
         property_name,
+        false,
         |object, type_name| object.is_instance_of_class_name(type_name),
     )
 }
@@ -37849,6 +37926,7 @@ pub fn coerce_property_value_with_object_type_resolver<F>(
     value: Value,
     class_name: &str,
     property_name: &str,
+    strict_scalars: bool,
     object_type_resolver: F,
 ) -> RuntimeResult<Value>
 where
@@ -37859,6 +37937,7 @@ where
         value,
         class_name,
         property_name,
+        strict_scalars,
         &object_type_resolver,
     )
 }
@@ -37868,6 +37947,7 @@ fn coerce_property_value_with_object_type_resolver_dyn(
     value: Value,
     class_name: &str,
     property_name: &str,
+    strict_scalars: bool,
     object_type_resolver: &dyn Fn(&PhpObject, &str) -> bool,
 ) -> RuntimeResult<Value> {
     if type_decl.contains('|') {
@@ -37877,6 +37957,7 @@ fn coerce_property_value_with_object_type_resolver_dyn(
                 value.clone(),
                 class_name,
                 property_name,
+                strict_scalars,
                 object_type_resolver,
             ) {
                 return Ok(value);
@@ -37897,6 +37978,7 @@ fn coerce_property_value_with_object_type_resolver_dyn(
                 value.clone(),
                 class_name,
                 property_name,
+                strict_scalars,
                 object_type_resolver,
             )
             .map_err(|_| {
@@ -37926,6 +38008,10 @@ fn coerce_property_value_with_object_type_resolver_dyn(
     }
 
     let coerced = match normalized.as_str() {
+        "int" if strict_scalars => match &value {
+            Value::Int(_) => Some(value.clone()),
+            _ => None,
+        },
         "int" => match &value {
             Value::Int(_) => Some(value.clone()),
             Value::Bool(value) => Some(Value::Int(if *value { 1 } else { 0 })),
@@ -37934,6 +38020,11 @@ fn coerce_property_value_with_object_type_resolver_dyn(
                 Number::Int(value) => Value::Int(value),
                 Number::Float(value) => Value::Int(value as i64),
             }),
+            _ => None,
+        },
+        "float" if strict_scalars => match &value {
+            Value::Int(value) => Some(Value::Float(*value as f64)),
+            Value::Float(_) => Some(value.clone()),
             _ => None,
         },
         "float" => match &value {
@@ -37946,11 +38037,19 @@ fn coerce_property_value_with_object_type_resolver_dyn(
             }),
             _ => None,
         },
+        "bool" if strict_scalars => match &value {
+            Value::Bool(_) => Some(value.clone()),
+            _ => None,
+        },
         "bool" => match &value {
             Value::Bool(_) => Some(value.clone()),
             Value::Int(value) => Some(Value::Bool(*value != 0)),
             Value::Float(value) => Some(Value::Bool(*value != 0.0)),
             Value::String(value) => Some(Value::Bool(!value.is_empty() && value != "0")),
+            _ => None,
+        },
+        "string" if strict_scalars => match &value {
+            Value::String(_) | Value::BinaryString(_) => Some(value.clone()),
             _ => None,
         },
         "string" => match &value {
@@ -45052,6 +45151,79 @@ mod tests {
 
     fn native_string_for_test(value: &str) -> NativeStringHandle {
         unsafe { phpc_native_string_from_bytes(value.as_ptr(), value.len()) }
+    }
+
+    #[test]
+    fn native_strnatcmp_left_aligned_digit_runs_match_php() {
+        assert_eq!(php_strnatcmp_bytes(b" 00", b" 0", false), 1);
+        assert_eq!(php_strnatcmp_bytes(b" 0", b" 00", false), -1);
+        assert_eq!(php_strnatcmp_bytes(b"a0002", b"a002", false), -1);
+        assert_eq!(php_strnatcmp_bytes(b"a2", b"a02", false), 1);
+        assert_eq!(php_strnatcmp_bytes(b"0002", b"002", false), 0);
+        assert_eq!(php_strnatcmp_bytes(b"A001", b"a01", true), -1);
+    }
+
+    #[test]
+    fn unset_typed_property_magic_get_return_coercion_obeys_strict_flag() {
+        let mut class = PhpClassMetadata::new(ClassId(811), "SideEffectBox".to_string());
+        class
+            .add_property(
+                PhpPropertyMetadata::instance("id", Visibility::Public)
+                    .with_type_decl(Some("int".to_string())),
+            )
+            .unwrap();
+
+        let object = PhpObject::from_class(&class);
+        object.unset_property_from_context("id", None, &[]).unwrap();
+        object
+            .write_property_from_context("id", Value::Int(7), None, &[])
+            .unwrap();
+
+        let error = object
+            .coerce_unset_typed_property_read_value_from_context_with_object_type_resolver(
+                "id",
+                Value::String("bad".to_string()),
+                None,
+                &[],
+                false,
+                |object, type_name| object.is_instance_of_class_name(type_name),
+            )
+            .unwrap_err();
+        assert_eq!(
+            error.message(),
+            "invalid property access: Cannot assign string to property SideEffectBox::$id of type int"
+        );
+        assert_eq!(
+            object.read_property_from_context("id", None, &[]).unwrap(),
+            Value::Int(7)
+        );
+
+        let weak = object
+            .coerce_unset_typed_property_read_value_from_context_with_object_type_resolver(
+                "id",
+                Value::String("42".to_string()),
+                None,
+                &[],
+                false,
+                |object, type_name| object.is_instance_of_class_name(type_name),
+            )
+            .unwrap();
+        assert_eq!(weak, Value::Int(42));
+
+        let strict = object
+            .coerce_unset_typed_property_read_value_from_context_with_object_type_resolver(
+                "id",
+                Value::String("42".to_string()),
+                None,
+                &[],
+                true,
+                |object, type_name| object.is_instance_of_class_name(type_name),
+            )
+            .unwrap_err();
+        assert_eq!(
+            strict.message(),
+            "invalid property access: Cannot assign string to property SideEffectBox::$id of type int"
+        );
     }
 
     unsafe fn int_from_frame_for_test(frame: NativeCallFrameHandle, index: usize) -> i64 {
