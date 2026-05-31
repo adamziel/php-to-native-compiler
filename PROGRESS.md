@@ -1,22 +1,17 @@
-# PHP Native Compiler Progress
+# PHP Native Compiler PHPT Progress
 
 Updated: 2026-05-31 15:20 CEST
 
 Primary/public branch: `origin/master`
-Publication base before this update:
-`54829387 docs: simplify PHPT progress report`
-Published source head for current score:
-`54f3c2c3 fix: preserve strictness provenance in magic typed properties`
+Semantic source for current score:
+`54f3c2c34708171d0f97cce98bf27c4eb69c4663 fix: preserve strictness provenance in magic typed properties`
 
-This file is the public PHPT-suite progress report. AO workers and the
-supervisor must update this file before claiming public progress.
-
-Pinned PHPT metric:
+Public PHPT metric:
 
 `passed runnable PHPTs / total pinned runnable PHPTs`
 
-The pinned php-src suite uses the stable public denominator `20294`. Raw
-runner denominators that exclude BORKED rows are not public progress.
+Pinned denominator: `20294` total pinned runnable php-src PHPTs. Raw runner
+denominators that exclude BORKED rows are not public progress.
 
 Current public score: **5173 / 20294 pinned runnable PHPTs = 25.49%**.
 
@@ -26,7 +21,7 @@ Published gate: Batch023 repair01.
 
 - Gate run:
   `phpt-full-batch023-repair01-sharded-serialized-openbasedir-20260531T1308Z-php-src-f97ff59-public-54829387-source-54f3c2c3`
-- Source: `54f3c2c3 fix: preserve strictness provenance in magic typed properties`
+- Source: `54f3c2c34708171d0f97cce98bf27c4eb69c4663 fix: preserve strictness provenance in magic typed properties`
 - Score: **5173 / 20294 pinned runnable PHPTs = 25.49%**
 - Regression result: zero latest-published PASS regressions against the
   Batch022 repair02 PASS baseline.
