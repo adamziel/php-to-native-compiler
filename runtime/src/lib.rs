@@ -31739,9 +31739,15 @@ impl PhpClassTable {
                 .add_property(PhpPropertyMetadata::instance(property, Visibility::Public))
                 .expect("Error core metadata should not duplicate properties");
         }
+        let invalid_uri_exception_id = classes
+            .declare_class("Uri\\InvalidUriException")
+            .expect("core class table should contain Error before Uri\\InvalidUriException");
+        classes
+            .set_parent(invalid_uri_exception_id, exception_id)
+            .expect("Uri\\InvalidUriException should extend Exception");
         classes
             .declare_class("stdClass")
-            .expect("core class table should contain Exception and Error before stdClass");
+            .expect("core class table should contain Uri\\InvalidUriException before stdClass");
         let mysqli_id = classes
             .declare_class("mysqli")
             .expect("core class table should contain Exception and stdClass before mysqli");
@@ -31837,9 +31843,68 @@ impl PhpClassTable {
                 Visibility::Public,
             ))
             .expect("RoundingMode core metadata should not duplicate methods");
+        let uri_comparison_mode_id = classes
+            .declare_class("Uri\\UriComparisonMode")
+            .expect("core class table should contain RoundingMode before UriComparisonMode");
+        let uri_comparison_mode = classes
+            .get_mut(uri_comparison_mode_id)
+            .expect("declared UriComparisonMode class id should resolve");
+        uri_comparison_mode
+            .add_property(PhpPropertyMetadata::instance("name", Visibility::Public))
+            .expect("UriComparisonMode core metadata should not duplicate name");
+        let uri_host_type_id = classes
+            .declare_class("Uri\\Rfc3986\\UriHostType")
+            .expect("core class table should contain UriComparisonMode before UriHostType");
+        let uri_host_type = classes
+            .get_mut(uri_host_type_id)
+            .expect("declared UriHostType class id should resolve");
+        uri_host_type
+            .add_property(PhpPropertyMetadata::instance("name", Visibility::Public))
+            .expect("UriHostType core metadata should not duplicate name");
+        let uri_type_id = classes
+            .declare_class("Uri\\Rfc3986\\UriType")
+            .expect("core class table should contain UriHostType before UriType");
+        let uri_type = classes
+            .get_mut(uri_type_id)
+            .expect("declared UriType class id should resolve");
+        uri_type
+            .add_property(PhpPropertyMetadata::instance("name", Visibility::Public))
+            .expect("UriType core metadata should not duplicate name");
+        let uri_id = classes
+            .declare_class("Uri\\Rfc3986\\Uri")
+            .expect("core class table should contain UriType before Uri");
+        let uri = classes
+            .get_mut(uri_id)
+            .expect("declared Uri class id should resolve");
+        for property in [
+            "scheme", "username", "password", "host", "port", "path", "query", "fragment",
+        ] {
+            uri.add_property(PhpPropertyMetadata::instance(property, Visibility::Public))
+                .expect("Uri core metadata should not duplicate properties");
+        }
+        uri.add_method(PhpMethodMetadata::instance(
+            "__construct",
+            Visibility::Public,
+        ))
+        .expect("Uri core metadata should not duplicate __construct");
+        uri.add_method(PhpMethodMetadata::static_method(
+            "parse",
+            Visibility::Public,
+        ))
+        .expect("Uri core metadata should not duplicate parse");
+        for method in [
+            "toRawString",
+            "toString",
+            "equals",
+            "getHostType",
+            "getUriType",
+        ] {
+            uri.add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("Uri core metadata should not duplicate methods");
+        }
         let bcmath_number_id = classes
             .declare_class("BcMath\\Number")
-            .expect("core class table should contain RoundingMode before BcMath\\Number");
+            .expect("core class table should contain Uri before BcMath\\Number");
         let bcmath_number = classes
             .get_mut(bcmath_number_id)
             .expect("declared BcMath\\Number class id should resolve");

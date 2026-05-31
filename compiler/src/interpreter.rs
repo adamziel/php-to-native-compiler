@@ -224,6 +224,7 @@ struct Interpreter {
     spl_object_storage_get_hash_depth: usize,
     spl_doubly_linked_lists: HashMap<i64, SplDoublyLinkedListState>,
     date_time_objects: HashMap<i64, BoundedDateTimeObjectState>,
+    uri_rfc3986_empty_port_objects: HashSet<i64>,
     source_file: Option<String>,
     main_source_file: Option<String>,
     included_files: Vec<String>,
@@ -11018,6 +11019,7 @@ impl Interpreter {
             spl_object_storage_get_hash_depth: 0,
             spl_doubly_linked_lists: HashMap::new(),
             date_time_objects: HashMap::new(),
+            uri_rfc3986_empty_port_objects: HashSet::new(),
             main_source_file: source_file.clone(),
             source_file,
             included_files: Vec::new(),
@@ -22143,6 +22145,9 @@ impl Interpreter {
         }
         if declared_class_name.eq_ignore_ascii_case("BcMath\\Number") {
             return self.instantiate_bcmath_number(args, span, scope);
+        }
+        if declared_class_name.eq_ignore_ascii_case("Uri\\Rfc3986\\Uri") {
+            return self.instantiate_uri_rfc3986(args, span, scope);
         }
 
         let constructor = self.resolve_instance_method(class_id, "__construct");
@@ -45806,6 +45811,14 @@ impl Interpreter {
                 .call_bcmath_number_method(object, method_name, args, span, caller_scope)
                 .map(|value| (value, None));
         }
+        if object
+            .class_name()
+            .eq_ignore_ascii_case("Uri\\Rfc3986\\Uri")
+        {
+            return self
+                .call_uri_rfc3986_method(object, method_name, args, span, caller_scope)
+                .map(|value| (value, None));
+        }
 
         let (class_id, class_name, resolved_method_name, visibility, is_static) = {
             let receiver_class_name = self
@@ -50570,6 +50583,11 @@ impl Interpreter {
             expect_expr_arity("RoundingMode::cases", args.len(), 0, span)?;
             return self.rounding_mode_cases_array(span);
         }
+        if receiver_class_name.eq_ignore_ascii_case("Uri\\Rfc3986\\Uri")
+            && method_name.eq_ignore_ascii_case("parse")
+        {
+            return self.call_uri_rfc3986_parse_static(args, span, caller_scope);
+        }
         if receiver_class_name.eq_ignore_ascii_case("DateTimeZone")
             && method_name.eq_ignore_ascii_case("listIdentifiers")
         {
@@ -51960,6 +51978,19 @@ impl Interpreter {
                 ));
             };
             return Ok(Value::Object(self.rounding_mode_case_object(mode, span)?));
+        }
+        if class_name.eq_ignore_ascii_case("Uri\\UriComparisonMode") {
+            if !matches!(constant, "IncludeFragment" | "ExcludeFragment") {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::undefined_constant(format!("{class_name}::{constant}")),
+                ));
+            }
+            return Ok(Value::Object(self.uri_enum_case_object(
+                "Uri\\UriComparisonMode",
+                constant,
+                span,
+            )?));
         }
 
         if let Some(enum_decl) = self
@@ -97779,6 +97810,10 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
             return Some(("ReflectionException", message.to_string()));
         }
 
+        if let Some(message) = error.message.strip_prefix("Uri\\InvalidUriException: ") {
+            return Some(("Uri\\InvalidUriException", message.to_string()));
+        }
+
         if error.message.starts_with("Non-static method ")
             && error.message.ends_with(" cannot be called statically")
         {
@@ -122940,6 +122975,393 @@ impl Interpreter {
         apply_putenv_assignment(assignment, span)
     }
 
+    fn instantiate_uri_rfc3986(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        expect_expr_arity("Uri\\Rfc3986\\Uri::__construct", args.len(), 1, span)?;
+        let value = self.evaluate(&args[0], scope)?;
+        let input = self.uri_string_argument("Uri\\Rfc3986\\Uri::__construct()", &value, span)?;
+        let parts = parse_rfc3986_uri(&input).map_err(|_| uri_invalid_uri_error(span))?;
+        self.uri_rfc3986_object_from_parts(parts, span)
+            .map(Value::Object)
+    }
+
+    fn call_uri_rfc3986_parse_static(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        expect_expr_arity("Uri\\Rfc3986\\Uri::parse", args.len(), 1, span)?;
+        let value = self.evaluate(&args[0], scope)?;
+        let input = self.uri_string_argument("Uri\\Rfc3986\\Uri::parse()", &value, span)?;
+        let parts = parse_rfc3986_uri(&input).map_err(|_| uri_invalid_uri_error(span))?;
+        self.uri_rfc3986_object_from_parts(parts, span)
+            .map(Value::Object)
+    }
+
+    fn call_uri_rfc3986_method(
+        &mut self,
+        object: PhpObject,
+        method_name: &str,
+        args: &[Expr],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        let values = args
+            .iter()
+            .map(|arg| self.evaluate(arg, scope))
+            .collect::<CompileResult<Vec<_>>>()?;
+        match method_name.to_ascii_lowercase().as_str() {
+            "__construct" => {
+                expect_arity("Uri\\Rfc3986\\Uri::__construct", &values, 1, span)?;
+                let input =
+                    self.uri_string_argument("Uri\\Rfc3986\\Uri::__construct()", &values[0], span)?;
+                let parts = parse_rfc3986_uri(&input).map_err(|_| uri_invalid_uri_error(span))?;
+                self.write_uri_rfc3986_properties(&object, &parts, span)?;
+                Ok(Value::Null)
+            }
+            "torawstring" | "tostring" => {
+                let callable = if method_name.eq_ignore_ascii_case("toRawString") {
+                    "Uri\\Rfc3986\\Uri::toRawString"
+                } else {
+                    "Uri\\Rfc3986\\Uri::toString"
+                };
+                expect_arity(callable, &values, 0, span)?;
+                let parts = self.uri_rfc3986_parts_from_object(&object, span)?;
+                Ok(Value::String(parts.to_raw_string()))
+            }
+            "equals" => {
+                if !(1..=2).contains(&values.len()) {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::arity_mismatch(
+                            callable_name("Uri\\Rfc3986\\Uri::equals"),
+                            ArityExpectation::Between { min: 1, max: 2 },
+                            values.len(),
+                        ),
+                    ));
+                }
+                let other = match &values[0] {
+                    Value::Object(object)
+                        if object
+                            .class_name()
+                            .eq_ignore_ascii_case("Uri\\Rfc3986\\Uri") =>
+                    {
+                        object
+                    }
+                    other => {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "Uri\\Rfc3986\\Uri::equals()",
+                                format!(
+                                    "argument must be Uri\\Rfc3986\\Uri in the current subset, got {}",
+                                    other.type_name()
+                                ),
+                            ),
+                        ));
+                    }
+                };
+                let include_fragment = match values.get(1) {
+                    Some(mode) => self.uri_comparison_mode_includes_fragment(mode, span)?,
+                    None => true,
+                };
+                let mut left = self
+                    .uri_rfc3986_parts_from_object(&object, span)?
+                    .normalized();
+                let mut right = self
+                    .uri_rfc3986_parts_from_object(other, span)?
+                    .normalized();
+                if !include_fragment {
+                    left.fragment = None;
+                    right.fragment = None;
+                }
+                Ok(Value::Bool(left == right))
+            }
+            "gethosttype" => {
+                expect_arity("Uri\\Rfc3986\\Uri::getHostType", &values, 0, span)?;
+                let parts = self.uri_rfc3986_parts_from_object(&object, span)?;
+                let case = parts.host_type_case();
+                self.uri_enum_case_object("Uri\\Rfc3986\\UriHostType", case, span)
+                    .map(Value::Object)
+            }
+            "geturitype" => {
+                expect_arity("Uri\\Rfc3986\\Uri::getUriType", &values, 0, span)?;
+                let parts = self.uri_rfc3986_parts_from_object(&object, span)?;
+                let case = parts.uri_type_case();
+                self.uri_enum_case_object("Uri\\Rfc3986\\UriType", case, span)
+                    .map(Value::Object)
+            }
+            _ => Err(runtime_error(
+                span,
+                RuntimeError::undefined_function(format!("Uri\\Rfc3986\\Uri::{method_name}()")),
+            )),
+        }
+    }
+
+    fn uri_string_argument(
+        &self,
+        callable: &'static str,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<String> {
+        match value {
+            Value::String(value) => Ok(value.clone()),
+            Value::BinaryString(bytes) => Ok(String::from_utf8_lossy(bytes).into_owned()),
+            other => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    callable,
+                    format!(
+                        "argument must be string in the current subset, got {}",
+                        other.type_name()
+                    ),
+                ),
+            )),
+        }
+    }
+
+    fn uri_rfc3986_object_from_parts(
+        &mut self,
+        parts: Rfc3986UriParts,
+        span: Span,
+    ) -> CompileResult<PhpObject> {
+        let class_id = self
+            .classes
+            .lookup_class_id("Uri\\Rfc3986\\Uri")
+            .ok_or_else(|| {
+                runtime_error(span, RuntimeError::undefined_class("Uri\\Rfc3986\\Uri"))
+            })?;
+        let object_id = self.allocate_object_id();
+        let class = self
+            .classes
+            .get(class_id)
+            .expect("Uri\\Rfc3986\\Uri class id should resolve");
+        let object = PhpObject::from_class_with_id(class, object_id);
+        self.write_uri_rfc3986_properties(&object, &parts, span)?;
+        self.track_allocated_object(&object);
+        Ok(object)
+    }
+
+    fn write_uri_rfc3986_properties(
+        &mut self,
+        object: &PhpObject,
+        parts: &Rfc3986UriParts,
+        span: Span,
+    ) -> CompileResult<()> {
+        object
+            .write_public_property("scheme", optional_string_value(parts.scheme.as_deref()))
+            .map_err(|error| runtime_error(span, error))?;
+        object
+            .write_public_property("username", optional_string_value(parts.username.as_deref()))
+            .map_err(|error| runtime_error(span, error))?;
+        object
+            .write_public_property("password", optional_string_value(parts.password.as_deref()))
+            .map_err(|error| runtime_error(span, error))?;
+        object
+            .write_public_property("host", optional_string_value(parts.host.as_deref()))
+            .map_err(|error| runtime_error(span, error))?;
+        object
+            .write_public_property("port", parts.port.map(Value::Int).unwrap_or(Value::Null))
+            .map_err(|error| runtime_error(span, error))?;
+        object
+            .write_public_property("path", Value::String(parts.path.clone()))
+            .map_err(|error| runtime_error(span, error))?;
+        object
+            .write_public_property("query", optional_string_value(parts.query.as_deref()))
+            .map_err(|error| runtime_error(span, error))?;
+        object
+            .write_public_property("fragment", optional_string_value(parts.fragment.as_deref()))
+            .map_err(|error| runtime_error(span, error))?;
+        if parts.empty_port {
+            self.uri_rfc3986_empty_port_objects.insert(object.id());
+        } else {
+            self.uri_rfc3986_empty_port_objects.remove(&object.id());
+        }
+        Ok(())
+    }
+
+    fn uri_rfc3986_parts_from_object(
+        &self,
+        object: &PhpObject,
+        span: Span,
+    ) -> CompileResult<Rfc3986UriParts> {
+        let scheme = self.uri_optional_string_property(object, "scheme", span)?;
+        let username = self.uri_optional_string_property(object, "username", span)?;
+        let password = self.uri_optional_string_property(object, "password", span)?;
+        let host = self.uri_optional_string_property(object, "host", span)?;
+        let port = self.uri_optional_port_property(object, span)?;
+        let empty_port =
+            port.is_none() && self.uri_rfc3986_empty_port_objects.contains(&object.id());
+        let path = match object
+            .read_public_property("path")
+            .map_err(|error| runtime_error(span, error))?
+        {
+            Value::String(path) => path,
+            Value::BinaryString(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
+            Value::Null => String::new(),
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "Uri\\Rfc3986\\Uri",
+                        format!("path property must be string, got {}", other.type_name()),
+                    ),
+                ));
+            }
+        };
+        let query = self.uri_optional_string_property(object, "query", span)?;
+        let fragment = self.uri_optional_string_property(object, "fragment", span)?;
+        Ok(Rfc3986UriParts {
+            scheme,
+            username,
+            password,
+            host,
+            port,
+            empty_port,
+            path,
+            query,
+            fragment,
+        })
+    }
+
+    fn uri_optional_string_property(
+        &self,
+        object: &PhpObject,
+        property: &str,
+        span: Span,
+    ) -> CompileResult<Option<String>> {
+        match object
+            .read_public_property(property)
+            .map_err(|error| runtime_error(span, error))?
+        {
+            Value::Null => Ok(None),
+            Value::String(value) => Ok(Some(value)),
+            Value::BinaryString(bytes) => Ok(Some(String::from_utf8_lossy(&bytes).into_owned())),
+            other => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "Uri\\Rfc3986\\Uri",
+                    format!(
+                        "{property} property must be string or null, got {}",
+                        other.type_name()
+                    ),
+                ),
+            )),
+        }
+    }
+
+    fn uri_optional_port_property(
+        &self,
+        object: &PhpObject,
+        span: Span,
+    ) -> CompileResult<Option<i64>> {
+        match object
+            .read_public_property("port")
+            .map_err(|error| runtime_error(span, error))?
+        {
+            Value::Null => Ok(None),
+            Value::Int(value) if (0..=65535).contains(&value) => Ok(Some(value)),
+            Value::String(value) if value.chars().all(|ch| ch.is_ascii_digit()) => value
+                .parse::<i64>()
+                .ok()
+                .filter(|value| (0..=65535).contains(value))
+                .map(Some)
+                .ok_or_else(|| uri_invalid_uri_error(span)),
+            other => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "Uri\\Rfc3986\\Uri",
+                    format!(
+                        "port property must be int or null, got {}",
+                        other.type_name()
+                    ),
+                ),
+            )),
+        }
+    }
+
+    fn uri_enum_case_object(
+        &self,
+        class_name: &'static str,
+        case_name: &str,
+        span: Span,
+    ) -> CompileResult<PhpObject> {
+        let class = self
+            .classes
+            .lookup_class(class_name)
+            .ok_or_else(|| runtime_error(span, RuntimeError::undefined_class(class_name)))?;
+        let object = PhpObject::from_class(class);
+        object
+            .write_public_property("name", Value::String(case_name.to_string()))
+            .map_err(|error| runtime_error(span, error))?;
+        Ok(object)
+    }
+
+    fn uri_comparison_mode_includes_fragment(
+        &self,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<bool> {
+        let Value::Object(object) = value else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "Uri\\Rfc3986\\Uri::equals()",
+                    format!(
+                        "comparison mode must be Uri\\UriComparisonMode in the current subset, got {}",
+                        value.type_name()
+                    ),
+                ),
+            ));
+        };
+        if !object
+            .class_name()
+            .eq_ignore_ascii_case("Uri\\UriComparisonMode")
+        {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "Uri\\Rfc3986\\Uri::equals()",
+                    format!(
+                        "comparison mode must be Uri\\UriComparisonMode in the current subset, got {}",
+                        object.class_name()
+                    ),
+                ),
+            ));
+        }
+        let name = match object
+            .read_public_property("name")
+            .map_err(|error| runtime_error(span, error))?
+        {
+            Value::String(name) => name,
+            _ => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "Uri\\Rfc3986\\Uri::equals()",
+                        "Uri\\UriComparisonMode case is missing a string name",
+                    ),
+                ));
+            }
+        };
+        match name.as_str() {
+            "IncludeFragment" => Ok(true),
+            "ExcludeFragment" => Ok(false),
+            _ => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "Uri\\Rfc3986\\Uri::equals()",
+                    format!("unsupported Uri\\UriComparisonMode case {name}"),
+                ),
+            )),
+        }
+    }
+
     fn bcmath_default_scale(&self) -> usize {
         self.ini_value("bcmath.scale")
             .and_then(|value| parse_bcmath_scale_text(&value))
@@ -127256,6 +127678,452 @@ fn initial_default_timezone_from_ini(
     )
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Rfc3986UriParts {
+    scheme: Option<String>,
+    username: Option<String>,
+    password: Option<String>,
+    host: Option<String>,
+    port: Option<i64>,
+    empty_port: bool,
+    path: String,
+    query: Option<String>,
+    fragment: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct NormalizedRfc3986Uri {
+    scheme: Option<String>,
+    username: Option<String>,
+    password: Option<String>,
+    host: Option<String>,
+    port: Option<i64>,
+    path: String,
+    query: Option<String>,
+    fragment: Option<String>,
+}
+
+impl Rfc3986UriParts {
+    fn to_raw_string(&self) -> String {
+        let mut output = String::new();
+        if let Some(scheme) = &self.scheme {
+            output.push_str(scheme);
+            output.push(':');
+        }
+        if self.has_authority() {
+            output.push_str("//");
+            if let Some(username) = &self.username {
+                output.push_str(username);
+                if let Some(password) = &self.password {
+                    output.push(':');
+                    output.push_str(password);
+                }
+                output.push('@');
+            }
+            if let Some(host) = &self.host {
+                output.push_str(&serialize_rfc3986_host(host));
+            }
+            if let Some(port) = self.port {
+                output.push(':');
+                output.push_str(&port.to_string());
+            } else if self.empty_port {
+                output.push(':');
+            }
+        }
+        output.push_str(&self.path);
+        if let Some(query) = &self.query {
+            output.push('?');
+            output.push_str(query);
+        }
+        if let Some(fragment) = &self.fragment {
+            output.push('#');
+            output.push_str(fragment);
+        }
+        output
+    }
+
+    fn normalized(&self) -> NormalizedRfc3986Uri {
+        NormalizedRfc3986Uri {
+            scheme: self
+                .scheme
+                .as_ref()
+                .map(|scheme| scheme.to_ascii_lowercase()),
+            username: self
+                .username
+                .as_ref()
+                .map(|username| percent_decode_unreserved(username)),
+            password: self
+                .password
+                .as_ref()
+                .map(|password| percent_decode_unreserved(password)),
+            host: self.host.as_ref().map(|host| normalize_rfc3986_host(host)),
+            port: self.port,
+            path: remove_rfc3986_dot_segments(&percent_decode_unreserved(&self.path)),
+            query: self
+                .query
+                .as_ref()
+                .map(|query| percent_decode_unreserved(query)),
+            fragment: self
+                .fragment
+                .as_ref()
+                .map(|fragment| percent_decode_unreserved(fragment)),
+        }
+    }
+
+    fn has_authority(&self) -> bool {
+        self.host.is_some()
+            || self.username.is_some()
+            || self.password.is_some()
+            || self.port.is_some()
+    }
+
+    fn host_type_case(&self) -> &'static str {
+        let Some(host) = self.host.as_deref() else {
+            return "None";
+        };
+        let host = bracketed_rfc3986_host_inner(host).unwrap_or(host);
+        if host.parse::<Ipv4Addr>().is_ok() {
+            "IPv4"
+        } else if host.parse::<Ipv6Addr>().is_ok() {
+            "IPv6"
+        } else if is_rfc3986_ipvfuture_inner(host) {
+            "IPvFuture"
+        } else if host.is_empty() {
+            "None"
+        } else {
+            "RegisteredName"
+        }
+    }
+
+    fn uri_type_case(&self) -> &'static str {
+        if self.scheme.is_some() {
+            "Uri"
+        } else if self.has_authority() {
+            "NetworkPathReference"
+        } else if self.path.starts_with('/') {
+            "AbsolutePathReference"
+        } else {
+            "RelativeReference"
+        }
+    }
+}
+
+fn parse_rfc3986_uri(input: &str) -> Result<Rfc3986UriParts, ()> {
+    if input.bytes().any(|byte| byte == 0) {
+        return Err(());
+    }
+
+    let (without_fragment, fragment) = split_once_char(input, '#');
+    let (without_query, query) = split_once_char(without_fragment, '?');
+    let mut rest = without_query;
+    let mut scheme = None;
+
+    if let Some(colon) = rest.find(':') {
+        let slash = rest.find('/').unwrap_or(usize::MAX);
+        if colon < slash {
+            let candidate = &rest[..colon];
+            if !is_valid_rfc3986_scheme(candidate) {
+                return Err(());
+            }
+            scheme = Some(candidate.to_string());
+            rest = &rest[colon + 1..];
+        }
+    }
+
+    let (username, password, host, port, empty_port, path) =
+        if let Some(authority_rest) = rest.strip_prefix("//") {
+            let path_start = authority_rest.find('/').unwrap_or(authority_rest.len());
+            let authority = &authority_rest[..path_start];
+            let path = &authority_rest[path_start..];
+            let (username, password, host, port, empty_port) = parse_rfc3986_authority(authority)?;
+            (
+                username,
+                password,
+                Some(host),
+                port,
+                empty_port,
+                path.to_string(),
+            )
+        } else {
+            (None, None, None, None, false, rest.to_string())
+        };
+
+    validate_rfc3986_path(&path)?;
+
+    Ok(Rfc3986UriParts {
+        scheme,
+        username,
+        password,
+        host,
+        port,
+        empty_port,
+        path,
+        query: query.map(str::to_string),
+        fragment: fragment.map(str::to_string),
+    })
+}
+
+fn split_once_char(input: &str, needle: char) -> (&str, Option<&str>) {
+    match input.split_once(needle) {
+        Some((left, right)) => (left, Some(right)),
+        None => (input, None),
+    }
+}
+
+fn is_valid_rfc3986_scheme(candidate: &str) -> bool {
+    let mut chars = candidate.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    first.is_ascii_alphabetic()
+        && chars.all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '+' | '-' | '.'))
+}
+
+fn parse_rfc3986_authority(
+    authority: &str,
+) -> Result<(Option<String>, Option<String>, String, Option<i64>, bool), ()> {
+    if !authority.is_ascii() {
+        return Err(());
+    }
+
+    let (userinfo, host_port) = match authority.rsplit_once('@') {
+        Some((userinfo, host_port)) => (Some(userinfo), host_port),
+        None => (None, authority),
+    };
+    let (username, password) = match userinfo {
+        Some(userinfo) => {
+            if userinfo.contains(['[', ']']) {
+                return Err(());
+            }
+            match userinfo.split_once(':') {
+                Some((username, password)) => {
+                    (Some(username.to_string()), Some(password.to_string()))
+                }
+                None => (Some(userinfo.to_string()), None),
+            }
+        }
+        None => (None, None),
+    };
+
+    let (host, port, empty_port) = if let Some(bracketed) = host_port.strip_prefix('[') {
+        let Some(end) = bracketed.find(']') else {
+            return Err(());
+        };
+        let host = format!("[{}]", &bracketed[..end]);
+        let remainder = &bracketed[end + 1..];
+        let (port, empty_port) = if let Some(port) = remainder.strip_prefix(':') {
+            let parsed = parse_rfc3986_port(port)?;
+            (parsed, parsed.is_none())
+        } else if remainder.is_empty() {
+            (None, false)
+        } else {
+            return Err(());
+        };
+        (host, port, empty_port)
+    } else {
+        if host_port.contains(['[', ']']) {
+            return Err(());
+        }
+        match host_port.rsplit_once(':') {
+            Some((host, port)) if !host.contains(':') => {
+                let parsed = parse_rfc3986_port(port)?;
+                (host.to_string(), parsed, parsed.is_none())
+            }
+            Some(_) => return Err(()),
+            None => (host_port.to_string(), None, false),
+        }
+    };
+
+    validate_rfc3986_host(&host)?;
+    Ok((username, password, host, port, empty_port))
+}
+
+fn parse_rfc3986_port(port: &str) -> Result<Option<i64>, ()> {
+    if port.is_empty() {
+        return Ok(None);
+    }
+    if !port.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err(());
+    }
+    let port = port.parse::<i64>().map_err(|_| ())?;
+    if (0..=65535).contains(&port) {
+        Ok(Some(port))
+    } else {
+        Err(())
+    }
+}
+
+fn validate_rfc3986_host(host: &str) -> Result<(), ()> {
+    if !host.is_ascii() {
+        return Err(());
+    }
+    if let Some(inner) = bracketed_rfc3986_host_inner(host) {
+        if inner.parse::<Ipv6Addr>().is_ok() || is_rfc3986_ipvfuture_inner(inner) {
+            return Ok(());
+        }
+        return Err(());
+    }
+    if host.contains(['[', ']']) {
+        return Err(());
+    }
+    Ok(())
+}
+
+fn validate_rfc3986_path(path: &str) -> Result<(), ()> {
+    if !path.is_ascii() || path.contains(['[', ']']) {
+        return Err(());
+    }
+    Ok(())
+}
+
+fn bracketed_rfc3986_host_inner(host: &str) -> Option<&str> {
+    host.strip_prefix('[')?.strip_suffix(']')
+}
+
+fn is_rfc3986_ipvfuture_inner(host: &str) -> bool {
+    let Some(first) = host.as_bytes().first().copied() else {
+        return false;
+    };
+    if !matches!(first, b'v' | b'V') {
+        return false;
+    }
+    let rest = &host[1..];
+    let Some((version, address)) = rest.split_once('.') else {
+        return false;
+    };
+    !version.is_empty()
+        && !address.is_empty()
+        && version.bytes().all(|byte| byte.is_ascii_hexdigit())
+        && address.bytes().all(|byte| {
+            byte.is_ascii_alphanumeric()
+                || matches!(
+                    byte,
+                    b'-' | b'.'
+                        | b'_'
+                        | b'~'
+                        | b'!'
+                        | b'$'
+                        | b'&'
+                        | b'\''
+                        | b'('
+                        | b')'
+                        | b'*'
+                        | b'+'
+                        | b','
+                        | b';'
+                        | b'='
+                        | b':'
+                )
+        })
+}
+
+fn serialize_rfc3986_host(host: &str) -> String {
+    if bracketed_rfc3986_host_inner(host).is_some() {
+        return host.to_string();
+    }
+    if host.contains(':') && !(host.starts_with('[') && host.ends_with(']')) {
+        format!("[{host}]")
+    } else {
+        host.to_string()
+    }
+}
+
+fn normalize_rfc3986_host(host: &str) -> String {
+    let host = bracketed_rfc3986_host_inner(host).unwrap_or(host);
+    if let Ok(ipv4) = host.parse::<Ipv4Addr>() {
+        return ipv4.to_string();
+    }
+    if let Ok(ipv6) = host.parse::<Ipv6Addr>() {
+        return ipv6.to_string();
+    }
+    percent_decode_unreserved(host).to_ascii_lowercase()
+}
+
+fn percent_decode_unreserved(input: &str) -> String {
+    let bytes = input.as_bytes();
+    let mut output = String::with_capacity(input.len());
+    let mut index = 0usize;
+    while index < bytes.len() {
+        if bytes[index] == b'%' && index + 2 < bytes.len() {
+            if let (Some(high), Some(low)) =
+                (hex_value(bytes[index + 1]), hex_value(bytes[index + 2]))
+            {
+                let decoded = (high << 4) | low;
+                if is_rfc3986_unreserved(decoded) {
+                    output.push(decoded as char);
+                } else {
+                    output.push('%');
+                    output.push((bytes[index + 1] as char).to_ascii_uppercase());
+                    output.push((bytes[index + 2] as char).to_ascii_uppercase());
+                }
+                index += 3;
+                continue;
+            }
+        }
+        output.push(bytes[index] as char);
+        index += 1;
+    }
+    output
+}
+
+fn hex_value(byte: u8) -> Option<u8> {
+    match byte {
+        b'0'..=b'9' => Some(byte - b'0'),
+        b'a'..=b'f' => Some(byte - b'a' + 10),
+        b'A'..=b'F' => Some(byte - b'A' + 10),
+        _ => None,
+    }
+}
+
+fn is_rfc3986_unreserved(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~')
+}
+
+fn remove_rfc3986_dot_segments(path: &str) -> String {
+    if path.is_empty() {
+        return String::new();
+    }
+    let absolute = path.starts_with('/');
+    let trailing_slash = path.ends_with('/');
+    let mut stack: Vec<&str> = Vec::new();
+    for segment in path.split('/') {
+        match segment {
+            "" | "." => {}
+            ".." => {
+                stack.pop();
+            }
+            segment => stack.push(segment),
+        }
+    }
+    let mut output = if absolute {
+        format!("/{}", stack.join("/"))
+    } else {
+        stack.join("/")
+    };
+    if trailing_slash && !output.ends_with('/') {
+        output.push('/');
+    }
+    if output.is_empty() && absolute {
+        output.push('/');
+    }
+    output
+}
+
+fn optional_string_value(value: Option<&str>) -> Value {
+    value
+        .map(|value| Value::String(value.to_string()))
+        .unwrap_or(Value::Null)
+}
+
+fn uri_invalid_uri_error(span: Span) -> Diagnostic {
+    Diagnostic::new(
+        Phase::Runtime,
+        span.line,
+        span.column,
+        "Uri\\InvalidUriException: The specified URI is malformed",
+    )
+}
+
 #[derive(Clone, Copy)]
 enum BcBinaryDecimalOp {
     Add,
@@ -129050,6 +129918,9 @@ where
             output
         }
         Value::Object(value) => {
+            if let Some(output) = format_enum_like_var_dump(value, &padding) {
+                return Ok(output);
+            }
             let properties = display_object_properties(value);
             let mut output = format!(
                 "{padding}object({})#{} ({}) {{\n",
@@ -129129,6 +130000,9 @@ where
             Ok(output)
         }
         Value::Object(value) => {
+            if let Some(output) = format_enum_like_var_dump(value, &padding) {
+                return Ok(output.into_bytes());
+            }
             let properties = display_object_properties(value);
             let mut output = format!(
                 "{padding}object({})#{} ({}) {{\n",
@@ -129166,6 +130040,27 @@ where
         }
         _ => format_var_dump_with_indent(value, indent, span, serialize_precision, resource_type)
             .map(String::into_bytes),
+    }
+}
+
+fn format_enum_like_var_dump(object: &PhpObject, padding: &str) -> Option<String> {
+    enum_like_case_name(object)
+        .map(|case_name| format!("{padding}enum({}::{case_name})\n", object.class_name()))
+}
+
+fn enum_like_case_name(object: &PhpObject) -> Option<String> {
+    if !matches!(
+        object.class_name(),
+        "RoundingMode"
+            | "Uri\\UriComparisonMode"
+            | "Uri\\Rfc3986\\UriHostType"
+            | "Uri\\Rfc3986\\UriType"
+    ) {
+        return None;
+    }
+    match object.read_public_property("name").ok()? {
+        Value::String(name) => Some(name),
+        _ => None,
     }
 }
 
