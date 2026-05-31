@@ -4,12 +4,6 @@ use php_compiler::run_source;
 
 const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
 
-fn runtime_error(source: &str) -> php_compiler::error::Diagnostic {
-    let error = run_source(source).unwrap_err();
-    assert_eq!(error.phase, Phase::Runtime);
-    error
-}
-
 #[test]
 fn preg_split_executes_current_wordpress_wpdb_prepare_placeholder_extraction() {
     let execution = run_source(
@@ -61,57 +55,46 @@ echo count($split), "|", $split[0], "|", $split[1], "|", $split[2], "|", $split[
 }
 
 #[test]
-fn preg_split_rejects_forms_outside_current_subset() {
-    let unsupported_pattern = runtime_error(
+fn preg_split_supports_general_regex_flags_limits_and_offsets() {
+    let execution = run_source(
         r#"<?php
-preg_split('/\s+/', 'a b', -1, PREG_SPLIT_DELIM_CAPTURE);
+$parts = preg_split('/[\s,]+/', 'x yy,zzz', -1, PREG_SPLIT_NO_EMPTY);
+echo count($parts), "|", $parts[0], "|", $parts[1], "|", $parts[2], "\n";
+$limited = preg_split('/[\s,]+/', 'x yy,zzz', 2);
+echo count($limited), "|", $limited[0], "|", $limited[1], "\n";
+$captured = preg_split('/(\d)/', 'a1b2', -1, PREG_SPLIT_DELIM_CAPTURE | PREG_SPLIT_OFFSET_CAPTURE);
+echo count($captured), "|", $captured[1][0], ":", $captured[1][1], "|", $captured[3][0], ":", $captured[3][1];
+ini_set('pcre.recursion_limit', 1);
+$failed = preg_split('/(\d*)/', 'ab2c3u');
+echo "\n", $failed === false ? "false" : "array", "|", preg_last_error();
 "#,
-    );
-    assert_eq!(unsupported_pattern.line, 2);
-    assert_eq!(unsupported_pattern.column, 1);
-    assert_eq!(
-        unsupported_pattern.message,
-        "unsupported call preg_split(): only the WordPress wpdb prepare placeholder extraction pattern is implemented in the current subset"
-    );
+    )
+    .unwrap();
 
-    let unsupported_limit = runtime_error(
-        r#"<?php
-$allowed_format = '(?:[1-9][0-9]*[$])?[-+0-9]*(?: |0|\'.)?[-+0-9]*(?:\.[0-9]+)?';
-preg_split("/(^|[^%]|(?:%%)+)(%(?:$allowed_format)?[sdfFi])/", '%s', 1, PREG_SPLIT_DELIM_CAPTURE);
-"#,
-    );
-    assert_eq!(unsupported_limit.line, 3);
-    assert_eq!(unsupported_limit.column, 1);
     assert_eq!(
-        unsupported_limit.message,
-        "unsupported call preg_split(): only limit -1 is implemented for the WordPress wpdb prepare placeholder extraction pattern"
+        execution.stdout,
+        "3|x|yy|zzz\n2|x|yy,zzz\n5|1:1|2:3\nfalse|3"
     );
+    assert_eq!(execution.exit_code, 0);
+}
 
-    let unsupported_flags = runtime_error(
+#[test]
+fn preg_quote_escapes_pcre_metacharacters_and_optional_delimiter() {
+    let execution = run_source(
         r#"<?php
-$allowed_format = '(?:[1-9][0-9]*[$])?[-+0-9]*(?: |0|\'.)?[-+0-9]*(?:\.[0-9]+)?';
-preg_split("/(^|[^%]|(?:%%)+)(%(?:$allowed_format)?[sdfFi])/", '%s', -1, 0);
+$before = '/this *-has \ metacharacters^ in $';
+$quoted = preg_quote($before, '/');
+echo $quoted, "\n";
+echo preg_match('/' . $quoted . '/', $before);
 "#,
-    );
-    assert_eq!(unsupported_flags.line, 3);
-    assert_eq!(unsupported_flags.column, 1);
-    assert_eq!(
-        unsupported_flags.message,
-        "unsupported call preg_split(): only PREG_SPLIT_DELIM_CAPTURE is implemented for the WordPress wpdb prepare placeholder extraction pattern"
-    );
+    )
+    .unwrap();
 
-    let unsupported_arity = runtime_error(
-        r#"<?php
-$allowed_format = '(?:[1-9][0-9]*[$])?[-+0-9]*(?: |0|\'.)?[-+0-9]*(?:\.[0-9]+)?';
-preg_split("/(^|[^%]|(?:%%)+)(%(?:$allowed_format)?[sdfFi])/", '%s');
-"#,
-    );
-    assert_eq!(unsupported_arity.line, 3);
-    assert_eq!(unsupported_arity.column, 1);
     assert_eq!(
-        unsupported_arity.message,
-        "unsupported call preg_split(): only the WordPress wpdb prepare placeholder extraction pattern with limit -1 and PREG_SPLIT_DELIM_CAPTURE is implemented in the current subset"
+        execution.stdout,
+        "\\/this \\*\\-has \\\\ metacharacters\\^ in \\$\n1"
     );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
@@ -120,12 +103,15 @@ fn emit_ir_folds_preg_split_metadata_but_rejects_direct_calls() {
         r#"<?php
 echo function_exists("preg_split") ? "1" : "0";
 echo is_callable("preg_split") ? "1" : "0";
+echo function_exists("preg_quote") ? "1" : "0";
+echo defined("PREG_SPLIT_NO_EMPTY") ? "1" : "0";
 echo defined("PREG_SPLIT_DELIM_CAPTURE") ? "1" : "0";
+echo defined("PREG_SPLIT_OFFSET_CAPTURE") ? "1" : "0";
 "#,
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 3, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 6, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
 

@@ -82658,12 +82658,13 @@ impl Interpreter {
             "rawurldecode" => call_rawurldecode(&args, span),
             "serialize" => self.call_serialize_builtin(&args, span),
             "unserialize" => self.call_unserialize_builtin(&args, span),
+            "preg_quote" => call_preg_quote(&args, span),
             "preg_match" => self.call_preg_match_values(&args, span),
             "preg_match_all" => self.call_preg_match_all(args, span),
             "preg_grep" => self.call_preg_grep(&args, span),
             "preg_filter" => self.call_preg_filter(&args, span),
             "preg_replace" => self.call_preg_replace(args, span),
-            "preg_split" => call_preg_split(&args, span),
+            "preg_split" => self.call_preg_split(&args, span),
             "preg_replace_callback" => self.call_preg_replace_callback(args, span),
             "preg_replace_callback_array" => self.call_preg_replace_callback_array(args, span),
             "preg_last_error" => {
@@ -97845,6 +97846,13 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
             "string",
             vec![reflection_internal_param("string", "string")],
         ),
+        "preg_quote" => (
+            "string",
+            vec![
+                reflection_internal_param("str", "string"),
+                reflection_internal_optional_null_param("delimiter", "?string"),
+            ],
+        ),
         "htmlspecialchars" | "htmlentities" => (
             "string",
             vec![
@@ -102246,6 +102254,7 @@ fn is_builtin(name: &str) -> bool {
             | "rawurldecode"
             | "serialize"
             | "unserialize"
+            | "preg_quote"
             | "preg_match"
             | "preg_match_all"
             | "preg_grep"
@@ -103451,6 +103460,9 @@ const PHP_PREG_SET_ORDER: i64 = 2;
 const PHP_PREG_OFFSET_CAPTURE: i64 = 256;
 const PHP_PREG_UNMATCHED_AS_NULL: i64 = 512;
 const PHP_PREG_GREP_INVERT: i64 = 1;
+const PHP_PREG_SPLIT_NO_EMPTY: i64 = 1;
+const PHP_PREG_SPLIT_DELIM_CAPTURE: i64 = 2;
+const PHP_PREG_SPLIT_OFFSET_CAPTURE: i64 = 4;
 const PHP_PREG_NO_ERROR: i64 = 0;
 const PHP_PREG_INTERNAL_ERROR: i64 = 1;
 const PHP_PREG_BACKTRACK_LIMIT_ERROR: i64 = 2;
@@ -104135,7 +104147,9 @@ const BUILTIN_GLOBAL_CONSTANT_NAMES: &[&str] = &[
     "PREG_BAD_UTF8_ERROR",
     "PREG_BAD_UTF8_OFFSET_ERROR",
     "PREG_JIT_STACKLIMIT_ERROR",
+    "PREG_SPLIT_NO_EMPTY",
     "PREG_SPLIT_DELIM_CAPTURE",
+    "PREG_SPLIT_OFFSET_CAPTURE",
     "SORT_REGULAR",
     "SORT_NUMERIC",
     "SORT_STRING",
@@ -104537,7 +104551,9 @@ fn builtin_global_constant_value(name: &str) -> Option<Value> {
         "PREG_BAD_UTF8_ERROR" => Some(Value::Int(PHP_PREG_BAD_UTF8_ERROR)),
         "PREG_BAD_UTF8_OFFSET_ERROR" => Some(Value::Int(PHP_PREG_BAD_UTF8_OFFSET_ERROR)),
         "PREG_JIT_STACKLIMIT_ERROR" => Some(Value::Int(PHP_PREG_JIT_STACKLIMIT_ERROR)),
-        "PREG_SPLIT_DELIM_CAPTURE" => Some(Value::Int(2)),
+        "PREG_SPLIT_NO_EMPTY" => Some(Value::Int(PHP_PREG_SPLIT_NO_EMPTY)),
+        "PREG_SPLIT_DELIM_CAPTURE" => Some(Value::Int(PHP_PREG_SPLIT_DELIM_CAPTURE)),
+        "PREG_SPLIT_OFFSET_CAPTURE" => Some(Value::Int(PHP_PREG_SPLIT_OFFSET_CAPTURE)),
         "SORT_REGULAR" => Some(Value::Int(0)),
         "SORT_NUMERIC" => Some(Value::Int(1)),
         "SORT_STRING" => Some(Value::Int(2)),
@@ -113632,6 +113648,60 @@ fn call_quotemeta(args: &[Value], span: Span) -> CompileResult<Value> {
     Ok(interpreter_value_from_php_string_bytes(output))
 }
 
+fn call_preg_quote(args: &[Value], span: Span) -> CompileResult<Value> {
+    if !(1..=2).contains(&args.len()) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "preg_quote()",
+                ArityExpectation::Between { min: 1, max: 2 },
+                args.len(),
+            ),
+        ));
+    }
+
+    let value = string_compare_argument_bytes("preg_quote()", "str", &args[0], span)?;
+    let delimiter = match args.get(1) {
+        Some(delimiter) if !matches!(delimiter, Value::Null) => {
+            string_compare_argument_bytes("preg_quote()", "delimiter", delimiter, span)?
+        }
+        _ => Vec::new(),
+    };
+
+    let mut output = Vec::with_capacity(value.len());
+    for byte in value {
+        if matches!(
+            byte,
+            b'.' | b'\\'
+                | b'+'
+                | b'*'
+                | b'?'
+                | b'['
+                | b'^'
+                | b']'
+                | b'$'
+                | b'('
+                | b')'
+                | b'{'
+                | b'}'
+                | b'='
+                | b'!'
+                | b'<'
+                | b'>'
+                | b'|'
+                | b':'
+                | b'-'
+                | b'#'
+        ) || delimiter.contains(&byte)
+        {
+            output.push(b'\\');
+        }
+        output.push(byte);
+    }
+
+    Ok(interpreter_value_from_php_string_bytes(output))
+}
+
 fn call_nl2br(args: &[Value], span: Span) -> CompileResult<Value> {
     if !(1..=2).contains(&args.len()) {
         return Err(runtime_error(
@@ -116876,64 +116946,6 @@ fn call_preg_replace(args: &[Value], span: Span) -> CompileResult<Value> {
     Ok(Value::String(subject[..end].to_string()))
 }
 
-fn call_preg_split(args: &[Value], span: Span) -> CompileResult<Value> {
-    if !(2..=4).contains(&args.len()) {
-        return Err(runtime_error(
-            span,
-            RuntimeError::arity_mismatch(
-                "preg_split()",
-                ArityExpectation::Between { min: 2, max: 4 },
-                args.len(),
-            ),
-        ));
-    }
-
-    if args.len() != 4 {
-        return Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                "preg_split()",
-                "only the WordPress wpdb prepare placeholder extraction pattern with limit -1 and PREG_SPLIT_DELIM_CAPTURE is implemented in the current subset",
-            ),
-        ));
-    }
-
-    let pattern = string_contains_argument("preg_split()", "pattern", &args[0], span)?;
-    let subject = string_contains_argument("preg_split()", "subject", &args[1], span)?;
-
-    if !is_wordpress_wpdb_prepare_placeholder_split_pattern(&pattern) {
-        return Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                "preg_split()",
-                "only the WordPress wpdb prepare placeholder extraction pattern is implemented in the current subset",
-            ),
-        ));
-    }
-    if !matches!(args[2], Value::Int(-1)) {
-        return Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                "preg_split()",
-                "only limit -1 is implemented for the WordPress wpdb prepare placeholder extraction pattern",
-            ),
-        ));
-    }
-    if !matches!(args[3], Value::Int(2)) {
-        return Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                "preg_split()",
-                "only PREG_SPLIT_DELIM_CAPTURE is implemented for the WordPress wpdb prepare placeholder extraction pattern",
-            ),
-        ));
-    }
-
-    Ok(Value::Array(split_wordpress_wpdb_prepare_placeholders(
-        &subject, span,
-    )?))
-}
-
 fn is_wordpress_redirect_sanitizer_cleanup_pattern(pattern: &str) -> bool {
     pattern == "|[^a-z0-9-~+_.?#=&;,/:%!*\\[\\]()@]|i"
         || pattern == "|[^a-z0-9-~+_.?#=&;,/:%!*[]()@]|i"
@@ -116984,10 +116996,6 @@ fn is_wordpress_kses_slash_zero_cleanup_pattern(pattern: &str) -> bool {
 
 fn is_wordpress_wpdb_prepare_placeholder_escape_pattern(pattern: &str) -> bool {
     pattern.starts_with("/%(?:%|$|(?!(") && pattern.ends_with(")?[sdfFi]))/")
-}
-
-fn is_wordpress_wpdb_prepare_placeholder_split_pattern(pattern: &str) -> bool {
-    pattern.starts_with("/(^|[^%]|(?:%%)+)(%(") && pattern.ends_with("[sdfFi])/")
 }
 
 fn is_wordpress_wpdb_prepare_placeholder_escape_replacement(replacement: &str) -> bool {
@@ -117077,88 +117085,6 @@ fn wordpress_wpdb_prepare_placeholder_suffix_len(suffix: &str) -> Option<usize> 
     }
 }
 
-fn split_wordpress_wpdb_prepare_placeholders(subject: &str, span: Span) -> CompileResult<PhpArray> {
-    let bytes = subject.as_bytes();
-    let mut array = PhpArray::new();
-    let mut cursor = 0;
-    let mut index = 0;
-
-    while index < bytes.len() {
-        if bytes[index] != b'%' {
-            index += 1;
-            continue;
-        }
-
-        let Some(suffix_len) = wordpress_wpdb_prepare_placeholder_suffix_len(&subject[index + 1..])
-        else {
-            index += 1;
-            continue;
-        };
-
-        let Some((match_start, delimiter_start)) =
-            wordpress_wpdb_prepare_placeholder_delimiter(subject, index)
-        else {
-            index += 1;
-            continue;
-        };
-
-        if match_start < cursor {
-            index += 1;
-            continue;
-        }
-
-        append_string_part(&mut array, &subject[cursor..match_start], span)?;
-        append_string_part(&mut array, &subject[delimiter_start..index], span)?;
-        let placeholder_end = index + 1 + suffix_len;
-        append_string_part(&mut array, &subject[index..placeholder_end], span)?;
-
-        cursor = placeholder_end;
-        index = placeholder_end;
-    }
-
-    append_string_part(&mut array, &subject[cursor..], span)?;
-    Ok(array)
-}
-
-fn wordpress_wpdb_prepare_placeholder_delimiter(
-    subject: &str,
-    placeholder_start: usize,
-) -> Option<(usize, usize)> {
-    if placeholder_start == 0 {
-        return Some((0, 0));
-    }
-
-    let bytes = subject.as_bytes();
-    let mut run_start = placeholder_start;
-    while run_start > 0 && bytes[run_start - 1] == b'%' {
-        run_start -= 1;
-    }
-    let percent_run_len = placeholder_start - run_start;
-    if percent_run_len >= 2 {
-        let capture_len = percent_run_len - (percent_run_len % 2);
-        let match_start = placeholder_start - capture_len;
-        return Some((match_start, match_start));
-    }
-
-    if bytes[placeholder_start - 1] != b'%' {
-        let delimiter_start = subject[..placeholder_start]
-            .char_indices()
-            .last()
-            .map(|(index, _)| index)
-            .expect("placeholder_start is greater than zero");
-        return Some((delimiter_start, delimiter_start));
-    }
-
-    None
-}
-
-fn append_string_part(array: &mut PhpArray, value: &str, span: Span) -> CompileResult<()> {
-    array
-        .append(Value::String(value.to_string()))
-        .map(|_| ())
-        .map_err(|error| runtime_error(span, error))
-}
-
 fn remove_wordpress_kses_slash_zero(subject: &str) -> String {
     let mut output = String::with_capacity(subject.len());
     let mut chars = subject.chars().peekable();
@@ -117224,6 +117150,109 @@ impl Interpreter {
         let (count, _) =
             self.pcre_match_all_result(&args[0], &args[1], flags, args.get(4), span)?;
         Ok(count)
+    }
+
+    fn call_preg_split(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(2..=4).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "preg_split()",
+                    ArityExpectation::Between { min: 2, max: 4 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let mut limit = args.get(2).and_then(pcre_int_value).unwrap_or(-1);
+        if limit == 0 {
+            limit = -1;
+        }
+        let flags = args.get(3).and_then(pcre_int_value).unwrap_or(0);
+        let Some(regex) = self.compile_pcre_or_warn("preg_split()", &args[0], span)? else {
+            return Ok(Value::Bool(false));
+        };
+        let subject = self.pcre_subject_bytes("preg_split()", &args[1], span)?;
+        if self
+            .ini_value("pcre.recursion_limit")
+            .and_then(|value| value.parse::<i64>().ok())
+            .is_some_and(|value| value <= 1)
+        {
+            self.pcre_last_error = PHP_PREG_RECURSION_LIMIT_ERROR;
+            return Ok(Value::Bool(false));
+        }
+        if regex.utf8 && std::str::from_utf8(&subject).is_err() {
+            self.pcre_last_error = PHP_PREG_BAD_UTF8_ERROR;
+            return Ok(Value::Bool(false));
+        }
+
+        let no_empty = flags & PHP_PREG_SPLIT_NO_EMPTY != 0;
+        let delimiter_capture = flags & PHP_PREG_SPLIT_DELIM_CAPTURE != 0;
+        let offset_capture = flags & PHP_PREG_SPLIT_OFFSET_CAPTURE != 0;
+        let split_limit = (limit > 0).then_some(limit.saturating_sub(1) as usize);
+        let mut split_count = 0_usize;
+        let mut cursor = 0_usize;
+        let mut search_start = 0_usize;
+        let mut output = PhpArray::new();
+
+        while search_start <= subject.len() {
+            if split_limit.is_some_and(|max| split_count >= max) {
+                break;
+            }
+            let Some(captures) = regex.regex.captures_at(&subject, search_start) else {
+                break;
+            };
+            let Some(matched) = captures.get(0) else {
+                break;
+            };
+
+            pcre_split_append_piece(
+                &mut output,
+                &subject[cursor..matched.start()],
+                cursor,
+                no_empty,
+                offset_capture,
+                span,
+            )?;
+
+            if delimiter_capture {
+                for index in 1..captures.len() {
+                    if let Some(capture) = captures.get(index) {
+                        pcre_split_append_piece(
+                            &mut output,
+                            &subject[capture.start()..capture.end()],
+                            capture.start(),
+                            no_empty,
+                            offset_capture,
+                            span,
+                        )?;
+                    }
+                }
+            }
+
+            cursor = matched.end();
+            split_count += 1;
+
+            if matched.start() == matched.end() {
+                if matched.end() >= subject.len() {
+                    break;
+                }
+                search_start = matched.end() + 1;
+            } else {
+                search_start = matched.end();
+            }
+        }
+
+        pcre_split_append_piece(
+            &mut output,
+            &subject[cursor..],
+            cursor,
+            no_empty,
+            offset_capture,
+            span,
+        )?;
+        self.pcre_last_error = PHP_PREG_NO_ERROR;
+        Ok(Value::Array(output))
     }
 
     fn call_preg_grep(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -118296,6 +118325,35 @@ fn pcre_capture_value(
     pair.append(Value::Int(offset))
         .map_err(|error| runtime_error(span, error))?;
     Ok(Value::Array(pair))
+}
+
+fn pcre_split_append_piece(
+    output: &mut PhpArray,
+    bytes: &[u8],
+    offset: usize,
+    no_empty: bool,
+    offset_capture: bool,
+    span: Span,
+) -> CompileResult<()> {
+    if no_empty && bytes.is_empty() {
+        return Ok(());
+    }
+
+    let value = interpreter_value_from_php_string_bytes(bytes.to_vec());
+    let value = if offset_capture {
+        let mut pair = PhpArray::new();
+        pair.append(value)
+            .map_err(|error| runtime_error(span, error))?;
+        pair.append(Value::Int(offset as i64))
+            .map_err(|error| runtime_error(span, error))?;
+        Value::Array(pair)
+    } else {
+        value
+    };
+    output
+        .append(value)
+        .map_err(|error| runtime_error(span, error))?;
+    Ok(())
 }
 
 fn pcre_replace_bytes(
@@ -133343,6 +133401,7 @@ fn compat_ini_value(normalized_name: &str) -> Option<&'static str> {
         "mysqlnd.collect_statistics" => Some("1"),
         "open_basedir" => Some(""),
         "output_handler" => Some(""),
+        "pcre.recursion_limit" => Some("100000"),
         "post_max_size" => Some("8M"),
         "precision" => Some("14"),
         "sendmail_from" => Some(""),
