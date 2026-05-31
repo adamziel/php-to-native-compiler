@@ -31775,9 +31775,17 @@ impl PhpClassTable {
         let php_token = classes
             .get_mut(php_token_id)
             .expect("declared PhpToken class id should resolve");
-        for property in ["id", "text", "line", "pos"] {
+        for (property, type_decl) in [
+            ("id", "int"),
+            ("text", "string"),
+            ("line", "int"),
+            ("pos", "int"),
+        ] {
             php_token
-                .add_property(PhpPropertyMetadata::instance(property, Visibility::Public))
+                .add_property(
+                    PhpPropertyMetadata::instance(property, Visibility::Public)
+                        .with_type_decl(Some(type_decl.to_string())),
+                )
                 .expect("PhpToken core metadata should not duplicate properties");
         }
         php_token
@@ -31786,7 +31794,15 @@ impl PhpClassTable {
                 Visibility::Public,
             ))
             .expect("PhpToken core metadata should not duplicate tokenize");
-        for method in ["getTokenName", "__toString"] {
+        php_token
+            .add_method(PhpMethodMetadata::instance_with_flags(
+                "__construct",
+                Visibility::Public,
+                false,
+                true,
+            ))
+            .expect("PhpToken core metadata should not duplicate constructor");
+        for method in ["getTokenName", "__toString", "is", "isIgnorable"] {
             php_token
                 .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
                 .expect("PhpToken core metadata should not duplicate methods");
@@ -37497,6 +37513,12 @@ impl ObjectProperty {
 
     fn initialized_value_cloned(&self) -> RuntimeResult<Value> {
         if self.unset {
+            if self.type_decl.is_some() {
+                return Err(RuntimeError::uninitialized_typed_property(
+                    self.declaring_class_name.clone(),
+                    self.name.clone(),
+                ));
+            }
             return Err(RuntimeError::undefined_property(
                 self.declaring_class_name.clone(),
                 self.name.clone(),

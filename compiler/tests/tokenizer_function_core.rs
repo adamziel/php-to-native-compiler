@@ -105,8 +105,143 @@ foreach ($tokens as $token) {
 }
 
 #[test]
-fn tokenizer_rejects_nonzero_flags_until_token_parse_boundary_is_supported() {
-    let error = runtime_error(r#"<?php token_get_all("<?php echo 1;", 1);"#);
+fn tokenizer_accepts_token_parse_and_contextual_reserved_member_names() {
+    let execution = run_source(
+        r#"<?php
+$tokens = token_get_all('<?php
+X::continue;
+$x->class;
+class X {
+    const ARRAY = 1;
+    public $x = self::ARRAY;
+}
+', TOKEN_PARSE);
+foreach ($tokens as $token) {
+    if (is_array($token)) {
+        $name = token_name($token[0]);
+        if ($name == "T_WHITESPACE" || $name == "T_OPEN_TAG") {
+            continue;
+        }
+        echo $name, ":", $token[1], "\n";
+    } else if ($token == ";" || $token == "{" || $token == "}") {
+        echo $token, "\n";
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "T_STRING:X\n",
+            "T_DOUBLE_COLON:::\n",
+            "T_STRING:continue\n",
+            ";\n",
+            "T_VARIABLE:$x\n",
+            "T_OBJECT_OPERATOR:->\n",
+            "T_STRING:class\n",
+            ";\n",
+            "T_CLASS:class\n",
+            "T_STRING:X\n",
+            "{\n",
+            "T_CONST:const\n",
+            "T_STRING:ARRAY\n",
+            "T_LNUMBER:1\n",
+            ";\n",
+            "T_PUBLIC:public\n",
+            "T_VARIABLE:$x\n",
+            "T_STRING:self\n",
+            "T_DOUBLE_COLON:::\n",
+            "T_STRING:ARRAY\n",
+            ";\n",
+            "}\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn php_token_objects_support_constructor_methods_subclasses_and_ampersands() {
+    let execution = run_source(
+        r#"<?php
+$token = new PhpToken(T_FUNCTION, "function");
+echo $token->getTokenName(), ":", $token->line, ":", $token->pos, "\n";
+var_dump($token->is(T_FUNCTION));
+var_dump($token->is("function"));
+var_dump($token->is([T_CLASS, "function"]));
+var_dump($token->isIgnorable());
+var_dump((new PhpToken(100000, "x"))->getTokenName());
+echo (new PhpToken(40, "("))->getTokenName(), "\n";
+
+$tokens = PhpToken::tokenize('<?php $x & $y;');
+foreach ($tokens as $part) {
+    if ($part->getTokenName() == "T_AMPERSAND_FOLLOWED_BY_VAR_OR_VARARG") {
+        echo $part->getTokenName(), "\n";
+    }
+}
+
+class MyPhpToken extends PhpToken {
+    public int $extra = 123;
+    public function lowered(): string {
+        return strtolower($this->text);
+    }
+}
+$sub = MyPhpToken::tokenize('<?PHP ECHO "X";');
+var_dump($sub[0] instanceof MyPhpToken);
+echo $sub[0]->extra, ":", $sub[1]->lowered(), "\n";
+
+unset($token->id);
+try {
+    $token->is(T_FUNCTION);
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "T_FUNCTION:-1:-1\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "NULL\n",
+            "(\n",
+            "T_AMPERSAND_FOLLOWED_BY_VAR_OR_VARARG\n",
+            "bool(true)\n",
+            "123:echo\n",
+            "Typed property PhpToken::$id must not be accessed before initialization\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn php_token_constructor_is_final_for_subclasses() {
+    let error = runtime_error(
+        r#"<?php
+class BadPhpToken extends PhpToken {
+    public function __construct() {}
+}
+"#,
+    );
+
+    assert!(
+        error
+            .message
+            .contains("cannot override final method PhpToken::__construct()"),
+        "{}",
+        error.message
+    );
+}
+
+#[test]
+fn tokenizer_rejects_unsupported_nonzero_flags() {
+    let error = runtime_error(r#"<?php token_get_all("<?php echo 1;", 2);"#);
 
     assert!(
         error

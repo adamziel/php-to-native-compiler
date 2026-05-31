@@ -10885,6 +10885,7 @@ impl Interpreter {
         let mut classes = PhpClassTable::with_core_classes();
         seed_interpreter_generator_class(&mut classes)?;
         seed_core_final_class_markers(&classes, &mut final_classes);
+        seed_core_final_method_markers(&classes, &mut final_methods);
         seed_core_class_constant_runtime_tables(&classes, &mut class_constants);
         for stmt in &program.statements {
             match stmt {
@@ -11323,6 +11324,20 @@ impl Interpreter {
         self.classes
             .lookup_class_id("mysqli")
             .is_some_and(|mysqli_id| class_id == mysqli_id)
+    }
+
+    fn is_php_token_class_id(&self, class_id: ClassId) -> bool {
+        self.classes
+            .lookup_class_id("PhpToken")
+            .is_some_and(|php_token_id| {
+                class_id == php_token_id || self.classes.is_subclass_of(class_id, php_token_id)
+            })
+    }
+
+    fn resolved_method_is_core_php_token(&self, class_id: ClassId) -> bool {
+        self.classes
+            .lookup_class_id("PhpToken")
+            .is_some_and(|php_token_id| class_id == php_token_id)
     }
 
     fn spl_doubly_linked_list_default_iterator_mode(class_name: &str) -> i64 {
@@ -22393,6 +22408,16 @@ impl Interpreter {
                     "static constructors are not implemented",
                 ),
             ));
+        }
+
+        if self.resolved_method_is_core_php_token(constructor_class_id) {
+            let values = args
+                .iter()
+                .map(|arg| self.evaluate(arg, scope))
+                .collect::<CompileResult<Vec<_>>>()?;
+            self.initialize_php_token_object(&object, &values, span)?;
+            self.track_allocated_object(&object);
+            return Ok(Value::Object(object));
         }
 
         if self.resolved_method_is_core_array_object(constructor_class_id) {
@@ -46385,6 +46410,14 @@ impl Interpreter {
                 .map(Some);
         }
 
+        if self.resolved_method_is_core_php_token(class_id)
+            && php_token_core_instance_method(method_name)
+        {
+            return self
+                .call_php_token_method_with_values(object, method_name, args, span)
+                .map(Some);
+        }
+
         if method_name.eq_ignore_ascii_case("__toString") && args.is_empty() {
             if object
                 .class_name()
@@ -46555,6 +46588,14 @@ impl Interpreter {
         if self.resolved_method_is_core_spl_doubly_linked_list(class_id) {
             return self
                 .call_spl_doubly_linked_list_method_with_values(object, method_name, args, span)
+                .map(Some);
+        }
+
+        if self.resolved_method_is_core_php_token(class_id)
+            && php_token_core_instance_method(method_name)
+        {
+            return self
+                .call_php_token_method_with_values(object, method_name, args, span)
                 .map(Some);
         }
 
@@ -46880,7 +46921,9 @@ impl Interpreter {
                 .call_mysqli_method(object, method_name, args, span)
                 .map(|value| (value, None));
         }
-        if object.class_name().eq_ignore_ascii_case("PhpToken") {
+        if object.is_instance_of_class_name("PhpToken")
+            && php_token_core_instance_method(method_name)
+        {
             let values = args
                 .iter()
                 .map(|arg| self.evaluate(arg, caller_scope))
@@ -51990,10 +52033,8 @@ impl Interpreter {
             expect_expr_arity("DateTimeZone::listAbbreviations", args.len(), 0, span)?;
             return Ok(Value::Array(bounded_timezone_abbreviations_array()));
         }
-        if receiver_class_name.eq_ignore_ascii_case("PhpToken")
-            && method_name.eq_ignore_ascii_case("tokenize")
-        {
-            return self.call_php_token_static_tokenize(args, span, caller_scope);
+        if self.is_php_token_class_id(class_id) && method_name.eq_ignore_ascii_case("tokenize") {
+            return self.call_php_token_static_tokenize(class_id, args, span, caller_scope);
         }
         if self.is_reflection_method_class_id(class_id)
             && method_name.eq_ignore_ascii_case("createFromMethodName")
@@ -52147,6 +52188,16 @@ impl Interpreter {
             .get(receiver_class_id)
             .expect("receiver class id should resolve to class metadata");
         let receiver_class_name = receiver_class.name().to_string();
+        if self.is_php_token_class_id(receiver_class_id)
+            && method_name.eq_ignore_ascii_case("tokenize")
+        {
+            return self.call_php_token_static_tokenize(
+                receiver_class_id,
+                args,
+                span,
+                caller_scope,
+            );
+        }
         if self.is_reflection_method_class_id(receiver_class_id)
             && method_name.eq_ignore_ascii_case("createFromMethodName")
         {
@@ -52542,7 +52593,9 @@ impl Interpreter {
                             ),
                         ));
                     };
-                    if object.class_name().eq_ignore_ascii_case("PhpToken") {
+                    if object.is_instance_of_class_name("PhpToken")
+                        && php_token_core_instance_method(method)
+                    {
                         self.call_php_token_method_with_values(object, method, Vec::new(), span)?
                     } else {
                         let class_name = object.class_name().to_string();
@@ -82193,6 +82246,7 @@ impl Interpreter {
 
     fn call_php_token_static_tokenize(
         &mut self,
+        token_class_id: ClassId,
         args: &[Expr],
         span: Span,
         caller_scope: &mut SymbolTable,
@@ -82213,43 +82267,126 @@ impl Interpreter {
             .collect::<CompileResult<Vec<_>>>()?;
         ensure_tokenizer_flags("PhpToken::tokenize()", values.get(1), span)?;
         let source = tokenizer_source_bytes("PhpToken::tokenize()", &values[0], span)?;
+        if self.abstract_classes.contains(&token_class_id) {
+            let class_name = self
+                .classes
+                .get(token_class_id)
+                .expect("PhpToken receiver class id should resolve")
+                .name()
+                .to_string();
+            return Err(Diagnostic::new(
+                Phase::Runtime,
+                span.line,
+                span.column,
+                format!("Cannot instantiate abstract class {class_name}"),
+            ));
+        }
         let mut array = PhpArray::new();
         for token in php_tokenizer::tokenize(&source) {
             array
-                .append(Value::Object(self.create_php_token_object(&token, span)?))
+                .append(Value::Object(self.create_php_token_object(
+                    token_class_id,
+                    &token,
+                    span,
+                )?))
                 .map_err(|error| runtime_error(span, error))?;
         }
         Ok(Value::Array(array))
     }
 
     fn create_php_token_object(
-        &self,
+        &mut self,
+        class_id: ClassId,
         token: &PhpTokenizerToken,
         span: Span,
     ) -> CompileResult<PhpObject> {
-        let class_id = self
-            .classes
-            .lookup_class_id("PhpToken")
-            .ok_or_else(|| runtime_error(span, RuntimeError::undefined_class("PhpToken")))?;
+        let object = self.create_php_token_blank_object(class_id, span)?;
+        self.initialize_php_token_object_with_parts(
+            &object,
+            Value::Int(token.id()),
+            interpreter_value_from_php_string_bytes(token.text().to_vec()),
+            Value::Int(token.line()),
+            Value::Int(token.position()),
+            span,
+        )?;
+        Ok(object)
+    }
+
+    fn create_php_token_blank_object(
+        &mut self,
+        class_id: ClassId,
+        span: Span,
+    ) -> CompileResult<PhpObject> {
+        let inherited_properties = self.inherited_instance_properties(class_id);
+        let mut ancestor_class_names = self.inherited_class_names(class_id);
+        ancestor_class_names.extend(self.class_alias_names(class_id));
+        let interface_names = self.class_implements_interface_names(class_id);
+        let object_id = self.allocate_object_id();
         let class = self
             .classes
             .get(class_id)
-            .expect("PhpToken class id should resolve");
-        let object = PhpObject::from_class(class);
+            .ok_or_else(|| runtime_error(span, RuntimeError::undefined_class("PhpToken")))?;
+        let object = PhpObject::from_class_with_relationship_metadata_with_id(
+            class,
+            &inherited_properties,
+            ancestor_class_names,
+            interface_names,
+            object_id,
+        );
+        self.apply_instance_property_defaults(&object, class_id)?;
+        self.track_allocated_object(&object);
+        Ok(object)
+    }
+
+    fn initialize_php_token_object(
+        &mut self,
+        object: &PhpObject,
+        args: &[Value],
+        span: Span,
+    ) -> CompileResult<()> {
+        if !(2..=4).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "PhpToken::__construct()",
+                    ArityExpectation::Between { min: 2, max: 4 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let line = args.get(2).cloned().unwrap_or(Value::Int(-1));
+        let position = args.get(3).cloned().unwrap_or(Value::Int(-1));
+        self.initialize_php_token_object_with_parts(
+            object,
+            args[0].clone(),
+            args[1].clone(),
+            line,
+            position,
+            span,
+        )
+    }
+
+    fn initialize_php_token_object_with_parts(
+        &self,
+        object: &PhpObject,
+        id: Value,
+        text: Value,
+        line: Value,
+        position: Value,
+        span: Span,
+    ) -> CompileResult<()> {
         for (property, value) in [
-            ("id", Value::Int(token.id())),
-            (
-                "text",
-                interpreter_value_from_php_string_bytes(token.text().to_vec()),
-            ),
-            ("line", Value::Int(token.line())),
-            ("pos", Value::Int(token.position())),
+            ("id", id),
+            ("text", text),
+            ("line", line),
+            ("pos", position),
         ] {
             object
                 .write_public_property(property, value)
                 .map_err(|error| runtime_error(span, error))?;
         }
-        Ok(object)
+        Ok(())
     }
 
     fn call_php_token_method_with_values(
@@ -82263,13 +82400,33 @@ impl Interpreter {
             "gettokenname" => {
                 expect_arity("PhpToken::getTokenName", &args, 0, span)?;
                 let id = php_token_object_id(&object, "PhpToken::getTokenName()", span)?;
-                Ok(Value::String(php_tokenizer::token_name(id).to_string()))
+                Ok(match php_token_name_for_object_id(id) {
+                    Some(name) => Value::String(name),
+                    None => Value::Null,
+                })
             }
             "__tostring" => {
                 expect_arity("PhpToken::__toString", &args, 0, span)?;
                 object
                     .read_public_property("text")
                     .map_err(|error| runtime_error(span, error))
+            }
+            "is" => {
+                expect_arity("PhpToken::is", &args, 1, span)?;
+                php_token_is_kind(&object, &args[0], span).map(Value::Bool)
+            }
+            "isignorable" => {
+                expect_arity("PhpToken::isIgnorable", &args, 0, span)?;
+                let id = php_token_object_id(&object, "PhpToken::isIgnorable()", span)?;
+                Ok(Value::Bool(matches!(
+                    id,
+                    php_tokenizer::T_OPEN_TAG
+                        | php_tokenizer::T_OPEN_TAG_WITH_ECHO
+                        | php_tokenizer::T_CLOSE_TAG
+                        | php_tokenizer::T_WHITESPACE
+                        | php_tokenizer::T_COMMENT
+                        | php_tokenizer::T_DOC_COMMENT
+                )))
             }
             _ => Err(runtime_error(
                 span,
@@ -95166,6 +95323,26 @@ fn seed_core_final_class_markers(classes: &PhpClassTable, final_classes: &mut Ha
     }
 }
 
+fn seed_core_final_method_markers(
+    classes: &PhpClassTable,
+    final_methods: &mut HashMap<(ClassId, String), String>,
+) {
+    for class_name in ["PhpToken"] {
+        let Some(class_id) = classes.lookup_class_id(class_name) else {
+            continue;
+        };
+        let Some(class) = classes.get(class_id) else {
+            continue;
+        };
+        for method in class.methods().iter().filter(|method| method.is_final()) {
+            final_methods.insert(
+                (class_id, method.name().to_ascii_lowercase()),
+                method.name().to_string(),
+            );
+        }
+    }
+}
+
 fn register_class_name(classes: &mut PhpClassTable, class: &ClassDecl) -> CompileResult<ClassId> {
     if is_core_interface_name(&class.name) {
         return Err(runtime_error(
@@ -100520,6 +100697,13 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
             return Some(("Error", error.message.clone()));
         }
 
+        if error
+            .message
+            .starts_with("Cannot instantiate abstract class ")
+        {
+            return Some(("Error", error.message.clone()));
+        }
+
         if error.message.starts_with("Unsupported operand types: ") {
             return Some(("TypeError", error.message.clone()));
         }
@@ -100661,6 +100845,17 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
                 "TypeError",
                 "filter_var(): Option must be a valid callback".to_string(),
             ));
+        }
+
+        if let Some(message) = error
+            .message
+            .strip_prefix("unsupported call PhpToken::is(): ")
+            .filter(|message| {
+                message
+                    .starts_with("Argument #1 ($kind) must only have elements of type string|int, ")
+            })
+        {
+            return Some(("TypeError", format!("PhpToken::is(): {message}")));
         }
 
         if let Some(message) = array_reduce_callback_too_few_arguments_message(error) {
@@ -103300,6 +103495,7 @@ const PHP_URL_QUERY: i64 = 6;
 const PHP_URL_FRAGMENT: i64 = 7;
 const PHP_QUERY_RFC1738: i64 = 1;
 const PHP_QUERY_RFC3986: i64 = 2;
+const PHP_TOKEN_PARSE: i64 = 1;
 const PHP_SCANDIR_SORT_ASCENDING: i64 = 0;
 const PHP_SCANDIR_SORT_DESCENDING: i64 = 1;
 const PHP_SCANDIR_SORT_NONE: i64 = 2;
@@ -103751,6 +103947,7 @@ const BUILTIN_GLOBAL_CONSTANT_NAMES: &[&str] = &[
     "PHP_URL_FRAGMENT",
     "PHP_QUERY_RFC1738",
     "PHP_QUERY_RFC3986",
+    "TOKEN_PARSE",
     "SCANDIR_SORT_ASCENDING",
     "SCANDIR_SORT_DESCENDING",
     "SCANDIR_SORT_NONE",
@@ -104148,6 +104345,7 @@ fn builtin_global_constant_value(name: &str) -> Option<Value> {
         "PHP_URL_FRAGMENT" => Some(Value::Int(PHP_URL_FRAGMENT)),
         "PHP_QUERY_RFC1738" => Some(Value::Int(PHP_QUERY_RFC1738)),
         "PHP_QUERY_RFC3986" => Some(Value::Int(PHP_QUERY_RFC3986)),
+        "TOKEN_PARSE" => Some(Value::Int(PHP_TOKEN_PARSE)),
         "SCANDIR_SORT_ASCENDING" => Some(Value::Int(PHP_SCANDIR_SORT_ASCENDING)),
         "SCANDIR_SORT_DESCENDING" => Some(Value::Int(PHP_SCANDIR_SORT_DESCENDING)),
         "SCANDIR_SORT_NONE" => Some(Value::Int(PHP_SCANDIR_SORT_NONE)),
@@ -134890,7 +135088,7 @@ fn ensure_tokenizer_flags(
     span: Span,
 ) -> CompileResult<()> {
     match value {
-        None | Some(Value::Int(0)) => Ok(()),
+        None | Some(Value::Int(0)) | Some(Value::Int(PHP_TOKEN_PARSE)) => Ok(()),
         Some(Value::Int(_)) => Err(runtime_error(
             span,
             RuntimeError::unsupported_call(
@@ -134970,6 +135168,89 @@ fn php_token_object_id(
                 format!(
                     "PhpToken id property must be int, got {}",
                     other.type_name()
+                ),
+            ),
+        )),
+    }
+}
+
+fn php_token_object_text_bytes(
+    object: &PhpObject,
+    callable: &'static str,
+    span: Span,
+) -> CompileResult<Vec<u8>> {
+    let value = object
+        .read_public_property("text")
+        .map_err(|error| runtime_error(span, error))?;
+    value.try_echo_bytes().map_err(|error| {
+        runtime_error(
+            span,
+            RuntimeError::unsupported_call(callable, error.message().to_string()),
+        )
+    })
+}
+
+fn php_token_core_instance_method(method_name: &str) -> bool {
+    matches!(
+        method_name.to_ascii_lowercase().as_str(),
+        "gettokenname" | "__tostring" | "is" | "isignorable"
+    )
+}
+
+fn php_token_name_for_object_id(id: i64) -> Option<String> {
+    let name = php_tokenizer::token_name(id);
+    if name != "UNKNOWN" {
+        return Some(name.to_string());
+    }
+    (0..=255)
+        .contains(&id)
+        .then(|| char::from(id as u8).to_string())
+}
+
+fn php_token_is_kind(object: &PhpObject, kind: &Value, span: Span) -> CompileResult<bool> {
+    match kind {
+        Value::Int(expected_id) => {
+            Ok(php_token_object_id(object, "PhpToken::is()", span)? == *expected_id)
+        }
+        Value::String(expected_text) => {
+            Ok(php_token_object_text_bytes(object, "PhpToken::is()", span)?
+                == expected_text.as_bytes())
+        }
+        Value::BinaryString(expected_text) => {
+            Ok(php_token_object_text_bytes(object, "PhpToken::is()", span)?
+                == expected_text.as_slice())
+        }
+        Value::Array(kinds) => {
+            for entry in kinds.entries() {
+                match entry.value() {
+                    Value::Int(_) | Value::String(_) | Value::BinaryString(_) => {
+                        if php_token_is_kind(object, entry.value(), span)? {
+                            return Ok(true);
+                        }
+                    }
+                    other => {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "PhpToken::is()",
+                                format!(
+                                    "Argument #1 ($kind) must only have elements of type string|int, {} given",
+                                    php_type_error_given(other)
+                                ),
+                            ),
+                        ));
+                    }
+                }
+            }
+            Ok(false)
+        }
+        other => Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "PhpToken::is()",
+                format!(
+                    "Argument #1 ($kind) must be of type string|int|array, {} given",
+                    php_type_error_given(other)
                 ),
             ),
         )),

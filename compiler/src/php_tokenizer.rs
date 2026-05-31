@@ -190,6 +190,7 @@ pub const T_POW_EQUAL: i64 = 402;
 pub const T_PROPERTY_C: i64 = 403;
 pub const T_AMPERSAND_NOT_FOLLOWED_BY_VAR_OR_VARARG: i64 = 404;
 pub const T_BAD_CHARACTER: i64 = 405;
+pub const T_AMPERSAND_FOLLOWED_BY_VAR_OR_VARARG: i64 = 406;
 
 pub fn token_id_by_constant_name(name: &str) -> Option<i64> {
     Some(match name {
@@ -338,6 +339,7 @@ pub fn token_id_by_constant_name(name: &str) -> Option<i64> {
         "T_POW_EQUAL" => T_POW_EQUAL,
         "T_PROPERTY_C" => T_PROPERTY_C,
         "T_AMPERSAND_NOT_FOLLOWED_BY_VAR_OR_VARARG" => T_AMPERSAND_NOT_FOLLOWED_BY_VAR_OR_VARARG,
+        "T_AMPERSAND_FOLLOWED_BY_VAR_OR_VARARG" => T_AMPERSAND_FOLLOWED_BY_VAR_OR_VARARG,
         "T_BAD_CHARACTER" => T_BAD_CHARACTER,
         _ => return None,
     })
@@ -490,6 +492,7 @@ pub fn token_name(id: i64) -> &'static str {
         T_POW_EQUAL => "T_POW_EQUAL",
         T_PROPERTY_C => "T_PROPERTY_C",
         T_AMPERSAND_NOT_FOLLOWED_BY_VAR_OR_VARARG => "T_AMPERSAND_NOT_FOLLOWED_BY_VAR_OR_VARARG",
+        T_AMPERSAND_FOLLOWED_BY_VAR_OR_VARARG => "T_AMPERSAND_FOLLOWED_BY_VAR_OR_VARARG",
         T_BAD_CHARACTER => "T_BAD_CHARACTER",
         _ => "UNKNOWN",
     }
@@ -506,6 +509,7 @@ struct Scanner<'a> {
     index: usize,
     line: i64,
     in_php: bool,
+    last_significant_token: Option<i64>,
     tokens: Vec<PhpTokenizerToken>,
 }
 
@@ -516,6 +520,7 @@ impl<'a> Scanner<'a> {
             index: 0,
             line: 1,
             in_php: false,
+            last_significant_token: None,
             tokens: Vec::new(),
         }
     }
@@ -925,7 +930,11 @@ impl<'a> Scanner<'a> {
             return;
         }
 
-        let id = token_id_for_identifier(&self.source[start..self.index]).unwrap_or(T_STRING);
+        let id = if self.identifier_is_reserved_word_in_string_context() {
+            T_STRING
+        } else {
+            token_id_for_identifier(&self.source[start..self.index]).unwrap_or(T_STRING)
+        };
         self.push_token(id, start, self.index);
     }
 
@@ -991,7 +1000,6 @@ impl<'a> Scanner<'a> {
             (b"::", T_PAAMAYIM_NEKUDOTAYIM),
             (b"#[", T_ATTRIBUTE),
             (b"??", T_COALESCE),
-            (b"&", T_AMPERSAND_NOT_FOLLOWED_BY_VAR_OR_VARARG),
         ] {
             if self.starts_with(pattern) {
                 let start = self.index;
@@ -1000,7 +1008,51 @@ impl<'a> Scanner<'a> {
                 return true;
             }
         }
+        if self.starts_with(b"&") {
+            let start = self.index;
+            self.index += 1;
+            let id = if self.ampersand_is_followed_by_var_or_vararg() {
+                T_AMPERSAND_FOLLOWED_BY_VAR_OR_VARARG
+            } else {
+                T_AMPERSAND_NOT_FOLLOWED_BY_VAR_OR_VARARG
+            };
+            self.push_token(id, start, self.index);
+            return true;
+        }
         false
+    }
+
+    fn identifier_is_reserved_word_in_string_context(&self) -> bool {
+        matches!(
+            self.last_significant_token,
+            Some(
+                T_OBJECT_OPERATOR
+                    | T_NULLSAFE_OBJECT_OPERATOR
+                    | T_PAAMAYIM_NEKUDOTAYIM
+                    | T_CONST
+                    | T_FUNCTION
+                    | T_FN
+                    | T_AS
+                    | T_INSTEADOF
+                    | T_AMPERSAND_FOLLOWED_BY_VAR_OR_VARARG
+                    | T_AMPERSAND_NOT_FOLLOWED_BY_VAR_OR_VARARG
+            )
+        )
+    }
+
+    fn ampersand_is_followed_by_var_or_vararg(&self) -> bool {
+        let mut cursor = self.index;
+        while self
+            .source
+            .get(cursor)
+            .copied()
+            .is_some_and(is_php_whitespace)
+        {
+            cursor += 1;
+        }
+
+        self.source.get(cursor) == Some(&b'$')
+            || self.source.get(cursor..cursor + 3) == Some(b"...")
     }
 
     fn cast_token_at_current(&self) -> Option<(i64, usize)> {
@@ -1029,6 +1081,7 @@ impl<'a> Scanner<'a> {
         let line = self.line;
         let position = start as i64;
         self.line += byte_line_count(&text);
+        self.note_significant_token(id);
         self.tokens.push(PhpTokenizerToken::Token {
             id,
             text,
@@ -1042,6 +1095,9 @@ impl<'a> Scanner<'a> {
         let line = self.line;
         let position = start as i64;
         self.line += byte_line_count(&text);
+        if let Some(symbol) = text.first() {
+            self.last_significant_token = Some(*symbol as i64);
+        }
         self.tokens.push(PhpTokenizerToken::Symbol {
             text,
             line,
@@ -1071,6 +1127,21 @@ impl<'a> Scanner<'a> {
 
     fn peek_offset(&self, offset: usize) -> Option<u8> {
         self.source.get(self.index + offset).copied()
+    }
+
+    fn note_significant_token(&mut self, id: i64) {
+        if !matches!(
+            id,
+            T_INLINE_HTML
+                | T_WHITESPACE
+                | T_COMMENT
+                | T_DOC_COMMENT
+                | T_OPEN_TAG
+                | T_CLOSE_TAG
+                | T_OPEN_TAG_WITH_ECHO
+        ) {
+            self.last_significant_token = Some(id);
+        }
     }
 }
 

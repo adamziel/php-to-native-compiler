@@ -33,6 +33,13 @@
   trait-originated `__TRAIT__` still fails at parse time until original trait
   method context tracking is implemented. `__NAMESPACE__` evaluates to the
   current namespace name, or an empty string in global namespace.
+- tokenizer runtime builtins: `token_get_all()` and `token_name()` cover the
+  core interpreter token stream, `TOKEN_PARSE` is accepted for the supported
+  contextual reserved-word cases, and `PhpToken` supports construction,
+  subclass tokenization, `getTokenName()`, `is()`, `isIgnorable()`, and
+  `__toString()` for the current tokenizer subset. Full parse-error
+  validation for `TOKEN_PARSE` and complete heredoc/nowdoc token parity remain
+  unsupported.
 - static variables backed by per-scope materialized symbol tables
 - direct variable removal: `unset($name)` removes static variables from the
   current scope and treats undefined names as no-ops; when a removed direct
