@@ -31840,10 +31840,10 @@ impl PhpClassTable {
             .get_mut(bcmath_number_id)
             .expect("declared BcMath\\Number class id should resolve");
         bcmath_number
-            .add_property(PhpPropertyMetadata::instance("value", Visibility::Public))
+            .add_property(PhpPropertyMetadata::instance("value", Visibility::Public).readonly())
             .expect("BcMath\\Number core metadata should not duplicate value");
         bcmath_number
-            .add_property(PhpPropertyMetadata::instance("scale", Visibility::Public))
+            .add_property(PhpPropertyMetadata::instance("scale", Visibility::Public).readonly())
             .expect("BcMath\\Number core metadata should not duplicate scale");
         for method in [
             "__construct",
@@ -33066,6 +33066,7 @@ pub struct PhpPropertyMetadata {
     visibility: Visibility,
     is_static: bool,
     type_decl: Option<String>,
+    is_readonly: bool,
 }
 
 impl PhpPropertyMetadata {
@@ -33075,6 +33076,7 @@ impl PhpPropertyMetadata {
             visibility,
             is_static: false,
             type_decl: None,
+            is_readonly: false,
         }
     }
 
@@ -33084,11 +33086,17 @@ impl PhpPropertyMetadata {
             visibility,
             is_static: true,
             type_decl: None,
+            is_readonly: false,
         }
     }
 
     pub fn with_type_decl(mut self, type_decl: Option<String>) -> Self {
         self.type_decl = type_decl;
+        self
+    }
+
+    pub fn readonly(mut self) -> Self {
+        self.is_readonly = true;
         self
     }
 
@@ -33106,6 +33114,10 @@ impl PhpPropertyMetadata {
 
     pub fn type_decl(&self) -> Option<&str> {
         self.type_decl.as_deref()
+    }
+
+    pub fn is_readonly(&self) -> bool {
+        self.is_readonly
     }
 }
 
@@ -36198,6 +36210,7 @@ impl PhpObject {
                 initializer.property.name(),
                 initializer.property.visibility(),
                 initializer.property.type_decl().map(str::to_string),
+                initializer.property.is_readonly(),
             );
         }
 
@@ -36213,6 +36226,7 @@ impl PhpObject {
                 property.name(),
                 property.visibility(),
                 property.type_decl().map(str::to_string),
+                property.is_readonly(),
             );
         }
 
@@ -36233,6 +36247,7 @@ impl PhpObject {
         name: &str,
         visibility: Visibility,
         type_decl: Option<String>,
+        is_readonly: bool,
     ) {
         if visibility != Visibility::Private {
             if let Some(property) = properties.iter_mut().find(|property| {
@@ -36240,7 +36255,8 @@ impl PhpObject {
             }) {
                 property.visibility = visibility;
                 property.type_decl = type_decl;
-                property.initialized = property.type_decl.is_none();
+                property.is_readonly = is_readonly;
+                property.initialized = property.type_decl.is_none() && !property.is_readonly;
                 return;
             }
         }
@@ -36251,8 +36267,9 @@ impl PhpObject {
             name: name.to_string(),
             visibility,
             type_decl: type_decl.clone(),
+            is_readonly,
             storage: ObjectPropertyStorage::Value(PhpValueCell::new(Value::Null)),
-            initialized: type_decl.is_none(),
+            initialized: type_decl.is_none() && !is_readonly,
             unset: false,
         });
     }
@@ -36617,6 +36634,7 @@ impl PhpObject {
         let mut properties = self.properties.borrow_mut();
         let property = self.public_property_mut_or_error(&mut properties, name)?;
 
+        property.ensure_writable()?;
         let value = coerce_typed_property_value(property, value)?;
         property.set_value(value);
         property.initialized = true;
@@ -36631,6 +36649,7 @@ impl PhpObject {
         let mut properties = self.properties.borrow_mut();
         let property = self.public_property_mut_or_error(&mut properties, name)?;
 
+        property.ensure_writable()?;
         let value = coerce_typed_property_value(property, reference.value_cloned())?;
         reference.set_value(value);
         property.set_reference_cell(reference);
@@ -36646,6 +36665,7 @@ impl PhpObject {
         if let Some(index) = properties.iter().rposition(|property| {
             property.name == name && property.visibility == Visibility::Public
         }) {
+            properties[index].ensure_writable()?;
             return properties[index].reference_cell();
         }
 
@@ -36660,6 +36680,12 @@ impl PhpObject {
         }
 
         if !self.allows_dynamic_public_properties() {
+            if self.forbids_dynamic_public_properties_as_error() {
+                return Err(RuntimeError::unsupported_property_access(format!(
+                    "Cannot create dynamic property {}::${}",
+                    self.class_name, name
+                )));
+            }
             return Err(RuntimeError::undefined_property(
                 self.class_name.clone(),
                 name,
@@ -36673,6 +36699,7 @@ impl PhpObject {
             name: name.to_string(),
             visibility: Visibility::Public,
             type_decl: None,
+            is_readonly: false,
             storage: ObjectPropertyStorage::Reference(reference.clone()),
             initialized: true,
             unset: false,
@@ -36685,6 +36712,7 @@ impl PhpObject {
         if let Some(index) = properties.iter().rposition(|property| {
             property.name == name && property.visibility == Visibility::Public
         }) {
+            properties[index].ensure_writable()?;
             let value = coerce_typed_property_value(&properties[index], value)?;
             properties[index].set_value(value);
             properties[index].initialized = true;
@@ -36702,6 +36730,12 @@ impl PhpObject {
         }
 
         if !self.allows_dynamic_public_properties() {
+            if self.forbids_dynamic_public_properties_as_error() {
+                return Err(RuntimeError::unsupported_property_access(format!(
+                    "Cannot create dynamic property {}::${}",
+                    self.class_name, name
+                )));
+            }
             return Err(RuntimeError::undefined_property(
                 self.class_name.clone(),
                 name,
@@ -36714,6 +36748,7 @@ impl PhpObject {
             name: name.to_string(),
             visibility: Visibility::Public,
             type_decl: None,
+            is_readonly: false,
             storage: ObjectPropertyStorage::Value(PhpValueCell::new(value)),
             initialized: true,
             unset: false,
@@ -36726,6 +36761,10 @@ impl PhpObject {
             || self.class_name.eq_ignore_ascii_case("wpdb")
             || self.is_instance_of_class_name("ArrayObject")
             || self.is_instance_of_class_name("ArrayIterator")
+    }
+
+    fn forbids_dynamic_public_properties_as_error(&self) -> bool {
+        self.class_name.eq_ignore_ascii_case("BcMath\\Number")
     }
 
     pub fn replace_public_properties_from_array(&self, array: &PhpArray) -> RuntimeResult<()> {
@@ -36749,6 +36788,7 @@ impl PhpObject {
                     name: name.clone(),
                     visibility: Visibility::Public,
                     type_decl: None,
+                    is_readonly: false,
                     storage: ObjectPropertyStorage::Value(PhpValueCell::new(Value::Null)),
                     initialized: true,
                     unset: false,
@@ -36780,6 +36820,7 @@ impl PhpObject {
             return self.write_dynamic_public_property(name, value);
         };
 
+        property.ensure_writable()?;
         let value = coerce_typed_property_value(property, value)?;
         property.set_value(value);
         property.initialized = true;
@@ -36800,6 +36841,7 @@ impl PhpObject {
             protected_class_ids,
         )?;
 
+        property.ensure_writable()?;
         property.reference_cell()
     }
 
@@ -36835,6 +36877,7 @@ impl PhpObject {
             protected_class_ids,
         )?;
 
+        property.ensure_writable()?;
         let value = coerce_typed_property_value(property, reference.value_cloned())?;
         reference.set_value(value);
         property.set_reference_cell(reference);
@@ -36887,6 +36930,7 @@ impl PhpObject {
             return Ok(value);
         };
 
+        property.ensure_writable()?;
         let value = coerce_typed_property_value_with_object_type_resolver(
             property,
             value,
@@ -36914,6 +36958,7 @@ impl PhpObject {
             return Ok(false);
         };
 
+        property.ensure_unsettable()?;
         property.unset_value();
         Ok(true)
     }
@@ -37091,6 +37136,7 @@ pub struct ObjectProperty {
     name: String,
     visibility: Visibility,
     type_decl: Option<String>,
+    is_readonly: bool,
     storage: ObjectPropertyStorage,
     initialized: bool,
     unset: bool,
@@ -37170,6 +37216,26 @@ impl ObjectProperty {
 
     pub fn is_unset(&self) -> bool {
         self.unset
+    }
+
+    fn ensure_writable(&self) -> RuntimeResult<()> {
+        if self.is_readonly && self.initialized && !self.unset {
+            return Err(RuntimeError::unsupported_property_access(format!(
+                "Cannot modify readonly property {}::${}",
+                self.declaring_class_name, self.name
+            )));
+        }
+        Ok(())
+    }
+
+    fn ensure_unsettable(&self) -> RuntimeResult<()> {
+        if self.is_readonly {
+            return Err(RuntimeError::unsupported_property_access(format!(
+                "Cannot unset readonly property {}::${}",
+                self.declaring_class_name, self.name
+            )));
+        }
+        Ok(())
     }
 
     pub fn mangled_name(&self) -> String {

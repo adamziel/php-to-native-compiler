@@ -10759,6 +10759,7 @@ impl Interpreter {
         let instance_property_defaults = HashMap::new();
         let mut classes = PhpClassTable::with_core_classes();
         seed_interpreter_generator_class(&mut classes)?;
+        seed_core_final_class_markers(&classes, &mut final_classes);
         seed_core_class_constant_runtime_tables(&classes, &mut class_constants);
         for stmt in &program.statements {
             match stmt {
@@ -81852,7 +81853,7 @@ impl Interpreter {
             "strval" => self.call_strval(&args, span),
             "boolval" => {
                 expect_arity(name, &args, 1, span)?;
-                Ok(Value::Bool(args[0].is_truthy()))
+                Ok(Value::Bool(self.value_to_bool_cast(&args[0], span)?))
             }
             "intval" => self.call_intval(&args, span),
             "floatval" | "doubleval" => {
@@ -87969,6 +87970,18 @@ impl Interpreter {
             .map_err(|error| runtime_error(span, error))
     }
 
+    fn value_to_bool_cast(&self, value: &Value, span: Span) -> CompileResult<bool> {
+        if let Value::Object(object) = value {
+            if object.class_name().eq_ignore_ascii_case("BcMath\\Number") {
+                return self
+                    .bcmath_number_object_decimal(object, span)
+                    .map(|decimal| !decimal.is_zero());
+            }
+        }
+
+        Ok(value.is_truthy())
+    }
+
     fn call_strval(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("strval", args, 1, span)?;
         self.value_to_string_cast_value(args[0].clone(), "strval()", span)
@@ -88473,7 +88486,7 @@ impl Interpreter {
         match kind {
             CastKind::String => self.value_to_string_cast_value(value, "(string)", span),
             CastKind::Int => self.int_cast_value(value, "(int)", span),
-            CastKind::Bool => Ok(Value::Bool(value.is_truthy())),
+            CastKind::Bool => Ok(Value::Bool(self.value_to_bool_cast(&value, span)?)),
             CastKind::Float => self.float_cast_value(value, "(float)", span),
             CastKind::Array => match value {
                 Value::Null => Ok(Value::Array(PhpArray::new())),
@@ -92135,6 +92148,14 @@ fn seed_interpreter_generator_class(classes: &mut PhpClassTable) -> CompileResul
         .set_interfaces(generator_id, vec!["Iterator".to_string()])
         .map_err(Diagnostic::from)?;
     Ok(())
+}
+
+fn seed_core_final_class_markers(classes: &PhpClassTable, final_classes: &mut HashSet<ClassId>) {
+    for class_name in ["BcMath\\Number"] {
+        if let Some(class_id) = classes.lookup_class_id(class_name) {
+            final_classes.insert(class_id);
+        }
+    }
 }
 
 fn register_class_name(classes: &mut PhpClassTable, class: &ClassDecl) -> CompileResult<ClassId> {
@@ -97358,6 +97379,19 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
             ));
         }
 
+        for prefix in [
+            "unsupported object property access: Cannot modify readonly property ",
+            "unsupported object property access: Cannot unset readonly property ",
+            "unsupported object property access: Cannot create dynamic property ",
+        ] {
+            if let Some(property) = error.message.strip_prefix(prefix) {
+                let message = prefix
+                    .strip_prefix("unsupported object property access: ")
+                    .expect("prefix includes property-access diagnostic label");
+                return Some(("Error", format!("{message}{property}")));
+            }
+        }
+
         if error.message == "Method name must be a string"
             || error.message == "Class name must be a valid object or a string"
         {
@@ -98167,6 +98201,9 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
             || message.contains(" is too large")
             || message.contains(" must be greater than or equal to 0") =>
         {
+            Some(format!("{function}: {message}"))
+        }
+        ("BcMath\\Number::__construct()", message) if message.contains(" is not well-formed") => {
             Some(format!("{function}: {message}"))
         }
         (
@@ -122611,6 +122648,18 @@ impl Interpreter {
             .map(|arg| self.evaluate(arg, scope))
             .collect::<CompileResult<Vec<_>>>()?;
         match method_name.to_ascii_lowercase().as_str() {
+            "__construct" => {
+                expect_arity("BcMath\\Number::__construct", &values, 1, span)?;
+                let decimal = self.bcmath_number_constructor_decimal(&values[0], span)?;
+                let scale = decimal.scale;
+                object
+                    .write_public_property("value", Value::String(decimal.format_with_scale(scale)))
+                    .map_err(|error| runtime_error(span, error))?;
+                object
+                    .write_public_property("scale", Value::Int(scale as i64))
+                    .map_err(|error| runtime_error(span, error))?;
+                Ok(Value::Null)
+            }
             "__tostring" => {
                 expect_arity("BcMath\\Number::__toString", &values, 0, span)?;
                 self.bcmath_number_object_string(&object, span)
@@ -123142,10 +123191,34 @@ impl Interpreter {
     }
 
     fn bcmath_number_constructor_decimal(
-        &self,
+        &mut self,
         value: &Value,
         span: Span,
     ) -> CompileResult<BcDecimal> {
+        if let Value::Float(value) = value {
+            let Some(integer) = php_base_conversion_float_to_i64(*value) else {
+                return Err(bcmath_number_error(
+                    "BcMath\\Number::__construct()",
+                    1,
+                    "num",
+                    span,
+                ));
+            };
+            if value.trunc() != *value {
+                self.emit_display_diagnostic(
+                    "Deprecated",
+                    PHP_E_DEPRECATED,
+                    format!(
+                        "Implicit conversion from float {} to int loses precision",
+                        format_php_float_to_int_deprecation_value(*value)
+                    ),
+                    span,
+                )?;
+            }
+            return BcDecimal::parse(&integer.to_string()).ok_or_else(|| {
+                bcmath_number_error("BcMath\\Number::__construct()", 1, "num", span)
+            });
+        }
         if let Value::String(text) = value {
             if matches!(text.as_str(), "" | "+" | "-") {
                 return Ok(BcDecimal::zero());
