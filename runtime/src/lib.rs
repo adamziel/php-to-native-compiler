@@ -29266,7 +29266,7 @@ impl PhpArray {
         };
         self.invalidate_key_index();
 
-        if matches!(entry.key, ArrayKey::Int(key) if key >= 0 && key.checked_add(1) == Some(self.next_auto_index))
+        if matches!(entry.key, ArrayKey::Int(key) if key.checked_add(1) == Some(self.next_auto_index))
         {
             self.next_auto_index -= 1;
             self.auto_index_exhausted = false;
@@ -30345,7 +30345,18 @@ impl PhpArray {
         let ArrayKey::Int(value) = key else {
             return;
         };
-        if *value < 0 || self.auto_index_exhausted || *value < self.next_auto_index {
+        if self.auto_index_exhausted {
+            return;
+        }
+
+        let should_advance = if *value >= 0 {
+            *value >= self.next_auto_index
+        } else if self.next_auto_index == 0 {
+            true
+        } else {
+            self.next_auto_index < 0 && *value >= self.next_auto_index
+        };
+        if !should_advance {
             return;
         }
 
@@ -76689,12 +76700,16 @@ mod tests {
     }
 
     #[test]
-    fn array_append_uses_next_non_negative_integer_key() {
+    fn array_append_uses_next_integer_key_after_negative_indices() {
         let mut array = PhpArray::new();
 
         array.insert(-2, Value::String("negative".to_string()));
         assert_eq!(
             array.append(Value::String("first".to_string())).unwrap(),
+            ArrayKey::Int(-1)
+        );
+        assert_eq!(
+            array.append(Value::String("zero".to_string())).unwrap(),
             ArrayKey::Int(0)
         );
         array.insert(5, Value::String("five".to_string()));
@@ -76712,6 +76727,7 @@ mod tests {
             keys,
             vec![
                 ArrayKey::Int(-2),
+                ArrayKey::Int(-1),
                 ArrayKey::Int(0),
                 ArrayKey::Int(5),
                 ArrayKey::Int(6),
@@ -77076,6 +77092,16 @@ mod tests {
         assert_eq!(array.pop_value(), Value::String("new".to_string()));
         assert_eq!(array.pop_value(), Value::String("two".to_string()));
         assert_eq!(array.pop_value(), Value::Null);
+
+        let mut negative = PhpArray::new();
+        negative.insert(-2, Value::String("negative".to_string()));
+        assert_eq!(negative.pop_value(), Value::String("negative".to_string()));
+        assert_eq!(
+            negative
+                .append(Value::String("reused".to_string()))
+                .unwrap(),
+            ArrayKey::Int(-2)
+        );
     }
 
     #[test]

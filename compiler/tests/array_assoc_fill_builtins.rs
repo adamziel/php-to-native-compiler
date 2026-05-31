@@ -45,6 +45,39 @@ try {
 }
 
 #[test]
+fn array_auto_keys_continue_from_negative_integer_keys() {
+    let execution = run_source(
+        r#"<?php
+$a = [];
+$a[-5] = "-5";
+$a[] = "after -5";
+print_r($a);
+
+$b = [-2 => true, true, true];
+$d = [];
+$d[-2] = true;
+$d[] = true;
+$d[] = true;
+var_dump($b === $d);
+
+$e = [-2 => false];
+array_pop($e);
+$e[] = true;
+$e[] = true;
+$e[] = true;
+var_dump($d == $e);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "Array\n(\n    [-5] => -5\n    [-4] => after -5\n)\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn array_diff_assoc_and_intersect_assoc_compare_scalar_string_values_with_keys() {
     let source = r#"<?php
 $left = ["a" => "green", "b" => "brown", 0 => "red", 1 => "", "2" => "two"];
