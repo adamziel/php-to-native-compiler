@@ -151,6 +151,39 @@ var_dump(touch(""));
 }
 
 #[test]
+fn file_metadata_builtins_reject_trailing_slash_regular_file_paths() {
+    let fixture = TempFsFixture::new("metadata-trailing-slash");
+    let file = fixture.root.join("file.txt");
+    fs::write(&file, "payload").expect("fixture file is created");
+    let file = php_string(&file);
+    let source = format!(
+        r#"<?php
+$file = {file};
+var_dump(fileowner($file . "/"));
+var_dump(filegroup($file . "/"));
+var_dump(fileinode($file . "/"));
+var_dump(fileperms($file . "/"));
+"#,
+        file = file
+    );
+
+    let execution = run_source(&source).unwrap();
+
+    for function in ["fileowner", "filegroup", "fileinode", "fileperms"] {
+        assert!(
+            execution
+                .stdout
+                .contains(&format!("Warning: {function}(): stat failed for ")),
+            "{}",
+            execution.stdout
+        );
+    }
+    assert_eq!(execution.stdout.matches("bool(false)").count(), 4);
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn open_basedir_denials_use_php_display_warning_shape() {
     let fixture = TempFsFixture::new("open-basedir-display");
     fs::create_dir(fixture.root.join("allowed")).expect("allowed directory is created");
@@ -187,6 +220,98 @@ var_dump(touch($denied));
         execution.stdout
     );
     assert_eq!(execution.stdout.matches("bool(false)").count(), 4);
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn file_metadata_open_basedir_rejections_use_php_shaped_warning_text() {
+    let fixture = TempFsFixture::new("metadata-basedir");
+    let root = php_string(&fixture.root);
+    let source = format!(
+        r#"<?php
+$root = {root};
+$allowed = $root . "/allowed";
+$denied = $root . "/denied";
+mkdir($allowed);
+mkdir($denied);
+file_put_contents($allowed . "/ok.txt", "ok");
+file_put_contents($denied . "/bad.txt", "bad");
+ini_set("open_basedir", $allowed);
+var_dump(fileowner($denied . "/bad.txt"));
+var_dump(filegroup($denied . "/bad.txt"));
+var_dump(fileinode($denied . "/bad.txt"));
+var_dump(fileatime($denied . "/bad.txt"));
+var_dump(filectime($denied . "/bad.txt"));
+var_dump(is_executable($denied . "/bad.txt"));
+ini_set("open_basedir", "");
+unlink($allowed . "/ok.txt");
+unlink($denied . "/bad.txt");
+rmdir($allowed);
+rmdir($denied);
+"#,
+        root = root
+    );
+
+    let execution = run_source(&source).unwrap();
+
+    for function in [
+        "fileowner",
+        "filegroup",
+        "fileinode",
+        "fileatime",
+        "filectime",
+        "is_executable",
+    ] {
+        assert!(
+            execution.stdout.contains(&format!(
+                "Warning: {function}(): open_basedir restriction in effect. File("
+            )),
+            "{}",
+            execution.stdout
+        );
+        assert!(
+            execution
+                .stdout
+                .contains(") is not within the allowed path(s): ("),
+            "{}",
+            execution.stdout
+        );
+    }
+    assert_eq!(execution.stdout.matches("bool(false)").count(), 6);
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn chown_and_chgrp_missing_files_warn_return_false_and_continue() {
+    let fixture = TempFsFixture::new("ownership");
+    let missing = php_string(&fixture.root.join("missing.txt"));
+    let source = format!(
+        r#"<?php
+echo function_exists("chown") ? "chown" : "missing";
+echo ":" . (function_exists("chgrp") ? "chgrp" : "missing");
+var_dump(chown({missing}, 0));
+var_dump(chgrp({missing}, 0));
+echo "alive";
+"#,
+        missing = missing
+    );
+
+    let execution = run_source(&source).unwrap();
+
+    assert!(execution
+        .stdout
+        .starts_with("chown:chgrp\nWarning: chown(): No such file or directory"));
+    assert!(
+        execution
+            .stdout
+            .contains("Warning: chgrp(): No such file or directory"),
+        "{}",
+        execution.stdout
+    );
+    assert!(execution.stdout.ends_with("bool(false)\nalive"));
+    assert_eq!(execution.stdout.matches("bool(false)").count(), 2);
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);
 }

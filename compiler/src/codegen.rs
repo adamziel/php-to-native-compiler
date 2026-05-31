@@ -6896,6 +6896,7 @@ fn collect_native_arrow_capture_candidates_from_expr(
                 match part {
                     InterpolatedStringPart::Literal(_) => {}
                     InterpolatedStringPart::Variable(name)
+                    | InterpolatedStringPart::DeprecatedDollarBraceVariable(name)
                     | InterpolatedStringPart::ArrayOffset { variable: name, .. }
                     | InterpolatedStringPart::ObjectProperty { variable: name, .. } => {
                         captures.push((name.clone(), *span));
@@ -8402,6 +8403,7 @@ fn new_class_name_contains_globals_access(class_name: &NewClassName) -> bool {
 fn interpolated_string_part_contains_globals_access(part: &InterpolatedStringPart) -> bool {
     match part {
         InterpolatedStringPart::Variable(name)
+        | InterpolatedStringPart::DeprecatedDollarBraceVariable(name)
         | InterpolatedStringPart::ArrayOffset { variable: name, .. }
         | InterpolatedStringPart::ObjectProperty { variable: name, .. }
         | InterpolatedStringPart::AccessChain { variable: name, .. } => {
@@ -8938,6 +8940,7 @@ fn new_class_name_contains_request_state_access(class_name: &NewClassName) -> bo
 fn interpolated_string_part_contains_request_state_access(part: &InterpolatedStringPart) -> bool {
     match part {
         InterpolatedStringPart::Variable(name)
+        | InterpolatedStringPart::DeprecatedDollarBraceVariable(name)
         | InterpolatedStringPart::ArrayOffset { variable: name, .. }
         | InterpolatedStringPart::ObjectProperty { variable: name, .. }
         | InterpolatedStringPart::AccessChain { variable: name, .. } => {
@@ -66142,6 +66145,10 @@ fn is_array_builtin(name: &str) -> bool {
             | "array_reduce"
             | "array_filter"
             | "array_map"
+            | "array_find"
+            | "array_find_key"
+            | "array_any"
+            | "array_all"
             | "array_multisort"
             | "sort"
             | "rsort"
@@ -66346,6 +66353,8 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "chr",
     "bin2hex",
     "hex2bin",
+    "pack",
+    "unpack",
     "ord",
     "dechex",
     "decbin",
@@ -66381,6 +66390,13 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "str_repeat",
     "str_pad",
     "chunk_split",
+    "mb_strlen",
+    "mb_strpos",
+    "mb_stripos",
+    "mb_strrpos",
+    "mb_strripos",
+    "mb_strtolower",
+    "mb_strtoupper",
     "str_split",
     "range",
     "addslashes",
@@ -66422,6 +66438,7 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "str_getcsv",
     "parse_str",
     "parse_url",
+    "http_build_query",
     "levenshtein",
     "similar_text",
     "preg_match",
@@ -66528,8 +66545,11 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "get_required_files",
     "set_include_path",
     "min",
+    "max",
     "rand",
     "uniqid",
+    "hash",
+    "hash_algos",
     "hash_hmac",
     "count",
     "sizeof",
@@ -66571,6 +66591,8 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "array_diff_assoc",
     "array_intersect",
     "array_intersect_assoc",
+    "array_diff_ukey",
+    "array_intersect_ukey",
     "array_unique",
     "array_count_values",
     "array_sum",
@@ -66578,6 +66600,10 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "array_reduce",
     "array_filter",
     "array_map",
+    "array_find",
+    "array_find_key",
+    "array_any",
+    "array_all",
     "array_multisort",
     "sort",
     "rsort",
@@ -67122,6 +67148,7 @@ fn native_builtin_global_constant_c_value(name: &str) -> Option<CValue> {
         "FILE_USE_INCLUDE_PATH" => Some(CValue::Int("1".to_string())),
         "FILE_IGNORE_NEW_LINES" => Some(CValue::Int("2".to_string())),
         "FILE_SKIP_EMPTY_LINES" => Some(CValue::Int("4".to_string())),
+        "FILE_NO_DEFAULT_CONTEXT" => Some(CValue::Int("16".to_string())),
         "LOCK_EX" => Some(CValue::Int("2".to_string())),
         "FILE_APPEND" => Some(CValue::Int("8".to_string())),
         "HTML_SPECIALCHARS" => Some(CValue::Int("0".to_string())),
@@ -67149,6 +67176,8 @@ fn native_builtin_global_constant_c_value(name: &str) -> Option<CValue> {
         "PHP_URL_PATH" => Some(CValue::Int("5".to_string())),
         "PHP_URL_QUERY" => Some(CValue::Int("6".to_string())),
         "PHP_URL_FRAGMENT" => Some(CValue::Int("7".to_string())),
+        "PHP_QUERY_RFC1738" => Some(CValue::Int("1".to_string())),
+        "PHP_QUERY_RFC3986" => Some(CValue::Int("2".to_string())),
         "SCANDIR_SORT_ASCENDING" => Some(CValue::Int("0".to_string())),
         "SCANDIR_SORT_DESCENDING" => Some(CValue::Int("1".to_string())),
         "SCANDIR_SORT_NONE" => Some(CValue::Int("2".to_string())),

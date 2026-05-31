@@ -1,12 +1,6 @@
 use php_compiler::error::Phase;
 use php_compiler::{emit_ir_source, run_source};
 
-fn runtime_error(source: &str) -> php_compiler::error::Diagnostic {
-    let error = run_source(source).unwrap_err();
-    assert_eq!(error.phase, Phase::Runtime);
-    error
-}
-
 #[test]
 fn array_fill_builds_integer_keyed_arrays_and_clones_values() {
     let source = r#"<?php
@@ -75,15 +69,33 @@ print_r($call([0 => 1, 1 => 2.0, "x" => false], [0 => "1", 1 => "2", "x" => ""])
 }
 
 #[test]
-fn array_assoc_builtins_reject_non_array_arguments() {
-    let error = runtime_error("<?php\narray_diff_assoc([1], 42);\n");
+fn print_r_indents_nested_arrays_with_php_separators() {
+    let execution = run_source(
+        r#"<?php
+$items = ["outer" => ["child" => "ok"], "tail" => "done"];
+print_r($items);
+"#,
+    )
+    .unwrap();
 
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 1);
     assert_eq!(
-        error.message,
-        "unsupported call array_diff_assoc(): second argument must be array, got int"
+        execution.stdout,
+        "Array\n(\n    [outer] => Array\n        (\n            [child] => ok\n        )\n\n    [tail] => done\n)\n"
     );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn array_assoc_builtins_reject_non_array_arguments() {
+    let execution = run_source(
+        "<?php\ntry { array_diff_assoc([1], 42); } catch (TypeError $e) { echo $e->getMessage(); }\n",
+    )
+    .unwrap();
+    assert_eq!(
+        execution.stdout,
+        "array_diff_assoc(): Argument #2 must be of type array, int given"
+    );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

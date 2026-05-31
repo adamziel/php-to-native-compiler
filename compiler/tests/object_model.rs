@@ -6024,6 +6024,40 @@ echo $trait->hasMethod("helper") ? "trait-helper" : "missing-helper";
 }
 
 #[test]
+fn reflection_class_get_interfaces_returns_named_reflection_objects() {
+    let execution = run_source(
+        r#"<?php
+interface RootContract {}
+interface LeafContract extends RootContract {}
+class BasePlugin {}
+class Plugin extends BasePlugin implements LeafContract {}
+
+function line($label, $interfaces) {
+    ksort($interfaces);
+    foreach ($interfaces as $key => $interface) {
+        echo $label, "|", $key, "|", get_class($interface), "|", $interface->name, "|", $interface->getName(), "\n";
+    }
+}
+
+$class = new ReflectionClass(Plugin::class);
+line("class", $class->getInterfaces());
+$parent = $class->getParentClass();
+echo "parent|", $parent->name, "|", $parent->getName(), "\n";
+
+$interface = new ReflectionClass(LeafContract::class);
+line("interface", $interface->getInterfaces());
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "class|LeafContract|ReflectionClass|LeafContract|LeafContract\nclass|RootContract|ReflectionClass|RootContract|RootContract\nparent|BasePlugin|BasePlugin\ninterface|RootContract|ReflectionClass|RootContract|RootContract\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reflection_class_reports_bounded_class_source_metadata() {
     let execution = run_source_with_source_file(
         r#"<?php
@@ -6422,6 +6456,61 @@ try {
     assert_eq!(
         execution.stdout,
         "destruct|1|1|0|BaseHook\nbyref|1|1|0|BaseHook\nsubclass|MyReflectionMethod|1\ninternal|1|0|111\nmissing|Method ChildHook::missing() does not exist"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reflection_function_and_method_report_static_variables() {
+    let execution = run_source(
+        r#"<?php
+function user_statics() {
+    static $c;
+    static $a = 1, $b = "hello";
+}
+
+class Plugin {
+    public function boot() {
+        static $seen = 2;
+        static $empty;
+    }
+
+    public static function ping() {
+        echo "method-closure-static\n";
+    }
+
+    public function label($value = "bound") {
+        echo "method-closure-", $value, "\n";
+    }
+}
+
+function dump_array($label, $values) {
+    echo $label, "\n";
+    foreach ($values as $key => $value) {
+        echo $key, "=", ($value === null ? "NULL" : $value), "\n";
+    }
+}
+
+function callback_line($value) {
+    echo "function-closure-", $value, "\n";
+}
+
+dump_array("function", (new ReflectionFunction("user_statics"))->getStaticVariables());
+dump_array("method", (new ReflectionMethod(Plugin::class, "boot"))->getStaticVariables());
+echo "extract|", (new ReflectionFunction("extract"))->isInternal() ? "internal" : "user", "|", (new ReflectionFunction("extract"))->getStartLine() === false ? "no-line" : "line", "\n";
+$functionClosure = (new ReflectionFunction("callback_line"))->getClosure();
+$functionClosure("ok");
+$staticClosure = (new ReflectionMethod(Plugin::class, "ping"))->getClosure();
+$staticClosure();
+$methodClosure = (new ReflectionMethod(Plugin::class, "label"))->getClosure(new Plugin());
+$methodClosure();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "function\nc=NULL\na=1\nb=hello\nmethod\nseen=2\nempty=NULL\nextract|internal|no-line\nfunction-closure-ok\nmethod-closure-static\nmethod-closure-bound\n"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -11187,6 +11276,33 @@ foreach ($class->getConstants(4) as $name => $value) {
 }
 
 #[test]
+fn reflection_class_constant_lookup_accepts_scalar_names() {
+    let execution = run_source(
+        r#"<?php
+class Packet {
+    public const VALUE = 1;
+}
+
+function yn($value) {
+    return $value ? "1" : "0";
+}
+
+$class = new ReflectionClass(Packet::class);
+echo "has|", yn($class->hasConstant(1)), yn($class->hasConstant(1.5)), yn($class->hasConstant(true)), "\n";
+var_dump($class->getConstant(1));
+"#,
+    )
+    .unwrap();
+
+    assert!(execution.stdout.starts_with("has|000\n"));
+    assert!(execution.stdout.contains(
+        "Deprecated: ReflectionClass::getConstant() for a non-existent constant is deprecated"
+    ));
+    assert!(execution.stdout.ends_with("bool(false)\n"));
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reflection_class_reports_bounded_shape_relationship_metadata() {
     let execution = run_source(
         r#"<?php
@@ -14635,6 +14751,34 @@ echo $store[$first], "\n";
 }
 
 #[test]
+fn spl_object_storage_get_hash_return_type_errors_are_php_shaped() {
+    let source = r#"<?php
+class BadHashStorage extends SplObjectStorage {
+    #[ReturnTypeWillChange]
+    public function getHash($object) {
+        return 2;
+    }
+}
+
+$store = new BadHashStorage();
+$object = new stdClass();
+try {
+    $store[$object] = "value";
+} catch (Throwable $e) {
+    echo $e::class, ": ", $e->getMessage();
+}
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "TypeError: BadHashStorage::getHash(): Return value must be of type string, int returned"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn spl_fixed_array_offsets_iteration_resize_static_constructor_and_errors() {
     let source = r#"<?php
 class ChildFixedArray extends SplFixedArray {
@@ -14717,6 +14861,44 @@ foreach ($it as $key => $value) {
         execution.stdout,
         "bool(true)\n4|1\nb:2\na:1\n0:3\n1|copy\n0=3\na=1\nb=2\nx:ex\ny:why\n"
     );
+}
+
+#[test]
+fn array_object_nested_storage_mutations_reach_inner_array_object() {
+    let source = r#"<?php
+$base = new ArrayObject(array(1 => "one", 2 => "two", 3 => "three"));
+$base[] = "four";
+$copy = new ArrayObject($base);
+$copy[] = "five";
+$copy[6] = "six";
+unset($copy[2]);
+
+foreach ($base as $key => $value) {
+    echo $key, "=", $value, "\n";
+}
+print_r($copy->getArrayCopy());
+
+$it = new ArrayIterator(new stdClass());
+try {
+    $it->append("bad");
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert!(execution.stdout.contains(
+        "Deprecated: ArrayObject::__construct(): Using an object as a backing array for ArrayObject is deprecated"
+    ));
+    assert!(execution.stdout.contains(
+        "Deprecated: ArrayIterator::__construct(): Using an object as a backing array for ArrayIterator is deprecated"
+    ));
+    assert!(execution.stdout.contains(
+        "1=one\n3=three\n4=four\n5=five\n6=six\nArray\n(\n    [1] => one\n    [3] => three\n    [4] => four\n    [5] => five\n    [6] => six\n)\n"
+    ));
+    assert!(execution.stdout.ends_with(
+        "Cannot append properties to objects, use ArrayIterator::offsetSet() instead\n"
+    ));
 }
 
 #[test]

@@ -125,6 +125,31 @@ echo str_pad("x", length: 3, pad_type: STR_PAD_LEFT), "\n";
 }
 
 #[test]
+fn str_getcsv_preserves_nul_escape_eof_edge() {
+    let execution = run_source(
+        r#"<?php
+var_export(str_getcsv("y", ",", "y", "\000"));
+echo "\n";
+var_export(str_getcsv("\0yy", "y", "y", "\0"));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "array (\n",
+            "  0 => '' . \"\\0\" . '',\n",
+            ")\n",
+            "array (\n",
+            "  0 => '' . \"\\0\" . '',\n",
+            "  1 => '' . \"\\0\" . '',\n",
+            ")",
+        )
+    );
+}
+
+#[test]
 fn strpbrk_returns_suffix_from_first_matching_byte() {
     let execution = run_source(
         r#"<?php

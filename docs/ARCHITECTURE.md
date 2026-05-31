@@ -21,6 +21,11 @@ execution path, and a narrow LLVM IR text emitter for simple straight-line code.
 The interpreter runs top-level statements in a global symbol table and creates a
 fresh local symbol table for each user-function call. Before a user-function
 body is entered, direct calls validate supported by-reference argument sources;
+the parser keeps bounded file-scope `declare(strict_types=0|1);` and
+`declare(encoding="...");` directives as no-op interpreter statements, and
+routes strict-types block mode to a PHP-shaped fatal diagnostic without
+claiming actual strict scalar call enforcement, tick handlers, or source
+transcoding.
 definite value expressions passed to by-reference parameters produce a bounded
 PHP fatal `Error` and stop argument/callee evaluation rather than entering
 the legacy unsupported-reference path. Local scopes can import
@@ -532,7 +537,12 @@ explicit CLI request exercises, `PHPC_QUERY_STRING` seeds flat URL-encoded
 and bracketed URL-encoded query pairs into `$_GET`, and
 `PHPC_REQUEST_METHOD=POST` plus
 `PHPC_CONTENT_TYPE=application/x-www-form-urlencoded` and `PHPC_REQUEST_BODY`
-seeds flat and bracketed URL-encoded body pairs into `$_POST`. `PHPC_COOKIE`
+seeds flat and bracketed URL-encoded body pairs into `$_POST`.
+`http_build_query()` uses the same ordered PHP-array model in the opposite
+direction for bounded query strings: it walks arrays or initialized public
+object properties, recurses with bracketed child keys, skips null/resource
+leaves, applies top-level numeric prefixes, and encodes components as
+RFC1738 form data by default or RFC3986 when requested. `PHPC_COOKIE`
 is treated as an explicit semicolon-delimited cookie header seed for
 `$_COOKIE` and `$_SERVER["HTTP_COOKIE"]`. `PHPC_FILES` is treated as an
 explicit URL-encoded upload metadata seed for `$_FILES` using PHP-shaped keys
@@ -973,18 +983,21 @@ resolution, union/intersection canonicalization, built-in/internal interface inh
 diagnostics, and native lowering remain explicit boundaries.
 
 Double-quoted string interpolation is represented explicitly in the AST for
-the current simple `$name`, `{$name}`, array-offset, object-property, and
-chained access slices instead of being rewritten to ordinary string
-concatenation. The runtime evaluates those parts left to right through the
-active symbol table and PHP-shaped echo-string conversion. Native lowering
+the current simple `$name`, `{$name}`, deprecated `${name}`, array-offset,
+object-property, and chained access slices instead of being rewritten to
+ordinary string concatenation. The interpreter emits PHP's compile-time
+deprecation diagnostic for `${name}` and then evaluates those parts left to
+right through the active symbol table and PHP-shaped echo-string conversion;
+undefined simple interpolation variables warn and contribute an empty string.
+Native lowering
 rejects ordinary interpolated strings with a dedicated codegen diagnostic until
 native interpolation part evaluation, PHP-shaped string conversion,
 array/object lookup, `__toString` dispatch, runtime string allocation,
 references/copy-on-write, and exact native diagnostics exist. Interpolated
 `defined("SODIUM_$constant")` names continue to use the global-constant native
 boundary until native constant tables and runtime string lookup semantics
-exist. `${...}`, dynamic properties, static properties, and arbitrary complex
-expressions remain lexer boundaries.
+exist. Variable variables, complex `${...}` forms, dynamic properties, static
+properties, and arbitrary complex expressions remain lexer boundaries.
 
 PHP error-control syntax is represented as an explicit AST wrapper for
 `@expr`. The interpreter currently evaluates the wrapped expression normally
@@ -2679,16 +2692,17 @@ WordPress `wpdb::placeholder_escape()` salt path. The current slice accepts no
 arguments and returns a fixed integer so compatibility probes are reproducible;
 PHP random-state compatibility, min/max forms, seeding, cryptographic
 randomness, and native lowering remain out of scope.
-`uniqid()`, `hash_hmac()`, `md5()`, and `md5_file()` are interpreter-only
-deterministic hash boundaries for the same placeholder-escape path and focused
-file-content checks. `uniqid()` returns a fixed prefix-based ID with a
-PHP-shaped more-entropy suffix length, `hash_hmac()` currently supports
-lowercase hex HMAC-SHA256 through the `hmac` and `sha2` crates, `md5()`
-supports scalar/null string-convertible input with lowercase hex or raw binary
-output through the `md-5` crate, and `md5_file()` uses the bounded local-file
-path policy shared with `sha1_file()`. Broader hash algorithms, streaming hash
-contexts, exact entropy/time behavior, FIPS/provider policy, and native
-lowering remain out of scope.
+`uniqid()`, `hash()`, `hash_algos()`, `hash_hmac()`, `md5()`, and
+`md5_file()` are interpreter-only deterministic hash boundaries for the same
+placeholder-escape path and focused file-content checks. `uniqid()` returns a
+fixed prefix-based ID with a PHP-shaped more-entropy suffix length,
+`hash_hmac()` currently supports lowercase hex HMAC-SHA256 through the `hmac`
+and `sha2` crates, `hash()` covers a bounded SHA-1/SHA-2 digest set with
+lowercase hex or raw binary output, `md5()` supports scalar/null
+string-convertible input with lowercase hex or raw binary output through the
+`md-5` crate, and `md5_file()` uses the bounded local-file path policy shared
+with `sha1_file()`. Streaming hash contexts, exact entropy/time behavior,
+FIPS/provider policy, and native lowering remain out of scope.
 `strcasecmp()` is an interpreter-only bounded string comparison builtin for
 current scalar/null string-convertible values. It compares valid UTF-8 runtime
 strings by bytes with ASCII case folding and returns only sign values. Native
@@ -3266,6 +3280,14 @@ signed 64-bit integer subset, and native filesystem lowering remain out of
 scope. Native function-table
 introspection recognizes the name, while direct native calls reject under the
 function-call boundary.
+The adjacent interpreter-only metadata helpers `fileinode()`, `fileowner()`,
+`filegroup()`, `fileatime()`, `filectime()`, and `is_executable()` share the
+same local-path and request-local `open_basedir` check. Denied metadata paths
+emit PHP-shaped display warnings and return `false`; successful metadata reads
+stay host-local and bounded. `chown()` and `chgrp()` currently share only the
+local path/open_basedir/missing-file recovery part of that boundary and reject
+actual ownership changes on existing files until a native host ownership policy
+exists.
 `realpath()` is interpreter-only for one string local path. It uses the same
 process-path-then-repo-root relative path policy as the metadata builtins,
 returns a UTF-8 resolved host path for existing local paths, and returns
@@ -3601,9 +3623,19 @@ Variable-variable execution and `eval` remain design boundaries; direct
 Namespace declarations and top-level class `use` import declarations execute
 as metadata/no-op statements in `phpc run`, but the native path still rejects
 namespace declarations/imports before scalar folding or backend execution.
-First-class callable syntax such as `strlen(...)` and `$callback(...)` also
-stops at a stable parse diagnostic until Closure creation and callable object
-semantics exist.
+First-class callable syntax has a bounded interpreter acquisition path for
+current callable values. Named functions such as `strlen(...)` and dynamic
+string callables produce the same callable string value consumed by the
+existing dynamic-call dispatcher, closure values such as `$closure(...)` and
+`$closure->__invoke(...)` return the current closure value, and object/static
+method forms such as `$object->method(...)` or `ClassName::method(...)`
+produce the existing two-element array-callable shape after validating the
+current declared or magic callability slice. This is intentionally not full PHP
+`Closure` object parity yet: private-scope method closures, callable
+reflection identity, `Closure::fromCallable()`, constexpr closure object
+dumping, autoload/namespace breadth, and native lowering remain unsupported.
+`new ClassName(...)` and non-variadic placeholders such as `foo(?)` lower to
+the matching bounded fatal diagnostics.
 Call-site argument unpacking such as `handler(...$args)` stops at a dedicated
 parse diagnostic until iterable expansion order, string-keyed named-argument
 interaction, by-reference argument propagation, variadic collection, duplicate
@@ -3664,10 +3696,13 @@ does not resolve classes or methods and is not callable dispatch. Normal
 `is_callable([$receiver, $method])` resolution checks the same shape against
 current declared method metadata: object receivers are true for public declared
 methods, and class-string receivers are true for public static declared
-methods. Array/object callable dynamic invocation, private/protected
-caller-context method callability, method calls, first-class callable syntax,
-and namespace/autoload-aware callable resolution are still outside the
-implemented dynamic-call subset. Constant names that are lexed as language keywords or
+methods. Array/object callable dynamic invocation is supported by the current
+dynamic-call path for the documented two-element callable shape, including
+public object methods and public static class-string methods, and first-class
+callable acquisition now reuses that same shape for method forms. Broader
+private/protected caller-context method callability, full PHP `Closure` object
+semantics for first-class callables, and namespace/autoload-aware callable
+resolution are still outside the implemented dynamic-call subset. Constant names that are lexed as language keywords or
 literals cannot be read bare, and case-insensitive legacy constants, extension
 constants, namespace-qualified constants, nested or namespace-aware `const`
 declarations, dynamic `const` values, class constants through
@@ -3869,8 +3904,11 @@ tables, including the existing autoload callback path for string misses. The
 object stores request-local reflection state and dispatches the current
 `getName()`, `getShortName()`, `isInterface()`, `isTrait()`,
 `isInstantiable()`, `getParentClass()`, `getInterfaceNames()`,
-`hasMethod($name)`, `getFileName()`, `getStartLine()`, `getEndLine()`, and
-`getDocComment()` methods directly through the interpreter. Class-like source
+`getInterfaces()`, `hasMethod($name)`, `getFileName()`, `getStartLine()`,
+`getEndLine()`, and `getDocComment()` methods directly through the
+interpreter. ReflectionClass objects also materialize the bounded public
+`name` property so debug output and simple metadata reads observe the reflected
+class-like name. Class-like source
 paths are tracked in interpreter-side metadata when class, interface, and
 trait declarations are loaded from a known CLI/fixture or include path; start
 and end lines plus directly preceding `/** ... */` doc-comments come from the
@@ -4006,6 +4044,11 @@ expands simple methods imported from direct trait-body `use` declarations for
 the declaring class for that bounded metadata slice. The slice intentionally
 does not add built-in/internal trait catalogs, exact adapted trait-method
 ordering, recursive conflict/adaptation edge cases, or native lowering.
+`ReflectionClass::getInterfaces()` uses the same request-local state pattern
+for user interface metadata and returns a PHP-shaped associative array keyed by
+interface name. Scalar `hasConstant()` and `getConstant()` name arguments are
+normalized through PHP string conversion before the existing bounded
+class/interface/trait constant lookup.
 `get_declared_classes()` lists classes and unit enums declared in the current
 parsed program;
 `get_declared_interfaces()` lists interfaces declared in the current parsed
@@ -4249,8 +4292,9 @@ remain explicit unsupported zones.
 
 Heredoc and nowdoc syntax is tokenized directly in the lexer for the current
 unindented identifier-label subset. Heredoc reuses the existing double-quoted
-interpolation parts, while nowdoc emits a literal string. The lexer trims the
-line ending immediately before the terminator to match PHP's runtime value.
+interpolation parts, including simple deprecated `${name}` diagnostics, while
+nowdoc emits a literal string. The lexer trims the line ending immediately
+before the terminator to match PHP's runtime value.
 Indentation stripping, broader quoted-label forms, malformed-label recovery,
 exact diagnostics, and native lowering remain explicit boundaries.
 

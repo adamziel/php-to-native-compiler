@@ -298,6 +298,47 @@ fn non_numeric_string_arithmetic_is_catchable_type_error() {
 }
 
 #[test]
+fn numeric_string_operator_recovery_and_arithmetic_errors_are_catchable() {
+    let execution = run_source(
+        r#"<?php
+error_reporting(E_ERROR);
+var_dump("2abc" * "3");
+var_dump("2abc" << "3.4a");
+try { var_dump("abc" << "1"); } catch (TypeError $e) { echo "type:", $e->getMessage(), "\n"; }
+try { var_dump(1 / 0); } catch (DivisionByZeroError $e) { echo "div:", $e->getMessage(), "\n"; }
+try { var_dump(1 % 0); } catch (DivisionByZeroError $e) { echo "mod:", $e->getMessage(), "\n"; }
+try { var_dump(1 << -1); } catch (ArithmeticError $e) { echo "shift:", $e->getMessage(), "\n"; }
+try { var_dump(-"abc"); } catch (TypeError $e) { echo "unary:", $e->getMessage(), "\n"; }
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "int(6)\nint(16)\ntype:Unsupported operand types: string << string\ndiv:Division by zero\nmod:Modulo by zero\nshift:Bit shift by negative number\nunary:Unsupported operand types: string * int\n"
+    );
+}
+
+#[test]
+fn large_float_echo_and_operator_int_coercion_match_php_64bit_edges() {
+    let execution = run_source(
+        r#"<?php
+$overflow = 9223372036854775807 + 1;
+echo $overflow, "\n";
+var_dump($overflow & -1);
+var_dump($overflow | 7);
+var_dump($overflow % 7);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "9.2233720368548E+18\nint(-9223372036854775808)\nint(-9223372036854775801)\nint(-1)\n"
+    );
+}
+
+#[test]
 fn isset_can_check_undefined_variables_without_reading_them() {
     let execution = run_source("<?php\necho isset($missing);\n$x = 1;\necho isset($x);\n")
         .expect("isset should not throw for missing direct variables");

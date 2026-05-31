@@ -17980,8 +17980,14 @@ fn append_native_array_print_r_bytes(
             format!("{child_padding}[{}] => ", entry.key.display_key()).as_bytes(),
         );
         match entry.value_cloned() {
-            Value::Array(value) => append_native_array_print_r_bytes(output, &value, indent + 1)?,
-            Value::Object(value) => append_native_object_print_r_bytes(output, &value, indent + 1)?,
+            Value::Array(value) => {
+                append_native_array_print_r_bytes(output, &value, indent + 2)?;
+                output.push(b'\n');
+            }
+            Value::Object(value) => {
+                append_native_object_print_r_bytes(output, &value, indent + 2)?;
+                output.push(b'\n');
+            }
             value => {
                 output.extend_from_slice(&value.try_echo_bytes()?);
                 output.push(b'\n');
@@ -18011,8 +18017,14 @@ fn append_native_object_print_r_bytes(
             .as_bytes(),
         );
         match property.value_cloned() {
-            Value::Array(value) => append_native_array_print_r_bytes(output, &value, indent + 1)?,
-            Value::Object(value) => append_native_object_print_r_bytes(output, &value, indent + 1)?,
+            Value::Array(value) => {
+                append_native_array_print_r_bytes(output, &value, indent + 2)?;
+                output.push(b'\n');
+            }
+            Value::Object(value) => {
+                append_native_object_print_r_bytes(output, &value, indent + 2)?;
+                output.push(b'\n');
+            }
             value => {
                 output.extend_from_slice(&value.try_echo_bytes()?);
                 output.push(b'\n');
@@ -28525,6 +28537,10 @@ impl PhpArray {
         key
     }
 
+    pub fn insert_shared_slot(&mut self, key: impl Into<ArrayKey>, slot: &ArraySlot) -> ArrayKey {
+        self.insert_slot(key, ArraySlot::share_cell_from(slot))
+    }
+
     pub fn append(&mut self, value: Value) -> RuntimeResult<ArrayKey> {
         self.append_slot(ArraySlot::new(value))
     }
@@ -30083,8 +30099,8 @@ impl PhpArray {
     pub fn filtered_without_callback(&self) -> Self {
         let mut array = Self::new();
         for entry in &self.entries {
-            if entry.value().is_truthy() {
-                array.insert(entry.key.clone(), entry.value_cloned());
+            if entry.value_cloned().is_truthy() {
+                array.insert_shared_slot(entry.key.clone(), entry.slot());
             }
         }
         array
@@ -30261,9 +30277,14 @@ impl PhpArray {
         }
     }
 
-    fn inherit_append_cursor_from(&mut self, source: &Self) {
+    pub fn inherit_append_cursor_from(&mut self, source: &Self) {
         self.next_auto_index = source.next_auto_index;
         self.auto_index_exhausted = source.auto_index_exhausted;
+    }
+
+    pub fn set_append_cursor(&mut self, next_auto_index: i64, auto_index_exhausted: bool) {
+        self.next_auto_index = next_auto_index;
+        self.auto_index_exhausted = auto_index_exhausted;
     }
 }
 
@@ -31717,12 +31738,11 @@ impl PhpClassTable {
                     ))
                     .expect("Exception core metadata should not duplicate constructor state");
             }
-            exception
-                .add_method(PhpMethodMetadata::instance(
-                    "getMessage",
-                    Visibility::Public,
-                ))
-                .expect("Exception core metadata should not duplicate getMessage");
+            for method in ["getMessage", "getCode"] {
+                exception
+                    .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                    .expect("Exception core metadata should not duplicate methods");
+            }
         }
         let error_id = classes
             .declare_class("Error")
@@ -31730,14 +31750,47 @@ impl PhpClassTable {
         let error = classes
             .get_mut(error_id)
             .expect("core Error class id should resolve");
-        for property in ["message", "line"] {
+        for property in ["message", "code", "line"] {
             error
                 .add_property(PhpPropertyMetadata::instance(property, Visibility::Public))
                 .expect("Error core metadata should not duplicate properties");
         }
+        for method in ["getMessage", "getCode"] {
+            error
+                .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("Error core metadata should not duplicate methods");
+        }
+        let invalid_uri_exception_id = classes
+            .declare_class("Uri\\InvalidUriException")
+            .expect("core class table should contain Error before Uri\\InvalidUriException");
+        classes
+            .set_parent(invalid_uri_exception_id, exception_id)
+            .expect("Uri\\InvalidUriException should extend Exception");
         classes
             .declare_class("stdClass")
-            .expect("core class table should contain Exception and Error before stdClass");
+            .expect("core class table should contain Uri\\InvalidUriException before stdClass");
+        let php_token_id = classes
+            .declare_class("PhpToken")
+            .expect("core class table should contain stdClass before PhpToken");
+        let php_token = classes
+            .get_mut(php_token_id)
+            .expect("declared PhpToken class id should resolve");
+        for property in ["id", "text", "line", "pos"] {
+            php_token
+                .add_property(PhpPropertyMetadata::instance(property, Visibility::Public))
+                .expect("PhpToken core metadata should not duplicate properties");
+        }
+        php_token
+            .add_method(PhpMethodMetadata::static_method(
+                "tokenize",
+                Visibility::Public,
+            ))
+            .expect("PhpToken core metadata should not duplicate tokenize");
+        for method in ["getTokenName", "__toString"] {
+            php_token
+                .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("PhpToken core metadata should not duplicate methods");
+        }
         let mysqli_id = classes
             .declare_class("mysqli")
             .expect("core class table should contain Exception and stdClass before mysqli");
@@ -31756,15 +31809,48 @@ impl PhpClassTable {
                 Visibility::Public,
             ))
             .expect("mysqli core metadata should not duplicate connect_error");
+        for method in ["__construct", "close"] {
+            mysqli
+                .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("mysqli core metadata should not duplicate methods");
+        }
         classes
             .declare_class("mysqli_result")
             .expect("core class table should contain mysqli before mysqli_result");
         classes
             .declare_class("mysqli_stmt")
             .expect("core class table should contain mysqli_result before mysqli_stmt");
+        let mysqli_driver_id = classes
+            .declare_class("mysqli_driver")
+            .expect("core class table should contain mysqli_stmt before mysqli_driver");
+        let mysqli_driver = classes
+            .get_mut(mysqli_driver_id)
+            .expect("declared mysqli_driver class id should resolve");
+        mysqli_driver
+            .add_property(PhpPropertyMetadata::instance(
+                "client_info",
+                Visibility::Public,
+            ))
+            .expect("mysqli_driver core metadata should not duplicate client_info");
+        for property in ["client_version", "driver_version", "report_mode"] {
+            mysqli_driver
+                .add_property(
+                    PhpPropertyMetadata::instance(property, Visibility::Public)
+                        .with_type_decl(Some("int".to_string())),
+                )
+                .expect("mysqli_driver core metadata should not duplicate int properties");
+        }
+        for property in ["embedded", "reconnect"] {
+            mysqli_driver
+                .add_property(
+                    PhpPropertyMetadata::instance(property, Visibility::Public)
+                        .with_type_decl(Some("bool".to_string())),
+                )
+                .expect("mysqli_driver core metadata should not duplicate bool properties");
+        }
         let pdo_id = classes
             .declare_class("PDO")
-            .expect("core class table should contain mysqli_stmt before PDO");
+            .expect("core class table should contain mysqli_driver before PDO");
         let pdo = classes
             .get_mut(pdo_id)
             .expect("declared PDO class id should resolve");
@@ -31800,17 +31886,76 @@ impl PhpClassTable {
                 Visibility::Public,
             ))
             .expect("RoundingMode core metadata should not duplicate methods");
+        let uri_comparison_mode_id = classes
+            .declare_class("Uri\\UriComparisonMode")
+            .expect("core class table should contain RoundingMode before UriComparisonMode");
+        let uri_comparison_mode = classes
+            .get_mut(uri_comparison_mode_id)
+            .expect("declared UriComparisonMode class id should resolve");
+        uri_comparison_mode
+            .add_property(PhpPropertyMetadata::instance("name", Visibility::Public))
+            .expect("UriComparisonMode core metadata should not duplicate name");
+        let uri_host_type_id = classes
+            .declare_class("Uri\\Rfc3986\\UriHostType")
+            .expect("core class table should contain UriComparisonMode before UriHostType");
+        let uri_host_type = classes
+            .get_mut(uri_host_type_id)
+            .expect("declared UriHostType class id should resolve");
+        uri_host_type
+            .add_property(PhpPropertyMetadata::instance("name", Visibility::Public))
+            .expect("UriHostType core metadata should not duplicate name");
+        let uri_type_id = classes
+            .declare_class("Uri\\Rfc3986\\UriType")
+            .expect("core class table should contain UriHostType before UriType");
+        let uri_type = classes
+            .get_mut(uri_type_id)
+            .expect("declared UriType class id should resolve");
+        uri_type
+            .add_property(PhpPropertyMetadata::instance("name", Visibility::Public))
+            .expect("UriType core metadata should not duplicate name");
+        let uri_id = classes
+            .declare_class("Uri\\Rfc3986\\Uri")
+            .expect("core class table should contain UriType before Uri");
+        let uri = classes
+            .get_mut(uri_id)
+            .expect("declared Uri class id should resolve");
+        for property in [
+            "scheme", "username", "password", "host", "port", "path", "query", "fragment",
+        ] {
+            uri.add_property(PhpPropertyMetadata::instance(property, Visibility::Public))
+                .expect("Uri core metadata should not duplicate properties");
+        }
+        uri.add_method(PhpMethodMetadata::instance(
+            "__construct",
+            Visibility::Public,
+        ))
+        .expect("Uri core metadata should not duplicate __construct");
+        uri.add_method(PhpMethodMetadata::static_method(
+            "parse",
+            Visibility::Public,
+        ))
+        .expect("Uri core metadata should not duplicate parse");
+        for method in [
+            "toRawString",
+            "toString",
+            "equals",
+            "getHostType",
+            "getUriType",
+        ] {
+            uri.add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("Uri core metadata should not duplicate methods");
+        }
         let bcmath_number_id = classes
             .declare_class("BcMath\\Number")
-            .expect("core class table should contain RoundingMode before BcMath\\Number");
+            .expect("core class table should contain Uri before BcMath\\Number");
         let bcmath_number = classes
             .get_mut(bcmath_number_id)
             .expect("declared BcMath\\Number class id should resolve");
         bcmath_number
-            .add_property(PhpPropertyMetadata::instance("value", Visibility::Public))
+            .add_property(PhpPropertyMetadata::instance("value", Visibility::Public).readonly())
             .expect("BcMath\\Number core metadata should not duplicate value");
         bcmath_number
-            .add_property(PhpPropertyMetadata::instance("scale", Visibility::Public))
+            .add_property(PhpPropertyMetadata::instance("scale", Visibility::Public).readonly())
             .expect("BcMath\\Number core metadata should not duplicate scale");
         for method in [
             "__construct",
@@ -31926,6 +32071,9 @@ impl PhpClassTable {
         let reflection_class = classes
             .get_mut(reflection_class_id)
             .expect("declared ReflectionClass class id should resolve");
+        reflection_class
+            .add_property(PhpPropertyMetadata::instance("name", Visibility::Public))
+            .expect("ReflectionClass core metadata should not duplicate properties");
         for method in [
             "__construct",
             "__toString",
@@ -31951,6 +32099,7 @@ impl PhpClassTable {
             "isIterateable",
             "getParentClass",
             "getInterfaceNames",
+            "getInterfaces",
             "getTraitNames",
             "getTraits",
             "hasConstant",
@@ -32006,9 +32155,13 @@ impl PhpClassTable {
             "getParameters",
             "getNumberOfParameters",
             "getNumberOfRequiredParameters",
+            "getStaticVariables",
+            "getClosure",
             "hasReturnType",
             "getReturnType",
             "returnsReference",
+            "invoke",
+            "invokeArgs",
         ] {
             reflection_function
                 .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
@@ -32034,6 +32187,7 @@ impl PhpClassTable {
         }
         for method in [
             "__construct",
+            "__toString",
             "getName",
             "getFileName",
             "getStartLine",
@@ -32044,6 +32198,7 @@ impl PhpClassTable {
             "getParameters",
             "getNumberOfParameters",
             "getNumberOfRequiredParameters",
+            "getStaticVariables",
             "hasReturnType",
             "getReturnType",
             "isPublic",
@@ -32059,6 +32214,10 @@ impl PhpClassTable {
             "isInternal",
             "isUserDefined",
             "returnsReference",
+            "setAccessible",
+            "getClosure",
+            "invoke",
+            "invokeArgs",
         ] {
             reflection_method
                 .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
@@ -32665,6 +32824,121 @@ impl PhpClassTable {
                 .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
                 .expect("DateTime core metadata should not duplicate methods");
         }
+        let dom_exception_id = classes
+            .declare_class("DOMException")
+            .expect("core class table should contain DateTime before DOMException");
+        let exception_id = classes
+            .lookup_class_id("Exception")
+            .expect("core Exception class id should resolve for DOMException");
+        classes
+            .set_parent(dom_exception_id, exception_id)
+            .expect("DOMException should extend Exception");
+        let dom_node_id = classes
+            .declare_class("DOMNode")
+            .expect("core class table should contain DOMException before DOMNode");
+        let dom_node = classes
+            .get_mut(dom_node_id)
+            .expect("declared DOMNode class id should resolve");
+        for property in [
+            "nodeName",
+            "nodeValue",
+            "parentNode",
+            "ownerDocument",
+            "firstElementChild",
+        ] {
+            dom_node
+                .add_property(PhpPropertyMetadata::instance(property, Visibility::Public))
+                .expect("DOMNode core metadata should not duplicate properties");
+        }
+        dom_node
+            .add_method(PhpMethodMetadata::instance(
+                "appendChild",
+                Visibility::Public,
+            ))
+            .expect("DOMNode core metadata should not duplicate methods");
+        let dom_attr_id = classes
+            .declare_class("DOMAttr")
+            .expect("core class table should contain DOMNode before DOMAttr");
+        classes
+            .set_parent(dom_attr_id, dom_node_id)
+            .expect("DOMAttr should extend DOMNode");
+        let dom_attr = classes
+            .get_mut(dom_attr_id)
+            .expect("declared DOMAttr class id should resolve");
+        for property in [
+            "name",
+            "value",
+            "ownerElement",
+            "namespaceURI",
+            "prefix",
+            "localName",
+        ] {
+            dom_attr
+                .add_property(PhpPropertyMetadata::instance(property, Visibility::Public))
+                .expect("DOMAttr core metadata should not duplicate properties");
+        }
+        dom_attr
+            .add_method(PhpMethodMetadata::instance(
+                "__construct",
+                Visibility::Public,
+            ))
+            .expect("DOMAttr core metadata should not duplicate methods");
+        let dom_element_id = classes
+            .declare_class("DOMElement")
+            .expect("core class table should contain DOMAttr before DOMElement");
+        classes
+            .set_parent(dom_element_id, dom_node_id)
+            .expect("DOMElement should extend DOMNode");
+        let dom_element = classes
+            .get_mut(dom_element_id)
+            .expect("declared DOMElement class id should resolve");
+        for property in ["tagName", "__attributes", "__children"] {
+            dom_element
+                .add_property(PhpPropertyMetadata::instance(property, Visibility::Public))
+                .expect("DOMElement core metadata should not duplicate properties");
+        }
+        for method in [
+            "__construct",
+            "appendChild",
+            "setAttribute",
+            "getAttribute",
+            "hasAttribute",
+            "getAttributeNode",
+            "getAttributeNames",
+            "hasAttributes",
+            "toggleAttribute",
+        ] {
+            dom_element
+                .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("DOMElement core metadata should not duplicate methods");
+        }
+        let dom_document_id = classes
+            .declare_class("DOMDocument")
+            .expect("core class table should contain DOMElement before DOMDocument");
+        classes
+            .set_parent(dom_document_id, dom_node_id)
+            .expect("DOMDocument should extend DOMNode");
+        let dom_document = classes
+            .get_mut(dom_document_id)
+            .expect("declared DOMDocument class id should resolve");
+        for property in ["documentElement", "__children"] {
+            dom_document
+                .add_property(PhpPropertyMetadata::instance(property, Visibility::Public))
+                .expect("DOMDocument core metadata should not duplicate properties");
+        }
+        for method in [
+            "__construct",
+            "appendChild",
+            "removeChild",
+            "createAttribute",
+            "createElement",
+            "importNode",
+            "saveXML",
+        ] {
+            dom_document
+                .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("DOMDocument core metadata should not duplicate methods");
+        }
         classes
     }
 
@@ -33029,6 +33303,7 @@ pub struct PhpPropertyMetadata {
     visibility: Visibility,
     is_static: bool,
     type_decl: Option<String>,
+    is_readonly: bool,
 }
 
 impl PhpPropertyMetadata {
@@ -33038,6 +33313,7 @@ impl PhpPropertyMetadata {
             visibility,
             is_static: false,
             type_decl: None,
+            is_readonly: false,
         }
     }
 
@@ -33047,11 +33323,17 @@ impl PhpPropertyMetadata {
             visibility,
             is_static: true,
             type_decl: None,
+            is_readonly: false,
         }
     }
 
     pub fn with_type_decl(mut self, type_decl: Option<String>) -> Self {
         self.type_decl = type_decl;
+        self
+    }
+
+    pub fn readonly(mut self) -> Self {
+        self.is_readonly = true;
         self
     }
 
@@ -33069,6 +33351,10 @@ impl PhpPropertyMetadata {
 
     pub fn type_decl(&self) -> Option<&str> {
         self.type_decl.as_deref()
+    }
+
+    pub fn is_readonly(&self) -> bool {
+        self.is_readonly
     }
 }
 
@@ -36161,6 +36447,7 @@ impl PhpObject {
                 initializer.property.name(),
                 initializer.property.visibility(),
                 initializer.property.type_decl().map(str::to_string),
+                initializer.property.is_readonly(),
             );
         }
 
@@ -36176,6 +36463,7 @@ impl PhpObject {
                 property.name(),
                 property.visibility(),
                 property.type_decl().map(str::to_string),
+                property.is_readonly(),
             );
         }
 
@@ -36196,6 +36484,7 @@ impl PhpObject {
         name: &str,
         visibility: Visibility,
         type_decl: Option<String>,
+        is_readonly: bool,
     ) {
         if visibility != Visibility::Private {
             if let Some(property) = properties.iter_mut().find(|property| {
@@ -36203,7 +36492,8 @@ impl PhpObject {
             }) {
                 property.visibility = visibility;
                 property.type_decl = type_decl;
-                property.initialized = property.type_decl.is_none();
+                property.is_readonly = is_readonly;
+                property.initialized = property.type_decl.is_none() && !property.is_readonly;
                 return;
             }
         }
@@ -36214,8 +36504,9 @@ impl PhpObject {
             name: name.to_string(),
             visibility,
             type_decl: type_decl.clone(),
+            is_readonly,
             storage: ObjectPropertyStorage::Value(PhpValueCell::new(Value::Null)),
-            initialized: type_decl.is_none(),
+            initialized: type_decl.is_none() && !is_readonly,
             unset: false,
         });
     }
@@ -36580,6 +36871,7 @@ impl PhpObject {
         let mut properties = self.properties.borrow_mut();
         let property = self.public_property_mut_or_error(&mut properties, name)?;
 
+        property.ensure_writable()?;
         let value = coerce_typed_property_value(property, value)?;
         property.set_value(value);
         property.initialized = true;
@@ -36594,6 +36886,7 @@ impl PhpObject {
         let mut properties = self.properties.borrow_mut();
         let property = self.public_property_mut_or_error(&mut properties, name)?;
 
+        property.ensure_writable()?;
         let value = coerce_typed_property_value(property, reference.value_cloned())?;
         reference.set_value(value);
         property.set_reference_cell(reference);
@@ -36609,6 +36902,7 @@ impl PhpObject {
         if let Some(index) = properties.iter().rposition(|property| {
             property.name == name && property.visibility == Visibility::Public
         }) {
+            properties[index].ensure_writable()?;
             return properties[index].reference_cell();
         }
 
@@ -36623,6 +36917,12 @@ impl PhpObject {
         }
 
         if !self.allows_dynamic_public_properties() {
+            if self.forbids_dynamic_public_properties_as_error() {
+                return Err(RuntimeError::unsupported_property_access(format!(
+                    "Cannot create dynamic property {}::${}",
+                    self.class_name, name
+                )));
+            }
             return Err(RuntimeError::undefined_property(
                 self.class_name.clone(),
                 name,
@@ -36636,6 +36936,7 @@ impl PhpObject {
             name: name.to_string(),
             visibility: Visibility::Public,
             type_decl: None,
+            is_readonly: false,
             storage: ObjectPropertyStorage::Reference(reference.clone()),
             initialized: true,
             unset: false,
@@ -36648,6 +36949,7 @@ impl PhpObject {
         if let Some(index) = properties.iter().rposition(|property| {
             property.name == name && property.visibility == Visibility::Public
         }) {
+            properties[index].ensure_writable()?;
             let value = coerce_typed_property_value(&properties[index], value)?;
             properties[index].set_value(value);
             properties[index].initialized = true;
@@ -36665,6 +36967,12 @@ impl PhpObject {
         }
 
         if !self.allows_dynamic_public_properties() {
+            if self.forbids_dynamic_public_properties_as_error() {
+                return Err(RuntimeError::unsupported_property_access(format!(
+                    "Cannot create dynamic property {}::${}",
+                    self.class_name, name
+                )));
+            }
             return Err(RuntimeError::undefined_property(
                 self.class_name.clone(),
                 name,
@@ -36677,6 +36985,7 @@ impl PhpObject {
             name: name.to_string(),
             visibility: Visibility::Public,
             type_decl: None,
+            is_readonly: false,
             storage: ObjectPropertyStorage::Value(PhpValueCell::new(value)),
             initialized: true,
             unset: false,
@@ -36689,6 +36998,10 @@ impl PhpObject {
             || self.class_name.eq_ignore_ascii_case("wpdb")
             || self.is_instance_of_class_name("ArrayObject")
             || self.is_instance_of_class_name("ArrayIterator")
+    }
+
+    fn forbids_dynamic_public_properties_as_error(&self) -> bool {
+        self.class_name.eq_ignore_ascii_case("BcMath\\Number")
     }
 
     pub fn replace_public_properties_from_array(&self, array: &PhpArray) -> RuntimeResult<()> {
@@ -36712,6 +37025,7 @@ impl PhpObject {
                     name: name.clone(),
                     visibility: Visibility::Public,
                     type_decl: None,
+                    is_readonly: false,
                     storage: ObjectPropertyStorage::Value(PhpValueCell::new(Value::Null)),
                     initialized: true,
                     unset: false,
@@ -36743,6 +37057,7 @@ impl PhpObject {
             return self.write_dynamic_public_property(name, value);
         };
 
+        property.ensure_writable()?;
         let value = coerce_typed_property_value(property, value)?;
         property.set_value(value);
         property.initialized = true;
@@ -36763,6 +37078,7 @@ impl PhpObject {
             protected_class_ids,
         )?;
 
+        property.ensure_writable()?;
         property.reference_cell()
     }
 
@@ -36798,6 +37114,7 @@ impl PhpObject {
             protected_class_ids,
         )?;
 
+        property.ensure_writable()?;
         let value = coerce_typed_property_value(property, reference.value_cloned())?;
         reference.set_value(value);
         property.set_reference_cell(reference);
@@ -36850,6 +37167,7 @@ impl PhpObject {
             return Ok(value);
         };
 
+        property.ensure_writable()?;
         let value = coerce_typed_property_value_with_object_type_resolver(
             property,
             value,
@@ -36877,6 +37195,7 @@ impl PhpObject {
             return Ok(false);
         };
 
+        property.ensure_unsettable()?;
         property.unset_value();
         Ok(true)
     }
@@ -37054,6 +37373,7 @@ pub struct ObjectProperty {
     name: String,
     visibility: Visibility,
     type_decl: Option<String>,
+    is_readonly: bool,
     storage: ObjectPropertyStorage,
     initialized: bool,
     unset: bool,
@@ -37133,6 +37453,26 @@ impl ObjectProperty {
 
     pub fn is_unset(&self) -> bool {
         self.unset
+    }
+
+    fn ensure_writable(&self) -> RuntimeResult<()> {
+        if self.is_readonly && self.initialized && !self.unset {
+            return Err(RuntimeError::unsupported_property_access(format!(
+                "Cannot modify readonly property {}::${}",
+                self.declaring_class_name, self.name
+            )));
+        }
+        Ok(())
+    }
+
+    fn ensure_unsettable(&self) -> RuntimeResult<()> {
+        if self.is_readonly {
+            return Err(RuntimeError::unsupported_property_access(format!(
+                "Cannot unset readonly property {}::${}",
+                self.declaring_class_name, self.name
+            )));
+        }
+        Ok(())
     }
 
     pub fn mangled_name(&self) -> String {
@@ -38259,11 +38599,8 @@ impl Value {
                     ))
                 }
             },
-            (Value::Array(_), _) | (_, Value::Array(_)) => {
-                Err(RuntimeError::unsupported_comparison(
-                    "array comparisons with non-array values are not implemented",
-                ))
-            }
+            (Value::Array(left), right) => php_array_non_array_comparison(left, true, right, op),
+            (left, Value::Array(right)) => php_array_non_array_comparison(right, false, left, op),
             (Value::Object(left), Value::Object(right)) => {
                 left.php_cmp_checked_with_context(right, op, context)
             }
@@ -38455,10 +38792,10 @@ impl Value {
             Value::Bool(false) => Ok(0),
             Value::Bool(true) => Ok(1),
             Value::Int(value) => Ok(*value),
-            Value::Float(value) => Ok(*value as i64),
+            Value::Float(value) => Ok(php_float_to_operator_int(*value)),
             Value::String(value) => match parse_numeric_string(value) {
                 Some(Number::Int(value)) => Ok(value),
-                Some(Number::Float(value)) => Ok(value as i64),
+                Some(Number::Float(value)) => Ok(php_float_to_operator_int(value)),
                 None => Err(RuntimeError::invalid_arithmetic(
                     operation,
                     "string is not numeric",
@@ -38466,7 +38803,7 @@ impl Value {
             },
             Value::BinaryString(value) => match parse_numeric_string_bytes(value) {
                 Some(Number::Int(value)) => Ok(value),
-                Some(Number::Float(value)) => Ok(value as i64),
+                Some(Number::Float(value)) => Ok(php_float_to_operator_int(value)),
                 None => Err(RuntimeError::invalid_arithmetic(
                     operation,
                     "string is not numeric",
@@ -43621,7 +43958,7 @@ impl Number {
     fn as_int(&self) -> i64 {
         match self {
             Number::Int(value) => *value,
-            Number::Float(value) => *value as i64,
+            Number::Float(value) => php_float_to_operator_int(*value),
         }
     }
 
@@ -43630,6 +43967,20 @@ impl Number {
             Number::Int(value) => value.to_string(),
             Number::Float(value) => format_php_float(value),
         }
+    }
+}
+
+fn php_float_to_operator_int(value: f64) -> i64 {
+    if !value.is_finite() {
+        return 0;
+    }
+
+    let truncated = value.trunc();
+    const PHP_INT_64_ABS_LIMIT: f64 = 9_223_372_036_854_775_808.0;
+    if truncated >= PHP_INT_64_ABS_LIMIT || truncated <= -PHP_INT_64_ABS_LIMIT {
+        i64::MIN
+    } else {
+        truncated as i64
     }
 }
 
@@ -44009,7 +44360,10 @@ fn php_arithmetic_modulo_result(left: Number, right: Number) -> RuntimeResult<Va
 
 fn php_arithmetic_negate_result(number: Number) -> Value {
     match number {
-        Number::Int(value) => Value::Int(value.wrapping_neg()),
+        Number::Int(value) => value
+            .checked_neg()
+            .map(Value::Int)
+            .unwrap_or_else(|| Value::Float(-(value as f64))),
         Number::Float(value) => Value::Float(-value),
     }
 }
@@ -44018,6 +44372,48 @@ fn compare_numbers(left: Number, right: Number) -> Option<Ordering> {
     match (left, right) {
         (Number::Int(left), Number::Int(right)) => Some(left.cmp(&right)),
         (left, right) => left.as_float().partial_cmp(&right.as_float()),
+    }
+}
+
+fn php_array_non_array_comparison(
+    array: &PhpArray,
+    array_is_left: bool,
+    other: &Value,
+    op: Comparison,
+) -> RuntimeResult<bool> {
+    let ordering = match other {
+        Value::Null | Value::Bool(_) => {
+            let array_truthy = !array.is_empty();
+            let other_truthy = other.is_truthy();
+            if array_is_left {
+                array_truthy.cmp(&other_truthy)
+            } else {
+                other_truthy.cmp(&array_truthy)
+            }
+        }
+        Value::Object(_) | Value::Closure(_) => {
+            return Err(RuntimeError::unsupported_comparison(
+                "array comparisons with object values are not implemented",
+            ));
+        }
+        Value::Resource(_) => {
+            return Err(RuntimeError::unsupported_comparison(
+                "array comparisons with resource values are not implemented",
+            ));
+        }
+        _ if array_is_left => Ordering::Greater,
+        _ => Ordering::Less,
+    };
+
+    Ok(comparison_matches_ordering(ordering, op))
+}
+
+fn comparison_matches_ordering(ordering: Ordering, op: Comparison) -> bool {
+    match (ordering, op) {
+        (Ordering::Less, Comparison::Lt | Comparison::Le | Comparison::Ne) => true,
+        (Ordering::Equal, Comparison::Eq | Comparison::Le | Comparison::Ge) => true,
+        (Ordering::Greater, Comparison::Gt | Comparison::Ge | Comparison::Ne) => true,
+        _ => false,
     }
 }
 
@@ -44217,7 +44613,7 @@ fn format_php_float(value: f64) -> String {
         };
     }
 
-    let formatted = format!("{}", value);
+    let formatted = format_php_finite_float_default_precision(value, false);
     if formatted == "-0" {
         "0".to_string()
     } else {
@@ -44229,8 +44625,12 @@ fn format_php_float_for_string_key(value: f64) -> String {
     if value.is_nan() || value.is_infinite() {
         return format_php_float(value);
     }
+    format_php_finite_float_default_precision(value, true)
+}
+
+fn format_php_finite_float_default_precision(value: f64, preserve_negative_zero: bool) -> String {
     if value == 0.0 {
-        return if value.is_sign_negative() {
+        return if preserve_negative_zero && value.is_sign_negative() {
             "-0".to_string()
         } else {
             "0".to_string()
@@ -51624,7 +52024,7 @@ mod tests {
             "array print_r",
             array,
             NativeValueFormatterTag::PrintR,
-            b"Array\n(\n    [name] => Ada\n    [2] => 1\n    [nested] => Array\n    (\n        [child] => ok\n    )\n)\n",
+            b"Array\n(\n    [name] => Ada\n    [2] => 1\n    [nested] => Array\n        (\n            [child] => ok\n        )\n\n)\n",
         );
 
         let mut diagnostic = NativeDiagnosticHandle::null();
@@ -79923,8 +80323,16 @@ mod tests {
         assert_eq!(reflection_class.name(), "ReflectionClass");
         assert_eq!(reflection_class.id().index(), 13);
         assert!(reflection_class.parent_id().is_none());
-        assert!(reflection_class.properties().is_empty());
+        assert_eq!(
+            reflection_class
+                .properties()
+                .iter()
+                .map(PhpPropertyMetadata::name)
+                .collect::<Vec<_>>(),
+            vec!["name"]
+        );
         assert!(reflection_class.method("getName").is_some());
+        assert!(reflection_class.method("getInterfaces").is_some());
         assert!(reflection_class.method("hasMethod").is_some());
         assert!(reflection_class.method("getAttributes").is_some());
 

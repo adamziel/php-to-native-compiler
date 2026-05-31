@@ -638,7 +638,34 @@ impl<'a> Lexer<'a> {
                         value.push(self.advance());
                         continue;
                     }
-                    Some('$' | '{') => {
+                    Some('{') => {
+                        self.advance();
+                        self.advance();
+                        if !value.is_empty() {
+                            parts.push(InterpolatedStringPart::Literal(value));
+                            value = String::new();
+                        }
+
+                        let Some(first) = self.peek() else {
+                            return Err(self.error_at(span, "unterminated string literal"));
+                        };
+                        if !is_identifier_start(first) {
+                            return Err(
+                                self.error_at(span, unsupported_string_interpolation_message())
+                            );
+                        }
+
+                        let name = self.lex_identifier_name();
+                        if self.peek() != Some('}') {
+                            return Err(
+                                self.error_at(span, unsupported_string_interpolation_message())
+                            );
+                        }
+                        self.advance();
+                        parts.push(InterpolatedStringPart::DeprecatedDollarBraceVariable(name));
+                        continue;
+                    }
+                    Some('$') => {
                         return Err(self.error_at(span, unsupported_string_interpolation_message()));
                     }
                     _ => {}
@@ -767,7 +794,34 @@ impl<'a> Lexer<'a> {
                         value.push(self.advance());
                         continue;
                     }
-                    Some('$' | '{') => {
+                    Some('{') => {
+                        self.advance();
+                        self.advance();
+                        if !value.is_empty() {
+                            parts.push(InterpolatedStringPart::Literal(value));
+                            value = String::new();
+                        }
+
+                        let Some(first) = self.peek() else {
+                            return Err(self.error_at(span, "unterminated heredoc string literal"));
+                        };
+                        if !is_identifier_start(first) {
+                            return Err(
+                                self.error_at(span, unsupported_string_interpolation_message())
+                            );
+                        }
+
+                        let name = self.lex_identifier_name();
+                        if self.peek() != Some('}') {
+                            return Err(
+                                self.error_at(span, unsupported_string_interpolation_message())
+                            );
+                        }
+                        self.advance();
+                        parts.push(InterpolatedStringPart::DeprecatedDollarBraceVariable(name));
+                        continue;
+                    }
+                    Some('$') => {
                         return Err(self.error_at(span, unsupported_string_interpolation_message()));
                     }
                     _ => {}
@@ -859,7 +913,13 @@ impl<'a> Lexer<'a> {
                     return Err(self.error_at(span, unsupported_string_interpolation_message()));
                 }
                 let property = self.lex_identifier_name();
-                segments.push(InterpolatedAccessSegment::ObjectProperty(property));
+                if self.starts_with("()") {
+                    self.advance();
+                    self.advance();
+                    segments.push(InterpolatedAccessSegment::MethodCall(property));
+                } else {
+                    segments.push(InterpolatedAccessSegment::ObjectProperty(property));
+                }
                 continue;
             }
 
@@ -871,6 +931,15 @@ impl<'a> Lexer<'a> {
         }
 
         if segments.len() == 1 {
+            if matches!(
+                segments.first(),
+                Some(InterpolatedAccessSegment::MethodCall(_))
+            ) {
+                return Ok(InterpolatedStringPart::AccessChain {
+                    variable: name,
+                    segments,
+                });
+            }
             return match segments.remove(0) {
                 InterpolatedAccessSegment::ArrayOffset(key) => {
                     Ok(InterpolatedStringPart::ArrayOffset {
@@ -884,6 +953,7 @@ impl<'a> Lexer<'a> {
                         property,
                     })
                 }
+                InterpolatedAccessSegment::MethodCall(_) => unreachable!(),
             };
         }
 
@@ -1102,9 +1172,15 @@ impl<'a> Lexer<'a> {
             if digits.is_empty() {
                 return Err(self.error_at(span, format!("invalid integer literal '{text}'")));
             }
-            let value = i64::from_str_radix(&digits, 16)
-                .map_err(|_| self.error_at(span, format!("invalid integer literal '{text}'")))?;
-            return Ok(TokenKind::Int(value));
+            return match i64::from_str_radix(&digits, 16) {
+                Ok(value) => Ok(TokenKind::Int(value)),
+                Err(_) => {
+                    let value = u64::from_str_radix(&digits, 16).map_err(|_| {
+                        self.error_at(span, format!("invalid integer literal '{text}'"))
+                    })?;
+                    Ok(TokenKind::Float(value as f64))
+                }
+            };
         }
 
         if first == '0' && matches!(self.peek(), Some('0'..='9')) {
@@ -1385,7 +1461,7 @@ fn is_identifier_part(ch: char) -> bool {
 }
 
 fn unsupported_string_interpolation_message() -> &'static str {
-    "unsupported string interpolation: only simple $name, {$name}, array offsets, and object properties in double-quoted strings are implemented; ${...}, dynamic properties, static properties, arbitrary expressions, and complex interpolation are not implemented"
+    "unsupported string interpolation: only simple $name, {$name}, ${name}, array offsets, and object properties in double-quoted strings are implemented; variable variables, dynamic properties, static properties, arbitrary expressions, and complex interpolation are not implemented"
 }
 
 fn unsupported_heredoc_message() -> &'static str {

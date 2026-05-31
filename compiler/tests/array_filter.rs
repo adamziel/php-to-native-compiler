@@ -481,50 +481,103 @@ echo count($builtin), "|", $builtin["zero"], "|", strlen($builtin["space"]);
 }
 
 #[test]
-fn array_filter_callback_requires_string_callable() {
-    let error = runtime_error("<?php\n$items = [\"Ada\"];\necho array_filter($items, 42);\n");
+fn array_filter_accepts_general_callables_and_reports_callback_errors() {
+    let source = r#"<?php
+class FilterHelper {
+    public static function key_is_two($value, $key) {
+        return $key === 2;
+    }
+}
 
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 6);
-    assert_eq!(
-        error.message,
-        "unsupported call array_filter(): callback must evaluate to string, got int"
-    );
+$items = [1, 2, 3];
+$closure = fn($value) => $value > 1;
+print_r(array_filter($items, $closure));
+print_r(array_filter($items, ["FilterHelper", "key_is_two"], ARRAY_FILTER_USE_BOTH));
 
-    let closure_error = runtime_error(
-        "<?php\n$items = [\"Ada\"];\n$callback = fn($value) => true;\necho array_filter($items, $callback);\n",
-    );
-    assert_eq!(closure_error.line, 4);
-    assert_eq!(closure_error.column, 6);
+try {
+    array_filter($items, 42);
+} catch (Throwable $e) {
+    echo $e->getMessage(), "\n";
+}
+
+try {
+    array_filter($items, "missing_filter");
+} catch (Throwable $e) {
+    echo $e->getMessage(), "\n";
+}
+
+try {
+    array_filter($items, "is_numeric", ARRAY_FILTER_USE_BOTH);
+} catch (Throwable $e) {
+    echo $e->getMessage(), "\n";
+}
+
+try {
+    array_filter([], mode: 999);
+} catch (Throwable $e) {
+    echo $e::class, ": ", $e->getMessage(), "\n";
+}
+"#;
+
+    let execution = run_source(source).unwrap();
     assert_eq!(
-        closure_error.message,
-        "unsupported call array_filter(): callback must evaluate to string, got closure"
+        execution.stdout,
+        "Array\n(\n    [1] => 2\n    [2] => 3\n)\nArray\n(\n    [2] => 3\n)\narray_filter(): Argument #2 ($callback) must be a valid callback or null, no array or string given\narray_filter(): Argument #2 ($callback) must be a valid callback or null, function \"missing_filter\" not found or invalid function name\nis_numeric() expects exactly 1 argument, 2 given\nValueError: array_filter(): Argument #3 ($mode) must be one of ARRAY_FILTER_USE_VALUE, ARRAY_FILTER_USE_KEY, or ARRAY_FILTER_USE_BOTH\n"
     );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
-fn array_filter_callback_reports_unknown_function() {
-    let error = runtime_error(
-        "<?php\n$items = [\"Ada\"];\necho array_filter($items, \"missing_filter\");\n",
-    );
+fn array_filter_callback_arity_throws_argument_count_error_and_preserves_reference_slots() {
+    let source = r#"<?php
+try {
+    array_filter([1, 2], "strlen", ARRAY_FILTER_USE_BOTH);
+} catch (ArgumentCountError $e) {
+    echo "builtin:", $e::class, ":", $e->getMessage(), "\n";
+} catch (TypeError $e) {
+    echo "builtin-type:", $e::class, ":", $e->getMessage(), "\n";
+}
 
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 6);
-    assert_eq!(error.message, "undefined function missing_filter()");
+function needs_two($a, $b) {
+    return true;
+}
+
+try {
+    array_filter([1], "needs_two");
+} catch (ArgumentCountError $e) {
+    echo "user:", $e::class, ":", $e->getMessage(), "\n";
+} catch (TypeError $e) {
+    echo "user-type:", $e::class, ":", $e->getMessage(), "\n";
+}
+
+$ref = "start";
+$items = [&$ref, "drop"];
+$filtered = array_filter($items, fn($value) => $value === "start");
+$filtered[0] = "changed";
+echo $ref, "\n";
+$ref = "source";
+echo $filtered[0], "\n";
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "builtin:ArgumentCountError:strlen() expects exactly 1 argument, 2 given\nuser:ArgumentCountError:Too few arguments to function needs_two(), 1 passed and exactly 2 expected\nchanged\nsource\n"
+    );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
-fn array_filter_rejects_unsupported_integer_mode() {
-    let error = runtime_error(
-        "<?php\n$items = [\"Ada\", \"\"];\necho array_filter($items, \"strlen\", 3);\n",
-    );
+fn array_filter_invalid_integer_mode_throws_value_error() {
+    let execution =
+        run_source("<?php\n$items = [\"Ada\", \"\"];\necho array_filter($items, \"strlen\", 3);\n")
+            .unwrap();
 
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 6);
     assert_eq!(
-        error.message,
-        "unsupported call array_filter(): mode flag must be integer 0, 1, or 2 in the current subset, got 3"
+        execution.stdout,
+        "Fatal error: Uncaught ValueError: array_filter(): Argument #3 ($mode) must be one of ARRAY_FILTER_USE_VALUE, ARRAY_FILTER_USE_KEY, or ARRAY_FILTER_USE_BOTH in Command line code:3\nStack trace:\n#0 {main}\n  thrown in Command line code on line 3"
     );
+    assert_eq!(execution.exit_code, 255);
 }
 
 #[test]

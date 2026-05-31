@@ -234,3 +234,95 @@ try {
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);
 }
+
+#[test]
+fn bcmath_number_readonly_properties_can_be_read_by_reference_as_values() {
+    let execution = run_source(
+        r#"<?php
+$num = new BcMath\Number("1.25");
+$value = &$num->value;
+$scale = &$num->scale;
+var_dump($value, $scale);
+$value = "changed";
+var_dump($num->value);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "string(4) \"1.25\"\nint(2)\nstring(4) \"1.25\"\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn bcmath_number_object_cast_properties_and_constructor_diagnostics_are_generalized() {
+    let execution = run_source(
+        r#"<?php
+$zero = new BcMath\Number("0.0");
+$nonzero = new BcMath\Number("-0.125");
+var_dump((bool) $zero);
+var_dump(boolval($nonzero));
+echo (string) $zero, "|", $zero->value, "|", $zero->scale, "\n";
+print_r((array) $nonzero);
+var_dump($zero->missing);
+try {
+    $zero->value = "3";
+} catch (Error $e) {
+    echo get_class($e), ":", $e->getMessage(), "\n";
+}
+try {
+    unset($zero->scale);
+} catch (Error $e) {
+    echo get_class($e), ":", $e->getMessage(), "\n";
+}
+try {
+    $zero->dynamic = "no";
+} catch (Error $e) {
+    echo get_class($e), ":", $e->getMessage(), "\n";
+}
+try {
+    $zero->__construct("1");
+} catch (Error $e) {
+    echo get_class($e), ":", $e->getMessage(), "\n";
+}
+try {
+    new BcMath\Number("not-a-number");
+} catch (Error $e) {
+    echo get_class($e), ":", $e->getMessage(), "\n";
+}
+$float = new BcMath\Number(0.1234);
+echo (string) $float, "|", $float->scale, "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "bool(false)\n",
+            "bool(true)\n",
+            "0.0|0.0|1\n",
+            "Array\n",
+            "(\n",
+            "    [value] => -0.125\n",
+            "    [scale] => 3\n",
+            ")\n",
+            "\n",
+            "Warning: Undefined property: BcMath\\Number::$missing in Command line code on line 8\n",
+            "NULL\n",
+            "Error:Cannot modify readonly property BcMath\\Number::$value\n",
+            "Error:Cannot unset readonly property BcMath\\Number::$scale\n",
+            "Error:Cannot create dynamic property BcMath\\Number::$dynamic\n",
+            "Error:Cannot modify readonly property BcMath\\Number::$value\n",
+            "ValueError:BcMath\\Number::__construct(): Argument #1 ($num) is not well-formed\n",
+            "\n",
+            "Deprecated: Implicit conversion from float 0.1234 to int loses precision in Command line code on line 34\n",
+            "0|0\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}

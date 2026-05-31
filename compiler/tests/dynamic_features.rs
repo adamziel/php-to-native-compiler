@@ -1857,6 +1857,53 @@ echo "{{$term_count}}", "\n";
 }
 
 #[test]
+fn double_quoted_strings_interpolate_deprecated_dollar_brace_variables() {
+    let execution = run_source(
+        r#"<?php
+$name = "Ada";
+echo "${name}", "\n";
+$suffix = "RUNTIME";
+define("APP_RUNTIME", "ok");
+echo constant("APP_${suffix}"), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "Deprecated: Using ${var} in strings is deprecated, use {$var} instead in Command line code on line 3\n\nDeprecated: Using ${var} in strings is deprecated, use {$var} instead in Command line code on line 6\nAda\nok\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn encapsed_string_dereference_preserves_php_string_receiver_behavior() {
+    let execution = run_source(
+        r#"<?php
+$bar = "bar";
+var_dump("foo$bar"[0]);
+var_dump("foo$bar"->prop);
+try {
+    var_dump("foo$bar"->method());
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+class FooBar { public static $prop = 42; }
+var_dump("foo$bar"::$prop);
+function foobar() { return 42; }
+var_dump("foo$bar"());
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "string(1) \"f\"\n\nWarning: Attempt to read property \"prop\" on string in Command line code on line 4\nNULL\nCall to a member function method() on string\nint(42)\nint(42)\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn double_quoted_strings_interpolate_current_array_offsets_and_object_properties() {
     let execution = run_source(
         r#"<?php
@@ -1914,7 +1961,7 @@ echo "$$name";
     assert_eq!(variable_variable.column, 6);
     assert_eq!(
         variable_variable.message,
-        "unsupported string interpolation: only simple $name, {$name}, array offsets, and object properties in double-quoted strings are implemented; ${...}, dynamic properties, static properties, arbitrary expressions, and complex interpolation are not implemented"
+        "unsupported string interpolation: only simple $name, {$name}, ${name}, array offsets, and object properties in double-quoted strings are implemented; variable variables, dynamic properties, static properties, arbitrary expressions, and complex interpolation are not implemented"
     );
 }
 
@@ -1923,14 +1970,14 @@ fn remaining_complex_string_interpolation_forms_keep_named_boundaries() {
     let dollar_brace = lex_error(
         r#"<?php
 $name = "value";
-echo "${name}";
+echo "${$name}";
 "#,
     );
     assert_eq!(dollar_brace.line, 3);
     assert_eq!(dollar_brace.column, 6);
     assert_eq!(
         dollar_brace.message,
-        "unsupported string interpolation: only simple $name, {$name}, array offsets, and object properties in double-quoted strings are implemented; ${...}, dynamic properties, static properties, arbitrary expressions, and complex interpolation are not implemented"
+        "unsupported string interpolation: only simple $name, {$name}, ${name}, array offsets, and object properties in double-quoted strings are implemented; variable variables, dynamic properties, static properties, arbitrary expressions, and complex interpolation are not implemented"
     );
 
     let dynamic_property = lex_error(
@@ -1947,34 +1994,40 @@ echo "customize_partial_render_{$partial->{$property}}";
     assert_eq!(dynamic_property.column, 6);
     assert_eq!(
         dynamic_property.message,
-        "unsupported string interpolation: only simple $name, {$name}, array offsets, and object properties in double-quoted strings are implemented; ${...}, dynamic properties, static properties, arbitrary expressions, and complex interpolation are not implemented"
+        "unsupported string interpolation: only simple $name, {$name}, ${name}, array offsets, and object properties in double-quoted strings are implemented; variable variables, dynamic properties, static properties, arbitrary expressions, and complex interpolation are not implemented"
     );
 }
 
 #[test]
-fn undefined_variables_in_string_interpolation_use_current_runtime_error() {
-    let error = runtime_error(
+fn undefined_variables_in_string_interpolation_warn_and_coerce_to_empty_string() {
+    let execution = run_source(
         r#"<?php
 echo "APP_$constant";
 "#,
-    );
+    )
+    .unwrap();
 
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 6);
-    assert_eq!(error.message, "undefined variable '$constant'");
+    assert_eq!(
+        execution.stdout,
+        "Warning: Undefined variable $constant in Command line code on line 2\nAPP_"
+    );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
-fn undefined_variables_in_braced_string_interpolation_use_current_runtime_error() {
-    let error = runtime_error(
+fn undefined_variables_in_braced_string_interpolation_warn_and_coerce_to_empty_string() {
+    let execution = run_source(
         r#"<?php
 echo "APP_{$constant}";
 "#,
-    );
+    )
+    .unwrap();
 
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 6);
-    assert_eq!(error.message, "undefined variable '$constant'");
+    assert_eq!(
+        execution.stdout,
+        "Warning: Undefined variable $constant in Command line code on line 2\nAPP_"
+    );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

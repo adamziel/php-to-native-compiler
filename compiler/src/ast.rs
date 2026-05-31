@@ -1279,6 +1279,7 @@ pub enum NewClassName {
 pub enum InterpolatedStringPart {
     Literal(String),
     Variable(String),
+    DeprecatedDollarBraceVariable(String),
     ArrayOffset {
         variable: String,
         key: InterpolatedArrayKey,
@@ -1297,6 +1298,7 @@ pub enum InterpolatedStringPart {
 pub enum InterpolatedAccessSegment {
     ArrayOffset(InterpolatedArrayKey),
     ObjectProperty(String),
+    MethodCall(String),
 }
 
 #[derive(Debug, Clone, PartialEq)]

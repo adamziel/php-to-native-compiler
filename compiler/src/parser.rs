@@ -23,6 +23,7 @@ struct Parser {
     current: usize,
     nested_statement_depth: usize,
     function_body_depth: usize,
+    trait_method_body_depth: usize,
     function_generator_stack: Vec<bool>,
     current_namespace: String,
     class_imports: Vec<(String, String)>,
@@ -78,6 +79,7 @@ impl Parser {
             current: 0,
             nested_statement_depth: 0,
             function_body_depth: 0,
+            trait_method_body_depth: 0,
             function_generator_stack: Vec::new(),
             current_namespace: String::new(),
             class_imports: Vec::new(),
@@ -175,8 +177,8 @@ impl Parser {
             }
             TokenKind::Namespace => self.parse_namespace(),
             TokenKind::Use => self.parse_use_declaration(),
-            TokenKind::Declare => self.parse_unsupported_declare(),
-            TokenKind::Eval => self.parse_unsupported_eval(),
+            TokenKind::Declare => self.parse_declare(),
+            TokenKind::Eval => self.parse_assignment_or_expression_statement(),
             TokenKind::InlineHtml(_) => self.parse_inline_html(),
             TokenKind::Echo => self.parse_echo(),
             TokenKind::Print => self.parse_print(),
@@ -887,7 +889,10 @@ impl Parser {
             )?;
             function
         } else {
-            self.parse_function_after_keyword(span, false, false)?
+            self.trait_method_body_depth += 1;
+            let function = self.parse_function_after_keyword(span, false, false);
+            self.trait_method_body_depth -= 1;
+            function?
         };
         Ok(ClassMethodDecl {
             function,
@@ -1695,33 +1700,101 @@ impl Parser {
         })
     }
 
-    fn parse_unsupported_declare(&mut self) -> CompileResult<Stmt> {
+    fn parse_declare(&mut self) -> CompileResult<Stmt> {
         let span = self
             .consume_keyword(TokenKind::Declare, "expected 'declare'")?
             .span;
-        let message = match (
-            &self.peek().kind,
-            &self.peek_next().kind,
-            &self.peek_n(2).kind,
-        ) {
-            (TokenKind::LParen, TokenKind::Identifier(name), TokenKind::Equal)
-                if name.eq_ignore_ascii_case("strict_types") =>
-            {
-                "unsupported declare directive: strict_types is not implemented"
-            }
-            (TokenKind::LParen, TokenKind::Identifier(name), TokenKind::Equal)
-                if name.eq_ignore_ascii_case("ticks") =>
-            {
-                "unsupported declare directive: ticks requires tick handlers and execution hooks, which are not implemented"
-            }
-            (TokenKind::LParen, TokenKind::Identifier(name), TokenKind::Equal)
-                if name.eq_ignore_ascii_case("encoding") =>
-            {
-                "unsupported declare directive: encoding requires source encoding, lexer decoding, and runtime text handling, which are not implemented"
-            }
-            _ => "unsupported declare directive: declare semantics are not implemented",
+        self.consume_keyword(TokenKind::LParen, "expected '(' after declare")?;
+        let directive = match self.advance().clone() {
+            Token {
+                kind: TokenKind::Identifier(name),
+                ..
+            } => name,
+            token => return Err(self.error_at(token.span, "expected declare directive name")),
         };
-        Err(self.error_at(span, message))
+        self.consume_keyword(TokenKind::Equal, "expected '=' after declare directive")?;
+
+        let directive_key = directive.to_ascii_lowercase();
+        match directive_key.as_str() {
+            "strict_types" => match self.advance().clone() {
+                Token {
+                    kind: TokenKind::Int(0 | 1),
+                    ..
+                } => {}
+                token => {
+                    return Err(self.error_at(
+                        token.span,
+                        "unsupported declare directive: strict_types must be 0 or 1",
+                    ));
+                }
+            },
+            "encoding" => match self.advance().clone() {
+                Token {
+                    kind: TokenKind::StringLiteral(_),
+                    ..
+                } => {}
+                token => {
+                    return Err(self.error_at(
+                        token.span,
+                        "unsupported declare directive: encoding expects a string literal",
+                    ));
+                }
+            },
+            "ticks" => {
+                return Err(self.error_at(
+                    span,
+                    "unsupported declare directive: ticks requires tick handlers and execution hooks, which are not implemented",
+                ));
+            }
+            _ => {
+                return Err(self.error_at(
+                    span,
+                    "unsupported declare directive: declare semantics are not implemented",
+                ));
+            }
+        }
+
+        self.consume_keyword(TokenKind::RParen, "expected ')' after declare directive")?;
+
+        if self.match_token(|kind| matches!(kind, TokenKind::LBrace)) {
+            self.skip_declare_block_after_open(span)?;
+            if directive_key == "strict_types" {
+                return Ok(Stmt::Expr {
+                    expr: Expr::Call {
+                        name: "__phpc_declare_strict_types_block_error".to_string(),
+                        args: Vec::new(),
+                        span,
+                    },
+                    span,
+                });
+            }
+            return Err(self.error_at(
+                span,
+                "unsupported declare directive: block declare mode is not implemented for this directive",
+            ));
+        }
+
+        self.consume_keyword(TokenKind::Semicolon, "expected ';' after declare")?;
+        Ok(Stmt::Expr {
+            expr: Expr::Null(span),
+            span,
+        })
+    }
+
+    fn skip_declare_block_after_open(&mut self, span: Span) -> CompileResult<()> {
+        let mut depth = 1usize;
+        while depth > 0 {
+            let token = self.advance().clone();
+            match token.kind {
+                TokenKind::LBrace => depth += 1,
+                TokenKind::RBrace => depth -= 1,
+                TokenKind::Eof => {
+                    return Err(self.error_at(span, "expected '}' after declare block"));
+                }
+                _ => {}
+            }
+        }
+        Ok(())
     }
 
     fn parse_namespace(&mut self) -> CompileResult<Stmt> {
@@ -1868,13 +1941,6 @@ impl Parser {
                 _ => offset += 1,
             }
         }
-    }
-
-    fn parse_unsupported_eval(&mut self) -> CompileResult<Stmt> {
-        let span = self
-            .consume_keyword(TokenKind::Eval, "expected 'eval'")?
-            .span;
-        Err(self.error_at(span, unsupported_eval_message()))
     }
 
     fn parse_use_import_name(&mut self) -> CompileResult<(String, Span)> {
@@ -6234,6 +6300,18 @@ impl Parser {
 
             if self.match_token(|kind| matches!(kind, TokenKind::LParen)) {
                 let span = expr.span();
+                if self.match_first_class_callable_placeholder_after_open() {
+                    expr = Expr::Call {
+                        name: "__phpc_first_class_dynamic".to_string(),
+                        args: vec![expr],
+                        span,
+                    };
+                    continue;
+                }
+                if self.match_non_variadic_first_class_placeholder_after_open() {
+                    expr = Self::first_class_callable_invalid_placeholder_expr(span);
+                    continue;
+                }
                 let args = self.parse_call_arguments_after_open()?;
                 expr = Expr::DynamicCall {
                     callee: Box::new(expr),
@@ -6249,6 +6327,18 @@ impl Parser {
                     let property = self.parse_dynamic_property_name_expr(operator_span)?;
                     if self.match_token(|kind| matches!(kind, TokenKind::LParen)) {
                         let span = expr.span();
+                        if self.match_first_class_callable_placeholder_after_open() {
+                            expr = Expr::Call {
+                                name: "__phpc_first_class_dynamic_method".to_string(),
+                                args: vec![expr, property],
+                                span,
+                            };
+                            continue;
+                        }
+                        if self.match_non_variadic_first_class_placeholder_after_open() {
+                            expr = Self::first_class_callable_invalid_placeholder_expr(span);
+                            continue;
+                        }
                         let args = self.parse_call_arguments_after_open()?;
                         expr = Expr::DynamicMethodCall {
                             target: Box::new(expr),
@@ -6270,6 +6360,18 @@ impl Parser {
                 let (member, _) = self.consume_object_property_name(operator_span)?;
                 if self.match_token(|kind| matches!(kind, TokenKind::LParen)) {
                     let span = expr.span();
+                    if self.match_first_class_callable_placeholder_after_open() {
+                        expr = Expr::Call {
+                            name: "__phpc_first_class_method".to_string(),
+                            args: vec![expr, Expr::String(member, operator_span)],
+                            span,
+                        };
+                        continue;
+                    }
+                    if self.match_non_variadic_first_class_placeholder_after_open() {
+                        expr = Self::first_class_callable_invalid_placeholder_expr(span);
+                        continue;
+                    }
                     let args = self.parse_call_arguments_after_open()?;
                     expr = Expr::MethodCall {
                         target: Box::new(expr),
@@ -6306,6 +6408,18 @@ impl Parser {
                         self.advance();
                         self.consume_keyword(TokenKind::LParen, "expected '(' after method name")?;
                         let span = expr.span();
+                        if self.match_first_class_callable_placeholder_after_open() {
+                            expr = Expr::Call {
+                                name: "__phpc_first_class_object_static_method".to_string(),
+                                args: vec![expr, Expr::String(method, operator_span)],
+                                span,
+                            };
+                            continue;
+                        }
+                        if self.match_non_variadic_first_class_placeholder_after_open() {
+                            expr = Self::first_class_callable_invalid_placeholder_expr(span);
+                            continue;
+                        }
                         let args = self.parse_call_arguments_after_open()?;
                         expr = Expr::ObjectStaticMethodCall {
                             target: Box::new(expr),
@@ -6457,7 +6571,10 @@ impl Parser {
             }
             TokenKind::Function => self.parse_closure_expression(token.span, false),
             TokenKind::Fn => self.parse_arrow_function_expression(token.span, false),
-            TokenKind::Eval => Err(self.error_at(token.span, unsupported_eval_message())),
+            TokenKind::Eval => {
+                self.consume_keyword(TokenKind::LParen, "expected '(' after eval")?;
+                self.parse_call_or_first_class_callable_after_open("eval".to_string(), token.span)
+            }
             TokenKind::Do => {
                 Err(self.error_at(token.span, unsupported_do_while_expression_message()))
             }
@@ -6506,6 +6623,15 @@ impl Parser {
                     }
                     if magic_name == "__METHOD__" {
                         return Ok(Expr::MagicMethod { span: token.span });
+                    }
+                    if magic_name == "__TRAIT__" {
+                        if self.trait_method_body_depth > 0 {
+                            return Err(self.error_at(
+                                token.span,
+                                unsupported_magic_constant_message(magic_name),
+                            ));
+                        }
+                        return Ok(Expr::String(String::new(), token.span));
                     }
                     if magic_name == "__NAMESPACE__" {
                         return Ok(Expr::String(self.current_namespace.clone(), token.span));
@@ -6829,6 +6955,18 @@ impl Parser {
                 {
                     self.advance();
                     self.consume_keyword(TokenKind::LParen, "expected '(' after method name")?;
+                    if self.match_first_class_callable_placeholder_after_open() {
+                        return Ok(Expr::Call {
+                            name: "__phpc_first_class_parent_method".to_string(),
+                            args: vec![Expr::String(method, operator_span)],
+                            span: operator_span,
+                        });
+                    }
+                    if self.match_non_variadic_first_class_placeholder_after_open() {
+                        return Ok(Self::first_class_callable_invalid_placeholder_expr(
+                            operator_span,
+                        ));
+                    }
                     let args = self.parse_call_arguments_after_open()?;
                     Ok(Expr::ParentMethodCall {
                         method,
@@ -6896,6 +7034,18 @@ impl Parser {
                 {
                     self.advance();
                     self.consume_keyword(TokenKind::LParen, "expected '(' after method name")?;
+                    if self.match_first_class_callable_placeholder_after_open() {
+                        return Ok(Expr::Call {
+                            name: "__phpc_first_class_self_method".to_string(),
+                            args: vec![Expr::String(method, operator_span)],
+                            span: operator_span,
+                        });
+                    }
+                    if self.match_non_variadic_first_class_placeholder_after_open() {
+                        return Ok(Self::first_class_callable_invalid_placeholder_expr(
+                            operator_span,
+                        ));
+                    }
                     let args = self.parse_call_arguments_after_open()?;
                     Ok(Expr::SelfMethodCall {
                         method,
@@ -6963,6 +7113,18 @@ impl Parser {
                 {
                     self.advance();
                     self.consume_keyword(TokenKind::LParen, "expected '(' after method name")?;
+                    if self.match_first_class_callable_placeholder_after_open() {
+                        return Ok(Expr::Call {
+                            name: "__phpc_first_class_late_static_method".to_string(),
+                            args: vec![Expr::String(method, operator_span)],
+                            span: operator_span,
+                        });
+                    }
+                    if self.match_non_variadic_first_class_placeholder_after_open() {
+                        return Ok(Self::first_class_callable_invalid_placeholder_expr(
+                            operator_span,
+                        ));
+                    }
                     let args = self.parse_call_arguments_after_open()?;
                     Ok(Expr::LateStaticMethodCall {
                         method,
@@ -7036,6 +7198,26 @@ impl Parser {
             TokenKind::Identifier(method) if matches!(self.peek_next().kind, TokenKind::LParen) => {
                 self.advance();
                 self.consume_keyword(TokenKind::LParen, "expected '(' after method name")?;
+                if self.match_first_class_callable_placeholder_after_open() {
+                    return Ok(Expr::Call {
+                        name: "__phpc_first_class_static_method".to_string(),
+                        args: vec![
+                            Expr::String(
+                                receiver
+                                    .expect("named static receiver should exist")
+                                    .to_string(),
+                                operator_span,
+                            ),
+                            Expr::String(method, operator_span),
+                        ],
+                        span: operator_span,
+                    });
+                }
+                if self.match_non_variadic_first_class_placeholder_after_open() {
+                    return Ok(Self::first_class_callable_invalid_placeholder_expr(
+                        operator_span,
+                    ));
+                }
                 let args = self.parse_call_arguments_after_open()?;
                 Ok(Expr::StaticMethodCall {
                     class_name: receiver
@@ -7138,6 +7320,16 @@ impl Parser {
             _ => return Err(self.error_at(token.span, "expected class name after 'new'")),
         };
         let args = if self.match_token(|kind| matches!(kind, TokenKind::LParen)) {
+            if self.match_first_class_callable_placeholder_after_open() {
+                return Ok(Expr::Call {
+                    name: "__phpc_first_class_new".to_string(),
+                    args: Vec::new(),
+                    span,
+                });
+            }
+            if self.match_non_variadic_first_class_placeholder_after_open() {
+                return Ok(Self::first_class_callable_invalid_placeholder_expr(span));
+            }
             self.parse_call_arguments_after_open()?
         } else {
             Vec::new()
@@ -7352,17 +7544,54 @@ impl Parser {
         name: String,
         span: Span,
     ) -> CompileResult<Expr> {
+        if self.match_first_class_callable_placeholder_after_open() {
+            let callable = name.strip_prefix('\\').unwrap_or(&name).to_string();
+            return Ok(Expr::Call {
+                name: "__phpc_first_class_function".to_string(),
+                args: vec![Expr::String(callable, span)],
+                span,
+            });
+        }
+        if self.match_non_variadic_first_class_placeholder_after_open() {
+            return Ok(Self::first_class_callable_invalid_placeholder_expr(span));
+        }
+
+        let args = self.parse_call_arguments_after_open()?;
+        Ok(Expr::Call { name, args, span })
+    }
+
+    fn match_first_class_callable_placeholder_after_open(&mut self) -> bool {
         if matches!(self.peek().kind, TokenKind::Ellipsis)
             && matches!(self.peek_next().kind, TokenKind::RParen)
         {
             self.advance();
             self.advance();
-            let callable = name.strip_prefix('\\').unwrap_or(&name).to_string();
-            return Ok(Expr::String(callable, span));
+            true
+        } else {
+            false
         }
+    }
 
-        let args = self.parse_call_arguments_after_open()?;
-        Ok(Expr::Call { name, args, span })
+    fn match_non_variadic_first_class_placeholder_after_open(&mut self) -> bool {
+        if !matches!(self.peek().kind, TokenKind::Question) {
+            return false;
+        }
+        self.advance();
+        while !matches!(self.peek().kind, TokenKind::RParen | TokenKind::Eof) {
+            self.advance();
+        }
+        if matches!(self.peek().kind, TokenKind::RParen) {
+            self.advance();
+        }
+        true
+    }
+
+    fn first_class_callable_invalid_placeholder_expr(span: Span) -> Expr {
+        Expr::Call {
+            name: "__phpc_first_class_invalid_placeholder".to_string(),
+            args: Vec::new(),
+            span,
+        }
     }
 
     fn parse_call_argument_after_open(&mut self) -> CompileResult<Expr> {
@@ -9031,10 +9260,6 @@ fn unsupported_magic_constant_message(name: &str) -> String {
     format!(
         "unsupported magic constant {name}: source-aware magic constant evaluation is not implemented"
     )
-}
-
-fn unsupported_eval_message() -> &'static str {
-    "unsupported eval: eval parsing and caller-scope execution are not implemented"
 }
 
 fn unsupported_throw_message() -> &'static str {

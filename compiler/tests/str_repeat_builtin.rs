@@ -151,6 +151,23 @@ try {
 }
 
 #[test]
+fn str_repeat_respects_runtime_memory_limit_setting() {
+    let execution = run_source(
+        r#"<?php
+ini_set("memory_limit", "1K");
+str_repeat("x", 2048);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "Fatal error: Allowed memory size of 1024 bytes exhausted (tried to allocate 2048 bytes) in Command line code on line 3"
+    );
+    assert_eq!(execution.exit_code, 255);
+}
+
+#[test]
 fn emit_ir_folds_str_repeat_metadata_but_rejects_direct_calls() {
     let ir = emit_ir_source(
         r#"<?php

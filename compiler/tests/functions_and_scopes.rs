@@ -88,6 +88,157 @@ echo $value, "\n";
 }
 
 #[test]
+fn return_type_mismatches_report_php_type_errors() {
+    let execution = run_source(
+        r#"<?php
+function missing_array(): array {
+}
+try {
+    missing_array();
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+
+function wrong_array(): array {
+    return 1;
+}
+try {
+    wrong_array();
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+
+class expected_return_type {}
+class actual_return_type {
+    public function make(): expected_return_type {
+        return $this;
+    }
+}
+try {
+    (new actual_return_type())->make();
+} catch (TypeError $e) {
+    echo $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "missing_array(): Return value must be of type array, none returned\nwrong_array(): Return value must be of type array, int returned\nactual_return_type::make(): Return value must be of type expected_return_type, actual_return_type returned"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+
+    let uncaught = run_source_with_source_file(
+        r#"<?php
+class expected_return_type {}
+class actual_return_type {
+    public function make(): expected_return_type {
+        return $this;
+    }
+}
+(new actual_return_type())->make();
+"#,
+        "/tmp/uncaught_method_return_type.php",
+    )
+    .unwrap();
+    assert!(uncaught.stdout.contains(
+        "Fatal error: Uncaught TypeError: actual_return_type::make(): Return value must be of type expected_return_type, actual_return_type returned in /tmp/uncaught_method_return_type.php:4"
+    ));
+    assert!(uncaught.stdout.contains(
+        "#0 /tmp/uncaught_method_return_type.php(8): actual_return_type->make()\n#1 {main}"
+    ));
+    assert_eq!(uncaught.stderr, "");
+    assert_eq!(uncaught.exit_code, 255);
+}
+
+#[test]
+fn void_and_never_return_value_startup_fatals_are_php_shaped() {
+    let void_null = run_source_with_source_file(
+        r#"<?php
+function foo(): void {
+    return null;
+}
+"#,
+        "/tmp/void_null_return.php",
+    )
+    .unwrap();
+    assert_eq!(void_null.stdout, "");
+    assert_eq!(
+        void_null.stderr,
+        "Fatal error: A void function must not return a value (did you mean \"return;\" instead of \"return null;\"?) in /tmp/void_null_return.php on line 3"
+    );
+    assert_eq!(void_null.exit_code, 255);
+
+    let void_method = run_source_with_source_file(
+        r#"<?php
+class Foo {
+    public function bar(): void {
+        return -1;
+    }
+}
+"#,
+        "/tmp/void_method_return.php",
+    )
+    .unwrap();
+    assert_eq!(void_method.stdout, "");
+    assert_eq!(
+        void_method.stderr,
+        "Fatal error: A void method must not return a value in /tmp/void_method_return.php on line 4"
+    );
+    assert_eq!(void_method.exit_code, 255);
+
+    let never_value = run_source_with_source_file(
+        r#"<?php
+function foo(): never {
+    return 1;
+}
+"#,
+        "/tmp/never_value_return.php",
+    )
+    .unwrap();
+    assert_eq!(never_value.stdout, "");
+    assert_eq!(
+        never_value.stderr,
+        "Fatal error: A never-returning function must not return in /tmp/never_value_return.php on line 3"
+    );
+    assert_eq!(never_value.exit_code, 255);
+}
+
+#[test]
+fn never_return_type_allows_throwing_bodies() {
+    let execution = run_source(
+        r#"<?php
+function fail_now(): never {
+    throw new Exception("bad");
+}
+
+try {
+    fail_now();
+} catch (Exception $e) {
+}
+
+function calls_fail_now(): never {
+    fail_now();
+}
+
+try {
+    calls_fail_now();
+} catch (Exception $e) {
+}
+
+echo "OK!", PHP_EOL;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "OK!\n");
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn user_functions_do_not_import_global_variables_implicitly() {
     let error = runtime_error(
         r#"<?php
@@ -1317,10 +1468,30 @@ echo __NAMESPACE__;
 }
 
 #[test]
-fn magic_trait_constant_is_rejected_until_trait_context_tracking_exists() {
-    let error = parse_error(
+fn magic_trait_constant_is_empty_outside_trait_methods() {
+    let execution = run_source(
         r#"<?php
 class Box {
+    public function label() {
+        return __TRAIT__;
+    }
+}
+$box = new Box();
+echo "[", __TRAIT__, "]\n";
+echo "[", $box->label(), "]";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "[]\n[]");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn magic_trait_constant_in_trait_method_is_rejected_until_trait_context_tracking_exists() {
+    let error = parse_error(
+        r#"<?php
+trait Label {
     public function label() {
         return __TRAIT__;
     }
@@ -9022,6 +9193,127 @@ echo is_callable($fn) ? "callable" : "not-callable";
 
     assert_eq!(execution.stdout, "not-callable");
     assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn first_class_callable_method_and_static_acquisition_dispatches() {
+    let execution = run_source(
+        r#"<?php
+class FirstClassCallableBox {
+    public function instance() {
+        return "instance";
+    }
+
+    public static function named() {
+        return "static";
+    }
+}
+
+$box = new FirstClassCallableBox;
+$instance = $box->instance(...);
+$static = FirstClassCallableBox::named(...);
+echo $instance(), "|", $static();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "instance|static");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn first_class_callable_closure_acquisition_preserves_closure_identity() {
+    let execution = run_source(
+        r#"<?php
+$fn = function () {
+    return "ok";
+};
+$direct = $fn(...);
+$invoke = $fn->__invoke(...);
+var_dump($fn === $direct);
+echo $invoke();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "bool(true)\nok");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn first_class_callable_magic_methods_dispatch_after_acquisition() {
+    let execution = run_source(
+        r#"<?php
+class FirstClassCallableMagicBase {
+    public function __call($method, $args) {
+        return $method;
+    }
+
+    public static function __callStatic($method, $args) {
+        return static::class . "::" . $method;
+    }
+}
+
+class FirstClassCallableMagicChild extends FirstClassCallableMagicBase {}
+
+$object = new FirstClassCallableMagicBase;
+$instance = $object->anythingInstance(...);
+$static = FirstClassCallableMagicBase::anythingStatic(...);
+$lateStatic = FirstClassCallableMagicChild::anythingStatic(...);
+echo $instance(), "\n";
+echo $static(), "\n";
+echo $lateStatic();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "anythingInstance\nFirstClassCallableMagicBase::anythingStatic\nFirstClassCallableMagicChild::anythingStatic"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn first_class_callable_errors_are_runtime_errors() {
+    let new_execution = run_source(
+        r#"<?php
+class FirstClassCallableNewTarget {}
+new FirstClassCallableNewTarget(...);
+"#,
+    )
+    .unwrap();
+    assert_eq!(
+        new_execution.stdout,
+        "Fatal error: Cannot create Closure for new expression in Command line code on line 3"
+    );
+    assert_eq!(new_execution.exit_code, 255);
+
+    let placeholder_execution = run_source(
+        r#"<?php
+function first_class_callable_placeholder_target() {}
+first_class_callable_placeholder_target(?);
+"#,
+    )
+    .unwrap();
+    assert_eq!(
+        placeholder_execution.stdout,
+        "Fatal error: Cannot create a Closure for call expression with more than one argument, or non-variadic placeholders in Command line code on line 3"
+    );
+    assert_eq!(placeholder_execution.exit_code, 255);
+
+    let execution = run_source(
+        r#"<?php
+try {
+    $fn = 123;
+    $fn(...);
+} catch (Error $e) {
+    echo $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
+    assert_eq!(execution.stdout, "Value of type int is not callable");
 }
 
 #[test]

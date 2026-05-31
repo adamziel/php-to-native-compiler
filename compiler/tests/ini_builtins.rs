@@ -1,8 +1,30 @@
+use std::env;
+use std::sync::{Mutex, MutexGuard, OnceLock};
+
 use php_compiler::emit_ir_source;
 use php_compiler::error::Phase;
 use php_compiler::run_source;
 
 const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
+
+fn env_lock() -> MutexGuard<'static, ()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+        .lock()
+        .expect("environment lock is not poisoned")
+}
+
+fn set_env_var(name: &str, value: &str) {
+    env::set_var(name, value);
+}
+
+fn restore_env_var(name: &str, previous: Option<std::ffi::OsString>) {
+    if let Some(value) = previous {
+        env::set_var(name, value);
+    } else {
+        env::remove_var(name);
+    }
+}
 
 #[test]
 fn ini_get_reads_current_deterministic_registry() {
@@ -37,6 +59,46 @@ echo ini_set("missing.option", "x") === false ? "false" : "not-false";
 
     assert_eq!(execution.stdout, "|0|0|1|1||false");
     assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn get_cfg_var_reads_startup_configuration_not_runtime_mutation() {
+    let execution = run_source(
+        r#"<?php
+echo get_cfg_var("memory_limit"), "|";
+ini_set("memory_limit", "256M");
+echo ini_get("memory_limit"), "|";
+echo get_cfg_var("memory_limit"), "|";
+echo get_cfg_var("missing.option") === false ? "false" : "not-false";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "128M|256M|128M|false");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn get_cfg_var_reads_phpt_startup_override_not_runtime_mutation() {
+    let _guard = env_lock();
+    let previous = env::var_os("PHPC_PHPT_INI_FLAGS");
+
+    set_env_var("PHPC_PHPT_INI_FLAGS", "-d memory_limit=64M");
+    let execution = run_source(
+        r#"<?php
+echo get_cfg_var("memory_limit"), "|";
+echo ini_get("memory_limit"), "|";
+ini_set("memory_limit", "256M");
+echo get_cfg_var("memory_limit"), "|";
+echo ini_get("memory_limit");
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "64M|64M|64M|256M");
+    assert_eq!(execution.exit_code, 0);
+
+    restore_env_var("PHPC_PHPT_INI_FLAGS", previous);
 }
 
 #[test]
@@ -111,13 +173,14 @@ fn ini_builtins_reject_forms_outside_current_subset() {
         "arity mismatch for ini_get(): expected 1 argument(s), got 2"
     );
 
-    let too_few = run_source("<?php\nini_set('memory_limit');\n").unwrap_err();
-    assert_eq!(too_few.phase, Phase::Runtime);
-    assert_eq!(too_few.line, 2);
-    assert_eq!(too_few.column, 1);
-    assert_eq!(
-        too_few.message,
-        "arity mismatch for ini_set(): expected 2 argument(s), got 1"
+    let too_few = run_source("<?php\nini_set('memory_limit');\n").unwrap();
+    assert_eq!(too_few.exit_code, 255);
+    assert!(
+        too_few.stdout.contains(
+            "Fatal error: Uncaught TypeError: Too few arguments to function ini_set(), 1 passed"
+        ),
+        "{}",
+        too_few.stdout
     );
 }
 
@@ -146,4 +209,25 @@ echo is_callable("ini_set") ? "1" : "0";
     assert_eq!(set_error.line, 2);
     assert_eq!(set_error.column, 1);
     assert_eq!(set_error.message, LLVM_FUNCTION_CALL_REJECTION);
+}
+
+#[test]
+fn parse_ini_string_typed_scanner_converts_supported_scalars() {
+    let execution = run_source(
+        r#"<?php
+$values = parse_ini_string(
+    "a=true\nb=false\nc=null\nd=123\ne=3.5\nf=\"123\"\ng=on\nh=off\ni=yes\nj=no\nk=none\nl=\"true\"",
+    false,
+    INI_SCANNER_TYPED
+);
+var_dump($values);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "array(12) {\n  [\"a\"]=>\n  bool(true)\n  [\"b\"]=>\n  bool(false)\n  [\"c\"]=>\n  NULL\n  [\"d\"]=>\n  int(123)\n  [\"e\"]=>\n  float(3.5)\n  [\"f\"]=>\n  string(3) \"123\"\n  [\"g\"]=>\n  bool(true)\n  [\"h\"]=>\n  bool(false)\n  [\"i\"]=>\n  bool(true)\n  [\"j\"]=>\n  bool(false)\n  [\"k\"]=>\n  bool(false)\n  [\"l\"]=>\n  string(4) \"true\"\n}\n"
+    );
+    assert_eq!(execution.exit_code, 0);
 }
