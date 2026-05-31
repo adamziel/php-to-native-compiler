@@ -131292,7 +131292,8 @@ fn format_print_r_array(array: &PhpArray, indent: usize) -> String {
         let value = entry.value_cloned();
         match value {
             Value::Array(value) => {
-                output.push_str(&format_print_r_array(&value, indent + 1));
+                output.push_str(&format_print_r_array(&value, indent + 2));
+                output.push('\n');
             }
             Value::Object(value) => {
                 output.push_str(&format_print_r_object(&value, indent + 2));

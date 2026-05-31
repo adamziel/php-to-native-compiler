@@ -17980,8 +17980,14 @@ fn append_native_array_print_r_bytes(
             format!("{child_padding}[{}] => ", entry.key.display_key()).as_bytes(),
         );
         match entry.value_cloned() {
-            Value::Array(value) => append_native_array_print_r_bytes(output, &value, indent + 1)?,
-            Value::Object(value) => append_native_object_print_r_bytes(output, &value, indent + 1)?,
+            Value::Array(value) => {
+                append_native_array_print_r_bytes(output, &value, indent + 2)?;
+                output.push(b'\n');
+            }
+            Value::Object(value) => {
+                append_native_object_print_r_bytes(output, &value, indent + 2)?;
+                output.push(b'\n');
+            }
             value => {
                 output.extend_from_slice(&value.try_echo_bytes()?);
                 output.push(b'\n');
@@ -18011,8 +18017,14 @@ fn append_native_object_print_r_bytes(
             .as_bytes(),
         );
         match property.value_cloned() {
-            Value::Array(value) => append_native_array_print_r_bytes(output, &value, indent + 1)?,
-            Value::Object(value) => append_native_object_print_r_bytes(output, &value, indent + 1)?,
+            Value::Array(value) => {
+                append_native_array_print_r_bytes(output, &value, indent + 2)?;
+                output.push(b'\n');
+            }
+            Value::Object(value) => {
+                append_native_object_print_r_bytes(output, &value, indent + 2)?;
+                output.push(b'\n');
+            }
             value => {
                 output.extend_from_slice(&value.try_echo_bytes()?);
                 output.push(b'\n');
@@ -51975,7 +51987,7 @@ mod tests {
             "array print_r",
             array,
             NativeValueFormatterTag::PrintR,
-            b"Array\n(\n    [name] => Ada\n    [2] => 1\n    [nested] => Array\n    (\n        [child] => ok\n    )\n)\n",
+            b"Array\n(\n    [name] => Ada\n    [2] => 1\n    [nested] => Array\n        (\n            [child] => ok\n        )\n\n)\n",
         );
 
         let mut diagnostic = NativeDiagnosticHandle::null();

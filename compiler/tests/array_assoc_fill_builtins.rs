@@ -75,6 +75,23 @@ print_r($call([0 => 1, 1 => 2.0, "x" => false], [0 => "1", 1 => "2", "x" => ""])
 }
 
 #[test]
+fn print_r_indents_nested_arrays_with_php_separators() {
+    let execution = run_source(
+        r#"<?php
+$items = ["outer" => ["child" => "ok"], "tail" => "done"];
+print_r($items);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "Array\n(\n    [outer] => Array\n        (\n            [child] => ok\n        )\n\n    [tail] => done\n)\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn array_assoc_builtins_reject_non_array_arguments() {
     let error = runtime_error("<?php\narray_diff_assoc([1], 42);\n");
 
