@@ -78699,6 +78699,11 @@ impl Interpreter {
     fn call_ob_get_flush(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("ob_get_flush", args, 0, span)?;
         let Some(output) = self.output_buffers.pop() else {
+            self.emit_output_buffer_no_active_notice(
+                "ob_get_flush()",
+                "Failed to delete and flush buffer. No buffer to delete or flush",
+                span,
+            )?;
             return Ok(Value::Bool(false));
         };
         self.append_output_at(&output, span);
@@ -78708,6 +78713,11 @@ impl Interpreter {
     fn call_ob_clean(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("ob_clean", args, 0, span)?;
         let Some(buffer) = self.output_buffers.last_mut() else {
+            self.emit_output_buffer_no_active_notice(
+                "ob_clean()",
+                "Failed to delete buffer. No buffer to delete",
+                span,
+            )?;
             return Ok(Value::Bool(false));
         };
         buffer.clear();
@@ -78717,6 +78727,11 @@ impl Interpreter {
     fn call_ob_flush(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("ob_flush", args, 0, span)?;
         let Some(buffer) = self.output_buffers.last_mut() else {
+            self.emit_output_buffer_no_active_notice(
+                "ob_flush()",
+                "Failed to flush buffer. No buffer to flush",
+                span,
+            )?;
             return Ok(Value::Bool(false));
         };
         let output = std::mem::take(buffer);
@@ -78726,20 +78741,38 @@ impl Interpreter {
 
     fn call_ob_end_clean(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("ob_end_clean", args, 0, span)?;
-        Ok(self
-            .output_buffers
-            .pop()
-            .map(|_| Value::Bool(true))
-            .unwrap_or(Value::Bool(false)))
+        if self.output_buffers.pop().is_some() {
+            return Ok(Value::Bool(true));
+        }
+        self.emit_output_buffer_no_active_notice(
+            "ob_end_clean()",
+            "Failed to delete buffer. No buffer to delete",
+            span,
+        )?;
+        Ok(Value::Bool(false))
     }
 
     fn call_ob_end_flush(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("ob_end_flush", args, 0, span)?;
         let Some(output) = self.output_buffers.pop() else {
+            self.emit_output_buffer_no_active_notice(
+                "ob_end_flush()",
+                "Failed to delete and flush buffer. No buffer to delete or flush",
+                span,
+            )?;
             return Ok(Value::Bool(false));
         };
         self.append_output_at(&output, span);
         Ok(Value::Bool(true))
+    }
+
+    fn emit_output_buffer_no_active_notice(
+        &mut self,
+        function: &str,
+        message: &str,
+        span: Span,
+    ) -> CompileResult<()> {
+        self.emit_display_notice(format!("{function}: {message}"), span)
     }
 
     fn call_header(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {

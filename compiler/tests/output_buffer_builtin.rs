@@ -312,7 +312,16 @@ echo ob_end_flush() === false ? "end-flush=false" : "end-flush=true";
 
     assert_eq!(
         execution.stdout,
-        "clean=false|flush=false|get-flush=false|end-clean=false|end-flush=false"
+        "Notice: ob_clean(): Failed to delete buffer. No buffer to delete in Command line code on line 2\n\
+clean=false|\n\
+Notice: ob_flush(): Failed to flush buffer. No buffer to flush in Command line code on line 4\n\
+flush=false|\n\
+Notice: ob_get_flush(): Failed to delete and flush buffer. No buffer to delete or flush in Command line code on line 6\n\
+get-flush=false|\n\
+Notice: ob_end_clean(): Failed to delete buffer. No buffer to delete in Command line code on line 8\n\
+end-clean=false|\n\
+Notice: ob_end_flush(): Failed to delete and flush buffer. No buffer to delete or flush in Command line code on line 10\n\
+end-flush=false"
     );
     assert_eq!(execution.exit_code, 0);
 }

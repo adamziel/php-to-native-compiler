@@ -5317,18 +5317,22 @@
   is active. `ob_get_clean()` accepts no
   arguments, pops the innermost buffer, and returns its captured string, or
   `false` when no buffer is active. `ob_clean()` accepts no arguments, clears
-  the innermost active buffer, and returns `true`, or `false` when no buffer is
-  active. `ob_get_flush()` accepts no arguments, closes the innermost active
-  buffer, appends its contents to the next outer buffer or stdout, and returns
-  the captured string, or `false` when no buffer is active. `ob_flush()`
-  accepts no arguments, appends the innermost active
-  buffer contents to the next outer buffer or stdout, clears that active
-  buffer, and returns `true`, or `false` when no buffer is active.
-  `ob_end_clean()` accepts no arguments, discards and closes the innermost
-  buffer, and returns `true`, or `false` when no buffer is active.
-  `ob_end_flush()` accepts no arguments, closes the innermost buffer, appends
-  its contents to the next outer buffer or stdout, and returns `true`, or
-  `false` when no buffer is active. `ob_get_status($full_status = false)`
+  the innermost active buffer, and returns `true`; when no buffer is active it
+  emits the bounded PHP-style no-buffer notice and returns `false`.
+  `ob_get_flush()` accepts no arguments, closes the innermost active buffer,
+  appends its contents to the next outer buffer or stdout, and returns the
+  captured string; when no buffer is active it emits the bounded
+  delete-and-flush no-buffer notice and returns `false`. `ob_flush()` accepts
+  no arguments, appends the innermost active buffer contents to the next outer
+  buffer or stdout, clears that active buffer, and returns `true`; when no
+  buffer is active it emits the bounded no-buffer-to-flush notice and returns
+  `false`. `ob_end_clean()` accepts no arguments, discards and closes the
+  innermost buffer, and returns `true`; when no buffer is active it emits the
+  bounded no-buffer-to-delete notice and returns `false`. `ob_end_flush()`
+  accepts no arguments, closes the innermost buffer, appends its contents to
+  the next outer buffer or stdout, and returns `true`; when no buffer is active
+  it emits the bounded delete-and-flush no-buffer notice and returns `false`.
+  `ob_get_status($full_status = false)`
   accepts no arguments or one bool argument. Without an active buffer it
   returns an empty array. With the default false flag it returns the innermost
   default-handler status array with `name`, `type`, `flags`, `level`,
@@ -11279,8 +11283,9 @@
   `ob_clean()`/`ob_flush()`/`ob_end_clean()`/`ob_end_flush()` behavior beyond the current no-argument
   interpreter-owned buffer stack: callbacks, chunk sizes, flags, exact handler
   status metadata, custom handler names, output handler nesting semantics,
-  output-started/header interaction, fatal-error cleanup, exact warnings, and
-  native lowering beyond function-table introspection
+  output-started/header interaction, fatal-error cleanup, exact warnings
+  beyond the documented no-active-buffer notices, and native lowering beyond
+  function-table introspection
 - `php_sapi_name()` behavior beyond the current no-argument deterministic
   `cli` result: host PHP SAPI discovery, web-server/CGI/FPM SAPI states,
   request-specific SAPI switching, exact diagnostics, and native lowering
