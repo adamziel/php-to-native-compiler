@@ -1298,6 +1298,7 @@ pub enum InterpolatedStringPart {
 pub enum InterpolatedAccessSegment {
     ArrayOffset(InterpolatedArrayKey),
     ObjectProperty(String),
+    MethodCall(String),
 }
 
 #[derive(Debug, Clone, PartialEq)]

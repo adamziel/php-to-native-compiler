@@ -31769,6 +31769,28 @@ impl PhpClassTable {
         classes
             .declare_class("stdClass")
             .expect("core class table should contain Uri\\InvalidUriException before stdClass");
+        let php_token_id = classes
+            .declare_class("PhpToken")
+            .expect("core class table should contain stdClass before PhpToken");
+        let php_token = classes
+            .get_mut(php_token_id)
+            .expect("declared PhpToken class id should resolve");
+        for property in ["id", "text", "line", "pos"] {
+            php_token
+                .add_property(PhpPropertyMetadata::instance(property, Visibility::Public))
+                .expect("PhpToken core metadata should not duplicate properties");
+        }
+        php_token
+            .add_method(PhpMethodMetadata::static_method(
+                "tokenize",
+                Visibility::Public,
+            ))
+            .expect("PhpToken core metadata should not duplicate tokenize");
+        for method in ["getTokenName", "__toString"] {
+            php_token
+                .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("PhpToken core metadata should not duplicate methods");
+        }
         let mysqli_id = classes
             .declare_class("mysqli")
             .expect("core class table should contain Exception and stdClass before mysqli");

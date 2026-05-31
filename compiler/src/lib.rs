@@ -6,6 +6,7 @@ pub mod include_discovery;
 pub mod interpreter;
 pub mod lexer;
 pub mod parser;
+pub mod php_tokenizer;
 pub mod test_runner;
 pub mod trait_semantics;
 

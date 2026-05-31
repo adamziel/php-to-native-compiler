@@ -33,6 +33,7 @@ use crate::ast::{
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 use crate::parser::parse_source;
+use crate::php_tokenizer::{self, PhpTokenizerToken};
 use crate::trait_semantics;
 
 pub const MAX_USER_FUNCTION_CALL_DEPTH: usize = 64;
@@ -46695,6 +46696,15 @@ impl Interpreter {
                 .call_mysqli_method(object, method_name, args, span)
                 .map(|value| (value, None));
         }
+        if object.class_name().eq_ignore_ascii_case("PhpToken") {
+            let values = args
+                .iter()
+                .map(|arg| self.evaluate(arg, caller_scope))
+                .collect::<CompileResult<Vec<_>>>()?;
+            return self
+                .call_php_token_method_with_values(object, method_name, values, span)
+                .map(|value| (value, None));
+        }
         if object.is_instance_of_class_name("DateTimeZone") {
             return self
                 .call_datetimezone_method(object, method_name, args, span, caller_scope)
@@ -51619,6 +51629,11 @@ impl Interpreter {
             expect_expr_arity("DateTimeZone::listAbbreviations", args.len(), 0, span)?;
             return Ok(Value::Array(bounded_timezone_abbreviations_array()));
         }
+        if receiver_class_name.eq_ignore_ascii_case("PhpToken")
+            && method_name.eq_ignore_ascii_case("tokenize")
+        {
+            return self.call_php_token_static_tokenize(args, span, caller_scope);
+        }
         if self.is_reflection_method_class_id(class_id)
             && method_name.eq_ignore_ascii_case("createFromMethodName")
         {
@@ -52136,7 +52151,7 @@ impl Interpreter {
     }
 
     fn evaluate_interpolated_access_chain(
-        &self,
+        &mut self,
         variable: &str,
         segments: &[InterpolatedAccessSegment],
         span: Span,
@@ -52152,6 +52167,39 @@ impl Interpreter {
                 }
                 InterpolatedAccessSegment::ObjectProperty(property) => {
                     self.read_interpolated_object_property(value, property, span)?
+                }
+                InterpolatedAccessSegment::MethodCall(method) => {
+                    let Value::Object(object) = value else {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "string interpolation",
+                                format!(
+                                    "method interpolation requires object receiver, got {}",
+                                    value.type_name()
+                                ),
+                            ),
+                        ));
+                    };
+                    if object.class_name().eq_ignore_ascii_case("PhpToken") {
+                        self.call_php_token_method_with_values(object, method, Vec::new(), span)?
+                    } else {
+                        let class_name = object.class_name().to_string();
+                        self.call_magic_instance_method_with_values(
+                            object,
+                            method,
+                            Vec::new(),
+                            span,
+                        )?
+                        .ok_or_else(|| {
+                            runtime_error(
+                                span,
+                                RuntimeError::undefined_function(format!(
+                                    "{class_name}::{method}()"
+                                )),
+                            )
+                        })?
+                    }
                 }
             };
         }
@@ -54919,10 +54967,69 @@ impl Interpreter {
                 ),
             ));
         }
+        if key == "eval" || fallback_key.as_deref() == Some("eval") {
+            return self.call_eval(args, span, caller_scope);
+        }
 
         ensure_no_positional_arguments_after_named_arguments(args)?;
 
         self.call_direct_named_function(name, args, span, caller_scope)
+    }
+
+    fn call_eval(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        expect_expr_arity("eval", args.len(), 1, span)?;
+        let value = self.evaluate_by_value_argument_with_cow_source(&args[0], caller_scope)?;
+        let source = tokenizer_source_bytes("eval()", &value, span)?;
+        let source = String::from_utf8(source).map_err(|error| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "eval()",
+                    format!("evaluated source must be valid UTF-8 in the current subset: {error}"),
+                ),
+            )
+        })?;
+        let program = parse_source(&format!("<?php {source}"))?;
+        self.emit_deprecated_dollar_brace_interpolation_diagnostics(&program)?;
+        self.register_included_declarations(&program)?;
+        match self.execute_statements(&program.statements, caller_scope)? {
+            Flow::Normal => Ok(Value::Null),
+            Flow::Return(value) => Ok(value),
+            Flow::Exit(code) => {
+                self.exit_signal = Some(code);
+                Ok(Value::Null)
+            }
+            Flow::Break { depth, span } => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "eval()",
+                    format!("break depth {depth} escaped evaluated source"),
+                ),
+            )),
+            Flow::Continue { depth, span } => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "eval()",
+                    format!("continue depth {depth} escaped evaluated source"),
+                ),
+            )),
+            Flow::Throw { object, span } => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "eval()",
+                    format!(
+                        "uncaught {} thrown from evaluated source in the current subset",
+                        object.class_name()
+                    ),
+                ),
+            )),
+            Flow::Goto { label, span } => Err(undefined_goto_label_error(span, &label)),
+        }
     }
 
     fn call_first_class_callable_helper(
@@ -81518,6 +81625,111 @@ impl Interpreter {
         Ok(())
     }
 
+    fn call_token_get_all(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(1..=2).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "token_get_all()",
+                    ArityExpectation::Between { min: 1, max: 2 },
+                    args.len(),
+                ),
+            ));
+        }
+        ensure_tokenizer_flags("token_get_all()", args.get(1), span)?;
+        let source = tokenizer_source_bytes("token_get_all()", &args[0], span)?;
+        Ok(Value::Array(tokenizer_tokens_array(
+            &php_tokenizer::tokenize(&source),
+        )?))
+    }
+
+    fn call_php_token_static_tokenize(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        if !(1..=2).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "PhpToken::tokenize()",
+                    ArityExpectation::Between { min: 1, max: 2 },
+                    args.len(),
+                ),
+            ));
+        }
+        let values = args
+            .iter()
+            .map(|arg| self.evaluate_by_value_argument_with_cow_source(arg, caller_scope))
+            .collect::<CompileResult<Vec<_>>>()?;
+        ensure_tokenizer_flags("PhpToken::tokenize()", values.get(1), span)?;
+        let source = tokenizer_source_bytes("PhpToken::tokenize()", &values[0], span)?;
+        let mut array = PhpArray::new();
+        for token in php_tokenizer::tokenize(&source) {
+            array
+                .append(Value::Object(self.create_php_token_object(&token, span)?))
+                .map_err(|error| runtime_error(span, error))?;
+        }
+        Ok(Value::Array(array))
+    }
+
+    fn create_php_token_object(
+        &self,
+        token: &PhpTokenizerToken,
+        span: Span,
+    ) -> CompileResult<PhpObject> {
+        let class_id = self
+            .classes
+            .lookup_class_id("PhpToken")
+            .ok_or_else(|| runtime_error(span, RuntimeError::undefined_class("PhpToken")))?;
+        let class = self
+            .classes
+            .get(class_id)
+            .expect("PhpToken class id should resolve");
+        let object = PhpObject::from_class(class);
+        for (property, value) in [
+            ("id", Value::Int(token.id())),
+            (
+                "text",
+                interpreter_value_from_php_string_bytes(token.text().to_vec()),
+            ),
+            ("line", Value::Int(token.line())),
+            ("pos", Value::Int(token.position())),
+        ] {
+            object
+                .write_public_property(property, value)
+                .map_err(|error| runtime_error(span, error))?;
+        }
+        Ok(object)
+    }
+
+    fn call_php_token_method_with_values(
+        &mut self,
+        object: PhpObject,
+        method_name: &str,
+        args: Vec<Value>,
+        span: Span,
+    ) -> CompileResult<Value> {
+        match method_name.to_ascii_lowercase().as_str() {
+            "gettokenname" => {
+                expect_arity("PhpToken::getTokenName", &args, 0, span)?;
+                let id = php_token_object_id(&object, "PhpToken::getTokenName()", span)?;
+                Ok(Value::String(php_tokenizer::token_name(id).to_string()))
+            }
+            "__tostring" => {
+                expect_arity("PhpToken::__toString", &args, 0, span)?;
+                object
+                    .read_public_property("text")
+                    .map_err(|error| runtime_error(span, error))
+            }
+            _ => Err(runtime_error(
+                span,
+                RuntimeError::undefined_function(format!("PhpToken::{method_name}()")),
+            )),
+        }
+    }
+
     fn call_builtin(&mut self, name: &str, args: Vec<Value>, span: Span) -> CompileResult<Value> {
         match name {
             "define" => {
@@ -81604,6 +81816,8 @@ impl Interpreter {
                     .map_err(|error| runtime_error(span, error))?;
                 Ok(Value::Int(value.len() as i64))
             }
+            "token_name" => call_token_name(&args, span),
+            "token_get_all" => self.call_token_get_all(&args, span),
             "chr" => self.call_chr(&args, span),
             "bin2hex" => call_bin2hex(&args, span),
             "hex2bin" => self.call_hex2bin(&args, span),
@@ -100778,6 +100992,8 @@ fn is_builtin(name: &str) -> bool {
         name,
         "define"
             | "strlen"
+            | "token_name"
+            | "token_get_all"
             | "chr"
             | "bin2hex"
             | "hex2bin"
@@ -102822,6 +103038,10 @@ fn is_mysqli_global_constant_name(name: &str) -> bool {
 }
 
 fn builtin_global_constant_value(name: &str) -> Option<Value> {
+    if let Some(id) = php_tokenizer::token_id_by_constant_name(name) {
+        return Some(Value::Int(id));
+    }
+
     match name {
         "PHP_VERSION" => Some(Value::String("8.3.0".to_string())),
         "PHP_VERSION_ID" => Some(Value::Int(80300)),
@@ -131149,6 +131369,118 @@ fn version_compare_operator_result(
             RuntimeError::unsupported_call(
                 "version_compare()",
                 format!("unsupported operator {operator} in the current subset"),
+            ),
+        )),
+    }
+}
+
+fn call_token_name(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("token_name", args, 1, span)?;
+    let id = match &args[0] {
+        Value::Int(value) => *value,
+        other => {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "token_name()",
+                    format!(
+                        "token argument must be int in the current subset, got {}",
+                        other.type_name()
+                    ),
+                ),
+            ));
+        }
+    };
+    Ok(Value::String(php_tokenizer::token_name(id).to_string()))
+}
+
+fn ensure_tokenizer_flags(
+    callable: &'static str,
+    value: Option<&Value>,
+    span: Span,
+) -> CompileResult<()> {
+    match value {
+        None | Some(Value::Int(0)) => Ok(()),
+        Some(Value::Int(_)) => Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                callable,
+                "TOKEN_PARSE and non-zero tokenizer flags are not implemented in the current subset",
+            ),
+        )),
+        Some(other) => Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                callable,
+                format!(
+                    "flags argument must be int in the current subset, got {}",
+                    other.type_name()
+                ),
+            ),
+        )),
+    }
+}
+
+fn tokenizer_source_bytes(
+    callable: &'static str,
+    value: &Value,
+    span: Span,
+) -> CompileResult<Vec<u8>> {
+    value.try_echo_bytes().map_err(|error| {
+        runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                callable,
+                format!(
+                    "source must be string-compatible in the current subset: {}",
+                    error.message()
+                ),
+            ),
+        )
+    })
+}
+
+fn tokenizer_tokens_array(tokens: &[PhpTokenizerToken]) -> CompileResult<PhpArray> {
+    let mut array = PhpArray::new();
+    for token in tokens {
+        let value = if token.is_token_array() {
+            Value::Array(tokenizer_token_tuple(token)?)
+        } else {
+            interpreter_value_from_php_string_bytes(token.text().to_vec())
+        };
+        array.append(value)?;
+    }
+    Ok(array)
+}
+
+fn tokenizer_token_tuple(token: &PhpTokenizerToken) -> RuntimeResult<PhpArray> {
+    let mut tuple = PhpArray::new();
+    tuple.append(Value::Int(token.id()))?;
+    tuple.append(interpreter_value_from_php_string_bytes(
+        token.text().to_vec(),
+    ))?;
+    tuple.append(Value::Int(token.line()))?;
+    Ok(tuple)
+}
+
+fn php_token_object_id(
+    object: &PhpObject,
+    callable: &'static str,
+    span: Span,
+) -> CompileResult<i64> {
+    match object
+        .read_public_property("id")
+        .map_err(|error| runtime_error(span, error))?
+    {
+        Value::Int(value) => Ok(value),
+        other => Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                callable,
+                format!(
+                    "PhpToken id property must be int, got {}",
+                    other.type_name()
+                ),
             ),
         )),
     }

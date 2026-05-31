@@ -178,7 +178,7 @@ impl Parser {
             TokenKind::Namespace => self.parse_namespace(),
             TokenKind::Use => self.parse_use_declaration(),
             TokenKind::Declare => self.parse_declare(),
-            TokenKind::Eval => self.parse_unsupported_eval(),
+            TokenKind::Eval => self.parse_assignment_or_expression_statement(),
             TokenKind::InlineHtml(_) => self.parse_inline_html(),
             TokenKind::Echo => self.parse_echo(),
             TokenKind::Print => self.parse_print(),
@@ -1941,13 +1941,6 @@ impl Parser {
                 _ => offset += 1,
             }
         }
-    }
-
-    fn parse_unsupported_eval(&mut self) -> CompileResult<Stmt> {
-        let span = self
-            .consume_keyword(TokenKind::Eval, "expected 'eval'")?
-            .span;
-        Err(self.error_at(span, unsupported_eval_message()))
     }
 
     fn parse_use_import_name(&mut self) -> CompileResult<(String, Span)> {
@@ -6578,7 +6571,10 @@ impl Parser {
             }
             TokenKind::Function => self.parse_closure_expression(token.span, false),
             TokenKind::Fn => self.parse_arrow_function_expression(token.span, false),
-            TokenKind::Eval => Err(self.error_at(token.span, unsupported_eval_message())),
+            TokenKind::Eval => {
+                self.consume_keyword(TokenKind::LParen, "expected '(' after eval")?;
+                self.parse_call_or_first_class_callable_after_open("eval".to_string(), token.span)
+            }
             TokenKind::Do => {
                 Err(self.error_at(token.span, unsupported_do_while_expression_message()))
             }
@@ -9264,10 +9260,6 @@ fn unsupported_magic_constant_message(name: &str) -> String {
     format!(
         "unsupported magic constant {name}: source-aware magic constant evaluation is not implemented"
     )
-}
-
-fn unsupported_eval_message() -> &'static str {
-    "unsupported eval: eval parsing and caller-scope execution are not implemented"
 }
 
 fn unsupported_throw_message() -> &'static str {

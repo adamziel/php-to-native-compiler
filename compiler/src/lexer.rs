@@ -913,7 +913,13 @@ impl<'a> Lexer<'a> {
                     return Err(self.error_at(span, unsupported_string_interpolation_message()));
                 }
                 let property = self.lex_identifier_name();
-                segments.push(InterpolatedAccessSegment::ObjectProperty(property));
+                if self.starts_with("()") {
+                    self.advance();
+                    self.advance();
+                    segments.push(InterpolatedAccessSegment::MethodCall(property));
+                } else {
+                    segments.push(InterpolatedAccessSegment::ObjectProperty(property));
+                }
                 continue;
             }
 
@@ -925,6 +931,15 @@ impl<'a> Lexer<'a> {
         }
 
         if segments.len() == 1 {
+            if matches!(
+                segments.first(),
+                Some(InterpolatedAccessSegment::MethodCall(_))
+            ) {
+                return Ok(InterpolatedStringPart::AccessChain {
+                    variable: name,
+                    segments,
+                });
+            }
             return match segments.remove(0) {
                 InterpolatedAccessSegment::ArrayOffset(key) => {
                     Ok(InterpolatedStringPart::ArrayOffset {
@@ -938,6 +953,7 @@ impl<'a> Lexer<'a> {
                         property,
                     })
                 }
+                InterpolatedAccessSegment::MethodCall(_) => unreachable!(),
             };
         }
 
