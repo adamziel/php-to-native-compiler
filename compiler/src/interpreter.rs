@@ -20,6 +20,7 @@ use php_runtime::{
     PhpReferenceCell, PhpReferenceCellId, RuntimeError, RuntimeErrorKind, RuntimeResult, Value,
     Visibility,
 };
+use regex::bytes::{Captures as RegexCaptures, Regex, RegexBuilder};
 use sha2::{Sha224, Sha256, Sha384, Sha512, Sha512_224, Sha512_256};
 
 use crate::ast::{
@@ -258,6 +259,7 @@ struct Interpreter {
     directories: HashMap<i64, DirectoryResource>,
     last_opened_directory: Option<i64>,
     strtok_state: Option<StrtokState>,
+    pcre_last_error: i64,
     uploaded_file_paths: HashSet<PathBuf>,
     stat_cache: HashMap<PathBuf, fs::Metadata>,
     realpath_cache: HashMap<String, RealpathCacheEntry>,
@@ -11083,6 +11085,7 @@ impl Interpreter {
             directories: HashMap::new(),
             last_opened_directory: None,
             strtok_state: None,
+            pcre_last_error: PHP_PREG_NO_ERROR,
             uploaded_file_paths: HashSet::new(),
             stat_cache: HashMap::new(),
             realpath_cache: HashMap::new(),
@@ -56037,14 +56040,17 @@ impl Interpreter {
                 if key == "preg_match" {
                     return self.call_preg_match_with_optional_matches(args, span, caller_scope);
                 }
+                if key == "preg_match_all" {
+                    return self.call_preg_match_all_direct(args, span, caller_scope);
+                }
+                if key == "preg_replace" {
+                    return self.call_preg_replace_direct(args, span, caller_scope);
+                }
                 if key == "preg_replace_callback" {
-                    let mut values = Vec::with_capacity(args.len());
-                    for arg in args {
-                        values.push(
-                            self.evaluate_by_value_argument_with_cow_source(arg, caller_scope)?,
-                        );
-                    }
-                    return self.call_preg_replace_callback(values, span);
+                    return self.call_preg_replace_callback_direct(args, span, caller_scope);
+                }
+                if key == "preg_replace_callback_array" {
+                    return self.call_preg_replace_callback_array_direct(args, span, caller_scope);
                 }
                 if key == "str_replace" {
                     return self.call_str_replace_with_optional_count(args, span, caller_scope);
@@ -56224,14 +56230,17 @@ impl Interpreter {
                 if key == "preg_match" {
                     return self.call_preg_match_with_optional_matches(args, span, caller_scope);
                 }
+                if key == "preg_match_all" {
+                    return self.call_preg_match_all_direct(args, span, caller_scope);
+                }
+                if key == "preg_replace" {
+                    return self.call_preg_replace_direct(args, span, caller_scope);
+                }
                 if key == "preg_replace_callback" {
-                    let mut values = Vec::with_capacity(args.len());
-                    for arg in args {
-                        values.push(
-                            self.evaluate_by_value_argument_with_cow_source(arg, caller_scope)?,
-                        );
-                    }
-                    return self.call_preg_replace_callback(values, span);
+                    return self.call_preg_replace_callback_direct(args, span, caller_scope);
+                }
+                if key == "preg_replace_callback_array" {
+                    return self.call_preg_replace_callback_array_direct(args, span, caller_scope);
                 }
                 if key == "str_replace" {
                     return self.call_str_replace_with_optional_count(args, span, caller_scope);
@@ -63882,20 +63891,40 @@ impl Interpreter {
         }
 
         if args.len() > 3 {
-            return Err(runtime_error(
+            let Expr::Variable(matches_name, _) = &args[2] else {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "preg_match()",
+                        "matches output must be a direct variable in the current subset",
+                    ),
+                ));
+            };
+            let pattern = self.evaluate(&args[0], caller_scope)?;
+            let subject = self.evaluate(&args[1], caller_scope)?;
+            let flags = self.evaluate(&args[3], caller_scope)?;
+            let offset = if let Some(offset) = args.get(4) {
+                Some(self.evaluate(offset, caller_scope)?)
+            } else {
+                None
+            };
+            let (result, matches) = self.pcre_match_result(
+                "preg_match()",
+                &pattern,
+                &subject,
+                &flags,
+                offset.as_ref(),
                 span,
-                RuntimeError::unsupported_call(
-                    "preg_match()",
-                    "flags and offset arguments are not implemented; pass at most a direct matches variable in the current subset",
-                ),
-            ));
+            )?;
+            caller_scope.write_static(matches_name, Value::Array(matches));
+            return Ok(result);
         }
 
         let pattern = self.evaluate(&args[0], caller_scope)?;
         let subject = self.evaluate(&args[1], caller_scope)?;
         let values = vec![pattern, subject];
         if args.len() == 2 {
-            return call_preg_match(&values, span);
+            return self.call_preg_match_values(&values, span);
         }
 
         let Expr::Variable(matches_name, _) = &args[2] else {
@@ -63908,22 +63937,183 @@ impl Interpreter {
             ));
         };
 
-        let pattern = string_contains_argument("preg_match()", "pattern", &values[0], span)?;
-        let subject = string_contains_argument("preg_match()", "subject", &values[1], span)?;
-        let pattern = BoundedPregPattern::parse(&pattern).map_err(|message| {
-            runtime_error(
-                span,
-                RuntimeError::unsupported_call("preg_match()", message),
-            )
-        })?;
+        let (result, matches) = self.pcre_match_result(
+            "preg_match()",
+            &values[0],
+            &values[1],
+            &Value::Int(0),
+            None,
+            span,
+        )?;
+        caller_scope.write_static(matches_name, Value::Array(matches));
+        Ok(result)
+    }
 
-        if let Some(matches) = pattern.captures(&subject) {
-            caller_scope.write_static(matches_name, Value::Array(matches));
-            Ok(Value::Int(1))
-        } else {
-            caller_scope.write_static(matches_name, Value::Array(PhpArray::new()));
-            Ok(Value::Int(0))
+    fn call_preg_match_all_direct(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        if !(2..=5).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "preg_match_all()",
+                    ArityExpectation::Between { min: 2, max: 5 },
+                    args.len(),
+                ),
+            ));
         }
+
+        let pattern = self.evaluate(&args[0], caller_scope)?;
+        let subject = self.evaluate(&args[1], caller_scope)?;
+        let flags = if let Some(flags) = args.get(3) {
+            self.evaluate(flags, caller_scope)?
+        } else {
+            Value::Int(PHP_PREG_PATTERN_ORDER)
+        };
+        let offset = if let Some(offset) = args.get(4) {
+            Some(self.evaluate(offset, caller_scope)?)
+        } else {
+            None
+        };
+        let (count, matches) =
+            self.pcre_match_all_result(&pattern, &subject, &flags, offset.as_ref(), span)?;
+
+        if let Some(matches_arg) = args.get(2) {
+            let Expr::Variable(matches_name, _) = matches_arg else {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "preg_match_all()",
+                        "matches output must be a direct variable in the current subset",
+                    ),
+                ));
+            };
+            caller_scope.write_static(matches_name, Value::Array(matches));
+        }
+
+        Ok(count)
+    }
+
+    fn call_preg_replace_direct(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        if !(3..=5).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "preg_replace()",
+                    ArityExpectation::Between { min: 3, max: 5 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let mut values = Vec::with_capacity(args.len().min(4));
+        for arg in args.iter().take(4) {
+            values.push(self.evaluate_by_value_argument_with_cow_source(arg, caller_scope)?);
+        }
+        let (value, count) = self.preg_replace_result(&values, false, span)?;
+        if let Some(count_arg) = args.get(4) {
+            let Expr::Variable(count_name, _) = count_arg else {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "preg_replace()",
+                        "count output must be a direct variable in the current subset",
+                    ),
+                ));
+            };
+            caller_scope.write_static(count_name, Value::Int(count));
+        }
+        Ok(value)
+    }
+
+    fn call_preg_replace_callback_direct(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        if !(3..=6).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "preg_replace_callback()",
+                    ArityExpectation::Between { min: 3, max: 6 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let mut values = Vec::with_capacity(args.len().min(4) + usize::from(args.len() == 6));
+        for arg in args.iter().take(4) {
+            values.push(self.evaluate_by_value_argument_with_cow_source(arg, caller_scope)?);
+        }
+        if args.len() == 6 {
+            values.push(self.evaluate_by_value_argument_with_cow_source(&args[5], caller_scope)?);
+        }
+
+        let (value, count) = self.preg_replace_callback_result(&values, span)?;
+        if let Some(count_arg) = args.get(4) {
+            let Expr::Variable(count_name, _) = count_arg else {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "preg_replace_callback()",
+                        "count output must be a direct variable in the current subset",
+                    ),
+                ));
+            };
+            caller_scope.write_static(count_name, Value::Int(count));
+        }
+        Ok(value)
+    }
+
+    fn call_preg_replace_callback_array_direct(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        if !(2..=5).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "preg_replace_callback_array()",
+                    ArityExpectation::Between { min: 2, max: 5 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let mut values = Vec::with_capacity(args.len().min(3) + usize::from(args.len() == 5));
+        for arg in args.iter().take(3) {
+            values.push(self.evaluate_by_value_argument_with_cow_source(arg, caller_scope)?);
+        }
+        if args.len() == 5 {
+            values.push(self.evaluate_by_value_argument_with_cow_source(&args[4], caller_scope)?);
+        }
+
+        let (value, count) = self.preg_replace_callback_array_result(&values, span)?;
+        if let Some(count_arg) = args.get(3) {
+            let Expr::Variable(count_name, _) = count_arg else {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "preg_replace_callback_array()",
+                        "count output must be a direct variable in the current subset",
+                    ),
+                ));
+            };
+            caller_scope.write_static(count_name, Value::Int(count));
+        }
+        Ok(value)
     }
 
     fn call_str_replace_with_optional_count(
@@ -82148,10 +82338,18 @@ impl Interpreter {
             "rawurldecode" => call_rawurldecode(&args, span),
             "serialize" => self.call_serialize_builtin(&args, span),
             "unserialize" => self.call_unserialize_builtin(&args, span),
-            "preg_match" => call_preg_match(&args, span),
-            "preg_replace" => call_preg_replace(&args, span),
+            "preg_match" => self.call_preg_match_values(&args, span),
+            "preg_match_all" => self.call_preg_match_all(args, span),
+            "preg_grep" => self.call_preg_grep(&args, span),
+            "preg_filter" => self.call_preg_filter(&args, span),
+            "preg_replace" => self.call_preg_replace(args, span),
             "preg_split" => call_preg_split(&args, span),
             "preg_replace_callback" => self.call_preg_replace_callback(args, span),
+            "preg_replace_callback_array" => self.call_preg_replace_callback_array(args, span),
+            "preg_last_error" => {
+                expect_arity("preg_last_error", &args, 0, span)?;
+                Ok(Value::Int(self.pcre_last_error))
+            }
             "get_defined_vars" => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
@@ -101376,9 +101574,14 @@ fn is_builtin(name: &str) -> bool {
             | "serialize"
             | "unserialize"
             | "preg_match"
+            | "preg_match_all"
+            | "preg_grep"
+            | "preg_filter"
             | "preg_replace"
             | "preg_split"
             | "preg_replace_callback"
+            | "preg_replace_callback_array"
+            | "preg_last_error"
             | "get_defined_vars"
             | "extract"
             | "compact"
@@ -102557,6 +102760,18 @@ const PHP_SESSION_NONE: i64 = 1;
 const PHP_SESSION_ACTIVE: i64 = 2;
 const PHP_COUNT_NORMAL: i64 = 0;
 const PHP_COUNT_RECURSIVE: i64 = 1;
+const PHP_PREG_PATTERN_ORDER: i64 = 1;
+const PHP_PREG_SET_ORDER: i64 = 2;
+const PHP_PREG_OFFSET_CAPTURE: i64 = 256;
+const PHP_PREG_UNMATCHED_AS_NULL: i64 = 512;
+const PHP_PREG_GREP_INVERT: i64 = 1;
+const PHP_PREG_NO_ERROR: i64 = 0;
+const PHP_PREG_INTERNAL_ERROR: i64 = 1;
+const PHP_PREG_BACKTRACK_LIMIT_ERROR: i64 = 2;
+const PHP_PREG_RECURSION_LIMIT_ERROR: i64 = 3;
+const PHP_PREG_BAD_UTF8_ERROR: i64 = 4;
+const PHP_PREG_BAD_UTF8_OFFSET_ERROR: i64 = 5;
+const PHP_PREG_JIT_STACKLIMIT_ERROR: i64 = 6;
 const PHP_EXTR_OVERWRITE_CONST: i64 = PHP_EXTR_OVERWRITE;
 const PHP_EXTR_SKIP_CONST: i64 = PHP_EXTR_SKIP;
 const PHP_EXTR_PREFIX_SAME_CONST: i64 = PHP_EXTR_PREFIX_SAME;
@@ -103167,6 +103382,18 @@ const BUILTIN_GLOBAL_CONSTANT_NAMES: &[&str] = &[
     "CASE_UPPER",
     "ARRAY_FILTER_USE_BOTH",
     "ARRAY_FILTER_USE_KEY",
+    "PREG_PATTERN_ORDER",
+    "PREG_SET_ORDER",
+    "PREG_OFFSET_CAPTURE",
+    "PREG_UNMATCHED_AS_NULL",
+    "PREG_GREP_INVERT",
+    "PREG_NO_ERROR",
+    "PREG_INTERNAL_ERROR",
+    "PREG_BACKTRACK_LIMIT_ERROR",
+    "PREG_RECURSION_LIMIT_ERROR",
+    "PREG_BAD_UTF8_ERROR",
+    "PREG_BAD_UTF8_OFFSET_ERROR",
+    "PREG_JIT_STACKLIMIT_ERROR",
     "PREG_SPLIT_DELIM_CAPTURE",
     "SORT_REGULAR",
     "SORT_NUMERIC",
@@ -103506,6 +103733,18 @@ fn builtin_global_constant_value(name: &str) -> Option<Value> {
         "CASE_UPPER" => Some(Value::Int(1)),
         "ARRAY_FILTER_USE_BOTH" => Some(Value::Int(1)),
         "ARRAY_FILTER_USE_KEY" => Some(Value::Int(2)),
+        "PREG_PATTERN_ORDER" => Some(Value::Int(PHP_PREG_PATTERN_ORDER)),
+        "PREG_SET_ORDER" => Some(Value::Int(PHP_PREG_SET_ORDER)),
+        "PREG_OFFSET_CAPTURE" => Some(Value::Int(PHP_PREG_OFFSET_CAPTURE)),
+        "PREG_UNMATCHED_AS_NULL" => Some(Value::Int(PHP_PREG_UNMATCHED_AS_NULL)),
+        "PREG_GREP_INVERT" => Some(Value::Int(PHP_PREG_GREP_INVERT)),
+        "PREG_NO_ERROR" => Some(Value::Int(PHP_PREG_NO_ERROR)),
+        "PREG_INTERNAL_ERROR" => Some(Value::Int(PHP_PREG_INTERNAL_ERROR)),
+        "PREG_BACKTRACK_LIMIT_ERROR" => Some(Value::Int(PHP_PREG_BACKTRACK_LIMIT_ERROR)),
+        "PREG_RECURSION_LIMIT_ERROR" => Some(Value::Int(PHP_PREG_RECURSION_LIMIT_ERROR)),
+        "PREG_BAD_UTF8_ERROR" => Some(Value::Int(PHP_PREG_BAD_UTF8_ERROR)),
+        "PREG_BAD_UTF8_OFFSET_ERROR" => Some(Value::Int(PHP_PREG_BAD_UTF8_OFFSET_ERROR)),
+        "PREG_JIT_STACKLIMIT_ERROR" => Some(Value::Int(PHP_PREG_JIT_STACKLIMIT_ERROR)),
         "PREG_SPLIT_DELIM_CAPTURE" => Some(Value::Int(2)),
         "SORT_REGULAR" => Some(Value::Int(0)),
         "SORT_NUMERIC" => Some(Value::Int(1)),
@@ -116161,6 +116400,120 @@ fn remove_wordpress_kses_slash_zero(subject: &str) -> String {
 }
 
 impl Interpreter {
+    fn call_preg_match_values(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(2..=5).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "preg_match()",
+                    ArityExpectation::Between { min: 2, max: 5 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let flags = args.get(3).unwrap_or(&Value::Int(0));
+        let (result, _) =
+            self.pcre_match_result("preg_match()", &args[0], &args[1], flags, args.get(4), span)?;
+        Ok(result)
+    }
+
+    fn call_preg_match_all(&mut self, args: Vec<Value>, span: Span) -> CompileResult<Value> {
+        if !(2..=5).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "preg_match_all()",
+                    ArityExpectation::Between { min: 2, max: 5 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let flags = args.get(3).unwrap_or(&Value::Int(PHP_PREG_PATTERN_ORDER));
+        let (count, _) =
+            self.pcre_match_all_result(&args[0], &args[1], flags, args.get(4), span)?;
+        Ok(count)
+    }
+
+    fn call_preg_grep(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(2..=3).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "preg_grep()",
+                    ArityExpectation::Between { min: 2, max: 3 },
+                    args.len(),
+                ),
+            ));
+        }
+        let Value::Array(input) = &args[1] else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "preg_grep()",
+                    format!(
+                        "Argument #2 ($array) must be of type array, {} given",
+                        Self::php_type_error_actual_name(&args[1])
+                    ),
+                ),
+            ));
+        };
+        let invert = args
+            .get(2)
+            .and_then(pcre_int_value)
+            .is_some_and(|flags| flags & PHP_PREG_GREP_INVERT != 0);
+        let Some(regex) = self.compile_pcre_or_warn("preg_grep()", &args[0], span)? else {
+            return Ok(Value::Bool(false));
+        };
+
+        let mut output = PhpArray::new();
+        for entry in input.entries() {
+            let entry_value = entry.value_cloned();
+            let bytes = self.pcre_subject_bytes("preg_grep()", &entry_value, span)?;
+            if regex.utf8 && std::str::from_utf8(&bytes).is_err() {
+                self.pcre_last_error = PHP_PREG_BAD_UTF8_ERROR;
+                return Ok(Value::Bool(false));
+            }
+            let matched = regex.regex.is_match(&bytes);
+            if matched != invert {
+                output.insert(entry.key.clone(), entry_value);
+            }
+        }
+        self.pcre_last_error = PHP_PREG_NO_ERROR;
+        Ok(Value::Array(output))
+    }
+
+    fn call_preg_filter(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(3..=5).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "preg_filter()",
+                    ArityExpectation::Between { min: 3, max: 5 },
+                    args.len(),
+                ),
+            ));
+        }
+        let (value, _) = self.preg_replace_result(args, true, span)?;
+        Ok(value)
+    }
+
+    fn call_preg_replace(&mut self, args: Vec<Value>, span: Span) -> CompileResult<Value> {
+        if !(3..=5).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "preg_replace()",
+                    ArityExpectation::Between { min: 3, max: 5 },
+                    args.len(),
+                ),
+            ));
+        }
+        self.preg_replace_result(&args, false, span)
+            .map(|(value, _)| value)
+    }
+
     fn call_preg_replace_callback(&mut self, args: Vec<Value>, span: Span) -> CompileResult<Value> {
         if !(3..=6).contains(&args.len()) {
             return Err(runtime_error(
@@ -116173,74 +116526,1145 @@ impl Interpreter {
             ));
         }
 
-        if args.len() > 3 {
+        self.preg_replace_callback_result(&args, span)
+            .map(|(value, _)| value)
+    }
+
+    fn call_preg_replace_callback_array(
+        &mut self,
+        args: Vec<Value>,
+        span: Span,
+    ) -> CompileResult<Value> {
+        if !(2..=5).contains(&args.len()) {
             return Err(runtime_error(
                 span,
-                RuntimeError::unsupported_call(
-                    "preg_replace_callback()",
-                    "limit, count output, and flags arguments are not implemented; pass exactly three arguments in the current subset",
+                RuntimeError::arity_mismatch(
+                    "preg_replace_callback_array()",
+                    ArityExpectation::Between { min: 2, max: 5 },
+                    args.len(),
                 ),
             ));
         }
-
-        let pattern_text =
-            string_contains_argument("preg_replace_callback()", "pattern", &args[0], span)?;
-        let callback =
-            string_contains_argument("preg_replace_callback()", "callback", &args[1], span)?;
-        let subject =
-            string_contains_argument("preg_replace_callback()", "subject", &args[2], span)?;
-        let pattern =
-            BoundedPregPattern::parse_slash_delimited(&pattern_text).map_err(|message| {
-                runtime_error(
-                    span,
-                    RuntimeError::unsupported_call("preg_replace_callback()", message),
-                )
-            })?;
-        if !pattern.has_non_empty_iterable_matches() {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "preg_replace_callback()",
-                    "zero-length regex matches are not implemented in the current subset",
-                ),
-            ));
-        }
-
-        let mut output = String::with_capacity(subject.len());
-        let mut cursor = 0;
-        while let Some(matched) = pattern.next_match(&subject, cursor) {
-            output.push_str(&subject[cursor..matched.start]);
-            let replacement =
-                self.call_preg_replace_callback_replacement(&callback, matched.captures, span)?;
-            output.push_str(&replacement);
-            cursor = matched.end;
-        }
-        output.push_str(&subject[cursor..]);
-
-        Ok(Value::String(output))
+        self.preg_replace_callback_array_result(&args, span)
+            .map(|(value, _)| value)
     }
 
     fn call_preg_replace_callback_replacement(
         &mut self,
-        callback: &str,
+        callback: &Value,
         captures: PhpArray,
+        context: &'static str,
         span: Span,
     ) -> CompileResult<String> {
         let args = vec![Value::Array(captures)];
-        let value = match self.lookup_function_exact(callback).ok_or_else(|| {
-            runtime_error(
-                span,
-                RuntimeError::undefined_function(callable_name(callback)),
-            )
-        })? {
-            Callable::Builtin(key) => self.call_builtin(&key, args, span)?,
-            Callable::User(function) => {
-                self.call_user_function_with_values(function, args, span)?
+        let value = self.call_pcre_callback_with_values(callback, args, context, span)?;
+        self.pcre_subject_bytes(context, &value, span)
+            .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
+    }
+
+    fn compile_pcre_or_warn(
+        &mut self,
+        context: &'static str,
+        pattern: &Value,
+        span: Span,
+    ) -> CompileResult<Option<PhpPcreRegex>> {
+        let pattern = self.pcre_subject_bytes(context, pattern, span)?;
+        let pattern = String::from_utf8_lossy(&pattern);
+        let (body, modifiers) = match parse_php_pcre_pattern(&pattern) {
+            Ok(parts) => parts,
+            Err(message) => {
+                self.emit_warning(context, message, span)?;
+                self.pcre_last_error = PHP_PREG_INTERNAL_ERROR;
+                return Ok(None);
             }
         };
 
-        string_contains_argument("preg_replace_callback()", "callback result", &value, span)
+        let settings = match PhpPcreSettings::parse(&modifiers) {
+            Ok(settings) => settings,
+            Err(message) => {
+                self.emit_warning(context, message, span)?;
+                self.pcre_last_error = PHP_PREG_INTERNAL_ERROR;
+                return Ok(None);
+            }
+        };
+        let body = translate_pcre_body_for_regex(&body);
+        let mut builder = RegexBuilder::new(&body);
+        builder.unicode(false);
+        builder.case_insensitive(settings.case_insensitive);
+        builder.multi_line(settings.multi_line);
+        builder.dot_matches_new_line(settings.dot_matches_new_line);
+        builder.ignore_whitespace(settings.ignore_whitespace);
+        builder.swap_greed(settings.swap_greed);
+
+        match builder.build() {
+            Ok(regex) => Ok(Some(PhpPcreRegex {
+                regex,
+                utf8: settings.utf8,
+            })),
+            Err(error) => {
+                self.emit_warning(context, format!("Compilation failed: {error}"), span)?;
+                self.pcre_last_error = PHP_PREG_INTERNAL_ERROR;
+                Ok(None)
+            }
+        }
     }
+
+    fn pcre_subject_bytes(
+        &mut self,
+        context: &'static str,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<Vec<u8>> {
+        match self.value_to_string_cast_value(value.clone(), context, span)? {
+            Value::String(value) => Ok(value.into_bytes()),
+            Value::BinaryString(value) => Ok(value),
+            value => value
+                .try_echo_bytes()
+                .map_err(|error| runtime_error(span, error)),
+        }
+    }
+
+    fn pcre_match_start(
+        &mut self,
+        context: &'static str,
+        subject: &[u8],
+        offset: Option<&Value>,
+        utf8: bool,
+        span: Span,
+    ) -> CompileResult<Option<usize>> {
+        let raw_offset = offset.and_then(pcre_int_value).unwrap_or(0);
+        let start = if raw_offset >= 0 {
+            raw_offset
+        } else {
+            subject.len() as i64 + raw_offset
+        };
+        if start < 0 || start > subject.len() as i64 {
+            self.emit_warning(context, "Offset out of range", span)?;
+            self.pcre_last_error = PHP_PREG_BAD_UTF8_OFFSET_ERROR;
+            return Ok(None);
+        }
+        let start = start as usize;
+        if utf8 {
+            match std::str::from_utf8(subject) {
+                Ok(_) if std::str::from_utf8(&subject[..start]).is_ok() => {}
+                Ok(_) => {
+                    self.pcre_last_error = PHP_PREG_BAD_UTF8_OFFSET_ERROR;
+                    return Ok(None);
+                }
+                Err(_) => {
+                    self.pcre_last_error = PHP_PREG_BAD_UTF8_ERROR;
+                    return Ok(None);
+                }
+            }
+        }
+        Ok(Some(start))
+    }
+
+    fn pcre_match_result(
+        &mut self,
+        context: &'static str,
+        pattern: &Value,
+        subject: &Value,
+        flags: &Value,
+        offset: Option<&Value>,
+        span: Span,
+    ) -> CompileResult<(Value, PhpArray)> {
+        let flags = pcre_int_value(flags).unwrap_or(0);
+        let Some(regex) = self.compile_pcre_or_warn(context, pattern, span)? else {
+            return Ok((Value::Bool(false), PhpArray::new()));
+        };
+        let subject = self.pcre_subject_bytes(context, subject, span)?;
+        let Some(start) = self.pcre_match_start(context, &subject, offset, regex.utf8, span)?
+        else {
+            return Ok((Value::Bool(false), PhpArray::new()));
+        };
+
+        let Some(captures) = regex.regex.captures(&subject[start..]) else {
+            self.pcre_last_error = PHP_PREG_NO_ERROR;
+            return Ok((Value::Int(0), PhpArray::new()));
+        };
+        let matches = pcre_capture_array(&subject, start, &captures, flags, span)?;
+        self.pcre_last_error = PHP_PREG_NO_ERROR;
+        Ok((Value::Int(1), matches))
+    }
+
+    fn pcre_match_all_result(
+        &mut self,
+        pattern: &Value,
+        subject: &Value,
+        flags: &Value,
+        offset: Option<&Value>,
+        span: Span,
+    ) -> CompileResult<(Value, PhpArray)> {
+        let flags = pcre_int_value(flags).unwrap_or(PHP_PREG_PATTERN_ORDER);
+        let set_order = flags & PHP_PREG_SET_ORDER != 0;
+        let Some(regex) = self.compile_pcre_or_warn("preg_match_all()", pattern, span)? else {
+            return Ok((Value::Bool(false), PhpArray::new()));
+        };
+        let subject = self.pcre_subject_bytes("preg_match_all()", subject, span)?;
+        let Some(start) =
+            self.pcre_match_start("preg_match_all()", &subject, offset, regex.utf8, span)?
+        else {
+            return Ok((Value::Bool(false), PhpArray::new()));
+        };
+
+        let capture_len = regex.regex.captures_len();
+        let mut rows: Vec<Vec<Option<(usize, usize)>>> = Vec::new();
+        for captures in regex.regex.captures_iter(&subject[start..]) {
+            let mut row = Vec::with_capacity(capture_len);
+            for index in 0..capture_len {
+                row.push(
+                    captures
+                        .get(index)
+                        .map(|matched| (start + matched.start(), start + matched.end())),
+                );
+            }
+            rows.push(row);
+        }
+
+        let mut output = PhpArray::new();
+        if set_order {
+            for row in &rows {
+                let mut match_array = PhpArray::new();
+                for capture in row {
+                    match_array
+                        .append(pcre_capture_value(&subject, *capture, flags, span)?)
+                        .map_err(|error| runtime_error(span, error))?;
+                }
+                output
+                    .append(Value::Array(match_array))
+                    .map_err(|error| runtime_error(span, error))?;
+            }
+        } else {
+            for capture_index in 0..capture_len {
+                let mut capture_array = PhpArray::new();
+                for row in &rows {
+                    let capture = row.get(capture_index).copied().flatten();
+                    capture_array
+                        .append(pcre_capture_value(&subject, capture, flags, span)?)
+                        .map_err(|error| runtime_error(span, error))?;
+                }
+                output.insert(capture_index as i64, Value::Array(capture_array));
+            }
+        }
+
+        self.pcre_last_error = PHP_PREG_NO_ERROR;
+        Ok((Value::Int(rows.len() as i64), output))
+    }
+
+    fn preg_replace_result(
+        &mut self,
+        args: &[Value],
+        filter_only: bool,
+        span: Span,
+    ) -> CompileResult<(Value, i64)> {
+        let patterns = pcre_pattern_values(&args[0]);
+        let replacements = pcre_replacement_values(&args[1]);
+        let replacement_is_array = matches!(&args[1], Value::Array(_));
+        let limit = args.get(3).and_then(pcre_int_value).unwrap_or(-1);
+        let mut count = 0_i64;
+
+        match &args[2] {
+            Value::Array(subjects) => {
+                let mut result = PhpArray::new();
+                for entry in subjects.entries() {
+                    let subject_value = entry.value_cloned();
+                    let subject =
+                        self.pcre_subject_bytes("preg_replace()", &subject_value, span)?;
+                    let (replaced, changed) = self.preg_replace_subject_bytes(
+                        &patterns,
+                        &replacements,
+                        replacement_is_array,
+                        &subject,
+                        limit,
+                        &mut count,
+                        span,
+                    )?;
+                    if !filter_only || changed {
+                        result.insert(
+                            entry.key.clone(),
+                            interpreter_value_from_php_string_bytes(replaced),
+                        );
+                    }
+                }
+                Ok((Value::Array(result), count))
+            }
+            subject => {
+                let subject = self.pcre_subject_bytes("preg_replace()", subject, span)?;
+                let (replaced, changed) = self.preg_replace_subject_bytes(
+                    &patterns,
+                    &replacements,
+                    replacement_is_array,
+                    &subject,
+                    limit,
+                    &mut count,
+                    span,
+                )?;
+                let value = if filter_only && !changed {
+                    Value::Null
+                } else {
+                    interpreter_value_from_php_string_bytes(replaced)
+                };
+                Ok((value, count))
+            }
+        }
+    }
+
+    fn preg_replace_subject_bytes(
+        &mut self,
+        patterns: &[PcrePatternValue],
+        replacements: &[Value],
+        replacement_is_array: bool,
+        subject: &[u8],
+        limit: i64,
+        count: &mut i64,
+        span: Span,
+    ) -> CompileResult<(Vec<u8>, bool)> {
+        let mut current = subject.to_vec();
+        let mut changed = false;
+        for (index, pattern) in patterns.iter().enumerate() {
+            if limit >= 0 && *count >= limit {
+                break;
+            }
+            let replacement_value = if replacement_is_array {
+                replacements.get(index)
+            } else {
+                replacements.first()
+            };
+            let replacement = match replacement_value {
+                Some(value) => self.pcre_subject_bytes("preg_replace()", value, span)?,
+                None => Vec::new(),
+            };
+            if let Some(legacy) =
+                legacy_preg_replace_bytes(&pattern.value, &replacement, &current, span)
+            {
+                let replaced = legacy?;
+                if replaced != current {
+                    *count += 1;
+                    changed = true;
+                    current = replaced;
+                }
+                continue;
+            }
+            let Some(regex) =
+                self.compile_pcre_or_warn("preg_replace()", &pattern.value_as_php(), span)?
+            else {
+                return Ok((Vec::new(), false));
+            };
+            if regex.utf8 && std::str::from_utf8(&current).is_err() {
+                self.pcre_last_error = PHP_PREG_BAD_UTF8_ERROR;
+                return Ok((Vec::new(), false));
+            }
+            let (replaced, replacements_made) = pcre_replace_bytes(
+                &regex.regex,
+                &current,
+                &replacement,
+                limit_remaining(limit, *count),
+                span,
+            )?;
+            if replacements_made > 0 {
+                *count += replacements_made;
+                changed = true;
+                current = replaced;
+            }
+            self.pcre_last_error = PHP_PREG_NO_ERROR;
+        }
+        Ok((current, changed))
+    }
+
+    fn preg_replace_callback_result(
+        &mut self,
+        args: &[Value],
+        span: Span,
+    ) -> CompileResult<(Value, i64)> {
+        let patterns = pcre_pattern_values(&args[0]);
+        let callback = &args[1];
+        let limit = args.get(3).and_then(pcre_int_value).unwrap_or(-1);
+        let flags = args.get(4).and_then(pcre_int_value).unwrap_or(0);
+        let mut count = 0_i64;
+
+        match &args[2] {
+            Value::Array(subjects) => {
+                let mut result = PhpArray::new();
+                for entry in subjects.entries() {
+                    let subject_value = entry.value_cloned();
+                    let subject =
+                        self.pcre_subject_bytes("preg_replace_callback()", &subject_value, span)?;
+                    let replaced = self.preg_replace_callback_subject_bytes(
+                        &patterns,
+                        callback,
+                        &subject,
+                        limit,
+                        flags,
+                        &mut count,
+                        "preg_replace_callback()",
+                        span,
+                    )?;
+                    result.insert(
+                        entry.key.clone(),
+                        interpreter_value_from_php_string_bytes(replaced),
+                    );
+                }
+                Ok((Value::Array(result), count))
+            }
+            subject => {
+                let subject = self.pcre_subject_bytes("preg_replace_callback()", subject, span)?;
+                let replaced = self.preg_replace_callback_subject_bytes(
+                    &patterns,
+                    callback,
+                    &subject,
+                    limit,
+                    flags,
+                    &mut count,
+                    "preg_replace_callback()",
+                    span,
+                )?;
+                Ok((interpreter_value_from_php_string_bytes(replaced), count))
+            }
+        }
+    }
+
+    fn preg_replace_callback_array_result(
+        &mut self,
+        args: &[Value],
+        span: Span,
+    ) -> CompileResult<(Value, i64)> {
+        let Value::Array(pattern_callbacks) = &args[0] else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "preg_replace_callback_array()",
+                    format!(
+                        "Argument #1 ($pattern) must be of type array, {} given",
+                        Self::php_type_error_actual_name(&args[0])
+                    ),
+                ),
+            ));
+        };
+        let mut patterns = Vec::new();
+        for entry in pattern_callbacks.entries() {
+            let ArrayKey::String(pattern) = &entry.key else {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "preg_replace_callback_array()",
+                        "numeric pattern keys are not implemented in the current subset",
+                    ),
+                ));
+            };
+            patterns.push((
+                PcrePatternValue::from_bytes(pattern.as_bytes().to_vec()),
+                entry.value_cloned(),
+            ));
+        }
+
+        let limit = args.get(2).and_then(pcre_int_value).unwrap_or(-1);
+        let flags = args.get(3).and_then(pcre_int_value).unwrap_or(0);
+        let mut count = 0_i64;
+
+        match &args[1] {
+            Value::Array(subjects) => {
+                let mut result = PhpArray::new();
+                for entry in subjects.entries() {
+                    let subject_value = entry.value_cloned();
+                    let mut subject = self.pcre_subject_bytes(
+                        "preg_replace_callback_array()",
+                        &subject_value,
+                        span,
+                    )?;
+                    for (pattern, callback) in &patterns {
+                        subject = self.preg_replace_callback_subject_bytes(
+                            std::slice::from_ref(pattern),
+                            callback,
+                            &subject,
+                            limit,
+                            flags,
+                            &mut count,
+                            "preg_replace_callback_array()",
+                            span,
+                        )?;
+                    }
+                    result.insert(
+                        entry.key.clone(),
+                        interpreter_value_from_php_string_bytes(subject),
+                    );
+                }
+                Ok((Value::Array(result), count))
+            }
+            subject => {
+                let mut subject =
+                    self.pcre_subject_bytes("preg_replace_callback_array()", subject, span)?;
+                for (pattern, callback) in &patterns {
+                    subject = self.preg_replace_callback_subject_bytes(
+                        std::slice::from_ref(pattern),
+                        callback,
+                        &subject,
+                        limit,
+                        flags,
+                        &mut count,
+                        "preg_replace_callback_array()",
+                        span,
+                    )?;
+                }
+                Ok((interpreter_value_from_php_string_bytes(subject), count))
+            }
+        }
+    }
+
+    fn preg_replace_callback_subject_bytes(
+        &mut self,
+        patterns: &[PcrePatternValue],
+        callback: &Value,
+        subject: &[u8],
+        limit: i64,
+        flags: i64,
+        count: &mut i64,
+        context: &'static str,
+        span: Span,
+    ) -> CompileResult<Vec<u8>> {
+        let mut current = subject.to_vec();
+        for pattern in patterns {
+            if limit >= 0 && *count >= limit {
+                break;
+            }
+            if let Some(replaced) = self.preg_replace_callback_bounded_subject_bytes(
+                pattern, callback, &current, limit, flags, count, context, span,
+            ) {
+                current = replaced?;
+                continue;
+            }
+            let Some(regex) = self.compile_pcre_or_warn(context, &pattern.value_as_php(), span)?
+            else {
+                return Ok(Vec::new());
+            };
+            if regex.utf8 && std::str::from_utf8(&current).is_err() {
+                self.pcre_last_error = PHP_PREG_BAD_UTF8_ERROR;
+                return Ok(Vec::new());
+            }
+            let mut output = Vec::with_capacity(current.len());
+            let mut cursor = 0_usize;
+            let mut replacements = 0_i64;
+            for captures in regex.regex.captures_iter(&current) {
+                if limit_remaining(limit, *count + replacements) == Some(0) {
+                    break;
+                }
+                let Some(matched) = captures.get(0) else {
+                    continue;
+                };
+                output.extend_from_slice(&current[cursor..matched.start()]);
+                let captures_array = pcre_capture_array(&current, 0, &captures, flags, span)?;
+                let replacement = self.call_preg_replace_callback_replacement(
+                    callback,
+                    captures_array,
+                    context,
+                    span,
+                )?;
+                output.extend_from_slice(replacement.as_bytes());
+                cursor = matched.end();
+                replacements += 1;
+            }
+            if replacements > 0 {
+                output.extend_from_slice(&current[cursor..]);
+                current = output;
+                *count += replacements;
+            }
+            self.pcre_last_error = PHP_PREG_NO_ERROR;
+        }
+        Ok(current)
+    }
+
+    fn preg_replace_callback_bounded_subject_bytes(
+        &mut self,
+        pattern: &PcrePatternValue,
+        callback: &Value,
+        subject: &[u8],
+        limit: i64,
+        flags: i64,
+        count: &mut i64,
+        context: &'static str,
+        span: Span,
+    ) -> Option<CompileResult<Vec<u8>>> {
+        let pattern_text = std::str::from_utf8(&pattern.value).ok()?;
+        let bounded = BoundedPregPattern::parse(pattern_text).ok()?;
+        if !bounded.has_non_empty_iterable_matches() || flags & PHP_PREG_OFFSET_CAPTURE != 0 {
+            return None;
+        }
+        let subject_text = std::str::from_utf8(subject).ok()?;
+        let mut output = Vec::with_capacity(subject.len());
+        let mut cursor = 0_usize;
+        let mut search_start = 0_usize;
+        let mut replacements = 0_i64;
+
+        while let Some(matched) = bounded.next_match(subject_text, search_start) {
+            if limit_remaining(limit, *count + replacements) == Some(0) {
+                break;
+            }
+            output.extend_from_slice(&subject[cursor..matched.start]);
+            let replacement = match self.call_preg_replace_callback_replacement(
+                callback,
+                matched.captures,
+                context,
+                span,
+            ) {
+                Ok(replacement) => replacement,
+                Err(error) => return Some(Err(error)),
+            };
+            output.extend_from_slice(replacement.as_bytes());
+            cursor = matched.end;
+            search_start = matched.end;
+            replacements += 1;
+        }
+
+        if replacements == 0 {
+            return Some(Ok(subject.to_vec()));
+        }
+        output.extend_from_slice(&subject[cursor..]);
+        *count += replacements;
+        self.pcre_last_error = PHP_PREG_NO_ERROR;
+        Some(Ok(output))
+    }
+
+    fn call_pcre_callback_with_values(
+        &mut self,
+        callback: &Value,
+        args: Vec<Value>,
+        context: &'static str,
+        span: Span,
+    ) -> CompileResult<Value> {
+        match callback {
+            Value::String(callback_name) => {
+                if let Some((class_name, method_name)) =
+                    static_method_callable_string(callback_name)
+                {
+                    let callback =
+                        static_method_array_callable_value(class_name, method_name, span)?;
+                    return self.call_array_callable_with_values_with_context(
+                        &callback, args, span, false, context,
+                    );
+                }
+                if let Some(error) = forbidden_dynamic_builtin_call_error(callback_name, span) {
+                    return Err(error);
+                }
+                let callable = self.lookup_function(callback_name).ok_or_else(|| {
+                    runtime_error(
+                        span,
+                        RuntimeError::undefined_function(callable_name(callback_name)),
+                    )
+                })?;
+                match callable {
+                    Callable::Builtin(key) => self.call_builtin(&key, args, span),
+                    Callable::User(function) => {
+                        let function = function.as_ref();
+                        ensure_user_function_arity_with_extra_policy(
+                            function,
+                            args.len(),
+                            span,
+                            true,
+                        )
+                            .map_err(|error| callback_context_diagnostic(context, error))?;
+                        ensure_supported_function_signature(function, args.len(), span)?;
+                        self.ensure_user_function_call_depth(function, span)?;
+                        self.call_user_function_with_checked_values(
+                            function,
+                            args,
+                            None,
+                            None,
+                            None,
+                            Vec::new(),
+                            None,
+                        )
+                    }
+                }
+            }
+            Value::Array(callback) => {
+                self.call_array_callable_with_values_with_context(callback, args, span, true, context)
+            }
+            Value::Closure(closure) => {
+                self.invoke_closure_value_with_extra_policy(
+                    closure.clone(),
+                    args,
+                    span,
+                    context,
+                    true,
+                )
+            }
+            Value::Object(object) => {
+                let receiver_class = self
+                    .classes
+                    .get(object.class_id())
+                    .expect("object class id should resolve to class metadata");
+                let receiver_class_name = receiver_class.name().to_string();
+                let Some((class_id, declaring_class_name, resolved_method_name, visibility, is_static)) =
+                    self.resolve_instance_method(object.class_id(), "__invoke")
+                else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::undefined_function(format!("{receiver_class_name}::__invoke()")),
+                    ));
+                };
+                if is_static {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{declaring_class_name}::__invoke()"),
+                            "invokable object callbacks require a non-static __invoke method in the current subset",
+                        ),
+                    ));
+                }
+                if visibility != Visibility::Public {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{declaring_class_name}::__invoke()"),
+                            "invokable object callback dispatch is only implemented for public __invoke methods",
+                        ),
+                    ));
+                }
+
+                let function =
+                    self.method_function(class_id, &declaring_class_name, &resolved_method_name, span)?;
+                let function = function.as_ref();
+                ensure_user_function_arity_with_extra_policy(function, args.len(), span, true)
+                    .map_err(|error| callback_context_diagnostic(context, error))?;
+                ensure_supported_function_signature(function, args.len(), span)?;
+                self.ensure_user_function_call_depth(function, span)?;
+                self.call_user_function_with_checked_values(
+                    function,
+                    args,
+                    Some(object.clone()),
+                    Some(class_id),
+                    Some(object.class_id()),
+                    Vec::new(),
+                    None,
+                )
+            }
+            other => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    context,
+                    format!(
+                        "callback must be string, closure, or array callable in the current subset, got {}",
+                        other.type_name()
+                    ),
+                ),
+            )),
+        }
+    }
+}
+
+#[derive(Clone)]
+struct PhpPcreRegex {
+    regex: Regex,
+    utf8: bool,
+}
+
+#[derive(Clone)]
+struct PcrePatternValue {
+    value: Vec<u8>,
+}
+
+impl PcrePatternValue {
+    fn from_value(value: &Value) -> Self {
+        match value {
+            Value::String(value) => Self::from_bytes(value.as_bytes().to_vec()),
+            Value::BinaryString(value) => Self::from_bytes(value.clone()),
+            value => Self::from_bytes(value.echo_string().into_bytes()),
+        }
+    }
+
+    fn from_bytes(value: Vec<u8>) -> Self {
+        Self { value }
+    }
+
+    fn value_as_php(&self) -> Value {
+        interpreter_value_from_php_string_bytes(self.value.clone())
+    }
+}
+
+#[derive(Default)]
+struct PhpPcreSettings {
+    case_insensitive: bool,
+    multi_line: bool,
+    dot_matches_new_line: bool,
+    ignore_whitespace: bool,
+    swap_greed: bool,
+    utf8: bool,
+}
+
+impl PhpPcreSettings {
+    fn parse(modifiers: &str) -> Result<Self, String> {
+        let mut settings = Self::default();
+        for modifier in modifiers.chars() {
+            match modifier {
+                'i' => settings.case_insensitive = true,
+                'm' => settings.multi_line = true,
+                's' => settings.dot_matches_new_line = true,
+                'x' => settings.ignore_whitespace = true,
+                'U' => settings.swap_greed = true,
+                'u' => settings.utf8 = true,
+                'A' | 'D' | 'S' | 'J' => {}
+                other => return Err(format!("Unknown modifier '{other}'")),
+            }
+        }
+        Ok(settings)
+    }
+}
+
+fn pcre_int_value(value: &Value) -> Option<i64> {
+    match value {
+        Value::Int(value) => Some(*value),
+        Value::Bool(value) => Some(i64::from(*value)),
+        Value::Null => Some(0),
+        Value::String(value) => value.parse::<i64>().ok(),
+        _ => None,
+    }
+}
+
+fn pcre_pattern_values(value: &Value) -> Vec<PcrePatternValue> {
+    match value {
+        Value::Array(patterns) => patterns
+            .entries()
+            .iter()
+            .map(|entry| PcrePatternValue::from_value(&entry.value_cloned()))
+            .collect(),
+        value => vec![PcrePatternValue::from_value(value)],
+    }
+}
+
+fn pcre_replacement_values(value: &Value) -> Vec<Value> {
+    match value {
+        Value::Array(replacements) => replacements
+            .entries()
+            .iter()
+            .map(|entry| entry.value_cloned())
+            .collect(),
+        value => vec![value.clone()],
+    }
+}
+
+fn limit_remaining(limit: i64, used: i64) -> Option<i64> {
+    (limit >= 0).then_some((limit - used).max(0))
+}
+
+fn parse_php_pcre_pattern(pattern: &str) -> Result<(String, String), String> {
+    let mut chars = pattern.char_indices();
+    let Some((_, delimiter)) = chars.next() else {
+        return Err("Empty regular expression".to_string());
+    };
+    if delimiter.is_ascii_alphanumeric() || delimiter == '\\' || delimiter == '\0' {
+        return Err("Delimiter must not be alphanumeric, backslash, or NUL".to_string());
+    }
+    let close = match delimiter {
+        '(' => ')',
+        '[' => ']',
+        '{' => '}',
+        '<' => '>',
+        other => other,
+    };
+    let mut closing_index = None;
+    let mut escaped = false;
+    for (index, ch) in chars {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if ch == '\\' {
+            escaped = true;
+            continue;
+        }
+        if ch == close {
+            closing_index = Some(index);
+        }
+    }
+    let Some(end) = closing_index else {
+        return Err("No ending delimiter found".to_string());
+    };
+    let body = pattern[delimiter.len_utf8()..end].to_string();
+    let modifiers = pattern[end + close.len_utf8()..].to_string();
+    Ok((body, modifiers))
+}
+
+fn translate_pcre_body_for_regex(body: &str) -> String {
+    let mut output = String::with_capacity(body.len());
+    let mut chars = body.chars().peekable();
+    let mut in_class = false;
+    let mut in_quantifier = false;
+    let mut escaped = false;
+    while let Some(ch) = chars.next() {
+        if escaped {
+            if matches!(ch, '/' | '#') {
+                output.push(ch);
+            } else if ch == 'k' && chars.peek() == Some(&'<') {
+                output.push_str("(?P=");
+                chars.next();
+                for name_ch in chars.by_ref() {
+                    if name_ch == '>' {
+                        output.push(')');
+                        break;
+                    }
+                    output.push(name_ch);
+                }
+            } else {
+                output.push('\\');
+                output.push(ch);
+            }
+            escaped = false;
+            continue;
+        }
+        match ch {
+            '\\' => escaped = true,
+            '[' if !in_class => {
+                in_class = true;
+                output.push(ch);
+            }
+            ']' if in_class => {
+                in_class = false;
+                output.push(ch);
+            }
+            '{' if !in_class => {
+                if pcre_quantifier_body_starts(chars.clone()) {
+                    in_quantifier = true;
+                    output.push(ch);
+                } else {
+                    output.push_str("\\{");
+                }
+            }
+            '}' if !in_class && in_quantifier => {
+                in_quantifier = false;
+                output.push(ch);
+            }
+            '}' if !in_class => output.push_str("\\}"),
+            _ => output.push(ch),
+        }
+    }
+    if escaped {
+        output.push('\\');
+    }
+    output.replace("(?<", "(?P<")
+}
+
+fn pcre_quantifier_body_starts(mut chars: std::iter::Peekable<std::str::Chars<'_>>) -> bool {
+    let mut saw_digit = false;
+    while let Some(ch) = chars.peek().copied() {
+        match ch {
+            '0'..='9' => {
+                saw_digit = true;
+                chars.next();
+            }
+            ',' => {
+                chars.next();
+                while chars.peek().is_some_and(|ch| ch.is_ascii_digit()) {
+                    chars.next();
+                }
+                return saw_digit && chars.peek() == Some(&'}');
+            }
+            '}' => return saw_digit,
+            _ => return false,
+        }
+    }
+    false
+}
+
+fn pcre_capture_array(
+    subject: &[u8],
+    base: usize,
+    captures: &RegexCaptures<'_>,
+    flags: i64,
+    span: Span,
+) -> CompileResult<PhpArray> {
+    let mut array = PhpArray::new();
+    for index in 0..captures.len() {
+        let capture = captures
+            .get(index)
+            .map(|matched| (base + matched.start(), base + matched.end()));
+        array
+            .append(pcre_capture_value(subject, capture, flags, span)?)
+            .map_err(|error| runtime_error(span, error))?;
+    }
+    Ok(array)
+}
+
+fn pcre_capture_value(
+    subject: &[u8],
+    capture: Option<(usize, usize)>,
+    flags: i64,
+    span: Span,
+) -> CompileResult<Value> {
+    let unmatched_as_null = flags & PHP_PREG_UNMATCHED_AS_NULL != 0;
+    let value = match capture {
+        Some((start, end)) => interpreter_value_from_php_string_bytes(subject[start..end].to_vec()),
+        None if unmatched_as_null => Value::Null,
+        None => Value::String(String::new()),
+    };
+    if flags & PHP_PREG_OFFSET_CAPTURE == 0 {
+        return Ok(value);
+    }
+    let offset = capture.map(|(start, _)| start as i64).unwrap_or(-1);
+    let mut pair = PhpArray::new();
+    pair.append(value)
+        .map_err(|error| runtime_error(span, error))?;
+    pair.append(Value::Int(offset))
+        .map_err(|error| runtime_error(span, error))?;
+    Ok(Value::Array(pair))
+}
+
+fn pcre_replace_bytes(
+    regex: &Regex,
+    subject: &[u8],
+    replacement: &[u8],
+    limit: Option<i64>,
+    span: Span,
+) -> CompileResult<(Vec<u8>, i64)> {
+    let mut output = Vec::with_capacity(subject.len());
+    let mut cursor = 0_usize;
+    let mut count = 0_i64;
+    for captures in regex.captures_iter(subject) {
+        if limit == Some(count) {
+            break;
+        }
+        let Some(matched) = captures.get(0) else {
+            continue;
+        };
+        output.extend_from_slice(&subject[cursor..matched.start()]);
+        output.extend_from_slice(&expand_pcre_replacement(subject, &captures, replacement));
+        cursor = matched.end();
+        count += 1;
+    }
+    if count == 0 {
+        return Ok((subject.to_vec(), 0));
+    }
+    output.extend_from_slice(&subject[cursor..]);
+    let _ = span;
+    Ok((output, count))
+}
+
+fn expand_pcre_replacement(
+    subject: &[u8],
+    captures: &RegexCaptures<'_>,
+    replacement: &[u8],
+) -> Vec<u8> {
+    let mut output = Vec::with_capacity(replacement.len());
+    let mut index = 0_usize;
+    while index < replacement.len() {
+        match replacement[index] {
+            b'\\' => {
+                if let Some((capture, consumed)) =
+                    parse_replacement_capture(&replacement[index + 1..])
+                {
+                    append_capture_bytes(&mut output, subject, captures, capture);
+                    index += consumed + 1;
+                } else if let Some(&next) = replacement.get(index + 1) {
+                    output.push(next);
+                    index += 2;
+                } else {
+                    output.push(b'\\');
+                    index += 1;
+                }
+            }
+            b'$' => {
+                if replacement.get(index + 1) == Some(&b'{') {
+                    if let Some(close) = replacement[index + 2..]
+                        .iter()
+                        .position(|byte| *byte == b'}')
+                    {
+                        if let Some(capture) =
+                            std::str::from_utf8(&replacement[index + 2..index + 2 + close])
+                                .ok()
+                                .and_then(|digits| digits.parse::<usize>().ok())
+                        {
+                            append_capture_bytes(&mut output, subject, captures, capture);
+                            index += close + 3;
+                            continue;
+                        }
+                    }
+                }
+                if let Some((capture, consumed)) =
+                    parse_replacement_capture(&replacement[index + 1..])
+                {
+                    append_capture_bytes(&mut output, subject, captures, capture);
+                    index += consumed + 1;
+                } else {
+                    output.push(b'$');
+                    index += 1;
+                }
+            }
+            byte => {
+                output.push(byte);
+                index += 1;
+            }
+        }
+    }
+    output
+}
+
+fn parse_replacement_capture(bytes: &[u8]) -> Option<(usize, usize)> {
+    let first = *bytes.first()?;
+    if !first.is_ascii_digit() {
+        return None;
+    }
+    let mut consumed = 1;
+    let mut value = usize::from(first - b'0');
+    if let Some(second) = bytes.get(1).copied().filter(u8::is_ascii_digit) {
+        value = value * 10 + usize::from(second - b'0');
+        consumed = 2;
+    }
+    Some((value, consumed))
+}
+
+fn append_capture_bytes(
+    output: &mut Vec<u8>,
+    subject: &[u8],
+    captures: &RegexCaptures<'_>,
+    capture: usize,
+) {
+    if let Some(matched) = captures.get(capture) {
+        output.extend_from_slice(&subject[matched.start()..matched.end()]);
+    }
+}
+
+fn legacy_preg_replace_bytes(
+    pattern: &[u8],
+    replacement: &[u8],
+    subject: &[u8],
+    span: Span,
+) -> Option<CompileResult<Vec<u8>>> {
+    let pattern = std::str::from_utf8(pattern).ok()?;
+    let replacement = std::str::from_utf8(replacement).ok()?;
+    let subject = std::str::from_utf8(subject).ok()?;
+    let legacy_pattern = pattern == "/[^0-9.].*/"
+        || pattern == "#/[^/]*$#i"
+        || is_wordpress_redirect_sanitizer_cleanup_pattern(pattern)
+        || is_wordpress_mail_host_cleanup_pattern(pattern)
+        || is_wordpress_kses_control_char_cleanup_pattern(pattern)
+        || is_wordpress_kses_slash_zero_cleanup_pattern(pattern)
+        || is_wordpress_wpdb_prepare_placeholder_escape_pattern(pattern);
+    if !legacy_pattern {
+        return None;
+    }
+    if is_wordpress_wpdb_prepare_placeholder_escape_pattern(pattern) {
+        if !is_wordpress_wpdb_prepare_placeholder_escape_replacement(replacement) {
+            return None;
+        }
+    } else if !replacement.is_empty() {
+        return None;
+    }
+    Some(
+        call_preg_replace(
+            &[
+                Value::String(pattern.to_string()),
+                Value::String(replacement.to_string()),
+                Value::String(subject.to_string()),
+            ],
+            span,
+        )
+        .and_then(|value| match value {
+            Value::String(value) => Ok(value.into_bytes()),
+            Value::BinaryString(value) => Ok(value),
+            value => value
+                .try_echo_bytes()
+                .map_err(|error| runtime_error(span, error)),
+        }),
+    )
 }
 
 struct BoundedPregMatch {

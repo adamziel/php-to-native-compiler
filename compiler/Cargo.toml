@@ -16,4 +16,5 @@ path = "src/main.rs"
 hmac = "0.12"
 md-5 = "0.10"
 php_runtime = { path = "../runtime" }
+regex = "1"
 sha2 = "0.10"
