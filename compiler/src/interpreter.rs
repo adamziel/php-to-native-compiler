@@ -20234,6 +20234,18 @@ impl Interpreter {
             .or_else(|| error.file.as_ref().map(|file| file.display().to_string()))
             .unwrap_or_else(|| "Command line code".to_string());
         let line = error.line;
+        let has_only_internal_frames = self
+            .pending_uncaught_call_frames
+            .iter()
+            .all(|frame| frame.function_line == frame.call_line);
+        if !self.pending_uncaught_call_frames.is_empty() && has_only_internal_frames {
+            let stack_trace = self.formatted_pending_uncaught_call_trace(&file);
+            self.push_uncaught_fatal_separator();
+            self.push_unbuffered_stdout_text(&format!(
+                "Fatal error: Uncaught {error_class_name}: {error_message} in {file}:{line}\nStack trace:\n{stack_trace}\n  thrown in {file} on line {line}"
+            ));
+            return;
+        }
         let callable = call_argument_type_error_callable(error_message).unwrap_or("{main}");
         self.push_uncaught_fatal_separator();
         self.push_unbuffered_stdout_text(&format!(
@@ -83587,17 +83599,24 @@ impl Interpreter {
                     match arg {
                         Value::Array(array) => arrays.push(array),
                         other => {
-                            return Err(runtime_error(
+                            let error = runtime_error(
                                 span,
                                 RuntimeError::unsupported_call(
                                     "array_merge()",
                                     format!(
-                                        "{} must be array, got {}",
-                                        positional_argument_label(index),
-                                        other.type_name()
+                                        "Argument #{} must be of type array, {} given",
+                                        index + 1,
+                                        php_type_error_given(other)
                                     ),
                                 ),
-                            ));
+                            );
+                            self.record_pending_uncaught_internal_call_frame(
+                                "array_merge",
+                                span,
+                                &args,
+                                &error,
+                            );
+                            return Err(error);
                         }
                     }
                 }
@@ -83981,10 +84000,7 @@ impl Interpreter {
                 span,
             ),
             "array_unique" => match args.as_slice() {
-                [Value::Array(array)] => array
-                    .unique_values_by_string()
-                    .map(Value::Array)
-                    .map_err(|error| runtime_error(span, error)),
+                [Value::Array(array)] => self.call_array_unique_by_string(array, span),
                 [Value::Array(array), Value::Int(0)] => array
                     .unique_values_regular()
                     .map(Value::Array)
@@ -83993,10 +84009,9 @@ impl Interpreter {
                     .unique_values_by_numeric()
                     .map(Value::Array)
                     .map_err(|error| runtime_error(span, error)),
-                [Value::Array(array), Value::Int(2)] => array
-                    .unique_values_by_string()
-                    .map(Value::Array)
-                    .map_err(|error| runtime_error(span, error)),
+                [Value::Array(array), Value::Int(2)] => {
+                    self.call_array_unique_by_string(array, span)
+                }
                 [Value::Array(_), _] => Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
@@ -87728,13 +87743,12 @@ impl Interpreter {
             Value::Float(value) => Ok(ArrayNumericNumber::Float(value)),
             Value::String(value) => match parse_array_numeric_string(&value) {
                 Some(number) => Ok(number),
-                None if matches!(operation, ArrayNumericOperation::Multiplication) => {
+                None => {
                     self.emit_array_numeric_unsupported_type_warning(
                         callable, operation, "string", span,
                     )?;
                     Ok(ArrayNumericNumber::Int(0))
                 }
-                None => Ok(operation.unsupported_fallback()),
             },
             Value::BinaryString(value) => {
                 let number = std::str::from_utf8(&value)
@@ -87784,6 +87798,31 @@ impl Interpreter {
             ),
             span,
         )
+    }
+
+    fn call_array_unique_by_string(
+        &mut self,
+        array: &PhpArray,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let mut seen = Vec::new();
+        let mut unique = PhpArray::new();
+        for entry in array.entries() {
+            let value = entry.value_cloned();
+            let comparison_value =
+                self.array_native_string_comparison_value("array_unique()", &value, span)?;
+            if seen
+                .iter()
+                .any(|seen_value| seen_value == &comparison_value)
+            {
+                continue;
+            }
+
+            seen.push(comparison_value);
+            unique.insert_slot(entry.key.clone(), entry.slot().clone());
+        }
+
+        Ok(Value::Array(unique))
     }
 
     fn call_array_reduce(&mut self, args: Vec<Value>, span: Span) -> CompileResult<Value> {

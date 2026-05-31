@@ -1,10 +1,17 @@
 use php_compiler::error::Phase;
 use php_compiler::{emit_ir_source, run_source};
 
-fn runtime_error(source: &str) -> php_compiler::error::Diagnostic {
-    let error = run_source(source).unwrap_err();
-    assert_eq!(error.phase, Phase::Runtime);
-    error
+fn assert_uncaught_type_error(source: &str, message: &str, line: usize) {
+    let execution = run_source(source).unwrap();
+    assert_eq!(execution.exit_code, 255);
+    assert!(execution.stdout.contains(message), "{}", execution.stdout);
+    assert!(
+        execution
+            .stdout
+            .contains(&format!("thrown in Command line code on line {line}")),
+        "{}",
+        execution.stdout
+    );
 }
 
 #[test]
@@ -169,39 +176,50 @@ fn emit_ir_rejects_array_merge_recursive_until_native_call_lowering_exists() {
 
 #[test]
 fn array_merge_requires_array_first_argument() {
-    let error = runtime_error("<?php\n$right = [];\necho array_merge(42, $right);\n");
-
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 6);
-    assert_eq!(
-        error.message,
-        "unsupported call array_merge(): first argument must be array, got int"
+    assert_uncaught_type_error(
+        "<?php\n$right = [];\necho array_merge(42, $right);\n",
+        "Fatal error: Uncaught TypeError: array_merge(): Argument #1 must be of type array, int given",
+        3,
     );
 }
 
 #[test]
 fn array_merge_requires_array_second_argument() {
-    let error = runtime_error("<?php\n$left = [];\necho array_merge($left, 42);\n");
-
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 6);
-    assert_eq!(
-        error.message,
-        "unsupported call array_merge(): second argument must be array, got int"
+    assert_uncaught_type_error(
+        "<?php\n$left = [];\necho array_merge($left, 42);\n",
+        "Fatal error: Uncaught TypeError: array_merge(): Argument #2 must be of type array, int given",
+        3,
     );
 }
 
 #[test]
 fn array_merge_requires_array_variadic_arguments() {
-    let error =
-        runtime_error("<?php\n$left = [];\n$right = [];\necho array_merge($left, $right, 42);\n");
-
-    assert_eq!(error.line, 4);
-    assert_eq!(error.column, 6);
-    assert_eq!(
-        error.message,
-        "unsupported call array_merge(): third argument must be array, got int"
+    assert_uncaught_type_error(
+        "<?php\n$left = [];\n$right = [];\necho array_merge($left, $right, 42);\n",
+        "Fatal error: Uncaught TypeError: array_merge(): Argument #3 must be of type array, int given",
+        4,
     );
+}
+
+#[test]
+fn array_merge_preserves_reference_backed_value_slots() {
+    let source = r#"<?php
+$value = "foo";
+$left = [&$value];
+$right = ["name" => "bar"];
+$merged = array_merge($left, $right);
+var_dump($merged);
+$value = "changed";
+var_dump($merged);
+"#;
+
+    let execution = run_source(source).unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "array(2) {\n  [0]=>\n  &string(3) \"foo\"\n  [\"name\"]=>\n  string(3) \"bar\"\n}\narray(2) {\n  [0]=>\n  &string(7) \"changed\"\n  [\"name\"]=>\n  string(3) \"bar\"\n}\n"
+    );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

@@ -167,6 +167,28 @@ echo $items["name"], "|", $items[5], "|", $items[2], "|", $items["02"], "|", $it
 }
 
 #[test]
+fn array_slice_preserves_reference_backed_value_slots() {
+    let source = r#"<?php
+$first = "one";
+$second = "two";
+$third = "three";
+$items = [3 => &$first, 2 => &$second, 1 => &$third];
+$slice = array_slice($items, 1, 2);
+var_dump($slice);
+$second = "changed";
+var_dump(array_slice($items, 1, 2, true));
+"#;
+
+    let execution = run_source(source).unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "array(2) {\n  [0]=>\n  &string(3) \"two\"\n  [1]=>\n  &string(5) \"three\"\n}\narray(2) {\n  [2]=>\n  &string(7) \"changed\"\n  [1]=>\n  &string(5) \"three\"\n}\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn array_slice_requires_array_first_argument() {
     let error = runtime_error("<?php\necho array_slice(42, 0);\n");
 

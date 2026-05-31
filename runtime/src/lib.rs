@@ -29679,16 +29679,16 @@ impl PhpArray {
         let mut array = Self::new();
         for entry in self.entries[start..end].iter() {
             if preserve_keys {
-                array.insert(entry.key.clone(), entry.value_cloned());
+                array.insert_slot(entry.key.clone(), entry.slot().clone());
             } else {
                 match &entry.key {
                     ArrayKey::Int(_) => {
                         array
-                            .append(entry.value_cloned())
+                            .append_slot(entry.slot().clone())
                             .expect("array length fits in i64");
                     }
                     ArrayKey::String(key) => {
-                        array.insert(key.clone(), entry.value_cloned());
+                        array.insert_slot(key.clone(), entry.slot().clone());
                     }
                 }
             }
@@ -30146,11 +30146,11 @@ impl PhpArray {
         for entry in &source.entries {
             match &entry.key {
                 ArrayKey::Int(_) => {
-                    self.append(entry.value_cloned())
+                    self.append_slot(entry.slot().clone())
                         .expect("array length fits in i64");
                 }
                 ArrayKey::String(key) => {
-                    self.insert(key.clone(), entry.value_cloned());
+                    self.insert_slot(key.clone(), entry.slot().clone());
                 }
             }
         }

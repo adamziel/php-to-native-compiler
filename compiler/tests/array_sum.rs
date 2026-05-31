@@ -50,7 +50,14 @@ fn array_sum_treats_non_numeric_strings_as_zero() {
     let execution =
         run_source("<?php\n$items = [\"ok\", \"abc\"];\necho array_sum($items);\n").unwrap();
 
-    assert_eq!(execution.stdout, "0");
+    assert_eq!(
+        execution
+            .stdout
+            .matches("Warning: array_sum(): Addition is not supported on type string")
+            .count(),
+        2
+    );
+    assert!(execution.stdout.ends_with("\n0"));
     assert_eq!(execution.exit_code, 0);
 }
 
