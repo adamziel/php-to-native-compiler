@@ -86718,7 +86718,8 @@ impl Interpreter {
         prebound_locals: Vec<PreboundLocal>,
         span: Span,
     ) -> CompileResult<Value> {
-        ensure_user_function_arity_with_extra_policy(function, args.len(), span, true)?;
+        ensure_user_function_arity_with_extra_policy(function, args.len(), span, true)
+            .map_err(array_walk_callback_diagnostic)?;
         ensure_supported_array_walk_callback_metadata(function, span)?;
         self.emit_array_walk_reference_parameter_warnings(function, args.len(), span)?;
         self.ensure_user_function_call_depth(function, span)?;
@@ -97825,6 +97826,10 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
         return Some(("ArgumentCountError", message));
     }
 
+    if let Some(message) = array_walk_argument_count_error_message(error) {
+        return Some(("ArgumentCountError", message));
+    }
+
     if let Some(message) = sprintf_argument_count_error_message(error) {
         return Some(("ArgumentCountError", message));
     }
@@ -97834,6 +97839,10 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
     }
 
     if let Some(message) = reflection_constructor_argument_count_error_message(error) {
+        return Some(("TypeError", message));
+    }
+
+    if let Some(message) = array_walk_callback_too_few_arguments_message(error) {
         return Some(("TypeError", message));
     }
 
@@ -98361,6 +98370,35 @@ fn array_map_internal_argument_count_error_message(error: &Diagnostic) -> Option
     None
 }
 
+fn array_walk_argument_count_error_message(error: &Diagnostic) -> Option<String> {
+    if error.phase != Phase::Runtime {
+        return None;
+    }
+
+    let rest = error.message.strip_prefix("arity mismatch for ")?;
+    let (callable, expectation) = rest.split_once(": expected ")?;
+    if !matches!(callable, "array_walk()" | "array_walk_recursive()") {
+        return None;
+    }
+    let (expected, actual) = expectation.split_once(" argument(s), got ")?;
+    let actual = actual.parse::<usize>().ok()?;
+    let (min, max) = expected.split_once(" to ")?;
+    let min = min.parse::<usize>().ok()?;
+    let max = max.parse::<usize>().ok()?;
+
+    if actual < min {
+        Some(format!(
+            "{callable} expects at least {min} arguments, {actual} given"
+        ))
+    } else if actual > max {
+        Some(format!(
+            "{callable} expects at most {max} arguments, {actual} given"
+        ))
+    } else {
+        None
+    }
+}
+
 fn sprintf_argument_count_error_message(error: &Diagnostic) -> Option<String> {
     if error.phase != Phase::Runtime {
         return None;
@@ -98491,6 +98529,19 @@ fn array_filter_callback_diagnostic(error: Diagnostic) -> Diagnostic {
     error
 }
 
+fn array_walk_callback_diagnostic(error: Diagnostic) -> Diagnostic {
+    if error.phase == Phase::Runtime && error.message.starts_with("arity mismatch for ") {
+        return Diagnostic {
+            phase: error.phase,
+            file: error.file,
+            line: error.line,
+            column: error.column,
+            message: format!("array_walk callback {}", error.message),
+        };
+    }
+    error
+}
+
 fn callback_context_diagnostic(context: &str, error: Diagnostic) -> Diagnostic {
     match context {
         "array_map()" => array_map_callback_diagnostic(error),
@@ -98536,6 +98587,27 @@ fn array_map_callback_too_few_arguments_message(error: &Diagnostic) -> Option<St
         return None;
     }
     let callable = format_callback_arity_callable(callable, error);
+
+    Some(format!(
+        "Too few arguments to function {callable}, {actual} passed and exactly {expected} expected"
+    ))
+}
+
+fn array_walk_callback_too_few_arguments_message(error: &Diagnostic) -> Option<String> {
+    if error.phase != Phase::Runtime {
+        return None;
+    }
+
+    let rest = error
+        .message
+        .strip_prefix("array_walk callback arity mismatch for ")?;
+    let (callable, expectation) = rest.split_once(": expected ")?;
+    let (expected, actual) = expectation.split_once(" argument(s), got ")?;
+    let expected = expected.parse::<usize>().ok()?;
+    let actual = actual.parse::<usize>().ok()?;
+    if actual >= expected {
+        return None;
+    }
 
     Some(format!(
         "Too few arguments to function {callable}, {actual} passed and exactly {expected} expected"
