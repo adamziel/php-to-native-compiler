@@ -150,25 +150,32 @@ fn array_column_requires_array_rows_argument() {
 }
 
 #[test]
-fn array_column_rejects_unsupported_column_keys_and_index_key_argument() {
-    let key_error = runtime_error("<?php\n$rows = [];\necho array_column($rows, true);\n");
+fn array_column_coerces_weak_scalar_keys_and_reports_type_errors() {
+    let source = r#"<?php
+$rows = [["php7", "foo"], ["php8", "bar"]];
+print_r(array_column($rows, false));
+print_r(array_column($rows, true));
 
-    assert_eq!(key_error.line, 3);
-    assert_eq!(key_error.column, 6);
+$indexed = [["php" => 7, "foo"], ["php" => 8, "bar"]];
+print_r(array_column($indexed, "php", false));
+print_r(array_column($indexed, "php", true));
+
+try {
+    array_column($rows, []);
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    array_column($indexed, "php", []);
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+"#;
+
+    let execution = run_source(source).unwrap();
     assert_eq!(
-        key_error.message,
-        "unsupported call array_column(): column key must be int, string, or null in the current subset, got bool"
-    );
-
-    let index_key_error = runtime_error(
-        "<?php\n$rows = [[\"name\" => \"Ada\"]];\necho array_column($rows, \"name\", true);\n",
-    );
-
-    assert_eq!(index_key_error.line, 3);
-    assert_eq!(index_key_error.column, 6);
-    assert_eq!(
-        index_key_error.message,
-        "unsupported call array_column(): index key must be int, string, or null in the current subset, got bool"
+        execution.stdout,
+        "Array\n(\n    [0] => php7\n    [1] => php8\n)\nArray\n(\n    [0] => foo\n    [1] => bar\n)\nArray\n(\n    [foo] => 7\n    [bar] => 8\n)\nArray\n(\n    [0] => 7\n    [1] => 8\n)\narray_column(): Argument #2 ($column_key) must be of type string|int|null, array given\narray_column(): Argument #3 ($index_key) must be of type string|int|null, array given\n"
     );
 
     let index_value_error = runtime_error("<?php\n$rows = [[\"id\" => 1.5, \"name\" => \"Ada\"]];\necho array_column($rows, \"name\", \"id\");\n");
@@ -179,6 +186,53 @@ fn array_column_rejects_unsupported_column_keys_and_index_key_argument() {
         index_value_error.message,
         "unsupported call array_column(): lossy or non-finite float index values are not supported; only null, bool, int, string, and integral finite float index values are implemented"
     );
+}
+
+#[test]
+fn array_column_uses_object_string_keys_numeric_object_properties_and_magic_get() {
+    let source = r#"<?php
+class ColumnKey {
+    public function __toString() {
+        return "last_name";
+    }
+}
+class IndexKey {
+    public function __toString() {
+        return "first_name";
+    }
+}
+class Secret {
+    private $prop;
+    public function __construct($value) {
+        $this->prop = $value;
+    }
+    public function __isset($name) {
+        return $name === "prop";
+    }
+    public function __get($name) {
+        return "__get($this->prop)";
+    }
+}
+
+$records = [
+    ["first_name" => "Ada", "last_name" => "Lovelace"],
+    ["first_name" => "Grace", "last_name" => "Hopper"],
+];
+print_r(array_column($records, new ColumnKey(), new IndexKey()));
+
+$numeric = new stdClass();
+$numeric->{1} = "numeric";
+$rows = [$numeric, new Secret("hidden")];
+print_r(array_column($rows, 1));
+print_r(array_column($rows, "prop"));
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "Array\n(\n    [Ada] => Lovelace\n    [Grace] => Hopper\n)\nArray\n(\n    [0] => numeric\n)\nArray\n(\n    [0] => __get(hidden)\n)\n"
+    );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

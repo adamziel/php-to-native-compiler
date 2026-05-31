@@ -83122,48 +83122,7 @@ impl Interpreter {
                     ),
                 )),
             },
-            "array_column" => match args.as_slice() {
-                [Value::Array(array), column_key] => {
-                    let column_key = ArrayColumnKey::from_value(column_key)
-                        .map_err(|error| runtime_error(span, error))?;
-                    array
-                        .column_values(column_key, None)
-                        .map(Value::Array)
-                        .map_err(|error| runtime_error(span, error))
-                }
-                [Value::Array(array), column_key, index_key] => {
-                    let column_key = ArrayColumnKey::from_value(column_key)
-                        .map_err(|error| runtime_error(span, error))?;
-                    let index_key = ArrayColumnKey::index_from_value(index_key)
-                        .map_err(|error| runtime_error(span, error))?;
-                    array
-                        .column_values(column_key, index_key)
-                        .map(Value::Array)
-                        .map_err(|error| runtime_error(span, error))
-                }
-                [other, _] => Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "array_column()",
-                        format!("first argument must be array, got {}", other.type_name()),
-                    ),
-                )),
-                [other, _, _] => Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "array_column()",
-                        format!("first argument must be array, got {}", other.type_name()),
-                    ),
-                )),
-                _ => Err(runtime_error(
-                    span,
-                    RuntimeError::arity_mismatch(
-                        "array_column()",
-                        ArityExpectation::Between { min: 2, max: 3 },
-                        args.len(),
-                    ),
-                )),
-            },
+            "array_column" => self.call_array_column_builtin(&args, span),
             "array_reverse" => match args.as_slice() {
                 [Value::Array(array)] => Ok(Value::Array(array.reversed_reindexed())),
                 [Value::Array(array), Value::Bool(false)] => {
@@ -90780,6 +90739,254 @@ impl Interpreter {
                 ),
             )),
             Value::Resource(id) => Ok(Value::String(format!("Resource id #{id}"))),
+        }
+    }
+
+    fn call_array_column_builtin(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        match args {
+            [Value::Array(array), column_key] => {
+                let column_key =
+                    self.array_column_key_argument(column_key, 2, "column_key", span)?;
+                self.array_column_values(array, column_key, None, span)
+                    .map(Value::Array)
+            }
+            [Value::Array(array), column_key, index_key] => {
+                let column_key =
+                    self.array_column_key_argument(column_key, 2, "column_key", span)?;
+                let index_key = self.array_column_key_argument(index_key, 3, "index_key", span)?;
+                self.array_column_values(array, column_key, index_key, span)
+                    .map(Value::Array)
+            }
+            [other, _] | [other, _, _] => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "array_column()",
+                    format!("first argument must be array, got {}", other.type_name()),
+                ),
+            )),
+            _ => Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "array_column()",
+                    ArityExpectation::Between { min: 2, max: 3 },
+                    args.len(),
+                ),
+            )),
+        }
+    }
+
+    fn array_column_key_argument(
+        &mut self,
+        value: &Value,
+        position: usize,
+        name: &str,
+        span: Span,
+    ) -> CompileResult<Option<ArrayColumnKey>> {
+        match value {
+            Value::Null => Ok(None),
+            Value::Bool(false) => Ok(Some(ArrayColumnKey::Int(0))),
+            Value::Bool(true) => Ok(Some(ArrayColumnKey::Int(1))),
+            Value::Int(value) => Ok(Some(ArrayColumnKey::Int(*value))),
+            Value::Float(float) => {
+                let Some(key) = php_base_conversion_float_to_i64(*float) else {
+                    return Err(self.array_column_key_type_error(value, position, name, span));
+                };
+                if float.trunc() != *float {
+                    self.emit_display_diagnostic(
+                        "Deprecated",
+                        PHP_E_DEPRECATED,
+                        format!(
+                            "Implicit conversion from float {} to int loses precision",
+                            format_php_float_to_int_deprecation_value(*float)
+                        ),
+                        span,
+                    )?;
+                }
+                Ok(Some(ArrayColumnKey::Int(key)))
+            }
+            Value::String(value) => Ok(Some(ArrayColumnKey::String(value.clone()))),
+            Value::BinaryString(value) => Ok(Some(ArrayColumnKey::String(
+                tree_walk_binary_string_utf8(value, "array_column()", span)?.to_string(),
+            ))),
+            Value::Object(object) => {
+                if object.class_name().eq_ignore_ascii_case("BcMath\\Number") {
+                    return self
+                        .bcmath_number_object_string(object, span)
+                        .map(ArrayColumnKey::String)
+                        .map(Some);
+                }
+                if let Some(value) =
+                    self.object_to_string_with_magic(object.clone(), "array_column()", span)?
+                {
+                    return Ok(Some(ArrayColumnKey::String(value)));
+                }
+                Err(self.array_column_key_type_error(value, position, name, span))
+            }
+            Value::Array(_) | Value::Closure(_) | Value::Resource(_) => {
+                Err(self.array_column_key_type_error(value, position, name, span))
+            }
+        }
+    }
+
+    fn array_column_key_type_error(
+        &self,
+        value: &Value,
+        position: usize,
+        name: &str,
+        span: Span,
+    ) -> Diagnostic {
+        runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "array_column()",
+                format!(
+                    "Argument #{position} (${name}) must be of type string|int|null, {} given",
+                    php_type_error_given(value)
+                ),
+            ),
+        )
+    }
+
+    fn array_column_values(
+        &mut self,
+        source: &PhpArray,
+        column_key: Option<ArrayColumnKey>,
+        index_key: Option<ArrayColumnKey>,
+        span: Span,
+    ) -> CompileResult<PhpArray> {
+        let mut result = PhpArray::new();
+        for entry in source.entries() {
+            let value = match &column_key {
+                None => Some(entry.value_cloned()),
+                Some(column_key) => self.array_column_row_value(entry.value(), column_key, span)?,
+            };
+
+            let Some(value) = value else {
+                continue;
+            };
+
+            match &index_key {
+                Some(index_key) => {
+                    if let Some(index_value) =
+                        self.array_column_row_value(entry.value(), index_key, span)?
+                    {
+                        let key = self.array_column_index_key_from_value(&index_value, span)?;
+                        result.insert(key, value);
+                    } else {
+                        result
+                            .append(value)
+                            .map_err(|error| runtime_error(span, error))?;
+                    }
+                }
+                None => {
+                    result
+                        .append(value)
+                        .map_err(|error| runtime_error(span, error))?;
+                }
+            }
+        }
+        Ok(result)
+    }
+
+    fn array_column_row_value(
+        &mut self,
+        row: &Value,
+        key: &ArrayColumnKey,
+        span: Span,
+    ) -> CompileResult<Option<Value>> {
+        match row {
+            Value::Array(row) => Ok(row.get_cloned(Self::array_column_array_key(key))),
+            Value::Object(object) => self.array_column_object_property_value(object, key, span),
+            _ => Ok(None),
+        }
+    }
+
+    fn array_column_object_property_value(
+        &mut self,
+        object: &PhpObject,
+        key: &ArrayColumnKey,
+        span: Span,
+    ) -> CompileResult<Option<Value>> {
+        let property = Self::array_column_property_name(key);
+        if let Some(value) = object.read_current_public_property(&property) {
+            return Ok(Some(value));
+        }
+
+        let Some(isset) = self.call_magic_instance_method_with_values(
+            object.clone(),
+            "__isset",
+            vec![Value::String(property.clone())],
+            span,
+        )?
+        else {
+            return Ok(None);
+        };
+
+        if !isset.is_truthy() {
+            return Ok(None);
+        }
+
+        self.call_magic_instance_method_with_values(
+            object.clone(),
+            "__get",
+            vec![Value::String(property)],
+            span,
+        )
+    }
+
+    fn array_column_array_key(key: &ArrayColumnKey) -> ArrayKey {
+        match key {
+            ArrayColumnKey::Int(value) => ArrayKey::Int(*value),
+            ArrayColumnKey::String(value) => ArrayKey::string(value.clone()),
+        }
+    }
+
+    fn array_column_property_name(key: &ArrayColumnKey) -> String {
+        match key {
+            ArrayColumnKey::Int(value) => value.to_string(),
+            ArrayColumnKey::String(value) => value.clone(),
+        }
+    }
+
+    fn array_column_index_key_from_value(
+        &self,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<ArrayKey> {
+        match value {
+            Value::Null => Ok(ArrayKey::String(String::new())),
+            Value::Bool(false) => Ok(ArrayKey::Int(0)),
+            Value::Bool(true) => Ok(ArrayKey::Int(1)),
+            Value::Int(value) => Ok(ArrayKey::Int(*value)),
+            Value::Float(value)
+                if value.is_finite()
+                    && value.fract() == 0.0
+                    && *value >= i64::MIN as f64
+                    && *value < i64::MAX as f64 =>
+            {
+                Ok(ArrayKey::Int(*value as i64))
+            }
+            Value::Float(_) => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "array_column()",
+                    "lossy or non-finite float index values are not supported; only null, bool, int, string, and integral finite float index values are implemented",
+                ),
+            )),
+            Value::String(value) => Ok(ArrayKey::string(value.clone())),
+            Value::BinaryString(value) => {
+                Ok(ArrayKey::string(tree_walk_binary_string_utf8(value, "array_column()", span)?))
+            }
+            other => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "array_column()",
+                    format!(
+                        "index values must be null, bool, int, string, or integral finite float in the current subset, got {}",
+                        other.type_name()
+                    ),
+                ),
+            )),
         }
     }
 

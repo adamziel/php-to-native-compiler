@@ -9432,25 +9432,27 @@
   stable project diagnostic. Unicode/locale-aware casing, scalar flag
   coercions, references/copy-on-write, exact native warning/`TypeError`
   behavior, and native lowering are not implemented.
-  `array_column($rows, $column_key)` accepts an array first argument and an
-  int, string, or null column key. Array rows use the current int/string key
-  normalization rules, public object rows use exact public property names for
-  string column keys, missing columns are skipped, null values are preserved,
-  scalar rows are skipped, and extracted values are reindexed from integer key
-  zero. A null column key returns each row value reindexed in insertion order.
-  `array_column($rows, $column_key, $index_key)` accepts an int, string, or
-  null index key and uses null, boolean, integer, string, or integral finite
+  `array_column($rows, $column_key)` accepts an array first argument plus
+  null, int, string, weak bool/float, binary-string, or object-with-`__toString`
+  column keys. Array rows use the current int/string key normalization rules;
+  object rows use exact public property names for string keys and stringified
+  numeric property names for integer keys. Missing columns are skipped, null
+  values are preserved, scalar rows are skipped, and extracted values are
+  reindexed from integer key zero. A null column key returns each row value
+  reindexed in insertion order. Non-public or missing object properties can
+  fall back through userland `__isset` and `__get` when those methods are
+  declared.
+  `array_column($rows, $column_key, $index_key)` accepts the same key subset
+  for `$index_key` and uses null, boolean, integer, string, or integral finite
   float row values as result keys. Missing index fields append using the
   current array append cursor, duplicate result keys overwrite the previous
   value without moving that key's insertion position, and null index keys keep
   the reindexed behavior. The builtin is also available through string-valued
   dynamic function calls.
-  Non-array first arguments, column or index keys other than int/string/null,
-  lossy or non-finite float index values, array/object/resource index values,
-  magic `__get`, `ArrayAccess`, exact visibility-context behavior for
-  non-public properties,
-  references/copy-on-write, exact native `TypeError`/warning behavior,
-  resource values, and native lowering are not implemented.
+  Non-array first arguments, array/closure/resource column or index key
+  arguments, lossy or non-finite float index values, array/object/resource
+  index values, `ArrayAccess`, strict-types scalar key rejection, references
+  and copy-on-write, resource values, and native lowering are not implemented.
   `array_fill_keys($keys, $value)` accepts arrays only for the first argument,
   stringifies null, boolean, integer, float, and string key values through the
   PHP scalar key path, preserves `-0.0` as the string key `"-0"`, normalizes
