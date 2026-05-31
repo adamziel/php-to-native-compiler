@@ -1,9 +1,12 @@
 # PHP Native Compiler PHPT Progress
 
-Updated: 2026-05-31 15:20 CEST
+Updated: 2026-05-31 16:03 CEST
 
 Primary/public branch: `origin/master`
-Semantic source for current score:
+Current public branch head:
+`7fdd2f668f5f61a788e53292b42f32e682cbc72a fix: cover URI WhatWG residuals`
+
+Semantic source for current published score:
 `54f3c2c34708171d0f97cce98bf27c4eb69c4663 fix: preserve strictness provenance in magic typed properties`
 
 Public PHPT metric:
@@ -38,6 +41,54 @@ latest published PASS set, and recorded here.
 
 - Batch023 checkpoint10 was superseded by Batch023 repair01. Its candidate
   score is no longer current public progress.
+
+## Batch024 Staging Checklist
+
+Batch024 is accumulating source fixes after the Batch023 repair01 full-suite
+gate. Focused PHPT proof is used for each candidate, but the public percentage
+does not change until a supervisor-owned full-suite gate is run for the batch,
+all latest-public PASS regressions are repaired or adjudicated, and the
+accepted score is recorded here.
+
+- [x] `7fdd2f66` URI WhatWG residuals, patch `sha45916ebb`: source integrated
+  after reviewer FINAL GO, two critic SAFE artifacts, p38-ready, supervisor
+  proof, focused PHPT `34 / 34`, and `0 / 34` latest-public PASS overlap.
+  This is batch source movement only; it is not a public score update.
+- [ ] Batch024 slot 2: pending exact-current generalized fix against
+  `7fdd2f66`.
+- [ ] Batch024 slot 3: pending exact-current generalized fix against
+  `7fdd2f66`.
+- [ ] Batch024 slot 4: pending exact-current generalized fix against
+  `7fdd2f66`.
+- [ ] Batch024 slot 5: pending exact-current generalized fix against
+  `7fdd2f66`.
+- [ ] Batch024 slot 6: pending exact-current generalized fix against
+  `7fdd2f66`.
+- [ ] Batch024 slot 7: pending exact-current generalized fix against
+  `7fdd2f66`.
+- [ ] Batch024 slot 8: pending exact-current generalized fix against
+  `7fdd2f66`.
+- [ ] Batch024 slot 9: pending exact-current generalized fix against
+  `7fdd2f66`.
+- [ ] Batch024 slot 10: pending exact-current generalized fix against
+  `7fdd2f66`.
+- [ ] Batch024 full-suite gate: run only after 10 accepted staged fixes, then
+  repair any latest-public PASS regressions before publishing the next score.
+
+Current rejected or stale Batch024 candidates:
+
+- `181e5838` Zend union defaults is rejected for the legal
+  `false|int $x = false` default counterexample.
+- `c62d8fa3` PCRE helper APIs is rejected because
+  `preg_replace_callback_array()` must preserve sequential callback side
+  effects before a later invalid pattern returns `NULL`.
+- `a86157c9` PCRE match hygiene is rejected for overbroad backtrack-limit
+  behavior.
+- `f96d5381` INI parse quantity and `cd6699e9` tokenizer PhpToken object
+  diagnostics have reviewer NO-GO artifacts.
+- `2cd2baeb` array negative auto-key has useful stale `54f3c2c3` artifacts,
+  but it must be restamped or source-equivalence proved by compliant
+  `gpt-5.5` / `xhigh` / `fast` review before it can occupy a Batch024 slot.
 
 ## Score History
 
