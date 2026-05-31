@@ -80087,6 +80087,13 @@ impl Interpreter {
             "str_pad" => call_str_pad(&args, span),
             "wordwrap" => call_wordwrap(&args, span),
             "chunk_split" => call_chunk_split(&args, span),
+            "mb_strlen" => call_mb_strlen(&args, span),
+            "mb_strpos" => call_mb_strpos(&args, "mb_strpos()", false, false, span),
+            "mb_stripos" => call_mb_strpos(&args, "mb_stripos()", true, false, span),
+            "mb_strrpos" => call_mb_strpos(&args, "mb_strrpos()", false, true, span),
+            "mb_strripos" => call_mb_strpos(&args, "mb_strripos()", true, true, span),
+            "mb_strtolower" => call_mb_strcase(&args, "mb_strtolower()", false, span),
+            "mb_strtoupper" => call_mb_strcase(&args, "mb_strtoupper()", true, span),
             "str_split" => call_str_split(&args, span),
             "addslashes" => self.call_addslashes(&args, span),
             "stripslashes" => self.call_stripslashes(&args, span),
@@ -94536,6 +94543,29 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_optional_string_param("separator", "\r\n"),
             ],
         ),
+        "mb_strlen" => (
+            "int",
+            vec![
+                reflection_internal_param("string", "string"),
+                reflection_internal_optional_null_param("encoding", "?string"),
+            ],
+        ),
+        "mb_strpos" | "mb_stripos" | "mb_strrpos" | "mb_strripos" => (
+            "int|false",
+            vec![
+                reflection_internal_param("haystack", "string"),
+                reflection_internal_param("needle", "string"),
+                reflection_internal_optional_int_param("offset", 0),
+                reflection_internal_optional_null_param("encoding", "?string"),
+            ],
+        ),
+        "mb_strtolower" | "mb_strtoupper" => (
+            "string",
+            vec![
+                reflection_internal_param("string", "string"),
+                reflection_internal_optional_null_param("encoding", "?string"),
+            ],
+        ),
         "str_split" => (
             "array",
             vec![
@@ -97887,6 +97917,10 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
         | ("stripos()", "Argument #3 ($offset) must be contained in argument #1 ($haystack)")
         | ("strrpos()", "Argument #3 ($offset) must be contained in argument #1 ($haystack)")
         | ("strripos()", "Argument #3 ($offset) must be contained in argument #1 ($haystack)")
+        | ("mb_strpos()", "Argument #3 ($offset) must be contained in argument #1 ($haystack)")
+        | ("mb_stripos()", "Argument #3 ($offset) must be contained in argument #1 ($haystack)")
+        | ("mb_strrpos()", "Argument #3 ($offset) must be contained in argument #1 ($haystack)")
+        | ("mb_strripos()", "Argument #3 ($offset) must be contained in argument #1 ($haystack)")
         | ("range()", "Argument #3 ($step) cannot be 0")
         | ("range()", "Argument #3 ($step) must be greater than 0 for increasing ranges")
         | (
@@ -97929,6 +97963,22 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
             if message
                 .starts_with("Argument #2 ($component) must be a valid URL component identifier, ") =>
         {
+            Some(format!("{function}: {message}"))
+        }
+        ("mb_strlen()", message)
+            if message.starts_with("Argument #2 ($encoding) must be a valid encoding, ") =>
+        {
+            Some(format!("{function}: {message}"))
+        }
+        ("mb_strtolower()" | "mb_strtoupper()", message)
+            if message.starts_with("Argument #2 ($encoding) must be a valid encoding, ") =>
+        {
+            Some(format!("{function}: {message}"))
+        }
+        (
+            "mb_strpos()" | "mb_stripos()" | "mb_strrpos()" | "mb_strripos()",
+            message,
+        ) if message.starts_with("Argument #4 ($encoding) must be a valid encoding, ") => {
             Some(format!("{function}: {message}"))
         }
         ("str_decrement()", message)
@@ -98401,6 +98451,13 @@ fn is_builtin(name: &str) -> bool {
             | "str_pad"
             | "wordwrap"
             | "chunk_split"
+            | "mb_strlen"
+            | "mb_strpos"
+            | "mb_stripos"
+            | "mb_strrpos"
+            | "mb_strripos"
+            | "mb_strtolower"
+            | "mb_strtoupper"
             | "str_split"
             | "range"
             | "addslashes"
@@ -111578,6 +111635,365 @@ fn call_strrpos(
     Ok(found
         .map(|index| Value::Int(index as i64))
         .unwrap_or(Value::Bool(false)))
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum MbScalarEncoding {
+    Utf8,
+    SingleByte,
+}
+
+fn mb_scalar_encoding(
+    function: &'static str,
+    position: usize,
+    value: Option<&Value>,
+    span: Span,
+) -> CompileResult<MbScalarEncoding> {
+    let Some(value) = value else {
+        return Ok(MbScalarEncoding::Utf8);
+    };
+    if matches!(value, Value::Null) {
+        return Ok(MbScalarEncoding::Utf8);
+    }
+
+    let encoding = value
+        .try_echo_string()
+        .map_err(|error| runtime_error(span, error))?;
+    let normalized = encoding
+        .chars()
+        .filter(|ch| !matches!(ch, '-' | '_'))
+        .flat_map(char::to_lowercase)
+        .collect::<String>();
+
+    match normalized.as_str() {
+        "utf8" => Ok(MbScalarEncoding::Utf8),
+        "ascii" | "usascii" | "iso88591" | "latin1" | "8bit" => {
+            Ok(MbScalarEncoding::SingleByte)
+        }
+        _ => Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                format!(
+                    "Argument #{position} ($encoding) must be a valid encoding, \"{encoding}\" given"
+                ),
+            ),
+        )),
+    }
+}
+
+fn mb_utf8_lossy(bytes: Vec<u8>) -> String {
+    String::from_utf8(bytes)
+        .unwrap_or_else(|error| String::from_utf8_lossy(&error.into_bytes()).into_owned())
+}
+
+fn call_mb_strlen(args: &[Value], span: Span) -> CompileResult<Value> {
+    if !(1..=2).contains(&args.len()) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "mb_strlen()",
+                ArityExpectation::Between { min: 1, max: 2 },
+                args.len(),
+            ),
+        ));
+    }
+
+    let encoding = mb_scalar_encoding("mb_strlen()", 2, args.get(1), span)?;
+    let value = string_compare_argument_bytes("mb_strlen()", "string", &args[0], span)?;
+    let length = match encoding {
+        MbScalarEncoding::Utf8 => mb_utf8_lossy(value).chars().count(),
+        MbScalarEncoding::SingleByte => value.len(),
+    };
+    Ok(Value::Int(length as i64))
+}
+
+fn call_mb_strpos(
+    args: &[Value],
+    function: &'static str,
+    case_insensitive: bool,
+    reverse: bool,
+    span: Span,
+) -> CompileResult<Value> {
+    if !(2..=4).contains(&args.len()) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                function,
+                ArityExpectation::Between { min: 2, max: 4 },
+                args.len(),
+            ),
+        ));
+    }
+
+    let haystack = string_compare_argument_bytes(function, "haystack", &args[0], span)?;
+    let needle = string_compare_argument_bytes(function, "needle", &args[1], span)?;
+    let offset = match args.get(2) {
+        Some(value) => php_internal_int_argument(function, 3, "offset", value, span)?,
+        None => 0,
+    };
+    let encoding = mb_scalar_encoding(function, 4, args.get(3), span)?;
+
+    match encoding {
+        MbScalarEncoding::Utf8 => mb_utf8_strpos(
+            function,
+            &mb_utf8_lossy(haystack),
+            &mb_utf8_lossy(needle),
+            offset,
+            case_insensitive,
+            reverse,
+            span,
+        ),
+        MbScalarEncoding::SingleByte => mb_single_byte_strpos(
+            function,
+            &haystack,
+            &needle,
+            offset,
+            case_insensitive,
+            reverse,
+            span,
+        ),
+    }
+}
+
+fn mb_normalize_offset(
+    function: &'static str,
+    length: usize,
+    offset: i64,
+    span: Span,
+) -> CompileResult<usize> {
+    let length = length as i64;
+    let start = if offset >= 0 { offset } else { length + offset };
+    if start < 0 || start > length {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                "Argument #3 ($offset) must be contained in argument #1 ($haystack)",
+            ),
+        ));
+    }
+    Ok(start as usize)
+}
+
+fn mb_single_byte_strpos(
+    function: &'static str,
+    haystack: &[u8],
+    needle: &[u8],
+    offset: i64,
+    case_insensitive: bool,
+    reverse: bool,
+    span: Span,
+) -> CompileResult<Value> {
+    let start = mb_normalize_offset(function, haystack.len(), offset, span)?;
+    if needle.is_empty() {
+        return Ok(Value::Int(start as i64));
+    }
+    if needle.len() > haystack.len() {
+        return Ok(Value::Bool(false));
+    }
+
+    let matches_at = |index: usize| {
+        let window = &haystack[index..index + needle.len()];
+        if case_insensitive {
+            window.eq_ignore_ascii_case(needle)
+        } else {
+            window == needle
+        }
+    };
+    let max_start = haystack.len() - needle.len();
+    let found = if reverse {
+        (0..=max_start.min(start))
+            .rev()
+            .find(|&index| matches_at(index))
+    } else if start > max_start {
+        None
+    } else {
+        (start..=max_start).find(|&index| matches_at(index))
+    };
+
+    Ok(found
+        .map(|index| Value::Int(index as i64))
+        .unwrap_or(Value::Bool(false)))
+}
+
+fn mb_utf8_strpos(
+    function: &'static str,
+    haystack: &str,
+    needle: &str,
+    offset: i64,
+    case_insensitive: bool,
+    reverse: bool,
+    span: Span,
+) -> CompileResult<Value> {
+    let haystack_chars = haystack.chars().collect::<Vec<_>>();
+    let needle_chars = needle.chars().collect::<Vec<_>>();
+    let start = mb_normalize_offset(function, haystack_chars.len(), offset, span)?;
+    if needle_chars.is_empty() {
+        return Ok(Value::Int(start as i64));
+    }
+    if needle_chars.len() > haystack_chars.len() {
+        return Ok(Value::Bool(false));
+    }
+
+    let haystack_folded;
+    let needle_folded;
+    let matches_at = if case_insensitive {
+        haystack_folded = haystack_chars
+            .iter()
+            .map(|ch| mb_casefold_char(*ch))
+            .collect::<Vec<_>>();
+        needle_folded = needle_chars
+            .iter()
+            .map(|ch| mb_casefold_char(*ch))
+            .collect::<Vec<_>>();
+        Box::new(move |index: usize| {
+            haystack_folded[index..index + needle_folded.len()] == needle_folded[..]
+        }) as Box<dyn Fn(usize) -> bool>
+    } else {
+        Box::new(move |index: usize| {
+            haystack_chars[index..index + needle_chars.len()] == needle_chars[..]
+        }) as Box<dyn Fn(usize) -> bool>
+    };
+
+    let max_start = haystack.chars().count() - needle.chars().count();
+    let found = if reverse {
+        (0..=max_start.min(start))
+            .rev()
+            .find(|&index| matches_at(index))
+    } else if start > max_start {
+        None
+    } else {
+        (start..=max_start).find(|&index| matches_at(index))
+    };
+
+    Ok(found
+        .map(|index| Value::Int(index as i64))
+        .unwrap_or(Value::Bool(false)))
+}
+
+fn mb_casefold_char(ch: char) -> String {
+    if matches!(ch, 'ς' | 'Σ') {
+        return "σ".to_string();
+    }
+    ch.to_lowercase().collect()
+}
+
+fn call_mb_strcase(
+    args: &[Value],
+    function: &'static str,
+    uppercase: bool,
+    span: Span,
+) -> CompileResult<Value> {
+    if !(1..=2).contains(&args.len()) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                function,
+                ArityExpectation::Between { min: 1, max: 2 },
+                args.len(),
+            ),
+        ));
+    }
+
+    let encoding = mb_scalar_encoding(function, 2, args.get(1), span)?;
+    let value = string_compare_argument_bytes(function, "string", &args[0], span)?;
+    if encoding == MbScalarEncoding::SingleByte {
+        let output = if uppercase {
+            value
+                .into_iter()
+                .map(|byte| byte.to_ascii_uppercase())
+                .collect()
+        } else {
+            value
+                .into_iter()
+                .map(|byte| byte.to_ascii_lowercase())
+                .collect()
+        };
+        return Ok(interpreter_value_from_php_string_bytes(output));
+    }
+
+    let input = mb_utf8_lossy(value);
+    let output = if uppercase {
+        input
+            .chars()
+            .flat_map(char::to_uppercase)
+            .collect::<String>()
+    } else {
+        mb_utf8_lowercase(&input)
+    };
+    Ok(Value::String(output))
+}
+
+fn mb_utf8_lowercase(input: &str) -> String {
+    let chars = input.chars().collect::<Vec<_>>();
+    let mut output = String::with_capacity(input.len());
+    for (index, ch) in chars.iter().enumerate() {
+        if *ch == 'Σ' {
+            output.push(if mb_sigma_is_final(&chars, index) {
+                'ς'
+            } else {
+                'σ'
+            });
+            continue;
+        }
+        output.extend(ch.to_lowercase());
+    }
+    output
+}
+
+fn mb_sigma_is_final(chars: &[char], index: usize) -> bool {
+    mb_has_cased_letter_before(chars, index) && !mb_has_cased_letter_after(chars, index)
+}
+
+fn mb_has_cased_letter_before(chars: &[char], index: usize) -> bool {
+    let mut skipped_ignorable = 0usize;
+    for ch in chars[..index].iter().rev() {
+        if mb_is_cased_letter(*ch) {
+            return true;
+        }
+        if mb_is_case_ignorable(*ch) {
+            skipped_ignorable += 1;
+            if skipped_ignorable <= 63 {
+                continue;
+            }
+        }
+        return false;
+    }
+    false
+}
+
+fn mb_has_cased_letter_after(chars: &[char], index: usize) -> bool {
+    for ch in &chars[index + 1..] {
+        if mb_is_cased_letter(*ch) {
+            return true;
+        }
+        if mb_is_case_ignorable(*ch) {
+            continue;
+        }
+        return false;
+    }
+    false
+}
+
+fn mb_is_cased_letter(ch: char) -> bool {
+    ch.is_alphabetic() && ch.to_lowercase().to_string() != ch.to_uppercase().to_string()
+}
+
+fn mb_is_case_ignorable(ch: char) -> bool {
+    matches!(
+        ch,
+        '\''
+            | '.'
+            | ':'
+            | '\u{00AD}'
+            | '\u{2019}'
+            | '\u{0300}'..='\u{036F}'
+            | '\u{1AB0}'..='\u{1AFF}'
+            | '\u{1DC0}'..='\u{1DFF}'
+            | '\u{20D0}'..='\u{20FF}'
+            | '\u{FE20}'..='\u{FE2F}'
+    )
 }
 
 fn call_strstr(
