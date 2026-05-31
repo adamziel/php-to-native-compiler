@@ -22004,6 +22004,12 @@ impl Interpreter {
                 ),
             ));
         }
+        if declared_class_name.eq_ignore_ascii_case("mysqli") {
+            return self.instantiate_mysqli(args, span, scope);
+        }
+        if declared_class_name.eq_ignore_ascii_case("mysqli_driver") {
+            return self.instantiate_mysqli_driver(args, span);
+        }
         if declared_class_name.eq_ignore_ascii_case("ReflectionClass") {
             return self.instantiate_reflection_class(args, span, scope);
         }
@@ -22833,6 +22839,16 @@ impl Interpreter {
                 ),
             ));
         };
+
+        if object.class_name().eq_ignore_ascii_case("mysqli_driver") {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "clone",
+                    "Trying to clone an uncloneable object of class mysqli_driver",
+                ),
+            ));
+        }
 
         let object_id = self.allocate_object_id();
         let clone = object.shallow_clone_with_id(object_id);
@@ -31643,6 +31659,24 @@ impl Interpreter {
                             }
                         }
 
+                        if let Some(stored_value) = self.write_mysqli_driver_property(
+                            &object_value,
+                            property,
+                            value.clone(),
+                            *span,
+                        )? {
+                            scope.post_replace_holder_storage(&boundary);
+                            scope.remove_public_object_property_root_from_array_offset_aliases(
+                                object,
+                                property,
+                                &alias_fallbacks,
+                            );
+                            scope.sync_array_offset_aliases_for_object_property_root(
+                                object, property,
+                            );
+                            return Ok(stored_value);
+                        }
+
                         self.emit_array_object_dynamic_property_deprecation_if_needed(
                             &object_value,
                             property,
@@ -37347,6 +37381,64 @@ impl Interpreter {
         Ok(Value::Object(object))
     }
 
+    fn instantiate_mysqli(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        if args.len() > 6 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "mysqli::__construct()",
+                    ArityExpectation::Between { min: 0, max: 6 },
+                    args.len(),
+                ),
+            ));
+        }
+        let values = args
+            .iter()
+            .map(|arg| self.evaluate(arg, scope))
+            .collect::<CompileResult<Vec<_>>>()?;
+        self.call_mysqli_connect(&values, span)
+    }
+
+    fn instantiate_mysqli_driver(&mut self, args: &[Expr], span: Span) -> CompileResult<Value> {
+        expect_expr_arity("mysqli_driver::__construct", args.len(), 0, span)?;
+        let class_id = self
+            .classes
+            .lookup_class_id("mysqli_driver")
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::undefined_class("mysqli_driver core placeholder"),
+                )
+            })?;
+        let object_id = self.allocate_object_id();
+        let class = self
+            .classes
+            .get(class_id)
+            .expect("core mysqli_driver class id should resolve");
+        let object = PhpObject::from_class_with_id(class, object_id);
+        for (property, value) in [
+            (
+                "client_info",
+                Value::String("mysqlnd 8.0.0-phpc-placeholder".to_string()),
+            ),
+            ("client_version", Value::Int(80000)),
+            ("driver_version", Value::Int(80000)),
+            ("embedded", Value::Bool(false)),
+            ("reconnect", Value::Bool(false)),
+            ("report_mode", Value::Int(self.mysqli_report_mode)),
+        ] {
+            object
+                .write_public_property(property, value)
+                .map_err(|error| runtime_error(span, error))?;
+        }
+        Ok(Value::Object(object))
+    }
+
     fn create_mysqli_result_placeholder(
         &mut self,
         span: Span,
@@ -38935,6 +39027,97 @@ impl Interpreter {
         Ok(Value::String("8.0.0-phpc-placeholder".to_string()))
     }
 
+    fn call_mysqli_method(
+        &mut self,
+        object: PhpObject,
+        method_name: &str,
+        args: &[Expr],
+        span: Span,
+    ) -> CompileResult<Value> {
+        match method_name.to_ascii_lowercase().as_str() {
+            "__construct" => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "mysqli::__construct()",
+                    "Cannot call constructor twice",
+                ),
+            )),
+            "close" => {
+                expect_expr_arity("mysqli::close", args.len(), 0, span)?;
+                expect_mysqli_handle("mysqli::close()", &Value::Object(object), span)?;
+                Ok(Value::Bool(true))
+            }
+            _ => Err(runtime_error(
+                span,
+                RuntimeError::undefined_function(format!("mysqli::{method_name}()")),
+            )),
+        }
+    }
+
+    fn write_mysqli_driver_property(
+        &mut self,
+        object: &PhpObject,
+        property: &str,
+        value: Value,
+        span: Span,
+    ) -> CompileResult<Option<Value>> {
+        if !object.class_name().eq_ignore_ascii_case("mysqli_driver") {
+            return Ok(None);
+        }
+
+        if property == "report_mode" {
+            let mode = match &value {
+                Value::Null => 0,
+                Value::Bool(value) => {
+                    if *value {
+                        1
+                    } else {
+                        0
+                    }
+                }
+                Value::Int(value) => *value,
+                Value::Float(value) => *value as i64,
+                Value::String(value) => parse_ini_i64_prefix(value).unwrap_or(0),
+                Value::BinaryString(value) => std::str::from_utf8(value)
+                    .ok()
+                    .and_then(parse_ini_i64_prefix)
+                    .unwrap_or(0),
+                other => {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "mysqli_driver::$report_mode",
+                            format!(
+                                "Cannot assign {} to property mysqli_driver::$report_mode of type int",
+                                other.type_name()
+                            ),
+                        ),
+                    ));
+                }
+            };
+            object
+                .write_public_property("report_mode", Value::Int(mode))
+                .map_err(|error| runtime_error(span, error))?;
+            self.mysqli_report_mode = mode;
+            return Ok(Some(Value::Int(mode)));
+        }
+
+        if matches!(
+            property,
+            "client_info" | "client_version" | "driver_version" | "embedded" | "reconnect"
+        ) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("mysqli_driver::${property}"),
+                    format!("Cannot write read-only property mysqli_driver::${property}"),
+                ),
+            ));
+        }
+
+        Ok(None)
+    }
+
     fn call_mysqli_get_server_version(&self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_get_server_version", args, 1, span)?;
         expect_mysqli_handle("mysqli_get_server_version()", &args[0], span)?;
@@ -39307,6 +39490,7 @@ impl Interpreter {
     fn call_mysqli_get_connection_stats(&self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_get_connection_stats", args, 1, span)?;
         expect_mysqli_handle("mysqli_get_connection_stats()", &args[0], span)?;
+        let collect_statistics = self.mysqlnd_collect_statistics_enabled();
         let mut stats = PhpArray::new();
         stats.insert("bytes_sent", Value::Int(0));
         stats.insert("bytes_received", Value::Int(0));
@@ -39314,9 +39498,16 @@ impl Interpreter {
         stats.insert("packets_received", Value::Int(0));
         stats.insert("result_set_queries", Value::Int(0));
         stats.insert("non_result_set_queries", Value::Int(0));
-        stats.insert("connect_success", Value::Int(1));
-        stats.insert("active_connections", Value::Int(1));
+        let connection_counter = if collect_statistics { 1 } else { 0 };
+        stats.insert("connect_success", Value::Int(connection_counter));
+        stats.insert("active_connections", Value::Int(connection_counter));
         Ok(Value::Array(stats))
+    }
+
+    fn mysqlnd_collect_statistics_enabled(&self) -> bool {
+        self.ini_value("mysqlnd.collect_statistics")
+            .map(|value| php_ini_truthy(&value))
+            .unwrap_or(true)
     }
 
     fn call_mysqli_get_links_stats(&self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -45198,6 +45389,11 @@ impl Interpreter {
         if object.class_name().eq_ignore_ascii_case("Directory") {
             return self
                 .call_directory_method(object, method_name, args, span)
+                .map(|value| (value, None));
+        }
+        if object.class_name().eq_ignore_ascii_case("mysqli") {
+            return self
+                .call_mysqli_method(object, method_name, args, span)
                 .map(|value| (value, None));
         }
         if object.is_instance_of_class_name("DateTimeZone") {
@@ -64303,13 +64499,10 @@ impl Interpreter {
             None => false,
         };
 
-        let constants = self.defined_constants_array();
         if categorize {
-            let mut categories = PhpArray::new();
-            categories.insert("Core".to_string(), Value::Array(constants));
-            Ok(Value::Array(categories))
+            Ok(Value::Array(self.defined_constants_by_category_array()))
         } else {
-            Ok(Value::Array(constants))
+            Ok(Value::Array(self.defined_constants_array()))
         }
     }
 
@@ -64328,6 +64521,35 @@ impl Interpreter {
         }
 
         constants
+    }
+
+    fn defined_constants_by_category_array(&self) -> PhpArray {
+        let mut core = PhpArray::new();
+        let mut mysqli = PhpArray::new();
+
+        for name in builtin_global_constant_names() {
+            let Some(value) = builtin_global_constant_value(name) else {
+                continue;
+            };
+            if is_mysqli_global_constant_name(name) {
+                mysqli.insert((*name).to_string(), value);
+            } else {
+                core.insert((*name).to_string(), value);
+            }
+        }
+
+        let mut runtime_constants = self.constants.values.iter().collect::<Vec<_>>();
+        runtime_constants.sort_by(|(left, _), (right, _)| left.cmp(right));
+        for (name, value) in runtime_constants {
+            core.insert(name.clone(), value.clone());
+        }
+
+        let mut categories = PhpArray::new();
+        categories.insert("Core".to_string(), Value::Array(core));
+        if !mysqli.is_empty() {
+            categories.insert("mysqli".to_string(), Value::Array(mysqli));
+        }
+        categories
     }
 
     fn call_user_function(
@@ -96856,6 +97078,21 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
             return Some(("Error", error.message.clone()));
         }
 
+        for prefix in [
+            "unsupported call clone: ",
+            "unsupported call mysqli::__construct(): ",
+            "unsupported call mysqli_driver::$client_info: ",
+            "unsupported call mysqli_driver::$client_version: ",
+            "unsupported call mysqli_driver::$driver_version: ",
+            "unsupported call mysqli_driver::$embedded: ",
+            "unsupported call mysqli_driver::$reconnect: ",
+            "unsupported call mysqli_driver::$report_mode: ",
+        ] {
+            if let Some(message) = error.message.strip_prefix(prefix) {
+                return Some(("Error", message.to_string()));
+            }
+        }
+
         if let Some(property) = error
             .message
             .strip_prefix("unsupported object property access: non-public property ")
@@ -99146,10 +99383,14 @@ fn reflection_get_attributes_callable_name(target: i64) -> &'static str {
 const PHP_MYSQLI_REPORT_OFF: i64 = 0;
 const PHP_MYSQLI_REPORT_ERROR: i64 = 1;
 const PHP_MYSQLI_REPORT_STRICT: i64 = 2;
+const PHP_MYSQLI_REPORT_INDEX: i64 = 4;
+const PHP_MYSQLI_REPORT_ALL: i64 = 255;
 const PHP_MYSQLI_ASSOC: i64 = 1;
 const PHP_MYSQLI_NUM: i64 = 2;
 const PHP_MYSQLI_BOTH: i64 = 3;
 const PHP_MYSQLI_ASYNC: i64 = 8;
+const PHP_MYSQLI_READ_DEFAULT_FILE: i64 = 4;
+const PHP_MYSQLI_READ_DEFAULT_GROUP: i64 = 5;
 const PHP_MYSQLI_CLIENT_SSL: i64 = 2048;
 const PHP_MYSQLI_CLIENT_COMPRESS: i64 = 32;
 const PHP_MYSQLI_CLIENT_INTERACTIVE: i64 = 1024;
@@ -99169,6 +99410,7 @@ const PHP_MYSQLI_CLIENT_ALL_SUPPORTED: i64 = PHP_MYSQLI_CLIENT_SSL
     | PHP_MYSQLI_CLIENT_SSL_DONT_VERIFY_SERVER_CERT
     | PHP_MYSQLI_CLIENT_CAN_HANDLE_EXPIRED_PASSWORDS;
 const PHP_MYSQLI_OPT_CONNECT_TIMEOUT: i64 = 0;
+const PHP_MYSQLI_OPT_COMPRESS: i64 = 1;
 const PHP_MYSQLI_OPT_LOCAL_INFILE: i64 = 8;
 const PHP_MYSQLI_OPT_LOAD_DATA_LOCAL_DIR: i64 = 43;
 const PHP_MYSQLI_INIT_COMMAND: i64 = 3;
@@ -99178,6 +99420,9 @@ const PHP_MYSQLI_OPT_NET_READ_BUFFER_SIZE: i64 = 203;
 const PHP_MYSQLI_OPT_INT_AND_FLOAT_NATIVE: i64 = 201;
 const PHP_MYSQLI_OPT_SSL_VERIFY_SERVER_CERT: i64 = 21;
 const PHP_MYSQLI_OPT_CAN_HANDLE_EXPIRED_PASSWORDS: i64 = 37;
+const PHP_MYSQLI_STORE_RESULT: i64 = 0;
+const PHP_MYSQLI_USE_RESULT: i64 = 1;
+const PHP_MYSQLI_STORE_RESULT_COPY_DATA: i64 = 16;
 const PHP_MYSQLI_STMT_ATTR_UPDATE_MAX_LENGTH: i64 = 0;
 const PHP_MYSQLI_STMT_ATTR_CURSOR_TYPE: i64 = 1;
 const PHP_MYSQLI_STMT_ATTR_PREFETCH_ROWS: i64 = 2;
@@ -99185,6 +99430,68 @@ const PHP_MYSQLI_CURSOR_TYPE_NO_CURSOR: i64 = 0;
 const PHP_MYSQLI_CURSOR_TYPE_READ_ONLY: i64 = 1;
 const PHP_MYSQLI_CURSOR_TYPE_FOR_UPDATE: i64 = 2;
 const PHP_MYSQLI_CURSOR_TYPE_SCROLLABLE: i64 = 4;
+const PHP_MYSQLI_NOT_NULL_FLAG: i64 = 1;
+const PHP_MYSQLI_PRI_KEY_FLAG: i64 = 2;
+const PHP_MYSQLI_UNIQUE_KEY_FLAG: i64 = 4;
+const PHP_MYSQLI_MULTIPLE_KEY_FLAG: i64 = 8;
+const PHP_MYSQLI_BLOB_FLAG: i64 = 16;
+const PHP_MYSQLI_UNSIGNED_FLAG: i64 = 32;
+const PHP_MYSQLI_ZEROFILL_FLAG: i64 = 64;
+const PHP_MYSQLI_BINARY_FLAG: i64 = 128;
+const PHP_MYSQLI_ENUM_FLAG: i64 = 256;
+const PHP_MYSQLI_AUTO_INCREMENT_FLAG: i64 = 512;
+const PHP_MYSQLI_TIMESTAMP_FLAG: i64 = 1024;
+const PHP_MYSQLI_SET_FLAG: i64 = 2048;
+const PHP_MYSQLI_NO_DEFAULT_VALUE_FLAG: i64 = 4096;
+const PHP_MYSQLI_ON_UPDATE_NOW_FLAG: i64 = 8192;
+const PHP_MYSQLI_PART_KEY_FLAG: i64 = 16384;
+const PHP_MYSQLI_NUM_FLAG: i64 = 32768;
+const PHP_MYSQLI_GROUP_FLAG: i64 = 32768;
+const PHP_MYSQLI_SERVER_QUERY_NO_GOOD_INDEX_USED: i64 = 16;
+const PHP_MYSQLI_SERVER_QUERY_NO_INDEX_USED: i64 = 32;
+const PHP_MYSQLI_SERVER_PS_OUT_PARAMS: i64 = 4096;
+const PHP_MYSQLI_SERVER_QUERY_WAS_SLOW: i64 = 2048;
+const PHP_MYSQLI_SERVER_PUBLIC_KEY: i64 = 35;
+const PHP_MYSQLI_TYPE_DECIMAL: i64 = 0;
+const PHP_MYSQLI_TYPE_TINY: i64 = 1;
+const PHP_MYSQLI_TYPE_SHORT: i64 = 2;
+const PHP_MYSQLI_TYPE_LONG: i64 = 3;
+const PHP_MYSQLI_TYPE_FLOAT: i64 = 4;
+const PHP_MYSQLI_TYPE_DOUBLE: i64 = 5;
+const PHP_MYSQLI_TYPE_NULL: i64 = 6;
+const PHP_MYSQLI_TYPE_TIMESTAMP: i64 = 7;
+const PHP_MYSQLI_TYPE_LONGLONG: i64 = 8;
+const PHP_MYSQLI_TYPE_INT24: i64 = 9;
+const PHP_MYSQLI_TYPE_DATE: i64 = 10;
+const PHP_MYSQLI_TYPE_TIME: i64 = 11;
+const PHP_MYSQLI_TYPE_DATETIME: i64 = 12;
+const PHP_MYSQLI_TYPE_YEAR: i64 = 13;
+const PHP_MYSQLI_TYPE_NEWDATE: i64 = 14;
+const PHP_MYSQLI_TYPE_BIT: i64 = 16;
+const PHP_MYSQLI_TYPE_VECTOR: i64 = 242;
+const PHP_MYSQLI_TYPE_JSON: i64 = 245;
+const PHP_MYSQLI_TYPE_NEWDECIMAL: i64 = 246;
+const PHP_MYSQLI_TYPE_ENUM: i64 = 247;
+const PHP_MYSQLI_TYPE_SET: i64 = 248;
+const PHP_MYSQLI_TYPE_TINY_BLOB: i64 = 249;
+const PHP_MYSQLI_TYPE_MEDIUM_BLOB: i64 = 250;
+const PHP_MYSQLI_TYPE_LONG_BLOB: i64 = 251;
+const PHP_MYSQLI_TYPE_BLOB: i64 = 252;
+const PHP_MYSQLI_TYPE_VAR_STRING: i64 = 253;
+const PHP_MYSQLI_TYPE_STRING: i64 = 254;
+const PHP_MYSQLI_TYPE_CHAR: i64 = 1;
+const PHP_MYSQLI_TYPE_GEOMETRY: i64 = 255;
+const PHP_MYSQLI_NO_DATA: i64 = 100;
+const PHP_MYSQLI_DATA_TRUNCATED: i64 = 101;
+const PHP_MYSQLI_SET_CHARSET_NAME: i64 = 7;
+const PHP_MYSQLI_DEBUG_TRACE_ENABLED: i64 = 0;
+const PHP_MYSQLI_TRANS_START_WITH_CONSISTENT_SNAPSHOT: i64 = 1;
+const PHP_MYSQLI_TRANS_START_READ_WRITE: i64 = 2;
+const PHP_MYSQLI_TRANS_START_READ_ONLY: i64 = 4;
+const PHP_MYSQLI_TRANS_COR_AND_CHAIN: i64 = 1;
+const PHP_MYSQLI_TRANS_COR_AND_NO_CHAIN: i64 = 2;
+const PHP_MYSQLI_TRANS_COR_RELEASE: i64 = 4;
+const PHP_MYSQLI_TRANS_COR_NO_RELEASE: i64 = 8;
 const PHP_MYSQLI_REFRESH_GRANT: i64 = 1;
 const PHP_MYSQLI_REFRESH_LOG: i64 = 2;
 const PHP_MYSQLI_REFRESH_TABLES: i64 = 4;
@@ -99771,13 +100078,20 @@ const BUILTIN_GLOBAL_CONSTANT_NAMES: &[&str] = &[
     "SEEK_SET",
     "SEEK_CUR",
     "SEEK_END",
+    "MYSQLI_READ_DEFAULT_GROUP",
+    "MYSQLI_READ_DEFAULT_FILE",
     "MYSQLI_REPORT_OFF",
     "MYSQLI_REPORT_ERROR",
     "MYSQLI_REPORT_STRICT",
+    "MYSQLI_REPORT_INDEX",
+    "MYSQLI_REPORT_ALL",
     "MYSQLI_ASSOC",
     "MYSQLI_NUM",
     "MYSQLI_BOTH",
     "MYSQLI_ASYNC",
+    "MYSQLI_STORE_RESULT",
+    "MYSQLI_USE_RESULT",
+    "MYSQLI_STORE_RESULT_COPY_DATA",
     "MYSQLI_CLIENT_SSL",
     "MYSQLI_CLIENT_COMPRESS",
     "MYSQLI_CLIENT_INTERACTIVE",
@@ -99788,6 +100102,7 @@ const BUILTIN_GLOBAL_CONSTANT_NAMES: &[&str] = &[
     "MYSQLI_CLIENT_SSL_DONT_VERIFY_SERVER_CERT",
     "MYSQLI_CLIENT_CAN_HANDLE_EXPIRED_PASSWORDS",
     "MYSQLI_OPT_CONNECT_TIMEOUT",
+    "MYSQLI_OPT_COMPRESS",
     "MYSQLI_OPT_LOCAL_INFILE",
     "MYSQLI_OPT_LOAD_DATA_LOCAL_DIR",
     "MYSQLI_INIT_COMMAND",
@@ -99802,8 +100117,69 @@ const BUILTIN_GLOBAL_CONSTANT_NAMES: &[&str] = &[
     "MYSQLI_STMT_ATTR_PREFETCH_ROWS",
     "MYSQLI_CURSOR_TYPE_NO_CURSOR",
     "MYSQLI_CURSOR_TYPE_READ_ONLY",
-    "MYSQLI_CURSOR_TYPE_FOR_UPDATE",
-    "MYSQLI_CURSOR_TYPE_SCROLLABLE",
+    "MYSQLI_NOT_NULL_FLAG",
+    "MYSQLI_PRI_KEY_FLAG",
+    "MYSQLI_UNIQUE_KEY_FLAG",
+    "MYSQLI_MULTIPLE_KEY_FLAG",
+    "MYSQLI_BLOB_FLAG",
+    "MYSQLI_UNSIGNED_FLAG",
+    "MYSQLI_ZEROFILL_FLAG",
+    "MYSQLI_BINARY_FLAG",
+    "MYSQLI_ENUM_FLAG",
+    "MYSQLI_AUTO_INCREMENT_FLAG",
+    "MYSQLI_TIMESTAMP_FLAG",
+    "MYSQLI_SET_FLAG",
+    "MYSQLI_NO_DEFAULT_VALUE_FLAG",
+    "MYSQLI_ON_UPDATE_NOW_FLAG",
+    "MYSQLI_PART_KEY_FLAG",
+    "MYSQLI_NUM_FLAG",
+    "MYSQLI_GROUP_FLAG",
+    "MYSQLI_SERVER_QUERY_NO_GOOD_INDEX_USED",
+    "MYSQLI_SERVER_QUERY_NO_INDEX_USED",
+    "MYSQLI_SERVER_PS_OUT_PARAMS",
+    "MYSQLI_SERVER_QUERY_WAS_SLOW",
+    "MYSQLI_SERVER_PUBLIC_KEY",
+    "MYSQLI_IS_MARIADB",
+    "MYSQLI_TYPE_DECIMAL",
+    "MYSQLI_TYPE_TINY",
+    "MYSQLI_TYPE_SHORT",
+    "MYSQLI_TYPE_LONG",
+    "MYSQLI_TYPE_FLOAT",
+    "MYSQLI_TYPE_DOUBLE",
+    "MYSQLI_TYPE_NULL",
+    "MYSQLI_TYPE_TIMESTAMP",
+    "MYSQLI_TYPE_LONGLONG",
+    "MYSQLI_TYPE_INT24",
+    "MYSQLI_TYPE_DATE",
+    "MYSQLI_TYPE_TIME",
+    "MYSQLI_TYPE_DATETIME",
+    "MYSQLI_TYPE_YEAR",
+    "MYSQLI_TYPE_NEWDATE",
+    "MYSQLI_TYPE_ENUM",
+    "MYSQLI_TYPE_SET",
+    "MYSQLI_TYPE_VECTOR",
+    "MYSQLI_TYPE_JSON",
+    "MYSQLI_TYPE_TINY_BLOB",
+    "MYSQLI_TYPE_MEDIUM_BLOB",
+    "MYSQLI_TYPE_LONG_BLOB",
+    "MYSQLI_TYPE_BLOB",
+    "MYSQLI_TYPE_VAR_STRING",
+    "MYSQLI_TYPE_STRING",
+    "MYSQLI_TYPE_CHAR",
+    "MYSQLI_TYPE_GEOMETRY",
+    "MYSQLI_TYPE_NEWDECIMAL",
+    "MYSQLI_TYPE_BIT",
+    "MYSQLI_NO_DATA",
+    "MYSQLI_DATA_TRUNCATED",
+    "MYSQLI_SET_CHARSET_NAME",
+    "MYSQLI_DEBUG_TRACE_ENABLED",
+    "MYSQLI_TRANS_START_WITH_CONSISTENT_SNAPSHOT",
+    "MYSQLI_TRANS_START_READ_WRITE",
+    "MYSQLI_TRANS_START_READ_ONLY",
+    "MYSQLI_TRANS_COR_AND_CHAIN",
+    "MYSQLI_TRANS_COR_AND_NO_CHAIN",
+    "MYSQLI_TRANS_COR_RELEASE",
+    "MYSQLI_TRANS_COR_NO_RELEASE",
     "MYSQLI_REFRESH_GRANT",
     "MYSQLI_REFRESH_LOG",
     "MYSQLI_REFRESH_TABLES",
@@ -99818,6 +100194,10 @@ const BUILTIN_GLOBAL_CONSTANT_NAMES: &[&str] = &[
 
 fn builtin_global_constant_names() -> &'static [&'static str] {
     BUILTIN_GLOBAL_CONSTANT_NAMES
+}
+
+fn is_mysqli_global_constant_name(name: &str) -> bool {
+    name.to_ascii_uppercase().contains("MYSQLI")
 }
 
 fn builtin_global_constant_value(name: &str) -> Option<Value> {
@@ -100002,13 +100382,20 @@ fn builtin_global_constant_value(name: &str) -> Option<Value> {
         "SEEK_SET" => Some(Value::Int(0)),
         "SEEK_CUR" => Some(Value::Int(1)),
         "SEEK_END" => Some(Value::Int(2)),
+        "MYSQLI_READ_DEFAULT_GROUP" => Some(Value::Int(PHP_MYSQLI_READ_DEFAULT_GROUP)),
+        "MYSQLI_READ_DEFAULT_FILE" => Some(Value::Int(PHP_MYSQLI_READ_DEFAULT_FILE)),
         "MYSQLI_REPORT_OFF" => Some(Value::Int(PHP_MYSQLI_REPORT_OFF)),
         "MYSQLI_REPORT_ERROR" => Some(Value::Int(PHP_MYSQLI_REPORT_ERROR)),
         "MYSQLI_REPORT_STRICT" => Some(Value::Int(PHP_MYSQLI_REPORT_STRICT)),
+        "MYSQLI_REPORT_INDEX" => Some(Value::Int(PHP_MYSQLI_REPORT_INDEX)),
+        "MYSQLI_REPORT_ALL" => Some(Value::Int(PHP_MYSQLI_REPORT_ALL)),
         "MYSQLI_ASSOC" => Some(Value::Int(PHP_MYSQLI_ASSOC)),
         "MYSQLI_NUM" => Some(Value::Int(PHP_MYSQLI_NUM)),
         "MYSQLI_BOTH" => Some(Value::Int(PHP_MYSQLI_BOTH)),
         "MYSQLI_ASYNC" => Some(Value::Int(PHP_MYSQLI_ASYNC)),
+        "MYSQLI_STORE_RESULT" => Some(Value::Int(PHP_MYSQLI_STORE_RESULT)),
+        "MYSQLI_USE_RESULT" => Some(Value::Int(PHP_MYSQLI_USE_RESULT)),
+        "MYSQLI_STORE_RESULT_COPY_DATA" => Some(Value::Int(PHP_MYSQLI_STORE_RESULT_COPY_DATA)),
         "MYSQLI_CLIENT_SSL" => Some(Value::Int(PHP_MYSQLI_CLIENT_SSL)),
         "MYSQLI_CLIENT_COMPRESS" => Some(Value::Int(PHP_MYSQLI_CLIENT_COMPRESS)),
         "MYSQLI_CLIENT_INTERACTIVE" => Some(Value::Int(PHP_MYSQLI_CLIENT_INTERACTIVE)),
@@ -100025,6 +100412,7 @@ fn builtin_global_constant_value(name: &str) -> Option<Value> {
             Some(Value::Int(PHP_MYSQLI_CLIENT_CAN_HANDLE_EXPIRED_PASSWORDS))
         }
         "MYSQLI_OPT_CONNECT_TIMEOUT" => Some(Value::Int(PHP_MYSQLI_OPT_CONNECT_TIMEOUT)),
+        "MYSQLI_OPT_COMPRESS" => Some(Value::Int(PHP_MYSQLI_OPT_COMPRESS)),
         "MYSQLI_OPT_LOCAL_INFILE" => Some(Value::Int(PHP_MYSQLI_OPT_LOCAL_INFILE)),
         "MYSQLI_OPT_LOAD_DATA_LOCAL_DIR" => Some(Value::Int(PHP_MYSQLI_OPT_LOAD_DATA_LOCAL_DIR)),
         "MYSQLI_INIT_COMMAND" => Some(Value::Int(PHP_MYSQLI_INIT_COMMAND)),
@@ -100047,6 +100435,75 @@ fn builtin_global_constant_value(name: &str) -> Option<Value> {
         "MYSQLI_CURSOR_TYPE_READ_ONLY" => Some(Value::Int(PHP_MYSQLI_CURSOR_TYPE_READ_ONLY)),
         "MYSQLI_CURSOR_TYPE_FOR_UPDATE" => Some(Value::Int(PHP_MYSQLI_CURSOR_TYPE_FOR_UPDATE)),
         "MYSQLI_CURSOR_TYPE_SCROLLABLE" => Some(Value::Int(PHP_MYSQLI_CURSOR_TYPE_SCROLLABLE)),
+        "MYSQLI_NOT_NULL_FLAG" => Some(Value::Int(PHP_MYSQLI_NOT_NULL_FLAG)),
+        "MYSQLI_PRI_KEY_FLAG" => Some(Value::Int(PHP_MYSQLI_PRI_KEY_FLAG)),
+        "MYSQLI_UNIQUE_KEY_FLAG" => Some(Value::Int(PHP_MYSQLI_UNIQUE_KEY_FLAG)),
+        "MYSQLI_MULTIPLE_KEY_FLAG" => Some(Value::Int(PHP_MYSQLI_MULTIPLE_KEY_FLAG)),
+        "MYSQLI_BLOB_FLAG" => Some(Value::Int(PHP_MYSQLI_BLOB_FLAG)),
+        "MYSQLI_UNSIGNED_FLAG" => Some(Value::Int(PHP_MYSQLI_UNSIGNED_FLAG)),
+        "MYSQLI_ZEROFILL_FLAG" => Some(Value::Int(PHP_MYSQLI_ZEROFILL_FLAG)),
+        "MYSQLI_BINARY_FLAG" => Some(Value::Int(PHP_MYSQLI_BINARY_FLAG)),
+        "MYSQLI_ENUM_FLAG" => Some(Value::Int(PHP_MYSQLI_ENUM_FLAG)),
+        "MYSQLI_AUTO_INCREMENT_FLAG" => Some(Value::Int(PHP_MYSQLI_AUTO_INCREMENT_FLAG)),
+        "MYSQLI_TIMESTAMP_FLAG" => Some(Value::Int(PHP_MYSQLI_TIMESTAMP_FLAG)),
+        "MYSQLI_SET_FLAG" => Some(Value::Int(PHP_MYSQLI_SET_FLAG)),
+        "MYSQLI_NO_DEFAULT_VALUE_FLAG" => Some(Value::Int(PHP_MYSQLI_NO_DEFAULT_VALUE_FLAG)),
+        "MYSQLI_ON_UPDATE_NOW_FLAG" => Some(Value::Int(PHP_MYSQLI_ON_UPDATE_NOW_FLAG)),
+        "MYSQLI_PART_KEY_FLAG" => Some(Value::Int(PHP_MYSQLI_PART_KEY_FLAG)),
+        "MYSQLI_NUM_FLAG" => Some(Value::Int(PHP_MYSQLI_NUM_FLAG)),
+        "MYSQLI_GROUP_FLAG" => Some(Value::Int(PHP_MYSQLI_GROUP_FLAG)),
+        "MYSQLI_SERVER_QUERY_NO_GOOD_INDEX_USED" => {
+            Some(Value::Int(PHP_MYSQLI_SERVER_QUERY_NO_GOOD_INDEX_USED))
+        }
+        "MYSQLI_SERVER_QUERY_NO_INDEX_USED" => {
+            Some(Value::Int(PHP_MYSQLI_SERVER_QUERY_NO_INDEX_USED))
+        }
+        "MYSQLI_SERVER_PS_OUT_PARAMS" => Some(Value::Int(PHP_MYSQLI_SERVER_PS_OUT_PARAMS)),
+        "MYSQLI_SERVER_QUERY_WAS_SLOW" => Some(Value::Int(PHP_MYSQLI_SERVER_QUERY_WAS_SLOW)),
+        "MYSQLI_SERVER_PUBLIC_KEY" => Some(Value::Int(PHP_MYSQLI_SERVER_PUBLIC_KEY)),
+        "MYSQLI_IS_MARIADB" => Some(Value::Bool(false)),
+        "MYSQLI_TYPE_DECIMAL" => Some(Value::Int(PHP_MYSQLI_TYPE_DECIMAL)),
+        "MYSQLI_TYPE_TINY" => Some(Value::Int(PHP_MYSQLI_TYPE_TINY)),
+        "MYSQLI_TYPE_SHORT" => Some(Value::Int(PHP_MYSQLI_TYPE_SHORT)),
+        "MYSQLI_TYPE_LONG" => Some(Value::Int(PHP_MYSQLI_TYPE_LONG)),
+        "MYSQLI_TYPE_FLOAT" => Some(Value::Int(PHP_MYSQLI_TYPE_FLOAT)),
+        "MYSQLI_TYPE_DOUBLE" => Some(Value::Int(PHP_MYSQLI_TYPE_DOUBLE)),
+        "MYSQLI_TYPE_NULL" => Some(Value::Int(PHP_MYSQLI_TYPE_NULL)),
+        "MYSQLI_TYPE_TIMESTAMP" => Some(Value::Int(PHP_MYSQLI_TYPE_TIMESTAMP)),
+        "MYSQLI_TYPE_LONGLONG" => Some(Value::Int(PHP_MYSQLI_TYPE_LONGLONG)),
+        "MYSQLI_TYPE_INT24" => Some(Value::Int(PHP_MYSQLI_TYPE_INT24)),
+        "MYSQLI_TYPE_DATE" => Some(Value::Int(PHP_MYSQLI_TYPE_DATE)),
+        "MYSQLI_TYPE_TIME" => Some(Value::Int(PHP_MYSQLI_TYPE_TIME)),
+        "MYSQLI_TYPE_DATETIME" => Some(Value::Int(PHP_MYSQLI_TYPE_DATETIME)),
+        "MYSQLI_TYPE_YEAR" => Some(Value::Int(PHP_MYSQLI_TYPE_YEAR)),
+        "MYSQLI_TYPE_NEWDATE" => Some(Value::Int(PHP_MYSQLI_TYPE_NEWDATE)),
+        "MYSQLI_TYPE_ENUM" => Some(Value::Int(PHP_MYSQLI_TYPE_ENUM)),
+        "MYSQLI_TYPE_SET" => Some(Value::Int(PHP_MYSQLI_TYPE_SET)),
+        "MYSQLI_TYPE_VECTOR" => Some(Value::Int(PHP_MYSQLI_TYPE_VECTOR)),
+        "MYSQLI_TYPE_JSON" => Some(Value::Int(PHP_MYSQLI_TYPE_JSON)),
+        "MYSQLI_TYPE_TINY_BLOB" => Some(Value::Int(PHP_MYSQLI_TYPE_TINY_BLOB)),
+        "MYSQLI_TYPE_MEDIUM_BLOB" => Some(Value::Int(PHP_MYSQLI_TYPE_MEDIUM_BLOB)),
+        "MYSQLI_TYPE_LONG_BLOB" => Some(Value::Int(PHP_MYSQLI_TYPE_LONG_BLOB)),
+        "MYSQLI_TYPE_BLOB" => Some(Value::Int(PHP_MYSQLI_TYPE_BLOB)),
+        "MYSQLI_TYPE_VAR_STRING" => Some(Value::Int(PHP_MYSQLI_TYPE_VAR_STRING)),
+        "MYSQLI_TYPE_STRING" => Some(Value::Int(PHP_MYSQLI_TYPE_STRING)),
+        "MYSQLI_TYPE_CHAR" => Some(Value::Int(PHP_MYSQLI_TYPE_CHAR)),
+        "MYSQLI_TYPE_GEOMETRY" => Some(Value::Int(PHP_MYSQLI_TYPE_GEOMETRY)),
+        "MYSQLI_TYPE_NEWDECIMAL" => Some(Value::Int(PHP_MYSQLI_TYPE_NEWDECIMAL)),
+        "MYSQLI_TYPE_BIT" => Some(Value::Int(PHP_MYSQLI_TYPE_BIT)),
+        "MYSQLI_NO_DATA" => Some(Value::Int(PHP_MYSQLI_NO_DATA)),
+        "MYSQLI_DATA_TRUNCATED" => Some(Value::Int(PHP_MYSQLI_DATA_TRUNCATED)),
+        "MYSQLI_SET_CHARSET_NAME" => Some(Value::Int(PHP_MYSQLI_SET_CHARSET_NAME)),
+        "MYSQLI_DEBUG_TRACE_ENABLED" => Some(Value::Int(PHP_MYSQLI_DEBUG_TRACE_ENABLED)),
+        "MYSQLI_TRANS_START_WITH_CONSISTENT_SNAPSHOT" => {
+            Some(Value::Int(PHP_MYSQLI_TRANS_START_WITH_CONSISTENT_SNAPSHOT))
+        }
+        "MYSQLI_TRANS_START_READ_WRITE" => Some(Value::Int(PHP_MYSQLI_TRANS_START_READ_WRITE)),
+        "MYSQLI_TRANS_START_READ_ONLY" => Some(Value::Int(PHP_MYSQLI_TRANS_START_READ_ONLY)),
+        "MYSQLI_TRANS_COR_AND_CHAIN" => Some(Value::Int(PHP_MYSQLI_TRANS_COR_AND_CHAIN)),
+        "MYSQLI_TRANS_COR_AND_NO_CHAIN" => Some(Value::Int(PHP_MYSQLI_TRANS_COR_AND_NO_CHAIN)),
+        "MYSQLI_TRANS_COR_RELEASE" => Some(Value::Int(PHP_MYSQLI_TRANS_COR_RELEASE)),
+        "MYSQLI_TRANS_COR_NO_RELEASE" => Some(Value::Int(PHP_MYSQLI_TRANS_COR_NO_RELEASE)),
         "MYSQLI_REFRESH_GRANT" => Some(Value::Int(PHP_MYSQLI_REFRESH_GRANT)),
         "MYSQLI_REFRESH_LOG" => Some(Value::Int(PHP_MYSQLI_REFRESH_LOG)),
         "MYSQLI_REFRESH_TABLES" => Some(Value::Int(PHP_MYSQLI_REFRESH_TABLES)),
@@ -121537,6 +121994,12 @@ impl Interpreter {
             }
         }
 
+        if normalized_name == "mysqli.default_port"
+            && !mysqli_default_port_ini_value_is_valid(&value)
+        {
+            return Ok(Value::Bool(false));
+        }
+
         if normalized_name == "include_path" {
             self.include_path = value.clone();
         }
@@ -123747,6 +124210,13 @@ fn php_ini_truthy(value: &str) -> bool {
         )
 }
 
+fn mysqli_default_port_ini_value_is_valid(value: &str) -> bool {
+    match value.trim().parse::<i64>() {
+        Ok(port) => (0..=65535).contains(&port),
+        Err(_) => false,
+    }
+}
+
 fn parse_ini_i64_prefix(value: &str) -> Option<i64> {
     parse_ini_numeric_prefix(value).and_then(|value| {
         if value.is_finite() && value >= i64::MIN as f64 && value <= i64::MAX as f64 {
@@ -123902,6 +124372,8 @@ fn compat_ini_value(normalized_name: &str) -> Option<&'static str> {
         "max_execution_time" => Some("30"),
         "mbstring.func_overload" => Some("0"),
         "memory_limit" => Some("128M"),
+        "mysqli.default_port" => Some("3306"),
+        "mysqlnd.collect_statistics" => Some("1"),
         "open_basedir" => Some(""),
         "output_handler" => Some(""),
         "post_max_size" => Some("8M"),

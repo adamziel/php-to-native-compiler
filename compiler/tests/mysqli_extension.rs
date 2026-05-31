@@ -476,6 +476,24 @@ echo $dynamic["result_set_queries"];
 }
 
 #[test]
+fn mysqli_connection_stats_respect_collect_statistics_off() {
+    let execution = run_source(
+        r#"<?php
+ini_set("mysqlnd.collect_statistics", "0");
+$handle = mysqli_init();
+$stats = mysqli_get_connection_stats($handle);
+echo count($stats);
+echo "|", $stats["connect_success"];
+echo "|", $stats["active_connections"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "8|0|0");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_links_stats_return_current_placeholder_metadata() {
     let execution = run_source(
         r#"<?php
@@ -495,6 +513,118 @@ echo $dynamic["total"];
     .unwrap();
 
     assert_eq!(execution.stdout, "yes|callable|0|0|0|0");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn mysqli_default_port_ini_validates_range() {
+    let execution = run_source(
+        r#"<?php
+echo ini_get("mysqli.default_port");
+ini_set("mysqli.default_port", 65536);
+echo "|", ini_get("mysqli.default_port");
+ini_set("mysqli.default_port", -1);
+echo "|", ini_get("mysqli.default_port");
+ini_set("mysqli.default_port", 3305);
+echo "|", ini_get("mysqli.default_port");
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "3306|3306|3306|3305");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn mysqli_driver_metadata_properties_and_writes() {
+    let execution = run_source(
+        r#"<?php
+$driver = new mysqli_driver();
+echo class_exists("mysqli_driver") ? "class" : "missing";
+echo "|", get_class($driver);
+echo "|", isset($driver->client_info) ? "set" : "unset";
+echo "|", empty($driver->client_info) ? "empty" : "not-empty";
+try {
+    $driver->client_info = "custom";
+} catch (Error $e) {
+    echo "|", $e->getMessage();
+}
+$driver->report_mode = true;
+echo "|";
+var_dump($driver->report_mode);
+try {
+    $driver->report_mode = array();
+} catch (Error $e) {
+    echo $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "class|mysqli_driver|set|not-empty|Cannot write read-only property mysqli_driver::$client_info|int(1)\nCannot assign array to property mysqli_driver::$report_mode of type int"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn mysqli_driver_is_uncloneable() {
+    let execution = run_source(
+        r#"<?php
+try {
+    clone new mysqli_driver();
+} catch (Error $e) {
+    echo get_class($e), ": ", $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "Error: Trying to clone an uncloneable object of class mysqli_driver"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn mysqli_object_constructor_cannot_be_recalled() {
+    let execution = run_source(
+        r#"<?php
+$mysqli = new mysqli();
+try {
+    $mysqli->__construct("doesnotexist");
+} catch (Error $e) {
+    echo $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "Cannot call constructor twice");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn mysqli_defined_constants_are_categorized_and_current() {
+    let execution = run_source(
+        r#"<?php
+$constants = get_defined_constants(true);
+echo isset($constants["mysqli"]["MYSQLI_TYPE_VECTOR"]) ? $constants["mysqli"]["MYSQLI_TYPE_VECTOR"] : "missing";
+echo "|", isset($constants["Core"]["MYSQLI_TYPE_VECTOR"]) ? "wrong-core" : "not-core";
+echo "|", isset($constants["mysqli"]["MYSQLI_IS_MARIADB"]) && $constants["mysqli"]["MYSQLI_IS_MARIADB"] === false ? "mariadb-false" : "mariadb-bad";
+echo "|", isset($constants["mysqli"]["MYSQLI_REPORT_ALL"]) ? $constants["mysqli"]["MYSQLI_REPORT_ALL"] : "missing";
+echo "|", array_key_exists("MYSQLI_TYPE_VECTOR", get_defined_constants()) ? "flat" : "missing-flat";
+echo "|", defined("MYSQLI_CURSOR_TYPE_FOR_UPDATE") ? "legacy-direct" : "legacy-missing";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "242|not-core|mariadb-false|255|flat|legacy-direct"
+    );
     assert_eq!(execution.exit_code, 0);
 }
 

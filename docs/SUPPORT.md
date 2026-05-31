@@ -3951,9 +3951,11 @@
   expose real result resources.
   `mysqli_get_connection_stats($handle)` accepts the placeholder object and
   returns an eight-key deterministic statistics array with zeroed traffic/query
-  counters plus deterministic placeholder connection counters, without real
-  mysqlnd statistics, client/server traffic accounting, memory accounting,
-  connection reuse state, or host database state.
+  counters plus deterministic placeholder connection counters. When
+  `mysqlnd.collect_statistics=0`, the placeholder connection counters are also
+  zeroed. This does not implement real mysqlnd statistics, client/server
+  traffic accounting, memory accounting, connection reuse state, or host
+  database state.
   `mysqli_get_links_stats()` returns deterministic zeroed `total`,
   `active_plinks`, and `cached_plinks` metadata without inspecting real
   persistent links, sockets, host client-library state, or connection reuse
@@ -3968,6 +3970,17 @@
   `true`, without inspecting host client-library build flags, real
   thread-safety configuration, host client-library state, sockets, or host
   database state.
+  `mysqli_driver` objects expose deterministic placeholder metadata for
+  `client_info`, `client_version`, `driver_version`, `embedded`, `reconnect`,
+  and writable `report_mode`; the metadata properties are treated as read-only
+  except `report_mode`, and driver objects reject `clone`. `mysqli.default_port`
+  has a deterministic default of `3306` and accepts runtime changes only in the
+  `0..65535` port range. MySQLi constants are exported under the `mysqli`
+  category for `get_defined_constants(true)`, including current field/type,
+  report, refresh, transaction, client, option, and status constants used by
+  the PHPT metadata rows. This is not full MySQLi driver state, host client
+  library discovery, or exact internal-property enforcement beyond this
+  placeholder metadata slice.
   `mysqli_stmt_init($handle)` creates a deterministic placeholder
   `mysqli_stmt` object with no prepared query.
   `mysqli_prepare($handle, $query)` creates a deterministic placeholder

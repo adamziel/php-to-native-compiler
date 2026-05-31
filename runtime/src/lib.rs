@@ -31756,15 +31756,48 @@ impl PhpClassTable {
                 Visibility::Public,
             ))
             .expect("mysqli core metadata should not duplicate connect_error");
+        for method in ["__construct", "close"] {
+            mysqli
+                .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("mysqli core metadata should not duplicate methods");
+        }
         classes
             .declare_class("mysqli_result")
             .expect("core class table should contain mysqli before mysqli_result");
         classes
             .declare_class("mysqli_stmt")
             .expect("core class table should contain mysqli_result before mysqli_stmt");
+        let mysqli_driver_id = classes
+            .declare_class("mysqli_driver")
+            .expect("core class table should contain mysqli_stmt before mysqli_driver");
+        let mysqli_driver = classes
+            .get_mut(mysqli_driver_id)
+            .expect("declared mysqli_driver class id should resolve");
+        mysqli_driver
+            .add_property(PhpPropertyMetadata::instance(
+                "client_info",
+                Visibility::Public,
+            ))
+            .expect("mysqli_driver core metadata should not duplicate client_info");
+        for property in ["client_version", "driver_version", "report_mode"] {
+            mysqli_driver
+                .add_property(
+                    PhpPropertyMetadata::instance(property, Visibility::Public)
+                        .with_type_decl(Some("int".to_string())),
+                )
+                .expect("mysqli_driver core metadata should not duplicate int properties");
+        }
+        for property in ["embedded", "reconnect"] {
+            mysqli_driver
+                .add_property(
+                    PhpPropertyMetadata::instance(property, Visibility::Public)
+                        .with_type_decl(Some("bool".to_string())),
+                )
+                .expect("mysqli_driver core metadata should not duplicate bool properties");
+        }
         let pdo_id = classes
             .declare_class("PDO")
-            .expect("core class table should contain mysqli_stmt before PDO");
+            .expect("core class table should contain mysqli_driver before PDO");
         let pdo = classes
             .get_mut(pdo_id)
             .expect("declared PDO class id should resolve");
