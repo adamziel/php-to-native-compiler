@@ -7393,6 +7393,37 @@ impl SymbolTable {
         handles
     }
 
+    fn reference_cell_is_captured_by_object_property(&self, cell: &VariableCell) -> bool {
+        let reference_id = cell.id();
+        let local_capture =
+            self.symbols
+                .borrow()
+                .values()
+                .any(|symbol_cell| match symbol_cell.value_cloned() {
+                    Value::Object(object) => object
+                        .properties()
+                        .iter()
+                        .any(|property| property.reference_cell_id() == Some(reference_id)),
+                    _ => false,
+                });
+        if local_capture {
+            return true;
+        }
+
+        self.global_symbols.as_ref().is_some_and(|global_symbols| {
+            global_symbols
+                .borrow()
+                .values()
+                .any(|symbol_cell| match symbol_cell.value_cloned() {
+                    Value::Object(object) => object
+                        .properties()
+                        .iter()
+                        .any(|property| property.reference_cell_id() == Some(reference_id)),
+                    _ => false,
+                })
+        })
+    }
+
     fn public_object_property_alias_roots_for_object(
         &self,
         source_object: &PhpObject,
@@ -18412,6 +18443,30 @@ impl Interpreter {
         self.emit_display_diagnostic("Notice", PHP_E_NOTICE, message, span)
     }
 
+    fn emit_array_access_indirect_modification_notice(
+        &mut self,
+        class_name: &str,
+        span: Span,
+    ) -> CompileResult<()> {
+        self.emit_display_notice(
+            format!("Indirect modification of overloaded element of {class_name} has no effect"),
+            span,
+        )
+    }
+
+    fn emit_array_access_reference_assignment_fatal(&mut self, span: Span) {
+        let file = self
+            .source_file
+            .clone()
+            .unwrap_or_else(|| "Command line code".to_string());
+        self.push_uncaught_fatal_separator();
+        self.push_unbuffered_stdout_text(&format!(
+            "Fatal error: Uncaught Error: Cannot assign by reference to an array dimension of an object in {file}:{}\nStack trace:\n#0 {{main}}\n  thrown in {file} on line {}",
+            span.line, span.line
+        ));
+        self.exit_signal = Some(255);
+    }
+
     fn emit_display_warning(&mut self, message: impl AsRef<str>, span: Span) -> CompileResult<()> {
         self.emit_display_diagnostic("Warning", PHP_E_WARNING, message, span)
     }
@@ -21178,13 +21233,7 @@ impl Interpreter {
                 self.execute_unset_array_access_path(object, rest_keys, span, scope)
             }
             Value::Array(_) | Value::Null | Value::Bool(false) => {
-                self.emit_notice(
-                    "ArrayAccess::offsetGet()",
-                    format!(
-                        "Indirect modification of overloaded element of {class_name} has no effect"
-                    ),
-                    span,
-                )?;
+                self.emit_array_access_indirect_modification_notice(&class_name, span)?;
                 Ok(())
             }
             Value::String(_) => Err(runtime_error(
@@ -24122,6 +24171,11 @@ impl Interpreter {
                 ..
             } => {
                 let key = self.evaluate_array_key(index, scope)?;
+                if self.emit_array_access_reference_assignment_target_fatal_if_needed(
+                    name, span, scope,
+                )? {
+                    return Ok(());
+                }
                 self.reject_array_access_reference_target_if_needed(name, span, scope)?;
                 if let ReferenceSource::Variable {
                     name: source_name, ..
@@ -24270,6 +24324,11 @@ impl Interpreter {
             AssignTarget::ArrayIndex {
                 name, index: None, ..
             } => {
+                if self.emit_array_access_reference_assignment_target_fatal_if_needed(
+                    name, span, scope,
+                )? {
+                    return Ok(());
+                }
                 self.reject_array_access_reference_target_if_needed(name, span, scope)?;
                 if let ReferenceSource::Variable {
                     name: source_name, ..
@@ -24349,6 +24408,11 @@ impl Interpreter {
                     .iter()
                     .map(|index| self.evaluate_array_key(index, scope))
                     .collect::<CompileResult<Vec<_>>>()?;
+                if self.emit_array_access_reference_assignment_target_fatal_if_needed(
+                    name, span, scope,
+                )? {
+                    return Ok(());
+                }
                 self.reject_array_access_reference_target_if_needed(name, span, scope)?;
                 if let ReferenceSource::Variable {
                     name: source_name, ..
@@ -25095,6 +25159,27 @@ impl Interpreter {
             self.reject_array_access_reference_target_value(&value, span)?;
         }
         Ok(())
+    }
+
+    fn emit_array_access_reference_assignment_target_fatal_if_needed(
+        &mut self,
+        name: &str,
+        span: Span,
+        scope: &SymbolTable,
+    ) -> CompileResult<bool> {
+        let Some(Value::Object(object)) = scope.read_named(name) else {
+            return Ok(false);
+        };
+        if !self
+            .classes
+            .implements_interface(object.class_id(), "ArrayAccess")
+        {
+            return Ok(false);
+        }
+        let class_name = object.class_name().to_string();
+        self.emit_array_access_indirect_modification_notice(&class_name, span)?;
+        self.emit_array_access_reference_assignment_fatal(span);
+        Ok(true)
     }
 
     fn reject_array_access_reference_source_if_needed(
@@ -28351,11 +28436,7 @@ impl Interpreter {
             }
         }
 
-        self.emit_notice(
-            "ArrayAccess::offsetGet()",
-            format!("Indirect modification of overloaded element of {class_name} has no effect"),
-            span,
-        )?;
+        self.emit_array_access_indirect_modification_notice(&class_name, span)?;
 
         if !rest_keys.is_empty() || check_terminal_scalar_parent {
             self.reject_by_value_array_access_scalar_parent_for_nested_write(
@@ -28489,11 +28570,7 @@ impl Interpreter {
             }
         }
 
-        self.emit_notice(
-            "ArrayAccess::offsetGet()",
-            format!("Indirect modification of overloaded element of {class_name} has no effect"),
-            span,
-        )?;
+        self.emit_array_access_indirect_modification_notice(&class_name, span)?;
 
         if self.write_by_value_overloaded_array_path_array_access_object(
             &first_value,
@@ -28831,11 +28908,7 @@ impl Interpreter {
             }
         }
 
-        self.emit_notice(
-            "ArrayAccess::offsetGet()",
-            format!("Indirect modification of overloaded element of {class_name} has no effect"),
-            span,
-        )?;
+        self.emit_array_access_indirect_modification_notice(&class_name, span)?;
 
         if let Some(binding) = self
             .by_value_overloaded_array_path_array_access_reference_source_binding(
@@ -35632,8 +35705,39 @@ impl Interpreter {
                     None => Err(runtime_error(span, RuntimeError::undefined_variable(name))),
                 }
             }
-            AssignTarget::NestedArrayIndex { .. }
-            | AssignTarget::NestedArrayAppend { .. }
+            AssignTarget::NestedArrayIndex { name, indices, .. } => {
+                let keys = indices
+                    .iter()
+                    .map(|index| self.evaluate_array_key(index, scope))
+                    .collect::<CompileResult<Vec<_>>>()?;
+                match scope.read_named(name) {
+                    Some(Value::Object(object))
+                        if self
+                            .classes
+                            .implements_interface(object.class_id(), "ArrayAccess") =>
+                    {
+                        self.read_array_access_nested_compound_assignment_left(
+                            object, keys, span, scope,
+                        )
+                    }
+                    Some(Value::Array(_)) => Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "compound assignment",
+                            "nested array targets are not implemented",
+                        ),
+                    )),
+                    Some(other) => Err(runtime_error(
+                        span,
+                        RuntimeError::invalid_array_access(format!(
+                            "cannot read offset from {}",
+                            other.type_name()
+                        )),
+                    )),
+                    None => Err(runtime_error(span, RuntimeError::undefined_variable(name))),
+                }
+            }
+            AssignTarget::NestedArrayAppend { .. }
             | AssignTarget::StaticPropertyArrayIndex { .. }
             | AssignTarget::StaticPropertyArrayAppend { .. }
             | AssignTarget::NonDirectObjectPropertyArrayAppend { .. }
@@ -35904,6 +36008,104 @@ impl Interpreter {
                 RuntimeError::unsupported_call("compound assignment target", message),
             )),
         }
+    }
+
+    fn read_array_access_nested_compound_assignment_left(
+        &mut self,
+        object: PhpObject,
+        keys: Vec<ArrayKey>,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<(CompoundAssignmentPlace, Value)> {
+        let Some((first_key, rest_keys)) = keys.split_first() else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "compound assignment",
+                    "nested ArrayAccess assignment requires at least one key",
+                ),
+            ));
+        };
+
+        let (first_value, first_source) = self
+            .call_array_access_offset_get_with_array_copy_source(
+                object.clone(),
+                Self::array_key_value(Some(first_key.clone())),
+                span,
+                scope,
+            )?;
+        if rest_keys.is_empty() {
+            let hidden_name = self.hidden_array_access_reference_object_name(&object);
+            scope.write_static(&hidden_name, Value::Object(object));
+            return Ok((
+                CompoundAssignmentPlace::ArrayAccessOffset {
+                    name: hidden_name,
+                    key: first_key.clone(),
+                },
+                first_value,
+            ));
+        }
+
+        let first_source = if matches!(first_value, Value::Array(_)) {
+            first_source
+        } else {
+            None
+        };
+        let first_value = scope.value_with_object_property_aliases_from_array_copy(
+            first_value,
+            first_source,
+            true,
+        );
+
+        if let Value::Object(nested_object) = &first_value {
+            if self
+                .classes
+                .implements_interface(nested_object.class_id(), "ArrayAccess")
+            {
+                let Some((nested_key, nested_rest)) = rest_keys.split_first() else {
+                    unreachable!("rest_keys is not empty");
+                };
+                if nested_rest.is_empty() {
+                    let value = self.call_array_access_method_with_caller_scope(
+                        nested_object.clone(),
+                        "offsetGet",
+                        vec![Self::array_key_value(Some(nested_key.clone()))],
+                        span,
+                        scope,
+                    )?;
+                    let hidden_name = self.hidden_array_access_reference_object_name(nested_object);
+                    scope.write_static(&hidden_name, Value::Object(nested_object.clone()));
+                    return Ok((
+                        CompoundAssignmentPlace::ArrayAccessOffset {
+                            name: hidden_name,
+                            key: nested_key.clone(),
+                        },
+                        value,
+                    ));
+                }
+                return self.read_array_access_nested_compound_assignment_left(
+                    nested_object.clone(),
+                    rest_keys.to_vec(),
+                    span,
+                    scope,
+                );
+            }
+        }
+
+        let class_name = object.class_name().to_string();
+        self.emit_array_access_indirect_modification_notice(&class_name, span)?;
+        self.reject_by_value_array_access_scalar_parent_for_nested_write(
+            &first_value,
+            rest_keys,
+            false,
+            span,
+        )?;
+        let left = if let Value::Array(array) = first_value {
+            Self::read_nested_array_value(&array, rest_keys, span)?
+        } else {
+            Value::Null
+        };
+        Ok((CompoundAssignmentPlace::ArrayAccessTemporary, left))
     }
 
     fn read_object_property_for_read_modify_write(
@@ -36263,6 +36465,7 @@ impl Interpreter {
                         ))
                     }
                     Some(Value::Object(object)) => {
+                        let class_name = object.class_name().to_string();
                         let value = self.call_array_access_method_with_caller_scope(
                             object,
                             "offsetGet",
@@ -36270,6 +36473,7 @@ impl Interpreter {
                             span,
                             scope,
                         )?;
+                        self.emit_array_access_indirect_modification_notice(&class_name, span)?;
                         Ok((CompoundAssignmentPlace::ArrayAccessTemporary, value))
                     }
                     Some(other) => Err(runtime_error(
@@ -36331,12 +36535,17 @@ impl Interpreter {
                             .map_err(|error| runtime_error(span, error))?;
                         match property_value {
                             Value::Object(array_access_object) => {
+                                let class_name = array_access_object.class_name().to_string();
                                 let value = self.call_array_access_method_with_caller_scope(
                                     array_access_object,
                                     "offsetGet",
                                     vec![Self::array_key_value(Some(keys[0].clone()))],
                                     span,
                                     scope,
+                                )?;
+                                self.emit_array_access_indirect_modification_notice(
+                                    &class_name,
+                                    span,
                                 )?;
                                 Ok((CompoundAssignmentPlace::ArrayAccessTemporary, value))
                             }
@@ -43879,12 +44088,13 @@ impl Interpreter {
         match target_value {
             Value::Array(array) => {
                 let key = self.evaluate_array_key(index, scope)?;
-                let value = array.get_cloned(key.clone()).ok_or_else(|| {
-                    runtime_error(
+                let Some(value) = array.get_cloned(key.clone()) else {
+                    self.emit_display_warning(
+                        format!("Undefined array key {}", key.diagnostic_key()),
                         span,
-                        RuntimeError::undefined_array_key(key.diagnostic_key()),
-                    )
-                })?;
+                    )?;
+                    return Ok((Value::Null, None));
+                };
                 let source = if matches!(value, Value::Array(_)) {
                     self.array_literal_copy_source_for_index_expr(target, index, scope)
                         .or_else(|| {
@@ -43976,12 +44186,13 @@ impl Interpreter {
                     unreachable!("array literal evaluation returns array value");
                 };
                 let key = self.evaluate_array_key(index, scope)?;
-                let value = array.get_cloned(key.clone()).ok_or_else(|| {
-                    runtime_error(
+                let Some(value) = array.get_cloned(key.clone()) else {
+                    self.emit_display_warning(
+                        format!("Undefined array key {}", key.diagnostic_key()),
                         span,
-                        RuntimeError::undefined_array_key(key.diagnostic_key()),
-                    )
-                })?;
+                    )?;
+                    return Ok(Some((Value::Null, None)));
+                };
                 let source = Self::array_literal_copy_source_for_expression_path(
                     &copy_sources,
                     std::slice::from_ref(&key),
@@ -44000,12 +44211,13 @@ impl Interpreter {
                     return Ok(None);
                 };
                 let key = self.evaluate_array_key(index, scope)?;
-                let value = array.get_cloned(key.clone()).ok_or_else(|| {
-                    runtime_error(
+                let Some(value) = array.get_cloned(key.clone()) else {
+                    self.emit_display_warning(
+                        format!("Undefined array key {}", key.diagnostic_key()),
                         span,
-                        RuntimeError::undefined_array_key(key.diagnostic_key()),
-                    )
-                })?;
+                    )?;
+                    return Ok(Some((Value::Null, None)));
+                };
                 let source = Self::array_literal_copy_source_for_expression_path(
                     &copy_sources,
                     std::slice::from_ref(&key),
@@ -67599,6 +67811,20 @@ impl Interpreter {
                 .iter()
                 .find(|binding| binding.param_name == param.name)
             {
+                if let Some(arg) = args.get(index) {
+                    if let Err(error) =
+                        self.coerce_call_argument_value(function, index, param, arg.clone())
+                    {
+                        self.function_context.pop();
+                        if class_context.is_some() {
+                            self.class_context.pop();
+                        }
+                        if called_class_context.is_some() {
+                            self.called_class_context.pop();
+                        }
+                        return Err(error);
+                    }
+                }
                 match &binding.target {
                     ReferenceBindingTarget::CallerCell { cell, .. } => {
                         local_scope.bind_static_to_cell(&param.name, cell.clone());
@@ -70411,11 +70637,7 @@ impl Interpreter {
             }
         }
 
-        self.emit_notice(
-            "ArrayAccess::offsetGet()",
-            format!("Indirect modification of overloaded element of {class_name} has no effect"),
-            span,
-        )?;
+        self.emit_array_access_indirect_modification_notice(&class_name, span)?;
 
         if !rest_keys.is_empty() {
             self.reject_by_value_array_access_scalar_parent_for_nested_write(
@@ -70959,8 +71181,19 @@ impl Interpreter {
                 }
                 _ => original_cell.value_cloned(),
             };
-            self.write_back_array_offset_aliases(aliases, value, caller_scope, span)?;
-            if !had_existing_reference {
+            let reference_escaped =
+                local_scope.reference_cell_is_captured_by_object_property(original_cell);
+            if reference_escaped {
+                self.write_back_array_offset_aliases_reference_cell(
+                    aliases,
+                    original_cell.clone(),
+                    caller_scope,
+                    span,
+                )?;
+            } else {
+                self.write_back_array_offset_aliases(aliases, value, caller_scope, span)?;
+            }
+            if !had_existing_reference && !reference_escaped {
                 caller_scope.demote_array_offset_aliases_to_value_slots(aliases, span)?;
             }
         }
@@ -73039,7 +73272,7 @@ impl Interpreter {
             value,
             &function.name,
             &format!("parameter ${}", param.name),
-            |object, type_name| object.is_instance_of_class_name(type_name),
+            |object, type_name| self.object_satisfies_live_property_type(object, type_name),
         )
         .map_err(|_| {
             runtime_error(
@@ -73142,7 +73375,7 @@ impl Interpreter {
             value,
             &function.name,
             label,
-            |object, type_name| object.is_instance_of_class_name(type_name),
+            |object, type_name| self.object_satisfies_live_property_type(object, type_name),
         )
         .map_err(|_| {
             runtime_error(
@@ -92248,6 +92481,9 @@ fn validate_interface_parent_relationship(
     for parent_name in &interface.parents {
         let parent_key = parent_name.to_ascii_lowercase();
         let Some(parent) = interface_lookup.get(&parent_key) else {
+            if is_core_interface_name(parent_name) {
+                continue;
+            }
             return Err(runtime_error(
                 interface.span,
                 RuntimeError::unsupported_class_inheritance(
@@ -127732,7 +127968,7 @@ fn function_type_metadata_is_runtime_enforceable(function: &FunctionDecl) -> boo
             && param
                 .type_decl
                 .as_ref()
-                .is_some_and(|decl| !type_decl_is_exact(decl, "mixed"))
+                .is_some_and(|decl| !by_reference_type_decl_is_runtime_enforceable_for_call(decl))
     }) {
         return false;
     }
@@ -127747,6 +127983,54 @@ fn function_type_metadata_is_runtime_enforceable(function: &FunctionDecl) -> boo
                 .as_ref()
                 .map_or(true, type_decl_is_runtime_enforceable_for_call)
         })
+}
+
+fn by_reference_type_decl_is_runtime_enforceable_for_call(decl: &TypeDecl) -> bool {
+    by_reference_type_text_is_runtime_enforceable_for_call(decl.text.trim())
+}
+
+fn by_reference_type_text_is_runtime_enforceable_for_call(text: &str) -> bool {
+    if text.is_empty() {
+        return false;
+    }
+
+    let without_nullable = text.strip_prefix('?').unwrap_or(text).trim();
+    if without_nullable.contains('|') {
+        return without_nullable
+            .split('|')
+            .all(by_reference_type_text_is_runtime_enforceable_for_call);
+    }
+    if without_nullable.contains('&') {
+        return without_nullable
+            .split('&')
+            .all(by_reference_type_text_is_runtime_enforceable_for_call);
+    }
+
+    let normalized = without_nullable
+        .strip_prefix('\\')
+        .unwrap_or(without_nullable)
+        .to_ascii_lowercase();
+    !matches!(
+        normalized.as_str(),
+        "bool"
+            | "boolean"
+            | "callable"
+            | "false"
+            | "float"
+            | "double"
+            | "int"
+            | "integer"
+            | "iterable"
+            | "never"
+            | "null"
+            | "parent"
+            | "resource"
+            | "self"
+            | "static"
+            | "string"
+            | "true"
+            | "void"
+    )
 }
 
 fn type_decl_is_runtime_enforceable_for_call(decl: &TypeDecl) -> bool {
@@ -128066,13 +128350,20 @@ where
                     format_var_dump_object_property(&property)
                 ));
                 let property_value = property.value_cloned();
-                output.push_str(&format_var_dump_with_indent(
+                let mut property_output = format_var_dump_with_indent(
                     &property_value,
                     indent + 1,
                     span,
                     serialize_precision,
                     resource_type,
-                )?);
+                )?;
+                if property.is_reference() {
+                    let property_padding = "  ".repeat(indent + 1);
+                    if property_output.starts_with(&property_padding) {
+                        property_output.insert(property_padding.len(), '&');
+                    }
+                }
+                output.push_str(&property_output);
             }
             output.push_str(&format!("{padding}}}\n"));
             output
@@ -128142,13 +128433,20 @@ where
                     .as_bytes(),
                 );
                 let property_value = property.value_cloned();
-                output.extend_from_slice(&format_var_dump_bytes_with_indent(
+                let mut property_output = format_var_dump_bytes_with_indent(
                     &property_value,
                     indent + 1,
                     span,
                     serialize_precision,
                     resource_type,
-                )?);
+                )?;
+                if property.is_reference() {
+                    let property_padding = "  ".repeat(indent + 1).into_bytes();
+                    if property_output.starts_with(&property_padding) {
+                        property_output.insert(property_padding.len(), b'&');
+                    }
+                }
+                output.extend_from_slice(&property_output);
             }
             output.extend_from_slice(format!("{padding}}}\n").as_bytes());
             Ok(output)
