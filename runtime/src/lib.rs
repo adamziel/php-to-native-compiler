@@ -30281,6 +30281,11 @@ impl PhpArray {
         self.next_auto_index = source.next_auto_index;
         self.auto_index_exhausted = source.auto_index_exhausted;
     }
+
+    pub fn set_append_cursor(&mut self, next_auto_index: i64, auto_index_exhausted: bool) {
+        self.next_auto_index = next_auto_index;
+        self.auto_index_exhausted = auto_index_exhausted;
+    }
 }
 
 impl Default for PhpArray {

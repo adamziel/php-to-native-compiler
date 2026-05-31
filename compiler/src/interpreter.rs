@@ -51,6 +51,14 @@ const SPL_STACK_ITERATOR_MODE: i64 = SPL_QUEUE_ITERATOR_MODE | SPL_DLL_IT_MODE_L
 const ARRAY_OBJECT_STD_PROP_LIST: i64 = 1;
 const ARRAY_OBJECT_ARRAY_AS_PROPS: i64 = 2;
 const COMPACT_MAX_ARRAY_DEPTH: usize = 64;
+const PHP_EXTR_OVERWRITE: i64 = 0;
+const PHP_EXTR_SKIP: i64 = 1;
+const PHP_EXTR_PREFIX_SAME: i64 = 2;
+const PHP_EXTR_PREFIX_ALL: i64 = 3;
+const PHP_EXTR_PREFIX_INVALID: i64 = 4;
+const PHP_EXTR_PREFIX_IF_EXISTS: i64 = 5;
+const PHP_EXTR_IF_EXISTS: i64 = 6;
+const PHP_EXTR_REFS: i64 = 256;
 const PHP_FIRST_USER_RESOURCE_ID: i64 = 4;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -3702,6 +3710,31 @@ impl SymbolTable {
 
     fn materialized_globals_array_value(&self) -> Value {
         let storage = self.global_storage().borrow();
+        let mut entries: Vec<(String, VariableCell)> = storage
+            .iter()
+            .filter(|(name, _)| !name.starts_with('\0'))
+            .map(|(name, cell)| (name.clone(), cell.clone()))
+            .collect();
+        entries.sort_by(|(left, _), (right, _)| left.cmp(right));
+
+        let mut reference_counts: HashMap<PhpReferenceCellId, usize> = HashMap::new();
+        for (_, cell) in &entries {
+            *reference_counts.entry(cell.id()).or_default() += 1;
+        }
+
+        let mut array = PhpArray::new();
+        for (name, cell) in entries {
+            if reference_counts.get(&cell.id()).copied().unwrap_or(0) > 1 {
+                array.insert_reference(name, cell);
+            } else {
+                array.insert(name, cell.value_cloned());
+            }
+        }
+        Value::Array(array)
+    }
+
+    fn materialized_defined_vars_array_value(&self) -> Value {
+        let storage = self.symbols.borrow();
         let mut entries: Vec<(String, VariableCell)> = storage
             .iter()
             .filter(|(name, _)| !name.starts_with('\0'))
@@ -37187,6 +37220,52 @@ impl Interpreter {
         Ok(())
     }
 
+    fn array_literal_next_auto_key(
+        next_auto_index: &mut i64,
+        auto_index_exhausted: &mut bool,
+        span: Span,
+    ) -> CompileResult<ArrayKey> {
+        if *auto_index_exhausted {
+            return Err(runtime_error(
+                span,
+                RuntimeError::invalid_array_key("cannot append after maximum integer key"),
+            ));
+        }
+
+        let key = ArrayKey::Int(*next_auto_index);
+        Self::array_literal_update_append_cursor(&key, next_auto_index, auto_index_exhausted);
+        Ok(key)
+    }
+
+    fn array_literal_update_append_cursor(
+        key: &ArrayKey,
+        next_auto_index: &mut i64,
+        auto_index_exhausted: &mut bool,
+    ) {
+        let ArrayKey::Int(value) = key else {
+            return;
+        };
+        if *auto_index_exhausted {
+            return;
+        }
+
+        let should_advance = if *value >= 0 {
+            *value >= *next_auto_index
+        } else if *next_auto_index == 0 {
+            true
+        } else {
+            *next_auto_index < 0 && *value >= *next_auto_index
+        };
+        if !should_advance {
+            return;
+        }
+
+        match value.checked_add(1) {
+            Some(next) => *next_auto_index = next,
+            None => *auto_index_exhausted = true,
+        }
+    }
+
     fn evaluate_array(
         &mut self,
         items: &[ArrayItem],
@@ -37194,25 +37273,30 @@ impl Interpreter {
         scope: &mut SymbolTable,
     ) -> CompileResult<Value> {
         let mut array = PhpArray::new();
+        let mut next_auto_index = 0;
+        let mut auto_index_exhausted = false;
 
         for item in items {
             let key = match &item.key {
-                Some(expr) => Some(self.evaluate_array_key(expr, scope)?),
-                None => None,
+                Some(expr) => {
+                    let key = self.evaluate_array_key(expr, scope)?;
+                    Self::array_literal_update_append_cursor(
+                        &key,
+                        &mut next_auto_index,
+                        &mut auto_index_exhausted,
+                    );
+                    key
+                }
+                None => Self::array_literal_next_auto_key(
+                    &mut next_auto_index,
+                    &mut auto_index_exhausted,
+                    span,
+                )?,
             };
             if item.by_reference {
                 let (_, reference) =
                     self.evaluate_array_literal_reference_cell(&item.value, scope)?;
-                match key {
-                    Some(key) => {
-                        array.insert_reference(key, reference);
-                    }
-                    None => {
-                        array
-                            .append_reference(reference)
-                            .map_err(|error| runtime_error(span, error))?;
-                    }
-                }
+                array.insert_reference(key, reference);
                 continue;
             }
             let (value, array_copy_source) =
@@ -37223,18 +37307,10 @@ impl Interpreter {
                 true,
             );
 
-            match key {
-                Some(key) => {
-                    array.insert(key, value);
-                }
-                None => {
-                    array
-                        .append(value)
-                        .map_err(|error| runtime_error(span, error))?;
-                }
-            }
+            array.insert(key, value);
         }
 
+        array.set_append_cursor(next_auto_index, auto_index_exhausted);
         Ok(Value::Array(array))
     }
 
@@ -37251,11 +37327,25 @@ impl Interpreter {
         let mut array = PhpArray::new();
         let mut references = Vec::new();
         let mut copy_sources = Vec::new();
+        let mut next_auto_index = 0;
+        let mut auto_index_exhausted = false;
 
         for item in items {
             let key = match &item.key {
-                Some(expr) => Some(self.evaluate_array_key(expr, scope)?),
-                None => None,
+                Some(expr) => {
+                    let key = self.evaluate_array_key(expr, scope)?;
+                    Self::array_literal_update_append_cursor(
+                        &key,
+                        &mut next_auto_index,
+                        &mut auto_index_exhausted,
+                    );
+                    key
+                }
+                None => Self::array_literal_next_auto_key(
+                    &mut next_auto_index,
+                    &mut auto_index_exhausted,
+                    span,
+                )?,
             };
 
             if item.by_reference {
@@ -37263,15 +37353,7 @@ impl Interpreter {
                     .public_object_property_array_copy_source_for_value_expr(&item.value, scope);
                 let (value, reference) =
                     self.evaluate_array_literal_reference_element(&item.value, scope)?;
-                let key = match key {
-                    Some(key) => {
-                        array.insert(key.clone(), value);
-                        key
-                    }
-                    None => array
-                        .append(value)
-                        .map_err(|error| runtime_error(span, error))?,
-                };
+                array.insert(key.clone(), value);
                 references.push(match reference {
                     ArrayLiteralReferenceElement::Variable {
                         mut keys,
@@ -37331,15 +37413,7 @@ impl Interpreter {
                     )
                 }
             };
-            let key = match key {
-                Some(key) => {
-                    array.insert(key.clone(), value);
-                    key
-                }
-                None => array
-                    .append(value)
-                    .map_err(|error| runtime_error(span, error))?,
-            };
+            array.insert(key.clone(), value);
             for reference in nested_references {
                 references.push(match reference {
                     ArrayLiteralReferenceElement::Variable {
@@ -37382,6 +37456,7 @@ impl Interpreter {
             }
         }
 
+        array.set_append_cursor(next_auto_index, auto_index_exhausted);
         Ok((Value::Array(array), references, copy_sources))
     }
 
@@ -55701,6 +55776,12 @@ impl Interpreter {
                 if key == "mysqli_stmt_fetch" {
                     return self.call_mysqli_stmt_fetch_direct(args, span, caller_scope);
                 }
+                if key == "get_defined_vars" {
+                    return self.call_get_defined_vars(args, span, caller_scope);
+                }
+                if key == "extract" {
+                    return self.call_extract(args, span, caller_scope);
+                }
                 if key == "compact" {
                     return self.call_compact(args, span, caller_scope);
                 }
@@ -55881,6 +55962,12 @@ impl Interpreter {
                 }
                 if key == "mysqli_stmt_fetch" {
                     return self.call_mysqli_stmt_fetch_direct(args, span, caller_scope);
+                }
+                if key == "get_defined_vars" {
+                    return self.call_get_defined_vars(args, span, caller_scope);
+                }
+                if key == "extract" {
+                    return self.call_extract(args, span, caller_scope);
                 }
                 if key == "compact" {
                     return self.call_compact(args, span, caller_scope);
@@ -64141,6 +64228,216 @@ impl Interpreter {
             )?;
             caller_scope.sync_array_offset_aliases_for_object_property_root(object_name, property);
             Ok(())
+        }
+    }
+
+    fn call_get_defined_vars(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &SymbolTable,
+    ) -> CompileResult<Value> {
+        if !args.is_empty() {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "get_defined_vars()",
+                    ArityExpectation::Exactly(0),
+                    args.len(),
+                ),
+            ));
+        }
+
+        Ok(caller_scope.materialized_defined_vars_array_value())
+    }
+
+    fn call_extract(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        if !(1..=3).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "extract()",
+                    ArityExpectation::Between { min: 1, max: 3 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let source_value = self.evaluate(&args[0], caller_scope)?;
+        let Value::Array(source_array) = source_value else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "extract()",
+                    format!(
+                        "Argument #1 ($array) must be of type array, {} given",
+                        php_type_error_given(&source_value)
+                    ),
+                ),
+            ));
+        };
+
+        let flags = match args.get(1) {
+            Some(expr) => {
+                let value = self.evaluate(expr, caller_scope)?;
+                php_internal_int_argument("extract()", 2, "flags", &value, expr.span())?
+            }
+            None => PHP_EXTR_OVERWRITE,
+        };
+
+        let by_reference = (flags & PHP_EXTR_REFS) != 0;
+        let mode = ExtractMode::from_flags(flags & !PHP_EXTR_REFS).ok_or_else(|| {
+            runtime_error(
+                args.get(1).map(Expr::span).unwrap_or(span),
+                RuntimeError::unsupported_call(
+                    "extract()",
+                    "Argument #2 ($flags) must be a valid extract type",
+                ),
+            )
+        })?;
+
+        let prefix = if mode.requires_prefix() {
+            let Some(prefix_expr) = args.get(2) else {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "extract()",
+                        "Argument #3 ($prefix) is required when using this extract type",
+                    ),
+                ));
+            };
+            let prefix_value = self.evaluate(prefix_expr, caller_scope)?;
+            let prefix = string_builtin_argument("extract()", "prefix", &prefix_value, span)?;
+            if !prefix.is_empty() && !is_php_extract_identifier(&prefix) {
+                return Err(runtime_error(
+                    prefix_expr.span(),
+                    RuntimeError::unsupported_call(
+                        "extract()",
+                        "Argument #3 ($prefix) must be a valid identifier",
+                    ),
+                ));
+            }
+            Some(prefix)
+        } else {
+            None
+        };
+
+        let source_keys = source_array
+            .entries()
+            .iter()
+            .map(|entry| entry.key.clone())
+            .collect::<Vec<_>>();
+        let mut source_references = if by_reference {
+            Self::extract_source_array_references(&args[0], &source_keys, caller_scope)
+        } else {
+            HashMap::new()
+        };
+
+        let mut extracted = 0usize;
+        for entry in source_array.entries() {
+            let Some(target) = Self::extract_target_name_for_key(
+                &entry.key,
+                mode,
+                prefix.as_deref(),
+                caller_scope,
+            ) else {
+                continue;
+            };
+
+            extracted += 1;
+            if target == "GLOBALS" {
+                continue;
+            }
+
+            if by_reference {
+                let reference = source_references
+                    .remove(&entry.key)
+                    .or_else(|| entry.slot().reference_cell())
+                    .unwrap_or_else(|| PhpReferenceCell::new(entry.value_cloned()));
+                caller_scope.bind_static_to_cell(&target, reference);
+            } else {
+                caller_scope.write_static_checked_with_object_type_resolver(
+                    &target,
+                    entry.value_cloned(),
+                    span,
+                    |object, type_name| self.object_satisfies_live_property_type(object, type_name),
+                )?;
+            }
+        }
+
+        Ok(Value::Int(extracted as i64))
+    }
+
+    fn extract_source_array_references(
+        source: &Expr,
+        keys: &[ArrayKey],
+        caller_scope: &mut SymbolTable,
+    ) -> HashMap<ArrayKey, PhpReferenceCell> {
+        let Expr::Variable(source_name, _) = source else {
+            return HashMap::new();
+        };
+        if source_name == "GLOBALS" {
+            return HashMap::new();
+        }
+
+        let Some(source_cell) = caller_scope.read_cell(source_name) else {
+            return HashMap::new();
+        };
+
+        let mut references = HashMap::new();
+        source_cell.update_value(|value| {
+            let Value::Array(array) = value else {
+                return;
+            };
+
+            for key in keys {
+                if let Some(slot) = array.get_slot_mut(key.clone()) {
+                    references.insert(key.clone(), slot.promote_to_reference_cell());
+                }
+            }
+        });
+        references
+    }
+
+    fn extract_target_name_for_key(
+        key: &ArrayKey,
+        mode: ExtractMode,
+        prefix: Option<&str>,
+        caller_scope: &SymbolTable,
+    ) -> Option<String> {
+        let direct_name = extract_direct_variable_name(key);
+        let direct_exists = direct_name
+            .as_deref()
+            .is_some_and(|name| caller_scope.read_named(name).is_some());
+
+        match mode {
+            ExtractMode::Overwrite => direct_name,
+            ExtractMode::Skip => direct_name.filter(|name| caller_scope.read_named(name).is_none()),
+            ExtractMode::IfExists => direct_name.filter(|_| direct_exists),
+            ExtractMode::PrefixInvalid => direct_name
+                .or_else(|| extract_prefixed_variable_name(prefix.unwrap_or_default(), key, true)),
+            ExtractMode::PrefixAll => {
+                extract_prefixed_variable_name(prefix.unwrap_or_default(), key, false)
+            }
+            ExtractMode::PrefixSame => match direct_name {
+                Some(name) if caller_scope.read_named(&name).is_some() => {
+                    extract_prefixed_variable_name(prefix.unwrap_or_default(), key, false)
+                }
+                Some(name) => Some(name),
+                None => None,
+            },
+            ExtractMode::PrefixIfExists => {
+                if direct_exists {
+                    extract_prefixed_variable_name(prefix.unwrap_or_default(), key, false)
+                } else {
+                    None
+                }
+            }
         }
     }
 
@@ -81444,6 +81741,20 @@ impl Interpreter {
             "preg_replace" => call_preg_replace(&args, span),
             "preg_split" => call_preg_split(&args, span),
             "preg_replace_callback" => self.call_preg_replace_callback(args, span),
+            "get_defined_vars" => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "get_defined_vars()",
+                    "caller-scope variable lookup is only implemented for direct get_defined_vars() calls in the current subset",
+                ),
+            )),
+            "extract" => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "extract()",
+                    "caller-scope variable binding is only implemented for direct extract() calls in the current subset",
+                ),
+            )),
             "compact" => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
@@ -96604,6 +96915,15 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_optional_int_param("mode", 0),
             ],
         ),
+        "get_defined_vars" => ("array", vec![]),
+        "extract" => (
+            "int",
+            vec![
+                reflection_internal_param("array", "array"),
+                reflection_internal_optional_int_param("flags", PHP_EXTR_OVERWRITE),
+                reflection_internal_optional_string_param("prefix", ""),
+            ],
+        ),
         "array_key_exists" | "key_exists" => (
             "bool",
             vec![
@@ -99673,6 +99993,9 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
         | ("count_chars()", "Argument #2 ($mode) must be between 0 and 4 (inclusive)")
         | ("count()", "Argument #2 ($mode) must be either COUNT_NORMAL or COUNT_RECURSIVE")
         | ("sizeof()", "Argument #2 ($mode) must be either COUNT_NORMAL or COUNT_RECURSIVE")
+        | ("extract()", "Argument #2 ($flags) must be a valid extract type")
+        | ("extract()", "Argument #3 ($prefix) is required when using this extract type")
+        | ("extract()", "Argument #3 ($prefix) must be a valid identifier")
         | ("ftruncate()", "Argument #2 ($size) must be greater than or equal to 0")
         | ("stream_get_contents()", "Argument #2 ($length) must be greater than or equal to -1")
         | (
@@ -100299,6 +100622,8 @@ fn is_builtin(name: &str) -> bool {
             | "preg_replace"
             | "preg_split"
             | "preg_replace_callback"
+            | "get_defined_vars"
+            | "extract"
             | "compact"
             | "error_reporting"
             | "connection_aborted"
@@ -101475,6 +101800,14 @@ const PHP_SESSION_NONE: i64 = 1;
 const PHP_SESSION_ACTIVE: i64 = 2;
 const PHP_COUNT_NORMAL: i64 = 0;
 const PHP_COUNT_RECURSIVE: i64 = 1;
+const PHP_EXTR_OVERWRITE_CONST: i64 = PHP_EXTR_OVERWRITE;
+const PHP_EXTR_SKIP_CONST: i64 = PHP_EXTR_SKIP;
+const PHP_EXTR_PREFIX_SAME_CONST: i64 = PHP_EXTR_PREFIX_SAME;
+const PHP_EXTR_PREFIX_ALL_CONST: i64 = PHP_EXTR_PREFIX_ALL;
+const PHP_EXTR_PREFIX_INVALID_CONST: i64 = PHP_EXTR_PREFIX_INVALID;
+const PHP_EXTR_PREFIX_IF_EXISTS_CONST: i64 = PHP_EXTR_PREFIX_IF_EXISTS;
+const PHP_EXTR_IF_EXISTS_CONST: i64 = PHP_EXTR_IF_EXISTS;
+const PHP_EXTR_REFS_CONST: i64 = PHP_EXTR_REFS;
 const PHP_FILE_USE_INCLUDE_PATH: i64 = 1;
 const PHP_FILE_IGNORE_NEW_LINES: i64 = 2;
 const PHP_FILE_SKIP_EMPTY_LINES: i64 = 4;
@@ -102065,6 +102398,14 @@ const BUILTIN_GLOBAL_CONSTANT_NAMES: &[&str] = &[
     "E_ALL",
     "COUNT_NORMAL",
     "COUNT_RECURSIVE",
+    "EXTR_OVERWRITE",
+    "EXTR_SKIP",
+    "EXTR_PREFIX_SAME",
+    "EXTR_PREFIX_ALL",
+    "EXTR_PREFIX_INVALID",
+    "EXTR_PREFIX_IF_EXISTS",
+    "EXTR_IF_EXISTS",
+    "EXTR_REFS",
     "CASE_LOWER",
     "CASE_UPPER",
     "ARRAY_FILTER_USE_BOTH",
@@ -102392,6 +102733,14 @@ fn builtin_global_constant_value(name: &str) -> Option<Value> {
         "E_ALL" => Some(Value::Int(PHP_E_ALL)),
         "COUNT_NORMAL" => Some(Value::Int(PHP_COUNT_NORMAL)),
         "COUNT_RECURSIVE" => Some(Value::Int(PHP_COUNT_RECURSIVE)),
+        "EXTR_OVERWRITE" => Some(Value::Int(PHP_EXTR_OVERWRITE_CONST)),
+        "EXTR_SKIP" => Some(Value::Int(PHP_EXTR_SKIP_CONST)),
+        "EXTR_PREFIX_SAME" => Some(Value::Int(PHP_EXTR_PREFIX_SAME_CONST)),
+        "EXTR_PREFIX_ALL" => Some(Value::Int(PHP_EXTR_PREFIX_ALL_CONST)),
+        "EXTR_PREFIX_INVALID" => Some(Value::Int(PHP_EXTR_PREFIX_INVALID_CONST)),
+        "EXTR_PREFIX_IF_EXISTS" => Some(Value::Int(PHP_EXTR_PREFIX_IF_EXISTS_CONST)),
+        "EXTR_IF_EXISTS" => Some(Value::Int(PHP_EXTR_IF_EXISTS_CONST)),
+        "EXTR_REFS" => Some(Value::Int(PHP_EXTR_REFS_CONST)),
         "CASE_LOWER" => Some(Value::Int(0)),
         "CASE_UPPER" => Some(Value::Int(1)),
         "ARRAY_FILTER_USE_BOTH" => Some(Value::Int(1)),
@@ -115137,6 +115486,78 @@ struct BoundedPregMatch {
     start: usize,
     end: usize,
     captures: PhpArray,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ExtractMode {
+    Overwrite,
+    Skip,
+    PrefixSame,
+    PrefixAll,
+    PrefixInvalid,
+    PrefixIfExists,
+    IfExists,
+}
+
+impl ExtractMode {
+    fn from_flags(flags: i64) -> Option<Self> {
+        match flags {
+            PHP_EXTR_OVERWRITE => Some(Self::Overwrite),
+            PHP_EXTR_SKIP => Some(Self::Skip),
+            PHP_EXTR_PREFIX_SAME => Some(Self::PrefixSame),
+            PHP_EXTR_PREFIX_ALL => Some(Self::PrefixAll),
+            PHP_EXTR_PREFIX_INVALID => Some(Self::PrefixInvalid),
+            PHP_EXTR_PREFIX_IF_EXISTS => Some(Self::PrefixIfExists),
+            PHP_EXTR_IF_EXISTS => Some(Self::IfExists),
+            _ => None,
+        }
+    }
+
+    fn requires_prefix(self) -> bool {
+        matches!(
+            self,
+            Self::PrefixSame | Self::PrefixAll | Self::PrefixInvalid | Self::PrefixIfExists
+        )
+    }
+}
+
+fn extract_direct_variable_name(key: &ArrayKey) -> Option<String> {
+    match key {
+        ArrayKey::String(name) if is_php_extract_identifier(name) => Some(name.clone()),
+        _ => None,
+    }
+}
+
+fn extract_prefixed_variable_name(
+    prefix: &str,
+    key: &ArrayKey,
+    allow_empty_suffix: bool,
+) -> Option<String> {
+    let suffix = match key {
+        ArrayKey::Int(value) => value.to_string(),
+        ArrayKey::String(value) if !value.is_empty() => value.clone(),
+        ArrayKey::String(_) if allow_empty_suffix => String::new(),
+        ArrayKey::String(_) => return None,
+    };
+
+    let name = if prefix.is_empty() {
+        format!("_{suffix}")
+    } else {
+        format!("{prefix}_{suffix}")
+    };
+    is_php_extract_identifier(&name).then_some(name)
+}
+
+fn is_php_extract_identifier(name: &str) -> bool {
+    let mut bytes = name.bytes();
+    let Some(first) = bytes.next() else {
+        return false;
+    };
+    if !matches!(first, b'a'..=b'z' | b'A'..=b'Z' | b'_') {
+        return false;
+    }
+
+    bytes.all(|byte| matches!(byte, b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'_'))
 }
 
 fn compact_argument_type_name(value: &Value) -> String {
