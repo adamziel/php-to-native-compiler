@@ -11187,6 +11187,12 @@ impl Interpreter {
             .any(|core_id| class_id == core_id)
     }
 
+    fn resolved_method_is_core_mysqli(&self, class_id: ClassId) -> bool {
+        self.classes
+            .lookup_class_id("mysqli")
+            .is_some_and(|mysqli_id| class_id == mysqli_id)
+    }
+
     fn spl_doubly_linked_list_default_iterator_mode(class_name: &str) -> i64 {
         if class_name.eq_ignore_ascii_case("SplQueue") {
             SPL_QUEUE_ITERATOR_MODE
@@ -22187,6 +22193,27 @@ impl Interpreter {
 
         if self.resolved_method_is_core_spl_doubly_linked_list(constructor_class_id) {
             expect_expr_arity("SplDoublyLinkedList::__construct", args.len(), 0, span)?;
+            self.track_allocated_object(&object);
+            return Ok(Value::Object(object));
+        }
+
+        if self.resolved_method_is_core_mysqli(constructor_class_id) {
+            if args.len() > 6 {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::arity_mismatch(
+                        "mysqli::__construct()",
+                        ArityExpectation::Between { min: 0, max: 6 },
+                        args.len(),
+                    ),
+                ));
+            }
+            let values = args
+                .iter()
+                .map(|arg| self.evaluate(arg, scope))
+                .collect::<CompileResult<Vec<_>>>()?;
+            self.validate_mysqli_connect_arguments("mysqli::__construct()", &values, span)?;
+            self.initialize_mysqli_placeholder_object(&object, span)?;
             self.track_allocated_object(&object);
             return Ok(Value::Object(object));
         }
@@ -37372,13 +37399,22 @@ impl Interpreter {
             .get(class_id)
             .expect("core mysqli class id should resolve");
         let object = PhpObject::from_class_with_id(class, object_id);
+        self.initialize_mysqli_placeholder_object(&object, span)?;
+        Ok(Value::Object(object))
+    }
+
+    fn initialize_mysqli_placeholder_object(
+        &self,
+        object: &PhpObject,
+        span: Span,
+    ) -> CompileResult<()> {
         object
             .write_public_property("connect_errno", Value::Int(0))
             .map_err(|error| runtime_error(span, error))?;
         object
             .write_public_property("connect_error", Value::Null)
             .map_err(|error| runtime_error(span, error))?;
-        Ok(Value::Object(object))
+        Ok(())
     }
 
     fn instantiate_mysqli(
@@ -37401,7 +37437,8 @@ impl Interpreter {
             .iter()
             .map(|arg| self.evaluate(arg, scope))
             .collect::<CompileResult<Vec<_>>>()?;
-        self.call_mysqli_connect(&values, span)
+        self.validate_mysqli_connect_arguments("mysqli::__construct()", &values, span)?;
+        self.create_mysqli_placeholder(span)
     }
 
     fn instantiate_mysqli_driver(&mut self, args: &[Expr], span: Span) -> CompileResult<Value> {
@@ -38944,6 +38981,16 @@ impl Interpreter {
             ));
         }
 
+        self.validate_mysqli_connect_arguments("mysqli_connect()", args, span)?;
+        self.create_mysqli_placeholder(span)
+    }
+
+    fn validate_mysqli_connect_arguments(
+        &self,
+        function: &str,
+        args: &[Value],
+        span: Span,
+    ) -> CompileResult<()> {
         for (index, label) in ["hostname", "username", "password", "database"]
             .iter()
             .enumerate()
@@ -38953,7 +39000,7 @@ impl Interpreter {
                     return Err(runtime_error(
                         span,
                         RuntimeError::unsupported_call(
-                            "mysqli_connect()",
+                            function,
                             format!(
                                 "{label} argument must be string or null in the current subset, got {}",
                                 value.type_name()
@@ -38969,7 +39016,7 @@ impl Interpreter {
                 return Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
-                        "mysqli_connect()",
+                        function,
                         format!(
                             "port argument must be int or null in the current subset, got {}",
                             port.type_name()
@@ -38984,7 +39031,7 @@ impl Interpreter {
                 return Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
-                        "mysqli_connect()",
+                        function,
                         format!(
                             "socket argument must be string or null in the current subset, got {}",
                             socket.type_name()
@@ -38994,7 +39041,7 @@ impl Interpreter {
             }
         }
 
-        self.create_mysqli_placeholder(span)
+        Ok(())
     }
 
     fn call_mysqli_get_server_info(&self, args: &[Value], span: Span) -> CompileResult<Value> {

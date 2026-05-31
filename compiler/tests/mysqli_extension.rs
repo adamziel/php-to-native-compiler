@@ -242,6 +242,35 @@ echo "|", $handle->connect_error === null ? "null" : "set";
 }
 
 #[test]
+fn mysqli_subclass_inherited_constructor_preserves_declared_properties() {
+    let execution = run_source(
+        r#"<?php
+class Test extends mysqli
+{
+    public $test = array();
+
+    function foo()
+    {
+        $ar_test = array("foo", "bar");
+        $this->test = &$ar_test;
+    }
+}
+
+$my_test = new Test;
+$my_test->foo();
+var_dump($my_test->test);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "array(2) {\n  [0]=>\n  string(3) \"foo\"\n  [1]=>\n  string(3) \"bar\"\n}\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_real_connect_accepts_current_wordpress_placeholder_shape() {
     let execution = run_source(
         r#"<?php
