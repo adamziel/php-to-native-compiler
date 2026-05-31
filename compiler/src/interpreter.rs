@@ -81955,49 +81955,40 @@ impl Interpreter {
             "glob" => self.call_glob(&args, span),
             "filesize" => {
                 expect_arity(name, &args, 1, span)?;
-                match &args[0] {
-                    Value::String(path) => {
-                        if path.contains("://") {
-                            return Err(runtime_error(
-                                span,
-                                RuntimeError::unsupported_call(
-                                    "filesize()",
-                                    "stream wrappers are not supported in the current subset",
-                                ),
-                            ));
-                        }
-                        let metadata = match self.cached_local_metadata(path) {
-                            Some(metadata) => metadata,
-                            None => {
-                                self.emit_display_warning(
-                                    format!("filesize(): stat failed for {path}"),
-                                    span,
-                                )?;
-                                return Ok(Value::Bool(false));
-                            }
-                        };
-                        let size = i64::try_from(metadata.len()).map_err(|_| {
-                            runtime_error(
-                                span,
-                                RuntimeError::unsupported_call(
-                                    "filesize()",
-                                    "file size exceeds the current signed 64-bit integer subset",
-                                ),
-                            )
-                        })?;
-                        Ok(Value::Int(size))
-                    }
-                    other => Err(runtime_error(
+                let Some(path) =
+                    self.filesystem_scalar_metadata_path_argument("filesize", "filename", &args[0], span)?
+                else {
+                    return Ok(Value::Bool(false));
+                };
+                if path.contains("://") {
+                    return Err(runtime_error(
                         span,
                         RuntimeError::unsupported_call(
                             "filesize()",
-                            format!(
-                                "path argument must be string in the current subset, got {}",
-                                other.type_name()
-                            ),
+                            "stream wrappers are not supported in the current subset",
                         ),
-                    )),
+                    ));
                 }
+                let metadata = match self.cached_local_metadata(&path) {
+                    Some(metadata) => metadata,
+                    None => {
+                        self.emit_display_warning(
+                            format!("filesize(): stat failed for {path}"),
+                            span,
+                        )?;
+                        return Ok(Value::Bool(false));
+                    }
+                };
+                let size = i64::try_from(metadata.len()).map_err(|_| {
+                    runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "filesize()",
+                            "file size exceeds the current signed 64-bit integer subset",
+                        ),
+                    )
+                })?;
+                Ok(Value::Int(size))
             }
             "fileatime" => {
                 self.call_file_timestamp_builtin(&args, "fileatime", filesystem_atime_value, span)
