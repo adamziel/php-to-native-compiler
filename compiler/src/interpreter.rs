@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::fs;
+use std::fs::{self, FileTimes};
 use std::io::{ErrorKind, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -74382,21 +74382,60 @@ impl Interpreter {
                 ));
             }
         }
+        if matches!(args.get(1), Some(Value::Null)) && matches!(args.get(2), Some(Value::Int(_))) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "touch()",
+                    "Argument #2 ($mtime) cannot be null when argument #3 ($atime) is an integer",
+                ),
+            ));
+        }
+        let modified = touch_argument_time(args.get(1), SystemTime::now(), span)?;
+        let accessed = touch_argument_time(args.get(2), modified, span)?;
         let filesystem_path =
             self.resolve_local_filesystem_operation_path("touch", &path, false, span)?;
         if !self.enforce_bounded_open_basedir("touch()", &path, &filesystem_path, span)? {
             return Ok(Value::Bool(false));
         }
-        match fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&filesystem_path)
-        {
-            Ok(_) => {
-                self.clear_stat_cache_filesystem_path(&filesystem_path);
-                self.cache_bounded_realpath_entry_for_local_path(&filesystem_path);
-                Ok(Value::Bool(true))
+        let metadata = fs::metadata(&filesystem_path).ok();
+        if trailing_separator_requires_directory(&path) {
+            match metadata.as_ref() {
+                Some(metadata) if metadata.is_dir() => {}
+                Some(_) => {
+                    self.emit_filesystem_display_warning(
+                        "touch",
+                        format!("Unable to create file {path} because Not a directory"),
+                        span,
+                    )?;
+                    return Ok(Value::Bool(false));
+                }
+                None => {
+                    self.emit_filesystem_display_warning(
+                        "touch",
+                        format!("Unable to create file {path} because Is a directory"),
+                        span,
+                    )?;
+                    return Ok(Value::Bool(false));
+                }
             }
+        }
+        let file = match metadata.as_ref().map(|metadata| metadata.is_dir()) {
+            Some(true) => fs::File::open(&filesystem_path),
+            Some(false) => fs::OpenOptions::new().write(true).open(&filesystem_path),
+            None => {
+                if trailing_separator_requires_directory(&path) {
+                    Err(std::io::Error::from_raw_os_error(21))
+                } else {
+                    fs::OpenOptions::new()
+                        .create(true)
+                        .write(true)
+                        .open(&filesystem_path)
+                }
+            }
+        };
+        let file = match file {
+            Ok(file) => file,
             Err(error) => {
                 self.emit_filesystem_display_warning(
                     "touch",
@@ -74406,9 +74445,26 @@ impl Interpreter {
                     ),
                     span,
                 )?;
-                Ok(Value::Bool(false))
+                return Ok(Value::Bool(false));
             }
+        };
+        let times = FileTimes::new()
+            .set_accessed(accessed)
+            .set_modified(modified);
+        if let Err(error) = file.set_times(times) {
+            self.emit_filesystem_display_warning(
+                "touch",
+                format!(
+                    "Unable to create file {path} because {}",
+                    Self::filesystem_io_warning_message(&error)
+                ),
+                span,
+            )?;
+            return Ok(Value::Bool(false));
         }
+        self.clear_stat_cache_filesystem_path(&filesystem_path);
+        self.cache_bounded_realpath_entry_for_local_path(&filesystem_path);
+        Ok(Value::Bool(true))
     }
 
     fn call_sys_get_temp_dir(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -97779,6 +97835,10 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
         | ("ftruncate()", "Argument #2 ($size) must be greater than or equal to 0")
         | ("stream_get_contents()", "Argument #2 ($length) must be greater than or equal to -1")
         | (
+            "touch()",
+            "Argument #2 ($mtime) cannot be null when argument #3 ($atime) is an integer",
+        )
+        | (
             "flock()",
             "Argument #2 ($operation) must be one of LOCK_SH, LOCK_EX, or LOCK_UN",
         )
@@ -117896,6 +117956,41 @@ fn filesystem_group_value(metadata: &fs::Metadata) -> i64 {
 #[cfg(not(unix))]
 fn filesystem_group_value(_metadata: &fs::Metadata) -> i64 {
     0
+}
+
+fn touch_argument_time(
+    value: Option<&Value>,
+    fallback: SystemTime,
+    span: Span,
+) -> CompileResult<SystemTime> {
+    let Some(Value::Int(seconds)) = value else {
+        return Ok(fallback);
+    };
+    if *seconds >= 0 {
+        UNIX_EPOCH
+            .checked_add(Duration::from_secs(*seconds as u64))
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "touch()",
+                        "timestamp exceeds the current SystemTime subset",
+                    ),
+                )
+            })
+    } else {
+        UNIX_EPOCH
+            .checked_sub(Duration::from_secs(seconds.unsigned_abs()))
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "touch()",
+                        "timestamp before the current SystemTime subset",
+                    ),
+                )
+            })
+    }
 }
 
 #[cfg(unix)]
