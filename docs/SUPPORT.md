@@ -2753,6 +2753,17 @@
   validation, broader IPv6 and platform-specific file URL edge cases, binary
   byte fidelity outside UTF-8 strings, URL normalization, IDNA, percent-decoding
   of parsed URL components, and native lowering remain unsupported.
+- `Uri\Rfc3986\Uri` supports bounded construction/parsing, raw string output,
+  equivalence, host-type lookup, and URI-type lookup for the current ASCII
+  subset. `Uri\WhatWg\Url` supports a bounded WHATWG URL subset for direct
+  construction and `parse()`, including special-scheme detection, ASCII string
+  output, equality with `Uri\UriComparisonMode`, host-type lookup, default-port
+  elision, dot-segment normalization, IPv4/IPv6/domain host normalization,
+  empty `file://` hosts, opaque non-special hosts, empty success `errors`
+  arrays, and simple relative-path resolution against a `Uri\WhatWg\Url` base.
+  IDNA, full percent-encoding rules, mutation setters, complete validation
+  error arrays, non-ASCII host processing, and native lowering remain
+  unsupported.
 - `http_build_query()` supports ordered arrays and initialized public object
   properties, including recursive nested arrays/objects, top-level numeric
   prefixes, explicit argument separators, null/resource elision,

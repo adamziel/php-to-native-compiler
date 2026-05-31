@@ -22343,6 +22343,9 @@ impl Interpreter {
         if declared_class_name.eq_ignore_ascii_case("Uri\\Rfc3986\\Uri") {
             return self.instantiate_uri_rfc3986(args, span, scope);
         }
+        if declared_class_name.eq_ignore_ascii_case("Uri\\WhatWg\\Url") {
+            return self.instantiate_uri_whatwg_url(args, span, scope);
+        }
         if declared_class_name.eq_ignore_ascii_case("DOMAttr") {
             return self.instantiate_dom_attr(args, span, scope);
         }
@@ -47255,6 +47258,11 @@ impl Interpreter {
                 .call_uri_rfc3986_method(object, method_name, args, span, caller_scope)
                 .map(|value| (value, None));
         }
+        if object.class_name().eq_ignore_ascii_case("Uri\\WhatWg\\Url") {
+            return self
+                .call_uri_whatwg_url_method(object, method_name, args, span, caller_scope)
+                .map(|value| (value, None));
+        }
         if object.is_instance_of_class_name("DOMNode") {
             return self
                 .call_dom_method(object, method_name, args, span, caller_scope)
@@ -52227,6 +52235,11 @@ impl Interpreter {
         {
             return self.call_uri_rfc3986_parse_static(args, span, caller_scope);
         }
+        if receiver_class_name.eq_ignore_ascii_case("Uri\\WhatWg\\Url")
+            && method_name.eq_ignore_ascii_case("parse")
+        {
+            return self.call_uri_whatwg_url_parse_static(args, span, caller_scope);
+        }
         if receiver_class_name.eq_ignore_ascii_case("DateTimeZone")
             && method_name.eq_ignore_ascii_case("listIdentifiers")
         {
@@ -53680,6 +53693,19 @@ impl Interpreter {
             }
             return Ok(Value::Object(self.uri_enum_case_object(
                 "Uri\\UriComparisonMode",
+                constant,
+                span,
+            )?));
+        }
+        if class_name.eq_ignore_ascii_case("Uri\\WhatWg\\UrlHostType") {
+            if !matches!(constant, "Domain" | "IPv4" | "IPv6" | "Opaque" | "Empty") {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::undefined_constant(format!("{class_name}::{constant}")),
+                ));
+            }
+            return Ok(Value::Object(self.uri_enum_case_object(
+                "Uri\\WhatWg\\UrlHostType",
                 constant,
                 span,
             )?));
@@ -101507,6 +101533,13 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
             return Some(("ReflectionException", message.to_string()));
         }
 
+        if let Some(message) = error
+            .message
+            .strip_prefix("Uri\\WhatWg\\InvalidUrlException: ")
+        {
+            return Some(("Uri\\WhatWg\\InvalidUrlException", message.to_string()));
+        }
+
         if let Some(message) = error.message.strip_prefix("Uri\\InvalidUriException: ") {
             return Some(("Uri\\InvalidUriException", message.to_string()));
         }
@@ -130041,6 +130074,9 @@ impl Interpreter {
             "gethosttype" => {
                 expect_arity("Uri\\Rfc3986\\Uri::getHostType", &values, 0, span)?;
                 let parts = self.uri_rfc3986_parts_from_object(&object, span)?;
+                if parts.host.is_none() {
+                    return Ok(Value::Null);
+                }
                 let case = parts.host_type_case();
                 self.uri_enum_case_object("Uri\\Rfc3986\\UriHostType", case, span)
                     .map(Value::Object)
@@ -130055,6 +130091,179 @@ impl Interpreter {
             _ => Err(runtime_error(
                 span,
                 RuntimeError::undefined_function(format!("Uri\\Rfc3986\\Uri::{method_name}()")),
+            )),
+        }
+    }
+
+    fn instantiate_uri_whatwg_url(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        expect_expr_arity("Uri\\WhatWg\\Url::__construct", args.len(), 1, span)?;
+        let value = self.evaluate(unwrap_named_argument(&args[0]), scope)?;
+        let input = self.uri_string_argument("Uri\\WhatWg\\Url::__construct()", &value, span)?;
+        let parts =
+            parse_whatwg_url(&input, None).map_err(|error| uri_invalid_url_error(span, error))?;
+        self.uri_whatwg_url_object_from_parts(parts, span)
+            .map(Value::Object)
+    }
+
+    fn call_uri_whatwg_url_parse_static(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        if !(1..=3).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    callable_name("Uri\\WhatWg\\Url::parse"),
+                    ArityExpectation::Between { min: 1, max: 3 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let input_value = self.evaluate(unwrap_named_argument(&args[0]), scope)?;
+        let input = self.uri_string_argument("Uri\\WhatWg\\Url::parse()", &input_value, span)?;
+
+        let mut base = None;
+        let mut errors_target = None;
+        for arg in &args[1..] {
+            match arg {
+                Expr::NamedArgument { name, expr, .. } if name.eq_ignore_ascii_case("errors") => {
+                    if let Expr::Variable(variable, _) = &**expr {
+                        errors_target = Some(variable.clone());
+                    } else {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "Uri\\WhatWg\\Url::parse()",
+                                "errors argument must be a direct variable in the current subset",
+                            ),
+                        ));
+                    }
+                }
+                Expr::NamedArgument { name, expr, .. } if name.eq_ignore_ascii_case("baseUrl") => {
+                    let value = self.evaluate(expr, scope)?;
+                    base = Some(self.uri_whatwg_url_parts_argument(&value, span)?);
+                }
+                other => {
+                    let value = self.evaluate(unwrap_named_argument(other), scope)?;
+                    if matches!(value, Value::Null) {
+                        continue;
+                    }
+                    base = Some(self.uri_whatwg_url_parts_argument(&value, span)?);
+                }
+            }
+        }
+
+        let parts = parse_whatwg_url(&input, base.as_ref())
+            .map_err(|error| uri_invalid_url_error(span, error))?;
+        if let Some(target) = errors_target {
+            scope.write_named(&target, Value::Array(PhpArray::new()));
+        }
+        self.uri_whatwg_url_object_from_parts(parts, span)
+            .map(Value::Object)
+    }
+
+    fn call_uri_whatwg_url_method(
+        &mut self,
+        object: PhpObject,
+        method_name: &str,
+        args: &[Expr],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        let values = args
+            .iter()
+            .map(|arg| self.evaluate(unwrap_named_argument(arg), scope))
+            .collect::<CompileResult<Vec<_>>>()?;
+        match method_name.to_ascii_lowercase().as_str() {
+            "__construct" => {
+                expect_arity("Uri\\WhatWg\\Url::__construct", &values, 1, span)?;
+                let input =
+                    self.uri_string_argument("Uri\\WhatWg\\Url::__construct()", &values[0], span)?;
+                let parts = parse_whatwg_url(&input, None)
+                    .map_err(|error| uri_invalid_url_error(span, error))?;
+                self.write_uri_whatwg_url_properties(&object, &parts, span)?;
+                Ok(Value::Null)
+            }
+            "toasciistring" | "tostring" => {
+                let callable = if method_name.eq_ignore_ascii_case("toAsciiString") {
+                    "Uri\\WhatWg\\Url::toAsciiString"
+                } else {
+                    "Uri\\WhatWg\\Url::toString"
+                };
+                expect_arity(callable, &values, 0, span)?;
+                let parts = self.uri_whatwg_url_parts_from_object(&object, span)?;
+                Ok(Value::String(parts.to_ascii_string()))
+            }
+            "equals" => {
+                if !(1..=2).contains(&values.len()) {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::arity_mismatch(
+                            callable_name("Uri\\WhatWg\\Url::equals"),
+                            ArityExpectation::Between { min: 1, max: 2 },
+                            values.len(),
+                        ),
+                    ));
+                }
+                let other = match &values[0] {
+                    Value::Object(object)
+                        if object.class_name().eq_ignore_ascii_case("Uri\\WhatWg\\Url") =>
+                    {
+                        object
+                    }
+                    other => {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "Uri\\WhatWg\\Url::equals()",
+                                format!(
+                                    "argument must be Uri\\WhatWg\\Url in the current subset, got {}",
+                                    other.type_name()
+                                ),
+                            ),
+                        ));
+                    }
+                };
+                let include_fragment = match values.get(1) {
+                    Some(mode) => self.uri_comparison_mode_includes_fragment(mode, span)?,
+                    None => true,
+                };
+                let mut left = self.uri_whatwg_url_parts_from_object(&object, span)?;
+                let mut right = self.uri_whatwg_url_parts_from_object(other, span)?;
+                if !include_fragment {
+                    left.fragment = None;
+                    right.fragment = None;
+                }
+                Ok(Value::Bool(
+                    left.to_ascii_string() == right.to_ascii_string(),
+                ))
+            }
+            "gethosttype" => {
+                expect_arity("Uri\\WhatWg\\Url::getHostType", &values, 0, span)?;
+                let parts = self.uri_whatwg_url_parts_from_object(&object, span)?;
+                match parts.host_type_case() {
+                    Some(case) => self
+                        .uri_enum_case_object("Uri\\WhatWg\\UrlHostType", case, span)
+                        .map(Value::Object),
+                    None => Ok(Value::Null),
+                }
+            }
+            "isspecialscheme" => {
+                expect_arity("Uri\\WhatWg\\Url::isSpecialScheme", &values, 0, span)?;
+                let parts = self.uri_whatwg_url_parts_from_object(&object, span)?;
+                Ok(Value::Bool(is_whatwg_special_scheme(&parts.scheme)))
+            }
+            _ => Err(runtime_error(
+                span,
+                RuntimeError::undefined_function(format!("Uri\\WhatWg\\Url::{method_name}()")),
             )),
         }
     }
@@ -130183,6 +130392,128 @@ impl Interpreter {
             query,
             fragment,
         })
+    }
+
+    fn uri_whatwg_url_object_from_parts(
+        &mut self,
+        parts: WhatWgUrlParts,
+        span: Span,
+    ) -> CompileResult<PhpObject> {
+        let class_id = self
+            .classes
+            .lookup_class_id("Uri\\WhatWg\\Url")
+            .ok_or_else(|| {
+                runtime_error(span, RuntimeError::undefined_class("Uri\\WhatWg\\Url"))
+            })?;
+        let object_id = self.allocate_object_id();
+        let class = self
+            .classes
+            .get(class_id)
+            .expect("Uri\\WhatWg\\Url class id should resolve");
+        let object = PhpObject::from_class_with_id(class, object_id);
+        self.write_uri_whatwg_url_properties(&object, &parts, span)?;
+        self.track_allocated_object(&object);
+        Ok(object)
+    }
+
+    fn write_uri_whatwg_url_properties(
+        &mut self,
+        object: &PhpObject,
+        parts: &WhatWgUrlParts,
+        span: Span,
+    ) -> CompileResult<()> {
+        object
+            .write_public_property("scheme", Value::String(parts.scheme.clone()))
+            .map_err(|error| runtime_error(span, error))?;
+        object
+            .write_public_property("username", optional_string_value(parts.username.as_deref()))
+            .map_err(|error| runtime_error(span, error))?;
+        object
+            .write_public_property("password", optional_string_value(parts.password.as_deref()))
+            .map_err(|error| runtime_error(span, error))?;
+        object
+            .write_public_property("host", optional_string_value(parts.host.as_deref()))
+            .map_err(|error| runtime_error(span, error))?;
+        object
+            .write_public_property("port", parts.port.map(Value::Int).unwrap_or(Value::Null))
+            .map_err(|error| runtime_error(span, error))?;
+        object
+            .write_public_property("path", Value::String(parts.path.clone()))
+            .map_err(|error| runtime_error(span, error))?;
+        object
+            .write_public_property("query", optional_string_value(parts.query.as_deref()))
+            .map_err(|error| runtime_error(span, error))?;
+        object
+            .write_public_property("fragment", optional_string_value(parts.fragment.as_deref()))
+            .map_err(|error| runtime_error(span, error))?;
+        Ok(())
+    }
+
+    fn uri_whatwg_url_parts_from_object(
+        &self,
+        object: &PhpObject,
+        span: Span,
+    ) -> CompileResult<WhatWgUrlParts> {
+        let scheme = self
+            .uri_optional_string_property(object, "scheme", span)?
+            .unwrap_or_default();
+        let username = self.uri_optional_string_property(object, "username", span)?;
+        let password = self.uri_optional_string_property(object, "password", span)?;
+        let host = self.uri_optional_string_property(object, "host", span)?;
+        let port = self.uri_optional_port_property(object, span)?;
+        let path = match object
+            .read_public_property("path")
+            .map_err(|error| runtime_error(span, error))?
+        {
+            Value::String(path) => path,
+            Value::BinaryString(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
+            Value::Null => String::new(),
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "Uri\\WhatWg\\Url",
+                        format!("path property must be string, got {}", other.type_name()),
+                    ),
+                ));
+            }
+        };
+        let query = self.uri_optional_string_property(object, "query", span)?;
+        let fragment = self.uri_optional_string_property(object, "fragment", span)?;
+        Ok(WhatWgUrlParts {
+            scheme,
+            username,
+            password,
+            host,
+            port,
+            path,
+            query,
+            fragment,
+        })
+    }
+
+    fn uri_whatwg_url_parts_argument(
+        &self,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<WhatWgUrlParts> {
+        match value {
+            Value::Object(object)
+                if object.class_name().eq_ignore_ascii_case("Uri\\WhatWg\\Url") =>
+            {
+                self.uri_whatwg_url_parts_from_object(object, span)
+            }
+            other => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "Uri\\WhatWg\\Url::parse()",
+                    format!(
+                        "base URL must be Uri\\WhatWg\\Url or null in the current subset, got {}",
+                        other.type_name()
+                    ),
+                ),
+            )),
+        }
     }
 
     fn uri_optional_string_property(
@@ -134760,9 +135091,392 @@ impl Rfc3986UriParts {
         } else if self.path.starts_with('/') {
             "AbsolutePathReference"
         } else {
-            "RelativeReference"
+            "RelativePathReference"
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct WhatWgUrlParts {
+    scheme: String,
+    username: Option<String>,
+    password: Option<String>,
+    host: Option<String>,
+    port: Option<i64>,
+    path: String,
+    query: Option<String>,
+    fragment: Option<String>,
+}
+
+impl WhatWgUrlParts {
+    fn to_ascii_string(&self) -> String {
+        let mut output = String::new();
+        output.push_str(&self.scheme);
+        output.push(':');
+
+        let has_authority =
+            self.host.is_some() || self.username.is_some() || self.password.is_some();
+        if has_authority {
+            output.push_str("//");
+            if let Some(username) = &self.username {
+                output.push_str(username);
+                if let Some(password) = &self.password {
+                    if !password.is_empty() {
+                        output.push(':');
+                        output.push_str(password);
+                    }
+                }
+                output.push('@');
+            }
+            if let Some(host) = &self.host {
+                output.push_str(host);
+            }
+            if let Some(port) = self.port {
+                output.push(':');
+                output.push_str(&port.to_string());
+            }
+        }
+
+        output.push_str(&self.path);
+        if let Some(query) = &self.query {
+            output.push('?');
+            output.push_str(query);
+        }
+        if let Some(fragment) = &self.fragment {
+            output.push('#');
+            output.push_str(fragment);
+        }
+        output
+    }
+
+    fn host_type_case(&self) -> Option<&'static str> {
+        if !is_whatwg_special_scheme(&self.scheme) && self.host.is_some() {
+            return Some("Opaque");
+        }
+        let host = self.host.as_deref()?;
+        if host.is_empty() {
+            return Some("Empty");
+        }
+        let inner = bracketed_rfc3986_host_inner(host).unwrap_or(host);
+        if inner.parse::<Ipv4Addr>().is_ok() {
+            Some("IPv4")
+        } else if inner.parse::<Ipv6Addr>().is_ok() {
+            Some("IPv6")
+        } else {
+            Some("Domain")
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WhatWgUrlParseError {
+    Malformed,
+    MissingSchemeNonRelativeUrl,
+    HostMissing,
+    DomainInvalidCodePoint,
+    Ipv6InvalidCodePoint,
+}
+
+fn parse_whatwg_url(
+    input: &str,
+    base: Option<&WhatWgUrlParts>,
+) -> Result<WhatWgUrlParts, WhatWgUrlParseError> {
+    if input.bytes().any(|byte| byte == 0) {
+        return Err(WhatWgUrlParseError::DomainInvalidCodePoint);
+    }
+
+    let input = input.trim();
+    if input.is_empty() {
+        return Err(WhatWgUrlParseError::MissingSchemeNonRelativeUrl);
+    }
+
+    if let Some(base) = base {
+        if !looks_like_whatwg_absolute_url(input) {
+            return resolve_whatwg_relative_url(input, base);
+        }
+    }
+
+    let Some(colon) = input.find(':') else {
+        return Err(WhatWgUrlParseError::MissingSchemeNonRelativeUrl);
+    };
+    let scheme_candidate = &input[..colon];
+    if !is_valid_rfc3986_scheme(scheme_candidate) {
+        return Err(WhatWgUrlParseError::MissingSchemeNonRelativeUrl);
+    }
+    let scheme = scheme_candidate.to_ascii_lowercase();
+    let rest = &input[colon + 1..];
+    let (without_fragment, fragment) = split_once_char(rest, '#');
+    let (without_query, query) = split_once_char(without_fragment, '?');
+
+    if let Some(authority_rest) = without_query.strip_prefix("//") {
+        parse_whatwg_url_with_authority(&scheme, authority_rest, query, fragment)
+    } else {
+        if is_whatwg_special_scheme(&scheme) && scheme != "file" {
+            return Err(WhatWgUrlParseError::HostMissing);
+        }
+        let path = normalize_whatwg_path(&scheme, without_query);
+        Ok(WhatWgUrlParts {
+            scheme,
+            username: None,
+            password: None,
+            host: None,
+            port: None,
+            path,
+            query: query.map(str::to_string),
+            fragment: fragment.map(str::to_string),
+        })
+    }
+}
+
+fn parse_whatwg_url_with_authority(
+    scheme: &str,
+    authority_rest: &str,
+    query: Option<&str>,
+    fragment: Option<&str>,
+) -> Result<WhatWgUrlParts, WhatWgUrlParseError> {
+    let path_start = authority_rest.find('/').unwrap_or(authority_rest.len());
+    let authority = &authority_rest[..path_start];
+    let raw_path = &authority_rest[path_start..];
+    let (userinfo, host_port) = match authority.rsplit_once('@') {
+        Some((userinfo, host_port)) => (Some(userinfo), host_port),
+        None => (None, authority),
+    };
+
+    if host_port.is_empty() && is_whatwg_special_scheme(scheme) && scheme != "file" {
+        return Err(if userinfo.is_some() {
+            WhatWgUrlParseError::Malformed
+        } else {
+            WhatWgUrlParseError::HostMissing
+        });
+    }
+
+    let (username, password) = parse_whatwg_userinfo(userinfo);
+    let (host, port) = parse_whatwg_host_port(scheme, host_port)?;
+    let path = normalize_whatwg_path(scheme, raw_path);
+    Ok(WhatWgUrlParts {
+        scheme: scheme.to_string(),
+        username,
+        password,
+        host: Some(host),
+        port,
+        path,
+        query: query.map(str::to_string),
+        fragment: fragment.map(str::to_string),
+    })
+}
+
+fn resolve_whatwg_relative_url(
+    input: &str,
+    base: &WhatWgUrlParts,
+) -> Result<WhatWgUrlParts, WhatWgUrlParseError> {
+    if input.starts_with("//") || input.starts_with('/') {
+        return Err(WhatWgUrlParseError::MissingSchemeNonRelativeUrl);
+    }
+    let (without_fragment, fragment) = split_once_char(input, '#');
+    let (path, query) = split_once_char(without_fragment, '?');
+    let mut resolved = base.clone();
+    resolved.path = normalize_whatwg_path(&resolved.scheme, &format!("/{path}"));
+    resolved.query = query.map(str::to_string);
+    resolved.fragment = fragment.map(str::to_string);
+    Ok(resolved)
+}
+
+fn parse_whatwg_userinfo(userinfo: Option<&str>) -> (Option<String>, Option<String>) {
+    match userinfo {
+        Some(userinfo) => match userinfo.split_once(':') {
+            Some((username, password)) => (Some(username.to_string()), Some(password.to_string())),
+            None => (Some(userinfo.to_string()), None),
+        },
+        None => (None, None),
+    }
+}
+
+fn parse_whatwg_host_port(
+    scheme: &str,
+    host_port: &str,
+) -> Result<(String, Option<i64>), WhatWgUrlParseError> {
+    if scheme == "file" && host_port.is_empty() {
+        return Ok((String::new(), None));
+    }
+
+    let (raw_host, raw_port) = if let Some(bracketed) = host_port.strip_prefix('[') {
+        let Some(end) = bracketed.find(']') else {
+            return Err(WhatWgUrlParseError::Ipv6InvalidCodePoint);
+        };
+        let host = &bracketed[..end];
+        let remainder = &bracketed[end + 1..];
+        let port = if let Some(port) = remainder.strip_prefix(':') {
+            Some(port)
+        } else if remainder.is_empty() {
+            None
+        } else {
+            return Err(WhatWgUrlParseError::Ipv6InvalidCodePoint);
+        };
+        let normalized = normalize_whatwg_ipv6_host(host)?;
+        return Ok((normalized, parse_whatwg_port(scheme, port)?));
+    } else {
+        if host_port.contains(['[', ']']) || host_port.bytes().any(|byte| byte == 0) {
+            return Err(WhatWgUrlParseError::DomainInvalidCodePoint);
+        }
+        match host_port.rsplit_once(':') {
+            Some((host, port)) if !host.contains(':') => (host, Some(port)),
+            Some(_) => return Err(WhatWgUrlParseError::DomainInvalidCodePoint),
+            None => (host_port, None),
+        }
+    };
+
+    if raw_host.is_empty() && is_whatwg_special_scheme(scheme) && scheme != "file" {
+        return Err(WhatWgUrlParseError::HostMissing);
+    }
+
+    let host = normalize_whatwg_domain_or_ipv4_host(raw_host)?;
+    let port = parse_whatwg_port(scheme, raw_port)?;
+    Ok((host, port))
+}
+
+fn normalize_whatwg_ipv6_host(host: &str) -> Result<String, WhatWgUrlParseError> {
+    let parsed = host
+        .parse::<Ipv6Addr>()
+        .map_err(|_| WhatWgUrlParseError::Ipv6InvalidCodePoint)?;
+    Ok(format!("[{}]", parsed))
+}
+
+fn normalize_whatwg_domain_or_ipv4_host(host: &str) -> Result<String, WhatWgUrlParseError> {
+    if host
+        .bytes()
+        .any(|byte| matches!(byte, b'\0' | b'[' | b']' | b'\\' | b' '))
+    {
+        return Err(WhatWgUrlParseError::DomainInvalidCodePoint);
+    }
+    let decoded = percent_decode_ascii_case_insensitive(host, "%2e", ".");
+    if let Some(ipv4) = normalize_whatwg_ipv4_host(&decoded) {
+        return Ok(ipv4);
+    }
+    Ok(decoded.to_ascii_lowercase())
+}
+
+fn normalize_whatwg_ipv4_host(host: &str) -> Option<String> {
+    if host.is_empty()
+        || !host
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || byte == b'.')
+    {
+        return None;
+    }
+    let parts = host
+        .split('.')
+        .map(str::parse::<u16>)
+        .collect::<Result<Vec<_>, _>>()
+        .ok()?;
+    if parts.is_empty() || parts.len() > 4 || parts.iter().any(|part| *part > 255) {
+        return None;
+    }
+    let octets = match parts.as_slice() {
+        [a, b, c, d] => [*a, *b, *c, *d],
+        [a, b] => [*a, 0, 0, *b],
+        [a, b, c] => [*a, *b, 0, *c],
+        [a] => [0, 0, 0, *a],
+        _ => return None,
+    };
+    Some(format!(
+        "{}.{}.{}.{}",
+        octets[0], octets[1], octets[2], octets[3]
+    ))
+}
+
+fn parse_whatwg_port(scheme: &str, port: Option<&str>) -> Result<Option<i64>, WhatWgUrlParseError> {
+    let Some(port) = port else {
+        return Ok(None);
+    };
+    if port.is_empty() {
+        return Ok(None);
+    }
+    if !port.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err(WhatWgUrlParseError::Malformed);
+    }
+    let parsed = port
+        .parse::<i64>()
+        .map_err(|_| WhatWgUrlParseError::Malformed)?;
+    if !(0..=65535).contains(&parsed) {
+        return Err(WhatWgUrlParseError::Malformed);
+    }
+    if Some(parsed) == whatwg_default_port(scheme) {
+        Ok(None)
+    } else {
+        Ok(Some(parsed))
+    }
+}
+
+fn normalize_whatwg_path(scheme: &str, raw_path: &str) -> String {
+    if is_whatwg_special_scheme(scheme) {
+        let mut path = raw_path.to_string();
+        if path.is_empty() {
+            path.push('/');
+        } else if !path.starts_with('/') {
+            path.insert(0, '/');
+        }
+        remove_rfc3986_dot_segments(&path)
+    } else {
+        raw_path.to_string()
+    }
+}
+
+fn is_whatwg_special_scheme(scheme: &str) -> bool {
+    matches!(scheme, "ftp" | "file" | "http" | "https" | "ws" | "wss")
+}
+
+fn whatwg_default_port(scheme: &str) -> Option<i64> {
+    match scheme {
+        "ftp" => Some(21),
+        "http" | "ws" => Some(80),
+        "https" | "wss" => Some(443),
+        _ => None,
+    }
+}
+
+fn looks_like_whatwg_absolute_url(input: &str) -> bool {
+    let Some(colon) = input.find(':') else {
+        return false;
+    };
+    let slash = input.find('/').unwrap_or(usize::MAX);
+    colon < slash && is_valid_rfc3986_scheme(&input[..colon])
+}
+
+fn percent_decode_ascii_case_insensitive(input: &str, needle: &str, replacement: &str) -> String {
+    let mut output = String::with_capacity(input.len());
+    let mut index = 0;
+    while index < input.len() {
+        let remaining = &input[index..];
+        if remaining.len() >= needle.len() && remaining[..needle.len()].eq_ignore_ascii_case(needle)
+        {
+            output.push_str(replacement);
+            index += needle.len();
+        } else {
+            let ch = remaining
+                .chars()
+                .next()
+                .expect("non-empty remaining string should have a char");
+            output.push(ch);
+            index += ch.len_utf8();
+        }
+    }
+    output
+}
+
+fn uri_invalid_url_error(span: Span, error: WhatWgUrlParseError) -> Diagnostic {
+    let suffix = match error {
+        WhatWgUrlParseError::Malformed => "",
+        WhatWgUrlParseError::MissingSchemeNonRelativeUrl => " (MissingSchemeNonRelativeUrl)",
+        WhatWgUrlParseError::HostMissing => " (HostMissing)",
+        WhatWgUrlParseError::DomainInvalidCodePoint => " (DomainInvalidCodePoint)",
+        WhatWgUrlParseError::Ipv6InvalidCodePoint => " (Ipv6InvalidCodePoint)",
+    };
+    Diagnostic::new(
+        Phase::Runtime,
+        span.line,
+        span.column,
+        format!("Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed{suffix}"),
+    )
 }
 
 fn parse_rfc3986_uri(input: &str) -> Result<Rfc3986UriParts, ()> {
@@ -137224,6 +137938,7 @@ fn enum_like_case_name(object: &PhpObject) -> Option<String> {
             | "Uri\\UriComparisonMode"
             | "Uri\\Rfc3986\\UriHostType"
             | "Uri\\Rfc3986\\UriType"
+            | "Uri\\WhatWg\\UrlHostType"
     ) {
         return None;
     }

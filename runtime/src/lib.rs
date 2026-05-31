@@ -31860,9 +31860,17 @@ impl PhpClassTable {
         classes
             .set_parent(invalid_uri_exception_id, exception_id)
             .expect("Uri\\InvalidUriException should extend Exception");
+        let invalid_url_exception_id = classes
+            .declare_class("Uri\\WhatWg\\InvalidUrlException")
+            .expect(
+                "core class table should contain Uri\\InvalidUriException before Uri\\WhatWg\\InvalidUrlException",
+            );
+        classes
+            .set_parent(invalid_url_exception_id, exception_id)
+            .expect("Uri\\WhatWg\\InvalidUrlException should extend Exception");
         classes
             .declare_class("stdClass")
-            .expect("core class table should contain Uri\\InvalidUriException before stdClass");
+            .expect("core class table should contain Uri exceptions before stdClass");
         let php_token_id = classes
             .declare_class("PhpToken")
             .expect("core class table should contain stdClass before PhpToken");
@@ -32054,6 +32062,47 @@ impl PhpClassTable {
         ] {
             uri.add_method(PhpMethodMetadata::instance(method, Visibility::Public))
                 .expect("Uri core metadata should not duplicate methods");
+        }
+        let url_host_type_id = classes
+            .declare_class("Uri\\WhatWg\\UrlHostType")
+            .expect("core class table should contain Uri before UrlHostType");
+        let url_host_type = classes
+            .get_mut(url_host_type_id)
+            .expect("declared UrlHostType class id should resolve");
+        url_host_type
+            .add_property(PhpPropertyMetadata::instance("name", Visibility::Public))
+            .expect("UrlHostType core metadata should not duplicate name");
+        let url_id = classes
+            .declare_class("Uri\\WhatWg\\Url")
+            .expect("core class table should contain UrlHostType before Url");
+        let url = classes
+            .get_mut(url_id)
+            .expect("declared Url class id should resolve");
+        for property in [
+            "scheme", "username", "password", "host", "port", "path", "query", "fragment",
+        ] {
+            url.add_property(PhpPropertyMetadata::instance(property, Visibility::Public))
+                .expect("Url core metadata should not duplicate properties");
+        }
+        url.add_method(PhpMethodMetadata::instance(
+            "__construct",
+            Visibility::Public,
+        ))
+        .expect("Url core metadata should not duplicate __construct");
+        url.add_method(PhpMethodMetadata::static_method(
+            "parse",
+            Visibility::Public,
+        ))
+        .expect("Url core metadata should not duplicate parse");
+        for method in [
+            "toAsciiString",
+            "toString",
+            "equals",
+            "getHostType",
+            "isSpecialScheme",
+        ] {
+            url.add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("Url core metadata should not duplicate methods");
         }
         let bcmath_number_id = classes
             .declare_class("BcMath\\Number")
