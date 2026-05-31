@@ -31721,12 +31721,11 @@ impl PhpClassTable {
                     ))
                     .expect("Exception core metadata should not duplicate constructor state");
             }
-            exception
-                .add_method(PhpMethodMetadata::instance(
-                    "getMessage",
-                    Visibility::Public,
-                ))
-                .expect("Exception core metadata should not duplicate getMessage");
+            for method in ["getMessage", "getCode"] {
+                exception
+                    .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                    .expect("Exception core metadata should not duplicate methods");
+            }
         }
         let error_id = classes
             .declare_class("Error")
@@ -31734,10 +31733,15 @@ impl PhpClassTable {
         let error = classes
             .get_mut(error_id)
             .expect("core Error class id should resolve");
-        for property in ["message", "line"] {
+        for property in ["message", "code", "line"] {
             error
                 .add_property(PhpPropertyMetadata::instance(property, Visibility::Public))
                 .expect("Error core metadata should not duplicate properties");
+        }
+        for method in ["getMessage", "getCode"] {
+            error
+                .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("Error core metadata should not duplicate methods");
         }
         let invalid_uri_exception_id = classes
             .declare_class("Uri\\InvalidUriException")
@@ -32770,6 +32774,121 @@ impl PhpClassTable {
             datetime
                 .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
                 .expect("DateTime core metadata should not duplicate methods");
+        }
+        let dom_exception_id = classes
+            .declare_class("DOMException")
+            .expect("core class table should contain DateTime before DOMException");
+        let exception_id = classes
+            .lookup_class_id("Exception")
+            .expect("core Exception class id should resolve for DOMException");
+        classes
+            .set_parent(dom_exception_id, exception_id)
+            .expect("DOMException should extend Exception");
+        let dom_node_id = classes
+            .declare_class("DOMNode")
+            .expect("core class table should contain DOMException before DOMNode");
+        let dom_node = classes
+            .get_mut(dom_node_id)
+            .expect("declared DOMNode class id should resolve");
+        for property in [
+            "nodeName",
+            "nodeValue",
+            "parentNode",
+            "ownerDocument",
+            "firstElementChild",
+        ] {
+            dom_node
+                .add_property(PhpPropertyMetadata::instance(property, Visibility::Public))
+                .expect("DOMNode core metadata should not duplicate properties");
+        }
+        dom_node
+            .add_method(PhpMethodMetadata::instance(
+                "appendChild",
+                Visibility::Public,
+            ))
+            .expect("DOMNode core metadata should not duplicate methods");
+        let dom_attr_id = classes
+            .declare_class("DOMAttr")
+            .expect("core class table should contain DOMNode before DOMAttr");
+        classes
+            .set_parent(dom_attr_id, dom_node_id)
+            .expect("DOMAttr should extend DOMNode");
+        let dom_attr = classes
+            .get_mut(dom_attr_id)
+            .expect("declared DOMAttr class id should resolve");
+        for property in [
+            "name",
+            "value",
+            "ownerElement",
+            "namespaceURI",
+            "prefix",
+            "localName",
+        ] {
+            dom_attr
+                .add_property(PhpPropertyMetadata::instance(property, Visibility::Public))
+                .expect("DOMAttr core metadata should not duplicate properties");
+        }
+        dom_attr
+            .add_method(PhpMethodMetadata::instance(
+                "__construct",
+                Visibility::Public,
+            ))
+            .expect("DOMAttr core metadata should not duplicate methods");
+        let dom_element_id = classes
+            .declare_class("DOMElement")
+            .expect("core class table should contain DOMAttr before DOMElement");
+        classes
+            .set_parent(dom_element_id, dom_node_id)
+            .expect("DOMElement should extend DOMNode");
+        let dom_element = classes
+            .get_mut(dom_element_id)
+            .expect("declared DOMElement class id should resolve");
+        for property in ["tagName", "__attributes", "__children"] {
+            dom_element
+                .add_property(PhpPropertyMetadata::instance(property, Visibility::Public))
+                .expect("DOMElement core metadata should not duplicate properties");
+        }
+        for method in [
+            "__construct",
+            "appendChild",
+            "setAttribute",
+            "getAttribute",
+            "hasAttribute",
+            "getAttributeNode",
+            "getAttributeNames",
+            "hasAttributes",
+            "toggleAttribute",
+        ] {
+            dom_element
+                .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("DOMElement core metadata should not duplicate methods");
+        }
+        let dom_document_id = classes
+            .declare_class("DOMDocument")
+            .expect("core class table should contain DOMElement before DOMDocument");
+        classes
+            .set_parent(dom_document_id, dom_node_id)
+            .expect("DOMDocument should extend DOMNode");
+        let dom_document = classes
+            .get_mut(dom_document_id)
+            .expect("declared DOMDocument class id should resolve");
+        for property in ["documentElement", "__children"] {
+            dom_document
+                .add_property(PhpPropertyMetadata::instance(property, Visibility::Public))
+                .expect("DOMDocument core metadata should not duplicate properties");
+        }
+        for method in [
+            "__construct",
+            "appendChild",
+            "removeChild",
+            "createAttribute",
+            "createElement",
+            "importNode",
+            "saveXML",
+        ] {
+            dom_document
+                .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("DOMDocument core metadata should not duplicate methods");
         }
         classes
     }

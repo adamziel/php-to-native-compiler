@@ -20112,6 +20112,14 @@ impl Interpreter {
             .classes
             .get(class_id)
             .expect("core Error class id should resolve");
+        let class_name = class.name().to_string();
+        let code = if class_name.eq_ignore_ascii_case("DOMException")
+            && message == "Invalid Character Error"
+        {
+            5
+        } else {
+            0
+        };
         let object = PhpObject::from_class_with_relationship_metadata_with_id(
             class,
             &inherited_properties,
@@ -20124,6 +20132,14 @@ impl Interpreter {
             .write_property_from_context(
                 "message",
                 Value::String(message),
+                Some(class_id),
+                &protected_class_ids,
+            )
+            .map_err(|error| runtime_error(Span { line: 0, column: 0 }, error))?;
+        object
+            .write_property_from_context(
+                "code",
+                Value::Int(code),
                 Some(class_id),
                 &protected_class_ids,
             )
@@ -22148,6 +22164,15 @@ impl Interpreter {
         }
         if declared_class_name.eq_ignore_ascii_case("Uri\\Rfc3986\\Uri") {
             return self.instantiate_uri_rfc3986(args, span, scope);
+        }
+        if declared_class_name.eq_ignore_ascii_case("DOMAttr") {
+            return self.instantiate_dom_attr(args, span, scope);
+        }
+        if declared_class_name.eq_ignore_ascii_case("DOMElement") {
+            return self.instantiate_dom_element(args, span, scope);
+        }
+        if declared_class_name.eq_ignore_ascii_case("DOMDocument") {
+            return self.instantiate_dom_document(args, span, scope);
         }
 
         let constructor = self.resolve_instance_method(class_id, "__construct");
@@ -37674,6 +37699,867 @@ impl Interpreter {
         Ok(class.name().to_string())
     }
 
+    fn create_dom_object(&mut self, class_name: &str, span: Span) -> CompileResult<PhpObject> {
+        let class_id = self.classes.lookup_class_id(class_name).ok_or_else(|| {
+            runtime_error(span, RuntimeError::undefined_class(class_name.to_string()))
+        })?;
+        let inherited_properties = self.inherited_instance_properties(class_id);
+        let mut ancestor_class_names = self.inherited_class_names(class_id);
+        ancestor_class_names.extend(self.class_alias_names(class_id));
+        let interface_names = self.class_implements_interface_names(class_id);
+        let object_id = self.allocate_object_id();
+        let class = self
+            .classes
+            .get(class_id)
+            .expect("DOM core class id should resolve");
+        let object = PhpObject::from_class_with_relationship_metadata_with_id(
+            class,
+            &inherited_properties,
+            ancestor_class_names,
+            interface_names,
+            object_id,
+        );
+        self.track_allocated_object(&object);
+        Ok(object)
+    }
+
+    fn instantiate_dom_attr(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        if !(1..=2).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "DOMAttr::__construct()",
+                    format!(
+                        "DOMAttr::__construct() expects at least 1 argument, {} given",
+                        args.len()
+                    ),
+                ),
+            ));
+        }
+        let values = args
+            .iter()
+            .map(|arg| self.evaluate(arg, scope))
+            .collect::<CompileResult<Vec<_>>>()?;
+        let name = string_builtin_argument("DOMAttr::__construct()", "name", &values[0], span)?;
+        let value = match values.get(1) {
+            Some(value) => string_builtin_argument("DOMAttr::__construct()", "value", value, span)?,
+            None => String::new(),
+        };
+        dom_validate_xml_name("DOMAttr::__construct()", &name, span)?;
+        self.create_dom_attr_object(&name, &value, span)
+            .map(Value::Object)
+    }
+
+    fn instantiate_dom_element(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        if !(1..=3).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "DOMElement::__construct()",
+                    ArityExpectation::Between { min: 1, max: 3 },
+                    args.len(),
+                ),
+            ));
+        }
+        let values = args
+            .iter()
+            .map(|arg| self.evaluate(arg, scope))
+            .collect::<CompileResult<Vec<_>>>()?;
+        let tag_name = string_builtin_argument(
+            "DOMElement::__construct()",
+            "qualifiedName",
+            &values[0],
+            span,
+        )?;
+        dom_validate_xml_name("DOMElement::__construct()", &tag_name, span)?;
+        let object = self.create_dom_element_object(&tag_name, span)?;
+        if let Some(value) = values.get(1) {
+            let text = string_builtin_argument("DOMElement::__construct()", "value", value, span)?;
+            object
+                .write_public_property("nodeValue", Value::String(text))
+                .map_err(|error| runtime_error(span, error))?;
+        }
+        Ok(Value::Object(object))
+    }
+
+    fn instantiate_dom_document(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        if args.len() > 2 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "DOMDocument::__construct()",
+                    ArityExpectation::Between { min: 0, max: 2 },
+                    args.len(),
+                ),
+            ));
+        }
+        for arg in args {
+            self.evaluate(arg, scope)?;
+        }
+        let object = self.create_dom_object("DOMDocument", span)?;
+        object
+            .write_public_property("nodeName", Value::String("#document".to_string()))
+            .map_err(|error| runtime_error(span, error))?;
+        object
+            .write_public_property("nodeValue", Value::Null)
+            .map_err(|error| runtime_error(span, error))?;
+        object
+            .write_public_property("parentNode", Value::Null)
+            .map_err(|error| runtime_error(span, error))?;
+        object
+            .write_public_property("ownerDocument", Value::Null)
+            .map_err(|error| runtime_error(span, error))?;
+        object
+            .write_public_property("firstElementChild", Value::Null)
+            .map_err(|error| runtime_error(span, error))?;
+        object
+            .write_public_property("documentElement", Value::Null)
+            .map_err(|error| runtime_error(span, error))?;
+        object
+            .write_public_property("__children", Value::Array(PhpArray::new()))
+            .map_err(|error| runtime_error(span, error))?;
+        Ok(Value::Object(object))
+    }
+
+    fn create_dom_attr_object(
+        &mut self,
+        name: &str,
+        value: &str,
+        span: Span,
+    ) -> CompileResult<PhpObject> {
+        let object = self.create_dom_object("DOMAttr", span)?;
+        for (property, property_value) in [
+            ("nodeName", Value::String(name.to_string())),
+            ("nodeValue", Value::String(value.to_string())),
+            ("name", Value::String(name.to_string())),
+            ("value", Value::String(value.to_string())),
+            ("ownerElement", Value::Null),
+            ("parentNode", Value::Null),
+            ("ownerDocument", Value::Null),
+            ("namespaceURI", Value::Null),
+            ("prefix", Value::Null),
+            ("localName", Value::String(dom_local_name(name))),
+            ("firstElementChild", Value::Null),
+        ] {
+            object
+                .write_public_property(property, property_value)
+                .map_err(|error| runtime_error(span, error))?;
+        }
+        Ok(object)
+    }
+
+    fn create_dom_element_object(
+        &mut self,
+        tag_name: &str,
+        span: Span,
+    ) -> CompileResult<PhpObject> {
+        let object = self.create_dom_object("DOMElement", span)?;
+        for (property, property_value) in [
+            ("nodeName", Value::String(tag_name.to_string())),
+            ("nodeValue", Value::String(String::new())),
+            ("tagName", Value::String(tag_name.to_string())),
+            ("parentNode", Value::Null),
+            ("ownerDocument", Value::Null),
+            ("firstElementChild", Value::Null),
+            ("__attributes", Value::Array(PhpArray::new())),
+            ("__children", Value::Array(PhpArray::new())),
+        ] {
+            object
+                .write_public_property(property, property_value)
+                .map_err(|error| runtime_error(span, error))?;
+        }
+        Ok(object)
+    }
+
+    fn call_dom_method(
+        &mut self,
+        object: PhpObject,
+        method_name: &str,
+        args: &[Expr],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        let values = args
+            .iter()
+            .map(|arg| self.evaluate(arg, scope))
+            .collect::<CompileResult<Vec<_>>>()?;
+        if object.class_name().eq_ignore_ascii_case("DOMAttr") {
+            return self.call_dom_attr_method(object, method_name, &values, span);
+        }
+        if object.class_name().eq_ignore_ascii_case("DOMElement") {
+            return self.call_dom_element_method(object, method_name, &values, span);
+        }
+        if object.class_name().eq_ignore_ascii_case("DOMDocument") {
+            return self.call_dom_document_method(object, method_name, &values, span);
+        }
+        Err(runtime_error(
+            span,
+            RuntimeError::undefined_function(format!("DOMNode::{method_name}()")),
+        ))
+    }
+
+    fn call_dom_attr_method(
+        &mut self,
+        object: PhpObject,
+        method_name: &str,
+        values: &[Value],
+        span: Span,
+    ) -> CompileResult<Value> {
+        match method_name.to_ascii_lowercase().as_str() {
+            "__construct" => {
+                if !(1..=2).contains(&values.len()) {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "DOMAttr::__construct()",
+                            format!(
+                                "DOMAttr::__construct() expects at least 1 argument, {} given",
+                                values.len()
+                            ),
+                        ),
+                    ));
+                }
+                let name =
+                    string_builtin_argument("DOMAttr::__construct()", "name", &values[0], span)?;
+                let value = match values.get(1) {
+                    Some(value) => {
+                        string_builtin_argument("DOMAttr::__construct()", "value", value, span)?
+                    }
+                    None => String::new(),
+                };
+                dom_validate_xml_name("DOMAttr::__construct()", &name, span)?;
+                object
+                    .write_public_property("nodeName", Value::String(name.clone()))
+                    .map_err(|error| runtime_error(span, error))?;
+                object
+                    .write_public_property("nodeValue", Value::String(value.clone()))
+                    .map_err(|error| runtime_error(span, error))?;
+                object
+                    .write_public_property("name", Value::String(name.clone()))
+                    .map_err(|error| runtime_error(span, error))?;
+                object
+                    .write_public_property("value", Value::String(value))
+                    .map_err(|error| runtime_error(span, error))?;
+                object
+                    .write_public_property("localName", Value::String(dom_local_name(&name)))
+                    .map_err(|error| runtime_error(span, error))?;
+                Ok(Value::Null)
+            }
+            _ => Err(runtime_error(
+                span,
+                RuntimeError::undefined_function(format!("DOMAttr::{method_name}()")),
+            )),
+        }
+    }
+
+    fn call_dom_document_method(
+        &mut self,
+        object: PhpObject,
+        method_name: &str,
+        values: &[Value],
+        span: Span,
+    ) -> CompileResult<Value> {
+        match method_name.to_ascii_lowercase().as_str() {
+            "__construct" => Ok(Value::Null),
+            "createattribute" => {
+                expect_arity("DOMDocument::createAttribute", values, 1, span)?;
+                let name = string_builtin_argument(
+                    "DOMDocument::createAttribute()",
+                    "name",
+                    &values[0],
+                    span,
+                )?;
+                dom_validate_xml_name("DOMDocument::createAttribute()", &name, span)?;
+                self.create_dom_attr_object(&name, "", span)
+                    .map(Value::Object)
+            }
+            "createelement" => {
+                if !(1..=2).contains(&values.len()) {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::arity_mismatch(
+                            "DOMDocument::createElement()",
+                            ArityExpectation::Between { min: 1, max: 2 },
+                            values.len(),
+                        ),
+                    ));
+                }
+                let tag_name = string_builtin_argument(
+                    "DOMDocument::createElement()",
+                    "qualifiedName",
+                    &values[0],
+                    span,
+                )?;
+                dom_validate_xml_name("DOMDocument::createElement()", &tag_name, span)?;
+                let element = self.create_dom_element_object(&tag_name, span)?;
+                element
+                    .write_public_property("ownerDocument", Value::Object(object.clone()))
+                    .map_err(|error| runtime_error(span, error))?;
+                if let Some(value) = values.get(1) {
+                    let text = string_builtin_argument(
+                        "DOMDocument::createElement()",
+                        "value",
+                        value,
+                        span,
+                    )?;
+                    element
+                        .write_public_property("nodeValue", Value::String(text))
+                        .map_err(|error| runtime_error(span, error))?;
+                }
+                Ok(Value::Object(element))
+            }
+            "appendchild" => {
+                expect_arity("DOMDocument::appendChild", values, 1, span)?;
+                let Value::Object(child) = &values[0] else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "DOMDocument::appendChild()",
+                            format!("argument must be DOMNode, got {}", values[0].type_name()),
+                        ),
+                    ));
+                };
+                self.dom_document_append_child(&object, child, span)?;
+                Ok(Value::Object(child.clone()))
+            }
+            "removechild" => {
+                expect_arity("DOMDocument::removeChild", values, 1, span)?;
+                let Value::Object(child) = &values[0] else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "DOMDocument::removeChild()",
+                            format!("argument must be DOMNode, got {}", values[0].type_name()),
+                        ),
+                    ));
+                };
+                self.dom_document_remove_child(&object, child, span)?;
+                Ok(Value::Object(child.clone()))
+            }
+            "importnode" => {
+                if !(1..=2).contains(&values.len()) {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::arity_mismatch(
+                            "DOMDocument::importNode()",
+                            ArityExpectation::Between { min: 1, max: 2 },
+                            values.len(),
+                        ),
+                    ));
+                }
+                let Value::Object(node) = &values[0] else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "DOMDocument::importNode()",
+                            format!("argument must be DOMNode, got {}", values[0].type_name()),
+                        ),
+                    ));
+                };
+                node.write_public_property("ownerDocument", Value::Object(object))
+                    .map_err(|error| runtime_error(span, error))?;
+                Ok(Value::Object(node.clone()))
+            }
+            "savexml" => {
+                if values.len() > 1 {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::arity_mismatch(
+                            "DOMDocument::saveXML()",
+                            ArityExpectation::Between { min: 0, max: 1 },
+                            values.len(),
+                        ),
+                    ));
+                }
+                if let Some(Value::Object(node)) = values.first() {
+                    return self
+                        .dom_serialize_node(node, false, span)
+                        .map(Value::String);
+                }
+                let mut output = String::from("<?xml version=\"1.0\"?>\n");
+                match object
+                    .read_public_property("documentElement")
+                    .map_err(|error| runtime_error(span, error))?
+                {
+                    Value::Object(root) => {
+                        output.push_str(&self.dom_serialize_node(&root, false, span)?);
+                        output.push('\n');
+                    }
+                    _ => {}
+                }
+                Ok(Value::String(output))
+            }
+            _ => Err(runtime_error(
+                span,
+                RuntimeError::undefined_function(format!("DOMDocument::{method_name}()")),
+            )),
+        }
+    }
+
+    fn call_dom_element_method(
+        &mut self,
+        object: PhpObject,
+        method_name: &str,
+        values: &[Value],
+        span: Span,
+    ) -> CompileResult<Value> {
+        match method_name.to_ascii_lowercase().as_str() {
+            "__construct" => {
+                if !(1..=3).contains(&values.len()) {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::arity_mismatch(
+                            "DOMElement::__construct()",
+                            ArityExpectation::Between { min: 1, max: 3 },
+                            values.len(),
+                        ),
+                    ));
+                }
+                let tag_name = string_builtin_argument(
+                    "DOMElement::__construct()",
+                    "qualifiedName",
+                    &values[0],
+                    span,
+                )?;
+                dom_validate_xml_name("DOMElement::__construct()", &tag_name, span)?;
+                object
+                    .write_public_property("nodeName", Value::String(tag_name.clone()))
+                    .map_err(|error| runtime_error(span, error))?;
+                object
+                    .write_public_property("tagName", Value::String(tag_name))
+                    .map_err(|error| runtime_error(span, error))?;
+                if let Some(value) = values.get(1) {
+                    let text =
+                        string_builtin_argument("DOMElement::__construct()", "value", value, span)?;
+                    object
+                        .write_public_property("nodeValue", Value::String(text))
+                        .map_err(|error| runtime_error(span, error))?;
+                }
+                Ok(Value::Null)
+            }
+            "appendchild" => {
+                expect_arity("DOMElement::appendChild", values, 1, span)?;
+                let Value::Object(child) = &values[0] else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "DOMElement::appendChild()",
+                            format!("argument must be DOMNode, got {}", values[0].type_name()),
+                        ),
+                    ));
+                };
+                if child.class_name().eq_ignore_ascii_case("DOMAttr") {
+                    let name = self.dom_attr_name(child, span)?;
+                    self.dom_set_element_attribute(&object, &name, child, span)?;
+                    return Ok(Value::Object(child.clone()));
+                }
+                let mut children = self.dom_element_children(&object, span)?;
+                children
+                    .append(Value::Object(child.clone()))
+                    .map_err(|error| runtime_error(span, error))?;
+                object
+                    .write_public_property("__children", Value::Array(children))
+                    .map_err(|error| runtime_error(span, error))?;
+                object
+                    .write_public_property("firstElementChild", Value::Object(child.clone()))
+                    .map_err(|error| runtime_error(span, error))?;
+                child
+                    .write_public_property("parentNode", Value::Object(object.clone()))
+                    .map_err(|error| runtime_error(span, error))?;
+                Ok(Value::Object(child.clone()))
+            }
+            "setattribute" => {
+                expect_arity("DOMElement::setAttribute", values, 2, span)?;
+                let name = string_builtin_argument(
+                    "DOMElement::setAttribute()",
+                    "name",
+                    &values[0],
+                    span,
+                )?;
+                let value = string_builtin_argument(
+                    "DOMElement::setAttribute()",
+                    "value",
+                    &values[1],
+                    span,
+                )?;
+                dom_validate_xml_name("DOMElement::setAttribute()", &name, span)?;
+                let attr = self.create_dom_attr_object(&name, &value, span)?;
+                self.dom_set_element_attribute(&object, &name, &attr, span)?;
+                Ok(Value::Object(attr))
+            }
+            "getattribute" => {
+                expect_arity("DOMElement::getAttribute", values, 1, span)?;
+                let name = string_builtin_argument(
+                    "DOMElement::getAttribute()",
+                    "name",
+                    &values[0],
+                    span,
+                )?;
+                let attrs = self.dom_element_attributes(&object, span)?;
+                match attrs.get_cloned(ArrayKey::String(name)) {
+                    Some(Value::Object(attr)) => {
+                        self.dom_attr_value(&attr, span).map(Value::String)
+                    }
+                    _ => Ok(Value::String(String::new())),
+                }
+            }
+            "hasattribute" => {
+                expect_arity("DOMElement::hasAttribute", values, 1, span)?;
+                let name = string_builtin_argument(
+                    "DOMElement::hasAttribute()",
+                    "name",
+                    &values[0],
+                    span,
+                )?;
+                Ok(Value::Bool(
+                    self.dom_element_attributes(&object, span)?
+                        .contains_key(ArrayKey::String(name)),
+                ))
+            }
+            "getattributenode" => {
+                expect_arity("DOMElement::getAttributeNode", values, 1, span)?;
+                let name = string_builtin_argument(
+                    "DOMElement::getAttributeNode()",
+                    "name",
+                    &values[0],
+                    span,
+                )?;
+                Ok(self
+                    .dom_element_attributes(&object, span)?
+                    .get_cloned(ArrayKey::String(name))
+                    .unwrap_or(Value::Null))
+            }
+            "getattributenames" => {
+                expect_arity("DOMElement::getAttributeNames", values, 0, span)?;
+                let attrs = self.dom_element_attributes(&object, span)?;
+                let mut names = PhpArray::new();
+                for entry in attrs.entries() {
+                    if let ArrayKey::String(name) = &entry.key {
+                        names
+                            .append(Value::String(name.clone()))
+                            .map_err(|error| runtime_error(span, error))?;
+                    }
+                }
+                Ok(Value::Array(names))
+            }
+            "hasattributes" => {
+                expect_arity("DOMElement::hasAttributes", values, 0, span)?;
+                Ok(Value::Bool(
+                    !self.dom_element_attributes(&object, span)?.is_empty(),
+                ))
+            }
+            "toggleattribute" => {
+                if !(1..=2).contains(&values.len()) {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::arity_mismatch(
+                            "DOMElement::toggleAttribute()",
+                            ArityExpectation::Between { min: 1, max: 2 },
+                            values.len(),
+                        ),
+                    ));
+                }
+                let name = string_builtin_argument(
+                    "DOMElement::toggleAttribute()",
+                    "name",
+                    &values[0],
+                    span,
+                )?;
+                dom_validate_xml_name("DOMElement::toggleAttribute()", &name, span)?;
+                let force = values.get(1).map(Value::is_truthy);
+                let mut attrs = self.dom_element_attributes(&object, span)?;
+                let has_attr = attrs.contains_key(ArrayKey::String(name.clone()));
+                match (has_attr, force) {
+                    (true, Some(true)) => Ok(Value::Bool(true)),
+                    (true, None) | (true, Some(false)) => {
+                        attrs.remove(ArrayKey::String(name));
+                        object
+                            .write_public_property("__attributes", Value::Array(attrs))
+                            .map_err(|error| runtime_error(span, error))?;
+                        Ok(Value::Bool(false))
+                    }
+                    (false, Some(false)) => Ok(Value::Bool(false)),
+                    (false, None) | (false, Some(true)) => {
+                        let attr = self.create_dom_attr_object(&name, "", span)?;
+                        self.dom_set_element_attribute(&object, &name, &attr, span)?;
+                        Ok(Value::Bool(true))
+                    }
+                }
+            }
+            _ => Err(runtime_error(
+                span,
+                RuntimeError::undefined_function(format!("DOMElement::{method_name}()")),
+            )),
+        }
+    }
+
+    fn dom_element_attributes(&self, object: &PhpObject, span: Span) -> CompileResult<PhpArray> {
+        match object
+            .read_public_property("__attributes")
+            .map_err(|error| runtime_error(span, error))?
+        {
+            Value::Array(attrs) => Ok(attrs),
+            _ => Ok(PhpArray::new()),
+        }
+    }
+
+    fn dom_element_children(&self, object: &PhpObject, span: Span) -> CompileResult<PhpArray> {
+        match object
+            .read_public_property("__children")
+            .map_err(|error| runtime_error(span, error))?
+        {
+            Value::Array(children) => Ok(children),
+            _ => Ok(PhpArray::new()),
+        }
+    }
+
+    fn dom_set_element_attribute(
+        &mut self,
+        element: &PhpObject,
+        name: &str,
+        attr: &PhpObject,
+        span: Span,
+    ) -> CompileResult<()> {
+        let mut attrs = self.dom_element_attributes(element, span)?;
+        attr.write_public_property("ownerElement", Value::Object(element.clone()))
+            .map_err(|error| runtime_error(span, error))?;
+        attr.write_public_property("parentNode", Value::Object(element.clone()))
+            .map_err(|error| runtime_error(span, error))?;
+        attr.write_public_property("name", Value::String(name.to_string()))
+            .map_err(|error| runtime_error(span, error))?;
+        attr.write_public_property("nodeName", Value::String(name.to_string()))
+            .map_err(|error| runtime_error(span, error))?;
+        attrs.insert(
+            ArrayKey::String(name.to_string()),
+            Value::Object(attr.clone()),
+        );
+        element
+            .write_public_property("__attributes", Value::Array(attrs))
+            .map_err(|error| runtime_error(span, error))?;
+        Ok(())
+    }
+
+    fn dom_document_append_child(
+        &mut self,
+        document: &PhpObject,
+        child: &PhpObject,
+        span: Span,
+    ) -> CompileResult<()> {
+        let mut children = match document
+            .read_public_property("__children")
+            .map_err(|error| runtime_error(span, error))?
+        {
+            Value::Array(children) => children,
+            _ => PhpArray::new(),
+        };
+        children
+            .append(Value::Object(child.clone()))
+            .map_err(|error| runtime_error(span, error))?;
+        document
+            .write_public_property("__children", Value::Array(children))
+            .map_err(|error| runtime_error(span, error))?;
+        if child.class_name().eq_ignore_ascii_case("DOMElement") {
+            document
+                .write_public_property("documentElement", Value::Object(child.clone()))
+                .map_err(|error| runtime_error(span, error))?;
+            document
+                .write_public_property("firstElementChild", Value::Object(child.clone()))
+                .map_err(|error| runtime_error(span, error))?;
+        }
+        child
+            .write_public_property("ownerDocument", Value::Object(document.clone()))
+            .map_err(|error| runtime_error(span, error))?;
+        child
+            .write_public_property("parentNode", Value::Object(document.clone()))
+            .map_err(|error| runtime_error(span, error))?;
+        Ok(())
+    }
+
+    fn dom_document_remove_child(
+        &mut self,
+        document: &PhpObject,
+        child: &PhpObject,
+        span: Span,
+    ) -> CompileResult<()> {
+        let children = match document
+            .read_public_property("__children")
+            .map_err(|error| runtime_error(span, error))?
+        {
+            Value::Array(children) => children,
+            _ => PhpArray::new(),
+        };
+        let mut remaining = PhpArray::new();
+        for entry in children.entries() {
+            match entry.value() {
+                Value::Object(existing) if existing.id() == child.id() => {}
+                value => {
+                    remaining
+                        .append(value.clone())
+                        .map_err(|error| runtime_error(span, error))?;
+                }
+            }
+        }
+        document
+            .write_public_property("__children", Value::Array(remaining))
+            .map_err(|error| runtime_error(span, error))?;
+        match document
+            .read_public_property("documentElement")
+            .map_err(|error| runtime_error(span, error))?
+        {
+            Value::Object(existing) if existing.id() == child.id() => {
+                document
+                    .write_public_property("documentElement", Value::Null)
+                    .map_err(|error| runtime_error(span, error))?;
+                document
+                    .write_public_property("firstElementChild", Value::Null)
+                    .map_err(|error| runtime_error(span, error))?;
+            }
+            _ => {}
+        }
+        if child.class_name().eq_ignore_ascii_case("DOMElement") {
+            self.dom_clear_element_attribute_owners(child, span)?;
+        }
+        child
+            .write_public_property("parentNode", Value::Null)
+            .map_err(|error| runtime_error(span, error))?;
+        child
+            .write_public_property("ownerDocument", Value::Null)
+            .map_err(|error| runtime_error(span, error))?;
+        Ok(())
+    }
+
+    fn dom_clear_element_attribute_owners(
+        &mut self,
+        element: &PhpObject,
+        span: Span,
+    ) -> CompileResult<()> {
+        let attrs = self.dom_element_attributes(element, span)?;
+        for entry in attrs.entries() {
+            if let Value::Object(attr) = entry.value() {
+                attr.write_public_property("ownerElement", Value::Null)
+                    .map_err(|error| runtime_error(span, error))?;
+                attr.write_public_property("parentNode", Value::Null)
+                    .map_err(|error| runtime_error(span, error))?;
+                attr.write_public_property("ownerDocument", Value::Null)
+                    .map_err(|error| runtime_error(span, error))?;
+            }
+        }
+        Ok(())
+    }
+
+    fn dom_attr_name(&self, attr: &PhpObject, span: Span) -> CompileResult<String> {
+        match attr
+            .read_public_property("name")
+            .map_err(|error| runtime_error(span, error))?
+        {
+            Value::String(name) => Ok(name),
+            value => string_builtin_argument("DOMAttr::$name", "name", &value, span),
+        }
+    }
+
+    fn dom_attr_value(&self, attr: &PhpObject, span: Span) -> CompileResult<String> {
+        let value = attr
+            .read_public_property("value")
+            .map_err(|error| runtime_error(span, error))?;
+        string_builtin_argument("DOMAttr::$value", "value", &value, span)
+    }
+
+    fn dom_serialize_node(
+        &self,
+        node: &PhpObject,
+        include_declaration: bool,
+        span: Span,
+    ) -> CompileResult<String> {
+        if node.class_name().eq_ignore_ascii_case("DOMDocument") {
+            let mut output = if include_declaration {
+                String::from("<?xml version=\"1.0\"?>\n")
+            } else {
+                String::new()
+            };
+            if let Value::Object(root) = node
+                .read_public_property("documentElement")
+                .map_err(|error| runtime_error(span, error))?
+            {
+                output.push_str(&self.dom_serialize_element(&root, span)?);
+            }
+            return Ok(output);
+        }
+        if node.class_name().eq_ignore_ascii_case("DOMElement") {
+            return self.dom_serialize_element(node, span);
+        }
+        if node.class_name().eq_ignore_ascii_case("DOMAttr") {
+            let name = self.dom_attr_name(node, span)?;
+            let value = self.dom_attr_value(node, span)?;
+            return Ok(format!("{name}=\"{}\"", xml_escape_attribute(&value)));
+        }
+        Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "DOMDocument::saveXML()",
+                format!("unsupported DOM node class {}", node.class_name()),
+            ),
+        ))
+    }
+
+    fn dom_serialize_element(&self, element: &PhpObject, span: Span) -> CompileResult<String> {
+        let tag_name = match element
+            .read_public_property("tagName")
+            .map_err(|error| runtime_error(span, error))?
+        {
+            Value::String(name) => name,
+            value => string_builtin_argument("DOMElement::$tagName", "tagName", &value, span)?,
+        };
+        let attrs = self.dom_element_attributes(element, span)?;
+        let mut output = format!("<{tag_name}");
+        for entry in attrs.entries() {
+            if let Value::Object(attr) = entry.value() {
+                let name = self.dom_attr_name(attr, span)?;
+                let value = self.dom_attr_value(attr, span)?;
+                output.push(' ');
+                output.push_str(&name);
+                output.push_str("=\"");
+                output.push_str(&xml_escape_attribute(&value));
+                output.push('"');
+            }
+        }
+        let children = self.dom_element_children(element, span)?;
+        let node_value = element
+            .read_public_property("nodeValue")
+            .map_err(|error| runtime_error(span, error))?;
+        let node_text =
+            string_builtin_argument("DOMElement::$nodeValue", "nodeValue", &node_value, span)?;
+        if children.is_empty() && node_text.is_empty() {
+            output.push_str("/>");
+            return Ok(output);
+        }
+        output.push('>');
+        output.push_str(&xml_escape_text(&node_text));
+        for entry in children.entries() {
+            if let Value::Object(child) = entry.value() {
+                output.push_str(&self.dom_serialize_node(child, false, span)?);
+            }
+        }
+        output.push_str("</");
+        output.push_str(&tag_name);
+        output.push('>');
+        Ok(output)
+    }
+
     fn create_mysqli_placeholder(&mut self, span: Span) -> CompileResult<Value> {
         let class_id = self.classes.lookup_class_id("mysqli").ok_or_else(|| {
             runtime_error(
@@ -45858,6 +46744,11 @@ impl Interpreter {
                 .call_uri_rfc3986_method(object, method_name, args, span, caller_scope)
                 .map(|value| (value, None));
         }
+        if object.is_instance_of_class_name("DOMNode") {
+            return self
+                .call_dom_method(object, method_name, args, span, caller_scope)
+                .map(|value| (value, None));
+        }
 
         let (class_id, class_name, resolved_method_name, visibility, is_static) = {
             let receiver_class_name = self
@@ -46013,6 +46904,17 @@ impl Interpreter {
             "getmessage" => {
                 expect_expr_arity("Error::getMessage", args.len(), 0, span)?;
                 Ok(Value::String(self.throwable_message_for_fatal(&object)))
+            }
+            "getcode" => {
+                expect_expr_arity("Error::getCode", args.len(), 0, span)?;
+                let protected_class_ids = self.protected_class_ids_for_context(object.class_id());
+                object
+                    .read_property_from_context(
+                        "code",
+                        Some(object.class_id()),
+                        &protected_class_ids,
+                    )
+                    .map_err(|error| runtime_error(span, error))
             }
             "getline" => {
                 expect_expr_arity("Error::getLine", args.len(), 0, span)?;
@@ -97863,6 +98765,24 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
             return Some(("Uri\\InvalidUriException", message.to_string()));
         }
 
+        for prefix in [
+            "unsupported call DOMAttr::__construct(): ",
+            "unsupported call DOMElement::__construct(): ",
+            "unsupported call DOMDocument::createAttribute(): ",
+            "unsupported call DOMDocument::createElement(): ",
+            "unsupported call DOMElement::setAttribute(): ",
+            "unsupported call DOMElement::toggleAttribute(): ",
+        ] {
+            if let Some(message) = error.message.strip_prefix(prefix) {
+                if message == "Invalid Character Error" {
+                    return Some(("DOMException", message.to_string()));
+                }
+                if message.contains(" expects at least ") || message.contains(" expects exactly ") {
+                    return Some(("TypeError", message.to_string()));
+                }
+            }
+        }
+
         if error.message.starts_with("Non-static method ")
             && error.message.ends_with(" cannot be called statically")
         {
@@ -101302,6 +102222,7 @@ fn builtin_global_constant_value(name: &str) -> Option<Value> {
         "CONNECTION_NORMAL" => Some(Value::Int(0)),
         "CONNECTION_ABORTED" => Some(Value::Int(1)),
         "CONNECTION_TIMEOUT" => Some(Value::Int(2)),
+        "DOM_INVALID_CHARACTER_ERR" => Some(Value::Int(5)),
         "STDIN" => Some(Value::Resource(1)),
         "STDOUT" => Some(Value::Resource(2)),
         "STDERR" => Some(Value::Resource(3)),
@@ -106785,6 +107706,49 @@ fn string_builtin_argument(
     value
         .try_echo_string()
         .map_err(|error| runtime_error(span, error))
+}
+
+fn dom_local_name(name: &str) -> String {
+    name.rsplit_once(':')
+        .map(|(_, local)| local)
+        .unwrap_or(name)
+        .to_string()
+}
+
+fn dom_validate_xml_name(callable: &str, name: &str, span: Span) -> CompileResult<()> {
+    if dom_is_valid_xml_name(name) {
+        return Ok(());
+    }
+    Err(runtime_error(
+        span,
+        RuntimeError::unsupported_call(callable, "Invalid Character Error"),
+    ))
+}
+
+fn dom_is_valid_xml_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    if !(first == '_' || first == ':' || first.is_ascii_alphabetic()) {
+        return false;
+    }
+    chars.all(|ch| ch == '_' || ch == ':' || ch == '-' || ch == '.' || ch.is_ascii_alphanumeric())
+}
+
+fn xml_escape_attribute(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('"', "&quot;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
+
+fn xml_escape_text(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
 }
 
 fn hex_bytes(bytes: &[u8]) -> String {
