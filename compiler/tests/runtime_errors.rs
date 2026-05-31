@@ -261,6 +261,24 @@ fn foreach_non_array_iterable_has_stable_runtime_error() {
 }
 
 #[test]
+fn foreach_null_and_undefined_iterables_warn_and_continue() {
+    let execution = run_source(
+        "<?php\nfunction test() {\n    foreach (null as $value) { echo \"bad\"; }\n}\ntest();\nforeach ($missing as $value);\necho \"Done\\n\";\n",
+    )
+    .unwrap();
+
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+    assert!(execution.stdout.contains(
+        "Warning: foreach() argument must be of type array|object, null given in Command line code on line 3"
+    ));
+    assert!(execution
+        .stdout
+        .contains("Warning: Undefined variable $missing in Command line code on line 6"));
+    assert!(execution.stdout.ends_with("Done\n"));
+}
+
+#[test]
 fn invalid_arithmetic_has_stable_runtime_error() {
     let error = runtime_error("<?php\necho 1 / 0;\n");
 

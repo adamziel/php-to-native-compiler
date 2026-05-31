@@ -5519,6 +5519,10 @@ impl Parser {
             return self.parse_block_after_open();
         }
 
+        if self.match_token(|kind| matches!(kind, TokenKind::Semicolon)) {
+            return Ok(Vec::new());
+        }
+
         Ok(vec![self.parse_nested_statement()?])
     }
 

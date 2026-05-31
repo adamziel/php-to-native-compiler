@@ -2439,7 +2439,12 @@
   nested reference slots below that public object-property array are mirrored
   into the copied loop value, so a later by-reference foreach over that copy
   can update the original referenced slot while non-reference copied elements
-  remain detached. By-reference
+  remain detached. `foreach` over `null`, including an undefined direct
+  variable that resolves to `null` for this statement, emits a PHP-style
+  warning and skips the loop. Empty statement loop bodies such as
+  `foreach ($items as $value);` parse as no-op bodies. Other non-array/
+  non-object iterables still use the current bounded runtime error.
+  By-reference
   value forms over a direct array variable, such
   as `foreach ($array as &$value)` and
   `foreach ($array as $key => &$value)`, execute as a bounded direct-slot and

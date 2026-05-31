@@ -13575,6 +13575,39 @@ impl Interpreter {
         }
     }
 
+    fn evaluate_foreach_iterable(
+        &mut self,
+        iterable: &Expr,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        match iterable {
+            Expr::Variable(name, span)
+                if name != "GLOBALS"
+                    && !(name.eq_ignore_ascii_case("this")
+                        && scope.read_named("this").is_none()) =>
+            {
+                if let Some(value) = scope.read_named(name) {
+                    Ok(value)
+                } else {
+                    self.emit_undefined_variable_warning(name, *span)?;
+                    Ok(Value::Null)
+                }
+            }
+            _ => self.evaluate(iterable, scope),
+        }
+    }
+
+    fn emit_foreach_non_iterable_warning(
+        &mut self,
+        type_name: &str,
+        span: Span,
+    ) -> CompileResult<()> {
+        self.emit_display_warning(
+            format!("foreach() argument must be of type array|object, {type_name} given"),
+            span,
+        )
+    }
+
     fn execute_foreach_by_value_iterable(
         &mut self,
         iterable: Value,
@@ -13623,6 +13656,10 @@ impl Interpreter {
             }
             Value::Object(object) if !self.is_traversable_object(&object) => {
                 self.execute_foreach_public_object_by_value(object, key, value, body, span, scope)
+            }
+            Value::Null => {
+                self.emit_foreach_non_iterable_warning("null", span)?;
+                Ok(Flow::Normal)
             }
             other => Err(runtime_error(
                 span,
@@ -14153,7 +14190,7 @@ impl Interpreter {
                         iterable, key, value, body, *span, scope,
                     );
                 }
-                let iterable = self.evaluate(iterable, scope)?;
+                let iterable = self.evaluate_foreach_iterable(iterable, scope)?;
                 return self.execute_foreach_by_value_iterable_with_array_copy_return_source(
                     iterable, key, value, body, *span, scope,
                 );
@@ -14526,6 +14563,10 @@ impl Interpreter {
                 self.execute_foreach_public_object_by_value_with_array_copy_return_source(
                     object, key, value, body, span, scope,
                 )
+            }
+            Value::Null => {
+                self.emit_foreach_non_iterable_warning("null", span)?;
+                Ok(ArrayCopyReturnBodyFlow::Normal)
             }
             other => Err(runtime_error(
                 span,
@@ -19508,7 +19549,7 @@ impl Interpreter {
                     }
                     return Ok(Flow::Normal);
                 }
-                let iterable = self.evaluate(iterable, scope)?;
+                let iterable = self.evaluate_foreach_iterable(iterable, scope)?;
                 self.execute_foreach_by_value_iterable(iterable, key, value, body, *span, scope)
             }
             Stmt::UnsetVariable { name, .. } => {
