@@ -3,6 +3,7 @@ use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs::{self, FileTimes};
 use std::io::{ErrorKind, Read, Seek, SeekFrom, Write};
+use std::net::{Ipv4Addr, Ipv6Addr};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
@@ -18983,15 +18984,15 @@ impl Interpreter {
             Stmt::Echo { exprs, .. } => {
                 for expr in exprs {
                     let value = self.evaluate(expr, scope)?;
-                    let output = self.value_to_echo_string(value, expr.span())?;
-                    self.append_output_at(&output, expr.span());
+                    let output = self.value_to_echo_bytes(value, expr.span())?;
+                    self.append_output_bytes_at(&output, expr.span());
                 }
                 Ok(Flow::Normal)
             }
             Stmt::Print { expr, .. } => {
                 let value = self.evaluate(expr, scope)?;
-                let output = self.value_to_echo_string(value, expr.span())?;
-                self.append_output_at(&output, expr.span());
+                let output = self.value_to_echo_bytes(value, expr.span())?;
+                self.append_output_bytes_at(&output, expr.span());
                 Ok(Flow::Normal)
             }
             Stmt::Assign { target, expr, .. } => {
@@ -36868,6 +36869,14 @@ impl Interpreter {
                 format!(
                     "Constant {name} is deprecated since 8.4, as date_sunrise() and date_sunset() were deprecated in 8.1"
                 ),
+                span,
+            )?;
+        }
+        if matches!(name, "FILTER_SANITIZE_STRING" | "FILTER_SANITIZE_STRIPPED") {
+            self.emit_display_diagnostic(
+                "Deprecated",
+                PHP_E_DEPRECATED,
+                format!("Constant {name} is deprecated since 8.1, use htmlspecialchars() instead"),
                 span,
             )?;
         }
@@ -80495,6 +80504,7 @@ impl Interpreter {
             "filter_list" => call_filter_list(&args, span),
             "filter_id" => call_filter_id(&args, span),
             "filter_var" => self.call_filter_var(&args, span),
+            "filter_var_array" => self.call_filter_var_array(&args, span),
             "filter_input" => self.call_filter_input(&args, span),
             "gc_enable" => {
                 expect_arity(name, &args, 0, span)?;
@@ -95004,6 +95014,18 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 ),
             ],
         ),
+        "filter_var_array" => (
+            "array|false|null",
+            vec![
+                reflection_internal_param("array", "array"),
+                reflection_internal_optional_param(
+                    "options",
+                    "array|int",
+                    Expr::Int(PHP_FILTER_DEFAULT, Span::new(0, 0)),
+                ),
+                reflection_internal_optional_bool_param("add_empty", true),
+            ],
+        ),
         "filter_input" => (
             "mixed",
             vec![
@@ -97330,6 +97352,15 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
             _ => {}
         }
 
+        if error.message
+            == "unsupported call filter_var(): filter_var(): Option must be a valid callback"
+        {
+            return Some((
+                "TypeError",
+                "filter_var(): Option must be a valid callback".to_string(),
+            ));
+        }
+
         if let Some(message) = array_reduce_callback_too_few_arguments_message(error) {
             return Some(("TypeError", message));
         }
@@ -98074,6 +98105,11 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
         {
             Some(format!("{function}: {message}"))
         }
+        (
+            "filter_var()",
+            "filter_var(): \"regexp\" option is missing"
+                | "filter_var(): \"decimal\" option must be one character long",
+        ) => Some(message.to_string()),
         ("tempnam()", message)
             if message.starts_with("Argument #")
                 && message.ends_with(" must not contain any null bytes") =>
@@ -98692,6 +98728,7 @@ fn is_builtin(name: &str) -> bool {
             | "filter_list"
             | "filter_id"
             | "filter_var"
+            | "filter_var_array"
             | "filter_input"
             | "gc_enable"
             | "gc_collect_cycles"
@@ -99787,7 +99824,26 @@ const PHP_FILTER_SANITIZE_FULL_SPECIAL_CHARS: i64 = 522;
 const PHP_FILTER_SANITIZE_ADD_SLASHES: i64 = 523;
 const PHP_FILTER_CALLBACK: i64 = 1024;
 const PHP_FILTER_DEFAULT: i64 = PHP_FILTER_UNSAFE_RAW;
+const PHP_FILTER_FLAG_ALLOW_OCTAL: i64 = 1;
+const PHP_FILTER_FLAG_ALLOW_HEX: i64 = 2;
+const PHP_FILTER_FLAG_STRIP_LOW: i64 = 4;
+const PHP_FILTER_FLAG_STRIP_HIGH: i64 = 8;
+const PHP_FILTER_FLAG_ENCODE_LOW: i64 = 16;
+const PHP_FILTER_FLAG_ENCODE_HIGH: i64 = 32;
+const PHP_FILTER_FLAG_ENCODE_AMP: i64 = 64;
+const PHP_FILTER_FLAG_NO_ENCODE_QUOTES: i64 = 128;
+const PHP_FILTER_FLAG_EMPTY_STRING_NULL: i64 = 256;
+const PHP_FILTER_FLAG_ALLOW_FRACTION: i64 = 4096;
+const PHP_FILTER_FLAG_ALLOW_THOUSAND: i64 = 8192;
+const PHP_FILTER_FLAG_ALLOW_SCIENTIFIC: i64 = 16384;
+const PHP_FILTER_FLAG_PATH_REQUIRED: i64 = 262_144;
+const PHP_FILTER_FLAG_QUERY_REQUIRED: i64 = 524_288;
+const PHP_FILTER_FLAG_IPV4: i64 = 1_048_576;
+const PHP_FILTER_FLAG_IPV6: i64 = 2_097_152;
+const PHP_FILTER_FLAG_NO_RES_RANGE: i64 = 4_194_304;
+const PHP_FILTER_FLAG_NO_PRIV_RANGE: i64 = 8_388_608;
 const PHP_FILTER_REQUIRE_ARRAY: i64 = 16_777_216;
+const PHP_FILTER_REQUIRE_SCALAR: i64 = 33_554_432;
 const PHP_FILTER_FORCE_ARRAY: i64 = 67_108_864;
 const PHP_FILTER_NULL_ON_FAILURE: i64 = 134_217_728;
 const PHP_SETLOCALE_MAX_LOCALE_NAME_BYTES: usize = 255;
@@ -100184,7 +100240,26 @@ const BUILTIN_GLOBAL_CONSTANT_NAMES: &[&str] = &[
     "FILTER_SANITIZE_NUMBER_FLOAT",
     "FILTER_SANITIZE_ADD_SLASHES",
     "FILTER_CALLBACK",
+    "FILTER_FLAG_ALLOW_OCTAL",
+    "FILTER_FLAG_ALLOW_HEX",
+    "FILTER_FLAG_STRIP_LOW",
+    "FILTER_FLAG_STRIP_HIGH",
+    "FILTER_FLAG_ENCODE_LOW",
+    "FILTER_FLAG_ENCODE_HIGH",
+    "FILTER_FLAG_ENCODE_AMP",
+    "FILTER_FLAG_NO_ENCODE_QUOTES",
+    "FILTER_FLAG_EMPTY_STRING_NULL",
+    "FILTER_FLAG_ALLOW_FRACTION",
+    "FILTER_FLAG_ALLOW_THOUSAND",
+    "FILTER_FLAG_ALLOW_SCIENTIFIC",
+    "FILTER_FLAG_PATH_REQUIRED",
+    "FILTER_FLAG_QUERY_REQUIRED",
+    "FILTER_FLAG_IPV4",
+    "FILTER_FLAG_IPV6",
+    "FILTER_FLAG_NO_RES_RANGE",
+    "FILTER_FLAG_NO_PRIV_RANGE",
     "FILTER_REQUIRE_ARRAY",
+    "FILTER_REQUIRE_SCALAR",
     "FILTER_FORCE_ARRAY",
     "FILTER_NULL_ON_FAILURE",
     "HTML_SPECIALCHARS",
@@ -100488,7 +100563,26 @@ fn builtin_global_constant_value(name: &str) -> Option<Value> {
         "FILTER_SANITIZE_NUMBER_FLOAT" => Some(Value::Int(PHP_FILTER_SANITIZE_NUMBER_FLOAT)),
         "FILTER_SANITIZE_ADD_SLASHES" => Some(Value::Int(PHP_FILTER_SANITIZE_ADD_SLASHES)),
         "FILTER_CALLBACK" => Some(Value::Int(PHP_FILTER_CALLBACK)),
+        "FILTER_FLAG_ALLOW_OCTAL" => Some(Value::Int(PHP_FILTER_FLAG_ALLOW_OCTAL)),
+        "FILTER_FLAG_ALLOW_HEX" => Some(Value::Int(PHP_FILTER_FLAG_ALLOW_HEX)),
+        "FILTER_FLAG_STRIP_LOW" => Some(Value::Int(PHP_FILTER_FLAG_STRIP_LOW)),
+        "FILTER_FLAG_STRIP_HIGH" => Some(Value::Int(PHP_FILTER_FLAG_STRIP_HIGH)),
+        "FILTER_FLAG_ENCODE_LOW" => Some(Value::Int(PHP_FILTER_FLAG_ENCODE_LOW)),
+        "FILTER_FLAG_ENCODE_HIGH" => Some(Value::Int(PHP_FILTER_FLAG_ENCODE_HIGH)),
+        "FILTER_FLAG_ENCODE_AMP" => Some(Value::Int(PHP_FILTER_FLAG_ENCODE_AMP)),
+        "FILTER_FLAG_NO_ENCODE_QUOTES" => Some(Value::Int(PHP_FILTER_FLAG_NO_ENCODE_QUOTES)),
+        "FILTER_FLAG_EMPTY_STRING_NULL" => Some(Value::Int(PHP_FILTER_FLAG_EMPTY_STRING_NULL)),
+        "FILTER_FLAG_ALLOW_FRACTION" => Some(Value::Int(PHP_FILTER_FLAG_ALLOW_FRACTION)),
+        "FILTER_FLAG_ALLOW_THOUSAND" => Some(Value::Int(PHP_FILTER_FLAG_ALLOW_THOUSAND)),
+        "FILTER_FLAG_ALLOW_SCIENTIFIC" => Some(Value::Int(PHP_FILTER_FLAG_ALLOW_SCIENTIFIC)),
+        "FILTER_FLAG_PATH_REQUIRED" => Some(Value::Int(PHP_FILTER_FLAG_PATH_REQUIRED)),
+        "FILTER_FLAG_QUERY_REQUIRED" => Some(Value::Int(PHP_FILTER_FLAG_QUERY_REQUIRED)),
+        "FILTER_FLAG_IPV4" => Some(Value::Int(PHP_FILTER_FLAG_IPV4)),
+        "FILTER_FLAG_IPV6" => Some(Value::Int(PHP_FILTER_FLAG_IPV6)),
+        "FILTER_FLAG_NO_RES_RANGE" => Some(Value::Int(PHP_FILTER_FLAG_NO_RES_RANGE)),
+        "FILTER_FLAG_NO_PRIV_RANGE" => Some(Value::Int(PHP_FILTER_FLAG_NO_PRIV_RANGE)),
         "FILTER_REQUIRE_ARRAY" => Some(Value::Int(PHP_FILTER_REQUIRE_ARRAY)),
+        "FILTER_REQUIRE_SCALAR" => Some(Value::Int(PHP_FILTER_REQUIRE_SCALAR)),
         "FILTER_FORCE_ARRAY" => Some(Value::Int(PHP_FILTER_FORCE_ARRAY)),
         "FILTER_NULL_ON_FAILURE" => Some(Value::Int(PHP_FILTER_NULL_ON_FAILURE)),
         "HTML_SPECIALCHARS" => Some(Value::Int(PHP_HTML_SPECIALCHARS)),
@@ -113402,6 +113496,29 @@ impl BoundedPregPattern {
             None => (false, body),
         };
 
+        if body == ".*" {
+            return Ok(match (starts_with_anchor, ends_with_anchor) {
+                (true, true) => Self::Exact(String::new()),
+                (true, false) => Self::Prefix(String::new()),
+                (false, true) => Self::Suffix(String::new()),
+                (false, false) => Self::Contains(String::new()),
+            });
+        }
+        if let Some(prefix) = body
+            .strip_suffix("(.*)")
+            .or_else(|| body.strip_suffix(".*"))
+        {
+            let literal = decode_bounded_preg_literal(prefix)?;
+            return Ok(if starts_with_anchor {
+                Self::Prefix(literal)
+            } else {
+                Self::Contains(literal)
+            });
+        }
+        if body == "\\[" {
+            return Ok(Self::Contains("[".to_string()));
+        }
+
         if body.starts_with('[') && body.ends_with(']') {
             if let Some(class) = parse_bounded_preg_character_class(body)? {
                 return Ok(Self::CharacterClass {
@@ -114548,7 +114665,7 @@ fn decode_bounded_preg_literal(body: &str) -> Result<String, String> {
                 );
             };
             match escaped {
-                '/' | '\\' | '.' | '-' | '^' | '$' => literal.push(escaped),
+                '/' | '\\' | '.' | '-' | '^' | '$' | '[' | ']' => literal.push(escaped),
                 _ => {
                     return Err(format!(
                         "escape sequence \\{escaped} is not implemented in the current subset"
@@ -116865,7 +116982,7 @@ fn apply_sprintf_width(value: String, width: Option<usize>, left_align: bool, pa
     let Some(width) = width else {
         return value;
     };
-    let len = value.chars().count();
+    let len = value.as_bytes().len();
     if len >= width {
         return value;
     }
@@ -119985,7 +120102,102 @@ impl Interpreter {
         }
 
         let options = filter_options_from_value(args.get(2), "filter_var()", span)?;
-        self.apply_filter_value(args[0].clone(), filter, options.flags, span)
+        self.apply_filter_value(args[0].clone(), filter, &options, span)
+    }
+
+    fn call_filter_var_array(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(1..=3).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "filter_var_array()",
+                    ArityExpectation::Between { min: 1, max: 3 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let Value::Array(input) = &args[0] else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "filter_var_array()",
+                    format!(
+                        "Argument #1 ($array) must be of type array, {} given",
+                        php_type_error_given(&args[0])
+                    ),
+                ),
+            ));
+        };
+
+        let add_empty = match args.get(2) {
+            Some(value) => value.is_truthy(),
+            None => true,
+        };
+
+        match args.get(1) {
+            None => {
+                let options = FilterOptions::default();
+                self.apply_filter_array(input.clone(), PHP_FILTER_DEFAULT, &options, span)
+            }
+            Some(Value::Int(filter)) => {
+                if !filter_id_is_known(*filter) {
+                    self.emit_display_diagnostic(
+                        "Warning",
+                        PHP_E_WARNING,
+                        format!("filter_var_array(): Unknown filter with ID {filter}"),
+                        span,
+                    )?;
+                    return Ok(Value::Bool(false));
+                }
+                let options = FilterOptions::default();
+                self.apply_filter_array(input.clone(), *filter, &options, span)
+            }
+            Some(Value::Array(specs)) => {
+                let mut filtered = PhpArray::new();
+                for spec in specs.entries() {
+                    let filter_spec = filter_descriptor_from_value(
+                        &spec.value_cloned(),
+                        "filter_var_array()",
+                        span,
+                    )?;
+                    match input.get_slot(spec.key.clone()) {
+                        Some(slot) => {
+                            let value = self.apply_filter_slot(
+                                slot,
+                                filter_spec.filter,
+                                &filter_spec.options,
+                                span,
+                            )?;
+                            match (slot.reference_cell(), value) {
+                                (Some(reference), Value::Array(array)) => {
+                                    reference.set_value(Value::Array(array.clone()));
+                                    filtered.insert_reference(spec.key.clone(), reference);
+                                }
+                                (_, value) => {
+                                    filtered.insert(spec.key.clone(), value);
+                                }
+                            }
+                        }
+                        None if add_empty => {
+                            filtered.insert(spec.key.clone(), Value::Null);
+                        }
+                        None => {}
+                    }
+                }
+                Ok(Value::Array(filtered))
+            }
+            Some(other) => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "filter_var_array()",
+                    format!(
+                        "options must be int or array in the current subset, got {}",
+                        other.type_name()
+                    ),
+                ),
+            )),
+        }
     }
 
     fn call_filter_input(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -120042,7 +120254,7 @@ impl Interpreter {
             });
 
         match value {
-            Some(value) => self.apply_filter_value(value, filter, options.flags, span),
+            Some(value) => self.apply_filter_value(value, filter, &options, span),
             None if options.flags & PHP_FILTER_NULL_ON_FAILURE != 0 => Ok(Value::Bool(false)),
             None => Ok(Value::Null),
         }
@@ -120052,89 +120264,296 @@ impl Interpreter {
         &mut self,
         value: Value,
         filter: i64,
-        flags: i64,
+        options: &FilterOptions,
         span: Span,
     ) -> CompileResult<Value> {
+        let flags = options.flags;
         if flags & PHP_FILTER_REQUIRE_ARRAY != 0 {
             return match value {
-                Value::Array(array) => self.apply_filter_array(array, filter, flags, span),
+                Value::Array(array) => self.apply_filter_array(array, filter, options, span),
                 _ => Ok(filter_failure_value(flags)),
             };
+        }
+
+        if flags & PHP_FILTER_REQUIRE_SCALAR != 0 && matches!(value, Value::Array(_)) {
+            return Ok(filter_failure_value(flags));
         }
 
         if flags & PHP_FILTER_FORCE_ARRAY != 0 {
             let mut array = PhpArray::new();
             match value {
                 Value::Array(values) => {
-                    return self.apply_filter_array(values, filter, flags, span)
+                    return self.apply_filter_array(values, filter, options, span)
                 }
                 other => {
                     array
-                        .append(self.apply_filter_single(other, filter, flags, span)?)
+                        .append(self.apply_filter_single(other, filter, options, span)?)
                         .map_err(|error| runtime_error(span, error))?;
                 }
             }
             return Ok(Value::Array(array));
         }
 
-        self.apply_filter_single(value, filter, flags, span)
+        self.apply_filter_single(value, filter, options, span)
     }
 
     fn apply_filter_array(
         &mut self,
         array: PhpArray,
         filter: i64,
-        flags: i64,
+        options: &FilterOptions,
         span: Span,
     ) -> CompileResult<Value> {
         let mut filtered = PhpArray::new();
         for entry in array.entries() {
-            let value = match entry.value_cloned() {
-                Value::Array(nested) => self.apply_filter_array(nested, filter, flags, span)?,
-                value => self.apply_filter_single(value, filter, flags, span)?,
-            };
-            filtered.insert(entry.key.clone(), value);
+            if let Some(reference) = entry.slot().reference_cell() {
+                let value = match reference.value_cloned() {
+                    Value::Array(nested) => {
+                        self.apply_filter_array(nested, filter, options, span)?
+                    }
+                    value => self.apply_filter_single(value, filter, options, span)?,
+                };
+                reference.set_value(value.clone());
+                filtered.insert_reference(entry.key.clone(), reference);
+            } else {
+                let value = match entry.value_cloned() {
+                    Value::Array(nested) => {
+                        self.apply_filter_array(nested, filter, options, span)?
+                    }
+                    value => self.apply_filter_single(value, filter, options, span)?,
+                };
+                filtered.insert(entry.key.clone(), value);
+            }
         }
         Ok(Value::Array(filtered))
+    }
+
+    fn apply_filter_slot(
+        &mut self,
+        slot: &ArraySlot,
+        filter: i64,
+        options: &FilterOptions,
+        span: Span,
+    ) -> CompileResult<Value> {
+        match slot.value_cloned() {
+            Value::Array(array) if options.flags & PHP_FILTER_REQUIRE_ARRAY != 0 => {
+                self.apply_filter_array(array, filter, options, span)
+            }
+            Value::Array(_) if options.flags & PHP_FILTER_FORCE_ARRAY != 0 => {
+                self.apply_filter_value(slot.value_cloned(), filter, options, span)
+            }
+            value => self.apply_filter_value(value, filter, options, span),
+        }
     }
 
     fn apply_filter_single(
         &mut self,
         value: Value,
         filter: i64,
-        flags: i64,
+        options: &FilterOptions,
         span: Span,
     ) -> CompileResult<Value> {
+        let flags = options.flags;
         match filter {
             PHP_FILTER_UNSAFE_RAW => value
                 .try_echo_string()
+                .map(|value| filter_sanitize_unsafe_raw(&value, flags))
                 .map(Value::String)
                 .map_err(|error| runtime_error(span, error)),
             PHP_FILTER_SANITIZE_SPECIAL_CHARS => value
                 .try_echo_string()
-                .map(|value| Value::String(filter_sanitize_special_chars(&value)))
+                .map(|value| Value::String(filter_sanitize_special_chars(&value, flags)))
                 .map_err(|error| runtime_error(span, error)),
-            PHP_FILTER_VALIDATE_INT => Ok(filter_validate_int(&value)
+            PHP_FILTER_SANITIZE_FULL_SPECIAL_CHARS => value
+                .try_echo_string()
+                .map(|value| Value::String(filter_sanitize_full_special_chars(&value)))
+                .map_err(|error| runtime_error(span, error)),
+            PHP_FILTER_SANITIZE_STRING => value
+                .try_echo_string()
+                .map(|value| Value::String(filter_sanitize_string(&value, flags)))
+                .map_err(|error| runtime_error(span, error)),
+            PHP_FILTER_SANITIZE_ENCODED => value
+                .try_echo_string()
+                .map(|value| Value::String(filter_sanitize_encoded(&value)))
+                .map_err(|error| runtime_error(span, error)),
+            PHP_FILTER_SANITIZE_EMAIL => value
+                .try_echo_string()
+                .map(|value| Value::String(filter_sanitize_email(&value)))
+                .map_err(|error| runtime_error(span, error)),
+            PHP_FILTER_SANITIZE_URL => value
+                .try_echo_string()
+                .map(|value| Value::String(filter_sanitize_url(&value)))
+                .map_err(|error| runtime_error(span, error)),
+            PHP_FILTER_SANITIZE_NUMBER_INT => value
+                .try_echo_string()
+                .map(|value| Value::String(filter_sanitize_number_int(&value)))
+                .map_err(|error| runtime_error(span, error)),
+            PHP_FILTER_SANITIZE_NUMBER_FLOAT => value
+                .try_echo_string()
+                .map(|value| Value::String(filter_sanitize_number_float(&value, flags)))
+                .map_err(|error| runtime_error(span, error)),
+            PHP_FILTER_SANITIZE_ADD_SLASHES => value
+                .try_echo_string()
+                .map(|value| Value::String(filter_sanitize_add_slashes(&value)))
+                .map_err(|error| runtime_error(span, error)),
+            PHP_FILTER_VALIDATE_INT => Ok(filter_validate_int(&value, flags)
+                .and_then(|value| filter_apply_int_options(value, options))
                 .map(Value::Int)
-                .unwrap_or_else(|| filter_failure_value(flags))),
-            PHP_FILTER_VALIDATE_FLOAT => Ok(filter_validate_float(&value)
-                .map(Value::Float)
-                .unwrap_or_else(|| filter_failure_value(flags))),
+                .unwrap_or_else(|| filter_default_or_failure(options, flags))),
+            PHP_FILTER_VALIDATE_FLOAT => {
+                let validated = filter_validate_float_with_options(&value, options, span)?;
+                Ok(validated
+                    .map(Value::Float)
+                    .unwrap_or_else(|| filter_default_or_failure(options, flags)))
+            }
             PHP_FILTER_VALIDATE_BOOL => Ok(filter_validate_bool(&value)
                 .map(Value::Bool)
+                .unwrap_or_else(|| filter_default_or_failure(options, flags))),
+            PHP_FILTER_VALIDATE_REGEXP => Ok(self
+                .filter_validate_regexp(&value, options, span)?
                 .unwrap_or_else(|| filter_failure_value(flags))),
-            PHP_FILTER_VALIDATE_REGEXP
-            | PHP_FILTER_VALIDATE_DOMAIN
-            | PHP_FILTER_VALIDATE_URL
-            | PHP_FILTER_VALIDATE_EMAIL
-            | PHP_FILTER_VALIDATE_IP
-            | PHP_FILTER_VALIDATE_MAC => Ok(filter_failure_value(flags)),
+            PHP_FILTER_VALIDATE_DOMAIN => Ok(filter_validate_domain(&value)
+                .map(Value::String)
+                .unwrap_or_else(|| filter_default_or_failure(options, flags))),
+            PHP_FILTER_VALIDATE_URL => Ok(filter_validate_url(&value, flags)
+                .map(Value::String)
+                .unwrap_or_else(|| filter_default_or_failure(options, flags))),
+            PHP_FILTER_VALIDATE_EMAIL => Ok(filter_validate_email(&value)
+                .map(Value::String)
+                .unwrap_or_else(|| filter_default_or_failure(options, flags))),
+            PHP_FILTER_VALIDATE_IP => Ok(filter_validate_ip(&value, flags)
+                .map(Value::String)
+                .unwrap_or_else(|| filter_default_or_failure(options, flags))),
+            PHP_FILTER_VALIDATE_MAC => Ok(filter_validate_mac(&value)
+                .map(Value::String)
+                .unwrap_or_else(|| filter_default_or_failure(options, flags))),
+            PHP_FILTER_CALLBACK => self.filter_callback(value, options, span),
             _ => Ok(filter_failure_value(flags)),
         }
     }
+
+    fn filter_validate_regexp(
+        &mut self,
+        value: &Value,
+        options: &FilterOptions,
+        span: Span,
+    ) -> CompileResult<Option<Value>> {
+        let Some(Value::Array(options_array)) = options.options.as_ref() else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "filter_var()",
+                    "filter_var(): \"regexp\" option is missing",
+                ),
+            ));
+        };
+        let Some(Value::String(pattern)) = options_array.get_cloned("regexp") else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "filter_var()",
+                    "filter_var(): \"regexp\" option is missing",
+                ),
+            ));
+        };
+        let subject = value
+            .try_echo_string()
+            .map_err(|error| runtime_error(span, error))?;
+        let pattern = BoundedPregPattern::parse(&pattern).map_err(|message| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call("filter_var()", message),
+            )
+        })?;
+        Ok(pattern.matches(&subject).then_some(Value::String(subject)))
+    }
+
+    fn filter_callback(
+        &mut self,
+        value: Value,
+        options: &FilterOptions,
+        span: Span,
+    ) -> CompileResult<Value> {
+        if options.flags & PHP_FILTER_REQUIRE_SCALAR != 0 && matches!(value, Value::Array(_)) {
+            return Ok(Value::Bool(false));
+        }
+        let Some(callback) = options.options.as_ref() else {
+            return Err(filter_callback_type_error(span));
+        };
+        let arg = value
+            .try_echo_string()
+            .map(Value::String)
+            .map_err(|error| runtime_error(span, error))?;
+        match callback {
+            Value::String(callback_name) => {
+                if callback_name.is_empty() {
+                    return Err(filter_callback_type_error(span));
+                }
+                if let Some((class_name, method_name)) =
+                    static_method_callable_string(callback_name)
+                {
+                    let callback =
+                        static_method_array_callable_value(class_name, method_name, span)?;
+                    return self.call_array_map_array_callable_with_values(
+                        &callback,
+                        vec![arg],
+                        span,
+                    );
+                }
+                if let Some(error) = forbidden_dynamic_builtin_call_error(callback_name, span) {
+                    return Err(error);
+                }
+                let callable = self
+                    .lookup_function(callback_name)
+                    .ok_or_else(|| filter_callback_type_error(span))?;
+                if let Callable::User(function) = &callable {
+                    if self.emit_filter_callback_reference_warnings(function.as_ref(), 1, span)? {
+                        return Ok(Value::Null);
+                    }
+                }
+                self.call_array_map_resolved_callable_with_values(callable, vec![arg], span)
+            }
+            Value::Array(callback) => {
+                self.call_array_map_array_callable_with_values(callback, vec![arg], span)
+            }
+            Value::Closure(closure) => self.invoke_closure_value_with_extra_policy(
+                closure.clone(),
+                vec![arg],
+                span,
+                "filter_var()",
+                true,
+            ),
+            _ => Err(filter_callback_type_error(span)),
+        }
+    }
+
+    fn emit_filter_callback_reference_warnings(
+        &mut self,
+        function: &FunctionDecl,
+        actual: usize,
+        span: Span,
+    ) -> CompileResult<bool> {
+        if !function
+            .params
+            .iter()
+            .take(actual)
+            .any(|param| param.by_reference)
+        {
+            return Ok(false);
+        }
+        self.emit_call_user_func_reference_parameter_warnings(function, actual, span)?;
+        Ok(true)
+    }
 }
 
-fn filter_sanitize_special_chars(value: &str) -> String {
+fn filter_sanitize_unsafe_raw(value: &str, flags: i64) -> String {
+    if flags & PHP_FILTER_FLAG_ENCODE_AMP == 0 {
+        return value.to_string();
+    }
+    value.replace('&', "&#38;")
+}
+
+fn filter_sanitize_special_chars(value: &str, flags: i64) -> String {
     let mut sanitized = String::with_capacity(value.len());
     for ch in value.chars() {
         match ch {
@@ -120143,15 +120562,156 @@ fn filter_sanitize_special_chars(value: &str) -> String {
             '\'' => sanitized.push_str("&#39;"),
             '<' => sanitized.push_str("&#60;"),
             '>' => sanitized.push_str("&#62;"),
+            ch if (ch as u32) <= 31 && flags & PHP_FILTER_FLAG_ENCODE_LOW != 0 => {
+                sanitized.push_str(&format!("&#{};", ch as u32))
+            }
+            ch if !ch.is_ascii() && flags & PHP_FILTER_FLAG_ENCODE_HIGH != 0 => {
+                for byte in ch.to_string().as_bytes() {
+                    sanitized.push_str(&format!("&#{byte};"));
+                }
+            }
+            ch => sanitized.push(ch),
+        }
+    }
+    sanitized
+}
+
+fn filter_sanitize_full_special_chars(value: &str) -> String {
+    let mut sanitized = String::with_capacity(value.len());
+    for ch in value.chars() {
+        match ch {
+            '&' => sanitized.push_str("&amp;"),
+            '"' => sanitized.push_str("&quot;"),
+            '\'' => sanitized.push_str("&#039;"),
+            '<' => sanitized.push_str("&lt;"),
+            '>' => sanitized.push_str("&gt;"),
             _ => sanitized.push(ch),
         }
     }
     sanitized
 }
 
-#[derive(Clone, Copy)]
+fn filter_sanitize_string(value: &str, flags: i64) -> String {
+    let mut output = String::new();
+    let mut in_tag = false;
+    let mut nested_tag = false;
+    for ch in value.chars() {
+        match ch {
+            '<' if in_tag => nested_tag = true,
+            '<' => {
+                in_tag = true;
+                nested_tag = false;
+            }
+            '>' if in_tag && nested_tag => nested_tag = false,
+            '>' if in_tag => in_tag = false,
+            ch if in_tag => {
+                let _ = ch;
+            }
+            '&' if flags & PHP_FILTER_FLAG_ENCODE_AMP != 0 => output.push_str("&#38;"),
+            '\'' if flags & PHP_FILTER_FLAG_NO_ENCODE_QUOTES == 0 => output.push_str("&#39;"),
+            '"' if flags & PHP_FILTER_FLAG_NO_ENCODE_QUOTES == 0 => output.push_str("&#34;"),
+            ch => output.push(ch),
+        }
+    }
+    output
+}
+
+fn filter_sanitize_encoded(value: &str) -> String {
+    let mut output = String::new();
+    for byte in value.as_bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(*byte, b'-' | b'_' | b'.') {
+            output.push(*byte as char);
+        } else {
+            output.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    output
+}
+
+fn filter_sanitize_email(value: &str) -> String {
+    value
+        .chars()
+        .filter(|ch| {
+            ch.is_ascii_alphanumeric()
+                || matches!(
+                    *ch,
+                    '!' | '#'
+                        | '$'
+                        | '%'
+                        | '&'
+                        | '\''
+                        | '*'
+                        | '+'
+                        | '-'
+                        | '='
+                        | '?'
+                        | '^'
+                        | '_'
+                        | '`'
+                        | '{'
+                        | '|'
+                        | '}'
+                        | '~'
+                        | '@'
+                        | '.'
+                        | '['
+                        | ']'
+                )
+        })
+        .collect()
+}
+
+fn filter_sanitize_url(value: &str) -> String {
+    value
+        .chars()
+        .filter(|ch| ch.is_ascii() && !ch.is_ascii_control() && !ch.is_ascii_whitespace())
+        .collect()
+}
+
+fn filter_sanitize_number_int(value: &str) -> String {
+    value
+        .chars()
+        .filter(|ch| ch.is_ascii_digit() || matches!(*ch, '+' | '-'))
+        .collect()
+}
+
+fn filter_sanitize_number_float(value: &str, flags: i64) -> String {
+    value
+        .chars()
+        .filter(|ch| {
+            ch.is_ascii_digit()
+                || matches!(*ch, '+' | '-')
+                || (*ch == '.' && flags & PHP_FILTER_FLAG_ALLOW_FRACTION != 0)
+                || (*ch == ',' && flags & PHP_FILTER_FLAG_ALLOW_THOUSAND != 0)
+                || (matches!(*ch, 'e' | 'E') && flags & PHP_FILTER_FLAG_ALLOW_SCIENTIFIC != 0)
+        })
+        .collect()
+}
+
+fn filter_sanitize_add_slashes(value: &str) -> String {
+    let mut output = String::new();
+    for ch in value.chars() {
+        match ch {
+            '\0' => output.push_str("\\0"),
+            '\'' => output.push_str("\\'"),
+            '"' => output.push_str("\\\""),
+            '\\' => output.push_str("\\\\"),
+            ch => output.push(ch),
+        }
+    }
+    output
+}
+
+#[derive(Clone, Default)]
 struct FilterOptions {
     flags: i64,
+    options: Option<Value>,
+    default: Option<Value>,
+}
+
+struct FilterDescriptor {
+    filter: i64,
+    options: FilterOptions,
 }
 
 const PHP_FILTER_NAME_IDS: &[(&str, i64)] = &[
@@ -120199,36 +120759,86 @@ fn filter_id_is_known(filter: i64) -> bool {
         || filter == PHP_FILTER_VALIDATE_BOOL
 }
 
+fn filter_descriptor_from_value(
+    value: &Value,
+    function: &str,
+    span: Span,
+) -> CompileResult<FilterDescriptor> {
+    match value {
+        Value::Int(filter) => {
+            if !filter_id_is_known(*filter) {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        function,
+                        format!("Unknown filter with ID {filter}"),
+                    ),
+                ));
+            }
+            Ok(FilterDescriptor {
+                filter: *filter,
+                options: FilterOptions::default(),
+            })
+        }
+        Value::Array(options) => {
+            let filter = match options.get_cloned("filter") {
+                Some(Value::Int(filter)) => filter,
+                Some(Value::String(name)) => {
+                    filter_id_for_name(&name).unwrap_or(PHP_FILTER_DEFAULT)
+                }
+                Some(other) => {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            function,
+                            format!("filter must be int or string, got {}", other.type_name()),
+                        ),
+                    ))
+                }
+                None => PHP_FILTER_DEFAULT,
+            };
+            if !filter_id_is_known(filter) {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        function,
+                        format!("Unknown filter with ID {filter}"),
+                    ),
+                ));
+            }
+            Ok(FilterDescriptor {
+                filter,
+                options: filter_options_from_array(options, function, span)?,
+            })
+        }
+        other => Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                format!(
+                    "filter descriptor must be int or array in the current subset, got {}",
+                    other.type_name()
+                ),
+            ),
+        )),
+    }
+}
+
 fn filter_options_from_value(
     value: Option<&Value>,
     function: &str,
     span: Span,
 ) -> CompileResult<FilterOptions> {
     let Some(value) = value else {
-        return Ok(FilterOptions { flags: 0 });
+        return Ok(FilterOptions::default());
     };
 
     match value {
-        Value::Int(flags) => Ok(FilterOptions { flags: *flags }),
-        Value::Array(options) => {
-            let flags = match options.get_cloned("flags") {
-                Some(Value::Int(flags)) => flags,
-                Some(other) => {
-                    return Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            function,
-                            format!(
-                                "options flags must be int in the current subset, got {}",
-                                other.type_name()
-                            ),
-                        ),
-                    ));
-                }
-                None => 0,
-            };
-            Ok(FilterOptions { flags })
-        }
+        Value::Int(flags) => Ok(FilterOptions {
+            flags: *flags,
+            ..FilterOptions::default()
+        }),
+        Value::Array(options) => filter_options_from_array(options, function, span),
         other => Err(runtime_error(
             span,
             RuntimeError::unsupported_call(
@@ -120240,6 +120850,34 @@ fn filter_options_from_value(
             ),
         )),
     }
+}
+
+fn filter_options_from_array(
+    options: &PhpArray,
+    function: &str,
+    span: Span,
+) -> CompileResult<FilterOptions> {
+    let flags = match options.get_cloned("flags") {
+        Some(Value::Int(flags)) => flags,
+        Some(other) => {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function,
+                    format!(
+                        "options flags must be int in the current subset, got {}",
+                        other.type_name()
+                    ),
+                ),
+            ));
+        }
+        None => 0,
+    };
+    Ok(FilterOptions {
+        flags,
+        options: options.get_cloned("options"),
+        default: options.get_cloned("default"),
+    })
 }
 
 fn filter_input_global_name(input_type: i64) -> Option<&'static str> {
@@ -120259,20 +120897,92 @@ fn filter_failure_value(flags: i64) -> Value {
     }
 }
 
-fn filter_validate_int(value: &Value) -> Option<i64> {
+fn filter_default_or_failure(options: &FilterOptions, flags: i64) -> Value {
+    options
+        .default
+        .clone()
+        .unwrap_or_else(|| filter_failure_value(flags))
+}
+
+fn filter_validate_int(value: &Value, flags: i64) -> Option<i64> {
     match value {
         Value::Int(value) => Some(*value),
-        Value::String(value) => parse_filter_int(value),
+        Value::String(value) => parse_filter_int(value, flags),
         _ => None,
     }
 }
 
-fn parse_filter_int(value: &str) -> Option<i64> {
+fn parse_filter_int(value: &str, flags: i64) -> Option<i64> {
     let trimmed = value.trim();
     if trimmed.is_empty() {
         return None;
     }
-    trimmed.parse::<i64>().ok()
+    if trimmed.starts_with('-') {
+        return parse_filter_decimal_int(trimmed);
+    }
+    let unsigned = trimmed.strip_prefix('+').unwrap_or(trimmed);
+    if flags & PHP_FILTER_FLAG_ALLOW_HEX != 0 {
+        if let Some(hex) = unsigned
+            .strip_prefix("0x")
+            .or_else(|| unsigned.strip_prefix("0X"))
+        {
+            if hex.is_empty() {
+                return None;
+            }
+            return i64::from_str_radix(hex, 16).ok();
+        }
+    }
+    if flags & PHP_FILTER_FLAG_ALLOW_OCTAL != 0 {
+        if let Some(octal) = unsigned
+            .strip_prefix("0o")
+            .or_else(|| unsigned.strip_prefix("0O"))
+        {
+            if octal.is_empty() {
+                return None;
+            }
+            return i64::from_str_radix(octal, 8).ok();
+        }
+        if unsigned.len() > 1 && unsigned.starts_with('0') {
+            return i64::from_str_radix(&unsigned[1..], 8).ok();
+        }
+    }
+    parse_filter_decimal_int(trimmed)
+}
+
+fn parse_filter_decimal_int(value: &str) -> Option<i64> {
+    let unsigned = value
+        .strip_prefix('-')
+        .or_else(|| value.strip_prefix('+'))
+        .unwrap_or(value);
+    if unsigned.len() > 1 && unsigned.starts_with('0') {
+        return None;
+    }
+    value.parse::<i64>().ok()
+}
+
+fn filter_apply_int_options(value: i64, options: &FilterOptions) -> Option<i64> {
+    let Some(Value::Array(options)) = options.options.as_ref() else {
+        return Some(value);
+    };
+    if let Some(min) = options.get_cloned("min_range").and_then(filter_option_int) {
+        if value < min {
+            return None;
+        }
+    }
+    if let Some(max) = options.get_cloned("max_range").and_then(filter_option_int) {
+        if value > max {
+            return None;
+        }
+    }
+    Some(value)
+}
+
+fn filter_option_int(value: Value) -> Option<i64> {
+    match value {
+        Value::Int(value) => Some(value),
+        Value::String(value) => value.parse::<i64>().ok(),
+        _ => None,
+    }
 }
 
 fn filter_validate_float(value: &Value) -> Option<f64> {
@@ -120287,6 +120997,52 @@ fn filter_validate_float(value: &Value) -> Option<f64> {
     }
 }
 
+fn filter_validate_float_with_options(
+    value: &Value,
+    options: &FilterOptions,
+    span: Span,
+) -> CompileResult<Option<f64>> {
+    let Value::String(input) = value else {
+        return Ok(filter_validate_float(value));
+    };
+    let decimal = match options.options.as_ref() {
+        Some(Value::Array(options)) => match options.get_cloned("decimal") {
+            Some(Value::String(decimal)) => {
+                let mut chars = decimal.chars();
+                let Some(ch) = chars.next() else {
+                    return Err(filter_decimal_value_error(span));
+                };
+                if chars.next().is_some() {
+                    return Err(filter_decimal_value_error(span));
+                }
+                ch
+            }
+            Some(Value::Int(value)) if (0..=9).contains(&value) => {
+                char::from_digit(value as u32, 10).unwrap_or('.')
+            }
+            Some(_) => return Err(filter_decimal_value_error(span)),
+            None => '.',
+        },
+        _ => '.',
+    };
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return Ok(None);
+    }
+    let normalized = if decimal != '.' {
+        if trimmed.contains('.') {
+            return Ok(None);
+        }
+        trimmed.replace(decimal, ".")
+    } else {
+        trimmed.to_string()
+    };
+    Ok(normalized
+        .parse::<f64>()
+        .ok()
+        .filter(|value| value.is_finite()))
+}
+
 fn filter_validate_bool(value: &Value) -> Option<bool> {
     match value {
         Value::Bool(value) => Some(*value),
@@ -120299,6 +121055,242 @@ fn filter_validate_bool(value: &Value) -> Option<bool> {
         },
         _ => None,
     }
+}
+
+fn filter_validate_email(value: &Value) -> Option<String> {
+    let value = value.try_echo_string().ok()?;
+    let (local, domain) = value.split_once('@')?;
+    if local.is_empty() || domain.is_empty() || domain.contains('@') {
+        return None;
+    }
+    if local.starts_with('.') || local.ends_with('.') || local.contains("..") {
+        return None;
+    }
+    if domain.starts_with('.') || domain.ends_with('.') || domain.contains("..") {
+        return None;
+    }
+    for label in domain.split('.') {
+        if label.is_empty()
+            || label.starts_with('-')
+            || label.ends_with('-')
+            || !label
+                .chars()
+                .all(|ch| ch.is_ascii_alphanumeric() || ch == '-')
+        {
+            return None;
+        }
+    }
+    if !domain.contains('.') {
+        return None;
+    }
+    if domain
+        .rsplit('.')
+        .next()?
+        .chars()
+        .all(|ch| ch.is_ascii_digit())
+    {
+        return None;
+    }
+    if !local.chars().all(|ch| {
+        ch.is_ascii_alphanumeric()
+            || matches!(
+                ch,
+                '!' | '#'
+                    | '$'
+                    | '%'
+                    | '&'
+                    | '\''
+                    | '*'
+                    | '+'
+                    | '-'
+                    | '/'
+                    | '='
+                    | '?'
+                    | '^'
+                    | '_'
+                    | '`'
+                    | '{'
+                    | '|'
+                    | '}'
+                    | '~'
+                    | '.'
+            )
+    }) {
+        return None;
+    }
+    Some(value)
+}
+
+fn filter_validate_domain(value: &Value) -> Option<String> {
+    let value = value.try_echo_string().ok()?;
+    (!value.is_empty() && !value.chars().any(|ch| ch.is_ascii_control())).then_some(value)
+}
+
+fn filter_validate_url(value: &Value, flags: i64) -> Option<String> {
+    let value = value.try_echo_string().ok()?;
+    if value.is_empty()
+        || value.contains(['\r', '\n'])
+        || value.chars().any(|ch| ch.is_ascii_whitespace())
+    {
+        return None;
+    }
+    let (scheme, rest) = value.split_once(':')?;
+    if scheme.is_empty()
+        || !scheme
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '+' | '-' | '.'))
+    {
+        return None;
+    }
+    match scheme.to_ascii_lowercase().as_str() {
+        "http" | "https" | "ftp" => {
+            let authority_path = rest.strip_prefix("//")?;
+            let authority_end = authority_path
+                .find(['/', '?', '#'])
+                .unwrap_or(authority_path.len());
+            let authority = &authority_path[..authority_end];
+            if authority.is_empty() {
+                return None;
+            }
+            let path_query = &authority_path[authority_end..];
+            if flags & PHP_FILTER_FLAG_PATH_REQUIRED != 0 && !path_query.starts_with('/') {
+                return None;
+            }
+            if flags & PHP_FILTER_FLAG_QUERY_REQUIRED != 0 && !path_query.contains('?') {
+                return None;
+            }
+            let host_port = authority
+                .rsplit_once('@')
+                .map_or(authority, |(_, right)| right);
+            if host_port.starts_with('[') {
+                let end = host_port.find(']')?;
+                let host = &host_port[1..end];
+                host.parse::<Ipv6Addr>().ok()?;
+                if let Some(port) = host_port[end + 1..].strip_prefix(':') {
+                    filter_url_port_is_valid(port)?;
+                } else if host_port.len() != end + 1 {
+                    return None;
+                }
+            } else {
+                let (host, port) = match host_port.rsplit_once(':') {
+                    Some((host, port))
+                        if !port.is_empty() && port.chars().all(|ch| ch.is_ascii_digit()) =>
+                    {
+                        (host, Some(port))
+                    }
+                    Some((_host, port)) if !port.is_empty() => return None,
+                    _ => (host_port, None),
+                };
+                filter_url_host_is_valid(host).then_some(())?;
+                if let Some(port) = port {
+                    filter_url_port_is_valid(port)?;
+                }
+            }
+            Some(value)
+        }
+        "file" => value.starts_with("file://").then_some(value),
+        "mailto" | "news" => (!rest.is_empty()).then_some(value),
+        _ => None,
+    }
+}
+
+fn filter_url_host_is_valid(host: &str) -> bool {
+    if host.is_empty() || host.contains('_') {
+        return false;
+    }
+    let trimmed = host.trim_end_matches('.');
+    if trimmed.is_empty() || trimmed.len() > 253 {
+        return false;
+    }
+    if trimmed.parse::<Ipv4Addr>().is_ok() {
+        return true;
+    }
+    for label in trimmed.split('.') {
+        if label.is_empty()
+            || label.len() > 63
+            || label.starts_with('-')
+            || label.ends_with('-')
+            || !label
+                .chars()
+                .all(|ch| ch.is_ascii_alphanumeric() || ch == '-')
+        {
+            return false;
+        }
+    }
+    true
+}
+
+fn filter_url_port_is_valid(port: &str) -> Option<()> {
+    let port = port.parse::<u32>().ok()?;
+    (port <= 65535).then_some(())
+}
+
+fn filter_validate_ip(value: &Value, flags: i64) -> Option<String> {
+    let value = value.try_echo_string().ok()?;
+    if flags & PHP_FILTER_FLAG_IPV6 == 0 {
+        if let Ok(addr) = value.parse::<Ipv4Addr>() {
+            if flags & PHP_FILTER_FLAG_NO_PRIV_RANGE != 0 && ipv4_is_private(addr) {
+                return None;
+            }
+            if flags & PHP_FILTER_FLAG_NO_RES_RANGE != 0 && ipv4_is_reserved(addr) {
+                return None;
+            }
+            return Some(value);
+        }
+    }
+    if flags & PHP_FILTER_FLAG_IPV4 == 0 {
+        if let Ok(addr) = value.parse::<Ipv6Addr>() {
+            if flags & PHP_FILTER_FLAG_NO_RES_RANGE != 0 && addr.is_loopback() {
+                return None;
+            }
+            return Some(value);
+        }
+    }
+    None
+}
+
+fn ipv4_is_private(addr: Ipv4Addr) -> bool {
+    let octets = addr.octets();
+    octets[0] == 10
+        || (octets[0] == 172 && (16..=31).contains(&octets[1]))
+        || (octets[0] == 192 && octets[1] == 168)
+}
+
+fn ipv4_is_reserved(addr: Ipv4Addr) -> bool {
+    let octets = addr.octets();
+    octets[0] == 127 || octets == [255, 255, 255, 255]
+}
+
+fn filter_validate_mac(value: &Value) -> Option<String> {
+    let value = value.try_echo_string().ok()?;
+    let parts = value.split(':').collect::<Vec<_>>();
+    if parts.len() != 6 {
+        return None;
+    }
+    parts
+        .iter()
+        .all(|part| part.len() == 2 && part.chars().all(|ch| ch.is_ascii_hexdigit()))
+        .then_some(value)
+}
+
+fn filter_decimal_value_error(span: Span) -> Diagnostic {
+    runtime_error(
+        span,
+        RuntimeError::unsupported_call(
+            "filter_var()",
+            "filter_var(): \"decimal\" option must be one character long",
+        ),
+    )
+}
+
+fn filter_callback_type_error(span: Span) -> Diagnostic {
+    runtime_error(
+        span,
+        RuntimeError::unsupported_call(
+            "filter_var()",
+            "filter_var(): Option must be a valid callback",
+        ),
+    )
 }
 
 fn call_microtime(args: &[Value], span: Span) -> CompileResult<Value> {
