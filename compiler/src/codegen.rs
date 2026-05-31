@@ -66545,6 +66545,7 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "get_required_files",
     "set_include_path",
     "min",
+    "max",
     "rand",
     "uniqid",
     "hash",

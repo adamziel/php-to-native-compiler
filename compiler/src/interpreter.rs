@@ -80828,7 +80828,8 @@ impl Interpreter {
                 let previous = std::mem::replace(&mut self.include_path, path.clone());
                 Ok(Value::String(previous))
             }
-            "min" => call_min(&args, span),
+            "min" => call_min_max("min()", MinMaxOperation::Min, &args, span),
+            "max" => call_min_max("max()", MinMaxOperation::Max, &args, span),
             "rand" => call_rand(&args, span),
             "uniqid" => call_uniqid(&args, span),
             "hash" => call_hash(&args, span),
@@ -99407,6 +99408,7 @@ fn is_builtin(name: &str) -> bool {
             | "get_required_files"
             | "set_include_path"
             | "min"
+            | "max"
             | "rand"
             | "uniqid"
             | "hash"
@@ -120544,79 +120546,103 @@ fn pow_number_arg(
     }
 }
 
-fn call_min(args: &[Value], span: Span) -> CompileResult<Value> {
-    if matches!(args, [Value::Array(_)]) {
-        return Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                "min()",
-                "array argument forms are not implemented in the current subset",
-            ),
-        ));
-    }
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MinMaxOperation {
+    Min,
+    Max,
+}
 
-    if args.len() < 2 {
-        return Err(runtime_error(
-            span,
-            RuntimeError::arity_mismatch("min()", ArityExpectation::AtLeast(2), args.len()),
-        ));
-    }
-
-    let mut minimum = match &args[0] {
-        Value::Int(value) => *value,
-        Value::Array(_) => {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "min()",
-                    "array argument forms are not implemented in the current subset",
-                ),
-            ));
-        }
-        other => {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "min()",
-                    format!(
-                        "arguments must be integers in the current subset, got {}",
-                        other.type_name()
+fn call_min_max(
+    callable: &'static str,
+    operation: MinMaxOperation,
+    args: &[Value],
+    span: Span,
+) -> CompileResult<Value> {
+    let values = match args {
+        [Value::Array(array)] => {
+            if array.is_empty() {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        callable,
+                        "empty array argument forms are not implemented in the current subset",
                     ),
-                ),
+                ));
+            }
+            array
+                .entries()
+                .iter()
+                .map(ArrayEntry::value_cloned)
+                .collect::<Vec<_>>()
+        }
+        [_] => {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(callable, ArityExpectation::AtLeast(2), args.len()),
             ));
         }
+        [] => {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(callable, ArityExpectation::AtLeast(1), args.len()),
+            ));
+        }
+        _ => args.to_vec(),
     };
 
-    for value in &args[1..] {
-        match value {
-            Value::Int(value) => {
-                minimum = minimum.min(*value);
-            }
-            Value::Array(_) => {
-                return Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "min()",
-                        "array argument forms are not implemented in the current subset",
-                    ),
-                ));
-            }
-            other => {
-                return Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "min()",
-                        format!(
-                            "arguments must be integers in the current subset, got {}",
-                            other.type_name()
-                        ),
-                    ),
-                ));
-            }
+    let mut selected = values
+        .first()
+        .cloned()
+        .expect("min/max input has at least one value after validation");
+
+    for value in values.iter().skip(1) {
+        let prefer_candidate = match operation {
+            MinMaxOperation::Min => min_max_value_is_less(value, &selected, span)?,
+            MinMaxOperation::Max => min_max_value_is_greater(value, &selected, span)?,
+        };
+        if prefer_candidate {
+            selected = value.clone();
         }
     }
 
-    Ok(Value::Int(minimum))
+    Ok(selected)
+}
+
+fn min_max_value_is_less(left: &Value, right: &Value, span: Span) -> CompileResult<bool> {
+    min_max_compare_values(left, right, span).map(|ordering| ordering == Ordering::Less)
+}
+
+fn min_max_value_is_greater(left: &Value, right: &Value, span: Span) -> CompileResult<bool> {
+    min_max_compare_values(left, right, span).map(|ordering| ordering == Ordering::Greater)
+}
+
+fn min_max_compare_values(left: &Value, right: &Value, span: Span) -> CompileResult<Ordering> {
+    match (left, right) {
+        (Value::Array(_), Value::Array(_)) => Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "min()/max()",
+                "array-to-array ordering is not implemented in the current subset",
+            ),
+        )),
+        (Value::Array(_), _) => Ok(Ordering::Greater),
+        (_, Value::Array(_)) => Ok(Ordering::Less),
+        _ => {
+            if left
+                .php_cmp_checked(right, Comparison::Lt)
+                .map_err(|error| runtime_error(span, error))?
+            {
+                Ok(Ordering::Less)
+            } else if left
+                .php_cmp_checked(right, Comparison::Gt)
+                .map_err(|error| runtime_error(span, error))?
+            {
+                Ok(Ordering::Greater)
+            } else {
+                Ok(Ordering::Equal)
+            }
+        }
+    }
 }
 
 fn call_rand(args: &[Value], span: Span) -> CompileResult<Value> {
