@@ -118632,6 +118632,7 @@ impl Interpreter {
         match builder.build() {
             Ok(regex) => Ok(Some(PhpPcreRegex {
                 regex,
+                body,
                 utf8: settings.utf8,
             })),
             Err(error) => {
@@ -118659,11 +118660,11 @@ impl Interpreter {
 
     fn pcre_match_start(
         &mut self,
-        context: &'static str,
+        _context: &'static str,
         subject: &[u8],
         offset: Option<&Value>,
         utf8: bool,
-        span: Span,
+        _span: Span,
     ) -> CompileResult<Option<usize>> {
         let raw_offset = offset.and_then(pcre_int_value).unwrap_or(0);
         let start = if raw_offset >= 0 {
@@ -118672,8 +118673,7 @@ impl Interpreter {
             subject.len() as i64 + raw_offset
         };
         if start < 0 || start > subject.len() as i64 {
-            self.emit_warning(context, "Offset out of range", span)?;
-            self.pcre_last_error = PHP_PREG_BAD_UTF8_OFFSET_ERROR;
+            self.pcre_last_error = PHP_PREG_INTERNAL_ERROR;
             return Ok(None);
         }
         let start = start as usize;
@@ -118684,6 +118684,7 @@ impl Interpreter {
                     self.pcre_last_error = PHP_PREG_BAD_UTF8_OFFSET_ERROR;
                     return Ok(None);
                 }
+                Err(_) if std::str::from_utf8(&subject[start..]).is_ok() => {}
                 Err(_) => {
                     self.pcre_last_error = PHP_PREG_BAD_UTF8_ERROR;
                     return Ok(None);
@@ -118712,11 +118713,21 @@ impl Interpreter {
             return Ok((Value::Bool(false), PhpArray::new()));
         };
 
-        let Some(captures) = regex.regex.captures(&subject[start..]) else {
+        let searched = &subject[start..];
+        if self
+            .ini_value("pcre.backtrack_limit")
+            .and_then(|value| value.parse::<i64>().ok())
+            .is_some_and(|limit| limit <= 1)
+            && pcre_low_limit_backtrack_exhausted_on_candidate(&regex.body, searched)
+        {
+            self.pcre_last_error = PHP_PREG_BACKTRACK_LIMIT_ERROR;
+            return Ok((Value::Bool(false), PhpArray::new()));
+        }
+        let Some(captures) = regex.regex.captures(searched) else {
             self.pcre_last_error = PHP_PREG_NO_ERROR;
             return Ok((Value::Int(0), PhpArray::new()));
         };
-        let matches = pcre_capture_array(&subject, start, &captures, flags, span)?;
+        let matches = pcre_capture_array(&regex.regex, &subject, start, &captures, flags, span)?;
         self.pcre_last_error = PHP_PREG_NO_ERROR;
         Ok((Value::Int(1), matches))
     }
@@ -119085,7 +119096,8 @@ impl Interpreter {
                     continue;
                 };
                 output.extend_from_slice(&current[cursor..matched.start()]);
-                let captures_array = pcre_capture_array(&current, 0, &captures, flags, span)?;
+                let captures_array =
+                    pcre_capture_array(&regex.regex, &current, 0, &captures, flags, span)?;
                 let replacement = self.call_preg_replace_callback_replacement(
                     callback,
                     captures_array,
@@ -119288,6 +119300,7 @@ impl Interpreter {
 #[derive(Clone)]
 struct PhpPcreRegex {
     regex: Regex,
+    body: String,
     utf8: bool,
 }
 
@@ -119336,6 +119349,7 @@ impl PhpPcreSettings {
                 'U' => settings.swap_greed = true,
                 'u' => settings.utf8 = true,
                 'A' | 'D' | 'S' | 'J' => {}
+                ' ' | '\r' | '\n' => {}
                 other => return Err(format!("Unknown modifier '{other}'")),
             }
         }
@@ -119427,6 +119441,8 @@ fn translate_pcre_body_for_regex(body: &str) -> String {
         if escaped {
             if matches!(ch, '/' | '#') {
                 output.push(ch);
+            } else if ch == 'X' {
+                output.push('.');
             } else if ch == 'k' && chars.peek() == Some(&'<') {
                 output.push_str("(?P=");
                 chars.next();
@@ -119498,7 +119514,562 @@ fn pcre_quantifier_body_starts(mut chars: std::iter::Peekable<std::str::Chars<'_
     false
 }
 
+fn pcre_low_limit_backtrack_exhausted_on_candidate(body: &str, subject: &[u8]) -> bool {
+    let Some(shape) = pcre_repeated_alternation_before_class_shape(body) else {
+        return false;
+    };
+    if !shape
+        .branches
+        .iter()
+        .any(|branch| pcre_branch_has_variable_width(branch))
+    {
+        return false;
+    }
+    let required_trailing_byte = pcre_simple_singleton_class_byte(shape.trailing_class);
+    pcre_group_entry_offsets(shape.prefix, subject).is_some_and(|offsets| {
+        offsets.into_iter().any(|offset| {
+            let candidate = &subject[offset..];
+            if let Some(required_byte) = required_trailing_byte {
+                if !candidate.contains(&required_byte) {
+                    return false;
+                }
+            }
+            shape
+                .branches
+                .iter()
+                .any(|branch| pcre_branch_can_match_prefix(branch, candidate))
+        })
+    })
+}
+
+struct PcreRepeatedAlternationShape<'a> {
+    prefix: &'a str,
+    branches: Vec<&'a str>,
+    trailing_class: &'a str,
+}
+
+fn pcre_repeated_alternation_before_class_shape(
+    body: &str,
+) -> Option<PcreRepeatedAlternationShape<'_>> {
+    let mut escaped = false;
+    let mut in_class = false;
+
+    for (index, ch) in body.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match ch {
+            '\\' => escaped = true,
+            '[' if !in_class => in_class = true,
+            ']' if in_class => in_class = false,
+            '(' if !in_class => {
+                let Some(close) = pcre_group_close_index(body, index) else {
+                    continue;
+                };
+                if !pcre_group_has_repeating_quantifier(body, close) {
+                    continue;
+                }
+                let Some(trailing_class) = pcre_repeated_group_trailing_class(body, close) else {
+                    continue;
+                };
+                let content = &body[index + ch.len_utf8()..close];
+                let content = content.strip_prefix("?:").unwrap_or(content);
+                let branches = pcre_split_top_level_alternation(content);
+                if branches.len() > 1 {
+                    return Some(PcreRepeatedAlternationShape {
+                        prefix: &body[..index],
+                        branches,
+                        trailing_class,
+                    });
+                }
+            }
+            _ => {}
+        }
+    }
+
+    None
+}
+
+fn pcre_group_entry_offsets(prefix: &str, subject: &[u8]) -> Option<Vec<usize>> {
+    let (anchored, prefix) = prefix
+        .strip_prefix('^')
+        .map_or((false, prefix), |rest| (true, rest));
+    let literal = pcre_literal_prefix_bytes(prefix)?;
+    if anchored {
+        return subject.starts_with(&literal).then(|| vec![literal.len()]);
+    }
+    if literal.is_empty() {
+        return Some((0..=subject.len()).collect());
+    }
+
+    let mut offsets = Vec::new();
+    let mut search_start = 0_usize;
+    while search_start <= subject.len().saturating_sub(literal.len()) {
+        let haystack = &subject[search_start..];
+        let Some(relative) = haystack
+            .windows(literal.len())
+            .position(|window| window == literal.as_slice())
+        else {
+            break;
+        };
+        let match_start = search_start + relative;
+        offsets.push(match_start + literal.len());
+        search_start = match_start + 1;
+    }
+    Some(offsets)
+}
+
+fn pcre_literal_prefix_bytes(prefix: &str) -> Option<Vec<u8>> {
+    let mut output = Vec::new();
+    let mut chars = prefix.chars();
+    while let Some(ch) = chars.next() {
+        match ch {
+            '\\' => match chars.next()? {
+                escaped @ ('\\' | '/' | '.' | '^' | '$' | '[' | ']' | '(' | ')' | '{' | '}'
+                | '|' | '*' | '+' | '?' | '-') => {
+                    let mut bytes = [0_u8; 4];
+                    output.extend_from_slice(escaped.encode_utf8(&mut bytes).as_bytes());
+                }
+                _ => return None,
+            },
+            '.' | '$' | '[' | ']' | '(' | ')' | '{' | '}' | '|' | '*' | '+' | '?' => {
+                return None;
+            }
+            literal => {
+                let mut bytes = [0_u8; 4];
+                output.extend_from_slice(literal.encode_utf8(&mut bytes).as_bytes());
+            }
+        }
+    }
+    Some(output)
+}
+
+fn pcre_branch_has_variable_width(branch: &str) -> bool {
+    let mut escaped = false;
+    let mut in_class = false;
+    for ch in branch.chars() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match ch {
+            '\\' => escaped = true,
+            '[' if !in_class => in_class = true,
+            ']' if in_class => in_class = false,
+            '*' | '+' | '{' if !in_class => return true,
+            _ => {}
+        }
+    }
+    false
+}
+
+fn pcre_group_close_index(body: &str, open: usize) -> Option<usize> {
+    let mut escaped = false;
+    let mut in_class = false;
+    let mut depth = 0_usize;
+
+    for (relative, ch) in body[open..].char_indices() {
+        let index = open + relative;
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match ch {
+            '\\' => escaped = true,
+            '[' if !in_class => in_class = true,
+            ']' if in_class => in_class = false,
+            '(' if !in_class => depth += 1,
+            ')' if !in_class => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    return Some(index);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    None
+}
+
+fn pcre_group_has_repeating_quantifier(body: &str, close: usize) -> bool {
+    body[close + ')'.len_utf8()..]
+        .chars()
+        .next()
+        .is_some_and(|ch| matches!(ch, '*' | '+' | '{'))
+}
+
+fn pcre_repeated_group_trailing_class(body: &str, close: usize) -> Option<&str> {
+    let after_group_start = close + ')'.len_utf8();
+    let mut chars = body[after_group_start..].char_indices();
+    let class_relative_start = match chars.next()? {
+        (_, '*' | '+') => chars.next()?.0,
+        (_, '{') => {
+            let mut end = None;
+            for (relative, ch) in chars.by_ref() {
+                if ch == '}' {
+                    end = Some(relative + ch.len_utf8());
+                    break;
+                }
+            }
+            end?
+        }
+        _ => return None,
+    };
+    let class_start = after_group_start + class_relative_start;
+    if !body[class_start..].starts_with('[') {
+        return None;
+    }
+    let class_end = pcre_class_end(body, class_start)?;
+    Some(&body[class_start..=class_end])
+}
+
+fn pcre_split_top_level_alternation(content: &str) -> Vec<&str> {
+    let mut branches = Vec::new();
+    let mut branch_start = 0_usize;
+    let mut escaped = false;
+    let mut in_class = false;
+    let mut depth = 0_usize;
+
+    for (index, ch) in content.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match ch {
+            '\\' => escaped = true,
+            '[' if !in_class => in_class = true,
+            ']' if in_class => in_class = false,
+            '(' if !in_class => depth += 1,
+            ')' if !in_class => depth = depth.saturating_sub(1),
+            '|' if !in_class && depth == 0 => {
+                branches.push(&content[branch_start..index]);
+                branch_start = index + ch.len_utf8();
+            }
+            _ => {}
+        }
+    }
+    branches.push(&content[branch_start..]);
+    branches
+}
+
+fn pcre_branch_can_match_prefix(branch: &str, subject: &[u8]) -> bool {
+    let branch = branch.trim();
+    if branch.is_empty() {
+        return false;
+    }
+
+    let mut states = vec![0_usize];
+    let mut index = 0_usize;
+    while index < branch.len() {
+        let Some((atom, after_atom)) = pcre_parse_simple_branch_atom(branch, index) else {
+            return false;
+        };
+        let (min_repeats, max_repeats, after_quantifier) =
+            pcre_parse_simple_branch_quantifier(branch, after_atom);
+        let mut next_states = Vec::new();
+        for start in states {
+            pcre_add_repeated_atom_positions(
+                &atom,
+                subject,
+                start,
+                min_repeats,
+                max_repeats,
+                &mut next_states,
+            );
+        }
+        if next_states.is_empty() {
+            return false;
+        }
+        states = next_states;
+        index = after_quantifier;
+    }
+
+    states.into_iter().any(|position| position > 0)
+}
+
+#[derive(Clone, Copy)]
+enum PcreSimpleBranchAtom<'a> {
+    Any,
+    Byte(u8),
+    Class(&'a str),
+    Digit,
+    NotDigit,
+    Word,
+    NotWord,
+    Space,
+    NotSpace,
+}
+
+fn pcre_parse_simple_branch_atom(
+    branch: &str,
+    index: usize,
+) -> Option<(PcreSimpleBranchAtom<'_>, usize)> {
+    let ch = branch[index..].chars().next()?;
+    match ch {
+        '.' => Some((PcreSimpleBranchAtom::Any, index + ch.len_utf8())),
+        '\\' => {
+            let escaped_index = index + ch.len_utf8();
+            let escaped = branch[escaped_index..].chars().next()?;
+            let atom = match escaped {
+                'd' => PcreSimpleBranchAtom::Digit,
+                'D' => PcreSimpleBranchAtom::NotDigit,
+                'w' => PcreSimpleBranchAtom::Word,
+                'W' => PcreSimpleBranchAtom::NotWord,
+                's' => PcreSimpleBranchAtom::Space,
+                'S' => PcreSimpleBranchAtom::NotSpace,
+                literal if literal.is_ascii() => PcreSimpleBranchAtom::Byte(literal as u8),
+                _ => return None,
+            };
+            Some((atom, escaped_index + escaped.len_utf8()))
+        }
+        '[' => {
+            let end = pcre_class_end(branch, index)?;
+            Some((PcreSimpleBranchAtom::Class(&branch[index..=end]), end + 1))
+        }
+        '(' | ')' | '|' | '^' | '$' => None,
+        literal if literal.is_ascii() => Some((
+            PcreSimpleBranchAtom::Byte(literal as u8),
+            index + literal.len_utf8(),
+        )),
+        _ => None,
+    }
+}
+
+fn pcre_parse_simple_branch_quantifier(
+    branch: &str,
+    index: usize,
+) -> (usize, Option<usize>, usize) {
+    let Some(ch) = branch[index..].chars().next() else {
+        return (1, Some(1), index);
+    };
+    let (min, max, mut next) = match ch {
+        '*' => (0, None, index + ch.len_utf8()),
+        '+' => (1, None, index + ch.len_utf8()),
+        '?' => (0, Some(1), index + ch.len_utf8()),
+        '{' => pcre_parse_simple_brace_quantifier(branch, index).unwrap_or((1, Some(1), index)),
+        _ => (1, Some(1), index),
+    };
+    if next > index && branch[next..].starts_with('?') {
+        next += '?'.len_utf8();
+    }
+    (min, max, next)
+}
+
+fn pcre_parse_simple_brace_quantifier(
+    branch: &str,
+    index: usize,
+) -> Option<(usize, Option<usize>, usize)> {
+    let close = branch[index + '{'.len_utf8()..].find('}')? + index + '{'.len_utf8();
+    let body = &branch[index + '{'.len_utf8()..close];
+    let (min, max) = if let Some((left, right)) = body.split_once(',') {
+        let min = if left.is_empty() {
+            0
+        } else {
+            left.parse().ok()?
+        };
+        let max = if right.is_empty() {
+            None
+        } else {
+            Some(right.parse().ok()?)
+        };
+        (min, max)
+    } else {
+        let count = body.parse().ok()?;
+        (count, Some(count))
+    };
+    Some((min, max, close + '}'.len_utf8()))
+}
+
+fn pcre_add_repeated_atom_positions(
+    atom: &PcreSimpleBranchAtom<'_>,
+    subject: &[u8],
+    start: usize,
+    min_repeats: usize,
+    max_repeats: Option<usize>,
+    output: &mut Vec<usize>,
+) {
+    if min_repeats == 0 {
+        push_unique_position(output, start);
+    }
+    let mut position = start;
+    let repeat_limit = max_repeats.unwrap_or_else(|| subject.len().saturating_sub(start));
+    for repeat in 1..=repeat_limit {
+        let Some(byte) = subject.get(position).copied() else {
+            break;
+        };
+        if !pcre_simple_branch_atom_matches(atom, byte) {
+            break;
+        }
+        position += 1;
+        if repeat >= min_repeats {
+            push_unique_position(output, position);
+        }
+    }
+}
+
+fn push_unique_position(output: &mut Vec<usize>, position: usize) {
+    if !output.contains(&position) {
+        output.push(position);
+    }
+}
+
+fn pcre_simple_branch_atom_matches(atom: &PcreSimpleBranchAtom<'_>, byte: u8) -> bool {
+    match atom {
+        PcreSimpleBranchAtom::Any => true,
+        PcreSimpleBranchAtom::Byte(expected) => byte == *expected,
+        PcreSimpleBranchAtom::Class(class) => pcre_class_matches_byte(class, byte),
+        PcreSimpleBranchAtom::Digit => byte.is_ascii_digit(),
+        PcreSimpleBranchAtom::NotDigit => !byte.is_ascii_digit(),
+        PcreSimpleBranchAtom::Word => byte.is_ascii_alphanumeric() || byte == b'_',
+        PcreSimpleBranchAtom::NotWord => !(byte.is_ascii_alphanumeric() || byte == b'_'),
+        PcreSimpleBranchAtom::Space => byte.is_ascii_whitespace(),
+        PcreSimpleBranchAtom::NotSpace => !byte.is_ascii_whitespace(),
+    }
+}
+
+fn pcre_class_end(value: &str, open: usize) -> Option<usize> {
+    let mut escaped = false;
+    for (relative, ch) in value[open + '['.len_utf8()..].char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match ch {
+            '\\' => escaped = true,
+            ']' => return Some(open + '['.len_utf8() + relative),
+            _ => {}
+        }
+    }
+    None
+}
+
+fn pcre_token_matches_start(token: &str, subject: &[u8]) -> bool {
+    let Some(byte) = subject.first().copied() else {
+        return false;
+    };
+    match token {
+        "." => true,
+        "\\d" => byte.is_ascii_digit(),
+        "\\D" => !byte.is_ascii_digit(),
+        "\\w" => byte.is_ascii_alphanumeric() || byte == b'_',
+        "\\W" => !(byte.is_ascii_alphanumeric() || byte == b'_'),
+        "\\s" => byte.is_ascii_whitespace(),
+        "\\S" => !byte.is_ascii_whitespace(),
+        token if token.starts_with('[') => pcre_class_matches_byte(token, byte),
+        token => token.as_bytes().first().is_some_and(|first| *first == byte),
+    }
+}
+
+fn pcre_simple_singleton_class_byte(class: &str) -> Option<u8> {
+    let end = pcre_class_end(class, 0)?;
+    let inner = &class['['.len_utf8()..end];
+    let bytes = inner.as_bytes();
+    match bytes {
+        [byte] if *byte != b'^' && *byte != b'-' => Some(*byte),
+        [b'\\', escaped]
+            if matches!(
+                escaped,
+                b'\\'
+                    | b'/'
+                    | b'.'
+                    | b'^'
+                    | b'$'
+                    | b'['
+                    | b']'
+                    | b'('
+                    | b')'
+                    | b'{'
+                    | b'}'
+                    | b'|'
+                    | b'*'
+                    | b'+'
+                    | b'?'
+                    | b'-'
+                    | b'!'
+            ) =>
+        {
+            Some(*escaped)
+        }
+        _ => None,
+    }
+}
+
+fn pcre_class_matches_byte(class: &str, byte: u8) -> bool {
+    let Some(end) = pcre_class_end(class, 0) else {
+        return false;
+    };
+    let inner = &class['['.len_utf8()..end];
+    let mut bytes = inner.as_bytes().iter().copied().peekable();
+    let inverted = matches!(bytes.peek(), Some(b'^'));
+    if inverted {
+        bytes.next();
+    }
+    let mut matched = false;
+    let mut previous = None;
+
+    while let Some(current) = bytes.next() {
+        let current = if current == b'\\' {
+            match bytes.next() {
+                Some(b'd') => {
+                    matched |= byte.is_ascii_digit();
+                    previous = None;
+                    continue;
+                }
+                Some(b'D') => {
+                    matched |= !byte.is_ascii_digit();
+                    previous = None;
+                    continue;
+                }
+                Some(b'w') => {
+                    matched |= byte.is_ascii_alphanumeric() || byte == b'_';
+                    previous = None;
+                    continue;
+                }
+                Some(b'W') => {
+                    matched |= !(byte.is_ascii_alphanumeric() || byte == b'_');
+                    previous = None;
+                    continue;
+                }
+                Some(b's') => {
+                    matched |= byte.is_ascii_whitespace();
+                    previous = None;
+                    continue;
+                }
+                Some(b'S') => {
+                    matched |= !byte.is_ascii_whitespace();
+                    previous = None;
+                    continue;
+                }
+                Some(escaped) => escaped,
+                None => b'\\',
+            }
+        } else {
+            current
+        };
+
+        if current == b'-' {
+            if let (Some(start), Some(end)) = (previous, bytes.peek().copied()) {
+                bytes.next();
+                matched |= start <= byte && byte <= end;
+                previous = None;
+                continue;
+            }
+        }
+        matched |= current == byte;
+        previous = Some(current);
+    }
+
+    if inverted {
+        !matched
+    } else {
+        matched
+    }
+}
+
 fn pcre_capture_array(
+    regex: &Regex,
     subject: &[u8],
     base: usize,
     captures: &RegexCaptures<'_>,
@@ -119506,13 +120077,35 @@ fn pcre_capture_array(
     span: Span,
 ) -> CompileResult<PhpArray> {
     let mut array = PhpArray::new();
-    for index in 0..captures.len() {
+    let unmatched_as_null = flags & PHP_PREG_UNMATCHED_AS_NULL != 0;
+    let last_capture_index = if unmatched_as_null {
+        captures.len().saturating_sub(1)
+    } else {
+        (0..captures.len())
+            .rev()
+            .find(|index| captures.get(*index).is_some())
+            .unwrap_or(0)
+    };
+    for index in 0..=last_capture_index {
         let capture = captures
             .get(index)
             .map(|matched| (base + matched.start(), base + matched.end()));
         array
             .append(pcre_capture_value(subject, capture, flags, span)?)
             .map_err(|error| runtime_error(span, error))?;
+    }
+    for (index, name) in regex.capture_names().enumerate().skip(1) {
+        let Some(name) = name else {
+            continue;
+        };
+        let capture = captures
+            .get(index)
+            .map(|matched| (base + matched.start(), base + matched.end()));
+        if capture.is_none() && !unmatched_as_null {
+            continue;
+        }
+        let value = pcre_capture_value(subject, capture, flags, span)?;
+        array.insert(name.to_string(), value);
     }
     Ok(array)
 }
@@ -134589,6 +135182,8 @@ const COMPAT_INI_DIRECTIVES: &[&str] = &[
     "mysqlnd.collect_statistics",
     "open_basedir",
     "output_handler",
+    "pcre.backtrack_limit",
+    "pcre.recursion_limit",
     "post_max_size",
     "precision",
     "sendmail_from",
@@ -135295,6 +135890,7 @@ fn compat_ini_value(normalized_name: &str) -> Option<&'static str> {
         "mysqlnd.collect_statistics" => Some("1"),
         "open_basedir" => Some(""),
         "output_handler" => Some(""),
+        "pcre.backtrack_limit" => Some("1000000"),
         "pcre.recursion_limit" => Some("100000"),
         "post_max_size" => Some("8M"),
         "precision" => Some("14"),
