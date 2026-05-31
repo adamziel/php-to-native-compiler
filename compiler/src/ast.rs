@@ -1416,6 +1416,7 @@ pub enum BinaryOp {
     Le,
     Gt,
     Ge,
+    Spaceship,
     NullCoalesce,
     LogicalAnd,
     LogicalOr,

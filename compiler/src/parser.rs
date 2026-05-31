@@ -5984,6 +5984,8 @@ impl Parser {
                 BinaryOp::Eq
             } else if self.match_token(|kind| matches!(kind, TokenKind::BangEqual)) {
                 BinaryOp::Ne
+            } else if self.match_token(|kind| matches!(kind, TokenKind::LessGreater)) {
+                BinaryOp::Ne
             } else if self.match_token(|kind| matches!(kind, TokenKind::StrictEqual)) {
                 BinaryOp::StrictEq
             } else if self.match_token(|kind| matches!(kind, TokenKind::StrictBangEqual)) {
@@ -6025,6 +6027,8 @@ impl Parser {
                 BinaryOp::Gt
             } else if self.match_token(|kind| matches!(kind, TokenKind::GreaterEqual)) {
                 BinaryOp::Ge
+            } else if self.match_token(|kind| matches!(kind, TokenKind::Spaceship)) {
+                BinaryOp::Spaceship
             } else {
                 break;
             };
@@ -9087,6 +9091,8 @@ fn token_name(kind: &TokenKind) -> &'static str {
         TokenKind::StrictBangEqual => "!==",
         TokenKind::Less => "<",
         TokenKind::LessEqual => "<=",
+        TokenKind::LessGreater => "<>",
+        TokenKind::Spaceship => "<=>",
         TokenKind::LeftShift => "<<",
         TokenKind::Greater => ">",
         TokenKind::GreaterEqual => ">=",

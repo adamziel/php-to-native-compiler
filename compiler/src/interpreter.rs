@@ -18933,13 +18933,29 @@ impl Interpreter {
                 }
             }
             Value::Array(array) => self.call_error_handler_array_callable(&array, args, span),
-            Value::Closure(_) => Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
+            Value::Closure(closure) => {
+                let function = self
+                    .closure_functions
+                    .get(&closure.id())
+                    .cloned()
+                    .ok_or_else(|| {
+                        runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "set_error_handler()",
+                                "closure body metadata is missing in the current subset",
+                            ),
+                        )
+                    })?;
+                let args = error_handler_args_for_function(function.as_ref(), &args);
+                self.invoke_closure_value_with_extra_policy(
+                    closure,
+                    args,
+                    span,
                     "set_error_handler()",
-                    "closure error-handler invocation is not implemented in the current subset",
-                ),
-            )),
+                    false,
+                )
+            }
             other => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
@@ -36607,7 +36623,7 @@ impl Interpreter {
         scope: &mut SymbolTable,
     ) -> CompileResult<()> {
         let (place, value) = self.read_increment_decrement_left(target, span, scope)?;
-        let updated = Self::increment_decrement_value(value, op, span)?;
+        let updated = self.increment_decrement_value(value, op, span)?;
         self.write_compound_assignment_place(place, updated, span, scope)?;
         Ok(())
     }
@@ -36621,7 +36637,7 @@ impl Interpreter {
         scope: &mut SymbolTable,
     ) -> CompileResult<Value> {
         let (place, previous) = self.read_increment_decrement_left(target, span, scope)?;
-        let updated = Self::increment_decrement_value(previous.clone(), op, span)?;
+        let updated = self.increment_decrement_value(previous.clone(), op, span)?;
         self.write_compound_assignment_place(place, updated.clone(), span, scope)?;
 
         Ok(match position {
@@ -36637,10 +36653,15 @@ impl Interpreter {
         scope: &mut SymbolTable,
     ) -> CompileResult<(CompoundAssignmentPlace, Value)> {
         match target {
-            AssignTarget::Variable { name, .. } => Ok((
-                CompoundAssignmentPlace::Variable(name.clone()),
-                scope.read_static(name, span)?,
-            )),
+            AssignTarget::Variable { name, .. } => {
+                let value = if let Some(value) = scope.read_named(name) {
+                    value.clone()
+                } else {
+                    self.emit_undefined_variable_warning(name, span)?;
+                    Value::Null
+                };
+                Ok((CompoundAssignmentPlace::Variable(name.clone()), value))
+            }
             AssignTarget::List { .. } => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
@@ -36856,6 +36877,7 @@ impl Interpreter {
     }
 
     fn increment_decrement_value(
+        &mut self,
         value: Value,
         op: IncrementDecrementOp,
         span: Span,
@@ -36865,21 +36887,89 @@ impl Interpreter {
             (Value::Float(value), IncrementDecrementOp::Increment) => Value::Float(value + 1.0),
             (Value::Float(value), IncrementDecrementOp::Decrement) => Value::Float(value - 1.0),
             (Value::Null, IncrementDecrementOp::Increment) => Value::Int(1),
-            (Value::Null, IncrementDecrementOp::Decrement) => Value::Null,
-            (Value::String(value), op) => increment_decrement_string_value(value.into_bytes(), op),
-            (Value::BinaryString(value), op) => increment_decrement_string_value(value, op),
-            (other, _) => {
-                return Err(runtime_error(
+            (Value::Null, IncrementDecrementOp::Decrement) => {
+                self.emit_display_warning(
+                    "Decrement on type null has no effect, this will change in the next major version of PHP",
                     span,
-                    RuntimeError::unsupported_call(
-                        "increment/decrement",
-                        format!(
-                            "only int, float, null, and string variables, array/object offsets, object properties, or static properties are implemented, got {}",
-                            other.type_name()
-                        ),
+                )?;
+                Value::Null
+            }
+            (Value::Bool(value), op) => {
+                self.emit_display_warning(
+                    format!(
+                        "{} on type bool has no effect, this will change in the next major version of PHP",
+                        increment_decrement_operation_name(op),
                     ),
+                    span,
+                )?;
+                Value::Bool(value)
+            }
+            (Value::String(value), op) => {
+                self.increment_decrement_string_value(value.into_bytes(), op, span)?
+            }
+            (Value::BinaryString(value), op) => {
+                self.increment_decrement_string_value(value, op, span)?
+            }
+            (Value::Array(_), op) => {
+                return Err(increment_decrement_type_error(op, "array", span));
+            }
+            (Value::Object(object), op) => {
+                return Err(increment_decrement_type_error(
+                    op,
+                    object.class_name(),
+                    span,
                 ));
             }
+            (Value::Closure(_), op) => {
+                return Err(increment_decrement_type_error(op, "Closure", span));
+            }
+            (Value::Resource(_), op) => {
+                return Err(increment_decrement_type_error(op, "resource", span));
+            }
+        })
+    }
+
+    fn increment_decrement_string_value(
+        &mut self,
+        bytes: Vec<u8>,
+        op: IncrementDecrementOp,
+        span: Span,
+    ) -> CompileResult<Value> {
+        if let Ok(value) = std::str::from_utf8(&bytes) {
+            match classify_php_numeric_string(value) {
+                PhpNumericStringClassification::Integer(value) => {
+                    return Ok(increment_decrement_integer_value(value, op));
+                }
+                PhpNumericStringClassification::Float(value) => {
+                    return Ok(match op {
+                        IncrementDecrementOp::Increment => Value::Float(value + 1.0),
+                        IncrementDecrementOp::Decrement => Value::Float(value - 1.0),
+                    });
+                }
+                PhpNumericStringClassification::LeadingNumeric
+                | PhpNumericStringClassification::NonNumeric => {}
+            }
+        }
+
+        let message = match op {
+            IncrementDecrementOp::Increment => {
+                "Increment on non-numeric string is deprecated, use str_increment() instead"
+            }
+            IncrementDecrementOp::Decrement if bytes.is_empty() => {
+                "Decrement on empty string is deprecated as non-numeric"
+            }
+            IncrementDecrementOp::Decrement => {
+                "Decrement on non-numeric string has no effect and is deprecated"
+            }
+        };
+        self.emit_display_diagnostic("Deprecated", PHP_E_DEPRECATED, message, span)?;
+
+        Ok(match op {
+            IncrementDecrementOp::Increment => {
+                interpreter_value_from_php_string_bytes(php_legacy_string_increment_bytes(&bytes))
+            }
+            IncrementDecrementOp::Decrement if bytes.is_empty() => Value::Int(-1),
+            IncrementDecrementOp::Decrement => interpreter_value_from_php_string_bytes(bytes),
         })
     }
 
@@ -91222,6 +91312,7 @@ impl Interpreter {
             BinaryOp::Ge => left
                 .php_cmp_checked(&right, Comparison::Ge)
                 .map(Value::Bool),
+            BinaryOp::Spaceship => php_spaceship_result(&left, &right),
         };
 
         result.map_err(|error| {
@@ -91845,6 +91936,16 @@ fn array_numeric_number_to_value(number: ArrayNumericNumber) -> Value {
         ArrayNumericNumber::Int(value) => Value::Int(value),
         ArrayNumericNumber::Float(value) => Value::Float(value),
     }
+}
+
+fn php_spaceship_result(left: &Value, right: &Value) -> RuntimeResult<Value> {
+    if left.php_cmp_checked(right, Comparison::Eq)? {
+        return Ok(Value::Int(0));
+    }
+    if left.php_cmp_checked(right, Comparison::Lt)? {
+        return Ok(Value::Int(-1));
+    }
+    Ok(Value::Int(1))
 }
 
 fn starts_with_numeric_prefix(value: &str) -> bool {
@@ -100420,6 +100521,12 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
         }
 
         if error.message.starts_with("Unsupported operand types: ") {
+            return Some(("TypeError", error.message.clone()));
+        }
+
+        if error.message.starts_with("Cannot increment ")
+            || error.message.starts_with("Cannot decrement ")
+        {
             return Some(("TypeError", error.message.clone()));
         }
 
@@ -114493,32 +114600,30 @@ fn increment_decrement_integer_value(value: i64, op: IncrementDecrementOp) -> Va
     }
 }
 
-fn increment_decrement_string_value(bytes: Vec<u8>, op: IncrementDecrementOp) -> Value {
-    if bytes.is_empty() && matches!(op, IncrementDecrementOp::Decrement) {
-        return Value::Int(-1);
-    }
-
-    if let Ok(value) = std::str::from_utf8(&bytes) {
-        match classify_php_numeric_string(value) {
-            PhpNumericStringClassification::Integer(value) => {
-                return increment_decrement_integer_value(value, op);
-            }
-            PhpNumericStringClassification::Float(value) => {
-                return match op {
-                    IncrementDecrementOp::Increment => Value::Float(value + 1.0),
-                    IncrementDecrementOp::Decrement => Value::Float(value - 1.0),
-                };
-            }
-            PhpNumericStringClassification::LeadingNumeric
-            | PhpNumericStringClassification::NonNumeric => {}
-        }
-    }
-
+fn increment_decrement_operation_name(op: IncrementDecrementOp) -> &'static str {
     match op {
-        IncrementDecrementOp::Increment => {
-            interpreter_value_from_php_string_bytes(php_legacy_string_increment_bytes(&bytes))
-        }
-        IncrementDecrementOp::Decrement => interpreter_value_from_php_string_bytes(bytes),
+        IncrementDecrementOp::Increment => "Increment",
+        IncrementDecrementOp::Decrement => "Decrement",
+    }
+}
+
+fn increment_decrement_type_error(
+    op: IncrementDecrementOp,
+    type_name: &str,
+    span: Span,
+) -> Diagnostic {
+    Diagnostic::new(
+        Phase::Runtime,
+        span.line,
+        span.column,
+        format!("Cannot {} {type_name}", increment_decrement_verb(op)),
+    )
+}
+
+fn increment_decrement_verb(op: IncrementDecrementOp) -> &'static str {
+    match op {
+        IncrementDecrementOp::Increment => "increment",
+        IncrementDecrementOp::Decrement => "decrement",
     }
 }
 

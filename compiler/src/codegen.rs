@@ -2717,6 +2717,7 @@ fn native_value_binary_op_tag(op: BinaryOp) -> Option<&'static str> {
         | BinaryOp::Le
         | BinaryOp::Gt
         | BinaryOp::Ge
+        | BinaryOp::Spaceship
         | BinaryOp::NullCoalesce => None,
     }
 }
@@ -2745,6 +2746,7 @@ fn native_value_binary_op_tag_value(op: BinaryOp) -> Option<u8> {
         | BinaryOp::Le
         | BinaryOp::Gt
         | BinaryOp::Ge
+        | BinaryOp::Spaceship
         | BinaryOp::NullCoalesce => None,
     }
 }
@@ -3079,6 +3081,7 @@ fn native_value_comparison_op_tag(op: BinaryOp) -> Option<&'static str> {
         BinaryOp::Ge => Some("PHPC_NATIVE_VALUE_COMPARISON_GE"),
         BinaryOp::StrictEq => Some("PHPC_NATIVE_VALUE_COMPARISON_STRICT_EQ"),
         BinaryOp::StrictNe => Some("PHPC_NATIVE_VALUE_COMPARISON_STRICT_NE"),
+        BinaryOp::Spaceship => None,
         BinaryOp::Add
         | BinaryOp::Sub
         | BinaryOp::Mul
@@ -3107,6 +3110,7 @@ fn native_value_comparison_op_tag_value(op: BinaryOp) -> Option<u8> {
         BinaryOp::Ge => Some(5),
         BinaryOp::StrictEq => Some(6),
         BinaryOp::StrictNe => Some(7),
+        BinaryOp::Spaceship => None,
         BinaryOp::Add
         | BinaryOp::Sub
         | BinaryOp::Mul
@@ -3132,6 +3136,7 @@ fn native_value_non_strict_comparison_op_tag(op: BinaryOp) -> Option<&'static st
         }
         BinaryOp::StrictEq
         | BinaryOp::StrictNe
+        | BinaryOp::Spaceship
         | BinaryOp::Add
         | BinaryOp::Sub
         | BinaryOp::Mul
@@ -13815,6 +13820,7 @@ impl LlvmGenerator {
             BinaryOp::StrictEq | BinaryOp::StrictNe => {
                 self.emit_static_strict_identity(left, op, right, span)
             }
+            BinaryOp::Spaceship => Err(self.unsupported(span, llvm_comparison_rejection())),
             BinaryOp::NullCoalesce => Err(self.unsupported(span, LLVM_CONDITIONAL_REJECTION)),
             BinaryOp::LogicalAnd | BinaryOp::LogicalOr | BinaryOp::LogicalXor => {
                 self.emit_bool_binary(left, op, right, span)
@@ -18362,6 +18368,7 @@ fn backend_binary_primitive_arithmetic_operation(
         | BinaryOp::Le
         | BinaryOp::Gt
         | BinaryOp::Ge
+        | BinaryOp::Spaceship
         | BinaryOp::StrictEq
         | BinaryOp::StrictNe
         | BinaryOp::NullCoalesce
@@ -57646,6 +57653,7 @@ impl CGenerator {
             BinaryOp::StrictEq | BinaryOp::StrictNe => {
                 self.emit_static_strict_identity(left, op, right, span)
             }
+            BinaryOp::Spaceship => Err(self.unsupported(span, assembly_comparison_rejection())),
             BinaryOp::NullCoalesce => Err(self.unsupported(span, ASSEMBLY_CONDITIONAL_REJECTION)),
             BinaryOp::LogicalAnd | BinaryOp::LogicalOr | BinaryOp::LogicalXor => {
                 self.emit_bool_binary(left, op, right, span)

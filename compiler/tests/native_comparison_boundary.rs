@@ -30,6 +30,26 @@ echo "10" > 2;
 }
 
 #[test]
+fn phpc_run_handles_spaceship_and_less_greater_not_equal_alias() {
+    let execution = run_source(
+        r#"<?php
+var_dump(3 <=> 2);
+var_dump(2 <=> "3");
+var_dump("a" <=> "a");
+var_dump(true <=> []);
+var_dump(679 <> "679");
+var_dump(679 <> "679abc");
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "int(1)\nint(-1)\nint(0)\nint(1)\nbool(false)\nbool(true)\n"
+    );
+}
+
+#[test]
 fn emit_ir_rejects_unsupported_comparison_operands_with_specific_boundary() {
     for source in [
         "<?php\necho \"1\" == \"1\";\n",
@@ -44,6 +64,14 @@ fn emit_ir_rejects_unsupported_comparison_operands_with_specific_boundary() {
         assert_eq!(error.phase, Phase::Codegen);
         assert_eq!(error.message, LLVM_COMPARISON_REJECTION);
     }
+}
+
+#[test]
+fn emit_ir_rejects_spaceship_until_native_value_ordering_result_exists() {
+    let error = emit_ir_source("<?php\necho 1 <=> 2;\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.message, LLVM_COMPARISON_REJECTION);
 }
 
 #[test]

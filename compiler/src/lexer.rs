@@ -113,6 +113,8 @@ pub enum TokenKind {
     StrictBangEqual,
     Less,
     LessEqual,
+    LessGreater,
+    Spaceship,
     LeftShift,
     Greater,
     GreaterEqual,
@@ -323,7 +325,13 @@ impl<'a> Lexer<'a> {
                 }
                 '<' => {
                     if self.match_char('=') {
-                        TokenKind::LessEqual
+                        if self.match_char('>') {
+                            TokenKind::Spaceship
+                        } else {
+                            TokenKind::LessEqual
+                        }
+                    } else if self.match_char('>') {
+                        TokenKind::LessGreater
                     } else if self.match_char('<') {
                         if self.match_char('<') {
                             self.lex_heredoc(span)?

@@ -170,30 +170,36 @@ echo $items["sum"], ":", $items["i"], "\n";
 }
 
 #[test]
-fn undefined_increment_decrement_left_side_is_runtime_error() {
-    let error = runtime_error("<?php\n$missing++;\n");
+fn undefined_increment_decrement_left_side_warns_and_uses_null_semantics() {
+    let execution = run_source(
+        r#"<?php
+set_error_handler(function($_, $message) {
+    echo $message, "\n";
+});
+var_dump($missing--);
+unset($missing);
+var_dump($missing++);
+unset($missing);
+var_dump(--$missing);
+unset($missing);
+var_dump(++$missing);
+"#,
+    )
+    .unwrap();
 
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 1);
-    assert_eq!(error.message, "undefined variable '$missing'");
-}
-
-#[test]
-fn expression_undefined_increment_decrement_left_side_is_runtime_error() {
-    let error = runtime_error("<?php\necho $missing++;\n");
-
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 6);
-    assert_eq!(error.message, "undefined variable '$missing'");
-}
-
-#[test]
-fn for_header_undefined_increment_decrement_left_side_is_runtime_error() {
-    let error = runtime_error("<?php\nfor ($missing++; false; ) {}\n");
-
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 6);
-    assert_eq!(error.message, "undefined variable '$missing'");
+    assert_eq!(
+        execution.stdout,
+        "Undefined variable $missing\n\
+Decrement on type null has no effect, this will change in the next major version of PHP\n\
+NULL\n\
+Undefined variable $missing\n\
+NULL\n\
+Undefined variable $missing\n\
+Decrement on type null has no effect, this will change in the next major version of PHP\n\
+NULL\n\
+Undefined variable $missing\n\
+int(1)\n"
+    );
 }
 
 #[test]
@@ -208,16 +214,14 @@ fn object_property_increment_decrement_reports_missing_properties() {
 
 #[test]
 fn object_property_increment_decrement_reports_non_public_properties() {
-    let error = runtime_error(
-        "<?php\nclass Box { private $secret; }\n$box = new Box();\n++$box->secret;\n",
-    );
+    let execution =
+        run_source("<?php\nclass Box { private $secret; }\n$box = new Box();\n++$box->secret;\n")
+            .unwrap();
 
-    assert_eq!(error.line, 4);
-    assert_eq!(error.column, 1);
-    assert_eq!(
-        error.message,
-        "unsupported object property access: non-public property Box::$secret requires same-class method context in the current subset"
-    );
+    assert_eq!(execution.exit_code, 255);
+    assert!(execution
+        .stdout
+        .contains("Fatal error: Uncaught Error: Cannot access private property Box::$secret"));
 }
 
 #[test]
@@ -256,7 +260,7 @@ fn array_offset_increment_decrement_reports_non_array_targets() {
 #[test]
 fn array_offset_increment_decrement_updates_string_values() {
     let execution = run_source(
-        "<?php\n$items = ['value' => 'az'];\n$items['value']++;\necho $items['value'], \"\\n\";\n",
+        "<?php\n$items = ['value' => 'az'];\n@$items['value']++;\necho $items['value'], \"\\n\";\n",
     )
     .unwrap();
 
@@ -266,7 +270,7 @@ fn array_offset_increment_decrement_updates_string_values() {
 #[test]
 fn object_property_increment_decrement_updates_string_values() {
     let execution = run_source(
-        "<?php\nclass Box { public $value; }\n$box = new Box();\n$box->value = 'Zz';\n$box->value++;\necho $box->value, \"\\n\";\n",
+        "<?php\nclass Box { public $value; }\n$box = new Box();\n$box->value = 'Zz';\n@$box->value++;\necho $box->value, \"\\n\";\n",
     )
     .unwrap();
 
@@ -296,6 +300,77 @@ echo "\n";
     assert_eq!(
         execution.stdout,
         "ba|AAa|10A|foo1.txu|foo!|1|5000001|6|\naz|9|4999999|-1|\n"
+    );
+}
+
+#[test]
+fn increment_decrement_emits_php_shaped_type_and_deprecation_diagnostics() {
+    let execution = run_source(
+        r#"<?php
+set_error_handler(function($severity, $message) {
+    if ($severity == E_DEPRECATED) {
+        echo "Deprecated: ", $message, "\n";
+    } elseif ($severity == E_WARNING) {
+        echo "Warning: ", $message, "\n";
+    }
+});
+
+$values = ["", " ", "199A"];
+foreach ($values as $value) {
+    $copy = $value;
+    $copy++;
+    var_dump($copy);
+    $copy = $value;
+    $copy--;
+    var_dump($copy);
+}
+
+foreach ([null, false, true] as $value) {
+    $copy = $value;
+    $copy--;
+    var_dump($copy);
+}
+
+foreach ([[], new stdClass()] as $value) {
+    try {
+        $value++;
+    } catch (TypeError $e) {
+        echo $e->getMessage(), "\n";
+    }
+    try {
+        $value--;
+    } catch (TypeError $e) {
+        echo $e->getMessage(), "\n";
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "Deprecated: Increment on non-numeric string is deprecated, use str_increment() instead\n\
+string(1) \"1\"\n\
+Deprecated: Decrement on empty string is deprecated as non-numeric\n\
+int(-1)\n\
+Deprecated: Increment on non-numeric string is deprecated, use str_increment() instead\n\
+string(1) \" \"\n\
+Deprecated: Decrement on non-numeric string has no effect and is deprecated\n\
+string(1) \" \"\n\
+Deprecated: Increment on non-numeric string is deprecated, use str_increment() instead\n\
+string(4) \"199B\"\n\
+Deprecated: Decrement on non-numeric string has no effect and is deprecated\n\
+string(4) \"199A\"\n\
+Warning: Decrement on type null has no effect, this will change in the next major version of PHP\n\
+NULL\n\
+Warning: Decrement on type bool has no effect, this will change in the next major version of PHP\n\
+bool(false)\n\
+Warning: Decrement on type bool has no effect, this will change in the next major version of PHP\n\
+bool(true)\n\
+Cannot increment array\n\
+Cannot decrement array\n\
+Cannot increment stdClass\n\
+Cannot decrement stdClass\n"
     );
 }
 
@@ -338,7 +413,7 @@ integer:min\n"
 
 #[test]
 fn expression_increment_decrement_returns_string_values() {
-    let execution = run_source("<?php\n$value = 'az';\necho ++$value, ':', $value, \"\\n\";\necho $value++, ':', $value, \"\\n\";\n")
+    let execution = run_source("<?php\n$value = 'az';\necho @++$value, ':', $value, \"\\n\";\necho @$value++, ':', $value, \"\\n\";\n")
         .unwrap();
 
     assert_eq!(execution.stdout, "ba:ba\nba:bb\n");
@@ -349,9 +424,9 @@ fn empty_string_decrement_matches_string_values_legacy_integer_promotion() {
     let execution = run_source(
         r#"<?php
 $value = "";
-echo --$value, ":", gettype($value), "\n";
+echo @--$value, ":", gettype($value), "\n";
 $value = "";
-echo $value--, ":", gettype($value), ":", $value, ":", gettype($value), "\n";
+echo @$value--, ":", gettype($value), ":", $value, ":", gettype($value), "\n";
 "#,
     )
     .unwrap();
@@ -362,7 +437,7 @@ echo $value--, ":", gettype($value), ":", $value, ":", gettype($value), "\n";
 #[test]
 fn for_header_increment_decrement_updates_string_values() {
     let execution = run_source(
-        "<?php\n$value = 'az';\n$go = true;\nfor (; $go; ++$value) {\n    echo $value, \"\\n\";\n    $go = false;\n}\necho $value, \"\\n\";\n",
+        "<?php\n$value = 'az';\n$go = true;\nfor (; $go; @++$value) {\n    echo $value, \"\\n\";\n    $go = false;\n}\necho $value, \"\\n\";\n",
     )
     .unwrap();
 
