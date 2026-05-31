@@ -32281,6 +32281,10 @@ impl PhpClassTable {
             "hasProperty",
             "getProperty",
             "getProperties",
+            "getStaticProperties",
+            "getStaticPropertyValue",
+            "setStaticPropertyValue",
+            "getDefaultProperties",
             "getAttributes",
         ] {
             reflection_class

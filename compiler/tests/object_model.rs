@@ -11343,6 +11343,69 @@ echo "iterable|", yn($plugin->isIterable()), yn($plugin->isIterateable()), yn($p
 }
 
 #[test]
+fn reflection_class_reports_static_and_default_property_metadata() {
+    let execution = run_source(
+        r#"<?php
+class Base {
+    private $hidden = "secret";
+    private static $secret = "hidden";
+    public static $shared = "base";
+    protected static $cache = "warm";
+    protected $base = 2;
+    public $nullSlot;
+}
+
+class Plugin extends Base {
+    public static $active = true;
+    public static $shared = "plugin";
+    private $own = 1;
+    public $name = "hook";
+    protected $items = array("a" => 1);
+}
+
+class A {
+    public static $x = "default";
+    public $y = "iy";
+}
+
+function label($value) {
+    if (is_array($value)) {
+        return "array:" . count($value);
+    }
+    if (is_bool($value)) {
+        return "bool:" . ($value ? "1" : "0");
+    }
+    if ($value === null) {
+        return "null";
+    }
+    return (string) $value;
+}
+
+$class = new ReflectionClass(Plugin::class);
+foreach ($class->getDefaultProperties() as $name => $value) {
+    echo "default|", $name, "|", label($value), "\n";
+}
+foreach ($class->getStaticProperties() as $name => $value) {
+    echo "static|", $name, "|", label($value), "\n";
+}
+echo "get|", label($class->getStaticPropertyValue("cache")), "|", label($class->getStaticPropertyValue("shared")), "|", label($class->getStaticPropertyValue("secret", "fallback")), "\n";
+$class->setStaticPropertyValue("cache", "hot");
+echo "set|", label($class->getStaticPropertyValue("cache")), "|", label(Base::$shared), "|", label(Plugin::$shared), "\n";
+A::$x = "changed";
+$aClass = new ReflectionClass(A::class);
+echo "mutation|", label($aClass->getDefaultProperties()["x"]), "|", label($aClass->getStaticProperties()["x"]);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "default|active|bool:1\ndefault|shared|plugin\ndefault|cache|warm\ndefault|own|1\ndefault|name|hook\ndefault|items|array:1\ndefault|base|2\ndefault|nullSlot|null\nstatic|active|bool:1\nstatic|shared|plugin\nstatic|cache|warm\nget|warm|plugin|fallback\nset|hot|base|plugin\nmutation|default|changed"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn emit_ir_rejects_class_constants_until_native_object_lowering_exists() {
     for source in [
         "<?php\necho Box::VERSION;\n",

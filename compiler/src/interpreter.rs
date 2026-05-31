@@ -242,6 +242,7 @@ struct Interpreter {
     enum_case_objects: HashMap<(String, String), PhpObject>,
     class_constants: HashMap<(ClassId, String), ClassConstantDecl>,
     static_properties: HashMap<(ClassId, String), VariableCell>,
+    static_property_defaults: HashMap<(ClassId, String), Value>,
     instance_property_defaults: HashMap<(ClassId, String), Value>,
     instance_property_default_exprs: HashMap<(ClassId, String), Expr>,
     classes: PhpClassTable,
@@ -10921,6 +10922,7 @@ impl Interpreter {
         let mut final_methods = HashMap::new();
         let mut class_constants = HashMap::new();
         let mut static_properties = HashMap::new();
+        let mut static_property_defaults = HashMap::new();
         let instance_property_defaults = HashMap::new();
         let instance_property_default_exprs = HashMap::new();
         let mut classes = PhpClassTable::with_core_classes();
@@ -11027,6 +11029,7 @@ impl Interpreter {
                 register_class_member_runtime_tables(
                     &mut class_constants,
                     &mut static_properties,
+                    &mut static_property_defaults,
                     &mut property_source_metadata,
                     &mut methods,
                     &mut method_signatures,
@@ -11072,6 +11075,7 @@ impl Interpreter {
             enum_case_objects: HashMap::new(),
             class_constants,
             static_properties,
+            static_property_defaults,
             instance_property_defaults,
             instance_property_default_exprs,
             classes,
@@ -18066,6 +18070,8 @@ impl Interpreter {
 
                 let mut default_scope = SymbolTable::new();
                 let value = self.evaluate(default, &mut default_scope)?;
+                self.static_property_defaults
+                    .insert((class_id, property.name.clone()), value.clone());
                 self.static_properties
                     .insert((class_id, property.name.clone()), VariableCell::new(value));
             }
@@ -18208,6 +18214,7 @@ impl Interpreter {
             register_class_member_runtime_tables(
                 &mut self.class_constants,
                 &mut self.static_properties,
+                &mut self.static_property_defaults,
                 &mut self.property_source_metadata,
                 &mut self.methods,
                 &mut self.method_signatures,
@@ -18315,6 +18322,7 @@ impl Interpreter {
         register_class_member_runtime_tables(
             &mut self.class_constants,
             &mut self.static_properties,
+            &mut self.static_property_defaults,
             &mut self.property_source_metadata,
             &mut self.methods,
             &mut self.method_signatures,
@@ -18328,6 +18336,7 @@ impl Interpreter {
             remove_class_member_runtime_tables(
                 &mut self.class_constants,
                 &mut self.static_properties,
+                &mut self.static_property_defaults,
                 &mut self.property_source_metadata,
                 &mut self.methods,
                 &mut self.method_signatures,
@@ -18346,6 +18355,7 @@ impl Interpreter {
             remove_class_member_runtime_tables(
                 &mut self.class_constants,
                 &mut self.static_properties,
+                &mut self.static_property_defaults,
                 &mut self.property_source_metadata,
                 &mut self.methods,
                 &mut self.method_signatures,
@@ -18399,6 +18409,8 @@ impl Interpreter {
 
             let mut default_scope = SymbolTable::new();
             let value = self.evaluate(default, &mut default_scope)?;
+            self.static_property_defaults
+                .insert((class_id, property.name.clone()), value.clone());
             self.static_properties
                 .insert((class_id, property.name.clone()), VariableCell::new(value));
         }
@@ -18416,6 +18428,8 @@ impl Interpreter {
 
             let mut default_scope = SymbolTable::new();
             let value = self.evaluate(default, &mut default_scope)?;
+            self.static_property_defaults
+                .insert((class_id, property.name.clone()), value.clone());
             self.static_properties
                 .insert((class_id, property.name.clone()), VariableCell::new(value));
         }
@@ -46667,9 +46681,10 @@ impl Interpreter {
                             ),
                         )
                     })?;
-                return Ok(Some(Value::String(
-                    self.reflection_property_to_string(&state),
-                )));
+                return self
+                    .reflection_property_to_string(&state, span)
+                    .map(Value::String)
+                    .map(Some);
             }
             if object
                 .class_name()
@@ -48005,6 +48020,66 @@ impl Interpreter {
                 }
                 Ok(Value::Array(properties))
             }
+            "getstaticproperties" => {
+                expect_expr_arity("ReflectionClass::getStaticProperties", args.len(), 0, span)?;
+                Ok(Value::Array(
+                    self.reflection_class_static_properties(&state),
+                ))
+            }
+            "getdefaultproperties" => {
+                expect_expr_arity("ReflectionClass::getDefaultProperties", args.len(), 0, span)?;
+                self.reflection_class_default_properties(&state, span)
+                    .map(Value::Array)
+            }
+            "getstaticpropertyvalue" => {
+                if args.len() > 2 {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::arity_mismatch(
+                            "ReflectionClass::getStaticPropertyValue()",
+                            ArityExpectation::Between { min: 1, max: 2 },
+                            args.len(),
+                        ),
+                    ));
+                }
+                let Some(name_arg) = args.first() else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::arity_mismatch(
+                            "ReflectionClass::getStaticPropertyValue()",
+                            ArityExpectation::Between { min: 1, max: 2 },
+                            args.len(),
+                        ),
+                    ));
+                };
+                let value = self.evaluate(name_arg, caller_scope)?;
+                let property = reflection_scalar_name_argument(value, span)?;
+                if let Some(value) =
+                    self.reflection_class_static_property_value(&state, &property, span)?
+                {
+                    return Ok(value);
+                }
+                if let Some(default) = args.get(1) {
+                    return self.evaluate(default, caller_scope);
+                }
+                Err(reflection_exception_error(
+                    span,
+                    format!("Property {}::${property} does not exist", state.name),
+                ))
+            }
+            "setstaticpropertyvalue" => {
+                expect_expr_arity(
+                    "ReflectionClass::setStaticPropertyValue",
+                    args.len(),
+                    2,
+                    span,
+                )?;
+                let value = self.evaluate(&args[0], caller_scope)?;
+                let property = reflection_scalar_name_argument(value, span)?;
+                let value = self.evaluate(&args[1], caller_scope)?;
+                self.reflection_class_set_static_property_value(&state, &property, value, span)?;
+                Ok(Value::Null)
+            }
             _ => Err(runtime_error(
                 span,
                 RuntimeError::undefined_function(format!("ReflectionClass::{method_name}()")),
@@ -48626,6 +48701,190 @@ impl Interpreter {
         }
     }
 
+    fn reflection_class_default_properties(
+        &mut self,
+        state: &ReflectionClassState,
+        span: Span,
+    ) -> CompileResult<PhpArray> {
+        let mut defaults = PhpArray::new();
+        let (ReflectionClassKind::Class, Some(class_id)) = (state.kind, state.class_id) else {
+            return Ok(defaults);
+        };
+
+        let mut seen = HashSet::new();
+        for include_static in [true, false] {
+            for (declaring_class_id, property_name) in
+                self.reflection_class_default_property_entries(class_id, include_static)
+            {
+                if !seen.insert(property_name.clone()) {
+                    continue;
+                }
+                let value = if include_static {
+                    self.static_property_defaults
+                        .get(&(declaring_class_id, property_name.clone()))
+                        .cloned()
+                        .unwrap_or(Value::Null)
+                } else {
+                    self.reflection_instance_property_default_value(
+                        declaring_class_id,
+                        &property_name,
+                        span,
+                    )?
+                };
+                defaults.insert(ArrayKey::String(property_name), value);
+            }
+        }
+
+        Ok(defaults)
+    }
+
+    fn reflection_class_default_property_entries(
+        &self,
+        class_id: ClassId,
+        include_static: bool,
+    ) -> Vec<(ClassId, String)> {
+        let mut entries = Vec::new();
+        let mut current = Some(class_id);
+        while let Some(current_id) = current {
+            let class = self
+                .classes
+                .get(current_id)
+                .expect("class id should resolve to class metadata");
+            entries.extend(class.properties().iter().filter_map(|property| {
+                if property.is_static() != include_static
+                    || (current_id != class_id && property.visibility() == Visibility::Private)
+                    || !self.reflection_property_metadata_has_default(current_id, property)
+                {
+                    return None;
+                }
+                Some((current_id, property.name().to_string()))
+            }));
+            current = class.parent_id();
+        }
+        entries
+    }
+
+    fn reflection_class_static_properties(&self, state: &ReflectionClassState) -> PhpArray {
+        let mut properties = PhpArray::new();
+        let (ReflectionClassKind::Class, Some(class_id)) = (state.kind, state.class_id) else {
+            return properties;
+        };
+
+        let mut seen = HashSet::new();
+        let mut current = Some(class_id);
+        while let Some(current_id) = current {
+            let class = self
+                .classes
+                .get(current_id)
+                .expect("class id should resolve to class metadata");
+            for property in class.properties() {
+                if !property.is_static()
+                    || (current_id != class_id && property.visibility() == Visibility::Private)
+                    || !seen.insert(property.name().to_string())
+                {
+                    continue;
+                }
+                if let Some(value) = self
+                    .static_properties
+                    .get(&(current_id, property.name().to_string()))
+                    .map(VariableCell::value_cloned)
+                {
+                    properties.insert(ArrayKey::String(property.name().to_string()), value);
+                }
+            }
+            current = class.parent_id();
+        }
+
+        properties
+    }
+
+    fn reflection_class_static_property_value(
+        &self,
+        state: &ReflectionClassState,
+        property_name: &str,
+        span: Span,
+    ) -> CompileResult<Option<Value>> {
+        let Some((declaring_class_id, declaring_class_name)) =
+            self.resolve_reflection_static_property_storage(state, property_name)
+        else {
+            return Ok(None);
+        };
+        self.static_properties
+            .get(&(declaring_class_id, property_name.to_string()))
+            .map(VariableCell::value_cloned)
+            .map(Some)
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::uninitialized_typed_property(declaring_class_name, property_name),
+                )
+            })
+    }
+
+    fn reflection_class_set_static_property_value(
+        &mut self,
+        state: &ReflectionClassState,
+        property_name: &str,
+        value: Value,
+        span: Span,
+    ) -> CompileResult<()> {
+        let Some((declaring_class_id, declaring_class_name)) =
+            self.resolve_reflection_static_property_storage(state, property_name)
+        else {
+            return Err(reflection_exception_error(
+                span,
+                format!("Property {}::${property_name} does not exist", state.name),
+            ));
+        };
+        let value = self.coerce_static_property_value(
+            declaring_class_id,
+            &declaring_class_name,
+            property_name,
+            value,
+            span,
+        )?;
+        if let Some(cell) = self
+            .static_properties
+            .get(&(declaring_class_id, property_name.to_string()))
+        {
+            cell.set_value(value);
+        } else {
+            self.static_properties.insert(
+                (declaring_class_id, property_name.to_string()),
+                VariableCell::new(value),
+            );
+        }
+        Ok(())
+    }
+
+    fn resolve_reflection_static_property_storage(
+        &self,
+        state: &ReflectionClassState,
+        property_name: &str,
+    ) -> Option<(ClassId, String)> {
+        let (ReflectionClassKind::Class, Some(class_id)) = (state.kind, state.class_id) else {
+            return None;
+        };
+        let mut current = Some(class_id);
+        while let Some(current_id) = current {
+            let class = self
+                .classes
+                .get(current_id)
+                .expect("class id should resolve to class metadata");
+            if let Some(property) = class.property(property_name) {
+                if current_id != class_id && property.visibility() == Visibility::Private {
+                    current = class.parent_id();
+                    continue;
+                }
+                return property
+                    .is_static()
+                    .then(|| (current_id, class.name().to_string()));
+            }
+            current = class.parent_id();
+        }
+        None
+    }
+
     fn reflection_trait_methods(
         &self,
         trait_decl: &TraitDecl,
@@ -48890,7 +49149,7 @@ impl Interpreter {
         property: &PhpPropertyMetadata,
     ) -> bool {
         if property.is_static() {
-            self.static_properties
+            self.static_property_defaults
                 .contains_key(&(declaring_class_id, property.name().to_string()))
         } else {
             property.type_decl().is_none()
@@ -50843,7 +51102,8 @@ impl Interpreter {
             )),
             "__tostring" => {
                 expect_expr_arity("ReflectionProperty::__toString", args.len(), 0, span)?;
-                Ok(Value::String(self.reflection_property_to_string(&state)))
+                self.reflection_property_to_string(&state, span)
+                    .map(Value::String)
             }
             "getname" => {
                 expect_expr_arity("ReflectionProperty::getName", args.len(), 0, span)?;
@@ -50905,7 +51165,7 @@ impl Interpreter {
             }
             "getdefaultvalue" => {
                 expect_expr_arity("ReflectionProperty::getDefaultValue", args.len(), 0, span)?;
-                Ok(self.reflection_property_default_value(&state))
+                self.reflection_property_default_value(&state, span)
             }
             "hastype" => {
                 expect_expr_arity("ReflectionProperty::hasType", args.len(), 0, span)?;
@@ -51211,35 +51471,58 @@ impl Interpreter {
         Ok(object)
     }
 
-    fn reflection_property_default_value(&self, state: &ReflectionPropertyState) -> Value {
+    fn reflection_instance_property_default_value(
+        &mut self,
+        declaring_class_id: ClassId,
+        property_name: &str,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let key = (declaring_class_id, property_name.to_string());
+        if let Some(value) = self.instance_property_defaults.get(&key) {
+            return Ok(value.clone());
+        }
+        if let Some(default) = self.instance_property_default_exprs.get(&key).cloned() {
+            return self.evaluate_deferred_instance_property_default(&default, span);
+        }
+        Ok(Value::Null)
+    }
+
+    fn reflection_property_default_value(
+        &mut self,
+        state: &ReflectionPropertyState,
+        span: Span,
+    ) -> CompileResult<Value> {
         let Some(declaring_class_id) = state.declaring_class_id else {
-            return Value::Null;
+            return Ok(Value::Null);
         };
         if state.is_static {
-            self.static_properties
-                .get(&(declaring_class_id, state.name.clone()))
-                .map(VariableCell::value_cloned)
-                .unwrap_or(Value::Null)
-        } else {
-            self.instance_property_defaults
+            Ok(self
+                .static_property_defaults
                 .get(&(declaring_class_id, state.name.clone()))
                 .cloned()
-                .unwrap_or(Value::Null)
+                .unwrap_or(Value::Null))
+        } else {
+            self.reflection_instance_property_default_value(declaring_class_id, &state.name, span)
         }
     }
 
-    fn reflection_property_to_string(&self, state: &ReflectionPropertyState) -> String {
+    fn reflection_property_to_string(
+        &mut self,
+        state: &ReflectionPropertyState,
+        span: Span,
+    ) -> CompileResult<String> {
         let visibility = match state.visibility {
             Visibility::Public => "public",
             Visibility::Protected => "protected",
             Visibility::Private => "private",
         };
         let static_marker = if state.is_static { " static" } else { "" };
-        let default = reflection_value_export_short(&self.reflection_property_default_value(state));
-        format!(
+        let default =
+            reflection_value_export_short(&self.reflection_property_default_value(state, span)?);
+        Ok(format!(
             "Property [ {visibility}{static_marker} ${} = {default} ]\n",
             state.name
-        )
+        ))
     }
 
     fn reflection_parameter_to_string(
@@ -96857,6 +97140,7 @@ fn register_enum_name(
 fn register_class_member_runtime_tables(
     class_constants: &mut HashMap<(ClassId, String), ClassConstantDecl>,
     static_properties: &mut HashMap<(ClassId, String), VariableCell>,
+    static_property_defaults: &mut HashMap<(ClassId, String), Value>,
     property_source_metadata: &mut HashMap<(ClassId, String), PropertySourceMetadata>,
     methods: &mut HashMap<(ClassId, String), Rc<FunctionDecl>>,
     method_signatures: &mut HashMap<(ClassId, String), MethodSignature>,
@@ -96880,6 +97164,7 @@ fn register_class_member_runtime_tables(
                 (class_id, property.name.clone()),
                 VariableCell::new(Value::Null),
             );
+            static_property_defaults.insert((class_id, property.name.clone()), Value::Null);
         }
     }
 
@@ -96911,6 +97196,7 @@ fn register_class_member_runtime_tables(
                         (class_id, property.name.clone()),
                         VariableCell::new(Value::Null),
                     );
+                    static_property_defaults.insert((class_id, property.name.clone()), Value::Null);
                 }
             }
             ClassMember::Method(method) => {
@@ -97149,6 +97435,7 @@ fn seed_core_class_constant_runtime_tables(
 fn remove_class_member_runtime_tables(
     class_constants: &mut HashMap<(ClassId, String), ClassConstantDecl>,
     static_properties: &mut HashMap<(ClassId, String), VariableCell>,
+    static_property_defaults: &mut HashMap<(ClassId, String), Value>,
     property_source_metadata: &mut HashMap<(ClassId, String), PropertySourceMetadata>,
     methods: &mut HashMap<(ClassId, String), Rc<FunctionDecl>>,
     method_signatures: &mut HashMap<(ClassId, String), MethodSignature>,
@@ -97157,6 +97444,7 @@ fn remove_class_member_runtime_tables(
 ) {
     class_constants.retain(|(declaring_class_id, _), _| *declaring_class_id != class_id);
     static_properties.retain(|(declaring_class_id, _), _| *declaring_class_id != class_id);
+    static_property_defaults.retain(|(declaring_class_id, _), _| *declaring_class_id != class_id);
     property_source_metadata.retain(|(declaring_class_id, _), _| *declaring_class_id != class_id);
     methods.retain(|(declaring_class_id, _), _| *declaring_class_id != class_id);
     method_signatures.retain(|(declaring_class_id, _), _| *declaring_class_id != class_id);
