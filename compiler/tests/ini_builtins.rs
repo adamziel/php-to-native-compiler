@@ -116,6 +116,151 @@ var_dump(ini_set("MAX_MEMORY_LIMIT", "256M"));
 }
 
 #[test]
+fn ini_parse_quantity_handles_decimal_hex_and_compatibility_suffixes() {
+    let _guard = env_lock();
+    let previous = env::var_os("PHPC_PHPT_INI_FLAGS");
+
+    env::remove_var("PHPC_PHPT_INI_FLAGS");
+    let execution = run_source(
+        r#"<?php
+error_reporting(E_ALL ^ E_WARNING);
+foreach (array('-1', '-0x412', '0', '1', '1b', '1k', '1m', '1g', '1gb', '14.2mb', '14.2bm', 'boat') as $input) {
+    echo ini_parse_quantity($input), "\n";
+}
+"#,
+    )
+    .unwrap();
+    let stdout = execution.stdout.clone();
+    let exit_code = execution.exit_code;
+
+    restore_env_var("PHPC_PHPT_INI_FLAGS", previous);
+
+    assert_eq!(
+        stdout,
+        "-1\n-1042\n0\n1\n1\n1024\n1048576\n1073741824\n1\n14\n14680064\n0\n"
+    );
+    assert_eq!(exit_code, 0);
+}
+
+#[test]
+fn ini_parse_quantity_emits_php_compatibility_warnings() {
+    let _guard = env_lock();
+    let previous = env::var_os("PHPC_PHPT_INI_FLAGS");
+
+    env::remove_var("PHPC_PHPT_INI_FLAGS");
+    let execution = run_source(
+        r#"<?php
+ini_parse_quantity('1mb');
+ini_parse_quantity('14.2bm');
+ini_parse_quantity('1.5');
+ini_parse_quantity('0x');
+ini_parse_quantity('256 then skip a few then g');
+"#,
+    )
+    .unwrap();
+    let stdout = execution.stdout.clone();
+    let exit_code = execution.exit_code;
+
+    restore_env_var("PHPC_PHPT_INI_FLAGS", previous);
+
+    assert!(stdout.contains(
+        "Warning: Invalid quantity \"1mb\": unknown multiplier \"b\", interpreting as \"1\" for backwards compatibility"
+    ));
+    assert!(stdout.contains(
+        "Warning: Invalid quantity \"14.2bm\", interpreting as \"14m\" for backwards compatibility"
+    ));
+    assert!(stdout.contains(
+        "Warning: Invalid quantity \"1.5\": unknown multiplier \"5\", interpreting as \"1\" for backwards compatibility"
+    ));
+    assert!(stdout.contains(
+        "Warning: Invalid quantity \"0x\": no digits after base prefix, interpreting as \"0\" for backwards compatibility"
+    ));
+    assert!(stdout.contains(
+        "Warning: Invalid quantity \"256 then skip a few then g\", interpreting as \"256 g\" for backwards compatibility"
+    ));
+    assert_eq!(exit_code, 0);
+}
+
+#[test]
+fn ini_parse_quantity_uses_php_overflow_results() {
+    let _guard = env_lock();
+    let previous = env::var_os("PHPC_PHPT_INI_FLAGS");
+
+    env::remove_var("PHPC_PHPT_INI_FLAGS");
+    let execution = run_source(
+        r#"<?php
+$cases = array(
+    '0x8000000000000000',
+    '-0x8000000000000000',
+    '9223372036854775808',
+    '-9223372036854775808',
+    '9223372036854775807K',
+    '-9223372036854775808K',
+);
+foreach ($cases as $case) {
+    echo "--", $case, "--\n";
+    var_dump(ini_parse_quantity($case));
+}
+"#,
+    )
+    .unwrap();
+    let stdout = execution.stdout.clone();
+    let exit_code = execution.exit_code;
+
+    restore_env_var("PHPC_PHPT_INI_FLAGS", previous);
+
+    assert!(stdout.contains(
+        "Warning: Invalid quantity \"0x8000000000000000\": value is out of range, using overflow result for backwards compatibility"
+    ));
+    assert!(stdout.contains(
+        "Warning: Invalid quantity \"9223372036854775808\": value is out of range, using overflow result for backwards compatibility"
+    ));
+    assert!(stdout.contains(
+        "Warning: Invalid quantity \"9223372036854775807K\": value is out of range, using overflow result for backwards compatibility"
+    ));
+    assert!(stdout.contains(
+        "Warning: Invalid quantity \"-9223372036854775808K\": value is out of range, using overflow result for backwards compatibility"
+    ));
+    assert!(stdout.contains("--0x8000000000000000--\n\nWarning:"));
+    assert!(stdout
+        .contains("int(-9223372036854775808)\n---0x8000000000000000--\nint(-9223372036854775808)"));
+    assert!(stdout.contains("--9223372036854775808--\n\nWarning:"));
+    assert!(stdout.contains(
+        "int(-9223372036854775808)\n---9223372036854775808--\nint(-9223372036854775808)"
+    ));
+    assert!(stdout.contains("int(-1024)"));
+    assert!(stdout.contains("int(0)"));
+    assert_eq!(exit_code, 0);
+}
+
+#[test]
+fn ini_parse_quantity_honors_phpt_error_reporting_masks() {
+    let _guard = env_lock();
+    let previous = env::var_os("PHPC_PHPT_INI_FLAGS");
+
+    set_env_var(
+        "PHPC_PHPT_INI_FLAGS",
+        "-d error_reporting=E_ALL ^ E_WARNING",
+    );
+    let xor_execution = run_source("<?php\necho ini_parse_quantity('1mb'), \"\\n\";\n").unwrap();
+    assert_eq!(xor_execution.stdout, "1\n");
+    assert_eq!(xor_execution.exit_code, 0);
+
+    set_env_var(
+        "PHPC_PHPT_INI_FLAGS",
+        "-d error_reporting=~E_WARNING & E_ALL",
+    );
+    let leading_not_execution = run_source("<?php\necho error_reporting(), \"\\n\";\n").unwrap();
+    let leading_not_stdout = leading_not_execution.stdout.clone();
+    let leading_not_exit_code = leading_not_execution.exit_code;
+
+    restore_env_var("PHPC_PHPT_INI_FLAGS", previous);
+
+    assert_eq!(leading_not_stdout, "0\n");
+    assert_eq!(leading_not_exit_code, 0);
+}
+
+#[test]
 fn ini_builtins_are_available_through_string_valued_calls() {
     let execution = run_source(
         r#"<?php

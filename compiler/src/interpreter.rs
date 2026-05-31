@@ -83734,6 +83734,7 @@ impl Interpreter {
             "ini_get" => self.call_ini_get(&args, span),
             "ini_get_all" => self.call_ini_get_all(&args, span),
             "ini_set" => self.call_ini_set(&args, span),
+            "ini_parse_quantity" => self.call_ini_parse_quantity(&args, span),
             "parse_ini_file" => self.call_parse_ini_file(&args, span),
             "parse_ini_string" => self.call_parse_ini_string(&args, span),
             "opcache_get_configuration" => self.call_opcache_get_configuration(&args, span),
@@ -103429,6 +103430,7 @@ fn is_builtin(name: &str) -> bool {
             | "ini_get"
             | "ini_get_all"
             | "ini_set"
+            | "ini_parse_quantity"
             | "parse_ini_file"
             | "parse_ini_string"
             | "opcache_get_configuration"
@@ -132406,6 +132408,34 @@ impl Interpreter {
         Ok(Value::String(previous))
     }
 
+    fn call_ini_parse_quantity(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("ini_parse_quantity", args, 1, span)?;
+
+        let value = match &args[0] {
+            Value::Null | Value::Bool(_) | Value::Int(_) | Value::Float(_) | Value::String(_) => {
+                args[0].echo_string()
+            }
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "ini_parse_quantity()",
+                        format!(
+                            "quantity argument must be null or scalar in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+        };
+
+        let parsed = parse_ini_quantity_value(&value);
+        if let Some(warning) = parsed.warning {
+            self.emit_display_warning(warning, span)?;
+        }
+        Ok(Value::Int(parsed.value))
+    }
+
     fn ini_value(&self, name: &str) -> Option<String> {
         let normalized = normalize_ini_name(name);
         if normalized == "include_path" {
@@ -134698,6 +134728,229 @@ fn parse_ini_size_bytes(value: &str) -> Option<i64> {
     number.checked_mul(multiplier)
 }
 
+struct IniQuantityValue {
+    value: i64,
+    warning: Option<String>,
+}
+
+struct IniQuantityNumber {
+    value: i64,
+    raw: u64,
+    text: String,
+    end: usize,
+    overflow: bool,
+}
+
+fn parse_ini_quantity_value(value: &str) -> IniQuantityValue {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return IniQuantityValue {
+            value: 0,
+            warning: None,
+        };
+    }
+
+    let Some(number) = parse_ini_quantity_integer_prefix(trimmed) else {
+        let reason = if is_ini_quantity_bare_base_prefix(trimmed) {
+            "no digits after base prefix"
+        } else {
+            "no valid leading digits"
+        };
+        return IniQuantityValue {
+            value: 0,
+            warning: Some(format!(
+                "Invalid quantity \"{value}\": {reason}, interpreting as \"0\" for backwards compatibility"
+            )),
+        };
+    };
+
+    let suffix = trimmed[number.end..]
+        .char_indices()
+        .rev()
+        .find(|(_, ch)| !ch.is_whitespace())
+        .map(|(index, ch)| (number.end + index, ch));
+
+    let Some((suffix_index, suffix)) = suffix else {
+        return IniQuantityValue {
+            value: number.value,
+            warning: number.overflow.then(|| {
+                format!(
+                    "Invalid quantity \"{value}\": value is out of range, using overflow result for backwards compatibility"
+                )
+            }),
+        };
+    };
+
+    let suffix_lower = suffix.to_ascii_lowercase();
+    let multiplier = match suffix_lower {
+        'g' => Some(1024_u64 * 1024 * 1024),
+        'm' => Some(1024_u64 * 1024),
+        'k' => Some(1024_u64),
+        _ => None,
+    };
+
+    let Some(multiplier) = multiplier else {
+        return IniQuantityValue {
+            value: number.value,
+            warning: Some(format!(
+                "Invalid quantity \"{value}\": unknown multiplier \"{suffix_lower}\", interpreting as \"{}\" for backwards compatibility",
+                number.text
+            )),
+        };
+    };
+
+    let between = &trimmed[number.end..suffix_index];
+    let malformed_suffix_warning = between.chars().any(|ch| !ch.is_whitespace()).then(|| {
+        let whitespace_before_suffix = between
+            .char_indices()
+            .rev()
+            .take_while(|(_, ch)| ch.is_whitespace())
+            .map(|(_, ch)| ch)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect::<String>();
+        format!(
+            "Invalid quantity \"{value}\", interpreting as \"{}{whitespace_before_suffix}{suffix_lower}\" for backwards compatibility",
+            number.text
+        )
+    });
+
+    let multiplier_i64 = multiplier as i64;
+    let multiplier_overflow = if number.value > 0 {
+        number.value > i64::MAX / multiplier_i64
+    } else {
+        number.value < i64::MIN / multiplier_i64
+    };
+    let overflow = number.overflow || multiplier_overflow;
+    let multiplied = number.raw.wrapping_mul(multiplier) as i64;
+
+    IniQuantityValue {
+        value: multiplied,
+        warning: malformed_suffix_warning.or_else(|| {
+            overflow.then(|| {
+                format!(
+                    "Invalid quantity \"{value}\": value is out of range, using overflow result for backwards compatibility"
+                )
+            })
+        }),
+    }
+}
+
+fn is_ini_quantity_bare_base_prefix(value: &str) -> bool {
+    let value = value.trim();
+    let value = value
+        .strip_prefix('+')
+        .or_else(|| value.strip_prefix('-'))
+        .unwrap_or(value);
+    matches!(value, "0x" | "0X")
+}
+
+fn parse_ini_quantity_integer_prefix(value: &str) -> Option<IniQuantityNumber> {
+    let bytes = value.as_bytes();
+    if bytes.is_empty() {
+        return None;
+    }
+
+    let mut index = 0;
+    let mut negative = false;
+    if matches!(bytes.get(index), Some(b'+') | Some(b'-')) {
+        negative = bytes[index] == b'-';
+        index += 1;
+    }
+
+    if bytes.get(index) == Some(&b'0') && matches!(bytes.get(index + 1), Some(b'x') | Some(b'X')) {
+        let digits_start = index + 2;
+        let mut end = digits_start;
+        while matches!(bytes.get(end), Some(byte) if byte.is_ascii_hexdigit()) {
+            end += 1;
+        }
+        if end == digits_start {
+            return None;
+        }
+        let (magnitude, magnitude_overflow) =
+            parse_ini_quantity_unsigned_digits(&bytes[digits_start..end], 16);
+        return Some(ini_quantity_signed_number(
+            value[..end].to_string(),
+            end,
+            negative,
+            magnitude,
+            magnitude_overflow,
+        ));
+    }
+
+    let digits_start = index;
+    while matches!(bytes.get(index), Some(byte) if byte.is_ascii_digit()) {
+        index += 1;
+    }
+    if index == digits_start {
+        return None;
+    }
+    let (magnitude, magnitude_overflow) =
+        parse_ini_quantity_unsigned_digits(&bytes[digits_start..index], 10);
+    Some(ini_quantity_signed_number(
+        value[..index].to_string(),
+        index,
+        negative,
+        magnitude,
+        magnitude_overflow,
+    ))
+}
+
+fn parse_ini_quantity_unsigned_digits(digits: &[u8], base: u64) -> (u64, bool) {
+    let mut value = 0_u64;
+    let mut overflow = false;
+    for byte in digits {
+        let digit = match *byte {
+            b'0'..=b'9' => u64::from(*byte - b'0'),
+            b'a'..=b'f' => u64::from(*byte - b'a' + 10),
+            b'A'..=b'F' => u64::from(*byte - b'A' + 10),
+            _ => return (value, overflow),
+        };
+        match value
+            .checked_mul(base)
+            .and_then(|next| next.checked_add(digit))
+        {
+            Some(next) => value = next,
+            None => {
+                value = u64::MAX;
+                overflow = true;
+            }
+        }
+    }
+    (value, overflow)
+}
+
+fn ini_quantity_signed_number(
+    text: String,
+    end: usize,
+    negative: bool,
+    magnitude: u64,
+    magnitude_overflow: bool,
+) -> IniQuantityNumber {
+    let mut raw = magnitude;
+    let mut overflow = magnitude_overflow;
+    if negative {
+        if !overflow && raw == (i64::MAX as u64) + 1 {
+            raw = 0_u64.wrapping_sub(raw);
+        } else if (raw as i64) < 0 {
+            overflow = true;
+        } else {
+            raw = 0_u64.wrapping_sub(raw);
+        }
+    } else if (raw as i64) < 0 {
+        overflow = true;
+    }
+
+    IniQuantityNumber {
+        value: raw as i64,
+        raw,
+        text,
+        end,
+        overflow,
+    }
+}
+
 fn opcache_default_i64(name: &str) -> i64 {
     opcache_default_ini_value(name)
         .and_then(parse_ini_i64_prefix)
@@ -134952,18 +135205,47 @@ fn compat_ini_builtin_default_value(normalized_name: &str) -> Option<&'static st
 }
 
 fn parse_ini_error_reporting_mask(value: &str) -> Option<i64> {
-    let mut tokens = value.split('&');
-    let first = parse_error_reporting_term(tokens.next()?.trim())?;
-    let mut mask = first;
-    for token in tokens {
-        let token = token.trim();
-        if let Some(rest) = token.strip_prefix('~') {
-            mask &= !parse_error_reporting_term(rest.trim())?;
-        } else {
-            mask &= parse_error_reporting_term(token)?;
-        }
+    if value.trim_start().starts_with('~') {
+        return Some(0);
     }
+
+    let mut mask = None;
+    let mut operator = '&';
+    let mut start = 0;
+
+    for (index, ch) in value.char_indices() {
+        if !matches!(ch, '&' | '^' | '|') {
+            continue;
+        }
+
+        let term = parse_error_reporting_mask_term(value[start..index].trim())?;
+        mask = Some(match (mask, operator) {
+            (None, _) => term,
+            (Some(current), '&') => current & term,
+            (Some(current), '^') => current ^ term,
+            (Some(current), '|') => current | term,
+            _ => return None,
+        });
+        operator = ch;
+        start = index + ch.len_utf8();
+    }
+
+    let term = parse_error_reporting_mask_term(value[start..].trim())?;
+    let mask = match (mask, operator) {
+        (None, _) => term,
+        (Some(current), '&') => current & term,
+        (Some(current), '^') => current ^ term,
+        (Some(current), '|') => current | term,
+        _ => return None,
+    };
     Some(mask)
+}
+
+fn parse_error_reporting_mask_term(value: &str) -> Option<i64> {
+    if let Some(rest) = value.strip_prefix('~') {
+        return Some(!parse_error_reporting_term(rest.trim())?);
+    }
+    parse_error_reporting_term(value)
 }
 
 fn parse_error_reporting_term(value: &str) -> Option<i64> {
@@ -135052,13 +135334,17 @@ fn phpc_phpt_ini_overrides_from_env() -> HashMap<String, String> {
     let Ok(flags) = std::env::var("PHPC_PHPT_INI_FLAGS") else {
         return values;
     };
-    let mut parts = flags.split_whitespace().peekable();
-    while let Some(part) = parts.next() {
+    let parts: Vec<_> = flags.split_whitespace().collect();
+    let mut index = 0;
+    while index < parts.len() {
+        let part = parts[index];
         let setting = if part == "-d" {
-            parts.next()
+            index += 1;
+            parts.get(index).copied()
         } else {
             part.strip_prefix("-d")
         };
+        index += 1;
         let Some(setting) = setting else {
             continue;
         };
@@ -135066,8 +135352,14 @@ fn phpc_phpt_ini_overrides_from_env() -> HashMap<String, String> {
             continue;
         };
         if !name.is_empty() {
+            let mut value = value.to_string();
+            while index < parts.len() && !parts[index].starts_with("-d") {
+                value.push(' ');
+                value.push_str(parts[index]);
+                index += 1;
+            }
             let normalized_name = normalize_ini_name(name);
-            let normalized_value = normalize_phpt_ini_override_value(&normalized_name, value);
+            let normalized_value = normalize_phpt_ini_override_value(&normalized_name, &value);
             values.insert(normalized_name, normalized_value);
         }
     }
