@@ -3210,7 +3210,8 @@
   targets, non-object property targets, and missing property names fail with
   stable runtime diagnostics instead of materializing objects or dynamic
   properties
-- builtins for the documented subset: `strlen`, `chr`, `strtolower`, `strtoupper`, `trim`, `ltrim`,
+- builtins for the documented subset: `strlen`, `chr`, `bin2hex`, `hex2bin`,
+  `pack`, `unpack`, `strtolower`, `strtoupper`, `trim`, `ltrim`,
   `rtrim`, `strcasecmp`, `strncmp`, `strncasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`, `strspn`, `strcspn`, `strpbrk`, `strpos`, `stripos`, `strrpos`, `strripos`, `strstr`, `strchr`, `stristr`, `strtok`, `substr`,
   `str_shuffle`, `wordwrap`, `str_word_count`, `strnatcmp`, `strnatcasecmp`,
   `similar_text`,
@@ -3646,6 +3647,18 @@
   parameter names, so skipped optional CSV arguments are filled from the
   internal metadata defaults. Empty input returns an array containing `null`,
   and the covered NUL-escape EOF edge keeps PHP's binary string shape.
+  `pack($format, ...$values)` and `unpack($format, $string, $offset = 0)`
+  support the bounded binary format subset used by the current string
+  pack/unpack PHPT rows: hexadecimal `H`/`h`, padding `x`, cursor controls
+  `X` and `@` for unpacking, space/NUL string fields `A`/`Z`, 32-bit
+  little-endian integers `V`, native 32-bit integer aliases `l`/`i`/`I`,
+  64-bit integer forms `Q`/`J`/`P`/`q`, and float/double forms
+  `e`/`E`/`g`/`G`. Unpack names, repeated values, `*` repeaters for the
+  covered scalar formats, offset validation, and the invalid-format
+  `ValueError` shape are covered. Broad host-portable endian matrices,
+  every PHP pack format code, alignment codes, references/copy-on-write,
+  exact warning breadth beyond the covered rows, and native lowering remain
+  unsupported.
   `parse_str($string, $result)` is supported only as a direct call with
   a direct result variable; it uses the bounded URL-encoded parser and current
   `arg_separator.input` value, rejects raw NUL bytes with the PHP `ValueError`
@@ -7866,8 +7879,9 @@
   global builtin/user-function table.
   Dynamic function calls are supported only when the callee expression evaluates
   to a string that case-insensitively resolves exactly to a user-defined function or to
-  one of the documented callable builtins: `strlen`, `strtolower`, `strtoupper`,
-  `str_increment`, `str_decrement`, `trim`, `ltrim`, `rtrim`, `strcasecmp`, `strncmp`, `strncasecmp`,
+  one of the documented callable builtins: `strlen`, `bin2hex`, `hex2bin`,
+  `pack`, `unpack`, `strtolower`, `strtoupper`, `str_increment`,
+  `str_decrement`, `trim`, `ltrim`, `rtrim`, `strcasecmp`, `strncmp`, `strncasecmp`,
   `str_contains`, `str_starts_with`, `str_ends_with`, `strspn`, `strcspn`, `strpbrk`, `strpos`, `stripos`, `strrpos`, `strripos`, `strstr`, `strchr`, `stristr`, `strtok`, `substr`, `str_shuffle`, `wordwrap`, `str_word_count`, `strnatcmp`, `strnatcasecmp`, `similar_text`, `convert_uuencode`, `convert_uudecode`, `substr_replace`, `substr_compare`, `substr_count`, `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `str_getcsv`, `error_reporting`,
   `printf`, `fprintf`, `sprintf`, `vsprintf`, `vprintf`, `vfprintf`, `call_user_func`, `call_user_func_array`, `implode`, `basename`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`,
   `file_put_contents`, `readfile`, `unlink`, `mkdir`, `rmdir`, `copy`, `rename`, `chdir`, `scandir`, `stat`, `lstat`, `fileperms`, `chmod`, `chown`, `chgrp`,
@@ -8114,7 +8128,7 @@
   full first-class callable `Closure` object parity, namespace-qualified callable
   resolution, autoload interaction, and native lowering for type declarations
   are unsupported.
-- Builtins: `strlen`, `strtolower`, `strtoupper`, `str_increment`,
+- Builtins: `strlen`, `bin2hex`, `hex2bin`, `pack`, `unpack`, `strtolower`, `strtoupper`, `str_increment`,
   `str_decrement`, `trim`, `ltrim`, `rtrim`, `strcasecmp`, `strncmp`, `strncasecmp`, `str_contains`,
   `str_starts_with`, `str_ends_with`, `strspn`, `strcspn`, `strpbrk`, `strpos`, `stripos`, `strrpos`, `strripos`, `strstr`, `strchr`, `stristr`, `strtok`, `substr`, `substr_replace`, `substr_compare`, `substr_count`, `similar_text`, `str_replace`, `str_getcsv`, `parse_str`, `printf`, `fprintf`, `sprintf`, `vsprintf`, `vprintf`, `vfprintf`,
   `call_user_func`, `call_user_func_array`, `implode`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`,

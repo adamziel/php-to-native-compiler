@@ -1156,9 +1156,15 @@ impl<'a> Lexer<'a> {
             if digits.is_empty() {
                 return Err(self.error_at(span, format!("invalid integer literal '{text}'")));
             }
-            let value = i64::from_str_radix(&digits, 16)
-                .map_err(|_| self.error_at(span, format!("invalid integer literal '{text}'")))?;
-            return Ok(TokenKind::Int(value));
+            return match i64::from_str_radix(&digits, 16) {
+                Ok(value) => Ok(TokenKind::Int(value)),
+                Err(_) => {
+                    let value = u64::from_str_radix(&digits, 16).map_err(|_| {
+                        self.error_at(span, format!("invalid integer literal '{text}'"))
+                    })?;
+                    Ok(TokenKind::Float(value as f64))
+                }
+            };
         }
 
         if first == '0' && matches!(self.peek(), Some('0'..='9')) {

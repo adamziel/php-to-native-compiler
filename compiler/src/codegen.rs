@@ -66349,6 +66349,8 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "chr",
     "bin2hex",
     "hex2bin",
+    "pack",
+    "unpack",
     "ord",
     "dechex",
     "decbin",

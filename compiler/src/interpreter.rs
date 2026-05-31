@@ -79708,8 +79708,8 @@ impl Interpreter {
             "chr" => self.call_chr(&args, span),
             "bin2hex" => call_bin2hex(&args, span),
             "hex2bin" => self.call_hex2bin(&args, span),
-            "pack" => call_pack(&args, span),
-            "unpack" => call_unpack(&args, span),
+            "pack" => self.call_pack(&args, span),
+            "unpack" => self.call_unpack(&args, span),
             "ord" => self.call_ord(&args, span),
             "dechex" => self.call_int_base_string_builtin("dechex()", &args, 16, span),
             "decbin" => self.call_int_base_string_builtin("decbin()", &args, 2, span),
@@ -97546,8 +97546,15 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
         | ("strripos()", "Argument #3 ($offset) must be contained in argument #1 ($haystack)")
         | ("range()", "Argument #3 ($step) cannot be 0")
         | ("range()", "Argument #3 ($step) must be greater than 0 for increasing ranges")
+        | (
+            "unpack()",
+            "Argument #3 ($offset) must be contained in argument #2 ($data)",
+        )
         | ("range()", "Argument #3 ($step) must be less than the range spanned by argument #1 ($start) and argument #2 ($end)") => {
             Some(format!("{function}: {message}"))
+        }
+        ("unpack()", message) if message.starts_with("Invalid format type ") => {
+            Some(message.to_string())
         }
         ("range()", message)
             if message.starts_with("Argument #")
@@ -105907,138 +105914,301 @@ struct PackFormatItem {
     name: Option<String>,
 }
 
-fn call_pack(args: &[Value], span: Span) -> CompileResult<Value> {
-    if args.is_empty() {
-        return Err(runtime_error(
-            span,
-            RuntimeError::arity_mismatch(
-                "pack()",
-                ArityExpectation::Between {
-                    min: 1,
-                    max: usize::MAX,
-                },
-                0,
-            ),
-        ));
+impl PackFormatItem {
+    fn code_name(&self) -> &'static str {
+        match self.code {
+            b'A' => "A",
+            b'Z' => "Z",
+            b'V' => "V",
+            b'l' => "l",
+            b'i' => "i",
+            b'I' => "I",
+            b'Q' => "Q",
+            b'J' => "J",
+            b'P' => "P",
+            b'q' => "q",
+            b'e' => "e",
+            b'E' => "E",
+            b'g' => "g",
+            b'G' => "G",
+            _ => "value",
+        }
     }
+}
 
-    let format = string_compare_argument_bytes("pack()", "format", &args[0], span)?;
-    let items = parse_pack_format_items("pack()", &format, false, span)?;
-    let mut output = Vec::new();
-    let mut value_index = 1usize;
+impl Interpreter {
+    fn call_pack(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if args.is_empty() {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "pack()",
+                    ArityExpectation::Between {
+                        min: 1,
+                        max: usize::MAX,
+                    },
+                    0,
+                ),
+            ));
+        }
 
-    for item in items {
-        match item.code {
-            b'x' => {
-                let count = match item.repeat {
-                    PackRepeat::Count(count) => count,
-                    PackRepeat::Star => {
+        let format = string_compare_argument_bytes("pack()", "format", &args[0], span)?;
+        let items = parse_pack_format_items("pack()", &format, false, span)?;
+        let mut output = Vec::new();
+        let mut value_index = 1usize;
+
+        for item in items {
+            match item.code {
+                b'x' => {
+                    output.extend(std::iter::repeat(0).take(pack_repeat_count(
+                        "pack()",
+                        "x",
+                        item.repeat,
+                        0,
+                        span,
+                    )?));
+                }
+                b'H' | b'h' => {
+                    let value = pack_next_value(args, &mut value_index, "H/h", span)?;
+                    let value = string_compare_argument_bytes("pack()", "value", value, span)?;
+                    let nibble_count = match item.repeat {
+                        PackRepeat::Star => value.len(),
+                        PackRepeat::Count(count) => count,
+                    };
+                    if value.len() < nibble_count {
                         return Err(runtime_error(
                             span,
                             RuntimeError::unsupported_call(
                                 "pack()",
-                                "Type x does not support the * repeater in the current subset",
+                                "H/h format values shorter than the requested repeater are not implemented",
                             ),
                         ));
                     }
-                };
-                output.extend(std::iter::repeat(0).take(count));
-            }
-            b'H' | b'h' => {
-                let Some(value) = args.get(value_index) else {
-                    return Err(runtime_error(
+                    output.extend(pack_hex_nibbles(
+                        &value[..nibble_count],
+                        item.code == b'H',
                         span,
-                        RuntimeError::unsupported_call(
-                            "pack()",
-                            "not enough arguments for H/h format values in the current subset",
-                        ),
-                    ));
-                };
-                value_index += 1;
-                let value = string_compare_argument_bytes("pack()", "value", value, span)?;
-                let nibble_count = match item.repeat {
-                    PackRepeat::Star => value.len(),
-                    PackRepeat::Count(count) => count,
-                };
-                if value.len() < nibble_count {
-                    return Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            "pack()",
-                            "H/h format values shorter than the requested repeater are not implemented",
-                        ),
-                    ));
+                    )?);
                 }
-                output.extend(pack_hex_nibbles(
-                    &value[..nibble_count],
-                    item.code == b'H',
-                    span,
-                )?);
+                b'A' | b'Z' => {
+                    let value = pack_next_value(args, &mut value_index, item.code_name(), span)?;
+                    let value = string_compare_argument_bytes("pack()", "value", value, span)?;
+                    output.extend(pack_string_field(item.code, item.repeat, &value));
+                }
+                b'e' | b'E' | b'g' | b'G' => {
+                    let count = pack_numeric_repeat_count(item.repeat, args.len(), value_index);
+                    for _ in 0..count {
+                        let value =
+                            pack_next_value(args, &mut value_index, item.code_name(), span)?;
+                        let value = self.pack_float_argument(value, span)?;
+                        match item.code {
+                            b'e' => output.extend(value.to_le_bytes()),
+                            b'E' => output.extend(value.to_be_bytes()),
+                            b'g' => output.extend((value as f32).to_le_bytes()),
+                            b'G' => output.extend((value as f32).to_be_bytes()),
+                            _ => unreachable!(),
+                        }
+                    }
+                }
+                b'V' | b'l' | b'i' | b'I' | b'Q' | b'J' | b'P' | b'q' => {
+                    let count = pack_numeric_repeat_count(item.repeat, args.len(), value_index);
+                    for _ in 0..count {
+                        let value =
+                            pack_next_value(args, &mut value_index, item.code_name(), span)?;
+                        let value = self.pack_int_argument(value, span)?;
+                        output.extend(pack_integer_bytes(item.code, value));
+                    }
+                }
+                _ => unreachable!("parse_pack_format_items filters unsupported pack format codes"),
             }
-            _ => unreachable!("parse_pack_format_items filters unsupported pack format codes"),
         }
+
+        Ok(interpreter_value_from_php_string_bytes(output))
     }
 
-    Ok(interpreter_value_from_php_string_bytes(output))
-}
+    fn call_unpack(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(2..=3).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "unpack()",
+                    ArityExpectation::Between { min: 2, max: 3 },
+                    args.len(),
+                ),
+            ));
+        }
 
-fn call_unpack(args: &[Value], span: Span) -> CompileResult<Value> {
-    if !(2..=3).contains(&args.len()) {
-        return Err(runtime_error(
-            span,
-            RuntimeError::arity_mismatch(
-                "unpack()",
-                ArityExpectation::Between { min: 2, max: 3 },
-                args.len(),
-            ),
-        ));
-    }
-    if args.len() == 3 {
-        let offset = integer_argument_current_subset("unpack()", "offset", &args[2], span)?;
-        if offset != 0 {
+        let format = string_compare_argument_bytes("unpack()", "format", &args[0], span)?;
+        let data = string_compare_argument_bytes("unpack()", "string", &args[1], span)?;
+        let offset = match args.get(2) {
+            Some(value) => integer_argument_current_subset("unpack()", "offset", value, span)?,
+            None => 0,
+        };
+        if offset < 0 || offset as usize > data.len() {
             return Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
                     "unpack()",
-                    "non-zero offsets are not implemented for bounded H/h unpack()",
+                    "Argument #3 ($offset) must be contained in argument #2 ($data)",
                 ),
             ));
         }
+
+        let items = parse_pack_format_items("unpack()", &format, true, span)?;
+        let base_offset = offset as usize;
+        let mut cursor = base_offset;
+        let mut array = PhpArray::new();
+        let mut next_key = 1_i64;
+
+        for item in items {
+            match item.code {
+                b'x' => {
+                    cursor = cursor.saturating_add(pack_repeat_count(
+                        "unpack()",
+                        "x",
+                        item.repeat,
+                        0,
+                        span,
+                    )?);
+                }
+                b'X' => {
+                    let count = pack_repeat_count("unpack()", "X", item.repeat, 0, span)?;
+                    cursor = cursor.saturating_sub(count);
+                }
+                b'@' => {
+                    let count = pack_repeat_count("unpack()", "@", item.repeat, 0, span)?;
+                    cursor = base_offset.saturating_add(count);
+                }
+                b'H' | b'h' => {
+                    let nibble_count = match item.repeat {
+                        PackRepeat::Star => data.len().saturating_sub(cursor) * 2,
+                        PackRepeat::Count(count) => count,
+                    };
+                    let byte_count = (nibble_count + 1) / 2;
+                    if !self.unpack_has_bytes(&data, cursor, byte_count, item.code, span)? {
+                        return Ok(Value::Bool(false));
+                    }
+                    let value = unpack_hex_nibbles(
+                        &data[cursor..cursor + byte_count],
+                        nibble_count,
+                        item.code == b'H',
+                    );
+                    insert_unpack_value(
+                        &mut array,
+                        &mut next_key,
+                        item.name.as_deref(),
+                        1,
+                        0,
+                        Value::String(value),
+                    );
+                    cursor += byte_count;
+                }
+                b'A' | b'Z' => {
+                    let count = unpack_string_repeat_count(item.repeat, data.len(), cursor);
+                    if !self.unpack_has_bytes(&data, cursor, count, item.code, span)? {
+                        return Ok(Value::Bool(false));
+                    }
+                    let value = unpack_string_field(item.code, &data[cursor..cursor + count]);
+                    insert_unpack_value(
+                        &mut array,
+                        &mut next_key,
+                        item.name.as_deref(),
+                        1,
+                        0,
+                        interpreter_value_from_php_string_bytes(value),
+                    );
+                    cursor += count;
+                }
+                b'e' | b'E' | b'g' | b'G' | b'V' | b'l' | b'i' | b'I' | b'Q' | b'J' | b'P'
+                | b'q' => {
+                    let size = pack_fixed_item_size(item.code).expect("fixed-size pack code");
+                    let count = unpack_numeric_repeat_count(item.repeat, data.len(), cursor, size);
+                    for index in 0..count {
+                        if !self.unpack_has_bytes(&data, cursor, size, item.code, span)? {
+                            return Ok(Value::Bool(false));
+                        }
+                        let value = unpack_fixed_value(item.code, &data[cursor..cursor + size]);
+                        insert_unpack_value(
+                            &mut array,
+                            &mut next_key,
+                            item.name.as_deref(),
+                            count,
+                            index,
+                            value,
+                        );
+                        cursor += size;
+                    }
+                }
+                _ => {
+                    unreachable!("parse_pack_format_items filters unsupported unpack format codes")
+                }
+            }
+        }
+
+        Ok(Value::Array(array))
     }
 
-    let format = string_compare_argument_bytes("unpack()", "format", &args[0], span)?;
-    let data = string_compare_argument_bytes("unpack()", "string", &args[1], span)?;
-    let items = parse_pack_format_items("unpack()", &format, true, span)?;
-    if items.len() != 1 {
-        return Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                "unpack()",
-                "multiple format segments are not implemented for bounded H/h unpack()",
+    fn pack_int_argument(&mut self, value: &Value, span: Span) -> CompileResult<i64> {
+        match value {
+            Value::Null => Ok(0),
+            Value::Bool(value) => Ok(i64::from(*value)),
+            Value::Int(value) => Ok(*value),
+            Value::Float(value) if value.is_finite() => {
+                self.sprintf_float_to_int_argument(*value, span)
+            }
+            Value::String(value) => Ok(parse_sprintf_numeric_string(value).unwrap_or(0.0) as i64),
+            Value::BinaryString(value) => Ok(std::str::from_utf8(value)
+                .ok()
+                .and_then(parse_sprintf_numeric_string)
+                .unwrap_or(0.0) as i64),
+            Value::Array(value) => Ok(i64::from(!value.is_empty())),
+            Value::Resource(id) => Ok(*id),
+            Value::Object(object) => {
+                self.emit_display_warning(
+                    format!(
+                        "Object of class {} could not be converted to int",
+                        object.class_name()
+                    ),
+                    span,
+                )?;
+                Ok(1)
+            }
+            Value::Closure(_) => {
+                self.emit_display_warning(
+                    "Object of class Closure could not be converted to int",
+                    span,
+                )?;
+                Ok(1)
+            }
+            Value::Float(_) => Ok(0),
+        }
+    }
+
+    fn pack_float_argument(&mut self, value: &Value, span: Span) -> CompileResult<f64> {
+        self.sprintf_float_argument("pack()", value, span)
+    }
+
+    fn unpack_has_bytes(
+        &mut self,
+        data: &[u8],
+        cursor: usize,
+        needed: usize,
+        code: u8,
+        span: Span,
+    ) -> CompileResult<bool> {
+        if cursor.saturating_add(needed) <= data.len() {
+            return Ok(true);
+        }
+        self.emit_display_warning(
+            format!(
+                "unpack(): Type {}: not enough input values, need {needed} values but only {} was provided",
+                code as char,
+                data.len().saturating_sub(cursor)
             ),
-        ));
+            span,
+        )?;
+        Ok(false)
     }
-    let mut array = PhpArray::new();
-    let mut next_key = 1_i64;
-
-    for item in items {
-        let nibble_count = match item.repeat {
-            PackRepeat::Star => data.len() * 2,
-            PackRepeat::Count(count) => count,
-        };
-        if nibble_count > data.len() * 2 {
-            return Ok(Value::Bool(false));
-        }
-        let value = unpack_hex_nibbles(&data, nibble_count, item.code == b'H');
-        if let Some(name) = item.name {
-            array.insert(name, Value::String(value));
-        } else {
-            array.insert(next_key, Value::String(value));
-            next_key += 1;
-        }
-    }
-
-    Ok(Value::Array(array))
 }
 
 fn parse_pack_format_items(
@@ -106056,11 +106226,58 @@ fn parse_pack_format_items(
             continue;
         }
         let supported = if allow_names {
-            matches!(code, b'H' | b'h')
+            matches!(
+                code,
+                b'x' | b'X'
+                    | b'@'
+                    | b'H'
+                    | b'h'
+                    | b'A'
+                    | b'Z'
+                    | b'V'
+                    | b'l'
+                    | b'i'
+                    | b'I'
+                    | b'Q'
+                    | b'J'
+                    | b'P'
+                    | b'q'
+                    | b'e'
+                    | b'E'
+                    | b'g'
+                    | b'G'
+            )
         } else {
-            matches!(code, b'x' | b'H' | b'h')
+            matches!(
+                code,
+                b'x' | b'H'
+                    | b'h'
+                    | b'A'
+                    | b'Z'
+                    | b'V'
+                    | b'l'
+                    | b'i'
+                    | b'I'
+                    | b'Q'
+                    | b'J'
+                    | b'P'
+                    | b'q'
+                    | b'e'
+                    | b'E'
+                    | b'g'
+                    | b'G'
+            )
         };
         if !supported {
+            if allow_names {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        function,
+                        format!("Invalid format type {}", code as char),
+                    ),
+                ));
+            }
             return Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
@@ -106129,6 +106346,182 @@ fn parse_pack_format_items(
     }
 
     Ok(items)
+}
+
+fn pack_next_value<'a>(
+    args: &'a [Value],
+    value_index: &mut usize,
+    code: &str,
+    span: Span,
+) -> CompileResult<&'a Value> {
+    let Some(value) = args.get(*value_index) else {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "pack()",
+                format!("not enough arguments for {code} format values in the current subset"),
+            ),
+        ));
+    };
+    *value_index += 1;
+    Ok(value)
+}
+
+fn pack_repeat_count(
+    function: &str,
+    code: &str,
+    repeat: PackRepeat,
+    star_count: usize,
+    span: Span,
+) -> CompileResult<usize> {
+    match repeat {
+        PackRepeat::Count(count) => Ok(count),
+        PackRepeat::Star => {
+            if star_count == 0 {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        function,
+                        format!(
+                            "Type {code} does not support the * repeater in the current subset"
+                        ),
+                    ),
+                ));
+            }
+            Ok(star_count)
+        }
+    }
+}
+
+fn pack_numeric_repeat_count(repeat: PackRepeat, arg_count: usize, value_index: usize) -> usize {
+    match repeat {
+        PackRepeat::Count(count) => count,
+        PackRepeat::Star => arg_count.saturating_sub(value_index),
+    }
+}
+
+fn pack_string_field(code: u8, repeat: PackRepeat, value: &[u8]) -> Vec<u8> {
+    match code {
+        b'A' => {
+            let count = match repeat {
+                PackRepeat::Star => value.len(),
+                PackRepeat::Count(count) => count,
+            };
+            let mut output = value.iter().copied().take(count).collect::<Vec<_>>();
+            output.resize(count, b' ');
+            output
+        }
+        b'Z' => {
+            let count = match repeat {
+                PackRepeat::Star => value.len().saturating_add(1),
+                PackRepeat::Count(count) => count,
+            };
+            if count == 0 {
+                return Vec::new();
+            }
+            let mut output = value
+                .iter()
+                .copied()
+                .take(count.saturating_sub(1))
+                .collect::<Vec<_>>();
+            output.resize(count, 0);
+            output
+        }
+        _ => unreachable!("pack_string_field called for non-string code"),
+    }
+}
+
+fn pack_fixed_item_size(code: u8) -> Option<usize> {
+    match code {
+        b'g' | b'G' | b'V' | b'l' | b'i' | b'I' => Some(4),
+        b'e' | b'E' | b'Q' | b'J' | b'P' | b'q' => Some(8),
+        _ => None,
+    }
+}
+
+fn pack_integer_bytes(code: u8, value: i64) -> Vec<u8> {
+    match code {
+        b'V' | b'I' => (value as u32).to_le_bytes().to_vec(),
+        b'l' | b'i' => (value as i32).to_le_bytes().to_vec(),
+        b'Q' | b'P' => (value as u64).to_le_bytes().to_vec(),
+        b'J' => (value as u64).to_be_bytes().to_vec(),
+        b'q' => value.to_le_bytes().to_vec(),
+        _ => unreachable!("pack_integer_bytes called for non-integer code"),
+    }
+}
+
+fn unpack_string_repeat_count(repeat: PackRepeat, data_len: usize, cursor: usize) -> usize {
+    match repeat {
+        PackRepeat::Star => data_len.saturating_sub(cursor),
+        PackRepeat::Count(count) => count,
+    }
+}
+
+fn unpack_numeric_repeat_count(
+    repeat: PackRepeat,
+    data_len: usize,
+    cursor: usize,
+    size: usize,
+) -> usize {
+    match repeat {
+        PackRepeat::Star => data_len.saturating_sub(cursor) / size,
+        PackRepeat::Count(count) => count,
+    }
+}
+
+fn unpack_string_field(code: u8, value: &[u8]) -> Vec<u8> {
+    match code {
+        b'A' => {
+            let mut end = value.len();
+            while end > 0 && matches!(value[end - 1], 0 | b' ' | b'\t' | b'\r' | b'\n') {
+                end -= 1;
+            }
+            value[..end].to_vec()
+        }
+        b'Z' => {
+            let end = value
+                .iter()
+                .position(|byte| *byte == 0)
+                .unwrap_or(value.len());
+            value[..end].to_vec()
+        }
+        _ => unreachable!("unpack_string_field called for non-string code"),
+    }
+}
+
+fn unpack_fixed_value(code: u8, bytes: &[u8]) -> Value {
+    match code {
+        b'V' | b'I' => Value::Int(u32::from_le_bytes(bytes.try_into().unwrap()) as i64),
+        b'l' | b'i' => Value::Int(i32::from_le_bytes(bytes.try_into().unwrap()) as i64),
+        b'Q' | b'P' => Value::Int(u64::from_le_bytes(bytes.try_into().unwrap()) as i64),
+        b'J' => Value::Int(u64::from_be_bytes(bytes.try_into().unwrap()) as i64),
+        b'q' => Value::Int(i64::from_le_bytes(bytes.try_into().unwrap())),
+        b'e' => Value::Float(f64::from_le_bytes(bytes.try_into().unwrap())),
+        b'E' => Value::Float(f64::from_be_bytes(bytes.try_into().unwrap())),
+        b'g' => Value::Float(f32::from_le_bytes(bytes.try_into().unwrap()) as f64),
+        b'G' => Value::Float(f32::from_be_bytes(bytes.try_into().unwrap()) as f64),
+        _ => unreachable!("unpack_fixed_value called for unsupported code"),
+    }
+}
+
+fn insert_unpack_value(
+    array: &mut PhpArray,
+    next_key: &mut i64,
+    name: Option<&str>,
+    count: usize,
+    index: usize,
+    value: Value,
+) {
+    if let Some(name) = name {
+        if count == 1 {
+            array.insert(name, value);
+        } else {
+            array.insert(format!("{name}{}", index + 1), value);
+        }
+    } else {
+        array.insert(*next_key, value);
+        *next_key += 1;
+    }
 }
 
 fn pack_hex_nibbles(input: &[u8], high_first: bool, span: Span) -> CompileResult<Vec<u8>> {
@@ -115512,7 +115905,7 @@ impl Interpreter {
         self.emit_display_warning(
             format!(
                 "The float {} is not representable as an int, cast occurred",
-                php_default_precision_float_string(value)
+                php_float_to_int_warning_string(value)
             ),
             span,
         )?;
@@ -116058,6 +116451,13 @@ fn php_default_precision_float_string(value: f64) -> String {
         format!("{value:.decimals$}")
     };
     trim_php_float_string(&formatted)
+}
+
+fn php_float_to_int_warning_string(value: f64) -> String {
+    if value.is_nan() || value.is_infinite() || value == 0.0 {
+        return php_default_precision_float_string(value);
+    }
+    normalize_sprintf_exponent(trim_scientific_float(format!("{value:E}")))
 }
 
 fn trim_php_float_string(value: &str) -> String {
