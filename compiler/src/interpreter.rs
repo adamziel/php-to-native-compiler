@@ -29953,6 +29953,13 @@ impl Interpreter {
             }
         };
 
+        if let Some(value) =
+            self.bcmath_number_detached_reference_property(&object, property, span)?
+        {
+            scope.write_detached_static(target_name, value);
+            return Ok(());
+        }
+
         match object.read_property_from_context(property, current_class_id, &protected_class_ids) {
             Ok(_) => {
                 let cell = object
@@ -30000,6 +30007,13 @@ impl Interpreter {
         };
 
         let (current_class_id, protected_class_ids) = self.current_property_access_context();
+        if let Some(value) =
+            self.bcmath_number_detached_reference_property(&object, property, span)?
+        {
+            scope.write_detached_static(target_name, value);
+            return Ok(());
+        }
+
         match object.read_property_from_context(property, current_class_id, &protected_class_ids) {
             Ok(_) => {
                 let cell = object
@@ -30047,6 +30061,13 @@ impl Interpreter {
         };
 
         let (current_class_id, protected_class_ids) = self.current_property_access_context();
+        if let Some(value) =
+            self.bcmath_number_detached_reference_property(&object, property, span)?
+        {
+            scope.write_detached_static(target_name, value);
+            return Ok(());
+        }
+
         match object.read_property_from_context(property, current_class_id, &protected_class_ids) {
             Ok(_) => {
                 let cell = object
@@ -30070,6 +30091,24 @@ impl Interpreter {
                 ),
             Err(error) => Err(runtime_error(span, error)),
         }
+    }
+
+    fn bcmath_number_detached_reference_property(
+        &self,
+        object: &PhpObject,
+        property: &str,
+        span: Span,
+    ) -> CompileResult<Option<Value>> {
+        if !object.class_name().eq_ignore_ascii_case("BcMath\\Number")
+            || !matches!(property, "value" | "scale")
+        {
+            return Ok(None);
+        }
+
+        object
+            .read_public_property(property)
+            .map(Some)
+            .map_err(|error| runtime_error(span, error))
     }
 
     fn bind_static_to_magic_get_root_or_dynamic_property(
@@ -121964,7 +122003,7 @@ fn filter_validate_email(value: &Value) -> Option<String> {
 
 fn filter_validate_domain(value: &Value) -> Option<String> {
     let value = value.try_echo_string().ok()?;
-    (!value.is_empty() && !value.chars().any(|ch| ch.is_ascii_control())).then_some(value)
+    filter_url_host_is_valid(&value).then_some(value)
 }
 
 fn filter_validate_url(value: &Value, flags: i64) -> Option<String> {
@@ -121972,6 +122011,7 @@ fn filter_validate_url(value: &Value, flags: i64) -> Option<String> {
     if value.is_empty()
         || value.contains(['\r', '\n'])
         || value.chars().any(|ch| ch.is_ascii_whitespace())
+        || value.contains('\\')
     {
         return None;
     }

@@ -236,6 +236,28 @@ try {
 }
 
 #[test]
+fn bcmath_number_readonly_properties_can_be_read_by_reference_as_values() {
+    let execution = run_source(
+        r#"<?php
+$num = new BcMath\Number("1.25");
+$value = &$num->value;
+$scale = &$num->scale;
+var_dump($value, $scale);
+$value = "changed";
+var_dump($num->value);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "string(4) \"1.25\"\nint(2)\nstring(4) \"1.25\"\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn bcmath_number_object_cast_properties_and_constructor_diagnostics_are_generalized() {
     let execution = run_source(
         r#"<?php

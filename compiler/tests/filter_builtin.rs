@@ -49,6 +49,40 @@ var_dump(filter_var("invalid", FILTER_VALIDATE_INT, FILTER_NULL_ON_FAILURE));
 }
 
 #[test]
+fn filter_var_rejects_invalid_url_and_domain_authority_forms() {
+    let execution = run_source(
+        r#"<?php
+foreach ([
+    "http://php.net\\@aliyun.com/aaa.do",
+    "https://example.com\\uFF03@bing.com",
+    "https://example.com:\\@test.com/",
+    "https://user:\\epass@test.com",
+    "https://user:\\@test.com",
+] as $url) {
+    var_dump(filter_var($url, FILTER_VALIDATE_URL));
+}
+var_dump(filter_var(".invalid", FILTER_VALIDATE_DOMAIN, FILTER_NULL_ON_FAILURE));
+var_dump(filter_var("example.com", FILTER_VALIDATE_DOMAIN, FILTER_NULL_ON_FAILURE));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "NULL\n",
+            "string(11) \"example.com\"\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn filter_var_sanitizes_scalars_and_warns_for_unknown_filters() {
     let execution = run_source(
         r#"<?php
