@@ -82445,6 +82445,7 @@ impl Interpreter {
                 ),
             )),
             "error_reporting" => self.call_error_reporting(args, span),
+            "set_time_limit" => call_set_time_limit(&args, span),
             "connection_aborted" => call_connection_aborted(&args, span),
             "connection_status" => call_connection_status(&args, span),
             "ignore_user_abort" => self.call_ignore_user_abort(args, span),
@@ -82598,6 +82599,8 @@ impl Interpreter {
             ),
             "sqrt" => self.call_php_unary_float_math("sqrt", "sqrt()", &args, f64::sqrt, span),
             "number_format" => self.call_number_format(&args, span),
+            "pi" => call_pi(&args, span),
+            "getrandmax" => call_getrandmax(&args, span),
             "sin" => self.call_php_unary_float_math("sin", "sin()", &args, f64::sin, span),
             "cos" => self.call_php_unary_float_math("cos", "cos()", &args, f64::cos, span),
             "tan" => self.call_php_unary_float_math("tan", "tan()", &args, f64::tan, span),
@@ -82614,6 +82617,8 @@ impl Interpreter {
             "expm1" => {
                 self.call_php_unary_float_math("expm1", "expm1()", &args, f64::exp_m1, span)
             }
+            "log" => self.call_log(&args, span),
+            "log1p" => self.call_php_unary_float_math("log1p", "log1p()", &args, f64::ln_1p, span),
             "atan2" => self.call_php_binary_float_math(
                 "atan2",
                 "atan2()",
@@ -82622,6 +82627,8 @@ impl Interpreter {
                 span,
             ),
             "fmod" => self.call_php_binary_float_math("fmod", "fmod()", &args, |a, b| a % b, span),
+            "fdiv" => self.call_php_binary_float_math("fdiv", "fdiv()", &args, |a, b| a / b, span),
+            "fpow" => self.call_php_binary_float_math("fpow", "fpow()", &args, f64::powf, span),
             "hypot" => {
                 self.call_php_binary_float_math("hypot", "hypot()", &args, f64::hypot, span)
             }
@@ -82658,6 +82665,9 @@ impl Interpreter {
                 span,
             ),
             "pow" => call_pow(self, &args, span),
+            "intdiv" => call_intdiv(&args, span),
+            "round" => call_round(self, &args, span),
+            "clamp" => call_clamp(&args, span),
             "bcadd" => self.call_bc_binary_decimal("bcadd", &args, span, BcBinaryDecimalOp::Add),
             "bcsub" => self.call_bc_binary_decimal("bcsub", &args, span, BcBinaryDecimalOp::Sub),
             "bcmul" => self.call_bc_binary_decimal("bcmul", &args, span, BcBinaryDecimalOp::Mul),
@@ -97654,6 +97664,7 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
         ),
         "json_last_error" => ("int", vec![]),
         "json_last_error_msg" => ("string", vec![]),
+        "set_time_limit" => ("bool", vec![reflection_internal_param("seconds", "int")]),
         "printf" => (
             "int",
             vec![
@@ -97733,9 +97744,56 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
         ),
         "ceil" | "floor" => ("float", vec![reflection_internal_param("num", "int|float")]),
         "sqrt" | "sin" | "cos" | "tan" | "asin" | "acos" | "atan" | "sinh" | "cosh" | "tanh"
-        | "log10" | "deg2rad" | "rad2deg" => {
+        | "log10" | "log1p" | "deg2rad" | "rad2deg" => {
             ("float", vec![reflection_internal_param("num", "float")])
         }
+        "pi" => ("float", vec![]),
+        "getrandmax" => ("int", vec![]),
+        "log" => (
+            "float",
+            vec![
+                reflection_internal_param("num", "float"),
+                reflection_internal_optional_param(
+                    "base",
+                    "float",
+                    Expr::Float(std::f64::consts::E, Span::new(0, 0)),
+                ),
+            ],
+        ),
+        "atan2" | "fmod" | "hypot" | "fdiv" | "fpow" => (
+            "float",
+            vec![
+                reflection_internal_param("num1", "float"),
+                reflection_internal_param("num2", "float"),
+            ],
+        ),
+        "intdiv" => (
+            "int",
+            vec![
+                reflection_internal_param("num1", "int"),
+                reflection_internal_param("num2", "int"),
+            ],
+        ),
+        "round" => (
+            "float",
+            vec![
+                reflection_internal_param("num", "int|float"),
+                reflection_internal_optional_int_param("precision", 0),
+                reflection_internal_optional_param(
+                    "mode",
+                    "RoundingMode|int",
+                    Expr::Int(PHP_ROUND_HALF_UP, Span::new(0, 0)),
+                ),
+            ],
+        ),
+        "clamp" => (
+            "mixed",
+            vec![
+                reflection_internal_param("value", "mixed"),
+                reflection_internal_param("min", "mixed"),
+                reflection_internal_param("max", "mixed"),
+            ],
+        ),
         "number_format" => (
             "string",
             vec![
@@ -100251,9 +100309,16 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
             }
             "unsupported call bcdiv(): Division by zero"
             | "unsupported call bcdivmod(): Division by zero"
+            | "unsupported call intdiv(): Division by zero"
             | "unsupported call BcMath\\Number::div(): Division by zero"
             | "unsupported call BcMath\\Number::divmod(): Division by zero" => {
                 return Some(("DivisionByZeroError", "Division by zero".to_string()));
+            }
+            "unsupported call intdiv(): Division of PHP_INT_MIN by -1 is not an integer" => {
+                return Some((
+                    "ArithmeticError",
+                    "Division of PHP_INT_MIN by -1 is not an integer".to_string(),
+                ));
             }
             "invalid array key: cannot append after maximum integer key" => {
                 return Some((
@@ -101029,6 +101094,14 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
         )
         | ("base_convert()", "Argument #2 ($from_base) must be between 2 and 36 (inclusive)")
         | ("base_convert()", "Argument #3 ($to_base) must be between 2 and 36 (inclusive)")
+        | ("log()", "Argument #2 ($base) must be greater than 0")
+        | ("round()", "Argument #3 ($mode) must be a valid rounding mode (RoundingMode::*)")
+        | ("clamp()", "Argument #2 ($min) must not be NAN")
+        | ("clamp()", "Argument #3 ($max) must not be NAN")
+        | (
+            "clamp()",
+            "Argument #2 ($min) must be smaller than or equal to argument #3 ($max)",
+        )
         | ("strncmp()", "Argument #3 ($length) must be greater than or equal to 0")
         | ("strncasecmp()", "Argument #3 ($length) must be greater than or equal to 0")
         | ("count_chars()", "Argument #2 ($mode) must be between 0 and 4 (inclusive)")
@@ -101693,6 +101766,7 @@ fn is_builtin(name: &str) -> bool {
             | "json_decode"
             | "json_last_error"
             | "json_last_error_msg"
+            | "set_time_limit"
             | "printf"
             | "fprintf"
             | "vprintf"
@@ -101715,6 +101789,8 @@ fn is_builtin(name: &str) -> bool {
             | "floor"
             | "sqrt"
             | "number_format"
+            | "pi"
+            | "getrandmax"
             | "sin"
             | "cos"
             | "tan"
@@ -101729,8 +101805,12 @@ fn is_builtin(name: &str) -> bool {
             | "atanh"
             | "exp"
             | "expm1"
+            | "log"
+            | "log1p"
             | "atan2"
             | "fmod"
+            | "fdiv"
+            | "fpow"
             | "hypot"
             | "is_finite"
             | "is_infinite"
@@ -101739,6 +101819,9 @@ fn is_builtin(name: &str) -> bool {
             | "deg2rad"
             | "rad2deg"
             | "pow"
+            | "intdiv"
+            | "round"
+            | "clamp"
             | "bcadd"
             | "bcsub"
             | "bcmul"
@@ -103280,6 +103363,11 @@ fn php_glob_bracket_class_matches(
     None
 }
 
+const PHP_ROUND_HALF_UP: i64 = 1;
+const PHP_ROUND_HALF_DOWN: i64 = 2;
+const PHP_ROUND_HALF_EVEN: i64 = 3;
+const PHP_ROUND_HALF_ODD: i64 = 4;
+
 const BUILTIN_GLOBAL_CONSTANT_NAMES: &[&str] = &[
     "PHP_VERSION",
     "PHP_VERSION_ID",
@@ -103288,7 +103376,27 @@ const BUILTIN_GLOBAL_CONSTANT_NAMES: &[&str] = &[
     "PHP_INT_MIN",
     "INF",
     "NAN",
+    "M_E",
+    "M_LOG2E",
+    "M_LOG10E",
+    "M_LN2",
+    "M_LN10",
     "M_PI",
+    "M_PI_2",
+    "M_PI_4",
+    "M_1_PI",
+    "M_2_PI",
+    "M_SQRTPI",
+    "M_2_SQRTPI",
+    "M_LNPI",
+    "M_EULER",
+    "M_SQRT2",
+    "M_SQRT1_2",
+    "M_SQRT3",
+    "PHP_ROUND_HALF_UP",
+    "PHP_ROUND_HALF_DOWN",
+    "PHP_ROUND_HALF_EVEN",
+    "PHP_ROUND_HALF_ODD",
     "PHP_SAPI",
     "PHP_BINARY",
     "PHP_OS",
@@ -103664,7 +103772,27 @@ fn builtin_global_constant_value(name: &str) -> Option<Value> {
         "PHP_INT_MIN" => Some(Value::Int(i64::MIN)),
         "INF" => Some(Value::Float(f64::INFINITY)),
         "NAN" => Some(Value::Float(f64::NAN)),
+        "M_E" => Some(Value::Float(std::f64::consts::E)),
+        "M_LOG2E" => Some(Value::Float(std::f64::consts::LOG2_E)),
+        "M_LOG10E" => Some(Value::Float(std::f64::consts::LOG10_E)),
+        "M_LN2" => Some(Value::Float(std::f64::consts::LN_2)),
+        "M_LN10" => Some(Value::Float(std::f64::consts::LN_10)),
         "M_PI" => Some(Value::Float(std::f64::consts::PI)),
+        "M_PI_2" => Some(Value::Float(std::f64::consts::FRAC_PI_2)),
+        "M_PI_4" => Some(Value::Float(std::f64::consts::FRAC_PI_4)),
+        "M_1_PI" => Some(Value::Float(std::f64::consts::FRAC_1_PI)),
+        "M_2_PI" => Some(Value::Float(std::f64::consts::FRAC_2_PI)),
+        "M_SQRTPI" => Some(Value::Float(1.772453850905516)),
+        "M_2_SQRTPI" => Some(Value::Float(1.1283791670955126)),
+        "M_LNPI" => Some(Value::Float(1.1447298858494002)),
+        "M_EULER" => Some(Value::Float(0.5772156649015329)),
+        "M_SQRT2" => Some(Value::Float(std::f64::consts::SQRT_2)),
+        "M_SQRT1_2" => Some(Value::Float(std::f64::consts::FRAC_1_SQRT_2)),
+        "M_SQRT3" => Some(Value::Float(1.7320508075688772)),
+        "PHP_ROUND_HALF_UP" => Some(Value::Int(PHP_ROUND_HALF_UP)),
+        "PHP_ROUND_HALF_DOWN" => Some(Value::Int(PHP_ROUND_HALF_DOWN)),
+        "PHP_ROUND_HALF_EVEN" => Some(Value::Int(PHP_ROUND_HALF_EVEN)),
+        "PHP_ROUND_HALF_ODD" => Some(Value::Int(PHP_ROUND_HALF_ODD)),
         "PHP_SAPI" => Some(Value::String("cli".to_string())),
         "PHP_BINARY" => Some(Value::String(php_binary_constant_value())),
         "PHP_OS" => Some(Value::String("Linux".to_string())),
@@ -124705,6 +124833,12 @@ fn call_phpversion(args: &[Value], span: Span) -> CompileResult<Value> {
     }
 }
 
+fn call_set_time_limit(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("set_time_limit", args, 1, span)?;
+    let _seconds = php_internal_int_argument("set_time_limit()", 1, "seconds", &args[0], span)?;
+    Ok(Value::Bool(true))
+}
+
 fn call_abs(interpreter: &mut Interpreter, args: &[Value], span: Span) -> CompileResult<Value> {
     expect_arity("abs", args, 1, span)?;
 
@@ -124715,6 +124849,312 @@ fn call_abs(interpreter: &mut Interpreter, args: &[Value], span: Span) -> Compil
             .unwrap_or_else(|| Value::Float((value as f64).abs()))),
         MathIntOrFloat::Float(value) => Ok(Value::Float(value.abs())),
     }
+}
+
+fn call_pi(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("pi", args, 0, span)?;
+    Ok(Value::Float(std::f64::consts::PI))
+}
+
+fn call_getrandmax(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("getrandmax", args, 0, span)?;
+    Ok(Value::Int(i64::from(i32::MAX)))
+}
+
+fn call_intdiv(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("intdiv", args, 2, span)?;
+    let left = php_internal_int_argument("intdiv()", 1, "num1", &args[0], span)?;
+    let right = php_internal_int_argument("intdiv()", 2, "num2", &args[1], span)?;
+    if right == 0 {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call("intdiv()", "Division by zero"),
+        ));
+    }
+    if left == i64::MIN && right == -1 {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "intdiv()",
+                "Division of PHP_INT_MIN by -1 is not an integer",
+            ),
+        ));
+    }
+    Ok(Value::Int(left / right))
+}
+
+fn call_round(interpreter: &mut Interpreter, args: &[Value], span: Span) -> CompileResult<Value> {
+    if !(1..=3).contains(&args.len()) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "round()",
+                ArityExpectation::Between { min: 1, max: 3 },
+                args.len(),
+            ),
+        ));
+    }
+
+    let number = interpreter.php_math_float_argument("round()", "int|float", &args[0], span)?;
+    let precision = match args.get(1) {
+        Some(value) => round_precision_argument(interpreter, value, span)?,
+        None => 0,
+    };
+    let mode = match args.get(2) {
+        Some(value) => round_mode_argument(value, span)?,
+        None => BcRoundingMode::HalfAwayFromZero,
+    };
+
+    Ok(Value::Float(round_float_value(number, precision, mode)))
+}
+
+fn round_precision_argument(
+    interpreter: &mut Interpreter,
+    value: &Value,
+    span: Span,
+) -> CompileResult<i64> {
+    match value {
+        Value::Float(float) => {
+            if float.is_finite() && float.trunc() != *float {
+                interpreter.emit_display_diagnostic(
+                    "Deprecated",
+                    PHP_E_DEPRECATED,
+                    format!(
+                        "Implicit conversion from float {} to int loses precision",
+                        format_php_float_to_int_deprecation_value(*float)
+                    ),
+                    span,
+                )?;
+            }
+            php_float_to_internal_i64(*float)
+                .ok_or_else(|| php_internal_int_type_error("round()", 2, "precision", value, span))
+        }
+        Value::String(text) => {
+            if let Ok(parsed) = text.trim().parse::<f64>() {
+                if parsed.is_finite() && parsed.trunc() != parsed {
+                    interpreter.emit_display_diagnostic(
+                        "Deprecated",
+                        PHP_E_DEPRECATED,
+                        format!(
+                            "Implicit conversion from float-string \"{text}\" to int loses precision"
+                        ),
+                        span,
+                    )?;
+                }
+            }
+            php_internal_int_argument("round()", 2, "precision", value, span)
+        }
+        Value::BinaryString(bytes) => {
+            if let Ok(text) = std::str::from_utf8(bytes) {
+                if let Ok(parsed) = text.trim().parse::<f64>() {
+                    if parsed.is_finite() && parsed.trunc() != parsed {
+                        interpreter.emit_display_diagnostic(
+                            "Deprecated",
+                            PHP_E_DEPRECATED,
+                            format!(
+                                "Implicit conversion from float-string \"{text}\" to int loses precision"
+                            ),
+                            span,
+                        )?;
+                    }
+                }
+            }
+            php_internal_int_argument("round()", 2, "precision", value, span)
+        }
+        _ => php_internal_int_argument("round()", 2, "precision", value, span),
+    }
+}
+
+fn round_mode_argument(value: &Value, span: Span) -> CompileResult<BcRoundingMode> {
+    match value {
+        Value::Int(PHP_ROUND_HALF_UP) => Ok(BcRoundingMode::HalfAwayFromZero),
+        Value::Int(PHP_ROUND_HALF_DOWN) => Ok(BcRoundingMode::HalfTowardsZero),
+        Value::Int(PHP_ROUND_HALF_EVEN) => Ok(BcRoundingMode::HalfEven),
+        Value::Int(PHP_ROUND_HALF_ODD) => Ok(BcRoundingMode::HalfOdd),
+        Value::Int(_) => Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "round()",
+                "Argument #3 ($mode) must be a valid rounding mode (RoundingMode::*)",
+            ),
+        )),
+        Value::Object(object) if object.class_name().eq_ignore_ascii_case("RoundingMode") => {
+            let name = object
+                .read_public_property("name")
+                .map_err(|error| runtime_error(span, error))?;
+            let Value::String(name) = name else {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "round()",
+                        "Argument #3 ($mode) must be a valid rounding mode (RoundingMode::*)",
+                    ),
+                ));
+            };
+            BcRoundingMode::from_case_name(&name).ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "round()",
+                        "Argument #3 ($mode) must be a valid rounding mode (RoundingMode::*)",
+                    ),
+                )
+            })
+        }
+        Value::Object(object) => Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "round()",
+                format!(
+                    "Argument #3 ($mode) must be of type RoundingMode|int, {} given",
+                    object.class_name()
+                ),
+            ),
+        )),
+        other => Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "round()",
+                format!(
+                    "Argument #3 ($mode) must be of type RoundingMode|int, {} given",
+                    php_type_error_given(other)
+                ),
+            ),
+        )),
+    }
+}
+
+fn round_float_value(value: f64, precision: i64, mode: BcRoundingMode) -> f64 {
+    if !value.is_finite() || value == 0.0 {
+        return value;
+    }
+
+    let precision = precision.clamp(-308, 308) as i32;
+    let scale = 10_f64.powi(precision.unsigned_abs() as i32);
+    if !scale.is_finite() || scale == 0.0 {
+        return if precision < 0 {
+            signed_zero_like(value)
+        } else {
+            value
+        };
+    }
+
+    let shifted = if precision >= 0 {
+        value * scale
+    } else {
+        value / scale
+    };
+    if !shifted.is_finite() {
+        return value;
+    }
+
+    let rounded = round_shifted_float(shifted, mode);
+    let result = if precision >= 0 {
+        rounded / scale
+    } else {
+        rounded * scale
+    };
+    if result == 0.0 {
+        signed_zero_like(value)
+    } else {
+        result
+    }
+}
+
+fn signed_zero_like(value: f64) -> f64 {
+    if value.is_sign_negative() {
+        -0.0
+    } else {
+        0.0
+    }
+}
+
+fn round_shifted_float(value: f64, mode: BcRoundingMode) -> f64 {
+    match mode {
+        BcRoundingMode::PositiveInfinity => value.ceil(),
+        BcRoundingMode::NegativeInfinity => value.floor(),
+        BcRoundingMode::TowardsZero => value.trunc(),
+        BcRoundingMode::AwayFromZero => {
+            if value.is_sign_negative() {
+                value.floor()
+            } else {
+                value.ceil()
+            }
+        }
+        BcRoundingMode::HalfAwayFromZero
+        | BcRoundingMode::HalfTowardsZero
+        | BcRoundingMode::HalfEven
+        | BcRoundingMode::HalfOdd => {
+            let sign = if value.is_sign_negative() { -1.0 } else { 1.0 };
+            let abs = value.abs();
+            let floor = abs.floor();
+            let fraction = abs - floor;
+            let increment = match mode {
+                BcRoundingMode::HalfAwayFromZero => fraction >= 0.5,
+                BcRoundingMode::HalfTowardsZero => fraction > 0.5,
+                BcRoundingMode::HalfEven => {
+                    fraction > 0.5 || (fraction == 0.5 && floor.rem_euclid(2.0) != 0.0)
+                }
+                BcRoundingMode::HalfOdd => {
+                    fraction > 0.5 || (fraction == 0.5 && floor.rem_euclid(2.0) == 0.0)
+                }
+                _ => unreachable!("outer match restricts half modes"),
+            };
+            sign * if increment { floor + 1.0 } else { floor }
+        }
+    }
+}
+
+fn call_clamp(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("clamp", args, 3, span)?;
+    let value = &args[0];
+    let min = &args[1];
+    let max = &args[2];
+
+    if matches!(min, Value::Float(float) if float.is_nan()) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call("clamp()", "Argument #2 ($min) must not be NAN"),
+        ));
+    }
+    if matches!(max, Value::Float(float) if float.is_nan()) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call("clamp()", "Argument #3 ($max) must not be NAN"),
+        ));
+    }
+    if php_value_compare(min, max, Comparison::Gt, span)? {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "clamp()",
+                "Argument #2 ($min) must be smaller than or equal to argument #3 ($max)",
+            ),
+        ));
+    }
+    if matches!(value, Value::Null) && !matches!(min, Value::Null) {
+        return Ok(min.clone());
+    }
+    if matches!(value, Value::Float(float) if float.is_nan()) {
+        return Ok(value.clone());
+    }
+    if php_value_compare(value, min, Comparison::Lt, span)? {
+        return Ok(min.clone());
+    }
+    if php_value_compare(value, max, Comparison::Gt, span)? {
+        return Ok(max.clone());
+    }
+    Ok(value.clone())
+}
+
+fn php_value_compare(
+    left: &Value,
+    right: &Value,
+    comparison: Comparison,
+    span: Span,
+) -> CompileResult<bool> {
+    left.php_cmp_checked(right, comparison)
+        .map_err(|error| runtime_error(span, error))
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -124910,6 +125350,39 @@ impl Interpreter {
         let left = self.php_math_float_argument(function, "float", &args[0], span)?;
         let right = self.php_math_float_argument(function, "float", &args[1], span)?;
         Ok(Value::Float(operation(left, right)))
+    }
+
+    fn call_log(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(1..=2).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "log()",
+                    ArityExpectation::Between { min: 1, max: 2 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let number = self.php_math_float_argument("log()", "float", &args[0], span)?;
+        let result = match args.get(1) {
+            Some(base_value) => {
+                let base = self.php_math_float_argument("log()", "float", base_value, span)?;
+                if base <= 0.0 || base.is_nan() {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "log()",
+                            "Argument #2 ($base) must be greater than 0",
+                        ),
+                    ));
+                }
+                number.log(base)
+            }
+            None => number.ln(),
+        };
+
+        Ok(Value::Float(result))
     }
 
     fn call_php_float_predicate(

@@ -1203,7 +1203,7 @@ impl<'a> Lexer<'a> {
         }
 
         let mut is_float = false;
-        if self.peek() == Some('.') && matches!(self.peek_next(), Some('0'..='9')) {
+        if self.peek() == Some('.') {
             is_float = true;
             text.push(self.advance());
             while matches!(self.peek(), Some('0'..='9')) {
