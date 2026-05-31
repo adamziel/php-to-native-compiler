@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-31 00:29 CEST
+Updated: 2026-05-31 02:38 CEST
 Primary branch: `master`
-Latest source head: `2120d9a2 fix: repair Batch018 gate regressions`
+Latest source head: `f89214c4 fix: repair filesystem path regressions`
 
 ## Progress Score
 
@@ -13,7 +13,7 @@ Progress is the pinned php-src PHPT full-suite pass rate:
 
 `passed runnable PHPTs / total runnable PHPTs`
 
-Current score: **4178 / 20294 pinned runnable PHPTs = 20.59%**.
+Current score: **4321 / 20294 pinned runnable PHPTs = 21.29%**.
 
 ## PHPT Goal Checklist
 
@@ -55,6 +55,7 @@ Current score: **4178 / 20294 pinned runnable PHPTs = 20.59%**.
 | Batch016 regression7 repair | 4048 / 20294 | 19.95% | 0 |
 | Batch017 checkpoint10 | 4132 / 20294 | 20.36% | 0; 10 raw invalid-marker hits adjudicated as failed-row output |
 | Batch018 repair01 | 4178 / 20294 | 20.59% | 0; 4 raw invalid-marker hits adjudicated as failed-row/expected output |
+| Batch019 repair02 | 4321 / 20294 | 21.29% | 0 semantic; `bug75679.phpt` and `open_basedir_filemtime.phpt` adjudicated by same-binary focused proof |
 
 The Batch013 checkpoint10 source `fc2788a7` is integrated and published by a
 pinned sharded full-suite gate on public `b3e42ce1`. The gate recorded 3170
@@ -256,6 +257,28 @@ PHPT output in failed or expected-output rows, not harness setup failure,
 missing `PHPC_BIN`, missing `PHP_BINARY`, or uppercase `run-tests.php -P`
 bypass. Evidence lives under
 `/home/claude/supervised-php-compiler/state/logs/phpt-full-batch018-repair01-sharded-20260531T0014Z-php-src-f97ff59-public-2c27cb71-source-2120d9a2`.
+
+The Batch019 repair02 sharded-plus-serialized publication gate on the same
+php-src pin, run
+`phpt-full-batch019-repair02-sharded-serialized-openbasedir-20260531T0023Z-php-src-f97ff59-public-b1eaf691-source-f89214c4`,
+recorded 4321 / 20294 pinned runnable PHPTs = 21.29%. Raw runner counts were
+`4321 PASS / 14214 FAIL / 2702 SKIP / 12 XFAIL / 1081 BORK / 1 WARN` across
+18548 runnable rows. Source `f89214c4` repaired the Batch019 regression
+clusters and ran the seven previously race-prone `open_basedir_*` rows
+serially after the sharded suite. The PASS-set comparison reported two raw
+latest-published PASS losses: `ext/standard/tests/file/bug75679.phpt` and
+`tests/security/open_basedir_filemtime.phpt`. Supervisor reran both with the
+same gate `phpc` binary from a short fresh php-src checkout and recorded
+`2 PASS / 0 FAIL / 0 SKIP`, so `bug75679.phpt` is treated as the existing
+long-root path-length harness guard and `open_basedir_filemtime.phpt` as the
+same sharded open_basedir isolation class, not semantic regressions. The raw
+invalid-marker scan found one literal `socket_set_option()` permission-denied
+expected-output line in a failed sockets row; it is not a harness setup
+failure, missing `PHPC_BIN`, missing `PHP_BINARY`, or uppercase
+`run-tests.php -P` bypass. Gate evidence lives under
+`/home/claude/supervised-php-compiler/state/logs/phpt-full-batch019-repair02-sharded-serialized-openbasedir-20260531T0023Z-php-src-f97ff59-public-b1eaf691-source-f89214c4`.
+Focused adjudication evidence lives under
+`/home/claude/supervised-php-compiler/state/logs/batch019-repair02-regression-adjudication-20260531T003555Z`.
 
 No other percentage is public project progress. Focused PHPT passes, source
 checkpoints, PRs, and docs/status edits are evidence for the next batch, but
