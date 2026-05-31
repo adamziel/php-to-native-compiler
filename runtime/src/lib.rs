@@ -44060,7 +44060,10 @@ fn php_arithmetic_modulo_result(left: Number, right: Number) -> RuntimeResult<Va
 
 fn php_arithmetic_negate_result(number: Number) -> Value {
     match number {
-        Number::Int(value) => Value::Int(value.wrapping_neg()),
+        Number::Int(value) => value
+            .checked_neg()
+            .map(Value::Int)
+            .unwrap_or_else(|| Value::Float(-(value as f64))),
         Number::Float(value) => Value::Float(-value),
     }
 }

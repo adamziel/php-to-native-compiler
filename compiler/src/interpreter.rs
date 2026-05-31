@@ -78423,7 +78423,12 @@ impl Interpreter {
                     .map(String::into_bytes);
             }
         }
-        format_var_dump_bytes_with_resource_type(value, span, |id| self.resource_type_label(id))
+        format_var_dump_bytes_with_resource_type(
+            value,
+            span,
+            self.php_serialize_precision(),
+            |id| self.resource_type_label(id),
+        )
     }
 
     fn format_spl_object_storage_var_dump(
@@ -78436,6 +78441,7 @@ impl Interpreter {
         let child_padding = "  ".repeat(indent + 1);
         let entry_padding = "  ".repeat(indent + 2);
         let pair_padding = "  ".repeat(indent + 3);
+        let serialize_precision = self.php_serialize_precision();
         let state = self.spl_object_storage_state(object, "var_dump", span)?;
         let properties: Vec<_> = object
             .properties()
@@ -78458,6 +78464,7 @@ impl Interpreter {
                 &property_value,
                 indent + 1,
                 span,
+                serialize_precision,
                 &|id| self.resource_type_label(id),
             )?);
         }
@@ -78476,6 +78483,7 @@ impl Interpreter {
                 &Value::Object(entry.object.clone()),
                 indent + 3,
                 span,
+                serialize_precision,
                 &|id| self.resource_type_label(id),
             )?);
             output.push_str(&format!("{pair_padding}[\"inf\"]=>\n"));
@@ -78486,6 +78494,7 @@ impl Interpreter {
                     &entry.info,
                     indent + 3,
                     span,
+                    serialize_precision,
                     &|id| self.resource_type_label(id),
                 )?);
             }
@@ -80348,7 +80357,7 @@ impl Interpreter {
 
                 Ok(Value::String(dirname_path(path, levels)))
             }
-            "abs" => call_abs(&args, span),
+            "abs" => call_abs(self, &args, span),
             "ceil" => self.call_php_unary_float_math_with_param_type(
                 "ceil",
                 "ceil()",
@@ -80376,6 +80385,41 @@ impl Interpreter {
             "sinh" => self.call_php_unary_float_math("sinh", "sinh()", &args, f64::sinh, span),
             "cosh" => self.call_php_unary_float_math("cosh", "cosh()", &args, f64::cosh, span),
             "tanh" => self.call_php_unary_float_math("tanh", "tanh()", &args, f64::tanh, span),
+            "asinh" => self.call_php_unary_float_math("asinh", "asinh()", &args, f64::asinh, span),
+            "acosh" => self.call_php_unary_float_math("acosh", "acosh()", &args, f64::acosh, span),
+            "atanh" => self.call_php_unary_float_math("atanh", "atanh()", &args, f64::atanh, span),
+            "exp" => self.call_php_unary_float_math("exp", "exp()", &args, f64::exp, span),
+            "expm1" => {
+                self.call_php_unary_float_math("expm1", "expm1()", &args, f64::exp_m1, span)
+            }
+            "atan2" => self.call_php_binary_float_math(
+                "atan2",
+                "atan2()",
+                &args,
+                f64::atan2,
+                span,
+            ),
+            "fmod" => self.call_php_binary_float_math("fmod", "fmod()", &args, |a, b| a % b, span),
+            "hypot" => {
+                self.call_php_binary_float_math("hypot", "hypot()", &args, f64::hypot, span)
+            }
+            "is_finite" => self.call_php_float_predicate(
+                "is_finite",
+                "is_finite()",
+                &args,
+                f64::is_finite,
+                span,
+            ),
+            "is_infinite" => self.call_php_float_predicate(
+                "is_infinite",
+                "is_infinite()",
+                &args,
+                f64::is_infinite,
+                span,
+            ),
+            "is_nan" => {
+                self.call_php_float_predicate("is_nan", "is_nan()", &args, f64::is_nan, span)
+            }
             "log10" => self.call_php_unary_float_math("log10", "log10()", &args, f64::log10, span),
             "deg2rad" => self.call_php_unary_float_math(
                 "deg2rad",
@@ -80391,7 +80435,7 @@ impl Interpreter {
                 f64::to_degrees,
                 span,
             ),
-            "pow" => call_pow(&args, span),
+            "pow" => call_pow(self, &args, span),
             "bcadd" => self.call_bc_binary_decimal("bcadd", &args, span, BcBinaryDecimalOp::Add),
             "bcsub" => self.call_bc_binary_decimal("bcsub", &args, span, BcBinaryDecimalOp::Sub),
             "bcmul" => self.call_bc_binary_decimal("bcmul", &args, span, BcBinaryDecimalOp::Mul),
@@ -88854,7 +88898,10 @@ fn modulo_array_numeric_numbers(
 
 fn negate_array_numeric_number(number: ArrayNumericNumber) -> ArrayNumericNumber {
     match number {
-        ArrayNumericNumber::Int(value) => ArrayNumericNumber::Int(value.wrapping_neg()),
+        ArrayNumericNumber::Int(value) => value
+            .checked_neg()
+            .map(ArrayNumericNumber::Int)
+            .unwrap_or_else(|| ArrayNumericNumber::Float(-(value as f64))),
         ArrayNumericNumber::Float(value) => ArrayNumericNumber::Float(-value),
     }
 }
@@ -98641,6 +98688,17 @@ fn is_builtin(name: &str) -> bool {
             | "sinh"
             | "cosh"
             | "tanh"
+            | "asinh"
+            | "acosh"
+            | "atanh"
+            | "exp"
+            | "expm1"
+            | "atan2"
+            | "fmod"
+            | "hypot"
+            | "is_finite"
+            | "is_infinite"
+            | "is_nan"
             | "log10"
             | "deg2rad"
             | "rad2deg"
@@ -108020,6 +108078,15 @@ impl Interpreter {
             .and_then(|precision| usize::try_from(precision).ok())
             .unwrap_or(14)
             .min(100)
+    }
+
+    fn php_serialize_precision(&self) -> Option<usize> {
+        self.ini_value("serialize_precision")
+            .as_deref()
+            .and_then(parse_ini_i64_prefix)
+            .filter(|precision| *precision > 0)
+            .and_then(|precision| usize::try_from(precision).ok())
+            .map(|precision| precision.min(100))
     }
 }
 
@@ -119254,38 +119321,76 @@ fn call_phpversion(args: &[Value], span: Span) -> CompileResult<Value> {
     }
 }
 
-fn call_abs(args: &[Value], span: Span) -> CompileResult<Value> {
+fn call_abs(interpreter: &mut Interpreter, args: &[Value], span: Span) -> CompileResult<Value> {
     expect_arity("abs", args, 1, span)?;
 
-    match &args[0] {
-        Value::Int(value) => value.checked_abs().map(Value::Int).ok_or_else(|| {
-            runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "abs()",
-                    "integer minimum overflow is not implemented in the current subset",
-                ),
-            )
-        }),
-        Value::Float(value) if value.is_finite() => Ok(Value::Float(value.abs())),
-        Value::Float(_) => Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                "abs()",
-                "NaN and infinity handling is not implemented in the current subset",
-            ),
-        )),
-        other => Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                "abs()",
-                format!(
-                    "argument must be int or finite float in the current subset, got {}",
-                    other.type_name()
-                ),
-            ),
-        )),
+    match php_math_int_or_float_argument(interpreter, "abs()", "int|float", &args[0], span)? {
+        MathIntOrFloat::Int(value) => Ok(value
+            .checked_abs()
+            .map(Value::Int)
+            .unwrap_or_else(|| Value::Float((value as f64).abs()))),
+        MathIntOrFloat::Float(value) => Ok(Value::Float(value.abs())),
     }
+}
+
+#[derive(Clone, Copy, Debug)]
+enum MathIntOrFloat {
+    Int(i64),
+    Float(f64),
+}
+
+fn php_math_int_or_float_argument(
+    interpreter: &mut Interpreter,
+    function: &'static str,
+    parameter_type: &'static str,
+    value: &Value,
+    span: Span,
+) -> CompileResult<MathIntOrFloat> {
+    match value {
+        Value::Null => {
+            interpreter.emit_display_diagnostic(
+                "Deprecated",
+                PHP_E_DEPRECATED,
+                format!(
+                    "{function}: Passing null to parameter #1 ($num) of type {parameter_type} is deprecated"
+                ),
+                span,
+            )?;
+            Ok(MathIntOrFloat::Int(0))
+        }
+        Value::Bool(value) => Ok(MathIntOrFloat::Int(i64::from(u8::from(*value)))),
+        Value::Int(value) => Ok(MathIntOrFloat::Int(*value)),
+        Value::Float(value) => Ok(MathIntOrFloat::Float(*value)),
+        Value::String(value) => math_numeric_string_value(value)
+            .ok_or_else(|| php_math_argument_type_error(function, parameter_type, "string", span)),
+        Value::BinaryString(value) => std::str::from_utf8(value)
+            .ok()
+            .and_then(math_numeric_string_value)
+            .ok_or_else(|| php_math_argument_type_error(function, parameter_type, "string", span)),
+        Value::Array(_) | Value::Object(_) | Value::Closure(_) | Value::Resource(_) => {
+            Err(php_math_argument_type_error(
+                function,
+                parameter_type,
+                php_type_error_given(value),
+                span,
+            ))
+        }
+    }
+}
+
+fn math_numeric_string_value(value: &str) -> Option<MathIntOrFloat> {
+    let value = value.trim_matches(is_php_numeric_whitespace);
+    if value.is_empty() {
+        return None;
+    }
+
+    if !value.contains(['.', 'e', 'E']) {
+        if let Ok(value) = value.parse::<i64>() {
+            return Some(MathIntOrFloat::Int(value));
+        }
+    }
+
+    value.parse::<f64>().ok().map(MathIntOrFloat::Float)
 }
 
 impl Interpreter {
@@ -119407,6 +119512,33 @@ impl Interpreter {
         expect_arity(arity_name, args, 1, span)?;
         let number = self.php_math_float_argument(function, parameter_type, &args[0], span)?;
         Ok(Value::Float(operation(number)))
+    }
+
+    fn call_php_binary_float_math(
+        &mut self,
+        arity_name: &'static str,
+        function: &'static str,
+        args: &[Value],
+        operation: fn(f64, f64) -> f64,
+        span: Span,
+    ) -> CompileResult<Value> {
+        expect_arity(arity_name, args, 2, span)?;
+        let left = self.php_math_float_argument(function, "float", &args[0], span)?;
+        let right = self.php_math_float_argument(function, "float", &args[1], span)?;
+        Ok(Value::Float(operation(left, right)))
+    }
+
+    fn call_php_float_predicate(
+        &mut self,
+        arity_name: &'static str,
+        function: &'static str,
+        args: &[Value],
+        predicate: fn(f64) -> bool,
+        span: Span,
+    ) -> CompileResult<Value> {
+        expect_arity(arity_name, args, 1, span)?;
+        let number = self.php_math_float_argument(function, "float", &args[0], span)?;
+        Ok(Value::Bool(predicate(number)))
     }
 
     fn php_math_float_argument(
@@ -119658,7 +119790,7 @@ fn php_math_argument_type_error(
     )
 }
 
-fn call_pow(args: &[Value], span: Span) -> CompileResult<Value> {
+fn call_pow(interpreter: &mut Interpreter, args: &[Value], span: Span) -> CompileResult<Value> {
     expect_arity("pow", args, 2, span)?;
 
     match (&args[0], &args[1]) {
@@ -119679,18 +119811,17 @@ fn call_pow(args: &[Value], span: Span) -> CompileResult<Value> {
             }
         }
         (base, exponent) => {
-            let base = finite_pow_number_arg("pow()", "base", base, span)?;
-            let exponent = finite_pow_number_arg("pow()", "exponent", exponent, span)?;
-            let result = base.powf(exponent);
-            if !result.is_finite() {
-                return Err(runtime_error(
+            let base = pow_number_arg(interpreter, "pow()", "base", base, span)?;
+            let exponent = pow_number_arg(interpreter, "pow()", "exponent", exponent, span)?;
+            if base == 0.0 && exponent.is_sign_negative() {
+                interpreter.emit_display_diagnostic(
+                    "Deprecated",
+                    PHP_E_DEPRECATED,
+                    "Power of base 0 and negative exponent is deprecated",
                     span,
-                    RuntimeError::unsupported_call(
-                        "pow()",
-                        "non-finite results are not implemented in the current subset",
-                    ),
-                ));
+                )?;
             }
+            let result = base.powf(exponent);
             if result.fract() == 0.0 && result >= i64::MIN as f64 && result <= i64::MAX as f64 {
                 Ok(Value::Int(result as i64))
             } else {
@@ -119700,28 +119831,68 @@ fn call_pow(args: &[Value], span: Span) -> CompileResult<Value> {
     }
 }
 
-fn finite_pow_number_arg(
+fn pow_number_arg(
+    interpreter: &mut Interpreter,
     function: &'static str,
     name: &str,
     value: &Value,
     span: Span,
 ) -> CompileResult<f64> {
     match value {
+        Value::Null => {
+            interpreter.emit_display_diagnostic(
+                "Deprecated",
+                PHP_E_DEPRECATED,
+                format!(
+                    "{function}: Passing null to parameter #1 ($num) of type int|float is deprecated"
+                ),
+                span,
+            )?;
+            Ok(0.0)
+        }
+        Value::Bool(value) => Ok(f64::from(u8::from(*value))),
         Value::Int(value) => Ok(*value as f64),
-        Value::Float(value) if value.is_finite() => Ok(*value),
-        Value::Float(_) => Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                function,
-                format!("{name} argument must be finite in the current subset"),
-            ),
-        )),
+        Value::Float(value) => Ok(*value),
+        Value::String(value) => math_numeric_string_value(value)
+            .map(|number| match number {
+                MathIntOrFloat::Int(value) => value as f64,
+                MathIntOrFloat::Float(value) => value,
+            })
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        function,
+                        format!(
+                            "{name} argument must be int or float in the current subset, got string"
+                        ),
+                    ),
+                )
+            }),
+        Value::BinaryString(value) => std::str::from_utf8(value)
+            .ok()
+            .and_then(math_numeric_string_value)
+            .map(|number| match number {
+                MathIntOrFloat::Int(value) => value as f64,
+                MathIntOrFloat::Float(value) => value,
+            })
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        function,
+                        format!(
+                            "{name} argument must be int or float in the current subset, got string"
+                        ),
+                    ),
+                )
+            }),
         other => Err(runtime_error(
             span,
             RuntimeError::unsupported_call(
                 function,
                 format!(
-                    "{name} argument must be int or finite float in the current subset, got {}",
+                    "{name} argument must be int or float in the current subset, got {}",
                     other.type_name()
                 ),
             ),
@@ -127720,18 +127891,20 @@ fn materialize_generator_yields(
 fn format_var_dump_bytes_with_resource_type<F>(
     value: &Value,
     span: Span,
+    serialize_precision: Option<usize>,
     resource_type: F,
 ) -> CompileResult<Vec<u8>>
 where
     F: Fn(i64) -> &'static str,
 {
-    format_var_dump_bytes_with_indent(value, 0, span, &resource_type)
+    format_var_dump_bytes_with_indent(value, 0, span, serialize_precision, &resource_type)
 }
 
 fn format_var_dump_with_indent<F>(
     value: &Value,
     indent: usize,
     span: Span,
+    serialize_precision: Option<usize>,
     resource_type: &F,
 ) -> CompileResult<String>
 where
@@ -127742,7 +127915,13 @@ where
         Value::Null => format!("{padding}NULL\n"),
         Value::Bool(value) => format!("{padding}bool({})\n", if *value { "true" } else { "false" }),
         Value::Int(value) => format!("{padding}int({value})\n"),
-        Value::Float(value) => format!("{padding}float({})\n", format_var_dump_float(*value)),
+        Value::Float(value) => format!(
+            "{padding}float({})\n",
+            match serialize_precision {
+                Some(precision) => format_var_dump_float_with_precision(*value, precision),
+                None => format_var_dump_float(*value),
+            }
+        ),
         Value::String(value) => format!("{padding}string({}) \"{}\"\n", value.len(), value),
         Value::BinaryString(value) => {
             let display = String::from_utf8_lossy(value);
@@ -127759,6 +127938,7 @@ where
                     entry,
                     indent + 1,
                     span,
+                    serialize_precision,
                     resource_type,
                 )?);
             }
@@ -127783,6 +127963,7 @@ where
                     &property_value,
                     indent + 1,
                     span,
+                    serialize_precision,
                     resource_type,
                 )?);
             }
@@ -127805,6 +127986,7 @@ fn format_var_dump_bytes_with_indent<F>(
     value: &Value,
     indent: usize,
     span: Span,
+    serialize_precision: Option<usize>,
     resource_type: &F,
 ) -> CompileResult<Vec<u8>>
 where
@@ -127828,6 +128010,7 @@ where
                     entry,
                     indent + 1,
                     span,
+                    serialize_precision,
                     resource_type,
                 )?);
             }
@@ -127856,15 +128039,15 @@ where
                     &property_value,
                     indent + 1,
                     span,
+                    serialize_precision,
                     resource_type,
                 )?);
             }
             output.extend_from_slice(format!("{padding}}}\n").as_bytes());
             Ok(output)
         }
-        _ => {
-            format_var_dump_with_indent(value, indent, span, resource_type).map(String::into_bytes)
-        }
+        _ => format_var_dump_with_indent(value, indent, span, serialize_precision, resource_type)
+            .map(String::into_bytes),
     }
 }
 
@@ -127872,13 +128055,15 @@ fn format_var_dump_array_entry<F>(
     entry: &ArrayEntry,
     indent: usize,
     span: Span,
+    serialize_precision: Option<usize>,
     resource_type: &F,
 ) -> CompileResult<String>
 where
     F: Fn(i64) -> &'static str,
 {
     let value = entry.value_cloned();
-    let mut output = format_var_dump_with_indent(&value, indent, span, resource_type)?;
+    let mut output =
+        format_var_dump_with_indent(&value, indent, span, serialize_precision, resource_type)?;
     if entry.slot().is_reference() {
         let padding = "  ".repeat(indent);
         if output.starts_with(&padding) {
@@ -127892,13 +128077,20 @@ fn format_var_dump_array_entry_bytes<F>(
     entry: &ArrayEntry,
     indent: usize,
     span: Span,
+    serialize_precision: Option<usize>,
     resource_type: &F,
 ) -> CompileResult<Vec<u8>>
 where
     F: Fn(i64) -> &'static str,
 {
     let value = entry.value_cloned();
-    let mut output = format_var_dump_bytes_with_indent(&value, indent, span, resource_type)?;
+    let mut output = format_var_dump_bytes_with_indent(
+        &value,
+        indent,
+        span,
+        serialize_precision,
+        resource_type,
+    )?;
     if entry.slot().is_reference() {
         let padding = "  ".repeat(indent).into_bytes();
         if output.starts_with(&padding) {
@@ -127926,6 +128118,38 @@ fn format_var_dump_float(value: f64) -> String {
         normalize_sprintf_exponent(trim_scientific_float(format!("{value:E}")))
     } else {
         value.to_string()
+    }
+}
+
+fn format_var_dump_float_with_precision(value: f64, precision: usize) -> String {
+    let precision = precision.max(1);
+    if value.is_nan() {
+        "NAN".to_string()
+    } else if value == f64::INFINITY {
+        "INF".to_string()
+    } else if value == f64::NEG_INFINITY {
+        "-INF".to_string()
+    } else if value != 0.0
+        && (value.abs() < 1e-4 || value.abs() >= 10_f64.powi(precision.min(308) as i32))
+    {
+        let fractional = precision.saturating_sub(1);
+        normalize_sprintf_exponent(trim_scientific_float(format!("{value:.fractional$E}")))
+    } else {
+        let abs = value.abs();
+        let decimals = if abs >= 1.0 {
+            let integer_digits = if abs >= 1.0 {
+                abs.log10().floor() as i32 + 1
+            } else {
+                0
+            };
+            precision.saturating_sub(integer_digits.max(0) as usize)
+        } else if abs == 0.0 {
+            precision
+        } else {
+            let leading_fractional_zeros = (-abs.log10()).ceil().max(1.0) as usize - 1;
+            precision.saturating_add(leading_fractional_zeros)
+        };
+        trim_decimal_suffix(&format!("{value:.decimals$}"))
     }
 }
 
