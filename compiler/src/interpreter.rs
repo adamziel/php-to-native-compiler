@@ -73939,6 +73939,14 @@ impl Interpreter {
         if !self.enforce_bounded_open_basedir("readlink()", &path, &filesystem_path, span)? {
             return Ok(Value::Bool(false));
         }
+        if trailing_separator_requires_directory(&path)
+            && fs::symlink_metadata(&filesystem_path)
+                .map(|metadata| !metadata.is_dir())
+                .unwrap_or(false)
+        {
+            self.emit_filesystem_display_warning("readlink", "Not a directory", span)?;
+            return Ok(Value::Bool(false));
+        }
         match fs::read_link(&filesystem_path) {
             Ok(target) => {
                 let target = target.into_os_string().into_string().map_err(|_| {
@@ -74019,6 +74027,10 @@ impl Interpreter {
         else {
             return Ok(Value::Bool(false));
         };
+        if target.is_empty() || link.is_empty() {
+            self.emit_filesystem_display_warning("link", "No such file or directory", span)?;
+            return Ok(Value::Bool(false));
+        }
         let target_path =
             self.resolve_local_filesystem_operation_path("link", &target, false, span)?;
         let link_path = self.resolve_local_filesystem_operation_path("link", &link, false, span)?;
@@ -74690,6 +74702,14 @@ impl Interpreter {
         let filesystem_path =
             self.resolve_local_filesystem_operation_path("unlink", &path, false, span)?;
         if !self.enforce_bounded_open_basedir("unlink()", &path, &filesystem_path, span)? {
+            return Ok(Value::Bool(false));
+        }
+        if trailing_separator_requires_directory(&path)
+            && fs::symlink_metadata(&filesystem_path)
+                .map(|metadata| !metadata.is_dir())
+                .unwrap_or(false)
+        {
+            self.emit_display_warning(format!("unlink({path}): Not a directory"), span)?;
             return Ok(Value::Bool(false));
         }
         match fs::remove_file(&filesystem_path) {
@@ -98811,11 +98831,13 @@ fn lexically_normalized_filesystem_path(path: &Path) -> PathBuf {
     for component in path.components() {
         match component {
             std::path::Component::CurDir => {}
-            std::path::Component::ParentDir => {
-                if !normalized.pop() {
-                    normalized.push("..");
+            std::path::Component::ParentDir => match normalized.components().next_back() {
+                Some(std::path::Component::Normal(_)) => {
+                    normalized.pop();
                 }
-            }
+                Some(std::path::Component::RootDir) | Some(std::path::Component::Prefix(_)) => {}
+                _ => normalized.push(".."),
+            },
             std::path::Component::Normal(part) => normalized.push(part),
             std::path::Component::RootDir => normalized.push(component.as_os_str()),
             std::path::Component::Prefix(prefix) => normalized.push(prefix.as_os_str()),
