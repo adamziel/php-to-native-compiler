@@ -1,12 +1,6 @@
 use php_compiler::error::Phase;
 use php_compiler::{emit_ir_source, run_source};
 
-fn runtime_error(source: &str) -> php_compiler::error::Diagnostic {
-    let error = run_source(source).unwrap_err();
-    assert_eq!(error.phase, Phase::Runtime);
-    error
-}
-
 #[test]
 fn array_fill_builds_integer_keyed_arrays_and_clones_values() {
     let source = r#"<?php
@@ -93,14 +87,15 @@ print_r($items);
 
 #[test]
 fn array_assoc_builtins_reject_non_array_arguments() {
-    let error = runtime_error("<?php\narray_diff_assoc([1], 42);\n");
-
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 1);
+    let execution = run_source(
+        "<?php\ntry { array_diff_assoc([1], 42); } catch (TypeError $e) { echo $e->getMessage(); }\n",
+    )
+    .unwrap();
     assert_eq!(
-        error.message,
-        "unsupported call array_diff_assoc(): second argument must be array, got int"
+        execution.stdout,
+        "array_diff_assoc(): Argument #2 must be of type array, int given"
     );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

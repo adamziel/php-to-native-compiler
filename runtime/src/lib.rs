@@ -30277,7 +30277,7 @@ impl PhpArray {
         }
     }
 
-    fn inherit_append_cursor_from(&mut self, source: &Self) {
+    pub fn inherit_append_cursor_from(&mut self, source: &Self) {
         self.next_auto_index = source.next_auto_index;
         self.auto_index_exhausted = source.auto_index_exhausted;
     }

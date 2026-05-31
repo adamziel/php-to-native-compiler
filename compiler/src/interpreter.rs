@@ -82825,12 +82825,12 @@ impl Interpreter {
                 }
             }
             "array_intersect_key" => {
-                if args.len() < 2 {
+                if args.is_empty() {
                     return Err(runtime_error(
                         span,
                         RuntimeError::arity_mismatch(
                             "array_intersect_key()",
-                            ArityExpectation::AtLeast(2),
+                            ArityExpectation::AtLeast(1),
                             args.len(),
                         ),
                     ));
@@ -82845,11 +82845,7 @@ impl Interpreter {
                                 span,
                                 RuntimeError::unsupported_call(
                                     "array_intersect_key()",
-                                    format!(
-                                        "{} must be array, got {}",
-                                        positional_argument_label(index),
-                                        other.type_name()
-                                    ),
+                                    array_user_compare_array_type_error_reason(index, other),
                                 ),
                             ));
                         }
@@ -82864,12 +82860,12 @@ impl Interpreter {
                 ))
             }
             "array_diff_key" => {
-                if args.len() < 2 {
+                if args.is_empty() {
                     return Err(runtime_error(
                         span,
                         RuntimeError::arity_mismatch(
                             "array_diff_key()",
-                            ArityExpectation::AtLeast(2),
+                            ArityExpectation::AtLeast(1),
                             args.len(),
                         ),
                     ));
@@ -82884,11 +82880,7 @@ impl Interpreter {
                                 span,
                                 RuntimeError::unsupported_call(
                                     "array_diff_key()",
-                                    format!(
-                                        "{} must be array, got {}",
-                                        positional_argument_label(index),
-                                        other.type_name()
-                                    ),
+                                    array_user_compare_array_type_error_reason(index, other),
                                 ),
                             ));
                         }
@@ -82901,160 +82893,110 @@ impl Interpreter {
                 Ok(Value::Array(left.diff_keys_with_all(others.iter().copied())))
             }
             "array_diff" => {
-                if args.len() < 2 {
+                if args.is_empty() {
                     return Err(runtime_error(
                         span,
                         RuntimeError::arity_mismatch(
                             "array_diff()",
-                            ArityExpectation::AtLeast(2),
+                            ArityExpectation::AtLeast(1),
                             args.len(),
                         ),
                     ));
                 }
 
-                let mut arrays = Vec::with_capacity(args.len());
-                for (index, arg) in args.iter().enumerate() {
-                    match arg {
-                        Value::Array(array) => arrays.push(array),
-                        other => {
-                            return Err(runtime_error(
-                                span,
-                                RuntimeError::unsupported_call(
-                                    "array_diff()",
-                                    format!(
-                                        "{} must be array, got {}",
-                                        positional_argument_label(index),
-                                        other.type_name()
-                                    ),
-                                ),
-                            ));
-                        }
-                    }
-                }
-
+                let arrays = self.collect_array_comparison_operands("array_diff()", &args, span)?;
                 let (left, others) = arrays
                     .split_first()
-                    .expect("array_diff requires at least two arrays");
-                left.diff_values_with_all(others.iter().copied())
-                    .map(Value::Array)
-                    .map_err(|error| runtime_error(span, error))
+                    .expect("array_diff requires at least one array");
+                self.call_array_native_value_compare(
+                    "array_diff()",
+                    left,
+                    others,
+                    ArrayUserCompareMode::Diff,
+                    false,
+                    span,
+                )
             }
             "array_diff_assoc" => {
-                if args.len() < 2 {
+                if args.is_empty() {
                     return Err(runtime_error(
                         span,
                         RuntimeError::arity_mismatch(
                             "array_diff_assoc()",
-                            ArityExpectation::AtLeast(2),
+                            ArityExpectation::AtLeast(1),
                             args.len(),
                         ),
                     ));
                 }
 
-                let mut arrays = Vec::with_capacity(args.len());
-                for (index, arg) in args.iter().enumerate() {
-                    match arg {
-                        Value::Array(array) => arrays.push(array),
-                        other => {
-                            return Err(runtime_error(
-                                span,
-                                RuntimeError::unsupported_call(
-                                    "array_diff_assoc()",
-                                    format!(
-                                        "{} must be array, got {}",
-                                        positional_argument_label(index),
-                                        other.type_name()
-                                    ),
-                                ),
-                            ));
-                        }
-                    }
-                }
-
+                let arrays =
+                    self.collect_array_comparison_operands("array_diff_assoc()", &args, span)?;
                 let (left, others) = arrays
                     .split_first()
-                    .expect("array_diff_assoc requires at least two arrays");
-                left.diff_assoc_with_all(others.iter().copied())
-                    .map(Value::Array)
-                    .map_err(|error| runtime_error(span, error))
+                    .expect("array_diff_assoc requires at least one array");
+                self.call_array_native_value_compare(
+                    "array_diff_assoc()",
+                    left,
+                    others,
+                    ArrayUserCompareMode::Diff,
+                    true,
+                    span,
+                )
             }
             "array_intersect" => {
-                if args.len() < 2 {
+                if args.is_empty() {
                     return Err(runtime_error(
                         span,
                         RuntimeError::arity_mismatch(
                             "array_intersect()",
-                            ArityExpectation::AtLeast(2),
+                            ArityExpectation::AtLeast(1),
                             args.len(),
                         ),
                     ));
                 }
 
-                let mut arrays = Vec::with_capacity(args.len());
-                for (index, arg) in args.iter().enumerate() {
-                    match arg {
-                        Value::Array(array) => arrays.push(array),
-                        other => {
-                            return Err(runtime_error(
-                                span,
-                                RuntimeError::unsupported_call(
-                                    "array_intersect()",
-                                    format!(
-                                        "{} must be array, got {}",
-                                        positional_argument_label(index),
-                                        other.type_name()
-                                    ),
-                                ),
-                            ));
-                        }
-                    }
-                }
-
+                let arrays =
+                    self.collect_array_comparison_operands("array_intersect()", &args, span)?;
                 let (left, others) = arrays
                     .split_first()
-                    .expect("array_intersect requires at least two arrays");
-                left.intersect_values_with_all(others.iter().copied())
-                    .map(Value::Array)
-                    .map_err(|error| runtime_error(span, error))
+                    .expect("array_intersect requires at least one array");
+                self.call_array_native_value_compare(
+                    "array_intersect()",
+                    left,
+                    others,
+                    ArrayUserCompareMode::Intersect,
+                    false,
+                    span,
+                )
             }
             "array_intersect_assoc" => {
-                if args.len() < 2 {
+                if args.is_empty() {
                     return Err(runtime_error(
                         span,
                         RuntimeError::arity_mismatch(
                             "array_intersect_assoc()",
-                            ArityExpectation::AtLeast(2),
+                            ArityExpectation::AtLeast(1),
                             args.len(),
                         ),
                     ));
                 }
 
-                let mut arrays = Vec::with_capacity(args.len());
-                for (index, arg) in args.iter().enumerate() {
-                    match arg {
-                        Value::Array(array) => arrays.push(array),
-                        other => {
-                            return Err(runtime_error(
-                                span,
-                                RuntimeError::unsupported_call(
-                                    "array_intersect_assoc()",
-                                    format!(
-                                        "{} must be array, got {}",
-                                        positional_argument_label(index),
-                                        other.type_name()
-                                    ),
-                                ),
-                            ));
-                        }
-                    }
-                }
-
+                let arrays = self.collect_array_comparison_operands(
+                    "array_intersect_assoc()",
+                    &args,
+                    span,
+                )?;
                 let (left, others) = arrays
                     .split_first()
-                    .expect("array_intersect_assoc requires at least two arrays");
-                left.intersect_assoc_with_all(others.iter().copied())
-                    .map(Value::Array)
-                    .map_err(|error| runtime_error(span, error))
+                    .expect("array_intersect_assoc requires at least one array");
+                self.call_array_native_value_compare(
+                    "array_intersect_assoc()",
+                    left,
+                    others,
+                    ArrayUserCompareMode::Intersect,
+                    true,
+                    span,
+                )
             }
             "array_udiff" => self.call_array_user_compare(
                 name,
@@ -86144,6 +86086,221 @@ impl Interpreter {
         Ok(Value::Int(previous))
     }
 
+    fn collect_array_comparison_operands(
+        &self,
+        context: &str,
+        args: &[Value],
+        span: Span,
+    ) -> CompileResult<Vec<PhpArray>> {
+        let mut arrays = Vec::with_capacity(args.len());
+        for (index, arg) in args.iter().enumerate() {
+            match arg {
+                Value::Array(array) => arrays.push(array.clone()),
+                other => {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            context,
+                            array_user_compare_array_type_error_reason(index, other),
+                        ),
+                    ));
+                }
+            }
+        }
+        Ok(arrays)
+    }
+
+    fn call_array_native_value_compare(
+        &mut self,
+        context: &str,
+        left: &PhpArray,
+        others: &[PhpArray],
+        mode: ArrayUserCompareMode,
+        compare_keys: bool,
+        span: Span,
+    ) -> CompileResult<Value> {
+        if mode == ArrayUserCompareMode::Diff && !compare_keys {
+            return self.call_array_native_diff_values(context, left, others, span);
+        }
+
+        let mut result = PhpArray::new();
+
+        for left_entry in left.entries() {
+            let mut keep = match mode {
+                ArrayUserCompareMode::Diff => true,
+                ArrayUserCompareMode::Intersect => true,
+            };
+
+            for other in others {
+                let matched = self.array_native_entry_matches_any(
+                    context,
+                    left_entry,
+                    other,
+                    compare_keys,
+                    span,
+                )?;
+                match mode {
+                    ArrayUserCompareMode::Diff if matched => {
+                        keep = false;
+                        break;
+                    }
+                    ArrayUserCompareMode::Intersect if !matched => {
+                        keep = false;
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+
+            if keep {
+                result.insert_shared_slot(left_entry.key.clone(), left_entry.slot());
+            }
+        }
+
+        result.inherit_append_cursor_from(left);
+        Ok(Value::Array(result))
+    }
+
+    fn call_array_native_diff_values(
+        &mut self,
+        context: &str,
+        left: &PhpArray,
+        others: &[PhpArray],
+        span: Span,
+    ) -> CompileResult<Value> {
+        if others.is_empty() {
+            let mut result = PhpArray::new();
+            for entry in left.entries() {
+                result.insert_shared_slot(entry.key.clone(), entry.slot());
+            }
+            result.inherit_append_cursor_from(left);
+            return Ok(Value::Array(result));
+        }
+
+        let left_values = left
+            .entries()
+            .iter()
+            .map(|entry| {
+                let value = entry.value_cloned();
+                self.array_native_string_comparison_value(context, &value, span)
+            })
+            .collect::<CompileResult<Vec<_>>>()?;
+        let other_values = others
+            .iter()
+            .map(|other| {
+                other
+                    .entries()
+                    .iter()
+                    .map(|entry| {
+                        let value = entry.value_cloned();
+                        self.array_native_string_comparison_value(context, &value, span)
+                    })
+                    .collect::<CompileResult<Vec<_>>>()
+            })
+            .collect::<CompileResult<Vec<_>>>()?;
+
+        let mut result = PhpArray::new();
+        for (entry, left_value) in left.entries().iter().zip(left_values.iter()) {
+            if other_values
+                .iter()
+                .all(|values| !values.iter().any(|right_value| right_value == left_value))
+            {
+                result.insert_shared_slot(entry.key.clone(), entry.slot());
+            }
+        }
+
+        result.inherit_append_cursor_from(left);
+        Ok(Value::Array(result))
+    }
+
+    fn array_native_entry_matches_any(
+        &mut self,
+        context: &str,
+        left: &ArrayEntry,
+        right: &PhpArray,
+        compare_keys: bool,
+        span: Span,
+    ) -> CompileResult<bool> {
+        for right_entry in right.entries() {
+            if compare_keys && left.key != right_entry.key {
+                continue;
+            }
+            let left_value = left.value_cloned();
+            let right_value = right_entry.value_cloned();
+            if self.array_native_values_match(context, &left_value, &right_value, span)? {
+                return Ok(true);
+            }
+        }
+
+        Ok(false)
+    }
+
+    fn array_native_values_match(
+        &mut self,
+        context: &str,
+        left: &Value,
+        right: &Value,
+        span: Span,
+    ) -> CompileResult<bool> {
+        let left = self.array_native_string_comparison_value(context, left, span)?;
+        let right = self.array_native_string_comparison_value(context, right, span)?;
+        Ok(left == right)
+    }
+
+    fn array_native_string_comparison_value(
+        &mut self,
+        context: &str,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<Vec<u8>> {
+        if let Some(value) = value.php_scalar_string_bytes() {
+            return Ok(value);
+        }
+
+        match value {
+            Value::Array(_) => {
+                self.emit_display_warning("Array to string conversion", span)?;
+                Ok(b"Array".to_vec())
+            }
+            Value::Object(object) => {
+                if object.class_name().eq_ignore_ascii_case("BcMath\\Number") {
+                    return self
+                        .bcmath_number_object_string(object, span)
+                        .map(String::into_bytes);
+                }
+                if let Some(output) =
+                    self.object_to_string_with_magic(object.clone(), context, span)?
+                {
+                    return Ok(output.into_bytes());
+                }
+                Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        context,
+                        format!(
+                            "Object of class {} could not be converted to string",
+                            object.class_name()
+                        ),
+                    ),
+                ))
+            }
+            Value::Closure(_) => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    context,
+                    "Object of class Closure could not be converted to string",
+                ),
+            )),
+            Value::Resource(id) => Ok(format!("Resource id #{id}").into_bytes()),
+            Value::Null
+            | Value::Bool(_)
+            | Value::Int(_)
+            | Value::Float(_)
+            | Value::String(_)
+            | Value::BinaryString(_) => unreachable!("scalar values returned early"),
+        }
+    }
+
     fn call_array_user_compare(
         &mut self,
         function_name: &str,
@@ -86155,7 +86312,7 @@ impl Interpreter {
     ) -> CompileResult<Value> {
         let callback_count = usize::from(value_mode == ArrayUserCompareValueMode::Callback)
             + usize::from(key_mode == ArrayUserCompareKeyMode::Callback);
-        let min_args = 2 + callback_count;
+        let min_args = 1 + callback_count;
         let context = format!("{function_name}()");
 
         if args.len() < min_args {
@@ -86167,6 +86324,26 @@ impl Interpreter {
                     args.len(),
                 ),
             ));
+        }
+
+        let (value_callback, key_callback) = match (value_mode, key_mode) {
+            (ArrayUserCompareValueMode::Callback, ArrayUserCompareKeyMode::Callback) => {
+                (Some(&args[args.len() - 2]), Some(&args[args.len() - 1]))
+            }
+            (ArrayUserCompareValueMode::Callback, _) => (Some(&args[args.len() - 1]), None),
+            (_, ArrayUserCompareKeyMode::Callback) => (None, Some(&args[args.len() - 1])),
+            _ => (None, None),
+        };
+        if let Some(callback) = value_callback {
+            self.validate_array_user_compare_callback(
+                &context,
+                callback,
+                args.len() - usize::from(key_callback.is_some()),
+                span,
+            )?;
+        }
+        if let Some(callback) = key_callback {
+            self.validate_array_user_compare_callback(&context, callback, args.len(), span)?;
         }
 
         let array_count = args.len() - callback_count;
@@ -86186,18 +86363,9 @@ impl Interpreter {
             }
         }
 
-        let (value_callback, key_callback) = match (value_mode, key_mode) {
-            (ArrayUserCompareValueMode::Callback, ArrayUserCompareKeyMode::Callback) => {
-                (Some(&args[args.len() - 2]), Some(&args[args.len() - 1]))
-            }
-            (ArrayUserCompareValueMode::Callback, _) => (Some(&args[args.len() - 1]), None),
-            (_, ArrayUserCompareKeyMode::Callback) => (None, Some(&args[args.len() - 1])),
-            _ => (None, None),
-        };
-
         let (left, others) = arrays
             .split_first()
-            .expect("array user compare requires at least two arrays");
+            .expect("array user compare requires at least one array");
         let mut result = PhpArray::new();
 
         for left_entry in left.entries() {
@@ -86234,11 +86402,56 @@ impl Interpreter {
             };
 
             if keep {
-                result.insert(left_entry.key.clone(), left_entry.value_cloned());
+                result.insert_shared_slot(left_entry.key.clone(), left_entry.slot());
             }
         }
 
+        result.inherit_append_cursor_from(left);
         Ok(Value::Array(result))
+    }
+
+    fn validate_array_user_compare_callback(
+        &self,
+        context: &str,
+        callback: &Value,
+        argument_number: usize,
+        span: Span,
+    ) -> CompileResult<()> {
+        match callback {
+            Value::String(callback_name) => {
+                if static_method_callable_string(callback_name).is_some()
+                    || self.lookup_function(callback_name).is_some()
+                    || forbidden_dynamic_builtin_call_error(callback_name, span).is_some()
+                {
+                    return Ok(());
+                }
+                Err(array_user_compare_invalid_callback_error(
+                    context,
+                    argument_number,
+                    format!("function \"{callback_name}\" not found or invalid function name"),
+                    span,
+                ))
+            }
+            Value::Array(callback) => {
+                if callback.entries().len() == 2 {
+                    Ok(())
+                } else {
+                    Err(array_user_compare_invalid_callback_error(
+                        context,
+                        argument_number,
+                        "array callback must have exactly two members",
+                        span,
+                    ))
+                }
+            }
+            Value::Closure(_) => Ok(()),
+            other => Err(array_user_compare_invalid_callback_error(
+                context,
+                argument_number,
+                format!("{} is not a valid callback", php_type_error_given(other)),
+                span,
+            )),
+        }
     }
 
     fn array_user_compare_entry_matches_any(
@@ -86283,10 +86496,10 @@ impl Interpreter {
     ) -> CompileResult<bool> {
         let values_match = match value_mode {
             ArrayUserCompareValueMode::Ignored => true,
-            ArrayUserCompareValueMode::Native => Self::array_user_compare_native_values_match(
+            ArrayUserCompareValueMode::Native => self.array_user_compare_native_values_match(
                 context,
-                left.value(),
-                right.value(),
+                &left.value_cloned(),
+                &right.value_cloned(),
                 span,
             )?,
             ArrayUserCompareValueMode::Callback => {
@@ -86322,33 +86535,15 @@ impl Interpreter {
     }
 
     fn array_user_compare_native_values_match(
+        &mut self,
         context: &str,
         left: &Value,
         right: &Value,
         span: Span,
     ) -> CompileResult<bool> {
-        let left = Self::array_user_compare_scalar_string_value(context, left, span)?;
-        let right = Self::array_user_compare_scalar_string_value(context, right, span)?;
+        let left = self.array_native_string_comparison_value(context, left, span)?;
+        let right = self.array_native_string_comparison_value(context, right, span)?;
         Ok(left == right)
-    }
-
-    fn array_user_compare_scalar_string_value(
-        context: &str,
-        value: &Value,
-        span: Span,
-    ) -> CompileResult<Vec<u8>> {
-        value.php_scalar_string_bytes().ok_or_else(|| {
-            runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    context,
-                    format!(
-                        "native value comparison requires scalar values in the current subset, got {}",
-                        value.type_name()
-                    ),
-                ),
-            )
-        })
     }
 
     fn call_array_user_compare_callback(
@@ -100375,6 +100570,7 @@ fn is_invalid_callback_argument_message(message: &str) -> bool {
     message.contains("(): Argument #1 ($callback) must be a valid callback, ")
         || message.contains("(): Argument #1 ($callback) must be a valid callback or null, ")
         || message.contains("(): Argument #2 ($callback) must be a valid callback or null, ")
+        || (message.contains("(): Argument #") && message.contains(" must be a valid callback, "))
 }
 
 fn call_argument_type_error_callable(message: &str) -> Option<&str> {
@@ -130891,6 +131087,23 @@ fn array_user_compare_array_type_error_reason(index: usize, value: &Value) -> St
             php_type_error_given(value)
         )
     }
+}
+
+fn array_user_compare_invalid_callback_error(
+    context: &str,
+    argument_number: usize,
+    detail: impl AsRef<str>,
+    span: Span,
+) -> Diagnostic {
+    Diagnostic::new(
+        Phase::Runtime,
+        span.line,
+        span.column,
+        format!(
+            "{context}: Argument #{argument_number} must be a valid callback, {}",
+            detail.as_ref()
+        ),
+    )
 }
 
 fn ensure_user_function_arity(

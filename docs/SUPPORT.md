@@ -5641,9 +5641,9 @@
   non-array variadic `array_intersect_key` operands, non-array
   `array_diff_key` operands, non-array variadic `array_diff_key` operands,
   non-array `array_diff` operands, non-array variadic `array_diff` operands,
-  unsupported non-scalar `array_diff` value comparisons,
+  non-stringable object `array_diff` value comparisons,
   non-array `array_intersect` operands, non-array variadic
-  `array_intersect` operands, unsupported non-scalar `array_intersect` value
+  `array_intersect` operands, non-stringable object `array_intersect` value
   comparisons,
   non-array `array_unique` operands, unsupported non-scalar
   `array_unique` value comparisons, unsupported `array_unique` sort flags,
@@ -6707,18 +6707,20 @@
   entries from the first array whose integer/string keys are absent from every
   subsequent array, preserves the first array's keys, values, and insertion
   order, and is also available through string-valued dynamic function calls.
-  `array_diff($array, ...$arrays)` accepts two or more arrays, compares
-  current scalar values through their PHP string forms, returns entries from
-  the first array whose scalar comparison value is absent from every subsequent
-  array, preserves the first array's keys, values, insertion order, and
-  append-index behavior, and is also available through string-valued dynamic
-  function calls.
-  `array_intersect($array, ...$arrays)` accepts two or more arrays, compares
-  current scalar values through their PHP string forms, returns entries from
-  the first array whose scalar comparison value is present in every subsequent
-  array, preserves the first array's keys, values, insertion order, and
-  append-index behavior, and is also available through string-valued dynamic
-  function calls.
+  `array_diff($array, ...$arrays)` accepts one or more arrays, compares
+  current values through their PHP string forms, including array warning
+  stringification, stringable objects, resources, and BcMath `Number` objects,
+  returns entries from the first array whose comparison value is absent from
+  every subsequent array, preserves the first array's keys, values, insertion
+  order, and append-index behavior, and is also available through
+  string-valued dynamic function calls.
+  `array_intersect($array, ...$arrays)` accepts one or more arrays, compares
+  current values through their PHP string forms, including array warning
+  stringification, stringable objects, resources, and BcMath `Number` objects,
+  returns entries from the first array whose comparison value is present in
+  every subsequent array, preserves the first array's keys, values, insertion
+  order, and append-index behavior, and is also available through
+  string-valued dynamic function calls.
   `array_unique($array)` and `array_unique($array, SORT_STRING)` compare
   current scalar values through their PHP string forms,
   `array_unique($array, SORT_REGULAR)` compares current scalar values through
@@ -6999,9 +7001,9 @@
   non-array variadic `array_intersect_key` operands, non-array
   `array_diff_key` operands, non-array variadic `array_diff_key` operands,
   non-array `array_diff` operands, non-array variadic `array_diff` operands,
-  unsupported non-scalar `array_diff` value comparisons,
+  non-stringable object `array_diff` value comparisons,
   non-array `array_intersect` operands, non-array variadic
-  `array_intersect` operands, unsupported non-scalar `array_intersect` value
+  `array_intersect` operands, non-stringable object `array_intersect` value
   comparisons,
   non-array `array_unique` operands, unsupported non-scalar
   `array_unique` value comparisons, unsupported `array_unique` sort flags,
@@ -9349,31 +9351,32 @@
   values, resource values, exact native `TypeError` objects, and native
   lowering are not implemented. `array_diff_key` is also available through
   string-valued dynamic function calls.
-  `array_diff($array, ...$arrays)` accepts two or more array operands, compares
-  current scalar values by their PHP string forms, and returns a new ordered
-  array containing entries from the first array whose scalar comparison value
-  is absent from every subsequent array. The first array's key shape, values,
-  insertion order, and append-index behavior are preserved, and the source
-  arrays are not mutated. Non-array operands, including variadic operands, and
-  non-scalar values such as arrays or objects fail with stable project
-  diagnostics.
-  References, copy-on-write containers, object/resource values, exact native
-  `TypeError` objects, PHP warning-and-string-conversion behavior for
-  non-scalar values, and native lowering are not implemented. `array_diff` is
-  also available through string-valued dynamic function calls.
-  `array_intersect($array, ...$arrays)` accepts two or more array operands,
-  compares current scalar values by their PHP string forms, and returns a new
-  ordered array containing entries from the first array whose scalar comparison
-  value is present in every subsequent array. The first array's key shape,
-  values, insertion order, and append-index behavior are preserved, and the
-  source arrays are not mutated. Non-array operands, including variadic
-  operands, fail with stable project diagnostics naming the offending
-  positional argument. Non-scalar values such as arrays or objects fail with
-  stable project diagnostics. References, copy-on-write containers,
-  object/resource values, exact native `TypeError` objects, PHP
-  warning-and-string-conversion behavior for non-scalar values, and native
-  lowering are not implemented. `array_intersect` is also available through
-  string-valued dynamic function calls.
+  `array_diff($array, ...$arrays)` accepts one or more array operands, compares
+  current values by their PHP string forms, and returns a new ordered array
+  containing entries from the first array whose comparison value is absent from
+  every subsequent array. Array values emit the native-style conversion warning
+  and compare as `Array`; stringable objects, BcMath `Number` objects, and
+  resources compare by their PHP string forms. A single-array call returns a
+  copy preserving the first array's key shape, values, insertion order, and
+  append-index behavior. The source arrays are not mutated. Non-array operands,
+  including variadic operands, fail with diagnostics naming the offending
+  positional argument. Non-stringable object values, exact native `TypeError`
+  objects, full copy-on-write containers, and native lowering are not
+  implemented. `array_diff` is also available through string-valued dynamic
+  function calls.
+  `array_intersect($array, ...$arrays)` accepts one or more array operands,
+  compares current values by their PHP string forms, and returns a new ordered
+  array containing entries from the first array whose comparison value is
+  present in every subsequent array. Array values emit the native-style
+  conversion warning and compare as `Array`; stringable objects, BcMath
+  `Number` objects, and resources compare by their PHP string forms. A
+  single-array call returns a copy preserving the first array's key shape,
+  values, insertion order, and append-index behavior. The source arrays are not
+  mutated. Non-array operands, including variadic operands, fail with
+  diagnostics naming the offending positional argument. Non-stringable object
+  values, exact native `TypeError` objects, full copy-on-write containers, and
+  native lowering are not implemented. `array_intersect` is also available
+  through string-valued dynamic function calls.
   `array_unique($array)` accepts one array operand,
   `array_unique($array, SORT_STRING)` accepts the same array operand with the
   current exact uppercase built-in `SORT_STRING` constant or integer value
@@ -9697,7 +9700,7 @@
   `array_combine` array/object/resource key values, `array_intersect_key` and
   `array_diff_key` exact native `TypeError` objects and
   reference/copy-on-write behavior, `array_diff` and `array_intersect`
-  non-scalar value comparison behavior, `array_unique` sort flags outside
+  non-stringable object value comparison behavior, `array_unique` sort flags outside
   `SORT_REGULAR`/`SORT_NUMERIC`/`SORT_STRING`, `array_unique` non-scalar
   value comparison
   behavior, exact native
@@ -10652,12 +10655,10 @@
 - `array_diff_key` exact native `TypeError` objects, reference/copy-on-write
   behavior, object handle identity preservation for object values, resource
   values, and native lowering
-- `array_diff` non-scalar value comparisons, exact native `TypeError` objects,
-  PHP warning-and-string-conversion behavior for arrays and objects,
-  reference/copy-on-write behavior, object/resource values, and native lowering
-- `array_intersect` non-scalar value comparisons, exact native `TypeError`
-  objects, PHP warning-and-string-conversion behavior for arrays and objects,
-  reference/copy-on-write behavior, object/resource values, and native lowering
+- `array_diff` non-stringable object value comparisons, exact native
+  `TypeError` objects, full copy-on-write behavior, and native lowering
+- `array_intersect` non-stringable object value comparisons, exact native
+  `TypeError` objects, full copy-on-write behavior, and native lowering
 - `array_unique` sort flags outside `SORT_REGULAR`/`SORT_NUMERIC`/
   `SORT_STRING`, non-scalar value comparisons, numeric-mode PHP warning
   recovery for non-numeric values, exact native `TypeError` objects, PHP
