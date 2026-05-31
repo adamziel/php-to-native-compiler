@@ -907,6 +907,25 @@ enum ArrayFilterMode {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ArrayFindOperation {
+    Find,
+    FindKey,
+    Any,
+    All,
+}
+
+impl ArrayFindOperation {
+    fn callable(self) -> &'static str {
+        match self {
+            Self::Find => "array_find()",
+            Self::FindKey => "array_find_key()",
+            Self::Any => "array_any()",
+            Self::All => "array_all()",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum UserArraySortOperation {
     Usort,
     Uasort,
@@ -81915,6 +81934,12 @@ impl Interpreter {
             "array_reduce" => self.call_array_reduce(args, span),
             "array_filter" => self.call_array_filter(args, span),
             "array_map" => self.call_array_map(args, span),
+            "array_find" => self.call_array_find_family(ArrayFindOperation::Find, args, span),
+            "array_find_key" => {
+                self.call_array_find_family(ArrayFindOperation::FindKey, args, span)
+            }
+            "array_any" => self.call_array_find_family(ArrayFindOperation::Any, args, span),
+            "array_all" => self.call_array_find_family(ArrayFindOperation::All, args, span),
             "array_multisort" => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
@@ -85976,6 +86001,144 @@ impl Interpreter {
                 "no array or string given",
                 span,
             )),
+        }
+    }
+
+    fn call_array_find_family(
+        &mut self,
+        operation: ArrayFindOperation,
+        args: Vec<Value>,
+        span: Span,
+    ) -> CompileResult<Value> {
+        match args.as_slice() {
+            [Value::Array(array), callback] => {
+                self.find_array_with_callback(operation, array, callback, span)
+            }
+            [other, _] => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    operation.callable(),
+                    format!(
+                        "Argument #1 ($array) must be of type array, {} given",
+                        Self::php_type_error_actual_name(other)
+                    ),
+                ),
+            )),
+            _ => Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    operation.callable(),
+                    ArityExpectation::Exactly(2),
+                    args.len(),
+                ),
+            )),
+        }
+    }
+
+    fn find_array_with_callback(
+        &mut self,
+        operation: ArrayFindOperation,
+        array: &PhpArray,
+        callback: &Value,
+        span: Span,
+    ) -> CompileResult<Value> {
+        for entry in array.entries() {
+            let result = self.call_array_find_callback_with_values(
+                callback,
+                vec![entry.value_cloned(), value_from_array_key(&entry.key)],
+                span,
+                operation.callable(),
+            )?;
+            let matched = result.is_truthy();
+            match operation {
+                ArrayFindOperation::Find if matched => return Ok(entry.value_cloned()),
+                ArrayFindOperation::FindKey if matched => {
+                    return Ok(value_from_array_key(&entry.key));
+                }
+                ArrayFindOperation::Any if matched => return Ok(Value::Bool(true)),
+                ArrayFindOperation::All if !matched => return Ok(Value::Bool(false)),
+                _ => {}
+            }
+        }
+
+        Ok(match operation {
+            ArrayFindOperation::Find | ArrayFindOperation::FindKey => Value::Null,
+            ArrayFindOperation::Any => Value::Bool(false),
+            ArrayFindOperation::All => Value::Bool(true),
+        })
+    }
+
+    fn call_array_find_callback_with_values(
+        &mut self,
+        callback: &Value,
+        args: Vec<Value>,
+        span: Span,
+        context: &str,
+    ) -> CompileResult<Value> {
+        match callback {
+            Value::String(callback_name) => {
+                if let Some((class_name, method_name)) =
+                    static_method_callable_string(callback_name)
+                {
+                    let callback =
+                        static_method_array_callable_value(class_name, method_name, span)?;
+                    return self.call_array_callable_with_values_with_context(
+                        &callback, args, span, true, context,
+                    );
+                }
+
+                if let Some(error) = forbidden_dynamic_builtin_call_error(callback_name, span) {
+                    return Err(error);
+                }
+                let callable = self.lookup_function(callback_name).ok_or_else(|| {
+                    Self::invalid_callback_error(
+                        context,
+                        format!("function \"{callback_name}\" not found or invalid function name"),
+                        span,
+                    )
+                })?;
+                self.call_array_find_resolved_callable_with_values(callable, args, span)
+            }
+            Value::Array(callback) => self
+                .call_array_callable_with_values_with_context(callback, args, span, true, context),
+            Value::Closure(closure) => self.invoke_closure_value_with_extra_policy(
+                closure.clone(),
+                args,
+                span,
+                context,
+                true,
+            ),
+            _ => Err(Self::invalid_callback_error(
+                context,
+                "no array or string given",
+                span,
+            )),
+        }
+    }
+
+    fn call_array_find_resolved_callable_with_values(
+        &mut self,
+        callable: Callable,
+        args: Vec<Value>,
+        span: Span,
+    ) -> CompileResult<Value> {
+        match callable {
+            Callable::Builtin(key) => self.call_builtin(&key, args, span),
+            Callable::User(function) => {
+                let function = function.as_ref();
+                ensure_user_function_arity_with_extra_policy(function, args.len(), span, true)?;
+                ensure_supported_function_signature(function, args.len(), span)?;
+                self.ensure_user_function_call_depth(function, span)?;
+                self.call_user_function_with_checked_values(
+                    function,
+                    args,
+                    None,
+                    None,
+                    None,
+                    Vec::new(),
+                    None,
+                )
+            }
         }
     }
 
@@ -99144,6 +99307,10 @@ fn is_builtin(name: &str) -> bool {
             | "array_reduce"
             | "array_filter"
             | "array_map"
+            | "array_find"
+            | "array_find_key"
+            | "array_any"
+            | "array_all"
             | "array_multisort"
             | "array_walk"
             | "array_walk_recursive"

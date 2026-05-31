@@ -66145,6 +66145,10 @@ fn is_array_builtin(name: &str) -> bool {
             | "array_reduce"
             | "array_filter"
             | "array_map"
+            | "array_find"
+            | "array_find_key"
+            | "array_any"
+            | "array_all"
             | "array_multisort"
             | "sort"
             | "rsort"
@@ -66595,6 +66599,10 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "array_reduce",
     "array_filter",
     "array_map",
+    "array_find",
+    "array_find_key",
+    "array_any",
+    "array_all",
     "array_multisort",
     "sort",
     "rsort",
