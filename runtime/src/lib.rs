@@ -28525,6 +28525,10 @@ impl PhpArray {
         key
     }
 
+    pub fn insert_shared_slot(&mut self, key: impl Into<ArrayKey>, slot: &ArraySlot) -> ArrayKey {
+        self.insert_slot(key, ArraySlot::share_cell_from(slot))
+    }
+
     pub fn append(&mut self, value: Value) -> RuntimeResult<ArrayKey> {
         self.append_slot(ArraySlot::new(value))
     }
@@ -30083,8 +30087,8 @@ impl PhpArray {
     pub fn filtered_without_callback(&self) -> Self {
         let mut array = Self::new();
         for entry in &self.entries {
-            if entry.value().is_truthy() {
-                array.insert(entry.key.clone(), entry.value_cloned());
+            if entry.value_cloned().is_truthy() {
+                array.insert_shared_slot(entry.key.clone(), entry.slot());
             }
         }
         array
@@ -38362,11 +38366,8 @@ impl Value {
                     ))
                 }
             },
-            (Value::Array(_), _) | (_, Value::Array(_)) => {
-                Err(RuntimeError::unsupported_comparison(
-                    "array comparisons with non-array values are not implemented",
-                ))
-            }
+            (Value::Array(left), right) => php_array_non_array_comparison(left, true, right, op),
+            (left, Value::Array(right)) => php_array_non_array_comparison(right, false, left, op),
             (Value::Object(left), Value::Object(right)) => {
                 left.php_cmp_checked_with_context(right, op, context)
             }
@@ -44138,6 +44139,48 @@ fn compare_numbers(left: Number, right: Number) -> Option<Ordering> {
     match (left, right) {
         (Number::Int(left), Number::Int(right)) => Some(left.cmp(&right)),
         (left, right) => left.as_float().partial_cmp(&right.as_float()),
+    }
+}
+
+fn php_array_non_array_comparison(
+    array: &PhpArray,
+    array_is_left: bool,
+    other: &Value,
+    op: Comparison,
+) -> RuntimeResult<bool> {
+    let ordering = match other {
+        Value::Null | Value::Bool(_) => {
+            let array_truthy = !array.is_empty();
+            let other_truthy = other.is_truthy();
+            if array_is_left {
+                array_truthy.cmp(&other_truthy)
+            } else {
+                other_truthy.cmp(&array_truthy)
+            }
+        }
+        Value::Object(_) | Value::Closure(_) => {
+            return Err(RuntimeError::unsupported_comparison(
+                "array comparisons with object values are not implemented",
+            ));
+        }
+        Value::Resource(_) => {
+            return Err(RuntimeError::unsupported_comparison(
+                "array comparisons with resource values are not implemented",
+            ));
+        }
+        _ if array_is_left => Ordering::Greater,
+        _ => Ordering::Less,
+    };
+
+    Ok(comparison_matches_ordering(ordering, op))
+}
+
+fn comparison_matches_ordering(ordering: Ordering, op: Comparison) -> bool {
+    match (ordering, op) {
+        (Ordering::Less, Comparison::Lt | Comparison::Le | Comparison::Ne) => true,
+        (Ordering::Equal, Comparison::Eq | Comparison::Le | Comparison::Ge) => true,
+        (Ordering::Greater, Comparison::Gt | Comparison::Ge | Comparison::Ne) => true,
+        _ => false,
     }
 }
 

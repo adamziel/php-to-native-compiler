@@ -2583,6 +2583,11 @@ fn parse_array_filter_string_mode(value: &str) -> Option<i64> {
     trimmed.parse::<f64>().ok().and_then(integral_float_to_i64)
 }
 
+fn format_array_filter_invalid_mode_message(_value: Option<i64>) -> String {
+    "Argument #3 ($mode) must be one of ARRAY_FILTER_USE_VALUE, ARRAY_FILTER_USE_KEY, or ARRAY_FILTER_USE_BOTH"
+        .to_string()
+}
+
 fn repo_root_relative_path(path: &Path) -> Option<PathBuf> {
     let candidate = repo_root_relative_candidate(path)?;
     candidate.exists().then_some(candidate)
@@ -48110,13 +48115,7 @@ impl Interpreter {
             span,
             allow_extra_user_args,
         )
-        .map_err(|error| {
-            if context == "array_map()" {
-                array_map_callback_diagnostic(error)
-            } else {
-                error
-            }
-        })?;
+        .map_err(|error| callback_context_diagnostic(context, error))?;
         ensure_supported_function_signature(function, values.len(), span)?;
         self.ensure_user_function_call_depth(function, span)?;
         let prebound_locals = self.closure_prebound_locals(&closure);
@@ -52843,17 +52842,18 @@ impl Interpreter {
     }
 
     fn invalid_callback_error(context: &str, detail: impl AsRef<str>, span: Span) -> Diagnostic {
-        let valid_callback = if context == "array_map()" {
+        let valid_callback = if matches!(context, "array_map()" | "array_filter()") {
             "valid callback or null"
         } else {
             "valid callback"
         };
+        let argument_number = if context == "array_filter()" { 2 } else { 1 };
         Diagnostic::new(
             Phase::Runtime,
             span.line,
             span.column,
             format!(
-                "{context}: Argument #1 ($callback) must be a {valid_callback}, {}",
+                "{context}: Argument #{argument_number} ($callback) must be a {valid_callback}, {}",
                 detail.as_ref()
             ),
         )
@@ -84476,7 +84476,7 @@ impl Interpreter {
                 let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
                     self.resolve_instance_method(object.class_id(), method_name)
                 else {
-                    if context == "array_map()" {
+                    if matches!(context, "array_map()" | "array_filter()") {
                         return Err(Self::invalid_callback_error(
                             context,
                             format!(
@@ -84502,7 +84502,7 @@ impl Interpreter {
                     span,
                 )
                 .map_err(|error| {
-                    if context == "array_map()" {
+                    if matches!(context, "array_map()" | "array_filter()") {
                         Self::invalid_callback_visibility_error(
                             context,
                             &class_name,
@@ -84524,13 +84524,7 @@ impl Interpreter {
                     span,
                     allow_extra_user_args,
                 )
-                .map_err(|error| {
-                    if context == "array_map()" {
-                        array_map_callback_diagnostic(error)
-                    } else {
-                        error
-                    }
-                })?;
+                .map_err(|error| callback_context_diagnostic(context, error))?;
                 ensure_supported_function_signature(function, args.len(), span)?;
                 self.ensure_user_function_call_depth(function, span)?;
                 let this_object = if is_static {
@@ -84577,7 +84571,7 @@ impl Interpreter {
                         span,
                     )? {
                         Some(value) => Ok(value),
-                        None if context == "array_map()" => Err(Self::invalid_callback_error(
+                        None if matches!(context, "array_map()" | "array_filter()") => Err(Self::invalid_callback_error(
                             context,
                             format!(
                                 "class {receiver_class_name} does not have a method \"{method_name}\""
@@ -84602,7 +84596,7 @@ impl Interpreter {
                     ));
                 }
                 if visibility != Visibility::Public {
-                    if context == "array_map()" {
+                    if matches!(context, "array_map()" | "array_filter()") {
                         return Err(Self::invalid_callback_visibility_error(
                             context,
                             &declaring_class_name,
@@ -84633,13 +84627,7 @@ impl Interpreter {
                     span,
                     allow_extra_user_args,
                 )
-                .map_err(|error| {
-                    if context == "array_map()" {
-                        array_map_callback_diagnostic(error)
-                    } else {
-                        error
-                    }
-                })?;
+                .map_err(|error| callback_context_diagnostic(context, error))?;
                 ensure_supported_function_signature(function, args.len(), span)?;
                 self.ensure_user_function_call_depth(function, span)?;
                 self.call_user_function_with_checked_values(
@@ -85510,9 +85498,7 @@ impl Interpreter {
                 span,
                 RuntimeError::unsupported_call(
                     "array_filter()",
-                    format!(
-                        "mode flag must be integer 0, 1, or 2 in the current subset, got {value}"
-                    ),
+                    format_array_filter_invalid_mode_message(Some(*value)),
                 ),
             )),
             Value::Float(value) => match integral_float_to_i64(*value) {
@@ -85523,9 +85509,7 @@ impl Interpreter {
                     span,
                     RuntimeError::unsupported_call(
                         "array_filter()",
-                        format!(
-                            "mode flag float must coerce to integer 0, 1, or 2 in the current subset, got {value}"
-                        ),
+                        format_array_filter_invalid_mode_message(Some(value)),
                     ),
                 )),
                 None => Err(runtime_error(
@@ -85545,9 +85529,7 @@ impl Interpreter {
                     span,
                     RuntimeError::unsupported_call(
                         "array_filter()",
-                        format!(
-                            "mode flag string must coerce to integer 0, 1, or 2 in the current subset, got {value}"
-                        ),
+                        format_array_filter_invalid_mode_message(Some(value)),
                     ),
                 )),
                 None => Err(runtime_error(
@@ -85579,31 +85561,6 @@ impl Interpreter {
         mode: ArrayFilterMode,
         span: Span,
     ) -> CompileResult<PhpArray> {
-        let callback_name = match callback {
-            Value::String(name) => name,
-            other => {
-                return Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "array_filter()",
-                        format!(
-                            "callback must evaluate to string, got {}",
-                            other.type_name()
-                        ),
-                    ),
-                ));
-            }
-        };
-        if let Some(error) = forbidden_dynamic_builtin_call_error(callback_name, span) {
-            return Err(error);
-        }
-        let callable = self.lookup_function(callback_name).ok_or_else(|| {
-            runtime_error(
-                span,
-                RuntimeError::undefined_function(callable_name(callback_name)),
-            )
-        })?;
-
         let mut filtered = PhpArray::new();
         for entry in array.entries() {
             let arguments = match mode {
@@ -85613,13 +85570,105 @@ impl Interpreter {
                 }
                 ArrayFilterMode::Key => vec![value_from_array_key(&entry.key)],
             };
-            let result = self.call_callable_with_values(callable.clone(), arguments, span)?;
+            let result = self.call_array_filter_callback_with_values(callback, arguments, span)?;
             if result.is_truthy() {
-                filtered.insert(entry.key.clone(), entry.value_cloned());
+                filtered.insert_shared_slot(entry.key.clone(), entry.slot());
             }
         }
 
         Ok(filtered)
+    }
+
+    fn call_array_filter_resolved_callable_with_values(
+        &mut self,
+        callable: Callable,
+        args: Vec<Value>,
+        span: Span,
+    ) -> CompileResult<Value> {
+        match callable {
+            Callable::Builtin(key) => self
+                .call_builtin(&key, args, span)
+                .map_err(array_filter_callback_diagnostic),
+            Callable::User(function) => {
+                let function = function.as_ref();
+                ensure_user_function_arity_with_extra_policy(function, args.len(), span, true)
+                    .map_err(array_filter_callback_diagnostic)?;
+                ensure_supported_function_signature(function, args.len(), span)?;
+                self.ensure_user_function_call_depth(function, span)?;
+                self.call_user_function_with_checked_values(
+                    function,
+                    args,
+                    None,
+                    None,
+                    None,
+                    Vec::new(),
+                    None,
+                )
+            }
+        }
+    }
+
+    fn call_array_filter_callback_with_values(
+        &mut self,
+        callback: &Value,
+        args: Vec<Value>,
+        span: Span,
+    ) -> CompileResult<Value> {
+        match callback {
+            Value::String(callback_name) => {
+                if let Some((class_name, method_name)) =
+                    static_method_callable_string(callback_name)
+                {
+                    let callback =
+                        static_method_array_callable_value(class_name, method_name, span)?;
+                    return self.call_array_callable_with_values_with_context(
+                        &callback,
+                        args,
+                        span,
+                        true,
+                        "array_filter()",
+                    );
+                }
+
+                if callback_name.is_empty() {
+                    return Err(Self::invalid_callback_error(
+                        "array_filter()",
+                        "function \"\" not found or invalid function name",
+                        span,
+                    ));
+                }
+                if let Some(error) = forbidden_dynamic_builtin_call_error(callback_name, span) {
+                    return Err(error);
+                }
+                let callable = self.lookup_function(callback_name).ok_or_else(|| {
+                    Self::invalid_callback_error(
+                        "array_filter()",
+                        format!("function \"{callback_name}\" not found or invalid function name"),
+                        span,
+                    )
+                })?;
+                self.call_array_filter_resolved_callable_with_values(callable, args, span)
+            }
+            Value::Array(callback) => self.call_array_callable_with_values_with_context(
+                callback,
+                args,
+                span,
+                true,
+                "array_filter()",
+            ),
+            Value::Closure(closure) => self.invoke_closure_value_with_extra_policy(
+                closure.clone(),
+                args,
+                span,
+                "array_filter()",
+                true,
+            ),
+            _ => Err(Self::invalid_callback_error(
+                "array_filter()",
+                "no array or string given",
+                span,
+            )),
+        }
     }
 
     fn call_array_map(&mut self, args: Vec<Value>, span: Span) -> CompileResult<Value> {
@@ -95603,6 +95652,14 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_param("value", "mixed"),
             ],
         ),
+        "array_filter" => (
+            "array",
+            vec![
+                reflection_internal_param("array", "array"),
+                reflection_internal_optional_null_param("callback", "?callable"),
+                reflection_internal_optional_int_param("mode", 0),
+            ],
+        ),
         "array_diff_assoc" | "array_intersect_assoc" => (
             "array",
             vec![
@@ -97870,6 +97927,10 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
             return Some(("TypeError", message));
         }
 
+        if let Some(message) = array_filter_callback_argument_count_error_message(error) {
+            return Some(("ArgumentCountError", message));
+        }
+
         if let Some(message) = error
             .message
             .strip_prefix("unsupported call substr_replace(): ")
@@ -98342,6 +98403,27 @@ fn array_map_callback_diagnostic(error: Diagnostic) -> Diagnostic {
     error
 }
 
+fn array_filter_callback_diagnostic(error: Diagnostic) -> Diagnostic {
+    if error.phase == Phase::Runtime && error.message.starts_with("arity mismatch for ") {
+        return Diagnostic {
+            phase: error.phase,
+            file: error.file,
+            line: error.line,
+            column: error.column,
+            message: format!("array_filter callback {}", error.message),
+        };
+    }
+    error
+}
+
+fn callback_context_diagnostic(context: &str, error: Diagnostic) -> Diagnostic {
+    match context {
+        "array_map()" => array_map_callback_diagnostic(error),
+        "array_filter()" => array_filter_callback_diagnostic(error),
+        _ => error,
+    }
+}
+
 fn array_reduce_callback_too_few_arguments_message(error: &Diagnostic) -> Option<String> {
     if error.phase != Phase::Runtime {
         return None;
@@ -98378,10 +98460,56 @@ fn array_map_callback_too_few_arguments_message(error: &Diagnostic) -> Option<St
     if actual >= expected {
         return None;
     }
+    let callable = format_callback_arity_callable(callable, error);
 
     Some(format!(
         "Too few arguments to function {callable}, {actual} passed and exactly {expected} expected"
     ))
+}
+
+fn array_filter_callback_argument_count_error_message(error: &Diagnostic) -> Option<String> {
+    if error.phase != Phase::Runtime {
+        return None;
+    }
+
+    let rest = error
+        .message
+        .strip_prefix("array_filter callback arity mismatch for ")?;
+    let (callable, expectation) = rest.split_once(": expected ")?;
+    let (expected, actual) = expectation.split_once(" argument(s), got ")?;
+    let expected = expected.parse::<usize>().ok()?;
+    let actual = actual.parse::<usize>().ok()?;
+    let callable = format_callback_arity_callable(callable, error);
+
+    if actual < expected {
+        return Some(format!(
+            "Too few arguments to function {callable}, {actual} passed and exactly {expected} expected"
+        ));
+    }
+    if actual > expected {
+        let noun = if expected == 1 {
+            "argument"
+        } else {
+            "arguments"
+        };
+        return Some(format!(
+            "{callable} expects exactly {expected} {noun}, {actual} given"
+        ));
+    }
+
+    None
+}
+
+fn format_callback_arity_callable(callable: &str, error: &Diagnostic) -> String {
+    if callable == "{closure}()" {
+        let file = error
+            .file
+            .as_ref()
+            .map(|file| file.display().to_string())
+            .unwrap_or_else(|| "<unknown>".to_string());
+        return format!("{{closure:{file}:{}}}()", error.line);
+    }
+    callable.to_string()
 }
 
 fn value_error_message(error: &Diagnostic) -> Option<String> {
@@ -98438,6 +98566,10 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
         | (
             "array_rand()",
             "Argument #2 ($num) must be between 1 and the number of elements in argument #1 ($array)",
+        )
+        | (
+            "array_filter()",
+            "Argument #3 ($mode) must be one of ARRAY_FILTER_USE_VALUE, ARRAY_FILTER_USE_KEY, or ARRAY_FILTER_USE_BOTH",
         )
         | ("chunk_split()", "Argument #2 ($length) must be greater than 0")
         | ("str_split()", "Argument #2 ($length) must be greater than 0")
@@ -98852,6 +98984,7 @@ fn is_internal_method_argument_type_error_message(message: &str) -> bool {
 fn is_invalid_callback_argument_message(message: &str) -> bool {
     message.contains("(): Argument #1 ($callback) must be a valid callback, ")
         || message.contains("(): Argument #1 ($callback) must be a valid callback or null, ")
+        || message.contains("(): Argument #2 ($callback) must be a valid callback or null, ")
 }
 
 fn call_argument_type_error_callable(message: &str) -> Option<&str> {
