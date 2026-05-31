@@ -66462,6 +66462,7 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "preg_replace_callback",
     "compact",
     "error_reporting",
+    "ini_parse_quantity",
     "set_time_limit",
     "connection_aborted",
     "connection_status",
