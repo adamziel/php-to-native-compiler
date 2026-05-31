@@ -66586,6 +66586,8 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "array_diff_assoc",
     "array_intersect",
     "array_intersect_assoc",
+    "array_diff_ukey",
+    "array_intersect_ukey",
     "array_unique",
     "array_count_values",
     "array_sum",

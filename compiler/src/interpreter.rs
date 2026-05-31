@@ -939,6 +939,7 @@ enum ArrayUserCompareMode {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ArrayUserCompareValueMode {
+    Ignored,
     Native,
     Callback,
 }
@@ -81562,6 +81563,22 @@ impl Interpreter {
                 ArrayUserCompareKeyMode::Callback,
                 span,
             ),
+            "array_diff_ukey" => self.call_array_user_compare(
+                name,
+                args,
+                ArrayUserCompareMode::Diff,
+                ArrayUserCompareValueMode::Ignored,
+                ArrayUserCompareKeyMode::Callback,
+                span,
+            ),
+            "array_intersect_ukey" => self.call_array_user_compare(
+                name,
+                args,
+                ArrayUserCompareMode::Intersect,
+                ArrayUserCompareValueMode::Ignored,
+                ArrayUserCompareKeyMode::Callback,
+                span,
+            ),
             "array_udiff_uassoc" => self.call_array_user_compare(
                 name,
                 args,
@@ -84626,12 +84643,8 @@ impl Interpreter {
                     return Err(runtime_error(
                         span,
                         RuntimeError::unsupported_call(
-                            context,
-                            format!(
-                                "{} must be array, got {}",
-                                positional_argument_label(index),
-                                other.type_name()
-                            ),
+                            context.clone(),
+                            array_user_compare_array_type_error_reason(index, other),
                         ),
                     ));
                 }
@@ -84734,6 +84747,7 @@ impl Interpreter {
         span: Span,
     ) -> CompileResult<bool> {
         let values_match = match value_mode {
+            ArrayUserCompareValueMode::Ignored => true,
             ArrayUserCompareValueMode::Native => Self::array_user_compare_native_values_match(
                 context,
                 left.value(),
@@ -95180,7 +95194,10 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_param("value_compare_func", "callable"),
             ],
         ),
-        "array_diff_uassoc" | "array_intersect_uassoc" => (
+        "array_diff_uassoc"
+        | "array_intersect_uassoc"
+        | "array_diff_ukey"
+        | "array_intersect_ukey" => (
             "array",
             vec![
                 reflection_internal_param("array", "array"),
@@ -98835,6 +98852,8 @@ fn is_builtin(name: &str) -> bool {
             | "array_uintersect_assoc"
             | "array_diff_uassoc"
             | "array_intersect_uassoc"
+            | "array_diff_ukey"
+            | "array_intersect_ukey"
             | "array_udiff_uassoc"
             | "array_uintersect_uassoc"
             | "array_unique"
@@ -127443,6 +127462,21 @@ fn positional_argument_label(index: usize) -> String {
         3 => "fourth argument".to_string(),
         4 => "fifth argument".to_string(),
         _ => format!("argument #{}", index + 1),
+    }
+}
+
+fn array_user_compare_array_type_error_reason(index: usize, value: &Value) -> String {
+    if index == 0 {
+        format!(
+            "Argument #1 ($array) must be of type array, {} given",
+            php_type_error_given(value)
+        )
+    } else {
+        format!(
+            "Argument #{} must be of type array, {} given",
+            index + 1,
+            php_type_error_given(value)
+        )
     }
 }
 
