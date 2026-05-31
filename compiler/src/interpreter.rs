@@ -59078,7 +59078,8 @@ impl Interpreter {
             ));
         }
 
-        let (result, count) = str_replace_scalar_result(&args[0], &args[1], &args[2], span)?;
+        let (result, count) =
+            self.str_replace_result("str_replace()", &args[0], &args[1], &args[2], false, span)?;
         if args.len() == 4 {
             if let Some(reference) = count_reference {
                 reference.set_value(Value::Int(count));
@@ -59092,7 +59093,7 @@ impl Interpreter {
             }
         }
 
-        Ok(Value::String(result))
+        Ok(result)
     }
 
     fn call_builtin_callback_with_values(
@@ -64370,7 +64371,8 @@ impl Interpreter {
         let search = self.evaluate(&args[0], caller_scope)?;
         let replace = self.evaluate(&args[1], caller_scope)?;
         let subject = self.evaluate(&args[2], caller_scope)?;
-        let (result, count) = str_replace_scalar_result(&search, &replace, &subject, span)?;
+        let (result, count) =
+            self.str_replace_result("str_replace()", &search, &replace, &subject, false, span)?;
 
         if args.len() == 4 {
             let Expr::Variable(count_name, _) = &args[3] else {
@@ -64385,7 +64387,156 @@ impl Interpreter {
             caller_scope.write_static(count_name, Value::Int(count));
         }
 
-        Ok(Value::String(result))
+        Ok(result)
+    }
+
+    fn call_str_replace(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        self.call_string_replace_function("str_replace()", args, false, span)
+            .map(|(value, _)| value)
+    }
+
+    fn call_str_ireplace(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        self.call_string_replace_function("str_ireplace()", args, true, span)
+            .map(|(value, _)| value)
+    }
+
+    fn call_string_replace_function(
+        &mut self,
+        function: &'static str,
+        args: &[Value],
+        case_insensitive: bool,
+        span: Span,
+    ) -> CompileResult<(Value, i64)> {
+        if !(3..=4).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    function,
+                    ArityExpectation::Between { min: 3, max: 4 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        if args.len() == 4 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function,
+                    "count output requires a direct call with a direct variable in the current subset",
+                ),
+            ));
+        }
+
+        self.str_replace_result(
+            function,
+            &args[0],
+            &args[1],
+            &args[2],
+            case_insensitive,
+            span,
+        )
+    }
+
+    fn str_replace_result(
+        &mut self,
+        function: &'static str,
+        search: &Value,
+        replace: &Value,
+        subject: &Value,
+        case_insensitive: bool,
+        span: Span,
+    ) -> CompileResult<(Value, i64)> {
+        let search_values = self.str_replace_argument_list(function, search, "search", span)?;
+        let replace_is_array = matches!(replace, Value::Array(_));
+        let replace_values = self.str_replace_argument_list(function, replace, "replace", span)?;
+
+        match subject {
+            Value::Array(array) => {
+                let mut output = PhpArray::new();
+                let mut total_count = 0;
+                for entry in array.entries() {
+                    let value = entry.value_cloned();
+                    let subject = self.str_replace_scalar_bytes(function, &value, span)?;
+                    let (replaced, count) = apply_string_replacements(
+                        subject,
+                        &search_values,
+                        &replace_values,
+                        replace_is_array,
+                        case_insensitive,
+                    );
+                    total_count += count;
+                    output.insert(
+                        entry.key.clone(),
+                        interpreter_value_from_php_string_bytes(replaced),
+                    );
+                }
+                Ok((Value::Array(output), total_count))
+            }
+            value => {
+                let subject = self.str_replace_scalar_bytes(function, value, span)?;
+                let (replaced, count) = apply_string_replacements(
+                    subject,
+                    &search_values,
+                    &replace_values,
+                    replace_is_array,
+                    case_insensitive,
+                );
+                Ok((interpreter_value_from_php_string_bytes(replaced), count))
+            }
+        }
+    }
+
+    fn str_replace_argument_list(
+        &mut self,
+        function: &'static str,
+        value: &Value,
+        _label: &'static str,
+        span: Span,
+    ) -> CompileResult<Vec<Vec<u8>>> {
+        match value {
+            Value::Array(array) => {
+                let mut values = Vec::with_capacity(array.len());
+                for entry in array.entries() {
+                    let value = entry.value_cloned();
+                    values.push(self.str_replace_scalar_bytes(function, &value, span)?);
+                }
+                Ok(values)
+            }
+            value => self
+                .str_replace_scalar_bytes(function, value, span)
+                .map(|value| vec![value]),
+        }
+    }
+
+    fn str_replace_scalar_bytes(
+        &mut self,
+        function: &'static str,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<Vec<u8>> {
+        match value {
+            Value::Array(_) => {
+                self.emit_display_warning("Array to string conversion", span)?;
+                Ok(b"Array".to_vec())
+            }
+            Value::Float(value) => Ok(php_default_precision_float_string(*value).into_bytes()),
+            Value::Resource(id) => Ok(format!("Resource id #{id}").into_bytes()),
+            Value::Object(object) => {
+                if let Some(output) =
+                    self.object_to_string_with_magic(object.clone(), function, span)?
+                {
+                    Ok(output.into_bytes())
+                } else {
+                    value
+                        .try_echo_bytes()
+                        .map_err(|error| runtime_error(span, error))
+                }
+            }
+            _ => value
+                .try_echo_bytes()
+                .map_err(|error| runtime_error(span, error)),
+        }
     }
 
     fn call_similar_text_direct(
@@ -77230,6 +77381,111 @@ impl Interpreter {
         Ok(Value::Int(data.len() as i64))
     }
 
+    fn call_highlight_string(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(1..=2).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "highlight_string()",
+                    ArityExpectation::Between { min: 1, max: 2 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let value = self.value_to_echo_bytes(args[0].clone(), span)?;
+        if args.get(1).is_some_and(Value::is_truthy) {
+            return Ok(interpreter_value_from_php_string_bytes(value));
+        }
+
+        self.append_output_bytes_at(&value, span);
+        Ok(Value::Bool(true))
+    }
+
+    fn call_highlight_file(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(1..=2).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "highlight_file()",
+                    ArityExpectation::Between { min: 1, max: 2 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let path = self.filesystem_filename_argument("highlight_file", &args[0], span)?;
+        let return_output = args.get(1).is_some_and(Value::is_truthy);
+        let filesystem_path =
+            self.resolve_local_filesystem_operation_path("highlight_file", &path, false, span)?;
+        if !self.enforce_bounded_open_basedir("highlight_file()", &path, &filesystem_path, span)? {
+            return Ok(Value::Bool(false));
+        }
+
+        let contents = match fs::read(&filesystem_path) {
+            Ok(contents) => contents,
+            Err(error) => {
+                self.emit_display_warning(
+                    format!(
+                        "highlight_file({path}): Failed to open stream: {}",
+                        php_filesystem_open_error_message(&error)
+                    ),
+                    span,
+                )?;
+                self.emit_display_warning(
+                    format!("highlight_file(): Failed opening '{path}' for highlighting"),
+                    span,
+                )?;
+                return Ok(Value::Bool(false));
+            }
+        };
+        self.cache_bounded_realpath_entry_for_local_path(&filesystem_path);
+
+        if return_output {
+            Ok(interpreter_value_from_php_string_bytes(contents))
+        } else {
+            self.append_output_bytes_at(&contents, span);
+            Ok(Value::Bool(true))
+        }
+    }
+
+    fn call_php_strip_whitespace(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("php_strip_whitespace", args, 1, span)?;
+        let path = self.filesystem_filename_argument("php_strip_whitespace", &args[0], span)?;
+        let filesystem_path = self.resolve_local_filesystem_operation_path(
+            "php_strip_whitespace",
+            &path,
+            false,
+            span,
+        )?;
+        if !self.enforce_bounded_open_basedir(
+            "php_strip_whitespace()",
+            &path,
+            &filesystem_path,
+            span,
+        )? {
+            return Ok(Value::String(String::new()));
+        }
+
+        let contents = match fs::read(&filesystem_path) {
+            Ok(contents) => contents,
+            Err(error) => {
+                self.emit_display_warning(
+                    format!(
+                        "php_strip_whitespace({path}): Failed to open stream: {}",
+                        php_filesystem_open_error_message(&error)
+                    ),
+                    span,
+                )?;
+                return Ok(Value::String(String::new()));
+            }
+        };
+        self.cache_bounded_realpath_entry_for_local_path(&filesystem_path);
+        Ok(interpreter_value_from_php_string_bytes(
+            php_strip_whitespace_bytes(&contents),
+        ))
+    }
+
     fn call_sha1_file(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         if !(1..=2).contains(&args.len()) {
             return Err(runtime_error(
@@ -82761,6 +83017,9 @@ impl Interpreter {
             "htmlentities" => call_htmlentities(self, &args, span),
             "htmlspecialchars_decode" => call_htmlspecialchars_decode(&args, span),
             "html_entity_decode" => call_html_entity_decode(self, &args, span),
+            "highlight_string" => self.call_highlight_string(&args, span),
+            "highlight_file" => self.call_highlight_file(&args, span),
+            "php_strip_whitespace" => self.call_php_strip_whitespace(&args, span),
             "get_html_translation_table" => call_get_html_translation_table(self, &args, span),
             "strip_tags" => call_strip_tags(&args, span),
             "nl2br" => call_nl2br(&args, span),
@@ -82816,7 +83075,8 @@ impl Interpreter {
             "substr_replace" => call_substr_replace(&args, span),
             "substr_compare" => call_substr_compare(&args, span),
             "substr_count" => call_substr_count(&args, span),
-            "str_replace" => call_str_replace(&args, span),
+            "str_replace" => self.call_str_replace(&args, span),
+            "str_ireplace" => self.call_str_ireplace(&args, span),
             "str_getcsv" => call_str_getcsv(&args, span),
             "parse_str" => Err(runtime_error(
                 span,
@@ -82911,7 +83171,8 @@ impl Interpreter {
                 }
 
                 let path = match &args[0] {
-                    Value::String(path) => path,
+                    Value::String(path) => path.as_bytes().to_vec(),
+                    Value::BinaryString(path) => path.clone(),
                     other => {
                         return Err(runtime_error(
                             span,
@@ -82927,7 +83188,8 @@ impl Interpreter {
                 };
 
                 let suffix = match args.get(1) {
-                    Some(Value::String(suffix)) => Some(suffix.as_str()),
+                    Some(Value::String(suffix)) => Some(suffix.as_bytes().to_vec()),
+                    Some(Value::BinaryString(suffix)) => Some(suffix.clone()),
                     Some(other) => {
                         return Err(runtime_error(
                             span,
@@ -82943,7 +83205,10 @@ impl Interpreter {
                     None => None,
                 };
 
-                Ok(Value::String(basename_path(path, suffix)))
+                Ok(interpreter_value_from_php_string_bytes(basename_path_bytes(
+                    &path,
+                    suffix.as_deref(),
+                )))
             }
             "pathinfo" => call_pathinfo(&args, span),
             "dirname" => {
@@ -82958,21 +83223,7 @@ impl Interpreter {
                     ));
                 }
 
-                let path = match &args[0] {
-                    Value::String(path) => path,
-                    other => {
-                        return Err(runtime_error(
-                            span,
-                            RuntimeError::unsupported_call(
-                                "dirname()",
-                                format!(
-                                    "path argument must be string in the current subset, got {}",
-                                    other.type_name()
-                                ),
-                            ),
-                        ));
-                    }
-                };
+                let path = self.value_to_echo_string(args[0].clone(), span)?;
 
                 let levels = match args.get(1) {
                     Some(Value::Int(levels)) if *levels >= 1 => *levels,
@@ -83000,7 +83251,7 @@ impl Interpreter {
                     None => 1,
                 };
 
-                Ok(Value::String(dirname_path(path, levels)))
+                Ok(Value::String(dirname_path(&path, levels)))
             }
             "abs" => call_abs(self, &args, span),
             "ceil" => self.call_php_unary_float_math_with_param_type(
@@ -98208,6 +98459,24 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_optional_int_param("flags", PHP_ENT_DEFAULT),
             ],
         ),
+        "highlight_string" => (
+            "string|bool",
+            vec![
+                reflection_internal_param("string", "string"),
+                reflection_internal_optional_bool_param("return", false),
+            ],
+        ),
+        "highlight_file" => (
+            "string|bool",
+            vec![
+                reflection_internal_param("filename", "string"),
+                reflection_internal_optional_bool_param("return", false),
+            ],
+        ),
+        "php_strip_whitespace" => (
+            "string",
+            vec![reflection_internal_param("filename", "string")],
+        ),
         "get_html_translation_table" => (
             "array",
             vec![
@@ -98445,7 +98714,7 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_optional_bool_param("case_insensitive", false),
             ],
         ),
-        "str_replace" => (
+        "str_replace" | "str_ireplace" => (
             "array|string",
             vec![
                 reflection_internal_param("search", "array|string"),
@@ -102531,6 +102800,9 @@ fn is_builtin(name: &str) -> bool {
             | "htmlentities"
             | "htmlspecialchars_decode"
             | "html_entity_decode"
+            | "highlight_string"
+            | "highlight_file"
+            | "php_strip_whitespace"
             | "get_html_translation_table"
             | "strip_tags"
             | "nl2br"
@@ -102588,6 +102860,7 @@ fn is_builtin(name: &str) -> bool {
             | "substr_compare"
             | "substr_count"
             | "str_replace"
+            | "str_ireplace"
             | "str_getcsv"
             | "parse_str"
             | "parse_url"
@@ -103521,6 +103794,189 @@ fn basename_path(path: &str, suffix: Option<&str>) -> String {
     name
 }
 
+fn basename_path_bytes(path: &[u8], suffix: Option<&[u8]>) -> Vec<u8> {
+    if path.is_empty() {
+        return Vec::new();
+    }
+
+    let mut end = path.len();
+    while end > 0 && path[end - 1] == b'/' {
+        end -= 1;
+    }
+    if end == 0 {
+        return Vec::new();
+    }
+
+    let trimmed = &path[..end];
+    let start = trimmed
+        .iter()
+        .rposition(|byte| *byte == b'/')
+        .map_or(0, |position| position + 1);
+    let mut name = trimmed[start..].to_vec();
+
+    if let Some(suffix) = suffix {
+        if !suffix.is_empty() && suffix.len() < name.len() && name.ends_with(suffix) {
+            name.truncate(name.len() - suffix.len());
+        }
+    }
+
+    name
+}
+
+fn php_strip_whitespace_bytes(source: &[u8]) -> Vec<u8> {
+    let source = String::from_utf8_lossy(source);
+    let mut output = String::new();
+    let mut pending_code = String::new();
+    let mut in_block_comment = false;
+    let mut in_heredoc = false;
+    let mut heredoc_marker = String::new();
+    let mut pending_space_after_open_tag = false;
+
+    for raw_line in source.lines() {
+        if in_heredoc {
+            output.push_str(raw_line);
+            output.push('\n');
+            if raw_line.trim_end().trim_end_matches(';') == heredoc_marker {
+                in_heredoc = false;
+            }
+            continue;
+        }
+
+        let mut removed_comment = false;
+        let stripped = php_strip_whitespace_remove_comments(
+            raw_line,
+            &mut in_block_comment,
+            &mut removed_comment,
+        );
+        let compact = php_strip_whitespace_collapse_line(stripped.trim());
+        if compact.is_empty() {
+            if removed_comment && output.ends_with("<?php\n") && pending_code.is_empty() {
+                pending_space_after_open_tag = true;
+            }
+            continue;
+        }
+
+        if compact == "<?php" {
+            php_strip_whitespace_flush_pending(&mut output, &mut pending_code);
+            output.push_str("<?php\n");
+            pending_space_after_open_tag = false;
+            continue;
+        }
+
+        if compact == "?>" {
+            php_strip_whitespace_flush_pending(&mut output, &mut pending_code);
+            output.push_str("?>");
+            continue;
+        }
+
+        if pending_code.is_empty() {
+            if pending_space_after_open_tag {
+                pending_code.push(' ');
+                pending_space_after_open_tag = false;
+            }
+            pending_code.push_str(&compact);
+        } else {
+            pending_code.push(' ');
+            pending_code.push_str(&compact);
+        }
+
+        if let Some(marker) = php_strip_whitespace_heredoc_marker(&compact) {
+            php_strip_whitespace_flush_pending(&mut output, &mut pending_code);
+            in_heredoc = true;
+            heredoc_marker = marker;
+        }
+    }
+
+    php_strip_whitespace_flush_pending(&mut output, &mut pending_code);
+    if output.ends_with('\n') {
+        output.pop();
+    }
+    output.into_bytes()
+}
+
+fn php_strip_whitespace_flush_pending(output: &mut String, pending_code: &mut String) {
+    if pending_code.is_empty() {
+        return;
+    }
+    output.push_str(pending_code);
+    pending_code.clear();
+    output.push('\n');
+}
+
+fn php_strip_whitespace_remove_comments(
+    line: &str,
+    in_block_comment: &mut bool,
+    removed_comment: &mut bool,
+) -> String {
+    let bytes = line.as_bytes();
+    let mut output = String::new();
+    let mut index = 0;
+    while index < bytes.len() {
+        if *in_block_comment {
+            *removed_comment = true;
+            if index + 1 < bytes.len() && bytes[index] == b'*' && bytes[index + 1] == b'/' {
+                *in_block_comment = false;
+                index += 2;
+            } else {
+                index += 1;
+            }
+            continue;
+        }
+
+        if index + 1 < bytes.len() && bytes[index] == b'/' && bytes[index + 1] == b'*' {
+            *removed_comment = true;
+            *in_block_comment = true;
+            if !output.ends_with(' ') {
+                output.push(' ');
+            }
+            index += 2;
+            continue;
+        }
+        if index + 1 < bytes.len() && bytes[index] == b'/' && bytes[index + 1] == b'/' {
+            *removed_comment = true;
+            break;
+        }
+        if bytes[index] == b'#' {
+            *removed_comment = true;
+            break;
+        }
+
+        output.push(bytes[index] as char);
+        index += 1;
+    }
+    output
+}
+
+fn php_strip_whitespace_collapse_line(line: &str) -> String {
+    let mut output = String::new();
+    let mut previous_space = false;
+    for ch in line.chars() {
+        if ch.is_whitespace() {
+            if !previous_space && !output.is_empty() {
+                output.push(' ');
+                previous_space = true;
+            }
+        } else {
+            output.push(ch);
+            previous_space = false;
+        }
+    }
+    if output.ends_with(' ') {
+        output.pop();
+    }
+    output
+}
+
+fn php_strip_whitespace_heredoc_marker(line: &str) -> Option<String> {
+    let marker = line.split_once("<<<")?.1.trim();
+    let marker = marker
+        .trim_matches(';')
+        .trim_matches('"')
+        .trim_matches('\'')
+        .trim();
+    (!marker.is_empty()).then(|| marker.to_string())
+}
+
 struct PathInfoParts {
     dirname: String,
     basename: String,
@@ -103841,6 +104297,7 @@ const PHP_PATHINFO_EXTENSION: i64 = 4;
 const PHP_PATHINFO_FILENAME: i64 = 8;
 const PHP_PATHINFO_ALL: i64 =
     PHP_PATHINFO_DIRNAME | PHP_PATHINFO_BASENAME | PHP_PATHINFO_EXTENSION | PHP_PATHINFO_FILENAME;
+const PHP_MAXPATHLEN: i64 = 4096;
 const PHP_URL_SCHEME: i64 = 0;
 const PHP_URL_HOST: i64 = 1;
 const PHP_URL_PORT: i64 = 2;
@@ -104293,6 +104750,7 @@ const BUILTIN_GLOBAL_CONSTANT_NAMES: &[&str] = &[
     "PATHINFO_EXTENSION",
     "PATHINFO_FILENAME",
     "PATHINFO_ALL",
+    "PHP_MAXPATHLEN",
     "PHP_URL_SCHEME",
     "PHP_URL_HOST",
     "PHP_URL_PORT",
@@ -104693,6 +105151,7 @@ fn builtin_global_constant_value(name: &str) -> Option<Value> {
         "PATHINFO_EXTENSION" => Some(Value::Int(PHP_PATHINFO_EXTENSION)),
         "PATHINFO_FILENAME" => Some(Value::Int(PHP_PATHINFO_FILENAME)),
         "PATHINFO_ALL" => Some(Value::Int(PHP_PATHINFO_ALL)),
+        "PHP_MAXPATHLEN" => Some(Value::Int(PHP_MAXPATHLEN)),
         "PHP_URL_SCHEME" => Some(Value::Int(PHP_URL_SCHEME)),
         "PHP_URL_HOST" => Some(Value::Int(PHP_URL_HOST)),
         "PHP_URL_PORT" => Some(Value::Int(PHP_URL_PORT)),
@@ -120368,33 +120827,6 @@ fn ascii_case_insensitive_compare(left: &str, right: &str) -> i64 {
     }
 }
 
-fn call_str_replace(args: &[Value], span: Span) -> CompileResult<Value> {
-    if !(3..=4).contains(&args.len()) {
-        return Err(runtime_error(
-            span,
-            RuntimeError::arity_mismatch(
-                "str_replace()",
-                ArityExpectation::Between { min: 3, max: 4 },
-                args.len(),
-            ),
-        ));
-    }
-
-    if args.len() == 4 {
-        return Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                "str_replace()",
-                "count output requires a direct str_replace() call with a direct variable in the current subset",
-            ),
-        ));
-    }
-
-    let (result, _) = str_replace_scalar_result(&args[0], &args[1], &args[2], span)?;
-
-    Ok(Value::String(result))
-}
-
 #[derive(Debug, Clone, Default)]
 struct ParsedUrlParts {
     scheme: Option<String>,
@@ -121027,97 +121459,68 @@ fn raw_urldecode_bytes(value: &[u8]) -> Vec<u8> {
     decoded
 }
 
-fn str_replace_scalar_result(
-    search: &Value,
-    replace: &Value,
-    subject: &Value,
-    span: Span,
-) -> CompileResult<(String, i64)> {
-    let search_values = string_replace_search_values(search, span)?;
-    if matches!(replace, Value::Array(_)) {
-        return Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                "str_replace()",
-                "replacement argument arrays are not implemented in the current subset",
-            ),
-        ));
-    }
-    let replace = string_replace_argument("str_replace()", "replace", replace, span)?;
-    let subject = string_replace_argument("str_replace()", "subject", subject, span)?;
-
-    let mut result = subject;
+fn apply_string_replacements(
+    mut subject: Vec<u8>,
+    search_values: &[Vec<u8>],
+    replace_values: &[Vec<u8>],
+    replace_is_array: bool,
+    case_insensitive: bool,
+) -> (Vec<u8>, i64) {
     let mut total_count = 0;
-    for search in search_values {
+    for (index, search) in search_values.iter().enumerate() {
         if search.is_empty() {
             continue;
         }
 
-        let count = result.matches(&search).count() as i64;
-        if count > 0 {
-            result = result.replace(&search, &replace);
-            total_count += count;
-        }
+        let replacement = if replace_is_array {
+            replace_values.get(index).map(Vec::as_slice).unwrap_or(b"")
+        } else {
+            replace_values.first().map(Vec::as_slice).unwrap_or(b"")
+        };
+        let (next, count) = replace_all_bytes(&subject, search, replacement, case_insensitive);
+        subject = next;
+        total_count += count;
     }
-
-    Ok((result, total_count))
+    (subject, total_count)
 }
 
-fn string_replace_search_values(search: &Value, span: Span) -> CompileResult<Vec<String>> {
-    match search {
-        Value::Array(array) => {
-            let mut values = Vec::with_capacity(array.len());
-            for entry in array.entries() {
-                match entry.value() {
-                    Value::Array(_) => {
-                        return Err(runtime_error(
-                            span,
-                            RuntimeError::unsupported_call(
-                                "str_replace()",
-                                "search array values must be null, bool, int, float, or string in the current subset, got array",
-                            ),
-                        ));
-                    }
-                    value => {
-                        values.push(string_replace_argument(
-                            "str_replace()",
-                            "search array value",
-                            value,
-                            span,
-                        )?);
-                    }
-                }
-            }
-            Ok(values)
+fn replace_all_bytes(
+    subject: &[u8],
+    search: &[u8],
+    replacement: &[u8],
+    case_insensitive: bool,
+) -> (Vec<u8>, i64) {
+    let mut output = Vec::with_capacity(subject.len());
+    let mut count = 0;
+    let mut index = 0;
+    while index < subject.len() {
+        if index + search.len() <= subject.len()
+            && php_bytes_match(
+                &subject[index..index + search.len()],
+                search,
+                case_insensitive,
+            )
+        {
+            output.extend_from_slice(replacement);
+            index += search.len();
+            count += 1;
+        } else {
+            output.push(subject[index]);
+            index += 1;
         }
-        value => Ok(vec![string_replace_argument(
-            "str_replace()",
-            "search",
-            value,
-            span,
-        )?]),
     }
+    (output, count)
 }
 
-fn string_replace_argument(
-    function: &str,
-    label: &str,
-    value: &Value,
-    span: Span,
-) -> CompileResult<String> {
-    if matches!(value, Value::Array(_)) {
-        return Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                function,
-                format!("{label} argument arrays are not implemented in the current subset"),
-            ),
-        ));
+fn php_bytes_match(left: &[u8], right: &[u8], case_insensitive: bool) -> bool {
+    if !case_insensitive {
+        return left == right;
     }
-
-    value
-        .try_echo_string()
-        .map_err(|error| runtime_error(span, error))
+    left.len() == right.len()
+        && left
+            .iter()
+            .zip(right.iter())
+            .all(|(left, right)| left.eq_ignore_ascii_case(right))
 }
 
 #[derive(Debug, Clone)]
@@ -124921,7 +125324,14 @@ fn php_filesystem_open_error_message(error: &std::io::Error) -> String {
         ErrorKind::AlreadyExists => "File exists".to_string(),
         ErrorKind::NotFound => "No such file or directory".to_string(),
         ErrorKind::PermissionDenied => "Permission denied".to_string(),
-        _ => error.to_string(),
+        _ => {
+            let message = error.to_string();
+            if message.contains("File name too long") {
+                "File name too long".to_string()
+            } else {
+                message
+            }
+        }
     }
 }
 

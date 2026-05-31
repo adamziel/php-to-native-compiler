@@ -3229,8 +3229,8 @@
   `mb_strlen`, `mb_strpos`, `mb_stripos`, `mb_strrpos`, `mb_strripos`,
   `mb_strtolower`, `mb_strtoupper`, `similar_text`,
   `convert_uuencode`, `convert_uudecode`,
-  `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `substr_replace`, `substr_compare`, `substr_count`, `str_getcsv`, `parse_str`, `http_build_query`,
-  `error_reporting`, `ignore_user_abort`, `printf`, `fprintf`, `sprintf`, `vsprintf`, `vprintf`, `vfprintf`, `call_user_func`, `call_user_func_array`,
+  `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `str_ireplace`, `substr_replace`, `substr_compare`, `substr_count`, `str_getcsv`, `parse_str`, `http_build_query`,
+  `highlight_string`, `highlight_file`, `php_strip_whitespace`, `error_reporting`, `set_time_limit`, `ignore_user_abort`, `printf`, `fprintf`, `sprintf`, `vsprintf`, `vprintf`, `vfprintf`, `call_user_func`, `call_user_func_array`,
   `implode`, `basename`, `dirname`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`,
   `file_put_contents`, `readfile`, `unlink`, `mkdir`, `rmdir`, `copy`, `rename`, `chdir`, `scandir`, `stat`, `lstat`, `fileperms`, `chmod`, `chown`, `chgrp`,
   `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_params`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `stream_context_set_params`, `fwrite`, `fscanf`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fflush`, `ftruncate`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`,
@@ -3679,17 +3679,22 @@
   `null`. Dynamic `parse_str()` calls and non-variable result targets remain
   unsupported.
   `str_replace($search, $replace, $subject, $count = null)` supports scalar or
-  array search values when each search value is scalar/null
-  string-convertible, a scalar/null string-convertible replacement, and a
-  scalar/null string-convertible subject. Search arrays apply each search
-  string sequentially. Direct calls and string-valued dynamic calls may pass a
-  direct variable as the fourth `$count` output argument; the interpreter
-  writes the aggregated non-overlapping replacement count as an integer. This
-  is a bounded output-parameter path, not true PHP references. Replacement
-  arrays, subject arrays, nested search arrays, non-variable count targets,
-  indirect `call_user_func()` count output, object/resource coercions, exact
-  warning behavior, binary string edge cases, and native lowering remain
-  unsupported.
+  one-level array search and replacement values, scalar/null string-convertible
+  subjects, and one-level array subjects while preserving subject keys. Search
+  arrays apply each search string sequentially, replacement arrays use an empty
+  replacement when a matching replacement element is missing, empty search
+  strings are ignored, binary-string results remain byte-preserving, and nested
+  array values use the current bounded `Array to string conversion` warning
+  path. Direct calls and string-valued dynamic calls may pass a direct variable
+  as the fourth `$count` output argument; the interpreter writes the aggregated
+  non-overlapping replacement count as an integer. This is a bounded
+  output-parameter path, not true PHP references. `str_ireplace()` supports the
+  same value shapes without the direct `$count` output parameter in this slice
+  and uses ASCII case-insensitive byte matching. Recursive arrays, non-variable
+  count targets, indirect `call_user_func()` count output, full locale/Unicode
+  case folding, object/resource coercions outside the current string
+  conversion hooks, exact warning behavior beyond the documented array
+  conversion path, and native lowering remain unsupported.
   `strtok($string, $token)` and continuation calls `strtok($token)` support
   byte-oriented tokenization for current string/binary-string values, including
   embedded NUL delimiters and one saved interpreter-local tokenization cursor.
@@ -4893,15 +4898,15 @@
   policy, callbacks, `AssertionError`, `Throwable` descriptions, exact
   warning/fatal behavior, PHP 8.3 deprecations, partial-output behavior, and
   native lowering are not implemented.
-  `basename($path, $suffix = "")` accepts a string path and optional string
-  suffix. It performs lexical Unix-style slash basename extraction for local
-  paths used by the current WordPress-oriented probes, trims trailing slashes,
-  and removes the suffix only when the extracted name ends with that non-empty
+  `basename($path, $suffix = "")` accepts string and binary-string paths plus
+  optional string or binary-string suffixes. It performs lexical Unix-style
+  slash basename extraction for local paths used by the current
+  WordPress-oriented probes, trims trailing slashes, preserves raw bytes, and
+  removes the suffix only when the extracted name ends with that non-empty
   suffix and the suffix is shorter than the extracted name. It does not resolve
-  the filesystem, symlinks, include paths, stream
-  wrappers, Windows drive/UNC paths, locale/codepage details, null-byte
-  behavior, broad scalar coercions, exact PHP warnings/`TypeError` behavior, or
-  native lowering.
+  the filesystem, symlinks, include paths, stream wrappers, Windows drive/UNC
+  paths, locale/codepage details, null-byte behavior, broad scalar coercions,
+  exact PHP warnings/`TypeError` behavior, or native lowering.
   `pathinfo($path, $flags = PATHINFO_ALL)` accepts scalar/null
   string-convertible paths and the `PATHINFO_DIRNAME`, `PATHINFO_BASENAME`,
   `PATHINFO_EXTENSION`, `PATHINFO_FILENAME`, or `PATHINFO_ALL` flag constants.
@@ -4912,14 +4917,27 @@
   paths beyond treating backslashes as ordinary characters in the current Unix
   slice, locale/codepage details, null-byte behavior, array/object/resource
   coercions, exact PHP warnings/`TypeError` behavior, or native lowering.
-  `dirname($path, $levels = 1)` accepts string paths and an optional positive
-  integer level count. It performs lexical Unix-style slash parent-directory
-  extraction for local paths used by the current WordPress bootstrap probes,
+  `dirname($path, $levels = 1)` accepts stringable paths and an optional
+  positive integer level count. It performs lexical Unix-style slash
+  parent-directory extraction for local paths used by the current WordPress
+  bootstrap probes,
   saturating repeated parent extraction at `""`, `.`, or `/` and raising a
   catchable `ValueError` for non-positive integer levels;
   it does not resolve the filesystem, symlinks, include paths, stream wrappers,
   Windows drive/UNC paths, locale/codepage details, or PHP's exact coercion and
   `ValueError` behavior.
+  `highlight_string($string, $return = false)` echoes the current byte string
+  unchanged and returns `true`, or returns the byte string when `$return` is
+  truthy. `highlight_file($path, $return = false)` reads a bounded local file
+  through the same local filesystem and open_basedir checks as other covered
+  file reads, echoes the bytes and returns `true`, or returns the bytes when
+  `$return` is truthy; open failures emit bounded warnings and return `false`.
+  `php_strip_whitespace($path)` reads a bounded local file through the same
+  checks and strips PHP comments plus redundant blank lines for the focused
+  heredoc/numeric rows. These are compatibility slices, not tokenizer-grade
+  source highlighters or full PHP whitespace preservation.
+  `set_time_limit($seconds)` accepts one int-compatible argument and returns
+  `true` without changing host execution limits.
   `file_exists($path)` accepts one string local path, rejects stream-wrapper
   paths, and returns `true` or `false` from the host filesystem metadata lookup
   for files and directories in the current interpreter run. Relative paths are
@@ -8718,10 +8736,13 @@
   string-int runtime contract for lowerable operands, while broader runtime
   diagnostics, references/copy-on-write, and exact PHP diagnostic parity stay
   outside the current native boundary.
-  `str_replace` accepts the same current scalar/null string-convertible and
-  direct-variable count-output subset as the builtin section above; direct
-  native `str_replace(...)` calls still reject under the function-call
-  boundary, while native function-table introspection recognizes the name.
+  `str_replace` and `str_ireplace` accept the same current replacement subsets
+  as the builtin section above; direct native calls still reject under the
+  function-call boundary, while native function-table introspection recognizes
+  the names.
+  `highlight_string`, `highlight_file`, `php_strip_whitespace`, and
+  `set_time_limit` are recognized by native function-table introspection but
+  still reject as direct native calls under the function-call boundary.
   `strtok` and `substr_replace` accept the same current interpreter-only
   tokenization and replacement-by-offset subsets as the builtin section above;
   direct native calls still reject under the function-call boundary, while
@@ -8758,7 +8779,8 @@
   lookup exposes the supported `PATHINFO_*` constants.
   `dirname` accepts the same current lexical Unix-style local path subset as
   the builtin section above; direct native `dirname(...)` calls still reject
-  under the function-call boundary.
+  under the function-call boundary. Native constant lookup also exposes
+  `PHP_MAXPATHLEN` as `4096`.
   `file_get_contents` accepts the same current deterministic `php://input`
   placeholder, local UTF-8 text-file read subset, optional bool include-path
   lookup flag, optional bounded stream-context resource, and bounded UTF-8
@@ -11181,25 +11203,30 @@
   compatibility, exact distribution, non-int count coercions beyond the
   current argument helper, reference/copy-on-write side effects, object or
   resource values, and native lowering beyond function-table introspection
-- `str_replace()` outside the current scalar/null string-convertible subject
-  subset with scalar/null replacement and scalar/null or one-level array
-  search values: replacement arrays, subject arrays, nested search arrays,
-  non-variable fourth `$count` targets, object/resource coercions, exact
-  warning behavior, binary string edge cases, and native lowering beyond
-  function-table introspection
+- `str_replace()` / `str_ireplace()` outside the current scalar/null and
+  one-level array replacement/search/subject subset: recursive arrays,
+  non-variable fourth `$count` targets, indirect count output, full
+  locale/Unicode case folding, object/resource coercions outside the current
+  string conversion hooks, exact warning behavior beyond covered array
+  conversion, and native lowering beyond function-table introspection
 - `implode()` outside the current scalar/null array-value subset: legacy
   reversed argument order, nested arrays, object/resource values, exact warning
   behavior, partial-output behavior, and native lowering beyond function-table
   introspection
 - `dirname()` path behavior outside the current lexical Unix-style local path
   subset, including Windows drive and UNC paths, stream wrappers, filesystem
-  canonicalization, symlink resolution, null-byte behavior, broad scalar
-  coercions, exact `ValueError`/`TypeError` diagnostics, and native lowering
-  beyond function-table introspection
+  canonicalization, symlink resolution, null-byte behavior, exact
+  `ValueError`/`TypeError` diagnostics, and native lowering beyond
+  function-table introspection
 - `basename()` path behavior outside the current lexical Unix-style local path
   subset, including Windows drive and UNC paths, stream wrappers, filesystem
   canonicalization, symlink resolution, null-byte behavior, locale/codepage
   details, broad scalar coercions, exact warning/`TypeError` diagnostics, and
+  native lowering beyond function-table introspection
+- `highlight_string()`, `highlight_file()`, and `php_strip_whitespace()`
+  outside the current byte-preserving local-file compatibility slices:
+  tokenizer-grade HTML highlighting, full PHP source whitespace/comment
+  fidelity, stream wrappers beyond covered local files, exact diagnostics, and
   native lowering beyond function-table introspection
 - `pathinfo()` path behavior outside the current lexical Unix-style local path
   subset and supported `PATHINFO_*` constants: Windows drive and UNC semantics
