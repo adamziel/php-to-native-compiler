@@ -19,7 +19,7 @@ use php_runtime::{
     PhpReferenceCell, PhpReferenceCellId, RuntimeError, RuntimeErrorKind, RuntimeResult, Value,
     Visibility,
 };
-use sha2::Sha256;
+use sha2::{Sha224, Sha256, Sha384, Sha512, Sha512_224, Sha512_256};
 
 use crate::ast::{
     ArrayItem, AssignTarget, AttributeDecl, BinaryOp, CastKind, CatchClause, ClassConstantDecl,
@@ -80124,6 +80124,8 @@ impl Interpreter {
             "min" => call_min(&args, span),
             "rand" => call_rand(&args, span),
             "uniqid" => call_uniqid(&args, span),
+            "hash" => call_hash(&args, span),
+            "hash_algos" => call_hash_algos(&args, span),
             "hash_hmac" => call_hash_hmac(&args, span),
             "filter_list" => call_filter_list(&args, span),
             "filter_id" => call_filter_id(&args, span),
@@ -94048,6 +94050,16 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
             ],
         ),
         "crc32" => ("int", vec![reflection_internal_param("string", "string")]),
+        "hash" => (
+            "string",
+            vec![
+                reflection_internal_param("algo", "string"),
+                reflection_internal_param("data", "string"),
+                reflection_internal_optional_bool_param("binary", false),
+                reflection_internal_optional_empty_array_param("options", "array"),
+            ],
+        ),
+        "hash_algos" => ("array", vec![]),
         "md5" => (
             "string",
             vec![
@@ -97500,6 +97512,7 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
             "Argument #4 ($cut_long_words) cannot be true when argument #2 ($width) is 0",
         )
         | ("str_word_count()", "Argument #2 ($format) must be a valid format value")
+        | ("hash()", "Argument #1 ($algo) must be a valid hashing algorithm")
         | ("parse_str()", "Argument #1 ($string) must not contain any null bytes")
         | ("strpbrk()", "Argument #2 ($characters) must be a non-empty string")
         | ("substr_count()", "Argument #2 ($needle) must not be empty")
@@ -98239,6 +98252,8 @@ fn is_builtin(name: &str) -> bool {
             | "min"
             | "rand"
             | "uniqid"
+            | "hash"
+            | "hash_algos"
             | "hash_hmac"
             | "filter_list"
             | "filter_id"
@@ -118674,6 +118689,136 @@ fn call_uniqid(args: &[Value], span: Span) -> CompileResult<Value> {
         value.push_str(".000000000");
     }
     Ok(Value::String(value))
+}
+
+#[derive(Clone, Copy)]
+enum PhpHashAlgorithm {
+    Sha1,
+    Sha224,
+    Sha256,
+    Sha384,
+    Sha512_224,
+    Sha512_256,
+    Sha512,
+}
+
+const PHP_HASH_ALGORITHM_NAMES: &[&str] = &[
+    "sha1",
+    "sha224",
+    "sha256",
+    "sha384",
+    "sha512/224",
+    "sha512/256",
+    "sha512",
+];
+
+fn call_hash(args: &[Value], span: Span) -> CompileResult<Value> {
+    if !(2..=4).contains(&args.len()) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "hash()",
+                ArityExpectation::Between { min: 2, max: 4 },
+                args.len(),
+            ),
+        ));
+    }
+
+    let algorithm = string_builtin_argument("hash()", "algo", &args[0], span)?;
+    let Some(algorithm) = php_hash_algorithm(&algorithm) else {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "hash()",
+                "Argument #1 ($algo) must be a valid hashing algorithm",
+            ),
+        ));
+    };
+    let data = string_compare_argument_bytes("hash()", "data", &args[1], span)?;
+    let raw_output = hash_raw_output_argument(args.get(2), span)?;
+    if let Some(options) = args.get(3) {
+        match options {
+            Value::Array(array) if array.is_empty() => {}
+            Value::Array(_) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "hash()",
+                        "non-empty options arrays are not implemented in the current hash subset",
+                    ),
+                ));
+            }
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "hash()",
+                        format!(
+                            "Argument #4 ($options) must be of type array, {} given",
+                            php_type_error_given(other)
+                        ),
+                    ),
+                ));
+            }
+        }
+    }
+
+    let digest = php_hash_digest_bytes(algorithm, &data);
+    if raw_output {
+        Ok(Value::BinaryString(digest))
+    } else {
+        Ok(Value::String(hex_bytes(&digest)))
+    }
+}
+
+fn call_hash_algos(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("hash_algos", args, 0, span)?;
+    let mut algorithms = PhpArray::new();
+    for algorithm in PHP_HASH_ALGORITHM_NAMES {
+        algorithms
+            .append(Value::String((*algorithm).to_string()))
+            .map_err(|error| runtime_error(span, error))?;
+    }
+    Ok(Value::Array(algorithms))
+}
+
+fn hash_raw_output_argument(value: Option<&Value>, span: Span) -> CompileResult<bool> {
+    match value {
+        Some(Value::Array(_)) => Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "hash()",
+                "Argument #3 ($binary) must be of type bool, array given",
+            ),
+        )),
+        Some(value) => Ok(value.is_truthy()),
+        None => Ok(false),
+    }
+}
+
+fn php_hash_algorithm(name: &str) -> Option<PhpHashAlgorithm> {
+    match name.to_ascii_lowercase().as_str() {
+        "sha1" => Some(PhpHashAlgorithm::Sha1),
+        "sha224" => Some(PhpHashAlgorithm::Sha224),
+        "sha256" => Some(PhpHashAlgorithm::Sha256),
+        "sha384" => Some(PhpHashAlgorithm::Sha384),
+        "sha512/224" | "sha512-224" => Some(PhpHashAlgorithm::Sha512_224),
+        "sha512/256" | "sha512-256" => Some(PhpHashAlgorithm::Sha512_256),
+        "sha512" => Some(PhpHashAlgorithm::Sha512),
+        _ => None,
+    }
+}
+
+fn php_hash_digest_bytes(algorithm: PhpHashAlgorithm, bytes: &[u8]) -> Vec<u8> {
+    match algorithm {
+        PhpHashAlgorithm::Sha1 => sha1_digest_bytes(bytes).to_vec(),
+        PhpHashAlgorithm::Sha224 => Sha224::digest(bytes).to_vec(),
+        PhpHashAlgorithm::Sha256 => Sha256::digest(bytes).to_vec(),
+        PhpHashAlgorithm::Sha384 => Sha384::digest(bytes).to_vec(),
+        PhpHashAlgorithm::Sha512_224 => Sha512_224::digest(bytes).to_vec(),
+        PhpHashAlgorithm::Sha512_256 => Sha512_256::digest(bytes).to_vec(),
+        PhpHashAlgorithm::Sha512 => Sha512::digest(bytes).to_vec(),
+    }
 }
 
 fn call_hash_hmac(args: &[Value], span: Span) -> CompileResult<Value> {

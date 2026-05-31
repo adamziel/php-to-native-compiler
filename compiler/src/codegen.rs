@@ -66536,6 +66536,8 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "min",
     "rand",
     "uniqid",
+    "hash",
+    "hash_algos",
     "hash_hmac",
     "count",
     "sizeof",
