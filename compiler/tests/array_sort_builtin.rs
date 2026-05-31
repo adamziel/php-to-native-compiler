@@ -63,6 +63,54 @@ echo implode(",", array_keys($items));
 }
 
 #[test]
+fn array_sort_residuals_handle_nested_arrays_objects_shuffle_and_spaceship() {
+    let execution = run_source(
+        r#"<?php
+class SortBox {
+    public $class_value;
+    function __construct($value) { $this->class_value = $value; }
+    function __toString() { return (string)$this->class_value; }
+}
+
+$objects = array(new SortBox(3), new SortBox(1), new SortBox(2));
+sort($objects);
+foreach ($objects as $object) { echo $object->class_value; }
+echo "|";
+
+$natural = array(new SortBox("b10"), new SortBox("a"), new SortBox("b2"));
+natcasesort($natural);
+foreach ($natural as $key => $object) { echo $key, ":", $object->class_value, ";"; }
+echo "|";
+
+$nested = array(array(2), array(), array(1, 0), array(1));
+usort($nested, function ($left, $right) {
+    if ($left == $right) {
+        return 0;
+    }
+    return $left > $right ? 1 : -1;
+});
+foreach ($nested as $row) {
+    echo count($row), ":", (count($row) ? $row[0] : "E"), ";";
+}
+echo "|";
+
+$items = array("a" => 1, "b" => 2, "c" => 3);
+var_dump(shuffle($items));
+echo implode(",", array_keys($items)), ":", implode(",", $items), "|";
+echo (array(1) <=> array(2)), ",";
+echo ("600" <=> "aaa");
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "123|1:a;2:b2;0:b10;|0:E;1:1;1:2;2:1;|bool(true)\n0,1,2:3,2,1|-1,-1"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn array_sort_family_rejects_forms_outside_current_subset() {
     let non_variable = run_source("<?php\nsort(array('tail'));\n").unwrap_err();
     assert_eq!(non_variable.phase, Phase::Runtime);

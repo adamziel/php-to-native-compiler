@@ -56330,6 +56330,9 @@ impl Interpreter {
                 if let Some(operation) = Self::user_array_sort_operation_for_builtin(&key) {
                     return self.call_user_array_sort(operation, args, span, caller_scope);
                 }
+                if key == "shuffle" {
+                    return self.call_shuffle(args, span, caller_scope);
+                }
                 if key == "array_push" {
                     return self.call_array_push(args, span, caller_scope);
                 }
@@ -56519,6 +56522,9 @@ impl Interpreter {
                 }
                 if let Some(operation) = Self::user_array_sort_operation_for_builtin(&key) {
                     return self.call_user_array_sort(operation, args, span, caller_scope);
+                }
+                if key == "shuffle" {
+                    return self.call_shuffle(args, span, caller_scope);
                 }
                 if key == "array_push" {
                     return self.call_array_push(args, span, caller_scope);
@@ -65520,6 +65526,19 @@ impl Interpreter {
 
         let callback = self.evaluate(&args[1], caller_scope)?;
 
+        if let Some((array_name, keys)) =
+            self.direct_variable_array_path_from_expr(&args[0], caller_scope)?
+        {
+            return self.call_direct_array_path_user_sort(
+                &array_name,
+                &keys,
+                operation,
+                &callback,
+                span,
+                caller_scope,
+            );
+        }
+
         match &args[0] {
             Expr::Variable(name, _) => {
                 let mut value = caller_scope.read_static(name, span)?;
@@ -65609,6 +65628,122 @@ impl Interpreter {
         }
     }
 
+    fn call_shuffle(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        if args.len() != 1 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch("shuffle()", ArityExpectation::Exactly(1), args.len()),
+            ));
+        }
+
+        match &args[0] {
+            expr if matches!(expr, Expr::Variable(_, _) | Expr::Index { .. }) => {
+                let Some((array_name, keys)) =
+                    self.direct_variable_array_path_from_expr(expr, caller_scope)?
+                else {
+                    return Err(runtime_error(
+                        expr.span(),
+                        RuntimeError::unsupported_call(
+                            "shuffle()",
+                            "only direct variable, direct array-offset, and direct object-property array arguments are implemented",
+                        ),
+                    ));
+                };
+                self.call_direct_array_path_shuffle(&array_name, &keys, span, caller_scope)
+            }
+            Expr::Variable(name, _) => {
+                let mut value = caller_scope.read_static(name, span)?;
+                let type_name = value.type_name();
+                let Value::Array(array) = &mut value else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "shuffle()",
+                            format!("first argument must be array, got {type_name}"),
+                        ),
+                    ));
+                };
+                array.shuffle_for_php_builtin();
+                caller_scope.write_static(name, value);
+                Ok(Value::Bool(true))
+            }
+            Expr::Property {
+                target,
+                property,
+                span: property_span,
+            } => {
+                let Expr::Variable(object_name, _) = target.as_ref() else {
+                    return Err(runtime_error(
+                        target.span(),
+                        RuntimeError::unsupported_call(
+                            "shuffle()",
+                            "only direct variable and direct object-property array arguments are implemented",
+                        ),
+                    ));
+                };
+                let object = match caller_scope.read_static(object_name, *property_span)? {
+                    Value::Object(object) => object,
+                    other => {
+                        return Err(runtime_error(
+                            *property_span,
+                            RuntimeError::invalid_property_access(format!(
+                                "cannot read property ${property} from {}",
+                                other.type_name()
+                            )),
+                        ));
+                    }
+                };
+                let (current_class_id, protected_class_ids) =
+                    self.current_property_access_context();
+                let mut value = object
+                    .read_property_from_context(property, current_class_id, &protected_class_ids)
+                    .map_err(|error| runtime_error(*property_span, error))?;
+                let type_name = value.type_name();
+                let Value::Array(array) = &mut value else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "shuffle()",
+                            format!("first argument must be array, got {type_name}"),
+                        ),
+                    ));
+                };
+                array.shuffle_for_php_builtin();
+                let boundary = caller_scope.object_property_holder_storage_boundary(
+                    object_name,
+                    &object,
+                    property,
+                    &[],
+                    current_class_id,
+                    &protected_class_ids,
+                );
+                caller_scope.pre_replace_holder_storage(&boundary);
+                object
+                    .write_property_from_context(
+                        property,
+                        value,
+                        current_class_id,
+                        &protected_class_ids,
+                    )
+                    .map_err(|error| runtime_error(*property_span, error))?;
+                caller_scope.post_replace_holder_storage(&boundary);
+                Ok(Value::Bool(true))
+            }
+            other => Err(runtime_error(
+                other.span(),
+                RuntimeError::unsupported_call(
+                    "shuffle()",
+                    "only direct variable, direct array-offset, and direct object-property array arguments are implemented",
+                ),
+            )),
+        }
+    }
+
     fn sort_array_with_user_comparator(
         &mut self,
         array: &mut PhpArray,
@@ -65617,6 +65752,7 @@ impl Interpreter {
         span: Span,
     ) -> CompileResult<()> {
         let mut entries = array.entries().to_vec();
+        let mut warned_bool_comparator = false;
         for index in 1..entries.len() {
             let mut cursor = index;
             while cursor > 0 {
@@ -65626,6 +65762,7 @@ impl Interpreter {
                     &entries[cursor],
                     &entries[cursor - 1],
                     span,
+                    &mut warned_bool_comparator,
                 )?;
                 if ordering != Ordering::Less {
                     break;
@@ -65646,6 +65783,7 @@ impl Interpreter {
         left: &ArrayEntry,
         right: &ArrayEntry,
         span: Span,
+        warned_bool_comparator: &mut bool,
     ) -> CompileResult<Ordering> {
         let args = if operation.compares_keys() {
             vec![
@@ -65661,14 +65799,38 @@ impl Interpreter {
             span,
             operation.callable(),
         )?;
-        Self::user_array_sort_ordering_from_result(operation.callable(), result, span)
+        self.user_array_sort_ordering_from_result(
+            operation.callable(),
+            result,
+            span,
+            warned_bool_comparator,
+        )
     }
 
     fn user_array_sort_ordering_from_result(
+        &mut self,
         function: &str,
         result: Value,
         span: Span,
+        warned_bool_comparator: &mut bool,
     ) -> CompileResult<Ordering> {
+        if let Value::Bool(value) = result {
+            if !*warned_bool_comparator {
+                self.emit_display_diagnostic(
+                    "Deprecated",
+                    PHP_E_DEPRECATED,
+                    format!("{function}: Returning bool from comparison function is deprecated, return an integer less than, equal to, or greater than zero"),
+                    span,
+                )?;
+                *warned_bool_comparator = true;
+            }
+            return Ok(if value {
+                Ordering::Greater
+            } else {
+                Ordering::Less
+            });
+        }
+
         let Some(value) = Self::user_array_sort_result_to_i64(&result) else {
             return Err(runtime_error(
                 span,
@@ -90604,6 +90766,136 @@ impl Interpreter {
         }
     }
 
+    fn call_direct_array_path_user_sort(
+        &mut self,
+        root_name: &str,
+        keys: &[ArrayKey],
+        operation: UserArraySortOperation,
+        callback: &Value,
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        let mut root_value = caller_scope.read_static(root_name, span)?;
+        let type_name = root_value.type_name();
+        let Value::Array(root_array) = &mut root_value else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    operation.callable(),
+                    format!("argument must be array, got {type_name}"),
+                ),
+            ));
+        };
+
+        self.apply_direct_array_path_user_sort(root_array, keys, operation, callback, span)?;
+        caller_scope.write_static(root_name, root_value);
+        caller_scope.sync_array_offset_aliases_for_root_path(
+            &ArrayOffsetAliasRoot::StaticArray {
+                name: root_name.to_string(),
+            },
+            keys,
+        );
+        Ok(Value::Bool(true))
+    }
+
+    fn apply_direct_array_path_user_sort(
+        &mut self,
+        array: &mut PhpArray,
+        keys: &[ArrayKey],
+        operation: UserArraySortOperation,
+        callback: &Value,
+        span: Span,
+    ) -> CompileResult<()> {
+        let Some((key, rest)) = keys.split_first() else {
+            return self.sort_array_with_user_comparator(array, operation, callback, span);
+        };
+
+        let Some(slot) = array.get_slot_mut(key.clone()) else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::undefined_array_key(key.diagnostic_key()),
+            ));
+        };
+        let mut child = slot.value_cloned();
+        let type_name = child.type_name();
+        let Value::Array(child_array) = &mut child else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    operation.callable(),
+                    format!("argument must be array, got {type_name}"),
+                ),
+            ));
+        };
+
+        self.apply_direct_array_path_user_sort(child_array, rest, operation, callback, span)?;
+        slot.set_value(child);
+        Ok(())
+    }
+
+    fn call_direct_array_path_shuffle(
+        &mut self,
+        root_name: &str,
+        keys: &[ArrayKey],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        let mut root_value = caller_scope.read_static(root_name, span)?;
+        let type_name = root_value.type_name();
+        let Value::Array(root_array) = &mut root_value else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "shuffle()",
+                    format!("argument must be array, got {type_name}"),
+                ),
+            ));
+        };
+
+        Self::apply_direct_array_path_shuffle(root_array, keys, span)?;
+        caller_scope.write_static(root_name, root_value);
+        caller_scope.sync_array_offset_aliases_for_root_path(
+            &ArrayOffsetAliasRoot::StaticArray {
+                name: root_name.to_string(),
+            },
+            keys,
+        );
+        Ok(Value::Bool(true))
+    }
+
+    fn apply_direct_array_path_shuffle(
+        array: &mut PhpArray,
+        keys: &[ArrayKey],
+        span: Span,
+    ) -> CompileResult<()> {
+        let Some((key, rest)) = keys.split_first() else {
+            array.shuffle_for_php_builtin();
+            return Ok(());
+        };
+
+        let Some(slot) = array.get_slot_mut(key.clone()) else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::undefined_array_key(key.diagnostic_key()),
+            ));
+        };
+        let mut child = slot.value_cloned();
+        let type_name = child.type_name();
+        let Value::Array(child_array) = &mut child else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "shuffle()",
+                    format!("argument must be array, got {type_name}"),
+                ),
+            ));
+        };
+
+        Self::apply_direct_array_path_shuffle(child_array, rest, span)?;
+        slot.set_value(child);
+        Ok(())
+    }
+
     fn is_iterable_value(&self, value: &Value) -> bool {
         match value {
             Value::Array(_) => true,
@@ -91488,6 +91780,13 @@ impl Interpreter {
             BinaryOp::StrictNe => left
                 .php_identical_checked(&right)
                 .map(|identical| Value::Bool(!identical)),
+            BinaryOp::Spaceship => left.php_ordering_checked(&right).map(|ordering| {
+                Value::Int(match ordering {
+                    Ordering::Less => -1,
+                    Ordering::Equal => 0,
+                    Ordering::Greater => 1,
+                })
+            }),
             BinaryOp::NullCoalesce => unreachable!("null coalescing is evaluated lazily"),
             BinaryOp::LogicalAnd | BinaryOp::LogicalOr | BinaryOp::LogicalXor => {
                 unreachable!("logical operators are evaluated before binary application")
@@ -91558,6 +91857,7 @@ impl Interpreter {
             BinaryOp::Mul => Some("*"),
             BinaryOp::Div => Some("/"),
             BinaryOp::Mod => Some("%"),
+            BinaryOp::Spaceship => Some("<=>"),
             BinaryOp::ShiftLeft => Some("<<"),
             BinaryOp::ShiftRight => Some(">>"),
             _ => None,
@@ -98623,6 +98923,10 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_variadic_reference_value_ok_untyped_param("rest"),
             ],
         ),
+        "shuffle" => (
+            "bool",
+            vec![reflection_internal_reference_param("array", "array")],
+        ),
         "sort" => (
             "bool",
             vec![
@@ -102532,6 +102836,7 @@ fn is_builtin(name: &str) -> bool {
             | "array_any"
             | "array_all"
             | "array_multisort"
+            | "shuffle"
             | "array_walk"
             | "array_walk_recursive"
             | "sort"
@@ -114266,24 +114571,42 @@ fn natural_compare_bytes(left: &[u8], right: &[u8], case_insensitive: bool) -> i
 fn natural_compare_left_aligned_number(
     left: &[u8],
     right: &[u8],
-    mut left_index: usize,
-    mut right_index: usize,
+    left_index: usize,
+    right_index: usize,
 ) -> i32 {
-    while left_index < left.len()
-        && right_index < right.len()
-        && left[left_index].is_ascii_digit()
-        && right[right_index].is_ascii_digit()
-    {
-        if left[left_index] != right[right_index] {
-            return compare_u8(left[left_index], right[right_index]);
-        }
-        left_index += 1;
-        right_index += 1;
+    let left_end = natural_digit_run_end(left, left_index);
+    let right_end = natural_digit_run_end(right, right_index);
+    let left_digits = &left[left_index..left_end];
+    let right_digits = &right[right_index..right_end];
+    let left_sig_start = left_digits
+        .iter()
+        .position(|byte| *byte != b'0')
+        .unwrap_or(left_digits.len());
+    let right_sig_start = right_digits
+        .iter()
+        .position(|byte| *byte != b'0')
+        .unwrap_or(right_digits.len());
+    let left_sig = &left_digits[left_sig_start..];
+    let right_sig = &right_digits[right_sig_start..];
+
+    match (left_sig.is_empty(), right_sig.is_empty()) {
+        (true, true) => return compare_usize(right_digits.len(), left_digits.len()),
+        (true, false) => return -1,
+        (false, true) => return 1,
+        (false, false) => {}
     }
 
-    let left_has_digits = left_index < left.len() && left[left_index].is_ascii_digit();
-    let right_has_digits = right_index < right.len() && right[right_index].is_ascii_digit();
-    compare_bool(left_has_digits, right_has_digits)
+    match left_sig.len().cmp(&right_sig.len()) {
+        Ordering::Less => return -1,
+        Ordering::Greater => return 1,
+        Ordering::Equal => {}
+    }
+
+    match left_sig.cmp(right_sig) {
+        Ordering::Less => -1,
+        Ordering::Greater => 1,
+        Ordering::Equal => compare_usize(right_digits.len(), left_digits.len()),
+    }
 }
 
 fn natural_compare_right_aligned_number(
@@ -114339,14 +114662,6 @@ fn compare_usize(left: usize, right: usize) -> i32 {
         std::cmp::Ordering::Less => -1,
         std::cmp::Ordering::Equal => 0,
         std::cmp::Ordering::Greater => 1,
-    }
-}
-
-fn compare_bool(left: bool, right: bool) -> i32 {
-    match (left, right) {
-        (false, true) => -1,
-        (true, false) => 1,
-        _ => 0,
     }
 }
 

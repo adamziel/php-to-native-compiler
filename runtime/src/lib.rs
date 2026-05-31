@@ -19251,21 +19251,45 @@ fn natural_compare_byte(byte: u8, case_insensitive: bool) -> u8 {
 }
 
 fn compare_left_aligned_digit_runs(left: &[u8], right: &[u8]) -> i64 {
-    let mut index = 0;
+    compare_leading_zero_digit_runs(left, right)
+}
 
-    loop {
-        match (left.get(index).copied(), right.get(index).copied()) {
-            (Some(left), Some(right)) if left.is_ascii_digit() && right.is_ascii_digit() => {
-                match left.cmp(&right) {
-                    Ordering::Less => return -1,
-                    Ordering::Greater => return 1,
-                    Ordering::Equal => index += 1,
-                }
-            }
-            (Some(left), _) if left.is_ascii_digit() => return 1,
-            (_, Some(right)) if right.is_ascii_digit() => return -1,
-            _ => return 0,
-        }
+fn compare_leading_zero_digit_runs(left: &[u8], right: &[u8]) -> i64 {
+    let left_end = left.iter().take_while(|byte| byte.is_ascii_digit()).count();
+    let right_end = right
+        .iter()
+        .take_while(|byte| byte.is_ascii_digit())
+        .count();
+    let left_digits = &left[..left_end];
+    let right_digits = &right[..right_end];
+    let left_sig_start = left_digits
+        .iter()
+        .position(|byte| *byte != b'0')
+        .unwrap_or(left_digits.len());
+    let right_sig_start = right_digits
+        .iter()
+        .position(|byte| *byte != b'0')
+        .unwrap_or(right_digits.len());
+    let left_sig = &left_digits[left_sig_start..];
+    let right_sig = &right_digits[right_sig_start..];
+
+    match (left_sig.is_empty(), right_sig.is_empty()) {
+        (true, true) => return compare_usize_as_i64(right_digits.len(), left_digits.len()),
+        (true, false) => return -1,
+        (false, true) => return 1,
+        (false, false) => {}
+    }
+
+    match left_sig.len().cmp(&right_sig.len()) {
+        Ordering::Less => return -1,
+        Ordering::Greater => return 1,
+        Ordering::Equal => {}
+    }
+
+    match left_sig.cmp(right_sig) {
+        Ordering::Less => -1,
+        Ordering::Greater => 1,
+        Ordering::Equal => compare_usize_as_i64(right_digits.len(), left_digits.len()),
     }
 }
 
@@ -19289,6 +19313,14 @@ fn compare_right_aligned_digit_runs(left: &[u8], right: &[u8]) -> i64 {
             (_, Some(right)) if right.is_ascii_digit() => return -1,
             _ => return bias,
         }
+    }
+}
+
+fn compare_usize_as_i64(left: usize, right: usize) -> i64 {
+    match left.cmp(&right) {
+        Ordering::Less => -1,
+        Ordering::Equal => 0,
+        Ordering::Greater => 1,
     }
 }
 
@@ -28967,6 +28999,23 @@ impl PhpArray {
         Ok(())
     }
 
+    pub fn shuffle_for_php_builtin(&mut self) {
+        let entries = std::mem::take(&mut self.entries);
+        self.entries = entries
+            .into_iter()
+            .rev()
+            .enumerate()
+            .map(|(index, entry)| {
+                let key = i64::try_from(index).expect("array length fits in i64");
+                ArrayEntry::from_slot(ArrayKey::Int(key), entry.slot)
+            })
+            .collect();
+        self.invalidate_key_index();
+        self.next_auto_index = i64::try_from(self.entries.len()).expect("array length fits");
+        self.auto_index_exhausted = false;
+        self.cursor = 0;
+    }
+
     pub fn multisort_for_php_builtin(
         arrays: &mut [PhpArray],
         flags: &[Option<Value>],
@@ -29490,6 +29539,30 @@ impl PhpArray {
         }
 
         Ok(true)
+    }
+
+    fn php_ordering_checked_with_context(
+        &self,
+        other: &Self,
+        context: &mut NativeValueComparisonContext,
+    ) -> RuntimeResult<Ordering> {
+        if self.entries.len() != other.entries.len() {
+            return Ok(self.entries.len().cmp(&other.entries.len()));
+        }
+
+        for left in &self.entries {
+            let Some(right) = other.get_slot(left.key.clone()) else {
+                return Ok(Ordering::Greater);
+            };
+            let left_value = left.value_cloned();
+            let right_value = right.value_cloned();
+            let ordering = left_value.php_ordering_checked_with_context(&right_value, context)?;
+            if ordering != Ordering::Equal {
+                return Ok(ordering);
+            }
+        }
+
+        Ok(Ordering::Equal)
     }
 
     pub fn keys_matching_loose_scalar(&self, search_value: &Value) -> RuntimeResult<Self> {
@@ -30398,6 +30471,24 @@ fn array_scalar_string_comparison_value(callable: &str, value: &Value) -> Runtim
         .expect("array scalar support must match scalar string byte support"))
 }
 
+fn array_sort_string_comparison_value(callable: &str, value: &Value) -> RuntimeResult<Vec<u8>> {
+    match value {
+        Value::Array(_) => Ok(b"Array".to_vec()),
+        Value::Object(object) => object.array_sort_string_bytes(callable),
+        Value::Closure(_) | Value::Resource(_) => Err(RuntimeError::unsupported_call(
+            callable,
+            format!(
+                "values must be scalar, array, or stringable object in the current subset, got {}",
+                value.type_name()
+            ),
+        )),
+        Value::BinaryString(bytes) => Ok(bytes.clone()),
+        Value::Null | Value::Bool(_) | Value::Int(_) | Value::Float(_) | Value::String(_) => {
+            Ok(value.echo_string().into_bytes())
+        }
+    }
+}
+
 fn array_scalar_value_supported(callable: &str, value: &Value) -> RuntimeResult<()> {
     match value {
         Value::Array(_) | Value::Object(_) | Value::Closure(_) | Value::Resource(_) => {
@@ -30598,8 +30689,8 @@ fn array_sort_value_ordering(
             Ok(compare_numbers(left, right).unwrap_or(Ordering::Equal))
         }
         NativeArraySortMode::String => {
-            let left = array_scalar_string_comparison_value(callable, &left)?;
-            let right = array_scalar_string_comparison_value(callable, &right)?;
+            let left = array_sort_string_comparison_value(callable, &left)?;
+            let right = array_sort_string_comparison_value(callable, &right)?;
             Ok(left.cmp(&right))
         }
     }
@@ -30685,8 +30776,8 @@ fn array_sort_natural_value_ordering(
 ) -> RuntimeResult<Ordering> {
     let left = left.value_cloned();
     let right = right.value_cloned();
-    let left = array_scalar_string_comparison_value(callable, &left)?;
-    let right = array_scalar_string_comparison_value(callable, &right)?;
+    let left = array_sort_string_comparison_value(callable, &left)?;
+    let right = array_sort_string_comparison_value(callable, &right)?;
     Ok(
         match php_strnatcmp_bytes(left.as_slice(), right.as_slice(), case_insensitive) {
             value if value < 0 => Ordering::Less,
@@ -30704,8 +30795,8 @@ fn array_sort_string_value_ordering(
 ) -> RuntimeResult<Ordering> {
     let left = left.value_cloned();
     let right = right.value_cloned();
-    let left = array_scalar_string_comparison_value(callable, &left)?;
-    let right = array_scalar_string_comparison_value(callable, &right)?;
+    let left = array_sort_string_comparison_value(callable, &left)?;
+    let right = array_sort_string_comparison_value(callable, &right)?;
     Ok(if case_insensitive {
         ascii_case_insensitive_ordering(left.as_slice(), right.as_slice())
     } else {
@@ -30887,15 +30978,12 @@ fn php_regular_value_ordering(
     left: &Value,
     right: &Value,
 ) -> RuntimeResult<Ordering> {
-    array_scalar_value_supported(callable, left)?;
-    array_scalar_value_supported(callable, right)?;
-    if left.php_cmp_checked(right, Comparison::Lt)? {
-        Ok(Ordering::Less)
-    } else if left.php_cmp_checked(right, Comparison::Gt)? {
-        Ok(Ordering::Greater)
-    } else {
-        Ok(Ordering::Equal)
-    }
+    left.php_ordering_checked(right).map_err(|error| {
+        RuntimeError::unsupported_call(
+            callable,
+            format!("regular ordering failed: {}", error.message()),
+        )
+    })
 }
 
 fn add_array_sum_numbers(left: Number, right: Number) -> Number {
@@ -36638,12 +36726,66 @@ impl PhpObject {
             Comparison::Ne => self
                 .php_equality_checked_with_context(other, context)
                 .map(|equal| !equal),
-            Comparison::Lt | Comparison::Le | Comparison::Gt | Comparison::Ge => {
-                Err(RuntimeError::unsupported_comparison(
-                    "object ordering comparisons are not implemented",
-                ))
+            Comparison::Lt | Comparison::Le | Comparison::Gt | Comparison::Ge => self
+                .php_ordering_checked_with_context(other, context)
+                .map(|ordering| comparison_matches_ordering(ordering, op)),
+        }
+    }
+
+    fn php_ordering_checked_with_context(
+        &self,
+        other: &Self,
+        context: &mut NativeValueComparisonContext,
+    ) -> RuntimeResult<Ordering> {
+        if self.id == other.id {
+            return Ok(Ordering::Equal);
+        }
+        if !self.class_name.eq_ignore_ascii_case(&other.class_name) {
+            return Ok(self.class_name.cmp(&other.class_name));
+        }
+
+        let Some(pair) = context.enter_object_pair(self.id, other.id)? else {
+            return Ok(Ordering::Equal);
+        };
+
+        let left = self.comparison_properties();
+        let right = other.comparison_properties();
+        let result = (|| {
+            if left.len() != right.len() {
+                return Ok(left.len().cmp(&right.len()));
+            }
+
+            for (left, right) in left.iter().zip(right.iter()) {
+                let name_ordering = left.name.cmp(&right.name);
+                if name_ordering != Ordering::Equal {
+                    return Ok(name_ordering);
+                }
+                match (&left.value, &right.value) {
+                    (Some(left), Some(right)) => {
+                        let ordering = left.php_ordering_checked_with_context(right, context)?;
+                        if ordering != Ordering::Equal {
+                            return Ok(ordering);
+                        }
+                    }
+                    (Some(_), None) => return Ok(Ordering::Greater),
+                    (None, Some(_)) => return Ok(Ordering::Less),
+                    (None, None) => {}
+                }
+            }
+
+            Ok(Ordering::Equal)
+        })();
+        context.leave_object_pair(pair);
+        result
+    }
+
+    fn array_sort_string_bytes(&self, callable: &str) -> RuntimeResult<Vec<u8>> {
+        for property in self.comparison_properties() {
+            if let Some(value) = property.value {
+                return array_sort_string_comparison_value(callable, &value);
             }
         }
+        Ok(self.class_name.as_bytes().to_vec())
     }
 
     fn comparison_properties(&self) -> Vec<ObjectComparisonProperty> {
@@ -38599,6 +38741,10 @@ impl Value {
         self.php_cmp_checked_with_context(other, op, &mut NativeValueComparisonContext::default())
     }
 
+    pub fn php_ordering_checked(&self, other: &Value) -> RuntimeResult<Ordering> {
+        self.php_ordering_checked_with_context(other, &mut NativeValueComparisonContext::default())
+    }
+
     pub fn php_compare_checked(&self, other: &Value, op: PhpComparisonOp) -> RuntimeResult<bool> {
         evaluate_php_comparison(self, other, op)?.into_runtime_result()
     }
@@ -38615,11 +38761,9 @@ impl Value {
                 Comparison::Ne => left
                     .php_equality_checked_with_context(right, context)
                     .map(|equal| !equal),
-                Comparison::Lt | Comparison::Le | Comparison::Gt | Comparison::Ge => {
-                    Err(RuntimeError::unsupported_comparison(
-                        "array ordering comparisons are not implemented",
-                    ))
-                }
+                Comparison::Lt | Comparison::Le | Comparison::Gt | Comparison::Ge => left
+                    .php_ordering_checked_with_context(right, context)
+                    .map(|ordering| comparison_matches_ordering(ordering, op)),
             },
             (Value::Array(left), right) => php_array_non_array_comparison(left, true, right, op),
             (left, Value::Array(right)) => php_array_non_array_comparison(right, false, left, op),
@@ -38674,6 +38818,43 @@ impl Value {
                 RuntimeError::unsupported_comparison("resource comparisons are not implemented"),
             ),
             _ => Ok(self.php_cmp(other, op)),
+        }
+    }
+
+    fn php_ordering_checked_with_context(
+        &self,
+        other: &Value,
+        context: &mut NativeValueComparisonContext,
+    ) -> RuntimeResult<Ordering> {
+        match (self, other) {
+            (Value::Array(left), Value::Array(right)) => {
+                left.php_ordering_checked_with_context(right, context)
+            }
+            (Value::Array(left), right) => php_array_non_array_ordering(left, true, right),
+            (left, Value::Array(right)) => php_array_non_array_ordering(right, false, left),
+            (Value::Object(left), Value::Object(right)) => {
+                left.php_ordering_checked_with_context(right, context)
+            }
+            (Value::Closure(left), Value::Closure(right)) => Ok(left.id().cmp(&right.id())),
+            (Value::Object(_) | Value::Closure(_), Value::Object(_) | Value::Closure(_)) => {
+                Err(RuntimeError::unsupported_comparison(
+                    "mixed object ordering comparisons are not implemented",
+                ))
+            }
+            (Value::Object(_) | Value::Closure(_), _)
+            | (_, Value::Object(_) | Value::Closure(_)) => {
+                Err(RuntimeError::unsupported_comparison(
+                    "object comparisons with non-object values are not implemented",
+                ))
+            }
+            (Value::Resource(_), _) | (_, Value::Resource(_)) => {
+                Err(RuntimeError::unsupported_comparison(
+                    "resource ordering comparisons are not implemented",
+                ))
+            }
+            _ => self.php_ordering(other).ok_or_else(|| {
+                RuntimeError::unsupported_comparison("ordering comparison is not implemented")
+            }),
         }
     }
 
@@ -44403,6 +44584,15 @@ fn php_array_non_array_comparison(
     other: &Value,
     op: Comparison,
 ) -> RuntimeResult<bool> {
+    let ordering = php_array_non_array_ordering(array, array_is_left, other)?;
+    Ok(comparison_matches_ordering(ordering, op))
+}
+
+fn php_array_non_array_ordering(
+    array: &PhpArray,
+    array_is_left: bool,
+    other: &Value,
+) -> RuntimeResult<Ordering> {
     let ordering = match other {
         Value::Null | Value::Bool(_) => {
             let array_truthy = !array.is_empty();
@@ -44426,8 +44616,7 @@ fn php_array_non_array_comparison(
         _ if array_is_left => Ordering::Greater,
         _ => Ordering::Less,
     };
-
-    Ok(comparison_matches_ordering(ordering, op))
+    Ok(ordering)
 }
 
 fn comparison_matches_ordering(ordering: Ordering, op: Comparison) -> bool {
