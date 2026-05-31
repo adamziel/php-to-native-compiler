@@ -37492,10 +37492,12 @@ impl Interpreter {
             .classes
             .get(class_id)
             .expect("core ReflectionClass class id should resolve");
+        let object = PhpObject::from_class_with_id(class, object_id);
+        object
+            .write_public_property("name", Value::String(state.name.clone()))
+            .map_err(|error| runtime_error(span, error))?;
         self.reflection_classes.insert(object_id, state);
-        Ok(Value::Object(PhpObject::from_class_with_id(
-            class, object_id,
-        )))
+        Ok(Value::Object(object))
     }
 
     fn instantiate_reflection_object(
@@ -45739,6 +45741,22 @@ impl Interpreter {
                 }
                 Ok(Value::Array(names))
             }
+            "getinterfaces" => {
+                expect_expr_arity("ReflectionClass::getInterfaces", args.len(), 0, span)?;
+                let mut interfaces = PhpArray::new();
+                for interface_name in self.reflection_class_interface_names(&state) {
+                    let interface = self.create_reflection_class_object(
+                        self.reflection_class_state_for(
+                            interface_name.clone(),
+                            ReflectionClassKind::Interface,
+                            None,
+                        ),
+                        span,
+                    )?;
+                    interfaces.insert(ArrayKey::String(interface_name), interface);
+                }
+                Ok(Value::Array(interfaces))
+            }
             "gettraitnames" => {
                 expect_expr_arity("ReflectionClass::getTraitNames", args.len(), 0, span)?;
                 let mut names = PhpArray::new();
@@ -45768,18 +45786,7 @@ impl Interpreter {
             "hasconstant" => {
                 expect_expr_arity("ReflectionClass::hasConstant", args.len(), 1, span)?;
                 let value = self.evaluate(&args[0], caller_scope)?;
-                let Value::String(constant) = value else {
-                    return Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            "ReflectionClass::hasConstant",
-                            format!(
-                                "constant argument must be string in the current subset, got {}",
-                                value.type_name()
-                            ),
-                        ),
-                    ));
-                };
+                let constant = reflection_scalar_name_argument(value, span)?;
                 Ok(Value::Bool(
                     self.reflection_class_resolve_constant(&state, &constant, span)?
                         .is_some(),
@@ -45788,18 +45795,7 @@ impl Interpreter {
             "getconstant" => {
                 expect_expr_arity("ReflectionClass::getConstant", args.len(), 1, span)?;
                 let value = self.evaluate(&args[0], caller_scope)?;
-                let Value::String(constant) = value else {
-                    return Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            "ReflectionClass::getConstant",
-                            format!(
-                                "constant argument must be string in the current subset, got {}",
-                                value.type_name()
-                            ),
-                        ),
-                    ));
-                };
+                let constant = reflection_scalar_name_argument(value, span)?;
                 let Some(constant_state) =
                     self.reflection_class_resolve_constant(&state, &constant, span)?
                 else {
@@ -46522,6 +46518,33 @@ impl Interpreter {
                 .map(|trait_decl| self.reflection_trait_trait_names(trait_decl))
                 .unwrap_or_default(),
             ReflectionClassKind::Interface => Vec::new(),
+        }
+    }
+
+    fn reflection_class_interface_names(&self, state: &ReflectionClassState) -> Vec<String> {
+        match state.kind {
+            ReflectionClassKind::Class => state
+                .class_id
+                .map(|class_id| self.class_implements_interface_names(class_id))
+                .unwrap_or_default(),
+            ReflectionClassKind::Interface => {
+                let Some(interface) = self.interface_lookup.get(&state.name.to_ascii_lowercase())
+                else {
+                    return Vec::new();
+                };
+                let mut names = Vec::new();
+                let mut seen = HashSet::new();
+                for parent_name in &interface.parents {
+                    self.push_class_implements_interface_name(
+                        parent_name,
+                        true,
+                        &mut names,
+                        &mut seen,
+                    );
+                }
+                names
+            }
+            ReflectionClassKind::Trait => Vec::new(),
         }
     }
 
@@ -95136,6 +95159,12 @@ fn reflection_class_namespace_name(name: &str) -> String {
         .unwrap_or_default()
 }
 
+fn reflection_scalar_name_argument(value: Value, span: Span) -> CompileResult<String> {
+    value
+        .try_echo_string()
+        .map_err(|error| runtime_error(span, error))
+}
+
 fn reflection_class_constant_modifier_mask(constant: &ReflectionClassConstantState) -> i64 {
     match constant.visibility {
         Visibility::Public => 1,
@@ -125324,7 +125353,8 @@ fn format_print_r_array(array: &PhpArray, indent: usize) -> String {
                 output.push_str(&format_print_r_array(&value, indent + 1));
             }
             Value::Object(value) => {
-                output.push_str(&format_print_r_object(&value, indent + 1));
+                output.push_str(&format_print_r_object(&value, indent + 2));
+                output.push('\n');
             }
             value => {
                 output.push_str(&value.echo_string());

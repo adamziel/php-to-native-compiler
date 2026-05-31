@@ -3903,8 +3903,11 @@ tables, including the existing autoload callback path for string misses. The
 object stores request-local reflection state and dispatches the current
 `getName()`, `getShortName()`, `isInterface()`, `isTrait()`,
 `isInstantiable()`, `getParentClass()`, `getInterfaceNames()`,
-`hasMethod($name)`, `getFileName()`, `getStartLine()`, `getEndLine()`, and
-`getDocComment()` methods directly through the interpreter. Class-like source
+`getInterfaces()`, `hasMethod($name)`, `getFileName()`, `getStartLine()`,
+`getEndLine()`, and `getDocComment()` methods directly through the
+interpreter. ReflectionClass objects also materialize the bounded public
+`name` property so debug output and simple metadata reads observe the reflected
+class-like name. Class-like source
 paths are tracked in interpreter-side metadata when class, interface, and
 trait declarations are loaded from a known CLI/fixture or include path; start
 and end lines plus directly preceding `/** ... */` doc-comments come from the
@@ -4040,6 +4043,11 @@ expands simple methods imported from direct trait-body `use` declarations for
 the declaring class for that bounded metadata slice. The slice intentionally
 does not add built-in/internal trait catalogs, exact adapted trait-method
 ordering, recursive conflict/adaptation edge cases, or native lowering.
+`ReflectionClass::getInterfaces()` uses the same request-local state pattern
+for user interface metadata and returns a PHP-shaped associative array keyed by
+interface name. Scalar `hasConstant()` and `getConstant()` name arguments are
+normalized through PHP string conversion before the existing bounded
+class/interface/trait constant lookup.
 `get_declared_classes()` lists classes and unit enums declared in the current
 parsed program;
 `get_declared_interfaces()` lists interfaces declared in the current parsed

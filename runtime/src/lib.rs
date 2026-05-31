@@ -31926,6 +31926,9 @@ impl PhpClassTable {
         let reflection_class = classes
             .get_mut(reflection_class_id)
             .expect("declared ReflectionClass class id should resolve");
+        reflection_class
+            .add_property(PhpPropertyMetadata::instance("name", Visibility::Public))
+            .expect("ReflectionClass core metadata should not duplicate properties");
         for method in [
             "__construct",
             "__toString",
@@ -31951,6 +31954,7 @@ impl PhpClassTable {
             "isIterateable",
             "getParentClass",
             "getInterfaceNames",
+            "getInterfaces",
             "getTraitNames",
             "getTraits",
             "hasConstant",
@@ -79941,8 +79945,16 @@ mod tests {
         assert_eq!(reflection_class.name(), "ReflectionClass");
         assert_eq!(reflection_class.id().index(), 13);
         assert!(reflection_class.parent_id().is_none());
-        assert!(reflection_class.properties().is_empty());
+        assert_eq!(
+            reflection_class
+                .properties()
+                .iter()
+                .map(PhpPropertyMetadata::name)
+                .collect::<Vec<_>>(),
+            vec!["name"]
+        );
         assert!(reflection_class.method("getName").is_some());
+        assert!(reflection_class.method("getInterfaces").is_some());
         assert!(reflection_class.method("hasMethod").is_some());
         assert!(reflection_class.method("getAttributes").is_some());
 

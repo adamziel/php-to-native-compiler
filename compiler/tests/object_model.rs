@@ -6024,6 +6024,40 @@ echo $trait->hasMethod("helper") ? "trait-helper" : "missing-helper";
 }
 
 #[test]
+fn reflection_class_get_interfaces_returns_named_reflection_objects() {
+    let execution = run_source(
+        r#"<?php
+interface RootContract {}
+interface LeafContract extends RootContract {}
+class BasePlugin {}
+class Plugin extends BasePlugin implements LeafContract {}
+
+function line($label, $interfaces) {
+    ksort($interfaces);
+    foreach ($interfaces as $key => $interface) {
+        echo $label, "|", $key, "|", get_class($interface), "|", $interface->name, "|", $interface->getName(), "\n";
+    }
+}
+
+$class = new ReflectionClass(Plugin::class);
+line("class", $class->getInterfaces());
+$parent = $class->getParentClass();
+echo "parent|", $parent->name, "|", $parent->getName(), "\n";
+
+$interface = new ReflectionClass(LeafContract::class);
+line("interface", $interface->getInterfaces());
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "class|LeafContract|ReflectionClass|LeafContract|LeafContract\nclass|RootContract|ReflectionClass|RootContract|RootContract\nparent|BasePlugin|BasePlugin\ninterface|RootContract|ReflectionClass|RootContract|RootContract\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reflection_class_reports_bounded_class_source_metadata() {
     let execution = run_source_with_source_file(
         r#"<?php
@@ -11183,6 +11217,33 @@ foreach ($class->getConstants(4) as $name => $value) {
         execution.stdout,
         "has|10\nvalues|combo|protected|child-secret|iface\nall|NAME=plugin\nall|COMBO=combo\nall|SECRET=child-secret\nall|BASE=base\nall|PROTECTED_NAME=protected\nall|FLAG=iface\npublic|NAME=plugin\npublic|COMBO=combo\npublic|BASE=base\npublic|FLAG=iface\nprivate|SECRET=child-secret\n"
     );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reflection_class_constant_lookup_accepts_scalar_names() {
+    let execution = run_source(
+        r#"<?php
+class Packet {
+    public const VALUE = 1;
+}
+
+function yn($value) {
+    return $value ? "1" : "0";
+}
+
+$class = new ReflectionClass(Packet::class);
+echo "has|", yn($class->hasConstant(1)), yn($class->hasConstant(1.5)), yn($class->hasConstant(true)), "\n";
+var_dump($class->getConstant(1));
+"#,
+    )
+    .unwrap();
+
+    assert!(execution.stdout.starts_with("has|000\n"));
+    assert!(execution.stdout.contains(
+        "Deprecated: ReflectionClass::getConstant() for a non-existent constant is deprecated"
+    ));
+    assert!(execution.stdout.ends_with("bool(false)\n"));
     assert_eq!(execution.exit_code, 0);
 }
 

@@ -8867,10 +8867,12 @@
   and string class-like names, invokes the existing autoload path for string
   misses, and supports `getName()`, `getShortName()`, `isInterface()`,
   `isTrait()`, `isInstantiable()`, `getParentClass()`,
-  `getInterfaceNames()`, `getTraitNames()`, `getTraits()`,
+  `getInterfaceNames()`, `getInterfaces()`, `getTraitNames()`, `getTraits()`,
   `hasMethod($name)`, `getFileName()`,
   `getStartLine()`, `getEndLine()`, and `getDocComment()` over the current
-  metadata tables. For declared user classes, interfaces, and traits loaded
+  metadata tables. ReflectionClass objects expose the bounded public `name`
+  property used by PHP's debug output and simple metadata reads. For declared
+  user classes, interfaces, and traits loaded
   from a known CLI/fixture or include path, `getFileName()` returns that path,
   line numbers come from the parsed class-like declaration and closing brace,
   and `getDocComment()` returns the directly preceding `/** ... */` docblock
@@ -8880,6 +8882,10 @@
   values are bounded `ReflectionClass` metadata objects for the traits. For
   declared user traits, those same methods expose direct trait-body `use`
   declarations as bounded trait metadata objects.
+  `getInterfaces()` returns an associative array keyed by interface name whose
+  values are bounded `ReflectionClass` metadata objects for implemented or
+  extended user interfaces in the current metadata tables; exact engine
+  ordering beyond the covered sorted PHPT shapes remains unsupported.
   `getMethod($name)` returns the same bounded `ReflectionMethod` metadata
   object as `new ReflectionMethod($class, $name)` for methods declared on
   current user classes, inherited class methods, composed trait methods,
@@ -10738,11 +10744,13 @@
   declared user classes, interfaces, and traits. The executable method subset
   is `getName()`, `getShortName()`, `isInterface()`, `isTrait()`,
   `isInstantiable()`, `getParentClass()`, `getInterfaceNames()`,
-  `getTraitNames()`, `getTraits()`, `hasMethod($name)`, `getFileName()`,
+  `getInterfaces()`, `getTraitNames()`, `getTraits()`, `hasMethod($name)`, `getFileName()`,
   `getStartLine()`, `getEndLine()`, `getDocComment()`,
   `getMethod($name)`, `getMethods([$filter])`, `hasProperty($name)`,
   `getProperty($name)`, and
-  zero-argument `getProperties()`. `ReflectionMethod` currently supports only bounded
+  zero-argument `getProperties()`. `hasConstant($name)` and
+  `getConstant($name)` accept string and scalar names in this bounded metadata
+  path. `ReflectionMethod` currently supports only bounded
   method metadata over declared user classes, interfaces, and traits with the
   source metadata, modifier, predicate, parameter-list, and return-type
   methods documented above, plus public non-static user-class by-value
