@@ -62,6 +62,8 @@ const PHP_EXTR_PREFIX_IF_EXISTS: i64 = 5;
 const PHP_EXTR_IF_EXISTS: i64 = 6;
 const PHP_EXTR_REFS: i64 = 256;
 const PHP_FIRST_USER_RESOURCE_ID: i64 = 4;
+const DEFERRED_INSTANCE_PROPERTY_DEFAULT_UNDEFINED_CONSTANT_PREFIX: &str =
+    "deferred instance property default undefined constant ";
 const PHP_JSON_HEX_TAG: i64 = 1;
 const PHP_JSON_HEX_AMP: i64 = 2;
 const PHP_JSON_HEX_APOS: i64 = 4;
@@ -148,10 +150,46 @@ fn run_program_with_optional_source_file(
         return Ok(execution);
     }
 
-    let mut interpreter = Interpreter::from_program(program, source_file, options)?;
+    let mut interpreter = match Interpreter::from_program(program, source_file.clone(), options) {
+        Ok(interpreter) => interpreter,
+        Err(error) => {
+            if let Some(execution) =
+                php_token_final_constructor_override_execution(&error, source_file.as_deref())
+            {
+                return Ok(execution);
+            }
+            return Err(error);
+        }
+    };
     let mut execution = interpreter.run(program)?;
     startup_diagnostics.prepend_warnings_to_execution(&mut execution);
     Ok(execution)
+}
+
+fn php_token_final_constructor_override_execution(
+    error: &Diagnostic,
+    source_file: Option<&str>,
+) -> Option<Execution> {
+    let method = error
+        .message
+        .strip_prefix("unsupported class inheritance for ")
+        .and_then(|message| message.split_once(": cannot override final method "))
+        .map(|(_, method)| method)
+        .filter(|method| *method == "PhpToken::__construct()")
+        .filter(|_| error.phase == Phase::Runtime)?;
+    let file = source_file
+        .map(str::to_string)
+        .or_else(|| error.file.as_ref().map(|file| file.display().to_string()))
+        .unwrap_or_else(|| "Command line code".to_string());
+    Some(Execution {
+        stdout: String::new(),
+        stdout_bytes: Vec::new(),
+        stderr: format!(
+            "Fatal error: Cannot override final method {method} in {file} on line {}",
+            error.line
+        ),
+        exit_code: 255,
+    })
 }
 
 pub fn class_metadata(program: &Program) -> CompileResult<PhpClassTable> {
@@ -205,6 +243,7 @@ struct Interpreter {
     class_constants: HashMap<(ClassId, String), ClassConstantDecl>,
     static_properties: HashMap<(ClassId, String), VariableCell>,
     instance_property_defaults: HashMap<(ClassId, String), Value>,
+    instance_property_default_exprs: HashMap<(ClassId, String), Expr>,
     classes: PhpClassTable,
     constants: ConstantTable,
     required_once: HashSet<PathBuf>,
@@ -10883,6 +10922,7 @@ impl Interpreter {
         let mut class_constants = HashMap::new();
         let mut static_properties = HashMap::new();
         let instance_property_defaults = HashMap::new();
+        let instance_property_default_exprs = HashMap::new();
         let mut classes = PhpClassTable::with_core_classes();
         seed_interpreter_generator_class(&mut classes)?;
         seed_core_final_class_markers(&classes, &mut final_classes);
@@ -11033,6 +11073,7 @@ impl Interpreter {
             class_constants,
             static_properties,
             instance_property_defaults,
+            instance_property_default_exprs,
             classes,
             constants: ConstantTable::new(),
             required_once: HashSet::new(),
@@ -11540,7 +11581,7 @@ impl Interpreter {
             interface_names,
             object_id,
         );
-        self.apply_instance_property_defaults(&object, class_id)?;
+        self.apply_instance_property_defaults(&object, class_id, span)?;
         self.spl_fixed_arrays
             .insert(object.id(), SplFixedArrayState { values, cursor: 0 });
         self.track_allocated_object(&object);
@@ -12385,7 +12426,7 @@ impl Interpreter {
             interface_names,
             object_id,
         );
-        self.apply_instance_property_defaults(&object, class_id)?;
+        self.apply_instance_property_defaults(&object, class_id, span)?;
         let state = BoundedArrayObjectState {
             storage,
             flags,
@@ -18313,6 +18354,8 @@ impl Interpreter {
             );
             self.instance_property_defaults
                 .retain(|(declaring_class_id, _), _| *declaring_class_id != class_id);
+            self.instance_property_default_exprs
+                .retain(|(declaring_class_id, _), _| *declaring_class_id != class_id);
             self.abstract_classes.remove(&class_id);
             self.final_classes.remove(&class_id);
             self.final_methods
@@ -18387,20 +18430,15 @@ impl Interpreter {
     ) -> CompileResult<()> {
         self.instance_property_defaults
             .retain(|(declaring_class_id, _), _| *declaring_class_id != class_id);
+        self.instance_property_default_exprs
+            .retain(|(declaring_class_id, _), _| *declaring_class_id != class_id);
 
         let class_properties = declared_class_properties(class);
         for property in composed_trait_properties(class, &self.trait_lookup)? {
             if class_properties.contains_key(&property.name) || property.is_static {
                 continue;
             }
-            let Some(default) = &property.default else {
-                continue;
-            };
-
-            let mut default_scope = SymbolTable::new();
-            let value = self.evaluate(default, &mut default_scope)?;
-            self.instance_property_defaults
-                .insert((class_id, property.name.clone()), value);
+            self.register_instance_property_default(class_id, &property)?;
         }
 
         for member in &class.members {
@@ -18410,16 +18448,31 @@ impl Interpreter {
             if property.is_static {
                 continue;
             }
-            let Some(default) = &property.default else {
-                continue;
-            };
-
-            let mut default_scope = SymbolTable::new();
-            let value = self.evaluate(default, &mut default_scope)?;
-            self.instance_property_defaults
-                .insert((class_id, property.name.clone()), value);
+            self.register_instance_property_default(class_id, property)?;
         }
 
+        Ok(())
+    }
+
+    fn register_instance_property_default(
+        &mut self,
+        class_id: ClassId,
+        property: &ClassPropertyDecl,
+    ) -> CompileResult<()> {
+        let Some(default) = &property.default else {
+            return Ok(());
+        };
+
+        let key = (class_id, property.name.clone());
+        if instance_property_default_requires_deferred_evaluation(default) {
+            self.instance_property_default_exprs
+                .insert(key, default.clone());
+            return Ok(());
+        }
+
+        let mut default_scope = SymbolTable::new();
+        let value = self.evaluate(default, &mut default_scope)?;
+        self.instance_property_defaults.insert(key, value);
         Ok(())
     }
 
@@ -22392,7 +22445,7 @@ impl Interpreter {
             self.spl_doubly_linked_lists
                 .insert(object.id(), SplDoublyLinkedListState::new(iterator_mode));
         }
-        self.apply_instance_property_defaults(&object, class_id)?;
+        self.apply_instance_property_defaults(&object, class_id, span)?;
         self.sync_spl_doubly_linked_list_object_properties(&object, span)?;
         let Some((
             constructor_class_id,
@@ -23450,37 +23503,63 @@ impl Interpreter {
     }
 
     fn apply_instance_property_defaults(
-        &self,
+        &mut self,
         object: &PhpObject,
         class_id: ClassId,
+        span: Span,
     ) -> CompileResult<()> {
         for declaring_class_id in self.instance_property_default_class_order(class_id) {
             let Some(class) = self.classes.get(declaring_class_id) else {
                 continue;
             };
-            for property in class.properties().iter().filter(|property| {
-                !property.is_static()
-                    && self
-                        .instance_property_defaults
-                        .contains_key(&(declaring_class_id, property.name().to_string()))
-            }) {
-                let value = self
-                    .instance_property_defaults
-                    .get(&(declaring_class_id, property.name().to_string()))
-                    .expect("default existence checked")
-                    .clone();
+            let property_names = class
+                .properties()
+                .iter()
+                .filter(|property| {
+                    !property.is_static()
+                        && (self
+                            .instance_property_defaults
+                            .contains_key(&(declaring_class_id, property.name().to_string()))
+                            || self
+                                .instance_property_default_exprs
+                                .contains_key(&(declaring_class_id, property.name().to_string())))
+                })
+                .map(|property| property.name().to_string())
+                .collect::<Vec<_>>();
+
+            for property_name in property_names {
+                let key = (declaring_class_id, property_name.clone());
+                let value = if let Some(value) = self.instance_property_defaults.get(&key) {
+                    value.clone()
+                } else if let Some(default) =
+                    self.instance_property_default_exprs.get(&key).cloned()
+                {
+                    self.evaluate_deferred_instance_property_default(&default, span)?
+                } else {
+                    continue;
+                };
                 object
                     .write_property_from_context(
-                        property.name(),
+                        &property_name,
                         value,
                         Some(declaring_class_id),
                         &[declaring_class_id],
                     )
-                    .map_err(|error| runtime_error(Span::new(0, 0), error))?;
+                    .map_err(|error| runtime_error(span, error))?;
             }
         }
 
         Ok(())
+    }
+
+    fn evaluate_deferred_instance_property_default(
+        &mut self,
+        default: &Expr,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let mut default_scope = SymbolTable::new();
+        self.evaluate(default, &mut default_scope)
+            .map_err(|error| remap_deferred_instance_property_default_error(error, span))
     }
 
     fn instance_property_default_class_order(&self, class_id: ClassId) -> Vec<ClassId> {
@@ -48817,6 +48896,9 @@ impl Interpreter {
             property.type_decl().is_none()
                 || self
                     .instance_property_defaults
+                    .contains_key(&(declaring_class_id, property.name().to_string()))
+                || self
+                    .instance_property_default_exprs
                     .contains_key(&(declaring_class_id, property.name().to_string()))
         }
     }
@@ -83002,7 +83084,7 @@ impl Interpreter {
             interface_names,
             object_id,
         );
-        self.apply_instance_property_defaults(&object, class_id)?;
+        self.apply_instance_property_defaults(&object, class_id, span)?;
         self.track_allocated_object(&object);
         Ok(object)
     }
@@ -101226,6 +101308,47 @@ fn runtime_error(span: Span, error: RuntimeError) -> Diagnostic {
     Diagnostic::new(Phase::Runtime, span.line, span.column, error.message())
 }
 
+fn remap_deferred_instance_property_default_error(mut error: Diagnostic, span: Span) -> Diagnostic {
+    if let Some(name) = error
+        .message
+        .strip_prefix("undefined constant ")
+        .filter(|_| error.phase == Phase::Runtime)
+    {
+        return Diagnostic::new(
+            Phase::Runtime,
+            span.line,
+            span.column,
+            format!("{DEFERRED_INSTANCE_PROPERTY_DEFAULT_UNDEFINED_CONSTANT_PREFIX}{name}"),
+        );
+    }
+
+    error.line = span.line;
+    error.column = span.column;
+    error
+}
+
+fn instance_property_default_requires_deferred_evaluation(expr: &Expr) -> bool {
+    match expr {
+        Expr::GlobalConstant { .. }
+        | Expr::ClassConstant { .. }
+        | Expr::SelfClassConstant { .. }
+        | Expr::ParentClassConstant { .. }
+        | Expr::LateStaticClassConstant { .. } => true,
+        Expr::Array { items, .. } => items.iter().any(|item| {
+            item.key
+                .as_ref()
+                .is_some_and(instance_property_default_requires_deferred_evaluation)
+                || instance_property_default_requires_deferred_evaluation(&item.value)
+        }),
+        Expr::Unary { expr, .. } => instance_property_default_requires_deferred_evaluation(expr),
+        Expr::Binary { left, right, .. } => {
+            instance_property_default_requires_deferred_evaluation(left)
+                || instance_property_default_requires_deferred_evaluation(right)
+        }
+        _ => false,
+    }
+}
+
 fn array_offset_type_error(type_name: &str, span: Span) -> Diagnostic {
     Diagnostic::new(
         Phase::Runtime,
@@ -101472,6 +101595,14 @@ fn catchable_php_error_message(error: &Diagnostic) -> Option<String> {
 fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static str, String)> {
     if is_forbidden_dynamic_builtin_call_diagnostic(error) {
         return Some(("Error", error.message.clone()));
+    }
+
+    if let Some(name) = error
+        .message
+        .strip_prefix(DEFERRED_INSTANCE_PROPERTY_DEFAULT_UNDEFINED_CONSTANT_PREFIX)
+        .filter(|_| error.phase == Phase::Runtime)
+    {
+        return Some(("Error", format!("Undefined constant \"{name}\"")));
     }
 
     if let Some(thrown) = catchable_uncaught_throw_class_and_message(error) {

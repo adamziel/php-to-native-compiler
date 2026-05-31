@@ -222,21 +222,67 @@ try {
 
 #[test]
 fn php_token_constructor_is_final_for_subclasses() {
-    let error = runtime_error(
+    let execution = run_source(
         r#"<?php
 class BadPhpToken extends PhpToken {
     public function __construct() {}
 }
 "#,
-    );
+    )
+    .unwrap();
 
-    assert!(
-        error
-            .message
-            .contains("cannot override final method PhpToken::__construct()"),
-        "{}",
-        error.message
+    assert_eq!(execution.stdout, "");
+    assert_eq!(
+        execution.stderr,
+        "Fatal error: Cannot override final method PhpToken::__construct() in Command line code on line 3"
     );
+    assert_eq!(execution.exit_code, 255);
+}
+
+#[test]
+fn deferred_instance_property_default_errors_use_allocation_call_sites() {
+    let declaration_only = run_source(
+        r#"<?php
+class A { public $extra = UNKNOWN; }
+echo "declared";
+"#,
+    )
+    .unwrap();
+    assert_eq!(declaration_only.stdout, "declared");
+    assert_eq!(declaration_only.exit_code, 0);
+
+    let ordinary_new = run_source(
+        r#"<?php
+class A { public $extra = UNKNOWN; }
+try {
+    new A();
+} catch (Error $e) {
+    echo $e->getMessage(), ":", $e->getLine(), "\n";
+}
+"#,
+    )
+    .unwrap();
+    assert_eq!(ordinary_new.stdout, "Undefined constant \"UNKNOWN\":4\n");
+    assert_eq!(ordinary_new.exit_code, 0);
+
+    let tokenized_subclass = run_source(
+        r#"<?php
+class MyPhpToken1 extends PhpToken {
+    public $extra = UNKNOWN;
+}
+try {
+    MyPhpToken1::tokenize("<?php foo");
+} catch (Error $e) {
+    echo $e->getMessage(), ":", $e->getLine(), "\n";
+}
+"#,
+    )
+    .unwrap();
+    assert_eq!(
+        tokenized_subclass.stdout,
+        "Undefined constant \"UNKNOWN\":6\n"
+    );
+    assert_eq!(tokenized_subclass.exit_code, 0);
 }
 
 #[test]
