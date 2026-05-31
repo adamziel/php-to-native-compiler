@@ -81737,6 +81737,8 @@ impl Interpreter {
             "urlencode" => call_urlencode(&args, span),
             "rawurlencode" => call_rawurlencode(&args, span),
             "rawurldecode" => call_rawurldecode(&args, span),
+            "serialize" => self.call_serialize_builtin(&args, span),
+            "unserialize" => self.call_unserialize_builtin(&args, span),
             "preg_match" => call_preg_match(&args, span),
             "preg_replace" => call_preg_replace(&args, span),
             "preg_split" => call_preg_split(&args, span),
@@ -85120,6 +85122,82 @@ impl Interpreter {
             },
             _ => unreachable!("is_builtin keeps this match exhaustive for callers"),
         }
+    }
+
+    fn call_serialize_builtin(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("serialize()", args, 1, span)?;
+        let mut output = String::new();
+        format_php_serialized_value(&args[0], &mut output).ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "serialize()",
+                    format!(
+                        "{} values require object/resource serialization support in the current subset",
+                        args[0].type_name()
+                    ),
+                ),
+            )
+        })?;
+        Ok(Value::String(output))
+    }
+
+    fn call_unserialize_builtin(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("unserialize()", args, 1, span)?;
+        let data = string_builtin_argument("unserialize()", "data", &args[0], span)?;
+        let mut parser = PhpSerializedParser::new(&data);
+        let mut object_factory = |class_name: &str, properties: Vec<(String, Value)>| {
+            self.create_unserialized_object(class_name, properties, span)
+                .ok()
+        };
+        match parser.parse_value_with_object_factory(&mut object_factory) {
+            Some(value) if parser.is_finished() => Ok(value),
+            _ => {
+                self.emit_display_warning(
+                    "unserialize(): Error at offset 0 of input in the current subset",
+                    span,
+                )?;
+                Ok(Value::Bool(false))
+            }
+        }
+    }
+
+    fn create_unserialized_object(
+        &mut self,
+        class_name: &str,
+        properties: Vec<(String, Value)>,
+        span: Span,
+    ) -> CompileResult<Value> {
+        if self.classes.lookup_class(class_name).is_none() {
+            self.run_autoload_callbacks(class_name, AutoloadKind::Class, span)?;
+        }
+        let class_id = self
+            .classes
+            .lookup_class_id(class_name)
+            .ok_or_else(|| runtime_error(span, RuntimeError::undefined_class(class_name)))?;
+        let inherited_properties = self.inherited_instance_properties(class_id);
+        let mut ancestor_class_names = self.inherited_class_names(class_id);
+        ancestor_class_names.extend(self.class_alias_names(class_id));
+        let interface_names = self.class_implements_interface_names(class_id);
+        let object_id = self.allocate_object_id();
+        let class = self
+            .classes
+            .get(class_id)
+            .expect("class id should resolve to class metadata");
+        let object = PhpObject::from_class_with_relationship_metadata_with_id(
+            class,
+            &inherited_properties,
+            ancestor_class_names,
+            interface_names,
+            object_id,
+        );
+        for (name, value) in properties {
+            object
+                .write_dynamic_public_property(&name, value)
+                .map_err(|error| runtime_error(span, error))?;
+        }
+        self.track_allocated_object(&object);
+        Ok(Value::Object(object))
     }
 
     fn call_user_func_builtin(&mut self, args: Vec<Value>, span: Span) -> CompileResult<Value> {
@@ -100814,6 +100892,8 @@ fn is_builtin(name: &str) -> bool {
             | "urlencode"
             | "rawurlencode"
             | "rawurldecode"
+            | "serialize"
+            | "unserialize"
             | "preg_match"
             | "preg_replace"
             | "preg_split"
@@ -120141,7 +120221,7 @@ fn format_php_serialized_value(value: &Value, output: &mut String) -> Option<()>
         }
         Value::Float(value) => {
             output.push_str("d:");
-            output.push_str(&value.to_string());
+            output.push_str(&format_php_serialized_float(*value));
             output.push(';');
         }
         Value::String(value) => {
@@ -120172,6 +120252,16 @@ fn format_php_serialized_value(value: &Value, output: &mut String) -> Option<()>
         Value::Object(_) | Value::Closure(_) | Value::Resource(_) => return None,
     }
     Some(())
+}
+
+fn format_php_serialized_float(value: f64) -> String {
+    if value != 0.0 && value.is_finite() && value.abs() < 0.0001 {
+        return format!("{value:.16E}")
+            .replace("E-0", "E-")
+            .replace("E+0", "E+");
+    }
+
+    value.to_string()
 }
 
 fn format_php_serialized_array_key(key: &ArrayKey, output: &mut String) {
@@ -120245,6 +120335,14 @@ impl<'a> PhpSerializedParser<'a> {
     }
 
     fn parse_value(&mut self) -> Option<Value> {
+        let mut no_object_factory = |_: &str, _: Vec<(String, Value)>| None;
+        self.parse_value_with_object_factory(&mut no_object_factory)
+    }
+
+    fn parse_value_with_object_factory<F>(&mut self, object_factory: &mut F) -> Option<Value>
+    where
+        F: FnMut(&str, Vec<(String, Value)>) -> Option<Value>,
+    {
         match self.data.get(self.position).copied()? {
             b'N' => {
                 self.position += 1;
@@ -120287,11 +120385,29 @@ impl<'a> PhpSerializedParser<'a> {
                 let mut array = PhpArray::new();
                 for _ in 0..len {
                     let key = self.parse_array_key()?;
-                    let value = self.parse_value()?;
+                    let value = self.parse_value_with_object_factory(object_factory)?;
                     array.insert(key, value);
                 }
                 self.expect_byte(b'}')?;
                 Some(Value::Array(array))
+            }
+            b'O' => {
+                self.position += 1;
+                let class_name = self.parse_serialized_string_payload()?;
+                self.expect_byte(b':')?;
+                let len = self.parse_usize_until_byte(b':')?;
+                self.expect_byte(b'{')?;
+                let mut properties = Vec::with_capacity(len);
+                for _ in 0..len {
+                    let key = self.parse_array_key()?;
+                    let ArrayKey::String(name) = key else {
+                        return None;
+                    };
+                    let value = self.parse_value_with_object_factory(object_factory)?;
+                    properties.push((name, value));
+                }
+                self.expect_byte(b'}')?;
+                object_factory(&class_name, properties)
             }
             _ => None,
         }
@@ -120315,6 +120431,12 @@ impl<'a> PhpSerializedParser<'a> {
     }
 
     fn parse_serialized_string(&mut self) -> Option<String> {
+        let value = self.parse_serialized_string_payload()?;
+        self.expect_byte(b';')?;
+        Some(value)
+    }
+
+    fn parse_serialized_string_payload(&mut self) -> Option<String> {
         self.expect_byte(b':')?;
         let len = self.parse_usize_until_byte(b':')?;
         self.expect_byte(b'"')?;
@@ -120322,7 +120444,6 @@ impl<'a> PhpSerializedParser<'a> {
         let bytes = self.data.get(self.position..end)?;
         self.position = end;
         self.expect_byte(b'"')?;
-        self.expect_byte(b';')?;
         std::str::from_utf8(bytes).ok().map(str::to_string)
     }
 
