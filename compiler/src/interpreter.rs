@@ -132968,6 +132968,14 @@ impl Interpreter {
             return Ok(Value::Bool(false));
         }
 
+        if matches!(
+            normalized_name.as_str(),
+            "arg_separator.input" | "arg_separator.output"
+        ) && value.is_empty()
+        {
+            return Ok(Value::Bool(false));
+        }
+
         if normalized_name == "include_path" {
             self.include_path = value.clone();
         }
@@ -135641,6 +135649,11 @@ fn parse_bounded_ini(
             continue;
         }
 
+        validate_bounded_ini_interpolation(
+            strip_bounded_ini_inline_comment(line).trim(),
+            index + 1,
+        )?;
+
         if line.starts_with('[') && line.ends_with(']') {
             if process_sections {
                 if let Some((section, values)) = current_section.take() {
@@ -135685,10 +135698,10 @@ fn parse_bounded_ini_value(value: &str, line: usize, scanner_mode: i64) -> Resul
 }
 
 fn parse_bounded_ini_scalar(value: &str, line: usize) -> Result<BoundedIniScalar, String> {
-    if value.starts_with('"') {
-        if value.ends_with('"') && value.len() >= 2 {
+    if let Some(rest) = value.strip_prefix('"') {
+        if let Some(end) = rest.find('"') {
             return Ok(BoundedIniScalar {
-                value: value[1..value.len() - 1].to_string(),
+                value: rest[..end].to_string(),
                 quoted: true,
             });
         }
@@ -135696,6 +135709,25 @@ fn parse_bounded_ini_scalar(value: &str, line: usize) -> Result<BoundedIniScalar
             "syntax error, unexpected end of file, expecting TC_DOLLAR_CURLY or TC_QUOTED_STRING or '\"' in Unknown on line {line}\n"
         ));
     }
+
+    if let Some(rest) = value.strip_prefix('\'') {
+        if let Some(end) = rest.find('\'') {
+            return Ok(BoundedIniScalar {
+                value: rest[..end].to_string(),
+                quoted: true,
+            });
+        }
+    }
+
+    let value = strip_bounded_ini_inline_comment(value).trim();
+    validate_bounded_ini_interpolation(value, line)?;
+    Ok(BoundedIniScalar {
+        value: value.trim_matches('\'').to_string(),
+        quoted: false,
+    })
+}
+
+fn validate_bounded_ini_interpolation(value: &str, line: usize) -> Result<(), String> {
     if let Some(open) = value.find("${") {
         let interpolation = &value[open + 2..];
         if interpolation.contains(":-") {
@@ -135709,17 +135741,25 @@ fn parse_bounded_ini_scalar(value: &str, line: usize) -> Result<BoundedIniScalar
             ));
         }
     }
-    if value.starts_with('\'') && value.ends_with('\'') && value.len() >= 2 {
-        return Ok(BoundedIniScalar {
-            value: value.trim_matches('\'').to_string(),
-            quoted: true,
-        });
-    }
+    Ok(())
+}
 
-    Ok(BoundedIniScalar {
-        value: value.trim_matches('\'').to_string(),
-        quoted: false,
-    })
+fn strip_bounded_ini_inline_comment(value: &str) -> &str {
+    let mut escaped = false;
+    for (index, ch) in value.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if ch == '\\' {
+            escaped = true;
+            continue;
+        }
+        if matches!(ch, ';' | '#') {
+            return &value[..index];
+        }
+    }
+    value
 }
 
 fn parse_bounded_ini_typed_scalar(value: &str) -> Value {

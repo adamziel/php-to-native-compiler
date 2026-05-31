@@ -116,6 +116,27 @@ var_dump(ini_set("MAX_MEMORY_LIMIT", "256M"));
 }
 
 #[test]
+fn ini_set_rejects_empty_arg_separators_without_mutating() {
+    let execution = run_source(
+        r#"<?php
+var_dump(ini_set("arg_separator.output", ""));
+var_dump(ini_get("arg_separator.output"));
+var_dump(ini_set("arg_separator.input", ""));
+var_dump(ini_get("arg_separator.input"));
+var_dump(ini_set("arg_separator.output", "|"));
+var_dump(ini_get("arg_separator.output"));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "bool(false)\nstring(1) \"&\"\nbool(false)\nstring(1) \"&\"\nstring(1) \"&\"\nstring(1) \"|\"\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn ini_parse_quantity_handles_decimal_hex_and_compatibility_suffixes() {
     let _guard = env_lock();
     let previous = env::var_os("PHPC_PHPT_INI_FLAGS");
@@ -373,6 +394,50 @@ var_dump($values);
     assert_eq!(
         execution.stdout,
         "array(12) {\n  [\"a\"]=>\n  bool(true)\n  [\"b\"]=>\n  bool(false)\n  [\"c\"]=>\n  NULL\n  [\"d\"]=>\n  int(123)\n  [\"e\"]=>\n  float(3.5)\n  [\"f\"]=>\n  string(3) \"123\"\n  [\"g\"]=>\n  bool(true)\n  [\"h\"]=>\n  bool(false)\n  [\"i\"]=>\n  bool(true)\n  [\"j\"]=>\n  bool(false)\n  [\"k\"]=>\n  bool(false)\n  [\"l\"]=>\n  string(4) \"true\"\n}\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn parse_ini_string_raw_scanner_strips_unquoted_inline_comments() {
+    let execution = run_source(
+        r#"<?php
+$ini = <<<END
+1="foo"
+2="bar" ; comment
+3= baz
+4= "foo;bar"
+5= "foo" ; bar ; baz
+6= "foo;bar" ; baz
+7= foo"bar ; "ok
+END;
+var_dump(parse_ini_string($ini, false, INI_SCANNER_RAW));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "array(7) {\n  [1]=>\n  string(3) \"foo\"\n  [2]=>\n  string(3) \"bar\"\n  [3]=>\n  string(3) \"baz\"\n  [4]=>\n  string(7) \"foo;bar\"\n  [5]=>\n  string(3) \"foo\"\n  [6]=>\n  string(7) \"foo;bar\"\n  [7]=>\n  string(7) \"foo\"bar\"\n}\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn parse_ini_string_reports_unclosed_interpolation_in_section_header() {
+    let execution = run_source("<?php\nvar_dump(parse_ini_string('[${ \t'));\n").unwrap();
+
+    assert!(
+        execution.stdout.contains(
+            "Warning: syntax error, unexpected end of file, expecting TC_FALLBACK or '}' in Unknown on line 1"
+        ),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution.stdout.ends_with("bool(false)\n"),
+        "{}",
+        execution.stdout
     );
     assert_eq!(execution.exit_code, 0);
 }
