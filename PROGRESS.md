@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-31 04:27 CEST
+Updated: 2026-05-31 08:32 CEST
 Primary branch: `master`
-Latest source head: `4e7a7a41 fix: repair mysqli subclass construction`
+Latest source head: `7e9c4fd8 fix: repair batch021 PHPT regressions`
 
 ## Progress Score
 
@@ -13,7 +13,7 @@ Progress is the pinned php-src PHPT full-suite pass rate:
 
 `passed runnable PHPTs / total runnable PHPTs`
 
-Current score: **4425 / 20294 pinned runnable PHPTs = 21.80%**.
+Current score: **4685 / 20294 pinned runnable PHPTs = 23.09%**.
 
 ## PHPT Goal Checklist
 
@@ -57,6 +57,7 @@ Current score: **4425 / 20294 pinned runnable PHPTs = 21.80%**.
 | Batch018 repair01 | 4178 / 20294 | 20.59% | 0; 4 raw invalid-marker hits adjudicated as failed-row/expected output |
 | Batch019 repair02 | 4321 / 20294 | 21.29% | 0 semantic; `bug75679.phpt` and `open_basedir_filemtime.phpt` adjudicated by same-binary focused proof |
 | Batch020 repair01 | 4425 / 20294 | 21.80% | 0; 1 raw sockets invalid-marker hit adjudicated as failed-row expected output |
+| Batch021 regression repair | 4685 / 20294 | 23.09% | 0; 1 raw sockets invalid-marker hit adjudicated as failed-row expected output |
 
 Batch020 repair01 source `4e7a7a41` is integrated in the supervisor staging
 line and validated by a pinned sharded full-suite gate plus serialized
@@ -64,6 +65,15 @@ line and validated by a pinned sharded full-suite gate plus serialized
 zero latest-published PASS regressions against the Batch019 repair02 PASS
 baseline, and one raw invalid-marker hit from a literal sockets expected-output
 `Permission denied` warning in a failed row.
+
+Batch021 regression-repair source `7e9c4fd8` is integrated in the supervisor
+staging line and validated by the pinned sharded full-suite gate plus
+serialized `open_basedir` rows. The gate recorded 4685 passed pinned runnable
+PHPTs, zero latest-published PASS regressions against the Batch020 repair01
+PASS baseline, and one raw invalid-marker hit from the same sockets
+expected-output `Permission denied` warning family in a failed row. Evidence
+lives under
+`/home/claude/supervised-php-compiler/state/logs/phpt-full-batch021-regression-repair-sharded-serialized-openbasedir-20260531T0838Z-php-src-f97ff59-public-049ff7b5-source-7e9c4fd8`.
 
 The Batch013 checkpoint10 source `fc2788a7` is integrated and published by a
 pinned sharded full-suite gate on public `b3e42ce1`. The gate recorded 3170
