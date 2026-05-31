@@ -14635,6 +14635,34 @@ echo $store[$first], "\n";
 }
 
 #[test]
+fn spl_object_storage_get_hash_return_type_errors_are_php_shaped() {
+    let source = r#"<?php
+class BadHashStorage extends SplObjectStorage {
+    #[ReturnTypeWillChange]
+    public function getHash($object) {
+        return 2;
+    }
+}
+
+$store = new BadHashStorage();
+$object = new stdClass();
+try {
+    $store[$object] = "value";
+} catch (Throwable $e) {
+    echo $e::class, ": ", $e->getMessage();
+}
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "TypeError: BadHashStorage::getHash(): Return value must be of type string, int returned"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn spl_fixed_array_offsets_iteration_resize_static_constructor_and_errors() {
     let source = r#"<?php
 class ChildFixedArray extends SplFixedArray {

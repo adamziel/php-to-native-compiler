@@ -73639,6 +73639,10 @@ impl Interpreter {
             self.emit_filesystem_metadata_failure_warning("fileperms", &path, true, span)?;
             return Ok(Value::Bool(false));
         };
+        if trailing_separator_requires_directory(&path) && !metadata.is_dir() {
+            self.emit_filesystem_metadata_failure_warning("fileperms", &path, true, span)?;
+            return Ok(Value::Bool(false));
+        }
         Ok(Value::Int(filesystem_mode_bits(&metadata)))
     }
 
@@ -73768,6 +73772,10 @@ impl Interpreter {
             self.emit_filesystem_metadata_failure_warning(function, &path, true, span)?;
             return Ok(Value::Bool(false));
         };
+        if trailing_separator_requires_directory(&path) && !metadata.is_dir() {
+            self.emit_filesystem_metadata_failure_warning(function, &path, true, span)?;
+            return Ok(Value::Bool(false));
+        }
         Ok(Value::Int(value(&metadata)))
     }
 
@@ -87637,7 +87645,7 @@ impl Interpreter {
                         PHP_E_DEPRECATED,
                         format!(
                             "Implicit conversion from float {} to int loses precision",
-                            format_php_precision_float(*value, self.php_scalar_precision())
+                            format_php_float_to_int_deprecation_value(*value)
                         ),
                         span,
                     )?;
@@ -97107,11 +97115,16 @@ fn return_type_error_message(error: &Diagnostic) -> Option<String> {
         return None;
     }
 
-    let message = error.message.as_str();
+    let message = error
+        .message
+        .strip_prefix("unsupported call ")
+        .and_then(|message| message.split_once(": "))
+        .map(|(_, message)| message)
+        .unwrap_or(error.message.as_str());
     (message.contains("(): Return value must be of type ")
         || message.ends_with(": A void function must not return a value")
         || message.ends_with(": A never-returning function must not return"))
-    .then(|| error.message.clone())
+    .then(|| message.to_string())
 }
 
 fn catchable_uncaught_throw_class_and_message(
@@ -98814,6 +98827,19 @@ fn lexically_normalized_filesystem_path(path: &Path) -> PathBuf {
     } else {
         normalized
     }
+}
+
+fn trailing_separator_requires_directory(path: &str) -> bool {
+    let Some(last) = path.chars().next_back() else {
+        return false;
+    };
+    if last != '/' && last != '\\' {
+        return false;
+    }
+
+    !path
+        .trim_end_matches(|ch| ch == '/' || ch == '\\')
+        .is_empty()
 }
 
 fn dirname_path(path: &str, levels: i64) -> String {
@@ -105764,7 +105790,10 @@ impl Interpreter {
                 self.emit_display_diagnostic(
                     "Deprecated",
                     PHP_E_DEPRECATED,
-                    format!("Implicit conversion from float {value} to int loses precision"),
+                    format!(
+                        "Implicit conversion from float {} to int loses precision",
+                        format_php_float_to_int_deprecation_value(*value)
+                    ),
                     span,
                 )?;
             }
@@ -106584,7 +106613,8 @@ impl Interpreter {
                             "Deprecated",
                             PHP_E_DEPRECATED,
                             format!(
-                                "Implicit conversion from float {value} to int loses precision"
+                                "Implicit conversion from float {} to int loses precision",
+                                format_php_float_to_int_deprecation_value(*value)
                             ),
                             span,
                         )?;
@@ -106919,6 +106949,15 @@ fn format_php_precision_float(value: f64, precision: usize) -> String {
     }
 
     Value::Float(value).echo_string()
+}
+
+fn format_php_float_to_int_deprecation_value(value: f64) -> String {
+    let abs = value.abs();
+    if value != 0.0 && !(1e-4..1e14).contains(&abs) {
+        normalize_php_scientific_float(format!("{value:.15E}"))
+    } else {
+        value.to_string()
+    }
 }
 
 fn normalize_php_scientific_float(mut value: String) -> String {

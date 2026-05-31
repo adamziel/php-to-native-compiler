@@ -131,13 +131,14 @@ if ($call(0.0, $items)) {
 
 #[test]
 fn array_key_exists_accepts_lossy_float_key_coercions_with_deprecation() {
-    let execution =
-        run_source("<?php\n$items = [1 => \"one\"];\necho array_key_exists(1.5, $items);\n")
-            .unwrap();
+    let execution = run_source(
+        "<?php\n$items = [0 => \"zero\", 1 => \"one\"];\necho array_key_exists(1.5, $items), \"\\n\";\necho array_key_exists(1.00000000000001, $items), \"\\n\";\necho array_key_exists(1.99999999999999, $items), \"\\n\";\necho array_key_exists(1.2345678900E-10, $items);\n",
+    )
+    .unwrap();
 
     assert_eq!(
         execution.stdout,
-        "Deprecated: Implicit conversion from float 1.5 to int loses precision in Command line code on line 3\n1"
+        "Deprecated: Implicit conversion from float 1.5 to int loses precision in Command line code on line 3\n1\n\nDeprecated: Implicit conversion from float 1.00000000000001 to int loses precision in Command line code on line 4\n1\n\nDeprecated: Implicit conversion from float 1.99999999999999 to int loses precision in Command line code on line 5\n1\n\nDeprecated: Implicit conversion from float 1.23456789E-10 to int loses precision in Command line code on line 6\n1"
     );
     assert_eq!(execution.exit_code, 0);
 }

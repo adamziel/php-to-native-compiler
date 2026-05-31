@@ -151,6 +151,39 @@ var_dump(touch(""));
 }
 
 #[test]
+fn file_metadata_builtins_reject_trailing_slash_regular_file_paths() {
+    let fixture = TempFsFixture::new("metadata-trailing-slash");
+    let file = fixture.root.join("file.txt");
+    fs::write(&file, "payload").expect("fixture file is created");
+    let file = php_string(&file);
+    let source = format!(
+        r#"<?php
+$file = {file};
+var_dump(fileowner($file . "/"));
+var_dump(filegroup($file . "/"));
+var_dump(fileinode($file . "/"));
+var_dump(fileperms($file . "/"));
+"#,
+        file = file
+    );
+
+    let execution = run_source(&source).unwrap();
+
+    for function in ["fileowner", "filegroup", "fileinode", "fileperms"] {
+        assert!(
+            execution
+                .stdout
+                .contains(&format!("Warning: {function}(): stat failed for ")),
+            "{}",
+            execution.stdout
+        );
+    }
+    assert_eq!(execution.stdout.matches("bool(false)").count(), 4);
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn open_basedir_denials_use_php_display_warning_shape() {
     let fixture = TempFsFixture::new("open-basedir-display");
     fs::create_dir(fixture.root.join("allowed")).expect("allowed directory is created");
