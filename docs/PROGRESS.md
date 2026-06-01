@@ -1,5 +1,17 @@
 # Progress Log
 
+## 2026-06-01
+
+Implemented:
+
+- Added a narrow tokenizer post-scan merge for the focused malformed
+  `__halt_compiler` tail exercised by `ext/tokenizer/tests/bug54089.phpt`.
+  After `__halt_compiler` followed by exactly three newline-prefixed bare
+  identifiers, same-line trailing bytes are preserved as one inline-HTML token
+  so `token_get_all()` can reconstruct the source without splitting the final
+  space from the tail text. Broader `__halt_compiler` parser-state parity,
+  full heredoc/nowdoc tokenization, and native lowering remain unsupported.
+
 ## 2026-05-27
 
 Implemented:

@@ -57,6 +57,27 @@ fn tokenizer_scans_core_stream_shape_namespaces_attributes_and_lines() {
 }
 
 #[test]
+fn tokenizer_merges_focused_halt_compiler_malformed_tail() {
+    let tokens = php_tokenizer::tokenize(b"<?php __halt_compiler\nabc\ndef\nghi ABC");
+
+    assert!(
+        tokens.iter().any(|token| {
+            token.id() == php_tokenizer::T_HALT_COMPILER && token_text(token) == "__halt_compiler"
+        }),
+        "expected halt compiler token"
+    );
+    assert!(
+        tokens.iter().any(|token| {
+            token.id() == php_tokenizer::T_INLINE_HTML && token_text(token) == " ABC"
+        }),
+        "expected same-line tail after the third malformed halt-compiler identifier to be merged"
+    );
+
+    let reconstructed = tokens.iter().map(token_text).collect::<Vec<_>>().join("");
+    assert_eq!(reconstructed, "<?php __halt_compiler\nabc\ndef\nghi ABC");
+}
+
+#[test]
 fn token_get_all_exposes_token_names_text_lengths_and_lines() {
     let execution = run_source(
         r#"<?php

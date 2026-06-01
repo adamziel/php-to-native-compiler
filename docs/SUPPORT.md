@@ -37,9 +37,12 @@
   core interpreter token stream, `TOKEN_PARSE` is accepted for the supported
   contextual reserved-word cases, and `PhpToken` supports construction,
   subclass tokenization, `getTokenName()`, `is()`, `isIgnorable()`, and
-  `__toString()` for the current tokenizer subset. Full parse-error
-  validation for `TOKEN_PARSE` and complete heredoc/nowdoc token parity remain
-  unsupported.
+  `__toString()` for the current tokenizer subset. The tokenizer also preserves
+  the focused malformed `__halt_compiler` tail shape where the same-line bytes
+  after the third newline-prefixed identifier are reported as one inline HTML
+  token. Full parse-error validation for `TOKEN_PARSE`, broader
+  `__halt_compiler` parser-state parity, and complete heredoc/nowdoc token
+  parity remain unsupported.
 - static variables backed by per-scope materialized symbol tables
 - direct variable removal: `unset($name)` removes static variables from the
   current scope and treats undefined names as no-ops; when a removed direct

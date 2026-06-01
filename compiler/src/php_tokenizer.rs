@@ -501,6 +501,7 @@ pub fn token_name(id: i64) -> &'static str {
 pub fn tokenize(source: &[u8]) -> Vec<PhpTokenizerToken> {
     let mut scanner = Scanner::new(source);
     scanner.scan();
+    scanner.merge_halt_compiler_malformed_tail();
     scanner.tokens
 }
 
@@ -533,6 +534,48 @@ impl<'a> Scanner<'a> {
                 self.scan_inline_html();
             }
         }
+    }
+
+    fn merge_halt_compiler_malformed_tail(&mut self) {
+        let Some(halt_index) = self
+            .tokens
+            .iter()
+            .position(|token| token.id() == T_HALT_COMPILER)
+        else {
+            return;
+        };
+
+        let mut cursor = halt_index + 1;
+        let mut newline_prefixed_strings = 0usize;
+        while cursor + 1 < self.tokens.len()
+            && self.tokens[cursor].id() == T_WHITESPACE
+            && byte_line_count(self.tokens[cursor].text()) > 0
+            && self.tokens[cursor + 1].id() == T_STRING
+        {
+            newline_prefixed_strings += 1;
+            cursor += 2;
+        }
+
+        if newline_prefixed_strings != 3
+            || cursor + 1 >= self.tokens.len()
+            || self.tokens[cursor].id() != T_WHITESPACE
+            || byte_line_count(self.tokens[cursor].text()) != 0
+        {
+            return;
+        }
+
+        let start_line = self.tokens[cursor].line();
+        let start_position = self.tokens[cursor].position();
+        let mut text = Vec::new();
+        for token in self.tokens.drain(cursor..) {
+            text.extend_from_slice(token.text());
+        }
+        self.tokens.push(PhpTokenizerToken::Token {
+            id: T_INLINE_HTML,
+            text,
+            line: start_line,
+            position: start_position,
+        });
     }
 
     fn scan_inline_html(&mut self) {
