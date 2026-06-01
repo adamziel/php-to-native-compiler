@@ -43298,3 +43298,24 @@ Next:
   iterators, user-comparator sorting for nested ArrayObject-backed storage,
   exact object-id reuse, serialization parity, full object-handler
   COW/reference identity, and native lowering.
+
+Next:
+
+- Added the adjacent SPL `ArrayObject` clone/storage residual row for
+  `ArrayObject_clone_other_std_props.phpt`: constructing an `ArrayObject` from a
+  source `ArrayObject` with `STD_PROP_LIST` now keeps the PHP-shaped object
+  backing deprecation but stores the source wrapper's current backing storage in
+  the new object, so cloning no longer retains the source wrapper object as the
+  private storage value.
+- Focused Rust check passed:
+  `cargo test -p phpc array_object_construct_from_std_prop_list_array_object_uses_inner_storage --test object_model -- --nocapture`.
+  `cargo build -p phpc` passed before the selected PHPT proof.
+- Selected PHPT command/artifacts are under
+  `/home/claude/supervised-php-compiler/state/artifacts/batch024-bcs2-45-spl-arrayobject-clone-20260602T000426+0200/`;
+  `selected-phpt.log` records the 1/1 PASS result and
+  `cli-arrayobject-clone.*` records the `phpc run` exercise path.
+- Still unsupported: exact object-id reuse for constructor/var_dump-only rows,
+  dynamic-property rows requiring broader `#[AllowDynamicProperties]` support,
+  general SPL wrapper iterators, by-reference SPL iterator execution,
+  serialization parity, full object-handler COW/reference identity, and native
+  lowering.

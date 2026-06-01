@@ -2584,7 +2584,10 @@
   `ArrayIterator::seek()` throws a catchable `OutOfBoundsException`. When one
   `ArrayObject` or `ArrayIterator` is constructed with another one as its
   backing storage, reads and writes recurse through the inner object's storage
-  so copy-constructor-style offset mutation updates the shared backing object.
+  so copy-constructor-style offset mutation updates the shared backing object;
+  when the source wrapper has `STD_PROP_LIST`, construction uses that wrapper's
+  current backing storage for the new object instead of storing the wrapper
+  object itself.
   Object-backed storage exposes public properties and keyed `offsetSet()`
   writes; appending to object-backed `ArrayIterator` or `ArrayObject` storage
   throws the PHP-shaped `Error` directing callers to `offsetSet()`. General SPL

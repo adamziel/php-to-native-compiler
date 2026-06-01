@@ -11930,9 +11930,31 @@ impl Interpreter {
             ));
         }
 
+        let inherited_flags = args
+            .first()
+            .and_then(|value| self.array_object_inherited_flags(value));
+        let inherited_iterator_class = args
+            .first()
+            .and_then(|value| self.array_object_inherited_iterator_class(value));
+
+        let object_arg = matches!(args.first(), Some(Value::Object(_)));
         let storage = match args.first() {
             Some(Value::Array(array)) => Value::Array(array.clone()),
-            Some(Value::Object(object)) => Value::Object(object.clone()),
+            Some(Value::Object(object)) => {
+                if self.is_array_object_storage_object(object) {
+                    if let Some(state) = self.array_objects.get(&object.id()) {
+                        if state.flags & ARRAY_OBJECT_STD_PROP_LIST == ARRAY_OBJECT_STD_PROP_LIST {
+                            state.storage.clone()
+                        } else {
+                            Value::Object(object.clone())
+                        }
+                    } else {
+                        Value::Object(object.clone())
+                    }
+                } else {
+                    Value::Object(object.clone())
+                }
+            }
             Some(other) => {
                 return Err(runtime_error(
                     span,
@@ -11962,7 +11984,7 @@ impl Interpreter {
                     ),
                 ));
             }
-            None => self.array_object_inherited_flags(&storage).unwrap_or(0),
+            None => inherited_flags.unwrap_or(0),
         };
 
         let iterator_class = match args.get(2) {
@@ -11985,12 +12007,10 @@ impl Interpreter {
                     ),
                 ));
             }
-            None => self
-                .array_object_inherited_iterator_class(&storage)
-                .unwrap_or_else(|| "ArrayIterator".to_string()),
+            None => inherited_iterator_class.unwrap_or_else(|| "ArrayIterator".to_string()),
         };
 
-        if matches!(storage, Value::Object(_)) {
+        if object_arg {
             self.emit_display_diagnostic(
                 "Deprecated",
                 PHP_E_DEPRECATED,

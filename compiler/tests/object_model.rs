@@ -15205,6 +15205,25 @@ try {
 }
 
 #[test]
+fn array_object_construct_from_std_prop_list_array_object_uses_inner_storage() {
+    let source = r#"<?php
+$a = new ArrayObject(array(1, 2, 3), ArrayObject::STD_PROP_LIST);
+$b = new ArrayObject($a);
+$c = clone $b;
+var_dump($c);
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert!(execution.stdout.contains(
+        "Deprecated: ArrayObject::__construct(): Using an object as a backing array for ArrayObject is deprecated"
+    ));
+    assert_eq!(execution.stdout.matches("object(ArrayObject)#").count(), 1);
+    assert!(execution.stdout.contains(
+        "[\"storage\":\"ArrayObject\":private]=>\n  array(3) {\n    [0]=>\n    int(1)\n"
+    ));
+}
+
+#[test]
 fn spl_doubly_linked_list_iteration_offsets_and_exceptions() {
     let source = r#"<?php
 $list = new SplDoublyLinkedList();
