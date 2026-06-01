@@ -210,6 +210,53 @@ var_dump(timezone_name_from_abbr("", -14400, 0));
 }
 
 #[test]
+fn timezone_location_and_iso_p_format_cover_bounded_rows() {
+    let execution = run_source(
+        r#"<?php
+date_default_timezone_set("UTC");
+$oslo = timezone_location_get(new DateTimeZone("Europe/Oslo"));
+echo $oslo["country_code"], "|", $oslo["latitude"], "|", $oslo["longitude"], "|", strlen($oslo["comments"]), "\n";
+$ny = (new DateTimeZone("America/New_York"))->getLocation();
+echo $ny["country_code"], "|", $ny["comments"], "\n";
+$abbr = DateTimeZone::listAbbreviations();
+foreach (["adt", "aest", "amt"] as $key) {
+    echo $key, ":", $abbr[$key][0]["timezone_id"], "|";
+}
+echo "\n";
+foreach (["UTC", "Europe/London", "Europe/Berlin", "America/Chicago"] as $zone) {
+    date_default_timezone_set($zone);
+    echo $zone, "=", date_format(date_create("2020-03-10 22:30:41"), "p"), "\n";
+}
+echo "Zulu=", date_format(date_create("2020-03-10 22:30:41Z"), "p"), "\n";
+class DateTimeZoneExtForParent extends DateTimeZone {
+    public function __toString() {
+        return parent::getName();
+    }
+}
+echo new DateTimeZoneExtForParent("America/Los_Angeles"), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "NO|59.91666|10.75|0\n",
+            "US|Eastern (most areas)\n",
+            "adt:America/Halifax|aest:Australia/Brisbane|amt:Asia/Yerevan|\n",
+            "UTC=Z\n",
+            "Europe/London=+00:00\n",
+            "Europe/Berlin=+01:00\n",
+            "America/Chicago=-05:00\n",
+            "Zulu=Z\n",
+            "America/Los_Angeles\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn gettimeofday_uses_default_timezone_offset() {
     let execution = run_source(
         r#"<?php

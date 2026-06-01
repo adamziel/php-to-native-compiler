@@ -1,5 +1,28 @@
 # Progress Log
 
+## 2026-06-01
+
+Implemented:
+
+- Added a bounded DateTimeZone location/ISO-offset slice for selected ext/date
+  PHPT rows. `timezone_location_get()` and `DateTimeZone::getLocation()` now
+  expose deterministic location arrays for the focused `Europe/Oslo`,
+  `America/New_York`, `America/Halifax`, `Australia/Brisbane`, and
+  `Asia/Yerevan` metadata rows, while returning `false` outside that table.
+  `DateTimeZone::listAbbreviations()` includes the small ADT/AEST/AMT rows
+  needed to exercise those locations without claiming a complete abbreviation
+  database. Date formatting now supports the ISO `p` timezone token for the
+  current named/fixed offset subset, including `Z` for supported UTC/Zulu
+  inputs, and DateTimeZone subclasses can dispatch core DateTimeZone methods
+  through `parent::` when a current `$this` object is available. Focused proof
+  covers Rust date builtin tests and selected PHPT rows
+  `date_format_timezone.phpt`, `timezone_location_get.phpt`,
+  `DateTimeZone_getLocation.phpt`, and `DateTimeZone_extends_basic1.phpt`.
+  Complete timezone/location/abbreviation catalogs, precise historical
+  transition data, broad `Z`/timezone parsing, full DateTimeZone subclass
+  native-method parity, exact diagnostics, and native lowering remain
+  unsupported.
+
 ## 2026-05-27
 
 Implemented:

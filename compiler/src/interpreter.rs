@@ -17385,6 +17385,11 @@ impl Interpreter {
                     &name, start, end,
                 )))
             }
+            "getlocation" => {
+                expect_expr_arity("DateTimeZone::getLocation", args.len(), 0, span)?;
+                let name = Self::datetimezone_name(&object, "DateTimeZone::getLocation()", span)?;
+                Ok(bounded_timezone_location_value(&name))
+            }
             _ => Err(runtime_error(
                 span,
                 RuntimeError::undefined_function(format!("DateTimeZone::{method_name}()")),
@@ -17914,6 +17919,13 @@ impl Interpreter {
         Ok(Value::Array(bounded_timezone_transitions_array(
             &name, start, end,
         )))
+    }
+
+    fn call_timezone_location_get(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("timezone_location_get", args, 1, span)?;
+        let object = self.datetimezone_argument("timezone_location_get()", args, 0, span)?;
+        let name = Self::datetimezone_name(&object, "timezone_location_get()", span)?;
+        Ok(bounded_timezone_location_value(&name))
     }
 
     fn execute_foreach_iterator_by_value(
@@ -52577,6 +52589,29 @@ impl Interpreter {
             .classes
             .get(parent_class_id)
             .expect("parent class id should resolve to class metadata");
+
+        if self.resolved_method_is_core_datetimezone(parent_class_id) {
+            let this_object = match caller_scope.read_named("this") {
+                Some(Value::Object(object)) => object.clone(),
+                _ => {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{}::{method_name}()", parent_class.name()),
+                            "non-static DateTimeZone method dispatch through parent:: requires current $this object context",
+                        ),
+                    ));
+                }
+            };
+            return self.call_datetimezone_method(
+                this_object,
+                method_name,
+                args,
+                span,
+                caller_scope,
+            );
+        }
+
         let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
             self.resolve_instance_method(parent_class_id, method_name)
         else {
@@ -84313,6 +84348,7 @@ impl Interpreter {
             "timezone_name_get" => self.call_timezone_name_get(&args, span),
             "timezone_offset_get" => self.call_timezone_offset_get(&args, span),
             "timezone_transitions_get" => self.call_timezone_transitions_get(&args, span),
+            "timezone_location_get" => self.call_timezone_location_get(&args, span),
             "timezone_abbreviations_list" => {
                 expect_arity("timezone_abbreviations_list", &args, 0, span)?;
                 Ok(Value::Array(bounded_timezone_abbreviations_array()))
@@ -104288,6 +104324,7 @@ fn is_builtin(name: &str) -> bool {
             | "timezone_name_get"
             | "timezone_offset_get"
             | "timezone_transitions_get"
+            | "timezone_location_get"
             | "timezone_abbreviations_list"
             | "setlocale"
             | "getenv"
@@ -134307,6 +134344,7 @@ impl BoundedTimezone {
                     7_200
                 }
             }
+            "Asia/Yerevan" => 14_400,
             "Asia/Hong_Kong" => 28_800,
             "Australia/Brisbane" => 36_000,
             "Pacific/Samoa" => -39_600,
@@ -134337,6 +134375,7 @@ impl BoundedTimezone {
             "Europe/Moscow" => 10_800,
             "Europe/Amsterdam" | "Europe/Rome" => 3_600,
             "Europe/Kyiv" => 7_200,
+            "Asia/Yerevan" => 14_400,
             "Asia/Jerusalem" => 7_200,
             "Asia/Calcutta" | "Asia/Kolkata" => 19_800,
             "Asia/Hong_Kong" => 28_800,
@@ -134453,6 +134492,7 @@ impl BoundedTimezone {
                     "EET"
                 }
             }
+            "Asia/Yerevan" => "AMT",
             "Asia/Hong_Kong" => "HKT",
             "Australia/Brisbane" => "AEST",
             "Pacific/Samoa" => "SST",
@@ -134487,6 +134527,7 @@ fn bounded_timezone_from_name(name: &str) -> Option<BoundedTimezone> {
         "Asia/Jerusalem" => "Asia/Jerusalem",
         "Asia/Calcutta" => "Asia/Calcutta",
         "Asia/Kolkata" => "Asia/Kolkata",
+        "Asia/Yerevan" => "Asia/Yerevan",
         "Asia/Hong_Kong" => "Asia/Hong_Kong",
         "Australia/Brisbane" => "Australia/Brisbane",
         "Pacific/Samoa" => "Pacific/Samoa",
@@ -134658,6 +134699,7 @@ const BOUNDED_TIMEZONE_IDENTIFIERS: &[(&str, i64, bool)] = &[
     ("Asia/Hong_Kong", PHP_DATETIMEZONE_ASIA, false),
     ("Asia/Jerusalem", PHP_DATETIMEZONE_ASIA, false),
     ("Asia/Kolkata", PHP_DATETIMEZONE_ASIA, false),
+    ("Asia/Yerevan", PHP_DATETIMEZONE_ASIA, false),
     ("Australia/Brisbane", PHP_DATETIMEZONE_AUSTRALIA, false),
     ("Etc/GMT", PHP_DATETIMEZONE_UTC, false),
     ("Etc/UTC", PHP_DATETIMEZONE_UTC, false),
@@ -134716,6 +134758,12 @@ fn bounded_datetime_timezone_hint(
         if let Some(zone) = bounded_timezone_from_name(token) {
             return zone;
         }
+    }
+    if trimmed.len() > 1 && trimmed.ends_with('Z') {
+        return BoundedTimezone {
+            name: "Z".to_string(),
+            fixed_offset: Some(0),
+        };
     }
     for suffix_len in [6_usize, 5] {
         if trimmed.len() > suffix_len {
@@ -134817,9 +134865,34 @@ fn bounded_timezone_transitions_array(name: &str, start: i64, end: i64) -> PhpAr
     array
 }
 
+fn bounded_timezone_location_value(name: &str) -> Value {
+    let Some((country_code, latitude, longitude, comments)) = (match name {
+        "America/Halifax" => Some(("CA", 44.647, -63.573, "Atlantic - NS (most areas)")),
+        "America/New_York" | "US/Eastern" => {
+            Some(("US", 40.71416, -74.00638, "Eastern (most areas)"))
+        }
+        "Asia/Yerevan" => Some(("AM", 40.18111, 44.51361, "Armenia")),
+        "Australia/Brisbane" => Some(("AU", -27.46794, 153.02809, "Queensland (most areas)")),
+        "Europe/Oslo" => Some(("NO", 59.91666, 10.75, "")),
+        _ => None,
+    }) else {
+        return Value::Bool(false);
+    };
+
+    let mut location = PhpArray::new();
+    location.insert("country_code", Value::String(country_code.to_string()));
+    location.insert("latitude", Value::Float(latitude));
+    location.insert("longitude", Value::Float(longitude));
+    location.insert("comments", Value::String(comments.to_string()));
+    Value::Array(location)
+}
+
 fn bounded_timezone_abbreviations_array() -> PhpArray {
     let mut array = PhpArray::new();
     for (abbr, offset, dst, zone_id) in [
+        ("adt", -10_800, true, "America/Halifax"),
+        ("aest", 36_000, false, "Australia/Brisbane"),
+        ("amt", 14_400, false, "Asia/Yerevan"),
         ("gmt", 0, false, "GMT"),
         ("utc", 0, false, "UTC"),
         ("bst", 3_600, true, "Europe/London"),
@@ -135263,6 +135336,9 @@ fn split_bounded_datetime_timezone(input: &str) -> (&str, Option<i64>) {
             return (body, Some(offset));
         }
     }
+    if input.len() > 1 && input.ends_with('Z') {
+        return (&input[..input.len() - 1], Some(0));
+    }
     if input.len() > 6 {
         let suffix = &input[input.len() - 6..];
         if matches!(suffix.as_bytes().first(), Some(b'+') | Some(b'-')) && &suffix[3..4] == ":" {
@@ -135294,7 +135370,7 @@ fn split_bounded_datetime_timezone(input: &str) -> (&str, Option<i64>) {
 
 fn parse_timezone_offset_token(token: &str) -> Option<i64> {
     match token.to_ascii_uppercase().as_str() {
-        "UTC" | "GMT" => return Some(0),
+        "UTC" | "GMT" | "Z" => return Some(0),
         "CEST" => return Some(7_200),
         "CET" => return Some(3_600),
         "EDT" => return Some(-14_400),
@@ -135801,6 +135877,18 @@ fn format_bounded_date_token(
         }
         'O' => format_timezone_offset(parts.offset, false),
         'P' => format_timezone_offset(parts.offset, true),
+        'p' => {
+            if parts.offset == 0
+                && matches!(
+                    timezone.name.as_str(),
+                    "UTC" | "Etc/UTC" | "Etc/Universal" | "Etc/Zulu" | "Zulu" | "Z"
+                )
+            {
+                "Z".to_string()
+            } else {
+                format_timezone_offset(parts.offset, true)
+            }
+        }
         'T' => timezone.abbreviation(parts),
         'Z' => parts.offset.to_string(),
         'c' => format!(
