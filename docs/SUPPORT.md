@@ -3133,6 +3133,11 @@
   is available, with `USER`/`LOGNAME` environment fallback. String-valued
   dynamic calls, `function_exists()`, `is_callable()`, and
   `ReflectionFunction` metadata recognize the builtin.
+- `getlastmod()`, `getmyinode()`, `getmyuid()`, and `getmygid()` with no
+  arguments, returning bounded integer metadata for the current main source
+  file or `false` when no inspectable main source file is available.
+  String-valued dynamic calls, `function_exists()`, `is_callable()`, and
+  `ReflectionFunction` metadata recognize the builtins.
 - `getmypid()` with no arguments, returning the current `phpc run` process id
   as an integer. String-valued dynamic calls, `function_exists()`,
   `is_callable()`, and `ReflectionFunction` metadata recognize the builtin.
@@ -9191,6 +9196,12 @@
   until native source-file metadata, account lookup policy, process/request
   identity, references/copy-on-write, and exact native diagnostics exist,
   while native function-table introspection recognizes the name.
+  `getlastmod`, `getmyinode`, `getmyuid`, and `getmygid` accept the same
+  current no-argument local main-source metadata subset as the builtin section
+  above; direct native calls still reject under the function-call boundary
+  until native source-file stat metadata, SAPI source identity, platform UID/GID
+  policy, references/copy-on-write, and exact native diagnostics exist, while
+  native function-table introspection recognizes the names.
   `umask` accepts the same request-local metadata subset as the builtin
   section above; direct native `umask(...)` calls still reject under the
   function-call boundary until native filesystem creation state, process-mask
@@ -11955,6 +11966,14 @@ Unsupported code should fail with an explicit parse, runtime, or codegen error.
   for missing paths, and reject null-byte directory names. Stream-wrapper
   metadata paths and platform-specific ACL/owner name resolution remain
   unsupported.
+- Script-file metadata helpers in `phpc run`: `getlastmod()`, `getmyinode()`,
+  `getmyuid()`, and `getmygid()` read the main source file's local filesystem
+  metadata and return PHP-shaped integers, matching the selected
+  `statpage.phpt` surface alongside the existing `getmypid()` support. When
+  there is no main source file or the source file cannot be inspected, the
+  helpers return `false`. Virtual sources, include-caller metadata, SAPI
+  differences, Windows UID/GID parity, non-UTF-8 source paths, exact warning
+  behavior for missing main files, and native lowering remain unsupported.
 - Additional local filesystem link helpers in `phpc run`: `readlink()` returns
   UTF-8 local symlink targets and reports invalid local paths as inline PHP
   warnings plus `false`; `symlink()` creates bounded local symbolic links,
