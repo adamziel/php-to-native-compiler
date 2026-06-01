@@ -162,3 +162,89 @@ var_dump(json_last_error(), json_last_error_msg());\n",
     );
     assert_eq!(execution.exit_code, 0);
 }
+
+#[test]
+fn json_decode_error_locations_and_invalid_utf8_options() {
+    let execution = run_source(
+        "<?php\n\
+var_dump(json_decode('[[1]]', false, 2));\n\
+var_dump(json_last_error(), json_last_error_msg());\n\
+var_dump(json_decode('[1}'));\n\
+var_dump(json_last_error(), json_last_error_msg());\n\
+var_dump(json_decode('[\"' . chr(0) . 'abcd\"]'));\n\
+var_dump(json_last_error(), json_last_error_msg());\n\
+var_dump(json_decode('[1'));\n\
+var_dump(json_last_error(), json_last_error_msg());\n\
+var_dump(json_decode(\"\\\"a\\xb0b\\\"\"));\n\
+var_dump(json_decode(\"\\\"a\\xb0b\\\"\", true, 512, JSON_INVALID_UTF8_IGNORE));\n\
+var_dump(bin2hex(json_decode(\"\\\"a\\xb0b\\\"\", true, 512, JSON_INVALID_UTF8_SUBSTITUTE)));\n\
+var_dump(bin2hex(json_decode(\"\\\"\\x61\\xf0\\x80\\x80\\x41\\\"\", true, 512, JSON_INVALID_UTF8_SUBSTITUTE)));\n",
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "NULL\n",
+            "int(1)\n",
+            "string(46) \"Maximum stack depth exceeded near location 1:2\"\n",
+            "NULL\n",
+            "int(2)\n",
+            "string(60) \"State mismatch (invalid or malformed JSON) near location 1:3\"\n",
+            "NULL\n",
+            "int(3)\n",
+            "string(71) \"Control character error, possibly incorrectly encoded near location 1:2\"\n",
+            "NULL\n",
+            "int(4)\n",
+            "string(30) \"Syntax error near location 1:3\"\n",
+            "NULL\n",
+            "string(2) \"ab\"\n",
+            "string(10) \"61efbfbd62\"\n",
+            "string(22) \"61efbfbdefbfbdefbfbd41\"\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn json_encode_invalid_utf8_line_terminator_and_partial_numbers() {
+    let execution = run_source(
+        "<?php\n\
+var_dump(json_encode(\"a\\xb0b\"));\n\
+var_dump(json_encode(\"a\\xb0b\", JSON_INVALID_UTF8_IGNORE));\n\
+var_dump(json_encode(\"a\\xb0b\", JSON_INVALID_UTF8_SUBSTITUTE));\n\
+var_dump(bin2hex(json_encode(\"a\\xb0b\", JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE)));\n\
+var_dump(json_encode(\"\\x61\\xf0\\x80\\x80\\x41\", JSON_INVALID_UTF8_IGNORE));\n\
+var_dump(json_encode(\"\\x61\\xf0\\x80\\x80\\x41\", JSON_INVALID_UTF8_SUBSTITUTE));\n\
+var_dump(json_encode(\"a\\xE2\\x80\\xA8b\", JSON_UNESCAPED_UNICODE));\n\
+var_dump(json_encode(\"a\\xE2\\x80\\xA8b\", JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_LINE_TERMINATORS));\n\
+var_dump(json_encode(INF, JSON_PARTIAL_OUTPUT_ON_ERROR));\n\
+var_dump(json_last_error(), json_last_error_msg());\n\
+var_dump(json_encode(NAN, JSON_PARTIAL_OUTPUT_ON_ERROR));\n\
+var_dump(json_last_error(), json_last_error_msg());\n\
+var_dump(json_encode(array(\"\\x80\" => 1), JSON_PARTIAL_OUTPUT_ON_ERROR));\n",
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "bool(false)\n",
+            "string(4) \"\"ab\"\"\n",
+            "string(10) \"\"a\\ufffdb\"\"\n",
+            "string(14) \"2261efbfbd6222\"\n",
+            "string(4) \"\"aA\"\"\n",
+            "string(10) \"\"a\\ufffdA\"\"\n",
+            "string(10) \"\"a\\u2028b\"\"\n",
+            "string(7) \"\"a\u{2028}b\"\"\n",
+            "string(1) \"0\"\n",
+            "int(7)\n",
+            "string(34) \"Inf and NaN cannot be JSON encoded\"\n",
+            "string(1) \"0\"\n",
+            "int(7)\n",
+            "string(34) \"Inf and NaN cannot be JSON encoded\"\n",
+            "string(6) \"{\"\":1}\"\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}

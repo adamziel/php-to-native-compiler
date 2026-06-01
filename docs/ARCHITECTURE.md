@@ -3208,6 +3208,19 @@ Direct `extension_loaded($name)` calls with already-lowerable string names fold
 against the current deterministic bounded compatibility registry: `json` and
 `hash` fold to true, while other names fold to false. Native code does not
 query host PHP modules, `php.ini`, SAPI state, or dynamic extension loading.
+The interpreter's bounded JSON builtin island is a PHP-shaped runtime helper
+rather than native lowering: `json_encode()` and `json_decode()` operate over
+boxed scalar, array, and public-property object values, maintain request-local
+`json_last_error()`/`json_last_error_msg()` state, and reject or sanitize
+invalid byte strings through the selected JSON flags before handing decoded
+strings to the small JSON parser/formatter. The current formatter has explicit
+branches for JSON hex/unicode escaping, U+2028/U+2029 line terminator handling,
+non-finite-number partial output, and invalid-UTF-8 ignore/substitute rows.
+The parser records bounded diagnostic locations for depth, state-mismatch,
+control-character, syntax, and unpaired UTF-16 errors, but it is not a full
+extension clone: broad `JsonSerializable` exception/unwinding behavior,
+complete JSON option validation, Unicode normalization, and native lowering
+remain outside this island.
 `file_exists()` is currently an interpreter-only local filesystem metadata
 builtin for the WordPress bootstrap drop-in check. It accepts one string local
 path, rejects stream-wrapper paths, and returns a boolean for host filesystem

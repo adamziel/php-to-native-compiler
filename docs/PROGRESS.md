@@ -1,5 +1,21 @@
 # Progress Log
 
+## 2026-06-01
+
+Implemented:
+
+- Added a bounded ext/json interpreter slice for selected PHPT rows covering
+  `json_last_error()`/`json_last_error_msg()` location state, non-finite
+  `json_encode()` partial-output zeros, `JSON_UNESCAPED_LINE_TERMINATORS`
+  interaction for U+2028/U+2029, and `JSON_INVALID_UTF8_IGNORE`/
+  `JSON_INVALID_UTF8_SUBSTITUTE` handling for encode/decode byte strings.
+  Focused proof covers `ext/json/tests/007.phpt`, `inf_nan_error.phpt`,
+  `json_encode_u2028_u2029.phpt`, `json_encode_invalid_utf8.phpt`, and
+  `json_decode_invalid_utf8.phpt`, plus Rust JSON builtin tests. Broader
+  `JsonSerializable` exception parity, full JSON option validation, complete
+  Unicode normalization/diagnostic-location parity, remaining ext/json
+  functions, and native lowering remain unsupported.
+
 ## 2026-05-27
 
 Implemented:
