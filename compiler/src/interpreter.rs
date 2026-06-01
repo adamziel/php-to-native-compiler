@@ -130944,6 +130944,15 @@ enum MathIntOrFloat {
     Float(f64),
 }
 
+impl MathIntOrFloat {
+    fn as_float(self) -> f64 {
+        match self {
+            Self::Int(value) => value as f64,
+            Self::Float(value) => value,
+        }
+    }
+}
+
 fn php_math_int_or_float_argument(
     interpreter: &mut Interpreter,
     function: &'static str,
@@ -130984,18 +130993,12 @@ fn php_math_int_or_float_argument(
 }
 
 fn math_numeric_string_value(value: &str) -> Option<MathIntOrFloat> {
-    let value = value.trim_matches(is_php_numeric_whitespace);
-    if value.is_empty() {
-        return None;
+    match classify_php_numeric_string(value) {
+        PhpNumericStringClassification::Integer(value) => Some(MathIntOrFloat::Int(value)),
+        PhpNumericStringClassification::Float(value) => Some(MathIntOrFloat::Float(value)),
+        PhpNumericStringClassification::LeadingNumeric
+        | PhpNumericStringClassification::NonNumeric => None,
     }
-
-    if !value.contains(['.', 'e', 'E']) {
-        if let Ok(value) = value.parse::<i64>() {
-            return Some(MathIntOrFloat::Int(value));
-        }
-    }
-
-    value.parse::<f64>().ok().map(MathIntOrFloat::Float)
 }
 
 impl Interpreter {
@@ -131201,12 +131204,15 @@ impl Interpreter {
             Value::Bool(value) => Ok(f64::from(u8::from(*value))),
             Value::Int(value) => Ok(*value as f64),
             Value::Float(value) => Ok(*value),
-            Value::String(value) => parse_sprintf_numeric_string(value).ok_or_else(|| {
-                php_math_argument_type_error(function, parameter_type, "string", span)
-            }),
+            Value::String(value) => math_numeric_string_value(value)
+                .map(MathIntOrFloat::as_float)
+                .ok_or_else(|| {
+                    php_math_argument_type_error(function, parameter_type, "string", span)
+                }),
             Value::BinaryString(value) => std::str::from_utf8(value)
                 .ok()
-                .and_then(parse_sprintf_numeric_string)
+                .and_then(math_numeric_string_value)
+                .map(MathIntOrFloat::as_float)
                 .ok_or_else(|| {
                     php_math_argument_type_error(function, parameter_type, "string", span)
                 }),

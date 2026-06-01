@@ -5873,11 +5873,26 @@
   `call_user_func()`/`call_user_func_array()` output parameters, exact warning
   text, SAPI differences, shutdown-time buffer flushing visibility, and native
   lowering remain unsupported.
-  `abs($value)` accepts current integer and finite-float runtime values,
-  returning an integer for integer input and a float for finite-float input.
-  Integer-minimum overflow, numeric string coercion, bool/null coercion,
-  array/object/resource operands, NaN/infinity behavior, exact diagnostics, and
-  native lowering remain unsupported.
+  `abs($value)` accepts current integer, float (including `INF`/`NAN`),
+  boolean, `null`, and full PHP numeric-string values, returning an integer for
+  integer-shaped inputs and a float for float-shaped inputs or integer-minimum
+  overflow. Passing `null` emits the current bounded deprecation before
+  returning `0`. Numeric strings share the PHP numeric-string classifier used
+  by `is_numeric()`: exponent overflow such as `"1e9999"` is accepted as
+  `INF`, while leading-numeric junk (`"123abc"`), empty strings, and symbolic
+  non-finite strings (`"INF"`/`"NAN"`) are rejected with a catchable
+  `TypeError`. Arrays, objects, closures, resources, exact diagnostic text for
+  every coercion edge, and native lowering remain unsupported.
+  Selected interpreter-only standard math helpers with float-shaped operands
+  (`ceil`, `floor`, `sqrt`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`,
+  `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`, `exp`, `expm1`, `log`,
+  `log1p`, `log10`, `atan2`, `fmod`, `fdiv`, `fpow`, `hypot`, `is_finite`,
+  `is_infinite`, `is_nan`, `deg2rad`, `rad2deg`, `pow`, and the primary
+  numeric parameter of `round`) use the same full numeric-string boundary for
+  their numeric scalar parameters where PHP accepts strings. The current subset
+  keeps broad platform-dependent libm parity, exact warnings for every invalid
+  argument label, resources, object numeric casts, integer-helper coercion
+  parity, `clamp()` comparison corner cases, and native lowering out of scope.
   `number_format($num, $decimals = 0, $decimal_separator = ".", $thousands_separator = ",")`
   accepts current finite numeric scalar values, full typed numeric strings,
   optional integer decimals including negative decimal positions, and
@@ -11810,10 +11825,11 @@
   process mask discovery beyond the bounded initial `0022` value, creation
   paths outside `fopen()`, `file_put_contents()`, `touch()`, and `mkdir()`,
   exact diagnostics, and native lowering beyond function-table introspection
-- `abs()` behavior beyond the current integer and finite-float subset:
-  integer-minimum overflow, numeric string coercion, bool/null coercion,
-  array/object/resource operands, NaN/infinity behavior, exact diagnostics, and
-  native lowering beyond function-table introspection
+- `abs()` and selected standard math helper behavior beyond the current scalar
+  numeric subset: leading-numeric or non-numeric strings, symbolic string
+  `"INF"`/`"NAN"`, object/resource numeric casts, exact diagnostic text for
+  every parameter label and coercion edge, broad platform-dependent libm parity,
+  and native lowering beyond function-table introspection
 - `number_format()` behavior beyond the current finite scalar formatting
   subset: non-finite values, precision beyond the bounded formatter,
   locale-aware grouping, exact PHP diagnostics for every coercion, resource

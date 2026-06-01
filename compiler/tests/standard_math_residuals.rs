@@ -26,6 +26,36 @@ var_dump(intdiv(-3, 2));
 }
 
 #[test]
+fn standard_math_numeric_strings_use_php_numeric_grammar() {
+    let execution = run_source(
+        r#"<?php
+var_dump(is_finite("1e9999"));
+var_dump(sqrt("1e9999"));
+echo ceil(" 039 "), "|", floor("-2.7"), "|", abs("-4.5"), "\n";
+$invalids = ["123abc", "INF", "NAN"];
+foreach ($invalids as $index => $value) {
+    try {
+        is_finite($value);
+    } catch (TypeError $e) {
+        echo $value, ":", $e->getMessage();
+        if ($index + 1 < count($invalids)) {
+            echo "\n";
+        }
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "bool(false)\nfloat(INF)\n39|-3|4.5\n123abc:is_finite(): Argument #1 ($num) must be of type float, string given\nINF:is_finite(): Argument #1 ($num) must be of type float, string given\nNAN:is_finite(): Argument #1 ($num) must be of type float, string given"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn pow_function_covers_large_exponents_numeric_strings_and_operand_errors() {
     let execution = run_source(
         r#"<?php
