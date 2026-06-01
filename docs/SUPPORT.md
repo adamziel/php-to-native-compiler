@@ -2748,11 +2748,15 @@
   `false` for the covered malformed host/port cases. `PHP_URL_*` constants are
   visible through bare reads, `defined()`, `constant()`, and
   `get_defined_constants()` alongside the existing supported builtin constants.
+  `urlencode()` and `urldecode()` support the bounded RFC1738/form
+  byte-oriented percent-encoding slice used by query strings (`+` for spaces,
+  valid `%HH` sequences decoded, malformed escapes preserved), while
   `rawurlencode()` and `rawurldecode()` support RFC3986 byte-oriented percent
   encoding and decoding for the current string subset. Exact RFC/WHATWG
   validation, broader IPv6 and platform-specific file URL edge cases, binary
-  byte fidelity outside UTF-8 strings, URL normalization, IDNA, percent-decoding
-  of parsed URL components, and native lowering remain unsupported.
+  source literal fidelity outside UTF-8 strings, URL normalization, IDNA,
+  percent-decoding of parsed URL components, and native lowering remain
+  unsupported.
 - `Uri\Rfc3986\Uri` supports bounded construction/parsing, raw string output,
   equivalence, host-type lookup, and URI-type lookup for the current ASCII
   subset. `Uri\WhatWg\Url` supports a bounded WHATWG URL subset for direct
@@ -2764,9 +2768,11 @@
   IDNA, full percent-encoding rules, mutation setters, complete validation
   error arrays, non-ASCII host processing, and native lowering remain
   unsupported.
-- `http_build_query()` supports ordered arrays and initialized public object
-  properties, including recursive nested arrays/objects, top-level numeric
-  prefixes, explicit argument separators, null/resource elision,
+- `http_build_query()` supports ordered arrays, initialized public object
+  properties, and initialized private/protected properties visible from the
+  current class context when called inside methods, including recursive nested
+  arrays/objects, top-level numeric prefixes, explicit argument separators,
+  null/resource elision,
   reference-backed array values, direct named arguments for the documented
   parameters, self-recursive public object branches skipped as empty output,
   and `PHP_QUERY_RFC1738` or `PHP_QUERY_RFC3986` component encoding. Closure
@@ -2774,6 +2780,14 @@
   strings, INI-derived argument separators beyond the current `&` fallback,
   cyclic array/reference structures, object custom serialization hooks, and
   native lowering beyond function-table introspection remain unsupported.
+- Direct, unbound `$http_response_header` reads in declared functions,
+  methods, and trait methods emit the PHP 8.5 deprecation text once per
+  function-like body before execution. The current detector intentionally
+  covers local declarations only and skips bodies where the variable is bound
+  by a parameter, assignment target, `static`, `global`, `foreach`, or catch
+  variable. Dynamic variable-variable fetches, exact op-array coverage for all
+  closure/include/eval forms, and `http_get_last_response_headers()` runtime
+  state remain unsupported.
 - `$_FILES` is seeded as a bounded root superglobal for `phpc run`. By default
   it is an empty ordered array. When `PHPC_FILES` is set, the runtime treats it
   as an explicit URL-encoded upload metadata seed with `$_FILES`-style keys
@@ -3241,7 +3255,7 @@
   `mb_strlen`, `mb_strpos`, `mb_stripos`, `mb_strrpos`, `mb_strripos`,
   `mb_strtolower`, `mb_strtoupper`, `similar_text`,
   `convert_uuencode`, `convert_uudecode`,
-  `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `str_ireplace`, `substr_replace`, `substr_compare`, `substr_count`, `str_getcsv`, `parse_str`, `http_build_query`,
+  `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `str_ireplace`, `substr_replace`, `substr_compare`, `substr_count`, `str_getcsv`, `parse_str`, `parse_url`, `urlencode`, `urldecode`, `rawurlencode`, `rawurldecode`, `http_build_query`,
   `highlight_string`, `highlight_file`, `php_strip_whitespace`, `error_reporting`, `set_time_limit`, `ignore_user_abort`, `printf`, `fprintf`, `sprintf`, `vsprintf`, `vprintf`, `vfprintf`, `call_user_func`, `call_user_func_array`,
   `implode`, `basename`, `dirname`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`,
   `file_put_contents`, `readfile`, `unlink`, `mkdir`, `rmdir`, `copy`, `rename`, `chdir`, `scandir`, `stat`, `lstat`, `fileperms`, `chmod`, `chown`, `chgrp`,
@@ -8572,11 +8586,11 @@
   output-buffer subset as the builtin section above; direct native calls reject
   under the output-buffer boundary, while native function-table introspection
   recognizes the names.
-  `http_build_query` accepts the same ordered array/public object query
-  encoding subset as the builtin section above; direct native
-  `http_build_query(...)` calls reject until native array/object traversal and
-  string assembly exist, while native function-table introspection recognizes
-  the name.
+  `http_build_query` accepts the same ordered array, public object, and
+  current-class visible object-property query encoding subset as the builtin
+  section above; direct native `http_build_query(...)` calls reject until
+  native array/object traversal and string assembly exist, while native
+  function-table introspection recognizes the name.
   `header` accepts the same current deterministic CLI header-log subset as the
   builtin section above; direct native `header(...)` calls reject under the
   header-state boundary, while native function-table introspection recognizes
@@ -11289,14 +11303,23 @@
   exact warning text, SAPI/web-server integration, network response emission,
   exact `ValueError`/`TypeError` diagnostics, partial-output behavior, and
   native lowering beyond function-table introspection
-- `http_build_query()` behavior beyond ordered array and initialized public
+- `http_build_query()` behavior beyond ordered array, initialized public
+  object-property data, and initialized current-class visible private/protected
   object-property data, recursive arrays/objects, scalar value conversion,
   null/resource elision, top-level numeric prefixes, explicit separators, and
   `PHP_QUERY_RFC1738`/`PHP_QUERY_RFC3986` encoding, plus documented named
   arguments and self-recursive public object branch elision: exact diagnostics,
   cyclic array/reference structures, binary key/value fidelity outside UTF-8
   strings, INI-derived argument separators beyond the current `&` fallback,
-  object custom hooks, and native lowering beyond function-table introspection
+  object custom hooks/get-hooks, and native lowering beyond function-table
+  introspection
+- `$http_response_header` deprecation behavior beyond direct unbound local
+  reads in declared functions/methods/trait methods, with bound-parameter,
+  direct-assignment, `static`, `global`, `foreach`, and catch-variable
+  suppressions: dynamic variable-variable fetches, exact op-array coverage for
+  all closure/include/eval forms, the `http_get_last_response_headers()`
+  replacement API, actual response-header storage populated by URL streams, and
+  native lowering beyond function-table introspection
 - `http_response_code()` behavior beyond no-argument reads and integer writes
   of request-local status state, including previous-value return behavior:
   real SAPI emission, exact valid-code ranges, reason phrases, web-server

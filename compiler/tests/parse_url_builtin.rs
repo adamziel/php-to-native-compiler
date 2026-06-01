@@ -45,10 +45,13 @@ echo parse_url("www.php.net:80/index.php?x=1#frag", PHP_URL_FRAGMENT), "\n";
 fn raw_url_encoding_matches_rfc3986_percent_boundaries() {
     let execution = run_source(
         r#"<?php
+echo urlencode("a b+c/%\0"), "\n";
+echo urldecode("a+b%2Bc%2F%25%00"), "\n";
+echo bin2hex(urldecode("search%e4")), "\n";
 echo rawurlencode("A1_-.~ +/%"), "\n";
 echo rawurldecode("%41%31%5F%2D%2E%7E%20%2B%2F%25"), "\n";
 echo bin2hex(rawurldecode("%00%FF%7E")), "\n";
-echo function_exists("rawurlencode") ? "fn" : "missing";
+echo function_exists("urldecode") ? "fn" : "missing";
 echo "|", is_callable("rawurldecode") ? "callable" : "missing";
 "#,
     )
@@ -56,7 +59,7 @@ echo "|", is_callable("rawurldecode") ? "callable" : "missing";
 
     assert_eq!(
         execution.stdout,
-        "A1_-.~%20%2B%2F%25\nA1_-.~ +/%\n00ff7e\nfn|callable"
+        "a+b%2Bc%2F%25%00\na b+c/%\0\n736561726368e4\nA1_-.~%20%2B%2F%25\nA1_-.~ +/%\n00ff7e\nfn|callable"
     );
     assert_eq!(execution.exit_code, 0);
 }

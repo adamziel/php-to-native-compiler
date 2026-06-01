@@ -4,6 +4,31 @@
 
 Implemented:
 
+- Added a second compact URL/HTTP PHPT slice covering class-context
+  `http_build_query()` object-property visibility, byte-oriented
+  `urlencode()`/`urldecode()` parity for the current string subset, and the
+  PHP 8.5 `$http_response_header` deprecation rows that do not perform network
+  access. `http_build_query($this)` now includes initialized private/protected
+  properties visible from the executing method while outside-object calls still
+  expose only public properties, and direct unbound `$http_response_header`
+  reads in declared functions/methods/trait methods emit the deprecation text
+  once per function-like body. Focused proof: `cargo fmt --check`, `cargo test
+  -p phpc --test header_builtin --test http_build_query_builtin --test
+  parse_url_builtin`, `cargo build -p phpc --bin phpc`, a `phpc run` CLI
+  exercise covering class-visible query properties, form URL encoding/decoding,
+  and the local deprecation, and focused PHPT `3 / 3` for
+  `ext/standard/tests/http/http_build_query/bug26817.phpt`,
+  `ext/standard/tests/http/http_response_header_deprecated_multiple_op_arrays.phpt`,
+  and
+  `ext/standard/tests/http/http_response_header_deprecated_nested_op_arrays.phpt`
+  with evidence under
+  `/home/claude/supervised-php-compiler/state/artifacts/bcs2-29-url-http-second-final-20260601T213133Z`.
+  Dynamic variable-variable `$http_response_header` fetches, exact op-array
+  coverage for all closure/include/eval forms, `http_get_last_response_headers()`
+  state, URL streams/network response storage, broader binary source literal
+  fidelity, object custom query hooks/get-hooks, exact diagnostics, and native
+  lowering remain unsupported.
+
 - Added a bounded `http_build_query()` query-formatting slice for direct named
   arguments and self-recursive public object branches. The interpreter now
   publishes internal parameter metadata for `data`, `numeric_prefix`,

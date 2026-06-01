@@ -11,6 +11,44 @@ fn runtime_error(source: &str) -> php_compiler::error::Diagnostic {
 }
 
 #[test]
+fn http_response_header_deprecation_warns_once_per_unbound_function_like_scope() {
+    let execution = run_source(
+        r#"<?php
+
+function foo() {
+    var_dump($http_response_header);
+}
+
+class C {
+    public function bar() {
+        echo $http_response_header;
+    }
+}
+
+function bound($http_response_header) {
+    echo $http_response_header;
+}
+
+function outer() {
+    $http_response_header = "outer";
+    function nested() {
+        echo $http_response_header;
+    }
+    echo $http_response_header;
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "Deprecated: The predefined locally scoped $http_response_header variable is deprecated, call http_get_last_response_headers() instead in Command line code on line 4\n\nDeprecated: The predefined locally scoped $http_response_header variable is deprecated, call http_get_last_response_headers() instead in Command line code on line 9\n\nDeprecated: The predefined locally scoped $http_response_header variable is deprecated, call http_get_last_response_headers() instead in Command line code on line 20\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn header_accepts_current_noop_signature() {
     let execution = run_source(
         r#"<?php

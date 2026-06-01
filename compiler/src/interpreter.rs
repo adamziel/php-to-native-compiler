@@ -1563,6 +1563,397 @@ fn collect_deprecated_dollar_brace_interpolation_spans(program: &Program) -> Vec
     spans
 }
 
+fn collect_http_response_header_deprecation_spans(program: &Program) -> Vec<Span> {
+    let mut spans = Vec::new();
+    collect_http_response_header_deprecation_stmt_declarations(&program.statements, &mut spans);
+    spans
+}
+
+fn collect_http_response_header_deprecation_stmt_declarations(
+    stmts: &[Stmt],
+    spans: &mut Vec<Span>,
+) {
+    for stmt in stmts {
+        match stmt {
+            Stmt::Function(function) => {
+                collect_http_response_header_deprecation_function(function, spans)
+            }
+            Stmt::Class(class_decl) => {
+                for member in &class_decl.members {
+                    if let ClassMember::Method(method) = member {
+                        collect_http_response_header_deprecation_function(&method.function, spans);
+                    }
+                }
+            }
+            Stmt::Trait(trait_decl) => {
+                for method in &trait_decl.methods {
+                    collect_http_response_header_deprecation_function(&method.function, spans);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn collect_http_response_header_deprecation_function(
+    function: &FunctionDecl,
+    spans: &mut Vec<Span>,
+) {
+    let local_is_bound = function
+        .params
+        .iter()
+        .any(|param| param.name == "http_response_header")
+        || http_response_header_is_bound_in_stmts(&function.body);
+
+    if !local_is_bound {
+        if let Some(span) = find_http_response_header_read_in_stmts(&function.body) {
+            spans.push(span);
+        }
+    }
+
+    collect_http_response_header_deprecation_stmt_declarations(&function.body, spans);
+}
+
+fn http_response_header_is_bound_in_stmts(stmts: &[Stmt]) -> bool {
+    stmts
+        .iter()
+        .any(http_response_header_is_bound_in_stmt_without_nested_declarations)
+}
+
+fn http_response_header_is_bound_in_stmt_without_nested_declarations(stmt: &Stmt) -> bool {
+    match stmt {
+        Stmt::Assign { target, .. }
+        | Stmt::ReferenceAssign { target, .. }
+        | Stmt::CompoundAssign { target, .. }
+        | Stmt::IncrementDecrement { target, .. }
+        | Stmt::NullCoalesceAssign { target, .. } => {
+            assign_target_binds_name(target, "http_response_header")
+        }
+        Stmt::Foreach {
+            key, value, body, ..
+        } => {
+            key.as_deref() == Some("http_response_header")
+                || foreach_value_target_binds_name(value, "http_response_header")
+                || http_response_header_is_bound_in_stmts(body)
+        }
+        Stmt::Global { names, .. } => names.iter().any(|name| name == "http_response_header"),
+        Stmt::StaticLocal { declarations, .. } => declarations
+            .iter()
+            .any(|declaration| declaration.name == "http_response_header"),
+        Stmt::If {
+            then_branch,
+            else_branch,
+            ..
+        } => {
+            http_response_header_is_bound_in_stmts(then_branch)
+                || http_response_header_is_bound_in_stmts(else_branch)
+        }
+        Stmt::While { body, .. } | Stmt::DoWhile { body, .. } => {
+            http_response_header_is_bound_in_stmts(body)
+        }
+        Stmt::For { body, .. } => http_response_header_is_bound_in_stmts(body),
+        Stmt::Switch { cases, .. } => cases
+            .iter()
+            .any(|case| http_response_header_is_bound_in_stmts(&case.body)),
+        Stmt::Try {
+            body,
+            catches,
+            finally_body,
+            ..
+        } => {
+            http_response_header_is_bound_in_stmts(body)
+                || catches.iter().any(|catch| {
+                    catch.variable.as_deref() == Some("http_response_header")
+                        || http_response_header_is_bound_in_stmts(&catch.body)
+                })
+                || finally_body
+                    .as_ref()
+                    .is_some_and(|body| http_response_header_is_bound_in_stmts(body))
+        }
+        Stmt::Function(_)
+        | Stmt::Class(_)
+        | Stmt::Interface(_)
+        | Stmt::Trait(_)
+        | Stmt::Enum(_) => false,
+        _ => false,
+    }
+}
+
+fn assign_target_binds_name(target: &AssignTarget, name: &str) -> bool {
+    match target {
+        AssignTarget::Variable {
+            name: target_name, ..
+        } => target_name == name,
+        AssignTarget::List { names, .. } => names
+            .iter()
+            .any(|target_name| target_name.as_deref() == Some(name)),
+        _ => false,
+    }
+}
+
+fn foreach_value_target_binds_name(target: &ForeachValueTarget, name: &str) -> bool {
+    match target {
+        ForeachValueTarget::Variable {
+            name: target_name, ..
+        } => target_name == name,
+        ForeachValueTarget::List { items, .. } => items.iter().any(|item| {
+            item.as_ref()
+                .is_some_and(|item| foreach_value_target_binds_name(item, name))
+        }),
+        ForeachValueTarget::Property { .. } | ForeachValueTarget::DynamicProperty { .. } => false,
+    }
+}
+
+fn find_http_response_header_read_in_stmts(stmts: &[Stmt]) -> Option<Span> {
+    stmts
+        .iter()
+        .find_map(find_http_response_header_read_in_stmt_without_nested_declarations)
+}
+
+fn find_http_response_header_read_in_stmt_without_nested_declarations(stmt: &Stmt) -> Option<Span> {
+    match stmt {
+        Stmt::Echo { exprs, .. } => find_http_response_header_read_in_exprs(exprs),
+        Stmt::Print { expr, .. }
+        | Stmt::Expr { expr, .. }
+        | Stmt::Throw { expr, .. }
+        | Stmt::Require { path: expr, .. }
+        | Stmt::Include { path: expr, .. } => find_http_response_header_read_in_expr(expr),
+        Stmt::Assign { expr, .. }
+        | Stmt::CompoundAssign { expr, .. }
+        | Stmt::NullCoalesceAssign { expr, .. } => find_http_response_header_read_in_expr(expr),
+        Stmt::If {
+            condition,
+            then_branch,
+            else_branch,
+            ..
+        } => find_http_response_header_read_in_expr(condition)
+            .or_else(|| find_http_response_header_read_in_stmts(then_branch))
+            .or_else(|| find_http_response_header_read_in_stmts(else_branch)),
+        Stmt::While {
+            condition, body, ..
+        }
+        | Stmt::DoWhile {
+            condition, body, ..
+        } => find_http_response_header_read_in_expr(condition)
+            .or_else(|| find_http_response_header_read_in_stmts(body)),
+        Stmt::For {
+            initializers,
+            conditions,
+            increments,
+            body,
+            ..
+        } => find_http_response_header_read_in_for_actions(initializers)
+            .or_else(|| find_http_response_header_read_in_exprs(conditions))
+            .or_else(|| find_http_response_header_read_in_for_actions(increments))
+            .or_else(|| find_http_response_header_read_in_stmts(body)),
+        Stmt::Switch { value, cases, .. } => {
+            find_http_response_header_read_in_expr(value).or_else(|| {
+                cases.iter().find_map(|case| {
+                    case.condition
+                        .as_ref()
+                        .and_then(find_http_response_header_read_in_expr)
+                        .or_else(|| find_http_response_header_read_in_stmts(&case.body))
+                })
+            })
+        }
+        Stmt::Foreach { iterable, body, .. } => find_http_response_header_read_in_expr(iterable)
+            .or_else(|| find_http_response_header_read_in_stmts(body)),
+        Stmt::Return { value, .. } => value
+            .as_ref()
+            .and_then(find_http_response_header_read_in_expr),
+        Stmt::Try {
+            body,
+            catches,
+            finally_body,
+            ..
+        } => find_http_response_header_read_in_stmts(body)
+            .or_else(|| {
+                catches
+                    .iter()
+                    .find_map(|catch| find_http_response_header_read_in_stmts(&catch.body))
+            })
+            .or_else(|| {
+                finally_body
+                    .as_ref()
+                    .and_then(|body| find_http_response_header_read_in_stmts(body))
+            }),
+        Stmt::Function(_)
+        | Stmt::Class(_)
+        | Stmt::Interface(_)
+        | Stmt::Trait(_)
+        | Stmt::Enum(_) => None,
+        _ => None,
+    }
+}
+
+fn find_http_response_header_read_in_for_actions(actions: &[ForAction]) -> Option<Span> {
+    actions.iter().find_map(|action| match action {
+        ForAction::Assign { expr, .. }
+        | ForAction::CompoundAssign { expr, .. }
+        | ForAction::Expr { expr } => find_http_response_header_read_in_expr(expr),
+        ForAction::IncrementDecrement { .. } => None,
+    })
+}
+
+fn find_http_response_header_read_in_exprs(exprs: &[Expr]) -> Option<Span> {
+    exprs
+        .iter()
+        .find_map(find_http_response_header_read_in_expr)
+}
+
+fn find_http_response_header_read_in_expr(expr: &Expr) -> Option<Span> {
+    match expr {
+        Expr::Variable(name, span) if name == "http_response_header" => Some(*span),
+        Expr::InterpolatedString { parts, .. } => parts.iter().find_map(|part| match part {
+            InterpolatedStringPart::Variable(name)
+            | InterpolatedStringPart::DeprecatedDollarBraceVariable(name)
+            | InterpolatedStringPart::ArrayOffset { variable: name, .. }
+            | InterpolatedStringPart::ObjectProperty { variable: name, .. }
+            | InterpolatedStringPart::AccessChain { variable: name, .. }
+                if name == "http_response_header" =>
+            {
+                Some(Span::new(0, 0))
+            }
+            _ => None,
+        }),
+        Expr::Index { target, index, .. } => find_http_response_header_read_in_expr(target)
+            .or_else(|| find_http_response_header_read_in_expr(index)),
+        Expr::AppendIndex { target, .. }
+        | Expr::ObjectClassNameConstant { target, .. }
+        | Expr::Clone { expr: target, .. }
+        | Expr::Unary { expr: target, .. }
+        | Expr::ErrorControl { expr: target, .. }
+        | Expr::Include { path: target, .. }
+        | Expr::Require { path: target, .. }
+        | Expr::Cast { expr: target, .. } => find_http_response_header_read_in_expr(target),
+        Expr::Property { target, .. }
+        | Expr::DynamicProperty { target, .. }
+        | Expr::MethodCall { target, .. }
+        | Expr::DynamicMethodCall { target, .. }
+        | Expr::ObjectStaticClassConstant { target, .. }
+        | Expr::ObjectStaticProperty { target, .. }
+        | Expr::DynamicObjectStaticProperty { target, .. }
+        | Expr::ObjectStaticMethodCall { target, .. } => {
+            find_http_response_header_read_in_expr(target).or_else(|| match expr {
+                Expr::DynamicProperty { property, .. }
+                | Expr::DynamicMethodCall {
+                    method: property, ..
+                }
+                | Expr::DynamicObjectStaticProperty { property, .. } => {
+                    find_http_response_header_read_in_expr(property)
+                }
+                Expr::MethodCall { args, .. } | Expr::ObjectStaticMethodCall { args, .. } => {
+                    find_http_response_header_read_in_exprs(args)
+                }
+                _ => None,
+            })
+        }
+        Expr::DynamicStaticProperty { property, .. }
+        | Expr::DynamicSelfStaticProperty { property, .. }
+        | Expr::DynamicParentStaticProperty { property, .. }
+        | Expr::DynamicLateStaticProperty { property, .. } => {
+            find_http_response_header_read_in_expr(property)
+        }
+        Expr::Array { items, .. } => items.iter().find_map(|item| {
+            item.key
+                .as_ref()
+                .and_then(find_http_response_header_read_in_expr)
+                .or_else(|| find_http_response_header_read_in_expr(&item.value))
+        }),
+        Expr::NamedArgument { expr, .. } | Expr::SpreadArgument { expr, .. } => {
+            find_http_response_header_read_in_expr(expr)
+        }
+        Expr::Call { args, .. }
+        | Expr::StaticMethodCall { args, .. }
+        | Expr::SelfMethodCall { args, .. }
+        | Expr::ParentMethodCall { args, .. }
+        | Expr::LateStaticMethodCall { args, .. } => find_http_response_header_read_in_exprs(args),
+        Expr::DynamicCall { callee, args, .. } => find_http_response_header_read_in_expr(callee)
+            .or_else(|| find_http_response_header_read_in_exprs(args)),
+        Expr::New {
+            class_name, args, ..
+        } => find_http_response_header_read_in_new_class_name(class_name)
+            .or_else(|| find_http_response_header_read_in_exprs(args)),
+        Expr::InstanceOf {
+            expr, class_name, ..
+        } => find_http_response_header_read_in_expr(expr)
+            .or_else(|| find_http_response_header_read_in_new_class_name(class_name)),
+        Expr::Binary { left, right, .. } => find_http_response_header_read_in_expr(left)
+            .or_else(|| find_http_response_header_read_in_expr(right)),
+        Expr::Ternary {
+            condition,
+            if_true,
+            if_false,
+            ..
+        } => find_http_response_header_read_in_expr(condition)
+            .or_else(|| find_http_response_header_read_in_expr(if_true))
+            .or_else(|| find_http_response_header_read_in_expr(if_false)),
+        Expr::ShortTernary {
+            condition,
+            if_false,
+            ..
+        } => find_http_response_header_read_in_expr(condition)
+            .or_else(|| find_http_response_header_read_in_expr(if_false)),
+        Expr::Match { subject, arms, .. } => find_http_response_header_read_in_expr(subject)
+            .or_else(|| {
+                arms.iter().find_map(|arm| {
+                    arm.conditions
+                        .iter()
+                        .find_map(find_http_response_header_read_in_expr)
+                        .or_else(|| find_http_response_header_read_in_expr(&arm.result))
+                })
+            }),
+        Expr::Assign { expr, .. }
+        | Expr::CompoundAssign { expr, .. }
+        | Expr::NullCoalesceAssign { expr, .. } => find_http_response_header_read_in_expr(expr),
+        Expr::Closure { params, body, .. } => {
+            let closure_is_bound = params
+                .iter()
+                .any(|param| param.name == "http_response_header")
+                || http_response_header_is_bound_in_stmts(body);
+            (!closure_is_bound)
+                .then(|| find_http_response_header_read_in_stmts(body))
+                .flatten()
+        }
+        Expr::IncrementDecrement { .. }
+        | Expr::Null(_)
+        | Expr::Bool(_, _)
+        | Expr::Variable(_, _)
+        | Expr::Int(_, _)
+        | Expr::Float(_, _)
+        | Expr::String(_, _)
+        | Expr::MagicLine { .. }
+        | Expr::MagicFile { .. }
+        | Expr::MagicDir { .. }
+        | Expr::MagicFunction { .. }
+        | Expr::MagicClass { .. }
+        | Expr::MagicMethod { .. }
+        | Expr::GlobalConstant { .. }
+        | Expr::ClassNameConstant { .. }
+        | Expr::SelfClassNameConstant { .. }
+        | Expr::ParentClassNameConstant { .. }
+        | Expr::StaticClassNameConstant { .. }
+        | Expr::ClassConstant { .. }
+        | Expr::SelfClassConstant { .. }
+        | Expr::ParentClassConstant { .. }
+        | Expr::LateStaticClassConstant { .. }
+        | Expr::StaticProperty { .. }
+        | Expr::SelfStaticProperty { .. }
+        | Expr::ParentStaticProperty { .. }
+        | Expr::LateStaticProperty { .. } => None,
+    }
+}
+
+fn find_http_response_header_read_in_new_class_name(class_name: &NewClassName) -> Option<Span> {
+    match class_name {
+        NewClassName::DynamicExpression(expr) => find_http_response_header_read_in_expr(expr),
+        NewClassName::DynamicVariable(name) if name == "http_response_header" => {
+            Some(Span::new(0, 0))
+        }
+        _ => None,
+    }
+}
+
 fn collect_deprecated_dollar_brace_interpolation_stmt_spans(stmts: &[Stmt], spans: &mut Vec<Span>) {
     for stmt in stmts {
         match stmt {
@@ -18515,6 +18906,7 @@ impl Interpreter {
     fn run(&mut self, program: &Program) -> CompileResult<Execution> {
         let mut scope = SymbolTable::from_root(self.global_symbols.clone());
         self.emit_deprecated_dollar_brace_interpolation_diagnostics(program)?;
+        self.emit_http_response_header_deprecation_diagnostics(program)?;
         let flow = match self.with_strict_types_scope(program.strict_types, |this| {
             this.execute_statements(&program.statements, &mut scope)
         }) {
@@ -18743,6 +19135,21 @@ impl Interpreter {
                 "Deprecated",
                 PHP_E_DEPRECATED,
                 "Using ${var} in strings is deprecated, use {$var} instead",
+                span,
+            )?;
+        }
+        Ok(())
+    }
+
+    fn emit_http_response_header_deprecation_diagnostics(
+        &mut self,
+        program: &Program,
+    ) -> CompileResult<()> {
+        for span in collect_http_response_header_deprecation_spans(program) {
+            self.emit_display_diagnostic(
+                "Deprecated",
+                PHP_E_DEPRECATED,
+                "The predefined locally scoped $http_response_header variable is deprecated, call http_get_last_response_headers() instead",
                 span,
             )?;
         }
@@ -20680,6 +21087,7 @@ impl Interpreter {
         self.source_file = Some(included_file);
         let flow = (|| {
             self.emit_deprecated_dollar_brace_interpolation_diagnostics(&program)?;
+            self.emit_http_response_header_deprecation_diagnostics(&program)?;
             self.register_included_declarations(&program)?;
             self.with_strict_types_scope(program.strict_types, |this| {
                 this.execute_statements(&program.statements, scope)
@@ -56277,6 +56685,7 @@ impl Interpreter {
         })?;
         let program = parse_source(&format!("<?php {source}"))?;
         self.emit_deprecated_dollar_brace_interpolation_diagnostics(&program)?;
+        self.emit_http_response_header_deprecation_diagnostics(&program)?;
         self.register_included_declarations(&program)?;
         match self.with_strict_types_scope(program.strict_types, |this| {
             this.execute_statements(&program.statements, caller_scope)
@@ -83998,8 +84407,9 @@ impl Interpreter {
                 ),
             )),
             "parse_url" => call_parse_url(&args, span),
-            "http_build_query" => call_http_build_query(&args, span),
+            "http_build_query" => call_http_build_query(self, &args, span),
             "urlencode" => call_urlencode(&args, span),
+            "urldecode" => call_urldecode(&args, span),
             "rawurlencode" => call_rawurlencode(&args, span),
             "rawurldecode" => call_rawurldecode(&args, span),
             "serialize" => self.call_serialize_builtin(&args, span),
@@ -99766,6 +100176,10 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_optional_int_param("encoding_type", PHP_QUERY_RFC1738),
             ],
         ),
+        "urlencode" | "urldecode" | "rawurlencode" | "rawurldecode" => (
+            "string",
+            vec![reflection_internal_param("string", "string")],
+        ),
         "json_encode" => (
             "string|false",
             vec![
@@ -104150,6 +104564,7 @@ fn is_builtin(name: &str) -> bool {
             | "parse_url"
             | "http_build_query"
             | "urlencode"
+            | "urldecode"
             | "rawurlencode"
             | "rawurldecode"
             | "serialize"
@@ -123187,8 +123602,16 @@ fn parse_url_port(value: &str) -> Option<i64> {
 
 fn call_urlencode(args: &[Value], span: Span) -> CompileResult<Value> {
     expect_arity("urlencode", args, 1, span)?;
-    let value = string_contains_argument("urlencode()", "string", &args[0], span)?;
-    Ok(Value::String(form_urlencode_component(&value)))
+    let value = string_compare_argument_bytes("urlencode()", "string", &args[0], span)?;
+    Ok(Value::String(form_urlencode_bytes(&value)))
+}
+
+fn call_urldecode(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("urldecode", args, 1, span)?;
+    let value = string_compare_argument_bytes("urldecode()", "string", &args[0], span)?;
+    Ok(interpreter_value_from_php_string_bytes(urldecode_bytes(
+        &value,
+    )))
 }
 
 #[derive(Clone, Copy)]
@@ -123197,7 +123620,11 @@ enum HttpQueryEncoding {
     Rfc3986,
 }
 
-fn call_http_build_query(args: &[Value], span: Span) -> CompileResult<Value> {
+fn call_http_build_query(
+    interpreter: &Interpreter,
+    args: &[Value],
+    span: Span,
+) -> CompileResult<Value> {
     if !(1..=4).contains(&args.len()) {
         return Err(runtime_error(
             span,
@@ -123210,11 +123637,12 @@ fn call_http_build_query(args: &[Value], span: Span) -> CompileResult<Value> {
     }
 
     let mut active_objects = HashSet::new();
+    let current_class_id = interpreter.class_context.last().copied();
     let root = match &args[0] {
         Value::Array(array) => array.clone(),
         Value::Object(object) => {
             active_objects.insert(object.id());
-            public_object_properties_for_http_query(object)
+            public_object_properties_for_http_query(object, current_class_id, &interpreter.classes)
         }
         other => {
             return Err(runtime_error(
@@ -123275,16 +123703,25 @@ fn call_http_build_query(args: &[Value], span: Span) -> CompileResult<Value> {
             encoding,
             span,
             &mut active_objects,
+            current_class_id,
+            &interpreter.classes,
         )?;
     }
 
     Ok(Value::String(pairs.join(&separator)))
 }
 
-fn public_object_properties_for_http_query(object: &PhpObject) -> PhpArray {
+fn public_object_properties_for_http_query(
+    object: &PhpObject,
+    current_class_id: Option<ClassId>,
+    classes: &PhpClassTable,
+) -> PhpArray {
     let mut array = PhpArray::new();
     for property in object.properties() {
-        if property.visibility() == Visibility::Public && property.is_initialized() {
+        if http_query_object_property_visible(&property, current_class_id, classes)
+            && property.is_initialized()
+            && !property.is_unset()
+        {
             array.insert(
                 ArrayKey::String(property.name().to_string()),
                 property.value_cloned(),
@@ -123292,6 +123729,21 @@ fn public_object_properties_for_http_query(object: &PhpObject) -> PhpArray {
         }
     }
     array
+}
+
+fn http_query_object_property_visible(
+    property: &ObjectProperty,
+    current_class_id: Option<ClassId>,
+    classes: &PhpClassTable,
+) -> bool {
+    match property.visibility() {
+        Visibility::Public => true,
+        Visibility::Private => current_class_id == Some(property.declaring_class_id()),
+        Visibility::Protected => current_class_id.is_some_and(|current_class_id| {
+            current_class_id == property.declaring_class_id()
+                || classes.is_subclass_of(current_class_id, property.declaring_class_id())
+        }),
+    }
 }
 
 fn http_query_top_level_key(key: &ArrayKey, numeric_prefix: &str) -> String {
@@ -123312,6 +123764,8 @@ fn collect_http_query_pairs(
     encoding: HttpQueryEncoding,
     span: Span,
     active_objects: &mut HashSet<i64>,
+    current_class_id: Option<ClassId>,
+    classes: &PhpClassTable,
 ) -> CompileResult<()> {
     match value {
         Value::Null | Value::Resource(_) => Ok(()),
@@ -123324,6 +123778,8 @@ fn collect_http_query_pairs(
                     encoding,
                     span,
                     active_objects,
+                    current_class_id,
+                    classes,
                 )?;
             }
             Ok(())
@@ -123332,7 +123788,7 @@ fn collect_http_query_pairs(
             if !active_objects.insert(object.id()) {
                 return Ok(());
             }
-            let array = public_object_properties_for_http_query(object);
+            let array = public_object_properties_for_http_query(object, current_class_id, classes);
             let result = (|| {
                 for entry in array.entries() {
                     collect_http_query_pairs(
@@ -123342,6 +123798,8 @@ fn collect_http_query_pairs(
                         encoding,
                         span,
                         active_objects,
+                        current_class_id,
+                        classes,
                     )?;
                 }
                 Ok(())
@@ -123376,7 +123834,7 @@ fn http_query_scalar_string(value: &Value) -> String {
 
 fn http_query_encode_component(value: &str, encoding: HttpQueryEncoding) -> String {
     match encoding {
-        HttpQueryEncoding::Rfc1738 => form_urlencode_component(value),
+        HttpQueryEncoding::Rfc1738 => form_urlencode_bytes(value.as_bytes()),
         HttpQueryEncoding::Rfc3986 => raw_urlencode_bytes(value.as_bytes()),
     }
 }
@@ -123395,9 +123853,9 @@ fn call_rawurldecode(args: &[Value], span: Span) -> CompileResult<Value> {
     ))
 }
 
-fn form_urlencode_component(value: &str) -> String {
+fn form_urlencode_bytes(value: &[u8]) -> String {
     let mut encoded = String::with_capacity(value.len());
-    for byte in value.bytes() {
+    for &byte in value {
         if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.') {
             encoded.push(byte as char);
         } else if byte == b' ' {
@@ -123407,6 +123865,32 @@ fn form_urlencode_component(value: &str) -> String {
         }
     }
     encoded
+}
+
+fn urldecode_bytes(value: &[u8]) -> Vec<u8> {
+    let mut decoded = Vec::with_capacity(value.len());
+    let mut index = 0;
+    while index < value.len() {
+        if value[index] == b'+' {
+            decoded.push(b' ');
+            index += 1;
+            continue;
+        }
+        if value[index] == b'%' && index + 2 < value.len() {
+            if let (Some(high), Some(low)) = (
+                hex_digit_value(value[index + 1]),
+                hex_digit_value(value[index + 2]),
+            ) {
+                decoded.push((high << 4) | low);
+                index += 3;
+                continue;
+            }
+        }
+
+        decoded.push(value[index]);
+        index += 1;
+    }
+    decoded
 }
 
 fn raw_urlencode_bytes(value: &[u8]) -> String {
