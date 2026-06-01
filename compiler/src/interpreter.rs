@@ -131032,111 +131032,102 @@ fn php_math_argument_type_error(
 fn call_pow(interpreter: &mut Interpreter, args: &[Value], span: Span) -> CompileResult<Value> {
     expect_arity("pow", args, 2, span)?;
 
-    match (&args[0], &args[1]) {
-        (Value::Int(base), Value::Int(exponent)) if *exponent >= 0 => {
-            let exponent = u32::try_from(*exponent).map_err(|_| {
-                runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "pow()",
-                        "integer exponents larger than u32 are not implemented in the current subset",
-                    ),
-                )
-            })?;
-            if let Some(value) = base.checked_pow(exponent) {
-                Ok(Value::Int(value))
-            } else {
-                Ok(Value::Float((*base as f64).powf(exponent as f64)))
-            }
+    let base = pow_number_arg(&args[0])
+        .ok_or_else(|| pow_unsupported_operand_types(&args[0], &args[1], span))?;
+    let exponent = pow_number_arg(&args[1])
+        .ok_or_else(|| pow_unsupported_operand_types(&args[0], &args[1], span))?;
+
+    let base_float = base.as_f64();
+    let exponent_float = exponent.as_f64();
+    if base_float == 0.0 && exponent_float.is_sign_negative() {
+        interpreter.emit_display_diagnostic(
+            "Deprecated",
+            PHP_E_DEPRECATED,
+            "Power of base 0 and negative exponent is deprecated",
+            span,
+        )?;
+    }
+
+    match (base.as_i64(), exponent.as_i64()) {
+        (Some(base), Some(exponent)) => Ok(pow_integral_result(base, exponent)),
+        _ => Ok(Value::Float(base_float.powf(exponent_float))),
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct PowNumber(MathIntOrFloat);
+
+impl PowNumber {
+    fn as_f64(self) -> f64 {
+        match self.0 {
+            MathIntOrFloat::Int(value) => value as f64,
+            MathIntOrFloat::Float(value) => value,
         }
-        (base, exponent) => {
-            let base = pow_number_arg(interpreter, "pow()", "base", base, span)?;
-            let exponent = pow_number_arg(interpreter, "pow()", "exponent", exponent, span)?;
-            if base == 0.0 && exponent.is_sign_negative() {
-                interpreter.emit_display_diagnostic(
-                    "Deprecated",
-                    PHP_E_DEPRECATED,
-                    "Power of base 0 and negative exponent is deprecated",
-                    span,
-                )?;
-            }
-            let result = base.powf(exponent);
-            if result.fract() == 0.0 && result >= i64::MIN as f64 && result <= i64::MAX as f64 {
-                Ok(Value::Int(result as i64))
-            } else {
-                Ok(Value::Float(result))
-            }
+    }
+
+    fn as_i64(self) -> Option<i64> {
+        match self.0 {
+            MathIntOrFloat::Int(value) => Some(value),
+            MathIntOrFloat::Float(_) => None,
         }
     }
 }
 
-fn pow_number_arg(
-    interpreter: &mut Interpreter,
-    function: &'static str,
-    name: &str,
-    value: &Value,
-    span: Span,
-) -> CompileResult<f64> {
+fn pow_number_arg(value: &Value) -> Option<PowNumber> {
     match value {
-        Value::Null => {
-            interpreter.emit_display_diagnostic(
-                "Deprecated",
-                PHP_E_DEPRECATED,
-                format!(
-                    "{function}: Passing null to parameter #1 ($num) of type int|float is deprecated"
-                ),
-                span,
-            )?;
-            Ok(0.0)
-        }
-        Value::Bool(value) => Ok(f64::from(u8::from(*value))),
-        Value::Int(value) => Ok(*value as f64),
-        Value::Float(value) => Ok(*value),
-        Value::String(value) => math_numeric_string_value(value)
-            .map(|number| match number {
-                MathIntOrFloat::Int(value) => value as f64,
-                MathIntOrFloat::Float(value) => value,
-            })
-            .ok_or_else(|| {
-                runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        function,
-                        format!(
-                            "{name} argument must be int or float in the current subset, got string"
-                        ),
-                    ),
-                )
-            }),
+        Value::Null => Some(PowNumber(MathIntOrFloat::Int(0))),
+        Value::Bool(value) => Some(PowNumber(MathIntOrFloat::Int(i64::from(u8::from(*value))))),
+        Value::Int(value) => Some(PowNumber(MathIntOrFloat::Int(*value))),
+        Value::Float(value) => Some(PowNumber(MathIntOrFloat::Float(*value))),
+        Value::String(value) => math_numeric_string_value(value).map(PowNumber),
         Value::BinaryString(value) => std::str::from_utf8(value)
             .ok()
             .and_then(math_numeric_string_value)
-            .map(|number| match number {
-                MathIntOrFloat::Int(value) => value as f64,
-                MathIntOrFloat::Float(value) => value,
-            })
-            .ok_or_else(|| {
-                runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        function,
-                        format!(
-                            "{name} argument must be int or float in the current subset, got string"
-                        ),
-                    ),
-                )
-            }),
-        other => Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                function,
-                format!(
-                    "{name} argument must be int or float in the current subset, got {}",
-                    other.type_name()
-                ),
-            ),
-        )),
+            .map(PowNumber),
+        Value::Array(_) | Value::Object(_) | Value::Closure(_) | Value::Resource(_) => None,
     }
+}
+
+fn pow_integral_result(base: i64, exponent: i64) -> Value {
+    if exponent >= 0 {
+        if let Ok(exponent) = u32::try_from(exponent) {
+            if let Some(value) = base.checked_pow(exponent) {
+                return Value::Int(value);
+            }
+        }
+
+        if matches!(base, -1 | 0 | 1) {
+            return Value::Int(match base {
+                -1 if exponent % 2 != 0 => -1,
+                0 if exponent != 0 => 0,
+                _ => 1,
+            });
+        }
+    }
+
+    Value::Float(pow_integral_float_result(base, exponent))
+}
+
+fn pow_integral_float_result(base: i64, exponent: i64) -> f64 {
+    let magnitude = (base as f64).abs().powf(exponent as f64);
+    if base < 0 && exponent % 2 != 0 {
+        -magnitude
+    } else {
+        magnitude
+    }
+}
+
+fn pow_unsupported_operand_types(left: &Value, right: &Value, span: Span) -> Diagnostic {
+    Diagnostic::new(
+        Phase::Runtime,
+        span.line,
+        span.column,
+        format!(
+            "Unsupported operand types: {} ** {}",
+            php_type_error_given(left),
+            php_type_error_given(right)
+        ),
+    )
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Added a focused math/general worker slice for bounded `pow()` parity.
+  `pow()` now accepts covered int-like/null/bool/numeric-string operands on
+  either side without the prior artificial `u32` exponent cap, preserves
+  PHP-shaped int-vs-float return typing for the reached integer, float, large
+  exponent overflow/underflow, and negative-zero cases, and reports catchable
+  unsupported-operand `TypeError` messages for the reached string, array,
+  object, and resource rows. Focused Rust passed `13 / 13` across
+  `standard_math_residuals` and `elementary_math_builtins`, `cargo build -p
+  phpc --bin phpc` passed, and selected PHPT proof passed `5 / 5` for
+  `ext/standard/tests/math/pow.phpt`,
+  `ext/standard/tests/math/pow_basic2.phpt`,
+  `ext/standard/tests/math/pow_basiclong_64bit.phpt`,
+  `ext/standard/tests/math/pow_variation1_64bit.phpt`, and
+  `ext/standard/tests/math/pow_variation2.phpt`. Unsupported edges remain
+  exponentiation operator syntax (`**`/`**=`), exact broad libm/platform
+  parity outside the covered rows, references/COW, and native lowering.
+
 - Implemented a focused local filesystem metadata candidate for five selected
   `ext/standard/tests/file` PHPT rows. `chmod()` now preserves relative
   `.`/`..` path segments for permission-setting operations so nonexistent

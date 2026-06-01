@@ -26,6 +26,73 @@ var_dump(intdiv(-3, 2));
 }
 
 #[test]
+fn pow_function_covers_large_exponents_numeric_strings_and_operand_errors() {
+    let execution = run_source(
+        r#"<?php
+class classA {}
+
+var_dump(pow(null, 3));
+var_dump(pow(true, 3));
+var_dump(pow("2", 3));
+var_dump(pow("5.5", 3));
+var_dump(pow(2.0, 3));
+var_dump(pow(2, 3.0));
+var_dump(pow(24, 20000));
+var_dump(pow(24, -20000));
+var_dump(pow(-0.24, 20001));
+var_dump(pow(PHP_INT_MAX, PHP_INT_MAX));
+var_dump(pow(-PHP_INT_MAX - 1, PHP_INT_MAX));
+var_dump(pow(-1, PHP_INT_MAX));
+var_dump(pow(1, PHP_INT_MAX));
+var_dump(pow(1, -PHP_INT_MAX - 1));
+
+$resource = fopen("php://memory", "r");
+foreach (["", [], new classA(), $resource] as $input) {
+    try {
+        var_dump(pow($input, 3));
+    } catch (Error $e) {
+        echo "base:", $e->getMessage(), "\n";
+    }
+}
+try {
+    var_dump(pow(20.3, ""));
+} catch (Error $e) {
+    echo "exp:", $e->getMessage(), "\n";
+}
+fclose($resource);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "int(0)\n",
+            "int(1)\n",
+            "int(8)\n",
+            "float(166.375)\n",
+            "float(8)\n",
+            "float(8)\n",
+            "float(INF)\n",
+            "float(0)\n",
+            "float(-0)\n",
+            "float(INF)\n",
+            "float(-INF)\n",
+            "int(-1)\n",
+            "int(1)\n",
+            "float(1)\n",
+            "base:Unsupported operand types: string ** int\n",
+            "base:Unsupported operand types: array ** int\n",
+            "base:Unsupported operand types: classA ** int\n",
+            "base:Unsupported operand types: resource ** int\n",
+            "exp:Unsupported operand types: float ** string\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn math_constants_use_precision_minus_one_for_string_formatting() {
     let execution = run_source(
         r#"<?php

@@ -5873,12 +5873,19 @@
   `mt_getrandmax()`, `sin()`, `cos()`, `tan()`, `asin()`, `acos()`, `atan()`,
   `atan2()`, `sinh()`, `cosh()`, `tanh()`, `asinh()`, `acosh()`, `atanh()`,
   `sqrt()`, `ceil()`, `floor()`, `exp()`, `expm1()`, `log()`, `log10()`,
-  `log1p()`, `fmod()`, `fdiv()`, `fpow()`, `hypot()`, `deg2rad()`, and
-  `rad2deg()` over the current numeric scalar coercion subset.
+  `log1p()`, `fmod()`, `fdiv()`, `pow()`, `fpow()`, `hypot()`,
+  `deg2rad()`, and `rad2deg()` over the current numeric scalar coercion
+  subset. `pow()` additionally keeps PHP-shaped int-vs-float return typing for
+  the covered int-like/null/bool/numeric-string operands, large integral
+  exponent overflow/underflow, negative-zero float results, and catchable
+  unsupported-operand `TypeError` messages for the covered string, array,
+  object, and resource operands.
   `deg2rad()` and `rad2deg()` use PHP's multiplication/division operation
   order for the covered PHPT precision-sensitive cases. Locale-sensitive
   parsing, exact warnings for all
-  malformed numeric inputs, and native lowering remain unsupported.
+  malformed numeric inputs, exponentiation operator syntax (`**`/`**=`), broad
+  libm/platform parity outside the covered rows, and native lowering remain
+  unsupported.
   `extension_loaded($name)` accepts string extension names and currently
   answers from a deterministic bounded compiler/runtime compatibility registry.
   It returns `true` for `json`, `hash`, `pdo`, and `pdo_mysql`, and `false`
