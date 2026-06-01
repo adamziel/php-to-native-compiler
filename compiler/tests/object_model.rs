@@ -15078,6 +15078,41 @@ try {
 }
 
 #[test]
+fn array_object_clone_flattens_object_storage_and_get_object_vars_uses_context() {
+    let source = r#"<?php
+class VarsArrayObject extends ArrayObject {
+    private $hidden;
+
+    public function vars() {
+        return get_object_vars($this);
+    }
+}
+
+$vars = new VarsArrayObject(new stdClass());
+print_r(get_object_vars($vars));
+print_r($vars->vars());
+
+$base = new ArrayObject(array(0 => "zero", 1 => "one"), ArrayObject::STD_PROP_LIST);
+$wrapped = new ArrayObject($base);
+$clone = clone $wrapped;
+$wrapped[2] = "two";
+$clone[3] = "three";
+print_r($base->getArrayCopy());
+print_r($clone->getArrayCopy());
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert!(execution
+        .stdout
+        .contains("Array\n(\n)\nArray\n(\n    [hidden] => \n)\n"));
+    assert!(execution.stdout.contains(
+        "Array\n(\n    [0] => zero\n    [1] => one\n    [2] => two\n)\nArray\n(\n    [0] => zero\n    [1] => one\n    [3] => three\n)\n"
+    ));
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn spl_doubly_linked_list_iteration_offsets_and_exceptions() {
     let source = r#"<?php
 $list = new SplDoublyLinkedList();

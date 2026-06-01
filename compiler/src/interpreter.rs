@@ -23468,7 +23468,20 @@ impl Interpreter {
         if let Some(state) = self.spl_fixed_arrays.get(&object.id()).cloned() {
             self.spl_fixed_arrays.insert(clone.id(), state);
         }
-        if let Some(state) = self.array_objects.get(&object.id()).cloned() {
+        if let Some(mut state) = self.array_objects.get(&object.id()).cloned() {
+            state.storage = match &state.storage {
+                Value::Object(storage_object) if storage_object.id() == object.id() => {
+                    Value::Object(clone.clone())
+                }
+                Value::Object(_) => Value::Array(self.array_object_storage_to_array(
+                    &state.storage,
+                    "__clone",
+                    span,
+                )?),
+                Value::Array(array) => Value::Array(array.clone()),
+                other => other.clone(),
+            };
+            state.cursor = 0;
             self.array_objects.insert(clone.id(), state);
             self.sync_array_object_object_properties(&clone, span)?;
         }
@@ -55707,6 +55720,18 @@ impl Interpreter {
         }
     }
 
+    fn object_property_visible_in_context(
+        property: &ObjectProperty,
+        current_class_id: Option<ClassId>,
+        protected_class_ids: &[ClassId],
+    ) -> bool {
+        match property.visibility() {
+            Visibility::Public => true,
+            Visibility::Private => current_class_id == Some(property.declaring_class_id()),
+            Visibility::Protected => protected_class_ids.contains(&property.declaring_class_id()),
+        }
+    }
+
     fn call_class_implements(
         &mut self,
         object_or_class: &Value,
@@ -87192,9 +87217,16 @@ impl Interpreter {
             },
             "get_object_vars" => match args.as_slice() {
                 [Value::Object(object)] => {
+                    let (current_class_id, protected_class_ids) =
+                        self.current_property_access_context();
                     let mut properties = PhpArray::new();
                     for property in object.properties() {
-                        if property.visibility() == Visibility::Public && property.is_initialized()
+                        if Self::object_property_visible_in_context(
+                            &property,
+                            current_class_id,
+                            &protected_class_ids,
+                        ) && property.is_initialized()
+                            && !property.is_unset()
                         {
                             properties.insert(
                                 ArrayKey::from(property.name()),

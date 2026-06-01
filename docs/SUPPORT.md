@@ -2570,8 +2570,9 @@
   `getArrayCopy()`, `exchangeArray()`, flags, iterator class metadata,
   sorting over array storage, `(array)` casts for the default storage-backed
   view and the `STD_PROP_LIST` standard-property view, catchable
-  `ArrayIterator::seek()` out-of-range exceptions, and ordinary by-value
-  iteration through their iterator methods. When one `ArrayObject` or
+  `ArrayIterator::seek()` out-of-range exceptions, object-backed clone
+  snapshots for public storage, and ordinary by-value iteration through their
+  iterator methods. When one `ArrayObject` or
   `ArrayIterator` is constructed with another one as its backing storage, reads
   and writes recurse through the inner object's storage so copy-constructor-style
   offset mutation updates the shared backing object. Object-backed
@@ -5631,8 +5632,10 @@
   string class names, `get_class_vars` returns public declared and inherited
   property names in child-to-parent declaration order with `null` values for
   declared string class names, `get_object_vars` returns public exact and
-  inherited instance property names with their current values in
-  parent-to-child slot order for current object values, `get_mangled_object_vars`
+  inherited instance property names from external scope, and currently visible
+  public/protected/private instance property names from method scope, with
+  their current values in parent-to-child slot order for current object values,
+  `get_mangled_object_vars`
   returns inherited and exact-class public/protected/private instance slots
   with PHP-style mangled keys for current object values,
   `is_a` checks
@@ -6376,11 +6379,12 @@
   default values or `null` for properties without defaults. It is available
   through string-valued dynamic function calls.
   `get_object_vars($object)` accepts current object values and returns an array
-  of public exact and inherited instance property names in parent-to-child slot
-  order with their current slot values. Compatible public redeclarations expose
-  the shared inherited slot once instead of duplicate parent/child entries.
-  Protected/private slots and static properties are not included. It is
-  available through string-valued dynamic function calls.
+  of public exact and inherited instance property names from external scope, or
+  currently visible public/protected/private instance property names from
+  method scope, in parent-to-child slot order with their current slot values.
+  Compatible public redeclarations expose the shared inherited slot once
+  instead of duplicate parent/child entries. Static properties are not
+  included. It is available through string-valued dynamic function calls.
   Direct `empty($object->name)` accepts direct object-variable public-property
   operands, returns true for falsey public property slots, undefined target
   variables, and non-object target variables, and uses a stable
@@ -10769,10 +10773,10 @@
   aliases/imports, namespace-aware names, autoloading,
   non-public/context-sensitive visibility listing, exact native ordering and
   `TypeError` behavior, and native lowering
-- `get_object_vars` dynamic properties, visibility context for non-public
-  properties, traits, interfaces, aliases/imports,
-  namespace-aware names, references/copy-on-write, exact native ordering and
-  `TypeError` behavior, and native lowering
+- `get_object_vars` dynamic properties, visibility context beyond the current
+  method-scope public/protected/private instance slot slice, traits,
+  interfaces, aliases/imports, namespace-aware names, references/copy-on-write,
+  exact native ordering and `TypeError` behavior, and native lowering
 - `get_mangled_object_vars` dynamic properties, property defaults beyond the
   current constant-expression subset, traits,
   interfaces, aliases/imports, namespace-aware names,

@@ -21,6 +21,21 @@ Implemented:
   offset expression diagnostics, full COW/reference identity, and native
   lowering remain unsupported.
 
+- Added a follow-up SPL `ArrayObject` object-storage clone and
+  `get_object_vars()` visibility-context slice. Cloning an `ArrayObject` or
+  `ArrayIterator` backed by another object now snapshots that visible public
+  backing storage into independent array storage for the clone, preserving the
+  copy-constructor-style shared original while letting clone writes diverge.
+  `get_object_vars($object)` now uses the current method property context so
+  ArrayObject subclasses can see their own private slots while external calls
+  still expose only public slots. Focused proof covers
+  `ArrayObject_clone_other_std_props.phpt` and
+  `ArrayObject_get_object_vars.phpt`. Self-referential object-backed
+  `ArrayObject` var-dump/clone shapes, `#[AllowDynamicProperties]` dynamic
+  property broadening, serialization/unserialization parity, exact
+  object-handle reuse, broader visibility-context edge cases, full
+  COW/reference identity, and native lowering remain unsupported.
+
 ## 2026-05-27
 
 Implemented:
