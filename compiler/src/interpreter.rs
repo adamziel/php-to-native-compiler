@@ -857,6 +857,7 @@ struct FileStream {
     eof: bool,
     metadata_unread_bytes: i64,
     uri: String,
+    filesystem_path: PathBuf,
     read_filter_rot13: bool,
     metadata_mode: String,
 }
@@ -77545,6 +77546,8 @@ impl Interpreter {
                     "fopen",
                     span,
                 )?;
+            }
+            if stream_mode.truncate || stream_mode.create || stream_mode.create_new {
                 self.clear_stat_cache_filesystem_path(&filesystem_path);
             }
             let mut stream = FileStream {
@@ -77555,6 +77558,7 @@ impl Interpreter {
                 eof: false,
                 metadata_unread_bytes: 0,
                 uri: path.to_string(),
+                filesystem_path: filesystem_path.clone(),
                 read_filter_rot13: false,
                 metadata_mode: mode.to_string(),
             };
@@ -78690,6 +78694,13 @@ impl Interpreter {
 
         loop {
             let directory_display = directory_path.to_string_lossy().into_owned();
+            if used_system_temp_dir && !system_temp_notice_emitted {
+                self.emit_display_notice(
+                    "tempnam(): file created in the system's temporary directory",
+                    span,
+                )?;
+                system_temp_notice_emitted = true;
+            }
             if !self.enforce_bounded_open_basedir(
                 "tempnam()",
                 &directory_display,
@@ -78697,13 +78708,6 @@ impl Interpreter {
                 span,
             )? {
                 return Ok(Value::Bool(false));
-            }
-            if used_system_temp_dir && !system_temp_notice_emitted {
-                self.emit_display_notice(
-                    "tempnam(): file created in the system's temporary directory",
-                    span,
-                )?;
-                system_temp_notice_emitted = true;
             }
 
             match self.create_tempnam_file_in_directory(
@@ -80582,6 +80586,7 @@ impl Interpreter {
             self.emit_bad_file_descriptor_notice("fwrite()", "Write", data.len(), span)?;
             return Ok(Value::Bool(false));
         }
+        let mut stat_cache_path_to_clear = None;
         match self
             .streams
             .get_mut(&stream_id)
@@ -80643,6 +80648,7 @@ impl Interpreter {
                         ),
                     )
                 })?;
+                stat_cache_path_to_clear = Some(stream.filesystem_path.clone());
                 if let Some(position) = logical_position {
                     let Some(position) = position.checked_add(data.len() as u64) else {
                         return Err(runtime_error(
@@ -80668,6 +80674,9 @@ impl Interpreter {
                 }
                 stream.eof = false;
             }
+        }
+        if let Some(path) = stat_cache_path_to_clear {
+            self.clear_stat_cache_filesystem_path(&path);
         }
         Ok(Value::Int(data.len() as i64))
     }
@@ -81898,46 +81907,54 @@ impl Interpreter {
             None => unreachable!("arity checked above"),
         };
 
-        match self.stream_mut_open_resource("ftruncate", &args[0], span)? {
+        let mut stat_cache_path_to_clear = None;
+        let result = match self.stream_mut_open_resource("ftruncate", &args[0], span)? {
             StreamResource::Memory(stream) => {
                 if !stream.writable {
-                    return Ok(Value::Bool(false));
-                }
-                if size <= stream.buffer.len() {
-                    let end = utf8_boundary_at_or_before(&stream.buffer, size);
-                    stream.buffer.truncate(end);
-                    stream.position = stream.position.min(end);
+                    Value::Bool(false)
                 } else {
-                    stream
-                        .buffer
-                        .push_str(&"\0".repeat(size - stream.buffer.len()));
+                    if size <= stream.buffer.len() {
+                        let end = utf8_boundary_at_or_before(&stream.buffer, size);
+                        stream.buffer.truncate(end);
+                        stream.position = stream.position.min(end);
+                    } else {
+                        stream
+                            .buffer
+                            .push_str(&"\0".repeat(size - stream.buffer.len()));
+                    }
+                    stream.eof = false;
+                    Value::Bool(true)
                 }
-                stream.eof = false;
-                Ok(Value::Bool(true))
             }
             StreamResource::File(stream) => {
                 if !stream.writable {
-                    return Ok(Value::Bool(false));
-                }
-                stream.metadata_unread_bytes = 0;
-                stream.file.flush().map_err(|error| {
-                    runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            "ftruncate()",
-                            format!("local file stream flush failed: {error}"),
-                        ),
-                    )
-                })?;
-                match stream.file.set_len(size as u64) {
-                    Ok(()) => {
-                        stream.eof = false;
-                        Ok(Value::Bool(true))
+                    Value::Bool(false)
+                } else {
+                    stream.metadata_unread_bytes = 0;
+                    stream.file.flush().map_err(|error| {
+                        runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "ftruncate()",
+                                format!("local file stream flush failed: {error}"),
+                            ),
+                        )
+                    })?;
+                    match stream.file.set_len(size as u64) {
+                        Ok(()) => {
+                            stream.eof = false;
+                            stat_cache_path_to_clear = Some(stream.filesystem_path.clone());
+                            Value::Bool(true)
+                        }
+                        Err(_) => Value::Bool(false),
                     }
-                    Err(_) => Ok(Value::Bool(false)),
                 }
             }
+        };
+        if let Some(path) = stat_cache_path_to_clear {
+            self.clear_stat_cache_filesystem_path(&path);
         }
+        Ok(result)
     }
 
     fn call_fstat(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {

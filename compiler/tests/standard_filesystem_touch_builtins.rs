@@ -91,6 +91,58 @@ rmdir($dir);
     assert_eq!(execution.exit_code, 0);
 }
 
+#[test]
+fn local_file_stream_writes_clear_filemtime_stat_cache() {
+    let fixture = TempFsFixture::new("stream-stat-cache");
+    let file = php_string(&fixture.root.join("cache.txt"));
+    let source = format!(
+        r#"<?php
+$file = {file};
+touch($file, 1);
+$first = filemtime($file);
+$handle = fopen($file, "w");
+fwrite($handle, "data");
+$second = filemtime($file);
+fclose($handle);
+echo $first, ":", ($second > $first ? "fresh" : "cached"), ":", file_get_contents($file);
+unlink($file);
+"#,
+        file = file
+    );
+
+    let execution = run_source(&source).unwrap();
+
+    assert_eq!(execution.stdout, "1:fresh:data");
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn local_file_stream_truncate_clears_filesize_stat_cache() {
+    let fixture = TempFsFixture::new("stream-truncate-stat-cache");
+    let file = php_string(&fixture.root.join("truncate.txt"));
+    let source = format!(
+        r#"<?php
+$file = {file};
+file_put_contents($file, "abcdef");
+$first = filesize($file);
+$handle = fopen($file, "r+");
+var_dump(ftruncate($handle, 3));
+$second = filesize($file);
+fclose($handle);
+echo $first, ":", $second, ":", file_get_contents($file);
+unlink($file);
+"#,
+        file = file
+    );
+
+    let execution = run_source(&source).unwrap();
+
+    assert_eq!(execution.stdout, "bool(true)\n6:3:abc");
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
 struct TempFsFixture {
     root: PathBuf,
 }

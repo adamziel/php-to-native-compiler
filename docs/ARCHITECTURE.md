@@ -3439,7 +3439,10 @@ native lowering remain unsupported. `fwrite()`,
 `fseek()`, `fstat()`, `stream_get_meta_data()`, and `fclose()` mutate, consume,
 or inspect the resource cursor or bounded metadata; append-mode writes are
 routed to EOF while local file streams retain PHP's logical cursor advancement
-after the write. A separate request-local directory resource table backs
+after the write. Successful local-file `fopen()` create/truncate,
+`fwrite()`, and `ftruncate()` operations clear the bounded request-local
+`filesize()`/`filemtime()` metadata cache for the affected local path. A
+separate request-local directory resource table backs
 `opendir()`, `readdir()`, `rewinddir()`, and `closedir()` for local UTF-8
 directories, returning `.`, `..`, and sorted host entry names through the same
 generic resource value shape. `fseek()` supports the built-in `SEEK_SET`,
@@ -3465,8 +3468,9 @@ beyond persistence, broader wrapper/status metadata APIs, exact host
 directory iteration order,
 binary/non-UTF-8 byte strings, real SAPI body stream lifetime, writable
 `php://input` edge behavior, `php://temp` spill-to-disk thresholds, permissions
-policy, locking, stat-cache behavior, warning plus `false` recovery beyond the
-documented local read/open slices, references/copy-on-write, and exact
+policy, locking, stat-cache behavior beyond the documented local metadata-cache
+invalidation points, warning plus `false` recovery beyond the documented local
+read/open slices, references/copy-on-write, and exact
 resource id/type behavior remain out of scope. Native stream-resource calls
 reject before lowering under a dedicated resource boundary, while
 function-table introspection recognizes the names.

@@ -4,6 +4,25 @@
 
 Implemented:
 
+- Added a bounded standard-filesystem PHPT slice for local stat-cache
+  invalidation and `tempnam()` fallback diagnostics. Local-file `fopen()`
+  create/truncate paths, `fwrite()`, and `ftruncate()` now clear the
+  request-local metadata cache used by `filesize()`/`filemtime()` for the
+  mutated host path, so subsequent metadata reads observe the write/truncate
+  without an explicit `clearstatcache()`. `tempnam()` now emits the
+  PHP-shaped system-temporary-directory fallback notice before the fallback
+  `open_basedir` denial when a missing requested directory falls back outside
+  the allow-list. Focused supervisor verification passed `11 / 11` across
+  `clearstatcache_builtin`, `standard_file_tempnam_builtins`, and
+  `standard_filesystem_touch_builtins`, `cargo build -p phpc --bin phpc`, a
+  direct `phpc run` CLI exercise over stat-cache invalidation and tempnam
+  fallback denial ordering, and selected PHPT proof `2 / 2` for
+  `ext/standard/tests/file/bug52624.phpt` and
+  `ext/standard/tests/file/bug72666_variation3.phpt`. Full PHP stat-cache
+  breadth, shell-backed stat-cache rows, stream wrappers beyond the bounded
+  local file subset, filters, and native filesystem lowering remain
+  unsupported.
+
 - Tightened the bounded interpreter JSON decoder error surface for the compact
   ext/json slice: nested container depth errors now report the container token
   that exceeds the requested depth, array/object state mismatches keep the

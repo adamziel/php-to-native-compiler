@@ -168,8 +168,12 @@ warning-plus-`false` recovery path and continue execution.
 `closedir()` cover bounded local UTF-8 directory handles. `clearstatcache()`
 accepts the PHP-shaped zero-, one-, or two-argument forms and clears the
 bounded request-local successful metadata cache used by `filesize()` and
-`filemtime()`, either globally or for one local path. Successful `realpath()`
-calls populate bounded request-local `realpath_cache_get()` entries;
+`filemtime()`, either globally or for one local path; successful local-file
+`fopen()` create/truncate, `fwrite()`, and `ftruncate()` mutations also clear
+that bounded metadata cache for the affected path. `tempnam()` emits the
+bounded PHP-shaped system-temporary-directory fallback notice before a fallback
+`open_basedir` denial. Successful `realpath()` calls populate bounded
+request-local `realpath_cache_get()` entries;
 one-argument `clearstatcache(true)` clears those entries, while
 `clearstatcache(true, $filename)` removes only a non-empty exact matching
 cached resolved-path key. Successful local `file_get_contents()` reads, local
@@ -192,8 +196,8 @@ binary byte fidelity, directory entry ordering fidelity, multipart upload
 parsing, runtime temporary upload creation, host upload validation,
 permissions/locking, realpath-cache ancestor entries and broader
 `open_basedir` policy beyond covered local filesystem helpers,
-stat-cache/realpath-cache state beyond those local read paths, closure shutdown
-callback execution,
+stat-cache/realpath-cache state beyond those local read/mutation paths,
+closure shutdown callback execution,
 invokable-object shutdown callbacks, exact warning text and error-handler
 integration beyond the documented `file_get_contents()` and local `fopen()`
 open-failure recovery stack slices, temp-file spillover, and native stream
