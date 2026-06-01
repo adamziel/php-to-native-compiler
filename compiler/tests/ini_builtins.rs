@@ -153,6 +153,27 @@ var_dump(ini_get("arg_separator.output"));
 }
 
 #[test]
+fn ini_set_rejects_non_scalar_values_before_option_lookup() {
+    let execution = run_source(
+        r#"<?php
+try {
+    ini_set("foo", []);
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "ini_set(): Argument #2 ($value) must be of type string|int|float|bool|null\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn ini_parse_quantity_handles_decimal_hex_and_compatibility_suffixes() {
     let _guard = env_lock();
     let previous = env::var_os("PHPC_PHPT_INI_FLAGS");
@@ -345,13 +366,14 @@ fn ini_builtins_reject_forms_outside_current_subset() {
         "unsupported call ini_set(): option argument must be string in the current subset, got int"
     );
 
-    let array_value = run_source("<?php\nini_set('display_errors', []);\n").unwrap_err();
-    assert_eq!(array_value.phase, Phase::Runtime);
-    assert_eq!(array_value.line, 2);
-    assert_eq!(array_value.column, 1);
-    assert_eq!(
-        array_value.message,
-        "unsupported call ini_set(): value argument must be null or scalar in the current subset, got array"
+    let array_value = run_source("<?php\nini_set('display_errors', []);\n").unwrap();
+    assert_eq!(array_value.exit_code, 255);
+    assert!(
+        array_value.stdout.contains(
+            "Fatal error: Uncaught TypeError: ini_set(): Argument #2 ($value) must be of type string|int|float|bool|null"
+        ),
+        "{}",
+        array_value.stdout
     );
 
     let too_many = run_source("<?php\nini_get('memory_limit', true);\n").unwrap_err();

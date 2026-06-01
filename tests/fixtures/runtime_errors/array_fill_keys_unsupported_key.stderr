@@ -1,2 +1,0 @@
-runtime error at 3:6: unsupported call array_fill_keys(): key values must be null, bool, int, float, or string in the current subset, got array
-

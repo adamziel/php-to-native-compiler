@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Integrated the next post-`1efcacf6` worker batch for six focused rows. The
+  interpreter now covers bounded stream context option-shape diagnostics for
+  the reached context rows, `get_extension_funcs("standard")` metadata,
+  strict-types scalar acceptance for `ini_set()`, and broader
+  `array_fill_keys()` key-value coercion for the reached variation rows.
+  Focused Rust passed `66 / 66` across `stream_resource_builtin`,
+  `general_function_builtins`, `ini_builtins`, and `array_fill_keys`;
+  `cargo build -p phpc --bin phpc` passed; and selected PHPT proof passed
+  `6 / 6` for `bug71884.phpt`, `stream_context_create_error.phpt`,
+  `get_extension_funcs_basic.phpt`, `ini_set_types.phpt`,
+  `array_fill_keys_variation1.phpt`, and
+  `array_fill_keys_variation2.phpt`. Unsupported edges remain full stream
+  wrapper/filter execution, notification callbacks and wrapper-specific
+  context option behavior, host extension inventory parity, full INI catalog
+  and access metadata, object key conversion beyond the current stringable
+  subset, references/COW, and native lowering.
+
 - Integrated the next focused source batch after the `2755fc15` public gate.
   The interpreter now covers bounded `request_parse_body()` CLI option
   validation and no-content-type `RequestParseBodyException` handling, C/POSIX

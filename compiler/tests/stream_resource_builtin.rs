@@ -969,6 +969,49 @@ echo in_array("udg", $transports, true) ? "udg" : "missing";
 }
 
 #[test]
+fn stream_context_option_shape_errors_match_reached_phpts() {
+    let execution = run_source(
+        r#"<?php
+try {
+    stream_context_create(array("ssl" => "abc"));
+} catch (ValueError $exception) {
+    echo $exception->getMessage(), "\n";
+}
+
+try {
+    stream_context_create(array("ssl" => array("verify_peer" => false)), array("options" => array("ssl" => "abc")));
+} catch (ValueError $exception) {
+    echo $exception->getMessage(), "\n";
+}
+
+try {
+    stream_context_create(array("ssl" => array("verify_peer" => false)), array("options" => false));
+} catch (TypeError $exception) {
+    echo $exception->getMessage(), "\n";
+}
+
+$options = array();
+$options[0]["A"] = 0;
+try {
+    stream_context_get_default($options);
+} catch (ValueError $exception) {
+    echo $exception->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "Options should have the form [\"wrappername\"][\"optionname\"] = $value\n\
+Options should have the form [\"wrappername\"][\"optionname\"] = $value\n\
+Invalid stream/context parameter\n\
+Options should have the form [\"wrappername\"][\"optionname\"] = $value\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn stream_get_meta_data_reports_bounded_directory_resource_metadata() {
     let path = std::env::temp_dir();
     let source = format!(

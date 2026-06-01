@@ -3460,8 +3460,10 @@
   `false` for unknown names. `ini_set($option, $value)` accepts known string
   option names and current scalar/null values, returns the previous
   deterministic value, stores the new string-coerced value for later
-  `ini_get()` reads in the same execution, and returns `false` for unknown
-  options. The registry currently covers WordPress-oriented options such as
+  `ini_get()` reads in the same execution, returns `false` for unknown
+  options, and raises a bounded catchable `TypeError` for non-scalar values
+  before option lookup. The registry currently covers WordPress-oriented
+  options such as
   `memory_limit`, `max_execution_time`, `disable_functions`,
   `mbstring.func_overload`, upload/mail/error-output defaults, and related
   bootstrap settings. Host php.ini discovery, access-level enforcement,
@@ -3474,6 +3476,12 @@
   warnings through the current error-reporting mask. Host INI catalogs,
   non-scalar operands, exact native warning objects, every malformed quantity
   spelling, and native lowering remain unsupported.
+  `get_extension_funcs("standard")` returns a deterministic bounded metadata
+  subset for the current standard-extension compatibility surface, including
+  reached scalar/string/math names such as `strlen`, `ini_set`, and `cos`.
+  Unknown extension names return `false`. Host extension inventories, exact
+  standard function ordering/completeness, dynamically loaded extensions, and
+  native lowering remain unsupported.
   `get_loaded_extensions($zend_extensions = false)` returns the deterministic
   compatibility extension list for the normal runtime slice and an empty array
   for `true`. Dynamic host extension discovery, exact load ordering,
@@ -5227,15 +5235,18 @@
   `PHPC_REQUEST_BODY` request seed and report bounded PHP/Input/`rb` metadata.
   `stream_context_create($options = null, $params = null)` creates an
   interpreter-owned stream-context resource when both arguments are arrays or
-  `null`; it stores string-keyed wrapper options and the bounded params slice
-  for `notification` plus `options`. `stream_context_get_options($context)`
-  returns the stored options array, while
+  `null`; it validates the reached PHP wrapper-option array shape, stores
+  string-keyed wrapper options and the bounded params slice for `notification`
+  plus `options`, reports malformed option arrays as catchable `ValueError`s,
+  and reports the reached non-array creation `options` param as a catchable
+  `TypeError`. `stream_context_get_options($context)` returns the stored
+  options array, while
   `stream_context_get_params($context)` returns the stored bounded params plus
   the current `options` entry. `stream_context_get_default($options = null)`
   returns a request-local default context resource and merges optional
-  string-keyed wrapper options into it. `stream_context_set_default($options)`
-  merges string-keyed wrapper options into that same default context and
-  returns it.
+  string-keyed wrapper options into it, with the same malformed option-array
+  `ValueError` boundary. `stream_context_set_default($options)` merges
+  string-keyed wrapper options into that same default context and returns it.
   `stream_context_set_option($context, $options)` and
   `stream_context_set_option($context, $wrapper, $option, $value)` persist
   string-keyed wrapper/option entries on bounded context resources and return
@@ -5243,7 +5254,8 @@
   `notification` param, merges an `options` param into the same wrapper-option
   table, and returns `true`. Other context params, notification callback
   invocation, wrapper-specific side effects, context param effects beyond
-  option merging, exact warnings/TypeErrors, and native lowering remain
+  option merging, exact warnings/TypeErrors beyond the documented
+  stream-context option-shape diagnostics, and native lowering remain
   unsupported.
   `fwrite($stream, $data, $length = null)`
   writes string/scalar data at the current cursor, or at EOF for append mode,
@@ -9826,14 +9838,17 @@
   `array_fill_keys($keys, $value)` accepts arrays only for the first argument,
   stringifies null, boolean, integer, float, and string key values through the
   PHP scalar key path, preserves `-0.0` as the string key `"-0"`, normalizes
-  decimal string results through the current PHP-style array-key rules, and
-  stores the supplied value in every result slot using the current cloned
-  `Value` model. Duplicate result keys are overwritten by later key entries
-  without moving the first result-key position. Arrays, objects, and future
-  resources fail with a stable project diagnostic instead of PHP's
-  warning/stringification behavior. References, copy-on-write containers,
-  object handle identity for object fill values, exact native
-  warning/`TypeError` behavior, and native lowering are not implemented.
+  decimal string results through the current PHP-style array-key rules,
+  stringifies resources as `Resource id #N`, stringifies objects with supported
+  `__toString()` methods, and stringifies array key values as `Array` after a
+  bounded PHP-style warning. Reference-backed key slots are read by value for
+  this helper, and the supplied value is stored in every result slot using the
+  current cloned `Value` model. Duplicate result keys are overwritten by later
+  key entries without moving the first result-key position. Objects without
+  supported `__toString()`, closures, exact native warning/`TypeError`
+  behavior, reference/copy-on-write container identity, object handle identity
+  for object fill values, broader resource identity parity for fill values, and
+  native lowering are not implemented.
   `array_fill_keys` is also available through string-valued dynamic function
   calls.
   `array_count_values($array)` accepts arrays only, uses integer values
@@ -11059,10 +11074,10 @@
   visibility-context behavior for non-public properties,
   reference/copy-on-write behavior, exact native `TypeError`/warning objects,
   resource values, and native lowering
-- `array_fill_keys` warning/stringification behavior for unsupported
-  array/object/resource key values, reference/copy-on-write behavior, object
-  handle identity for object fill values, exact native warning/`TypeError`
-  objects, resource values, and native lowering
+- `array_fill_keys` object key values without supported `__toString()`,
+  closure key values, reference/copy-on-write behavior, object handle identity
+  for object fill values, broader resource identity parity for fill values,
+  exact native warning/`TypeError` objects, and native lowering
 - `array_count_values` warning-and-skip behavior for unsupported values,
   reference/copy-on-write behavior, exact native warning/`TypeError` objects,
   resource values, and native lowering

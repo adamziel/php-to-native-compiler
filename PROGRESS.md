@@ -36,20 +36,30 @@ Previous accepted public gate: checkpoint `1fe2b233` completed the full pinned
 PHPT gate with `5481 / 20294 = 27.01%` and zero latest-published PASS
 regressions against the `43262ab5` baseline.
 
-Local supervisor note: the next post-public focused source batch is verified
-for 6 selected PHPT rows across `request_parse_body()` CLI option validation
-and no-content-type exception handling, C/POSIX `nl_langinfo()` day/month/radix
+Local source checkpoint note: checkpoint `1efcacf6` passed
+`tools/checkpoint.sh` for the next post-public focused source batch. It covers
+6 selected PHPT rows across `request_parse_body()` CLI option validation and
+no-content-type exception handling, C/POSIX `nl_langinfo()` day/month/radix
 metadata, and bounded caught `Throwable` stringification for the reached
 `sprintf()` error row. Focused Rust passed `383 / 383` across
 `request_parse_body_builtin`, `object_model`, `sprintf_builtin`, and
-`locale_string_builtins`; `cargo build -p phpc --bin phpc` passed; and
-selected PHPT proof passed `6 / 6` for
+`locale_string_builtins`; `cargo build -p phpc --bin phpc` passed; selected
+PHPT proof passed `6 / 6` for
 `multipart_options_invalid_key.phpt`,
 `multipart_options_invalid_quantity.phpt`,
 `multipart_options_invalid_value_type.phpt`, `options_array_references.phpt`,
 `nl_langinfo_basic.phpt`, and `sprintf_rope_optimization_002.phpt`. This is
-not a public score update until checkpoint validation and a full pinned PHPT
-gate complete.
+not a public score update until a full pinned PHPT gate completes.
+
+Local supervisor note: the next post-`1efcacf6` worker batch is verified for
+6 selected PHPT rows: `bug71884.phpt`,
+`stream_context_create_error.phpt`, `get_extension_funcs_basic.phpt`,
+`ini_set_types.phpt`, `array_fill_keys_variation1.phpt`, and
+`array_fill_keys_variation2.phpt`. Focused Rust passed `66 / 66` across
+`stream_resource_builtin`, `general_function_builtins`, `ini_builtins`, and
+`array_fill_keys`; `cargo build -p phpc --bin phpc` passed; and selected PHPT
+proof passed `6 / 6`. This is not a public score update until checkpoint
+validation and a full pinned PHPT gate complete.
 
 Local supervisor note: the next worker-integrated focused source batch covers
 8 additional target PHPT rows: `substr.phpt`, `fread_error.phpt`,

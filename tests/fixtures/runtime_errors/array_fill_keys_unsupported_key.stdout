@@ -1,6 +1,2 @@
-exit: 0
-stdout:
 Warning: Array to string conversion in tests/fixtures/runtime_errors/array_fill_keys_unsupported_key.php on line 3
-Array--- stdout end ---
-stderr:
---- stderr end ---
+Array

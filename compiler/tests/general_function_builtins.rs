@@ -44,6 +44,32 @@ foreach (["getmypid", "php_uname", "phpversion"] as $call) {
 }
 
 #[test]
+fn get_extension_funcs_returns_bounded_standard_function_metadata() {
+    let execution = run_source(
+        r#"<?php
+echo "Simple testcase for get_extension_funcs() function\n";
+$result = get_extension_funcs("standard");
+var_dump(gettype($result));
+var_dump(in_array("cos", $result));
+var_dump(get_extension_funcs("foo"));
+var_dump(in_array("strlen", get_extension_funcs("STANDARD")));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "Simple testcase for get_extension_funcs() function\n\
+string(5) \"array\"\n\
+bool(true)\n\
+bool(false)\n\
+bool(true)\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn getmypid_rejects_arguments() {
     let error = run_source("<?php\ngetmypid(1);\n").unwrap_err();
 

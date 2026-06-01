@@ -79537,9 +79537,17 @@ impl Interpreter {
                 ),
             ));
         }
-        let mut options = match args.first() {
-            Some(Value::Array(options)) => options.clone(),
-            Some(Value::Null) | None => PhpArray::new(),
+        let mut options = PhpArray::new();
+        match args.first() {
+            Some(Value::Array(raw_options)) => {
+                apply_stream_context_options(
+                    &mut options,
+                    raw_options,
+                    "stream_context_create()",
+                    span,
+                )?;
+            }
+            Some(Value::Null) | None => {}
             Some(other) => {
                 return Err(runtime_error(
                     span,
@@ -79552,7 +79560,7 @@ impl Interpreter {
                     ),
                 ));
             }
-        };
+        }
         let params = match args.get(1) {
             Some(Value::Array(params)) => apply_stream_context_params(
                 &mut options,
@@ -84854,6 +84862,7 @@ impl Interpreter {
             "getenv" => self.call_getenv(&args, span),
             "putenv" => self.call_putenv(&args, span),
             "get_cfg_var" => self.call_get_cfg_var(&args, span),
+            "get_extension_funcs" => self.call_get_extension_funcs(&args, span),
             "get_loaded_extensions" => self.call_get_loaded_extensions(&args, span),
             "ini_get" => self.call_ini_get(&args, span),
             "ini_get_all" => self.call_ini_get_all(&args, span),
@@ -85619,10 +85628,9 @@ impl Interpreter {
             "array_fill_keys" => {
                 expect_arity(name, &args, 2, span)?;
                 match &args[0] {
-                    Value::Array(keys) => keys
-                        .filled_keys(args[1].clone())
-                        .map(Value::Array)
-                        .map_err(|error| runtime_error(span, error)),
+                    Value::Array(keys) => self
+                        .call_array_fill_keys(keys, args[1].clone(), span)
+                        .map(Value::Array),
                     other => Err(runtime_error(
                         span,
                         RuntimeError::unsupported_call(
@@ -91820,6 +91828,61 @@ impl Interpreter {
         }
 
         !current.is_truthy()
+    }
+
+    fn call_array_fill_keys(
+        &mut self,
+        keys: &PhpArray,
+        fill_value: Value,
+        span: Span,
+    ) -> CompileResult<PhpArray> {
+        let mut array = PhpArray::new();
+        for entry in keys.entries() {
+            let key = self.array_fill_key_from_value(entry.value_cloned(), span)?;
+            array.insert(key, fill_value.clone());
+        }
+        Ok(array)
+    }
+
+    fn array_fill_key_from_value(&mut self, value: Value, span: Span) -> CompileResult<ArrayKey> {
+        match value {
+            Value::Array(_) => {
+                self.emit_display_warning("Array to string conversion", span)?;
+                Ok(ArrayKey::string("Array"))
+            }
+            Value::Object(object) => {
+                if object.class_name().eq_ignore_ascii_case("BcMath\\Number") {
+                    return self
+                        .bcmath_number_object_string(&object, span)
+                        .map(ArrayKey::string);
+                }
+                if let Some(output) =
+                    self.object_to_string_with_magic(object.clone(), "array_fill_keys()", span)?
+                {
+                    Ok(ArrayKey::string(output))
+                } else {
+                    Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "array_fill_keys()",
+                            format!(
+                                "Object of class {} could not be converted to string",
+                                object.class_name()
+                            ),
+                        ),
+                    ))
+                }
+            }
+            Value::Closure(_) => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "array_fill_keys()",
+                    "key values must be null, bool, int, float, string, binary string, resource, array, or object with __toString() in the current subset, got closure",
+                ),
+            )),
+            other => php_runtime::array_combine_key_from_value(&other)
+                .map_err(|error| runtime_error(span, error)),
+        }
     }
 
     fn call_array_combine(
@@ -104487,16 +104550,18 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
         | (
             "flock()",
             "Argument #2 ($operation) must be one of LOCK_SH, LOCK_EX, or LOCK_UN",
-        )
-        | (
+        ) => {
+            Some(format!("{function}: {message}"))
+        },
+        (
             "stream_context_create()"
             | "stream_context_get_default()"
             | "stream_context_set_default()"
             | "stream_context_set_option()"
             | "stream_context_set_options()",
             "Options should have the form [\"wrappername\"][\"optionname\"] = $value",
-        )
-        | ("strpos()", "Argument #3 ($offset) must be contained in argument #1 ($haystack)")
+        ) => Some(message.to_string()),
+        ("strpos()", "Argument #3 ($offset) must be contained in argument #1 ($haystack)")
         | ("stripos()", "Argument #3 ($offset) must be contained in argument #1 ($haystack)")
         | ("strrpos()", "Argument #3 ($offset) must be contained in argument #1 ($haystack)")
         | ("strripos()", "Argument #3 ($offset) must be contained in argument #1 ($haystack)")
@@ -104875,6 +104940,12 @@ fn stream_context_php_error_class_and_message(
                 | "Argument #4 ($value) must be provided when argument #2 ($wrapper_or_options) is a string"
         ) {
             return Some(("Error", message.to_string()));
+        }
+    }
+
+    if let Some(reason) = message.strip_prefix("stream_context_create(): ") {
+        if reason == "Invalid stream/context parameter" {
+            return Some(("TypeError", reason.to_string()));
         }
     }
 
@@ -105352,6 +105423,7 @@ fn is_builtin(name: &str) -> bool {
             | "getenv"
             | "putenv"
             | "get_cfg_var"
+            | "get_extension_funcs"
             | "get_loaded_extensions"
             | "ini_get"
             | "ini_get_all"
@@ -128846,12 +128918,14 @@ fn apply_stream_context_params(
             }
             "options" => {
                 let Value::Array(param_options) = entry.value() else {
+                    let message = if callable == "stream_context_create()" {
+                        "Invalid stream/context parameter"
+                    } else {
+                        "options param must be array in the current subset"
+                    };
                     return Err(runtime_error(
                         span,
-                        RuntimeError::unsupported_call(
-                            callable,
-                            "options param must be array in the current subset",
-                        ),
+                        RuntimeError::unsupported_call(callable, message),
                     ));
                 };
                 apply_stream_context_options(options, param_options, callable, span)?;
@@ -135113,6 +135187,20 @@ impl Interpreter {
             .unwrap_or(Value::Bool(false)))
     }
 
+    fn call_get_extension_funcs(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("get_extension_funcs", args, 1, span)?;
+        let name = string_builtin_argument("get_extension_funcs()", "extension", &args[0], span)?;
+        if !name.eq_ignore_ascii_case("standard") {
+            return Ok(Value::Bool(false));
+        }
+
+        let mut functions = PhpArray::new();
+        for (index, function) in COMPAT_STANDARD_EXTENSION_FUNCTIONS.iter().enumerate() {
+            functions.insert(index as i64, Value::String((*function).to_string()));
+        }
+        Ok(Value::Array(functions))
+    }
+
     fn call_get_loaded_extensions(&self, args: &[Value], span: Span) -> CompileResult<Value> {
         if args.len() > 1 {
             return Err(runtime_error(
@@ -135655,30 +135743,27 @@ impl Interpreter {
         };
 
         let normalized_name = normalize_ini_name(name);
+        let value = match &args[1] {
+            Value::Null | Value::Bool(_) | Value::Int(_) | Value::Float(_) | Value::String(_) => {
+                args[1].echo_string()
+            }
+            _ => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "ini_set()",
+                        "Argument #2 ($value) must be of type string|int|float|bool|null",
+                    ),
+                ));
+            }
+        };
+
         if !ini_option_is_runtime_mutable(&normalized_name) {
             return Ok(Value::Bool(false));
         }
 
         let Some(previous) = self.ini_value(&normalized_name) else {
             return Ok(Value::Bool(false));
-        };
-
-        let value = match &args[1] {
-            Value::Null | Value::Bool(_) | Value::Int(_) | Value::Float(_) | Value::String(_) => {
-                args[1].echo_string()
-            }
-            other => {
-                return Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "ini_set()",
-                        format!(
-                            "value argument must be null or scalar in the current subset, got {}",
-                            other.type_name()
-                        ),
-                    ),
-                ));
-            }
         };
 
         if normalized_name == "opcache.enable" {
@@ -138005,6 +138090,25 @@ const OPCACHE_DIRECTIVES: &[&str] = &[
 ];
 
 const COMPAT_LOADED_EXTENSIONS: &[&str] = &["bcmath", "filter", "json", "hash", "pdo", "pdo_mysql"];
+
+const COMPAT_STANDARD_EXTENSION_FUNCTIONS: &[&str] = &[
+    "strlen",
+    "strpos",
+    "substr",
+    "strtolower",
+    "strtoupper",
+    "trim",
+    "sprintf",
+    "printf",
+    "ini_get",
+    "ini_set",
+    "get_loaded_extensions",
+    "get_extension_funcs",
+    "abs",
+    "min",
+    "max",
+    "cos",
+];
 
 const COMPAT_INI_DIRECTIVES: &[&str] = &[
     "arg_separator.input",
