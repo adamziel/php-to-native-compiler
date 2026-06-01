@@ -3589,10 +3589,11 @@
   `PREG_UNMATCHED_AS_NULL`, and `PREG_PATTERN_ORDER`/`PREG_SET_ORDER` for
   `preg_match_all()`. Patterns are parsed with PHP-style delimiters and then
   executed through the Rust regex engine after a bounded PCRE-to-regex
-  translation for covered escapes and named groups. The covered modifier set
-  is `i`, `m`, `s`, `x`, `U`, `u`, `n`, and `D`, plus ignored `A`, `S`, and
-  `J`; `n` suppresses unnamed captures in returned match arrays while
-  retaining named captures. For non-`m` patterns with `$` and without `D`,
+  translation for covered escapes and named group syntaxes (`(?P<name>...)`,
+  `(?<name>...)`, and `(?'name'...)`). The covered modifier set is `i`, `m`,
+  `s`, `x`, `U`, `u`, `n`, and `D`, plus ignored `A`, `S`, and `J`; `n`
+  suppresses unnamed captures in returned match arrays while retaining named
+  captures. For non-`m` patterns with `$` and without `D`,
   matching retries against a final-LF-stripped search slice when the direct
   Rust-regex match fails, covering PHP's default `$`-before-final-LF behavior
   while keeping `D` dollar-end-only rows absolute-end anchored. Named captures

@@ -120513,6 +120513,24 @@ fn translate_pcre_body_for_regex(body: &str) -> String {
         }
         match ch {
             '\\' => escaped = true,
+            '(' if !in_class && chars.peek() == Some(&'?') => {
+                let mut lookahead = chars.clone();
+                lookahead.next();
+                if lookahead.peek() == Some(&'\'') {
+                    chars.next();
+                    chars.next();
+                    output.push_str("(?P<");
+                    for name_ch in chars.by_ref() {
+                        if name_ch == '\'' {
+                            output.push('>');
+                            break;
+                        }
+                        output.push(name_ch);
+                    }
+                } else {
+                    output.push(ch);
+                }
+            }
             '[' if !in_class => {
                 in_class = true;
                 output.push(ch);

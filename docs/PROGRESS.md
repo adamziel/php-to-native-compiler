@@ -36,6 +36,12 @@ Implemented:
   regression plus selected ext/pcre PHPT row `ext/pcre/tests/dollar_endonly.phpt`.
   Broader CRLF/newline anchor parity remains unsupported with the PCRE edges
   listed above.
+- Added the compact single-quoted named capture syntax translation for
+  `preg_match()`/`preg_match_all()` patterns, mapping `(?'name'...)` to the
+  existing Rust-regex named capture form while preserving the current match
+  array ordering and intermediate-unmatched behavior. Focused proof covers the
+  new Rust regression plus selected ext/pcre PHPT row
+  `ext/pcre/tests/bug72688.phpt`.
 
 ## 2026-05-27
 

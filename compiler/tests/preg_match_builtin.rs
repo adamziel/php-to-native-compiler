@@ -383,6 +383,30 @@ echo "\n";
 }
 
 #[test]
+fn preg_match_accepts_single_quoted_named_captures() {
+    let execution = run_source(
+        r#"<?php
+preg_match("/(?'first'foo)|(?'second'bar)/", 'bar', $match);
+var_export($match);
+echo "\n";
+"#,
+    )
+    .unwrap();
+
+    let expected = concat!(
+        "array (\n",
+        "  0 => 'bar',\n",
+        "  'first' => '',\n",
+        "  1 => '',\n",
+        "  'second' => 'bar',\n",
+        "  2 => 'bar',\n",
+        ")\n",
+    );
+    assert_eq!(execution.stdout, expected);
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn preg_match_supports_default_dollar_before_final_lf() {
     let execution = run_source(
         r#"<?php
