@@ -1,6 +1,6 @@
 # PHP Native Compiler PHPT Progress
 
-Updated: 2026-06-01 16:23 CEST
+Updated: 2026-06-01 16:45 CEST
 
 Primary/public branch: `origin/master`
 Latest source-bearing public head:
@@ -58,6 +58,13 @@ Local supervisor note: the `variable_unset` Rust baseline now matches the
 current PHP-shaped warning-and-continue path when reading a local after
 `unset()`. The focused suite passes locally, but this is not a public score
 update.
+
+Local supervisor note: checkpoint `263f60c4` produced a candidate full pinned
+PHPT score of `5361 / 20294 = 26.42%`, but publication was blocked by two
+latest-published PASS regressions: `is_file_variation4.phpt` and
+`vfprintf_error4.phpt`. Both rows now pass focused PHPT verification after the
+trailing-slash `is_file()` and catchable `vfprintf()` stream-argument fixes;
+the improved score is still not public until a rerun records zero regressions.
 
 ## Current Public Gate
 

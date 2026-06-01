@@ -29,12 +29,14 @@ echo "|";
 echo is_file(__DIR__) ? "dir" : "not-file";
 echo "|";
 echo is_file(__DIR__ . "/missing-file.php") ? "file" : "missing";
+echo "|";
+echo is_file(__FILE__ . "/") ? "trailing-file" : "trailing-not-file";
 "#,
         fixture_source_file(),
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "file|not-file|missing");
+    assert_eq!(execution.stdout, "file|not-file|missing|trailing-not-file");
     assert_eq!(execution.exit_code, 0);
 }
 

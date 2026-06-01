@@ -107,6 +107,29 @@ vfprintf($stream, "%s", "not-array");
         .contains("vfprintf(): Argument #3 ($values) must be of type array"));
     assert_eq!(values.stderr, "");
     assert_eq!(values.exit_code, 255);
+
+    let stream_type = run_source(
+        r#"<?php
+$stream = fopen("php://memory", "w+");
+try {
+    var_dump(vfprintf("foo", "bar", ["baz"]));
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    var_dump(vfprintf($stream, 'Foo %$c-0202Sd', [2]));
+} catch (ValueError $e) {
+    echo "Error found: ", $e->getMessage(), ".\n";
+}
+"#,
+    )
+    .unwrap();
+    assert_eq!(
+        stream_type.stdout,
+        "vfprintf(): Argument #1 ($stream) must be of type resource, string given\nError found: Argument number specifier must be greater than zero and less than 2147483647.\n"
+    );
+    assert_eq!(stream_type.stderr, "");
+    assert_eq!(stream_type.exit_code, 0);
 }
 
 #[test]

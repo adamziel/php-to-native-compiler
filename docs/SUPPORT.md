@@ -3438,7 +3438,8 @@
   PHP array truthiness, in the current finite numeric subset. Unknown format
   specifiers and invalid positional argument numbers raise a catchable
   `ValueError` before output in this bounded path, and vprintf/vfprintf
-  argument type/count failures route through catchable PHP-shaped `TypeError`.
+  argument type/count failures route through catchable PHP-shaped `TypeError`;
+  this includes non-resource `vfprintf()` stream arguments.
   PHP's full format grammar, star width or precision, general placeholders,
   locale behavior, broad argument reordering, object/resource conversions,
   exact warning behavior, partial-output behavior, and native lowering remain
@@ -5296,9 +5297,10 @@
   non-string coercions, stat-cache behavior, partial-output
   behavior, and native lowering remain unsupported.
   `is_file($path)` accepts one string local path, rejects stream-wrapper paths,
-  returns `true` for host regular files, and returns `false` for missing paths
-  or non-file paths such as directories. It shares the same current relative
-  path and bounded request-local `open_basedir` policy as `file_exists`.
+  returns `true` for host regular files, and returns `false` for missing paths,
+  regular-file paths with trailing slashes, or non-file paths such as
+  directories. It shares the same current relative path and bounded
+  request-local `open_basedir` policy as `file_exists`.
   Include-path lookup, stream wrappers,
   canonicalization/symlink policy, portable file-type details, permission
   warnings beyond the documented denial slice, non-string coercions,

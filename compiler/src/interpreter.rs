@@ -83474,6 +83474,18 @@ impl Interpreter {
 
     fn call_vfprintf(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("vfprintf", args, 3, span)?;
+        if !matches!(args[0], Value::Resource(_)) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "vfprintf()",
+                    format!(
+                        "Argument #1 ($stream) must be of type resource, {} given",
+                        php_type_error_given(&args[0])
+                    ),
+                ),
+            ));
+        }
         let output = self.call_vsprintf(&args[1..], "vfprintf()", span)?;
         let length = output.byte_len();
         self.write_stream_bytes("vfprintf", &args[0], &output.bytes, span)?;
@@ -86502,6 +86514,9 @@ impl Interpreter {
                             &metadata_path,
                             span,
                         )? {
+                            return Ok(Value::Bool(false));
+                        }
+                        if path.ends_with('/') || path.ends_with('\\') {
                             return Ok(Value::Bool(false));
                         }
                         Ok(Value::Bool(
