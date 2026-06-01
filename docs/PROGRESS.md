@@ -4,6 +4,24 @@
 
 Implemented:
 
+- Added a post-Batch024 focused score batch with direct PHPT wins:
+  string-keyed `$GLOBALS` unsets now remove root symbols so `count($GLOBALS)`
+  tracks the reached symbol-table PHPT row; `strcasecmp()` now returns PHP's
+  folded byte-delta magnitude instead of normalized signs; trim-family calls
+  coerce supported `__toString()` objects and the native callable trim helper
+  shares the form-feed-inclusive default mask; and `str_replace()` resource
+  search operands now raise a catchable PHP-shaped `TypeError` before `$count`
+  writeback while direct `str_ireplace()` supports the same direct-variable
+  `$count` output path. Top-level `null` search/replace/subject arguments in
+  `str_replace()` / `str_ireplace()` now emit the PHP-shaped deprecation while
+  nulls inside search/replacement arrays keep the current string conversion
+  behavior. Focused `cargo test -p phpc --test str_replace_builtin --test
+  strcasecmp_builtin --test string_trim_builtin --test superglobals --
+  --test-threads=1` passed `68 / 68`; focused `php_runtime` trim and string
+  helper tests passed `2 / 2`; and focused PHPT verification passed `7 / 7`
+  for `count_symbol_table.phpt`, `strcasecmp_basic.phpt`, `trim.phpt`,
+  `rtrim.phpt`, `str_replace_basic.phpt`, `str_ireplace.phpt`, and
+  `str_replace_variation1.phpt`.
 - Published the Batch024 regression-repair full pinned PHPT gate from
   checkpoint `43262ab5f81fe293a49829c9c270137be98f5e6d`. The gate recorded
   `5363 / 20294 = 26.43%` public pinned runnable PHPTs with zero

@@ -13890,7 +13890,7 @@ unsafe fn native_callable_builtin_argument_values(
     Ok(values)
 }
 
-const PHP_DEFAULT_TRIM_MASK: &[u8] = b" \n\r\t\x0b\0";
+const PHP_DEFAULT_TRIM_MASK: &[u8] = b" \n\r\t\x0b\x0c\0";
 
 fn native_callable_trimmed_bytes(subject: &[u8], mask: &[u8], mode: NativeTrimMode) -> Vec<u8> {
     let mut start = 0;
@@ -19025,7 +19025,7 @@ unsafe fn native_value_string_predicate(
 /// non-null, it must point to writable storage for one `NativeDiagnosticHandle`.
 /// On failure the helper stores a diagnostic handle that the caller owns and
 /// must release with `phpc_native_diagnostic_free`. Operation `0` returns
-/// `strcasecmp(subject, operand)` as -1, 0, or 1; operation `2` returns
+/// `strcasecmp(subject, operand)` as PHP's folded byte difference; operation `2` returns
 /// `strcmp(subject, operand)`; operations `3` and `4` return `strncmp()` and
 /// `strncasecmp()` over `length`; operation `1` returns
 /// `substr_count(subject, operand[, offset[, length]])`; operation `5` returns
@@ -19230,10 +19230,8 @@ fn ascii_case_insensitive_compare_bytes(left: &[u8], right: &[u8]) -> i64 {
     for (left, right) in left.iter().zip(right.iter()) {
         let left = left.to_ascii_lowercase();
         let right = right.to_ascii_lowercase();
-        match left.cmp(&right) {
-            Ordering::Less => return -1,
-            Ordering::Greater => return 1,
-            Ordering::Equal => {}
+        if left != right {
+            return i64::from(left) - i64::from(right);
         }
     }
 
@@ -51773,6 +51771,11 @@ mod tests {
                 ],
                 Value::String(" unchanged ".to_string()),
             ),
+            (
+                "trim",
+                vec![Value::BinaryString(b"\x0cABC\x0c".to_vec())],
+                Value::String("ABC".to_string()),
+            ),
         ];
 
         for (name, args, expected) in cases {
@@ -68862,6 +68865,22 @@ mod tests {
         assert_eq!(case_compare, 0);
         assert!(diagnostic.is_null());
 
+        let delta_left = NativeValueHandle::from_value(Value::String("aef".to_string()));
+        let delta_right = NativeValueHandle::from_value(Value::String("dfsgbdf".to_string()));
+        let case_compare_delta = unsafe {
+            phpc_native_value_string_int_operation_with_diagnostic(
+                delta_left,
+                delta_right,
+                0,
+                0,
+                0,
+                NativeStringIntOperation::CaseCompare as u8,
+                &mut diagnostic,
+            )
+        };
+        assert_eq!(case_compare_delta, -3);
+        assert!(diagnostic.is_null());
+
         let byte_compare = unsafe {
             phpc_native_value_string_int_operation_with_diagnostic(
                 payload,
@@ -69011,6 +69030,8 @@ mod tests {
         unsafe { phpc_native_value_free(scalar_needle) };
         unsafe { phpc_native_value_free(scalar) };
         unsafe { phpc_native_value_free(needle) };
+        unsafe { phpc_native_value_free(delta_right) };
+        unsafe { phpc_native_value_free(delta_left) };
         unsafe { phpc_native_value_free(repeated) };
         unsafe { phpc_native_value_free(folded) };
         unsafe { phpc_native_value_free(payload) };

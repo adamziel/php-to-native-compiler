@@ -1608,7 +1608,10 @@ source name, the direct global variable path, the supported string-keyed
 `$GLOBALS` offset path, and other covered alias-group slots observe the same
 value, and unsetting the source name detaches only that name. Nested by-value
 writes through supported string-keyed `$GLOBALS` paths route through the root
-global symbol table and sync covered aliases. Non-string root keys,
+global symbol table and sync covered aliases. Direct string-keyed `$GLOBALS`
+unsets also route through the root symbol table
+for top-level and function-scope paths, so `count($GLOBALS)` observes supported
+direct-variable and `$GLOBALS["name"]` removals. Non-string root keys,
 `$GLOBALS[] =& $value`, non-direct sources, recursive `$GLOBALS`
 materialization, full reference containers, copy-on-write, exact mutation
 ordering, and native lowering remain future work.
@@ -2640,15 +2643,14 @@ runtime UTF-8 strings so WordPress bootstrap can normalize simple option
 suffixes, while locale-sensitive casing, full Unicode case folding, binary
 string behavior beyond valid UTF-8, and native lowering remain out of scope.
 `trim()` is an interpreter-only bounded string-normalization builtin for
-current scalar/null string-convertible values. The first slice implements the
-default PHP whitespace mask for represented runtime strings so WordPress can
-parse shorthand INI values, while custom masks, binary/null-byte edge cases,
-and native lowering remain out of scope.
-`ltrim()` and `rtrim()` are interpreter-only bounded one-sided string
-normalization builtins for the same scalar/null string-convertible values.
-They support the default PHP whitespace mask and reached literal masks such as
-`/`, while character-mask ranges, broad binary edge cases, object/resource
+current scalar/null string-convertible values and supported `__toString()`
+objects. The current slice implements PHP's default whitespace byte mask,
+including form-feed, and simple increasing custom byte ranges such as `A..Z`
+for represented runtime strings. Broader charlist parsing, resource/array
 operands, exact diagnostics, and native lowering remain out of scope.
+`ltrim()` and `rtrim()` are interpreter-only bounded one-sided string
+normalization builtins for the same values. They share the same default mask,
+custom-range expansion, and supported `__toString()` coercion boundaries.
 `str_contains()`, `str_starts_with()`, and `str_ends_with()` are bounded string
 predicate builtins for current scalar/null string-convertible haystack and
 needle values. They use the current UTF-8 runtime string representation, keep
@@ -2694,9 +2696,11 @@ with `sha1_file()`. Streaming hash contexts, exact entropy/time behavior,
 FIPS/provider policy, and native lowering remain out of scope.
 `strcasecmp()` is an interpreter-only bounded string comparison builtin for
 current scalar/null string-convertible values. It compares valid UTF-8 runtime
-strings by bytes with ASCII case folding and returns only sign values. Native
-function-table introspection recognizes the name, while direct native calls
-still reject until string comparison helpers and diagnostics are lowered.
+strings and binary-string values by bytes with ASCII case folding and returns
+PHP's first differing folded byte delta, falling back to sign values only for
+prefix-length differences. Native function-table introspection recognizes the
+name, while direct native calls lower through the shared string-int runtime
+helper for the current scalar subset.
 `strncmp()` and `strncasecmp()` are bounded prefix string comparison builtins
 for current scalar/null string-convertible values plus int-compatible
 non-negative lengths. They compare runtime string bytes up to the requested
@@ -2709,9 +2713,11 @@ native parity for unsupported operand/reference/COW shapes remain out of
 scope.
 `str_replace()` is an interpreter-only bounded string replacement builtin for
 scalar/null and one-level array search, replacement, and subject values.
-Direct calls and string-valued dynamic calls write aggregate count output only
-for direct-variable fourth arguments. Callback-by-value fourth arguments use
-the PHP-shaped by-reference warning/result path without count writeback.
+Direct `str_replace()` and `str_ireplace()` calls plus string-valued dynamic
+calls write aggregate count output only for direct-variable fourth arguments.
+Callback-by-value fourth arguments use the PHP-shaped by-reference
+warning/result path without count writeback. Resource search operands now
+enter the catchable PHP-shaped TypeError path before count writeback.
 Native function-table introspection recognizes the name, while direct native
 calls still reject until string allocation, array forms, count-output
 references, and diagnostics have a lowered runtime model.

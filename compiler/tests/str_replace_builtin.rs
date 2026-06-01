@@ -99,6 +99,94 @@ echo $call("a", "b", "a-a", $count), "|", $count;
 }
 
 #[test]
+fn str_ireplace_reuses_replacement_engine_case_insensitively() {
+    let execution = run_source(
+        r#"<?php
+echo str_ireplace("tt", "a", "ttttTttttttttTT", $count), "|", $count, "\n";
+$result = str_ireplace(
+    array("tt", "y"),
+    array("aaa", "bbb"),
+    array("key" => "ttttTttttttttTT", "test" => "aayyaayasdayYahsdYYY"),
+    $array_count
+);
+echo $result["key"], "\n";
+echo $result["test"], "\n";
+echo $array_count;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "aaaaaaaT|7\naaaaaaaaaaaaaaaaaaaaaT\naabbbbbbaabbbasdabbbbbbahsdbbbbbbbbb\n15"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn str_replace_resource_type_error_preserves_count_variable() {
+    let execution = run_source(
+        r#"<?php
+$fp = fopen("php://memory", "w+");
+$fp_copy = $fp;
+try {
+    var_dump(str_replace($fp_copy, $fp_copy, $fp_copy, $fp_copy));
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+var_dump($fp_copy);
+fclose($fp);
+"#,
+    )
+    .unwrap();
+
+    let mut lines = execution.stdout.lines();
+    assert_eq!(
+        lines.next(),
+        Some("str_replace(): Argument #1 ($search) must be of type array|string, resource given")
+    );
+    let resource_line = lines.next().expect("resource dump should be present");
+    assert!(resource_line.starts_with("resource("), "{resource_line}");
+    assert!(
+        resource_line.ends_with(") of type (stream)"),
+        "{resource_line}"
+    );
+    assert_eq!(lines.next(), None);
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn str_replace_warns_for_top_level_null_search_only() {
+    let execution = run_source(
+        r#"<?php
+var_dump(str_replace(null, "x", "abc", $count));
+var_dump($count);
+var_dump(str_replace([null], "x", ["", "abc"], $array_count));
+var_dump($array_count);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "Deprecated: str_replace(): Passing null to parameter #1 ($search) of type array|string is deprecated in Command line code on line 2\n",
+            "string(3) \"abc\"\n",
+            "int(0)\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  string(0) \"\"\n",
+            "  [1]=>\n",
+            "  string(3) \"abc\"\n",
+            "}\n",
+            "int(0)\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn str_replace_covers_array_forms_and_rejects_remaining_boundaries() {
     let missing = runtime_error(
         r#"<?php

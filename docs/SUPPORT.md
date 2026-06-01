@@ -2677,7 +2677,9 @@
   covered alias-group slots observe the same value, and `unset($value)`
   detaches only the source name. Nested by-value writes through supported
   string-keyed `$GLOBALS` paths route through the root global symbol table and
-  sync covered aliases. The recursive literal-key spelling
+  sync covered aliases. Direct string-keyed `$GLOBALS` unsets route through the
+  same root table, so `count($GLOBALS)` observes supported direct-variable and
+  `$GLOBALS["name"]` removals. The recursive literal-key spelling
   `$GLOBALS['GLOBALS']` is covered as the ordinary root global variable named
   `GLOBALS` for direct nested writes, reference sources, append reference
   sources, and root overwrites. Direct `$GLOBALS` value reads materialize a
@@ -3468,15 +3470,17 @@
   `0`, and decrement underflow. Locale/Unicode-aware character classes,
   array/object/resource coercions, and native lowering remain unsupported.
   `trim($value)`, `ltrim($value)`, `rtrim($value)`, and `chop($value)`
-  support scalar/null string-convertible arguments and PHP's default byte mask
+  support scalar/null string-convertible arguments, supported `__toString()`
+  objects, and PHP's default byte mask
   including space, tab, LF, CR, vertical tab, form feed, and NUL. The optional
   character mask supports literal bytes, empty masks, and simple incrementing
   `x..y` byte ranges for represented runtime strings. Invalid `..` ranges such
   as missing left/right endpoints, descending ranges, and ambiguous chained
   ranges emit PHP-style warnings and return the original string. Broader
   binary/null-byte edge cases beyond the current represented runtime-string
-  subset, array/object/resource coercions, exact PHP diagnostics for every
-  charlist spelling, and native lowering remain unsupported.
+  subset, arrays, resources, closures, objects without supported
+  `__toString()`, exact PHP diagnostics for every charlist spelling, and
+  native lowering remain unsupported.
   `array_push($array, ...$values)` supports direct calls and string-valued
   direct dynamic calls when the first argument is a direct variable array path,
   including selected nested paths such as `$array[$key]`. It evaluates pushed
@@ -3495,10 +3499,12 @@
   handling beyond the selected callback forms, exact warnings, and native
   lowering remain unsupported.
   `strcasecmp($left, $right)` supports exactly two scalar/null
-  string-convertible arguments, compares with ASCII case folding, and returns
-  `-1`, `0`, or `1`. Array operands, object/resource coercions, binary string
-  edge cases beyond valid UTF-8 runtime strings, locale-sensitive behavior,
-  exact PHP diagnostics, and native lowering remain unsupported.
+  string-convertible arguments, compares byte strings with ASCII case folding,
+  and returns PHP's first differing folded byte delta, using sign values only
+  for prefix-length differences. Array operands, object/resource coercions,
+  broader binary string edge cases beyond represented runtime bytes,
+  locale-sensitive behavior, exact PHP diagnostics, and native lowering
+  outside the current string-int helper remain unsupported.
   `strncmp($string1, $string2, $length)` and
   `strncasecmp($string1, $string2, $length)` support scalar/null
   string-convertible operands, an int-compatible non-negative length, binary
@@ -3721,10 +3727,11 @@
   arguments emit the PHP-shaped by-reference warning and still return the
   replacement result without writing count output. This is a bounded
   output-parameter path, not true PHP references. `str_ireplace()` supports the
-  same value shapes without the direct `$count` output parameter in this slice
-  and uses ASCII case-insensitive byte matching. Recursive arrays, non-variable
-  count targets, indirect writable count output, full locale/Unicode
-  case folding, object/resource coercions outside the current string
+  same direct `$count` output parameter and uses ASCII case-insensitive byte
+  matching. Resource search operands raise a catchable PHP-shaped `TypeError`
+  before count writeback. Recursive arrays, non-variable count targets,
+  indirect writable count output, full locale/Unicode case folding,
+  object/resource coercions outside the current string
   conversion hooks, exact warning behavior beyond the documented array
   conversion path, and native lowering remain unsupported.
   `strtok($string, $token)` and continuation calls `strtok($token)` support
@@ -11153,21 +11160,24 @@
   string-convertible subset: locale-sensitive case mapping, full Unicode case
   folding, array/object/resource coercions, exact PHP diagnostics, and native
   lowering outside direct scalar calls and function-table introspection
-- `trim()` outside the current default-mask one-argument scalar/null
-  string-convertible subset: custom character masks, binary/null-byte string
-  edge cases beyond the current represented runtime-string subset,
-  array/object/resource coercions, exact PHP diagnostics, and native lowering
-  beyond function-table introspection
-- `ltrim()` outside the current scalar/null string-convertible default-mask and
-  non-empty literal-character-mask subset: character-mask ranges,
+- `trim()` outside the current scalar/null and supported `__toString()` object
+  subset with default mask, empty masks, literal masks, and simple increasing
+  custom character-mask ranges: broader binary/null-byte string edge cases
+  beyond the current represented runtime-string subset, arrays, resources,
+  closures, objects without supported `__toString()`, exact PHP diagnostics,
+  and native lowering beyond function-table introspection
+- `ltrim()` outside the current scalar/null and supported `__toString()` object
+  subset with the same default/literal/simple-range masks: broader
   binary/null-byte string edge cases beyond the current represented
-  runtime-string subset, array/object/resource coercions, exact PHP
-  diagnostics, and native lowering beyond function-table introspection
-- `rtrim()` outside the current scalar/null string-convertible default-mask and
-  non-empty literal-character-mask subset: character-mask ranges,
+  runtime-string subset, arrays, resources, closures, objects without
+  supported `__toString()`, exact PHP diagnostics, and native lowering beyond
+  function-table introspection
+- `rtrim()` outside the current scalar/null and supported `__toString()` object
+  subset with the same default/literal/simple-range masks: broader
   binary/null-byte string edge cases beyond the current represented
-  runtime-string subset, array/object/resource coercions, exact PHP
-  diagnostics, and native lowering beyond function-table introspection
+  runtime-string subset, arrays, resources, closures, objects without
+  supported `__toString()`, exact PHP diagnostics, and native lowering beyond
+  function-table introspection
 - `array_push()`/`array_unshift()` outside the current direct-variable array
   path ordered-array mutation
   subset and selected `call_user_func()`/`call_user_func_array()` callback
@@ -11309,12 +11319,12 @@
   resource values, and native lowering beyond function-table introspection
 - `str_replace()` / `str_ireplace()` outside the current scalar/null and
   one-level array replacement/search/subject subset: recursive arrays,
-  `str_replace()` count writeback targets beyond direct variables,
-  `str_ireplace()` fourth `$count` output, indirect writable count output, full
-  locale/Unicode case folding, object/resource coercions outside the current
-  string conversion hooks, exact warning behavior beyond covered array
-  conversion and the callback by-value count warning, and native lowering
-  beyond function-table introspection
+  count writeback targets beyond direct variables, indirect writable count
+  output, full locale/Unicode case folding, object/resource coercions outside
+  the current string conversion hooks, exact warning behavior beyond covered
+  null-argument deprecations, array conversion, resource-search TypeError, and
+  the callback by-value count warning, and native lowering beyond
+  function-table introspection
 - `implode()` outside the current scalar/null array-value subset: legacy
   reversed argument order, nested arrays, object/resource values, exact warning
   behavior, partial-output behavior, and native lowering beyond function-table

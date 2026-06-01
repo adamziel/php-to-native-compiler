@@ -1,6 +1,6 @@
 # PHP Native Compiler PHPT Progress
 
-Updated: 2026-06-01 17:03 CEST
+Updated: 2026-06-01 17:28 CEST
 
 Primary/public branch: `origin/master`
 Latest source-bearing public head:
@@ -17,6 +17,12 @@ Pinned denominator: `20294` total pinned runnable php-src PHPTs. Raw runner
 denominators that exclude BORKED rows are not public progress.
 
 Current public score: **5363 / 20294 pinned runnable PHPTs = 26.43%**.
+
+Local supervisor note: post-Batch024 focused source work is verified for
+`count_symbol_table.phpt`, `strcasecmp_basic.phpt`, trim/rtrim rows, and
+replacement-family rows. Focused Rust passed `68 / 68`, focused `php_runtime`
+passed `2 / 2`, and focused PHPT passed `7 / 7`. This is not a public score
+update until checkpoint validation and a full pinned PHPT gate complete.
 
 Local supervisor note: strict-identity `--emit-ir` Rust assertions were
 refreshed for the already-present boxed diagnostic-result echo boundary. The

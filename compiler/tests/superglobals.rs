@@ -826,6 +826,31 @@ echo "|", $GLOBALS["wp_object_cache"];
 }
 
 #[test]
+fn globals_count_tracks_direct_and_globals_offset_unsets() {
+    let execution = run_source(
+        r#"<?php
+$c1 = 0;
+$c2 = 0;
+$a = 1;
+$b = 1;
+$c1 = count($GLOBALS);
+unset($a);
+unset($GLOBALS["b"]);
+$c2 = count($GLOBALS);
+
+var_dump($c1 - $c2);
+$c = 1;
+$c1 = count($GLOBALS);
+var_dump($c1 - $c2);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "int(2)\nint(1)\n");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn globals_direct_string_offsets_bind_reference_targets_to_direct_sources() {
     let execution = run_source(
         r#"<?php

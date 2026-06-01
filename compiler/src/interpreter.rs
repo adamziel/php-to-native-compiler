@@ -3989,6 +3989,18 @@ impl SymbolTable {
             .map(|cell| cell.value_cloned())
     }
 
+    fn unset_global_name(&mut self, name: &str) {
+        self.clear_public_object_property_array_copy_source(name);
+        self.clear_array_literal_copy_source_paths_for_root(name);
+        self.detach_array_offset_aliases_for_unset_paths(&[ArrayOffsetAlias {
+            root: ArrayOffsetAliasRoot::GlobalArray {
+                name: name.to_string(),
+            },
+            keys: Vec::new(),
+        }]);
+        self.global_storage().borrow_mut().remove(name);
+    }
+
     fn read_named(&self, name: &str) -> Option<Value> {
         if let Some(aliases) = self.array_offset_aliases.get(name) {
             return aliases
@@ -21329,6 +21341,19 @@ impl Interpreter {
             }
         }
         let key = self.evaluate_array_key(index, scope)?;
+        if name == "GLOBALS" {
+            let Some(global_name) = globals_offset_name(&key) else {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "$GLOBALS",
+                        "only string-keyed direct offset unsets are implemented",
+                    ),
+                ));
+            };
+            scope.unset_global_name(global_name);
+            return Ok(());
+        }
         let foreach_detach = self
             .active_foreach_references
             .iter()
@@ -21396,6 +21421,44 @@ impl Interpreter {
             .iter()
             .map(|index| self.evaluate_array_key(index, scope))
             .collect::<CompileResult<Vec<_>>>()?;
+
+        if name == "GLOBALS" {
+            let (global_name, nested_keys) = SymbolTable::split_globals_reference_path(keys, span)?;
+            if nested_keys.is_empty() {
+                scope.unset_global_name(&global_name);
+                return Ok(());
+            }
+            match scope.read_global_name(&global_name) {
+                Some(Value::Array(mut array)) => {
+                    let unset_path = ArrayOffsetAlias {
+                        root: ArrayOffsetAliasRoot::GlobalArray {
+                            name: global_name.clone(),
+                        },
+                        keys: nested_keys.clone(),
+                    };
+                    scope.detach_array_offset_aliases_for_unset_paths(&[unset_path]);
+                    Self::unset_nested_array_value(&mut array, &nested_keys, span)?;
+                    scope.write_global_name(&global_name, Value::Array(array));
+                    Ok(())
+                }
+                Some(Value::Object(object))
+                    if self
+                        .classes
+                        .implements_interface(object.class_id(), "ArrayAccess") =>
+                {
+                    self.execute_unset_array_access_path(object, &nested_keys, span, scope)
+                }
+                Some(Value::Null) | None => Ok(()),
+                Some(other) => Err(runtime_error(
+                    span,
+                    RuntimeError::invalid_array_access(format!(
+                        "cannot unset offset on {}",
+                        other.type_name()
+                    )),
+                )),
+            }?;
+            return Ok(());
+        }
 
         match scope.read_named(name) {
             Some(Value::Array(mut array)) => {
@@ -57195,8 +57258,18 @@ impl Interpreter {
                 if key == "preg_replace_callback_array" {
                     return self.call_preg_replace_callback_array_direct(args, span, caller_scope);
                 }
-                if key == "str_replace" {
-                    return self.call_str_replace_with_optional_count(args, span, caller_scope);
+                if key == "str_replace" || key == "str_ireplace" {
+                    return self.call_string_replace_with_optional_count(
+                        if key == "str_ireplace" {
+                            "str_ireplace()"
+                        } else {
+                            "str_replace()"
+                        },
+                        key == "str_ireplace",
+                        args,
+                        span,
+                        caller_scope,
+                    );
                 }
                 if key == "similar_text" {
                     return self.call_similar_text_direct(args, span, caller_scope);
@@ -57391,8 +57464,18 @@ impl Interpreter {
                 if key == "preg_replace_callback_array" {
                     return self.call_preg_replace_callback_array_direct(args, span, caller_scope);
                 }
-                if key == "str_replace" {
-                    return self.call_str_replace_with_optional_count(args, span, caller_scope);
+                if key == "str_replace" || key == "str_ireplace" {
+                    return self.call_string_replace_with_optional_count(
+                        if key == "str_ireplace" {
+                            "str_ireplace()"
+                        } else {
+                            "str_replace()"
+                        },
+                        key == "str_ireplace",
+                        args,
+                        span,
+                        caller_scope,
+                    );
                 }
                 if key == "similar_text" {
                     return self.call_similar_text_direct(args, span, caller_scope);
@@ -65272,8 +65355,10 @@ impl Interpreter {
         Ok(value)
     }
 
-    fn call_str_replace_with_optional_count(
+    fn call_string_replace_with_optional_count(
         &mut self,
+        function: &'static str,
+        case_insensitive: bool,
         args: &[Expr],
         span: Span,
         caller_scope: &mut SymbolTable,
@@ -65282,7 +65367,7 @@ impl Interpreter {
             return Err(runtime_error(
                 span,
                 RuntimeError::arity_mismatch(
-                    "str_replace()",
+                    function,
                     ArityExpectation::Between { min: 3, max: 4 },
                     args.len(),
                 ),
@@ -65292,15 +65377,21 @@ impl Interpreter {
         let search = self.evaluate(&args[0], caller_scope)?;
         let replace = self.evaluate(&args[1], caller_scope)?;
         let subject = self.evaluate(&args[2], caller_scope)?;
-        let (result, count) =
-            self.str_replace_result("str_replace()", &search, &replace, &subject, false, span)?;
+        let (result, count) = self.str_replace_result(
+            function,
+            &search,
+            &replace,
+            &subject,
+            case_insensitive,
+            span,
+        )?;
 
         if args.len() == 4 {
             let Expr::Variable(count_name, _) = &args[3] else {
                 return Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
-                        "str_replace()",
+                        function,
                         "count output must be a direct variable in the current subset",
                     ),
                 ));
@@ -65368,9 +65459,10 @@ impl Interpreter {
         case_insensitive: bool,
         span: Span,
     ) -> CompileResult<(Value, i64)> {
-        let search_values = self.str_replace_argument_list(function, search, "search", span)?;
+        let search_values = self.str_replace_argument_list(function, search, 1, "search", span)?;
         let replace_is_array = matches!(replace, Value::Array(_));
-        let replace_values = self.str_replace_argument_list(function, replace, "replace", span)?;
+        let replace_values =
+            self.str_replace_argument_list(function, replace, 2, "replace", span)?;
 
         match subject {
             Value::Array(array) => {
@@ -65395,6 +65487,7 @@ impl Interpreter {
                 Ok((Value::Array(output), total_count))
             }
             value => {
+                self.emit_str_replace_null_deprecation(function, 3, "subject", value, span)?;
                 let subject = self.str_replace_scalar_bytes(function, value, span)?;
                 let (replaced, count) = apply_string_replacements(
                     subject,
@@ -65412,14 +65505,40 @@ impl Interpreter {
         &mut self,
         function: &'static str,
         value: &Value,
-        _label: &'static str,
+        position: usize,
+        label: &'static str,
         span: Span,
     ) -> CompileResult<Vec<Vec<u8>>> {
+        self.emit_str_replace_null_deprecation(function, position, label, value, span)?;
+        if label == "search" && matches!(value, Value::Resource(_)) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function,
+                    format!(
+                        "Argument #1 ($search) must be of type array|string, {} given",
+                        php_type_error_given(value)
+                    ),
+                ),
+            ));
+        }
         match value {
             Value::Array(array) => {
                 let mut values = Vec::with_capacity(array.len());
                 for entry in array.entries() {
                     let value = entry.value_cloned();
+                    if label == "search" && matches!(value, Value::Resource(_)) {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                function,
+                                format!(
+                                    "Argument #1 ($search) must be of type array|string, {} given",
+                                    php_type_error_given(&value)
+                                ),
+                            ),
+                        ));
+                    }
                     values.push(self.str_replace_scalar_bytes(function, &value, span)?);
                 }
                 Ok(values)
@@ -65428,6 +65547,27 @@ impl Interpreter {
                 .str_replace_scalar_bytes(function, value, span)
                 .map(|value| vec![value]),
         }
+    }
+
+    fn emit_str_replace_null_deprecation(
+        &mut self,
+        function: &'static str,
+        position: usize,
+        label: &'static str,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<()> {
+        if matches!(value, Value::Null) {
+            self.emit_display_diagnostic(
+                "Deprecated",
+                PHP_E_DEPRECATED,
+                format!(
+                    "{function}: Passing null to parameter #{position} (${label}) of type array|string is deprecated"
+                ),
+                span,
+            )?;
+        }
+        Ok(())
     }
 
     fn str_replace_scalar_bytes(
@@ -116421,9 +116561,7 @@ impl Interpreter {
             ));
         }
 
-        let value = args[0]
-            .try_echo_bytes()
-            .map_err(|error| runtime_error(span, error))?;
+        let value = self.trim_string_argument_bytes(function, &args[0], span)?;
         let mask = if let Some(mask) = args.get(1) {
             if matches!(mask, Value::Array(_)) {
                 return Err(runtime_error(
@@ -116434,9 +116572,7 @@ impl Interpreter {
                     ),
                 ));
             }
-            let mask = mask
-                .try_echo_bytes()
-                .map_err(|error| runtime_error(span, error))?;
+            let mask = self.trim_string_argument_bytes(function, mask, span)?;
             match expanded_trim_mask(&mask) {
                 TrimMaskExpansion::Expanded(mask) => mask,
                 TrimMaskExpansion::Invalid(message) => {
@@ -116451,6 +116587,30 @@ impl Interpreter {
         Ok(interpreter_value_from_php_string_bytes(
             trim_bytes_with_mask(&value, &mask, mode),
         ))
+    }
+
+    fn trim_string_argument_bytes(
+        &mut self,
+        function: &'static str,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<Vec<u8>> {
+        match value {
+            Value::Object(object) => {
+                if let Some(output) =
+                    self.object_to_string_with_magic(object.clone(), function, span)?
+                {
+                    Ok(output.into_bytes())
+                } else {
+                    value
+                        .try_echo_bytes()
+                        .map_err(|error| runtime_error(span, error))
+                }
+            }
+            _ => value
+                .try_echo_bytes()
+                .map_err(|error| runtime_error(span, error)),
+        }
     }
 
     fn call_strnatcmp(
@@ -117417,8 +117577,8 @@ fn trim_bytes_with_mask(value: &[u8], mask: &[u8], mode: TrimMode) -> Vec<u8> {
 fn call_strcasecmp(args: &[Value], span: Span) -> CompileResult<Value> {
     expect_arity("strcasecmp", args, 2, span)?;
 
-    let left = string_compare_argument("strcasecmp()", "first", &args[0], span)?;
-    let right = string_compare_argument("strcasecmp()", "second", &args[1], span)?;
+    let left = string_compare_argument_bytes("strcasecmp()", "first", &args[0], span)?;
+    let right = string_compare_argument_bytes("strcasecmp()", "second", &args[1], span)?;
 
     Ok(Value::Int(ascii_case_insensitive_compare(&left, &right)))
 }
@@ -122901,15 +123061,12 @@ fn string_compare_argument_bytes(
         .map_err(|error| runtime_error(span, error))
 }
 
-fn ascii_case_insensitive_compare(left: &str, right: &str) -> i64 {
-    for (left, right) in left.bytes().zip(right.bytes()) {
+fn ascii_case_insensitive_compare(left: &[u8], right: &[u8]) -> i64 {
+    for (&left, &right) in left.iter().zip(right.iter()) {
         let left = left.to_ascii_lowercase();
         let right = right.to_ascii_lowercase();
-        if left < right {
-            return -1;
-        }
-        if left > right {
-            return 1;
+        if left != right {
+            return i64::from(left) - i64::from(right);
         }
     }
 

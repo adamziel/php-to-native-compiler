@@ -28,6 +28,23 @@ echo strcasecmp(123, "123") === 0 ? "coerced" : "no";
 }
 
 #[test]
+fn strcasecmp_returns_php_byte_delta_magnitudes() {
+    let execution = run_source(
+        r#"<?php
+echo strcasecmp("aef", "dfsgbdf"), "|";
+echo strcasecmp("dfsgbdf", "aef"), "|";
+echo strcasecmp("E", "a"), "|";
+echo strcasecmp("qwe", "qwer"), "|";
+echo strcasecmp(chr(255), "a");
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "-3|3|4|-1|158");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn strcasecmp_is_available_through_string_valued_calls() {
     let execution = run_source(
         r#"<?php
