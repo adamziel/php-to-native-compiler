@@ -3240,7 +3240,7 @@
   `mb_strlen`, `mb_strpos`, `mb_stripos`, `mb_strrpos`, `mb_strripos`,
   `mb_strtolower`, `mb_strtoupper`, `similar_text`,
   `convert_uuencode`, `convert_uudecode`,
-  `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `str_ireplace`, `substr_replace`, `substr_compare`, `substr_count`, `str_getcsv`, `parse_str`, `http_build_query`,
+  `preg_quote`, `preg_match`, `preg_match_all`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `str_ireplace`, `substr_replace`, `substr_compare`, `substr_count`, `str_getcsv`, `parse_str`, `http_build_query`,
   `highlight_string`, `highlight_file`, `php_strip_whitespace`, `error_reporting`, `set_time_limit`, `ignore_user_abort`, `printf`, `fprintf`, `sprintf`, `vsprintf`, `vprintf`, `vfprintf`, `call_user_func`, `call_user_func_array`,
   `implode`, `basename`, `dirname`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`,
   `file_put_contents`, `readfile`, `unlink`, `mkdir`, `rmdir`, `copy`, `rename`, `chdir`, `scandir`, `stat`, `lstat`, `fileperms`, `chmod`, `chown`, `chgrp`,
@@ -3574,38 +3574,43 @@
   catchable `ValueError` messages. Array/object/resource operands, broader
   exact diagnostics, encoding-sensitive edge cases beyond represented runtime
   bytes, and native lowering remain unsupported.
-  `preg_match($pattern, $subject, $matches = null)` supports two scalar/null
-  string-convertible arguments and an optional third direct-variable matches
-  output argument. The current regex slice supports
-  slash-delimited literal contains/prefix/suffix/exact patterns with `^` and
-  `$` anchors plus a small literal escape subset, accepts the `u` modifier as
-  a no-op over the current valid UTF-8 runtime strings, returns integer `1`
-  for a match and `0` for no match, and exists to cover the reached WordPress
-  `wp_fix_server_vars()` SAPI-name pattern plus `_wp_can_use_pcre_u()`'s
-  `//u` startup probe. With a direct `$matches` variable, literal patterns
-  populate match `0`, failed matches clear the variable to an empty array, and
-  the two exact WordPress `wpdb::parse_db_host()` named-capture patterns
-  populate `0`, `host`/`1`, and optional `port`/`2` entries for the current
-  IPv4-ish and bracketed IPv6-ish startup paths. The exact WordPress table
-  prefix validation pattern `|[^a-z0-9_]|i` is also supported, returning a
-  match for the first non-alphanumeric/non-underscore character and no match
-  for conventional prefixes such as `wp_`. The exact WordPress safe-collation
-  query classifier `/^(?:SHOW|DESCRIBE|DESC|EXPLAIN|CREATE)\s/i` is supported
-  with ASCII-case-insensitive keyword matching and one following ASCII
-  whitespace character. The exact adjacent `wpdb::query()` classifiers
-  `/^\s*(create|alter|truncate|drop)\s/i`,
-  `/^\s*(insert|delete|update|replace)\s/i`, and
-  `/^\s*(insert|replace)\s/i` are supported with optional leading ASCII
-  whitespace, ASCII-case-insensitive keyword matching, one following ASCII
-  whitespace character, and match `0` population for direct `$matches`
-  variables. The exact WordPress `wpdb::check_ascii()` non-ASCII
-  byte detector `/[^\x00-\x7F]/` is supported over the current valid UTF-8
-  runtime string model, returning whether any represented character is
-  non-ASCII. Non-direct matches outputs, flags, offsets, optional
-  unmatched-group fidelity, broad named-capture support, full PCRE syntax,
-  modifiers other than the documented exact WordPress `i` patterns and `u`,
-  invalid-pattern warnings, byte/Unicode edge cases, broad coercions, exact
+  `preg_quote($str, $delimiter = null)` supports scalar/null
+  string-convertible input and an optional scalar/null delimiter. It escapes
+  the current PCRE metacharacter set plus every byte present in the supplied
+  delimiter. Array/object/resource operands, locale-sensitive quoting, exact
   diagnostics, and native lowering remain unsupported.
+  `preg_match($pattern, $subject, $matches = null, $flags = 0, $offset = 0)`
+  supports scalar/null string-convertible pattern and subject arguments, an
+  optional direct-variable matches output, integer-compatible flags, and
+  integer-compatible offsets in the interpreter path. Patterns are compiled
+  through the bounded Rust regex adapter after PHP delimiter/modifier parsing;
+  the deterministic slice covers the literal/WordPress patterns documented
+  below plus regex-crate-compatible byte/ASCII classes, repeats, alternation,
+  captures, named captures, and the `i`, `m`, `s`, `x`, `U`, `u`, and `n`
+  modifiers. The `n` modifier disables unnamed captures while keeping named
+  captures addressable. Direct `$matches` arrays now preserve PHP capture key
+  order for named groups (`0`, then each named string key before its numeric
+  key), including `PREG_OFFSET_CAPTURE` and `PREG_UNMATCHED_AS_NULL`; failed
+  matches clear the direct output to an empty array. The reached WordPress
+  patterns remain explicitly covered: `wp_fix_server_vars()` SAPI-name
+  literals, `_wp_can_use_pcre_u()`'s `//u` startup probe, the two
+  `wpdb::parse_db_host()` named-capture patterns, table-prefix validation
+  `|[^a-z0-9_]|i`, safe-collation query classification, adjacent
+  `wpdb::query()` DDL/DML classifiers, and `wpdb::check_ascii()`'s
+  `/[^\x00-\x7F]/` detector over current valid UTF-8 runtime strings.
+  Non-direct matches outputs, pattern arrays, duplicate named groups/`(?J)`,
+  branch-reset groups, recursive patterns, lookaround/backtracking verbs, PCRE
+  marks, Unicode property/class parity, invalid-pattern warning text parity,
+  byte/Unicode edge cases beyond the current runtime string model, broad
+  coercions, exact diagnostics, and native lowering remain unsupported.
+  `preg_match_all($pattern, $subject, $matches = null, $flags = PREG_PATTERN_ORDER, $offset = 0)` supports the same bounded regex adapter for scalar/null
+  string-convertible pattern and subject arguments, an optional direct-variable
+  matches output, `PREG_PATTERN_ORDER`, `PREG_SET_ORDER`,
+  `PREG_OFFSET_CAPTURE`, `PREG_UNMATCHED_AS_NULL`, and integer-compatible
+  offsets. Named capture arrays are emitted in PHP key order for both pattern
+  and set order, including optional unmatched groups represented as `null` or
+  `[null, -1]` when requested. The unsupported PCRE syntax, coercion,
+  diagnostic, and native-lowering boundaries are the same as `preg_match()`.
   `preg_replace_callback($pattern, $callback, $subject)` supports exactly the
   WordPress `wp_sanitize_redirect()` verbose UTF-8 sanitizer regex shape with
   the string callback `_wp_sanitize_utf8_in_redirect`. It percent-encodes
@@ -3639,17 +3644,18 @@
   placeholder replacement, invalid-pattern warnings, byte/Unicode edge cases,
   broad coercions, exact diagnostics, SQL semantics, and native lowering remain
   unsupported.
-  `preg_split($pattern, $subject, $limit, $flags)` supports exactly the
+  `preg_split($pattern, $subject, $limit = -1, $flags = 0)` supports
+  scalar/null string-convertible pattern and subject arguments through the
+  bounded regex adapter, integer-compatible limits where `0` is treated as
+  `-1`, `PREG_SPLIT_NO_EMPTY`, `PREG_SPLIT_DELIM_CAPTURE`,
+  `PREG_SPLIT_OFFSET_CAPTURE`, and their deterministic combinations. The
   reached WordPress `wpdb::prepare()` placeholder extraction regex
-  `/(^|[^%]|(?:%%)+)(%(?:$allowed_format)?[sdfFi])/` after `$allowed_format`
-  expansion, with `limit` exactly `-1` and `flags` exactly
-  `PREG_SPLIT_DELIM_CAPTURE` (value `2`). It returns a sequential array with
-  the leading literal segment and the two captured delimiter groups for each
-  recognized placeholder, matching the shape WordPress documents as one
-  leading value plus three values per placeholder. Broad PCRE splitting,
-  pattern arrays, subject arrays, other limits, `PREG_SPLIT_NO_EMPTY`,
-  `PREG_SPLIT_OFFSET_CAPTURE`, flag combinations, invalid-pattern warnings,
-  full capture semantics, SQL semantics, and native lowering remain
+  `/(^|[^%]|(?:%%)+)(%(?:$allowed_format)?[sdfFi])/` remains explicitly
+  covered after `$allowed_format` expansion. Pattern arrays, subject arrays,
+  full PCRE split semantics for unsupported regex features, exact
+  zero-length/bump-along edge cases, invalid-pattern warning text parity,
+  recursion/backtrack-limit parity beyond the bounded `preg_last_error()`
+  paths, broad coercions, exact diagnostics, and native lowering remain
   unsupported.
   `error_reporting($mask = null)` supports no arguments to read the current
   integer mask and one integer argument to store a new current mask while
@@ -7548,7 +7554,7 @@
   Direct `function_exists($name)` calls fold in native output when `$name` is
   an already-lowerable string value with a uniform known answer in the current
   documented builtin table: documented callable builtins, including
-  `strtolower`, `strtoupper`, `trim`, `ltrim`, `rtrim`, `strncmp`, `strncasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`, `strspn`, `strcspn`, `strpbrk`, `strpos`, `stripos`, `strrpos`, `strripos`, `strstr`, `strchr`, `stristr`, `strtok`, `substr`, `substr_replace`, `substr_compare`, `substr_count`, `similar_text`, `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`,
+  `strtolower`, `strtoupper`, `trim`, `ltrim`, `rtrim`, `strncmp`, `strncasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`, `strspn`, `strcspn`, `strpbrk`, `strpos`, `stripos`, `strrpos`, `strripos`, `strstr`, `strchr`, `stristr`, `strtok`, `substr`, `substr_replace`, `substr_compare`, `substr_count`, `similar_text`, `preg_quote`, `preg_match`, `preg_match_all`, `preg_replace`, `preg_split`, `preg_replace_callback`,
   `error_reporting`, `min`, `rand`, `uniqid`, `hash`, `hash_algos`, `hash_hmac`, `md5`, `md5_file`, `get_current_user`, `getmypid`, `basename`, `dirname`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`, `str_getcsv`, `parse_str`,
   `file_put_contents`, `readfile`, `unlink`, `mkdir`, `rmdir`, `copy`, `rename`, `chdir`, `scandir`, `stat`, `lstat`, `fileperms`, `chmod`, `chown`, `chgrp`,
   `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_params`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `stream_context_set_params`, `fwrite`, `fscanf`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fflush`, `ftruncate`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`,
@@ -7957,7 +7963,7 @@
   one of the documented callable builtins: `strlen`, `bin2hex`, `hex2bin`,
   `pack`, `unpack`, `strtolower`, `strtoupper`, `str_increment`,
   `str_decrement`, `trim`, `ltrim`, `rtrim`, `strcasecmp`, `strncmp`, `strncasecmp`,
-  `str_contains`, `str_starts_with`, `str_ends_with`, `strspn`, `strcspn`, `strpbrk`, `strpos`, `stripos`, `strrpos`, `strripos`, `strstr`, `strchr`, `stristr`, `strtok`, `substr`, `str_shuffle`, `wordwrap`, `str_word_count`, `strnatcmp`, `strnatcasecmp`, `mb_strlen`, `mb_strpos`, `mb_stripos`, `mb_strrpos`, `mb_strripos`, `mb_strtolower`, `mb_strtoupper`, `similar_text`, `convert_uuencode`, `convert_uudecode`, `substr_replace`, `substr_compare`, `substr_count`, `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `str_getcsv`, `error_reporting`,
+  `str_contains`, `str_starts_with`, `str_ends_with`, `strspn`, `strcspn`, `strpbrk`, `strpos`, `stripos`, `strrpos`, `strripos`, `strstr`, `strchr`, `stristr`, `strtok`, `substr`, `str_shuffle`, `wordwrap`, `str_word_count`, `strnatcmp`, `strnatcasecmp`, `mb_strlen`, `mb_strpos`, `mb_stripos`, `mb_strrpos`, `mb_strripos`, `mb_strtolower`, `mb_strtoupper`, `similar_text`, `convert_uuencode`, `convert_uudecode`, `substr_replace`, `substr_compare`, `substr_count`, `preg_quote`, `preg_match`, `preg_match_all`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `str_getcsv`, `error_reporting`,
   `printf`, `fprintf`, `sprintf`, `vsprintf`, `vprintf`, `vfprintf`, `call_user_func`, `call_user_func_array`, `implode`, `basename`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`,
   `file_put_contents`, `readfile`, `unlink`, `mkdir`, `rmdir`, `copy`, `rename`, `chdir`, `scandir`, `stat`, `lstat`, `fileperms`, `chmod`, `chown`, `chgrp`,
   `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_params`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `stream_context_set_params`, `fwrite`, `fscanf`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fflush`, `ftruncate`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`, `disk_free_space`, `diskfreespace`, `disk_total_space`, `clearstatcache`, `realpath`, `realpath_cache_get`, `realpath_cache_size`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_executable`, `is_link`, `abs`,
@@ -11151,19 +11157,17 @@
   represented runtime bytes, exact PHP diagnostics beyond empty-needle and
   offset/length bounds `ValueError`, and native lowering beyond function-table
   introspection
-- `preg_match()` outside the current slash-delimited literal
-  contains/prefix/suffix/exact pattern subset, the two exact WordPress db-host
-  named-capture patterns, the exact WordPress table-prefix validation pattern
-  `|[^a-z0-9_]|i`, the exact WordPress safe-collation query classifier, and
-  the exact adjacent WordPress `wpdb::query()` DDL/DML classifiers, and the
-  exact WordPress ASCII-check byte-range pattern: non-direct matches
-  outputs, flags, offsets, optional unmatched-group fidelity, broad
-  capture-group behavior, full PCRE syntax, bracket classes and ranges beyond
-  the documented exact WordPress pattern, modifiers other than the documented
-  exact WordPress `i` patterns and `u`,
-  invalid-pattern warnings, byte/Unicode behavior beyond the current valid
-  UTF-8 string model, broad coercions, exact diagnostics, and native lowering
-  beyond function-table introspection
+- `preg_quote()` outside scalar/null string-convertible input plus optional
+  scalar/null delimiter: array/object/resource operands, locale-sensitive
+  quoting, exact diagnostics, and native lowering beyond function-table
+  introspection
+- `preg_match()`/`preg_match_all()` outside the current bounded regex-adapter
+  subset: non-direct matches outputs, pattern arrays, duplicate named
+  groups/`(?J)`, branch-reset groups, recursive patterns, lookaround and
+  backtracking verbs, PCRE marks, full Unicode property/class parity, full PCRE
+  syntax and diagnostics, byte/Unicode behavior beyond the current runtime
+  string model, broad coercions, exact invalid-pattern warning text, and native
+  lowering beyond function-table introspection
 - `preg_replace()` outside the exact WordPress database-version cleanup pattern
   `/[^0-9.].*/`, path-tail cleanup pattern `#/[^/]*$#i`, and redirect
   sanitizer cleanup pattern `|[^a-z0-9-~+_.?#=&;,/:%!*\[\]()@]|i`, mail-host
@@ -11178,12 +11182,13 @@
   byte/Unicode behavior beyond the current valid UTF-8 string model, full PHP
   string escape semantics, broad coercions, exact diagnostics, and native
   lowering beyond function-table introspection
-- `preg_split()` outside the exact WordPress `wpdb::prepare()` placeholder
-  extraction pattern with `limit` `-1` and `PREG_SPLIT_DELIM_CAPTURE`: broad
-  PCRE splitting, pattern arrays, subject arrays, other limits,
-  `PREG_SPLIT_NO_EMPTY`, `PREG_SPLIT_OFFSET_CAPTURE`, flag combinations,
-  invalid-pattern warnings, full capture semantics, exact diagnostics, and
-  native lowering beyond function-table introspection
+- `preg_split()` outside scalar/null string-convertible pattern/subject
+  arguments through the bounded regex adapter plus integer-compatible limit
+  and `PREG_SPLIT_NO_EMPTY`/`PREG_SPLIT_DELIM_CAPTURE`/
+  `PREG_SPLIT_OFFSET_CAPTURE` flags: pattern arrays, subject arrays, full PCRE
+  splitting for unsupported regex features, exact zero-length/bump-along
+  behavior, invalid-pattern warning text parity, broad coercions, exact
+  diagnostics, and native lowering beyond function-table introspection
 - `preg_replace_callback()` outside the exact WordPress
   `wp_sanitize_redirect()` UTF-8 sanitizer regex shape, exact
   `_wp_sanitize_utf8_in_redirect` string callback, scalar/null subject, and

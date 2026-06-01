@@ -222,6 +222,33 @@ echo preg_match('/wp/i', 'WP');
 }
 
 #[test]
+fn preg_match_interleaves_named_captures_and_supports_no_auto_capture_modifier() {
+    let execution = run_source(
+        r#"<?php
+preg_match('/(?P<name>)(\d+)/', 0xffffffff, $match);
+echo implode(',', array_keys($match)), "|", $match['name'], "|", $match[1], "|", $match[2], "\n";
+preg_match('/(?P<capt1>.)(x)(?P<letsmix>\S+)/', 'fjszxax', $match, PREG_OFFSET_CAPTURE);
+echo implode(',', array_keys($match)), "|", $match['capt1'][0], ":", $match['capt1'][1], "|", $match[3][0], ":", $match[3][1], "\n";
+preg_match('/.(.)./n', 'abc', $match);
+echo implode(',', array_keys($match)), "|", count($match), "\n";
+preg_match('/.(?P<test>.)./n', 'abc', $match);
+echo implode(',', array_keys($match)), "|", $match['test'], "|", $match[1], "\n";
+preg_match_all('/(?P<word>the)/', 'the other the', $match);
+echo implode(',', array_keys($match)), "|", implode('-', $match['word']), "|", implode('-', $match[1]), "\n";
+preg_match_all('/(?<a>4)?(?<b>2)?\d/', '123456', $match, PREG_SET_ORDER | PREG_UNMATCHED_AS_NULL);
+echo implode(',', array_keys($match[1])), "|", ($match[1]['a'] === null ? 'NULL' : $match[1]['a']), "|", $match[1]['b'];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "0,name,1,2|||4294967295\n0,capt1,1,2,letsmix,3|z:3|ax:5\n0|1\n0,test,1|b|b\n0,word,1|the-the-the|the-the-the\n0,a,1,b,2|NULL|2"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn preg_match_handles_backtrack_offsets_utf8_and_trailing_unmatched_captures() {
     let execution = run_source(
         r#"<?php

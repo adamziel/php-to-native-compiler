@@ -119579,7 +119579,7 @@ impl Interpreter {
                 return Ok(None);
             }
         };
-        let body = translate_pcre_body_for_regex(&body);
+        let body = translate_pcre_body_for_regex(&body, settings.no_auto_capture);
         let mut builder = RegexBuilder::new(&body);
         builder.unicode(false);
         builder.case_insensitive(settings.case_insensitive);
@@ -119712,6 +119712,7 @@ impl Interpreter {
         };
 
         let capture_len = regex.regex.captures_len();
+        let capture_names = pcre_capture_names(&regex.regex);
         let mut rows: Vec<Vec<Option<(usize, usize)>>> = Vec::new();
         for captures in regex.regex.captures_iter(&subject[start..]) {
             let mut row = Vec::with_capacity(capture_len);
@@ -119729,9 +119730,16 @@ impl Interpreter {
         if set_order {
             for row in &rows {
                 let mut match_array = PhpArray::new();
-                for capture in row {
+                for (capture_index, capture) in row.iter().enumerate() {
+                    let value = pcre_capture_value(&subject, *capture, flags, span)?;
+                    if let Some(name) = capture_names
+                        .get(capture_index)
+                        .and_then(|name| name.as_ref())
+                    {
+                        match_array.insert(name.clone(), value.clone());
+                    }
                     match_array
-                        .append(pcre_capture_value(&subject, *capture, flags, span)?)
+                        .append(value)
                         .map_err(|error| runtime_error(span, error))?;
                 }
                 output
@@ -119747,7 +119755,14 @@ impl Interpreter {
                         .append(pcre_capture_value(&subject, capture, flags, span)?)
                         .map_err(|error| runtime_error(span, error))?;
                 }
-                output.insert(capture_index as i64, Value::Array(capture_array));
+                let value = Value::Array(capture_array);
+                if let Some(name) = capture_names
+                    .get(capture_index)
+                    .and_then(|name| name.as_ref())
+                {
+                    output.insert(name.clone(), value.clone());
+                }
+                output.insert(capture_index as i64, value);
             }
         }
 
@@ -120292,6 +120307,7 @@ struct PhpPcreSettings {
     multi_line: bool,
     dot_matches_new_line: bool,
     ignore_whitespace: bool,
+    no_auto_capture: bool,
     swap_greed: bool,
     utf8: bool,
 }
@@ -120305,6 +120321,7 @@ impl PhpPcreSettings {
                 'm' => settings.multi_line = true,
                 's' => settings.dot_matches_new_line = true,
                 'x' => settings.ignore_whitespace = true,
+                'n' => settings.no_auto_capture = true,
                 'U' => settings.swap_greed = true,
                 'u' => settings.utf8 = true,
                 'A' | 'D' | 'S' | 'J' => {}
@@ -120390,7 +120407,7 @@ fn parse_php_pcre_pattern(pattern: &str) -> Result<(String, String), String> {
     Ok((body, modifiers))
 }
 
-fn translate_pcre_body_for_regex(body: &str) -> String {
+fn translate_pcre_body_for_regex(body: &str, no_auto_capture: bool) -> String {
     let mut output = String::with_capacity(body.len());
     let mut chars = body.chars().peekable();
     let mut in_class = false;
@@ -120428,6 +120445,9 @@ fn translate_pcre_body_for_regex(body: &str) -> String {
             ']' if in_class => {
                 in_class = false;
                 output.push(ch);
+            }
+            '(' if !in_class && no_auto_capture && chars.peek() != Some(&'?') => {
+                output.push_str("(?:");
             }
             '{' if !in_class => {
                 if pcre_quantifier_body_starts(chars.clone()) {
@@ -121037,6 +121057,7 @@ fn pcre_capture_array(
 ) -> CompileResult<PhpArray> {
     let mut array = PhpArray::new();
     let unmatched_as_null = flags & PHP_PREG_UNMATCHED_AS_NULL != 0;
+    let capture_names = pcre_capture_names(regex);
     let last_capture_index = if unmatched_as_null {
         captures.len().saturating_sub(1)
     } else {
@@ -121049,24 +121070,23 @@ fn pcre_capture_array(
         let capture = captures
             .get(index)
             .map(|matched| (base + matched.start(), base + matched.end()));
-        array
-            .append(pcre_capture_value(subject, capture, flags, span)?)
-            .map_err(|error| runtime_error(span, error))?;
-    }
-    for (index, name) in regex.capture_names().enumerate().skip(1) {
-        let Some(name) = name else {
-            continue;
-        };
-        let capture = captures
-            .get(index)
-            .map(|matched| (base + matched.start(), base + matched.end()));
-        if capture.is_none() && !unmatched_as_null {
+        if capture.is_none() && !unmatched_as_null && index > 0 {
             continue;
         }
         let value = pcre_capture_value(subject, capture, flags, span)?;
-        array.insert(name.to_string(), value);
+        if let Some(name) = capture_names.get(index).and_then(|name| name.as_ref()) {
+            array.insert(name.clone(), value.clone());
+        }
+        array.insert(index as i64, value);
     }
     Ok(array)
+}
+
+fn pcre_capture_names(regex: &Regex) -> Vec<Option<String>> {
+    regex
+        .capture_names()
+        .map(|name| name.map(str::to_string))
+        .collect()
 }
 
 fn pcre_capture_value(

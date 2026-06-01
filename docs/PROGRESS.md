@@ -1,5 +1,23 @@
 # Progress Log
 
+## 2026-06-01
+
+Implemented:
+
+- Added a compact interpreter PCRE named-capture ordering slice. `preg_match()`
+  and `preg_match_all()` now emit named captures in PHP insertion order
+  (string key before the matching numeric key) for direct `$matches` outputs,
+  including `PREG_OFFSET_CAPTURE`, `PREG_UNMATCHED_AS_NULL`, pattern order, and
+  set order. The bounded regex adapter also accepts the `n` modifier by
+  converting unnamed capturing groups to non-capturing groups while preserving
+  named captures. Focused proof covers the previously failing
+  `ext/pcre/tests/bug34790.phpt`, `bug61780_2.phpt`, `gh17122.phpt`,
+  `match_flags2.phpt`, and `preg_match_non_capture.phpt` rows, plus Rust unit
+  coverage and a direct `phpc run` CLI probe. Duplicate named groups/`(?J)`,
+  branch-reset groups, recursive patterns, lookaround/backtracking verbs, PCRE
+  marks, Unicode property/class parity, exact invalid-pattern warning text,
+  broad PCRE syntax, and native lowering remain unsupported.
+
 ## 2026-05-27
 
 Implemented:
