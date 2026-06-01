@@ -552,7 +552,12 @@ values parse as decimal integers when possible. The same initial seed records
 bounded upload provenance for `tmp_name` entries whose sibling `error` value
 is `0`; `is_uploaded_file()` checks that request-local provenance and
 `move_uploaded_file()` moves a registered local path once before clearing the
-source provenance. Repeated scalar keys use
+source provenance. The standalone URL component helpers share the same bounded
+byte-oriented component model: `urlencode()`/`urldecode()` use the RFC1738
+form rule where spaces are `+`, while `rawurlencode()`/`rawurldecode()`
+preserve RFC3986 `~` and do not treat `+` specially. These helpers are
+component codecs only; whole-URL validation/normalization and native lowering
+remain outside this boundary. Repeated scalar keys use
 last-write-wins, `[]` bracket segments append in order, and keyed bracket
 segments materialize nested arrays under the current ordered-array model. Dots
 and spaces in top-level request names are normalized to underscores before

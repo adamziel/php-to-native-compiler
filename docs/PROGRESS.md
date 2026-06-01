@@ -43250,3 +43250,29 @@ Next:
   split-lane batch. A checkpoint was still not created because
   `tools/checkpoint.sh` stages the full dirty tree and this worker was not
   asked to checkpoint.
+
+Next:
+
+- Added Milestone 2305, a bounded ext/standard URL component codec slice for
+  `urldecode()` alongside first-class `urlencode()`/raw URL codec metadata.
+  `phpc run` now decodes RFC1738 form components by converting `+` to space,
+  decoding valid percent escapes byte-wise, preserving malformed percent
+  sequences literally, and returning binary-string values when decoded bytes
+  are not UTF-8. Direct string-valued `urldecode` calls and reflection/
+  `function_exists()`/`is_callable()` metadata are covered, and native
+  function-table introspection now recognizes `urlencode`, `urldecode`,
+  `rawurlencode`, and `rawurldecode` while direct native calls remain rejected.
+- Added focused URL PHPT-shaped proof in `parse_url_builtin` plus the
+  Milestone 2305 `phpc run` fixture and system-PHP comparison artifact. This
+  does not add whole-URL normalization/validation, IDNA, parsed-component
+  percent-decoding, full UTF-8-invalid input fidelity through every string
+  coercion path, exact diagnostics, or native URL codec lowering.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-bcs2-58a CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test parse_url_builtin -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-bcs2-58b CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone2305`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-bcs2-58b CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone2305`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-bcs2-58b CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- run tests/fixtures/milestone2305/form_url_codec_urldecode.php`;
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo fmt --check`; and
+  `git diff --check`.
+- Full `tools/run-tests.sh` is deferred for this review-sized URL helper slice;
+  run it at the next checkpoint batch or before any checkpoint commit.

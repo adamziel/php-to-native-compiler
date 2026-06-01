@@ -62,6 +62,31 @@ echo "|", is_callable("rawurldecode") ? "callable" : "missing";
 }
 
 #[test]
+fn form_url_encoding_matches_rfc1738_phpt_boundaries() {
+    let execution = run_source(
+        r#"<?php
+echo urlencode("A1_-.~ +/%"), "\n";
+echo urldecode("A1_-.%7E+%2B%2F%25"), "\n";
+echo bin2hex(urldecode("%00%FF%7E+")), "\n";
+echo urldecode("bad%2g%"), "\n";
+$call = "urldecode";
+echo $call("a+b%2Bc"), "\n";
+echo function_exists("urlencode") ? "fn" : "missing";
+echo "|", is_callable("urldecode") ? "callable" : "missing";
+$function = new ReflectionFunction("urldecode");
+echo "|", $function->getNumberOfRequiredParameters(), "/", $function->getNumberOfParameters();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "A1_-.%7E+%2B%2F%25\nA1_-.~ +/%\n00ff7e20\nbad%2g%\na b+c\nfn|callable|1/1"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn parse_url_matches_bounded_edge_cases_from_url_phpts() {
     let execution = run_source(
         r#"<?php
@@ -116,4 +141,23 @@ echo defined("PHP_URL_FRAGMENT") ? "1" : "0";
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("PHP_URL_SCHEME"), "{ir}");
     assert!(!ir.contains("PHP_URL_FRAGMENT"), "{ir}");
+}
+
+#[test]
+fn emit_ir_folds_url_codec_function_metadata() {
+    let ir = emit_ir_source(
+        r#"<?php
+echo function_exists("urlencode") ? "1" : "0";
+echo function_exists("urldecode") ? "1" : "0";
+echo function_exists("rawurlencode") ? "1" : "0";
+echo function_exists("rawurldecode") ? "1" : "0";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 4, "{ir}");
+    assert!(!ir.contains("urlencode"), "{ir}");
+    assert!(!ir.contains("urldecode"), "{ir}");
+    assert!(!ir.contains("rawurlencode"), "{ir}");
+    assert!(!ir.contains("rawurldecode"), "{ir}");
 }

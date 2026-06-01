@@ -84000,6 +84000,7 @@ impl Interpreter {
             "parse_url" => call_parse_url(&args, span),
             "http_build_query" => call_http_build_query(&args, span),
             "urlencode" => call_urlencode(&args, span),
+            "urldecode" => call_urldecode(&args, span),
             "rawurlencode" => call_rawurlencode(&args, span),
             "rawurldecode" => call_rawurldecode(&args, span),
             "serialize" => self.call_serialize_builtin(&args, span),
@@ -99757,6 +99758,10 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_optional_int_param("component", -1),
             ],
         ),
+        "urlencode" | "urldecode" | "rawurlencode" | "rawurldecode" => (
+            "string",
+            vec![reflection_internal_param("string", "string")],
+        ),
         "json_encode" => (
             "string|false",
             vec![
@@ -104141,6 +104146,7 @@ fn is_builtin(name: &str) -> bool {
             | "parse_url"
             | "http_build_query"
             | "urlencode"
+            | "urldecode"
             | "rawurlencode"
             | "rawurldecode"
             | "serialize"
@@ -123182,6 +123188,14 @@ fn call_urlencode(args: &[Value], span: Span) -> CompileResult<Value> {
     Ok(Value::String(form_urlencode_component(&value)))
 }
 
+fn call_urldecode(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("urldecode", args, 1, span)?;
+    let value = string_compare_argument_bytes("urldecode()", "string", &args[0], span)?;
+    Ok(interpreter_value_from_php_string_bytes(
+        form_urldecode_bytes(&value),
+    ))
+}
+
 #[derive(Clone, Copy)]
 enum HttpQueryEncoding {
     Rfc1738,
@@ -123395,6 +123409,33 @@ fn raw_urldecode_bytes(value: &[u8]) -> Vec<u8> {
     let mut decoded = Vec::with_capacity(value.len());
     let mut index = 0;
     while index < value.len() {
+        if value[index] == b'%' && index + 2 < value.len() {
+            if let (Some(high), Some(low)) = (
+                hex_digit_value(value[index + 1]),
+                hex_digit_value(value[index + 2]),
+            ) {
+                decoded.push((high << 4) | low);
+                index += 3;
+                continue;
+            }
+        }
+
+        decoded.push(value[index]);
+        index += 1;
+    }
+    decoded
+}
+
+fn form_urldecode_bytes(value: &[u8]) -> Vec<u8> {
+    let mut decoded = Vec::with_capacity(value.len());
+    let mut index = 0;
+    while index < value.len() {
+        if value[index] == b'+' {
+            decoded.push(b' ');
+            index += 1;
+            continue;
+        }
+
         if value[index] == b'%' && index + 2 < value.len() {
             if let (Some(high), Some(low)) = (
                 hex_digit_value(value[index + 1]),

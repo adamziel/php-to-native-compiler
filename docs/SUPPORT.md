@@ -2748,6 +2748,9 @@
   `false` for the covered malformed host/port cases. `PHP_URL_*` constants are
   visible through bare reads, `defined()`, `constant()`, and
   `get_defined_constants()` alongside the existing supported builtin constants.
+  `urlencode()` and `urldecode()` support the bounded RFC1738 form component
+  codec: spaces encode as `+`, valid percent escapes decode byte-wise, `+`
+  decodes to a space, and malformed percent sequences are left literal.
   `rawurlencode()` and `rawurldecode()` support RFC3986 byte-oriented percent
   encoding and decoding for the current string subset. Exact RFC/WHATWG
   validation, broader IPv6 and platform-specific file URL edge cases, binary
@@ -3240,7 +3243,7 @@
   `mb_strlen`, `mb_strpos`, `mb_stripos`, `mb_strrpos`, `mb_strripos`,
   `mb_strtolower`, `mb_strtoupper`, `similar_text`,
   `convert_uuencode`, `convert_uudecode`,
-  `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `str_ireplace`, `substr_replace`, `substr_compare`, `substr_count`, `str_getcsv`, `parse_str`, `http_build_query`,
+  `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `str_ireplace`, `substr_replace`, `substr_compare`, `substr_count`, `str_getcsv`, `parse_str`, `parse_url`, `http_build_query`, `urlencode`, `urldecode`, `rawurlencode`, `rawurldecode`,
   `highlight_string`, `highlight_file`, `php_strip_whitespace`, `error_reporting`, `set_time_limit`, `ignore_user_abort`, `printf`, `fprintf`, `sprintf`, `vsprintf`, `vprintf`, `vfprintf`, `call_user_func`, `call_user_func_array`,
   `implode`, `basename`, `dirname`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`,
   `file_put_contents`, `readfile`, `unlink`, `mkdir`, `rmdir`, `copy`, `rename`, `chdir`, `scandir`, `stat`, `lstat`, `fileperms`, `chmod`, `chown`, `chgrp`,
@@ -8576,6 +8579,11 @@
   `http_build_query(...)` calls reject until native array/object traversal and
   string assembly exist, while native function-table introspection recognizes
   the name.
+  `urlencode`, `urldecode`, `rawurlencode`, and `rawurldecode` accept the
+  same current URL component codec subset as the builtin section above for
+  `phpc run`; direct native calls reject until native byte-string URL codec
+  helpers exist, while native function-table introspection recognizes the
+  names.
   `header` accepts the same current deterministic CLI header-log subset as the
   builtin section above; direct native `header(...)` calls reject under the
   header-state boundary, while native function-table introspection recognizes
@@ -11294,6 +11302,11 @@
   `PHP_QUERY_RFC1738`/`PHP_QUERY_RFC3986` encoding: exact diagnostics, cyclic
   structures, binary key/value fidelity outside UTF-8 strings, INI-derived
   argument separators beyond the current `&` fallback, object custom hooks,
+  and native lowering beyond function-table introspection
+- `urlencode()`/`urldecode()` and `rawurlencode()`/`rawurldecode()` behavior
+  beyond bounded component-level percent encoding/decoding for current strings:
+  full binary byte fidelity for UTF-8-invalid inputs on every string path,
+  URL normalization, IDNA, whole-URL parsing or validation, exact diagnostics,
   and native lowering beyond function-table introspection
 - `http_response_code()` behavior beyond no-argument reads and integer writes
   of request-local status state, including previous-value return behavior:
