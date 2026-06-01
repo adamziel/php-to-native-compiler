@@ -1,5 +1,24 @@
 # Progress Log
 
+## 2026-06-01
+
+Implemented:
+
+- Added a bounded ext/filter scalar sanitization slice for `FILTER_UNSAFE_RAW`,
+  `FILTER_SANITIZE_ENCODED`, `FILTER_SANITIZE_SPECIAL_CHARS`, and related
+  string-returning filters. The interpreter now exposes
+  `FILTER_FLAG_STRIP_BACKTICK`, strips low/high bytes (including ASCII 127) and
+  backticks for the covered sanitizers, preserves unsafe-raw byte inputs while
+  applying low/high/amp entity encoding, returns `NULL` for empty
+  string-returning filters when `FILTER_FLAG_EMPTY_STRING_NULL` is set, and
+  honors nested `options["default"]` validation fallbacks. Focused Rust and CLI
+  fixtures cover the new scalar behavior, and exact PHPT proof rows
+  `ext/filter/tests/043.phpt`, `051.phpt`, `bug53037.phpt`,
+  `bug69202.phpt`, and `bug69203.phpt` pass. Unsupported ext/filter edges
+  remain documented: full input-array/SAPI parity, hostname validation flags,
+  MAC separator options, float thousands/ranges, broader arrays/references/COW,
+  exact native error objects, and native lowering.
+
 ## 2026-05-27
 
 Implemented:

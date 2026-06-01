@@ -3241,6 +3241,7 @@
   `mb_strtolower`, `mb_strtoupper`, `similar_text`,
   `convert_uuencode`, `convert_uudecode`,
   `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `str_ireplace`, `substr_replace`, `substr_compare`, `substr_count`, `str_getcsv`, `parse_str`, `http_build_query`,
+  `filter_list`, `filter_id`, `filter_var`, `filter_var_array`, `filter_input`,
   `highlight_string`, `highlight_file`, `php_strip_whitespace`, `error_reporting`, `set_time_limit`, `ignore_user_abort`, `printf`, `fprintf`, `sprintf`, `vsprintf`, `vprintf`, `vfprintf`, `call_user_func`, `call_user_func_array`,
   `implode`, `basename`, `dirname`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`,
   `file_put_contents`, `readfile`, `unlink`, `mkdir`, `rmdir`, `copy`, `rename`, `chdir`, `scandir`, `stat`, `lstat`, `fileperms`, `chmod`, `chown`, `chgrp`,
@@ -3362,6 +3363,21 @@
   namespace/autoload behavior, exact native `TypeError` behavior, native
   lowering, and the environment-specific legacy `is_real` alias are not
   implemented.
+  The current ext/filter slice exposes bounded `filter_list()`, `filter_id()`,
+  `filter_var()`, `filter_var_array()`, and `filter_input()` behavior for the
+  documented scalar filters and the request seeds documented for `phpc run`.
+  `FILTER_UNSAFE_RAW`, `FILTER_SANITIZE_STRING`/`STRIPPED`,
+  `FILTER_SANITIZE_ENCODED`, `FILTER_SANITIZE_SPECIAL_CHARS`,
+  `FILTER_SANITIZE_FULL_SPECIAL_CHARS`, `FILTER_SANITIZE_EMAIL`,
+  `FILTER_SANITIZE_URL`, `FILTER_SANITIZE_NUMBER_INT`,
+  `FILTER_SANITIZE_NUMBER_FLOAT`, `FILTER_SANITIZE_ADD_SLASHES`, selected
+  validation filters, and `FILTER_CALLBACK` execute in the interpreter.
+  The scalar sanitization flag slice includes low/high-byte and backtick
+  stripping for unsafe-raw, encoded, special-chars, and deprecated
+  string/stripped filters; unsafe-raw low/high/amp encoding;
+  `FILTER_FLAG_EMPTY_STRING_NULL`; and validation default fallbacks from
+  nested `options["default"]`.
+  `FILTER_FLAG_STRIP_BACKTICK` is exposed with PHP's integer value `512`.
   `version_compare($version1, $version2, $operator = null)` supports string
   versions made of dot, hyphen, or underscore separated non-negative integer
   components. With two arguments it returns `-1`, `0`, or `1`; with a string
@@ -10748,6 +10764,13 @@
   reference/copy-on-write behavior, object handle identity
   preservation, resource values, exact native `TypeError` objects, and native
   lowering
+- ext/filter behavior beyond the current scalar/runtime slice: `filter_has_var`,
+  `filter_input_array`, `INPUT_ENV`/`INPUT_SERVER`, CGI/SAPI input parity,
+  `FILTER_FLAG_HOSTNAME`, full RFC/IDN email and URL validation,
+  MAC separator options and exact `ValueError` objects, locale/custom thousand
+  separators and range options for floats, integer overflow edge cases outside
+  the current decimal/hex/octal subset, full array/reference/COW filtering
+  parity, exact native warning/`TypeError` objects, and native lowering
 - `array_map` array/object callables, closures, first-class callables, method
   calls, reference/copy-on-write behavior, object handle identity preservation,
   resource values, exact native `TypeError` objects, and native lowering

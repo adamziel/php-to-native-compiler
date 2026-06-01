@@ -105652,6 +105652,7 @@ const PHP_FILTER_FLAG_ENCODE_HIGH: i64 = 32;
 const PHP_FILTER_FLAG_ENCODE_AMP: i64 = 64;
 const PHP_FILTER_FLAG_NO_ENCODE_QUOTES: i64 = 128;
 const PHP_FILTER_FLAG_EMPTY_STRING_NULL: i64 = 256;
+const PHP_FILTER_FLAG_STRIP_BACKTICK: i64 = 512;
 const PHP_FILTER_FLAG_ALLOW_FRACTION: i64 = 4096;
 const PHP_FILTER_FLAG_ALLOW_THOUSAND: i64 = 8192;
 const PHP_FILTER_FLAG_ALLOW_SCIENTIFIC: i64 = 16384;
@@ -106126,6 +106127,7 @@ const BUILTIN_GLOBAL_CONSTANT_NAMES: &[&str] = &[
     "FILTER_FLAG_ENCODE_AMP",
     "FILTER_FLAG_NO_ENCODE_QUOTES",
     "FILTER_FLAG_EMPTY_STRING_NULL",
+    "FILTER_FLAG_STRIP_BACKTICK",
     "FILTER_FLAG_ALLOW_FRACTION",
     "FILTER_FLAG_ALLOW_THOUSAND",
     "FILTER_FLAG_ALLOW_SCIENTIFIC",
@@ -106531,6 +106533,7 @@ fn builtin_global_constant_value(name: &str) -> Option<Value> {
         "FILTER_FLAG_ENCODE_AMP" => Some(Value::Int(PHP_FILTER_FLAG_ENCODE_AMP)),
         "FILTER_FLAG_NO_ENCODE_QUOTES" => Some(Value::Int(PHP_FILTER_FLAG_NO_ENCODE_QUOTES)),
         "FILTER_FLAG_EMPTY_STRING_NULL" => Some(Value::Int(PHP_FILTER_FLAG_EMPTY_STRING_NULL)),
+        "FILTER_FLAG_STRIP_BACKTICK" => Some(Value::Int(PHP_FILTER_FLAG_STRIP_BACKTICK)),
         "FILTER_FLAG_ALLOW_FRACTION" => Some(Value::Int(PHP_FILTER_FLAG_ALLOW_FRACTION)),
         "FILTER_FLAG_ALLOW_THOUSAND" => Some(Value::Int(PHP_FILTER_FLAG_ALLOW_THOUSAND)),
         "FILTER_FLAG_ALLOW_SCIENTIFIC" => Some(Value::Int(PHP_FILTER_FLAG_ALLOW_SCIENTIFIC)),
@@ -129944,45 +129947,65 @@ impl Interpreter {
         let flags = options.flags;
         match filter {
             PHP_FILTER_UNSAFE_RAW => value
-                .try_echo_string()
+                .try_echo_bytes()
                 .map(|value| filter_sanitize_unsafe_raw(&value, flags))
-                .map(Value::String)
+                .map(|value| filter_sanitize_string_result(value, flags))
                 .map_err(|error| runtime_error(span, error)),
             PHP_FILTER_SANITIZE_SPECIAL_CHARS => value
                 .try_echo_string()
-                .map(|value| Value::String(filter_sanitize_special_chars(&value, flags)))
+                .map(|value| {
+                    filter_sanitize_string_result(
+                        filter_sanitize_special_chars(&value, flags),
+                        flags,
+                    )
+                })
                 .map_err(|error| runtime_error(span, error)),
             PHP_FILTER_SANITIZE_FULL_SPECIAL_CHARS => value
                 .try_echo_string()
-                .map(|value| Value::String(filter_sanitize_full_special_chars(&value)))
+                .map(|value| {
+                    filter_sanitize_string_result(filter_sanitize_full_special_chars(&value), flags)
+                })
                 .map_err(|error| runtime_error(span, error)),
             PHP_FILTER_SANITIZE_STRING => value
                 .try_echo_string()
-                .map(|value| Value::String(filter_sanitize_string(&value, flags)))
+                .map(|value| {
+                    filter_sanitize_string_result(filter_sanitize_string(&value, flags), flags)
+                })
                 .map_err(|error| runtime_error(span, error)),
             PHP_FILTER_SANITIZE_ENCODED => value
-                .try_echo_string()
-                .map(|value| Value::String(filter_sanitize_encoded(&value)))
+                .try_echo_bytes()
+                .map(|value| {
+                    filter_sanitize_string_result(filter_sanitize_encoded(&value, flags), flags)
+                })
                 .map_err(|error| runtime_error(span, error)),
             PHP_FILTER_SANITIZE_EMAIL => value
                 .try_echo_string()
-                .map(|value| Value::String(filter_sanitize_email(&value)))
+                .map(|value| filter_sanitize_string_result(filter_sanitize_email(&value), flags))
                 .map_err(|error| runtime_error(span, error)),
             PHP_FILTER_SANITIZE_URL => value
                 .try_echo_string()
-                .map(|value| Value::String(filter_sanitize_url(&value)))
+                .map(|value| filter_sanitize_string_result(filter_sanitize_url(&value), flags))
                 .map_err(|error| runtime_error(span, error)),
             PHP_FILTER_SANITIZE_NUMBER_INT => value
                 .try_echo_string()
-                .map(|value| Value::String(filter_sanitize_number_int(&value)))
+                .map(|value| {
+                    filter_sanitize_string_result(filter_sanitize_number_int(&value), flags)
+                })
                 .map_err(|error| runtime_error(span, error)),
             PHP_FILTER_SANITIZE_NUMBER_FLOAT => value
                 .try_echo_string()
-                .map(|value| Value::String(filter_sanitize_number_float(&value, flags)))
+                .map(|value| {
+                    filter_sanitize_string_result(
+                        filter_sanitize_number_float(&value, flags),
+                        flags,
+                    )
+                })
                 .map_err(|error| runtime_error(span, error)),
             PHP_FILTER_SANITIZE_ADD_SLASHES => value
                 .try_echo_string()
-                .map(|value| Value::String(filter_sanitize_add_slashes(&value)))
+                .map(|value| {
+                    filter_sanitize_string_result(filter_sanitize_add_slashes(&value), flags)
+                })
                 .map_err(|error| runtime_error(span, error)),
             PHP_FILTER_VALIDATE_INT => Ok(filter_validate_int(&value, flags)
                 .and_then(|value| filter_apply_int_options(value, options))
@@ -130134,17 +130157,39 @@ impl Interpreter {
     }
 }
 
-fn filter_sanitize_unsafe_raw(value: &str, flags: i64) -> String {
-    if flags & PHP_FILTER_FLAG_ENCODE_AMP == 0 {
-        return value.to_string();
+fn filter_sanitize_string_result(value: String, flags: i64) -> Value {
+    if flags & PHP_FILTER_FLAG_EMPTY_STRING_NULL != 0 && value.is_empty() {
+        Value::Null
+    } else {
+        Value::String(value)
     }
-    value.replace('&', "&#38;")
+}
+
+fn filter_sanitize_unsafe_raw(value: &[u8], flags: i64) -> String {
+    let mut sanitized = Vec::with_capacity(value.len());
+    for byte in value {
+        if filter_should_strip_byte(*byte, flags) {
+            continue;
+        }
+        if *byte == b'&' && flags & PHP_FILTER_FLAG_ENCODE_AMP != 0 {
+            sanitized.extend_from_slice(b"&#38;");
+        } else if *byte <= 31 && flags & PHP_FILTER_FLAG_ENCODE_LOW != 0 {
+            sanitized.extend_from_slice(format!("&#{};", byte).as_bytes());
+        } else if *byte >= 127 && flags & PHP_FILTER_FLAG_ENCODE_HIGH != 0 {
+            sanitized.extend_from_slice(format!("&#{};", byte).as_bytes());
+        } else {
+            sanitized.push(*byte);
+        }
+    }
+    String::from_utf8(sanitized)
+        .unwrap_or_else(|error| String::from_utf8_lossy(&error.into_bytes()).into_owned())
 }
 
 fn filter_sanitize_special_chars(value: &str, flags: i64) -> String {
     let mut sanitized = String::with_capacity(value.len());
     for ch in value.chars() {
         match ch {
+            ch if filter_should_strip_char(ch, flags) => {}
             '&' => sanitized.push_str("&#38;"),
             '"' => sanitized.push_str("&#34;"),
             '\'' => sanitized.push_str("&#39;"),
@@ -130195,6 +130240,7 @@ fn filter_sanitize_string(value: &str, flags: i64) -> String {
             ch if in_tag => {
                 let _ = ch;
             }
+            ch if filter_should_strip_char(ch, flags) => {}
             '&' if flags & PHP_FILTER_FLAG_ENCODE_AMP != 0 => output.push_str("&#38;"),
             '\'' if flags & PHP_FILTER_FLAG_NO_ENCODE_QUOTES == 0 => output.push_str("&#39;"),
             '"' if flags & PHP_FILTER_FLAG_NO_ENCODE_QUOTES == 0 => output.push_str("&#34;"),
@@ -130204,9 +130250,12 @@ fn filter_sanitize_string(value: &str, flags: i64) -> String {
     output
 }
 
-fn filter_sanitize_encoded(value: &str) -> String {
+fn filter_sanitize_encoded(value: &[u8], flags: i64) -> String {
     let mut output = String::new();
-    for byte in value.as_bytes() {
+    for byte in value {
+        if filter_should_strip_byte(*byte, flags) {
+            continue;
+        }
         if byte.is_ascii_alphanumeric() || matches!(*byte, b'-' | b'_' | b'.') {
             output.push(*byte as char);
         } else {
@@ -130214,6 +130263,18 @@ fn filter_sanitize_encoded(value: &str) -> String {
         }
     }
     output
+}
+
+fn filter_should_strip_byte(byte: u8, flags: i64) -> bool {
+    (byte <= 31 && flags & PHP_FILTER_FLAG_STRIP_LOW != 0)
+        || (byte >= 127 && flags & PHP_FILTER_FLAG_STRIP_HIGH != 0)
+        || (byte == b'`' && flags & PHP_FILTER_FLAG_STRIP_BACKTICK != 0)
+}
+
+fn filter_should_strip_char(ch: char, flags: i64) -> bool {
+    ((ch as u32) <= 31 && flags & PHP_FILTER_FLAG_STRIP_LOW != 0)
+        || ((ch as u32) >= 127 && flags & PHP_FILTER_FLAG_STRIP_HIGH != 0)
+        || (ch == '`' && flags & PHP_FILTER_FLAG_STRIP_BACKTICK != 0)
 }
 
 fn filter_sanitize_email(value: &str) -> String {
@@ -130461,10 +130522,17 @@ fn filter_options_from_array(
         }
         None => 0,
     };
+    let filter_options = options.get_cloned("options");
+    let default = options
+        .get_cloned("default")
+        .or_else(|| match &filter_options {
+            Some(Value::Array(nested)) => nested.get_cloned("default"),
+            _ => None,
+        });
     Ok(FilterOptions {
         flags,
-        options: options.get_cloned("options"),
-        default: options.get_cloned("default"),
+        options: filter_options,
+        default,
     })
 }
 

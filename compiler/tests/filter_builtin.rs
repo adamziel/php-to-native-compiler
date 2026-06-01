@@ -125,3 +125,33 @@ var_dump(filter_var(1, -1, array(123)));
     );
     assert_eq!(execution.exit_code, 0);
 }
+
+#[test]
+fn filter_var_handles_scalar_sanitize_flags_and_nested_defaults() {
+    let execution = run_source(
+        r#"<?php
+var_dump(FILTER_FLAG_STRIP_BACKTICK);
+var_dump(filter_var("", FILTER_DEFAULT, array("flags" => FILTER_FLAG_EMPTY_STRING_NULL)));
+var_dump(filter_var("``a`b`c``", FILTER_UNSAFE_RAW, FILTER_FLAG_STRIP_BACKTICK));
+var_dump(filter_var("\x7f", FILTER_UNSAFE_RAW, FILTER_FLAG_STRIP_HIGH));
+var_dump(filter_var("\x7f", FILTER_SANITIZE_ENCODED, FILTER_FLAG_STRIP_HIGH));
+var_dump(filter_var("\x7f", FILTER_SANITIZE_SPECIAL_CHARS, FILTER_FLAG_STRIP_HIGH));
+var_dump(filter_var("bad", FILTER_VALIDATE_INT, array("options" => array("default" => 321))));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "int(512)\n",
+            "NULL\n",
+            "string(3) \"abc\"\n",
+            "string(0) \"\"\n",
+            "string(0) \"\"\n",
+            "string(0) \"\"\n",
+            "int(321)\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
