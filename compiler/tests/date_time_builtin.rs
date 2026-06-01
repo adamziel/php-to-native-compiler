@@ -277,6 +277,74 @@ foreach ([
 }
 
 #[test]
+fn datetimezone_magic_serialization_rewrites_bounded_metadata() {
+    let execution = run_source(
+        r#"<?php
+$metadata = (new DateTimeZone("CEST"))->__serialize();
+foreach ($metadata as $key => $value) {
+    echo $key, "=", $value, "\n";
+}
+$tz = new DateTimeZone("UTC");
+foreach ([
+    ["timezone_type" => 3, "timezone" => "Europe/London"],
+    ["timezone_type" => 2, "timezone" => "CEST"],
+    ["timezone_type" => 1, "timezone" => "+0130"],
+] as $state) {
+    $tz->__unserialize($state);
+    echo $tz->getName(), "|", serialize($tz), "\n";
+}
+try {
+    $tz->__unserialize(["timezone_type" => 3, "timezone" => "Europe/L\0ndon"]);
+} catch (Error $e) {
+    echo $e::class, ": ", $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "timezone_type=2\n",
+            "timezone=CEST\n",
+            "Europe/London|O:12:\"DateTimeZone\":2:{s:13:\"timezone_type\";i:3;s:8:\"timezone\";s:13:\"Europe/London\";}\n",
+            "CEST|O:12:\"DateTimeZone\":2:{s:13:\"timezone_type\";i:2;s:8:\"timezone\";s:4:\"CEST\";}\n",
+            "+01:30|O:12:\"DateTimeZone\":2:{s:13:\"timezone_type\";i:1;s:8:\"timezone\";s:6:\"+01:30\";}\n",
+            "Error: Invalid serialization data for DateTimeZone object\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn datetimezone_global_unserialize_rejects_invalid_core_metadata() {
+    let execution = run_source(
+        r#"<?php
+$valid = 'O:12:"DateTimeZone":2:{s:13:"timezone_type";i:1;s:8:"timezone";s:5:"+0130";}';
+echo unserialize($valid)->getName(), "\n";
+$invalid = 'O:12:"DateTimeZone":2:{s:13:"timezone_type";i:3;s:8:"timezone";s:17:"Ame' . "\0" . 'rica/New_York";}';
+try {
+    unserialize($invalid);
+} catch (Error $e) {
+    echo $e::class, ": ", $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "+01:30\n",
+            "Error: Invalid serialization data for DateTimeZone object\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn gettimeofday_uses_default_timezone_offset() {
     let execution = run_source(
         r#"<?php

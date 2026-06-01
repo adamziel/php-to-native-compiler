@@ -31,6 +31,19 @@ Implemented:
   DateTimeZone `unserialize()` exception parity, complete timezone validation,
   exact diagnostics, and native lowering remain unsupported.
 
+- Added bounded `DateTimeZone::__serialize()` and
+  `DateTimeZone::__unserialize($data)` metadata hooks for direct core
+  `DateTimeZone` objects. The hooks expose and restore the same
+  `timezone_type`/`timezone` shapes as the serializer/set-state slice and
+  normalize fixed offsets such as `+0130` to `+01:30`. Global `unserialize()`
+  now validates direct core `DateTimeZone` metadata with the same bounded rules,
+  including the selected null-byte invalid row. Focused proof covers the Rust
+  date builtin tests and selected PHPT rows `DateTimeZone_serialization.phpt`
+  and `DateTimeZone_serialize_errors.phpt`. DateTimeZone subclass magic-hook
+  parity, general object serialization, broader invalid DateTimeZone global
+  `unserialize()` exception parity, complete timezone validation, exact
+  diagnostics, and native lowering remain unsupported.
+
 ## 2026-05-27
 
 Implemented:

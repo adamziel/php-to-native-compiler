@@ -32185,7 +32185,14 @@ impl PhpClassTable {
                 Visibility::Public,
             ))
             .expect("DateTimeZone core metadata should not duplicate methods");
-        for method in ["__construct", "getName", "getOffset", "getTransitions"] {
+        for method in [
+            "__construct",
+            "__serialize",
+            "__unserialize",
+            "getName",
+            "getOffset",
+            "getTransitions",
+        ] {
             datetimezone
                 .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
                 .expect("DateTimeZone core metadata should not duplicate methods");

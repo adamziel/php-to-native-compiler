@@ -17302,6 +17302,40 @@ impl Interpreter {
         Ok((timezone_type, timezone_name))
     }
 
+    fn datetimezone_serialized_parts_from_object(
+        object: &PhpObject,
+        function: &'static str,
+        span: Span,
+    ) -> CompileResult<(i64, String)> {
+        let invalid = || {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function,
+                    "Invalid serialization data for DateTimeZone object",
+                ),
+            )
+        };
+        let timezone_type = match object.read_public_property("timezone_type") {
+            Ok(Value::Int(value)) => value,
+            _ => return Err(invalid()),
+        };
+        let timezone = match object.read_public_property("timezone") {
+            Ok(Value::String(value)) => value,
+            _ => return Err(invalid()),
+        };
+        let timezone_name =
+            bounded_datetimezone_serialized_name(timezone_type, &timezone).ok_or_else(invalid)?;
+        Ok((timezone_type, timezone_name))
+    }
+
+    fn datetimezone_serialized_array(timezone_type: i64, timezone_name: String) -> PhpArray {
+        let mut array = PhpArray::new();
+        array.insert("timezone_type", Value::Int(timezone_type));
+        array.insert("timezone", Value::String(timezone_name));
+        array
+    }
+
     fn datetimezone_name(
         object: &PhpObject,
         function: impl Into<String>,
@@ -17363,6 +17397,40 @@ impl Interpreter {
         match method_name.to_ascii_lowercase().as_str() {
             "__construct" => {
                 self.initialize_datetimezone_object(&object, args, span, caller_scope)?;
+                Ok(Value::Null)
+            }
+            "__serialize" => {
+                expect_expr_arity("DateTimeZone::__serialize", args.len(), 0, span)?;
+                let (timezone_type, timezone_name) =
+                    Self::datetimezone_serialized_parts_from_object(
+                        &object,
+                        "DateTimeZone::__serialize()",
+                        span,
+                    )?;
+                Ok(Value::Array(Self::datetimezone_serialized_array(
+                    timezone_type,
+                    timezone_name,
+                )))
+            }
+            "__unserialize" => {
+                expect_expr_arity("DateTimeZone::__unserialize", args.len(), 1, span)?;
+                let value = self.evaluate(&args[0], caller_scope)?;
+                let Value::Array(array) = value else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "DateTimeZone::__unserialize()",
+                            "Invalid serialization data for DateTimeZone object",
+                        ),
+                    ));
+                };
+                let (timezone_type, timezone_name) =
+                    Self::datetimezone_serialized_parts_from_array(
+                        &array,
+                        "DateTimeZone::__unserialize()",
+                        span,
+                    )?;
+                self.assign_datetimezone_object_parts(&object, timezone_type, timezone_name, span)?;
                 Ok(Value::Null)
             }
             "getname" => {
@@ -87540,12 +87608,19 @@ impl Interpreter {
         expect_arity("unserialize()", args, 1, span)?;
         let data = string_builtin_argument("unserialize()", "data", &args[0], span)?;
         let mut parser = PhpSerializedParser::new(&data);
-        let mut object_factory = |class_name: &str, properties: Vec<(String, Value)>| {
-            self.create_unserialized_object(class_name, properties, span)
-                .ok()
+        let mut object_error = None;
+        let mut object_factory = |class_name: &str, properties: Vec<(String, Value)>| match self
+            .create_unserialized_object(class_name, properties, span)
+        {
+            Ok(value) => Some(value),
+            Err(error) => {
+                object_error = Some(error);
+                None
+            }
         };
         match parser.parse_value_with_object_factory(&mut object_factory) {
             Some(value) if parser.is_finished() => Ok(value),
+            _ if object_error.is_some() => Err(object_error.expect("checked is_some")),
             _ => {
                 self.emit_display_warning(
                     "unserialize(): Error at offset 0 of input in the current subset",
@@ -87562,6 +87637,19 @@ impl Interpreter {
         properties: Vec<(String, Value)>,
         span: Span,
     ) -> CompileResult<Value> {
+        if class_name.eq_ignore_ascii_case("DateTimeZone") {
+            let mut array = PhpArray::new();
+            for (name, value) in properties {
+                array.insert(name, value);
+            }
+            let (timezone_type, timezone_name) =
+                Self::datetimezone_serialized_parts_from_array(&array, "unserialize()", span)?;
+            let object =
+                self.create_datetimezone_object_from_parts(timezone_type, timezone_name, span)?;
+            self.track_allocated_object(&object);
+            return Ok(Value::Object(object));
+        }
+
         if self.classes.lookup_class(class_name).is_none() {
             self.run_autoload_callbacks(class_name, AutoloadKind::Class, span)?;
         }
@@ -102614,8 +102702,12 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
             return Some(("Error", error.message.clone()));
         }
 
-        if error.message
-            == "unsupported call DateTimeZone::__set_state(): Invalid serialization data for DateTimeZone object"
+        if matches!(
+            error.message.as_str(),
+            "unsupported call DateTimeZone::__set_state(): Invalid serialization data for DateTimeZone object"
+                | "unsupported call DateTimeZone::__unserialize(): Invalid serialization data for DateTimeZone object"
+                | "unsupported call unserialize(): Invalid serialization data for DateTimeZone object"
+        )
         {
             return Some((
                 "Error",

@@ -5402,15 +5402,20 @@
   initialized `DateTime` instances, and `serialize()`/`unserialize()` round-trip
   direct core `DateTimeZone` objects with valid type-1 fixed offsets, type-2
   abbreviations, or type-3 identifiers through their public
-  `timezone_type`/`timezone` metadata. `DateTimeZone::__set_state($data)`
-  recreates direct core `DateTimeZone` objects from the same bounded metadata
-  array shape and throws catchable `Error` for the currently covered invalid
-  metadata rows.
+  `timezone_type`/`timezone` metadata. `DateTimeZone::__serialize()` returns,
+  and `DateTimeZone::__unserialize($data)` restores, that same bounded metadata
+  shape for direct core objects, including fixed-offset normalization.
+  `DateTimeZone::__set_state($data)` recreates direct core `DateTimeZone`
+  objects from the same bounded metadata array shape and throws catchable
+  `Error` for the currently covered invalid metadata rows. Global
+  `unserialize()` validates direct core `DateTimeZone` metadata with the same
+  bounded rules, including the currently covered null-byte invalid row.
   `date.timezone` PHPT INI overrides seed the same bounded timezone state,
   including PHPT-style trailing semicolon syntax. Full timezone database
   validation, all historical transition rules, general object serialization,
-  DateTimeZone subclass serialization, invalid DateTimeZone `unserialize()`
-  exception parity, exact diagnostics, and native lowering remain unsupported.
+  DateTimeZone subclass serialization/magic-hook parity, invalid DateTimeZone
+  global `unserialize()` exception parity outside the covered metadata shape,
+  exact diagnostics, and native lowering remain unsupported.
   `header($header, $replace = true, $response_code = 0)` accepts a string
   header line plus optional bool replacement flag and optional integer response
   code, records the raw header line in deterministic in-process CLI request
