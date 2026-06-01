@@ -4,6 +4,12 @@
 
 Implemented:
 
+- Published the Batch024 regression-repair full pinned PHPT gate from
+  checkpoint `43262ab5f81fe293a49829c9c270137be98f5e6d`. The gate recorded
+  `5363 / 20294 = 26.43%` public pinned runnable PHPTs with zero
+  latest-published PASS regressions against the Batch023 repair01 baseline.
+  Evidence:
+  `/home/claude/supervised-php-compiler/state/logs/phpt-full-batch024-regression-repair-20260601T145651Z-php-src-f97ff59-source-43262ab5`.
 - Repaired the two PASS regressions found by the Batch024 full pinned PHPT
   gate candidate. `is_file()` now returns `false` for regular-file paths with
   trailing slashes, matching `is_file_variation4.phpt`, and `vfprintf()` now
@@ -11,9 +17,7 @@ Implemented:
   before continuing to later catchable `ValueError` cases, matching
   `vfprintf_error4.phpt`. Focused `cargo test -p phpc --test is_file_builtin
   --test fprintf_builtin -- --test-threads=1` passed `10 / 10`, and focused
-  PHPT verification for both regression rows passed `2 / 2`; a zero-regression
-  full pinned PHPT gate is still required before publishing the improved
-  candidate score.
+  PHPT verification for both regression rows passed `2 / 2`.
 - Refreshed the stale `variable_unset` Rust baseline for the current
   PHP-shaped undefined-variable warning path. Reading a local after `unset()`
   now asserts visible stdout warning text and exit `0` instead of expecting an

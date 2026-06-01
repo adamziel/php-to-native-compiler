@@ -1,13 +1,13 @@
 # PHP Native Compiler PHPT Progress
 
-Updated: 2026-06-01 16:45 CEST
+Updated: 2026-06-01 17:03 CEST
 
 Primary/public branch: `origin/master`
 Latest source-bearing public head:
-`67c7a328a1e819c05e723f9f012763210b219a21 fix: improve stream context diagnostics`
+`43262ab5f81fe293a49829c9c270137be98f5e6d checkpoint: repair PHPT gate regressions`
 
 Semantic source for current published score:
-`54f3c2c34708171d0f97cce98bf27c4eb69c4663 fix: preserve strictness provenance in magic typed properties`
+`43262ab5f81fe293a49829c9c270137be98f5e6d checkpoint: repair PHPT gate regressions`
 
 Public PHPT metric:
 
@@ -16,7 +16,7 @@ Public PHPT metric:
 Pinned denominator: `20294` total pinned runnable php-src PHPTs. Raw runner
 denominators that exclude BORKED rows are not public progress.
 
-Current public score: **5173 / 20294 pinned runnable PHPTs = 25.49%**.
+Current public score: **5363 / 20294 pinned runnable PHPTs = 26.43%**.
 
 Local supervisor note: strict-identity `--emit-ir` Rust assertions were
 refreshed for the already-present boxed diagnostic-result echo boundary. The
@@ -62,24 +62,24 @@ update.
 Local supervisor note: checkpoint `263f60c4` produced a candidate full pinned
 PHPT score of `5361 / 20294 = 26.42%`, but publication was blocked by two
 latest-published PASS regressions: `is_file_variation4.phpt` and
-`vfprintf_error4.phpt`. Both rows now pass focused PHPT verification after the
-trailing-slash `is_file()` and catchable `vfprintf()` stream-argument fixes;
-the improved score is still not public until a rerun records zero regressions.
+`vfprintf_error4.phpt`. Checkpoint `43262ab5` repaired both regressions and
+the rerun published `5363 / 20294 = 26.43%` with zero latest-published PASS
+regressions.
 
 ## Current Public Gate
 
-Published gate: Batch023 repair01.
+Published gate: Batch024 regression repair.
 
 - Gate run:
-  `phpt-full-batch023-repair01-sharded-serialized-openbasedir-20260531T1308Z-php-src-f97ff59-public-54829387-source-54f3c2c3`
-- Source: `54f3c2c34708171d0f97cce98bf27c4eb69c4663 fix: preserve strictness provenance in magic typed properties`
-- Score: **5173 / 20294 pinned runnable PHPTs = 25.49%**
+  `phpt-full-batch024-regression-repair-20260601T145651Z-php-src-f97ff59-source-43262ab5`
+- Source: `43262ab5f81fe293a49829c9c270137be98f5e6d checkpoint: repair PHPT gate regressions`
+- Score: **5363 / 20294 pinned runnable PHPTs = 26.43%**
 - Regression result: zero latest-published PASS regressions against the
-  Batch022 repair02 PASS baseline.
+  Batch023 repair01 PASS baseline.
 - Gate notes: the full `open_basedir_*` family was serialized; the known
   sockets expected-output marker was adjudicated as failed-row output, not a
-  harness marker failure. The previously blocking
-  `strnatcmp_leftalign.phpt` and `typed_properties_009.phpt` rows now pass.
+  harness marker failure. The previously blocking Batch024 candidate
+  regressions `is_file_variation4.phpt` and `vfprintf_error4.phpt` now pass.
 
 No focused PHPT run, source checkpoint, status note, PR, or candidate gate
 changes the public score until it is parsed, regression-checked against the
@@ -158,9 +158,8 @@ Accepted source slots as of public/source head
   `ae68026fe03088451b9c904e2bba5fd11ceff4e10a21f41276a3839c3453cb36`,
   focused PHPT `3 / 3` and non-repeat Rust guard `1 / 1` for the old
   `fwrite('not-resource', 'x')` diagnostic path.
-- [ ] Batch024 full-suite gate: pending. Run only under supervisor ownership,
-  then repair or adjudicate any latest-public PASS regressions before
-  publishing the next score.
+- [x] Batch024 full-suite gate: published as Batch024 regression repair at
+  `5363 / 20294 = 26.43%` with zero latest-published PASS regressions.
 
 Current rejected, reverted, stale, or still-pending Batch024 candidates:
 
@@ -416,7 +415,8 @@ Current rejected, reverted, stale, or still-pending Batch024 candidates:
 | Batch020 repair01 | 4425 / 20294 | 21.80% | 0 PASS regressions; sockets marker adjudicated |
 | Batch021 regression repair | 4685 / 20294 | 23.09% | 0 PASS regressions; sockets marker adjudicated |
 | Batch022 repair02 | 4949 / 20294 | 24.39% | 0 PASS regressions; sockets marker adjudicated |
-| Batch023 repair01 | 5173 / 20294 | 25.49% | 0 PASS regressions; current public score |
+| Batch023 repair01 | 5173 / 20294 | 25.49% | 0 PASS regressions |
+| Batch024 regression repair | 5363 / 20294 | 26.43% | 0 PASS regressions; current public score |
 
 ## Operating Rules / Gates
 
@@ -441,7 +441,9 @@ Current rejected, reverted, stale, or still-pending Batch024 candidates:
   `f97ff597429a2fe633665a7e02d97c8077f9f90f`
 - PHPT wrapper:
   `/home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper`
-- Current Batch023 gate evidence:
+- Current Batch024 gate evidence:
+  `/home/claude/supervised-php-compiler/state/logs/phpt-full-batch024-regression-repair-20260601T145651Z-php-src-f97ff59-source-43262ab5`
+- Previous Batch023 baseline evidence:
   `/home/claude/supervised-php-compiler/state/logs/phpt-full-batch023-repair01-sharded-serialized-openbasedir-20260531T1308Z-php-src-f97ff59-public-54829387-source-54f3c2c3`
 - Previous Batch022 baseline evidence:
   `/home/claude/supervised-php-compiler/state/logs/phpt-full-batch022-repair02-sharded-serialized-openbasedir-20260531T0839Z-php-src-f97ff59-public-5530d1da-source-69c5111f`
