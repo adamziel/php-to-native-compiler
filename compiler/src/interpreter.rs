@@ -83542,6 +83542,7 @@ impl Interpreter {
         let source = tokenizer_source_bytes("token_get_all()", &args[0], span)?;
         let tokens = php_tokenizer::tokenize_with_parse_mode(&source, token_parse);
         if token_parse {
+            validate_token_parse_tokens(&tokens, span)?;
             self.emit_tokenizer_token_deprecations("token_get_all()", &tokens, span)?;
         }
         Ok(Value::Array(tokenizer_tokens_array(&tokens)?))
@@ -83586,6 +83587,7 @@ impl Interpreter {
         }
         let tokens = php_tokenizer::tokenize_with_parse_mode(&source, token_parse);
         if token_parse {
+            validate_token_parse_tokens(&tokens, span)?;
             self.emit_tokenizer_token_deprecations("PhpToken::tokenize()", &tokens, span)?;
         }
         let mut array = PhpArray::new();
@@ -102411,6 +102413,12 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
 
     if let Some(thrown) = catchable_uncaught_throw_class_and_message(error) {
         return Some(thrown);
+    }
+
+    if error.phase == Phase::Runtime {
+        if let Some(message) = error.message.strip_prefix("ParseError: ") {
+            return Some(("ParseError", message.to_string()));
+        }
     }
 
     if error.phase == Phase::Runtime
@@ -139191,6 +139199,110 @@ fn ensure_tokenizer_flags(
             ),
         )),
     }
+}
+
+fn validate_token_parse_tokens(tokens: &[PhpTokenizerToken], span: Span) -> CompileResult<()> {
+    if let Some(message) = tokenizer_token_parse_error_message(tokens) {
+        return Err(Diagnostic::new(
+            Phase::Runtime,
+            span.line,
+            span.column,
+            format!("ParseError: {message}"),
+        ));
+    }
+    Ok(())
+}
+
+fn tokenizer_token_parse_error_message(tokens: &[PhpTokenizerToken]) -> Option<String> {
+    for token in tokens {
+        if token.id() == php_tokenizer::T_LNUMBER && tokenizer_invalid_octal_literal(token.text()) {
+            return Some("Invalid numeric literal".to_string());
+        }
+        if token.id() == php_tokenizer::T_CONSTANT_ENCAPSED_STRING {
+            if let Some(message) = tokenizer_invalid_unicode_escape_message(token.text()) {
+                return Some(message);
+            }
+        }
+    }
+
+    tokenizer_unexpected_identifier_message(tokens)
+}
+
+fn tokenizer_invalid_octal_literal(text: &[u8]) -> bool {
+    if text.len() < 2 || text.first() != Some(&b'0') {
+        return false;
+    }
+    if matches!(text.get(1), Some(b'x' | b'X' | b'b' | b'B' | b'o' | b'O')) {
+        return false;
+    }
+    text.iter()
+        .copied()
+        .filter(|byte| *byte != b'_')
+        .all(|byte| byte.is_ascii_digit())
+        && text.iter().any(|byte| matches!(byte, b'8' | b'9'))
+}
+
+fn tokenizer_invalid_unicode_escape_message(text: &[u8]) -> Option<String> {
+    if !text.starts_with(b"\"") {
+        return None;
+    }
+
+    let mut index = 0;
+    while index + 2 < text.len() {
+        if text[index] == b'\\' && text[index + 1] == b'u' && text[index + 2] == b'{' {
+            let mut cursor = index + 3;
+            let mut value: u32 = 0;
+            let mut saw_digit = false;
+            while cursor < text.len() && text[cursor] != b'}' {
+                let Some(digit) = (text[cursor] as char).to_digit(16) else {
+                    return Some("Invalid UTF-8 codepoint escape sequence".to_string());
+                };
+                saw_digit = true;
+                value = value.saturating_mul(16).saturating_add(digit);
+                cursor += 1;
+            }
+            if cursor >= text.len() || !saw_digit {
+                return Some("Invalid UTF-8 codepoint escape sequence".to_string());
+            }
+            if value > 0x10ffff {
+                return Some(
+                    "Invalid UTF-8 codepoint escape sequence: Codepoint too large".to_string(),
+                );
+            }
+            index = cursor;
+        }
+        index += 1;
+    }
+    None
+}
+
+fn tokenizer_unexpected_identifier_message(tokens: &[PhpTokenizerToken]) -> Option<String> {
+    let significant = tokens
+        .iter()
+        .filter(|token| !tokenizer_parse_ignorable_token(token))
+        .take(3)
+        .collect::<Vec<_>>();
+    let [first, second, ..] = significant.as_slice() else {
+        return None;
+    };
+    if first.id() == php_tokenizer::T_STRING && second.id() == php_tokenizer::T_STRING {
+        return Some(format!(
+            "syntax error, unexpected identifier \"{}\"",
+            String::from_utf8_lossy(second.text())
+        ));
+    }
+    None
+}
+
+fn tokenizer_parse_ignorable_token(token: &PhpTokenizerToken) -> bool {
+    matches!(
+        token.id(),
+        php_tokenizer::T_OPEN_TAG
+            | php_tokenizer::T_OPEN_TAG_WITH_ECHO
+            | php_tokenizer::T_WHITESPACE
+            | php_tokenizer::T_COMMENT
+            | php_tokenizer::T_DOC_COMMENT
+    )
 }
 
 fn tokenizer_source_bytes(

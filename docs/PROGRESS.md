@@ -10,14 +10,18 @@ Implemented:
   octal numeric literals with separators or 64-bit overflow keep PHP-compatible
   token classes, and non-canonical `(double)`/`(real)` casts in parse mode emit
   the covered deprecation through the existing runtime error-handler path before
-  returning `PhpToken` objects or `token_get_all()` arrays. Focused Rust tests
-  cover the scanner and interpreter surfaces, and focused PHPT proof targets
-  `bug77966.phpt`, `gh19507_eval.phpt`,
+  returning `PhpToken` objects or `token_get_all()` arrays. `TOKEN_PARSE` also
+  raises catchable `ParseError` objects for the focused invalid-octal, invalid
+  Unicode codepoint escape, and adjacent identifier syntax rows. Focused Rust
+  tests cover the scanner and interpreter surfaces, and focused PHPT proof
+  targets `bug77966.phpt`, `gh19507_eval.phpt`,
   `invalid_large_octal_with_underscores.phpt`, and
-  `invalid_octal_dnumber.phpt`. Full `TOKEN_PARSE` parse-error validation,
-  uncaught-exception fatal formatting from tokenizer error handlers, complete
-  numeric-separator/overflow parity, full heredoc/nowdoc tokenization, and
-  `PhpToken` object-handle reuse parity remain unsupported.
+  `invalid_octal_dnumber.phpt`, plus the adjacent `parse_errors.phpt` and
+  `token_get_all_TOKEN_PARSE_000.phpt` parse-error rows. Full `TOKEN_PARSE`
+  parse-error validation, uncaught-exception fatal formatting from tokenizer
+  error handlers, complete numeric-separator/overflow parity, full
+  heredoc/nowdoc tokenization, and `PhpToken` object-handle reuse parity remain
+  unsupported.
 
 ## 2026-05-27
 

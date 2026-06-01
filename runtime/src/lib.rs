@@ -31865,9 +31865,15 @@ impl PhpClassTable {
                 .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
                 .expect("Error core metadata should not duplicate methods");
         }
+        let parse_error_id = classes
+            .declare_class("ParseError")
+            .expect("core class table should contain Error before ParseError");
+        classes
+            .set_parent(parse_error_id, error_id)
+            .expect("ParseError should extend Error");
         let invalid_uri_exception_id = classes
             .declare_class("Uri\\InvalidUriException")
-            .expect("core class table should contain Error before Uri\\InvalidUriException");
+            .expect("core class table should contain ParseError before Uri\\InvalidUriException");
         classes
             .set_parent(invalid_uri_exception_id, exception_id)
             .expect("Uri\\InvalidUriException should extend Exception");

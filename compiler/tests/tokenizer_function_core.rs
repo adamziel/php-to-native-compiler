@@ -243,6 +243,37 @@ foreach ($tokens as $token) {
 }
 
 #[test]
+fn tokenizer_token_parse_reports_bounded_parse_errors() {
+    let execution = run_source(
+        r#"<?php
+function show_parse_error($code) {
+    try {
+        token_get_all($code, TOKEN_PARSE);
+    } catch (ParseError $e) {
+        echo $e->getMessage(), "\n";
+    }
+}
+show_parse_error('<?php var_dump(078);');
+show_parse_error('<?php var_dump("\u{xyz}");');
+show_parse_error('<?php var_dump("\u{ffffff}");');
+show_parse_error('<?php invalid code;');
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "Invalid numeric literal\n",
+            "Invalid UTF-8 codepoint escape sequence\n",
+            "Invalid UTF-8 codepoint escape sequence: Codepoint too large\n",
+            "syntax error, unexpected identifier \"code\"\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn php_token_objects_support_constructor_methods_subclasses_and_ampersands() {
     let execution = run_source(
         r#"<?php
