@@ -15001,7 +15001,7 @@ impl Interpreter {
 
         match target_value {
             Value::Array(array) => {
-                let key = self.evaluate_array_key(index, scope)?;
+                let key = self.evaluate_array_offset_key(index, scope)?;
                 let Some(value) = array.get_cloned(key.clone()) else {
                     self.emit_display_warning(
                         format!("Undefined array key {}", key.diagnostic_key()),
@@ -15034,11 +15034,23 @@ impl Interpreter {
                 Ok((value, source))
             }
             Value::String(value) => {
-                let key = self.evaluate_array_key(index, scope)?;
-                let value = self.read_ascii_string_offset(&value, &key, span)?;
+                let (offset, display_key) = self.evaluate_string_offset_index(index, scope)?;
+                let value = self.read_ascii_string_offset_at(&value, offset, &display_key, span)?;
                 Ok((value, None))
             }
             Value::Object(object) => {
+                if !self
+                    .classes
+                    .implements_interface(object.class_id(), "ArrayAccess")
+                {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::invalid_array_access(format!(
+                            "Cannot use object of type {} as array",
+                            object.class_name()
+                        )),
+                    ));
+                }
                 let (offset_arg, copy_source_key) =
                     self.array_access_offset_arg_for_object_index(&object, index, scope)?;
                 let (value, executed_source) = self
@@ -15065,7 +15077,7 @@ impl Interpreter {
                 Ok((value, source))
             }
             other => {
-                let _ = self.evaluate_array_key(index, scope)?;
+                let _ = self.evaluate(index, scope)?;
                 self.emit_display_warning(
                     format!(
                         "Trying to access array offset on {}",
@@ -15082,6 +15094,13 @@ impl Interpreter {
         match value {
             Value::Bool(true) => "true".to_string(),
             Value::Bool(false) => "false".to_string(),
+            _ => value.type_name().to_string(),
+        }
+    }
+
+    fn offset_access_type_name(value: &Value) -> String {
+        match value {
+            Value::Object(object) => object.class_name().to_string(),
             _ => value.type_name().to_string(),
         }
     }
@@ -18837,6 +18856,14 @@ impl Interpreter {
             })?,
         };
 
+        Self::string_offset_index_from_i64(offset, byte_len, span)
+    }
+
+    fn string_offset_index_from_i64(
+        offset: i64,
+        byte_len: usize,
+        span: Span,
+    ) -> CompileResult<usize> {
         let resolved = if offset < 0 {
             byte_len as i64 + offset
         } else {
@@ -18871,10 +18898,123 @@ impl Interpreter {
         value.parse::<i64>().ok()
     }
 
-    fn read_ascii_string_offset(
+    fn parse_leading_integer_string_offset_key(value: &str) -> Option<i64> {
+        let trimmed = value.trim_start();
+        let bytes = trimmed.as_bytes();
+        let mut end = 0;
+
+        if matches!(bytes.first(), Some(b'+') | Some(b'-')) {
+            end += 1;
+        }
+
+        let digit_start = end;
+        while matches!(bytes.get(end), Some(b'0'..=b'9')) {
+            end += 1;
+        }
+
+        if end == digit_start || matches!(bytes.get(end), Some(b'.')) {
+            return None;
+        }
+
+        trimmed[..end].parse::<i64>().ok()
+    }
+
+    fn evaluate_string_offset_index(
+        &mut self,
+        expr: &Expr,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<(i64, String)> {
+        let key = self.evaluate(expr, scope)?;
+        match key {
+            Value::Int(value) => Ok((value, value.to_string())),
+            Value::Bool(value) => {
+                self.emit_display_warning("String offset cast occurred", expr.span())?;
+                let value = i64::from(value);
+                Ok((value, value.to_string()))
+            }
+            Value::Float(value) => {
+                self.emit_display_warning("String offset cast occurred", expr.span())?;
+                let value = Self::float_to_offset_i64(value, expr.span())?;
+                Ok((value, value.to_string()))
+            }
+            Value::Null => {
+                self.emit_display_warning("String offset cast occurred", expr.span())?;
+                Ok((0, "0".to_string()))
+            }
+            Value::String(value) => {
+                if let Some(offset) = Self::parse_string_offset_key(&value) {
+                    return Ok((offset, value));
+                }
+                if let Some(offset) = Self::parse_leading_integer_string_offset_key(&value) {
+                    self.emit_display_warning(
+                        format!("Illegal string offset \"{value}\""),
+                        expr.span(),
+                    )?;
+                    return Ok((offset, value));
+                }
+                Err(Self::offset_type_runtime_error(
+                    &Value::String(value),
+                    "string",
+                    expr.span(),
+                ))
+            }
+            Value::BinaryString(value) => {
+                let value = String::from_utf8_lossy(&value).into_owned();
+                if let Some(offset) = Self::parse_string_offset_key(&value) {
+                    return Ok((offset, value));
+                }
+                if let Some(offset) = Self::parse_leading_integer_string_offset_key(&value) {
+                    self.emit_display_warning(
+                        format!("Illegal string offset \"{value}\""),
+                        expr.span(),
+                    )?;
+                    return Ok((offset, value));
+                }
+                Err(runtime_error(
+                    expr.span(),
+                    RuntimeError::invalid_array_access(
+                        "Cannot access offset of type string on string".to_string(),
+                    ),
+                ))
+            }
+            other => Err(Self::offset_type_runtime_error(
+                &other,
+                "string",
+                expr.span(),
+            )),
+        }
+    }
+
+    fn offset_type_runtime_error(value: &Value, container: &str, span: Span) -> Diagnostic {
+        runtime_error(
+            span,
+            RuntimeError::invalid_array_access(format!(
+                "Cannot access offset of type {} on {container}",
+                Self::offset_access_type_name(value)
+            )),
+        )
+    }
+
+    fn float_to_offset_i64(value: f64, span: Span) -> CompileResult<i64> {
+        if !value.is_finite() || value.trunc() < i64::MIN as f64 || value.trunc() >= i64::MAX as f64
+        {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "array offset",
+                    "non-finite or out-of-range float offset cast behavior is not implemented",
+                ),
+            ));
+        }
+
+        Ok(value.trunc() as i64)
+    }
+
+    fn read_ascii_string_offset_at(
         &mut self,
         value: &str,
-        key: &ArrayKey,
+        offset: i64,
+        display_key: &str,
         span: Span,
     ) -> CompileResult<Value> {
         if !value.is_ascii() {
@@ -18887,11 +19027,11 @@ impl Interpreter {
             ));
         }
 
-        let index = Self::string_offset_index(key, value.len(), "read", span)?;
+        let index = Self::string_offset_index_from_i64(offset, value.len(), span)?;
         let Some(byte) = value.as_bytes().get(index) else {
             self.emit_warning(
                 "string offset",
-                format!("Uninitialized string offset {}", key.display_key()),
+                format!("Uninitialized string offset {display_key}"),
                 span,
             )?;
             return Ok(Value::String(String::new()));
@@ -36087,38 +36227,47 @@ impl Interpreter {
                     None => Err(runtime_error(span, RuntimeError::undefined_variable(name))),
                 }
             }
-            AssignTarget::NestedArrayIndex { name, indices, .. } => {
-                let keys = indices
-                    .iter()
-                    .map(|index| self.evaluate_array_key(index, scope))
-                    .collect::<CompileResult<Vec<_>>>()?;
-                match scope.read_named(name) {
-                    Some(Value::Object(object))
-                        if self
-                            .classes
-                            .implements_interface(object.class_id(), "ArrayAccess") =>
-                    {
-                        self.read_array_access_nested_compound_assignment_left(
-                            object, keys, span, scope,
-                        )
+            AssignTarget::NestedArrayIndex { name, indices, .. } => match scope.read_named(name) {
+                Some(Value::String(_)) => {
+                    if let Some(first_index) = indices.first() {
+                        let _ = self.evaluate_string_offset_index(first_index, scope)?;
                     }
-                    Some(Value::Array(_)) => Err(runtime_error(
+                    Err(runtime_error(
                         span,
-                        RuntimeError::unsupported_call(
-                            "compound assignment",
-                            "nested array targets are not implemented",
+                        RuntimeError::invalid_array_access(
+                            "Cannot use string offset as an array".to_string(),
                         ),
-                    )),
-                    Some(other) => Err(runtime_error(
-                        span,
-                        RuntimeError::invalid_array_access(format!(
-                            "cannot read offset from {}",
-                            other.type_name()
-                        )),
-                    )),
-                    None => Err(runtime_error(span, RuntimeError::undefined_variable(name))),
+                    ))
                 }
-            }
+                Some(Value::Object(object))
+                    if self
+                        .classes
+                        .implements_interface(object.class_id(), "ArrayAccess") =>
+                {
+                    let keys = indices
+                        .iter()
+                        .map(|index| self.evaluate_array_key(index, scope))
+                        .collect::<CompileResult<Vec<_>>>()?;
+                    self.read_array_access_nested_compound_assignment_left(
+                        object, keys, span, scope,
+                    )
+                }
+                Some(Value::Array(_)) => Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "compound assignment",
+                        "nested array targets are not implemented",
+                    ),
+                )),
+                Some(other) => Err(runtime_error(
+                    span,
+                    RuntimeError::invalid_array_access(format!(
+                        "cannot read offset from {}",
+                        other.type_name()
+                    )),
+                )),
+                None => Err(runtime_error(span, RuntimeError::undefined_variable(name))),
+            },
             AssignTarget::NestedArrayAppend { .. }
             | AssignTarget::StaticPropertyArrayIndex { .. }
             | AssignTarget::StaticPropertyArrayAppend { .. }
@@ -45461,7 +45610,7 @@ impl Interpreter {
 
         match target_value {
             Value::Array(array) => {
-                let key = self.evaluate_array_key(index, scope)?;
+                let key = self.evaluate_array_offset_key(index, scope)?;
                 let Some(value) = array.get_cloned(key.clone()) else {
                     self.emit_display_warning(
                         format!("Undefined array key {}", key.diagnostic_key()),
@@ -45494,11 +45643,23 @@ impl Interpreter {
                 Ok((value, source))
             }
             Value::String(value) => {
-                let key = self.evaluate_array_key(index, scope)?;
-                let value = self.read_ascii_string_offset(&value, &key, span)?;
+                let (offset, display_key) = self.evaluate_string_offset_index(index, scope)?;
+                let value = self.read_ascii_string_offset_at(&value, offset, &display_key, span)?;
                 Ok((value, None))
             }
             Value::Object(object) => {
+                if !self
+                    .classes
+                    .implements_interface(object.class_id(), "ArrayAccess")
+                {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::invalid_array_access(format!(
+                            "Cannot use object of type {} as array",
+                            object.class_name()
+                        )),
+                    ));
+                }
                 let (offset_arg, copy_source_key) =
                     self.array_access_offset_arg_for_object_index(&object, index, scope)?;
                 let (value, executed_source) = self
@@ -45524,13 +45685,17 @@ impl Interpreter {
                 );
                 Ok((value, source))
             }
-            other => Err(runtime_error(
-                span,
-                RuntimeError::invalid_array_access(format!(
-                    "cannot read offset from {}",
-                    other.type_name()
-                )),
-            )),
+            other => {
+                let _ = self.evaluate(index, scope)?;
+                self.emit_display_warning(
+                    format!(
+                        "Trying to access array offset on {}",
+                        Self::array_offset_read_warning_container(&other)
+                    ),
+                    span,
+                )?;
+                Ok((Value::Null, None))
+            }
         }
     }
 
@@ -45559,7 +45724,7 @@ impl Interpreter {
                 let Value::Array(array) = value else {
                     unreachable!("array literal evaluation returns array value");
                 };
-                let key = self.evaluate_array_key(index, scope)?;
+                let key = self.evaluate_array_offset_key(index, scope)?;
                 let Some(value) = array.get_cloned(key.clone()) else {
                     self.emit_display_warning(
                         format!("Undefined array key {}", key.diagnostic_key()),
@@ -45584,7 +45749,7 @@ impl Interpreter {
                 else {
                     return Ok(None);
                 };
-                let key = self.evaluate_array_key(index, scope)?;
+                let key = self.evaluate_array_offset_key(index, scope)?;
                 let Some(value) = array.get_cloned(key.clone()) else {
                     self.emit_display_warning(
                         format!("Undefined array key {}", key.diagnostic_key()),
@@ -55803,6 +55968,53 @@ impl Interpreter {
         scope: &mut SymbolTable,
     ) -> CompileResult<ArrayKey> {
         self.evaluate_array_key_with_null_offset_deprecation(expr, scope, true)
+    }
+
+    fn evaluate_array_offset_key(
+        &mut self,
+        expr: &Expr,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<ArrayKey> {
+        let key = self.evaluate(expr, scope)?;
+        match key {
+            Value::Float(value) => {
+                let offset = Self::float_to_offset_i64(value, expr.span())?;
+                if value.fract() != 0.0 {
+                    self.emit_display_diagnostic(
+                        "Deprecated",
+                        PHP_E_DEPRECATED,
+                        format!(
+                            "Implicit conversion from float {} to int loses precision",
+                            format_php_float_to_int_deprecation_value(value)
+                        ),
+                        expr.span(),
+                    )?;
+                }
+                Ok(ArrayKey::Int(offset))
+            }
+            Value::Resource(id) => {
+                self.emit_display_warning(
+                    format!("Resource ID#{id} used as offset, casting to integer ({id})"),
+                    expr.span(),
+                )?;
+                Ok(ArrayKey::Int(id))
+            }
+            Value::Null => {
+                self.emit_display_diagnostic(
+                    "Deprecated",
+                    PHP_E_DEPRECATED,
+                    "Using null as an array offset is deprecated, use an empty string instead",
+                    expr.span(),
+                )?;
+                Ok(ArrayKey::String(String::new()))
+            }
+            other @ (Value::Object(_) | Value::Array(_)) => Err(Self::offset_type_runtime_error(
+                &other,
+                "array",
+                expr.span(),
+            )),
+            _ => ArrayKey::from_value(&key).map_err(|error| runtime_error(expr.span(), error)),
+        }
     }
 
     fn evaluate_array_key_without_null_offset_deprecation(
@@ -102249,6 +102461,22 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
 
         if error.message.starts_with("Unsupported operand types: ") {
             return Some(("TypeError", error.message.clone()));
+        }
+
+        let array_access_message = error
+            .message
+            .strip_prefix("invalid array access: ")
+            .unwrap_or(&error.message);
+
+        if array_access_message.starts_with("Cannot access offset of type ") {
+            return Some(("TypeError", array_access_message.to_string()));
+        }
+
+        if array_access_message == "Cannot use string offset as an array"
+            || (array_access_message.starts_with("Cannot use object of type ")
+                && array_access_message.ends_with(" as array"))
+        {
+            return Some(("Error", array_access_message.to_string()));
         }
 
         if error.message.starts_with("Cannot increment ")
