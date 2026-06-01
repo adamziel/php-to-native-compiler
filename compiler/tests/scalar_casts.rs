@@ -239,6 +239,47 @@ echo strlen($keys[2]), "|", $array[$keys[2]], "\n";
 }
 
 #[test]
+fn settype_direct_variables_execute_current_cast_subset() {
+    let execution = run_source(
+        r#"<?php
+$int = "8754456";
+var_dump(settype($int, "int"));
+var_dump($int);
+$float = "10.25";
+settype($float, "double");
+var_dump($float);
+$bool = "0";
+settype($bool, "boolean");
+var_dump($bool);
+$array = "x";
+settype($array, "array");
+echo count($array), "|", $array[0], "\n";
+$object = ["a" => 1];
+settype($object, "object");
+echo get_class($object), "|", $object->a, "\n";
+$null = true;
+settype($null, "null");
+var_dump($null);
+$kept = "kept";
+try {
+    settype($kept, "resource");
+} catch (ValueError $e) {
+    echo $e->getMessage(), "\n";
+}
+var_dump($kept);
+echo function_exists("settype") ? "exists" : "missing";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "bool(true)\nint(8754456)\nfloat(10.25)\nbool(false)\n1|x\nstdClass|1\nNULL\nCannot convert to resource type\nstring(4) \"kept\"\nexists"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn remaining_casts_have_stable_parse_error() {
     let error = run_source("<?php\necho (unset) \"1\";\n").unwrap_err();
 

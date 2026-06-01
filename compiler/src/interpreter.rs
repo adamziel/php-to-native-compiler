@@ -56966,6 +56966,9 @@ impl Interpreter {
                 if key == "compact" {
                     return self.call_compact(args, span, caller_scope);
                 }
+                if key == "settype" {
+                    return self.call_settype(args, span, caller_scope);
+                }
                 if key == "array_multisort" {
                     return self.call_array_multisort(args, span, caller_scope);
                 }
@@ -57158,6 +57161,9 @@ impl Interpreter {
                 }
                 if key == "compact" {
                     return self.call_compact(args, span, caller_scope);
+                }
+                if key == "settype" {
+                    return self.call_settype(args, span, caller_scope);
                 }
                 if key == "array_multisort" {
                     return self.call_array_multisort(args, span, caller_scope);
@@ -92219,6 +92225,65 @@ impl Interpreter {
         self.int_cast_value(args[0].clone(), "(int)", span)
     }
 
+    fn call_settype(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        if args.len() != 2 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch("settype()", ArityExpectation::Exactly(2), args.len()),
+            ));
+        }
+
+        let Expr::Variable(name, _) = &args[0] else {
+            return Err(runtime_error(
+                args[0].span(),
+                RuntimeError::unsupported_call(
+                    "settype()",
+                    "first argument must be a direct variable in the current subset",
+                ),
+            ));
+        };
+
+        let type_value = self.evaluate_by_value_argument_with_cow_source(&args[1], caller_scope)?;
+        let target_type = string_builtin_argument("settype()", "type", &type_value, span)?;
+        let value = caller_scope.read_static(name, args[0].span())?;
+        let converted = self.settype_cast_value(value, &target_type, span)?;
+        caller_scope.write_static(name, converted);
+        Ok(Value::Bool(true))
+    }
+
+    fn settype_cast_value(
+        &mut self,
+        value: Value,
+        target_type: &str,
+        span: Span,
+    ) -> CompileResult<Value> {
+        match target_type.to_ascii_lowercase().as_str() {
+            "bool" | "boolean" => self.apply_cast(CastKind::Bool, value, span),
+            "int" | "integer" => self.apply_cast(CastKind::Int, value, span),
+            "float" | "double" => self.apply_cast(CastKind::Float, value, span),
+            "string" => self.apply_cast(CastKind::String, value, span),
+            "array" => self.apply_cast(CastKind::Array, value, span),
+            "object" => self.apply_cast(CastKind::Object, value, span),
+            "null" => Ok(Value::Null),
+            "resource" => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call("settype()", "Cannot convert to resource type"),
+            )),
+            other => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "settype()",
+                    format!("Argument #2 ($type) must be a valid type, got \"{other}\""),
+                ),
+            )),
+        }
+    }
+
     fn value_to_string_cast_value(
         &mut self,
         value: Value,
@@ -92937,7 +93002,8 @@ impl Interpreter {
                 | Value::Int(_)
                 | Value::Float(_)
                 | Value::String(_)
-                | Value::BinaryString(_) => {
+                | Value::BinaryString(_)
+                | Value::Resource(_) => {
                     let mut array = PhpArray::new();
                     array
                         .append(value)
@@ -92952,13 +93018,6 @@ impl Interpreter {
                     RuntimeError::unsupported_call(
                         "(array)",
                         "Closure object-to-array cast behavior is not implemented",
-                    ),
-                )),
-                Value::Resource(_) => Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "(array)",
-                        "resource-to-array cast behavior is not implemented",
                     ),
                 )),
             },
@@ -92988,7 +93047,8 @@ impl Interpreter {
                     | Value::Int(_)
                     | Value::Float(_)
                     | Value::String(_)
-                    | Value::BinaryString(_) => {
+                    | Value::BinaryString(_)
+                    | Value::Resource(_) => {
                         object
                             .write_dynamic_public_property("scalar", value)
                             .map_err(|error| runtime_error(span, error))?;
@@ -93000,15 +93060,6 @@ impl Interpreter {
                             RuntimeError::unsupported_call(
                                 "(object)",
                                 "Closure object casts are not implemented",
-                            ),
-                        ));
-                    }
-                    Value::Resource(_) => {
-                        return Err(runtime_error(
-                            span,
-                            RuntimeError::unsupported_call(
-                                "(object)",
-                                "resource-to-object cast behavior is not implemented",
                             ),
                         ));
                     }
@@ -99709,6 +99760,13 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
             ],
         ),
         "floatval" | "doubleval" => ("float", vec![reflection_internal_param("value", "mixed")]),
+        "settype" => (
+            "bool",
+            vec![
+                reflection_internal_reference_param("var", "mixed"),
+                reflection_internal_param("type", "string"),
+            ],
+        ),
         "defined" => (
             "bool",
             vec![reflection_internal_param("constant_name", "string")],
@@ -102980,6 +103038,7 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
             Some(format!("{function}: {message}"))
         }
         ("array_multisort()", "Array sizes are inconsistent") => Some(message.to_string()),
+        ("settype()", "Cannot convert to resource type") => Some(message.to_string()),
         (
             "php_uname()",
             "Argument #1 ($mode) must be a single character"
@@ -103985,6 +104044,7 @@ fn is_builtin(name: &str) -> bool {
             | "next"
             | "in_array"
             | "array_search"
+            | "settype"
             | "strval"
             | "boolval"
             | "intval"
