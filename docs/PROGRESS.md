@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Repaired the completed array/string worker lane on the current supervisor
+  head. `array_intersect()` now keeps scanning the first comparison array when
+  that comparison array contains array-valued entries, so the reached
+  two-dimensional-array PHPT row gets PHP-shaped `Array to string conversion`
+  warning counts while preserving existing scalar/stringable-object/resource
+  comparison behavior. Focused Rust passed `12 / 12` across
+  `array_intersect` and `array_count_values`; `cargo build -p phpc --bin phpc`
+  passed; and selected PHPT proof passed `6 / 6` for
+  `array_count_values.phpt`, `array_count_values2.phpt`,
+  `array_intersect_variation9.phpt`, `similar_text_basic.phpt`,
+  `str_word_count.phpt`, and `str_word_count1.phpt`. Unsupported edges remain
+  full native comparison/warning-count parity outside the covered
+  `array_intersect()` first-comparison-array path, non-stringable object value
+  comparison behavior, exact native `TypeError` objects, references/COW, and
+  native lowering. This is not a public score update until a full pinned PHPT
+  gate accepts a checkpoint.
+
 - Accepted checkpoint `4f1c81d5` as the current public PHPT score source after
   a full pinned php-src gate completed with zero latest-published PASS
   regressions. The public-comparable score is now `5513 / 20294 = 27.17%`,

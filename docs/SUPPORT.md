@@ -9776,12 +9776,16 @@
   array containing entries from the first array whose comparison value is
   present in every subsequent array. Array values emit the native-style
   conversion warning and compare as `Array`; stringable objects, BcMath
-  `Number` objects, and resources compare by their PHP string forms. A
-  single-array call returns a copy preserving the first array's key shape,
-  values, insertion order, and append-index behavior. The source arrays are not
-  mutated. Non-array operands, including variadic operands, fail with
+  `Number` objects, and resources compare by their PHP string forms. When the
+  first comparison array contains array-valued entries, the interpreter keeps
+  scanning that comparison array to match the reached two-dimensional-array
+  warning counts. A single-array call returns a copy preserving the first
+  array's key shape, values, insertion order, and append-index behavior. The
+  source arrays are not mutated. Non-array operands, including variadic
+  operands, fail with
   diagnostics naming the offending positional argument. Non-stringable object
-  values, exact native `TypeError` objects, full copy-on-write containers, and
+  values, exact warning-count parity outside the covered first-comparison-array
+  path, exact native `TypeError` objects, full copy-on-write containers, and
   native lowering are not implemented. `array_intersect` is also available
   through string-valued dynamic function calls.
   `array_unique($array)` accepts one array operand,

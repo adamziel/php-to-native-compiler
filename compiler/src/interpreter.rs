@@ -89349,12 +89349,20 @@ impl Interpreter {
                 ArrayUserCompareMode::Intersect => true,
             };
 
-            for other in others {
+            for (other_index, other) in others.iter().enumerate() {
+                let scan_all_matches = mode == ArrayUserCompareMode::Intersect
+                    && !compare_keys
+                    && other_index == 0
+                    && other
+                        .entries()
+                        .iter()
+                        .any(|entry| matches!(entry.value(), Value::Array(_)));
                 let matched = self.array_native_entry_matches_any(
                     context,
                     left_entry,
                     other,
                     compare_keys,
+                    scan_all_matches,
                     span,
                 )?;
                 match mode {
@@ -89437,8 +89445,10 @@ impl Interpreter {
         left: &ArrayEntry,
         right: &PhpArray,
         compare_keys: bool,
+        scan_all_matches: bool,
         span: Span,
     ) -> CompileResult<bool> {
+        let mut matched = false;
         for right_entry in right.entries() {
             if compare_keys && left.key != right_entry.key {
                 continue;
@@ -89446,11 +89456,14 @@ impl Interpreter {
             let left_value = left.value_cloned();
             let right_value = right_entry.value_cloned();
             if self.array_native_values_match(context, &left_value, &right_value, span)? {
-                return Ok(true);
+                if !scan_all_matches {
+                    return Ok(true);
+                }
+                matched = true;
             }
         }
 
-        Ok(false)
+        Ok(matched)
     }
 
     fn array_native_values_match(

@@ -195,6 +195,36 @@ print_r(array_intersect($left));
 }
 
 #[test]
+fn array_intersect_matches_php_warning_counts_for_two_dimensional_arrays() {
+    let source = r#"<?php
+$arr1 = [
+    [1, 2, "hello", "world"],
+    [1, 2, 3, 4],
+    [1 => "one", 2 => "two", 3 => "three"],
+    ["ten" => 10, "twenty" => 20.00, "thirty" => 30],
+];
+$arr2 = [
+    [1, 2, 3, 4],
+    [1 => "one", 2 => "two", 3 => "three"],
+];
+
+var_dump(array_intersect($arr1, $arr2));
+var_dump(array_intersect($arr1, $arr2, $arr1));
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution
+            .stdout
+            .matches("Warning: Array to string conversion")
+            .count(),
+        40
+    );
+    assert!(execution.stdout.contains("array(4) {\n  [0]=>"));
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn emit_ir_rejects_array_intersect_until_native_call_lowering_exists() {
     let error = emit_ir_source("<?php\necho array_intersect([1], [1]);\n").unwrap_err();
 

@@ -1,6 +1,6 @@
 # PHP Native Compiler PHPT Progress
 
-Updated: 2026-06-01 22:10 CEST
+Updated: 2026-06-01 22:32 CEST
 
 Primary/public branch: `origin/master`
 Latest accepted public-score source:
@@ -78,6 +78,17 @@ additional target PHPT rows: `DateTime_getOffset_basic1.phpt`,
 `24 / 24`, `cargo build -p phpc --bin phpc` passed, and selected PHPT
 verification passed `11 / 11`. This is not a public score update until
 checkpoint validation and a full pinned PHPT gate complete.
+
+Local supervisor note: the completed array/string worker lane is now repaired
+on the current supervisor head. `array_intersect_variation9.phpt` now passes
+after matching the reached two-dimensional-array `Array to string conversion`
+warning counts; the full selected lane passed `6 / 6` for
+`array_count_values.phpt`, `array_count_values2.phpt`,
+`array_intersect_variation9.phpt`, `similar_text_basic.phpt`,
+`str_word_count.phpt`, and `str_word_count1.phpt`. Focused Rust passed
+`12 / 12` across `array_intersect` and `array_count_values`; build passed.
+This is not a public score update until checkpoint validation and a full pinned
+PHPT gate complete.
 
 Local supervisor note: the next worker-integrated focused source batch covers
 8 additional target PHPT rows: `substr.phpt`, `fread_error.phpt`,
