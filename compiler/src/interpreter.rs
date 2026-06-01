@@ -83998,7 +83998,17 @@ impl Interpreter {
                 ),
             )),
             "parse_url" => call_parse_url(&args, span),
-            "http_build_query" => call_http_build_query(&args, span),
+            "http_build_query" => {
+                let (current_class_id, protected_class_ids) = self.current_property_access_context();
+                call_http_build_query(
+                    &args,
+                    HttpQueryObjectContext {
+                        current_class_id,
+                        protected_class_ids,
+                    },
+                    span,
+                )
+            }
             "urlencode" => call_urlencode(&args, span),
             "urldecode" => call_urldecode(&args, span),
             "rawurlencode" => call_rawurlencode(&args, span),
@@ -123215,7 +123225,11 @@ enum HttpQueryEncoding {
     Rfc3986,
 }
 
-fn call_http_build_query(args: &[Value], span: Span) -> CompileResult<Value> {
+fn call_http_build_query(
+    args: &[Value],
+    object_context: HttpQueryObjectContext,
+    span: Span,
+) -> CompileResult<Value> {
     if !(1..=4).contains(&args.len()) {
         return Err(runtime_error(
             span,
@@ -123286,6 +123300,7 @@ fn call_http_build_query(args: &[Value], span: Span) -> CompileResult<Value> {
         &numeric_prefix,
         &mut pairs,
         encoding,
+        &object_context,
         &mut visited,
         span,
     )?;
@@ -123303,10 +123318,18 @@ struct HttpQueryVisit {
     objects: HashSet<i64>,
 }
 
-fn public_object_properties_for_http_query(object: &PhpObject) -> PhpArray {
+struct HttpQueryObjectContext {
+    current_class_id: Option<ClassId>,
+    protected_class_ids: Vec<ClassId>,
+}
+
+fn public_object_properties_for_http_query(
+    object: &PhpObject,
+    context: &HttpQueryObjectContext,
+) -> PhpArray {
     let mut array = PhpArray::new();
     for property in object.properties() {
-        if property.visibility() == Visibility::Public && property.is_initialized() {
+        if http_query_property_visible(&property, context) && property.is_initialized() {
             array.insert(
                 ArrayKey::String(property.name().to_string()),
                 property.value_cloned(),
@@ -123314,6 +123337,19 @@ fn public_object_properties_for_http_query(object: &PhpObject) -> PhpArray {
         }
     }
     array
+}
+
+fn http_query_property_visible(
+    property: &ObjectProperty,
+    context: &HttpQueryObjectContext,
+) -> bool {
+    match property.visibility() {
+        Visibility::Public => true,
+        Visibility::Private => context.current_class_id == Some(property.declaring_class_id()),
+        Visibility::Protected => context
+            .protected_class_ids
+            .contains(&property.declaring_class_id()),
+    }
 }
 
 fn http_query_top_level_key(key: &ArrayKey, numeric_prefix: &str) -> String {
@@ -123332,6 +123368,7 @@ fn collect_http_query_root_pairs(
     numeric_prefix: &str,
     pairs: &mut Vec<String>,
     encoding: HttpQueryEncoding,
+    object_context: &HttpQueryObjectContext,
     visited: &mut HttpQueryVisit,
     span: Span,
 ) -> CompileResult<()> {
@@ -123344,6 +123381,7 @@ fn collect_http_query_root_pairs(
                     &entry.value_cloned(),
                     pairs,
                     encoding,
+                    object_context,
                     visited,
                     span,
                 )?;
@@ -123353,7 +123391,7 @@ fn collect_http_query_root_pairs(
             if !visited.objects.insert(object.id()) {
                 return Ok(());
             }
-            let array = public_object_properties_for_http_query(&object);
+            let array = public_object_properties_for_http_query(&object, object_context);
             for entry in array.entries() {
                 let key = http_query_top_level_key(&entry.key, numeric_prefix);
                 collect_http_query_pairs(
@@ -123361,6 +123399,7 @@ fn collect_http_query_root_pairs(
                     &entry.value_cloned(),
                     pairs,
                     encoding,
+                    object_context,
                     visited,
                     span,
                 )?;
@@ -123376,6 +123415,7 @@ fn collect_http_query_pairs(
     value: &Value,
     pairs: &mut Vec<String>,
     encoding: HttpQueryEncoding,
+    object_context: &HttpQueryObjectContext,
     visited: &mut HttpQueryVisit,
     span: Span,
 ) -> CompileResult<()> {
@@ -123388,6 +123428,7 @@ fn collect_http_query_pairs(
                     &entry.value_cloned(),
                     pairs,
                     encoding,
+                    object_context,
                     visited,
                     span,
                 )?;
@@ -123398,13 +123439,14 @@ fn collect_http_query_pairs(
             if !visited.objects.insert(object.id()) {
                 return Ok(());
             }
-            let array = public_object_properties_for_http_query(object);
+            let array = public_object_properties_for_http_query(object, object_context);
             for entry in array.entries() {
                 collect_http_query_pairs(
                     http_query_child_key(&key, &entry.key),
                     &entry.value_cloned(),
                     pairs,
                     encoding,
+                    object_context,
                     visited,
                     span,
                 )?;

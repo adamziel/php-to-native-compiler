@@ -34,6 +34,16 @@ Implemented:
   diagnostics, binary key/value fidelity outside UTF-8 strings, object custom
   hooks, and native lowering remain unsupported.
 
+- Added method-context visible object-property extraction for
+  `http_build_query()`. Calls made inside a class method now include the
+  initialized protected/private properties visible from that method context,
+  while calls outside class scope continue to serialize only public properties.
+  Focused proof covers the query-helper Rust tests, `cargo build -p phpc`, a
+  direct CLI exercise, and selected PHPT row
+  `ext/standard/tests/http/http_build_query/bug26817.phpt`. Magic property
+  hooks, exact diagnostics, cyclic arrays, binary key/value fidelity outside
+  UTF-8 strings, object custom hooks, and native lowering remain unsupported.
+
 ## 2026-05-27
 
 Implemented:

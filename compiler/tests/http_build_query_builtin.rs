@@ -50,6 +50,40 @@ echo http_build_query(new UrlBuilder()), "\n";
 }
 
 #[test]
+fn http_build_query_uses_visible_object_properties_from_method_context() {
+    let execution = run_source(
+        r#"<?php
+class QuerySource
+{
+    protected $foo;
+    private $bar;
+    public $test;
+
+    function fill()
+    {
+        $this->bar = "meuh";
+        $this->foo = "lala";
+        $this->test = "test";
+
+        var_dump(http_build_query($this));
+    }
+}
+
+$obj = new QuerySource();
+$obj->fill();
+var_dump(http_build_query($obj));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "string(27) \"foo=lala&bar=meuh&test=test\"\nstring(9) \"test=test\"\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn http_build_query_recurses_and_skips_null_or_resource_values() {
     let execution = run_source(
         r#"<?php
