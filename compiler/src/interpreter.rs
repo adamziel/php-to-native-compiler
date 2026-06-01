@@ -79640,8 +79640,8 @@ impl Interpreter {
                 RuntimeError::unsupported_call(
                     format!("{function}()"),
                     format!(
-                        "Argument #1 ($stream) must be of type resource, {} given",
-                        php_type_error_given(value)
+                        "stream argument must be resource in the current subset, got {}",
+                        value.type_name()
                     ),
                 ),
             ));
@@ -80453,8 +80453,8 @@ impl Interpreter {
                 RuntimeError::unsupported_call(
                     "fscanf()",
                     format!(
-                        "Argument #1 ($stream) must be of type resource, {} given",
-                        php_type_error_given(value)
+                        "stream argument must be resource in the current subset, got {}",
+                        value.type_name()
                     ),
                 ),
             ));
@@ -102655,6 +102655,10 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
             return Some(("TypeError", format!("PhpToken::is(): {message}")));
         }
 
+        if let Some((class_name, message)) = stream_context_php_error_class_and_message(error) {
+            return Some((class_name, message));
+        }
+
         if let Some(message) = array_reduce_callback_too_few_arguments_message(error) {
             return Some(("TypeError", message));
         }
@@ -103795,6 +103799,37 @@ fn builtin_resource_type_error_message(error: &Diagnostic) -> Option<String> {
     {
         return Some(reason.to_string());
     }
+    None
+}
+
+fn stream_context_php_error_class_and_message(
+    error: &Diagnostic,
+) -> Option<(&'static str, String)> {
+    if error.phase != Phase::Runtime {
+        return None;
+    }
+
+    let message = error.message.strip_prefix("unsupported call ")?;
+    if let Some(reason) = message.strip_prefix("stream_context_set_option(): ") {
+        if matches!(
+            reason,
+            "Argument #3 ($option_name) must be null when argument #2 ($wrapper_or_options) is an array"
+                | "Argument #4 ($value) cannot be provided when argument #2 ($wrapper_or_options) is an array"
+                | "Argument #3 ($option_name) cannot be null when argument #2 ($wrapper_or_options) is a string"
+                | "Argument #4 ($value) must be provided when argument #2 ($wrapper_or_options) is a string"
+        ) {
+            return Some(("Error", message.to_string()));
+        }
+    }
+
+    if let Some(reason) = message.strip_prefix("stream_context_set_params(): ") {
+        if reason
+            .starts_with("Argument #1 ($context) must be an array with valid callbacks as values")
+        {
+            return Some(("TypeError", message.to_string()));
+        }
+    }
+
     None
 }
 

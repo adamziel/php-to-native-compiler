@@ -1122,6 +1122,60 @@ echo $preserved["options"]["http"]["header"];
 }
 
 #[test]
+fn stream_context_diagnostics_are_catchable_php_errors() {
+    let execution = run_source(
+        r#"<?php
+function valid_notice() {}
+$context = stream_context_create();
+
+try {
+    stream_context_set_option($context, [], "x");
+} catch (Error $error) {
+    echo $error->getMessage(), "\n";
+}
+
+try {
+    stream_context_set_option($context, [], null, "x");
+} catch (Error $error) {
+    echo $error->getMessage(), "\n";
+}
+
+try {
+    stream_context_set_option($context, "http", "method");
+} catch (Error $error) {
+    echo $error->getMessage(), "\n";
+}
+
+stream_context_set_params($context, array("notification" => "valid_notice"));
+try {
+    stream_context_set_params($context, array("notification" => "missing_notice"));
+} catch (TypeError $error) {
+    echo $error->getMessage(), "\n";
+}
+
+try {
+    stream_context_set_params($context, array("notification" => array("MissingNotice", "handle")));
+} catch (TypeError $error) {
+    echo $error->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "stream_context_set_option(): Argument #3 ($option_name) must be null when argument #2 ($wrapper_or_options) is an array\n",
+            "stream_context_set_option(): Argument #4 ($value) cannot be provided when argument #2 ($wrapper_or_options) is an array\n",
+            "stream_context_set_option(): Argument #4 ($value) must be provided when argument #2 ($wrapper_or_options) is a string\n",
+            "stream_context_set_params(): Argument #1 ($context) must be an array with valid callbacks as values, function \"missing_notice\" not found or invalid function name\n",
+            "stream_context_set_params(): Argument #1 ($context) must be an array with valid callbacks as values, class \"MissingNotice\" not found\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn local_directory_handle_builtins_iterate_rewind_and_close_entries() {
     let root = temp_stream_path("phpc-directory-handle-root");
     let nested = root.join("nested");
