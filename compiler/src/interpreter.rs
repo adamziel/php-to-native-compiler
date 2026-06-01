@@ -79077,6 +79077,49 @@ impl Interpreter {
         ))
     }
 
+    fn call_get_meta_tags(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(1..=2).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "get_meta_tags()",
+                    ArityExpectation::Between { min: 1, max: 2 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let path = self.filesystem_filename_argument("get_meta_tags", &args[0], span)?;
+        let use_include_path =
+            self.use_include_path_argument("get_meta_tags", args.get(1), span)?;
+        let filesystem_path = self.resolve_local_filesystem_operation_path(
+            "get_meta_tags",
+            &path,
+            use_include_path,
+            span,
+        )?;
+        if !self.enforce_bounded_open_basedir("get_meta_tags()", &path, &filesystem_path, span)? {
+            return Ok(Value::Bool(false));
+        }
+
+        let contents = match fs::read(&filesystem_path) {
+            Ok(contents) => contents,
+            Err(error) => {
+                self.emit_display_warning(
+                    format!(
+                        "get_meta_tags({path}): Failed to open stream: {}",
+                        php_filesystem_open_error_message(&error)
+                    ),
+                    span,
+                )?;
+                return Ok(Value::Bool(false));
+            }
+        };
+        self.cache_bounded_realpath_entry_for_local_path(&filesystem_path);
+
+        Ok(Value::Array(get_meta_tags_array(&contents)))
+    }
+
     fn call_sha1_file(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         if !(1..=2).contains(&args.len()) {
             return Err(runtime_error(
@@ -84713,6 +84756,7 @@ impl Interpreter {
             "highlight_string" => self.call_highlight_string(&args, span),
             "highlight_file" => self.call_highlight_file(&args, span),
             "php_strip_whitespace" => self.call_php_strip_whitespace(&args, span),
+            "get_meta_tags" => self.call_get_meta_tags(&args, span),
             "get_html_translation_table" => call_get_html_translation_table(self, &args, span),
             "strip_tags" => call_strip_tags(&args, span),
             "nl2br" => call_nl2br(&args, span),
@@ -100729,6 +100773,13 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
             "string",
             vec![reflection_internal_param("filename", "string")],
         ),
+        "get_meta_tags" => (
+            "array|false",
+            vec![
+                reflection_internal_param("filename", "string"),
+                reflection_internal_optional_bool_param("use_include_path", false),
+            ],
+        ),
         "get_html_translation_table" => (
             "array",
             vec![
@@ -105585,6 +105636,7 @@ fn is_builtin(name: &str) -> bool {
             | "highlight_string"
             | "highlight_file"
             | "php_strip_whitespace"
+            | "get_meta_tags"
             | "get_html_translation_table"
             | "strip_tags"
             | "nl2br"
@@ -106778,6 +106830,153 @@ fn php_strip_whitespace_heredoc_marker(line: &str) -> Option<String> {
         .trim_matches('\'')
         .trim();
     (!marker.is_empty()).then(|| marker.to_string())
+}
+
+fn get_meta_tags_array(contents: &[u8]) -> PhpArray {
+    let end = find_ascii_case_insensitive(contents, b"</head>").unwrap_or(contents.len());
+    let contents = &contents[..end];
+    let mut array = PhpArray::new();
+    let mut cursor = 0usize;
+
+    while let Some(relative_start) = find_ascii_case_insensitive(&contents[cursor..], b"<meta") {
+        let mut tag_start = cursor + relative_start;
+
+        loop {
+            let Some(relative_end) = contents[tag_start..].iter().position(|byte| *byte == b'>')
+            else {
+                return array;
+            };
+            let tag_end = tag_start + relative_end;
+
+            if let Some(nested_start) = find_ascii_case_insensitive(
+                &contents[tag_start + b"<meta".len()..tag_end],
+                b"<meta",
+            ) {
+                tag_start += b"<meta".len() + nested_start;
+                continue;
+            }
+
+            let tag = &contents[tag_start + b"<meta".len()..tag_end];
+            if let Some((name, content)) = parse_meta_tag_attributes(tag) {
+                let key = normalize_meta_tag_name(&name);
+                if !key.is_empty() {
+                    array.insert(key, interpreter_value_from_php_string_bytes(content));
+                }
+            }
+
+            cursor = tag_end + 1;
+            break;
+        }
+    }
+
+    array
+}
+
+fn parse_meta_tag_attributes(tag: &[u8]) -> Option<(Vec<u8>, Vec<u8>)> {
+    let mut cursor = 0usize;
+    let mut name = None;
+    let mut content = None;
+
+    while cursor < tag.len() {
+        skip_ascii_whitespace(tag, &mut cursor);
+        if cursor >= tag.len() {
+            break;
+        }
+        if tag[cursor] == b'/' {
+            cursor += 1;
+            continue;
+        }
+
+        let attribute_start = cursor;
+        while cursor < tag.len()
+            && !tag[cursor].is_ascii_whitespace()
+            && tag[cursor] != b'='
+            && tag[cursor] != b'/'
+        {
+            cursor += 1;
+        }
+        if attribute_start == cursor {
+            cursor += 1;
+            continue;
+        }
+        let attribute = &tag[attribute_start..cursor];
+
+        skip_ascii_whitespace(tag, &mut cursor);
+        let value = if cursor < tag.len() && tag[cursor] == b'=' {
+            cursor += 1;
+            skip_ascii_whitespace(tag, &mut cursor);
+            parse_meta_tag_attribute_value(tag, &mut cursor)
+        } else {
+            Vec::new()
+        };
+
+        if ascii_case_insensitive_eq(attribute, b"name") {
+            name = Some(value);
+        } else if ascii_case_insensitive_eq(attribute, b"content") {
+            content = Some(value);
+        }
+    }
+
+    Some((name?, content?))
+}
+
+fn parse_meta_tag_attribute_value(tag: &[u8], cursor: &mut usize) -> Vec<u8> {
+    if *cursor >= tag.len() {
+        return Vec::new();
+    }
+
+    let quote = tag[*cursor];
+    if quote == b'"' || quote == b'\'' {
+        *cursor += 1;
+        let value_start = *cursor;
+        while *cursor < tag.len() && tag[*cursor] != quote {
+            *cursor += 1;
+        }
+        let value = tag[value_start..*cursor].to_vec();
+        if *cursor < tag.len() {
+            *cursor += 1;
+        }
+        return value;
+    }
+
+    let value_start = *cursor;
+    while *cursor < tag.len() && !tag[*cursor].is_ascii_whitespace() && tag[*cursor] != b'/' {
+        *cursor += 1;
+    }
+    tag[value_start..*cursor].to_vec()
+}
+
+fn normalize_meta_tag_name(name: &[u8]) -> String {
+    name.iter()
+        .map(|byte| match byte {
+            b'A'..=b'Z' => char::from(byte.to_ascii_lowercase()),
+            b'a'..=b'z' | b'0'..=b'9' | b'_' => char::from(*byte),
+            _ => '_',
+        })
+        .collect()
+}
+
+fn skip_ascii_whitespace(bytes: &[u8], cursor: &mut usize) {
+    while *cursor < bytes.len() && bytes[*cursor].is_ascii_whitespace() {
+        *cursor += 1;
+    }
+}
+
+fn find_ascii_case_insensitive(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    if needle.is_empty() {
+        return Some(0);
+    }
+    haystack
+        .windows(needle.len())
+        .position(|window| ascii_case_insensitive_eq(window, needle))
+}
+
+fn ascii_case_insensitive_eq(left: &[u8], right: &[u8]) -> bool {
+    left.len() == right.len()
+        && left
+            .iter()
+            .zip(right)
+            .all(|(left, right)| left.eq_ignore_ascii_case(right))
 }
 
 struct PathInfoParts {

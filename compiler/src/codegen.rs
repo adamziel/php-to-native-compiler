@@ -66486,6 +66486,7 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "highlight_string",
     "highlight_file",
     "php_strip_whitespace",
+    "get_meta_tags",
     "get_html_translation_table",
     "strip_tags",
     "str_repeat",

@@ -4,6 +4,8 @@
 
 Implemented:
 
+- Added a bounded interpreter `get_meta_tags()` slice for ext/standard string residual coverage. The runtime now reads local files through the existing filesystem/open_basedir path, parses the deterministic `<meta name=... content=...>` forms covered by PHP's `get_meta_tags.phpt`, normalizes ASCII meta names to PHP array keys, stops at `</head>`, handles the PHPT malformed nested-`<meta` recovery rows, and exposes dynamic callability, `function_exists()` / `is_callable()` folding, and `ReflectionFunction` metadata. Focused Rust tests and `tests/fixtures/milestone2307/get_meta_tags_phpt_slice.php` cover the PHPT rows plus case-insensitive tag/attribute forms. Full HTML parsing, charset/entity handling, non-local stream wrappers, exact malformed-tag recovery outside the PHPT slice, references/COW, and native lowering beyond function-table introspection remain unsupported.
+
 - Added a compact `parse_url()` relative-reference slice for query-only and
   fragment-only inputs. `parse_url("?q")`, `parse_url("#f")`, empty query or
   fragment forms, and component extraction no longer synthesize an empty
