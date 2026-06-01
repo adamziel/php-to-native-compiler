@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Tightened the bounded interpreter JSON decoder error surface for the compact
+  ext/json slice: nested container depth errors now report the container token
+  that exceeds the requested depth, array/object state mismatches keep the
+  failing token location without consuming past it, unterminated arrays report
+  syntax rather than state mismatch at EOF, control-character decode failures
+  keep the containing string-token location, and invalid `json_decode()`
+  depth now maps to a catchable `ValueError`. Focused supervisor verification
+  passed `7 / 7` in `json_builtins`, `cargo build -p phpc --bin phpc`, a
+  direct `phpc run` CLI exercise over decode depth and catchable invalid-depth
+  behavior, and selected PHPT proof `2 / 2` for
+  `ext/json/tests/007.phpt` and
+  `ext/json/tests/json_decode_error.phpt`. Remaining unsupported edges are
+  unchanged for full Unicode/UTF-8 normalization, multi-line and non-ASCII
+  diagnostic-location parity, `JSON_THROW_ON_ERROR`, full `JsonSerializable`
+  behavior, complete option interaction parity, other json extension
+  functions, and native lowering.
+
 - Added a bounded `http_build_query()` query-formatting slice for direct named
   arguments and self-recursive public object branches. The interpreter now
   publishes internal parameter metadata for `data`, `numeric_prefix`,

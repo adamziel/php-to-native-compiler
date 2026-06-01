@@ -116,6 +116,48 @@ var_dump(json_decode('{"foo":"bar"}', null, 512, JSON_OBJECT_AS_ARRAY));
 }
 
 #[test]
+fn json_decode_depth_and_error_locations_match_core_rows() {
+    let execution = run_source(
+        r#"<?php
+var_dump(json_decode("[[1]]", false, 2));
+var_dump(json_last_error(), json_last_error_msg());
+var_dump(json_decode("[1}"));
+var_dump(json_last_error(), json_last_error_msg());
+var_dump(json_decode('["' . chr(0) . 'abcd"]'));
+var_dump(json_last_error(), json_last_error_msg());
+var_dump(json_decode("[1"));
+var_dump(json_last_error(), json_last_error_msg());
+try {
+    json_decode('"abc"', true, -1);
+} catch (ValueError $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "NULL\n",
+            "int(1)\n",
+            "string(46) \"Maximum stack depth exceeded near location 1:2\"\n",
+            "NULL\n",
+            "int(2)\n",
+            "string(60) \"State mismatch (invalid or malformed JSON) near location 1:3\"\n",
+            "NULL\n",
+            "int(3)\n",
+            "string(71) \"Control character error, possibly incorrectly encoded near location 1:2\"\n",
+            "NULL\n",
+            "int(4)\n",
+            "string(30) \"Syntax error near location 1:3\"\n",
+            "json_decode(): Argument #3 ($depth) must be greater than 0\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn json_validate_tracks_state_depth_flags_and_utf8() {
     let execution = run_source(
         "<?php\n\
