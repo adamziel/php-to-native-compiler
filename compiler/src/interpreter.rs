@@ -49593,9 +49593,12 @@ impl Interpreter {
         span: Span,
     ) -> CompileResult<String> {
         let kind = if state.is_internal {
-            "internal"
+            format!(
+                "internal:{}",
+                reflection_internal_extension_name(&state.name)
+            )
         } else {
-            "user"
+            "user".to_string()
         };
         let mut output = format!("Function [ <{kind}> function {} ] {{\n", state.name);
         if !state.is_internal {
@@ -49605,6 +49608,8 @@ impl Interpreter {
                     state.start_line, state.end_line
                 ));
             }
+            output.push('\n');
+        } else {
             output.push('\n');
         }
         output.push_str(&format!("  - Parameters [{}] {{\n", state.params.len()));
@@ -49618,7 +49623,11 @@ impl Interpreter {
             output.push_str(&self.reflection_parameter_to_string(&parameter_state, span)?);
             output.push('\n');
         }
-        output.push_str("  }\n}\n");
+        output.push_str("  }\n");
+        if let Some(return_type) = state.return_type.as_deref() {
+            output.push_str(&format!("  - Return [ {return_type} ]\n"));
+        }
+        output.push_str("}\n");
         Ok(output)
     }
 
@@ -51717,9 +51726,18 @@ impl Interpreter {
             ""
         };
         let default = if let Some(default) = state.parameter.default.as_ref() {
-            let mut default_scope = SymbolTable::new();
-            let default = self.evaluate(default, &mut default_scope)?;
-            format!(" = {}", reflection_value_export_short(&default))
+            if let Some(default_constant_name) = state.parameter.default_constant_name.as_deref() {
+                format!(" = {default_constant_name}")
+            } else {
+                let mut default_scope = SymbolTable::new();
+                let default = self.evaluate(default, &mut default_scope)?;
+                let default = if reflection_parameter_declaring_is_internal(&state.declaring) {
+                    reflection_value_export_internal_default(&default)
+                } else {
+                    reflection_value_export_short(&default)
+                };
+                format!(" = {default}")
+            }
         } else {
             String::new()
         };
@@ -99449,7 +99467,11 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
             "string",
             vec![
                 reflection_internal_param("string", "string"),
-                reflection_internal_optional_int_param("flags", PHP_ENT_DEFAULT),
+                reflection_internal_optional_int_constant_param(
+                    "flags",
+                    PHP_ENT_DEFAULT,
+                    "ENT_QUOTES | ENT_SUBSTITUTE | ENT_HTML401",
+                ),
                 reflection_internal_optional_null_param("encoding", "?string"),
                 reflection_internal_optional_bool_param("double_encode", true),
             ],
@@ -99482,9 +99504,17 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
         "get_html_translation_table" => (
             "array",
             vec![
-                reflection_internal_optional_int_param("table", PHP_HTML_SPECIALCHARS),
-                reflection_internal_optional_int_param("flags", PHP_ENT_DEFAULT),
-                reflection_internal_optional_null_param("encoding", "?string"),
+                reflection_internal_optional_int_constant_param(
+                    "table",
+                    PHP_HTML_SPECIALCHARS,
+                    "HTML_SPECIALCHARS",
+                ),
+                reflection_internal_optional_int_constant_param(
+                    "flags",
+                    PHP_ENT_DEFAULT,
+                    "ENT_QUOTES | ENT_SUBSTITUTE | ENT_HTML401",
+                ),
+                reflection_internal_optional_string_param("encoding", "UTF-8"),
             ],
         ),
         "strip_tags" => (
@@ -100431,6 +100461,16 @@ fn reflection_internal_optional_int_param(name: &str, default: i64) -> Reflectio
     param
 }
 
+fn reflection_internal_optional_int_constant_param(
+    name: &str,
+    default: i64,
+    default_constant_name: &str,
+) -> ReflectionParameterMetadata {
+    let mut param = reflection_internal_optional_int_param(name, default);
+    param.default_constant_name = Some(default_constant_name.to_string());
+    param
+}
+
 fn reflection_internal_optional_param(
     name: &str,
     type_decl: &str,
@@ -100524,6 +100564,13 @@ fn reflection_declaring_name(declaring: &ReflectionParameterDeclaring) -> String
         ReflectionParameterDeclaring::Method(method) => {
             format!("{}::{}()", method.declaring_class_name, method.name)
         }
+    }
+}
+
+fn reflection_parameter_declaring_is_internal(declaring: &ReflectionParameterDeclaring) -> bool {
+    match declaring {
+        ReflectionParameterDeclaring::Function(function) => function.is_internal,
+        ReflectionParameterDeclaring::Method(method) => method.is_internal,
     }
 }
 
@@ -100759,8 +100806,23 @@ fn reflection_value_export_short(value: &Value) -> String {
     }
 }
 
+fn reflection_value_export_internal_default(value: &Value) -> String {
+    match value {
+        Value::Null => "null".to_string(),
+        Value::String(value) => format!("\"{}\"", reflection_quote_double_string(value)),
+        Value::BinaryString(value) => String::from_utf8(value.clone())
+            .map(|value| format!("\"{}\"", reflection_quote_double_string(&value)))
+            .unwrap_or_else(|_| "\"\"".to_string()),
+        _ => reflection_value_export_short(value),
+    }
+}
+
 fn reflection_quote_string(value: &str) -> String {
     value.replace('\\', "\\\\").replace('\'', "\\'")
+}
+
+fn reflection_quote_double_string(value: &str) -> String {
+    value.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
 fn implemented_interface_names(classes: &PhpClassTable, class_id: ClassId) -> Vec<String> {
@@ -125496,16 +125558,25 @@ fn parse_sprintf_placeholder(
                         index += 1;
                     }
                     if precision_start == index {
-                        return Err(match format[index..].chars().next() {
-                            Some(ch) => SprintfParseError::ValueError(format!(
-                                "Unknown format specifier \"{ch}\""
-                            )),
-                            None => SprintfParseError::MissingFormatSpecifier,
-                        });
+                        match bytes.get(index) {
+                            Some(b'f' | b'F') => {
+                                precision = Some(SprintfSizeSpec::Literal(0));
+                            }
+                            Some(_) => {
+                                return Err(match format[index..].chars().next() {
+                                    Some(ch) => SprintfParseError::ValueError(format!(
+                                        "Unknown format specifier \"{ch}\""
+                                    )),
+                                    None => SprintfParseError::MissingFormatSpecifier,
+                                });
+                            }
+                            None => return Err(SprintfParseError::MissingFormatSpecifier),
+                        }
+                    } else {
+                        precision = Some(SprintfSizeSpec::Literal(
+                            parse_sprintf_precision_literal(&format[precision_start..index])?,
+                        ));
                     }
-                    precision = Some(SprintfSizeSpec::Literal(parse_sprintf_precision_literal(
-                        &format[precision_start..index],
-                    )?));
                 }
             }
             b'h' | b'H' => break,

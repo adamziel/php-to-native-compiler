@@ -3120,12 +3120,14 @@
   `get_html_translation_table` cover the current byte-string special-character
   subset, quote-style flags, double-encode preservation, selected Latin-1
   named entities, bounded charset validation with UTF-8 fallback warnings,
-  internal metadata, and the `HTML_*` / `ENT_*` constants. Recognized charset
+  bounded internal `ReflectionFunction::__toString()` metadata for the selected
+  `htmlspecialchars()`/`get_html_translation_table()` parameter defaults and
+  return types, and the `HTML_*` / `ENT_*` constants. Recognized charset
   names are limited to the current UTF-8, ISO-8859-1/15, Shift-JIS, EUC-JP,
   Windows-1251/1252, and IBM866 spellings reached by PHPT coverage. Full
   HTML4/HTML5 translation tables, all legacy encodings, invalid Unicode
-  substitution/disallowed-character parity, and native lowering remain
-  unsupported.
+  substitution/disallowed-character parity, exact reflection metadata for every
+  HTML-entity function and PHP version, and native lowering remain unsupported.
 - exact uppercase PHP error mask constants `E_ERROR`, `E_WARNING`, `E_PARSE`,
   `E_NOTICE`, `E_CORE_ERROR`, `E_CORE_WARNING`, `E_COMPILE_ERROR`,
   `E_COMPILE_WARNING`, `E_USER_ERROR`, `E_USER_WARNING`, `E_USER_NOTICE`,
@@ -3405,7 +3407,8 @@
   string format values with literal text, escaped percent signs `%%`,
   sequential and positional `%s`, `%d`, `%b`, `%c`, `%u`, `%o`, `%x`, `%X`,
   `%f`, `%F`, `%e`, and `%E` placeholders, plus the reached WordPress width, precision,
-  sign, zero/custom padding, left-align, and ignored integer length-modifier
+  sign, zero/custom padding, left-align, ignored integer length-modifier, and
+  empty-precision-as-zero behavior for `%f`/`%F`
   subset. `printf()` and `vprintf()` output the formatted string and return
   its byte length; `%c` writes the current raw byte to CLI stdout while the
   text snapshot remains UTF-8-lossy for tests. `fprintf()` and `vfprintf()`
@@ -3418,10 +3421,10 @@
   specifiers and invalid positional argument numbers raise a catchable
   `ValueError` before output in this bounded path, and vprintf/vfprintf
   argument type/count failures route through catchable PHP-shaped `TypeError`.
-  PHP's full format grammar, star width or precision, general placeholders,
-  locale behavior, broad argument reordering, object/resource conversions,
-  exact warning behavior, partial-output behavior, and native lowering remain
-  unsupported.
+  PHP's full format grammar, star width or precision, empty precision for
+  non-float specifiers, general placeholders, locale behavior, broad argument
+  reordering, object/resource conversions, exact warning behavior,
+  partial-output behavior, and native lowering remain unsupported.
   `chr($codepoint)` accepts integer-compatible values, returns the low byte
   using PHP's modulo-256 behavior, and emits PHP's deprecation diagnostic when
   the integer is outside the `[0, 255]` byte range. Array/object/resource
@@ -9056,12 +9059,14 @@
   `new ReflectionFunction(...)` for `strlen`, `strtolower`, `strtoupper`,
   `str_increment`, `str_decrement`, `trim`, `ltrim`,
   `rtrim`, `strcasecmp`, `strncmp`, `strncasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`,
-  `strpos`, `stripos`, `strrpos`, `strripos`, `substr`, `str_shuffle`, `printf`, `fprintf`, `sprintf`, `vprintf`, `vfprintf`, `implode`, `basename`, `dirname`, `number_format`, `defined`,
+  `strpos`, `stripos`, `strrpos`, `strripos`, `substr`, `str_shuffle`, `htmlspecialchars`, `htmlentities`,
+  `htmlspecialchars_decode`, `html_entity_decode`, `get_html_translation_table`, `printf`, `fprintf`, `sprintf`, `vprintf`, `vfprintf`, `implode`, `basename`, `dirname`, `number_format`, `defined`,
   `function_exists`, `is_array`, `is_object`, `is_string`, `is_scalar`,
   `count`, `sizeof`, `array_key_exists`, `is_callable`, `get_current_user`, `getmypid`, and `php_sapi_name`, exposes
   their name, false file/start/end/doc-comment metadata, current
-  parameter/default metadata, return type, and by-reference-return predicate,
-  and executes them through `invoke()`/`invokeArgs()`.
+  parameter/default metadata, return type, by-reference-return predicate, and
+  current stringification metadata including `<internal:<extension>>` headers
+  and return type lines, and executes them through `invoke()`/`invokeArgs()`.
   `ReflectionFunction::invoke(...$args)` and
   `ReflectionFunction::invokeArgs($args)` execute declared user functions,
   ordinary closure values, and those internal builtins over the current
@@ -10858,7 +10863,7 @@
   by-value invocation for `strlen`, `strtolower`, `strtoupper`,
   `str_increment`, `str_decrement`, `trim`, `ltrim`, `rtrim`,
   `strcasecmp`, `strncmp`, `strncasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`, `strpos`, `stripos`, `strrpos`, `strripos`,
-  `substr`, `str_shuffle`, `printf`, `fprintf`, `sprintf`, `vprintf`, `vfprintf`, `implode`, `basename`, `dirname`, `number_format`, `defined`,
+  `substr`, `str_shuffle`, `htmlspecialchars`, `htmlentities`, `htmlspecialchars_decode`, `html_entity_decode`, `get_html_translation_table`, `printf`, `fprintf`, `sprintf`, `vprintf`, `vfprintf`, `implode`, `basename`, `dirname`, `number_format`, `defined`,
   `function_exists`, `get_current_user`, `getmypid`, and `php_sapi_name`. Closure metadata is supported for
   current closure values. The supported
   metadata methods are the name, file/start/end/doc-comment, parameter-list,
@@ -11003,9 +11008,10 @@
   argument diagnostics, extension version coupling, and native lowering
 - `printf()`/`sprintf()`/`vsprintf()`/`vprintf()` outside the current
   `%s`/`%d`/`%b`/`%c`/`%u`/`%o`/`%x`/`%X`/`%f`/`%F`/`%e`/`%E` subset:
-  PHP's full format grammar, star width or precision, general placeholders,
-  locale behavior, broad argument reordering, binary byte fidelity for non-ASCII
-  `%c`, array/object/resource conversions, exact warning behavior,
+  PHP's full format grammar, star width or precision, empty precision for
+  non-float specifiers, general placeholders, locale behavior, broad argument
+  reordering, binary byte fidelity for non-ASCII `%c`, array/object/resource
+  conversions, exact warning behavior,
   partial-output behavior, and native lowering beyond function-table
   introspection
 - `strcasecmp()` outside the current exact-two-argument scalar/null

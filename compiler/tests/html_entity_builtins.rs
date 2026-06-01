@@ -97,6 +97,45 @@ echo $function->getName(), ":", $function->getNumberOfRequiredParameters(), "/",
 }
 
 #[test]
+fn html_reflection_function_strings_match_selected_php_metadata() {
+    let execution = run_source(
+        r#"<?php
+echo new ReflectionFunction('htmlspecialchars'), "\n";
+echo new ReflectionFunction('get_html_translation_table'), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "Function [ <internal:standard> function htmlspecialchars ] {\n",
+            "\n",
+            "  - Parameters [4] {\n",
+            "    Parameter #0 [ <required> string $string ]\n",
+            "    Parameter #1 [ <optional> int $flags = ENT_QUOTES | ENT_SUBSTITUTE | ENT_HTML401 ]\n",
+            "    Parameter #2 [ <optional> ?string $encoding = null ]\n",
+            "    Parameter #3 [ <optional> bool $double_encode = true ]\n",
+            "  }\n",
+            "  - Return [ string ]\n",
+            "}\n",
+            "\n",
+            "Function [ <internal:standard> function get_html_translation_table ] {\n",
+            "\n",
+            "  - Parameters [3] {\n",
+            "    Parameter #0 [ <optional> int $table = HTML_SPECIALCHARS ]\n",
+            "    Parameter #1 [ <optional> int $flags = ENT_QUOTES | ENT_SUBSTITUTE | ENT_HTML401 ]\n",
+            "    Parameter #2 [ <optional> string $encoding = \"UTF-8\" ]\n",
+            "  }\n",
+            "  - Return [ array ]\n",
+            "}\n",
+            "\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn emit_ir_folds_html_entity_builtin_metadata_and_constants() {
     let ir = emit_ir_source(
         r#"<?php

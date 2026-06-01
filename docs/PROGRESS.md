@@ -1,5 +1,25 @@
 # Progress Log
 
+## 2026-06-01
+
+Implemented:
+
+- Added a compact `ext/standard/tests/strings` runtime slice for the bounded
+  string builtins path: `printf("%.f", ...)`/`sprintf("%.F", ...)` now treat an
+  empty precision on `%f`/`%F` as zero precision, and the selected
+  HTML-entity internal reflection metadata now stringifies like PHP for
+  `htmlspecialchars()` and `get_html_translation_table()` headers, parameter
+  default spellings, lowercase internal `null`, double-quoted internal string
+  defaults, and return type lines. Focused Rust coverage exercises the new
+  formatter row, preserves the current `ValueError` fallback for empty
+  precision on non-float specifiers, and pins the selected reflection
+  stringification output. Selected PHPT proof targets
+  `ext/standard/tests/strings/gh18897.phpt` and
+  `ext/standard/tests/strings/bug61116.phpt`. Empty precision outside
+  `%f`/`%F`, broader formatter grammar, and exact ReflectionFunction
+  stringification/default spelling parity beyond the named bounded internal
+  slice remain unsupported.
+
 ## 2026-05-27
 
 Implemented:

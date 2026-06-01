@@ -198,6 +198,21 @@ echo sprintf("%-07.2d|%-07s|%-'#7.2f", 1234, "xy", 3.4);
 }
 
 #[test]
+fn printf_empty_float_precision_matches_zero_precision() {
+    let execution = run_source(
+        r#"<?php
+printf("%.f\n", 3.1415926535);
+printf("%.0f\n", 3.1415926535);
+echo sprintf("%.F|%.0F", 3.1415926535, 3.1415926535), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "3\n3\n3|3\n");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn json_encode_covers_current_formatter_descriptor_values() {
     let execution = run_source(
         r#"<?php
@@ -256,6 +271,22 @@ try {
     .unwrap();
     assert_eq!(vsprintf_star.stdout, "Unknown format specifier \"*\"");
     assert_eq!(vsprintf_star.exit_code, 0);
+
+    let empty_string_precision = run_source(
+        r#"<?php
+try {
+    echo sprintf("%.s", "abc");
+} catch (ValueError $e) {
+    echo $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
+    assert_eq!(
+        empty_string_precision.stdout,
+        "Unknown format specifier \"s\""
+    );
+    assert_eq!(empty_string_precision.exit_code, 0);
 
     let vprintf_args = run_source(
         r#"<?php
