@@ -4,6 +4,18 @@
 
 Implemented:
 
+- Added bounded interpreter support for the residual standard string utilities
+  `metaphone()` and `hebrev()`. `metaphone()` now covers PHP-compatible ASCII
+  phoneme generation, unbounded `max_phonemes = 0`, and catchable negative
+  `max_phonemes` `ValueError`s; `hebrev()` covers the ASCII punctuation and
+  right-to-left word wrapping shapes reached by the standard PHPT row. Focused
+  proof targets `ext/standard/tests/strings/metaphone.phpt`,
+  `bug44242.phpt`, `bug47443.phpt`, `bug48709.phpt`, and
+  `hebrev_basic.phpt`. Full Hebrew bidi conversion, non-ASCII metaphone
+  semantics, locale-sensitive alphabetic classification, embedded-NUL
+  metaphone continuation, and `hebrev()` character-level wrapping for very
+  small or negative widths remain unsupported.
+
 - Integrated the next focused repair/score batch after the `025c1325`
   checkpoint gate exposed two PASS regressions. The current source now restores
   `ext/standard/tests/array/array_keys_variation_005.phpt` by allowing

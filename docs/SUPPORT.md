@@ -3273,9 +3273,9 @@
 - builtins for the documented subset: `strlen`, `chr`, `bin2hex`, `hex2bin`,
   `pack`, `unpack`, `strtolower`, `strtoupper`, `trim`, `ltrim`,
   `rtrim`, `strcmp`, `strcasecmp`, `strncmp`, `strncasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`, `strspn`, `strcspn`, `strpbrk`, `strpos`, `stripos`, `strrpos`, `strripos`, `strstr`, `strchr`, `stristr`, `strtok`, `substr`,
-  `str_shuffle`, `wordwrap`, `str_word_count`, `strnatcmp`, `strnatcasecmp`,
+  `str_shuffle`, `wordwrap`, `hebrev`, `str_word_count`, `strnatcmp`, `strnatcasecmp`,
   `mb_strlen`, `mb_substr`, `mb_strpos`, `mb_stripos`, `mb_strrpos`, `mb_strripos`,
-  `mb_strtolower`, `mb_strtoupper`, `similar_text`,
+  `mb_strtolower`, `mb_strtoupper`, `similar_text`, `metaphone`,
   `convert_uuencode`, `convert_uudecode`,
   `preg_match`, `preg_last_error`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `str_ireplace`, `substr_replace`, `substr_compare`, `substr_count`, `str_getcsv`, `parse_str`, `http_build_query`,
   `escapeshellarg`, `highlight_string`, `highlight_file`, `php_strip_whitespace`, `error_reporting`, `set_time_limit`, `usleep`, `ignore_user_abort`, `printf`, `fprintf`, `sprintf`, `vsprintf`, `vprintf`, `vfprintf`, `call_user_func`, `call_user_func_array`,
@@ -3831,7 +3831,13 @@
   sources and do not model PHP's RNG state, distribution, seeding, or native
   lowering. `wordwrap()` supports scalar/null
   string-convertible input, integer width, non-empty string break values, and
-  the `cut_long_words` flag over current byte strings. `str_word_count()`
+  the `cut_long_words` flag over current byte strings. `hebrev()` supports
+  the ASCII text shapes reached by the current standard PHPT row: trailing
+  sentence punctuation is moved to the visual line start, and positive
+  `max_chars_per_line` values wrap words from the right into newline-separated
+  visual chunks. Full Hebrew bidi conversion, character-level wrapping for
+  very small or negative widths, non-space separator preservation, and exact
+  punctuation policy remain unsupported. `str_word_count()`
   supports formats `0`, `1`, and `2` with the current ASCII letter rules,
   literal extra character bytes, and PHP-shaped apostrophe/hyphen word-run
   handling, including whole-string leading apostrophe/hyphen and trailing
@@ -3842,8 +3848,15 @@
   &$percent = null)` supports scalar/null string-convertible operands and the
   PHP byte-oriented recursive longest-common-substring similarity count. Direct
   calls may pass a direct variable as the optional percent output; the
-  interpreter writes the computed float percentage to that variable. This is a
-  bounded output-parameter path, not true PHP references. `convert_uuencode()` and
+  interpreter writes the computed float percentage to that variable.
+  `metaphone()` supports the current PHP-compatible ASCII phoneme rules for
+  scalar/null string-convertible inputs, skips leading non-letter bytes,
+  honors `max_phonemes = 0` as unbounded, and reports PHP's catchable
+  `ValueError` for negative `max_phonemes`. Locale-sensitive alphabetic
+  classification, embedded-NUL continuation beyond the first NUL byte, and
+  full non-ASCII phoneme semantics remain unsupported. For `similar_text()`,
+  the percent output remains a bounded output-parameter path, not true PHP
+  references. `convert_uuencode()` and
   `convert_uudecode()` support the bounded uuencode/uudecode byte format used
   by the focused standard-library rows. `mb_strlen()`, `mb_substr()`,
   `mb_strpos()`,
