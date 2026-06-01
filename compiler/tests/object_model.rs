@@ -6237,6 +6237,55 @@ line("trait", $trait->getMethod("helper"), "");
 }
 
 #[test]
+fn reflection_class_constructor_and_method_prototype_metadata() {
+    let execution = run_source(
+        r#"<?php
+class BaseHook {
+    public function inherited() {}
+    public function tagged($name) {}
+}
+
+class HookRunner extends BaseHook {
+    public function __construct() {}
+    public function tagged($name) {}
+    public function fresh() {}
+}
+
+class ChildRunner extends HookRunner {}
+class PlainRunner {}
+
+function yn($value) {
+    return $value ? "1" : "0";
+}
+
+$runner = new ReflectionClass(HookRunner::class);
+$child = new ReflectionClass(ChildRunner::class);
+$plain = new ReflectionClass(PlainRunner::class);
+
+$ctor = $runner->getConstructor();
+echo "ctor|", $ctor->getName(), "|", $ctor->getDeclaringClass()->getName(), "|", yn($ctor->isConstructor()), "\n";
+$inheritedCtor = $child->getConstructor();
+echo "inherited-ctor|", $inheritedCtor->getName(), "|", $inheritedCtor->getDeclaringClass()->getName(), "\n";
+echo "plain-ctor|", yn($plain->getConstructor() === null), "|", yn($ctor != null), "\n";
+
+$override = new ReflectionMethod(HookRunner::class, "tagged");
+$base = new ReflectionMethod(BaseHook::class, "tagged");
+$fresh = new ReflectionMethod(HookRunner::class, "fresh");
+echo "has|", yn($override->hasPrototype()), yn($base->hasPrototype()), yn($fresh->hasPrototype()), "\n";
+$prototype = $override->getPrototype();
+echo "prototype|", $prototype->getName(), "|", $prototype->getDeclaringClass()->getName(), "|", $prototype->name, "|", $prototype->class;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "ctor|__construct|HookRunner|1\ninherited-ctor|__construct|HookRunner\nplain-ctor|1|1\nhas|100\nprototype|tagged|BaseHook|tagged|BaseHook"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reflection_class_get_methods_returns_bounded_method_lists() {
     let execution = run_source(
         r#"<?php

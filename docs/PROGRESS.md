@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added a bounded reflection constructor/prototype metadata slice for declared
+  user classes. `ReflectionClass::getConstructor()` now returns a
+  `ReflectionMethod` object for declared or inherited `__construct()` methods,
+  `ReflectionMethod::hasPrototype()`/`getPrototype()` report overridden
+  inherited user-class methods, and `ReflectionMethod` objects materialize the
+  public `name`/`class` properties expected by PHP-shaped debug/object reads.
+  The interpreter also covers bounded object/closure-vs-`null` loose
+  comparison so PHPT-style `ReflectionMethod` object presence probes can use
+  `$method != null`.
+  Focused proof covers Rust reflection metadata behavior and selected PHPT
+  rows for constructor lookup, prototype presence, and prototype object
+  metadata. Interface prototypes, trait alias/adaptation prototype parity,
+  private-parent prototype edge cases, exact `ReflectionException` text/object
+  behavior, and native lowering remain unsupported.
+
 - Added a shared trait effective-method metadata composition boundary consumed
   by both interpreter metadata/reflection and generated-C class metadata
   validation. The helper covers trait lookup, nested trait uses, aliases,

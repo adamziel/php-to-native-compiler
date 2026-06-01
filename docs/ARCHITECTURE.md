@@ -3905,10 +3905,10 @@ object stores request-local reflection state and dispatches the current
 `getName()`, `getShortName()`, `isInterface()`, `isTrait()`,
 `isInstantiable()`, `getParentClass()`, `getInterfaceNames()`,
 `getInterfaces()`, `hasMethod($name)`, `getFileName()`, `getStartLine()`,
-`getEndLine()`, and `getDocComment()` methods directly through the
-interpreter. ReflectionClass objects also materialize the bounded public
-`name` property so debug output and simple metadata reads observe the reflected
-class-like name. Class-like source
+`getEndLine()`, `getDocComment()`, and `getConstructor()` methods directly
+through the interpreter. ReflectionClass objects also materialize the bounded
+public `name` property so debug output and simple metadata reads observe the
+reflected class-like name. Class-like source
 paths are tracked in interpreter-side metadata when class, interface, and
 trait declarations are loaded from a known CLI/fixture or include path; start
 and end lines plus directly preceding `/** ... */` doc-comments come from the
@@ -3923,8 +3923,12 @@ state pattern for declared user class, interface, and trait methods. The
 constructor accepts an object or class-like string plus a string method name,
 resolves inherited class methods through the existing method metadata chain,
 and exposes the bounded source metadata methods, modifier predicates,
-`getDeclaringClass()`, parameter counts, `getParameters()`,
+`getDeclaringClass()`, inherited user-class prototype metadata through
+`hasPrototype()`/`getPrototype()`, parameter counts, `getParameters()`,
 `hasReturnType()`, and `getReturnType()` through interpreter dispatch.
+ReflectionMethod objects materialize bounded public `name` and `class`
+properties from the reflected method metadata for PHP-shaped debug/object
+property reads.
 Class-method source paths are tracked in the same method-signature table as
 parameter and return metadata when declarations are loaded from a known
 CLI/fixture or include path; start/end lines and directly preceding
@@ -3932,7 +3936,11 @@ CLI/fixture or include path; start/end lines and directly preceding
 and trait methods currently retain parsed line/doc-comment metadata but do not
 persist declaration source-file paths. Return type objects reuse the same request-local
 `ReflectionNamedType`, `ReflectionUnionType`, and `ReflectionIntersectionType`
-state as the property type metadata slice.
+state as the property type metadata slice. Prototype metadata is intentionally
+limited to overridden inherited user-class methods in the current declared
+class table; interface prototypes, trait alias/adaptation prototype parity,
+private-parent edge cases, and exact `ReflectionException` text/object
+behavior remain outside this slice.
 `ReflectionFunction` follows that same core placeholder plus request-local
 state pattern for declared user functions named by string. It stores parsed
 user-function metadata for `getName()`, source file, start/end lines, direct

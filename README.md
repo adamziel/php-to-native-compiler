@@ -572,7 +572,8 @@ incorrect native code.
   `ReflectionClass` metadata objects with `getName()`, `getShortName()`,
   `isInterface()`, `isTrait()`, `isInstantiable()`, `getParentClass()`,
   `getInterfaceNames()`, `getTraitNames()`, `getTraits()`,
-  `hasMethod($name)`, `getMethod($name)`, `getMethods([$filter])`, class-like
+  `getConstructor()`, `hasMethod($name)`, `getMethod($name)`,
+  `getMethods([$filter])`, class-like
   file/start/end/doc-comment source metadata, `hasProperty($name)`,
   `getProperty($name)`, and zero-argument `getProperties()`, bounded
   `ReflectionFunction` metadata objects for declared user functions and
@@ -585,7 +586,8 @@ incorrect native code.
   subset,
   `ReflectionMethod`
   metadata objects with declaring-class, visibility, static, final, abstract,
-  constructor, modifier-mask, class-method file/start/end/doc-comment source
+  constructor, inherited user-class prototype, modifier-mask, public
+  `name`/`class` property, class-method file/start/end/doc-comment source
   metadata, parameter-list, return-type inspection, and public non-static
   user-class by-value `invoke()`/`invokeArgs()`, plus static trait-method
   by-value invocation with bounded trait `__CLASS__`, `__METHOD__`,
@@ -729,8 +731,9 @@ core interface metadata, broad reflection metadata and exact engine ordering
 beyond the current `class_implements()`/`class_uses()`/`class_parents()` and
 bounded `ReflectionClass`/`ReflectionFunction`/`ReflectionMethod`/`ReflectionParameter`/
 `ReflectionNamedType`/`ReflectionProperty` metadata table slices, interface
-and trait method source-file persistence, exact `ReflectionClass::getMethod()`
-and `getMethods()` exception objects/text and broad trait-order parity,
+and trait method source-file persistence, exact `ReflectionClass::getMethod()`,
+`getMethods()`, and prototype exception objects/text, interface/trait
+prototype parity, and broad trait-order parity,
 reflection invocation beyond the current by-value user function/user-class
 method, static trait-method, named bounded internal function, and abstract-method
 diagnostic slices, non-public or dynamic

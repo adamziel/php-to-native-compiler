@@ -2357,8 +2357,10 @@
   PHP-shaped byte conversion path, so binary string values that are not valid
   UTF-8 remain binary strings instead of being forced through text output
   conversion
-- loose comparisons: `==`, `!=`, `<`, `<=`, `>`, `>=` across the current
-  scalar values (`null`, booleans, integers, floats, and strings)
+- binary loose comparisons: `==`, `!=`, `<`, `<=`, `>`, `>=` across the current
+  scalar values (`null`, booleans, integers, floats, and strings), plus the
+  bounded interpreter object/closure-vs-`null` ordering needed by reflection
+  constructor probes (`object != null`, `object > null`, and inverses)
 - strict identity comparisons: `===` and `!==` across the current scalar
   values (`null`, booleans, integers, floats, and strings), object handles,
   and ordered arrays with current integer/string keys and recursive strict
@@ -6963,7 +6965,9 @@
   copy-on-write identity, recursive arrays, Closure object identity, exact PHP
   object comparison behavior beyond handle identity, and edge cases around
   `NAN`/`INF` and PHP-version-specific float string precision are not covered.
-  Object loose comparisons in `phpc run` fail with explicit
+  Binary object loose comparisons in `phpc run` are only covered for
+  object/closure-vs-`null` equality/ordering; broader object/scalar and
+  general object-property comparison behavior fail with explicit
   unsupported-comparison runtime errors.
 - Conditionals: statement-form `if` supports zero or more `elseif` clauses and
   an optional `else` clause over the current expression and truthiness subset.
@@ -8983,6 +8987,9 @@
   values are bounded `ReflectionClass` metadata objects for implemented or
   extended user interfaces in the current metadata tables; exact engine
   ordering beyond the covered sorted PHPT shapes remains unsupported.
+  `getConstructor()` returns a bounded `ReflectionMethod` metadata object for
+  a declared or inherited `__construct()` method on current user classes, and
+  `null` when no constructor exists in the class chain.
   `getMethod($name)` returns the same bounded `ReflectionMethod` metadata
   object as `new ReflectionMethod($class, $name)` for methods declared on
   current user classes, inherited class methods, composed trait methods,
@@ -9002,7 +9009,8 @@
   `getFileName()`, `getStartLine()`, `getEndLine()`, `getDocComment()`,
   `getDeclaringClass()`, `getModifiers()`, `isPublic()`, `isProtected()`,
   `isPrivate()`, `isStatic()`, `isFinal()`, `isAbstract()`, and
-  `isConstructor()`, plus bounded parameter inspection through
+  `isConstructor()`, inherited user-class prototype metadata through
+  `hasPrototype()`/`getPrototype()`, plus bounded parameter inspection through
   `getParameters()`, `getNumberOfParameters()`, and
   `getNumberOfRequiredParameters()`, and bounded return type inspection through
   `hasReturnType()` and `getReturnType()`. Simple named return types
@@ -9014,7 +9022,13 @@
   declaration and closing brace, and `getDocComment()` returns the directly
   preceding `/** ... */` docblock or `false`. Interface and trait method
   reflection keeps parsed line/doc-comment metadata in the current request but
-  does not yet persist declaration source-file paths.
+  does not yet persist declaration source-file paths. ReflectionMethod objects
+  also expose bounded public `name` and `class` properties from the reflected
+  method metadata for PHP-shaped debug/object property reads. Prototype
+  metadata currently covers overridden inherited user-class methods only;
+  interface prototypes, trait alias/adaptation prototype parity, private-parent
+  edge cases, exact `ReflectionException` text/object behavior, and native
+  lowering remain unsupported.
   `ReflectionMethod::invoke($object, ...$args)` and
   `ReflectionMethod::invokeArgs($object, $args)` execute declared user-class
   methods over the current by-value argument subset, including public,

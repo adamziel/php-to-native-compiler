@@ -32268,6 +32268,7 @@ impl PhpClassTable {
             "isIterable",
             "isIterateable",
             "getParentClass",
+            "getConstructor",
             "getInterfaceNames",
             "getInterfaces",
             "getTraitNames",
@@ -32347,6 +32348,11 @@ impl PhpClassTable {
         let reflection_method = classes
             .get_mut(reflection_method_id)
             .expect("declared ReflectionMethod class id should resolve");
+        for property in ["name", "class"] {
+            reflection_method
+                .add_property(PhpPropertyMetadata::instance(property, Visibility::Public))
+                .expect("ReflectionMethod core metadata should not duplicate properties");
+        }
         for constant in [
             "IS_PUBLIC",
             "IS_PROTECTED",
@@ -32368,6 +32374,8 @@ impl PhpClassTable {
             "getEndLine",
             "getDocComment",
             "getDeclaringClass",
+            "getPrototype",
+            "hasPrototype",
             "getModifiers",
             "getParameters",
             "getNumberOfParameters",
@@ -38969,6 +38977,12 @@ impl Value {
                     }
                 }
             }
+            (Value::Object(_) | Value::Closure(_), Value::Null) => {
+                Ok(comparison_matches_ordering(Ordering::Greater, op))
+            }
+            (Value::Null, Value::Object(_) | Value::Closure(_)) => {
+                Ok(comparison_matches_ordering(Ordering::Less, op))
+            }
             (Value::Object(_) | Value::Closure(_), _)
             | (_, Value::Object(_) | Value::Closure(_)) => {
                 Err(RuntimeError::unsupported_comparison(
@@ -39020,6 +39034,8 @@ impl Value {
                     "mixed object ordering comparisons are not implemented",
                 ))
             }
+            (Value::Object(_) | Value::Closure(_), Value::Null) => Ok(Ordering::Greater),
+            (Value::Null, Value::Object(_) | Value::Closure(_)) => Ok(Ordering::Less),
             (Value::Object(_) | Value::Closure(_), _)
             | (_, Value::Object(_) | Value::Closure(_)) => {
                 Err(RuntimeError::unsupported_comparison(
@@ -80841,6 +80857,7 @@ mod tests {
         );
         assert!(reflection_class.method("getName").is_some());
         assert!(reflection_class.method("getInterfaces").is_some());
+        assert!(reflection_class.method("getConstructor").is_some());
         assert!(reflection_class.method("hasMethod").is_some());
         assert!(reflection_class.method("getAttributes").is_some());
 
@@ -80870,8 +80887,17 @@ mod tests {
         assert_eq!(reflection_method.name(), "ReflectionMethod");
         assert_eq!(reflection_method.id().index(), 16);
         assert!(reflection_method.parent_id().is_none());
-        assert!(reflection_method.properties().is_empty());
+        assert_eq!(
+            reflection_method
+                .properties()
+                .iter()
+                .map(PhpPropertyMetadata::name)
+                .collect::<Vec<_>>(),
+            vec!["name", "class"]
+        );
         assert!(reflection_method.constant("IS_PUBLIC").is_some());
+        assert!(reflection_method.method("getPrototype").is_some());
+        assert!(reflection_method.method("hasPrototype").is_some());
         assert!(reflection_method.method("getModifiers").is_some());
         assert!(reflection_method.method("getAttributes").is_some());
 

@@ -39735,7 +39735,7 @@ impl Interpreter {
         &mut self,
         state: ReflectionMethodState,
         class_id: ClassId,
-        _span: Span,
+        span: Span,
     ) -> CompileResult<Value> {
         let object_id = self.allocate_object_id();
         let inherited_properties = self.inherited_instance_properties(class_id);
@@ -39746,16 +39746,21 @@ impl Interpreter {
             .classes
             .get(class_id)
             .expect("core ReflectionMethod class id should resolve");
+        let object = PhpObject::from_class_with_relationship_metadata_with_id(
+            class,
+            &inherited_properties,
+            ancestor_class_names,
+            interface_names,
+            object_id,
+        );
+        object
+            .write_public_property("name", Value::String(state.name.clone()))
+            .map_err(|error| runtime_error(span, error))?;
+        object
+            .write_public_property("class", Value::String(state.declaring_class_name.clone()))
+            .map_err(|error| runtime_error(span, error))?;
         self.reflection_methods.insert(object_id, state);
-        Ok(Value::Object(
-            PhpObject::from_class_with_relationship_metadata_with_id(
-                class,
-                &inherited_properties,
-                ancestor_class_names,
-                interface_names,
-                object_id,
-            ),
-        ))
+        Ok(Value::Object(object))
     }
 
     fn resolve_reflection_method_target(
@@ -47948,6 +47953,21 @@ impl Interpreter {
                     span,
                 )
             }
+            "getconstructor" => {
+                expect_expr_arity("ReflectionClass::getConstructor", args.len(), 0, span)?;
+                let (ReflectionClassKind::Class, Some(class_id)) = (state.kind, state.class_id)
+                else {
+                    return Ok(Value::Null);
+                };
+                if self
+                    .resolve_instance_method(class_id, "__construct")
+                    .is_none()
+                {
+                    return Ok(Value::Null);
+                }
+                let method = self.resolve_reflection_method_target(&state, "__construct", span)?;
+                self.create_reflection_method_object(method, span)
+            }
             "getinterfacenames" => {
                 expect_expr_arity("ReflectionClass::getInterfaceNames", args.len(), 0, span)?;
                 let mut names = PhpArray::new();
@@ -48869,6 +48889,39 @@ impl Interpreter {
         }
     }
 
+    fn reflection_method_prototype_state(
+        &self,
+        state: &ReflectionMethodState,
+    ) -> Option<ReflectionMethodState> {
+        if state.declaring_kind != ReflectionClassKind::Class || state.is_internal {
+            return None;
+        }
+        let declaring_class_id = state.declaring_class_id?;
+        let reflected_class_id = state.reflected_class_id.unwrap_or(declaring_class_id);
+        let declaring_class = self
+            .classes
+            .get(declaring_class_id)
+            .expect("declaring class id should resolve");
+        let mut current = declaring_class.parent_id();
+        while let Some(current_id) = current {
+            let class = self
+                .classes
+                .get(current_id)
+                .expect("parent class id should resolve");
+            if let Some(method) = class.method(&state.name) {
+                if method.visibility() != Visibility::Private {
+                    return Some(self.reflection_class_method_state(
+                        reflected_class_id,
+                        current_id,
+                        method,
+                    ));
+                }
+            }
+            current = class.parent_id();
+        }
+        None
+    }
+
     fn reflection_class_default_properties(
         &mut self,
         state: &ReflectionClassState,
@@ -49760,6 +49813,25 @@ impl Interpreter {
                     ),
                     span,
                 )
+            }
+            "getprototype" => {
+                expect_expr_arity("ReflectionMethod::getPrototype", args.len(), 0, span)?;
+                let Some(prototype) = self.reflection_method_prototype_state(&state) else {
+                    return Err(reflection_exception_error(
+                        span,
+                        format!(
+                            "Method {}::{} does not have a prototype",
+                            state.declaring_class_name, state.name
+                        ),
+                    ));
+                };
+                self.create_reflection_method_object(prototype, span)
+            }
+            "hasprototype" => {
+                expect_expr_arity("ReflectionMethod::hasPrototype", args.len(), 0, span)?;
+                Ok(Value::Bool(
+                    self.reflection_method_prototype_state(&state).is_some(),
+                ))
             }
             "getmodifiers" => {
                 expect_expr_arity("ReflectionMethod::getModifiers", args.len(), 0, span)?;
