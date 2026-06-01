@@ -5115,8 +5115,9 @@
   advisory locking effects, non-UTF-8 output payloads,
   recursive array-to-string parity, exact warning text outside the covered
   missing-path and `open_basedir` denial slices, `TypeError`/`ValueError`
-  timing, ownership/time mutation for existing files, full stat-cache
-  invalidation, and
+  timing, ownership/time mutation for existing files outside the documented
+  `touch()` subset, full stat-cache invalidation beyond covered local
+  path writes/truncates, and
   native lowering unsupported. `is_uploaded_file($path)` and
   `move_uploaded_file($from, $to)` use only the request-local upload
   provenance captured from initial `PHPC_FILES` metadata entries with
@@ -5128,8 +5129,11 @@
   params, binary/non-UTF-8 byte fidelity, host SAPI body
   stream lifetime, writable `php://input` edge behavior, large `php://temp`
   spill-to-disk behavior, permissions policy, locking, broader wrapper/status
-  metadata APIs, stat-cache behavior, exact warning text, exact warning
-  recovery beyond the documented local read/open slices, exact resource
+  metadata APIs, stat-cache behavior beyond clearing the bounded
+  `filesize()`/`filemtime()` metadata cache after successful local
+  `fopen()` create/truncate, `fwrite()`, and `ftruncate()` mutations, exact
+  warning text, exact warning recovery beyond the documented local read/open
+  slices, exact resource
   ids/types, directory-entry ordering fidelity, references/copy-on-write, and
   native stream resources remain unsupported.
   Direct native stream-resource calls stop at a dedicated
@@ -5140,8 +5144,10 @@
   local filesystem entries including directories, and returns `false` with a
   PHP-style warning for missing paths. It shares the same current relative path
   policy as `file_exists`. Successful metadata reads are cached by resolved
-  local path until `clearstatcache()` clears all entries or
-  `clearstatcache(false, $path)` removes the matching entry. This is a
+  local path until `clearstatcache()` clears all entries,
+  `clearstatcache(false, $path)` removes the matching entry, or a successful
+  local file-stream create, truncate, write, or `ftruncate()` mutation clears
+  that local path. This is a
   bounded WordPress request/filesystem metadata slice, not full PHP filesystem
   support: include-path lookup, stream wrappers, full PHP stat-cache breadth,
   `open_basedir` policy beyond the shared local allow-list check, warning text
@@ -5154,7 +5160,9 @@
   existing local filesystem entries, and returns `false` for missing paths. It
   shares the same current relative path policy as `file_exists`. Successful
   metadata reads share the same bounded `clearstatcache()`-managed cache as
-  `filesize()`. This is a bounded WordPress request/filesystem stat metadata
+  `filesize()`, including successful local file-stream create/truncate/write
+  invalidation for the mutated path. This is a bounded WordPress
+  request/filesystem stat metadata
   slice, not full PHP filesystem support: include-path lookup, stream
   wrappers, full PHP stat-cache breadth, `open_basedir` policy beyond the
   shared local allow-list check, warning behavior outside the bounded
@@ -11522,10 +11530,11 @@ Unsupported code should fail with an explicit parse, runtime, or codegen error.
   process temporary directory, and `tempnam()` creates unique local filesystem
   files for existing directories or the system temporary directory, including
   scalar prefix coercion, basename-only prefixes, open_basedir checks,
-  stat-cache invalidation, realpath-cache seeding, and Unix `0600` mode creation.
-  Explicit `touch()` timestamp mutation, interrupted sleeps, non-local stream
-  wrappers for temporary files, Windows permission parity, and exact PHP
-  temporary-name entropy/truncation diagnostics remain unsupported.
+  PHP-shaped system-temp fallback notices before fallback `open_basedir`
+  denials, stat-cache invalidation, realpath-cache seeding, and Unix `0600`
+  mode creation. Interrupted sleeps, non-local stream wrappers for temporary
+  files, Windows permission parity, and exact PHP temporary-name
+  entropy/truncation diagnostics remain unsupported.
 - Additional bounded local file/CSV helpers in `phpc run`: `file()` reads local
   filesystem paths into line arrays with `FILE_USE_INCLUDE_PATH`,
   `FILE_IGNORE_NEW_LINES`, `FILE_SKIP_EMPTY_LINES`, and no-op

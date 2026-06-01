@@ -1,5 +1,26 @@
 # Progress Log
 
+## 2026-06-01
+
+Implemented:
+
+- Added a bounded standard-filesystem PHPT slice for local stat-cache
+  invalidation and `tempnam()` fallback diagnostics. Local-file `fopen()`
+  create/truncate paths, `fwrite()`, and `ftruncate()` now clear the
+  request-local metadata cache used by `filesize()`/`filemtime()` for the
+  mutated host path, so subsequent metadata reads observe the write/truncate
+  without an explicit `clearstatcache()`. `tempnam()` now emits the
+  PHP-shaped system-temporary-directory fallback notice before the fallback
+  `open_basedir` denial when a missing requested directory falls back outside
+  the allow-list. Focused Rust tests cover the tempnam notice/warning order,
+  filemtime cache invalidation after local stream writes, and filesize cache
+  invalidation after local stream truncation; selected PHPT proof covers
+  `ext/standard/tests/file/bug52624.phpt` and
+  `ext/standard/tests/file/bug72666_variation3.phpt`. Full PHP stat-cache
+  breadth, shell-backed stat-cache rows, stream wrappers beyond the bounded
+  local file subset, filters, and native filesystem lowering remain
+  unsupported.
+
 ## 2026-05-27
 
 Implemented:
