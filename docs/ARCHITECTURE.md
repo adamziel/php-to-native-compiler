@@ -3296,10 +3296,11 @@ returns a UTF-8 resolved host path for existing local paths, and returns
 `false` for unresolved local paths. Successful resolutions also populate a
 bounded request-local `realpath_cache_get()` table keyed by resolved path with
 the current PHP-shaped `key`, `is_dir`, `realpath`, and `expires` fields.
-Successful local `file_get_contents()` reads, local `fopen()` calls for paths
-that existed before opening, and successful local include/require reads also
-populate one bounded entry for the resolved target path. `clearstatcache(false)`
-leaves that table intact,
+Interpreter runs that have a source filename seed one bounded cache entry for
+the main source directory. Successful local `file_get_contents()` reads, local
+`fopen()` calls for paths that existed before opening, and successful local
+include/require reads also populate one bounded entry for the resolved target
+path. `clearstatcache(false)` leaves that table intact,
 `clearstatcache(true, $filename)` removes only a non-empty exact matching
 cached resolved-path key, and one-argument `clearstatcache(true)` clears all
 bounded realpath entries. `realpath_cache_size()` returns a deterministic
@@ -3308,8 +3309,9 @@ and cached resolved UTF-8 path entries contribute a positive stable size for
 empty/non-empty and clear/invalidation probes. Stream wrappers are rejected
 instead of being modeled. Symlink policy differences, exact warning plus
 `false` fidelity, include-path lookup, `open_basedir`, non-UTF-8 paths,
-realpath-cache ancestor entries, cache entries from filesystem operations
-beyond successful `realpath()`, local `file_get_contents()`, pre-existing local
+realpath-cache ancestor entries beyond the main source directory seed, cache
+entries from filesystem operations beyond the seeded main source directory,
+successful `realpath()`, local `file_get_contents()`, pre-existing local
 `fopen()` paths, and successful local include/require reads, exact
 realpath-cache key hashes and expiration policy,
 exact `realpath_cache_size()` memory-byte accounting, and native filesystem

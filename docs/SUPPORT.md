@@ -5177,9 +5177,9 @@
   full PHP stat-cache support: cached metadata for
   `file_exists()`, `is_file()`, `is_dir()`, `is_readable()`, `is_writable()`,
   `is_link()`, `fstat()`, and directory/stream wrappers, realpath-cache
-  entries from filesystem operations beyond successful `realpath()`, local
-  `file_get_contents()`, pre-existing local `fopen()` target paths, and
-  successful local include/require reads,
+  entries from filesystem operations beyond the seeded main source directory,
+  successful `realpath()`, local `file_get_contents()`, pre-existing local
+  `fopen()` target paths, and successful local include/require reads,
   broader scalar coercions, exact
   `ValueError`/`TypeError`/deprecation text, include_path/open_basedir policy,
   stream-wrapper cache interaction, cross-request cache state, partial-output
@@ -5189,11 +5189,12 @@
   and returns the resolved path as a UTF-8 string. Missing or otherwise
   unresolved local paths return `false`. Successful resolutions populate a
   bounded request-local `realpath_cache_get()` entry keyed by the resolved path
-  with `key`, `is_dir`, `realpath`, and `expires` fields. Successful local
-  `file_get_contents()` reads, local `fopen()` calls for paths that existed
-  before opening, and successful local include/require reads also populate one
-  bounded cache entry for the resolved target path. `clearstatcache(false)`
-  leaves those entries intact,
+  with `key`, `is_dir`, `realpath`, and `expires` fields. Interpreter runs with
+  a source filename also seed one bounded entry for the main source directory.
+  Successful local `file_get_contents()` reads, local `fopen()` calls for paths
+  that existed before opening, and successful local include/require reads also
+  populate one bounded cache entry for the resolved target path.
+  `clearstatcache(false)` leaves those entries intact,
   `clearstatcache(true, $filename)` removes only
   the non-empty exact matching cached resolved-path key, and
   `clearstatcache(true)` clears all bounded realpath entries.
@@ -5206,8 +5207,9 @@
   policy as `file_exists`. This is a bounded local path slice, not full PHP
   filesystem support: symlink policy can differ from PHP/host combinations,
   exact warning plus `false` fidelity, include-path lookup, `open_basedir`,
-  stream wrappers, non-UTF-8 paths, realpath-cache ancestor entries, cache
-  entries from filesystem operations beyond successful `realpath()`, local
+  stream wrappers, non-UTF-8 paths, realpath-cache ancestor entries beyond the
+  main source directory seed, cache entries from filesystem operations beyond
+  the seeded main source directory, successful `realpath()`, local
   `file_get_contents()`, pre-existing local `fopen()` target paths, and
   successful local include/require reads, exact realpath-cache `key` hash
   values and expiration policy, exact

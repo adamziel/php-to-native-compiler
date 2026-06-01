@@ -11206,6 +11206,7 @@ impl Interpreter {
             options.request_method.as_deref().unwrap_or("GET"),
             options.content_type.as_deref().unwrap_or(""),
         );
+        interpreter.seed_main_source_directory_realpath_cache_entry();
         interpreter.initialize_static_property_defaults(program)?;
         interpreter.initialize_instance_property_defaults(program)?;
         Ok(interpreter)
@@ -20834,6 +20835,19 @@ impl Interpreter {
         {
             self.cache_realpath_entry(resolved, &metadata);
         }
+    }
+
+    fn seed_main_source_directory_realpath_cache_entry(&mut self) {
+        let Some(source_directory) = self
+            .main_source_file
+            .as_deref()
+            .and_then(|source_file| Path::new(source_file).parent())
+            .filter(|path| !path.as_os_str().is_empty())
+            .map(Path::to_path_buf)
+        else {
+            return;
+        };
+        self.cache_bounded_realpath_entry_for_local_path(&source_directory);
     }
 
     fn realpath_cache_array(&self) -> PhpArray {

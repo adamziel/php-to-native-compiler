@@ -16,6 +16,15 @@ Implemented:
   `open_basedir` policy, stat-cache semantics, symlink/canonicalization
   details, array/object path coercions, and native filesystem lowering remain
   unsupported.
+- Seeded the bounded request-local realpath cache with the main source
+  directory when a run has a source filename, matching the local
+  `realpath_cache_get()[__DIR__]`/`realpath_cache_size()` shape covered by
+  `ext/standard/tests/file/realpath_cache.phpt`. A focused Rust test verifies
+  the seeded directory entry, `is_dir`, `realpath`, `expires`, positive size,
+  and `clearstatcache(true)` invalidation path. Broader PHP realpath-cache
+  ancestor population, exact key hash values, expiration policy, byte
+  accounting, cross-request cache state, non-UTF-8 paths, and native
+  realpath-cache lowering remain unsupported.
 
 ## 2026-05-27
 
