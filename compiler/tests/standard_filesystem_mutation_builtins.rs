@@ -191,6 +191,55 @@ rmdir($dir);
     assert_eq!(execution.exit_code, 0);
 }
 
+#[cfg(unix)]
+#[test]
+fn mkdir_default_mode_preserves_host_umask_for_stat_metadata() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let fixture = TempFsFixture::new("mkdir-umask");
+    let control = fixture.root.join("control");
+    fs::create_dir(&control).expect("control directory is created through std mkdir");
+    let expected_mode = fs::metadata(&control)
+        .expect("control directory metadata is readable")
+        .permissions()
+        .mode()
+        & 0o777;
+    fs::remove_dir(&control).expect("control directory is removed");
+
+    let root = php_string(&fixture.root);
+    let source = format!(
+        r#"<?php
+$root = {root};
+$default = $root . "/default";
+$explicit = $root . "/explicit";
+mkdir($default);
+mkdir($explicit, 0777);
+$before = stat($default);
+sleep(1);
+var_dump(chmod($default, 0777));
+clearstatcache();
+$after = stat($default);
+echo (($before["mode"] & 0777) === {expected_mode}) ? "default" : "bad-default";
+echo ":";
+echo (($after["mode"] & 0777) === 0777) ? "chmod" : "bad-chmod";
+echo ":";
+echo (({expected_mode} === 0777) || (($before["mode"] & 0777) !== ($after["mode"] & 0777))) ? "diff-ok" : "bad-diff";
+echo ":";
+printf("%o", fileperms($explicit) & 0777);
+rmdir($default);
+rmdir($explicit);
+"#,
+        root = root,
+        expected_mode = expected_mode
+    );
+
+    let execution = run_source(&source).unwrap();
+
+    assert_eq!(execution.stdout, "bool(true)\ndefault:chmod:diff-ok:777");
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
 #[test]
 fn copy_filesize_and_unlink_cover_local_error_display_semantics() {
     let fixture = TempFsFixture::new("copy-errors");

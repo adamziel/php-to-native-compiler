@@ -5101,7 +5101,10 @@
   `mkdir()`, `rmdir()`, `copy()`,
   `rename()`, and `chdir()` perform host-local operations with bounded
   `open_basedir` checks that return `false` and emit PHP-shaped display
-  warnings for denied paths; `copy()` rejects directory sources, existing
+  warnings for denied paths; `mkdir($path)` and `mkdir($path, null)` preserve
+  the host process umask applied by the underlying local directory creation,
+  while explicit integer modes still use the current exact post-create
+  permission subset; `copy()` rejects directory sources, existing
   directory destinations, and same-source/destination local file paths with
   PHP-style `false`/warning behavior while preserving the source file; and
   `scandir()` returns a PHP array for local
@@ -5115,8 +5118,9 @@
   advisory locking effects, non-UTF-8 output payloads,
   recursive array-to-string parity, exact warning text outside the covered
   missing-path and `open_basedir` denial slices, `TypeError`/`ValueError`
-  timing, ownership/time mutation for existing files, full stat-cache
-  invalidation, and
+  timing, ownership/time mutation for existing files, explicit-mode umask
+  parity, recursive parent-directory mode parity, full stat-cache invalidation,
+  and
   native lowering unsupported. `is_uploaded_file($path)` and
   `move_uploaded_file($from, $to)` use only the request-local upload
   provenance captured from initial `PHPC_FILES` metadata entries with

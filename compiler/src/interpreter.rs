@@ -78668,6 +78668,7 @@ impl Interpreter {
                 ));
             }
         };
+        let uses_default_mode = matches!(args.get(1), Some(Value::Null) | None);
         let recursive = match args.get(2) {
             Some(Value::Bool(flag)) => *flag,
             Some(Value::Null) | None => false,
@@ -78699,7 +78700,9 @@ impl Interpreter {
         };
         match result {
             Ok(()) => {
-                self.set_bounded_unix_permissions(&filesystem_path, mode, "mkdir", span)?;
+                if !uses_default_mode {
+                    self.set_bounded_unix_permissions(&filesystem_path, mode, "mkdir", span)?;
+                }
                 self.clear_stat_cache_filesystem_path(&filesystem_path);
                 self.cache_bounded_realpath_entry_for_local_path(&filesystem_path);
                 Ok(Value::Bool(true))

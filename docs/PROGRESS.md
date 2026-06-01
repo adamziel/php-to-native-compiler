@@ -1,5 +1,21 @@
 # Progress Log
 
+## 2026-06-01
+
+Implemented:
+
+- Aligned bounded `mkdir($path)` / `mkdir($path, null)` directory creation with
+  the host process umask observable through local `stat()` metadata, while
+  keeping explicit integer `mkdir($path, $mode)` in the existing exact
+  post-create permission subset. This lets `chmod($dir, 0777)` produce the
+  expected mode/ctime stat delta for the selected
+  `ext/standard/tests/file/lstat_stat_variation17.phpt` row without broadening
+  stream wrappers or recursive directory mode semantics. Focused proof covers
+  a Rust local-filesystem metadata test and the focused PHPT row. Explicit-mode
+  umask parity, recursive parent-directory mode parity, non-local wrappers,
+  non-UTF-8 paths, exact diagnostics, broader stat-cache behavior, and native
+  lowering remain unsupported.
+
 ## 2026-05-27
 
 Implemented:
