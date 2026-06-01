@@ -11886,7 +11886,8 @@ impl Interpreter {
 
     fn validate_array_object_iterator_class(
         &self,
-        class_name: &str,
+        callable: &str,
+        argument_label: &str,
         iterator_class: &str,
         span: Span,
     ) -> CompileResult<String> {
@@ -11902,9 +11903,9 @@ impl Interpreter {
         Err(runtime_error(
             span,
             RuntimeError::unsupported_call(
-                format!("{class_name}::__construct()"),
+                callable,
                 format!(
-                    "Argument #3 ($iteratorClass) must be a class name derived from ArrayIterator, {iterator_class} given"
+                    "{argument_label} must be a class name derived from ArrayIterator, {iterator_class} given"
                 ),
             ),
         ))
@@ -11965,9 +11966,13 @@ impl Interpreter {
         };
 
         let iterator_class = match args.get(2) {
-            Some(Value::String(name)) if !name.is_empty() => {
-                self.validate_array_object_iterator_class(class_name, name, span)?
-            }
+            Some(Value::String(name)) if !name.is_empty() => self
+                .validate_array_object_iterator_class(
+                    &format!("{class_name}::__construct()"),
+                    "Argument #3 ($iteratorClass)",
+                    name,
+                    span,
+                )?,
             Some(other) => {
                 return Err(runtime_error(
                     span,
@@ -12230,18 +12235,38 @@ impl Interpreter {
         Ok(())
     }
 
+    fn array_object_invalid_offset_message(
+        class_name: &str,
+        method_name: &str,
+        value: &Value,
+    ) -> String {
+        let offset_type = value.type_name();
+        match method_name.to_ascii_lowercase().as_str() {
+            "offsetexists" => {
+                format!("Cannot access offset of type {offset_type} in isset or empty")
+            }
+            "offsetunset" => {
+                format!("Cannot unset offset of type {offset_type} on {class_name}")
+            }
+            _ => format!("Cannot access offset of type {offset_type} on {class_name}"),
+        }
+    }
+
     fn array_object_offset_key(
+        class_name: &str,
         method_name: &str,
         value: &Value,
         span: Span,
     ) -> CompileResult<ArrayKey> {
         ArrayKey::from_value(value).map_err(|error| {
+            let reason = if error.message().contains("array keys are not supported") {
+                Self::array_object_invalid_offset_message(class_name, method_name, value)
+            } else {
+                error.message().to_string()
+            };
             runtime_error(
                 span,
-                RuntimeError::unsupported_call(
-                    format!("ArrayObject::{method_name}()"),
-                    error.message(),
-                ),
+                RuntimeError::unsupported_call(format!("{class_name}::{method_name}()"), reason),
             )
         })
     }
@@ -12616,9 +12641,13 @@ impl Interpreter {
             "setiteratorclass" => {
                 expect_arity(&format!("{class_name}::setIteratorClass"), &args, 1, span)?;
                 let iterator_class = match args.first() {
-                    Some(Value::String(name)) if !name.is_empty() => {
-                        self.validate_array_object_iterator_class(class_name, name, span)?
-                    }
+                    Some(Value::String(name)) if !name.is_empty() => self
+                        .validate_array_object_iterator_class(
+                            &format!("{class_name}::setIteratorClass()"),
+                            "Argument #1 ($iteratorClass)",
+                            name,
+                            span,
+                        )?,
                     Some(other) => {
                         return Err(runtime_error(
                             span,
@@ -12651,6 +12680,7 @@ impl Interpreter {
             "offsetexists" => {
                 expect_arity(&format!("{class_name}::offsetExists"), &args, 1, span)?;
                 let key = Self::array_object_offset_key(
+                    class_name,
                     "offsetExists",
                     args.first().expect("arity checked"),
                     span,
@@ -12664,6 +12694,7 @@ impl Interpreter {
             "offsetget" => {
                 expect_arity(&format!("{class_name}::offsetGet"), &args, 1, span)?;
                 let key = Self::array_object_offset_key(
+                    class_name,
                     "offsetGet",
                     args.first().expect("arity checked"),
                     span,
@@ -12695,6 +12726,7 @@ impl Interpreter {
                     None
                 } else {
                     Some(Self::array_object_offset_key(
+                        class_name,
                         "offsetSet",
                         args.first().expect("arity checked"),
                         span,
@@ -12733,6 +12765,7 @@ impl Interpreter {
             "offsetunset" => {
                 expect_arity(&format!("{class_name}::offsetUnset"), &args, 1, span)?;
                 let key = Self::array_object_offset_key(
+                    class_name,
                     "offsetUnset",
                     args.first().expect("arity checked"),
                     span,
@@ -12876,6 +12909,61 @@ impl Interpreter {
                             RuntimeError::unsupported_call(
                                 format!("{class_name}::{method_name}()"),
                                 "sorting nested ArrayObject-backed storage is not implemented in the current subset",
+                            ),
+                        ));
+                    }
+                }
+                state.cursor = 0;
+                self.sync_array_object_properties(&object, &state, span)?;
+                self.array_objects.insert(object.id(), state);
+                Ok(Value::Bool(true))
+            }
+            "uasort" | "uksort" => {
+                let method_display = match method_name.to_ascii_lowercase().as_str() {
+                    "uasort" => "uasort",
+                    "uksort" => "uksort",
+                    _ => unreachable!("user sort method matched"),
+                };
+                if args.len() != 1 {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{class_name}::{method_display}()"),
+                            format!(
+                                "{class_name}::{method_display}() expects exactly 1 argument, {} given",
+                                args.len()
+                            ),
+                        ),
+                    ));
+                }
+                let operation = match method_display {
+                    "uasort" => UserArraySortOperation::Uasort,
+                    "uksort" => UserArraySortOperation::Uksort,
+                    _ => unreachable!("user sort method matched"),
+                };
+                let callback = args.first().expect("arity checked").clone();
+                let mut state = self.array_object_state(&object, method_name, span)?.clone();
+                match &mut state.storage {
+                    Value::Array(array) => {
+                        self.sort_array_with_user_comparator(array, operation, &callback, span)?;
+                    }
+                    Value::Object(storage_object)
+                        if !self.is_array_object_storage_object(storage_object) =>
+                    {
+                        let mut array = Self::public_object_properties_array(storage_object);
+                        self.sort_array_with_user_comparator(
+                            &mut array, operation, &callback, span,
+                        )?;
+                        storage_object
+                            .replace_public_properties_from_array(&array)
+                            .map_err(|error| runtime_error(span, error))?;
+                    }
+                    _ => {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                format!("{class_name}::{method_display}()"),
+                                "user-comparator sorting nested ArrayObject-backed storage is not implemented in the current subset",
                             ),
                         ));
                     }
@@ -21278,7 +21366,9 @@ impl Interpreter {
         scope: &mut SymbolTable,
     ) -> CompileResult<()> {
         if let Some(Value::Object(object)) = scope.read_named(name) {
-            if self.is_spl_object_storage_object(&object) {
+            if self.is_spl_object_storage_object(&object)
+                || self.is_array_object_storage_object(&object)
+            {
                 let offset_arg = self.evaluate(index, scope)?;
                 self.call_array_access_method_with_caller_scope(
                     object,
@@ -23841,7 +23931,29 @@ impl Interpreter {
                     ..
                 } = source
                 {
-                    let key = self.evaluate_array_key(index, scope)?;
+                    let key = if let Some(Value::Object(object)) = scope.read_named(array_name) {
+                        if self.is_array_object_storage_object(&object) {
+                            let offset_arg = self.evaluate(index, scope)?;
+                            match ArrayKey::from_value(&offset_arg) {
+                                Ok(key) => key,
+                                Err(_) => {
+                                    let value = self.call_array_access_method_with_caller_scope(
+                                        object,
+                                        "offsetGet",
+                                        vec![offset_arg],
+                                        span,
+                                        scope,
+                                    )?;
+                                    scope.write_detached_static(name, value);
+                                    return Ok(());
+                                }
+                            }
+                        } else {
+                            self.evaluate_array_key(index, scope)?
+                        }
+                    } else {
+                        self.evaluate_array_key(index, scope)?
+                    };
                     if let Some(binding) = self
                         .evaluate_direct_array_access_reference_source_binding(
                             array_name,
@@ -31428,7 +31540,9 @@ impl Interpreter {
             AssignTarget::ArrayIndex { name, index, span } => {
                 if let (Some(index), Some(object)) = (index.as_ref(), scope.read_named_object(name))
                 {
-                    if self.is_spl_object_storage_object(&object) {
+                    if self.is_spl_object_storage_object(&object)
+                        || self.is_array_object_storage_object(&object)
+                    {
                         let (value, _source) =
                             self.evaluate_value_with_array_copy_source(expr, scope)?;
                         let value = scope
@@ -90630,7 +90744,9 @@ impl Interpreter {
         {
             if indices.len() == 1 {
                 if let Some(Value::Object(object)) = caller_scope.read_named(name) {
-                    if self.is_spl_object_storage_object(&object) {
+                    if self.is_spl_object_storage_object(&object)
+                        || self.is_array_object_storage_object(&object)
+                    {
                         let offset_arg = self.evaluate(indices[0], caller_scope)?;
                         let value = self.call_array_access_method_with_caller_scope(
                             object,
@@ -91286,7 +91402,9 @@ impl Interpreter {
         {
             if indices.len() == 1 {
                 if let Some(Value::Object(object)) = caller_scope.read_named(name) {
-                    if self.is_spl_object_storage_object(&object) {
+                    if self.is_spl_object_storage_object(&object)
+                        || self.is_array_object_storage_object(&object)
+                    {
                         let offset_arg = self.evaluate(indices[0], caller_scope)?;
                         let exists = self
                             .call_array_access_method_with_caller_scope(
@@ -91557,7 +91675,7 @@ impl Interpreter {
         scope: &mut SymbolTable,
     ) -> CompileResult<(Value, Option<ArrayKey>)> {
         let key_value = self.evaluate(index, scope)?;
-        if self.is_spl_object_storage_object(object) || self.is_spl_fixed_array_object(object) {
+        if self.array_access_object_uses_raw_offset_arg(object) {
             return Ok((key_value, None));
         }
         if matches!(key_value, Value::Null) {
@@ -91566,6 +91684,12 @@ impl Interpreter {
         let key =
             ArrayKey::from_value(&key_value).map_err(|error| runtime_error(index.span(), error))?;
         Ok((Self::array_key_value(Some(key.clone())), Some(key)))
+    }
+
+    fn array_access_object_uses_raw_offset_arg(&self, object: &PhpObject) -> bool {
+        self.is_spl_object_storage_object(object)
+            || self.is_spl_fixed_array_object(object)
+            || self.is_array_object_storage_object(object)
     }
 
     fn call_array_access_method(
@@ -102837,6 +102961,11 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
                     && reason.ends_with("::offsetSet() instead")
                 {
                     return Some(("Error", reason.to_string()));
+                }
+                if reason.starts_with("Cannot access offset of type ")
+                    || reason.starts_with("Cannot unset offset of type ")
+                {
+                    return Some(("TypeError", reason.to_string()));
                 }
                 if prefix.contains("ArrayIterator")
                     && method == "seek()"

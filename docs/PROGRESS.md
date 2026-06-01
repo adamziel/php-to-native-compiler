@@ -43273,3 +43273,28 @@ Next:
   split-lane batch. A checkpoint was still not created because
   `tools/checkpoint.sh` stages the full dirty tree and this worker was not
   asked to checkpoint.
+
+Next:
+
+- Added a compact SPL `ArrayObject`/`ArrayIterator` residual slice for direct
+  array-valued offset errors, iterator-class validation diagnostics, and
+  bounded `ArrayObject::uasort()`/`ArrayObject::uksort()` execution over array
+  storage or direct object public-property storage. The selected PHPT proof
+  passed 6/6 rows: `ext/spl/tests/ArrayObject/ArrayObject_illegal_offset.phpt`,
+  `arrayObject_setIteratorClass_error1.phpt`, `arrayObject_uasort_basic1.phpt`,
+  `arrayObject_uasort_error1.phpt`, `arrayObject_uksort_basic1.phpt`, and
+  `arrayObject_uksort_error1.phpt`.
+- Focused Rust checks passed for
+  `cargo test -p phpc array_object_user_comparator_sort_and_iterator_class_type_errors --test object_model -- --nocapture`
+  and
+  `cargo test -p phpc array_object_illegal_array_offsets_are_catchable_type_errors --test object_model -- --nocapture`.
+  `cargo build -p phpc` also passed before the selected PHPT proof.
+- Selected PHPT command/artifacts are under
+  `/home/claude/supervised-php-compiler/state/artifacts/batch024-bcs2-45-spl-arrayobject-sort-offset-20260601T235714+0200/`;
+  `selected-phpt.log` records the 6/6 PASS result and
+  `cli-arrayobject-sort-offset.*` records the `phpc run` exercise path.
+- Still unsupported: general SPL wrapper iterators (`LimitIterator`,
+  `IteratorIterator`, `NoRewindIterator`), by-reference iteration over SPL
+  iterators, user-comparator sorting for nested ArrayObject-backed storage,
+  exact object-id reuse, serialization parity, full object-handler
+  COW/reference identity, and native lowering.

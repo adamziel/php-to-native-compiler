@@ -14952,21 +14952,21 @@ print_r((array) $outer);
 "#;
 
     let execution = run_source(source).unwrap();
-    assert!(execution.stdout.contains(
-        "Array\n(\n    [0] => zero\n    [1] => one\n    [2] => two\n)\n"
-    ));
+    assert!(execution
+        .stdout
+        .contains("Array\n(\n    [0] => zero\n    [1] => one\n    [2] => two\n)\n"));
     assert!(execution.stdout.contains(
         "Deprecated: ArrayObject::__construct(): Using an object as a backing array for ArrayObject is deprecated"
     ));
-    assert!(execution.stdout.contains(
-        "Array\n(\n    [a] => aye\n    [b] => bee\n)\n"
-    ));
-    assert!(execution.stdout.contains(
-        "Array\n(\n    [shown] => std\n)\n"
-    ));
-    assert!(execution.stdout.ends_with(
-        "Array\n(\n    [inner] => storage\n)\n"
-    ));
+    assert!(execution
+        .stdout
+        .contains("Array\n(\n    [a] => aye\n    [b] => bee\n)\n"));
+    assert!(execution
+        .stdout
+        .contains("Array\n(\n    [shown] => std\n)\n"));
+    assert!(execution
+        .stdout
+        .ends_with("Array\n(\n    [inner] => storage\n)\n"));
 }
 
 #[test]
@@ -15116,6 +15116,91 @@ foreach ($iterable as $key => $value) {
     assert_eq!(
         execution.stdout,
         "object\narray\nchanged\nsecret\npublic\nChildArrayIterator\nChildArrayIterator\na=1\n"
+    );
+}
+
+#[test]
+fn array_object_user_comparator_sort_and_iterator_class_type_errors() {
+    let source = r#"<?php
+function reverse_cmp($left, $right) {
+    if ($left == $right) {
+        return 0;
+    }
+    return $left < $right ? 1 : -1;
+}
+
+$values = new ArrayObject(array(2, 3, 1));
+$values->uasort('reverse_cmp');
+foreach ($values->getArrayCopy() as $key => $value) {
+    echo $key, "=", $value, "\n";
+}
+
+$keys = new ArrayObject(array(3 => 0, 2 => 1, 5 => 2, 6 => 3, 1 => 4));
+$keys->uksort('reverse_cmp');
+foreach ($keys->getArrayCopy() as $key => $value) {
+    echo $key, "=", $value, "\n";
+}
+
+try {
+    $values->uasort();
+} catch (ArgumentCountError $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    $values->uksort();
+} catch (ArgumentCountError $e) {
+    echo $e->getMessage(), "\n";
+}
+
+try {
+    $values->setIteratorClass("stdClass");
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "1=3\n0=2\n2=1\n6=3\n5=2\n3=0\n2=1\n1=4\nArrayObject::uasort() expects exactly 1 argument, 0 given\nArrayObject::uksort() expects exactly 1 argument, 0 given\nArrayObject::setIteratorClass(): Argument #1 ($iteratorClass) must be a class name derived from ArrayIterator, stdClass given\n"
+    );
+}
+
+#[test]
+fn array_object_illegal_array_offsets_are_catchable_type_errors() {
+    let source = r#"<?php
+$ao = new ArrayObject(array(1, 2, 3));
+try {
+    var_dump($ao[[]]);
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    $ao[[]] = new stdClass;
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    $ref =& $ao[[]];
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    var_dump(isset($ao[[]]));
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    unset($ao[[]]);
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "Cannot access offset of type array on ArrayObject\nCannot access offset of type array on ArrayObject\nCannot access offset of type array on ArrayObject\nCannot access offset of type array in isset or empty\nCannot unset offset of type array on ArrayObject\n"
     );
 }
 

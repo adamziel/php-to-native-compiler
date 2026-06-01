@@ -32755,6 +32755,8 @@ impl PhpClassTable {
             "rewind",
             "setFlags",
             "setIteratorClass",
+            "uasort",
+            "uksort",
             "valid",
         ] {
             array_object
@@ -32810,6 +32812,8 @@ impl PhpClassTable {
             "seek",
             "setFlags",
             "setIteratorClass",
+            "uasort",
+            "uksort",
             "valid",
         ] {
             array_iterator
