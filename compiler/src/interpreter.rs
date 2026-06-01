@@ -84240,7 +84240,7 @@ impl Interpreter {
                 "deg2rad",
                 "deg2rad()",
                 &args,
-                f64::to_radians,
+                php_deg2rad,
                 span,
             ),
             "rad2deg" => self.call_php_unary_float_math(
@@ -126739,6 +126739,15 @@ fn format_php_serialized_value(value: &Value, output: &mut String) -> Option<()>
 }
 
 fn format_php_serialized_float(value: f64) -> String {
+    if value.is_nan() {
+        return "NAN".to_string();
+    }
+    if value == f64::INFINITY {
+        return "INF".to_string();
+    }
+    if value == f64::NEG_INFINITY {
+        return "-INF".to_string();
+    }
     if value != 0.0 && value.is_finite() && value.abs() < 0.0001 {
         return format!("{value:.16E}")
             .replace("E-0", "E-")
@@ -128297,6 +128306,10 @@ fn call_pi(args: &[Value], span: Span) -> CompileResult<Value> {
 fn call_getrandmax(args: &[Value], span: Span) -> CompileResult<Value> {
     expect_arity("getrandmax", args, 0, span)?;
     Ok(Value::Int(i64::from(i32::MAX)))
+}
+
+fn php_deg2rad(value: f64) -> f64 {
+    value * std::f64::consts::PI / 180.0
 }
 
 fn call_intdiv(args: &[Value], span: Span) -> CompileResult<Value> {

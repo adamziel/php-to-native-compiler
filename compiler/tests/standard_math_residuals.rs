@@ -40,6 +40,31 @@ var_dump(set_time_limit(1));
 }
 
 #[test]
+fn nonfinite_float_serialization_uses_php_math_bug_tokens() {
+    let execution = run_source(
+        r#"<?php
+foreach ([-INF, INF, NAN] as $value) {
+    var_dump(serialize($value));
+    var_dump(unserialize(serialize($value)));
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "string(7) \"d:-INF;\"\n\
+float(-INF)\n\
+string(6) \"d:INF;\"\n\
+float(INF)\n\
+string(6) \"d:NAN;\"\n\
+float(NAN)\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn round_supports_legacy_and_enum_modes() {
     let execution = run_source(
         r#"<?php

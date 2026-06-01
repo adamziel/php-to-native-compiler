@@ -16,6 +16,15 @@ Implemented:
   large positive decimal padding through 4096 places for integer inputs,
   covering php-src `ext/standard/tests/math/bug21523.phpt` without broadening
   high-positive-decimal float parity or unbounded allocation behavior.
+- Added a second compact math PHPT slice: `deg2rad()` now uses PHP's
+  multiply-by-`M_PI` conversion order for the deterministic scalar precision
+  rows in `ext/standard/tests/math/deg2rad_variation.phpt`, and the existing
+  scalar `serialize()`/`unserialize()` path now emits PHP-compatible uppercase
+  `INF`, `-INF`, and `NAN` tokens for
+  `ext/standard/tests/math/bug27646.phpt`. This keeps array/object/resource
+  math operands, non-numeric strings, platform/libm edge differences, custom
+  object serialization, references, resources, malformed serialized offsets,
+  and native lowering out of scope.
 
 Proof:
 
@@ -27,6 +36,12 @@ Proof:
   `phpc-phpt-wrapper` for `ext/standard/tests/math/bug21523.phpt`,
   `ext/standard/tests/array/min.phpt`, and
   `ext/standard/tests/array/max.phpt`.
+- Second-slice proof passed: `cargo test -p phpc --test
+  elementary_math_builtins -- --test-threads=1`, `cargo test -p phpc --test
+  standard_math_residuals -- --test-threads=1`, `cargo build -p phpc --bin
+  phpc`, and selected PHPT `2 / 2` for
+  `ext/standard/tests/math/deg2rad_variation.phpt` plus
+  `ext/standard/tests/math/bug27646.phpt`.
 
 ## 2026-05-27
 

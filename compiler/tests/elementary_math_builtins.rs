@@ -97,3 +97,26 @@ echo function_exists("ceil") && function_exists("floor") && function_exists("sqr
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);
 }
+
+#[test]
+fn deg2rad_matches_php_math_variation_precision_rows() {
+    let execution = run_source(
+        r#"<?php
+var_dump(deg2rad(23));
+var_dump(deg2rad(23.45));
+var_dump(deg2rad("1000"));
+var_dump(deg2rad(true));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "float(0.40142572795869574)\n\
+float(0.40927970959267024)\n\
+float(17.453292519943293)\n\
+float(0.017453292519943295)\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}

@@ -5589,6 +5589,13 @@
   Integer-minimum overflow, numeric string coercion, bool/null coercion,
   array/object/resource operands, NaN/infinity behavior, exact diagnostics, and
   native lowering remain unsupported.
+  `deg2rad($num)` and `rad2deg($num)` accept the current math scalar coercion
+  subset for integers, floats, numeric strings, booleans, and null. `deg2rad`
+  now uses PHP's multiply-by-`M_PI` conversion order for the deterministic
+  scalar precision rows covered by php-src's variation PHPT. Arrays, objects,
+  resources, non-numeric strings, exact diagnostic parity beyond the current
+  type boundary, platform/libm edge differences for other math functions, and
+  native lowering remain unsupported.
   `number_format($num, $decimals = 0, $decimal_separator = ".", $thousands_separator = ",")`
   accepts current finite numeric scalar values, full typed numeric strings,
   optional integer decimals including negative decimal positions, and
@@ -9244,6 +9251,12 @@
   type-boundary diagnostic.
   `print_r` can also render the current minimal object values. `strlen` remains
   scalar-only and rejects arrays and objects. `count` accepts arrays only.
+  `serialize()` and `unserialize()` cover the current scalar and ordered-array
+  value subset, including PHP-compatible uppercase `INF`, `-INF`, and `NAN`
+  tokens for existing non-finite float serialization/unserialization. Full
+  reference identity, custom object serialization hooks, `__serialize()`/
+  `__unserialize()`, resources, binary string edge parity, exact malformed
+  offset warnings, and native lowering remain unsupported.
   `array_key_exists($key, $array)` and `key_exists($key, $array)` accept integer
   and string keys over the current ordered array value model, plus `null`
   keys as the empty-string key, boolean keys as integer `0`/`1`, and integral
@@ -11373,6 +11386,11 @@
   integer-minimum overflow, numeric string coercion, bool/null coercion,
   array/object/resource operands, NaN/infinity behavior, exact diagnostics, and
   native lowering beyond function-table introspection
+- `deg2rad()`/`rad2deg()` behavior beyond the current scalar coercion and
+  deterministic conversion subset: arrays, objects, resources, non-numeric
+  strings, exact diagnostics for every coercion, platform/libm edge parity for
+  broader math functions, and native lowering beyond function-table
+  introspection
 - `number_format()` behavior beyond the current finite scalar formatting
   subset: non-finite values, integer decimal padding beyond the bounded
   4096-place formatter, high-positive-decimal float parity, locale-aware
@@ -11554,3 +11572,8 @@ Unsupported code should fail with an explicit parse, runtime, or codegen error.
   shape, complete UTF-16/UTF-8 diagnostics, exact diagnostic locations, every
   JSON option interaction, remaining json extension functions, and native
   lowering remain unsupported.
+- `serialize()`/`unserialize()` behavior beyond the current scalar and
+  ordered-array subset: reference identity, custom object serialization hooks,
+  `__serialize()`/`__unserialize()`, resources, binary string edge parity,
+  exact malformed offset warnings, and native lowering beyond function-table
+  introspection.
