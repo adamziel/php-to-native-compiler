@@ -122,3 +122,28 @@ echo defined("PHP_QUERY_RFC3986") ? "1" : "0";
     assert!(!ir.contains("PHP_QUERY_RFC1738"), "{ir}");
     assert!(!ir.contains("PHP_QUERY_RFC3986"), "{ir}");
 }
+
+#[test]
+fn http_build_query_accepts_named_optional_arguments() {
+    let execution = run_source(
+        r#"<?php
+$data = ["hello" => "world", "space" => "a b"];
+var_dump(http_build_query($data, encoding_type: PHP_QUERY_RFC3986));
+class StringableOnly {
+    public function __toString(): string {
+        return "Stringable";
+    }
+}
+$object = new StringableOnly();
+var_dump(http_build_query(["hello", $object], numeric_prefix: "prefix_"));
+var_dump(http_build_query($object, numeric_prefix: "prefix_"));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "string(23) \"hello=world&space=a%20b\"\nstring(14) \"prefix_0=hello\"\nstring(0) \"\"\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}

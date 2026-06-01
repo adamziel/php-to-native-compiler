@@ -1,5 +1,28 @@
 # Progress Log
 
+## 2026-06-01
+
+Implemented:
+
+- Added a bounded URL/HTTP standard-extension slice for form URL decoding and
+  named `http_build_query()` calls. `phpc run` now decodes `urldecode()`
+  components by translating `+` to a space, percent-decoding valid hex byte
+  pairs, preserving malformed percent sequences literally, and returning
+  PHP-shaped binary strings when decoded bytes are not UTF-8. Function metadata
+  now exposes `http_build_query()` parameters, so direct named optional
+  arguments such as `encoding_type:` and `numeric_prefix:` bind through the
+  normal builtin named-argument path; native `function_exists()` introspection
+  also recognizes `urlencode()`, `urldecode()`, `rawurlencode()`, and
+  `rawurldecode()`. Focused proof covers the URL/helper Rust tests,
+  `cargo build -p phpc`, a direct CLI exercise, and selected PHPT rows
+  `ext/standard/tests/http/http_build_query/gh12745.phpt` plus
+  `ext/standard/tests/http/http_build_query/http_build_query_object_just_stringable.phpt`.
+  Binary byte fidelity for `urlencode()` inputs outside UTF-8 strings, URL
+  normalization/validation, IDNA, decoded parsed-URL components,
+  cyclic `http_build_query()` structures, context-private object-property query
+  extraction, `get_headers()` network behavior, and native lowering of direct
+  URL/helper calls remain unsupported.
+
 ## 2026-05-27
 
 Implemented:

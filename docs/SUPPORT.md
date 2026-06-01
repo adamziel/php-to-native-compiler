@@ -2748,11 +2748,15 @@
   `false` for the covered malformed host/port cases. `PHP_URL_*` constants are
   visible through bare reads, `defined()`, `constant()`, and
   `get_defined_constants()` alongside the existing supported builtin constants.
-  `rawurlencode()` and `rawurldecode()` support RFC3986 byte-oriented percent
-  encoding and decoding for the current string subset. Exact RFC/WHATWG
+  `urlencode()` and `urldecode()` support PHP form component encoding/decoding
+  for the current string subset, including `+` as space on decode and byte
+  percent decoding. `rawurlencode()` and `rawurldecode()` support RFC3986
+  byte-oriented percent encoding and decoding for the current string subset.
+  Exact RFC/WHATWG
   validation, broader IPv6 and platform-specific file URL edge cases, binary
-  byte fidelity outside UTF-8 strings, URL normalization, IDNA, percent-decoding
-  of parsed URL components, and native lowering remain unsupported.
+  byte fidelity outside UTF-8 strings for `urlencode()`, URL normalization,
+  IDNA, percent-decoding of parsed URL components, and native lowering remain
+  unsupported.
 - `Uri\Rfc3986\Uri` supports bounded construction/parsing, raw string output,
   equivalence, host-type lookup, and URI-type lookup for the current ASCII
   subset. `Uri\WhatWg\Url` supports a bounded WHATWG URL subset for direct
@@ -2766,7 +2770,8 @@
   unsupported.
 - `http_build_query()` supports ordered arrays and initialized public object
   properties, including recursive nested arrays/objects, top-level numeric
-  prefixes, explicit argument separators, null/resource elision,
+  prefixes, direct named optional arguments, explicit argument separators,
+  null/resource elision,
   reference-backed array values, and `PHP_QUERY_RFC1738` or
   `PHP_QUERY_RFC3986` component encoding. Closure values, exact PHP
   diagnostics, binary string/key byte fidelity outside UTF-8 strings,
@@ -11290,11 +11295,12 @@
   native lowering beyond function-table introspection
 - `http_build_query()` behavior beyond ordered array and initialized public
   object-property data, recursive arrays/objects, scalar value conversion,
-  null/resource elision, top-level numeric prefixes, explicit separators, and
-  `PHP_QUERY_RFC1738`/`PHP_QUERY_RFC3986` encoding: exact diagnostics, cyclic
-  structures, binary key/value fidelity outside UTF-8 strings, INI-derived
-  argument separators beyond the current `&` fallback, object custom hooks,
-  and native lowering beyond function-table introspection
+  null/resource elision, top-level numeric prefixes, direct named optional
+  arguments, explicit separators, and `PHP_QUERY_RFC1738`/`PHP_QUERY_RFC3986`
+  encoding: exact diagnostics, cyclic structures, binary key/value fidelity
+  outside UTF-8 strings, INI-derived argument separators beyond the current
+  `&` fallback, object custom hooks, and native lowering beyond function-table
+  introspection
 - `http_response_code()` behavior beyond no-argument reads and integer writes
   of request-local status state, including previous-value return behavior:
   real SAPI emission, exact valid-code ranges, reason phrases, web-server

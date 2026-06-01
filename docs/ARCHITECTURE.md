@@ -542,7 +542,12 @@ seeds flat and bracketed URL-encoded body pairs into `$_POST`.
 direction for bounded query strings: it walks arrays or initialized public
 object properties, recurses with bracketed child keys, skips null/resource
 leaves, applies top-level numeric prefixes, and encodes components as
-RFC1738 form data by default or RFC3986 when requested. `PHPC_COOKIE`
+RFC1738 form data by default or RFC3986 when requested, including direct named
+optional arguments through the builtin metadata table. The direct URL component
+helpers share those byte-oriented encoding boundaries:
+`urlencode()`/`urldecode()` use form encoding with `+` decoding to a space,
+while `rawurlencode()`/`rawurldecode()` use RFC3986 percent encoding without
+that `+` special case. `PHPC_COOKIE`
 is treated as an explicit semicolon-delimited cookie header seed for
 `$_COOKIE` and `$_SERVER["HTTP_COOKIE"]`. `PHPC_FILES` is treated as an
 explicit URL-encoded upload metadata seed for `$_FILES` using PHP-shaped keys

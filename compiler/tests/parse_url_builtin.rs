@@ -62,6 +62,32 @@ echo "|", is_callable("rawurldecode") ? "callable" : "missing";
 }
 
 #[test]
+fn form_url_encoding_matches_php_query_component_boundaries() {
+    let execution = run_source(
+        r##"<?php
+$raw = ' !"#$%&\'()*+,-./0123456789:;<=>?'
+     . '@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_'
+     . '`abcdefghijklmnopqrstuvwxyz{|}~'
+     . "\0";
+$encoded = urlencode($raw);
+echo $encoded, "\n";
+echo urldecode($encoded) === $raw ? "roundtrip" : "mismatch";
+echo "|", urldecode("plus+space%2Bplus%zz%"), "\n";
+echo bin2hex(urldecode("%00%FF%7E")), "\n";
+echo function_exists("urldecode") ? "fn" : "missing";
+echo "|", is_callable("urlencode") ? "callable" : "missing";
+"##,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "+%21%22%23%24%25%26%27%28%29%2A%2B%2C-.%2F0123456789%3A%3B%3C%3D%3E%3F%40ABCDEFGHIJKLMNOPQRSTUVWXYZ%5B%5C%5D%5E_%60abcdefghijklmnopqrstuvwxyz%7B%7C%7D%7E%00\nroundtrip|plus space+plus%zz%\n00ff7e\nfn|callable"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn parse_url_matches_bounded_edge_cases_from_url_phpts() {
     let execution = run_source(
         r#"<?php
@@ -108,12 +134,14 @@ fn emit_ir_folds_parse_url_metadata_and_component_constants() {
 echo function_exists("parse_url") ? "1" : "0";
 echo defined("PHP_URL_SCHEME") ? "1" : "0";
 echo defined("PHP_URL_FRAGMENT") ? "1" : "0";
+echo function_exists("urldecode") ? "1" : "0";
 "#,
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 3, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 4, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("PHP_URL_SCHEME"), "{ir}");
     assert!(!ir.contains("PHP_URL_FRAGMENT"), "{ir}");
+    assert!(!ir.contains("urldecode"), "{ir}");
 }
