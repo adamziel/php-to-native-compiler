@@ -76,16 +76,37 @@ echo is_readable();
         arity.stdout
     );
 
-    let type_error = runtime_error(
+    let scalar_false_cases = run_source_with_source_file(
         r#"<?php
-echo is_readable(42);
+var_dump(is_readable(null));
+var_dump(is_readable(false));
+var_dump(is_readable(42));
+var_dump(is_readable(-2.34555));
+var_dump(is_readable(""));
+var_dump(is_readable("contains\0nul"));
 "#,
+        fixture_source_file(),
     );
-    assert_eq!(type_error.line, 2);
-    assert_eq!(type_error.column, 6);
     assert_eq!(
-        type_error.message,
-        "unsupported call is_readable(): path argument must be string in the current subset, got int"
+        scalar_false_cases.unwrap().stdout,
+        "bool(false)\nbool(false)\nbool(false)\nbool(false)\nbool(false)\nbool(false)\n"
+    );
+
+    let invalid_path = run_source_with_source_file(
+        r#"<?php
+echo is_readable([]);
+"#,
+        fixture_source_file(),
+    )
+    .unwrap();
+    assert_eq!(invalid_path.stderr, "");
+    assert_eq!(invalid_path.exit_code, 0);
+    assert!(
+        invalid_path.stdout.contains(
+            "Warning: is_readable(): filename argument must be a valid filesystem path, got array"
+        ),
+        "{}",
+        invalid_path.stdout
     );
 
     let stream = runtime_error(

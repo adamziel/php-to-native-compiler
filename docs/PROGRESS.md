@@ -4,6 +4,29 @@
 
 Implemented:
 
+- Implemented a focused local filesystem metadata candidate for five selected
+  `ext/standard/tests/file` PHPT rows. `chmod()` now preserves relative
+  `.`/`..` path segments for permission-setting operations so nonexistent
+  intermediate directories fail instead of being lexically normalized away, and
+  missing chmod targets emit the covered PHP-shaped display warning plus
+  `false`. `is_readable()` now accepts the reached scalar false-case path
+  forms, and `is_writable()`/`is_writeable()` now use Unix owner-write
+  permission bits for the covered local file/dir rows instead of Rust readonly
+  metadata. Focused Rust passed `3 / 3` in
+  `standard_file_metadata_residual_builtins`; selected PHPT proof passed `5 /
+  5` for `chmod_error.phpt`, `chmod_variation2.phpt`,
+  `is_readable_variation3.phpt`, `is_writable_basic.phpt`, and
+  `is_writable_variation2.phpt`; and adjacent PHPT guards passed `6 / 6` for
+  `chmod_basic.phpt`, `chmod_variation1.phpt`, `is_readable_basic.phpt`,
+  `is_readable_variation1.phpt`, `is_writable_variation1.phpt`, and
+  `is_writable_variation3.phpt`. This is not a public score update until
+  supervisor integration, checkpoint validation, and a full pinned PHPT gate
+  complete. Unsupported edges remain `passthru()`/shell-backed
+  `clearstatcache_001.phpt`, broad stream wrappers, full path
+  canonicalization/symlink policy, portable permission and TOCTOU parity,
+  exact diagnostics beyond the covered chmod missing-path warning, and native
+  lowering.
+
 - Repaired the completed array/string worker lane on the current supervisor
   head. `array_intersect()` now keeps scanning the first comparison array when
   that comparison array contains array-valued entries, so the reached
@@ -34,7 +57,6 @@ Implemented:
   covered constants, full timezone database parity, and native lowering. This
   is not a public score update until a full pinned PHPT gate accepts a
   checkpoint.
-
 - Accepted checkpoint `4f1c81d5` as the current public PHPT score source after
   a full pinned php-src gate completed with zero latest-published PASS
   regressions. The public-comparable score is now `5513 / 20294 = 27.17%`,

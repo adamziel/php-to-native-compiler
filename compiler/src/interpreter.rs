@@ -77879,6 +77879,36 @@ impl Interpreter {
         }
     }
 
+    fn resolve_local_filesystem_operation_path_preserving_dot_segments(
+        &self,
+        function: &str,
+        path: &str,
+        span: Span,
+    ) -> CompileResult<PathBuf> {
+        if let Some(file_url_path) = bounded_local_file_url_path(path) {
+            return file_url_path.map_err(|message| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(format!("{function}()"), message),
+                )
+            });
+        }
+        if path.contains("://") {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{function}()"),
+                    "only local file:// URLs and local filesystem paths are supported in the current filesystem subset",
+                ),
+            ));
+        }
+        let requested_path = PathBuf::from(path);
+        if requested_path.is_absolute() || requested_path.exists() {
+            return Ok(requested_path);
+        }
+        Ok(repo_root_relative_path(&requested_path).unwrap_or(requested_path))
+    }
+
     fn resolve_file_put_contents_path(
         &self,
         path: &str,
@@ -78009,18 +78039,24 @@ impl Interpreter {
                 ));
             }
         };
-        let filesystem_path =
-            self.resolve_local_filesystem_operation_path("chmod", &path, false, span)?;
+        let filesystem_path = self
+            .resolve_local_filesystem_operation_path_preserving_dot_segments(
+                "chmod", &path, span,
+            )?;
         if !self.enforce_bounded_open_basedir("chmod()", &path, &filesystem_path, span)? {
             return Ok(Value::Bool(false));
         }
-        match self.set_bounded_unix_permissions(&filesystem_path, mode, "chmod", span) {
+        match self.try_set_bounded_unix_permissions(&filesystem_path, mode) {
             Ok(()) => {
                 self.clear_stat_cache_filesystem_path(&filesystem_path);
                 Ok(Value::Bool(true))
             }
             Err(error) => {
-                self.emit_warning("chmod()", format!("{path}: {}", error.message), span)?;
+                self.emit_filesystem_display_warning(
+                    "chmod",
+                    Self::filesystem_io_warning_message(&error),
+                    span,
+                )?;
                 Ok(Value::Bool(false))
             }
         }
@@ -79416,12 +79452,8 @@ impl Interpreter {
         function: &str,
         span: Span,
     ) -> CompileResult<()> {
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let mode = (mode as u32) & 0o7777;
-            let permissions = fs::Permissions::from_mode(mode);
-            fs::set_permissions(path, permissions).map_err(|error| {
+        self.try_set_bounded_unix_permissions(path, mode)
+            .map_err(|error| {
                 runtime_error(
                     span,
                     RuntimeError::unsupported_call(
@@ -79430,10 +79462,20 @@ impl Interpreter {
                     ),
                 )
             })?;
+        Ok(())
+    }
+
+    fn try_set_bounded_unix_permissions(&self, path: &Path, mode: i64) -> std::io::Result<()> {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = (mode as u32) & 0o7777;
+            let permissions = fs::Permissions::from_mode(mode);
+            fs::set_permissions(path, permissions)?;
         }
         #[cfg(not(unix))]
         {
-            let _ = (path, mode, function, span);
+            let _ = (path, mode);
         }
         Ok(())
     }
@@ -87266,48 +87308,42 @@ impl Interpreter {
             }
             "is_readable" => {
                 expect_arity(name, &args, 1, span)?;
-                match &args[0] {
-                    Value::String(path) => {
-                        if path.contains("://") {
-                            return Err(runtime_error(
-                                span,
-                                RuntimeError::unsupported_call(
-                                    "is_readable()",
-                                    "stream wrappers are not supported in the current subset",
-                                ),
-                            ));
-                        }
-                        let metadata_path =
-                            self.resolve_local_filesystem_operation_path("is_readable", path, false, span)?;
-                        if !self.enforce_bounded_open_basedir(
-                            "is_readable()",
-                            path,
-                            &metadata_path,
-                            span,
-                        )? {
-                            return Ok(Value::Bool(false));
-                        }
-                        let Ok(metadata) = fs::metadata(&metadata_path) else {
-                            return Ok(Value::Bool(false));
-                        };
-                        let readable = if metadata.is_dir() {
-                            fs::read_dir(&metadata_path).is_ok()
-                        } else {
-                            fs::File::open(&metadata_path).is_ok()
-                        };
-                        Ok(Value::Bool(readable))
-                    }
-                    other => Err(runtime_error(
+                let Some(path) =
+                    self.filesystem_scalar_path_argument("is_readable", "filename", &args[0], span)?
+                else {
+                    return Ok(Value::Bool(false));
+                };
+                if path.is_empty() || path.contains('\0') {
+                    return Ok(Value::Bool(false));
+                }
+                if path.contains("://") {
+                    return Err(runtime_error(
                         span,
                         RuntimeError::unsupported_call(
                             "is_readable()",
-                            format!(
-                                "path argument must be string in the current subset, got {}",
-                                other.type_name()
-                            ),
+                            "stream wrappers are not supported in the current subset",
                         ),
-                    )),
+                    ));
                 }
+                let metadata_path =
+                    self.resolve_local_filesystem_operation_path("is_readable", &path, false, span)?;
+                if !self.enforce_bounded_open_basedir(
+                    "is_readable()",
+                    &path,
+                    &metadata_path,
+                    span,
+                )? {
+                    return Ok(Value::Bool(false));
+                }
+                let Ok(metadata) = fs::metadata(&metadata_path) else {
+                    return Ok(Value::Bool(false));
+                };
+                let readable = if metadata.is_dir() {
+                    fs::read_dir(&metadata_path).is_ok()
+                } else {
+                    fs::File::open(&metadata_path).is_ok()
+                };
+                Ok(Value::Bool(readable))
             }
             "is_writable" | "is_writeable" => {
                 expect_arity(name, &args, 1, span)?;
@@ -87358,7 +87394,7 @@ impl Interpreter {
                 let Ok(metadata) = fs::metadata(&metadata_path) else {
                     return Ok(Value::Bool(false));
                 };
-                Ok(Value::Bool(!metadata.permissions().readonly()))
+                Ok(Value::Bool(filesystem_mode_has_owner_write(&metadata)))
             }
             "is_link" => {
                 expect_arity(name, &args, 1, span)?;
@@ -129648,6 +129684,18 @@ fn filesystem_mode_has_owner_execute(metadata: &fs::Metadata) -> bool {
 #[cfg(not(unix))]
 fn filesystem_mode_has_owner_execute(_metadata: &fs::Metadata) -> bool {
     false
+}
+
+#[cfg(unix)]
+fn filesystem_mode_has_owner_write(metadata: &fs::Metadata) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+
+    metadata.permissions().mode() & 0o200 != 0
+}
+
+#[cfg(not(unix))]
+fn filesystem_mode_has_owner_write(metadata: &fs::Metadata) -> bool {
+    !metadata.permissions().readonly()
 }
 
 #[cfg(unix)]

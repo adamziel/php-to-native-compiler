@@ -95,6 +95,85 @@ try {{
     assert_eq!(execution.exit_code, 0);
 }
 
+#[test]
+fn chmod_and_readability_predicates_cover_phpt_permission_variations() {
+    let fixture = TempFsFixture::new("permission-predicates");
+    let file = fixture.path("probe.txt");
+    let dir = fixture.path("subdir");
+    fs::write(&file, "payload").expect("fixture file is written");
+    fs::create_dir(&dir).expect("fixture directory is created");
+
+    let source = format!(
+        r#"<?php
+$old = getcwd();
+$root = {root};
+$file = {file};
+$badPath = {bad_path};
+chdir($root);
+var_dump(chmod($file, 0002));
+clearstatcache();
+var_dump(is_writable($file));
+var_dump(is_writeable($file));
+var_dump(chmod($file, 0200));
+clearstatcache();
+var_dump(is_writable($file));
+var_dump(is_readable(0));
+var_dump(is_readable(1234));
+var_dump(is_readable(-2.34555));
+var_dump(is_readable(true));
+var_dump(is_readable(false));
+var_dump(is_readable(" "));
+var_dump(chmod($file, 0777));
+var_dump(chmod($badPath, 0755));
+clearstatcache();
+printf("%o\n", fileperms($file) & 0777);
+var_dump(chmod($root . "/missing.txt", 0777));
+chmod($file, 0600);
+chdir($old);
+"#,
+        root = php_string(&fixture.root),
+        file = php_string(&file),
+        bad_path = php_string(&dir.join("missing/../../probe.txt")),
+    );
+
+    let execution = run_source(&source).unwrap();
+
+    assert!(
+        execution.stdout.starts_with(concat!(
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "\n",
+            "Warning: chmod(): No such file or directory in ",
+        )),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution
+            .stdout
+            .contains("bool(false)\n777\n\nWarning: chmod(): No such file or directory in "),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution.stdout.ends_with("bool(false)\n"),
+        "{}",
+        execution.stdout
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
 struct TempFsFixture {
     root: PathBuf,
 }

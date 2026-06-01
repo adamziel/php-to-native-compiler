@@ -5482,21 +5482,24 @@
   warnings beyond the documented denial slice, non-string coercions,
   stat-cache behavior,
   partial-output behavior, and native lowering remain unsupported.
-  `is_readable($path)` accepts one string local path, rejects stream-wrapper
-  paths, returns `false` for missing paths, and checks host readability for
-  files with `File::open` and directories with `read_dir`. It shares the same
-  current relative path and bounded request-local `open_basedir` policy as
-  `file_exists`. Include-path lookup, stream
-  wrappers, canonicalization/symlink policy, portable permissions, warning
-  behavior beyond the documented denial slice, non-string coercions,
-  stat-cache behavior,
-  partial-output behavior, and native lowering remain unsupported.
+  `is_readable($path)` accepts one local path plus the bounded scalar
+  false-case forms reached by PHPT (`null`, booleans, integers, floats, empty
+  strings, and NUL-containing paths), rejects stream-wrapper paths, returns
+  `false` for missing paths, and checks host readability for files with
+  `File::open` and directories with `read_dir`. It shares the same current
+  relative path and bounded request-local `open_basedir` policy as
+  `file_exists`. Include-path lookup, stream wrappers,
+  canonicalization/symlink policy, portable permissions, warning behavior
+  beyond the documented denial slice, object/array path coercions,
+  stat-cache behavior, partial-output behavior, and native lowering remain
+  unsupported.
   `is_writable($path)` and its `is_writeable($path)` alias accept one string
   local path, plus the bounded scalar false-case forms reached by PHPT
   (`null`, booleans, integers, floats, empty strings, and NUL-containing
   paths), reject stream-wrapper paths, return `false` for missing paths, and
-  check the existing host metadata permission bits by treating readonly paths
-  as not writable. They share the same current relative path and bounded request-local
+  check the existing host metadata permission bits by requiring the owner write
+  bit on Unix and treating readonly paths as not writable on non-Unix hosts.
+  They share the same current relative path and bounded request-local
   `open_basedir` policy as `file_exists`. This is a
   small local metadata slice, not full PHP filesystem writability: permission
   portability, exact warnings beyond the documented denial slice, include_path lookup, stream
