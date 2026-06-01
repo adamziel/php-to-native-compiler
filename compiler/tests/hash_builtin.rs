@@ -113,6 +113,27 @@ listed"
 }
 
 #[test]
+fn hash_crc_algorithms_and_php82_algorithm_listing_are_available() {
+    let execution = run_source(
+        r#"<?php
+echo hash("crc32", "123456789"), "\n";
+echo hash("crc32b", "123456789"), "\n";
+echo hash("crc32c", "123456789"), "\n";
+echo bin2hex(hash("crc32", "123456789", true)), "\n";
+$algos = hash_algos();
+echo count($algos), "|", $algos[30], "|", $algos[31], "|", $algos[32];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "181989fc\ncbf43926\ne3069283\n181989fc\n60|crc32|crc32b|crc32c"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn hash_rejects_unknown_algorithms() {
     let execution = run_source("<?php\nhash('foo', '');\n").unwrap();
     assert_eq!(execution.stderr, "");

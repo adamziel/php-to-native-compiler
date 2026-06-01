@@ -182,7 +182,7 @@ rmdir($dir);
             "string(3) \"x+b\"\n",
             "a:bC",
             "bool(true)\n",
-            ":stat:644:777:mode.txt",
+            ":stat:644:755:mode.txt",
             ":file_put_contents(): supplied resource is not a valid stream resource",
             ":file_put_contents(): supplied resource is not a valid Stream-Context resource",
         )

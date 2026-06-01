@@ -16,6 +16,32 @@ Implemented:
   regressions. The only invalid-marker grep hit was the known expected socket
   `Permission denied` warning line, not a new proof blocker.
 
+- Integrated the next focused post-directory worker batch for eleven selected
+  PHPT rows. Mutable `DateTime` objects now expose bounded `getOffset()`,
+  `getTimezone()`, and `setTimezone()` over the existing DateTimeZone state;
+  `hash()` now executes `crc32`, `crc32b`, and `crc32c` and `hash_algos()`
+  returns the PHP 8.2 metadata list while preserving the existing SHA/HMAC
+  subset; Reflection now covers `ReflectionFunction::isVariadic()`,
+  `ReflectionClass::getConstructor()`, scalar string-convertible
+  `ReflectionClass::hasMethod()` arguments, and the narrow object/null loose
+  comparison used by the constructor row; and `umask()` now tracks a
+  request-local mask applied to newly created local paths through `fopen()`,
+  `file_put_contents()`, `touch()`, and `mkdir()`. Focused Rust passed `24 /
+  24` across `date_time_builtin`, `hash_builtin`, `file_umask_current_user`,
+  and `reflection_metadata`; `cargo build -p phpc --bin phpc` passed; and
+  selected PHPT proof passed `11 / 11` for
+  `DateTime_getOffset_basic1.phpt`, `DateTime_getTimeZone_basic1.phpt`,
+  `DateTime_setTimezone_basic1.phpt`, `crc32.phpt`, `hash_algos.phpt`,
+  `ReflectionFunction_isVariadic_basic.phpt`,
+  `ReflectionClass_getConstructor_basic.phpt`,
+  `ReflectionClass_hasMethod_002.phpt`, `umask_basic.phpt`,
+  `umask_variation1.phpt`, and `umask_variation2.phpt`. Unsupported edges
+  remain broad DateTime constructor/timezone and DateTimeImmutable parity,
+  hash execution outside the bounded SHA/CRC subset, HMAC execution beyond
+  SHA-256, full Reflection engine metadata and comparison semantics,
+  process-wide/non-Unix umask behavior, exact diagnostics, references/COW, and
+  native lowering.
+
 - Integrated the next bounded directory-open diagnostic slice after the
   `4f1c81d5` public gate. `dir()` and `opendir()` now preserve the existing
   local directory resource and `open_basedir` denial behavior while emitting

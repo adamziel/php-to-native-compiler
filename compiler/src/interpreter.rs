@@ -62,6 +62,7 @@ const PHP_EXTR_PREFIX_IF_EXISTS: i64 = 5;
 const PHP_EXTR_IF_EXISTS: i64 = 6;
 const PHP_EXTR_REFS: i64 = 256;
 const PHP_FIRST_USER_RESOURCE_ID: i64 = 4;
+const PHP_DEFAULT_REQUEST_UMASK: i64 = 0o022;
 const ARRAY_PAD_MAX_PADDING: u64 = 1_048_576;
 
 fn is_standard_stream_resource_id(id: i64) -> bool {
@@ -320,6 +321,7 @@ struct Interpreter {
     request_time_seeded: bool,
     default_timezone: String,
     default_timezone_explicit: bool,
+    current_umask: Option<i64>,
     request_body: String,
     include_path: String,
     execution_steps: usize,
@@ -11196,6 +11198,7 @@ impl Interpreter {
             request_time_seeded: options.request_time.is_some(),
             default_timezone,
             default_timezone_explicit: false,
+            current_umask: Some(PHP_DEFAULT_REQUEST_UMASK),
             request_body: options.request_body.unwrap_or_default(),
             include_path: ".".to_string(),
             execution_steps: 0,
@@ -17632,6 +17635,90 @@ impl Interpreter {
                     state.timestamp,
                     &state.timezone,
                 )))
+            }
+            "getoffset" => {
+                expect_expr_arity("DateTime::getOffset", args.len(), 0, span)?;
+                let state = self.date_time_objects.get(&object.id()).ok_or_else(|| {
+                    runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "DateTime::getOffset()",
+                            "DateTime object is not initialized in the current subset",
+                        ),
+                    )
+                })?;
+                Ok(Value::Int(
+                    state.timezone.offset_at_timestamp(state.timestamp),
+                ))
+            }
+            "gettimezone" => {
+                expect_expr_arity("DateTime::getTimezone", args.len(), 0, span)?;
+                let timezone_name = self
+                    .date_time_objects
+                    .get(&object.id())
+                    .map(|state| state.timezone.name.clone())
+                    .ok_or_else(|| {
+                        runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "DateTime::getTimezone()",
+                                "DateTime object is not initialized in the current subset",
+                            ),
+                        )
+                    })?;
+                let timezone_object =
+                    self.create_datetimezone_object_from_name(&timezone_name, span)?;
+                self.track_allocated_object(&timezone_object);
+                Ok(Value::Object(timezone_object))
+            }
+            "settimezone" => {
+                expect_expr_arity("DateTime::setTimezone", args.len(), 1, span)?;
+                let value = self.evaluate(&args[0], caller_scope)?;
+                let timezone_object = match value {
+                    Value::Object(object) if object.is_instance_of_class_name("DateTimeZone") => {
+                        object
+                    }
+                    other => {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "DateTime::setTimezone()",
+                                format!(
+                                    "Argument #1 ($timezone) must be DateTimeZone in the current subset, got {}",
+                                    other.type_name()
+                                ),
+                            ),
+                        ));
+                    }
+                };
+                let timestamp = self
+                    .date_time_objects
+                    .get(&object.id())
+                    .map(|state| state.timestamp)
+                    .ok_or_else(|| {
+                        runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "DateTime::setTimezone()",
+                                "DateTime object is not initialized in the current subset",
+                            ),
+                        )
+                    })?;
+                let timezone_name =
+                    Self::datetimezone_name(&timezone_object, "DateTime::setTimezone()", span)?;
+                let timezone = bounded_timezone_from_name(&timezone_name).ok_or_else(|| {
+                    runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "DateTime::setTimezone()",
+                            format!(
+                                "timezone {timezone_name} is not implemented in the current subset"
+                            ),
+                        ),
+                    )
+                })?;
+                self.assign_datetime_object_state(&object, timestamp, timezone, span)?;
+                Ok(Value::Object(object))
             }
             "gettimestamp" => {
                 expect_expr_arity("DateTime::getTimestamp", args.len(), 0, span)?;
@@ -48204,6 +48291,14 @@ impl Interpreter {
                 }
                 Ok(Value::Array(traits))
             }
+            "getconstructor" => {
+                expect_expr_arity("ReflectionClass::getConstructor", args.len(), 0, span)?;
+                if !self.reflection_class_has_method(&state, "__construct") {
+                    return Ok(Value::Null);
+                }
+                let method = self.resolve_reflection_method_target(&state, "__construct", span)?;
+                self.create_reflection_method_object(method, span)
+            }
             "hasconstant" => {
                 expect_expr_arity("ReflectionClass::hasConstant", args.len(), 1, span)?;
                 let value = self.evaluate(&args[0], caller_scope)?;
@@ -48257,18 +48352,12 @@ impl Interpreter {
             "hasmethod" => {
                 expect_expr_arity("ReflectionClass::hasMethod", args.len(), 1, span)?;
                 let value = self.evaluate(&args[0], caller_scope)?;
-                let Value::String(method) = value else {
-                    return Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            "ReflectionClass::hasMethod",
-                            format!(
-                                "method argument must be string in the current subset, got {}",
-                                value.type_name()
-                            ),
-                        ),
-                    ));
-                };
+                let method = reflection_scalar_string_argument(
+                    "ReflectionClass::hasMethod",
+                    "name",
+                    value,
+                    span,
+                )?;
                 Ok(Value::Bool(
                     self.reflection_class_has_method(&state, &method),
                 ))
@@ -49677,6 +49766,12 @@ impl Interpreter {
                         .iter()
                         .filter(|param| param.default.is_none() && !param.is_variadic)
                         .count() as i64,
+                ))
+            }
+            "isvariadic" => {
+                expect_expr_arity("ReflectionFunction::isVariadic", args.len(), 0, span)?;
+                Ok(Value::Bool(
+                    state.params.iter().any(|param| param.is_variadic),
                 ))
             }
             "getstaticvariables" => {
@@ -77393,6 +77488,7 @@ impl Interpreter {
                 return Ok(Value::Bool(false));
             }
             let realpath_entry = self.bounded_realpath_entry_for_local_path(&filesystem_path);
+            let existed_before_open = filesystem_path.exists();
             let file = match fs::OpenOptions::new()
                 .read(stream_mode.readable)
                 .write(stream_mode.writable)
@@ -77415,6 +77511,15 @@ impl Interpreter {
             };
             if let Some((resolved, metadata)) = realpath_entry {
                 self.cache_realpath_entry(resolved, &metadata);
+            }
+            if stream_mode.create && !existed_before_open {
+                self.set_bounded_unix_permissions(
+                    &filesystem_path,
+                    self.effective_umask_mode(0o666),
+                    "fopen",
+                    span,
+                )?;
+                self.clear_stat_cache_filesystem_path(&filesystem_path);
             }
             let mut stream = FileStream {
                 file,
@@ -78421,6 +78526,14 @@ impl Interpreter {
             )?;
             return Ok(Value::Bool(false));
         }
+        if metadata.is_none() {
+            self.set_bounded_unix_permissions(
+                &filesystem_path,
+                self.effective_umask_mode(0o666),
+                "touch",
+                span,
+            )?;
+        }
         self.clear_stat_cache_filesystem_path(&filesystem_path);
         self.cache_bounded_realpath_entry_for_local_path(&filesystem_path);
         Ok(Value::Bool(true))
@@ -78439,6 +78552,39 @@ impl Interpreter {
             )
         })?;
         Ok(Value::String(path))
+    }
+
+    fn call_umask(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if args.len() > 1 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "umask()",
+                    ArityExpectation::Between { min: 0, max: 1 },
+                    args.len(),
+                ),
+            ));
+        }
+        let previous = self.current_umask.unwrap_or(PHP_DEFAULT_REQUEST_UMASK);
+        match args.first() {
+            None | Some(Value::Null) => {}
+            Some(Value::Int(mask)) => {
+                self.current_umask = Some(mask & 0o777);
+            }
+            Some(other) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "umask()",
+                        format!(
+                            "mask argument must be int or null in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+        }
+        Ok(Value::Int(previous))
     }
 
     fn call_tempnam(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -78726,6 +78872,7 @@ impl Interpreter {
         } else {
             options.truncate(true);
         }
+        let existed_before_open = filesystem_path.exists();
         let mut file = match options.open(&filesystem_path) {
             Ok(file) => file,
             Err(error) => {
@@ -78745,6 +78892,14 @@ impl Interpreter {
                 span,
             )?;
             return Ok(Value::Bool(false));
+        }
+        if !existed_before_open {
+            self.set_bounded_unix_permissions(
+                &filesystem_path,
+                self.effective_umask_mode(0o666),
+                "file_put_contents",
+                span,
+            )?;
         }
         self.clear_stat_cache_filesystem_path(&filesystem_path);
         self.cache_bounded_realpath_entry_for_local_path(&filesystem_path);
@@ -79199,7 +79354,12 @@ impl Interpreter {
         };
         match result {
             Ok(()) => {
-                self.set_bounded_unix_permissions(&filesystem_path, mode, "mkdir", span)?;
+                self.set_bounded_unix_permissions(
+                    &filesystem_path,
+                    self.effective_umask_mode(mode),
+                    "mkdir",
+                    span,
+                )?;
                 self.clear_stat_cache_filesystem_path(&filesystem_path);
                 self.cache_bounded_realpath_entry_for_local_path(&filesystem_path);
                 Ok(Value::Bool(true))
@@ -79213,6 +79373,13 @@ impl Interpreter {
                 }
                 Ok(Value::Bool(false))
             }
+        }
+    }
+
+    fn effective_umask_mode(&self, mode: i64) -> i64 {
+        match self.current_umask {
+            Some(mask) => mode & !mask,
+            None => mode,
         }
     }
 
@@ -84618,6 +84785,7 @@ impl Interpreter {
             "getservbyname" => call_getservbyname(&args, span),
             "getservbyport" => call_getservbyport(&args, span),
             "get_current_user" => call_get_current_user(&args, self.main_source_file.as_deref(), span),
+            "umask" => self.call_umask(&args, span),
             "getmypid" => call_getmypid(&args, span),
             "php_uname" => call_php_uname(&args, span),
             "php_sapi_name" => call_php_sapi_name(&args, span),
@@ -93846,6 +94014,12 @@ impl Interpreter {
                     }));
                 }
             }
+            if matches!(
+                (&left, &right),
+                (Value::Object(_), Value::Null) | (Value::Null, Value::Object(_))
+            ) {
+                return Ok(Value::Bool(matches!(op, BinaryOp::Ne)));
+            }
         }
 
         if let Some(result) =
@@ -101276,6 +101450,10 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
         ),
         "connection_aborted" | "connection_status" => ("int", vec![]),
         "get_current_user" => ("string", vec![]),
+        "umask" => (
+            "int",
+            vec![reflection_internal_optional_null_param("mask", "?int")],
+        ),
         "getmypid" => ("int|false", vec![]),
         "php_uname" => (
             "string",
@@ -101626,6 +101804,35 @@ fn reflection_scalar_name_argument(value: Value, span: Span) -> CompileResult<St
     value
         .try_echo_string()
         .map_err(|error| runtime_error(span, error))
+}
+
+fn reflection_scalar_string_argument(
+    function: &'static str,
+    parameter: &'static str,
+    value: Value,
+    span: Span,
+) -> CompileResult<String> {
+    match value.php_scalar_string_bytes() {
+        Some(bytes) => String::from_utf8(bytes).map_err(|_| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{function}()"),
+                    format!("Argument (${parameter}) must be valid UTF-8 in the current subset"),
+                ),
+            )
+        }),
+        None => Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                format!("{function}()"),
+                format!(
+                    "Argument (${parameter}) must be scalar string-convertible in the current subset, got {}",
+                    value.type_name()
+                ),
+            ),
+        )),
+    }
 }
 
 fn reflection_class_constant_modifier_mask(constant: &ReflectionClassConstantState) -> i64 {
@@ -105326,6 +105533,7 @@ fn is_builtin(name: &str) -> bool {
             | "getservbyname"
             | "getservbyport"
             | "get_current_user"
+            | "umask"
             | "getmypid"
             | "php_uname"
             | "php_sapi_name"
@@ -115990,6 +116198,51 @@ fn php_crc32_bytes(bytes: &[u8]) -> i64 {
         }
     }
     i64::from(!crc)
+}
+
+fn php_hash_crc32_digest_bytes(bytes: &[u8]) -> [u8; 4] {
+    let mut crc = 0xffff_ffffu32;
+    for byte in bytes {
+        crc ^= u32::from(*byte) << 24;
+        for _ in 0..8 {
+            crc = if crc & 0x8000_0000 == 0 {
+                crc << 1
+            } else {
+                (crc << 1) ^ 0x04c1_1db7
+            };
+        }
+    }
+    (!crc).to_le_bytes()
+}
+
+fn php_hash_crc32b_digest_bytes(bytes: &[u8]) -> [u8; 4] {
+    let mut crc = 0xffff_ffffu32;
+    for byte in bytes {
+        crc ^= u32::from(*byte);
+        for _ in 0..8 {
+            crc = if crc & 1 == 0 {
+                crc >> 1
+            } else {
+                (crc >> 1) ^ 0xedb8_8320
+            };
+        }
+    }
+    (!crc).to_be_bytes()
+}
+
+fn php_hash_crc32c_digest_bytes(bytes: &[u8]) -> [u8; 4] {
+    let mut crc = 0xffff_ffffu32;
+    for byte in bytes {
+        crc ^= u32::from(*byte);
+        for _ in 0..8 {
+            crc = if crc & 1 == 0 {
+                crc >> 1
+            } else {
+                (crc >> 1) ^ 0x82f6_3b78
+            };
+        }
+    }
+    (!crc).to_be_bytes()
 }
 
 fn call_levenshtein(args: &[Value], span: Span) -> CompileResult<Value> {
@@ -131030,9 +131283,15 @@ enum PhpHashAlgorithm {
     Sha512_224,
     Sha512_256,
     Sha512,
+    Crc32,
+    Crc32b,
+    Crc32c,
 }
 
 const PHP_HASH_ALGORITHM_NAMES: &[&str] = &[
+    "md2",
+    "md4",
+    "md5",
     "sha1",
     "sha224",
     "sha256",
@@ -131040,6 +131299,56 @@ const PHP_HASH_ALGORITHM_NAMES: &[&str] = &[
     "sha512/224",
     "sha512/256",
     "sha512",
+    "sha3-224",
+    "sha3-256",
+    "sha3-384",
+    "sha3-512",
+    "ripemd128",
+    "ripemd160",
+    "ripemd256",
+    "ripemd320",
+    "whirlpool",
+    "tiger128,3",
+    "tiger160,3",
+    "tiger192,3",
+    "tiger128,4",
+    "tiger160,4",
+    "tiger192,4",
+    "snefru",
+    "snefru256",
+    "gost",
+    "gost-crypto",
+    "adler32",
+    "crc32",
+    "crc32b",
+    "crc32c",
+    "fnv132",
+    "fnv1a32",
+    "fnv164",
+    "fnv1a64",
+    "joaat",
+    "murmur3a",
+    "murmur3c",
+    "murmur3f",
+    "xxh32",
+    "xxh64",
+    "xxh3",
+    "xxh128",
+    "haval128,3",
+    "haval160,3",
+    "haval192,3",
+    "haval224,3",
+    "haval256,3",
+    "haval128,4",
+    "haval160,4",
+    "haval192,4",
+    "haval224,4",
+    "haval256,4",
+    "haval128,5",
+    "haval160,5",
+    "haval192,5",
+    "haval224,5",
+    "haval256,5",
 ];
 
 const PHP_HASH_HMAC_ALGORITHM_NAMES: &[&str] = &[
@@ -131211,6 +131520,9 @@ fn php_hash_algorithm(name: &str) -> Option<PhpHashAlgorithm> {
         "sha512/224" | "sha512-224" => Some(PhpHashAlgorithm::Sha512_224),
         "sha512/256" | "sha512-256" => Some(PhpHashAlgorithm::Sha512_256),
         "sha512" => Some(PhpHashAlgorithm::Sha512),
+        "crc32" => Some(PhpHashAlgorithm::Crc32),
+        "crc32b" => Some(PhpHashAlgorithm::Crc32b),
+        "crc32c" => Some(PhpHashAlgorithm::Crc32c),
         _ => None,
     }
 }
@@ -131224,6 +131536,9 @@ fn php_hash_digest_bytes(algorithm: PhpHashAlgorithm, bytes: &[u8]) -> Vec<u8> {
         PhpHashAlgorithm::Sha512_224 => Sha512_224::digest(bytes).to_vec(),
         PhpHashAlgorithm::Sha512_256 => Sha512_256::digest(bytes).to_vec(),
         PhpHashAlgorithm::Sha512 => Sha512::digest(bytes).to_vec(),
+        PhpHashAlgorithm::Crc32 => php_hash_crc32_digest_bytes(bytes).to_vec(),
+        PhpHashAlgorithm::Crc32b => php_hash_crc32b_digest_bytes(bytes).to_vec(),
+        PhpHashAlgorithm::Crc32c => php_hash_crc32c_digest_bytes(bytes).to_vec(),
     }
 }
 

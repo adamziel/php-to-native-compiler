@@ -3305,7 +3305,7 @@
   `get_include_path`, `set_include_path`, `min`, `rand`, `mt_rand`,
   `getrandmax`, `mt_getrandmax`, `srand`, `mt_srand`, `random_int`,
   `random_bytes`, `lcg_value`, `array_rand`, `uniqid`,
-  `crypt`, `hash`, `hash_algos`, `hash_hmac_algos`, `hash_hmac`, `hash_equals`, `md5`, `md5_file`, `get_current_user`, `getmypid`, `isset`, `empty`, `count`, `sizeof`, `compact`, `define`, `constant`, `defined`,
+  `crypt`, `hash`, `hash_algos`, `hash_hmac_algos`, `hash_hmac`, `hash_equals`, `md5`, `md5_file`, `get_current_user`, `umask`, `getmypid`, `isset`, `empty`, `count`, `sizeof`, `compact`, `define`, `constant`, `defined`,
   `array_key_exists`, `key_exists`, `array_key_first`, `array_key_last`, `current`,
   `array_is_list`, `array_values`, `array_keys`, `array_rand`, `array_reverse`, `array_slice`, `array_chunk`,
   `array_pad`, `array_merge`, `array_replace`, `array_combine`,
@@ -3955,9 +3955,11 @@
   unsupported.
   `hash($algo, $data, $binary = false, $options = [])` supports scalar/null
   string-convertible data for `sha1`, `sha224`, `sha256`, `sha384`,
-  `sha512/224`, `sha512/256`, and `sha512`, returning lowercase hex output or
-  raw binary-string output when the binary flag is truthy. `hash_algos()`
-  returns that bounded algorithm list.
+  `sha512/224`, `sha512/256`, `sha512`, `crc32`, `crc32b`, and `crc32c`,
+  returning lowercase hex output or raw binary-string output when the binary
+  flag is truthy. `hash_algos()` returns the PHP 8.2 algorithm metadata list
+  used by the public hash PHPT rows, though execution remains bounded to the
+  named SHA and CRC algorithms.
   `hash_hmac_algos()` returns the bounded PHP cryptographic HMAC algorithm
   metadata list used by the public hash PHPT row; only `hash_hmac('sha256',
   ...)` execution is currently implemented from that list.
@@ -3968,7 +3970,7 @@
   `hash_equals($known_string, $user_string)` supports strict string and binary
   string operands, constant-work same-length byte comparison, and PHP-shaped
   type diagnostics for non-string operands.
-  Hash algorithms outside that bounded SHA set, non-empty `hash()` options
+  Hash algorithms outside that bounded SHA/CRC execution set, non-empty `hash()` options
   arrays, streaming hash contexts, `hash_hmac()` execution for algorithms
   beyond SHA-256, `hash_hmac()` raw binary output, exact time/entropy behavior,
   cryptographic guarantees for generated IDs, array/object/resource coercions
@@ -5333,7 +5335,13 @@
   `lstat()`, `fileperms()`, `chmod()`, `chown()`, `chgrp()`, `is_executable()`,
   `file_exists()`, `filesize()`, `is_dir()`, `is_file()`, `is_readable()`,
   `is_writable()`, `is_link()`, `disk_free_space()`/`diskfreespace()`, and
-  `disk_total_space()` over host-local filesystem metadata. This slice
+  `disk_total_space()` over host-local filesystem metadata. This slice also
+  supports request-local `umask($mask = null)` metadata for the reached PHPT
+  rows: it returns the previous mask, accepts integer masks or `null`, exposes
+  dynamic-call and `ReflectionFunction` metadata, and applies the current mask
+  to newly created local files/directories through `fopen()`,
+  `file_put_contents()`, `touch()`, and `mkdir()` without changing the host
+  process umask. This slice
   intentionally keeps stream
   wrappers other
   than local `file://`, sockets and actual network transport resources,
@@ -5642,10 +5650,18 @@
   `true` for the bounded timezone identifiers used by the current date PHPT
   subset, updates `date_default_timezone_get()` and date/time formatting state,
   and returns `false` with a PHP-shaped notice for unknown identifiers.
+  Mutable `DateTime` objects support bounded `format()`, `getTimestamp()`,
+  `setTimestamp()`, `modify()`, `getOffset()`, `getTimezone()`, and
+  `setTimezone(DateTimeZone $timezone)` behavior over the same bounded
+  timezone table. Procedural `date_create()`, `date_format()`,
+  `date_timestamp_get()`, `date_timestamp_set()`, `date_offset_get()`, and
+  `date_timezone_get()` share that object state.
   `date.timezone` PHPT INI overrides seed the same bounded timezone state,
   including PHPT-style trailing semicolon syntax. Full timezone database
-  validation, all historical transition rules, exact diagnostics, and native
-  lowering remain unsupported.
+  validation, constructor timezone arguments beyond the current single time
+  argument, `DateTimeImmutable`, broad `DateTimeInterface` parity, all
+  historical transition rules, exact diagnostics, and native lowering remain
+  unsupported.
   `header($header, $replace = true, $response_code = 0)` accepts a string
   header line plus optional bool replacement flag and optional integer response
   code, records the raw header line in deterministic in-process CLI request
@@ -7841,7 +7857,7 @@
   an already-lowerable string value with a uniform known answer in the current
   documented builtin table: documented callable builtins, including
   `strtolower`, `strtoupper`, `trim`, `ltrim`, `rtrim`, `strncmp`, `strncasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`, `strspn`, `strcspn`, `strpbrk`, `strpos`, `stripos`, `strrpos`, `strripos`, `strstr`, `strchr`, `stristr`, `strtok`, `substr`, `substr_replace`, `substr_compare`, `substr_count`, `similar_text`, `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`,
-  `error_reporting`, `min`, `rand`, `uniqid`, `hash`, `hash_algos`, `hash_hmac`, `md5`, `md5_file`, `get_current_user`, `getmypid`, `basename`, `dirname`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`, `str_getcsv`, `parse_str`,
+  `error_reporting`, `min`, `rand`, `uniqid`, `hash`, `hash_algos`, `hash_hmac`, `md5`, `md5_file`, `get_current_user`, `umask`, `getmypid`, `basename`, `dirname`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`, `str_getcsv`, `parse_str`,
   `file_put_contents`, `readfile`, `unlink`, `mkdir`, `rmdir`, `copy`, `rename`, `chdir`, `scandir`, `stat`, `lstat`, `fileperms`, `chmod`, `chown`, `chgrp`,
   `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_params`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `stream_context_set_params`, `fwrite`, `fscanf`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fflush`, `ftruncate`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`,
   `disk_free_space`, `diskfreespace`, `disk_total_space`, `realpath`, `realpath_cache_get`, `realpath_cache_size`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_executable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`,
@@ -8253,7 +8269,7 @@
   `printf`, `fprintf`, `sprintf`, `vsprintf`, `vprintf`, `vfprintf`, `call_user_func`, `call_user_func_array`, `implode`, `basename`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`,
   `file_put_contents`, `readfile`, `unlink`, `mkdir`, `rmdir`, `copy`, `rename`, `chdir`, `scandir`, `stat`, `lstat`, `fileperms`, `chmod`, `chown`, `chgrp`,
   `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_params`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `stream_context_set_params`, `fwrite`, `fscanf`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fflush`, `ftruncate`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`, `disk_free_space`, `diskfreespace`, `disk_total_space`, `clearstatcache`, `realpath`, `realpath_cache_get`, `realpath_cache_size`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_executable`, `is_link`, `abs`,
-  `number_format`, `microtime`, `ini_get`, `min`, `get_current_user`, `getmypid`, `count`, `compact`,
+  `number_format`, `microtime`, `ini_get`, `min`, `get_current_user`, `umask`, `getmypid`, `count`, `compact`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `current`, `next`, `array_is_list`,
   `array_values`, `array_keys`, `array_reverse`, `array_slice`, `array_chunk`,
   `array_pad`, `array_merge`, `array_replace`, `array_combine`, `define`,
@@ -8503,7 +8519,7 @@
   `str_starts_with`, `str_ends_with`, `strspn`, `strcspn`, `strpbrk`, `strpos`, `stripos`, `strrpos`, `strripos`, `strstr`, `strchr`, `stristr`, `strtok`, `substr`, `substr_replace`, `substr_compare`, `substr_count`, `similar_text`, `str_replace`, `str_getcsv`, `parse_str`, `printf`, `fprintf`, `sprintf`, `vsprintf`, `vprintf`, `vfprintf`,
   `call_user_func`, `call_user_func_array`, `implode`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`,
   `file_put_contents`, `readfile`, `unlink`, `mkdir`, `rmdir`, `copy`, `rename`, `chdir`, `scandir`, `stat`, `lstat`, `fileperms`, `chmod`, `chown`, `chgrp`,
-  `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_params`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `stream_context_set_params`, `fwrite`, `fscanf`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fflush`, `ftruncate`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`, `disk_free_space`, `diskfreespace`, `disk_total_space`, `clearstatcache`, `realpath`, `realpath_cache_get`, `realpath_cache_size`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_executable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_length`, `ob_list_handlers`, `ob_get_status`, `ob_get_clean`, `ob_get_flush`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `date_default_timezone_set`, `abs`, `number_format`, `microtime`, `ini_get`, `min`, `get_current_user`, `isset`, `empty`, `count`,
+  `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_params`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `stream_context_set_params`, `fwrite`, `fscanf`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fflush`, `ftruncate`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`, `disk_free_space`, `diskfreespace`, `disk_total_space`, `clearstatcache`, `realpath`, `realpath_cache_get`, `realpath_cache_size`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_executable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_length`, `ob_list_handlers`, `ob_get_status`, `ob_get_clean`, `ob_get_flush`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `date_default_timezone_set`, `abs`, `number_format`, `microtime`, `ini_get`, `min`, `get_current_user`, `umask`, `isset`, `empty`, `count`,
   `define`, `constant`,
   `defined`, `array_key_exists`, `array_key_first`, `array_key_last`,
   `current`, `array_is_list`, `array_values`, `array_keys`, `array_reverse`,
@@ -8917,10 +8933,10 @@
   subset as the builtin section above; direct native `php_sapi_name(...)`
   calls still reject under the function-call boundary, while native
   function-table introspection recognizes the name.
-  `hash` and `hash_algos` accept the same bounded SHA algorithm subset as the
-  builtin section above; direct native calls still reject under the
-  function-call boundary, while native function-table introspection recognizes
-  the names.
+  `hash` accepts the same bounded SHA/CRC execution subset and `hash_algos`
+  returns the same PHP 8.2 metadata list as the builtin section above; direct
+  native calls still reject under the function-call boundary, while native
+  function-table introspection recognizes the names.
   `abs` accepts the same current integer and finite-float subset as the builtin
   section above; direct native `abs(...)` calls still reject under the
   function-call boundary, while native function-table introspection recognizes
@@ -9142,6 +9158,11 @@
   until native source-file metadata, account lookup policy, process/request
   identity, references/copy-on-write, and exact native diagnostics exist,
   while native function-table introspection recognizes the name.
+  `umask` accepts the same request-local metadata subset as the builtin
+  section above; direct native `umask(...)` calls still reject under the
+  function-call boundary until native filesystem creation state, process-mask
+  policy, references/copy-on-write, and exact native diagnostics exist, while
+  native function-table introspection recognizes the name.
   `clearstatcache` accepts the same bounded stat-cache mutation slice
   as the builtin section above; direct native `clearstatcache(...)` calls stop
   at a dedicated stat-cache mutation boundary until native filesystem metadata
@@ -9268,9 +9289,10 @@
   misses, and supports `getName()`, `getShortName()`, `isInterface()`,
   `isTrait()`, `isInstantiable()`, `getParentClass()`,
   `getInterfaceNames()`, `getInterfaces()`, `getTraitNames()`, `getTraits()`,
-  `hasMethod($name)`, `getFileName()`,
+  `hasMethod($name)`, `getConstructor()`, `getFileName()`,
   `getStartLine()`, `getEndLine()`, and `getDocComment()` over the current
-  metadata tables. ReflectionClass objects expose the bounded public `name`
+  metadata tables. `hasMethod($name)` accepts scalar string-convertible names
+  in this bounded path. ReflectionClass objects expose the bounded public `name`
   property used by PHP's debug output and simple metadata reads. For declared
   user classes, interfaces, and traits loaded
   from a known CLI/fixture or include path, `getFileName()` returns that path,
@@ -9346,8 +9368,9 @@
   object for declared user functions named by string. It supports
   `getName()`, `getFileName()`, `getStartLine()`, `getEndLine()`,
   `getDocComment()`, `getParameters()`, `getNumberOfParameters()`,
-  `getNumberOfRequiredParameters()`, `hasReturnType()`, `getReturnType()`,
-  `returnsReference()`, and `__toString()` over parsed user-function metadata.
+  `getNumberOfRequiredParameters()`, `isVariadic()`, `hasReturnType()`,
+  `getReturnType()`, `returnsReference()`, and `__toString()` over parsed
+  user-function metadata.
   `getFileName()`
   returns the current CLI/fixture source path for declarations loaded from a
   known file and `false` for source strings without one; line numbers come from
@@ -11194,7 +11217,8 @@
   declared user classes, interfaces, and traits. The executable method subset
   is `getName()`, `getShortName()`, `isInterface()`, `isTrait()`,
   `isInstantiable()`, `getParentClass()`, `getInterfaceNames()`,
-  `getInterfaces()`, `getTraitNames()`, `getTraits()`, `hasMethod($name)`, `getFileName()`,
+  `getInterfaces()`, `getTraitNames()`, `getTraits()`, `hasMethod($name)`,
+  `getConstructor()`, `getFileName()`,
   `getStartLine()`, `getEndLine()`, `getDocComment()`,
   `getMethod($name)`, `getMethods([$filter])`, `hasProperty($name)`,
   `getProperty($name)`, and
@@ -11211,7 +11235,7 @@
   `str_increment`, `str_decrement`, `trim`, `ltrim`, `rtrim`,
   `strcmp`, `strcasecmp`, `strncmp`, `strncasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`, `strpos`, `stripos`, `strrpos`, `strripos`,
   `substr`, `str_shuffle`, `printf`, `fprintf`, `sprintf`, `vprintf`, `vfprintf`, `implode`, `basename`, `dirname`, `number_format`, `defined`,
-  `function_exists`, `get_current_user`, `getmypid`, and `php_sapi_name`. Closure metadata is supported for
+  `function_exists`, `get_current_user`, `umask`, `getmypid`, and `php_sapi_name`. Closure metadata is supported for
   current closure values. The supported
   metadata methods are the name, file/start/end/doc-comment, parameter-list,
   return-type, by-reference-return, and stringification methods documented
@@ -11737,6 +11761,11 @@
   effective UID versus script-owner policy variants, account database changes
   during a request, exact diagnostics, and native lowering beyond
   function-table introspection
+- `umask()` behavior beyond the current request-local metadata slice:
+  process-wide host umask mutation, non-Unix permission parity, exact default
+  process mask discovery beyond the bounded initial `0022` value, creation
+  paths outside `fopen()`, `file_put_contents()`, `touch()`, and `mkdir()`,
+  exact diagnostics, and native lowering beyond function-table introspection
 - `abs()` behavior beyond the current integer and finite-float subset:
   integer-minimum overflow, numeric string coercion, bool/null coercion,
   array/object/resource operands, NaN/infinity behavior, exact diagnostics, and

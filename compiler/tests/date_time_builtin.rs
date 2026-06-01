@@ -295,3 +295,31 @@ echo count($tran), "|", $tran[6]["ts"], "|", $tran[6]["abbr"], "\n";
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);
 }
+
+#[test]
+fn datetime_mutable_timezone_metadata_matches_basic_rows() {
+    let execution = run_source(
+        r#"<?php
+date_default_timezone_set("Europe/London");
+$winter = new DateTime("2008-12-25 14:25:41");
+$summer = new DateTime("2008-07-02 14:25:41");
+echo "offsets=", $winter->getOffset() / 3600, "|", $summer->getOffset() / 3600, "\n";
+$object = new DateTime("2009-01-30 17:57:32");
+echo $object->getTimeZone()->getName(), "\n";
+date_default_timezone_set("America/New_York");
+$object = new DateTime("2009-01-30 17:57:32");
+echo $object->getTimeZone()->getName(), "\n";
+$returned = $object->setTimeZone(new DateTimeZone("America/Los_Angeles"));
+echo date_timezone_get($object)->getName(), "|";
+echo ($returned === $object ? "same" : "different"), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "offsets=0|1\nEurope/London\nAmerica/New_York\nAmerica/Los_Angeles|same\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}

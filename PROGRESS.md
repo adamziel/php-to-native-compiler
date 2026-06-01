@@ -1,6 +1,6 @@
 # PHP Native Compiler PHPT Progress
 
-Updated: 2026-06-01 21:39 CEST
+Updated: 2026-06-01 22:10 CEST
 
 Primary/public branch: `origin/master`
 Latest accepted public-score source:
@@ -67,6 +67,17 @@ warnings for missing, non-directory, or unreadable local paths before returning
 `git diff --check` passed, selected directory PHPT verification passed `4 / 4`,
 and the broader completed-worker smoke passed `17 / 17`. This is not a public
 score update until checkpoint validation and a full pinned PHPT gate complete.
+
+Local supervisor note: the next focused worker batch is integrated for 11
+additional target PHPT rows: `DateTime_getOffset_basic1.phpt`,
+`DateTime_getTimeZone_basic1.phpt`, `DateTime_setTimezone_basic1.phpt`,
+`crc32.phpt`, `hash_algos.phpt`, `ReflectionFunction_isVariadic_basic.phpt`,
+`ReflectionClass_getConstructor_basic.phpt`,
+`ReflectionClass_hasMethod_002.phpt`, `umask_basic.phpt`,
+`umask_variation1.phpt`, and `umask_variation2.phpt`. Focused Rust passed
+`24 / 24`, `cargo build -p phpc --bin phpc` passed, and selected PHPT
+verification passed `11 / 11`. This is not a public score update until
+checkpoint validation and a full pinned PHPT gate complete.
 
 Local supervisor note: the next worker-integrated focused source batch covers
 8 additional target PHPT rows: `substr.phpt`, `fread_error.phpt`,
