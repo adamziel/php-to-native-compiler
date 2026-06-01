@@ -48,6 +48,17 @@ Implemented:
   normalization and byte-invalid string option interactions remain
   unsupported.
 
+- Added the bounded `json_decode()` invalid UTF-8 flag row for byte strings
+  reached by PHPT fixtures. Invalid UTF-8 in the JSON input still returns
+  `null` and records `JSON_ERROR_UTF8` by default; with
+  `JSON_INVALID_UTF8_IGNORE` the decoder drops invalid byte sequences before
+  parsing, and with `JSON_INVALID_UTF8_SUBSTITUTE` it uses U+FFFD
+  replacement before parsing. Focused Rust coverage exercises scalar and list
+  inputs; selected PHPT proof covers
+  `ext/json/tests/json_decode_invalid_utf8.phpt`. Full Unicode normalization,
+  byte-for-byte invalid-location parity, and invalid UTF-8 interactions
+  outside the selected JSON string payload shapes remain unsupported.
+
 ## 2026-05-27
 
 Implemented:

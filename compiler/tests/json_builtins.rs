@@ -249,6 +249,43 @@ var_dump(json_encode($ps, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_LINE_TERMINATO
 }
 
 #[test]
+fn json_decode_invalid_utf8_ignore_and_substitute_flags() {
+    let execution = run_source(
+        "<?php\n\
+$one = \"\\\"a\\xb0b\\\"\";\n\
+var_dump(json_decode($one));\n\
+var_dump(json_decode($one, true, 512, JSON_INVALID_UTF8_IGNORE));\n\
+var_dump(bin2hex(json_decode($one, true, 512, JSON_INVALID_UTF8_SUBSTITUTE)));\n\
+$many = \"[\\\"\\xc1\\xc1\\\",\\\"a\\\"]\";\n\
+var_dump(json_decode($many, true, 512, JSON_INVALID_UTF8_IGNORE));\n\
+var_dump(array_map(function($item) { return bin2hex($item); }, json_decode($many, true, 512, JSON_INVALID_UTF8_SUBSTITUTE)));\n",
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "NULL\n",
+            "string(2) \"ab\"\n",
+            "string(10) \"61efbfbd62\"\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  string(0) \"\"\n",
+            "  [1]=>\n",
+            "  string(1) \"a\"\n",
+            "}\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  string(12) \"efbfbdefbfbd\"\n",
+            "  [1]=>\n",
+            "  string(2) \"61\"\n",
+            "}\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn json_validate_tracks_state_depth_flags_and_utf8() {
     let execution = run_source(
         "<?php\n\

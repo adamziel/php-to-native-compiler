@@ -28,7 +28,9 @@ rows `ext/json/tests/007.phpt`, `ext/json/tests/json_decode_error.phpt`,
 `ext/json/tests/json_last_error_error.phpt`, and
 `ext/json/tests/json_last_error_msg_error.phpt`, plus the bounded
 `INF`/`NAN` partial-output row `ext/json/tests/inf_nan_error.phpt` and
-line-terminator option row `ext/json/tests/json_encode_u2028_u2029.phpt`.
+line-terminator option row `ext/json/tests/json_encode_u2028_u2029.phpt`,
+plus decode-side invalid UTF-8 flags in
+`ext/json/tests/json_decode_invalid_utf8.phpt`.
 
 ## Semantic Gaps
 

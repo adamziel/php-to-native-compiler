@@ -124534,6 +124534,33 @@ fn json_control_character_token_position(input: &str, invalid_at: usize) -> usiz
     }
 }
 
+fn json_utf8_ignore_invalid(bytes: &[u8]) -> String {
+    let mut output = String::new();
+    let mut remaining = bytes;
+
+    while !remaining.is_empty() {
+        match std::str::from_utf8(remaining) {
+            Ok(valid) => {
+                output.push_str(valid);
+                break;
+            }
+            Err(error) => {
+                let valid_up_to = error.valid_up_to();
+                if valid_up_to > 0 {
+                    output.push_str(
+                        std::str::from_utf8(&remaining[..valid_up_to])
+                            .expect("valid prefix from Utf8Error should decode"),
+                    );
+                }
+                let skip = error.error_len().unwrap_or(remaining.len() - valid_up_to);
+                remaining = &remaining[valid_up_to.saturating_add(skip)..];
+            }
+        }
+    }
+
+    output
+}
+
 fn json_utf8_error_message_at(position: usize) -> String {
     format!(
         "{} near location 1:{}",
@@ -124921,6 +124948,13 @@ impl Interpreter {
             ));
         }
 
+        let assoc_arg = args.get(1);
+        let flags = args
+            .get(3)
+            .map(|value| php_internal_int_argument("json_decode()", 4, "flags", value, span))
+            .transpose()?
+            .unwrap_or(0);
+
         let mut input = match &args[0] {
             Value::Null => {
                 self.emit_display_diagnostic(
@@ -124938,6 +124972,12 @@ impl Interpreter {
             Value::String(value) => value.clone(),
             Value::BinaryString(value) => match std::str::from_utf8(value) {
                 Ok(value) => value.to_string(),
+                Err(_) if flags & PHP_JSON_INVALID_UTF8_IGNORE != 0 => {
+                    json_utf8_ignore_invalid(value)
+                }
+                Err(_) if flags & PHP_JSON_INVALID_UTF8_SUBSTITUTE != 0 => {
+                    String::from_utf8_lossy(value).into_owned()
+                }
                 Err(_) => {
                     self.set_json_last_error(
                         PHP_JSON_ERROR_UTF8,
@@ -124976,12 +125016,6 @@ impl Interpreter {
             return Ok(Value::Null);
         }
 
-        let assoc_arg = args.get(1);
-        let flags = args
-            .get(3)
-            .map(|value| php_internal_int_argument("json_decode()", 4, "flags", value, span))
-            .transpose()?
-            .unwrap_or(0);
         let assoc = if flags & PHP_JSON_OBJECT_AS_ARRAY != 0 {
             true
         } else {

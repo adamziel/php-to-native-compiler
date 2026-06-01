@@ -11543,8 +11543,9 @@ Unsupported code should fail with an explicit parse, runtime, or codegen error.
   associative decode mode, selected JSON constants, bigint-as-string decode,
   numeric-string encoding, unicode, line-terminator, and hex string escaping,
   pretty-print formatting, partial output for unsupported values plus
-  `INF`/`NAN`, validation depth and `JSON_INVALID_UTF8_IGNORE` checks,
-  request-local last-error state, bounded
+  `INF`/`NAN`, decode-side `JSON_INVALID_UTF8_IGNORE`/
+  `JSON_INVALID_UTF8_SUBSTITUTE`, validation depth and
+  `JSON_INVALID_UTF8_IGNORE` checks, request-local last-error state, bounded
   single-line decode error locations for depth/state/control/truncated-input
   failures, catchable `ValueError` diagnostics for invalid decode depth, and
   catchable `TypeError` diagnostics for extra arguments to
