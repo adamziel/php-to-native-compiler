@@ -276,6 +276,24 @@ rmdir($dir);
 }
 
 #[test]
+fn copy_reflection_marks_stream_context_parameter_optional() {
+    let execution = run_source(
+        r#"<?php
+$reflection = new ReflectionFunction("copy");
+foreach ($reflection->getParameters() as $parameter) {
+    echo $parameter->isOptional() ? "optional" : "required";
+    echo "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "required\nrequired\noptional\n");
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn readfile_supports_php_filename_coercion_include_path_and_display_warnings() {
     let fixture = TempFsFixture::new("readfile");
     let root = php_string(&fixture.root);

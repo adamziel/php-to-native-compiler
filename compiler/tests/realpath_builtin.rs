@@ -110,6 +110,37 @@ echo array_key_exists($resolved, realpath_cache_get()) ? "kept" : "cleared";
 }
 
 #[test]
+fn realpath_cache_get_seeds_current_source_directory_entry() {
+    let execution = run_source_with_source_file(
+        r#"<?php
+$cache = realpath_cache_get();
+$dir = __DIR__;
+echo array_key_exists($dir, $cache) ? "dir-cached" : "dir-missing";
+$entry = $cache[$dir];
+echo "|";
+echo $entry["is_dir"] === true ? "dir" : "not-dir";
+echo "|";
+echo $entry["realpath"] === $dir ? "same" : "different";
+echo "|";
+echo is_float($entry["key"]) ? "float-key" : "other-key";
+echo "|";
+echo realpath_cache_size() > 0 ? "sized" : "empty";
+clearstatcache(true);
+echo "|";
+echo realpath_cache_size() === 0 ? "cleared" : "still-sized";
+"#,
+        fixture_source_file(),
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "dir-cached|dir|same|float-key|sized|cleared"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn clearstatcache_true_with_filename_invalidates_one_realpath_cache_entry() {
     let execution = run_source_with_source_file(
         r#"<?php

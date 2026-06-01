@@ -5115,7 +5115,9 @@
   `open_basedir` checks that return `false` and emit PHP-shaped display
   warnings for denied paths; `copy()` rejects directory sources, existing
   directory destinations, and same-source/destination local file paths with
-  PHP-style `false`/warning behavior while preserving the source file; and
+  PHP-style `false`/warning behavior while preserving the source file;
+  `ReflectionFunction("copy")` exposes the bounded three-parameter metadata
+  shape with optional stream-context parameter for this local helper; and
   `scandir()` returns a PHP array for local
   directories with `SCANDIR_SORT_ASCENDING`, `SCANDIR_SORT_DESCENDING`, or
   `SCANDIR_SORT_NONE`. The same bounded local path slice includes `stat()`,
@@ -5187,9 +5189,9 @@
   full PHP stat-cache support: cached metadata for
   `file_exists()`, `is_file()`, `is_dir()`, `is_readable()`, `is_writable()`,
   `is_link()`, `fstat()`, and directory/stream wrappers, realpath-cache
-  entries from filesystem operations beyond successful `realpath()`, local
-  `file_get_contents()`, pre-existing local `fopen()` target paths, and
-  successful local include/require reads,
+  entries from filesystem operations beyond the initial main source directory,
+  successful `realpath()`, local `file_get_contents()`, pre-existing local
+  `fopen()` target paths, and successful local include/require reads,
   broader scalar coercions, exact
   `ValueError`/`TypeError`/deprecation text, include_path/open_basedir policy,
   stream-wrapper cache interaction, cross-request cache state, partial-output
@@ -5202,8 +5204,10 @@
   with `key`, `is_dir`, `realpath`, and `expires` fields. Successful local
   `file_get_contents()` reads, local `fopen()` calls for paths that existed
   before opening, and successful local include/require reads also populate one
-  bounded cache entry for the resolved target path. `clearstatcache(false)`
-  leaves those entries intact,
+  bounded cache entry for the resolved target path. Interpreter startup seeds
+  one bounded source-directory entry when the current `phpc run` source file
+  has local metadata, matching the deterministic CLI `realpath_cache_get()`
+  shape. `clearstatcache(false)` leaves those entries intact,
   `clearstatcache(true, $filename)` removes only
   the non-empty exact matching cached resolved-path key, and
   `clearstatcache(true)` clears all bounded realpath entries.
@@ -5217,10 +5221,11 @@
   filesystem support: symlink policy can differ from PHP/host combinations,
   exact warning plus `false` fidelity, include-path lookup, `open_basedir`,
   stream wrappers, non-UTF-8 paths, realpath-cache ancestor entries, cache
-  entries from filesystem operations beyond successful `realpath()`, local
-  `file_get_contents()`, pre-existing local `fopen()` target paths, and
-  successful local include/require reads, exact realpath-cache `key` hash
-  values and expiration policy, exact
+  entries from filesystem operations beyond the initial main source directory,
+  successful `realpath()`, local `file_get_contents()`, pre-existing local
+  `fopen()` target paths, and successful local include/require reads, exact
+  realpath-cache `key` hash values beyond the bounded floating placeholder
+  and exact expiration policy, exact
   `realpath_cache_size()` byte accounting, TOCTOU semantics, host filesystem coupling,
   partial-output behavior, and native lowering remain unsupported. Native
   function-table introspection can
@@ -5230,10 +5235,12 @@
   backend selection and direct `realpath_cache_get()`/`realpath_cache_size()`
   calls remain rejected by the generic native function-call boundary.
   `getcwd()` accepts no arguments and returns the process current working
-  directory as a UTF-8 string. This is a bounded CLI/request-state filesystem
-  slice: directory changes through the bounded local `chdir()` helper, failure
-  returning `false`, non-UTF-8 working directory paths, virtualized SAPI
-  working directories,
+  directory as a UTF-8 string, or `false` when the host reports that the
+  process current directory is no longer available. This is a bounded
+  CLI/request-state filesystem slice: directory changes through the bounded
+  local `chdir()` helper, invalid-CWD false recovery for removed host
+  directories, non-UTF-8 working directory paths, virtualized SAPI working
+  directories,
   include-path interaction, `open_basedir`, exact warnings, and native
   lowering remain unsupported. Direct native `getcwd()` calls stop at a
   dedicated current-directory codegen boundary before argument lowering or
@@ -9075,7 +9082,7 @@
   `rtrim`, `strcasecmp`, `strncmp`, `strncasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`,
   `strpos`, `stripos`, `strrpos`, `strripos`, `substr`, `str_shuffle`, `printf`, `fprintf`, `sprintf`, `vprintf`, `vfprintf`, `implode`, `basename`, `dirname`, `number_format`, `defined`,
   `function_exists`, `is_array`, `is_object`, `is_string`, `is_scalar`,
-  `count`, `sizeof`, `array_key_exists`, `is_callable`, `get_current_user`, `getlastmod`, `getmyinode`, `getmyuid`, `getmygid`, `getmypid`, and `php_sapi_name`, exposes
+  `count`, `sizeof`, `array_key_exists`, `is_callable`, `copy`, `get_current_user`, `getlastmod`, `getmyinode`, `getmyuid`, `getmygid`, `getmypid`, and `php_sapi_name`, exposes
   their name, false file/start/end/doc-comment metadata, current
   parameter/default metadata, return type, and by-reference-return predicate,
   and executes them through `invoke()`/`invokeArgs()`.
@@ -10876,7 +10883,7 @@
   `str_increment`, `str_decrement`, `trim`, `ltrim`, `rtrim`,
   `strcasecmp`, `strncmp`, `strncasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`, `strpos`, `stripos`, `strrpos`, `strripos`,
   `substr`, `str_shuffle`, `printf`, `fprintf`, `sprintf`, `vprintf`, `vfprintf`, `implode`, `basename`, `dirname`, `number_format`, `defined`,
-  `function_exists`, `get_current_user`, `getlastmod`, `getmyinode`, `getmyuid`, `getmygid`, `getmypid`, and `php_sapi_name`. Closure metadata is supported for
+  `function_exists`, `copy`, `get_current_user`, `getlastmod`, `getmyinode`, `getmyuid`, `getmygid`, `getmypid`, and `php_sapi_name`. Closure metadata is supported for
   current closure values. The supported
   metadata methods are the name, file/start/end/doc-comment, parameter-list,
   return-type, by-reference-return, and stringification methods documented
@@ -11266,16 +11273,19 @@
 - `realpath()` behavior beyond the current one-string local path resolution
   slice: symlink policy differences, exact warning plus `false` fidelity,
   include-path lookup, `open_basedir`, stream wrappers, non-UTF-8 paths,
-  portable permissions, stat-cache behavior, TOCTOU semantics, broad scalar
-  coercions, exact diagnostics, and native lowering beyond the dedicated
-  direct-call rejection plus function-table introspection
+  portable permissions, stat-cache behavior beyond the bounded request-local
+  entries, exact realpath-cache hash/size accounting, invalid-CWD path
+  normalization outside `.`/`./`, TOCTOU semantics, broad scalar coercions,
+  exact diagnostics, and native lowering beyond the dedicated direct-call
+  rejection plus function-table introspection
 - `is_dir()` behavior beyond the current one-string local path metadata slice:
   include-path lookup, stream wrappers, symlink/canonicalization policy,
   permission/open_basedir behavior, non-string coercions, stat-cache behavior,
   exact diagnostics, and native lowering beyond function-table introspection
 - `getcwd()` behavior beyond the current no-argument UTF-8 process-current-dir
-  slice: `chdir()` state mutation, failure returning `false`, non-UTF-8 host
-  paths, SAPI-specific working directory policy, include-path interaction,
+  slice: `chdir()` state mutation beyond the bounded local helper, failure
+  modes beyond removed-current-directory false recovery, non-UTF-8 host paths,
+  SAPI-specific working directory policy, include-path interaction,
   `open_basedir`, process/request cwd state for generated code,
   references/copy-on-write, exact diagnostics, and native lowering beyond the
   dedicated direct-call rejection plus function-table introspection

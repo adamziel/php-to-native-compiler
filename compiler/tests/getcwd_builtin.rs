@@ -42,6 +42,33 @@ echo is_dir($call()) ? "dir" : "missing";
 }
 
 #[test]
+fn getcwd_returns_false_after_current_directory_is_removed() {
+    let saved_cwd = std::env::current_dir().expect("test process has a current directory");
+    let execution = run_source(
+        r#"<?php
+$old = getcwd();
+$dir = sys_get_temp_dir() . "/phpc-invalid-cwd-" . uniqid();
+mkdir($dir);
+chdir($dir);
+rmdir($dir);
+var_dump(getcwd());
+var_dump(realpath(""));
+var_dump(realpath("."));
+var_dump(realpath("./"));
+chdir($old);
+"#,
+    );
+    std::env::set_current_dir(saved_cwd).expect("restore test process current directory");
+    let execution = execution.unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "bool(false)\nbool(false)\nstring(1) \".\"\nstring(1) \".\"\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn getcwd_rejects_arguments_in_current_subset() {
     let error = run_source("<?php\necho getcwd('/tmp');\n").unwrap_err();
 

@@ -17,6 +17,22 @@ Implemented:
   no stream-wrapper expansion, shell-backed rows, directory-open diagnostics,
   chmod/is_readable/is_writable/umask behavior, native stat ABI, or exact PHP
   diagnostic parity beyond the covered warning shape is claimed.
+- Added a second compact standard-filesystem PHPT slice for bounded realpath
+  cache and current-directory false recovery. `phpc run` now seeds the
+  request-local realpath cache with the main source directory, exposes a
+  PHP-shaped floating `key` placeholder in `realpath_cache_get()` entries,
+  returns `false` from `getcwd()` when the host current directory has been
+  removed, keeps `realpath("")` false, and preserves PHP's stable `"."`
+  result for `realpath(".")`/`realpath("./")` in that invalid-CWD shape.
+  Internal `ReflectionFunction("copy")` metadata now marks the stream-context
+  parameter optional. Focused proof covers
+  `ext/standard/tests/file/realpath_cache.phpt`,
+  `ext/standard/tests/file/realpath_bug77484.phpt`, and
+  `ext/standard/tests/file/bug66509.phpt`, plus Rust tests for each boundary.
+  Unsupported edges remain exact realpath cache hashing/byte accounting,
+  ancestor-cache breadth, cross-request cache state, non-local wrappers,
+  non-UTF-8 paths, broader invalid-CWD path normalization, SAPI cwd policy,
+  exact diagnostics, and native lowering.
 
 ## 2026-05-27
 

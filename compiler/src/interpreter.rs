@@ -11197,6 +11197,7 @@ impl Interpreter {
         if let Some(message) = timezone_startup_warning {
             interpreter.emit_startup_warning(message);
         }
+        interpreter.cache_main_source_directory_realpath_entry();
         interpreter.uploaded_file_paths =
             uploaded_file_paths_from_metadata_pairs(options.upload_files.as_deref().unwrap_or(""));
         interpreter.initialize_superglobals(
@@ -20836,6 +20837,20 @@ impl Interpreter {
         }
     }
 
+    fn cache_main_source_directory_realpath_entry(&mut self) {
+        let Some(source_file) = self.main_source_file.clone() else {
+            return;
+        };
+        let source_path = local_filesystem_metadata_path(&source_file);
+        let Some(source_dir) = source_path.parent() else {
+            return;
+        };
+        if source_dir.as_os_str().is_empty() {
+            return;
+        }
+        self.cache_bounded_realpath_entry_for_local_path(source_dir);
+    }
+
     fn realpath_cache_array(&self) -> PhpArray {
         let mut cache = PhpArray::new();
         let mut keys = self.realpath_cache.keys().cloned().collect::<Vec<_>>();
@@ -20845,7 +20860,7 @@ impl Interpreter {
                 continue;
             };
             let mut value = PhpArray::new();
-            value.insert("key", Value::Int(0));
+            value.insert("key", Value::Float(0.0));
             value.insert("is_dir", Value::Bool(entry.is_dir));
             value.insert("realpath", Value::String(entry.realpath.clone()));
             value.insert("expires", Value::Int(entry.expires));
@@ -86285,6 +86300,13 @@ impl Interpreter {
                             ));
                         }
 
+                        if path.is_empty() {
+                            return Ok(Value::Bool(false));
+                        }
+                        if (path == "." || path == "./") && std::env::current_dir().is_err() {
+                            return Ok(Value::String(".".to_string()));
+                        }
+
                         let filesystem_path = local_filesystem_metadata_path(path);
                         let Ok(metadata) = fs::metadata(&filesystem_path) else {
                             return Ok(Value::Bool(false));
@@ -86326,15 +86348,9 @@ impl Interpreter {
             }
             "getcwd" => {
                 expect_arity(name, &args, 0, span)?;
-                let path = std::env::current_dir().map_err(|error| {
-                    runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            "getcwd()",
-                            format!("current working directory lookup failed: {error}"),
-                        ),
-                    )
-                })?;
+                let Ok(path) = std::env::current_dir() else {
+                    return Ok(Value::Bool(false));
+                };
                 let path = path.into_os_string().into_string().map_err(|_| {
                     runtime_error(
                         span,
@@ -100323,6 +100339,14 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
             ],
         ),
         "connection_aborted" | "connection_status" => ("int", vec![]),
+        "copy" => (
+            "bool",
+            vec![
+                reflection_internal_param("from", "string"),
+                reflection_internal_param("to", "string"),
+                reflection_internal_optional_null_param("context", "?resource"),
+            ],
+        ),
         "get_current_user" => ("string", vec![]),
         "getlastmod" | "getmyinode" | "getmyuid" | "getmygid" => ("int|false", vec![]),
         "getmypid" => ("int|false", vec![]),
