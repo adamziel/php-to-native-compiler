@@ -2991,10 +2991,13 @@ until generated code has request storage beyond the null-only request-state ABI
 handle, SAPI population, `variables_order` policy, upload metadata,
 references/copy-on-write, and exact diagnostics. This avoids folding unassigned
 request bags as ordinary missing native variables.
-`abs()` is an interpreter-only bounded numeric builtin for current integer and
-finite-float values. It is intentionally narrower than PHP coercion until
-numeric string, bool/null coercion, overflow, NaN/infinity, and native runtime
-numeric diagnostics are modeled.
+`abs()` and the selected float-shaped standard math helper family are
+interpreter-only bounded numeric builtins. They share the runtime PHP
+numeric-string classifier for scalar parameters, so full numeric strings
+including exponent overflow are accepted while leading-numeric junk and
+symbolic string `INF`/`NAN` stay catchable type errors. The design deliberately
+avoids claiming broad libm parity, object/resource numeric casts, exact
+diagnostics for every coercion edge, or native runtime numeric calls.
 `microtime(true)` is an interpreter-only host-clock boundary for bootstrap
 timing checks. It returns a finite float seconds value from `SystemTime`, while
 the string-return forms stay unsupported until time virtualization, formatting,

@@ -105,6 +105,19 @@ Implemented:
   exponentiation operator syntax (`**`/`**=`), exact broad libm/platform
   parity outside the covered rows, references/COW, and native lowering.
 
+- Added a bounded standard-math numeric-string classifier slice for the
+  interpreter path. `abs()` and the selected float math helper family now share
+  the PHP numeric-string classifier instead of the `sprintf()` leading-prefix
+  parser, so full numeric strings such as `" 039 "`, `"-4.5"`, and exponent
+  overflow `"1e9999"` coerce through the supported integer/float helper
+  boundary while leading-numeric junk and symbolic string `"INF"`/`"NAN"`
+  raise catchable type errors. Focused Rust coverage and a direct `phpc run`
+  fixture prove the deterministic `is_finite`/`sqrt`/`ceil`/`floor`/`abs`
+  surface; selected PHP-src PHPT rows for `is_finite`, `sqrt`, and `abs` are
+  recorded as proof artifacts. Broad platform-dependent libm parity,
+  object/resource numeric casts, exact diagnostic parity for every argument
+  label, and native lowering remain unsupported.
+
 - Implemented a focused local filesystem metadata candidate for five selected
   `ext/standard/tests/file` PHPT rows. `chmod()` now preserves relative
   `.`/`..` path segments for permission-setting operations so nonexistent
