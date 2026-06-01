@@ -1,5 +1,26 @@
 # Progress Log
 
+## 2026-06-01
+
+Implemented:
+
+- Added a compact SPL `ArrayObject`/`ArrayIterator` runtime slice for PHPT
+  compatibility. `(array)` casts now use the backing storage view by default,
+  honor `STD_PROP_LIST` by exposing standard object properties without the
+  internal storage slot, and canonicalize numeric object-backed storage keys
+  for the cast path. `ArrayObject::exchangeArray()` now emits the bounded PHP
+  deprecation when switching to object-backed storage, and out-of-range
+  `ArrayIterator::seek()` diagnostics map to catchable `OutOfBoundsException`
+  objects. Focused proof covers array cast/standard-property casts,
+  object-backed exchange deprecations, seek exception handling, and selected
+  upstream PHPT rows for `array_001`, `ArrayObject_proptable_canonicalization`,
+  `ArrayObject_std_props_no_recursion`, `arrayObject_exchangeArray_basic2`,
+  and `array_014`. General SPL wrapper iterators, by-reference SPL iteration,
+  serialization/unserialization parity, recursive `var_dump()` parity for
+  self-referential storage, exact object-handle reuse in dumps, broader illegal
+  offset expression diagnostics, full COW/reference identity, and native
+  lowering remain unsupported.
+
 ## 2026-05-27
 
 Implemented:

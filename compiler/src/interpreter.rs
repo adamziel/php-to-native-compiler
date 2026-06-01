@@ -12015,6 +12015,75 @@ impl Interpreter {
         array
     }
 
+    fn public_object_properties_array_for_array_object_cast(object: &PhpObject) -> PhpArray {
+        let mut array = PhpArray::new();
+        for property in object.properties() {
+            if property.visibility() == Visibility::Public
+                && property.is_initialized()
+                && !property.is_unset()
+            {
+                array.insert(ArrayKey::string(property.name()), property.value_cloned());
+            }
+        }
+        array
+    }
+
+    fn array_object_standard_properties_for_array_cast(object: &PhpObject) -> PhpArray {
+        let mut array = object.initialized_mangled_properties_array();
+        array.remove(ArrayKey::String("\0ArrayObject\0storage".to_string()));
+        array.remove(ArrayKey::String("\0ArrayIterator\0storage".to_string()));
+        array
+    }
+
+    fn array_object_storage_to_array_cast(
+        &self,
+        storage: &Value,
+        span: Span,
+    ) -> CompileResult<PhpArray> {
+        match storage {
+            Value::Array(array) => Ok(array.clone()),
+            Value::Object(object) if self.is_array_object_storage_object(object) => {
+                let state = self.array_object_state(object, "(array)", span)?;
+                self.array_object_storage_to_array_cast(&state.storage, span)
+            }
+            Value::Object(object) => Ok(
+                Self::public_object_properties_array_for_array_object_cast(object),
+            ),
+            other => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "(array)",
+                    format!(
+                        "ArrayObject storage must be array or object in the current subset, got {}",
+                        other.type_name()
+                    ),
+                ),
+            )),
+        }
+    }
+
+    fn array_object_to_array_cast(
+        &self,
+        object: &PhpObject,
+        span: Span,
+    ) -> CompileResult<Option<PhpArray>> {
+        if !self.is_array_object_storage_object(object) {
+            return Ok(None);
+        }
+
+        let state = self.array_object_state(object, "(array)", span)?;
+        if state.flags & ARRAY_OBJECT_STD_PROP_LIST == ARRAY_OBJECT_STD_PROP_LIST {
+            Ok(Some(Self::array_object_standard_properties_for_array_cast(
+                object,
+            )))
+        } else {
+            Ok(Some(self.array_object_storage_to_array_cast(
+                &state.storage,
+                span,
+            )?))
+        }
+    }
+
     fn array_object_storage_to_array(
         &self,
         storage: &Value,
@@ -12562,6 +12631,16 @@ impl Interpreter {
                         ));
                     }
                 };
+                if matches!(replacement, Value::Object(_)) {
+                    self.emit_display_diagnostic(
+                        "Deprecated",
+                        PHP_E_DEPRECATED,
+                        format!(
+                            "{class_name}::exchangeArray(): Using an object as a backing array for {class_name} is deprecated, as it allows violating class constraints and invariants"
+                        ),
+                        span,
+                    )?;
+                }
                 let mut state = self.array_object_state(&object, method_name, span)?.clone();
                 let old = self.array_object_storage_to_array(&state.storage, method_name, span)?;
                 state.storage = replacement;
@@ -93235,7 +93314,11 @@ impl Interpreter {
                     Ok(Value::Array(array))
                 }
                 Value::Object(object) => {
-                    Ok(Value::Array(object.initialized_mangled_properties_array()))
+                    if let Some(array) = self.array_object_to_array_cast(&object, span)? {
+                        Ok(Value::Array(array))
+                    } else {
+                        Ok(Value::Array(object.initialized_mangled_properties_array()))
+                    }
                 }
                 Value::Closure(_) => Err(runtime_error(
                     span,
@@ -102816,6 +102899,9 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
                     && reason.ends_with("::offsetSet() instead")
                 {
                     return Some(("Error", reason.to_string()));
+                }
+                if reason.starts_with("Seek position ") && reason.ends_with(" is out of range") {
+                    return Some(("OutOfBoundsException", reason.to_string()));
                 }
                 if reason.contains(" must be of type ")
                     || reason.contains(" must be a class name derived from ArrayIterator")

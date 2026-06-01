@@ -15024,6 +15024,60 @@ foreach ($iterable as $key => $value) {
 }
 
 #[test]
+fn array_object_array_cast_exchange_array_deprecation_and_seek_exception() {
+    let source = r#"<?php
+class CastChildArrayObject extends ArrayObject {
+    public $prop = "declared";
+}
+
+$array = new ArrayObject(array(0 => "zero", 1 => "one"));
+print_r((array) $array);
+
+$std = new CastChildArrayObject(array("stored" => "hidden"), ArrayObject::STD_PROP_LIST);
+$std->prop = "visible";
+print_r((array) $std);
+
+$object = new stdClass();
+$object->a = 1;
+$wrapped = new ArrayObject($object);
+$wrapped[0] = 2;
+print_r((array) $wrapped);
+
+$exchange = new ArrayObject();
+$replacement = new stdClass();
+$replacement->k = "v";
+$exchange->exchangeArray($replacement);
+echo $exchange["k"], "\n";
+
+$it = new ArrayIterator(range(0, 2));
+try {
+    $it->seek(9);
+} catch (OutOfBoundsException $e) {
+    echo "seek:", $e->getMessage(), "\n";
+}
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert!(execution.stdout.contains(
+        "Array\n(\n    [0] => zero\n    [1] => one\n)\nArray\n(\n    [prop] => visible\n)\n"
+    ));
+    assert!(execution.stdout.contains(
+        "Deprecated: ArrayObject::__construct(): Using an object as a backing array for ArrayObject is deprecated"
+    ));
+    assert!(execution
+        .stdout
+        .contains("Array\n(\n    [a] => 1\n    [0] => 2\n)\n"));
+    assert!(execution.stdout.contains(
+        "Deprecated: ArrayObject::exchangeArray(): Using an object as a backing array for ArrayObject is deprecated"
+    ));
+    assert!(execution
+        .stdout
+        .ends_with("v\nseek:Seek position 9 is out of range\n"));
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn spl_doubly_linked_list_iteration_offsets_and_exceptions() {
     let source = r#"<?php
 $list = new SplDoublyLinkedList();
