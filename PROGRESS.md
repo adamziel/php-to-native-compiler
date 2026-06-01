@@ -1,6 +1,6 @@
 # PHP Native Compiler PHPT Progress
 
-Updated: 2026-06-02 00:19 CEST
+Updated: 2026-06-02 00:36 CEST
 
 Primary/public branch: `origin/master`
 Latest accepted public-score source:
@@ -19,7 +19,7 @@ denominators that exclude BORKED rows are not public progress.
 Current public score: **5513 / 20294 pinned runnable PHPTs = 27.17%**.
 
 Latest pushed source checkpoint:
-`1f09a75425b4831cf3e98a4ba9162ddbf87a5f54 checkpoint: add parse_url relative rows`
+`bdb82f710623b14711b0c11cab6d1dc716e38916 checkpoint: add standard math numeric string rows`
 
 This source checkpoint chain has been pushed to `origin/master`, but it does
 not change the public score above until the next full pinned PHPT gate accepts
@@ -29,7 +29,8 @@ diagnostics, DateTime/hash/reflection/umask rows, array intersect repair,
 DateTime format constants, file metadata permission rows, `pow()`,
 `metaphone()`, `http_build_query()`, JSON decode errors, filesystem stat-cache
 invalidation plus `tempnam()` fallback diagnostics, and `parse_url()`
-query-only/fragment-only relative references.
+query-only/fragment-only relative references, plus standard math numeric-string
+coercion rows.
 
 Accepted public gate: checkpoint `4f1c81d5` completed the full pinned PHPT
 gate with `5513 / 20294 = 27.17%` and zero latest-published PASS regressions
