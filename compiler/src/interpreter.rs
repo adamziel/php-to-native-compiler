@@ -119579,6 +119579,8 @@ impl Interpreter {
                 return Ok(None);
             }
         };
+        let allow_final_newline_dollar =
+            !settings.dollar_end_only && pcre_body_has_unescaped_dollar(&body);
         let body = translate_pcre_body_for_regex(&body, settings.no_auto_capture);
         let mut builder = RegexBuilder::new(&body);
         builder.unicode(false);
@@ -119592,6 +119594,7 @@ impl Interpreter {
             Ok(regex) => Ok(Some(PhpPcreRegex {
                 regex,
                 body,
+                allow_final_newline_dollar,
                 utf8: settings.utf8,
             })),
             Err(error) => {
@@ -119682,7 +119685,7 @@ impl Interpreter {
             self.pcre_last_error = PHP_PREG_BACKTRACK_LIMIT_ERROR;
             return Ok((Value::Bool(false), PhpArray::new()));
         }
-        let Some(captures) = regex.regex.captures(searched) else {
+        let Some(captures) = pcre_captures_with_final_newline_retry(&regex, searched) else {
             self.pcre_last_error = PHP_PREG_NO_ERROR;
             return Ok((Value::Int(0), PhpArray::new()));
         };
@@ -119713,18 +119716,7 @@ impl Interpreter {
 
         let capture_len = regex.regex.captures_len();
         let capture_names = pcre_capture_names(&regex.regex);
-        let mut rows: Vec<Vec<Option<(usize, usize)>>> = Vec::new();
-        for captures in regex.regex.captures_iter(&subject[start..]) {
-            let mut row = Vec::with_capacity(capture_len);
-            for index in 0..capture_len {
-                row.push(
-                    captures
-                        .get(index)
-                        .map(|matched| (start + matched.start(), start + matched.end())),
-                );
-            }
-            rows.push(row);
-        }
+        let rows = pcre_capture_rows_with_final_newline_retry(&regex, &subject, start, capture_len);
 
         let mut output = PhpArray::new();
         if set_order {
@@ -120275,6 +120267,7 @@ impl Interpreter {
 struct PhpPcreRegex {
     regex: Regex,
     body: String,
+    allow_final_newline_dollar: bool,
     utf8: bool,
 }
 
@@ -120304,6 +120297,7 @@ impl PcrePatternValue {
 #[derive(Default)]
 struct PhpPcreSettings {
     case_insensitive: bool,
+    dollar_end_only: bool,
     multi_line: bool,
     dot_matches_new_line: bool,
     ignore_whitespace: bool,
@@ -120318,13 +120312,14 @@ impl PhpPcreSettings {
         for modifier in modifiers.chars() {
             match modifier {
                 'i' => settings.case_insensitive = true,
+                'D' => settings.dollar_end_only = true,
                 'm' => settings.multi_line = true,
                 's' => settings.dot_matches_new_line = true,
                 'x' => settings.ignore_whitespace = true,
                 'n' => settings.no_auto_capture = true,
                 'U' => settings.swap_greed = true,
                 'u' => settings.utf8 = true,
-                'A' | 'D' | 'S' | 'J' => {}
+                'A' | 'S' | 'J' => {}
                 ' ' | '\r' | '\n' => {}
                 other => return Err(format!("Unknown modifier '{other}'")),
             }
@@ -120446,8 +120441,30 @@ fn translate_pcre_body_for_regex(body: &str, no_auto_capture: bool) -> String {
                 in_class = false;
                 output.push(ch);
             }
-            '(' if !in_class && no_auto_capture && chars.peek() != Some(&'?') => {
-                output.push_str("(?:");
+            '(' if !in_class => {
+                if chars.peek() == Some(&'?') && pcre_next_after_question(&chars) == Some('\'') {
+                    chars.next();
+                    chars.next();
+                    output.push_str("(?P<");
+                    for name_ch in chars.by_ref() {
+                        if name_ch == '\'' {
+                            output.push('>');
+                            break;
+                        }
+                        output.push(name_ch);
+                    }
+                } else if chars.peek() == Some(&'?')
+                    && pcre_next_after_question(&chars) == Some('<')
+                    && !matches!(pcre_second_after_question(&chars), Some('=') | Some('!'))
+                {
+                    chars.next();
+                    chars.next();
+                    output.push_str("(?P<");
+                } else if no_auto_capture && chars.peek() != Some(&'?') {
+                    output.push_str("(?:");
+                } else {
+                    output.push(ch);
+                }
             }
             '{' if !in_class => {
                 if pcre_quantifier_body_starts(chars.clone()) {
@@ -120468,7 +120485,7 @@ fn translate_pcre_body_for_regex(body: &str, no_auto_capture: bool) -> String {
     if escaped {
         output.push('\\');
     }
-    output.replace("(?<", "(?P<")
+    output
 }
 
 fn pcre_quantifier_body_starts(mut chars: std::iter::Peekable<std::str::Chars<'_>>) -> bool {
@@ -120488,6 +120505,42 @@ fn pcre_quantifier_body_starts(mut chars: std::iter::Peekable<std::str::Chars<'_
             }
             '}' => return saw_digit,
             _ => return false,
+        }
+    }
+    false
+}
+
+fn pcre_next_after_question(chars: &std::iter::Peekable<std::str::Chars<'_>>) -> Option<char> {
+    let mut probe = chars.clone();
+    if probe.next()? != '?' {
+        return None;
+    }
+    probe.next()
+}
+
+fn pcre_second_after_question(chars: &std::iter::Peekable<std::str::Chars<'_>>) -> Option<char> {
+    let mut probe = chars.clone();
+    if probe.next()? != '?' {
+        return None;
+    }
+    probe.next()?;
+    probe.next()
+}
+
+fn pcre_body_has_unescaped_dollar(body: &str) -> bool {
+    let mut escaped = false;
+    let mut in_class = false;
+    for ch in body.chars() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match ch {
+            '\\' => escaped = true,
+            '[' if !in_class => in_class = true,
+            ']' if in_class => in_class = false,
+            '$' if !in_class => return true,
+            _ => {}
         }
     }
     false
@@ -121045,6 +121098,62 @@ fn pcre_class_matches_byte(class: &str, byte: u8) -> bool {
     } else {
         matched
     }
+}
+
+fn pcre_captures_with_final_newline_retry<'a>(
+    regex: &PhpPcreRegex,
+    searched: &'a [u8],
+) -> Option<RegexCaptures<'a>> {
+    if let Some(captures) = regex.regex.captures(searched) {
+        return Some(captures);
+    }
+    let trimmed = pcre_final_newline_dollar_retry_subject(regex, searched)?;
+    regex.regex.captures(trimmed)
+}
+
+fn pcre_capture_rows_with_final_newline_retry(
+    regex: &PhpPcreRegex,
+    subject: &[u8],
+    start: usize,
+    capture_len: usize,
+) -> Vec<Vec<Option<(usize, usize)>>> {
+    let searched = &subject[start..];
+    let mut rows = pcre_capture_rows(regex, searched, start, capture_len);
+    if rows.is_empty() {
+        if let Some(trimmed) = pcre_final_newline_dollar_retry_subject(regex, searched) {
+            rows = pcre_capture_rows(regex, trimmed, start, capture_len);
+        }
+    }
+    rows
+}
+
+fn pcre_final_newline_dollar_retry_subject<'a>(
+    regex: &PhpPcreRegex,
+    searched: &'a [u8],
+) -> Option<&'a [u8]> {
+    (regex.allow_final_newline_dollar && searched.ends_with(b"\n"))
+        .then(|| &searched[..searched.len().saturating_sub(1)])
+}
+
+fn pcre_capture_rows(
+    regex: &PhpPcreRegex,
+    searched: &[u8],
+    base: usize,
+    capture_len: usize,
+) -> Vec<Vec<Option<(usize, usize)>>> {
+    let mut rows = Vec::new();
+    for captures in regex.regex.captures_iter(searched) {
+        let mut row = Vec::with_capacity(capture_len);
+        for index in 0..capture_len {
+            row.push(
+                captures
+                    .get(index)
+                    .map(|matched| (base + matched.start(), base + matched.end())),
+            );
+        }
+        rows.push(row);
+    }
+    rows
 }
 
 fn pcre_capture_array(

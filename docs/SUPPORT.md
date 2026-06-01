@@ -3586,12 +3586,17 @@
   through the bounded Rust regex adapter after PHP delimiter/modifier parsing;
   the deterministic slice covers the literal/WordPress patterns documented
   below plus regex-crate-compatible byte/ASCII classes, repeats, alternation,
-  captures, named captures, and the `i`, `m`, `s`, `x`, `U`, `u`, and `n`
+  captures, named captures using `(?P<name>...)`, `(?<name>...)`, or
+  `(?'name'...)`, and the `i`, `m`, `s`, `x`, `U`, `u`, `n`, and `D`
   modifiers. The `n` modifier disables unnamed captures while keeping named
-  captures addressable. Direct `$matches` arrays now preserve PHP capture key
-  order for named groups (`0`, then each named string key before its numeric
-  key), including `PREG_OFFSET_CAPTURE` and `PREG_UNMATCHED_AS_NULL`; failed
-  matches clear the direct output to an empty array. The reached WordPress
+  captures addressable. The `D` modifier keeps `$` anchored to the true
+  end-of-subject; without `D`, `preg_match()` and `preg_match_all()` perform a
+  bounded final-newline retry for `$` patterns that otherwise miss, matching
+  PHP's common before-final-newline anchor behavior for the covered rows.
+  Direct `$matches` arrays now preserve PHP capture key order for named groups
+  (`0`, then each named string key before its numeric key), including
+  `PREG_OFFSET_CAPTURE` and `PREG_UNMATCHED_AS_NULL`; failed matches clear the
+  direct output to an empty array. The reached WordPress
   patterns remain explicitly covered: `wp_fix_server_vars()` SAPI-name
   literals, `_wp_can_use_pcre_u()`'s `//u` startup probe, the two
   `wpdb::parse_db_host()` named-capture patterns, table-prefix validation
@@ -3600,7 +3605,8 @@
   `/[^\x00-\x7F]/` detector over current valid UTF-8 runtime strings.
   Non-direct matches outputs, pattern arrays, duplicate named groups/`(?J)`,
   branch-reset groups, recursive patterns, lookaround/backtracking verbs, PCRE
-  marks, Unicode property/class parity, invalid-pattern warning text parity,
+  marks, Unicode property/class parity, full `$`/`\Z`/CRLF anchor parity
+  beyond the bounded final-newline retry, invalid-pattern warning text parity,
   byte/Unicode edge cases beyond the current runtime string model, broad
   coercions, exact diagnostics, and native lowering remain unsupported.
   `preg_match_all($pattern, $subject, $matches = null, $flags = PREG_PATTERN_ORDER, $offset = 0)` supports the same bounded regex adapter for scalar/null
@@ -3610,7 +3616,9 @@
   offsets. Named capture arrays are emitted in PHP key order for both pattern
   and set order, including optional unmatched groups represented as `null` or
   `[null, -1]` when requested. The unsupported PCRE syntax, coercion,
-  diagnostic, and native-lowering boundaries are the same as `preg_match()`.
+  diagnostic, and native-lowering boundaries are the same as `preg_match()`;
+  the bounded final-newline `$` retry is covered here for match collection but
+  is not a claim of full PCRE anchor parity in replacement/split paths.
   `preg_replace_callback($pattern, $callback, $subject)` supports exactly the
   WordPress `wp_sanitize_redirect()` verbose UTF-8 sanitizer regex shape with
   the string callback `_wp_sanitize_utf8_in_redirect`. It percent-encodes
@@ -11165,9 +11173,10 @@
   subset: non-direct matches outputs, pattern arrays, duplicate named
   groups/`(?J)`, branch-reset groups, recursive patterns, lookaround and
   backtracking verbs, PCRE marks, full Unicode property/class parity, full PCRE
-  syntax and diagnostics, byte/Unicode behavior beyond the current runtime
-  string model, broad coercions, exact invalid-pattern warning text, and native
-  lowering beyond function-table introspection
+  syntax and diagnostics, full `$`/`\Z`/CRLF anchor parity beyond the bounded
+  final-newline retry for match paths, byte/Unicode behavior beyond the
+  current runtime string model, broad coercions, exact invalid-pattern warning
+  text, and native lowering beyond function-table introspection
 - `preg_replace()` outside the exact WordPress database-version cleanup pattern
   `/[^0-9.].*/`, path-tail cleanup pattern `#/[^/]*$#i`, and redirect
   sanitizer cleanup pattern `|[^a-z0-9-~+_.?#=&;,/:%!*\[\]()@]|i`, mail-host

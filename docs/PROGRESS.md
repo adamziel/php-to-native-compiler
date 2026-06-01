@@ -4,6 +4,20 @@
 
 Implemented:
 
+- Added a second compact interpreter PCRE slice for deterministic
+  `preg_match()`/`preg_match_all()` rows. The bounded regex adapter now
+  normalizes PCRE apostrophe named-capture syntax `(?'name'...)` to the Rust
+  regex named-group form, keeps those captures addressable in PHP-shaped match
+  arrays, honors the `D` modifier for strict end-of-subject `$`, and performs a
+  bounded final-newline retry for non-`D` `preg_match()`/`preg_match_all()`
+  patterns containing `$`. Focused proof covers
+  `ext/pcre/tests/bug72688.phpt` and `dollar_endonly.phpt` plus Rust unit
+  coverage. Duplicate named groups/`(?J)`, branch-reset groups, recursive
+  patterns, lookaround/backtracking verbs, PCRE marks, Unicode property/class
+  parity, full `$`/`\Z`/CRLF anchor parity for replacement/split paths, exact
+  invalid-pattern warning text, broad PCRE syntax, and native lowering remain
+  unsupported.
+
 - Added a compact interpreter PCRE named-capture ordering slice. `preg_match()`
   and `preg_match_all()` now emit named captures in PHP insertion order
   (string key before the matching numeric key) for direct `$matches` outputs,

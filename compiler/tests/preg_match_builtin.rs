@@ -249,6 +249,23 @@ echo implode(',', array_keys($match[1])), "|", ($match[1]['a'] === null ? 'NULL'
 }
 
 #[test]
+fn preg_match_supports_apostrophe_named_groups_and_dollar_endonly_modifier() {
+    let execution = run_source(
+        r#"<?php
+preg_match("/(?'word'foo)/", "foo", $match);
+echo implode(',', array_keys($match)), "|", $match['word'], "|", $match[1], "\n";
+echo preg_match_all('/^\S+.+$/', "aeiou\n", $match), "|", $match[0][0], "\n";
+echo preg_match_all('/^\S+.+$/D', "aeiou\n", $match), "|", count($match[0]), "\n";
+echo preg_match_all('/^\S+\s$/D', "aeiou\n", $match), "|", ($match[0][0] === "aeiou\n" ? "full" : "partial");
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "0,word,1|foo|foo\n1|aeiou\n0|0\n1|full");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn preg_match_handles_backtrack_offsets_utf8_and_trailing_unmatched_captures() {
     let execution = run_source(
         r#"<?php
