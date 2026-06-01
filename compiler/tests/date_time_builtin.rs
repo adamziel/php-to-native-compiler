@@ -347,13 +347,17 @@ echo $object->getTimeZone()->getName(), "\n";
 $returned = $object->setTimeZone(new DateTimeZone("America/Los_Angeles"));
 echo date_timezone_get($object)->getName(), "|";
 echo ($returned === $object ? "same" : "different"), "\n";
+$returned = date_timezone_set($object, new DateTimeZone("Europe/London"));
+echo date_timezone_get($object)->getName(), "|";
+echo $object->format("Y-m-d H:i:s T"), "|";
+echo ($returned === $object ? "same" : "different"), "\n";
 "#,
     )
     .unwrap();
 
     assert_eq!(
         execution.stdout,
-        "offsets=0|1\nEurope/London\nAmerica/New_York\nAmerica/Los_Angeles|same\n"
+        "offsets=0|1\nEurope/London\nAmerica/New_York\nAmerica/Los_Angeles|same\nEurope/London|2009-01-30 22:57:32 GMT|same\n"
     );
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);

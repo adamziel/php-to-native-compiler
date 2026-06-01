@@ -1,5 +1,27 @@
 # Progress Log
 
+## 2026-06-02
+
+Implemented:
+
+- Added the bounded procedural `date_timezone_set()` alias for mutable
+  `DateTime` objects. The interpreter reuses the existing DateTime and
+  DateTimeZone object-state helpers, preserves the stored timestamp while
+  replacing the bounded timezone, returns the same mutable DateTime object, and
+  exposes the function through builtin/callability metadata while keeping
+  native lowering rejected. Focused Rust passed `13 / 13` in
+  `date_time_builtin`; `cargo build -p phpc --bin phpc`, `cargo fmt --check`,
+  and `git diff --check` passed; a direct `phpc run` exercise proved
+  `getOffset()`, `getTimezone()`, `setTimezone()`, `date_timezone_get()`, and
+  `date_timezone_set()` together; and selected PHPT proof passed `5 / 5` for
+  `DateTime_getOffset_basic1.phpt`, `DateTime_getTimeZone_basic1.phpt`,
+  `date_timezone_get_basic1.phpt`, `DateTime_setTimezone_basic1.phpt`, and
+  `date_timezone_set_basic1.phpt`. Unsupported edges remain broad DateTime
+  constructor timezone arguments, DateTimeImmutable, DateInterval, DatePeriod,
+  full timezone database and DST history, serialization, createFromFormat,
+  exact diagnostics outside the covered rows, references/COW, and native
+  lowering.
+
 ## 2026-06-01
 
 Implemented:

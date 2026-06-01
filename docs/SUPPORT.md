@@ -5683,8 +5683,9 @@
   `setTimestamp()`, `modify()`, `getOffset()`, `getTimezone()`, and
   `setTimezone(DateTimeZone $timezone)` behavior over the same bounded
   timezone table. Procedural `date_create()`, `date_format()`,
-  `date_timestamp_get()`, `date_timestamp_set()`, `date_offset_get()`, and
-  `date_timezone_get()` share that object state. `DateTime` exposes the
+  `date_timestamp_get()`, `date_timestamp_set()`, `date_offset_get()`,
+  `date_timezone_get()`, and `date_timezone_set()` share that object state.
+  `DateTime` exposes the
   bounded date-format class constants matching the existing global `DATE_*`
   format constants, including PHP-shaped deprecation diagnostics for
   `DATE_RFC7231` / `DateTime::RFC7231`.

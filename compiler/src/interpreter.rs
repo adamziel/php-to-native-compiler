@@ -17945,6 +17945,37 @@ impl Interpreter {
         Ok(Value::Object(timezone_object))
     }
 
+    fn call_date_timezone_set(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("date_timezone_set", args, 2, span)?;
+        let object = self.datetime_object_argument("date_timezone_set()", args, 0, span)?;
+        let timezone_object = self.datetimezone_argument("date_timezone_set()", args, 1, span)?;
+        let timestamp = self
+            .date_time_objects
+            .get(&object.id())
+            .map(|state| state.timestamp)
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "date_timezone_set()",
+                        "DateTime object is not initialized in the current subset",
+                    ),
+                )
+            })?;
+        let timezone_name = Self::datetimezone_name(&timezone_object, "date_timezone_set()", span)?;
+        let timezone = bounded_timezone_from_name(&timezone_name).ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "date_timezone_set()",
+                    format!("timezone {timezone_name} is not implemented in the current subset"),
+                ),
+            )
+        })?;
+        self.assign_datetime_object_state(&object, timestamp, timezone, span)?;
+        Ok(Value::Object(object))
+    }
+
     fn call_timezone_open(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("timezone_open", args, 1, span)?;
         let Value::String(name) = &args[0] else {
@@ -85168,6 +85199,7 @@ impl Interpreter {
             "date_timestamp_set" => self.call_date_timestamp_set(&args, span),
             "date_offset_get" => self.call_date_offset_get(&args, span),
             "date_timezone_get" => self.call_date_timezone_get(&args, span),
+            "date_timezone_set" => self.call_date_timezone_set(&args, span),
             "idate" => self.call_idate(&args, span),
             "checkdate" => call_checkdate(&args, span),
             "getdate" => self.call_getdate(&args, span),
@@ -105855,6 +105887,7 @@ fn is_builtin(name: &str) -> bool {
             | "date_timestamp_set"
             | "date_offset_get"
             | "date_timezone_get"
+            | "date_timezone_set"
             | "idate"
             | "checkdate"
             | "getdate"

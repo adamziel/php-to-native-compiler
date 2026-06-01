@@ -66624,6 +66624,7 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "date_timestamp_set",
     "date_offset_get",
     "date_timezone_get",
+    "date_timezone_set",
     "idate",
     "checkdate",
     "getdate",
