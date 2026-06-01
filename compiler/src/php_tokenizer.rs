@@ -846,16 +846,20 @@ impl<'a> Scanner<'a> {
         let start = self.index;
         if self.starts_with_ignore_ascii_case(b"0x") {
             self.index += 2;
-            while self.peek().is_some_and(|byte| byte.is_ascii_hexdigit()) {
-                self.index += 1;
-            }
-            self.push_token(T_LNUMBER, start, self.index);
+            self.consume_digits_with_separators(|byte| byte.is_ascii_hexdigit());
+            self.push_token(
+                if integer_literal_overflows_to_dnumber(&self.source[start..self.index]) {
+                    T_DNUMBER
+                } else {
+                    T_LNUMBER
+                },
+                start,
+                self.index,
+            );
             return;
         }
 
-        while self.peek().is_some_and(|byte| byte.is_ascii_digit()) {
-            self.index += 1;
-        }
+        self.consume_digits_with_separators(|byte| byte.is_ascii_digit());
 
         let mut is_float = false;
         if self.peek() == Some(b'.')
@@ -865,9 +869,7 @@ impl<'a> Scanner<'a> {
         {
             is_float = true;
             self.index += 1;
-            while self.peek().is_some_and(|byte| byte.is_ascii_digit()) {
-                self.index += 1;
-            }
+            self.consume_digits_with_separators(|byte| byte.is_ascii_digit());
         }
 
         if matches!(self.peek(), Some(b'e' | b'E')) {
@@ -878,17 +880,35 @@ impl<'a> Scanner<'a> {
             {
                 is_float = true;
                 self.index += 1 + sign_offset;
-                while self.peek().is_some_and(|byte| byte.is_ascii_digit()) {
-                    self.index += 1;
-                }
+                self.consume_digits_with_separators(|byte| byte.is_ascii_digit());
             }
         }
 
         self.push_token(
-            if is_float { T_DNUMBER } else { T_LNUMBER },
+            if is_float || integer_literal_overflows_to_dnumber(&self.source[start..self.index]) {
+                T_DNUMBER
+            } else {
+                T_LNUMBER
+            },
             start,
             self.index,
         );
+    }
+
+    fn consume_digits_with_separators(&mut self, is_digit: impl Fn(u8) -> bool) {
+        while let Some(byte) = self.peek() {
+            if is_digit(byte) {
+                self.index += 1;
+            } else if byte == b'_' {
+                if self.peek_offset(1).is_some_and(|next| is_digit(next)) {
+                    self.index += 1;
+                } else {
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
     }
 
     fn consume_identifier_or_keyword(&mut self) {
@@ -1155,6 +1175,57 @@ fn is_bad_character(byte: u8) -> bool {
 
 fn byte_line_count(bytes: &[u8]) -> i64 {
     bytes.iter().filter(|byte| **byte == b'\n').count() as i64
+}
+
+fn integer_literal_overflows_to_dnumber(bytes: &[u8]) -> bool {
+    if bytes.iter().any(|byte| matches!(byte, b'.' | b'e' | b'E')) {
+        return false;
+    }
+
+    if bytes
+        .get(0..2)
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case(b"0x"))
+    {
+        return integer_digits_overflow(&bytes[2..], b"7fffffffffffffff", |byte| {
+            byte.to_ascii_lowercase()
+        });
+    }
+
+    let digits = bytes
+        .iter()
+        .copied()
+        .filter(|byte| *byte != b'_')
+        .collect::<Vec<_>>();
+    if digits.len() > 1 && digits.first() == Some(&b'0') {
+        let octal_prefix = digits
+            .iter()
+            .copied()
+            .take_while(|byte| matches!(byte, b'0'..=b'7'))
+            .collect::<Vec<_>>();
+        return integer_digits_overflow(&octal_prefix, b"777777777777777777777", |byte| byte);
+    }
+
+    integer_digits_overflow(&digits, b"9223372036854775807", |byte| byte)
+}
+
+fn integer_digits_overflow(bytes: &[u8], max_digits: &[u8], normalize: impl Fn(u8) -> u8) -> bool {
+    let digits = bytes
+        .iter()
+        .copied()
+        .filter(|byte| *byte != b'_')
+        .map(normalize)
+        .collect::<Vec<_>>();
+    let significant = digits
+        .iter()
+        .skip_while(|byte| **byte == b'0')
+        .copied()
+        .collect::<Vec<_>>();
+    if significant.is_empty() {
+        return false;
+    }
+
+    significant.len() > max_digits.len()
+        || (significant.len() == max_digits.len() && significant.as_slice() > max_digits)
 }
 
 fn token_id_for_identifier(identifier: &[u8]) -> Option<i64> {

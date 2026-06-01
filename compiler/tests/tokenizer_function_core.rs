@@ -162,6 +162,44 @@ foreach ($tokens as $token) {
 }
 
 #[test]
+fn tokenizer_preserves_numeric_separator_literals_and_marks_integer_overflow_dnumber() {
+    let tokens = php_tokenizer::tokenize(b"<?php 0_10000000000000000000009;");
+    assert_eq!(tokens.len(), 3);
+    assert_eq!(token_text(&tokens[1]), "0_10000000000000000000009");
+
+    let execution = run_source(
+        r#"<?php
+$inputs = [
+    "0_10000000000000000000009",
+    "0177777777777777777777787",
+    "09999999999999999999",
+    "000000000000000000009",
+    "0x7fffffffffffffff",
+    "0x8000000000000000",
+];
+foreach ($inputs as $code) {
+    $token = token_get_all("<?php " . $code . ";")[1];
+    echo $code, ":", token_name($token[0]), ":", $token[1], "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "0_10000000000000000000009:T_DNUMBER:0_10000000000000000000009\n",
+            "0177777777777777777777787:T_DNUMBER:0177777777777777777777787\n",
+            "09999999999999999999:T_LNUMBER:09999999999999999999\n",
+            "000000000000000000009:T_LNUMBER:000000000000000000009\n",
+            "0x7fffffffffffffff:T_LNUMBER:0x7fffffffffffffff\n",
+            "0x8000000000000000:T_DNUMBER:0x8000000000000000\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn php_token_objects_support_constructor_methods_subclasses_and_ampersands() {
     let execution = run_source(
         r#"<?php
