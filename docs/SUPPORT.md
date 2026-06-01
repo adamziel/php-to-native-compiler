@@ -9403,7 +9403,13 @@
   `getDocComment()`, `getParameters()`, `getNumberOfParameters()`,
   `getNumberOfRequiredParameters()`, `isVariadic()`, `hasReturnType()`,
   `getReturnType()`, `returnsReference()`, and `__toString()` over parsed
-  user-function metadata.
+  user-function metadata. `ReflectionFunction::isDisabled()` is exposed as
+  the PHP 8 deprecated metadata method for constructed reflection functions:
+  it emits the covered `E_DEPRECATED` diagnostic and returns `false`.
+  When startup/PHPT `disable_functions` names a function, constructing
+  `ReflectionFunction` for that name now raises the bounded catchable
+  `ReflectionException` "Function name() does not exist" shape; direct calls
+  and broader disabled-function runtime behavior remain outside this slice.
   `getFileName()`
   returns the current CLI/fixture source path for declarations loaded from a
   known file and `false` for source strings without one; line numbers come from
@@ -11275,8 +11281,12 @@
   `function_exists`, `get_current_user`, `umask`, `getmypid`, and `php_sapi_name`. Closure metadata is supported for
   current closure values. The supported
   metadata methods are the name, file/start/end/doc-comment, parameter-list,
-  return-type, by-reference-return, and stringification methods documented
-  above.
+  return-type, by-reference-return, deprecated `isDisabled()` false result,
+  and stringification methods documented above. The bounded constructor also
+  treats functions named by startup/PHPT `disable_functions` as a catchable
+  `ReflectionException` "Function name() does not exist" for the covered
+  reflection row; direct calls and `function_exists()` are not yet disabled by
+  that INI setting.
   `ReflectionParameter` currently supports only method parameters from that
   same metadata slice, declared user-function parameters named by string,
   supported internal-function parameters, and current closure parameters.

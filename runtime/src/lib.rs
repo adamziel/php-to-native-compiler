@@ -32396,6 +32396,7 @@ impl PhpClassTable {
             "isClosure",
             "isAnonymous",
             "isDeprecated",
+            "isDisabled",
             "getExtensionName",
             "getFileName",
             "getStartLine",

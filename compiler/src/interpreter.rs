@@ -39903,6 +39903,16 @@ impl Interpreter {
             ));
         };
 
+        if self.reflection_function_is_disabled_by_ini(name) {
+            return Err(reflection_exception_error(
+                span,
+                format!(
+                    "Function {}() does not exist",
+                    name.trim_start_matches('\\')
+                ),
+            ));
+        }
+
         match self.lookup_function(name) {
             Some(Callable::User(function)) => {
                 let source_file = self
@@ -39933,6 +39943,17 @@ impl Interpreter {
                 )
             }),
         }
+    }
+
+    fn reflection_function_is_disabled_by_ini(&self, name: &str) -> bool {
+        let normalized_name = name.trim_start_matches('\\');
+        if normalized_name.is_empty() {
+            return false;
+        }
+        startup_ini_value("disable_functions")
+            .unwrap_or_default()
+            .split(',')
+            .any(|entry| entry.trim().eq_ignore_ascii_case(normalized_name))
     }
 
     fn create_reflection_function_object(
@@ -49834,6 +49855,16 @@ impl Interpreter {
             "isdeprecated" => {
                 expect_expr_arity("ReflectionFunction::isDeprecated", args.len(), 0, span)?;
                 Ok(Value::Bool(state.is_deprecated))
+            }
+            "isdisabled" => {
+                expect_expr_arity("ReflectionFunction::isDisabled", args.len(), 0, span)?;
+                self.emit_display_diagnostic(
+                    "Deprecated",
+                    PHP_E_DEPRECATED,
+                    "Method ReflectionFunction::isDisabled() is deprecated since 8.0, as ReflectionFunction can no longer be constructed for disabled functions",
+                    span,
+                )?;
+                Ok(Value::Bool(false))
             }
             "getattributes" => self.call_reflection_get_attributes(
                 &state.attributes,

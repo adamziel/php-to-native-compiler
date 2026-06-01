@@ -4,6 +4,25 @@
 
 Implemented:
 
+- Added a tiny ReflectionFunction disabled-metadata PHPT slice.
+  `ReflectionFunction::isDisabled()` now exists on constructed reflection
+  functions, emits PHP's covered deprecation diagnostic, and returns `false`.
+  `new ReflectionFunction($name)` consults the startup/PHPT
+  `disable_functions` list for the reached row and raises a catchable
+  `ReflectionException` with the PHP-shaped `Function name() does not exist`
+  message before falling into unsupported internal-function metadata. Focused
+  Rust passed `2 / 2` in `reflection_metadata`; `cargo build -p phpc --bin
+  phpc` passed; a direct `phpc run` CLI exercise passed with
+  `PHPC_PHPT_INI_FLAGS='-d disable_functions=is_file'`; and selected PHPT
+  proof passed `2 / 2` for
+  `ext/reflection/tests/ReflectionFunction_isDisabled_basic.phpt` plus the
+  adjacent guard `ReflectionFunction_isDeprecated_basic.phpt`. Unsupported
+  edges remain applying `disable_functions` to direct calls,
+  `function_exists()`/`is_callable()`, broad internal-function reflection
+  metadata outside the bounded table, `disable_classes`, exact
+  `ReflectionException` object/trace parity outside the catchable message
+  path, and native lowering.
+
 - Added a compact `parse_url()` relative-reference slice for query-only and
   fragment-only inputs. `parse_url("?q")`, `parse_url("#f")`, empty query or
   fragment forms, and component extraction no longer synthesize an empty
