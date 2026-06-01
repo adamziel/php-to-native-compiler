@@ -1,0 +1,13 @@
+exit: 0
+stdout:
+T_LNUMBER:1_000
+T_LNUMBER:0xCAFE_F00D
+T_LNUMBER:0b1010_0110
+T_LNUMBER:0o755
+T_DNUMBER:.5e1
+T_DNUMBER:5.
+T_DNUMBER:5.e+1_2
+T_DNUMBER:9223372036854775808
+--- stdout end ---
+stderr:
+--- stderr end ---

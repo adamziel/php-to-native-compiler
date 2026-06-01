@@ -513,6 +513,14 @@ struct Scanner<'a> {
     tokens: Vec<PhpTokenizerToken>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum IntegerBase {
+    DecimalOrLegacyOctal,
+    Hex,
+    Binary,
+    Octal,
+}
+
 impl<'a> Scanner<'a> {
     fn new(source: &'a [u8]) -> Self {
         Self {
@@ -621,6 +629,15 @@ impl<'a> Scanner<'a> {
 
         if byte.is_ascii_digit() {
             self.consume_number();
+            return;
+        }
+
+        if byte == b'.'
+            && self
+                .peek_offset(1)
+                .is_some_and(|next| next.is_ascii_digit())
+        {
+            self.consume_leading_dot_number();
             return;
         }
 
@@ -844,51 +861,139 @@ impl<'a> Scanner<'a> {
 
     fn consume_number(&mut self) {
         let start = self.index;
-        if self.starts_with_ignore_ascii_case(b"0x") {
+
+        if self.prefixed_number_at_current(b"0x", |byte| byte.is_ascii_hexdigit()) {
             self.index += 2;
-            while self.peek().is_some_and(|byte| byte.is_ascii_hexdigit()) {
-                self.index += 1;
-            }
-            self.push_token(T_LNUMBER, start, self.index);
+            self.consume_digits_with_separators(|byte| byte.is_ascii_hexdigit());
+            self.push_token(
+                self.integer_token_id(start, self.index, IntegerBase::Hex),
+                start,
+                self.index,
+            );
             return;
         }
 
-        while self.peek().is_some_and(|byte| byte.is_ascii_digit()) {
-            self.index += 1;
+        if self.prefixed_number_at_current(b"0b", |byte| matches!(byte, b'0' | b'1')) {
+            self.index += 2;
+            self.consume_digits_with_separators(|byte| matches!(byte, b'0' | b'1'));
+            self.push_token(
+                self.integer_token_id(start, self.index, IntegerBase::Binary),
+                start,
+                self.index,
+            );
+            return;
         }
+
+        if self.prefixed_number_at_current(b"0o", |byte| matches!(byte, b'0'..=b'7')) {
+            self.index += 2;
+            self.consume_digits_with_separators(|byte| matches!(byte, b'0'..=b'7'));
+            self.push_token(
+                self.integer_token_id(start, self.index, IntegerBase::Octal),
+                start,
+                self.index,
+            );
+            return;
+        }
+
+        self.consume_digits_with_separators(|byte| byte.is_ascii_digit());
 
         let mut is_float = false;
-        if self.peek() == Some(b'.')
-            && self
-                .peek_offset(1)
-                .is_some_and(|byte| byte.is_ascii_digit())
-        {
+        if self.peek() == Some(b'.') {
             is_float = true;
             self.index += 1;
-            while self.peek().is_some_and(|byte| byte.is_ascii_digit()) {
-                self.index += 1;
-            }
+            self.consume_digits_with_separators(|byte| byte.is_ascii_digit());
         }
 
-        if matches!(self.peek(), Some(b'e' | b'E')) {
-            let sign_offset = usize::from(matches!(self.peek_offset(1), Some(b'+' | b'-')));
-            if self
-                .peek_offset(1 + sign_offset)
-                .is_some_and(|byte| byte.is_ascii_digit())
-            {
-                is_float = true;
-                self.index += 1 + sign_offset;
-                while self.peek().is_some_and(|byte| byte.is_ascii_digit()) {
-                    self.index += 1;
-                }
-            }
+        if self.consume_exponent_if_present() {
+            is_float = true;
         }
 
         self.push_token(
-            if is_float { T_DNUMBER } else { T_LNUMBER },
+            if is_float {
+                T_DNUMBER
+            } else {
+                self.integer_token_id(start, self.index, IntegerBase::DecimalOrLegacyOctal)
+            },
             start,
             self.index,
         );
+    }
+
+    fn consume_leading_dot_number(&mut self) {
+        let start = self.index;
+        self.index += 1;
+        self.consume_digits_with_separators(|byte| byte.is_ascii_digit());
+        self.consume_exponent_if_present();
+        self.push_token(T_DNUMBER, start, self.index);
+    }
+
+    fn prefixed_number_at_current<F>(&self, prefix: &[u8], is_digit: F) -> bool
+    where
+        F: Fn(u8) -> bool,
+    {
+        self.slice_eq_ignore_ascii_case(self.index, prefix)
+            && self
+                .source
+                .get(self.index + prefix.len())
+                .copied()
+                .is_some_and(is_digit)
+    }
+
+    fn consume_digits_with_separators<F>(&mut self, is_digit: F)
+    where
+        F: Copy + Fn(u8) -> bool,
+    {
+        while let Some(byte) = self.peek() {
+            if is_digit(byte) {
+                self.index += 1;
+            } else if byte == b'_' && self.peek_offset(1).is_some_and(|next| is_digit(next)) {
+                self.index += 1;
+            } else {
+                break;
+            }
+        }
+    }
+
+    fn consume_exponent_if_present(&mut self) -> bool {
+        if !matches!(self.peek(), Some(b'e' | b'E')) {
+            return false;
+        }
+
+        let sign_offset = usize::from(matches!(self.peek_offset(1), Some(b'+' | b'-')));
+        if !self
+            .peek_offset(1 + sign_offset)
+            .is_some_and(|byte| byte.is_ascii_digit())
+        {
+            return false;
+        }
+
+        self.index += 1 + sign_offset;
+        self.consume_digits_with_separators(|byte| byte.is_ascii_digit());
+        true
+    }
+
+    fn integer_token_id(&self, start: usize, end: usize, base: IntegerBase) -> i64 {
+        if self.integer_literal_fits_i64(start, end, base) {
+            T_LNUMBER
+        } else {
+            T_DNUMBER
+        }
+    }
+
+    fn integer_literal_fits_i64(&self, start: usize, end: usize, base: IntegerBase) -> bool {
+        let bytes = &self.source[start..end];
+        match base {
+            IntegerBase::Hex => integer_digits_fit_i64(&bytes[2..], 16, false),
+            IntegerBase::Binary => integer_digits_fit_i64(&bytes[2..], 2, false),
+            IntegerBase::Octal => integer_digits_fit_i64(&bytes[2..], 8, false),
+            IntegerBase::DecimalOrLegacyOctal => {
+                if bytes.len() > 1 && bytes.first() == Some(&b'0') {
+                    integer_digits_fit_i64(bytes, 8, true)
+                } else {
+                    integer_digits_fit_i64(bytes, 10, false)
+                }
+            }
+        }
     }
 
     fn consume_identifier_or_keyword(&mut self) {
@@ -1111,10 +1216,6 @@ impl<'a> Scanner<'a> {
             .is_some_and(|slice| slice == pattern)
     }
 
-    fn starts_with_ignore_ascii_case(&self, pattern: &[u8]) -> bool {
-        self.slice_eq_ignore_ascii_case(self.index, pattern)
-    }
-
     fn slice_eq_ignore_ascii_case(&self, index: usize, pattern: &[u8]) -> bool {
         self.source
             .get(index..index + pattern.len())
@@ -1155,6 +1256,48 @@ fn is_bad_character(byte: u8) -> bool {
 
 fn byte_line_count(bytes: &[u8]) -> i64 {
     bytes.iter().filter(|byte| **byte == b'\n').count() as i64
+}
+
+fn integer_digits_fit_i64(bytes: &[u8], base: u32, legacy_octal_prefix: bool) -> bool {
+    let mut value = 0u128;
+    let limit = i64::MAX as u128;
+    let mut saw_digit = false;
+
+    for byte in bytes.iter().copied() {
+        if byte == b'_' {
+            continue;
+        }
+
+        let Some(digit) = integer_digit_value(byte) else {
+            if legacy_octal_prefix {
+                break;
+            }
+            return true;
+        };
+        if digit >= base {
+            if legacy_octal_prefix {
+                break;
+            }
+            return true;
+        }
+
+        saw_digit = true;
+        value = value * base as u128 + digit as u128;
+        if value > limit {
+            return false;
+        }
+    }
+
+    saw_digit
+}
+
+fn integer_digit_value(byte: u8) -> Option<u32> {
+    match byte {
+        b'0'..=b'9' => Some((byte - b'0') as u32),
+        b'a'..=b'f' => Some((byte - b'a' + 10) as u32),
+        b'A'..=b'F' => Some((byte - b'A' + 10) as u32),
+        _ => None,
+    }
 }
 
 fn token_id_for_identifier(identifier: &[u8]) -> Option<i64> {

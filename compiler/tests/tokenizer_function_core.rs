@@ -1,3 +1,7 @@
+use std::fs;
+use std::path::Path;
+use std::process::{Command, Output};
+
 use php_compiler::error::Phase;
 use php_compiler::php_tokenizer::{self, PhpTokenizerToken};
 use php_compiler::run_source;
@@ -10,6 +14,43 @@ fn runtime_error(source: &str) -> php_compiler::error::Diagnostic {
 
 fn token_text(token: &PhpTokenizerToken) -> String {
     String::from_utf8_lossy(token.text()).into_owned()
+}
+
+fn numeric_token_names_and_text(tokens: &[PhpTokenizerToken]) -> Vec<String> {
+    tokens
+        .iter()
+        .filter_map(|token| {
+            let name = php_tokenizer::token_name(token.id());
+            matches!(name, "T_LNUMBER" | "T_DNUMBER")
+                .then(|| format!("{name}:{}", token_text(token)))
+        })
+        .collect()
+}
+
+fn significant_token_names_and_text(tokens: &[PhpTokenizerToken]) -> Vec<String> {
+    tokens
+        .iter()
+        .filter_map(|token| {
+            let name = php_tokenizer::token_name(token.id());
+            if matches!(name, "T_OPEN_TAG" | "T_WHITESPACE") {
+                None
+            } else if token.is_token_array() {
+                Some(format!("{name}:{}", token_text(token)))
+            } else {
+                Some(format!("SYM:{}", token_text(token)))
+            }
+        })
+        .collect()
+}
+
+fn render_cli_snapshot(output: &Output) -> String {
+    let exit_code = output.status.code().unwrap_or(1);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    format!(
+        "exit: {exit_code}\nstdout:\n{stdout}--- stdout end ---\nstderr:\n{stderr}--- stderr end ---\n"
+    )
 }
 
 #[test]
@@ -57,6 +98,53 @@ fn tokenizer_scans_core_stream_shape_namespaces_attributes_and_lines() {
 }
 
 #[test]
+fn tokenizer_scans_numeric_literal_separators_prefixes_dots_and_overflow_ids() {
+    let tokens = php_tokenizer::tokenize(
+        b"<?php 1_000 0xCAFE_F00D 0b1010_0110 0o755 .5e1 5. 5.e+1_2 9223372036854775808 0xFFFFFFFFFFFFFFFF 0o777777777777777777777777 0177777777777777777777787 0_10000000000000000000009;",
+    );
+
+    assert_eq!(
+        numeric_token_names_and_text(&tokens),
+        vec![
+            "T_LNUMBER:1_000",
+            "T_LNUMBER:0xCAFE_F00D",
+            "T_LNUMBER:0b1010_0110",
+            "T_LNUMBER:0o755",
+            "T_DNUMBER:.5e1",
+            "T_DNUMBER:5.",
+            "T_DNUMBER:5.e+1_2",
+            "T_DNUMBER:9223372036854775808",
+            "T_DNUMBER:0xFFFFFFFFFFFFFFFF",
+            "T_DNUMBER:0o777777777777777777777777",
+            "T_DNUMBER:0177777777777777777777787",
+            "T_DNUMBER:0_10000000000000000000009",
+        ]
+    );
+}
+
+#[test]
+fn tokenizer_splits_invalid_numeric_separator_prefixes_like_php_lexically() {
+    let tokens = php_tokenizer::tokenize(b"<?php 0x_CAFE 1__2 ._5 5_e1 5e_1;");
+
+    assert_eq!(
+        significant_token_names_and_text(&tokens),
+        vec![
+            "T_LNUMBER:0",
+            "T_STRING:x_CAFE",
+            "T_LNUMBER:1",
+            "T_STRING:__2",
+            "SYM:.",
+            "T_STRING:_5",
+            "T_LNUMBER:5",
+            "T_STRING:_e1",
+            "T_LNUMBER:5",
+            "T_STRING:e_1",
+            "SYM:;",
+        ]
+    );
+}
+
+#[test]
 fn token_get_all_exposes_token_names_text_lengths_and_lines() {
     let execution = run_source(
         r#"<?php
@@ -80,6 +168,70 @@ foreach ($tokens as $token) {
         "T_OPEN_TAG:6:1\nT_ECHO:4:2\nT_VARIABLE:5:2\nT_COMMENT:5:2\n"
     );
     assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn token_get_all_token_parse_exposes_numeric_literal_residual_rows() {
+    let execution = run_source(
+        r#"<?php
+$tokens = token_get_all('<?php
+echo 1_000;
+echo 0xCAFE_F00D;
+echo 0b1010_0110;
+echo 0o755;
+echo .5e1;
+echo 5.;
+echo 5.e+1_2;
+echo 9223372036854775808;
+', TOKEN_PARSE);
+foreach ($tokens as $token) {
+    if (is_array($token)) {
+        $name = token_name($token[0]);
+        if ($name == "T_LNUMBER" || $name == "T_DNUMBER") {
+            echo $name, ":", $token[1], "\n";
+        }
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "T_LNUMBER:1_000\n",
+            "T_LNUMBER:0xCAFE_F00D\n",
+            "T_LNUMBER:0b1010_0110\n",
+            "T_LNUMBER:0o755\n",
+            "T_DNUMBER:.5e1\n",
+            "T_DNUMBER:5.\n",
+            "T_DNUMBER:5.e+1_2\n",
+            "T_DNUMBER:9223372036854775808\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn tokenizer_numeric_literal_fixture_runs_through_phpc_cli() {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("compiler has a workspace root");
+    let fixture_arg = "tests/fixtures/milestone2305/tokenizer_numeric_literals.php";
+    let output = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root)
+        .args(["run", fixture_arg])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run phpc for {fixture_arg}: {error}"));
+
+    let expected = fs::read_to_string(
+        workspace_root.join("tests/fixtures/milestone2305/tokenizer_numeric_literals.cli"),
+    )
+    .unwrap_or_else(|error| panic!("failed to read CLI snapshot for {fixture_arg}: {error}"));
+    let actual = render_cli_snapshot(&output);
+
+    assert_eq!(actual, expected, "CLI snapshot mismatch for {fixture_arg}");
 }
 
 #[test]

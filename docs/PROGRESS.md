@@ -43250,3 +43250,25 @@ Next:
   split-lane batch. A checkpoint was still not created because
   `tools/checkpoint.sh` stages the full dirty tree and this worker was not
   asked to checkpoint.
+
+Next:
+
+- Added Milestone 2305, a bounded `ext/tokenizer` numeric literal scanner slice
+  for `token_get_all()`/`TOKEN_PARSE` and `PhpToken::tokenize()`. The tokenizer
+  now keeps PHP 8.x numeric-separator spellings in decimal, hexadecimal,
+  binary, explicit-octal, leading-dot/trailing-dot float, and exponent tokens,
+  classifies selected integer-overflow literals as `T_DNUMBER`, and preserves
+  PHP-style lexical splits for covered invalid separator positions.
+- Added the PHP-comparable Milestone 2305 fixture and direct `phpc run` CLI
+  snapshot for `TOKEN_PARSE` numeric rows, plus focused Rust tokenizer/runtime
+  tests for numeric token text, token IDs, lexical invalid-separator splits,
+  and CLI execution. `docs/probes/milestone2305-tokenizer-numeric-literals.md`
+  records the selected php-src PHPT provenance and unsupported edges.
+- Unsupported edges remain: `TOKEN_PARSE` parse-error object parity for invalid
+  syntax or invalid numeric separators, heredoc/nowdoc token parity, and
+  parser/runtime execution of binary or explicit-octal numeric literals outside
+  tokenizer source strings.
+- Focused checks passed:
+  `cargo test -p phpc --test tokenizer_function_core -- --test-threads=1`;
+  `cargo run -p phpc -- test tests/fixtures/milestone2305`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone2305`.
