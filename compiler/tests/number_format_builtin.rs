@@ -91,6 +91,24 @@ echo $reflection->getName(), "|", $reflection->invoke(1234.5678, 2);
 }
 
 #[test]
+fn number_format_pads_large_positive_decimals_for_integer_inputs() {
+    let execution = run_source(
+        r#"<?php
+$formatted = number_format(-2000, 2768);
+echo strlen($formatted), "\n";
+echo substr($formatted, 0, 7), "\n";
+echo substr($formatted, -8), "\n";
+echo ($formatted === "-2,000." . str_repeat("0", 2768)) ? "match" : "mismatch";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "2775\n-2,000.\n00000000\nmatch");
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn number_format_rejects_trailing_junk_numeric_strings() {
     let execution = run_source(
         r#"<?php

@@ -131250,7 +131250,7 @@ fn format_number_format_integer(
     decimal_separator: &str,
     thousands_separator: &str,
 ) -> String {
-    let decimals = decimals.clamp(i32::MIN as i64, 100);
+    let decimals = decimals.clamp(i32::MIN as i64, NUMBER_FORMAT_INTEGER_DECIMAL_LIMIT);
     let mut abs = u128::from(number.unsigned_abs());
     if decimals < 0 {
         abs = round_number_format_integer_abs(abs, decimals.saturating_neg() as u32);
@@ -131269,6 +131269,8 @@ fn format_number_format_integer(
         width = decimals as usize
     )
 }
+
+const NUMBER_FORMAT_INTEGER_DECIMAL_LIMIT: i64 = 4096;
 
 fn round_number_format_integer_abs(number: u128, places: u32) -> u128 {
     if number == 0 {

@@ -1,0 +1,9 @@
+exit: 0
+stdout:
+2775
+-2,000.
+00000000
+match
+--- stdout end ---
+stderr:
+--- stderr end ---

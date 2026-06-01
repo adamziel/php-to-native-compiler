@@ -4,6 +4,20 @@
 
 Implemented:
 
+- Added a focused `number_format()` math-row residual slice for large positive
+  decimal padding on integer-shaped inputs. The integer formatter now preserves
+  exact grouping and appends bounded fractional zero padding through 4096
+  digits, covering the reached `number_format(-2000, 2768)` PHPT row without
+  broadening finite-float precision. Focused Rust passed `5 / 5` in
+  `number_format_builtin`; `cargo build -p phpc --bin phpc` passed; the
+  Milestone 2306 `phpc run` fixture passed; and selected PHPT proof passed
+  `4 / 4` for `ext/standard/tests/math/bug21523.phpt`,
+  `number_format_basic.phpt`, `number_format_decimals.phpt`, and
+  `number_format_negative_zero.phpt`. Unsupported edges remain positive
+  integer fractional padding above 4096 digits, finite-float precision beyond
+  the bounded formatter, locale-aware grouping, exact diagnostics outside the
+  covered rows, resource/object conversions, and native lowering.
+
 - Added a compact `parse_url()` relative-reference slice for query-only and
   fragment-only inputs. `parse_url("?q")`, `parse_url("#f")`, empty query or
   fragment forms, and component extraction no longer synthesize an empty

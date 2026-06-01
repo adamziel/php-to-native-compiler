@@ -5884,11 +5884,12 @@
   scalar/null separators, returning grouped PHP-style decimal text.
   Multi-character decimal and thousands separators are preserved. Integer
   inputs and integer-shaped numeric strings keep exact 64-bit integer
-  precision for grouping and negative-decimal rounding. String arguments with
-  trailing non-whitespace bytes after a numeric prefix are rejected instead of
-  prefix-parsed. Non-finite values, enormous precision beyond the bounded
-  formatter, locale-aware grouping, exact PHP diagnostics for all coercions,
-  and native lowering remain unsupported.
+  precision for grouping, negative-decimal rounding, and bounded positive
+  fractional zero padding through 4096 digits. String arguments with trailing
+  non-whitespace bytes after a numeric prefix are rejected instead of
+  prefix-parsed. Non-finite values, precision beyond the bounded formatter,
+  locale-aware grouping, exact PHP diagnostics for all coercions, and native
+  lowering remain unsupported.
   Elementary math helpers currently cover `pi()`, `getrandmax()`,
   `mt_getrandmax()`, `sin()`, `cos()`, `tan()`, `asin()`, `acos()`, `atan()`,
   `atan2()`, `sinh()`, `cosh()`, `tanh()`, `asinh()`, `acosh()`, `atanh()`,
@@ -11815,7 +11816,8 @@
   array/object/resource operands, NaN/infinity behavior, exact diagnostics, and
   native lowering beyond function-table introspection
 - `number_format()` behavior beyond the current finite scalar formatting
-  subset: non-finite values, precision beyond the bounded formatter,
+  subset: non-finite values, positive integer fractional padding above 4096
+  digits, finite-float precision above the current bounded formatter,
   locale-aware grouping, exact PHP diagnostics for every coercion, resource
   and object conversions, and native lowering beyond function-table
   introspection
