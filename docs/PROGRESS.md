@@ -1,5 +1,24 @@
 # Progress Log
 
+## 2026-06-01
+
+Implemented:
+
+- Added a compact tokenizer/`PhpToken` PHPT slice for selected
+  `ext/tokenizer/tests` rows. `TOKEN_PARSE` tokenization now distinguishes the
+  focused trait-alias `namespace as` context as `T_STRING`, selected invalid
+  octal numeric literals with separators or 64-bit overflow keep PHP-compatible
+  token classes, and non-canonical `(double)`/`(real)` casts in parse mode emit
+  the covered deprecation through the existing runtime error-handler path before
+  returning `PhpToken` objects or `token_get_all()` arrays. Focused Rust tests
+  cover the scanner and interpreter surfaces, and focused PHPT proof targets
+  `bug77966.phpt`, `gh19507_eval.phpt`,
+  `invalid_large_octal_with_underscores.phpt`, and
+  `invalid_octal_dnumber.phpt`. Full `TOKEN_PARSE` parse-error validation,
+  uncaught-exception fatal formatting from tokenizer error handlers, complete
+  numeric-separator/overflow parity, full heredoc/nowdoc tokenization, and
+  `PhpToken` object-handle reuse parity remain unsupported.
+
 ## 2026-05-27
 
 Implemented:

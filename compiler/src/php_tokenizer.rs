@@ -499,7 +499,11 @@ pub fn token_name(id: i64) -> &'static str {
 }
 
 pub fn tokenize(source: &[u8]) -> Vec<PhpTokenizerToken> {
-    let mut scanner = Scanner::new(source);
+    tokenize_with_parse_mode(source, false)
+}
+
+pub fn tokenize_with_parse_mode(source: &[u8], token_parse: bool) -> Vec<PhpTokenizerToken> {
+    let mut scanner = Scanner::new(source, token_parse);
     scanner.scan();
     scanner.tokens
 }
@@ -509,17 +513,19 @@ struct Scanner<'a> {
     index: usize,
     line: i64,
     in_php: bool,
+    token_parse: bool,
     last_significant_token: Option<i64>,
     tokens: Vec<PhpTokenizerToken>,
 }
 
 impl<'a> Scanner<'a> {
-    fn new(source: &'a [u8]) -> Self {
+    fn new(source: &'a [u8], token_parse: bool) -> Self {
         Self {
             source,
             index: 0,
             line: 1,
             in_php: false,
+            token_parse,
             last_significant_token: None,
             tokens: Vec::new(),
         }
@@ -853,9 +859,7 @@ impl<'a> Scanner<'a> {
             return;
         }
 
-        while self.peek().is_some_and(|byte| byte.is_ascii_digit()) {
-            self.index += 1;
-        }
+        self.consume_digits_with_separators(u8::is_ascii_digit);
 
         let mut is_float = false;
         if self.peek() == Some(b'.')
@@ -884,11 +888,54 @@ impl<'a> Scanner<'a> {
             }
         }
 
+        if !is_float {
+            is_float = self.octal_like_literal_overflows_to_double(start, self.index);
+        }
+
         self.push_token(
             if is_float { T_DNUMBER } else { T_LNUMBER },
             start,
             self.index,
         );
+    }
+
+    fn consume_digits_with_separators(&mut self, mut is_digit: impl FnMut(&u8) -> bool) {
+        while self.peek().is_some_and(|byte| is_digit(&byte)) {
+            self.index += 1;
+            if self.peek() == Some(b'_') && self.peek_offset(1).is_some_and(|next| is_digit(&next))
+            {
+                self.index += 1;
+            }
+        }
+    }
+
+    fn octal_like_literal_overflows_to_double(&self, start: usize, end: usize) -> bool {
+        let literal = &self.source[start..end];
+        if literal.len() < 2 || literal.first() != Some(&b'0') || literal.contains(&b'_') {
+            return false;
+        }
+        if !literal.iter().all(u8::is_ascii_digit) {
+            return false;
+        }
+
+        let significant = literal
+            .iter()
+            .copied()
+            .skip_while(|byte| *byte == b'0')
+            .collect::<Vec<_>>();
+        if significant.is_empty() {
+            return false;
+        }
+
+        // PHP's tokenizer reports octal-shaped integer literals that overflow
+        // the signed 64-bit integer range as T_DNUMBER. Keep this conservative:
+        // short invalid-octal parse-error shapes such as 078 remain T_LNUMBER
+        // in the non-parse token stream.
+        if significant.iter().any(|byte| *byte >= b'8') {
+            significant.len() >= 23
+        } else {
+            significant.len() >= 22
+        }
     }
 
     fn consume_identifier_or_keyword(&mut self) {
@@ -930,7 +977,7 @@ impl<'a> Scanner<'a> {
             return;
         }
 
-        let id = if self.identifier_is_reserved_word_in_string_context() {
+        let id = if self.identifier_is_reserved_word_in_string_context(start, self.index) {
             T_STRING
         } else {
             token_id_for_identifier(&self.source[start..self.index]).unwrap_or(T_STRING)
@@ -1022,7 +1069,7 @@ impl<'a> Scanner<'a> {
         false
     }
 
-    fn identifier_is_reserved_word_in_string_context(&self) -> bool {
+    fn identifier_is_reserved_word_in_string_context(&self, start: usize, end: usize) -> bool {
         matches!(
             self.last_significant_token,
             Some(
@@ -1037,7 +1084,32 @@ impl<'a> Scanner<'a> {
                     | T_AMPERSAND_FOLLOWED_BY_VAR_OR_VARARG
                     | T_AMPERSAND_NOT_FOLLOWED_BY_VAR_OR_VARARG
             )
-        )
+        ) || (self.token_parse
+            && self.last_significant_token == Some(b'{' as i64)
+            && self.source[start..end].eq_ignore_ascii_case(b"namespace")
+            && self.next_identifier_after_whitespace_is(end, b"as"))
+    }
+
+    fn next_identifier_after_whitespace_is(&self, mut cursor: usize, expected: &[u8]) -> bool {
+        while self
+            .source
+            .get(cursor)
+            .copied()
+            .is_some_and(is_php_whitespace)
+        {
+            cursor += 1;
+        }
+        let Some(candidate) = self.source.get(cursor..cursor + expected.len()) else {
+            return false;
+        };
+        if !candidate.eq_ignore_ascii_case(expected) {
+            return false;
+        }
+        !self
+            .source
+            .get(cursor + expected.len())
+            .copied()
+            .is_some_and(|byte| byte == b'_' || byte.is_ascii_alphanumeric())
     }
 
     fn ampersand_is_followed_by_var_or_vararg(&self) -> bool {

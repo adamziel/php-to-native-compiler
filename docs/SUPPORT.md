@@ -35,10 +35,15 @@
   current namespace name, or an empty string in global namespace.
 - tokenizer runtime builtins: `token_get_all()` and `token_name()` cover the
   core interpreter token stream, `TOKEN_PARSE` is accepted for the supported
-  contextual reserved-word cases, and `PhpToken` supports construction,
-  subclass tokenization, `getTokenName()`, `is()`, `isIgnorable()`, and
-  `__toString()` for the current tokenizer subset. Full parse-error
-  validation for `TOKEN_PARSE` and complete heredoc/nowdoc token parity remain
+  contextual reserved-word cases, including selected member/class-constant and
+  trait-alias `namespace as` positions, selected invalid-octal numeric token
+  shapes preserve PHP's token class, and `TOKEN_PARSE` emits the covered
+  non-canonical `(double)`/`(real)` cast deprecations through the runtime error
+  handler. `PhpToken` supports construction, subclass tokenization,
+  `getTokenName()`, `is()`, `isIgnorable()`, and `__toString()` for the current
+  tokenizer subset. Full parse-error validation for `TOKEN_PARSE`, complete
+  numeric-separator/overflow parity, uncaught-exception fatal formatting from
+  tokenizer error handlers, and complete heredoc/nowdoc token parity remain
   unsupported.
 - static variables backed by per-scope materialized symbol tables
 - direct variable removal: `unset($name)` removes static variables from the
