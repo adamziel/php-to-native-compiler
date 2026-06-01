@@ -2764,15 +2764,19 @@
   IDNA, full percent-encoding rules, mutation setters, complete validation
   error arrays, non-ASCII host processing, and native lowering remain
   unsupported.
-- `http_build_query()` supports ordered arrays and initialized public object
-  properties, including recursive nested arrays/objects, top-level numeric
-  prefixes, explicit argument separators, null/resource elision,
-  reference-backed array values, and `PHP_QUERY_RFC1738` or
-  `PHP_QUERY_RFC3986` component encoding. Closure values, exact PHP
-  diagnostics, binary string/key byte fidelity outside UTF-8 strings,
-  INI-derived argument separators beyond the current `&` fallback, cyclic
-  structures, object custom serialization hooks, and native lowering beyond
-  function-table introspection remain unsupported.
+- `http_build_query()` supports ordered arrays and initialized object
+  properties visible to the current call context, including public properties
+  outside methods and matching private/protected properties inside class
+  method context. It also supports recursive nested arrays/objects, skips
+  recursive object re-entry, top-level numeric prefixes, direct named
+  arguments for the documented parameters, explicit argument separators,
+  null/resource elision, reference-backed array values, and
+  `PHP_QUERY_RFC1738` or `PHP_QUERY_RFC3986` component encoding. Closure
+  values, exact PHP diagnostics, binary string/key byte fidelity outside UTF-8
+  strings, INI-derived argument separators beyond the current `&` fallback,
+  cyclic array/reference structures, object custom serialization hooks, enum
+  conversion, and native lowering beyond function-table introspection remain
+  unsupported.
 - `$_FILES` is seeded as a bounded root superglobal for `phpc run`. By default
   it is an empty ordered array. When `PHPC_FILES` is set, the runtime treats it
   as an explicit URL-encoded upload metadata seed with `$_FILES`-style keys
@@ -8571,8 +8575,8 @@
   output-buffer subset as the builtin section above; direct native calls reject
   under the output-buffer boundary, while native function-table introspection
   recognizes the names.
-  `http_build_query` accepts the same ordered array/public object query
-  encoding subset as the builtin section above; direct native
+  `http_build_query` accepts the same ordered array/context-visible object
+  query encoding subset as the builtin section above; direct native
   `http_build_query(...)` calls reject until native array/object traversal and
   string assembly exist, while native function-table introspection recognizes
   the name.
@@ -11288,13 +11292,16 @@
   exact warning text, SAPI/web-server integration, network response emission,
   exact `ValueError`/`TypeError` diagnostics, partial-output behavior, and
   native lowering beyond function-table introspection
-- `http_build_query()` behavior beyond ordered array and initialized public
-  object-property data, recursive arrays/objects, scalar value conversion,
-  null/resource elision, top-level numeric prefixes, explicit separators, and
+- `http_build_query()` behavior beyond ordered array and initialized
+  context-visible object-property data, recursive arrays/objects with
+  recursive object re-entry skipped, scalar value conversion, null/resource
+  elision, top-level numeric prefixes, direct named arguments for documented
+  parameters, explicit separators, and
   `PHP_QUERY_RFC1738`/`PHP_QUERY_RFC3986` encoding: exact diagnostics, cyclic
-  structures, binary key/value fidelity outside UTF-8 strings, INI-derived
-  argument separators beyond the current `&` fallback, object custom hooks,
-  and native lowering beyond function-table introspection
+  array/reference structures, binary key/value fidelity outside UTF-8 strings,
+  INI-derived argument separators beyond the current `&` fallback, object
+  custom hooks, enum conversion, and native lowering beyond function-table
+  introspection
 - `http_response_code()` behavior beyond no-argument reads and integer writes
   of request-local status state, including previous-value return behavior:
   real SAPI emission, exact valid-code ranges, reason phrases, web-server

@@ -83998,7 +83998,7 @@ impl Interpreter {
                 ),
             )),
             "parse_url" => call_parse_url(&args, span),
-            "http_build_query" => call_http_build_query(&args, span),
+            "http_build_query" => call_http_build_query(self, &args, span),
             "urlencode" => call_urlencode(&args, span),
             "rawurlencode" => call_rawurlencode(&args, span),
             "rawurldecode" => call_rawurldecode(&args, span),
@@ -99755,6 +99755,15 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
             vec![
                 reflection_internal_param("url", "string"),
                 reflection_internal_optional_int_param("component", -1),
+            ],
+        ),
+        "http_build_query" => (
+            "string",
+            vec![
+                reflection_internal_param("data", "array|object"),
+                reflection_internal_optional_string_param("numeric_prefix", ""),
+                reflection_internal_optional_null_param("arg_separator", "?string"),
+                reflection_internal_optional_int_param("encoding_type", PHP_QUERY_RFC1738),
             ],
         ),
         "json_encode" => (
@@ -123188,7 +123197,11 @@ enum HttpQueryEncoding {
     Rfc3986,
 }
 
-fn call_http_build_query(args: &[Value], span: Span) -> CompileResult<Value> {
+fn call_http_build_query(
+    interpreter: &Interpreter,
+    args: &[Value],
+    span: Span,
+) -> CompileResult<Value> {
     if !(1..=4).contains(&args.len()) {
         return Err(runtime_error(
             span,
@@ -123199,23 +123212,6 @@ fn call_http_build_query(args: &[Value], span: Span) -> CompileResult<Value> {
             ),
         ));
     }
-
-    let root = match &args[0] {
-        Value::Array(array) => array.clone(),
-        Value::Object(object) => public_object_properties_for_http_query(object),
-        other => {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "http_build_query()",
-                    format!(
-                        "data argument must be array or object in the current subset, got {}",
-                        other.type_name()
-                    ),
-                ),
-            ));
-        }
-    };
 
     let numeric_prefix = match args.get(1) {
         Some(value) => {
@@ -123252,19 +123248,80 @@ fn call_http_build_query(args: &[Value], span: Span) -> CompileResult<Value> {
         }
     };
 
+    let (current_class_id, protected_class_ids) = interpreter.current_property_access_context();
     let mut pairs = Vec::new();
-    for entry in root.entries() {
-        let key = http_query_top_level_key(&entry.key, &numeric_prefix);
-        collect_http_query_pairs(key, &entry.value_cloned(), &mut pairs, encoding, span)?;
+    let mut object_stack = Vec::new();
+    match &args[0] {
+        Value::Array(array) => {
+            for entry in array.entries() {
+                let key = http_query_top_level_key(&entry.key, &numeric_prefix);
+                collect_http_query_pairs(
+                    key,
+                    &entry.value_cloned(),
+                    &mut pairs,
+                    encoding,
+                    current_class_id,
+                    &protected_class_ids,
+                    &mut object_stack,
+                    span,
+                )?;
+            }
+        }
+        Value::Object(object) => {
+            collect_http_query_root_object_pairs(
+                object,
+                &mut pairs,
+                encoding,
+                current_class_id,
+                &protected_class_ids,
+                &mut object_stack,
+                span,
+            )?;
+        }
+        other => {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "http_build_query()",
+                    format!(
+                        "data argument must be array or object in the current subset, got {}",
+                        other.type_name()
+                    ),
+                ),
+            ));
+        }
     }
 
     Ok(Value::String(pairs.join(&separator)))
 }
 
-fn public_object_properties_for_http_query(object: &PhpObject) -> PhpArray {
+fn object_property_visible_for_http_query(
+    property: &ObjectProperty,
+    current_class_id: Option<ClassId>,
+    protected_class_ids: &[ClassId],
+) -> bool {
+    match property.visibility() {
+        Visibility::Public => true,
+        Visibility::Private => current_class_id == Some(property.declaring_class_id()),
+        Visibility::Protected => protected_class_ids.contains(&property.declaring_class_id()),
+    }
+}
+
+fn visible_object_properties_for_http_query(
+    object: &PhpObject,
+    current_class_id: Option<ClassId>,
+    protected_class_ids: &[ClassId],
+) -> PhpArray {
     let mut array = PhpArray::new();
     for property in object.properties() {
-        if property.visibility() == Visibility::Public && property.is_initialized() {
+        if property.is_initialized()
+            && !property.is_unset()
+            && object_property_visible_for_http_query(
+                &property,
+                current_class_id,
+                protected_class_ids,
+            )
+        {
             array.insert(
                 ArrayKey::String(property.name().to_string()),
                 property.value_cloned(),
@@ -123285,11 +123342,49 @@ fn http_query_child_key(parent: &str, key: &ArrayKey) -> String {
     format!("{parent}[{}]", key.display_key())
 }
 
+fn collect_http_query_root_object_pairs(
+    object: &PhpObject,
+    pairs: &mut Vec<String>,
+    encoding: HttpQueryEncoding,
+    current_class_id: Option<ClassId>,
+    protected_class_ids: &[ClassId],
+    object_stack: &mut Vec<i64>,
+    span: Span,
+) -> CompileResult<()> {
+    if object_stack.contains(&object.id()) {
+        return Ok(());
+    }
+
+    object_stack.push(object.id());
+    let array = visible_object_properties_for_http_query(
+        object,
+        current_class_id,
+        protected_class_ids,
+    );
+    for entry in array.entries() {
+        collect_http_query_pairs(
+            entry.key.display_key(),
+            &entry.value_cloned(),
+            pairs,
+            encoding,
+            current_class_id,
+            protected_class_ids,
+            object_stack,
+            span,
+        )?;
+    }
+    object_stack.pop();
+    Ok(())
+}
+
 fn collect_http_query_pairs(
     key: String,
     value: &Value,
     pairs: &mut Vec<String>,
     encoding: HttpQueryEncoding,
+    current_class_id: Option<ClassId>,
+    protected_class_ids: &[ClassId],
+    object_stack: &mut Vec<i64>,
     span: Span,
 ) -> CompileResult<()> {
     match value {
@@ -123301,22 +123396,37 @@ fn collect_http_query_pairs(
                     &entry.value_cloned(),
                     pairs,
                     encoding,
+                    current_class_id,
+                    protected_class_ids,
+                    object_stack,
                     span,
                 )?;
             }
             Ok(())
         }
         Value::Object(object) => {
-            let array = public_object_properties_for_http_query(object);
+            if object_stack.contains(&object.id()) {
+                return Ok(());
+            }
+            object_stack.push(object.id());
+            let array = visible_object_properties_for_http_query(
+                object,
+                current_class_id,
+                protected_class_ids,
+            );
             for entry in array.entries() {
                 collect_http_query_pairs(
                     http_query_child_key(&key, &entry.key),
                     &entry.value_cloned(),
                     pairs,
                     encoding,
+                    current_class_id,
+                    protected_class_ids,
+                    object_stack,
                     span,
                 )?;
             }
+            object_stack.pop();
             Ok(())
         }
         Value::Closure(_) => Err(runtime_error(

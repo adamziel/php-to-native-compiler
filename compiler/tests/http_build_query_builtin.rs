@@ -50,6 +50,61 @@ echo http_build_query(new UrlBuilder()), "\n";
 }
 
 #[test]
+fn http_build_query_matches_object_visibility_named_arg_and_recursion_phpts() {
+    let execution = run_source(
+        r#"<?php
+class QueryVisibility {
+    protected $foo;
+    private $bar;
+    public $test;
+
+    function build()
+    {
+        $this->bar = 'meuh';
+        $this->foo = 'lala';
+        $this->test = 'test';
+
+        var_dump(http_build_query($this));
+    }
+}
+
+class StringableObject {
+    public function __toString() : string {
+        return "Stringable";
+    }
+}
+
+class RecursiveQuery {
+    public $public = "input";
+}
+
+$obj = new QueryVisibility();
+$obj->build();
+var_dump(http_build_query($obj));
+var_dump(http_build_query(
+    array('hello' => 'world', 'foo' => 'bar'),
+    encoding_type: PHP_QUERY_RFC3986
+));
+$stringable = new StringableObject();
+var_dump(http_build_query(['hello', $stringable]));
+var_dump(http_build_query($stringable));
+var_dump(http_build_query(['hello', $stringable], numeric_prefix: 'prefix_'));
+var_dump(http_build_query($stringable, numeric_prefix: 'prefix_'));
+$recursive = new RecursiveQuery();
+$recursive->public = $recursive;
+var_dump(http_build_query($recursive));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "string(27) \"foo=lala&bar=meuh&test=test\"\nstring(9) \"test=test\"\nstring(19) \"hello=world&foo=bar\"\nstring(7) \"0=hello\"\nstring(0) \"\"\nstring(14) \"prefix_0=hello\"\nstring(0) \"\"\nstring(0) \"\"\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn http_build_query_recurses_and_skips_null_or_resource_values() {
     let execution = run_source(
         r#"<?php

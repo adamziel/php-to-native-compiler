@@ -1,5 +1,24 @@
 # Progress Log
 
+## 2026-06-01
+
+Implemented:
+
+- Extended the interpreter `http_build_query()` subset for the remaining
+  deterministic object/named-argument HTTP query PHPT slice. Direct calls now
+  publish internal parameter metadata for named arguments, preserve the
+  default `null` argument-separator route when only `encoding_type` or
+  `numeric_prefix` is named, include initialized non-public object properties
+  when the call runs in a matching class/protected method context, and skip
+  recursive object re-entry while continuing to encode scalar properties. This
+  moves the focused rows
+  `ext/standard/tests/http/http_build_query/bug26817.phpt`,
+  `gh12745.phpt`,
+  `http_build_query_object_just_stringable.phpt`, and
+  `http_build_query_object_recursif.phpt` without claiming enum conversion,
+  full cyclic array/reference handling, custom object serialization hooks,
+  exact diagnostics, or native lowering.
+
 ## 2026-05-27
 
 Implemented:

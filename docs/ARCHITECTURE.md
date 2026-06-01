@@ -539,10 +539,12 @@ and bracketed URL-encoded query pairs into `$_GET`, and
 `PHPC_CONTENT_TYPE=application/x-www-form-urlencoded` and `PHPC_REQUEST_BODY`
 seeds flat and bracketed URL-encoded body pairs into `$_POST`.
 `http_build_query()` uses the same ordered PHP-array model in the opposite
-direction for bounded query strings: it walks arrays or initialized public
-object properties, recurses with bracketed child keys, skips null/resource
-leaves, applies top-level numeric prefixes, and encodes components as
-RFC1738 form data by default or RFC3986 when requested. `PHPC_COOKIE`
+direction for bounded query strings: it walks arrays or initialized object
+properties visible to the current call context, recurses with bracketed child
+keys, skips recursive object re-entry plus null/resource leaves, applies
+top-level numeric prefixes, accepts direct named arguments for the documented
+parameters, and encodes components as RFC1738 form data by default or RFC3986
+when requested. `PHPC_COOKIE`
 is treated as an explicit semicolon-delimited cookie header seed for
 `$_COOKIE` and `$_SERVER["HTTP_COOKIE"]`. `PHPC_FILES` is treated as an
 explicit URL-encoded upload metadata seed for `$_FILES` using PHP-shaped keys
