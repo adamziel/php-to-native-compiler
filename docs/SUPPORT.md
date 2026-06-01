@@ -11541,9 +11541,10 @@ Unsupported code should fail with an explicit parse, runtime, or codegen error.
   `json_validate()`, `json_last_error()`, and `json_last_error_msg()` cover
   scalar, array, and public-property object values, `stdClass` decode results,
   associative decode mode, selected JSON constants, bigint-as-string decode,
-  numeric-string encoding, unicode and hex string escaping, pretty-print
-  formatting, partial output for unsupported values plus `INF`/`NAN`, validation
-  depth and `JSON_INVALID_UTF8_IGNORE` checks, request-local last-error state, bounded
+  numeric-string encoding, unicode, line-terminator, and hex string escaping,
+  pretty-print formatting, partial output for unsupported values plus
+  `INF`/`NAN`, validation depth and `JSON_INVALID_UTF8_IGNORE` checks,
+  request-local last-error state, bounded
   single-line decode error locations for depth/state/control/truncated-input
   failures, catchable `ValueError` diagnostics for invalid decode depth, and
   catchable `TypeError` diagnostics for extra arguments to

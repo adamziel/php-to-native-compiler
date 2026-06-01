@@ -38,6 +38,16 @@ Implemented:
   `ext/json/tests/inf_nan_error.phpt`. Other exception-flag behavior,
   serializer propagation, and broader option interactions remain unsupported.
 
+- Added the bounded JSON line-terminator escaping option row for
+  `json_encode()`: U+2028 and U+2029 remain `\u2028`/`\u2029` under default
+  encoding, `JSON_UNESCAPED_UNICODE`, or `JSON_UNESCAPED_LINE_TERMINATORS`
+  alone, and are emitted raw only when both unescaped-unicode and
+  unescaped-line-terminator flags are present. Focused Rust coverage exercises
+  both line separators; selected PHPT proof covers
+  `ext/json/tests/json_encode_u2028_u2029.phpt`. Broader Unicode
+  normalization and byte-invalid string option interactions remain
+  unsupported.
+
 ## 2026-05-27
 
 Implemented:

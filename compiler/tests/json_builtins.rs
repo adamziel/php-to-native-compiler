@@ -220,6 +220,35 @@ var_dump(json_encode(NAN, JSON_PARTIAL_OUTPUT_ON_ERROR));
 }
 
 #[test]
+fn json_encode_line_terminators_require_unicode_and_line_flags_to_unescape() {
+    let execution = run_source(
+        "<?php\n\
+$ls = json_decode('\"a\\u2028b\"');\n\
+$ps = json_decode('\"a\\u2029b\"');\n\
+var_dump(json_encode($ls));\n\
+var_dump(json_encode($ls, JSON_UNESCAPED_UNICODE));\n\
+var_dump(json_encode($ls, JSON_UNESCAPED_LINE_TERMINATORS));\n\
+var_dump(json_encode($ls, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_LINE_TERMINATORS));\n\
+var_dump(json_encode($ps, JSON_UNESCAPED_UNICODE));\n\
+var_dump(json_encode($ps, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_LINE_TERMINATORS));\n",
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "string(10) \"\"a\\u2028b\"\"\n",
+            "string(10) \"\"a\\u2028b\"\"\n",
+            "string(10) \"\"a\\u2028b\"\"\n",
+            "string(7) \"\"a\u{2028}b\"\"\n",
+            "string(10) \"\"a\\u2029b\"\"\n",
+            "string(7) \"\"a\u{2029}b\"\"\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn json_validate_tracks_state_depth_flags_and_utf8() {
     let execution = run_source(
         "<?php\n\

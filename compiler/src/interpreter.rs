@@ -124567,6 +124567,12 @@ fn json_quote_string(value: &str, options: JsonEncodeOptions) -> String {
             '&' if options.has_flag(PHP_JSON_HEX_AMP) => output.push_str("\\u0026"),
             '\'' if options.has_flag(PHP_JSON_HEX_APOS) => output.push_str("\\u0027"),
             ch if ch < ' ' => output.push_str(&format!("\\u{:04x}", ch as u32)),
+            ch @ ('\u{2028}' | '\u{2029}')
+                if !(options.has_flag(PHP_JSON_UNESCAPED_UNICODE)
+                    && options.has_flag(PHP_JSON_UNESCAPED_LINE_TERMINATORS)) =>
+            {
+                output.push_str(&format!("\\u{:04x}", ch as u32));
+            }
             ch if ch as u32 > 0x7f && !options.has_flag(PHP_JSON_UNESCAPED_UNICODE) => {
                 let code = ch as u32;
                 if code <= 0xffff {

@@ -27,7 +27,8 @@ claimed by the Batch022 author packet plus the bounded depth/error-location
 rows `ext/json/tests/007.phpt`, `ext/json/tests/json_decode_error.phpt`,
 `ext/json/tests/json_last_error_error.phpt`, and
 `ext/json/tests/json_last_error_msg_error.phpt`, plus the bounded
-`INF`/`NAN` partial-output row `ext/json/tests/inf_nan_error.phpt`.
+`INF`/`NAN` partial-output row `ext/json/tests/inf_nan_error.phpt` and
+line-terminator option row `ext/json/tests/json_encode_u2028_u2029.phpt`.
 
 ## Semantic Gaps
 
