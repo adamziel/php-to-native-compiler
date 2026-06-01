@@ -59,38 +59,32 @@ class Exception {}
 }
 
 #[test]
-fn builtin_exception_constructor_arguments_remain_explicitly_unsupported() {
-    let error = run_source(
+fn builtin_exception_constructor_arguments_initialize_message_state() {
+    let execution = run_source(
         r#"<?php
 $exception = new Exception("message");
+echo $exception->getMessage();
 "#,
     )
-    .unwrap_err();
+    .unwrap();
 
-    assert_eq!(error.phase, Phase::Runtime);
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 14);
-    assert_eq!(
-        error.message,
-        "unsupported object instantiation for Exception: constructor arguments are not implemented"
-    );
+    assert_eq!(execution.stdout, "message");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
 fn throw_new_exception_reports_uncaught_boundary_after_operand_evaluation() {
-    let error = run_source(
+    let execution = run_source(
         r#"<?php
 throw new Exception();
 "#,
     )
-    .unwrap_err();
+    .unwrap();
 
-    assert_eq!(error.phase, Phase::Runtime);
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 1);
+    assert_eq!(execution.exit_code, 255);
     assert_eq!(
-        error.message,
-        "unsupported call throw: uncaught Exception propagation beyond catch/finally is not implemented"
+        execution.stdout,
+        "Fatal error: Uncaught Exception in Command line code:2\nStack trace:\n#0 {main}\n  thrown in Command line code on line 2"
     );
 }
 

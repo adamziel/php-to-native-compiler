@@ -11397,9 +11397,10 @@ impl LlvmGenerator {
         output.push_str("@.fmt_str = private unnamed_addr constant [3 x i8] c\"%s\\00\"\n");
 
         for (name, text) in &self.strings {
+            let len = php_string_literal_byte_len(text) + 1;
             output.push_str(&format!(
                 "@{name} = private unnamed_addr constant [{} x i8] c\"{}\"\n",
-                text.as_bytes().len() + 1,
+                len,
                 llvm_c_string(text)
             ));
         }
@@ -13057,6 +13058,16 @@ impl LlvmGenerator {
         }
 
         let value = self.emit_expr(&args[0])?;
+        if matches!(
+            &value,
+            IrValue::Int(_)
+                | IrValue::Float(_)
+                | IrValue::Bool(_)
+                | IrValue::BoolExpr(_)
+                | IrValue::Null
+        ) {
+            return Err(self.unsupported(span, LLVM_FUNCTION_CALL_REJECTION));
+        }
         if let Some(result) = self.function_exists_result_for_value(&value) {
             return Ok(IrValue::Bool(result));
         }
@@ -13177,6 +13188,16 @@ impl LlvmGenerator {
 
         let value = self.emit_expr(&args[0])?;
         if builtin_name.eq_ignore_ascii_case("extension_loaded") {
+            if matches!(
+                &value,
+                IrValue::Int(_)
+                    | IrValue::Float(_)
+                    | IrValue::Bool(_)
+                    | IrValue::BoolExpr(_)
+                    | IrValue::Null
+            ) {
+                return Err(self.unsupported(span, LLVM_FUNCTION_CALL_REJECTION));
+            }
             return self.emit_native_text_membership_bool(
                 value,
                 NativeTextSurface::ExtensionName,
@@ -13560,7 +13581,7 @@ impl LlvmGenerator {
 
     fn strlen_result_for_value(&self, value: &IrValue) -> Option<usize> {
         match value {
-            IrValue::String(value) => Some(value.len()),
+            IrValue::String(value) => Some(php_string_literal_byte_len(value)),
             IrValue::StringPtr(_) => {
                 let values = self.known_string_values_for_value(value)?;
                 known_strings_have_uniform_byte_length(&values)
@@ -16007,7 +16028,7 @@ impl LlvmGenerator {
         self.emit_native_value_string_pointer_stdout(
             &format!("@{global}"),
             usize_type,
-            &value.len().to_string(),
+            &php_string_literal_byte_len(value).to_string(),
         );
     }
 
@@ -16561,7 +16582,7 @@ impl LlvmGenerator {
                 let global = self.add_string(&value);
                 Ok(self.emit_native_value_from_string_bytes(
                     &format!("@{global}"),
-                    &value.len().to_string(),
+                    &php_string_literal_byte_len(&value).to_string(),
                 ))
             }
             IrValue::StringPtr(value) => {
@@ -16637,11 +16658,11 @@ impl LlvmGenerator {
 
     fn known_string_pointer_byte_len(&self, value: &str) -> Option<usize> {
         let values = self.known_string_values(value)?;
-        let first = values.values().first()?.len();
+        let first = php_string_literal_byte_len(values.values().first()?);
         values
             .values()
             .iter()
-            .all(|value| value.len() == first)
+            .all(|value| php_string_literal_byte_len(value) == first)
             .then_some(first)
     }
 
@@ -56411,6 +56432,18 @@ impl CGenerator {
         }
 
         let value = self.emit_expr(&args[0])?;
+        if matches!(
+            &value,
+            CValue::Int(_)
+                | CValue::Float(_)
+                | CValue::Bool(_)
+                | CValue::BoolExpr(_)
+                | CValue::ComparisonDecision(_)
+                | CValue::ArrayHandle(_)
+                | CValue::Null
+        ) {
+            return Err(self.unsupported(span, ASSEMBLY_FUNCTION_CALL_REJECTION));
+        }
         let candidates = self.function_exists_text_membership_candidates();
         self.emit_native_text_membership_bool(
             value,
@@ -56566,6 +56599,20 @@ impl CGenerator {
         }
 
         let value = self.emit_expr(&args[0])?;
+        if builtin_name.eq_ignore_ascii_case("extension_loaded")
+            && matches!(
+                &value,
+                CValue::Int(_)
+                    | CValue::Float(_)
+                    | CValue::Bool(_)
+                    | CValue::BoolExpr(_)
+                    | CValue::ComparisonDecision(_)
+                    | CValue::ArrayHandle(_)
+                    | CValue::Null
+            )
+        {
+            return Err(self.unsupported(span, ASSEMBLY_FUNCTION_CALL_REJECTION));
+        }
         if let Some(predicate_tag) = native_value_type_predicate_tag(builtin_name) {
             if matches!(
                 &value,
@@ -57069,7 +57116,7 @@ impl CGenerator {
 
     fn strlen_result_for_value(&self, value: &CValue) -> Option<usize> {
         match value {
-            CValue::String(value) => Some(value.len()),
+            CValue::String(value) => Some(php_string_literal_byte_len(value)),
             CValue::StringExpr(_) => {
                 let values = self.known_string_values_for_value(value)?;
                 known_strings_have_uniform_byte_length(&values)
@@ -58337,11 +58384,12 @@ impl CGenerator {
                 let (bytes, byte_len) = if value.is_empty() {
                     ("NULL".to_string(), "0".to_string())
                 } else {
-                    let bytes = c_byte_array(value.as_bytes());
+                    let literal_bytes = php_string_literal_bytes(&value);
+                    let bytes = c_byte_array(&literal_bytes);
                     let data = format!("phpc_native_comparison_bytes_{index}");
                     self.static_data
                         .push(format!("static const uint8_t {data}[] = {{{bytes}}};"));
-                    (data, value.len().to_string())
+                    (data, literal_bytes.len().to_string())
                 };
                 self.body.push(format!(
                     "phpc_NativeStringHandle {string} = phpc_native_string_from_bytes({bytes}, {byte_len});"
@@ -58408,11 +58456,12 @@ impl CGenerator {
                 let (bytes, byte_len) = if value.is_empty() {
                     ("NULL".to_string(), "0".to_string())
                 } else {
-                    let bytes = c_byte_array(value.as_bytes());
+                    let literal_bytes = php_string_literal_bytes(&value);
+                    let bytes = c_byte_array(&literal_bytes);
                     let data = format!("phpc_native_value_bytes_{index}");
                     self.static_data
                         .push(format!("static const uint8_t {data}[] = {{{bytes}}};"));
-                    (data, value.len().to_string())
+                    (data, literal_bytes.len().to_string())
                 };
                 self.body.push(format!(
                     "phpc_NativeDiagnosticHandle {diagnostic_handle} = {{0}};"
@@ -59311,7 +59360,7 @@ impl CGenerator {
 
     fn c_string_value_byte_len_operand(&mut self, value: &CValue) -> Option<String> {
         match value {
-            CValue::String(value) => Some(value.len().to_string()),
+            CValue::String(value) => Some(php_string_literal_byte_len(value).to_string()),
             CValue::StringExpr(value) => self.c_string_expr_byte_len_operand(value),
             _ => None,
         }
@@ -64491,7 +64540,7 @@ impl CGenerator {
         predicate_tag: &str,
     ) -> CValue {
         self.uses_native_array_helpers = true;
-        self.uses_native_reference_helpers |= value.is_reference;
+        self.uses_native_reference_helpers = true;
 
         let result = self.next_native_name("native_value_type_predicate");
         let diagnostic = self.next_native_name("native_value_type_predicate_diagnostic");
@@ -65216,11 +65265,12 @@ impl CGenerator {
     fn emit_native_string_helper_echo(&mut self, value: &str) {
         let index = self.next_static_data;
         self.next_static_data += 1;
-        let bytes = c_byte_array(value.as_bytes());
+        let literal_bytes = php_string_literal_bytes(value);
+        let bytes = c_byte_array(&literal_bytes);
         let data = format!("phpc_native_bytes_{index}");
         self.static_data
             .push(format!("static const uint8_t {data}[] = {{{bytes}}};"));
-        self.emit_native_string_pointer_helper_echo(&data, &value.len().to_string());
+        self.emit_native_string_pointer_helper_echo(&data, &literal_bytes.len().to_string());
     }
 
     fn emit_native_string_pointer_helper_echo(&mut self, value: &str, len: &str) {
@@ -65342,16 +65392,49 @@ impl CGenerator {
     }
 }
 
+const PHP_ESCAPED_BYTE_SENTINEL_BASE: u32 = 0xE000;
+const PHP_ESCAPED_BYTE_SENTINEL_END: u32 = PHP_ESCAPED_BYTE_SENTINEL_BASE + 0xFF;
+
+fn php_escaped_byte_sentinel_value(ch: char) -> Option<u8> {
+    let value = ch as u32;
+    if (PHP_ESCAPED_BYTE_SENTINEL_BASE..=PHP_ESCAPED_BYTE_SENTINEL_END).contains(&value) {
+        Some((value - PHP_ESCAPED_BYTE_SENTINEL_BASE) as u8)
+    } else {
+        None
+    }
+}
+
+fn php_string_literal_bytes(value: &str) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(value.len());
+    for ch in value.chars() {
+        if let Some(byte) = php_escaped_byte_sentinel_value(ch) {
+            bytes.push(byte);
+        } else {
+            let mut buffer = [0_u8; 4];
+            bytes.extend_from_slice(ch.encode_utf8(&mut buffer).as_bytes());
+        }
+    }
+    bytes
+}
+
+fn php_string_literal_byte_len(value: &str) -> usize {
+    php_string_literal_bytes(value).len()
+}
+
+fn php_string_literal_contains_nul(value: &str) -> bool {
+    php_string_literal_bytes(value).contains(&0)
+}
+
 fn llvm_c_string(value: &str) -> String {
     let mut escaped = String::new();
-    for byte in value.as_bytes() {
-        match *byte {
+    for byte in php_string_literal_bytes(value) {
+        match byte {
             b'\\' => escaped.push_str("\\5C"),
             b'"' => escaped.push_str("\\22"),
             b'\n' => escaped.push_str("\\0A"),
             b'\r' => escaped.push_str("\\0D"),
             b'\t' => escaped.push_str("\\09"),
-            0x20..=0x7e => escaped.push(*byte as char),
+            0x20..=0x7e => escaped.push(byte as char),
             other => escaped.push_str(&format!("\\{other:02X}")),
         }
     }
@@ -65360,16 +65443,20 @@ fn llvm_c_string(value: &str) -> String {
 }
 
 fn c_string(value: &str) -> String {
+    c_byte_string(&php_string_literal_bytes(value))
+}
+
+fn c_byte_string(bytes: &[u8]) -> String {
     let mut escaped = String::new();
-    for ch in value.chars() {
-        match ch {
-            '\\' => escaped.push_str("\\\\"),
-            '"' => escaped.push_str("\\\""),
-            '\n' => escaped.push_str("\\n"),
-            '\r' => escaped.push_str("\\r"),
-            '\t' => escaped.push_str("\\t"),
-            ch if ch.is_ascii_graphic() || ch == ' ' => escaped.push(ch),
-            ch => escaped.push_str(&format!("\\x{:02X}", ch as u32)),
+    for byte in bytes {
+        match *byte {
+            b'\\' => escaped.push_str("\\\\"),
+            b'"' => escaped.push_str("\\\""),
+            b'\n' => escaped.push_str("\\n"),
+            b'\r' => escaped.push_str("\\r"),
+            b'\t' => escaped.push_str("\\t"),
+            0x20..=0x7e => escaped.push(*byte as char),
+            byte => escaped.push_str(&format!("\\{byte:03o}")),
         }
     }
     escaped
@@ -67110,7 +67197,7 @@ fn native_filesystem_path_operation_assembly_rejection(
 fn known_strings_have_uniform_byte_length(values: &KnownString) -> Option<usize> {
     let mut result = None;
     for value in values.values() {
-        let current = value.len();
+        let current = php_string_literal_byte_len(value);
         if let Some(previous) = result {
             if previous != current {
                 return None;
@@ -67123,7 +67210,10 @@ fn known_strings_have_uniform_byte_length(values: &KnownString) -> Option<usize>
 }
 
 fn known_strings_are_nul_free(values: &KnownString) -> bool {
-    values.values().iter().all(|value| !value.contains('\0'))
+    values
+        .values()
+        .iter()
+        .all(|value| !php_string_literal_contains_nul(value))
 }
 
 fn known_strings_have_uniform_defined_result(values: &KnownString) -> Option<bool> {
@@ -72385,10 +72475,7 @@ echo " 10" < "zeta";
         let c_source = emit_c_source_for_assembly(&binary_program)
             .expect("known binary string comparison pairs should lower through C fallback");
 
-        assert!(
-            c_source.contains("strcmp("),
-            "numeric-vs-nonnumeric, leading-numeric, and sign/dot-prefixed nonnumeric pairs should lower through generated-C binary string comparison:\n{c_source}"
-        );
+        assert_known_string_comparison_runtime_boundary(&c_source);
 
         for source in [
             "<?php\necho \"10\" < \"2\";\n",
@@ -72397,11 +72484,21 @@ echo " 10" < "zeta";
             "<?php\necho \".5\" < \"5.\";\n",
         ] {
             let program = crate::parse(source).expect("parse numeric string comparison source");
-            let error = emit_c_source_for_assembly(&program).unwrap_err();
-
-            assert_eq!(error.phase, Phase::Codegen);
-            assert_eq!(error.message, assembly_comparison_rejection());
+            let c_source = emit_c_source_for_assembly(&program)
+                .expect("known string comparison source should lower through runtime boundary");
+            assert_known_string_comparison_runtime_boundary(&c_source);
         }
+    }
+
+    fn assert_known_string_comparison_runtime_boundary(c_source: &str) {
+        assert!(
+            c_source.contains("phpc_native_value_from_string_bytes_with_diagnostic"),
+            "known string pairs should materialize through the binary string value boundary:\n{c_source}"
+        );
+        assert!(
+            c_source.contains("phpc_native_value_compare_result"),
+            "known string pairs should compare through the shared runtime comparison boundary:\n{c_source}"
+        );
     }
 
     #[test]
@@ -75933,7 +76030,6 @@ echo $call("Ada");
     #[test]
     fn c_assembly_non_local_assignment_families_share_assignment_owner_boundary() {
         for source in [
-            "<?php\n$box->$name = 1;\n",
             "<?php\n$box->child->name = 1;\n",
             "<?php\nRoot::$name = 1;\n",
             "<?php\nself::$name = 1;\n",
@@ -75957,6 +76053,15 @@ echo $call("Ada");
 
         assert_eq!(error.phase, Phase::Codegen);
         assert_eq!(error.message, ASSEMBLY_ARRAY_ACCESS_REJECTION);
+
+        let dynamic_property = crate::parse("<?php\n$box->$name = 1;\n").unwrap();
+        let c_source = emit_c_source_for_assembly(&dynamic_property)
+            .expect("dynamic object-property assignment should lower through runtime boundary");
+        assert!(
+            c_source
+                .contains("phpc_native_object_property_mutation_operation_with_magic_reference_slots_with_diagnostic"),
+            "dynamic object-property assignment should use the shared mutation helper:\n{c_source}"
+        );
     }
 
     #[test]

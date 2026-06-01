@@ -1,6 +1,8 @@
-exit: 1
+exit: 255
 stdout:
---- stdout end ---
+Fatal error: Uncaught ArithmeticError: Bit shift by negative number in tests/fixtures/runtime_errors/negative_shift_count.php:2
+Stack trace:
+#0 {main}
+  thrown in tests/fixtures/runtime_errors/negative_shift_count.php on line 2--- stdout end ---
 stderr:
-runtime error at tests/fixtures/runtime_errors/negative_shift_count.php:2:6: invalid arithmetic for <<: bit shift by negative number
 --- stderr end ---

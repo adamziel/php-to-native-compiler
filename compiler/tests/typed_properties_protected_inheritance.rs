@@ -37,7 +37,7 @@ class ChildBox extends ParentBox { protected string $value; }
 
     assert_eq!(
         stderr,
-        "Fatal error: Type of ChildBox::$value must not be defined (as in class ParentBox) in tests/type_declarations/typed_property_untyped_parent.php on line 3"
+        "Fatal error: Type of ChildBox::$value must be omitted to match the parent definition in class ParentBox in tests/type_declarations/typed_property_untyped_parent.php on line 3"
     );
 }
 

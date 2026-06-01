@@ -12,7 +12,9 @@ use std::sync::atomic::{AtomicI64, Ordering as AtomicOrdering};
 pub type RuntimeResult<T> = Result<T, RuntimeError>;
 
 #[cfg(test)]
-static NATIVE_CALL_ARGUMENTS_FREE_COUNT_FOR_TEST: AtomicI64 = AtomicI64::new(0);
+thread_local! {
+    static NATIVE_CALL_ARGUMENTS_FREE_COUNT_FOR_TEST: RefCell<i64> = const { RefCell::new(0) };
+}
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1699,6 +1701,7 @@ enum NativeCallableBuiltin {
     StringLength,
     StringPredicate(NativeStringPredicate),
     StringResult(NativeStringResultOperation),
+    StringSearch(NativeStringSearchOperation),
     StringTrim(NativeTrimMode),
     ArraySort(NativeArraySortOperation),
     ArrayMutation(NativeArrayMutationOperation),
@@ -1756,6 +1759,8 @@ impl NativeCallableBuiltin {
             Self::StringResult(NativeStringResultOperation::AsciiFirstLower) => "lcfirst",
             Self::StringResult(NativeStringResultOperation::ShellArgEscape) => "escapeshellarg",
             Self::StringResult(NativeStringResultOperation::ShellCommandEscape) => "escapeshellcmd",
+            Self::StringSearch(NativeStringSearchOperation::Position) => "strpos",
+            Self::StringSearch(NativeStringSearchOperation::Count) => "substr_count",
             Self::StringTrim(NativeTrimMode::Both) => "trim",
             Self::StringTrim(NativeTrimMode::Left) => "ltrim",
             Self::StringTrim(NativeTrimMode::Right) => "rtrim",
@@ -1800,6 +1805,7 @@ impl NativeCallableBuiltin {
     fn signature(self) -> NativeCallableBuiltinSignature {
         const BY_VALUE_1: &[bool] = &[false];
         const BY_VALUE_2: &[bool] = &[false, false];
+        const BY_VALUE_3: &[bool] = &[false, false, false];
         const BY_REF_1: &[bool] = &[true];
         const BY_REF_THEN_VALUE: &[bool] = &[true, false];
         const PARAM_ARRAY: &[&str] = &["array"];
@@ -1808,9 +1814,12 @@ impl NativeCallableBuiltin {
         const PARAM_STRING: &[&str] = &["string"];
         const PARAM_VALUE: &[&str] = &["value"];
         const PARAM_HAYSTACK_NEEDLE: &[&str] = &["haystack", "needle"];
+        const PARAM_HAYSTACK_NEEDLE_OFFSET: &[&str] = &["haystack", "needle", "offset"];
         const PARAM_STRING_CHARACTERS: &[&str] = &["string", "characters"];
         const DEFAULTS_NONE_1: &[Option<NativeCallableBuiltinDefaultValue>] = &[None];
         const DEFAULTS_NONE_2: &[Option<NativeCallableBuiltinDefaultValue>] = &[None, None];
+        const DEFAULTS_STRPOS: &[Option<NativeCallableBuiltinDefaultValue>] =
+            &[None, None, Some(NativeCallableBuiltinDefaultValue::Int(0))];
         const DEFAULTS_SORT_FLAGS: &[Option<NativeCallableBuiltinDefaultValue>] =
             &[None, Some(NativeCallableBuiltinDefaultValue::Int(0))];
         const DEFAULTS_TRIM_CHARACTERS: &[Option<NativeCallableBuiltinDefaultValue>] = &[
@@ -1827,6 +1836,26 @@ impl NativeCallableBuiltin {
                 accepts_variadic_args: false,
                 returns_by_reference: false,
             },
+            Self::StringSearch(NativeStringSearchOperation::Position) => {
+                NativeCallableBuiltinSignature {
+                    required_arg_count: 2,
+                    fixed_param_names: PARAM_HAYSTACK_NEEDLE_OFFSET,
+                    fixed_param_by_reference: BY_VALUE_3,
+                    fixed_param_defaults: DEFAULTS_STRPOS,
+                    accepts_variadic_args: false,
+                    returns_by_reference: false,
+                }
+            }
+            Self::StringSearch(NativeStringSearchOperation::Count) => {
+                NativeCallableBuiltinSignature {
+                    required_arg_count: usize::MAX,
+                    fixed_param_names: &[],
+                    fixed_param_by_reference: &[],
+                    fixed_param_defaults: &[],
+                    accepts_variadic_args: false,
+                    returns_by_reference: false,
+                }
+            }
             Self::StringTrim(_) => NativeCallableBuiltinSignature {
                 required_arg_count: 1,
                 fixed_param_names: PARAM_STRING_CHARACTERS,
@@ -10248,6 +10277,9 @@ fn native_callable_builtin_for_function_name(name: &str) -> Option<NativeCallabl
         "escapeshellcmd" => Some(NativeCallableBuiltin::StringResult(
             NativeStringResultOperation::ShellCommandEscape,
         )),
+        "strpos" => Some(NativeCallableBuiltin::StringSearch(
+            NativeStringSearchOperation::Position,
+        )),
         "trim" => Some(NativeCallableBuiltin::StringTrim(NativeTrimMode::Both)),
         "ltrim" => Some(NativeCallableBuiltin::StringTrim(NativeTrimMode::Left)),
         "rtrim" => Some(NativeCallableBuiltin::StringTrim(NativeTrimMode::Right)),
@@ -12440,7 +12472,9 @@ pub unsafe extern "C" fn phpc_native_call_arguments_mark_finalized_variadic(
 #[no_mangle]
 pub unsafe extern "C" fn phpc_native_call_arguments_free(handle: NativeCallArgumentsHandle) {
     #[cfg(test)]
-    NATIVE_CALL_ARGUMENTS_FREE_COUNT_FOR_TEST.fetch_add(1, AtomicOrdering::SeqCst);
+    NATIVE_CALL_ARGUMENTS_FREE_COUNT_FOR_TEST.with(|count| {
+        *count.borrow_mut() += 1;
+    });
 
     if handle.ptr.is_null() {
         return;
@@ -14352,6 +14386,34 @@ unsafe fn native_callable_builtin_invoke_value(
         NativeCallableBuiltin::StringResult(operation) => unsafe {
             native_value_string_result_operation_value(values[0], 0, operation as u8)
         },
+        NativeCallableBuiltin::StringSearch(NativeStringSearchOperation::Position) => {
+            let offset_result = if values.len() > 2 {
+                unsafe {
+                    native_value_to_int64(
+                        values[2],
+                        NativeIntConversionOperation::StringOffset as u8,
+                    )
+                }
+            } else {
+                Ok(0)
+            };
+            offset_result.and_then(|offset| unsafe {
+                native_value_string_search_result(
+                    values[0],
+                    values[1],
+                    offset,
+                    0,
+                    0,
+                    NativeStringSearchOperation::Position as u8,
+                )
+            })
+        }
+        NativeCallableBuiltin::StringSearch(NativeStringSearchOperation::Count) => {
+            Err(RuntimeError::unsupported_call(
+                "substr_count",
+                "runtime callable builtin invocation is not implemented",
+            ))
+        }
         NativeCallableBuiltin::StringTrim(mode) => unsafe { native_callable_trim_value(mode, &values) },
         NativeCallableBuiltin::ArraySort(_) => unreachable!(),
         NativeCallableBuiltin::ArrayMutation(_) => unreachable!(),
@@ -48329,11 +48391,13 @@ mod tests {
     }
 
     fn reset_call_arguments_free_count_for_test() {
-        NATIVE_CALL_ARGUMENTS_FREE_COUNT_FOR_TEST.store(0, AtomicOrdering::SeqCst);
+        NATIVE_CALL_ARGUMENTS_FREE_COUNT_FOR_TEST.with(|count| {
+            *count.borrow_mut() = 0;
+        });
     }
 
     fn call_arguments_free_count_for_test() -> i64 {
-        NATIVE_CALL_ARGUMENTS_FREE_COUNT_FOR_TEST.load(AtomicOrdering::SeqCst)
+        NATIVE_CALL_ARGUMENTS_FREE_COUNT_FOR_TEST.with(|count| *count.borrow())
     }
 
     #[test]
@@ -66918,28 +66982,12 @@ mod tests {
         let mut diagnostic = NativeDiagnosticHandle::null();
         let invalid_value =
             unsafe { phpc_native_value_from_string_with_diagnostic(string, &mut diagnostic) };
-        assert!(invalid_value.is_null());
-        assert!(!diagnostic.is_null());
-        assert_eq!(unsafe { phpc_native_diagnostic_count(diagnostic) }, 1);
+        assert!(!invalid_value.is_null());
+        assert!(diagnostic.is_null());
         assert_eq!(
-            unsafe { phpc_native_diagnostic_severity_at(diagnostic, 0) },
-            NativeDiagnosticSeverity::Error.tag()
+            native_value_echo_bytes_for_test(invalid_value),
+            invalid_bytes
         );
-        assert!(unsafe {
-            phpc_native_diagnostic_contains_severity(
-                diagnostic,
-                NativeDiagnosticSeverity::Error.tag(),
-            )
-        });
-        let message = unsafe { phpc_native_diagnostic_message_clone_bytes(diagnostic) };
-        let message_bytes = unsafe { std::slice::from_raw_parts(message.ptr(), message.len()) };
-        assert_eq!(
-            message_bytes,
-            b"native value conversion failed: string bytes are not valid UTF-8"
-        );
-
-        unsafe { phpc_native_byte_buffer_free(message) };
-        unsafe { phpc_native_diagnostic_free(diagnostic) };
         unsafe { phpc_native_value_free(invalid_value) };
         unsafe { phpc_native_string_free(string) };
     }
@@ -67005,16 +67053,9 @@ mod tests {
                 &mut diagnostic,
             )
         };
-        assert!(invalid_value.is_null());
-        assert!(!diagnostic.is_null());
-        let message = unsafe { phpc_native_diagnostic_message_clone_bytes(diagnostic) };
-        let message_bytes = unsafe { std::slice::from_raw_parts(message.ptr(), message.len()) };
-        assert_eq!(
-            message_bytes,
-            b"native value conversion failed: string bytes are not valid UTF-8"
-        );
-        unsafe { phpc_native_byte_buffer_free(message) };
-        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        assert!(!invalid_value.is_null());
+        assert!(diagnostic.is_null());
+        assert_eq!(native_value_echo_bytes_for_test(invalid_value), invalid);
         unsafe { phpc_native_value_free(invalid_value) };
     }
 
@@ -67042,6 +67083,13 @@ mod tests {
                 phpc_native_null(),
                 true,
             ),
+            (
+                "binary byte-string strict non-identity",
+                &[0xff, b'p'][..],
+                NativeComparisonOp::StrictNe,
+                phpc_native_int(1),
+                true,
+            ),
         ] {
             let mut diagnostic = NativeDiagnosticHandle::null();
             let left = unsafe {
@@ -67066,15 +67114,7 @@ mod tests {
             unsafe { phpc_native_value_free(left) };
         }
 
-        let invalid_bytes = [0xff, b'p'];
-        for (label, bytes, len) in [
-            ("null pointer with nonzero length", ptr::null(), 4),
-            (
-                "invalid UTF-8 bytes",
-                invalid_bytes.as_ptr(),
-                invalid_bytes.len(),
-            ),
-        ] {
+        for (label, bytes, len) in [("null pointer with nonzero length", ptr::null(), 4)] {
             let mut diagnostic = NativeDiagnosticHandle::null();
             let value = unsafe {
                 phpc_native_value_from_string_bytes_with_diagnostic(bytes, len, &mut diagnostic)
@@ -67226,12 +67266,11 @@ mod tests {
             "string bytes pointer is null",
         );
 
-        let invalid_bytes = [0xff, b'p'];
         let mut failed_right_diagnostic = NativeDiagnosticHandle::null();
         let failed_right = unsafe {
             phpc_native_value_from_string_bytes_with_diagnostic(
-                invalid_bytes.as_ptr(),
-                invalid_bytes.len(),
+                ptr::null(),
+                2,
                 &mut failed_right_diagnostic,
             )
         };
@@ -67788,8 +67827,8 @@ mod tests {
         let invalid_bytes = [0xff];
         let invalid_handle =
             unsafe { phpc_native_string_from_bytes(invalid_bytes.as_ptr(), invalid_bytes.len()) };
-        assert_native_comparison_blocked(
-            "invalid string-handle materialization diagnostic",
+        assert_native_comparison_ok(
+            "binary string-handle materialization",
             unsafe {
                 phpc_native_comparison_operand_compare_and_free(
                     phpc_native_comparison_operand_from_string_and_free(invalid_handle),
@@ -67797,7 +67836,7 @@ mod tests {
                     phpc_native_comparison_operand_from_scalar(phpc_native_int(1)),
                 )
             },
-            "string bytes are not valid UTF-8",
+            false,
         );
     }
 
@@ -69900,11 +69939,11 @@ mod tests {
             Value::String("B".to_string()),
             "invalid string conversion: native string offset operation failed: array subjects are not supported; only null, bool, int, float, and string subjects are implemented",
         );
-        assert_diagnostic(
+        assert_written_warning(
             Value::String("abc".to_string()),
             Value::Int(1),
             Value::String(String::from_utf8(vec![0xc3, 0xa9]).unwrap()),
-            "unsupported call native string offset write: byte strings with invalid UTF-8 require the binary string value boundary",
+            &[b'a', 0xc3, b'c'],
         );
 
         let subject = NativeValueHandle::from_value(Value::String("ab".to_string()));
@@ -72336,7 +72375,7 @@ mod tests {
         natural_bad
             .append(Value::String("img2".to_string()))
             .unwrap();
-        natural_bad.append(Value::Array(PhpArray::new())).unwrap();
+        natural_bad.append(Value::Resource(7)).unwrap();
         natural_bad
             .append(Value::String("img10".to_string()))
             .unwrap();
@@ -72354,7 +72393,7 @@ mod tests {
         assert_eq!(natural_bad_result.tag, NATIVE_ARRAY_LVALUE_UNSUPPORTED);
         assert_eq!(
             native_diagnostic_message_for_test(natural_bad_result.diagnostic),
-            "unsupported call natsort(): values must be scalar in the current subset, got array"
+            "unsupported call natsort(): values must be scalar, array, or stringable object in the current subset, got resource"
         );
         unsafe { phpc_native_array_lvalue_result_free(natural_bad_result) };
 
@@ -80578,13 +80617,23 @@ mod tests {
             vec![
                 "Exception",
                 "Error",
+                "Uri\\InvalidUriException",
+                "Uri\\WhatWg\\InvalidUrlException",
                 "stdClass",
+                "PhpToken",
                 "mysqli",
                 "mysqli_result",
                 "mysqli_stmt",
+                "mysqli_driver",
                 "PDO",
                 "PDOStatement",
                 "RoundingMode",
+                "Uri\\UriComparisonMode",
+                "Uri\\Rfc3986\\UriHostType",
+                "Uri\\Rfc3986\\UriType",
+                "Uri\\Rfc3986\\Uri",
+                "Uri\\WhatWg\\UrlHostType",
+                "Uri\\WhatWg\\Url",
                 "BcMath\\Number",
                 "DateTimeZone",
                 "ReflectionException",
@@ -80608,9 +80657,12 @@ mod tests {
                 "DivisionByZeroError",
                 "RuntimeException",
                 "OutOfRangeException",
+                "UnexpectedValueException",
                 "OutOfBoundsException",
                 "Directory",
                 "SplFixedArray",
+                "ArrayObject",
+                "ArrayIterator",
                 "SplDoublyLinkedList",
                 "SplQueue",
                 "SplStack",
@@ -80618,6 +80670,11 @@ mod tests {
                 "ReflectionExtension",
                 "ReflectionZendExtension",
                 "DateTime",
+                "DOMException",
+                "DOMNode",
+                "DOMAttr",
+                "DOMElement",
+                "DOMDocument",
             ]
         );
         let mut normalized_class_names = class_names
@@ -80638,7 +80695,7 @@ mod tests {
                 .iter()
                 .map(PhpPropertyMetadata::name)
                 .collect::<Vec<_>>(),
-            vec!["message", "code", "previous"]
+            vec!["message", "code", "previous", "line"]
         );
         assert!(exception.method("getMessage").is_some());
 
@@ -80652,20 +80709,27 @@ mod tests {
                 .iter()
                 .map(PhpPropertyMetadata::name)
                 .collect::<Vec<_>>(),
-            vec!["message"]
+            vec!["message", "code", "line"]
         );
-        assert!(error.methods().is_empty());
+        assert_eq!(
+            error
+                .methods()
+                .iter()
+                .map(PhpMethodMetadata::name)
+                .collect::<Vec<_>>(),
+            vec!["getMessage", "getCode"]
+        );
 
         let stdclass = classes.lookup_class("stdclass").unwrap();
         assert_eq!(stdclass.name(), "stdClass");
-        assert_eq!(stdclass.id().index(), 2);
+        assert_eq!(stdclass.id().index(), 4);
         assert!(stdclass.parent_id().is_none());
         assert!(stdclass.properties().is_empty());
         assert!(stdclass.methods().is_empty());
 
         let mysqli = classes.lookup_class("mysqli").unwrap();
         assert_eq!(mysqli.name(), "mysqli");
-        assert_eq!(mysqli.id().index(), 3);
+        assert_eq!(mysqli.id().index(), 6);
         assert!(mysqli.parent_id().is_none());
         assert_eq!(
             mysqli
@@ -80675,25 +80739,32 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec!["connect_errno", "connect_error"]
         );
-        assert!(mysqli.methods().is_empty());
+        assert_eq!(
+            mysqli
+                .methods()
+                .iter()
+                .map(PhpMethodMetadata::name)
+                .collect::<Vec<_>>(),
+            vec!["__construct", "close"]
+        );
 
         let mysqli_result = classes.lookup_class("mysqli_result").unwrap();
         assert_eq!(mysqli_result.name(), "mysqli_result");
-        assert_eq!(mysqli_result.id().index(), 4);
+        assert_eq!(mysqli_result.id().index(), 7);
         assert!(mysqli_result.parent_id().is_none());
         assert!(mysqli_result.properties().is_empty());
         assert!(mysqli_result.methods().is_empty());
 
         let mysqli_stmt = classes.lookup_class("mysqli_stmt").unwrap();
         assert_eq!(mysqli_stmt.name(), "mysqli_stmt");
-        assert_eq!(mysqli_stmt.id().index(), 5);
+        assert_eq!(mysqli_stmt.id().index(), 8);
         assert!(mysqli_stmt.parent_id().is_none());
         assert!(mysqli_stmt.properties().is_empty());
         assert!(mysqli_stmt.methods().is_empty());
 
         let pdo = classes.lookup_class("pdo").unwrap();
         assert_eq!(pdo.name(), "PDO");
-        assert_eq!(pdo.id().index(), 6);
+        assert_eq!(pdo.id().index(), 10);
         assert!(pdo.parent_id().is_none());
         assert!(pdo.properties().is_empty());
         assert_eq!(
@@ -80717,14 +80788,14 @@ mod tests {
 
         let pdo_statement = classes.lookup_class("pdostatement").unwrap();
         assert_eq!(pdo_statement.name(), "PDOStatement");
-        assert_eq!(pdo_statement.id().index(), 7);
+        assert_eq!(pdo_statement.id().index(), 11);
         assert!(pdo_statement.parent_id().is_none());
         assert!(pdo_statement.properties().is_empty());
         assert!(pdo_statement.methods().is_empty());
 
         let rounding_mode = classes.lookup_class("roundingmode").unwrap();
         assert_eq!(rounding_mode.name(), "RoundingMode");
-        assert_eq!(rounding_mode.id().index(), 8);
+        assert_eq!(rounding_mode.id().index(), 12);
         assert!(rounding_mode.parent_id().is_none());
         assert_eq!(
             rounding_mode
@@ -80738,7 +80809,7 @@ mod tests {
 
         let bcmath_number = classes.lookup_class("bcmath\\number").unwrap();
         assert_eq!(bcmath_number.name(), "BcMath\\Number");
-        assert_eq!(bcmath_number.id().index(), 9);
+        assert_eq!(bcmath_number.id().index(), 19);
         assert!(bcmath_number.parent_id().is_none());
         assert_eq!(
             bcmath_number
@@ -80775,7 +80846,7 @@ mod tests {
 
         let datetimezone = classes.lookup_class("datetimezone").unwrap();
         assert_eq!(datetimezone.name(), "DateTimeZone");
-        assert_eq!(datetimezone.id().index(), 10);
+        assert_eq!(datetimezone.id().index(), 20);
         assert!(datetimezone.parent_id().is_none());
         assert_eq!(
             datetimezone
@@ -80807,14 +80878,14 @@ mod tests {
 
         let reflection_exception = classes.lookup_class("reflectionexception").unwrap();
         assert_eq!(reflection_exception.name(), "ReflectionException");
-        assert_eq!(reflection_exception.id().index(), 11);
+        assert_eq!(reflection_exception.id().index(), 21);
         assert_eq!(reflection_exception.parent_id(), Some(exception.id()));
         assert!(reflection_exception.properties().is_empty());
         assert!(reflection_exception.methods().is_empty());
 
         let attribute = classes.lookup_class("attribute").unwrap();
         assert_eq!(attribute.name(), "Attribute");
-        assert_eq!(attribute.id().index(), 12);
+        assert_eq!(attribute.id().index(), 22);
         assert!(attribute.parent_id().is_none());
         assert_eq!(
             attribute
@@ -80829,7 +80900,7 @@ mod tests {
 
         let reflection_class = classes.lookup_class("reflectionclass").unwrap();
         assert_eq!(reflection_class.name(), "ReflectionClass");
-        assert_eq!(reflection_class.id().index(), 13);
+        assert_eq!(reflection_class.id().index(), 23);
         assert!(reflection_class.parent_id().is_none());
         assert_eq!(
             reflection_class
@@ -80846,7 +80917,7 @@ mod tests {
 
         let reflection_object = classes.lookup_class("reflectionobject").unwrap();
         assert_eq!(reflection_object.name(), "ReflectionObject");
-        assert_eq!(reflection_object.id().index(), 14);
+        assert_eq!(reflection_object.id().index(), 24);
         assert_eq!(reflection_object.parent_id(), Some(reflection_class.id()));
         assert_eq!(
             reflection_object
@@ -80859,7 +80930,7 @@ mod tests {
 
         let reflection_function = classes.lookup_class("reflectionfunction").unwrap();
         assert_eq!(reflection_function.name(), "ReflectionFunction");
-        assert_eq!(reflection_function.id().index(), 15);
+        assert_eq!(reflection_function.id().index(), 25);
         assert!(reflection_function.parent_id().is_none());
         assert!(reflection_function.properties().is_empty());
         assert!(reflection_function.method("getParameters").is_some());
@@ -80868,7 +80939,7 @@ mod tests {
 
         let reflection_method = classes.lookup_class("reflectionmethod").unwrap();
         assert_eq!(reflection_method.name(), "ReflectionMethod");
-        assert_eq!(reflection_method.id().index(), 16);
+        assert_eq!(reflection_method.id().index(), 26);
         assert!(reflection_method.parent_id().is_none());
         assert!(reflection_method.properties().is_empty());
         assert!(reflection_method.constant("IS_PUBLIC").is_some());
@@ -80877,23 +80948,30 @@ mod tests {
 
         let reflection_parameter = classes.lookup_class("reflectionparameter").unwrap();
         assert_eq!(reflection_parameter.name(), "ReflectionParameter");
-        assert_eq!(reflection_parameter.id().index(), 17);
+        assert_eq!(reflection_parameter.id().index(), 27);
         assert!(reflection_parameter.parent_id().is_none());
-        assert!(reflection_parameter.properties().is_empty());
+        assert_eq!(
+            reflection_parameter
+                .properties()
+                .iter()
+                .map(PhpPropertyMetadata::name)
+                .collect::<Vec<_>>(),
+            vec!["name"]
+        );
         assert!(reflection_parameter.method("getDefaultValue").is_some());
         assert!(reflection_parameter.method("getType").is_some());
         assert!(reflection_parameter.method("getAttributes").is_some());
 
         let reflection_type = classes.lookup_class("reflectiontype").unwrap();
         assert_eq!(reflection_type.name(), "ReflectionType");
-        assert_eq!(reflection_type.id().index(), 18);
+        assert_eq!(reflection_type.id().index(), 28);
         assert!(reflection_type.parent_id().is_none());
         assert!(reflection_type.properties().is_empty());
         assert!(reflection_type.method("allowsNull").is_some());
 
         let reflection_named_type = classes.lookup_class("reflectionnamedtype").unwrap();
         assert_eq!(reflection_named_type.name(), "ReflectionNamedType");
-        assert_eq!(reflection_named_type.id().index(), 19);
+        assert_eq!(reflection_named_type.id().index(), 29);
         assert_eq!(
             reflection_named_type.parent_id(),
             Some(reflection_type.id())
@@ -80904,7 +80982,7 @@ mod tests {
 
         let reflection_union_type = classes.lookup_class("reflectionuniontype").unwrap();
         assert_eq!(reflection_union_type.name(), "ReflectionUnionType");
-        assert_eq!(reflection_union_type.id().index(), 20);
+        assert_eq!(reflection_union_type.id().index(), 30);
         assert_eq!(
             reflection_union_type.parent_id(),
             Some(reflection_type.id())
@@ -80918,7 +80996,7 @@ mod tests {
             reflection_intersection_type.name(),
             "ReflectionIntersectionType"
         );
-        assert_eq!(reflection_intersection_type.id().index(), 21);
+        assert_eq!(reflection_intersection_type.id().index(), 31);
         assert_eq!(
             reflection_intersection_type.parent_id(),
             Some(reflection_type.id())
@@ -80928,25 +81006,39 @@ mod tests {
 
         let reflection_property = classes.lookup_class("reflectionproperty").unwrap();
         assert_eq!(reflection_property.name(), "ReflectionProperty");
-        assert_eq!(reflection_property.id().index(), 22);
+        assert_eq!(reflection_property.id().index(), 32);
         assert!(reflection_property.parent_id().is_none());
-        assert!(reflection_property.properties().is_empty());
+        assert_eq!(
+            reflection_property
+                .properties()
+                .iter()
+                .map(PhpPropertyMetadata::name)
+                .collect::<Vec<_>>(),
+            vec!["name", "class"]
+        );
         assert!(reflection_property.constant("IS_PUBLIC").is_some());
         assert!(reflection_property.method("getDefaultValue").is_some());
         assert!(reflection_property.method("getAttributes").is_some());
 
         let reflection_class_constant = classes.lookup_class("reflectionclassconstant").unwrap();
         assert_eq!(reflection_class_constant.name(), "ReflectionClassConstant");
-        assert_eq!(reflection_class_constant.id().index(), 23);
+        assert_eq!(reflection_class_constant.id().index(), 33);
         assert!(reflection_class_constant.parent_id().is_none());
-        assert!(reflection_class_constant.properties().is_empty());
+        assert_eq!(
+            reflection_class_constant
+                .properties()
+                .iter()
+                .map(PhpPropertyMetadata::name)
+                .collect::<Vec<_>>(),
+            vec!["name", "class"]
+        );
         assert!(reflection_class_constant.constant("IS_PUBLIC").is_some());
         assert!(reflection_class_constant.method("getValue").is_some());
         assert!(reflection_class_constant.method("getAttributes").is_some());
 
         let reflection_attribute = classes.lookup_class("reflectionattribute").unwrap();
         assert_eq!(reflection_attribute.name(), "ReflectionAttribute");
-        assert_eq!(reflection_attribute.id().index(), 24);
+        assert_eq!(reflection_attribute.id().index(), 34);
         assert!(reflection_attribute.parent_id().is_none());
         assert_eq!(
             reflection_attribute
@@ -80961,29 +81053,29 @@ mod tests {
 
         let type_error = classes.lookup_class("typeerror").unwrap();
         assert_eq!(type_error.name(), "TypeError");
-        assert_eq!(type_error.id().index(), 25);
+        assert_eq!(type_error.id().index(), 35);
         assert_eq!(type_error.parent_id(), Some(error.id()));
         assert!(type_error.properties().is_empty());
 
         let argument_count_error = classes.lookup_class("argumentcounterror").unwrap();
         assert_eq!(argument_count_error.name(), "ArgumentCountError");
-        assert_eq!(argument_count_error.id().index(), 26);
+        assert_eq!(argument_count_error.id().index(), 36);
         assert_eq!(argument_count_error.parent_id(), Some(type_error.id()));
         assert!(argument_count_error.properties().is_empty());
 
         let value_error = classes.lookup_class("valueerror").unwrap();
         assert_eq!(value_error.name(), "ValueError");
-        assert_eq!(value_error.id().index(), 27);
+        assert_eq!(value_error.id().index(), 37);
         assert_eq!(value_error.parent_id(), Some(error.id()));
 
         let arithmetic_error = classes.lookup_class("arithmeticerror").unwrap();
         assert_eq!(arithmetic_error.name(), "ArithmeticError");
-        assert_eq!(arithmetic_error.id().index(), 28);
+        assert_eq!(arithmetic_error.id().index(), 38);
         assert_eq!(arithmetic_error.parent_id(), Some(error.id()));
 
         let division_by_zero_error = classes.lookup_class("divisionbyzeroerror").unwrap();
         assert_eq!(division_by_zero_error.name(), "DivisionByZeroError");
-        assert_eq!(division_by_zero_error.id().index(), 29);
+        assert_eq!(division_by_zero_error.id().index(), 39);
         assert_eq!(
             division_by_zero_error.parent_id(),
             Some(arithmetic_error.id())
@@ -80991,7 +81083,7 @@ mod tests {
 
         let runtime_exception = classes.lookup_class("runtimeexception").unwrap();
         assert_eq!(runtime_exception.name(), "RuntimeException");
-        assert_eq!(runtime_exception.id().index(), 30);
+        assert_eq!(runtime_exception.id().index(), 40);
         assert_eq!(runtime_exception.parent_id(), Some(exception.id()));
         assert!(runtime_exception.properties().is_empty());
         assert!(runtime_exception.methods().is_empty());
@@ -81650,7 +81742,9 @@ mod tests {
             .map(|diagnostic| diagnostic.message.clone())
             .unwrap_or_default();
         assert!(
-            message.contains("typed property StaticRefCounter::$count expects int"),
+            message.contains(
+                "Cannot assign array to reference held by property StaticRefCounter::$count of type int"
+            ),
             "{message}"
         );
         unsafe { phpc_native_diagnostic_free(diagnostic) };
@@ -81798,7 +81892,9 @@ mod tests {
             .map(|diagnostic| diagnostic.message.clone())
             .unwrap_or_default();
         assert!(
-            message.contains("typed property StaticBindRefCounter::$count expects int"),
+            message.contains(
+                "Cannot assign array to reference held by property StaticBindRefCounter::$count of type int"
+            ),
             "{message}"
         );
 
@@ -81933,7 +82029,9 @@ mod tests {
             .map(|diagnostic| diagnostic.message.clone())
             .unwrap_or_default();
         assert!(
-            message.contains("typed property StaticOffsetRefCounter::$typed expects ?string"),
+            message.contains(
+                "Cannot assign array to reference held by property StaticOffsetRefCounter::$typed of type ?string"
+            ),
             "{message}"
         );
 
@@ -82418,7 +82516,7 @@ mod tests {
             .unwrap_err();
         assert_eq!(
             type_error.message(),
-            "invalid property access: typed property Counter::$count expects int, got array"
+            "invalid property access: Cannot assign array to reference held by property Counter::$count of type int"
         );
     }
 

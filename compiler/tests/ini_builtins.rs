@@ -28,6 +28,10 @@ fn restore_env_var(name: &str, previous: Option<std::ffi::OsString>) {
 
 #[test]
 fn ini_get_reads_current_deterministic_registry() {
+    let _guard = env_lock();
+    let previous = env::var_os("PHPC_PHPT_INI_FLAGS");
+
+    env::remove_var("PHPC_PHPT_INI_FLAGS");
     let execution = run_source(
         r#"<?php
 echo ini_get("memory_limit"), "|";
@@ -37,9 +41,13 @@ echo ini_get("missing.option") === false ? "false" : "not-false";
 "#,
     )
     .unwrap();
+    let stdout = execution.stdout.clone();
+    let exit_code = execution.exit_code;
 
-    assert_eq!(execution.stdout, "128M|128M|0|false");
-    assert_eq!(execution.exit_code, 0);
+    restore_env_var("PHPC_PHPT_INI_FLAGS", previous);
+
+    assert_eq!(stdout, "128M|128M|0|false");
+    assert_eq!(exit_code, 0);
 }
 
 #[test]
@@ -63,6 +71,10 @@ echo ini_set("missing.option", "x") === false ? "false" : "not-false";
 
 #[test]
 fn get_cfg_var_reads_startup_configuration_not_runtime_mutation() {
+    let _guard = env_lock();
+    let previous = env::var_os("PHPC_PHPT_INI_FLAGS");
+
+    env::remove_var("PHPC_PHPT_INI_FLAGS");
     let execution = run_source(
         r#"<?php
 echo get_cfg_var("memory_limit"), "|";
@@ -73,9 +85,13 @@ echo get_cfg_var("missing.option") === false ? "false" : "not-false";
 "#,
     )
     .unwrap();
+    let stdout = execution.stdout.clone();
+    let exit_code = execution.exit_code;
 
-    assert_eq!(execution.stdout, "128M|256M|128M|false");
-    assert_eq!(execution.exit_code, 0);
+    restore_env_var("PHPC_PHPT_INI_FLAGS", previous);
+
+    assert_eq!(stdout, "128M|256M|128M|false");
+    assert_eq!(exit_code, 0);
 }
 
 #[test]
@@ -283,6 +299,10 @@ fn ini_parse_quantity_honors_phpt_error_reporting_masks() {
 
 #[test]
 fn ini_builtins_are_available_through_string_valued_calls() {
+    let _guard = env_lock();
+    let previous = env::var_os("PHPC_PHPT_INI_FLAGS");
+
+    env::remove_var("PHPC_PHPT_INI_FLAGS");
     let execution = run_source(
         r#"<?php
 $get = "ini_get";
@@ -296,9 +316,13 @@ echo $get("memory_limit");
 "#,
     )
     .unwrap();
+    let stdout = execution.stdout.clone();
+    let exit_code = execution.exit_code;
 
-    assert_eq!(execution.stdout, "yes|callable|128M|256M");
-    assert_eq!(execution.exit_code, 0);
+    restore_env_var("PHPC_PHPT_INI_FLAGS", previous);
+
+    assert_eq!(stdout, "yes|callable|128M|256M");
+    assert_eq!(exit_code, 0);
 }
 
 #[test]

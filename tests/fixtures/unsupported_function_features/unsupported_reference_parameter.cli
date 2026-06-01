@@ -1,6 +1,8 @@
-exit: 1
+exit: 255
 stdout:
---- stdout end ---
+Fatal error: Uncaught Error: mutate(): Argument #1 ($value) could not be passed by reference in tests/fixtures/unsupported_function_features/unsupported_reference_parameter.php:5
+Stack trace:
+#0 {main}
+  thrown in tests/fixtures/unsupported_function_features/unsupported_reference_parameter.php on line 5--- stdout end ---
 stderr:
-runtime error at tests/fixtures/unsupported_function_features/unsupported_reference_parameter.php:5:13: unsupported call mutate(): reference parameter invocation is only implemented for direct variable, direct array-offset, direct public object-property array-offset, and bounded magic __get reference arguments in the current subset
 --- stderr end ---

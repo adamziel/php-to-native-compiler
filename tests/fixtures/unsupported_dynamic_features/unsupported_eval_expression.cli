@@ -1,6 +1,8 @@
-exit: 1
+exit: 255
 stdout:
---- stdout end ---
+Fatal error: Uncaught Error: Call to undefined function eval() in tests/fixtures/unsupported_dynamic_features/unsupported_eval_expression.php:2
+Stack trace:
+#0 {main}
+  thrown in tests/fixtures/unsupported_dynamic_features/unsupported_eval_expression.php on line 2--- stdout end ---
 stderr:
-parse error at tests/fixtures/unsupported_dynamic_features/unsupported_eval_expression.php:2:11: unsupported eval: eval parsing and caller-scope execution are not implemented
 --- stderr end ---

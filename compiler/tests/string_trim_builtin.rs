@@ -11,11 +11,12 @@ fn trim_executes_current_default_mask_subset() {
 echo trim(\" \\t128M\\n\"), \"|\";\n\
 echo trim(\"\\tabc\\n\"), \"|\";\n\
 echo trim(null), \"|\";\n\
-echo trim(42);\n",
+echo trim(42), \"|\";\n\
+echo trim(\"\\fABC\\f\");\n",
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "128M|abc||42");
+    assert_eq!(execution.stdout, "128M|abc||42|ABC");
     assert_eq!(execution.exit_code, 0);
 }
 
@@ -25,11 +26,12 @@ fn trim_executes_custom_mask_ranges_and_empty_masks() {
         "<?php\n\
 echo trim(\"9.alpha0\", \"0..9.\"), \"|\";\n\
 echo trim(\"AZpayloadaz\", \"A..Zaz\"), \"|\";\n\
+echo trim(\"ABC\", \"A...Z\"), \"|\";\n\
 echo trim(\" unchanged \", \"\");\n",
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "alpha|payload| unchanged ");
+    assert_eq!(execution.stdout, "alpha|payload|| unchanged ");
     assert_eq!(execution.exit_code, 0);
 }
 
@@ -125,15 +127,6 @@ fn trim_rejects_forms_outside_supported_mask_semantics() {
         "unsupported call trim(): arrays are not supported"
     );
 
-    let ambiguous = run_source("<?php\ntrim('ABC', 'A...Z');\n").unwrap_err();
-    assert_eq!(ambiguous.phase, Phase::Runtime);
-    assert_eq!(ambiguous.line, 2);
-    assert_eq!(ambiguous.column, 1);
-    assert_eq!(
-        ambiguous.message,
-        "unsupported call trim(): character mask ranges are not fully implemented: ambiguous dot-runs are blocked until full PHP charlist parsing is implemented"
-    );
-
     let too_few = run_source("<?php\ntrim();\n").unwrap_err();
     assert_eq!(too_few.phase, Phase::Runtime);
     assert_eq!(too_few.line, 2);
@@ -162,15 +155,6 @@ fn ltrim_rejects_forms_outside_supported_mask_semantics() {
     assert_eq!(
         mask_array.message,
         "unsupported call ltrim(): character mask arrays are not supported"
-    );
-
-    let range_mask = run_source("<?php\nltrim('ABC', '..Z');\n").unwrap_err();
-    assert_eq!(range_mask.phase, Phase::Runtime);
-    assert_eq!(range_mask.line, 2);
-    assert_eq!(range_mask.column, 1);
-    assert_eq!(
-        range_mask.message,
-        "unsupported call ltrim(): character mask ranges are not fully implemented: no character to the left of '..'"
     );
 
     let too_few = run_source("<?php\nltrim();\n").unwrap_err();
@@ -203,15 +187,6 @@ fn rtrim_rejects_forms_outside_supported_mask_semantics() {
         "unsupported call rtrim(): character mask arrays are not supported"
     );
 
-    let range_mask = run_source("<?php\nrtrim('ABC', 'Z..A');\n").unwrap_err();
-    assert_eq!(range_mask.phase, Phase::Runtime);
-    assert_eq!(range_mask.line, 2);
-    assert_eq!(range_mask.column, 1);
-    assert_eq!(
-        range_mask.message,
-        "unsupported call rtrim(): character mask ranges are not fully implemented: '..'-ranges must be incrementing"
-    );
-
     let too_few = run_source("<?php\nrtrim();\n").unwrap_err();
     assert_eq!(too_few.phase, Phase::Runtime);
     assert_eq!(too_few.line, 2);
@@ -220,6 +195,35 @@ fn rtrim_rejects_forms_outside_supported_mask_semantics() {
         too_few.message,
         "arity mismatch for rtrim(): expected 1 to 2 argument(s), got 0"
     );
+}
+
+#[test]
+fn trim_family_invalid_ranges_warn_and_return_original() {
+    let execution = run_source(
+        "<?php\n\
+$hello = \"  Hello World\\n\";\n\
+echo ltrim($hello, \"..a\") === $hello ? \"left-left\\n\" : \"bad\\n\";\n\
+echo rtrim($hello, \"a..\") === $hello ? \"right-right\\n\" : \"bad\\n\";\n\
+echo trim($hello, \"z..a\") === $hello ? \"descending\\n\" : \"bad\\n\";\n\
+echo trim($hello, \"a..b..c\") === $hello ? \"generic\\n\" : \"bad\\n\";\n",
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "Warning: ltrim(): Invalid '..'-range, no character to the left of '..' in Command line code on line 3\n",
+            "left-left\n",
+            "\nWarning: rtrim(): Invalid '..'-range, no character to the right of '..' in Command line code on line 4\n",
+            "right-right\n",
+            "\nWarning: trim(): Invalid '..'-range, '..'-range needs to be incrementing in Command line code on line 5\n",
+            "descending\n",
+            "\nWarning: trim(): Invalid '..'-range in Command line code on line 6\n",
+            "generic\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

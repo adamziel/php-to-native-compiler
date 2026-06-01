@@ -2,7 +2,7 @@ use php_compiler::emit_ir_source;
 use php_compiler::error::Phase;
 use php_compiler::run_source;
 
-const LLVM_STREAM_RESOURCE_REJECTION: &str = "LLVM stream-resource lowering rejects fopen(), stream_context_create(), stream_context_get_options(), stream_context_get_params(), stream_context_get_default(), stream_context_set_default(), stream_context_set_option(), stream_context_set_params(), fwrite()/fputs(), fgetc(), fgets(), fgetcsv(), fputcsv(), fread(), rewind(), stream_get_contents(), feof(), ftell(), fseek(), fstat(), stream_get_meta_data(), stream_get_wrappers(), stream_wrapper_register(), stream_wrapper_unregister(), stream_wrapper_restore(), fclose(), opendir(), readdir(), rewinddir(), closedir(), is_uploaded_file(), and move_uploaded_file() until native PHP resource handles, stream wrapper state, stream context state, stream wrapper registry state, upload provenance state, binary string byte fidelity, warning plus false recovery, references/copy-on-write, and exact native stream diagnostics exist; phpc run handles current bounded php://memory, php://temp, php://input, local file stream resources, stream wrapper capability metadata, stream context resources, local directory handles, and PHPC_FILES upload provenance";
+const LLVM_STREAM_RESOURCE_REJECTION: &str = "LLVM stream-resource lowering rejects fopen(), tmpfile(), stream_context_create(), stream_context_get_options(), stream_context_get_params(), stream_context_get_default(), stream_context_set_default(), stream_context_set_option(), stream_context_set_options(), stream_context_set_params(), fwrite()/fputs(), fgetc(), fgets(), fgetcsv(), fputcsv(), fscanf(), fread(), rewind(), stream_get_contents(), fpassthru(), stream_copy_to_stream(), stream_filter_append(), stream_is_local(), stream_supports_lock(), flock(), feof(), ftell(), fseek(), fstat(), stream_get_meta_data(), stream_get_wrappers(), stream_get_transports(), stream_wrapper_register(), stream_wrapper_unregister(), stream_wrapper_restore(), fclose(), dir(), opendir(), readdir(), rewinddir(), closedir(), glob(), is_uploaded_file(), and move_uploaded_file() until native PHP resource handles, stream wrapper state, stream context state, stream wrapper registry state, stream transport state, stream filter state, stream lock state, upload provenance state, directory/glob state, binary string byte fidelity, warning plus false recovery, references/copy-on-write, and exact native stream diagnostics exist; phpc run handles current bounded php://memory, php://temp, php://input, data://, local file stream resources, stream wrapper and transport capability metadata, stream context resources, selected read filters, local directory handles, bounded local glob patterns, and PHPC_FILES upload provenance";
 
 fn runtime_error(source: &str) -> php_compiler::error::Diagnostic {
     let error = run_source(source).unwrap_err();
@@ -82,31 +82,31 @@ fn fprintf_and_vfprintf_reject_unsupported_operands() {
         "unsupported call fprintf(): stream argument must be resource in the current subset, got string"
     );
 
-    let format = runtime_error(
+    let format = run_source(
         r#"<?php
 $stream = fopen("php://memory", "w+");
-fprintf($stream, 42, "x");
+$result = fprintf($stream, 42, "x");
+rewind($stream);
+echo stream_get_contents($stream), "|", $result;
 "#,
-    );
-    assert_eq!(format.line, 3);
-    assert_eq!(format.column, 1);
-    assert_eq!(
-        format.message,
-        "unsupported call fprintf(): format argument must be string in the current subset, got int"
-    );
+    )
+    .unwrap();
+    assert_eq!(format.stdout, "42|2");
+    assert_eq!(format.stderr, "");
+    assert_eq!(format.exit_code, 0);
 
-    let values = runtime_error(
+    let values = run_source(
         r#"<?php
 $stream = fopen("php://memory", "w+");
 vfprintf($stream, "%s", "not-array");
 "#,
-    );
-    assert_eq!(values.line, 3);
-    assert_eq!(values.column, 1);
-    assert_eq!(
-        values.message,
-        "unsupported call vfprintf(): values argument must be array in the current subset, got string"
-    );
+    )
+    .unwrap();
+    assert!(values
+        .stdout
+        .contains("vfprintf(): Argument #3 ($values) must be of type array"));
+    assert_eq!(values.stderr, "");
+    assert_eq!(values.exit_code, 255);
 }
 
 #[test]

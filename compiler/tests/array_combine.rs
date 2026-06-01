@@ -90,7 +90,7 @@ $values = ["negative zero", "zero", "one", "one point five", "two point two five
 $combined = array_combine($keys, $values);
 print_r($combined);
 echo count($combined), "\n";
-echo $combined["-0"], "|", $combined[0], "|", $combined[1], "|", $combined["1.5"], "|", $combined["2.25"], "|", $combined["Class A object"], "|", $combined["Resource id #1"], "|", $combined[""], "|", $combined["04"], "\n";
+echo $combined["-0"], "|", $combined[0], "|", $combined[1], "|", $combined["1.5"], "|", $combined["2.25"], "|", $combined["Class A object"], "|", $combined["Resource id #5"], "|", $combined[""], "|", $combined["04"], "\n";
 
 $call = "array_combine";
 $again = $call([-0.0, 0.0, 1.25], ["negative zero", "zero", "fraction"]);
@@ -100,7 +100,7 @@ echo $again["-0"], "|", $again[0], "|", $again["1.25"];
     let execution = run_source(source).unwrap();
     assert_eq!(
         execution.stdout,
-        "Array\n(\n    [-0] => negative zero\n    [0] => zero\n    [1] => true key\n    [1.5] => one point five\n    [2.25] => two point two five\n    [Class A object] => object\n    [Resource id #1] => resource\n    [] => null key\n    [04] => leading\n)\n9\nnegative zero|zero|true key|one point five|two point two five|object|resource|null key|leading\nnegative zero|zero|fraction"
+        "Array\n(\n    [-0] => negative zero\n    [0] => zero\n    [1] => true key\n    [1.5] => one point five\n    [2.25] => two point two five\n    [Class A object] => object\n    [Resource id #5] => resource\n    [] => null key\n    [04] => leading\n)\n9\nnegative zero|zero|true key|one point five|two point two five|object|resource|null key|leading\nnegative zero|zero|fraction"
     );
     assert_eq!(execution.exit_code, 0);
 }

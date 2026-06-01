@@ -2700,6 +2700,14 @@ fn local_filesystem_metadata_path(path: &str) -> PathBuf {
     repo_root_relative_candidate(&path).unwrap_or(path)
 }
 
+fn local_filesystem_operation_path(path: &str) -> PathBuf {
+    let path = PathBuf::from(path);
+    if path.is_absolute() || path.exists() {
+        return lexically_normalized_filesystem_path(&path);
+    }
+    repo_root_relative_path(&path).unwrap_or_else(|| lexically_normalized_filesystem_path(&path))
+}
+
 fn local_filesystem_paths_match(left: &Path, right: &Path) -> bool {
     if left == right {
         return true;
@@ -2717,12 +2725,20 @@ fn open_basedir_check_path(path: &Path) -> PathBuf {
     if let Ok(resolved) = fs::canonicalize(path) {
         return resolved;
     }
-    if path.is_absolute() {
-        return path.to_path_buf();
-    }
-    std::env::current_dir()
-        .map(|cwd| cwd.join(path))
-        .unwrap_or_else(|_| path.to_path_buf())
+
+    let absolute = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir()
+            .map(|cwd| cwd.join(path))
+            .unwrap_or_else(|_| path.to_path_buf())
+    };
+
+    lexically_normalized_filesystem_path(&absolute)
+}
+
+fn local_open_basedir_check_path(path: &str) -> PathBuf {
+    open_basedir_check_path(Path::new(path))
 }
 
 fn bounded_local_file_url_path(path: &str) -> Option<Result<PathBuf, String>> {
@@ -20774,6 +20790,49 @@ impl Interpreter {
         Ok(false)
     }
 
+    fn enforce_bounded_open_basedir_for_local_display_path(
+        &mut self,
+        function: &str,
+        display_path: &str,
+        span: Span,
+    ) -> CompileResult<bool> {
+        let filesystem_path = local_open_basedir_check_path(display_path);
+        self.enforce_bounded_open_basedir(function, display_path, &filesystem_path, span)
+    }
+
+    fn emit_stream_open_denied_after_open_basedir(
+        &mut self,
+        function: &str,
+        path: &str,
+        span: Span,
+    ) -> CompileResult<()> {
+        self.emit_display_warning(
+            format!("{function}({path}): Failed to open stream: Operation not permitted"),
+            span,
+        )
+    }
+
+    fn emit_directory_open_denied_after_open_basedir(
+        &mut self,
+        function: &str,
+        path: &str,
+        span: Span,
+    ) -> CompileResult<()> {
+        self.emit_display_warning(
+            format!("{function}({path}): Failed to open directory: Operation not permitted"),
+            span,
+        )
+    }
+
+    fn emit_scandir_denied_after_open_basedir(
+        &mut self,
+        path: &str,
+        span: Span,
+    ) -> CompileResult<()> {
+        self.emit_directory_open_denied_after_open_basedir("scandir", path, span)?;
+        self.emit_display_warning("scandir(): (errno 1): Operation not permitted", span)
+    }
+
     fn path_allowed_by_bounded_open_basedir(&self, filesystem_path: &Path) -> bool {
         let Some(value) = self.ini_value("open_basedir") else {
             return true;
@@ -20789,17 +20848,6 @@ impl Interpreter {
             .map(PathBuf::from)
             .map(|entry| open_basedir_check_path(&entry))
             .any(|base| candidate.starts_with(base))
-    }
-
-    fn cached_local_metadata(&mut self, path: &str) -> Option<fs::Metadata> {
-        let metadata_path = local_filesystem_metadata_path(path);
-        if let Some(metadata) = self.stat_cache.get(&metadata_path) {
-            return Some(metadata.clone());
-        }
-
-        let metadata = fs::metadata(&metadata_path).ok()?;
-        self.stat_cache.insert(metadata_path, metadata.clone());
-        Some(metadata)
     }
 
     fn clear_stat_cache_path(&mut self, path: &str) {
@@ -23258,13 +23306,23 @@ impl Interpreter {
     }
 
     fn run_shutdown_callbacks(&mut self) -> CompileResult<()> {
-        while self.shutdown_callback_index < self.shutdown_callbacks.len() {
-            let callback = self.shutdown_callbacks[self.shutdown_callback_index].clone();
-            self.shutdown_callback_index += 1;
-            self.call_shutdown_callback(callback)?;
-        }
+        let pending_exit = self.exit_signal.take();
+        let result = (|| {
+            while self.shutdown_callback_index < self.shutdown_callbacks.len() {
+                let callback = self.shutdown_callbacks[self.shutdown_callback_index].clone();
+                self.shutdown_callback_index += 1;
+                self.call_shutdown_callback(callback)?;
+                if self.exit_signal.is_some() {
+                    break;
+                }
+            }
 
-        Ok(())
+            Ok(())
+        })();
+        if self.exit_signal.is_none() {
+            self.exit_signal = pending_exit;
+        }
+        result
     }
 
     fn call_shutdown_callback(&mut self, callback: ShutdownCallback) -> CompileResult<Value> {
@@ -76916,6 +76974,7 @@ impl Interpreter {
                 }
             });
             if !self.enforce_bounded_open_basedir("fopen()", path, &filesystem_path, span)? {
+                self.emit_stream_open_denied_after_open_basedir("fopen", path, span)?;
                 return Ok(Value::Bool(false));
             }
             let realpath_entry = self.bounded_realpath_entry_for_local_path(&filesystem_path);
@@ -77270,7 +77329,7 @@ impl Interpreter {
         if use_include_path {
             Ok(self.resolve_file_get_contents_path(path, true))
         } else {
-            Ok(lexically_normalized_filesystem_path(Path::new(path)))
+            Ok(local_filesystem_operation_path(path))
         }
     }
 
@@ -77615,11 +77674,13 @@ impl Interpreter {
         if !self.enforce_bounded_open_basedir("is_executable()", &path, &filesystem_path, span)? {
             return Ok(Value::Bool(false));
         }
-        Ok(Value::Bool(
-            fs::metadata(&filesystem_path)
-                .map(|metadata| filesystem_mode_has_owner_execute(&metadata))
-                .unwrap_or(false),
-        ))
+        let Some(metadata) = fs::metadata(&filesystem_path).ok() else {
+            return Ok(Value::Bool(false));
+        };
+        if trailing_separator_requires_directory(&path) && !metadata.is_dir() {
+            return Ok(Value::Bool(false));
+        }
+        Ok(Value::Bool(filesystem_mode_has_owner_execute(&metadata)))
     }
 
     fn call_disk_space_builtin(
@@ -78217,6 +78278,7 @@ impl Interpreter {
             &filesystem_path,
             span,
         )? {
+            self.emit_stream_open_denied_after_open_basedir("file_put_contents", &path, span)?;
             return Ok(Value::Bool(false));
         }
 
@@ -78563,6 +78625,7 @@ impl Interpreter {
             span,
         )?;
         if !self.enforce_bounded_open_basedir("file()", &path, &filesystem_path, span)? {
+            self.emit_stream_open_denied_after_open_basedir("file", &path, span)?;
             return Ok(Value::Bool(false));
         }
         let contents = match fs::read_to_string(&filesystem_path) {
@@ -78967,6 +79030,7 @@ impl Interpreter {
         let directory_path =
             self.resolve_local_filesystem_operation_path("scandir", &path, false, span)?;
         if !self.enforce_bounded_open_basedir("scandir()", &path, &directory_path, span)? {
+            self.emit_scandir_denied_after_open_basedir(&path, span)?;
             return Ok(Value::Bool(false));
         }
         let mut entries = vec![".".to_string(), "..".to_string()];
@@ -81637,7 +81701,17 @@ impl Interpreter {
             ));
         }
 
-        let directory_path = local_filesystem_metadata_path(path);
+        let directory_path =
+            self.resolve_local_filesystem_operation_path(function, path, false, span)?;
+        if !self.enforce_bounded_open_basedir(
+            &format!("{function}()"),
+            path,
+            &directory_path,
+            span,
+        )? {
+            self.emit_directory_open_denied_after_open_basedir(function, path, span)?;
+            return Ok(Value::Bool(false));
+        }
         let Ok(metadata) = fs::metadata(&directory_path) else {
             return Ok(Value::Bool(false));
         };
@@ -83955,10 +84029,10 @@ impl Interpreter {
             "strtoupper" => call_strtoupper(&args, span),
             "str_increment" => call_str_increment(&args, span),
             "str_decrement" => call_str_decrement(&args, span),
-            "trim" => call_trim(&args, span),
-            "ltrim" => call_ltrim(&args, span),
-            "rtrim" => call_rtrim(&args, span),
-            "chop" => call_chop(&args, span),
+            "trim" => self.call_trim_family(&args, span, "trim()", TrimMode::Both),
+            "ltrim" => self.call_trim_family(&args, span, "ltrim()", TrimMode::Left),
+            "rtrim" => self.call_trim_family(&args, span, "rtrim()", TrimMode::Right),
+            "chop" => self.call_trim_family(&args, span, "chop()", TrimMode::Right),
             "strcmp" => call_strcmp(&args, span),
             "strcasecmp" => call_strcasecmp(&args, span),
             "strncmp" => call_strncmp(&args, span),
@@ -84240,14 +84314,14 @@ impl Interpreter {
                 "deg2rad",
                 "deg2rad()",
                 &args,
-                f64::to_radians,
+                php_deg2rad,
                 span,
             ),
             "rad2deg" => self.call_php_unary_float_math(
                 "rad2deg",
                 "rad2deg()",
                 &args,
-                f64::to_degrees,
+                php_rad2deg,
                 span,
             ),
             "pow" => call_pow(self, &args, span),
@@ -85892,7 +85966,16 @@ impl Interpreter {
                                 ),
                             ));
                         }
-                        let metadata_path = local_filesystem_metadata_path(path);
+                        let metadata_path =
+                            self.resolve_local_filesystem_operation_path("file_exists", path, false, span)?;
+                        if !self.enforce_bounded_open_basedir(
+                            "file_exists()",
+                            path,
+                            &metadata_path,
+                            span,
+                        )? {
+                            return Ok(Value::Bool(false));
+                        }
                         Ok(Value::Bool(metadata_path.try_exists().unwrap_or(false)))
                     }
                     other => Err(runtime_error(
@@ -86063,6 +86146,11 @@ impl Interpreter {
                             &filesystem_path,
                             span,
                         )? {
+                            self.emit_stream_open_denied_after_open_basedir(
+                                "file_get_contents",
+                                &path,
+                                span,
+                            )?;
                             return Ok(Value::Bool(false));
                         }
                         let contents = match fs::read(&filesystem_path) {
@@ -86152,7 +86240,17 @@ impl Interpreter {
                         ),
                     ));
                 }
-                let metadata = match self.cached_local_metadata(&path) {
+                let filesystem_path =
+                    self.resolve_local_filesystem_operation_path("filesize", &path, false, span)?;
+                if !self.enforce_bounded_open_basedir(
+                    "filesize()",
+                    &path,
+                    &filesystem_path,
+                    span,
+                )? {
+                    return Ok(Value::Bool(false));
+                }
+                let metadata = match self.cached_filesystem_metadata(&filesystem_path, true) {
                     Some(metadata) => metadata,
                     None => {
                         self.emit_display_warning(
@@ -86355,7 +86453,16 @@ impl Interpreter {
                                 ),
                             ));
                         }
-                        let metadata_path = local_filesystem_metadata_path(path);
+                        let metadata_path =
+                            self.resolve_local_filesystem_operation_path("is_dir", path, false, span)?;
+                        if !self.enforce_bounded_open_basedir(
+                            "is_dir()",
+                            path,
+                            &metadata_path,
+                            span,
+                        )? {
+                            return Ok(Value::Bool(false));
+                        }
                         Ok(Value::Bool(
                             fs::metadata(&metadata_path)
                                 .map(|metadata| metadata.is_dir())
@@ -86387,7 +86494,16 @@ impl Interpreter {
                                 ),
                             ));
                         }
-                        let metadata_path = local_filesystem_metadata_path(path);
+                        let metadata_path =
+                            self.resolve_local_filesystem_operation_path("is_file", path, false, span)?;
+                        if !self.enforce_bounded_open_basedir(
+                            "is_file()",
+                            path,
+                            &metadata_path,
+                            span,
+                        )? {
+                            return Ok(Value::Bool(false));
+                        }
                         Ok(Value::Bool(
                             fs::metadata(&metadata_path)
                                 .map(|metadata| metadata.is_file())
@@ -86419,7 +86535,16 @@ impl Interpreter {
                                 ),
                             ));
                         }
-                        let metadata_path = local_filesystem_metadata_path(path);
+                        let metadata_path =
+                            self.resolve_local_filesystem_operation_path("is_readable", path, false, span)?;
+                        if !self.enforce_bounded_open_basedir(
+                            "is_readable()",
+                            path,
+                            &metadata_path,
+                            span,
+                        )? {
+                            return Ok(Value::Bool(false));
+                        }
                         let Ok(metadata) = fs::metadata(&metadata_path) else {
                             return Ok(Value::Bool(false));
                         };
@@ -86455,7 +86580,16 @@ impl Interpreter {
                                 ),
                             ));
                         }
-                        let metadata_path = local_filesystem_metadata_path(path);
+                        let metadata_path =
+                            self.resolve_local_filesystem_operation_path("is_writable", path, false, span)?;
+                        if !self.enforce_bounded_open_basedir(
+                            "is_writable()",
+                            path,
+                            &metadata_path,
+                            span,
+                        )? {
+                            return Ok(Value::Bool(false));
+                        }
                         let Ok(metadata) = fs::metadata(&metadata_path) else {
                             return Ok(Value::Bool(false));
                         };
@@ -86491,6 +86625,13 @@ impl Interpreter {
                             "stream wrappers are not supported in the current subset",
                         ),
                     ));
+                }
+                if !self.enforce_bounded_open_basedir_for_local_display_path(
+                    "is_link()",
+                    &path,
+                    span,
+                )? {
+                    return Ok(Value::Bool(false));
                 }
                 let metadata_path = local_filesystem_metadata_path(&path);
                 Ok(Value::Bool(
@@ -91238,7 +91379,8 @@ impl Interpreter {
                 property,
                 span,
             } => {
-                let property = self.evaluate_dynamic_property_name(property, *span, caller_scope)?;
+                let property =
+                    self.evaluate_dynamic_property_name(property, *span, caller_scope)?;
                 self.is_direct_object_property_empty(target, &property, *span, caller_scope)
             }
             Expr::StaticProperty {
@@ -91256,13 +91398,7 @@ impl Interpreter {
                 self.is_late_static_property_empty(property, *span)
             }
             Expr::Call { .. } => Ok(!self.evaluate(arg, caller_scope)?.is_truthy()),
-            _ => Err(runtime_error(
-                arg.span(),
-                RuntimeError::unsupported_call(
-                    "empty()",
-                    "only direct variables, direct array offset operands, direct object property operands, direct object-property array offset operands, and supported static property operands are supported",
-                ),
-            )),
+            _ => Ok(!self.evaluate(arg, caller_scope)?.is_truthy()),
         }
     }
 
@@ -92140,7 +92276,7 @@ impl Interpreter {
                     call_label,
                     format!(
                         "Argument #1 ($value) must be of type Countable|array, {} given",
-                        other.type_name()
+                        php_type_error_given(other)
                     ),
                 ),
             )),
@@ -116245,6 +116381,63 @@ fn str_word_count_charlist_contains(charlist: &[u8], byte: u8) -> bool {
 }
 
 impl Interpreter {
+    fn call_trim_family(
+        &mut self,
+        args: &[Value],
+        span: Span,
+        function: &'static str,
+        mode: TrimMode,
+    ) -> CompileResult<Value> {
+        if !(1..=2).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    function,
+                    ArityExpectation::Between { min: 1, max: 2 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        if matches!(args[0], Value::Array(_)) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(function, "arrays are not supported"),
+            ));
+        }
+
+        let value = args[0]
+            .try_echo_bytes()
+            .map_err(|error| runtime_error(span, error))?;
+        let mask = if let Some(mask) = args.get(1) {
+            if matches!(mask, Value::Array(_)) {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        function,
+                        "character mask arrays are not supported",
+                    ),
+                ));
+            }
+            let mask = mask
+                .try_echo_bytes()
+                .map_err(|error| runtime_error(span, error))?;
+            match expanded_trim_mask(&mask) {
+                TrimMaskExpansion::Expanded(mask) => mask,
+                TrimMaskExpansion::Invalid(message) => {
+                    self.emit_display_warning(format!("{function}: {message}"), span)?;
+                    return Ok(interpreter_value_from_php_string_bytes(value));
+                }
+            }
+        } else {
+            PHP_DEFAULT_TRIM_MASK_BYTES.to_vec()
+        };
+
+        Ok(interpreter_value_from_php_string_bytes(
+            trim_bytes_with_mask(&value, &mask, mode),
+        ))
+    }
+
     fn call_strnatcmp(
         &mut self,
         args: &[Value],
@@ -117088,7 +117281,7 @@ fn php_str_decrement_bytes(bytes: &[u8]) -> Option<Vec<u8>> {
     (!result.is_empty()).then_some(result)
 }
 
-const PHP_DEFAULT_TRIM_MASK_BYTES: &[u8] = b" \n\r\t\x0b\0";
+const PHP_DEFAULT_TRIM_MASK_BYTES: &[u8] = b" \n\r\t\x0b\x0c\0";
 
 #[derive(Clone, Copy)]
 enum TrimMode {
@@ -117139,55 +117332,53 @@ fn php_string_literal_value(value: &str) -> Value {
     interpreter_value_from_php_string_bytes(php_string_literal_bytes(value))
 }
 
-fn trim_mask_parse_error(name: &str, reason: &str) -> RuntimeError {
-    RuntimeError::unsupported_call(
-        name,
-        format!("character mask ranges are not fully implemented: {reason}"),
-    )
+enum TrimMaskExpansion {
+    Expanded(Vec<u8>),
+    Invalid(&'static str),
 }
 
-fn expanded_trim_mask(mask: &[u8], name: &str) -> RuntimeResult<Vec<u8>> {
+fn expanded_trim_mask(mask: &[u8]) -> TrimMaskExpansion {
     let mut expanded = Vec::with_capacity(mask.len());
     let mut index = 0;
 
     while index < mask.len() {
-        if mask[index] == b'.' && mask.get(index + 1) == Some(&b'.') {
-            return Err(trim_mask_parse_error(
-                name,
-                "no character to the left of '..'",
-            ));
-        }
-
         if mask.get(index + 1) == Some(&b'.') && mask.get(index + 2) == Some(&b'.') {
             let Some(&end) = mask.get(index + 3) else {
-                return Err(trim_mask_parse_error(
-                    name,
-                    "no character to the right of '..'",
-                ));
+                return TrimMaskExpansion::Invalid(
+                    "Invalid '..'-range, no character to the right of '..'",
+                );
             };
             if end == b'.' {
-                return Err(trim_mask_parse_error(
-                    name,
-                    "ambiguous dot-runs are blocked until full PHP charlist parsing is implemented",
-                ));
+                expanded.push(mask[index]);
+                index += 1;
+                continue;
             }
 
             let start = mask[index];
             if start > end {
-                return Err(trim_mask_parse_error(
-                    name,
-                    "'..'-ranges must be incrementing",
-                ));
+                return TrimMaskExpansion::Invalid(
+                    "Invalid '..'-range, '..'-range needs to be incrementing",
+                );
+            }
+            if mask.get(index + 4) == Some(&b'.') && mask.get(index + 5) == Some(&b'.') {
+                return TrimMaskExpansion::Invalid("Invalid '..'-range");
             }
             expanded.extend(start..=end);
             index += 4;
-        } else {
-            expanded.push(mask[index]);
-            index += 1;
+            continue;
         }
+
+        if mask[index] == b'.' && mask.get(index + 1) == Some(&b'.') {
+            return TrimMaskExpansion::Invalid(
+                "Invalid '..'-range, no character to the left of '..'",
+            );
+        }
+
+        expanded.push(mask[index]);
+        index += 1;
     }
 
-    Ok(expanded)
+    TrimMaskExpansion::Expanded(expanded)
 }
 
 fn trim_bytes_with_mask(value: &[u8], mask: &[u8], mode: TrimMode) -> Vec<u8> {
@@ -117206,72 +117397,6 @@ fn trim_bytes_with_mask(value: &[u8], mask: &[u8], mode: TrimMode) -> Vec<u8> {
     }
 
     value[start..end].to_vec()
-}
-
-fn trim_family_call(
-    args: &[Value],
-    span: Span,
-    name: &str,
-    mode: TrimMode,
-) -> CompileResult<Value> {
-    if !(1..=2).contains(&args.len()) {
-        return Err(runtime_error(
-            span,
-            RuntimeError::arity_mismatch(
-                name,
-                ArityExpectation::Between { min: 1, max: 2 },
-                args.len(),
-            ),
-        ));
-    }
-
-    if matches!(args[0], Value::Array(_)) {
-        return Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(name, "arrays are not supported"),
-        ));
-    }
-
-    let value = args[0]
-        .try_echo_bytes()
-        .map_err(|error| runtime_error(span, error))?;
-    let mask = if let Some(mask) = args.get(1) {
-        if matches!(mask, Value::Array(_)) {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(name, "character mask arrays are not supported"),
-            ));
-        }
-        expanded_trim_mask(
-            &mask
-                .try_echo_bytes()
-                .map_err(|error| runtime_error(span, error))?,
-            name,
-        )
-        .map_err(|error| runtime_error(span, error))?
-    } else {
-        PHP_DEFAULT_TRIM_MASK_BYTES.to_vec()
-    };
-
-    Ok(interpreter_value_from_php_string_bytes(
-        trim_bytes_with_mask(&value, &mask, mode),
-    ))
-}
-
-fn call_trim(args: &[Value], span: Span) -> CompileResult<Value> {
-    trim_family_call(args, span, "trim()", TrimMode::Both)
-}
-
-fn call_ltrim(args: &[Value], span: Span) -> CompileResult<Value> {
-    trim_family_call(args, span, "ltrim()", TrimMode::Left)
-}
-
-fn call_rtrim(args: &[Value], span: Span) -> CompileResult<Value> {
-    trim_family_call(args, span, "rtrim()", TrimMode::Right)
-}
-
-fn call_chop(args: &[Value], span: Span) -> CompileResult<Value> {
-    trim_family_call(args, span, "chop()", TrimMode::Right)
 }
 
 fn call_strcasecmp(args: &[Value], span: Span) -> CompileResult<Value> {
@@ -128295,6 +128420,14 @@ fn call_pi(args: &[Value], span: Span) -> CompileResult<Value> {
 fn call_getrandmax(args: &[Value], span: Span) -> CompileResult<Value> {
     expect_arity("getrandmax", args, 0, span)?;
     Ok(Value::Int(i64::from(i32::MAX)))
+}
+
+fn php_deg2rad(value: f64) -> f64 {
+    value / 180.0 * std::f64::consts::PI
+}
+
+fn php_rad2deg(value: f64) -> f64 {
+    value / std::f64::consts::PI * 180.0
 }
 
 fn call_intdiv(args: &[Value], span: Span) -> CompileResult<Value> {

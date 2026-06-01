@@ -34,6 +34,28 @@ echo function_exists("sin") ? "exists" : "missing";
 }
 
 #[test]
+fn angle_conversion_matches_php_formula_order_for_phpt_edges() {
+    let execution = run_source(
+        r#"<?php
+var_dump(deg2rad(23));
+var_dump(deg2rad("23.45"));
+var_dump(deg2rad("1000"));
+var_dump(rad2deg(9223372034707292160));
+var_dump(rad2deg(-2147483649));
+var_dump(rad2deg(4294967295));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "float(0.40142572795869574)\nfloat(0.40927970959267024)\nfloat(17.453292519943293)\nfloat(5.284602904677184E+20)\nfloat(-123041749661.05348)\nfloat(246083499150.21957)\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn elementary_math_builtins_cover_hyperbolic_and_log10() {
     let execution = run_source(
         r#"<?php

@@ -176,6 +176,32 @@ echo empty(filled()) ? "filled-empty" : "filled-set";
 }
 
 #[test]
+fn empty_accepts_non_lvalue_expression_values() {
+    let source = r#"<?php
+function getEmptyArray() { return []; }
+function getNonEmptyArray() { return [1, 2, 3]; }
+
+var_dump(empty([]));
+var_dump(empty([1, 2, 3]));
+var_dump(empty(getEmptyArray()));
+var_dump(empty(getNonEmptyArray()));
+var_dump(empty([] + []));
+var_dump(empty([1, 2, 3] + []));
+var_dump(empty("string"));
+var_dump(empty(""));
+var_dump(empty(true));
+var_dump(empty(false));
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "bool(true)\nbool(false)\nbool(true)\nbool(false)\nbool(true)\nbool(false)\nbool(false)\nbool(true)\nbool(false)\nbool(true)\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn complex_empty_operands_remain_explicitly_unsupported() {
     let error =
         runtime_error("<?php\nfunction items() { return [[1]]; }\necho empty(items()[0]);\n");

@@ -1,0 +1,4 @@
+Fatal error: Uncaught TypeError: Unsupported operand types: string + int in tests/fixtures/runtime_errors/non_numeric_string_arithmetic.php:2
+Stack trace:
+#0 {main}
+  thrown in tests/fixtures/runtime_errors/non_numeric_string_arithmetic.php on line 2

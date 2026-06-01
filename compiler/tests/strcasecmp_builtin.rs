@@ -46,17 +46,18 @@ echo "|", $call("UTF8", "utf8") === 0 ? "same" : "diff";
 
 #[test]
 fn strcasecmp_rejects_forms_outside_current_subset() {
-    let missing = runtime_error(
+    let missing = run_source(
         r#"<?php
 echo strcasecmp("a");
 "#,
-    );
-    assert_eq!(missing.line, 2);
-    assert_eq!(missing.column, 6);
-    assert_eq!(
-        missing.message,
-        "arity mismatch for strcasecmp(): expected 2 argument(s), got 1"
-    );
+    )
+    .unwrap();
+    assert!(missing.stdout.contains(
+        "Fatal error: Uncaught TypeError: Too few arguments to function strcasecmp(), 1 passed"
+    ));
+    assert!(missing.stdout.contains("exactly 2 expected"));
+    assert_eq!(missing.stderr, "");
+    assert_eq!(missing.exit_code, 255);
 
     let array_left = runtime_error(
         r#"<?php

@@ -1,6 +1,8 @@
-exit: 1
+exit: 255
 stdout:
---- stdout end ---
+Fatal error: Uncaught TypeError: Unsupported operand types: string + int in tests/fixtures/runtime_errors/non_numeric_string_arithmetic.php:2
+Stack trace:
+#0 {main}
+  thrown in tests/fixtures/runtime_errors/non_numeric_string_arithmetic.php on line 2--- stdout end ---
 stderr:
-runtime error at tests/fixtures/runtime_errors/non_numeric_string_arithmetic.php:2:6: invalid arithmetic for +: string is not numeric
 --- stderr end ---

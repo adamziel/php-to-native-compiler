@@ -1,6 +1,5 @@
-exit: 1
+exit: 0
 stdout:
---- stdout end ---
+Linux--- stdout end ---
 stderr:
-runtime error at tests/fixtures/unsupported_dynamic_features/unsupported_global_constant.php:2:6: undefined constant PHP_OS
 --- stderr end ---

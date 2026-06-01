@@ -650,7 +650,10 @@ echo $blocked === false ? "|blocked" : "|opened";
     );
     let execution = run_source(&source).unwrap();
 
-    assert_eq!(execution.stdout, "allowed|warning:2:basedir|blocked");
+    assert_eq!(
+        execution.stdout,
+        "allowed|warning:2:basedir|warning:2:other|blocked"
+    );
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);
     let _ = fs::remove_dir_all(root);

@@ -2,6 +2,7 @@ use php_compiler::error::Phase;
 use php_compiler::{emit_ir_source, run_source};
 
 const LLVM_MUTATION_REJECTION: &str = "LLVM mutation lowering rejects compound assignment outside lowerable direct variables, null coalescing assignment, increment/decrement, non-direct assignment expressions, direct variable unset, object property unset, static property unset, and multiple-operand unset until native read-modify-write ordering, null-aware mutation, unset symbol-table effects, references/copy-on-write, and exact native error behavior exist; phpc run handles current mutation behavior";
+const LLVM_NATIVE_ARRAY_NON_LOCAL_ASSIGNMENT_REJECTION: &str = "LLVM native array non-local assignment lowering rejects object, dynamic-object, non-direct object, and static property assignment targets until non-local owner cells, magic property writes, typed/static property state, assignment-expression results, references/copy-on-write, and exact diagnostics share one assignment owner contract; local variables and native array offset assignments use their shared native lvalue assignment contracts";
 
 #[test]
 fn direct_variable_assignment_expressions_return_assigned_values() {
@@ -576,8 +577,9 @@ fn emit_ir_lowers_direct_assignment_expressions() {
     )
     .unwrap();
 
-    assert!(ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_int, i64 2)"));
-    assert!(ir.contains("phpc_native_value_format_stdout_with_diagnostic"));
+    assert!(ir.matches("@phpc_native_int(i64 2)").count() >= 2);
+    assert!(ir.contains("phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free"));
+    assert!(ir.contains("phpc_native_value_from_string_bytes_with_diagnostic"));
     assert!(ir.contains("php\\00"));
     assert!(!ir.contains(LLVM_MUTATION_REJECTION));
 }
@@ -605,8 +607,9 @@ fn emit_ir_rejects_non_direct_assignment_expressions_until_native_lowering_exist
 fn emit_ir_lowers_chained_direct_assignment_expressions() {
     let ir = emit_ir_source("<?php\n$left = $right = 1;\necho $left, $right;\n").unwrap();
 
+    assert!(ir.matches("@phpc_native_int(i64 1)").count() >= 2);
     assert!(
-        ir.matches("call i32 (ptr, ...) @printf(ptr @.fmt_int, i64 1)")
+        ir.matches("phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free")
             .count()
             >= 2
     );
@@ -641,7 +644,10 @@ fn emit_ir_rejects_object_property_assignment_expressions_until_native_lowering_
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.line, 3);
     assert_eq!(error.column, 7);
-    assert_eq!(error.message, LLVM_MUTATION_REJECTION);
+    assert_eq!(
+        error.message,
+        LLVM_NATIVE_ARRAY_NON_LOCAL_ASSIGNMENT_REJECTION
+    );
 }
 
 #[test]

@@ -1,6 +1,6 @@
-exit: 1
+exit: 0
 stdout:
+Notice: Only variables should be assigned by reference in tests/fixtures/milestone752/reference_assignment_method_call_reached.php on line 8
 --- stdout end ---
 stderr:
-runtime error at tests/fixtures/milestone752/reference_assignment_method_call_reached.php:8:19: unsupported call make(): function does not return by reference
 --- stderr end ---

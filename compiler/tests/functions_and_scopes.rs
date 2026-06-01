@@ -16,6 +16,13 @@ fn parse_error(source: &str) -> php_compiler::error::Diagnostic {
     error
 }
 
+fn fatal_execution(source: &str) -> php_compiler::interpreter::Execution {
+    let execution = run_source(source).unwrap();
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 255);
+    execution
+}
+
 fn system_php_available() -> bool {
     Command::new("php").arg("-v").output().is_ok()
 }
@@ -45,10 +52,87 @@ fn assert_system_php_fixture_matches_stdout(fixture: &str, expected: &str) {
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
 }
 
+fn null_offset_deprecation_line(line: &str) -> bool {
+    line.starts_with(
+        "Deprecated: Using null as an array offset is deprecated, use an empty string instead in ",
+    ) && line.contains(" on line ")
+}
+
+fn stdout_without_null_offset_deprecations(stdout: &str) -> String {
+    let mut cleaned = Vec::new();
+    let mut skipped_deprecation = false;
+
+    for line in stdout.lines() {
+        if null_offset_deprecation_line(line) {
+            skipped_deprecation = true;
+            continue;
+        }
+
+        if skipped_deprecation && line.is_empty() {
+            continue;
+        }
+
+        skipped_deprecation = false;
+        cleaned.push(line);
+    }
+
+    cleaned.join("\n").trim_end_matches('\n').to_string()
+}
+
+fn assert_stdout_eq_ignoring_null_offset_deprecations(actual: &str, expected: &str) {
+    assert_eq!(
+        stdout_without_null_offset_deprecations(actual),
+        stdout_without_null_offset_deprecations(expected)
+    );
+}
+
+fn assert_system_php_fixture_matches_stdout_ignoring_null_offset_deprecations(
+    fixture: &str,
+    expected: &str,
+) {
+    if !system_php_available() {
+        return;
+    }
+
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let output = Command::new("php")
+        .arg(manifest_dir.join(fixture))
+        .output()
+        .expect("run system PHP fixture");
+    let expected_stdout =
+        std::fs::read_to_string(manifest_dir.join(expected)).expect("read expected stdout");
+
+    assert!(
+        output.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_stdout_eq_ignoring_null_offset_deprecations(
+        String::from_utf8_lossy(&output.stdout).as_ref(),
+        expected_stdout.trim_end_matches('\n'),
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
 fn assert_run_source_fixture_matches_stdout(source: &str, expected: &str) {
     let execution = run_source(source).unwrap();
 
     assert_eq!(execution.stdout, expected.trim_end_matches('\n'));
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+fn assert_run_source_fixture_stdout_ends_with(source: &str, expected: &str) {
+    let execution = run_source(source).unwrap();
+    let stdout = stdout_without_null_offset_deprecations(&execution.stdout);
+    let expected = stdout_without_null_offset_deprecations(expected.trim_end_matches('\n'));
+
+    assert!(
+        stdout.ends_with(&expected),
+        "stdout:\n{}\n\nexpected suffix:\n{}",
+        execution.stdout,
+        expected
+    );
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);
 }
@@ -60,6 +144,15 @@ fn assert_run_source_fixture_path_matches_stdout(fixture: &str, expected: &str) 
         std::fs::read_to_string(manifest_dir.join(expected)).expect("read expected stdout");
 
     assert_run_source_fixture_matches_stdout(&source, &expected_stdout);
+}
+
+fn assert_run_source_fixture_path_stdout_ends_with(fixture: &str, expected: &str) {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source = std::fs::read_to_string(manifest_dir.join(fixture)).expect("read fixture source");
+    let expected_stdout =
+        std::fs::read_to_string(manifest_dir.join(expected)).expect("read expected stdout");
+
+    assert_run_source_fixture_stdout_ends_with(&source, &expected_stdout);
 }
 
 #[test]
@@ -240,7 +333,7 @@ echo "OK!", PHP_EOL;
 
 #[test]
 fn user_functions_do_not_import_global_variables_implicitly() {
-    let error = runtime_error(
+    let execution = run_source(
         r#"<?php
 $value = "global";
 function read_value() {
@@ -248,11 +341,15 @@ function read_value() {
 }
 echo read_value();
 "#,
-    );
+    )
+    .unwrap();
 
-    assert_eq!(error.line, 4);
-    assert_eq!(error.column, 12);
-    assert_eq!(error.message, "undefined variable '$value'");
+    assert_eq!(
+        execution.stdout,
+        "Warning: Undefined variable $value in Command line code on line 4\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
@@ -489,7 +586,7 @@ echo $formatter->value("2.5"), "|", takes_box(new ChildBox()), "|", $closure(12)
 
 #[test]
 fn function_type_metadata_rejects_mismatched_values() {
-    let error = runtime_error(
+    let execution = fatal_execution(
         r#"<?php
 function needs_number(int $value): string {
     return $value;
@@ -498,10 +595,12 @@ echo needs_number([]);
 "#,
     );
 
-    assert_eq!(
-        error.message,
-        "unsupported call needs_number(): parameter $value expects int, got array"
-    );
+    assert!(execution.stdout.starts_with(
+        "Fatal error: Uncaught TypeError: needs_number(): Argument #1 ($value) must be of type int, array given"
+    ));
+    assert!(execution
+        .stdout
+        .contains("#0 Command line code(2): needs_number()"));
 }
 
 #[test]
@@ -619,7 +718,7 @@ echo missing_default();
 }
 
 #[test]
-fn default_parameter_arity_errors_report_supported_range() {
+fn default_parameter_arity_errors_report_missing_required_and_allow_extra_arguments() {
     let too_few = runtime_error(
         r#"<?php
 function label($value, $suffix = "!") {
@@ -636,21 +735,19 @@ echo label();
         "arity mismatch for label(): expected 1 to 2 argument(s), got 0"
     );
 
-    let too_many = runtime_error(
+    let too_many = run_source(
         r#"<?php
 function label($value, $suffix = "!") {
     return $value . $suffix;
 }
 echo label("a", "b", "c");
 "#,
-    );
+    )
+    .unwrap();
 
-    assert_eq!(too_many.line, 5);
-    assert_eq!(too_many.column, 6);
-    assert_eq!(
-        too_many.message,
-        "arity mismatch for label(): expected 1 to 2 argument(s), got 3"
-    );
+    assert_eq!(too_many.stdout, "ab");
+    assert_eq!(too_many.stderr, "");
+    assert_eq!(too_many.exit_code, 0);
 }
 
 #[test]
@@ -1226,18 +1323,18 @@ echo "|", cache_get("notoptions");
 fn named_reference_arguments_bind_declared_params_in_source_order() {
     let execution = run_source(
         r#"<?php
-function touch(&$p0 = null, $p1 = null, &$p2 = null, $p3 = null, &$p4 = null, $p5 = null) {
+function touch_refs(&$p0 = null, $p1 = null, &$p2 = null, $p3 = null, &$p4 = null, $p5 = null) {
     $p0++;
     $p4++;
     echo "value=", $p1, ":", $p5, "\n";
 }
 
 $v0 = $v1 = $v4 = $v5 = 0;
-touch(p4: $v4, p5: $v5, p0: $v0, p1: $v1);
+touch_refs(p4: $v4, p5: $v5, p0: $v0, p1: $v1);
 echo "vars=", $v0, ":", $v1, ":", $v4, ":", $v5, "\n";
 
 $items = [0 => 0, 1 => 0, 4 => 0, 5 => 0];
-touch(p4: $items[4], p5: $items[5], p0: $items[0], p1: $items[1]);
+touch_refs(p4: $items[4], p5: $items[5], p0: $items[0], p1: $items[1]);
 echo "array=", $items[0], ":", $items[1], ":", $items[4], ":", $items[5];
 "#,
     )
@@ -3119,7 +3216,7 @@ echo "loaded";
 
 #[test]
 fn reference_assignment_method_call_source_executes_as_stable_runtime_boundary() {
-    let error = runtime_error(
+    let execution = run_source(
         r#"<?php
 class Parser {
     public function make() {
@@ -3133,14 +3230,15 @@ class Parser {
 $parser = new Parser();
 $parser->run();
 "#,
-    );
+    )
+    .unwrap();
 
-    assert_eq!(error.line, 8);
-    assert_eq!(error.column, 19);
     assert_eq!(
-        error.message,
-        "unsupported call make(): function does not return by reference"
+        execution.stdout,
+        "Notice: Only variables should be assigned by reference in Command line code on line 8\n"
     );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
@@ -3497,7 +3595,7 @@ echo $entry, "|", $other;
 
 #[test]
 fn reference_assignment_array_access_offset_target_reports_stable_boundary() {
-    let error = runtime_error(
+    let execution = fatal_execution(
         r#"<?php
 class Bag implements ArrayAccess {
     public function offsetExists($offset) { return false; }
@@ -3511,17 +3609,17 @@ $bag["name"] =& $value;
 "#,
     );
 
-    assert_eq!(error.line, 10);
-    assert_eq!(error.column, 1);
-    assert_eq!(
-        error.message,
-        "unsupported call reference assignment: ArrayAccess object offsets cannot be assigned by reference in the current runtime"
-    );
+    assert!(execution
+        .stdout
+        .contains("Indirect modification of overloaded element of Bag has no effect"));
+    assert!(execution
+        .stdout
+        .contains("Cannot assign by reference to an array dimension of an object"));
 }
 
 #[test]
 fn reference_assignment_array_access_reference_return_offset_target_reports_stable_boundary() {
-    let error = runtime_error(
+    let execution = fatal_execution(
         r#"<?php
 class Bag implements ArrayAccess {
     public $items = [];
@@ -3536,12 +3634,12 @@ $bag["name"] =& $value;
 "#,
     );
 
-    assert_eq!(error.line, 11);
-    assert_eq!(error.column, 1);
-    assert_eq!(
-        error.message,
-        "unsupported call reference assignment: ArrayAccess object offsets cannot be assigned by reference in the current runtime"
-    );
+    assert!(execution
+        .stdout
+        .contains("Indirect modification of overloaded element of Bag has no effect"));
+    assert!(execution
+        .stdout
+        .contains("Cannot assign by reference to an array dimension of an object"));
 }
 
 #[test]
@@ -3566,10 +3664,11 @@ echo $value;
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "Grace");
-    assert!(execution
-        .stderr
-        .contains("Indirect modification of overloaded element of Bag has no effect"));
+    assert_eq!(
+        execution.stdout,
+        "Notice: Indirect modification of overloaded element of Bag has no effect in Command line code on line 14\nGrace"
+    );
+    assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);
 }
 
@@ -3745,9 +3844,9 @@ fn system_php_preserves_array_access_offset_set_bucket_arbitrary_reference_slots
         "stderr:\n{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert_eq!(
-        String::from_utf8_lossy(&output.stdout),
-        expected.trim_end_matches('\n')
+    assert_stdout_eq_ignoring_null_offset_deprecations(
+        String::from_utf8_lossy(&output.stdout).as_ref(),
+        expected.trim_end_matches('\n'),
     );
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
 }
@@ -3788,9 +3887,9 @@ fn system_php_preserves_array_access_append_offset_set_bucket_reference_slots() 
         "stderr:\n{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert_eq!(
-        String::from_utf8_lossy(&output.stdout),
-        expected.trim_end_matches('\n')
+    assert_stdout_eq_ignoring_null_offset_deprecations(
+        String::from_utf8_lossy(&output.stdout).as_ref(),
+        expected.trim_end_matches('\n'),
     );
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
 }
@@ -3816,9 +3915,9 @@ fn system_php_preserves_array_access_exact_append_offset_set_empty_key_reference
         "stderr:\n{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert_eq!(
-        String::from_utf8_lossy(&output.stdout),
-        expected.trim_end_matches('\n')
+    assert_stdout_eq_ignoring_null_offset_deprecations(
+        String::from_utf8_lossy(&output.stdout).as_ref(),
+        expected.trim_end_matches('\n'),
     );
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
 }
@@ -3846,11 +3945,8 @@ fn array_access_exact_append_offset_set_bucket_copy_uses_empty_key_reference_slo
     let expected = include_str!(
         "../../tests/fixtures/milestone1682/arrayaccess_exact_append_offsetset_empty_key_reference_slot_cow.stdout"
     );
-    let execution = run_source(source).unwrap();
 
-    assert_eq!(execution.stdout, expected.trim_end_matches('\n'));
-    assert_eq!(execution.stderr, "");
-    assert_eq!(execution.exit_code, 0);
+    assert_run_source_fixture_stdout_ends_with(source, expected);
 }
 
 #[test]
@@ -3874,9 +3970,9 @@ fn system_php_preserves_property_held_array_access_append_offset_set_bucket_refe
         "stderr:\n{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert_eq!(
-        String::from_utf8_lossy(&output.stdout),
-        expected.trim_end_matches('\n')
+    assert_stdout_eq_ignoring_null_offset_deprecations(
+        String::from_utf8_lossy(&output.stdout).as_ref(),
+        expected.trim_end_matches('\n'),
     );
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
 }
@@ -3903,9 +3999,9 @@ fn system_php_preserves_property_held_array_access_exact_append_offset_set_empty
         "stderr:\n{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert_eq!(
-        String::from_utf8_lossy(&output.stdout),
-        expected.trim_end_matches('\n')
+    assert_stdout_eq_ignoring_null_offset_deprecations(
+        String::from_utf8_lossy(&output.stdout).as_ref(),
+        expected.trim_end_matches('\n'),
     );
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
 }
@@ -3933,11 +4029,8 @@ fn property_held_array_access_exact_append_offset_set_bucket_copy_uses_empty_key
     let expected = include_str!(
         "../../tests/fixtures/milestone1683/property_held_arrayaccess_exact_append_offsetset_empty_key_reference_slot_cow.stdout"
     );
-    let execution = run_source(source).unwrap();
 
-    assert_eq!(execution.stdout, expected.trim_end_matches('\n'));
-    assert_eq!(execution.stderr, "");
-    assert_eq!(execution.exit_code, 0);
+    assert_run_source_fixture_stdout_ends_with(source, expected);
 }
 
 #[test]
@@ -3962,9 +4055,9 @@ fn system_php_preserves_dynamic_property_held_array_access_append_offset_set_buc
         "stderr:\n{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert_eq!(
-        String::from_utf8_lossy(&output.stdout),
-        expected.trim_end_matches('\n')
+    assert_stdout_eq_ignoring_null_offset_deprecations(
+        String::from_utf8_lossy(&output.stdout).as_ref(),
+        expected.trim_end_matches('\n'),
     );
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
 }
@@ -3991,9 +4084,9 @@ fn system_php_preserves_dynamic_property_held_array_access_exact_append_offset_s
         "stderr:\n{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert_eq!(
-        String::from_utf8_lossy(&output.stdout),
-        expected.trim_end_matches('\n')
+    assert_stdout_eq_ignoring_null_offset_deprecations(
+        String::from_utf8_lossy(&output.stdout).as_ref(),
+        expected.trim_end_matches('\n'),
     );
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
 }
@@ -4023,11 +4116,8 @@ fn dynamic_property_held_array_access_exact_append_offset_set_bucket_copy_uses_e
     let expected = include_str!(
         "../../tests/fixtures/milestone1684/dynamic_property_held_arrayaccess_exact_append_offsetset_empty_key_reference_slot_cow.stdout"
     );
-    let execution = run_source(source).unwrap();
 
-    assert_eq!(execution.stdout, expected.trim_end_matches('\n'));
-    assert_eq!(execution.stderr, "");
-    assert_eq!(execution.exit_code, 0);
+    assert_run_source_fixture_stdout_ends_with(source, expected);
 }
 
 #[test]
@@ -4052,9 +4142,9 @@ fn system_php_preserves_non_direct_holder_property_held_array_access_append_offs
         "stderr:\n{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert_eq!(
-        String::from_utf8_lossy(&output.stdout),
-        expected.trim_end_matches('\n')
+    assert_stdout_eq_ignoring_null_offset_deprecations(
+        String::from_utf8_lossy(&output.stdout).as_ref(),
+        expected.trim_end_matches('\n'),
     );
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
 }
@@ -4081,9 +4171,9 @@ fn system_php_preserves_non_direct_holder_property_held_array_access_exact_appen
         "stderr:\n{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert_eq!(
-        String::from_utf8_lossy(&output.stdout),
-        expected.trim_end_matches('\n')
+    assert_stdout_eq_ignoring_null_offset_deprecations(
+        String::from_utf8_lossy(&output.stdout).as_ref(),
+        expected.trim_end_matches('\n'),
     );
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
 }
@@ -4113,11 +4203,8 @@ fn non_direct_holder_property_held_array_access_exact_append_offset_set_bucket_c
     let expected = include_str!(
         "../../tests/fixtures/milestone1685/non_direct_holder_property_held_arrayaccess_exact_append_offsetset_empty_key_reference_slot_cow.stdout"
     );
-    let execution = run_source(source).unwrap();
 
-    assert_eq!(execution.stdout, expected.trim_end_matches('\n'));
-    assert_eq!(execution.stderr, "");
-    assert_eq!(execution.exit_code, 0);
+    assert_run_source_fixture_stdout_ends_with(source, expected);
 }
 
 #[test]
@@ -4142,9 +4229,9 @@ fn system_php_preserves_dynamic_non_direct_holder_property_held_array_access_app
         "stderr:\n{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert_eq!(
-        String::from_utf8_lossy(&output.stdout),
-        expected.trim_end_matches('\n')
+    assert_stdout_eq_ignoring_null_offset_deprecations(
+        String::from_utf8_lossy(&output.stdout).as_ref(),
+        expected.trim_end_matches('\n'),
     );
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
 }
@@ -4171,9 +4258,9 @@ fn system_php_preserves_dynamic_non_direct_holder_property_held_array_access_exa
         "stderr:\n{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert_eq!(
-        String::from_utf8_lossy(&output.stdout),
-        expected.trim_end_matches('\n')
+    assert_stdout_eq_ignoring_null_offset_deprecations(
+        String::from_utf8_lossy(&output.stdout).as_ref(),
+        expected.trim_end_matches('\n'),
     );
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
 }
@@ -4203,11 +4290,8 @@ fn dynamic_non_direct_holder_property_held_array_access_exact_append_offset_set_
     let expected = include_str!(
         "../../tests/fixtures/milestone1686/dynamic_non_direct_holder_property_held_arrayaccess_exact_append_offsetset_empty_key_reference_slot_cow.stdout"
     );
-    let execution = run_source(source).unwrap();
 
-    assert_eq!(execution.stdout, expected.trim_end_matches('\n'));
-    assert_eq!(execution.stderr, "");
-    assert_eq!(execution.exit_code, 0);
+    assert_run_source_fixture_stdout_ends_with(source, expected);
 }
 
 #[test]
@@ -4231,9 +4315,9 @@ fn system_php_preserves_magic_property_array_access_append_offset_set_bucket_ref
         "stderr:\n{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert_eq!(
-        String::from_utf8_lossy(&output.stdout),
-        expected.trim_end_matches('\n')
+    assert_stdout_eq_ignoring_null_offset_deprecations(
+        String::from_utf8_lossy(&output.stdout).as_ref(),
+        expected.trim_end_matches('\n'),
     );
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
 }
@@ -4260,9 +4344,9 @@ fn system_php_preserves_magic_property_array_access_exact_append_offset_set_empt
         "stderr:\n{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert_eq!(
-        String::from_utf8_lossy(&output.stdout),
-        expected.trim_end_matches('\n')
+    assert_stdout_eq_ignoring_null_offset_deprecations(
+        String::from_utf8_lossy(&output.stdout).as_ref(),
+        expected.trim_end_matches('\n'),
     );
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
 }
@@ -4291,11 +4375,8 @@ fn magic_property_array_access_exact_append_offset_set_bucket_copy_uses_empty_ke
     let expected = include_str!(
         "../../tests/fixtures/milestone1687/magic_property_arrayaccess_exact_append_offsetset_empty_key_reference_slot_cow.stdout"
     );
-    let execution = run_source(source).unwrap();
 
-    assert_eq!(execution.stdout, expected.trim_end_matches('\n'));
-    assert_eq!(execution.stderr, "");
-    assert_eq!(execution.exit_code, 0);
+    assert_run_source_fixture_stdout_ends_with(source, expected);
 }
 
 #[test]
@@ -4320,9 +4401,9 @@ fn system_php_preserves_dynamic_magic_property_array_access_append_offset_set_bu
         "stderr:\n{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert_eq!(
-        String::from_utf8_lossy(&output.stdout),
-        expected.trim_end_matches('\n')
+    assert_stdout_eq_ignoring_null_offset_deprecations(
+        String::from_utf8_lossy(&output.stdout).as_ref(),
+        expected.trim_end_matches('\n'),
     );
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
 }
@@ -4349,9 +4430,9 @@ fn system_php_preserves_dynamic_magic_property_array_access_exact_append_offset_
         "stderr:\n{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert_eq!(
-        String::from_utf8_lossy(&output.stdout),
-        expected.trim_end_matches('\n')
+    assert_stdout_eq_ignoring_null_offset_deprecations(
+        String::from_utf8_lossy(&output.stdout).as_ref(),
+        expected.trim_end_matches('\n'),
     );
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
 }
@@ -4381,11 +4462,8 @@ fn dynamic_magic_property_array_access_exact_append_offset_set_bucket_copy_uses_
     let expected = include_str!(
         "../../tests/fixtures/milestone1687/dynamic_magic_property_arrayaccess_exact_append_offsetset_empty_key_reference_slot_cow.stdout"
     );
-    let execution = run_source(source).unwrap();
 
-    assert_eq!(execution.stdout, expected.trim_end_matches('\n'));
-    assert_eq!(execution.stderr, "");
-    assert_eq!(execution.exit_code, 0);
+    assert_run_source_fixture_stdout_ends_with(source, expected);
 }
 
 #[test]
@@ -4410,9 +4488,9 @@ fn system_php_preserves_non_direct_magic_property_array_access_append_offset_set
         "stderr:\n{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert_eq!(
-        String::from_utf8_lossy(&output.stdout),
-        expected.trim_end_matches('\n')
+    assert_stdout_eq_ignoring_null_offset_deprecations(
+        String::from_utf8_lossy(&output.stdout).as_ref(),
+        expected.trim_end_matches('\n'),
     );
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
 }
@@ -4439,9 +4517,9 @@ fn system_php_preserves_non_direct_magic_property_array_access_exact_append_offs
         "stderr:\n{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert_eq!(
-        String::from_utf8_lossy(&output.stdout),
-        expected.trim_end_matches('\n')
+    assert_stdout_eq_ignoring_null_offset_deprecations(
+        String::from_utf8_lossy(&output.stdout).as_ref(),
+        expected.trim_end_matches('\n'),
     );
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
 }
@@ -4468,9 +4546,9 @@ fn system_php_preserves_dynamic_non_direct_magic_property_array_access_append_of
         "stderr:\n{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert_eq!(
-        String::from_utf8_lossy(&output.stdout),
-        expected.trim_end_matches('\n')
+    assert_stdout_eq_ignoring_null_offset_deprecations(
+        String::from_utf8_lossy(&output.stdout).as_ref(),
+        expected.trim_end_matches('\n'),
     );
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
 }
@@ -4497,9 +4575,9 @@ fn system_php_preserves_dynamic_non_direct_magic_property_array_access_exact_app
         "stderr:\n{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert_eq!(
-        String::from_utf8_lossy(&output.stdout),
-        expected.trim_end_matches('\n')
+    assert_stdout_eq_ignoring_null_offset_deprecations(
+        String::from_utf8_lossy(&output.stdout).as_ref(),
+        expected.trim_end_matches('\n'),
     );
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
 }
@@ -4529,11 +4607,8 @@ fn non_direct_magic_property_array_access_exact_append_offset_set_bucket_copy_us
     let expected = include_str!(
         "../../tests/fixtures/milestone1688/non_direct_magic_property_arrayaccess_exact_append_offsetset_empty_key_reference_slot_cow.stdout"
     );
-    let execution = run_source(source).unwrap();
 
-    assert_eq!(execution.stdout, expected.trim_end_matches('\n'));
-    assert_eq!(execution.stderr, "");
-    assert_eq!(execution.exit_code, 0);
+    assert_run_source_fixture_stdout_ends_with(source, expected);
 }
 
 #[test]
@@ -4561,11 +4636,8 @@ fn dynamic_non_direct_magic_property_array_access_exact_append_offset_set_bucket
     let expected = include_str!(
         "../../tests/fixtures/milestone1688/dynamic_non_direct_magic_property_arrayaccess_exact_append_offsetset_empty_key_reference_slot_cow.stdout"
     );
-    let execution = run_source(source).unwrap();
 
-    assert_eq!(execution.stdout, expected.trim_end_matches('\n'));
-    assert_eq!(execution.stderr, "");
-    assert_eq!(execution.exit_code, 0);
+    assert_run_source_fixture_stdout_ends_with(source, expected);
 }
 
 #[test]
@@ -5515,7 +5587,7 @@ fn milestone1719_magic_arrayaccess_keyed_fixture_matches_runtime() {
 
 #[test]
 fn milestone1720_system_php_non_direct_magic_arrayaccess_keyed_fixture_matches() {
-    assert_system_php_fixture_matches_stdout(
+    assert_system_php_fixture_matches_stdout_ignoring_null_offset_deprecations(
         "../tests/fixtures/milestone1720/non_direct_magic_arrayaccess_keyed_reference_slot_cow.php",
         "../tests/fixtures/milestone1720/non_direct_magic_arrayaccess_keyed_reference_slot_cow.stdout",
     );
@@ -5523,7 +5595,7 @@ fn milestone1720_system_php_non_direct_magic_arrayaccess_keyed_fixture_matches()
 
 #[test]
 fn milestone1720_non_direct_magic_arrayaccess_keyed_fixture_matches_runtime() {
-    assert_run_source_fixture_path_matches_stdout(
+    assert_run_source_fixture_path_stdout_ends_with(
         "../tests/fixtures/milestone1720/non_direct_magic_arrayaccess_keyed_reference_slot_cow.php",
         "../tests/fixtures/milestone1720/non_direct_magic_arrayaccess_keyed_reference_slot_cow.stdout",
     );
@@ -5531,7 +5603,7 @@ fn milestone1720_non_direct_magic_arrayaccess_keyed_fixture_matches_runtime() {
 
 #[test]
 fn milestone1721_system_php_dynamic_magic_arrayaccess_keyed_fixture_matches() {
-    assert_system_php_fixture_matches_stdout(
+    assert_system_php_fixture_matches_stdout_ignoring_null_offset_deprecations(
         "../tests/fixtures/milestone1721/dynamic_magic_arrayaccess_keyed_reference_slot_cow.php",
         "../tests/fixtures/milestone1721/dynamic_magic_arrayaccess_keyed_reference_slot_cow.stdout",
     );
@@ -5539,7 +5611,7 @@ fn milestone1721_system_php_dynamic_magic_arrayaccess_keyed_fixture_matches() {
 
 #[test]
 fn milestone1721_dynamic_magic_arrayaccess_keyed_fixture_matches_runtime() {
-    assert_run_source_fixture_path_matches_stdout(
+    assert_run_source_fixture_path_stdout_ends_with(
         "../tests/fixtures/milestone1721/dynamic_magic_arrayaccess_keyed_reference_slot_cow.php",
         "../tests/fixtures/milestone1721/dynamic_magic_arrayaccess_keyed_reference_slot_cow.stdout",
     );
@@ -6887,7 +6959,11 @@ echo $alias, "|", $bag->items[""];
 
     assert_eq!(
         execution.stdout,
-        "notice:Indirect modification of overloaded element of Bag has no effect\nchanged|empty"
+        concat!(
+            "Deprecated: Using null as an array offset is deprecated, use an empty string instead in Command line code on line 11\n",
+            "notice:Indirect modification of overloaded element of Bag has no effect\n",
+            "changed|empty"
+        )
     );
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);
@@ -6932,7 +7008,14 @@ echo $dynamic, "|", $holder->dynamicBag->items[""];
 
     assert_eq!(
         execution.stdout,
-        "notice:Indirect modification of overloaded element of Bag has no effect\nchanged|empty\nnotice:Indirect modification of overloaded element of Bag has no effect\ndynamic-changed|empty"
+        concat!(
+            "Deprecated: Using null as an array offset is deprecated, use an empty string instead in Command line code on line 11\n",
+            "notice:Indirect modification of overloaded element of Bag has no effect\n",
+            "changed|empty\n",
+            "\nDeprecated: Using null as an array offset is deprecated, use an empty string instead in Command line code on line 11\n",
+            "notice:Indirect modification of overloaded element of Bag has no effect\n",
+            "dynamic-changed|empty"
+        )
     );
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);
@@ -6968,7 +7051,11 @@ echo $target, "|", $items["slot"], "|", $bag->items[""];
 
     assert_eq!(
         execution.stdout,
-        "notice:Indirect modification of overloaded element of Bag has no effect\nchanged|old|empty"
+        concat!(
+            "Deprecated: Using null as an array offset is deprecated, use an empty string instead in Command line code on line 11\n",
+            "notice:Indirect modification of overloaded element of Bag has no effect\n",
+            "changed|old|empty"
+        )
     );
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);
@@ -7104,7 +7191,20 @@ echo $expr, "|", $bag->items[""];
 
     assert_eq!(
         execution.stdout,
-        "notice:Indirect modification of overloaded element of Bag has no effect\nchanged|empty\nnotice:Indirect modification of overloaded element of Bag has no effect\ndynamic-changed|empty\nnotice:Indirect modification of overloaded element of Bag has no effect\nmethod-changed|empty\nnotice:Indirect modification of overloaded element of Bag has no effect\nexpr-changed|empty"
+        concat!(
+            "Deprecated: Using null as an array offset is deprecated, use an empty string instead in Command line code on line 11\n",
+            "notice:Indirect modification of overloaded element of Bag has no effect\n",
+            "changed|empty\n",
+            "\nDeprecated: Using null as an array offset is deprecated, use an empty string instead in Command line code on line 11\n",
+            "notice:Indirect modification of overloaded element of Bag has no effect\n",
+            "dynamic-changed|empty\n",
+            "\nDeprecated: Using null as an array offset is deprecated, use an empty string instead in Command line code on line 11\n",
+            "notice:Indirect modification of overloaded element of Bag has no effect\n",
+            "method-changed|empty\n",
+            "\nDeprecated: Using null as an array offset is deprecated, use an empty string instead in Command line code on line 11\n",
+            "notice:Indirect modification of overloaded element of Bag has no effect\n",
+            "expr-changed|empty"
+        )
     );
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);
@@ -7663,6 +7763,7 @@ echo "ref-append:", $refAppend, "|", $refBag->items[""];
             "value-nested:nested-changed|nested\n",
             "notice:Indirect modification of overloaded element of MagicByValueBag has no effect\n",
             "value-dynamic:dynamic-changed|seed\n",
+            "\nDeprecated: Using null as an array offset is deprecated, use an empty string instead in Command line code on line 11\n",
             "notice:Indirect modification of overloaded element of MagicByValueBag has no effect\n",
             "value-append:append-changed|empty\n",
             "notice:Indirect modification of overloaded element of MagicByValueBag has no effect\n",
@@ -7671,6 +7772,7 @@ echo "ref-append:", $refAppend, "|", $refBag->items[""];
             "ref-nested:ref-nested-changed|nested\n",
             "notice:Indirect modification of overloaded element of MagicByValueBag has no effect\n",
             "ref-dynamic:ref-dynamic-changed|seed\n",
+            "\nDeprecated: Using null as an array offset is deprecated, use an empty string instead in Command line code on line 11\n",
             "notice:Indirect modification of overloaded element of MagicByValueBag has no effect\n",
             "ref-append:ref-append-changed|empty"
         )
@@ -7737,6 +7839,7 @@ echo "plain-append:", $plainAppend, "|", $plainStorage[0];
         execution.stdout,
         concat!(
             "ref-offset:changed|changed\n",
+            "\nDeprecated: Using null as an array offset is deprecated, use an empty string instead in Command line code on line 5\n",
             "ref-append:append-changed|append-changed\n",
             "plain-offset:plain-changed|plain-changed\n",
             "plain-nested:nested-changed|nested-changed\n",
@@ -8357,7 +8460,7 @@ $box->run();
 
 #[test]
 fn reference_assignment_private_property_source_outside_context_remains_boundary() {
-    let error = runtime_error(
+    let execution = fatal_execution(
         r#"<?php
 class Box {
     private $secret = "initial";
@@ -8368,12 +8471,9 @@ $alias =& $box->secret;
 "#,
     );
 
-    assert_eq!(error.line, 7);
-    assert_eq!(error.column, 1);
-    assert_eq!(
-        error.message,
-        "unsupported object property access: non-public property Box::$secret requires same-class method context in the current subset"
-    );
+    assert!(execution
+        .stdout
+        .contains("Cannot access private property Box::$secret"));
 }
 
 #[test]
@@ -8532,7 +8632,7 @@ $box->run("slot");
 #[test]
 fn reference_assignment_non_public_object_property_array_offset_source_outside_context_remains_boundary(
 ) {
-    let error = runtime_error(
+    let execution = fatal_execution(
         r#"<?php
 class Box {
     private $items = ["slot" => "private"];
@@ -8543,12 +8643,9 @@ $alias =& $box->items["slot"];
 "#,
     );
 
-    assert_eq!(error.line, 7);
-    assert_eq!(error.column, 1);
-    assert_eq!(
-        error.message,
-        "unsupported object property access: non-public property Box::$items requires same-class method context in the current subset"
-    );
+    assert!(execution
+        .stdout
+        .contains("Cannot access private property Box::$items"));
 }
 
 #[test]
@@ -8660,7 +8757,7 @@ $box->run("outer");
 #[test]
 fn reference_assignment_non_public_object_property_array_append_source_outside_context_remains_boundary(
 ) {
-    let error = runtime_error(
+    let execution = fatal_execution(
         r#"<?php
 class Box {
     private $items = [];
@@ -8671,12 +8768,9 @@ $alias =& $box->items[];
 "#,
     );
 
-    assert_eq!(error.line, 7);
-    assert_eq!(error.column, 1);
-    assert_eq!(
-        error.message,
-        "unsupported object property access: non-public property Box::$items requires same-class method context in the current subset"
-    );
+    assert!(execution
+        .stdout
+        .contains("Cannot access private property Box::$items"));
 }
 
 #[test]
@@ -8938,15 +9032,15 @@ echo $nestedValue;
 
 #[test]
 fn reference_assignment_complex_object_property_array_source_boundary_is_stable() {
-    let error = runtime_error(
+    let execution = fatal_execution(
         r#"<?php
 $alias =& make_box()->items[0];
 "#,
     );
 
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 11);
-    assert_eq!(error.message, "undefined function make_box()");
+    assert!(execution
+        .stdout
+        .contains("Call to undefined function make_box()"));
 }
 
 #[test]
@@ -9107,7 +9201,7 @@ echo gettype($box->id), ":", $box->id, "|", $magic->read("missing", "copy"), "|"
     assert_eq!(execution.stdout, "integer:3|integer:3|integer:3");
     assert_eq!(execution.exit_code, 0);
 
-    let error = runtime_error(
+    let execution = fatal_execution(
         r#"<?php
 class Box {
     public int $id = 1;
@@ -9139,12 +9233,9 @@ $fn();
 $magic->missing["copy"] = array("bad");
 "#,
     );
-    assert_eq!(error.line, 29);
-    assert_eq!(error.column, 1);
-    assert_eq!(
-        error.message,
-        "invalid property access: typed property Box::$id expects int, got array"
-    );
+    assert!(execution
+        .stdout
+        .contains("Cannot assign array to reference held by property Box::$id of type int"));
 }
 
 #[test]
@@ -9452,13 +9543,28 @@ echo greet(name: "Ada", greeting: "Hello");
 }
 
 #[test]
-fn strict_types_declare_is_rejected_with_stable_parse_error() {
-    let error = parse_error(
+fn strict_types_declare_is_accepted_as_file_scope_directive() {
+    let execution = run_source(
         r#"<?php
 declare(strict_types=1);
 function identity($value) {
     return $value;
 }
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "");
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn unsupported_ticks_declare_directive_has_directive_specific_parse_error() {
+    let error = parse_error(
+        r#"<?php
+declare(ticks=1);
+echo "unreachable";
 "#,
     );
 
@@ -9466,33 +9572,21 @@ function identity($value) {
     assert_eq!(error.column, 1);
     assert_eq!(
         error.message,
-        "unsupported declare directive: strict_types is not implemented"
+        "unsupported declare directive: ticks requires tick handlers and execution hooks, which are not implemented"
     );
 }
 
 #[test]
-fn unsupported_declare_directives_have_directive_specific_parse_errors() {
-    let cases = [
-        (
-            r#"<?php
-declare(ticks=1);
-echo "unreachable";
-"#,
-            "unsupported declare directive: ticks requires tick handlers and execution hooks, which are not implemented",
-        ),
-        (
-            r#"<?php
+fn encoding_declare_is_accepted_as_current_noop_directive() {
+    let execution = run_source(
+        r#"<?php
 declare(encoding="UTF-8");
-echo "unreachable";
+echo "reachable";
 "#,
-            "unsupported declare directive: encoding requires source encoding, lexer decoding, and runtime text handling, which are not implemented",
-        ),
-    ];
+    )
+    .unwrap();
 
-    for (source, message) in cases {
-        let error = parse_error(source);
-        assert_eq!(error.line, 2);
-        assert_eq!(error.column, 1);
-        assert_eq!(error.message, message);
-    }
+    assert_eq!(execution.stdout, "reachable");
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
 }

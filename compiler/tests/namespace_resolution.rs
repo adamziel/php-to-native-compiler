@@ -12,6 +12,7 @@ use php_compiler::{
 const LLVM_NAMESPACE_REJECTION: &str = "LLVM namespace lowering rejects namespace declarations, namespace-qualified names, namespace imports, and namespace-aware name resolution until native symbol tables, namespace context, aliases/imports, fallback function/constant lookup, class/autoload lookup, and exact native error behavior exist; phpc run handles current namespace behavior";
 const ASSEMBLY_FUNCTION_CALL_REJECTION: &str = "assembly function-call lowering rejects function calls outside the bounded generated-C user-function frame subset, including unknown user functions, callable builtins outside define()/constant()/defined(), arity-mismatched direct calls, unsupported by-reference argument binding, and unsupported dynamic string-valued calls, until full callable lookup, full arity/type diagnostics, callbacks, and cleanup handoff exist; generated-native C lowers supported by-value fixed/default/variadic direct, supported direct and compiler-known single-target by-reference frames, finite known-string dynamic, and runtime string-valued dynamic user-function frames";
 const ASSEMBLY_GLOBAL_CONSTANT_REJECTION: &str = "assembly global-constant lowering rejects built-in constant values, runtime-defined constants, bare constant reads, top-level const declarations, define()/constant(), and unsupported defined() forms until native constant tables, source-order definitions, namespace-aware lookup, and exact native error behavior exist; phpc run handles current global constant behavior";
+const ASSEMBLY_OBJECT_INSTANTIATION_REJECTION: &str = "assembly object-instantiation lowering rejects new expressions outside the bounded generated-C declared-object constructor subset, including unsupported constructor declarations, non-public/static constructors, destructor-observable cleanup, visibility contexts, autoload/class lookup, references/copy-on-write, and exact native object-instantiation errors; generated-native C lowers supported named and runtime string-valued declared object allocation for destructor-free declared classes, constructorless argument evaluation, public constructors with $this frame binding, and explicit constructor value-return diagnostics";
 
 fn parse_error(source: &str) -> php_compiler::error::Diagnostic {
     let error = run_source(source).unwrap_err();
@@ -645,14 +646,21 @@ echo fallback_only();
 "#;
     fs::write(&main, source).expect("write exact function import main fixture");
 
-    let error = run_source_with_source_file(source, main.display().to_string()).unwrap_err();
+    let execution = run_source_with_source_file(source, main.display().to_string()).unwrap();
 
-    assert_eq!(error.phase, Phase::Runtime);
-    assert_eq!(error.line, 7);
-    assert_eq!(error.column, 6);
-    assert_eq!(
-        error.message,
-        "undefined function Vendor\\Missing\\fallback_only()"
+    assert_eq!(execution.exit_code, 255);
+    assert_eq!(execution.stderr, "");
+    assert!(
+        execution.stdout.contains(
+            "Fatal error: Uncaught Error: Call to undefined function Vendor\\Missing\\fallback_only()"
+        ),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution.stdout.contains(" on line 7"),
+        "{}",
+        execution.stdout
     );
 
     let _ = fs::remove_file(lib);
@@ -662,33 +670,49 @@ echo fallback_only();
 
 #[test]
 fn missing_imported_function_and_non_imported_namespaced_calls_report_distinct_runtime_names() {
-    let imported_error = run_source(
+    let imported_execution = run_source(
         r#"<?php
 namespace App\Demo;
 use function Vendor\Missing\shared;
 shared();
 "#,
     )
-    .unwrap_err();
-    assert_eq!(imported_error.phase, Phase::Runtime);
-    assert_eq!(imported_error.line, 4);
-    assert_eq!(
-        imported_error.message,
-        "undefined function Vendor\\Missing\\shared()"
+    .unwrap();
+    assert_eq!(imported_execution.exit_code, 255);
+    assert_eq!(imported_execution.stderr, "");
+    assert!(
+        imported_execution
+            .stdout
+            .contains("Call to undefined function Vendor\\Missing\\shared()"),
+        "{}",
+        imported_execution.stdout
+    );
+    assert!(
+        imported_execution.stdout.contains("Command line code:4"),
+        "{}",
+        imported_execution.stdout
     );
 
-    let fallback_error = run_source(
+    let fallback_execution = run_source(
         r#"<?php
 namespace App\Demo;
 shared();
 "#,
     )
-    .unwrap_err();
-    assert_eq!(fallback_error.phase, Phase::Runtime);
-    assert_eq!(fallback_error.line, 3);
-    assert_eq!(
-        fallback_error.message,
-        "undefined function App\\Demo\\shared()"
+    .unwrap();
+    assert_eq!(fallback_execution.exit_code, 255);
+    assert_eq!(fallback_execution.stderr, "");
+    assert!(
+        fallback_execution
+            .stdout
+            .contains("Call to undefined function App\\Demo\\shared()"),
+        "{}",
+        fallback_execution.stdout
+    );
+    assert!(
+        fallback_execution.stdout.contains("Command line code:3"),
+        "{}",
+        fallback_execution.stdout
     );
 }
 
@@ -1157,16 +1181,8 @@ echo strlen("abc"), "|", strtolower("ABC"), "\n";
 }
 
 #[test]
-fn generated_c_exe_runs_imported_type_alias_static_property_metadata() {
-    if !has_cc() {
-        return;
-    }
-
-    let dir = namespace_resolution_fixture_dir("imported-type-alias-static-property-exe");
-    let root = dir.join("root.php");
-    let output = dir.join("program");
-    fs::write(
-        &root,
+fn generated_c_rejects_imported_type_alias_static_property_object_instantiation_boundary() {
+    let program = parse(
         r#"<?php
 namespace App\Demo;
 use App\Demo\Target as ImportedTarget;
@@ -1180,23 +1196,13 @@ Registry::$item = new Target();
 echo "ok\n";
 "#,
     )
-    .expect("write imported type alias static property executable fixture");
+    .unwrap();
+    let error = emit_native_executable_c_source(&program).unwrap_err();
 
-    let output = compile_exe(
-        &root,
-        &output,
-        "imported type alias static property executable",
-    );
-    let run = Command::new(&output)
-        .output()
-        .expect("run imported type alias static property executable");
-    assert!(
-        run.status.success(),
-        "stdout:\n{}\nstderr:\n{}",
-        String::from_utf8_lossy(&run.stdout),
-        String::from_utf8_lossy(&run.stderr)
-    );
-    assert_eq!(String::from_utf8_lossy(&run.stdout), "ok\n");
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 10);
+    assert_eq!(error.column, 19);
+    assert_eq!(error.message, ASSEMBLY_OBJECT_INSTANTIATION_REJECTION);
 }
 
 #[test]

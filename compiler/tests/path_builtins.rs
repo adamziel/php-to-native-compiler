@@ -266,14 +266,10 @@ echo $call("/a/b//c.php");
 
 #[test]
 fn dirname_reports_current_argument_boundaries() {
-    let non_string_path = run_source("<?php\necho dirname(42);\n").unwrap_err();
-    assert_eq!(non_string_path.phase, Phase::Runtime);
-    assert_eq!(non_string_path.line, 2);
-    assert_eq!(non_string_path.column, 6);
-    assert_eq!(
-        non_string_path.message,
-        "unsupported call dirname(): path argument must be string in the current subset, got int"
-    );
+    let scalar_path = run_source("<?php\necho dirname(42);\n").unwrap();
+    assert_eq!(scalar_path.stdout, ".");
+    assert_eq!(scalar_path.stderr, "");
+    assert_eq!(scalar_path.exit_code, 0);
 
     let non_int_levels = run_source("<?php\necho dirname('/a', '2');\n").unwrap_err();
     assert_eq!(non_int_levels.phase, Phase::Runtime);

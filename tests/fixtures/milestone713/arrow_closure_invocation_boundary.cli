@@ -1,6 +1,5 @@
-exit: 1
+exit: 0
 stdout:
---- stdout end ---
+Ada--- stdout end ---
 stderr:
-runtime error at tests/fixtures/milestone713/arrow_closure_invocation_boundary.php:3:6: unsupported call closure: arrow closure invocation is not implemented
 --- stderr end ---

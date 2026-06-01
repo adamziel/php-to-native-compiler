@@ -119,14 +119,14 @@ list($a, $b) = 42;
 
 #[test]
 fn emit_ir_rejects_list_assignment_until_native_array_destructuring_exists() {
-    let error = emit_ir_source("<?php\nlist($a, $b) = missing_call();\n").unwrap_err();
+    let error = emit_ir_source("<?php\nlist($a, $b) = [1, 2];\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.line, 2);
     assert_eq!(error.column, 1);
     assert_eq!(error.message, LLVM_ARRAY_DESTRUCTURING_REJECTION);
 
-    let short_error = emit_ir_source("<?php\n[$a, $b] = missing_call();\n").unwrap_err();
+    let short_error = emit_ir_source("<?php\n[$a, $b] = [1, 2];\n").unwrap_err();
 
     assert_eq!(short_error.phase, Phase::Codegen);
     assert_eq!(short_error.line, 2);

@@ -5,6 +5,89 @@ use php_runtime::Visibility;
 const LLVM_CLASS_NAME_CONSTANT_REJECTION: &str = "LLVM class-name constant lowering rejects ClassName::class, self::class, parent::class, and static::class until native class-name resolution, active class/parent and late-static-binding context, namespace/import canonicalization, autoload-free class lookup interaction, references/copy-on-write, and exact native class-name constant diagnostics exist; phpc run handles current bounded class-name constant behavior";
 const LLVM_STATIC_MEMBER_REJECTION: &str = "LLVM static-member lowering rejects class constants, static property reads/writes, and dynamic static-property receivers until native class constant tables, static property storage, class context and late-static-binding resolution, visibility checks, autoload/class lookup, references/copy-on-write, and exact native static-member errors exist; phpc run handles current bounded static-member behavior";
 const LLVM_NATIVE_ARRAY_NON_LOCAL_ASSIGNMENT_REJECTION: &str = "LLVM native array non-local assignment lowering rejects object, dynamic-object, non-direct object, and static property assignment targets until non-local owner cells, magic property writes, typed/static property state, assignment-expression results, references/copy-on-write, and exact diagnostics share one assignment owner contract; local variables and native array offset assignments use their shared native lvalue assignment contracts";
+const CORE_CLASS_NAMES: &[&str] = &[
+    "Exception",
+    "Error",
+    "Uri\\InvalidUriException",
+    "Uri\\WhatWg\\InvalidUrlException",
+    "stdClass",
+    "PhpToken",
+    "mysqli",
+    "mysqli_result",
+    "mysqli_stmt",
+    "mysqli_driver",
+    "PDO",
+    "PDOStatement",
+    "RoundingMode",
+    "Uri\\UriComparisonMode",
+    "Uri\\Rfc3986\\UriHostType",
+    "Uri\\Rfc3986\\UriType",
+    "Uri\\Rfc3986\\Uri",
+    "Uri\\WhatWg\\UrlHostType",
+    "Uri\\WhatWg\\Url",
+    "BcMath\\Number",
+    "DateTimeZone",
+    "ReflectionException",
+    "Attribute",
+    "ReflectionClass",
+    "ReflectionObject",
+    "ReflectionFunction",
+    "ReflectionMethod",
+    "ReflectionParameter",
+    "ReflectionType",
+    "ReflectionNamedType",
+    "ReflectionUnionType",
+    "ReflectionIntersectionType",
+    "ReflectionProperty",
+    "ReflectionClassConstant",
+    "ReflectionAttribute",
+    "TypeError",
+    "ArgumentCountError",
+    "ValueError",
+    "ArithmeticError",
+    "DivisionByZeroError",
+    "RuntimeException",
+    "OutOfRangeException",
+    "UnexpectedValueException",
+    "OutOfBoundsException",
+    "Directory",
+    "SplFixedArray",
+    "ArrayObject",
+    "ArrayIterator",
+    "SplDoublyLinkedList",
+    "SplQueue",
+    "SplStack",
+    "SplObjectStorage",
+    "ReflectionExtension",
+    "ReflectionZendExtension",
+    "DateTime",
+    "DOMException",
+    "DOMNode",
+    "DOMAttr",
+    "DOMElement",
+    "DOMDocument",
+    "Generator",
+];
+const CORE_INTERFACE_NAMES: &[&str] = &[
+    "Traversable",
+    "IteratorAggregate",
+    "Iterator",
+    "Serializable",
+    "ArrayAccess",
+    "Countable",
+    "Stringable",
+    "SplObserver",
+    "SplSubject",
+];
+
+fn expected_print_r_array(values: &[&str]) -> String {
+    let mut output = String::from("Array\n(\n");
+    for (index, value) in values.iter().enumerate() {
+        output.push_str(&format!("    [{index}] => {value}\n"));
+    }
+    output.push_str(")\n");
+    output
+}
 
 fn parse_error(source: &str) -> Diagnostic {
     let error = run_source(source).unwrap_err();
@@ -13,9 +96,40 @@ fn parse_error(source: &str) -> Diagnostic {
 }
 
 fn runtime_error(source: &str) -> Diagnostic {
-    let error = run_source(source).unwrap_err();
-    assert_eq!(error.phase, Phase::Runtime);
-    error
+    match run_source(source) {
+        Err(error) => {
+            assert_eq!(error.phase, Phase::Runtime);
+            error
+        }
+        Ok(execution) => {
+            assert_eq!(execution.exit_code, 255);
+            if let Some((message, line)) = php_fatal_stdout_message(&execution.stdout) {
+                assert_eq!(execution.stderr, "");
+                Diagnostic::new(Phase::Runtime, line, 1, message)
+            } else if let Some((message, line)) = php_startup_fatal_message(&execution.stderr) {
+                assert_eq!(execution.stdout, "");
+                Diagnostic::new(Phase::Runtime, line, 1, message)
+            } else {
+                panic!("expected runtime error or PHP fatal execution, got {execution:?}");
+            }
+        }
+    }
+}
+
+fn php_fatal_stdout_message(stdout: &str) -> Option<(String, usize)> {
+    let rest = stdout.strip_prefix("Fatal error: Uncaught ")?;
+    let (_, after_kind) = rest.split_once(": ")?;
+    let (message, after_message) = after_kind.split_once(" in Command line code:")?;
+    let (line_text, _) = after_message.split_once('\n')?;
+    let line = line_text.parse().ok()?;
+    Some((message.to_string(), line))
+}
+
+fn php_startup_fatal_message(stderr: &str) -> Option<(String, usize)> {
+    let rest = stderr.strip_prefix("Fatal error: ")?;
+    let (message, line_text) = rest.rsplit_once(" in Command line code on line ")?;
+    let line = line_text.parse().ok()?;
+    Some((message.to_string(), line))
 }
 
 fn assert_php_startup_fatal(source: &str, source_file: &str, line: usize, message: &str) {
@@ -53,57 +167,9 @@ echo "ready\n";
         .iter()
         .map(|class| class.name())
         .collect::<Vec<_>>();
-    assert_eq!(
-        class_names,
-        vec![
-            "Exception",
-            "Error",
-            "stdClass",
-            "mysqli",
-            "mysqli_result",
-            "mysqli_stmt",
-            "PDO",
-            "PDOStatement",
-            "RoundingMode",
-            "BcMath\\Number",
-            "DateTimeZone",
-            "ReflectionException",
-            "Attribute",
-            "ReflectionClass",
-            "ReflectionObject",
-            "ReflectionFunction",
-            "ReflectionMethod",
-            "ReflectionParameter",
-            "ReflectionType",
-            "ReflectionNamedType",
-            "ReflectionUnionType",
-            "ReflectionIntersectionType",
-            "ReflectionProperty",
-            "ReflectionClassConstant",
-            "ReflectionAttribute",
-            "TypeError",
-            "ArgumentCountError",
-            "ValueError",
-            "ArithmeticError",
-            "DivisionByZeroError",
-            "RuntimeException",
-            "OutOfRangeException",
-            "OutOfBoundsException",
-            "Directory",
-            "SplFixedArray",
-            "ArrayObject",
-            "ArrayIterator",
-            "SplDoublyLinkedList",
-            "SplQueue",
-            "SplStack",
-            "SplObjectStorage",
-            "ReflectionExtension",
-            "ReflectionZendExtension",
-            "DateTime",
-            "Generator",
-            "Box",
-        ]
-    );
+    let mut expected_class_names = CORE_CLASS_NAMES.to_vec();
+    expected_class_names.push("Box");
+    assert_eq!(class_names, expected_class_names);
     let mut normalized_class_names = class_names
         .iter()
         .map(|name| name.to_ascii_lowercase())
@@ -352,8 +418,8 @@ $box = new $class();
 "#,
     );
     assert_eq!(missing.line, 3);
-    assert_eq!(missing.column, 8);
-    assert_eq!(missing.message, "undefined class Missing");
+    assert_eq!(missing.column, 1);
+    assert_eq!(missing.message, "Class \"Missing\" not found");
 }
 
 #[test]
@@ -437,7 +503,7 @@ print_r($bag->items);
     let execution = run_source(source).unwrap();
     assert_eq!(
         execution.stdout,
-        "loaded\ncharge\nfallback\nroot-append\nArray\n(\n    [translation.mo] => Array\n    (\n        [en_US] => Array\n        (\n            [default] => loaded\n            [0] => fallback\n        )\n        [fr_FR] => Array\n        (\n            [default] => charge\n        )\n    )\n    [0] => root-append\n)\n"
+        "loaded\ncharge\nfallback\nroot-append\nArray\n(\n    [translation.mo] => Array\n        (\n            [en_US] => Array\n                (\n                    [default] => loaded\n                    [0] => fallback\n                )\n\n            [fr_FR] => Array\n                (\n                    [default] => charge\n                )\n\n        )\n\n    [0] => root-append\n)\n"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -485,7 +551,7 @@ print_r($bag->items);
     let execution = run_source(source).unwrap();
     assert_eq!(
         execution.stdout,
-        "fallback\ncharge\nArray\n(\n    [translation.mo] => Array\n    (\n        [en_US] => Array\n        (\n            [fallback] => fallback\n        )\n        [fr_FR] => Array\n        (\n            [default] => charge\n        )\n    )\n)\n"
+        "fallback\ncharge\nArray\n(\n    [translation.mo] => Array\n        (\n            [en_US] => Array\n                (\n                    [fallback] => fallback\n                )\n\n            [fr_FR] => Array\n                (\n                    [default] => charge\n                )\n\n        )\n\n)\n"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -2131,11 +2197,8 @@ echo empty($box->secret);
 
     assert_eq!(error.phase, Phase::Runtime);
     assert_eq!(error.line, 7);
-    assert_eq!(error.column, 12);
-    assert_eq!(
-        error.message,
-        "unsupported object property access: non-public property Box::$secret requires same-class method context in the current subset"
-    );
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, "Cannot access private property Box::$secret");
 }
 
 #[test]
@@ -2180,8 +2243,11 @@ echo $exception instanceof Exception ? "exception" : "missing";
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "leaf|7|Exception\nexception");
-    assert_eq!(execution.exit_code, 0);
+    assert_eq!(
+        execution.stdout,
+        "Fatal error: Uncaught Error: Call to undefined method Error::describe() in Command line code:9\nStack trace:\n#0 {main}\n  thrown in Command line code on line 9"
+    );
+    assert_eq!(execution.exit_code, 255);
 }
 
 #[test]
@@ -2199,8 +2265,11 @@ echo $exception->describe();
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "|0|null");
-    assert_eq!(execution.exit_code, 0);
+    assert_eq!(
+        execution.stdout,
+        "Fatal error: Uncaught Error: Call to undefined method Error::describe() in Command line code:8\nStack trace:\n#0 {main}\n  thrown in Command line code on line 8"
+    );
+    assert_eq!(execution.exit_code, 255);
 }
 
 #[test]
@@ -2783,7 +2852,7 @@ echo "Done";
         "Service::$value has #[\\Override] attribute, but no matching parent property exists",
     );
 
-    let runtime_error = runtime_error(
+    let promoted_property = run_source(
         r#"<?php
 class Service {
     public function __construct(
@@ -2792,11 +2861,11 @@ class Service {
 }
 new Service("value");
 "#,
-    );
-    assert_eq!(
-        runtime_error.message,
-        "unsupported object instantiation for Service: constructor property promotion initialization is not implemented"
-    );
+    )
+    .unwrap();
+    assert_eq!(promoted_property.stdout, "");
+    assert_eq!(promoted_property.stderr, "");
+    assert_eq!(promoted_property.exit_code, 0);
 }
 
 #[test]
@@ -3849,13 +3918,17 @@ echo interface_exists("DefinitelyMissingInterface") ? "missing:yes" : "missing:n
 
 #[test]
 fn interface_exists_requires_string_name_and_bool_autoload_arguments() {
-    let name_error = runtime_error("<?php\nvar_dump(interface_exists(42));\n");
+    let scalar_name = run_source("<?php\nvar_dump(interface_exists(42));\n").unwrap();
+    assert_eq!(scalar_name.stdout, "bool(false)\n");
+    assert_eq!(scalar_name.exit_code, 0);
+
+    let name_error = runtime_error("<?php\nvar_dump(interface_exists([]));\n");
 
     assert_eq!(name_error.line, 2);
     assert_eq!(name_error.column, 10);
     assert_eq!(
         name_error.message,
-        "unsupported call interface_exists(): interface name argument must be string, got int"
+        "unsupported call interface_exists(): class-like name argument must be string-compatible scalar in the current subset, got array"
     );
 
     let autoload_error = runtime_error("<?php\nvar_dump(interface_exists(\"Box\", []));\n");
@@ -4767,11 +4840,11 @@ class Plugin {
 "#,
     );
 
-    assert_eq!(error.line, 7);
-    assert_eq!(error.column, 12);
+    assert_eq!(error.line, 10);
+    assert_eq!(error.column, 1);
     assert_eq!(
         error.message,
-        "unsupported trait use: trait property FallbackOptions::$options conflicts with another composed trait property; incompatible trait property definitions are not implemented"
+        "PrimaryOptions and FallbackOptions define the same property ($options) in the composition of Plugin. However, the definition differs and is considered incompatible. Class was composed"
     );
 }
 
@@ -4816,13 +4889,17 @@ class Widget {
 
 #[test]
 fn trait_exists_requires_string_name_and_bool_autoload_arguments() {
-    let name_error = runtime_error("<?php\nvar_dump(trait_exists(42));\n");
+    let scalar_name = run_source("<?php\nvar_dump(trait_exists(42));\n").unwrap();
+    assert_eq!(scalar_name.stdout, "bool(false)\n");
+    assert_eq!(scalar_name.exit_code, 0);
+
+    let name_error = runtime_error("<?php\nvar_dump(trait_exists([]));\n");
 
     assert_eq!(name_error.line, 2);
     assert_eq!(name_error.column, 10);
     assert_eq!(
         name_error.message,
-        "unsupported call trait_exists(): trait name argument must be string, got int"
+        "unsupported call trait_exists(): class-like name argument must be string-compatible scalar in the current subset, got array"
     );
 
     let autoload_error = runtime_error("<?php\nvar_dump(trait_exists(\"Box\", []));\n");
@@ -4875,13 +4952,17 @@ if ($call("APP\\STATUS", true)) {
 
 #[test]
 fn enum_exists_requires_string_name_and_bool_autoload_arguments() {
-    let name_error = runtime_error("<?php\nvar_dump(enum_exists(42));\n");
+    let scalar_name = run_source("<?php\nvar_dump(enum_exists(42));\n").unwrap();
+    assert_eq!(scalar_name.stdout, "bool(false)\n");
+    assert_eq!(scalar_name.exit_code, 0);
+
+    let name_error = runtime_error("<?php\nvar_dump(enum_exists([]));\n");
 
     assert_eq!(name_error.line, 2);
     assert_eq!(name_error.column, 10);
     assert_eq!(
         name_error.message,
-        "unsupported call enum_exists(): enum name argument must be string, got int"
+        "unsupported call enum_exists(): class-like name argument must be string-compatible scalar in the current subset, got array"
     );
 
     let autoload_error = runtime_error("<?php\nvar_dump(enum_exists(\"Box\", []));\n");
@@ -5505,10 +5586,12 @@ echo $dynamic[0], "|", $dynamic[1], "|", $dynamic[2];
 "#;
 
     let execution = run_source(source).unwrap();
-    assert_eq!(
-        execution.stdout,
-        "Array\n(\n    [0] => Exception\n    [1] => stdClass\n    [2] => mysqli\n    [3] => mysqli_result\n    [4] => mysqli_stmt\n    [5] => PDO\n    [6] => PDOStatement\n    [7] => ReflectionException\n    [8] => ReflectionClass\n    [9] => ReflectionObject\n    [10] => ReflectionFunction\n    [11] => ReflectionMethod\n    [12] => ReflectionParameter\n    [13] => ReflectionType\n    [14] => ReflectionNamedType\n    [15] => ReflectionUnionType\n    [16] => ReflectionIntersectionType\n    [17] => ReflectionProperty\n    [18] => Box\n    [19] => Profile\n)\n20|Exception|stdClass|mysqli\nException|stdClass|mysqli"
-    );
+    let mut declared = CORE_CLASS_NAMES.to_vec();
+    declared.extend(["Box", "Profile"]);
+    let mut expected = expected_print_r_array(&declared);
+    expected.push_str("63|Exception|Error|Uri\\InvalidUriException\n");
+    expected.push_str("Exception|Error|Uri\\InvalidUriException");
+    assert_eq!(execution.stdout, expected);
     assert_eq!(execution.exit_code, 0);
 }
 
@@ -5526,10 +5609,11 @@ echo count($declared), "\n";
 "#;
 
     let execution = run_source(source).unwrap();
-    assert_eq!(
-        execution.stdout,
-        "Array\n(\n    [0] => Exception\n    [1] => stdClass\n    [2] => mysqli\n    [3] => mysqli_result\n    [4] => mysqli_stmt\n    [5] => PDO\n    [6] => PDOStatement\n    [7] => ReflectionException\n    [8] => ReflectionClass\n    [9] => ReflectionObject\n    [10] => ReflectionFunction\n    [11] => ReflectionMethod\n    [12] => ReflectionParameter\n    [13] => ReflectionType\n    [14] => ReflectionNamedType\n    [15] => ReflectionUnionType\n    [16] => ReflectionIntersectionType\n    [17] => ReflectionProperty\n    [18] => App\\Mode\n    [19] => App\\Status\n)\n20\n"
-    );
+    let mut declared = CORE_CLASS_NAMES.to_vec();
+    declared.extend(["App\\Mode", "App\\Status", "App\\Mode", "App\\Status"]);
+    let mut expected = expected_print_r_array(&declared);
+    expected.push_str("65\n");
+    assert_eq!(execution.stdout, expected);
     assert_eq!(execution.exit_code, 0);
 }
 
@@ -5550,7 +5634,13 @@ echo array_search("ReflectionException", $classes, true);
 
     assert_eq!(
         execution.stdout,
-        "exists\nextends\nException\nReflectionException|Exception|1\n7"
+        format!(
+            "exists\nextends\nException\nReflectionException|Exception|1\n{}",
+            CORE_CLASS_NAMES
+                .iter()
+                .position(|name| *name == "ReflectionException")
+                .unwrap()
+        )
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -5611,10 +5701,11 @@ echo count($dynamic);
 "#;
 
     let execution = run_source(source).unwrap();
-    assert_eq!(
-        execution.stdout,
-        "Array\n(\n    [0] => Traversable\n    [1] => IteratorAggregate\n    [2] => Iterator\n    [3] => Serializable\n    [4] => ArrayAccess\n    [5] => Countable\n    [6] => Stringable\n    [7] => App\\Logger\n    [8] => App\\Hookable\n)\n9\n9"
-    );
+    let mut declared = CORE_INTERFACE_NAMES.to_vec();
+    declared.extend(["App\\Logger", "App\\Hookable"]);
+    let mut expected = expected_print_r_array(&declared);
+    expected.push_str("11\n11");
+    assert_eq!(execution.stdout, expected);
     assert_eq!(execution.exit_code, 0);
 }
 
@@ -7854,10 +7945,10 @@ echo $box->id;
 "#,
     );
     assert_eq!(read_error.line, 4);
-    assert_eq!(read_error.column, 6);
+    assert_eq!(read_error.column, 1);
     assert_eq!(
         read_error.message,
-        "typed property Box::$id must not be accessed before initialization"
+        "Typed property Box::$id must not be accessed before initialization"
     );
 
     let static_read_error = runtime_error(
@@ -7867,10 +7958,10 @@ echo Box::$id;
 "#,
     );
     assert_eq!(static_read_error.line, 3);
-    assert_eq!(static_read_error.column, 9);
+    assert_eq!(static_read_error.column, 1);
     assert_eq!(
         static_read_error.message,
-        "typed property Box::$id must not be accessed before initialization"
+        "Typed property Box::$id must not be accessed before initialization"
     );
 
     let write_error = runtime_error(
@@ -7884,7 +7975,7 @@ $box->id = "nope";
     assert_eq!(write_error.column, 1);
     assert_eq!(
         write_error.message,
-        "invalid property access: typed property Box::$id expects int, got string"
+        "Cannot assign string to property Box::$id of type int"
     );
 
     let static_write_error = runtime_error(
@@ -7894,10 +7985,10 @@ Box::$ready = array();
 "#,
     );
     assert_eq!(static_write_error.line, 3);
-    assert_eq!(static_write_error.column, 4);
+    assert_eq!(static_write_error.column, 1);
     assert_eq!(
         static_write_error.message,
-        "invalid property access: typed property Box::$ready expects bool, got array"
+        "Cannot assign array to property Box::$ready of type bool"
     );
 }
 
@@ -7937,7 +8028,7 @@ $alias = "bad";
     assert_eq!(error.column, 1);
     assert_eq!(
         error.message,
-        "invalid property access: typed property Box::$id expects int, got string"
+        "Cannot assign string to reference held by property Box::$id of type int"
     );
 }
 
@@ -7981,7 +8072,7 @@ $target["copy"] = "bad";
     assert_eq!(error.column, 1);
     assert_eq!(
         error.message,
-        "invalid property access: typed property Box::$id expects int, got string"
+        "Cannot assign string to reference held by property Box::$id of type int"
     );
 }
 
@@ -8027,7 +8118,7 @@ $slot = "bad";
     assert_eq!(error.column, 1);
     assert_eq!(
         error.message,
-        "invalid property access: typed property Box::$id expects int, got string"
+        "Cannot assign string to reference held by property Box::$id of type int"
     );
 }
 
@@ -8070,7 +8161,7 @@ $holder->bag["outer"]["copy"] = array("bad");
     assert_eq!(error.column, 1);
     assert_eq!(
         error.message,
-        "invalid property access: typed property Box::$id expects int, got array"
+        "Cannot assign array to reference held by property Box::$id of type int"
     );
 }
 
@@ -8140,7 +8231,7 @@ $bag["outer"]["copy"] = array("bad");
     assert_eq!(error.column, 1);
     assert_eq!(
         error.message,
-        "invalid property access: typed property Box::$id expects int, got array"
+        "Cannot assign array to reference held by property Box::$id of type int"
     );
 }
 
@@ -8293,7 +8384,7 @@ $bag["outer"]["copy"] = array("bad");
     assert_eq!(error.column, 1);
     assert_eq!(
         error.message,
-        "invalid property access: typed property Box::$id expects int, got array"
+        "Cannot assign array to reference held by property Box::$id of type int"
     );
 
     let magic_error = runtime_error(
@@ -8344,7 +8435,7 @@ $magic->missing["copy"] = array("bad");
     assert_eq!(magic_error.column, 1);
     assert_eq!(
         magic_error.message,
-        "invalid property access: typed property Box::$id expects int, got array"
+        "Cannot assign array to reference held by property Box::$id of type int"
     );
 }
 
@@ -8444,7 +8535,7 @@ $bag["outer"]["copy"] = array("bad");
     assert_eq!(error.column, 1);
     assert_eq!(
         error.message,
-        "invalid property access: typed property Box::$id expects int, got array"
+        "Cannot assign array to reference held by property Box::$id of type int"
     );
 }
 
@@ -8550,7 +8641,7 @@ $keyed->items["outer"]["leaf"]["copy"] = array("bad");
     );
     assert_eq!(
         error.message,
-        "invalid property access: typed property Box::$id expects int, got array"
+        "Cannot assign array to reference held by property Box::$id of type int"
     );
 }
 
@@ -8659,7 +8750,7 @@ $keyed->items["outer"]["leaf"]["copy"] = array("bad");
     );
     assert_eq!(
         error.message,
-        "invalid property access: typed property Box::$id expects int, got array"
+        "Cannot assign array to reference held by property Box::$id of type int"
     );
 }
 
@@ -8785,7 +8876,7 @@ $keyed->items["outer"]["leaf"]["copy"] = array("bad");
     );
     assert_eq!(
         error.message,
-        "invalid property access: typed property Box::$id expects int, got array"
+        "Cannot assign array to reference held by property Box::$id of type int"
     );
 }
 
@@ -9168,7 +9259,7 @@ $alias = $other;
     assert_eq!(error.column, 1);
     assert_eq!(
         error.message,
-        "invalid property access: typed property Registry::$instance expects HookLateAlias, got object"
+        "Cannot assign object to reference held by property Registry::$instance of type HookLateAlias"
     );
 }
 
@@ -9239,7 +9330,7 @@ $registry->instance = new OtherHook();
     assert_eq!(write_error.column, 1);
     assert_eq!(
         write_error.message,
-        "invalid property access: typed property Registry::$instance expects Hook, got object"
+        "Cannot assign object to property Registry::$instance of type Hook"
     );
 
     let static_write_error = runtime_error(
@@ -9251,10 +9342,10 @@ Registry::$shared = new OtherHook();
 "#,
     );
     assert_eq!(static_write_error.line, 5);
-    assert_eq!(static_write_error.column, 9);
+    assert_eq!(static_write_error.column, 1);
     assert_eq!(
         static_write_error.message,
-        "invalid property access: typed property Registry::$shared expects Hook, got object"
+        "Cannot assign object to property Registry::$shared of type Hook"
     );
 }
 
@@ -9297,7 +9388,7 @@ $registry->instance = new OtherHook();
     assert_eq!(write_error.column, 1);
     assert_eq!(
         write_error.message,
-        "invalid property access: typed property Registry::$instance expects HookContract, got object"
+        "Cannot assign object to property Registry::$instance of type HookContract"
     );
 
     let static_write_error = runtime_error(
@@ -9309,10 +9400,10 @@ Registry::$shared = new OtherHook();
 "#,
     );
     assert_eq!(static_write_error.line, 5);
-    assert_eq!(static_write_error.column, 9);
+    assert_eq!(static_write_error.column, 1);
     assert_eq!(
         static_write_error.message,
-        "invalid property access: typed property Registry::$shared expects HookContract, got object"
+        "Cannot assign object to property Registry::$shared of type HookContract"
     );
 }
 
@@ -9366,7 +9457,7 @@ $registry->instance = new OtherHook();
     assert_eq!(write_error.column, 1);
     assert_eq!(
         write_error.message,
-        "invalid property access: typed property Registry::$instance expects HookAlias, got object"
+        "Cannot assign object to property Registry::$instance of type HookAlias"
     );
 
     let static_write_error = runtime_error(
@@ -9379,10 +9470,10 @@ Registry::$shared = new OtherHook();
 "#,
     );
     assert_eq!(static_write_error.line, 6);
-    assert_eq!(static_write_error.column, 9);
+    assert_eq!(static_write_error.column, 1);
     assert_eq!(
         static_write_error.message,
-        "invalid property access: typed property Registry::$shared expects HookContractAlias, got object"
+        "Cannot assign object to property Registry::$shared of type HookContractAlias"
     );
 }
 
@@ -9439,7 +9530,7 @@ $registry->instance = $other;
     assert_eq!(write_error.column, 1);
     assert_eq!(
         write_error.message,
-        "invalid property access: typed property Registry::$instance expects HookLateAlias, got object"
+        "Cannot assign object to property Registry::$instance of type HookLateAlias"
     );
 }
 
@@ -9507,7 +9598,7 @@ $registry->union = new Bad();
     assert_eq!(union_error.column, 1);
     assert_eq!(
         union_error.message,
-        "invalid property access: typed property Registry::$union expects HookContract|OtherHook, got object"
+        "Cannot assign object to property Registry::$union of type HookContract|OtherHook"
     );
 
     let intersection_error = runtime_error(
@@ -9524,7 +9615,7 @@ $registry->intersection = new Hook();
     assert_eq!(intersection_error.column, 1);
     assert_eq!(
         intersection_error.message,
-        "invalid property access: typed property Registry::$intersection expects HookContract&TaggedContract, got object"
+        "Cannot assign object to property Registry::$intersection of type HookContract&TaggedContract"
     );
 }
 
@@ -9577,10 +9668,10 @@ echo $box->id;
 "#,
     );
     assert_eq!(read_error.line, 6);
-    assert_eq!(read_error.column, 6);
+    assert_eq!(read_error.column, 1);
     assert_eq!(
         read_error.message,
-        "typed property Box::$id must not be accessed before initialization"
+        "Typed property Box::$id must not be accessed before initialization"
     );
 }
 
@@ -9875,7 +9966,7 @@ $class = "Missing";
 $class::make();
 "#,
     );
-    assert_eq!(undefined_class.message, "undefined class Missing");
+    assert_eq!(undefined_class.message, "Class \"Missing\" not found");
 
     let missing_method = runtime_error(
         r#"<?php
@@ -9884,7 +9975,10 @@ $class = "Box";
 $class::make();
 "#,
     );
-    assert_eq!(missing_method.message, "undefined function Box::make()");
+    assert_eq!(
+        missing_method.message,
+        "Call to undefined method Box::make()"
+    );
 
     let non_static_method = runtime_error(
         r#"<?php
@@ -9897,7 +9991,7 @@ $box::make();
     );
     assert_eq!(
         non_static_method.message,
-        "unsupported call Box::make(): non-static method dispatch through dynamic static receivers is not implemented"
+        "Non-static method Box::make() cannot be called statically"
     );
 
     let private_method = runtime_error(
@@ -10112,10 +10206,10 @@ fn spl_object_id_requires_one_object_argument() {
     let arity_error = runtime_error("<?php\nvar_dump(spl_object_id());\n");
 
     assert_eq!(arity_error.line, 2);
-    assert_eq!(arity_error.column, 10);
+    assert_eq!(arity_error.column, 1);
     assert_eq!(
         arity_error.message,
-        "arity mismatch for spl_object_id(): expected 1 argument(s), got 0"
+        "Too few arguments to function spl_object_id(), 0 passed in Command line code on line 2 and exactly 1 expected"
     );
 
     let type_error = runtime_error("<?php\nvar_dump(spl_object_id(42));\n");
@@ -10336,10 +10430,10 @@ fn clone_expression_rejects_non_objects_and_dispatches_declared_clone_methods() 
     let type_error = runtime_error("<?php\n$copy = clone 42;\n");
 
     assert_eq!(type_error.line, 2);
-    assert_eq!(type_error.column, 9);
+    assert_eq!(type_error.column, 1);
     assert_eq!(
         type_error.message,
-        "unsupported call clone: clone operand must be object in the current subset, got int"
+        "clone operand must be object in the current subset, got int"
     );
 
     let clone_execution = run_source(
@@ -10370,10 +10464,10 @@ fn spl_object_hash_requires_one_object_argument() {
     let arity_error = runtime_error("<?php\nvar_dump(spl_object_hash());\n");
 
     assert_eq!(arity_error.line, 2);
-    assert_eq!(arity_error.column, 10);
+    assert_eq!(arity_error.column, 1);
     assert_eq!(
         arity_error.message,
-        "arity mismatch for spl_object_hash(): expected 1 argument(s), got 0"
+        "Too few arguments to function spl_object_hash(), 0 passed in Command line code on line 2 and exactly 1 expected"
     );
 
     let type_error = runtime_error("<?php\nvar_dump(spl_object_hash(42));\n");
@@ -11214,7 +11308,7 @@ echo Root::NAME;
     );
 
     let undefined_class = runtime_error("<?php\necho Missing::VALUE;\n");
-    assert_eq!(undefined_class.message, "undefined class Missing");
+    assert_eq!(undefined_class.message, "Class \"Missing\" not found");
 
     let undefined_constant = runtime_error(
         r#"<?php
@@ -11514,7 +11608,7 @@ echo Root::$name;
     );
 
     let undefined_class = runtime_error("<?php\necho Missing::$value;\n");
-    assert_eq!(undefined_class.message, "undefined class Missing");
+    assert_eq!(undefined_class.message, "Class \"Missing\" not found");
 
     let undefined_property = runtime_error(
         r#"<?php
@@ -11922,7 +12016,7 @@ $child->clear();
     );
 
     let undefined_class = runtime_error("<?php\nunset(Missing::$value);\n");
-    assert_eq!(undefined_class.message, "undefined class Missing");
+    assert_eq!(undefined_class.message, "Class \"Missing\" not found");
 }
 
 #[test]
@@ -11948,8 +12042,8 @@ $box = new Missing();
     );
 
     assert_eq!(error.line, 2);
-    assert_eq!(error.column, 8);
-    assert_eq!(error.message, "undefined class Missing");
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, "Class \"Missing\" not found");
 }
 
 #[test]
@@ -12719,10 +12813,10 @@ Box::make();
 "#,
     );
     assert_eq!(non_static_method.line, 5);
-    assert_eq!(non_static_method.column, 4);
+    assert_eq!(non_static_method.column, 1);
     assert_eq!(
         non_static_method.message,
-        "unsupported call Box::make(): non-static method dispatch through named static receivers is not implemented"
+        "Non-static method Box::make() cannot be called statically"
     );
 
     let private_method = runtime_error(
@@ -12757,10 +12851,13 @@ class Box {}
 Box::missing();
 "#,
     );
-    assert_eq!(missing_method.message, "undefined function Box::missing()");
+    assert_eq!(
+        missing_method.message,
+        "Call to undefined method Box::missing()"
+    );
 
     let missing_class = runtime_error("<?php\nMissing::make();\n");
-    assert_eq!(missing_class.message, "undefined class Missing");
+    assert_eq!(missing_class.message, "Class \"Missing\" not found");
 }
 
 #[test]
@@ -13097,11 +13194,11 @@ class Child extends Base {
 }
 "#,
     );
-    assert_eq!(visibility_error.line, 7);
-    assert_eq!(visibility_error.column, 15);
+    assert_eq!(visibility_error.line, 6);
+    assert_eq!(visibility_error.column, 1);
     assert_eq!(
         visibility_error.message,
-        "unsupported class inheritance for Child: property Child::$name cannot reduce visibility of inherited public property Base::$name"
+        "Access level to Child::$name must be public (as in class Base)"
     );
 
     let static_error = runtime_error(
@@ -13115,11 +13212,11 @@ class Child extends Base {
 }
 "#,
     );
-    assert_eq!(static_error.line, 7);
-    assert_eq!(static_error.column, 12);
+    assert_eq!(static_error.line, 6);
+    assert_eq!(static_error.column, 1);
     assert_eq!(
         static_error.message,
-        "unsupported class inheritance for Child: cannot redeclare static property Base::$name as non static Child::$name"
+        "Cannot redeclare static Base::$name as non static Child::$name"
     );
 
     let static_error = runtime_error(
@@ -13133,10 +13230,11 @@ class Child extends Base {
 }
 "#,
     );
-    assert_eq!(static_error.line, 7);
+    assert_eq!(static_error.line, 6);
+    assert_eq!(static_error.column, 1);
     assert_eq!(
         static_error.message,
-        "unsupported class inheritance for Child: cannot redeclare non static property Base::$name as static Child::$name"
+        "Cannot redeclare non static Base::$name as static Child::$name"
     );
 }
 
@@ -14082,15 +14180,37 @@ new Base();
 
 #[test]
 fn unsupported_object_execution_syntax_is_rejected_with_stable_parse_errors() {
-    let cases = [
-        (
-            r#"<?php
+    let object_static_constant = runtime_error(
+        r#"<?php
 $box::NAME;
 "#,
-            2,
-            5,
-            "unsupported object static class constant access: object receiver class constants are not implemented",
-        ),
+    );
+    assert_eq!(object_static_constant.line, 2);
+    assert_eq!(object_static_constant.column, 1);
+    assert_eq!(
+        object_static_constant.message,
+        "unsupported call ::NAME: dynamic class constant receiver must be object or class string, got null"
+    );
+
+    for supported in [
+        r#"<?php
+class Box {
+    public $name, $email;
+}
+"#,
+        r#"<?php
+class Box {
+    public const VERSION = 1, NAME = "box";
+}
+"#,
+    ] {
+        let execution = run_source(supported).unwrap();
+        assert_eq!(execution.stdout, "");
+        assert_eq!(execution.stderr, "");
+        assert_eq!(execution.exit_code, 0);
+    }
+
+    let cases = [
         (
             r#"<?php
 $box = new class {};
@@ -14222,16 +14342,6 @@ class Box {
         (
             r#"<?php
 class Box {
-    public $name, $email;
-}
-"#,
-            3,
-            17,
-            "unsupported property declaration: multiple properties in one declaration are not implemented",
-        ),
-        (
-            r#"<?php
-class Box {
     use Labels, OtherLabels, ThirdLabels {
         label insteadof OtherLabels;
     }
@@ -14260,16 +14370,6 @@ class Box {
             3,
             19,
             "unsupported class constant declaration: static class constants are not implemented",
-        ),
-        (
-            r#"<?php
-class Box {
-    public const VERSION = 1, NAME = "box";
-}
-"#,
-            3,
-            29,
-            "unsupported class constant declaration: multiple class constants in one declaration are not implemented",
         ),
     ];
 
@@ -14631,7 +14731,7 @@ $value->label();
     assert_eq!(non_object.column, 1);
     assert_eq!(
         non_object.message,
-        "unsupported call label(): receiver must be object, got int"
+        "Call to a member function label() on int"
     );
 
     let missing = runtime_error(
@@ -14643,7 +14743,7 @@ $box->missing();
     );
     assert_eq!(missing.line, 4);
     assert_eq!(missing.column, 1);
-    assert_eq!(missing.message, "undefined function Box::missing()");
+    assert_eq!(missing.message, "Call to undefined method Box::missing()");
 
     let private_method = runtime_error(
         r#"<?php
@@ -14724,10 +14824,10 @@ echo $this;
 "#,
     );
     assert_eq!(top_level_this.line, 2);
-    assert_eq!(top_level_this.column, 6);
+    assert_eq!(top_level_this.column, 1);
     assert_eq!(
         top_level_this.message,
-        "unsupported call $this: object context is only available during instance method execution"
+        "Using $this when not in object context"
     );
 }
 

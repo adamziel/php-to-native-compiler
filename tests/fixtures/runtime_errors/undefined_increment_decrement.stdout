@@ -1,0 +1,2 @@
+Warning: Undefined variable $missing in tests/fixtures/runtime_errors/undefined_increment_decrement.php on line 2
+

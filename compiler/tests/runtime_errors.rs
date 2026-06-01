@@ -9,6 +9,12 @@ fn runtime_error(source: &str) -> php_compiler::error::Diagnostic {
     error
 }
 
+fn execution(source: &str) -> php_compiler::interpreter::Execution {
+    let execution = run_source(source).unwrap();
+    assert_eq!(execution.stderr, "");
+    execution
+}
+
 fn with_large_stack<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> T {
     thread::Builder::new()
         .stack_size(8 * 1024 * 1024)
@@ -19,38 +25,36 @@ fn with_large_stack<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -
 }
 
 #[test]
-fn undefined_variable_has_stable_runtime_error() {
-    let error = runtime_error("<?php\necho $missing;\n");
+fn undefined_variable_read_emits_php_warning() {
+    let execution = execution("<?php\necho $missing;\n");
 
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 6);
-    assert_eq!(error.message, "undefined variable '$missing'");
+    assert_eq!(
+        execution.stdout,
+        "Warning: Undefined variable $missing in Command line code on line 2\n"
+    );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
-fn user_function_arity_mismatch_has_stable_runtime_error() {
-    let error = runtime_error(
-        "<?php\nfunction identity($value) {\n    return $value;\n}\necho identity();\n",
-    );
+fn user_function_arity_mismatch_reports_php_fatal() {
+    let execution =
+        execution("<?php\nfunction identity($value) {\n    return $value;\n}\necho identity();\n");
 
-    assert_eq!(error.line, 5);
-    assert_eq!(error.column, 6);
-    assert_eq!(
-        error.message,
-        "arity mismatch for identity(): expected 1 argument(s), got 0"
-    );
+    assert!(execution.stdout.starts_with(
+        "Fatal error: Uncaught TypeError: Too few arguments to function identity(), 0 passed"
+    ));
+    assert!(execution.stdout.contains("exactly 1 expected"));
+    assert_eq!(execution.exit_code, 255);
 }
 
 #[test]
-fn unsupported_builtin_call_has_stable_runtime_error() {
-    let error = runtime_error("<?php\necho count(1);\n");
+fn unsupported_builtin_call_reports_php_fatal() {
+    let execution = execution("<?php\necho count(1);\n");
 
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 6);
-    assert_eq!(
-        error.message,
-        "unsupported call count(): only arrays and Countable objects are supported"
-    );
+    assert!(execution.stdout.starts_with(
+        "Fatal error: Uncaught TypeError: count(): Argument #1 ($value) must be of type Countable|array, int given"
+    ));
+    assert_eq!(execution.exit_code, 255);
 }
 
 #[test]
@@ -78,12 +82,14 @@ fn boolean_array_keys_are_normalized_in_long_arrays() {
 }
 
 #[test]
-fn undefined_array_key_has_stable_runtime_error() {
-    let error = runtime_error("<?php\n$items = [];\necho $items[0];\n");
+fn undefined_array_key_read_emits_php_warning() {
+    let execution = execution("<?php\n$items = [];\necho $items[0];\n");
 
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 6);
-    assert_eq!(error.message, "undefined array key 0");
+    assert_eq!(
+        execution.stdout,
+        "Warning: Undefined array key 0 in Command line code on line 3\n"
+    );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
@@ -96,12 +102,13 @@ fn duplicate_class_has_stable_runtime_error() {
 }
 
 #[test]
-fn undefined_class_has_stable_runtime_error() {
-    let error = runtime_error("<?php\n$box = new Missing();\n");
+fn undefined_class_reports_php_fatal() {
+    let execution = execution("<?php\n$box = new Missing();\n");
 
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 8);
-    assert_eq!(error.message, "undefined class Missing");
+    assert!(execution
+        .stdout
+        .starts_with("Fatal error: Uncaught Error: Class \"Missing\" not found"));
+    assert_eq!(execution.exit_code, 255);
 }
 
 #[test]
@@ -123,8 +130,8 @@ echo $box;
 }
 
 #[test]
-fn object_comparison_has_stable_runtime_error() {
-    let error = runtime_error(
+fn object_comparison_uses_current_php_truthy_result() {
+    let execution = execution(
         r#"<?php
 class Box {}
 $left = new Box();
@@ -133,17 +140,13 @@ echo $left == $right;
 "#,
     );
 
-    assert_eq!(error.line, 5);
-    assert_eq!(error.column, 6);
-    assert_eq!(
-        error.message,
-        "unsupported comparison: object comparisons are not implemented"
-    );
+    assert_eq!(execution.stdout, "1");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
-fn undefined_object_property_has_stable_runtime_error() {
-    let error = runtime_error(
+fn undefined_object_property_read_emits_php_warning() {
+    let execution = execution(
         r#"<?php
 class Box {}
 $box = new Box();
@@ -151,31 +154,32 @@ echo $box->missing;
 "#,
     );
 
-    assert_eq!(error.line, 4);
-    assert_eq!(error.column, 6);
-    assert_eq!(error.message, "undefined property Box::$missing");
+    assert_eq!(
+        execution.stdout,
+        "Warning: Undefined property: Box::$missing in Command line code on line 4\n"
+    );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
-fn invalid_property_target_has_stable_runtime_error() {
-    let error = runtime_error(
+fn invalid_property_target_read_emits_php_warning() {
+    let execution = execution(
         r#"<?php
 $value = 1;
 echo $value->name;
 "#,
     );
 
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 6);
     assert_eq!(
-        error.message,
-        "invalid property access: cannot read property $name from int"
+        execution.stdout,
+        "Warning: Attempt to read property \"name\" on int in Command line code on line 3\n"
     );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
-fn non_public_property_access_has_stable_runtime_error() {
-    let error = runtime_error(
+fn non_public_property_access_reports_php_fatal() {
+    let execution = execution(
         r#"<?php
 class Box {
     private $secret;
@@ -185,12 +189,10 @@ echo $box->secret;
 "#,
     );
 
-    assert_eq!(error.line, 6);
-    assert_eq!(error.column, 6);
-    assert_eq!(
-        error.message,
-        "unsupported object property access: non-public property Box::$secret requires same-class method context in the current subset"
-    );
+    assert!(execution
+        .stdout
+        .starts_with("Fatal error: Uncaught Error: Cannot access private property Box::$secret"));
+    assert_eq!(execution.exit_code, 255);
 }
 
 #[test]
@@ -279,12 +281,13 @@ fn foreach_null_and_undefined_iterables_warn_and_continue() {
 }
 
 #[test]
-fn invalid_arithmetic_has_stable_runtime_error() {
-    let error = runtime_error("<?php\necho 1 / 0;\n");
+fn division_by_zero_reports_php_fatal() {
+    let execution = execution("<?php\necho 1 / 0;\n");
 
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 6);
-    assert_eq!(error.message, "invalid arithmetic for /: division by zero");
+    assert!(execution
+        .stdout
+        .starts_with("Fatal error: Uncaught DivisionByZeroError: Division by zero"));
+    assert_eq!(execution.exit_code, 255);
 }
 
 #[test]
@@ -377,8 +380,8 @@ fn complex_isset_operands_remain_explicitly_unsupported() {
 }
 
 #[test]
-fn isset_non_public_property_access_remains_explicitly_unsupported() {
-    let error = runtime_error(
+fn isset_non_public_property_access_returns_false_without_read_error() {
+    let execution = execution(
         r#"<?php
 class Box {
     private $secret;
@@ -388,12 +391,8 @@ echo isset($box->secret);
 "#,
     );
 
-    assert_eq!(error.line, 6);
-    assert_eq!(error.column, 12);
-    assert_eq!(
-        error.message,
-        "unsupported object property access: non-public property Box::$secret requires same-class method context in the current subset"
-    );
+    assert_eq!(execution.stdout, "");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

@@ -2,6 +2,7 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, MutexGuard, OnceLock};
 
 use php_compiler::run_source;
 
@@ -185,6 +186,7 @@ var_dump(fileperms($file . "/"));
 
 #[test]
 fn open_basedir_denials_use_php_display_warning_shape() {
+    let _cwd_guard = cwd_guard();
     let fixture = TempFsFixture::new("open-basedir-display");
     fs::create_dir(fixture.root.join("allowed")).expect("allowed directory is created");
     fs::create_dir(fixture.root.join("denied")).expect("denied directory is created");
@@ -316,6 +318,64 @@ echo "alive";
     assert_eq!(execution.exit_code, 0);
 }
 
+#[test]
+fn open_basedir_relative_parent_denials_cover_predicates_metadata_and_directories() {
+    let _cwd_guard = cwd_guard();
+    let fixture = TempFsFixture::new("metadata-basedir-relative-parent");
+    let ok = fixture.root.join("test/ok");
+    let bad = fixture.root.join("test/bad");
+    fs::create_dir_all(&ok).expect("allowed directory is created");
+    fs::create_dir_all(&bad).expect("denied directory is created");
+    fs::write(ok.join("ok.txt"), "ok").expect("allowed file is created");
+    fs::write(bad.join("bad.txt"), "bad").expect("denied file is created");
+    let root = php_string(&fixture.root);
+    let source = format!(
+        r#"<?php
+$root = {root};
+chdir($root . "/test/ok");
+ini_set("open_basedir", ".");
+$badFile = "../bad/bad.txt";
+$badDir = "../bad";
+var_dump(file_exists($badFile));
+var_dump(is_dir($badDir));
+var_dump(is_file($badFile));
+var_dump(is_readable($badFile));
+var_dump(is_writable($badFile));
+var_dump(filesize($badFile));
+var_dump(opendir($badDir));
+echo "--allowed--\n";
+var_dump(file_exists("ok.txt"));
+var_dump(is_dir("."));
+var_dump(is_file("ok.txt"));
+var_dump(is_readable("ok.txt"));
+var_dump(filesize("ok.txt"));
+"#,
+        root = root
+    );
+
+    let execution = run_source(&source).unwrap();
+
+    assert_eq!(
+        execution
+            .stdout
+            .matches("open_basedir restriction in effect")
+            .count(),
+        7,
+        "{}",
+        execution.stdout
+    );
+    assert_eq!(execution.stdout.matches("bool(false)").count(), 7);
+    assert!(
+        execution
+            .stdout
+            .contains("--allowed--\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nint(2)\n"),
+        "{}",
+        execution.stdout
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
 struct TempFsFixture {
     root: PathBuf,
 }
@@ -344,4 +404,28 @@ impl Drop for TempFsFixture {
 fn php_string(path: &Path) -> String {
     let value = path.to_str().expect("temporary path is valid UTF-8");
     format!("'{}'", value.replace('\\', "\\\\").replace('\'', "\\'"))
+}
+
+struct CwdGuard {
+    _lock: MutexGuard<'static, ()>,
+    original: PathBuf,
+}
+
+impl Drop for CwdGuard {
+    fn drop(&mut self) {
+        let _ = std::env::set_current_dir(&self.original);
+    }
+}
+
+fn cwd_guard() -> CwdGuard {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    let lock = LOCK
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .expect("cwd lock is not poisoned");
+    let original = std::env::current_dir().expect("current directory is available");
+    CwdGuard {
+        _lock: lock,
+        original,
+    }
 }

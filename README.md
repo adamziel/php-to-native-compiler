@@ -292,8 +292,9 @@ incorrect native code.
   operators, shifts, `(string)`, `(int)`, `(bool)`, `(float)`/`(double)`, and
   `(array)` casts over documented
   current value boundaries, ternaries, increments/decrements, and PHP
-  error-control syntax `@expr` as a transparent runtime wrapper without
-  warning/notice suppression. Runtime increment/decrement includes current
+  error-control syntax `@expr` as a bounded runtime diagnostic-suppression
+  wrapper for current interpreter warnings/notices/deprecations. Runtime
+  increment/decrement includes current
   string `++`/`--` behavior for numeric strings, PHP-shaped float promotion at
   signed 64-bit overflow, and terminal ASCII-alphanumeric string increments.
   PHP 8 `match` expressions execute in the
@@ -536,8 +537,9 @@ incorrect native code.
   public and same-class private instance method calls, inherited public method
   calls, protected same-class/child method calls, explicit `parent::method()`
   and `parent::__construct()` calls in instance context, narrow
-  `self::method()` calls in instance context, class-method default parameters
-  using `self::CONST` from the declaring method class, narrow `ClassName::class`,
+  `self::method()` calls in instance context, default parameters using declared
+  `ClassName::CONST` or class-method `self::CONST` from the declaring method
+  class, narrow `ClassName::class`,
   `self::class`, and `parent::class` resolution, narrow class constants
   through `ClassName::CONST`, `self::CONST`, `parent::CONST`, and late-bound
   `static::CONST` in active called-class context,
@@ -657,7 +659,8 @@ named call arguments, call-time by-reference arguments,
 type declaration enforcement, cast behavior outside the current `(string)`,
 `(int)`, `(bool)`, and
 `(float)`/`(double)` slices plus the null/scalar/array `(array)` slice,
-actual PHP warning/notice suppression for `@expr`,
+full PHP `@expr` behavior beyond bounded suppression, including exact severity,
+recovery values, and `error_reporting()` mask interactions,
 typed/non-public/abstract/final or multi-constant interface
 declarations, full interface signature
 enforcement, broad built-in/internal interface method enforcement/catalogs

@@ -203,7 +203,7 @@ echo $blocked === false ? "|blocked" : "|read";
 
     assert_eq!(
         execution.stdout,
-        "allowed-payload|warning:2:basedir|blocked"
+        "allowed-payload|warning:2:basedir|warning:2:other|blocked"
     );
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);

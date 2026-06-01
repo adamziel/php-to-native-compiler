@@ -5,14 +5,17 @@ use php_compiler::{parse, run_source};
 
 const LLVM_CONTROL_FLOW_REJECTION: &str = "LLVM control-flow lowering rejects if/else and elseif chains, while loops, for loops, do-while loops, switch statements, goto labels, break, and continue until native PHP truthiness, branch layout, loop control flow, switch fallthrough, goto jumps, references/copy-on-write side effects, and exact native error behavior exist; phpc run handles current control-flow behavior";
 const LLVM_MUTATION_REJECTION: &str = "LLVM mutation lowering rejects compound assignment outside lowerable direct variables, null coalescing assignment, increment/decrement, non-direct assignment expressions, direct variable unset, object property unset, static property unset, and multiple-operand unset until native read-modify-write ordering, null-aware mutation, unset symbol-table effects, references/copy-on-write, and exact native error behavior exist; phpc run handles current mutation behavior";
-const LLVM_REFERENCE_ASSIGNMENT_REJECTION: &str = "LLVM reference-assignment lowering rejects direct variable, array-offset, object-property, function-call, method-call, static-call, magic __get, and ArrayAccess reference sources or targets until native reference containers, alias-aware symbol tables, copy-on-write, object/property alias roots, and exact native error behavior exist; phpc run handles current bounded reference-assignment behavior";
 const LLVM_INSTANCEOF_REJECTION: &str = "LLVM instanceof lowering rejects class/interface relationship checks until native class metadata tables, object handles, inheritance/interface registries, class-name resolution, autoload interaction, references/copy-on-write, and exact native instanceof diagnostics exist; phpc run handles current bounded instanceof behavior";
 const LLVM_CLONE_REJECTION: &str = "LLVM clone lowering rejects clone expressions, including direct-variable clone assignments that mirror public and context-aware non-public property reference slots, until native object handles, property slot cloning, __clone dispatch, reference-slot metadata, references/copy-on-write, and exact native error behavior exist; phpc run handles current bounded clone behavior";
 const LLVM_INTERFACE_REJECTION: &str = "LLVM interface lowering rejects interface declarations until native class/interface tables, implementation checks, relationship queries, autoload interaction, and exact native error behavior exist; phpc run handles current interface metadata behavior";
 const LLVM_TRAIT_REJECTION: &str = "LLVM trait lowering rejects trait declarations until native trait tables, class trait-use composition, conflict resolution, aliasing, relationship metadata, autoload interaction, and exact native error behavior exist; phpc run handles current trait metadata behavior";
 const LLVM_ENUM_REJECTION: &str = "LLVM enum lowering rejects enum declarations until native class/enum tables, enum case objects, backed enum values, interface implementation, relationship queries, autoload interaction, and exact native error behavior exist; phpc run handles current enum metadata behavior";
+const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
 const LLVM_FUNCTION_DECLARATION_REJECTION: &str = "LLVM user-function lowering rejects function declarations and return statements until native function symbol tables, stack-frame layout, default parameter binding, recursion guards, return-value flow, and exact native error behavior exist; phpc run handles current user-function declaration and return behavior";
+const LLVM_GLOBAL_CONSTANT_REJECTION: &str = "LLVM global-constant lowering rejects built-in constant values, runtime-defined constants, bare constant reads, top-level const declarations, define()/constant(), and unsupported defined() forms until native constant tables, source-order definitions, namespace-aware lookup, and exact native error behavior exist; phpc run handles current global constant behavior";
 const LLVM_MATCH_REJECTION: &str = "LLVM match expression lowering rejects match expressions until native strict arm comparison, default/exhaustiveness handling, value evaluation order, references/copy-on-write, and exact native error behavior exist; phpc run handles current match expression behavior";
+const LLVM_NONLOCAL_UNSET_REJECTION: &str = "LLVM native array non-local unset lowering rejects object, dynamic-object, non-direct object, and static property unsets until non-local owner cells, magic __unset dispatch, typed/static property state, references/copy-on-write, and exact diagnostics share one unset owner contract; local variables and native array offset unsets use their shared native lvalue unset contracts";
+const LLVM_OBJECT_INSTANTIATION_REJECTION: &str = "LLVM object-instantiation lowering rejects new expressions and constructor dispatch until native object allocation, object handles, constructor calls, visibility checks, autoload/class lookup, references/copy-on-write, and exact native object-instantiation errors exist; phpc run handles current bounded new behavior";
 
 fn parse_error(source: &str) -> php_compiler::error::Diagnostic {
     let error = run_source(source).unwrap_err();
@@ -146,37 +149,18 @@ echo $value?>"#,
 }
 
 #[test]
-fn unsupported_php_attribute_arguments_have_stable_lex_errors() {
+fn php_attribute_syntax_accepts_current_runtime_metadata_noop_boundary() {
     let cases = [
-        (
-            "<?php\n#[Route('/wp-json/demo')]\nfunction handler() {}\n",
-            2,
-            1,
-        ),
-        (
-            "<?php\nclass Box {\n    #[Inject]\n    public $service;\n}\n",
-            0,
-            0,
-        ),
-        (
-            "<?php\nclass Box {\n    #[Inject('service')]\n    public $service;\n}\n",
-            3,
-            5,
-        ),
+        "<?php\n#[Route('/wp-json/demo')]\nfunction handler() {}\n",
+        "<?php\nclass Box {\n    #[Inject]\n    public $service;\n}\n",
+        "<?php\nclass Box {\n    #[Inject('service')]\n    public $service;\n}\n",
     ];
 
-    for (source, line, column) in cases {
-        if line == 0 {
-            run_source(source).unwrap();
-            continue;
-        }
-        let error = lex_error(source);
-        assert_eq!(error.line, line);
-        assert_eq!(error.column, column);
-        assert_eq!(
-            error.message,
-            "unsupported PHP attribute arguments: constructor argument evaluation, target validation, reflection visibility, namespace-aware attribute names, repeatability rules, references/copy-on-write, and native lowering are not implemented"
-        );
+    for source in cases {
+        let execution = run_source(source).unwrap();
+        assert_eq!(execution.stdout, "");
+        assert_eq!(execution.stderr, "");
+        assert_eq!(execution.exit_code, 0);
     }
 }
 
@@ -185,11 +169,8 @@ fn emit_ir_rejects_php_attributes_at_lex_boundary() {
     let error =
         php_compiler::emit_ir_source("<?php\n#[Hook('init')]\nfunction boot() {}\n").unwrap_err();
 
-    assert_eq!(error.phase, Phase::Lex);
-    assert_eq!(
-        error.message,
-        "unsupported PHP attribute arguments: constructor argument evaluation, target validation, reflection visibility, namespace-aware attribute names, repeatability rules, references/copy-on-write, and native lowering are not implemented"
-    );
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.message, LLVM_FUNCTION_DECLARATION_REJECTION);
 }
 
 #[test]
@@ -337,7 +318,7 @@ fn emit_ir_rejects_object_property_unset_lowering() {
     let error = php_compiler::emit_ir_source("<?php\nunset($box->name);\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(error.message, LLVM_MUTATION_REJECTION);
+    assert_eq!(error.message, LLVM_NONLOCAL_UNSET_REJECTION);
 }
 
 #[test]
@@ -402,10 +383,7 @@ fn emit_ir_rejects_throw_statement_at_codegen_boundary() {
     let error = php_compiler::emit_ir_source("<?php\nthrow new Exception('boom');\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(
-        error.message,
-        "LLVM exception lowering rejects throw statements and try/catch/finally blocks until native Throwable objects, stack unwinding, catch/finally dispatch, stack traces, and exact native error behavior exist; phpc run handles the current exception boundary"
-    );
+    assert_eq!(error.message, LLVM_OBJECT_INSTANTIATION_REJECTION);
 }
 
 #[test]
@@ -527,27 +505,20 @@ fn emit_ir_rejects_exponentiation_syntax_at_parse_boundary() {
 }
 
 #[test]
-fn unsupported_first_class_callable_syntax_has_stable_parse_errors() {
+fn first_class_callable_syntax_executes_current_runtime_subset() {
     let cases = [
-        (
-            "<?php\n$callback = strlen(...);\n",
-            2,
-            20,
-            "unsupported first-class callable syntax: Closure creation with ... is not implemented",
-        ),
+        ("<?php\n$callback = strlen(...);\n", ""),
         (
             "<?php\n$callback = 'strlen';\necho $callback(...);\n",
-            3,
-            16,
-            "unsupported first-class callable syntax: Closure creation with ... is not implemented",
+            "strlen",
         ),
     ];
 
-    for (source, line, column, message) in cases {
-        let error = parse_error(source);
-        assert_eq!(error.line, line);
-        assert_eq!(error.column, column);
-        assert_eq!(error.message, message);
+    for (source, stdout) in cases {
+        let execution = run_source(source).unwrap();
+        assert_eq!(execution.stdout, stdout);
+        assert_eq!(execution.stderr, "");
+        assert_eq!(execution.exit_code, 0);
     }
 }
 
@@ -555,11 +526,8 @@ fn unsupported_first_class_callable_syntax_has_stable_parse_errors() {
 fn emit_ir_rejects_first_class_callable_syntax_at_parse_boundary() {
     let error = php_compiler::emit_ir_source("<?php\n$callback = strlen(...);\n").unwrap_err();
 
-    assert_eq!(error.phase, Phase::Parse);
-    assert_eq!(
-        error.message,
-        "unsupported first-class callable syntax: Closure creation with ... is not implemented"
-    );
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
 }
 
 #[test]
@@ -598,7 +566,7 @@ fn spread_arguments_parse_as_source_ordered_call_argument_nodes() {
 }
 
 #[test]
-fn native_codegen_rejects_argument_unpacking_at_shared_finalization_bridge() {
+fn native_codegen_lowers_argument_unpacking_through_shared_finalization_bridge() {
     let cases = [
         (
             "<?php\nclass Handler { public function run($first, $value) {} }\n$handler = new Handler();\n$args = ['init'];\n$handler->run('first', ...$args);\n",
@@ -612,41 +580,41 @@ fn native_codegen_rejects_argument_unpacking_at_shared_finalization_bridge() {
 
     for (source, source_index) in cases {
         let program = parse(source).unwrap();
-        let error = emit_native_executable_c_source(&program).unwrap_err();
+        let generated = emit_native_executable_c_source(&program).unwrap();
 
-        assert_eq!(error.phase, Phase::Codegen);
         assert!(
-            error.message.contains(&format!(
-                "spread call argument at source slot {source_index} requires runtime unpack normalization"
-            )),
-            "{}",
-            error.message
+            generated.contains("phpc_native_materialized_call_arguments_new")
+                && generated.contains("phpc_native_materialized_call_arguments_unpack_array_value_and_free")
+                && generated.contains("phpc_native_materialized_call_arguments_finalize_with_diagnostic"),
+            "spread source slot {source_index} should lower through materialized call arguments:\n{generated}"
+        );
+        assert!(
+            !generated.contains("spread call argument at source slot"),
+            "spread source slot {source_index} should not hit the old finalization blocker:\n{generated}"
         );
     }
 }
 
 #[test]
-fn native_codegen_blocks_descriptor_closure_spread_until_unpacked_handle_bridge_exists() {
+fn native_codegen_lowers_descriptor_closure_spread_through_unpacked_handle_bridge() {
     let program = parse(
         "<?php\n$closure = function ($first, $value) { return $first . $value; };\n$args = ['tail'];\necho $closure('head', ...$args);\n",
     )
     .unwrap();
 
-    let error = emit_native_executable_c_source(&program).unwrap_err();
+    let generated = emit_native_executable_c_source(&program).unwrap();
 
-    assert_eq!(error.phase, Phase::Codegen);
     assert!(
-        error
-            .message
-            .contains("spread operands need a materialized-entry producer plus finalized NativeCallArgumentsHandle bridge"),
-        "{}",
-        error.message
+        generated.contains("phpc_native_materialized_call_arguments_new")
+            && generated
+                .contains("phpc_native_materialized_call_arguments_unpack_array_value_and_free")
+            && generated
+                .contains("phpc_native_materialized_call_arguments_finalize_with_diagnostic")
+            && generated
+                .contains("phpc_native_closure_invoke_value_with_diagnostic_and_free_arguments"),
+        "descriptor closure spread should lower through materialized call arguments:\n{generated}"
     );
-    assert!(
-        error.message.contains("descriptor closure"),
-        "{}",
-        error.message
-    );
+    assert!(!generated.contains("spread operands need a materialized-entry producer"));
 }
 
 #[test]
@@ -814,20 +782,26 @@ fn emit_ir_rejects_anonymous_class_expression_at_parse_boundary() {
 }
 
 #[test]
-fn unsupported_parenthesized_dynamic_new_class_expressions_have_stable_parse_errors() {
+fn parenthesized_dynamic_new_class_expressions_reach_runtime_boundaries() {
     let cases = [
-        ("<?php\n$class = \"Box\";\n$box = new ($class)();\n", 3, 12),
-        ("<?php\necho new (factory())();\n", 2, 10),
+        (
+            "<?php\n$class = \"Box\";\n$box = new ($class)();\n",
+            "Class \"Box\" not found",
+        ),
+        (
+            "<?php\necho new (factory())();\n",
+            "Call to undefined function factory()",
+        ),
     ];
 
-    for (source, line, column) in cases {
-        let error = parse_error(source);
-        assert_eq!(error.line, line);
-        assert_eq!(error.column, column);
+    for (source, message) in cases {
+        let execution = run_source(source).unwrap();
         assert_eq!(
-            error.message,
-            "unsupported dynamic class-name expression in new: only named classes, self/parent/static, and direct variable class names are implemented; parenthesized and arbitrary class-name expressions require expression evaluation ordering, autoload interaction, exact PHP diagnostics, and native lowering"
+            execution.exit_code, 255,
+            "parenthesized dynamic new should reach a runtime fatal boundary"
         );
+        assert!(execution.stdout.contains(message), "{}", execution.stdout);
+        assert_eq!(execution.stderr, "");
     }
 }
 
@@ -836,11 +810,8 @@ fn emit_ir_rejects_parenthesized_dynamic_new_class_expression_at_parse_boundary(
     let error = php_compiler::emit_ir_source("<?php\n$class = \"Box\";\n$box = new ($class)();\n")
         .unwrap_err();
 
-    assert_eq!(error.phase, Phase::Parse);
-    assert_eq!(
-        error.message,
-        "unsupported dynamic class-name expression in new: only named classes, self/parent/static, and direct variable class names are implemented; parenthesized and arbitrary class-name expressions require expression evaluation ordering, autoload interaction, exact PHP diagnostics, and native lowering"
-    );
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.message, LLVM_OBJECT_INSTANTIATION_REJECTION);
 }
 
 #[test]
@@ -892,38 +863,17 @@ fn emit_ir_rejects_promoted_property_parameters_at_parse_boundary() {
 }
 
 #[test]
-fn unsupported_dnf_type_declarations_have_stable_parse_errors() {
+fn dnf_type_declarations_parse_and_run_in_current_metadata_subset() {
     let cases = [
-        (
-            "<?php\nfunction accepts((Iterator&Countable)|ArrayAccess $value) {}\n",
-            2,
-            18,
-        ),
-        (
-            "<?php\nfunction returns(): (Iterator&Countable)|ArrayAccess { return null; }\n",
-            2,
-            21,
-        ),
-        (
-            "<?php\nclass Box {\n    public (Iterator&Countable)|ArrayAccess $value;\n}\n",
-            3,
-            12,
-        ),
-        (
-            "<?php\nclass Box {\n    public static (Iterator&Countable)|ArrayAccess $value;\n}\n",
-            3,
-            19,
-        ),
+        "<?php\nfunction accepts((Iterator&Countable)|ArrayAccess $value) {}\n",
+        "<?php\nfunction returns(): (Iterator&Countable)|ArrayAccess { return null; }\n",
     ];
 
-    for (source, line, column) in cases {
-        let error = parse_error(source);
-        assert_eq!(error.line, line);
-        assert_eq!(error.column, column);
-        assert_eq!(
-            error.message,
-            "unsupported DNF type declaration: parenthesized union/intersection type declarations are not implemented"
-        );
+    for source in cases {
+        let execution = run_source(source).unwrap();
+        assert_eq!(execution.stdout, "");
+        assert_eq!(execution.stderr, "");
+        assert_eq!(execution.exit_code, 0);
     }
 }
 
@@ -934,11 +884,8 @@ fn emit_ir_rejects_dnf_type_declarations_at_parse_boundary() {
     )
     .unwrap_err();
 
-    assert_eq!(error.phase, Phase::Parse);
-    assert_eq!(
-        error.message,
-        "unsupported DNF type declaration: parenthesized union/intersection type declarations are not implemented"
-    );
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.message, LLVM_FUNCTION_DECLARATION_REJECTION);
 }
 
 #[test]
@@ -1062,7 +1009,7 @@ $e = \strlen();
 }
 
 #[test]
-fn unsupported_namespace_qualified_constant_reads_have_stable_parse_errors() {
+fn namespace_qualified_constant_reads_keep_parse_boundary_but_global_builtins_execute() {
     let cases = [
         (
             "<?php\n$value = App\\VERSION;\n",
@@ -1076,12 +1023,6 @@ fn unsupported_namespace_qualified_constant_reads_have_stable_parse_errors() {
             10,
             "unsupported namespace-qualified constant name: namespace-aware constant lookup, fallback behavior, constant imports, and native lowering are not implemented",
         ),
-        (
-            "<?php\necho \\PHP_VERSION;\n",
-            2,
-            6,
-            "unsupported fully-qualified constant name: leading global namespace constant reads require exact constant-table lookup, namespace fallback bypass, import interaction, and native lowering",
-        ),
     ];
 
     for (source, line, column, message) in cases {
@@ -1090,17 +1031,19 @@ fn unsupported_namespace_qualified_constant_reads_have_stable_parse_errors() {
         assert_eq!(error.column, column);
         assert_eq!(error.message, message);
     }
+
+    let execution = run_source("<?php\necho \\PHP_VERSION;\n").unwrap();
+    assert_eq!(execution.stdout, "8.3.0");
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
 fn emit_ir_rejects_fully_qualified_constant_reads_at_parse_boundary() {
     let error = php_compiler::emit_ir_source("<?php\necho \\PHP_VERSION;\n").unwrap_err();
 
-    assert_eq!(error.phase, Phase::Parse);
-    assert_eq!(
-        error.message,
-        "unsupported fully-qualified constant name: leading global namespace constant reads require exact constant-table lookup, namespace fallback bypass, import interaction, and native lowering"
-    );
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.message, LLVM_GLOBAL_CONSTANT_REJECTION);
 }
 
 #[test]
@@ -1344,6 +1287,12 @@ fn unsupported_typed_property_declarations_keep_stable_parse_errors() {
             "<?php\nclass Value {\n    public (Countable&Iterator)|ArrayAccess $id;\n}\n",
             3,
             12,
+            "unsupported DNF type declaration: parenthesized union/intersection type declarations are not implemented",
+        ),
+        (
+            "<?php\nclass Value {\n    public static (Countable&Iterator)|ArrayAccess $id;\n}\n",
+            3,
+            19,
             "unsupported DNF type declaration: parenthesized union/intersection type declarations are not implemented",
         ),
     ];
@@ -1827,7 +1776,7 @@ fn unsupported_null_coalescing_assignment_targets_have_stable_parse_errors() {
         assert_eq!(error.column, column);
         assert_eq!(
             error.message,
-            "unsupported null coalescing assignment: only direct variable, direct or nested array-offset, and direct object-property targets are implemented"
+            "unsupported null coalescing assignment: only direct variable, direct or nested array-offset, direct object-property, static-property, and direct object-property array-offset targets are implemented"
         );
     }
 }
@@ -1899,7 +1848,7 @@ fn unsupported_expression_position_assignment_forms_have_stable_parse_errors() {
             "<?php\n$items = [];\necho ($items[] ??= 'value');\n",
             3,
             16,
-            "unsupported null coalescing assignment: only direct variable, direct or nested array-offset, and direct object-property targets are implemented",
+            "unsupported null coalescing assignment: only direct variable, direct or nested array-offset, direct object-property, static-property, and direct object-property array-offset targets are implemented",
         ),
         (
             "<?php\n$items = [];\n$value = $items[] = 1;\n",
@@ -1927,12 +1876,14 @@ fn emit_ir_rejects_non_direct_assignment_expression_at_codegen_boundary() {
 }
 
 #[test]
-fn emit_ir_rejects_reference_assignment_at_codegen_boundary() {
-    let error =
-        php_compiler::emit_ir_source("<?php\n$value = 1;\n$alias =& $value;\n").unwrap_err();
+fn emit_ir_lowers_direct_reference_assignment_boundary() {
+    let ir = php_compiler::emit_ir_source("<?php\n$value = 1;\n$alias =& $value;\n").unwrap();
 
-    assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(error.message, LLVM_REFERENCE_ASSIGNMENT_REJECTION);
+    assert!(
+        ir.contains("@phpc_native_reference_from_value_and_free")
+            && ir.contains("@phpc_native_reference_clone"),
+        "{ir}"
+    );
 }
 
 #[test]
@@ -1952,15 +1903,15 @@ fn unsupported_compound_assignments_have_stable_parse_errors() {
 
 #[test]
 fn compound_assignment_expressions_have_stable_parse_errors() {
-    let error = parse_error(
+    let error = runtime_error(
         "<?php\n$items = ['outer' => ['inner' => 1]];\necho ($items['outer']['inner'] += 2);\n",
     );
 
     assert_eq!(error.line, 3);
-    assert_eq!(error.column, 33);
+    assert_eq!(error.column, 7);
     assert_eq!(
         error.message,
-        "unsupported compound assignment target: only direct static variables, direct array offsets, direct object properties, direct object-property array offsets, and supported static properties are implemented; append offsets and nested variable targets are not implemented"
+        "unsupported call compound assignment: nested array targets are not implemented"
     );
 }
 
@@ -2043,30 +1994,30 @@ fn emit_ir_rejects_increment_decrement_expressions_at_codegen_boundary() {
 }
 
 #[test]
-fn unsupported_foreach_forms_are_rejected_with_stable_parse_error() {
-    let cases = [
-        (
-            r#"<?php
+fn foreach_destructuring_executes_and_remaining_forms_keep_parse_boundaries() {
+    let destructuring_cases = [
+        r#"<?php
 $items = [[1]];
 foreach ($items as [$item]) {
     echo $item;
 }
 "#,
-            3,
-            20,
-            "unsupported foreach: destructuring loop targets are not implemented",
-        ),
-        (
-            r#"<?php
+        r#"<?php
 $items = [[1]];
 foreach ($items as $key => [$item]) {
     echo $item;
 }
 "#,
-            3,
-            28,
-            "unsupported foreach: destructuring loop targets are not implemented",
-        ),
+    ];
+
+    for source in destructuring_cases {
+        let execution = run_source(source).unwrap();
+        assert_eq!(execution.stdout, "1");
+        assert_eq!(execution.stderr, "");
+        assert_eq!(execution.exit_code, 0);
+    }
+
+    let cases = [
         (
             r#"<?php
 $items = [1];

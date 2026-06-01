@@ -1,5 +1,599 @@
 # Progress Log
 
+## 2026-06-01
+
+Implemented:
+
+- Refreshed the stale `variable_unset` Rust baseline for the current
+  PHP-shaped undefined-variable warning path. Reading a local after `unset()`
+  now asserts visible stdout warning text and exit `0` instead of expecting an
+  internal runtime diagnostic error. Focused `cargo test -p phpc --test
+  variable_unset -- --test-threads=1` passed `3 / 3`; this is not a public
+  score update.
+- Refreshed the stale typed-property reference-coercion Rust baseline for the
+  current PHP-shaped fatal execution path. Incompatible writes through a typed
+  property reference now assert the visible fatal output and exit `255`
+  instead of expecting an internal diagnostic error. Focused
+  `cargo test -p phpc --test typed_property_reference_coercion --
+  --test-threads=1` passed `2 / 2`; this is not a public score update.
+- Refreshed the stale typed-property protected-inheritance Rust baseline for
+  the current PHP-shaped fatal text when a typed child property extends an
+  untyped protected parent property: the test now expects the existing
+  `must be omitted to match the parent definition` diagnostic. Focused
+  `cargo test -p phpc --test typed_properties_protected_inheritance --
+  --test-threads=1` passed `3 / 3`; this is not a public score update.
+- Tightened native `function_exists()` / `extension_loaded()` lowering so
+  non-string scalar names keep the explicit native function-call rejection
+  instead of being coerced through the shared text-membership helper, matching
+  the current `phpc run` unsupported-name boundary. Refreshed the
+  `extension_loaded()` `--emit-ir` baseline to assert the implemented bounded
+  compatibility-registry membership helper for lowerable string names. Focused
+  `cargo test -p phpc --test type_introspection_builtins --
+  --test-threads=1` passed `19 / 19`; this is not a public score update.
+- Worker 01 array/counting lane: `count()` and `sizeof()` now reuse the
+  existing PHP-shaped TypeError operand-name formatter for non-countable
+  values. This preserves the current array and bounded `Countable` object
+  behavior while reporting `true`, `false`, `stdClass`, or the concrete class
+  name instead of generic `bool`/`object` in catchable TypeErrors, matching the
+  reached public `count_invalid.phpt` and `sizeof_object2.phpt` rows. Focused
+  `cargo test -p phpc --test countable_type_builtin -- --test-threads=1`
+  passed `10 / 10`, and the focused public array values/counting PHPT lane now
+  reports `17` passed, `1` skipped, and `3` still failed rows; this is not a
+  public score update until a pinned full-suite gate runs.
+- Refreshed the stale `syntax_boundaries` Rust baseline for current
+  parser/runtime/codegen boundaries. Attribute syntax, function DNF metadata,
+  first-class callable syntax, `\PHP_VERSION`, parenthesized dynamic `new`,
+  foreach destructuring, native spread call lowering, and direct reference
+  assignment now assert the implemented execution/lowering paths, while DNF
+  property declarations, namespace-qualified constants, object/static unsets,
+  object instantiation, unsupported null-coalescing targets, and nested
+  compound assignment still keep named rejection boundaries. Focused
+  `cargo test -p phpc --test syntax_boundaries -- --test-threads=1` passed
+  `109 / 109`; this is not a public score update.
+- Refreshed the stale `$_SESSION` undefined-read Rust baseline for the current
+  PHP-shaped warning execution path. The request superglobal test still
+  verifies that the session root is not materialized before session startup,
+  but now expects `phpc run` to emit the same visible undefined-variable
+  warning path as ordinary missing variables and continue with exit `0`.
+  Focused `cargo test -p phpc --test superglobals --
+  --test-threads=1` passed `36 / 36`; this is not a public score update.
+- Refreshed the stale strict-identity `--emit-ir` Rust baseline for the
+  current boxed diagnostic-result echo boundary. The tests still assert native
+  integer/boolean equality lowering (`icmp` / ternary `select`) while expecting
+  boolean echo results to flow through `phpc_native_bool()` and the shared
+  diagnostic-result stdout reporter instead of the older direct `printf`
+  string path. Focused `cargo test -p phpc --test strict_identity --
+  --test-threads=1` passed `5 / 5`; this is not a public score update.
+- Refreshed the stale `str_replace()` Rust baseline for already-present
+  bounded replacement behavior. The focused test now asserts the current
+  callback-by-value `$count` warning/result path, one-level replacement arrays,
+  nested search-array `Array to string conversion` warning recovery, and
+  one-level array subject replacement output, while preserving the direct-call
+  rejection for non-direct `$count` writeback targets. Focused
+  `cargo test -p phpc --test str_replace_builtin -- --test-threads=1` passed
+  `7 / 7`; this is not a public score update.
+- Refreshed the stale `strcasecmp()` arity baseline for the current
+  PHP-shaped too-few-arguments fatal execution path. Unsupported array operand
+  diagnostics and the native string-int contract assertions remain unchanged.
+  Focused `cargo test -p phpc --test strcasecmp_builtin -- --test-threads=1`
+  passed `4 / 4`; this is not a public score update.
+- Worker 05 numeric/math lane: aligned interpreter `deg2rad()` and `rad2deg()`
+  with PHP's precision-sensitive operation order for the reached PHPT rows
+  (`$degrees / 180 * M_PI` and `$radians / M_PI * 180`) instead of Rust's
+  `to_radians()`/`to_degrees()` constants. Added focused coverage for the
+  exact `deg2rad_variation`, `deg2rad_basiclong_64bit`, and
+  `rad2deg_basiclong_64bit` edge values, plus a small compile unblocker that
+  preserves a concurrent trim-family call-site refactor by delegating
+  `self.call_trim_family(...)` to the existing trim implementation.
+- Worker 02 string lane: broadened the bounded `trim()` / `ltrim()` /
+  `rtrim()` / `chop()` interpreter slice for the reached PHPT rows. The
+  default mask now includes form-feed, simple increasing `x..y` character mask
+  ranges are expanded, and invalid range spellings emit PHP-shaped warnings
+  while returning the original string. Arrays remain rejected, broader binary
+  charlist parsing and exact object/resource coercions remain unsupported, and
+  native lowering still rejects direct trim-family calls.
+- Worker 03 filesystem lane: extended `file()` open_basedir denial recovery to
+  emit the operation-specific follow-on `Failed to open stream` warning before
+  returning `false`, matching the reached `open_basedir_file.phpt` behavior
+  without broadening stream wrapper support.
+- Worker 06 variable/symbol lane: `empty()` now accepts non-lvalue expression
+  operands by evaluating their truthiness and returning the negated result,
+  while preserving the existing direct variable, offset, property, static
+  property, and call-operand behavior.
+- Added a bounded shared `open_basedir` relative-parent escape denial slice for
+  existing interpreter local filesystem helpers. The allow-list check now
+  canonicalizes existing paths and lexically normalizes unresolved paths
+  against the active cwd, so `open_basedir=.` after `chdir()` rejects `..`
+  escapes for local metadata/predicate helpers (`file_exists()`, `filesize()`,
+  `is_dir()`, `is_file()`, `is_readable()`, `is_writable()`, and `is_link()`),
+  local stream opens (`file_get_contents()`, `file_put_contents()`, `fopen()`),
+  and directory opens (`opendir()`/`dir()` plus `scandir()`) without
+  PHPT-name special casing. Stream and directory open denials now also emit the
+  bounded operation-specific follow-on warnings (`Failed to open stream`,
+  `Failed to open directory`, and `scandir()`'s bounded `(errno 1)` warning)
+  before returning `false`. Existing allowed normalized paths under the current
+  basedir remain allowed.
+- Added focused Rust coverage in
+  `compiler/tests/open_basedir_relative_escape.rs` for denied relative-parent
+  and absolute escapes, allowed normalized `ok` paths, metadata/predicate
+  warning counts, and stream/directory follow-on warning parity. Updated the
+  existing `file_get_contents()` and `fopen()` open_basedir handler tests to
+  expect the newly surfaced follow-on warning.
+- Refreshed stale `php_runtime` unit-test expectations for already-present
+  runtime behavior: binary PHP strings preserve invalid UTF-8 bytes, `natsort`
+  treats arrays as string-comparable `"Array"` values while still rejecting
+  resources, the expanded core class bootstrap metadata is reflected in the
+  metadata test, and typed static-property reference writes report the
+  reference-held diagnostic. The call-arguments free counter used only by
+  tests is now thread-local so the default parallel Rust test runner no longer
+  cross-contaminates those assertions. Codegen unit assertions were also
+  refreshed for existing generated-C behavior: dynamic object-property
+  assignment lowers through the shared runtime mutation helper, and known
+  string comparisons use the binary-string value/comparison boundary. No
+  runtime implementation behavior changed in this refresh. The
+  `array_combine()` resource-key baseline now expects PHP's first user-visible
+  stream handle string (`Resource id #5`) instead of the stale `#1` fixture,
+  and an `unset()` detached typed-reference test now expects the PHP-shaped
+  fatal `TypeError` path for reference-held property writes.
+  Assignment-expression `--emit-ir` baselines now assert the existing boxed
+  diagnostic-result echo boundary for direct assignment values and the
+  specific non-local assignment rejection for object-property assignment
+  expressions. Built-in `Exception` constructor and uncaught-throw baselines
+  now assert the already-present message initialization and PHP-shaped fatal
+  execution path, including the general exception boundary test file.
+  `call_user_func_array()` rejection-boundary baselines now expect the
+  existing PHP-shaped fatal TypeErrors for arity/type errors, the current named
+  builtin parameter mismatch diagnostic, and the warning-only by-value
+  reference argument path. Compound-assignment baselines now assert the boxed
+  diagnostic-result echo boundary for direct compound assignment expressions
+  and PHP-shaped fatal execution paths for private-property access, modulo by
+  zero, and negative shift errors; the matching CLI snapshot fixture now
+  expects the fatal modulo-by-zero stdout/exit shape. `count()` on
+  non-Countable objects now has a baseline for the existing PHP-shaped fatal
+  TypeError execution path. A stale default-parameter boundary test now asserts
+  the already-present interpreter support for declared `ClassName::CONST`
+  default values in user functions, including omitted and explicit argument
+  calls. Dynamic-feature baselines now track the existing PHP-shaped fatal
+  execution path for unresolved dynamic function calls and unresolved qualified
+  namespace calls, parser-phase variable-variable rejection, statement-form
+  `eval(...)` execution with expression-position eval still fatal, supported
+  simple function/const imports, supported `PHP_OS` constant lookup,
+  error-control suppression for undefined variables, and deprecated filter
+  aliases in `get_defined_constants()` comparisons via suppressed
+  `constant(...)` reads. The matching unsupported dynamic feature fixture and
+  CLI sidecars were refreshed for the current pathless diagnostics and
+  PHP-shaped execution results. The `runtime_errors` fixture family was also
+  refreshed against current `phpc run` behavior, preserving its `phpc-only`
+  status and moving stale `PHP_OS` unknown-constant probes to an actually
+  unknown `PHP_OS_MISSING` name. `file_exists()` focused tests now assert the
+  current PHP-shaped fatal arity execution and the synthetic relative source
+  path repo-relative fixture resolution used by direct interpreter test calls.
+  `filesize()`
+  focused tests now assert current directory metadata sizing, missing-path
+  warning/false recovery, scalar path coercion warning recovery, and
+  PHP-shaped fatal arity execution. `fprintf()`/`vfprintf()` focused tests now
+  use the current shared stream-resource native-lowering boundary, scalar
+  format coercion, and PHP-shaped values-argument TypeError output.
+  `functions_and_scopes`, modulo, shift, native variable-read,
+  `runtime_errors`, and `implode()` Rust baselines were refreshed for the same
+  current PHP-shaped warning/fatal execution paths, accepted `declare(strict_types)` /
+  `declare(encoding)` parser behavior, named reference-argument support under
+  non-builtin-style function names, ArrayAccess/null-offset deprecation output,
+  scalar `implode()` separator coercion, PHP-shaped `implode()` TypeErrors, and
+  array-to-string warning recovery. `ini_builtins` default-registry assertions
+  now share the same `PHPC_PHPT_INI_FLAGS` lock/restore discipline as the
+  PHPT-override assertions so Rust's default parallel test runner cannot leak
+  `memory_limit` overrides across tests. The milestone159 modulo-by-zero,
+  milestone160 modulo-compound-by-zero, and milestone162 division-by-zero
+  fixture sidecars now match the current fatal stdout/exit shape. Focused
+  `is_dir()`/`is_file()`/`is_readable()`/`is_writable()` tests now assert the
+  current PHP-shaped zero-argument fatal execution paths, matching the
+  already-refreshed `is_link()` boundary. `list_assignment` now proves the
+  intended native array-destructuring lowering blocker with literal RHS values,
+  leaving RHS call-boundary routing to the dedicated native-array boundary test.
+  Magic constant CLI/fixture sidecars for the non-trait-originated
+  `__TRAIT__` and global-namespace `__NAMESPACE__` cases were refreshed to the
+  current successful runtime output and no longer carry `phpc-only` markers.
+- Stabilized whole-tree fixture execution between `cargo test` and `phpc test`
+  by resolving existing repo-relative local filesystem operation paths through
+  the repository root when the current process cwd is the `compiler` crate.
+  This keeps self-referential local metadata fixtures such as `file_exists()`,
+  `is_file()`, `filesize()`, `filemtime()`, directory handles, and
+  `clearstatcache()` aligned without changing missing-path behavior. The
+  stale milestone1 native-boundary assertions were refreshed for the current
+  earlier variable-read and non-local-assignment blockers. The full fixture
+  tree and CLI sidecars were refreshed against current `phpc run` behavior,
+  and remaining system-PHP divergences for stream-context diagnostics,
+  ArrayAccess append/null-offset deprecation output, whole-array magic/
+  ArrayAccess copied-source COW identity, and `array_key_exists(null, ...)`
+  deprecation output now carry explicit `phpc-only` reasons.
+  `functions_and_scopes` system-PHP/runtime oracle assertions now normalize
+  those null-offset deprecation lines when comparing payload behavior so
+  source-path/provenance differences do not make the direct Rust tests stale.
+  Namespace-resolution baselines were also refreshed for the current
+  PHP-shaped fatal execution result on undefined imported/non-imported function
+  calls, and the generated-C imported-type-alias static-property probe now
+  records the current object-instantiation lowering boundary instead of
+  claiming executable support. Native arithmetic boundary baselines now track
+  the current boxed diagnostic-result echo output, scalar-coercion generated-C
+  routing through the value-operation ABI, LLVM string/unary-negative operand
+  conversion routing, and the exact modulo split where zero/dynamic divisors
+  still reject while unary negative literal divisors route through the
+  value-result boundary. Native assembly CLI fake-backend validators and
+  summary sidecars now accept current helper-based IR/C output-call shapes and
+  record the current LLVM `--emit-asm` rejection boundaries for unary and
+  bitwise/shift cases that no longer lower through the assembly path. Native
+  bitwise boundary baselines now track the current boxed diagnostic-result echo
+  output, avoid unrelated unary-negative lowering boundaries when asserting
+  all-ones/negative shift behavior, and refresh the emit-IR CLI sidecars for
+  current bitwise/shift lowering and rejection boundaries. Native cast
+  boundary baselines now include `(object)` casts in the existing scalar/array
+  cast rejection message, refresh the emit-IR/emit-ASM sidecars, and keep the
+  shared runtime ABI assertion aligned with the current cast blocker text.
+  Native comparison boundary baselines now track the current boxed
+  diagnostic-result echo output for comparison and strict-identity result
+  emissions, refresh the emit-IR CLI sidecars for current comparison lowering
+  and folding output, and keep unsupported comparison fixtures on their
+  explicit rejection boundaries. Generated-C dynamic string comparison operand
+  baselines now avoid the unrelated variable-held conditional-expression
+  boundary and assert the current native value byte-string materialization,
+  explicit byte-length tracking, and native value comparison helper path.
+  Native concatenation baselines now track the current boxed
+  diagnostic-result echo path for dynamic string output, including empty-string
+  identity concatenation over untracked string expressions, static string
+  concatenation, and single-result string ternary concatenation emit-IR
+  sidecars. Native conditional boundary baselines now track the current boxed
+  diagnostic-result echo path for scalar, string, boolean, and null ternary
+  output, including the now-direct boxed boolean echo path, while preserving
+  the existing unsupported conditional-expression rejection boundary and
+  refreshing the conditional emit-IR CLI sidecars. Native `empty()` boundary
+  baselines now track the current boxed diagnostic-result echo path for direct
+  variable empty output and record the exact split where array/property/static
+  property operands reject at the `empty()` boundary, while multi-argument and
+  call-operand forms still reject through the generic native function-call
+  boundary.
+  Native function-call boundary baselines now track the current boxed
+  diagnostic-result echo path for folded `strlen(...)` output, refresh the
+  `native_strlen` emit-IR CLI snapshot, keep unsupported direct-call argument
+  diagnostics on their exact call-site columns, and separate generated-C
+  rejection coverage from generated-C dynamic call/value-result forms that now
+  compile through the bounded runtime callable path. By-reference closure
+  capture execution still covers direct value consumers and a user-function
+  callback consumer, while direct `$alias =& $closure()` remains explicitly
+  routed through the generated-C reference-assignment boundary.
+  Native global-constant boundary `defined(...)` emit-IR CLI snapshots now
+  track the same boxed diagnostic-result echo path for folded builtin,
+  missing, and sort-mode constant-name results.
+  Native `isset()` boundary baselines now track the current boxed
+  diagnostic-result echo path for direct-variable isset output and record the
+  exact split where array/property/static-property operands reject at the
+  `isset()` boundary, while multi-argument and call-operand forms reject at
+  the generic native function-call boundary.
+- Stabilized the generated-C/native-link checkpoint after supervised parallel
+  inspection of the stale assertion cluster. The `native_link` source-shape
+  assertions now match the current callable-frame, root-symbol-table,
+  diagnostic-result, array-lvalue-owner, and comparison/type-predicate ABI
+  surfaces instead of older direct-call/helper shapes. Runtime callable
+  `strpos(...)` dispatch is routed through the string-search result boundary;
+  `substr_count(...)` remains documented as direct-call interpreter support
+  only, with runtime callable dispatch still outside the supported subset.
+  Native logical-boundary baselines now track the same boxed
+  diagnostic-result output path for folded logical truthiness and short-circuit
+  selected operands, while still asserting that unselected array operands are
+  not materialized. Native mutation-boundary baselines now track boxed output
+  for direct variable compound/assignment-expression values, current non-local
+  unset diagnostics, direct-variable native reference binding, and the still
+  unsupported write-through-after-reference-binding boundary. Native
+  object/class-boundary baselines now track non-local assignment preflight for
+  object/static property writes, variable-read preflight for undefined direct
+  array offsets, and the object-instantiation-first emit-IR CLI snapshot.
+  Native runtime-ABI baselines now track direct string-byte value
+  materialization through the boxed diagnostic-result stdout sink, the mixed
+  value-offset/offset-read boundary split, current generated-C callable
+  argument construction, and by-reference closure invocation without claiming
+  direct reference-assignment support. Native scalar-echo baselines now track
+  boxed diagnostic-result stdout for scalar and string echoes, including
+  false/null echo operands that remain PHP-silent at runtime. Native
+  string-arithmetic baselines now track boxed diagnostic-result stdout for
+  folded numeric-string arithmetic results while preserving shared runtime
+  value-result routing for division and modulo. Native type-introspection
+  emit-IR CLI snapshots now track the same boxed diagnostic-result stdout path
+  for scalar type predicates, static metadata predicates, direct
+  `function_exists()` / `is_callable()` folds, and array builtin callable-name
+  lookup outputs. Native unary-boundary baselines now track the current split
+  where direct runtime-backed unary numeric conversion lowers through the
+  native conversion ABI, selected conditional-value logical-not operands still
+  reject at the unary boundary, assignment-held unary expressions still hit
+  the current function-call lowering boundary, and unary emit-IR snapshots use
+  the boxed diagnostic-result stdout path. Null-coalescing baselines now track
+  the current PHP-shaped fatal execution result for external reads and
+  assignments to inaccessible private object properties, instead of expecting
+  a pre-execution Rust diagnostic. Object-model baselines now share the
+  current core class/interface inventory, PHP-shaped fatal execution parsing,
+  typed-property/reference TypeError text, trait/property composition startup
+  diagnostics, and the parser/execution split for newly supported multiple
+  property/constant declarations.
+
+Verified:
+
+- Worker 05 numeric/math focused Rust proof:
+  `CARGO_TARGET_DIR=/tmp/phpc-worker05-target CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test elementary_math_builtins angle_conversion_matches_php_formula_order_for_phpt_edges -- --test-threads=1`
+- Worker 05 numeric/math focused Rust guard:
+  `CARGO_TARGET_DIR=/tmp/phpc-worker05-target CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test elementary_math_builtins -- --test-threads=1`
+- Worker 05 numeric/math focused PHPT proof with
+  `PHPC_BIN=/tmp/phpc-worker05-target/debug/phpc` and lowercase
+  `run-tests.php -p /home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper`
+  passed `3 / 3` rows:
+  `ext/standard/tests/math/deg2rad_variation.phpt`,
+  `ext/standard/tests/math/deg2rad_basiclong_64bit.phpt`, and
+  `ext/standard/tests/math/rad2deg_basiclong_64bit.phpt`.
+- Worker 05 adjacent PHPT regression guard passed `1 / 1` row:
+  `ext/standard/tests/math/rad2deg_variation.phpt`.
+- Supervisor integrated numeric/math focused proof:
+  `CARGO_TARGET_DIR=/tmp/phpc-integrate-focused-target CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test elementary_math_builtins -- --test-threads=1`
+  passed with `5` tests, and lowercase focused PHPT proof with
+  `PHPC_BIN=/tmp/phpc-integrate-focused-target/debug/phpc` passed `4 / 4`
+  rows: `deg2rad_variation`, `deg2rad_basiclong_64bit`,
+  `rad2deg_basiclong_64bit`, and `rad2deg_variation`.
+- Supervisor integrated trim-family focused proof:
+  `CARGO_TARGET_DIR=/tmp/phpc-integrate-focused-target CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test string_trim_builtin -- --test-threads=1`
+  passed with `14` tests, and lowercase focused PHPT proof with
+  `PHPC_BIN=/tmp/phpc-integrate-focused-target/debug/phpc` passed `4 / 4`
+  rows: `trim.phpt`, `trim_error.phpt`, `ltrim_error.phpt`, and
+  `rtrim_error.phpt`.
+- Supervisor integrated `file()` open_basedir follow-on warning proof:
+  `CARGO_TARGET_DIR=/tmp/phpc-integrate-focused-target CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test standard_file_csv_split_builtins file_open_basedir_denial_emits_stream_followup_warning -- --test-threads=1`
+  passed, and lowercase focused PHPT proof with
+  `PHPC_BIN=/tmp/phpc-integrate-focused-target/debug/phpc` passed `2 / 2`
+  rows: `tests/security/open_basedir_file.phpt` and
+  `tests/security/open_basedir_dir.phpt`.
+- Supervisor integrated `empty()` expression proof:
+  `CARGO_TARGET_DIR=/tmp/phpc-integrate-focused-target CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test empty -- --test-threads=1`
+  passed with `5` tests, and lowercase focused PHPT proof with
+  `PHPC_BIN=/tmp/phpc-integrate-focused-target/debug/phpc` passed
+  `Zend/tests/empty_with_expr.phpt`.
+- Focused Rust open_basedir regression:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-openbasedir-supervisor CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test standard_file_metadata_builtins open_basedir_relative_parent_denials_cover_predicates_metadata_and_directories -- --test-threads=1`
+- `cargo fmt --check`
+- `git diff --check -- compiler/src/interpreter.rs compiler/tests/standard_file_metadata_builtins.rs compiler/tests/file_get_contents_builtin.rs compiler/tests/stream_resource_builtin.rs docs/PROGRESS.md docs/ARCHITECTURE.md docs/SUPPORT.md PROGRESS.md`
+- Generated-C source-only native-link checkpoint:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_link native_executable_c_source -- --test-threads=1`
+  passed with `417` tests.
+- Full native-link checkpoint:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_link -- --test-threads=1`
+  passed with `823` tests.
+- Post-format native-link source-shape checkpoint:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_link native_executable_c_source -- --test-threads=1`
+  passed with `417` tests.
+- Native-link checkpoint formatting/whitespace:
+  `cargo fmt --check` passed, and
+  `git diff --check -- compiler/src/codegen.rs compiler/tests/native_link.rs runtime/src/lib.rs docs/PROGRESS.md docs/ARCHITECTURE.md docs/SUPPORT.md PROGRESS.md docs/CHECKPOINT_SUPERVISOR.md`
+  passed.
+- Native logical-boundary refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_logical_boundary -- --test-threads=1`
+  passed with `19` tests.
+- Native mutation-boundary refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_mutation_boundary -- --test-threads=1`
+  passed with `12` tests.
+- Native object/class-boundary refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_object_class_boundary -- --test-threads=1`
+  passed with `57` tests.
+- Native runtime-ABI refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_runtime_abi -- --test-threads=1`
+  passed with `80` tests.
+- Native scalar-echo refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_scalar_echo_boundary -- --test-threads=1`
+  passed with `8` tests.
+- Native string-arithmetic refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_string_arithmetic -- --test-threads=1`
+  passed with `4` tests.
+- Native type-introspection refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_type_introspection_boundary -- --test-threads=1`
+  passed with `18` tests.
+- Native unary-boundary refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_unary_boundary -- --test-threads=1`
+  passed with `32` tests.
+- Null-coalescing baseline refresh:
+  `CARGO_TARGET_DIR=/tmp/phpc-integrate-focused-target CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test null_coalescing -- --test-threads=1`
+  passed with `21` tests.
+- Object-model baseline refresh:
+  `CARGO_TARGET_DIR=/tmp/phpc-object-model-target CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test object_model -- --test-threads=1`
+  passed with `362` tests.
+- Open_basedir relative-escape checkpoint isolation:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-openbasedir-supervisor CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test open_basedir_relative_escape`
+  and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-openbasedir-supervisor CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test open_basedir_relative_escape -- --test-threads=1`
+  both passed with `2` tests after guarding the cwd-mutating `chdir()` /
+  `open_basedir=.` cases against Rust's default parallel test runner.
+- Path builtin baseline refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test path_builtins -- --test-threads=1`
+  passed with `14` tests after refreshing the current `dirname(42)` weak
+  scalar-path coercion result.
+- Shutdown callback exit repair:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test shutdown_function_builtin -- --test-threads=1`
+  passed with `6` tests after allowing registered shutdown callbacks to run
+  after the bounded `exit()` path while preserving the pending exit status.
+- File metadata residual repair:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test standard_file_metadata_residual_builtins -- --test-threads=1`
+  passed with `2` tests after matching PHP's silent `false` result for
+  `is_executable($regular_file . "/")` while retaining executable-file and
+  executable-directory probes.
+- Standard file-metadata open_basedir isolation:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test standard_file_metadata_builtins`
+  passed with `7` tests after guarding the cwd-mutating `chdir()` /
+  `open_basedir=.` metadata tests against Rust's default parallel runner.
+- String predicate baseline refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test str_ends_with_builtin -- --test-threads=1`
+  passed with `6` tests,
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test str_starts_with_builtin -- --test-threads=1`
+  passed with `6` tests, and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test string_contains_builtin -- --test-threads=1`
+  passed with `5` tests after refreshing the PHP-shaped runtime arity fatal
+  assertions and the direct ASM lowering checks for the shared native
+  string-predicate ABI.
+- `CARGO_TARGET_DIR=/dev/shm/phpc-target-openbasedir-supervisor CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test file_get_contents_builtin file_get_contents_enforces_bounded_open_basedir_for_local_paths -- --test-threads=1`
+- `CARGO_TARGET_DIR=/dev/shm/phpc-target-openbasedir-supervisor CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test stream_resource_builtin local_fopen_enforces_bounded_open_basedir_for_local_paths_and_file_urls -- --test-threads=1`
+- `CARGO_TARGET_DIR=/dev/shm/phpc-target-openbasedir-supervisor CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test standard_file_metadata_builtins open_basedir -- --test-threads=1`
+- `CARGO_TARGET_DIR=/dev/shm/phpc-target-openbasedir-supervisor CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test standard_directory_glob_builtins glob_matches_local_patterns_relative_paths_flags_and_open_basedir_filtering -- --test-threads=1`
+- Focused PHPT proof with `PHPC_BIN=/dev/shm/phpc-target-openbasedir-supervisor/debug/phpc` passed the 10-row author packet
+  (`open_basedir_file_exists`, `file_get_contents`, `file_put_contents`,
+  `filesize`, `fopen`, `is_dir`, `is_file`, `is_readable`, `opendir`, and
+  `scandir`), seven guard/adjacent rows (`open_basedir_glob`, `stat`,
+  `filemtime`, `rename`, `unlink`, `is_link`, and `is_writable`), and a
+  nine-row extended guard set (`open_basedir_chdir`, `chmod`,
+  `copy_variation1`, `disk_free_space`, `filectime`, `filegroup`, `fileperms`,
+  `lstat`, and `rmdir`).
+- `bcs3` worker proof before supervisor integration: open_basedir author Rust
+  gates passed for `open_basedir_relative_escape`, file read/open tests,
+  metadata filters, and directory/glob guard coverage; focused PHPT proof
+  passed the 10-row author packet, five guard rows, and adjacent
+  `open_basedir_is_link`/`open_basedir_is_writable` rows.
+- Runtime baseline maintenance:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p php_runtime --lib -- --test-threads=1`
+  passed with `428` tests.
+- Whole-tree fixture maintenance:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test milestone1 -- --test-threads=1`
+  passed with `30` tests;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures`
+  passed with `2419` fixtures; and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures`
+  passed with `2419` fixtures, `1691` system-PHP comparisons, and `728`
+  `phpc-only` skips.
+- Resource-key baseline refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test array_combine array_combine_accepts_float_object_resource_key_value_coercions -- --test-threads=1`
+  passed.
+- Typed-reference unset baseline refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test array_unset unset_array_offsets_preserves_detached_typed_reference_cells -- --test-threads=1`
+  passed.
+- Assignment-expression emit-ir baseline refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test assignment_expression emit_ir -- --test-threads=1`
+  passed.
+- Built-in exception baseline refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test builtin_exception_class -- --test-threads=1`
+  passed.
+- Exception-boundary baseline refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test exception_boundaries -- --test-threads=1`
+  passed.
+- `call_user_func()`/`call_user_func_array()` baseline refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test call_user_func_builtin call_user_func_rejects_forms_outside_current_subset -- --test-threads=1`
+  passed.
+- Compound-assignment baseline refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test compound_assignment -- --test-threads=1`
+  passed.
+- Compound-assignment CLI snapshot refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test compound_assignment_cli -- --test-threads=1`
+  passed.
+- Countable-object baseline refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test countable_type_builtin -- --test-threads=1`
+  passed.
+- Default-parameter class-constant baseline refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test default_parameter_constants -- --test-threads=1`
+  passed.
+- Dynamic-feature baseline refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test dynamic_features -- --test-threads=1`
+  passed.
+- Unsupported dynamic feature fixture refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -q -p phpc -- test tests/fixtures/unsupported_dynamic_features`
+  passed with `13` fixtures.
+- Unsupported dynamic feature CLI snapshot refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test unsupported_dynamic_features_cli -- --test-threads=1`
+  passed.
+- Runtime error fixture refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -q -p phpc -- test tests/fixtures/runtime_errors`
+  passed with `163` fixtures.
+- Runtime error fixture compare-php marker check:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -q -p phpc -- test --compare-php tests/fixtures/runtime_errors`
+  passed with `163` `phpc-only` skips.
+- `file_exists()` focused baseline refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test file_exists_builtin -- --test-threads=1`
+  passed.
+- `filesize()` focused baseline refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test filesize_builtin -- --test-threads=1`
+  passed.
+- `fprintf()`/`vfprintf()` focused baseline refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test fprintf_builtin -- --test-threads=1`
+  passed.
+- `functions_and_scopes` focused baseline refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test functions_and_scopes -- --test-threads=1`
+  passed with `450` tests.
+- `namespace_resolution` focused baseline refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test namespace_resolution -- --test-threads=1`
+  passed with `35` tests.
+- Native arithmetic boundary refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_arithmetic_boundary -- --test-threads=1`
+  passed with `69` tests.
+- Native assembly CLI refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli -- --test-threads=1`
+  passed with `242` tests.
+- Native bitwise boundary refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_bitwise_boundary -- --test-threads=1`
+  passed with `54` tests.
+- Native cast boundary refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_cast_boundary -- --test-threads=1`
+  passed with `6` tests.
+- Native runtime ABI cast-boundary refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_runtime_abi generated_ir_blocks_scalar_cast_builtins_at_shared_value_cast_boundary -- --test-threads=1`
+  passed.
+- Native comparison boundary refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_comparison_boundary -- --test-threads=1`
+  passed with `88` tests.
+- Native generated-C dynamic string comparison refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_comparison_dynamic_string_operands -- --test-threads=1`
+  passed with `4` tests.
+- Native concat boundary refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_concat_boundary -- --test-threads=1`
+  passed with `16` tests.
+- Native conditional boundary refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary -- --test-threads=1`
+  passed with `83` tests.
+- Native `empty()` boundary refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_empty_boundary -- --test-threads=1`
+  passed with `4` tests.
+- Native function-call boundary refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_function_call_boundary -- --test-threads=1`
+  passed with `72` tests.
+- Native global-constant boundary snapshot refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_global_constant_boundary -- --test-threads=1`
+  passed with `22` tests.
+- Native `isset()` boundary refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_isset_boundary -- --test-threads=1`
+  passed with `4` tests.
+- Runtime warning/fatal baseline preflight:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test modulo_operator --test modulo_operator_cli --test native_variable_read_boundary --test runtime_errors --test shift_operators -- --test-threads=1`
+  passed.
+- `implode()` focused baseline refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test implode_builtin -- --test-threads=1`
+  passed.
+- `ini_builtins` parallel-runner env isolation:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test ini_builtins`
+  passed.
+- Local metadata predicate arity refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test is_dir_builtin --test is_file_builtin --test is_readable_builtin --test is_writable_builtin --test is_link_builtin`
+  passed.
+- List-assignment native-boundary refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test list_assignment -- --test-threads=1`
+  passed.
+- Magic constant CLI and fixture refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test magic_constants_cli -- --test-threads=1`
+  passed, and `/dev/shm/phpc-target-checkpoint-openbasedir/debug/phpc test`
+  plus `--compare-php` passed for `tests/fixtures/milestone78` and
+  `tests/fixtures/milestone79`.
+- Fatal sidecar preflight:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -q -p phpc -- test tests/fixtures/milestone159`
+  passed with `3` fixtures, and
+  `/dev/shm/phpc-target-checkpoint-openbasedir/debug/phpc test tests/fixtures/milestone160`
+  plus
+  `/dev/shm/phpc-target-checkpoint-openbasedir/debug/phpc test --compare-php tests/fixtures/milestone160`
+  passed with `2` fixtures, and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -q -p phpc -- test tests/fixtures/milestone162`
+  passed with `1` fixture.
+
+Review notes:
+
+- Held the local tokenizer lexical-tail currentization after `bcs3` review found
+  object-id lifetime risk plus numeric, `TOKEN_PARSE`, and cast-deprecation
+  counterexamples. No tokenizer behavior is claimed by this entry.
+
 ## 2026-05-27
 
 Implemented:
@@ -20712,11 +21306,11 @@ Implemented:
 - Added Milestone 1138, a dedicated native cast rejection for documented
   interpreter cast behavior. `phpc compile --emit-ir` and `--emit-asm` now
   reject `(string)`, `(int)/(integer)`, `(bool)/(boolean)`,
-  `(float)/(double)`, and `(array)` casts with a diagnostic naming PHP scalar
-  conversion, array materialization, warning/recovery behavior,
+  `(float)/(double)`, `(array)`, and `(object)` casts with a diagnostic naming
+  PHP scalar conversion, array/object materialization, warning/recovery behavior,
   object/resource handling, references/copy-on-write, and exact native
   diagnostics instead of falling through to the broader unary boundary. This
-  does not implement native scalar conversion, array materialization,
+  does not implement native scalar conversion, array/object materialization,
   warning/recovery behavior, object/resource cast handling, references,
   copy-on-write, or exact PHP diagnostics. Verification so far: `cargo test
   -p phpc --test native_cast_boundary -- --test-threads=1`, `cargo test -p

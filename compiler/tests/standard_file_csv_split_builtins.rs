@@ -74,6 +74,55 @@ var_dump(file($root . "/missing.txt"));
 }
 
 #[test]
+fn file_open_basedir_denial_emits_stream_followup_warning() {
+    let fixture = TempFsFixture::new("file-open-basedir");
+    let allowed = fixture.root.join("allowed");
+    let denied = fixture.root.join("denied");
+    fs::create_dir_all(&allowed).expect("allowed directory is created");
+    fs::create_dir_all(&denied).expect("denied directory is created");
+    let allowed_file = allowed.join("payload.txt");
+    let denied_file = denied.join("secret.txt");
+    fs::write(&allowed_file, "allowed\n").expect("allowed payload is written");
+    fs::write(&denied_file, "denied\n").expect("denied payload is written");
+
+    let source = format!(
+        r#"<?php
+function capture_file_open_basedir_warning($errno, $errstr) {{
+    if (str_contains($errstr, "open_basedir restriction in effect")) {{
+        echo "|warning:basedir";
+        return true;
+    }}
+    if (str_contains($errstr, "Failed to open stream")) {{
+        echo "|warning:stream";
+        return true;
+    }}
+    echo "|warning:other";
+    return true;
+}}
+
+ini_set("open_basedir", {allowed_dir});
+set_error_handler("capture_file_open_basedir_warning", E_WARNING);
+$lines = file({allowed_file}, FILE_IGNORE_NEW_LINES);
+echo implode(",", $lines);
+$blocked = file({denied_file});
+echo $blocked === false ? "|blocked" : "|read";
+"#,
+        allowed_dir = php_string(&allowed),
+        allowed_file = php_string(&allowed_file),
+        denied_file = php_string(&denied_file),
+    );
+
+    let execution = run_source(&source).unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "allowed|warning:basedir|warning:stream|blocked"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn fputcsv_writes_quoted_records_with_named_options() {
     let fixture = TempFsFixture::new("fputcsv");
     let root = php_string(&fixture.root);
