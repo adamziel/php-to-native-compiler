@@ -4,6 +4,19 @@
 
 Implemented:
 
+- Added a compact `parse_url()` relative-reference slice for query-only and
+  fragment-only inputs. `parse_url("?q")`, `parse_url("#f")`, empty query or
+  fragment forms, and component extraction no longer synthesize an empty
+  `path` member when PHP reports no path, while the empty string still keeps
+  the existing empty-path result. Focused supervisor verification passed `7 /
+  7` in `parse_url_builtin`, the Milestone 2306 `phpc run` fixture, `cargo
+  build -p phpc --bin phpc`, and selected PHPT proof `2 / 2` for
+  `ext/standard/tests/url/parse_url_basic_001.phpt` and
+  `ext/standard/tests/url/parse_url_basic_007.phpt`. Unsupported edges remain
+  full RFC3986/WHATWG parity, IDNA/Unicode host normalization, exact
+  malformed-authority diagnostics outside covered rows, and native URL
+  lowering.
+
 - Added a bounded standard-filesystem PHPT slice for local stat-cache
   invalidation and `tempnam()` fallback diagnostics. Local-file `fopen()`
   create/truncate paths, `fwrite()`, and `ftruncate()` now clear the

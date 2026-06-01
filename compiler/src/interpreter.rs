@@ -125124,7 +125124,8 @@ fn parse_php_url_parts(url: &str) -> Option<ParsedUrlParts> {
     }
 
     Some(ParsedUrlParts {
-        path: Some(before_query.to_string()),
+        path: (!before_query.is_empty() || !had_query_or_fragment)
+            .then(|| before_query.to_string()),
         query,
         fragment,
         ..ParsedUrlParts::default()

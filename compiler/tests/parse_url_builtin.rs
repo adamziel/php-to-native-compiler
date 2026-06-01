@@ -42,6 +42,38 @@ echo parse_url("www.php.net:80/index.php?x=1#frag", PHP_URL_FRAGMENT), "\n";
 }
 
 #[test]
+fn parse_url_query_and_fragment_only_inputs_do_not_materialize_empty_path() {
+    let execution = run_source(
+        r##"<?php
+foreach (["?", "#", "?q", "#f", "?#", "?#f", "?q#f"] as $url) {
+    $parts = parse_url($url);
+    echo $url, "|";
+    echo array_key_exists("path", $parts) ? "path" : "no-path";
+    echo "|", parse_url($url, PHP_URL_PATH) === null ? "null" : "path";
+    echo "|", parse_url($url, PHP_URL_QUERY) === null ? "null" : parse_url($url, PHP_URL_QUERY);
+    echo "|", parse_url($url, PHP_URL_FRAGMENT) === null ? "null" : parse_url($url, PHP_URL_FRAGMENT);
+    echo "\n";
+}
+"##,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "?|no-path|null||null\n",
+            "#|no-path|null|null|\n",
+            "?q|no-path|null|q|null\n",
+            "#f|no-path|null|null|f\n",
+            "?#|no-path|null||\n",
+            "?#f|no-path|null||f\n",
+            "?q#f|no-path|null|q|f\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn raw_url_encoding_matches_rfc3986_percent_boundaries() {
     let execution = run_source(
         r#"<?php

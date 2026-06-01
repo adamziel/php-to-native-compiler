@@ -2745,6 +2745,8 @@
 - `parse_url()` supports a bounded PHP-shaped URL decomposition slice for
   string URLs, including the `PHP_URL_*` component constants, full ordered
   result arrays, selected component extraction, empty query/fragment strings,
+  query-only and fragment-only relative references without synthetic empty
+  path components,
   user/password authority parts, host/port parsing with range checks,
   relative `//host` URLs, common `file://` empty-authority paths, and PHP-style
   `false` for the covered malformed host/port cases. `PHP_URL_*` constants are
