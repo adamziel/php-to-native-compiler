@@ -12821,6 +12821,7 @@ impl Interpreter {
                 Ok(Value::Null)
             }
             "asort" | "ksort" | "natsort" | "natcasesort" => {
+                self.array_object_reject_disabled_sort_method(method_name, span)?;
                 let operation = match method_name.to_ascii_lowercase().as_str() {
                     "asort" => PhpArraySortOperation::Asort,
                     "ksort" => PhpArraySortOperation::Ksort,
@@ -12876,6 +12877,7 @@ impl Interpreter {
                 Ok(Value::Bool(true))
             }
             "uasort" | "uksort" => {
+                self.array_object_reject_disabled_sort_method(method_name, span)?;
                 if args.len() != 1 {
                     return Err(runtime_error(
                         span,
@@ -12933,6 +12935,35 @@ impl Interpreter {
                 RuntimeError::undefined_function(format!("{class_name}::{method_name}()")),
             )),
         }
+    }
+
+    fn array_object_reject_disabled_sort_method(
+        &self,
+        method_name: &str,
+        span: Span,
+    ) -> CompileResult<()> {
+        if !self.function_disabled_by_ini(method_name) {
+            return Ok(());
+        }
+
+        let method = method_name.to_ascii_lowercase();
+        Err(Diagnostic::new(
+            Phase::Runtime,
+            span.line,
+            span.column,
+            format!("Cannot call method {method} when function {method} is disabled"),
+        ))
+    }
+
+    fn function_disabled_by_ini(&self, function: &str) -> bool {
+        let normalized_function = function.to_ascii_lowercase();
+        startup_ini_value("disable_functions").is_some_and(|value| {
+            value
+                .split([',', ' ', '\t', '\n', '\r'])
+                .map(str::trim)
+                .filter(|entry| !entry.is_empty())
+                .any(|entry| entry.eq_ignore_ascii_case(&normalized_function))
+        })
     }
 
     fn by_reference_foreach_variable_root(
@@ -47641,9 +47672,17 @@ impl Interpreter {
                 .iter()
                 .map(|arg| self.evaluate(arg, caller_scope))
                 .collect::<CompileResult<Vec<_>>>()?;
-            return self
-                .call_array_object_method_with_values(object, method_name, values, span)
-                .map(|value| (value, None));
+            let callable = format!("{}->{method_name}", object.class_name());
+            let result = self.call_array_object_method_with_values(
+                object,
+                method_name,
+                values.clone(),
+                span,
+            );
+            if let Err(error) = &result {
+                self.record_pending_uncaught_internal_call_frame(callable, span, &values, error);
+            }
+            return result.map(|value| (value, None));
         }
 
         if self.resolved_method_is_core_spl_object_storage(class_id) {
@@ -102544,6 +102583,13 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
         if error
             .message
             .starts_with("Cannot instantiate abstract class ")
+        {
+            return Some(("Error", error.message.clone()));
+        }
+
+        if error.message.starts_with("Cannot call method ")
+            && error.message.contains(" when function ")
+            && error.message.ends_with(" is disabled")
         {
             return Some(("Error", error.message.clone()));
         }

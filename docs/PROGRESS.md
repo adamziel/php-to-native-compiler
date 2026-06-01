@@ -43265,11 +43265,10 @@ Next:
   the ArrayObject arity path. Focused PHPT proof covered these php-src rows:
   `arrayObject_uasort_basic1.phpt`, `arrayObject_uasort_error1.phpt`,
   `arrayObject_uksort_basic1.phpt`, `arrayObject_uksort_error1.phpt`, and
-  the closure/dump callback row `ArrayObject_dump_during_sort.phpt`; the full
-  ArrayObject focused cluster now reports `39 / 108` selected tests passing
-  with the remaining failures still in the named unsupported areas below.
-- `disable_functions` parity for the method/procedural sorter relationship,
-  nested ArrayObject-backed comparator sorting, broad SPL wrapper iterators,
+  the closure/dump callback row `ArrayObject_dump_during_sort.phpt`; the
+  user-comparator-only pass lifted the full ArrayObject focused cluster to
+  `39 / 108` selected tests before the adjacent disabled-functions slice below.
+- Nested ArrayObject-backed comparator sorting, broad SPL wrapper iterators,
   by-reference SPL iteration, serialization parity, full COW/reference
   identity, and native lowering remain unsupported.
 - Focused checks passed:
@@ -43281,3 +43280,28 @@ Next:
   focused PHPT `4 / 4` for the direct uasort/uksort rows with lowercase
   `run-tests.php -p` through `phpc-phpt-wrapper`; and the broader
   `ext/spl/tests/ArrayObject/*.phpt` focused cluster at `39 / 108`.
+
+Next:
+
+- Added bounded SPL `ArrayObject`/`ArrayIterator` startup
+  `disable_functions` parity for the existing sorter methods
+  `asort()`, `ksort()`, `natsort()`, `natcasesort()`, `uasort()`, and
+  `uksort()` through `phpc run`. When the corresponding procedural function is
+  disabled at startup, the method now raises the PHP-shaped catchable `Error`
+  message and uncaught internal-call stack frame expected by the SPL PHPT rows.
+- Focused PHPT proof covered these php-src rows:
+  `asort_disabled.phpt`, `ksort_disabled.phpt`, `natsort_disabled.phpt`,
+  `natcasesort_disabled.phpt`, `uasort_disabled.phpt`, and
+  `uksort_disabled.phpt`. With the adjacent user-comparator slice, the full
+  `ext/spl/tests/ArrayObject/*.phpt` focused cluster now reports `45 / 108`
+  selected tests passing.
+- Runtime `ini_set()` parity for startup-only `disable_functions`, nested
+  ArrayObject-backed comparator sorting, broad SPL wrapper iterators,
+  by-reference SPL iteration, serialization parity, full COW/reference
+  identity, and native lowering remain unsupported.
+- Focused checks passed:
+  `cargo test -q -p phpc --test object_model array_object_sort_methods_honor_disable_functions_ini -- --test-threads=1`;
+  direct `PHPC_PHPT_INI_FLAGS='-d disable_functions=asort,ksort,natsort,natcasesort,uasort,uksort' cargo run -q -p phpc -- run /tmp/bcs2-arrayobject-disable.php`;
+  and focused PHPT `6 / 6` for the disabled sorter rows through
+  `phpc-phpt-wrapper`; the broader `ext/spl/tests/ArrayObject/*.phpt`
+  focused cluster reported `45 / 108`.

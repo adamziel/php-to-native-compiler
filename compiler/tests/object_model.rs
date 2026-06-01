@@ -1,3 +1,6 @@
+use std::env;
+use std::sync::{Mutex, MutexGuard, OnceLock};
+
 use php_compiler::error::{Diagnostic, Phase};
 use php_compiler::{class_metadata_source, run_source, run_source_with_source_file};
 use php_runtime::Visibility;
@@ -16,6 +19,21 @@ fn runtime_error(source: &str) -> Diagnostic {
     let error = run_source(source).unwrap_err();
     assert_eq!(error.phase, Phase::Runtime);
     error
+}
+
+fn env_lock() -> MutexGuard<'static, ()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+        .lock()
+        .expect("environment lock is not poisoned")
+}
+
+fn restore_env_var(name: &str, previous: Option<std::ffi::OsString>) {
+    if let Some(value) = previous {
+        env::set_var(name, value);
+    } else {
+        env::remove_var(name);
+    }
 }
 
 fn assert_php_startup_fatal(source: &str, source_file: &str, line: usize, message: &str) {
@@ -15021,6 +15039,70 @@ try {
             "obj-key:a:3\n",
             "ArrayObject::uasort() expects exactly 1 argument, 0 given\n",
             "ArrayIterator::uksort() expects exactly 1 argument, 2 given\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn array_object_sort_methods_honor_disable_functions_ini() {
+    let _guard = env_lock();
+    let previous = env::var_os("PHPC_PHPT_INI_FLAGS");
+    env::set_var(
+        "PHPC_PHPT_INI_FLAGS",
+        "-d disable_functions=asort,ksort,natsort,natcasesort,uasort,uksort",
+    );
+
+    let source = r#"<?php
+function cmp_values($left, $right) {
+    return $left <=> $right;
+}
+
+$ao = new ArrayObject(array('b' => 2, 'a' => 1));
+try {
+    $ao->asort();
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    $ao->ksort();
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    $ao->natsort();
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    $ao->natcasesort();
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    $ao->uasort('cmp_values');
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    $ao->uksort('cmp_values');
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+"#;
+
+    let execution = run_source(source).unwrap();
+    restore_env_var("PHPC_PHPT_INI_FLAGS", previous);
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "Cannot call method asort when function asort is disabled\n",
+            "Cannot call method ksort when function ksort is disabled\n",
+            "Cannot call method natsort when function natsort is disabled\n",
+            "Cannot call method natcasesort when function natcasesort is disabled\n",
+            "Cannot call method uasort when function uasort is disabled\n",
+            "Cannot call method uksort when function uksort is disabled\n",
         )
     );
     assert_eq!(execution.stderr, "");
