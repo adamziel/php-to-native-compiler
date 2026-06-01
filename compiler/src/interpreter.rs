@@ -77138,6 +77138,38 @@ impl Interpreter {
         Ok(Some(path))
     }
 
+    fn filesystem_silent_scalar_probe_path_argument(
+        &mut self,
+        function: &str,
+        label: &str,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<Option<String>> {
+        let path = match value {
+            Value::String(path) => path.clone(),
+            Value::BinaryString(bytes) => {
+                tree_walk_binary_string_utf8(bytes, "filesystem path", span)?.to_string()
+            }
+            Value::Null | Value::Bool(_) | Value::Int(_) | Value::Float(_) => value.echo_string(),
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        format!("{function}()"),
+                        format!(
+                            "{label} argument must be string in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+        };
+        if path.is_empty() {
+            return Ok(None);
+        }
+        Ok(Some(path))
+    }
+
     fn emit_filesystem_metadata_failure_warning(
         &mut self,
         function: &str,
@@ -85881,31 +85913,26 @@ impl Interpreter {
             "linkinfo" => self.call_linkinfo(&args, span),
             "file_exists" => {
                 expect_arity(name, &args, 1, span)?;
-                match &args[0] {
-                    Value::String(path) => {
-                        if path.contains("://") {
-                            return Err(runtime_error(
-                                span,
-                                RuntimeError::unsupported_call(
-                                    "file_exists()",
-                                    "stream wrappers are not supported in the current subset",
-                                ),
-                            ));
-                        }
-                        let metadata_path = local_filesystem_metadata_path(path);
-                        Ok(Value::Bool(metadata_path.try_exists().unwrap_or(false)))
-                    }
-                    other => Err(runtime_error(
+                let Some(path) = self.filesystem_silent_scalar_probe_path_argument(
+                    "file_exists",
+                    "path",
+                    &args[0],
+                    span,
+                )?
+                else {
+                    return Ok(Value::Bool(false));
+                };
+                if path.contains("://") {
+                    return Err(runtime_error(
                         span,
                         RuntimeError::unsupported_call(
                             "file_exists()",
-                            format!(
-                                "path argument must be string in the current subset, got {}",
-                                other.type_name()
-                            ),
+                            "stream wrappers are not supported in the current subset",
                         ),
-                    )),
+                    ));
                 }
+                let metadata_path = local_filesystem_metadata_path(&path);
+                Ok(Value::Bool(metadata_path.try_exists().unwrap_or(false)))
             }
             "file_get_contents" => {
                 if args.is_empty() || args.len() > 5 {
@@ -86344,35 +86371,30 @@ impl Interpreter {
             }
             "is_dir" => {
                 expect_arity(name, &args, 1, span)?;
-                match &args[0] {
-                    Value::String(path) => {
-                        if path.contains("://") {
-                            return Err(runtime_error(
-                                span,
-                                RuntimeError::unsupported_call(
-                                    "is_dir()",
-                                    "stream wrappers are not supported in the current subset",
-                                ),
-                            ));
-                        }
-                        let metadata_path = local_filesystem_metadata_path(path);
-                        Ok(Value::Bool(
-                            fs::metadata(&metadata_path)
-                                .map(|metadata| metadata.is_dir())
-                                .unwrap_or(false),
-                        ))
-                    }
-                    other => Err(runtime_error(
+                let Some(path) = self.filesystem_silent_scalar_probe_path_argument(
+                    "is_dir",
+                    "path",
+                    &args[0],
+                    span,
+                )?
+                else {
+                    return Ok(Value::Bool(false));
+                };
+                if path.contains("://") {
+                    return Err(runtime_error(
                         span,
                         RuntimeError::unsupported_call(
                             "is_dir()",
-                            format!(
-                                "path argument must be string in the current subset, got {}",
-                                other.type_name()
-                            ),
+                            "stream wrappers are not supported in the current subset",
                         ),
-                    )),
+                    ));
                 }
+                let metadata_path = local_filesystem_metadata_path(&path);
+                Ok(Value::Bool(
+                    fs::metadata(&metadata_path)
+                        .map(|metadata| metadata.is_dir())
+                        .unwrap_or(false),
+                ))
             }
             "is_file" => {
                 expect_arity(name, &args, 1, span)?;

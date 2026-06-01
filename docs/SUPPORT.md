@@ -4949,16 +4949,18 @@
   source highlighters or full PHP whitespace preservation.
   `set_time_limit($seconds)` accepts one int-compatible argument and returns
   `true` without changing host execution limits.
-  `file_exists($path)` accepts one string local path, rejects stream-wrapper
-  paths, and returns `true` or `false` from the host filesystem metadata lookup
-  for files and directories in the current interpreter run. Relative paths are
-  checked against the process path first and then against the repository root
-  for committed source-map fixture paths. It is a bounded WordPress bootstrap
-  compatibility slice, not full PHP filesystem support: include-path lookup,
-  stream wrappers, canonicalization/symlink policy, permissions and warning
-  fidelity, open_basedir, stat-cache behavior, TOCTOU semantics, host
-  filesystem coupling, partial-output behavior, and native lowering remain
-  unsupported.
+  `file_exists($path)` accepts one string, binary-string, scalar, or null local
+  path, rejects stream-wrapper paths, and returns `true` or `false` from the
+  host filesystem metadata lookup for files and directories in the current
+  interpreter run. Empty scalar-coerced paths and local paths such as `" "` or
+  `"|"` return silent `false` in the covered local false-case subset. Relative
+  paths are checked against the process path first and then against the
+  repository root for committed source-map fixture paths. It is a bounded
+  WordPress bootstrap compatibility slice, not full PHP filesystem support:
+  include-path lookup, stream wrappers, canonicalization/symlink policy,
+  permissions and warning fidelity, open_basedir, stat-cache behavior, TOCTOU
+  semantics, host filesystem coupling, array/object path coercions,
+  partial-output behavior, and native lowering remain unsupported.
   `file_get_contents($path, $use_include_path = false, $context = null,
   $offset = 0, $max_length = null)` accepts one required string path, one
   optional bool include-path flag, one optional bounded stream-context
@@ -5227,13 +5229,14 @@
   dedicated current-directory codegen boundary before argument lowering or
   backend output, while native function-table introspection can still see the
   known builtin name.
-  `is_dir($path)` accepts one string local path, rejects stream-wrapper paths,
-  returns `true` for host directories, and returns `false` for missing paths or
-  non-directory paths. It shares the same current relative path policy as
-  `file_exists`. Include-path lookup, stream wrappers,
+  `is_dir($path)` accepts one string, binary-string, scalar, or null local path,
+  rejects stream-wrapper paths, returns `true` for host directories, and returns
+  `false` for missing paths, non-directory paths, empty scalar-coerced paths,
+  and covered scalar false-case paths. It shares the same current relative path
+  policy as `file_exists`. Include-path lookup, stream wrappers,
   canonicalization/symlink policy, portable permissions, warning behavior,
-  non-string coercions, stat-cache behavior, open_basedir, partial-output
-  behavior, and native lowering remain unsupported.
+  array/object path coercions, stat-cache behavior, open_basedir,
+  partial-output behavior, and native lowering remain unsupported.
   `is_file($path)` accepts one string local path, rejects stream-wrapper paths,
   returns `true` for host regular files, and returns `false` for missing paths
   or non-file paths such as directories. It shares the same current relative
@@ -11252,10 +11255,11 @@
   portable permissions, stat-cache behavior, TOCTOU semantics, broad scalar
   coercions, exact diagnostics, and native lowering beyond the dedicated
   direct-call rejection plus function-table introspection
-- `is_dir()` behavior beyond the current one-string local path metadata slice:
+- `is_dir()` behavior beyond the current scalar/null local path metadata slice:
   include-path lookup, stream wrappers, symlink/canonicalization policy,
-  permission/open_basedir behavior, non-string coercions, stat-cache behavior,
-  exact diagnostics, and native lowering beyond function-table introspection
+  permission/open_basedir behavior, array/object path coercions,
+  stat-cache behavior, exact diagnostics, and native lowering beyond
+  function-table introspection
 - `getcwd()` behavior beyond the current no-argument UTF-8 process-current-dir
   slice: `chdir()` state mutation, failure returning `false`, non-UTF-8 host
   paths, SAPI-specific working directory policy, include-path interaction,

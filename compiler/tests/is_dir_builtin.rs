@@ -59,29 +59,17 @@ echo $call(__DIR__) ? "dir" : "missing";
 
 #[test]
 fn is_dir_rejects_forms_outside_current_subset() {
-    let arity = runtime_error(
+    let arity = run_source_with_source_file(
         r#"<?php
 echo is_dir();
 "#,
-    );
-    assert_eq!(arity.line, 2);
-    assert_eq!(arity.column, 6);
-    assert_eq!(
-        arity.message,
-        "arity mismatch for is_dir(): expected 1 argument(s), got 0"
-    );
-
-    let type_error = runtime_error(
-        r#"<?php
-echo is_dir(42);
-"#,
-    );
-    assert_eq!(type_error.line, 2);
-    assert_eq!(type_error.column, 6);
-    assert_eq!(
-        type_error.message,
-        "unsupported call is_dir(): path argument must be string in the current subset, got int"
-    );
+        fixture_source_file(),
+    )
+    .unwrap();
+    assert!(arity
+        .stdout
+        .contains("Too few arguments to function is_dir(), 0 passed"));
+    assert_eq!(arity.exit_code, 255);
 
     let stream = runtime_error(
         r#"<?php
@@ -94,6 +82,26 @@ echo is_dir("php://memory");
         stream.message,
         "unsupported call is_dir(): stream wrappers are not supported in the current subset"
     );
+}
+
+#[test]
+fn is_dir_scalar_false_cases_are_silent_false() {
+    let execution = run_source_with_source_file(
+        r#"<?php
+foreach ([-2.34555, true, false, " ", 0, 1234] as $path) {
+    var_dump(is_dir($path));
+}
+"#,
+        fixture_source_file(),
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "bool(false)\nbool(false)\nbool(false)\nbool(false)\nbool(false)\nbool(false)\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

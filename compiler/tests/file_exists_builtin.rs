@@ -75,29 +75,17 @@ echo file_exists(__DIR__) ? "dir" : "missing";
 
 #[test]
 fn file_exists_rejects_forms_outside_current_subset() {
-    let arity = runtime_error(
+    let arity = run_source_with_source_file(
         r#"<?php
 echo file_exists();
 "#,
-    );
-    assert_eq!(arity.line, 2);
-    assert_eq!(arity.column, 6);
-    assert_eq!(
-        arity.message,
-        "arity mismatch for file_exists(): expected 1 argument(s), got 0"
-    );
-
-    let type_error = runtime_error(
-        r#"<?php
-echo file_exists(42);
-"#,
-    );
-    assert_eq!(type_error.line, 2);
-    assert_eq!(type_error.column, 6);
-    assert_eq!(
-        type_error.message,
-        "unsupported call file_exists(): path argument must be string in the current subset, got int"
-    );
+        fixture_source_file(),
+    )
+    .unwrap();
+    assert!(arity
+        .stdout
+        .contains("Too few arguments to function file_exists(), 0 passed"));
+    assert_eq!(arity.exit_code, 255);
 
     let stream = runtime_error(
         r#"<?php
@@ -110,6 +98,28 @@ echo file_exists("php://memory");
         stream.message,
         "unsupported call file_exists(): stream wrappers are not supported in the current subset"
     );
+}
+
+#[test]
+fn file_exists_scalar_false_cases_are_silent_false() {
+    let execution = run_source_with_source_file(
+        r#"<?php
+var_dump(file_exists(false));
+var_dump(file_exists(""));
+var_dump(file_exists(" "));
+var_dump(file_exists("|"));
+var_dump(file_exists(42));
+"#,
+        fixture_source_file(),
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "bool(false)\nbool(false)\nbool(false)\nbool(false)\nbool(false)\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

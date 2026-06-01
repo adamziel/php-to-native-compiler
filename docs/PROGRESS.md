@@ -1,5 +1,22 @@
 # Progress Log
 
+## 2026-06-01
+
+Implemented:
+
+- Added a bounded local filesystem probe false-case slice for
+  `file_exists()` and `is_dir()`. The interpreter now accepts string,
+  binary-string, scalar, and null path operands for these two probes, silently
+  returning `false` for empty scalar-coerced paths and missing local names such
+  as `" "` and `"|"`, while keeping stream-wrapper rejection and array/object
+  operands outside the supported subset. Focused Rust tests cover
+  `file_exists(false/" "/42)` and `is_dir(float/bool/int)` false cases; selected
+  PHPT proof covers `ext/standard/tests/file/file_exists_variation1.phpt` and
+  `ext/standard/tests/file/is_dir_variation3.phpt`. Include-path lookup,
+  `open_basedir` policy, stat-cache semantics, symlink/canonicalization
+  details, array/object path coercions, and native filesystem lowering remain
+  unsupported.
+
 ## 2026-05-27
 
 Implemented:

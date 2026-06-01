@@ -3209,14 +3209,16 @@ against the current deterministic bounded compatibility registry: `json` and
 `hash` fold to true, while other names fold to false. Native code does not
 query host PHP modules, `php.ini`, SAPI state, or dynamic extension loading.
 `file_exists()` is currently an interpreter-only local filesystem metadata
-builtin for the WordPress bootstrap drop-in check. It accepts one string local
-path, rejects stream-wrapper paths, and returns a boolean for host filesystem
-metadata existence. Relative paths check the process path first and then the
-repository root for committed source-map fixture paths; this does not establish
-include-path lookup, canonicalization, stream support, stat-cache semantics,
-open_basedir, exact warnings, or native filesystem lowering. Native
-function-table introspection recognizes the name, while direct native calls
-reject under the function-call boundary.
+builtin for the WordPress bootstrap drop-in check. It accepts one string,
+binary-string, scalar, or null local path, rejects stream-wrapper paths, and
+returns a boolean for host filesystem metadata existence; empty scalar-coerced
+paths and covered odd local names such as `" "` or `"|"` return silent `false`.
+Relative paths check the process path first and then the repository root for
+committed source-map fixture paths; this does not establish include-path
+lookup, canonicalization, stream support, stat-cache semantics, open_basedir,
+array/object path coercions, exact warnings, or native filesystem lowering.
+Native function-table introspection recognizes the name, while direct native
+calls reject under the function-call boundary.
 `file_get_contents()` is also interpreter-only in the current runtime. It maps
 `php://input` to the same explicit `PHPC_REQUEST_BODY` request seed used by
 the request-bag scaffolding and otherwise keeps a bounded local UTF-8 text file
