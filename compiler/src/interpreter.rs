@@ -103456,6 +103456,8 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
         | ("extract()", "Argument #2 ($flags) must be a valid extract type")
         | ("extract()", "Argument #3 ($prefix) is required when using this extract type")
         | ("extract()", "Argument #3 ($prefix) must be a valid identifier")
+        | ("json_decode()", "Argument #3 ($depth) must be greater than 0")
+        | ("json_decode()", "Argument #3 ($depth) must be less than 2147483647")
         | ("json_validate()", "Argument #2 ($depth) must be greater than 0")
         | ("json_validate()", "Argument #2 ($depth) must be less than 2147483647")
         | (
@@ -124133,6 +124135,9 @@ impl<'a> JsonParser<'a> {
         if depth > self.max_depth {
             return Err(self.error(PHP_JSON_ERROR_DEPTH, "Maximum stack depth exceeded"));
         }
+        if depth >= self.max_depth && matches!(self.peek(), Some('[' | '{')) {
+            return Err(self.error(PHP_JSON_ERROR_DEPTH, "Maximum stack depth exceeded"));
+        }
         match self.peek() {
             Some('n') => self.parse_literal("null", JsonParsedValue::Null),
             Some('t') => self.parse_literal("true", JsonParsedValue::Bool(true)),
@@ -124176,6 +124181,9 @@ impl<'a> JsonParser<'a> {
             if self.consume_if(']') {
                 break;
             }
+            if self.is_eof() {
+                return Err(self.error(PHP_JSON_ERROR_SYNTAX, "Syntax error"));
+            }
             self.expect_char(',')?;
         }
         Ok(JsonParsedValue::Array(values))
@@ -124202,6 +124210,9 @@ impl<'a> JsonParser<'a> {
             self.skip_whitespace();
             if self.consume_if('}') {
                 break;
+            }
+            if self.is_eof() {
+                return Err(self.error(PHP_JSON_ERROR_SYNTAX, "Syntax error"));
             }
             self.expect_char(',')?;
         }
@@ -124362,7 +124373,8 @@ impl<'a> JsonParser<'a> {
     }
 
     fn expect_char(&mut self, expected: char) -> Result<(), JsonDecodeError> {
-        if self.next() == Some(expected) {
+        if self.peek() == Some(expected) {
+            self.position += 1;
             Ok(())
         } else {
             let code = if expected == ',' || expected == ':' {
@@ -124461,6 +124473,33 @@ fn json_invalid_utf8_string_token_position(bytes: &[u8], invalid_at: usize) -> u
                 in_string = false;
             }
         } else if byte == b'"' {
+            in_string = true;
+            string_start = index;
+        }
+    }
+
+    if in_string {
+        string_start
+    } else {
+        invalid_at
+    }
+}
+
+fn json_control_character_token_position(input: &str, invalid_at: usize) -> usize {
+    let mut in_string = false;
+    let mut escaped = false;
+    let mut string_start = invalid_at;
+
+    for (index, ch) in input.chars().take(invalid_at).enumerate() {
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == '"' {
+                in_string = false;
+            }
+        } else if ch == '"' {
             in_string = true;
             string_start = index;
         }
@@ -124890,13 +124929,18 @@ impl Interpreter {
             }
         };
 
-        if input
+        if let Some(position) = input
             .chars()
-            .any(|ch| ch.is_control() && !matches!(ch, '\t' | '\n' | '\r'))
+            .position(|ch| ch.is_control() && !matches!(ch, '\t' | '\n' | '\r'))
         {
+            let token_position = json_control_character_token_position(&input, position);
             self.set_json_last_error(
                 PHP_JSON_ERROR_CTRL_CHAR,
-                json_error_base_message(PHP_JSON_ERROR_CTRL_CHAR).to_string(),
+                json_error_message_at(
+                    PHP_JSON_ERROR_CTRL_CHAR,
+                    json_error_base_message(PHP_JSON_ERROR_CTRL_CHAR),
+                    token_position,
+                ),
             );
             return Ok(Value::Null);
         }

@@ -1,5 +1,25 @@
 # Progress Log
 
+## 2026-06-01
+
+Implemented:
+
+- Tightened the bounded interpreter JSON decoder error surface for the compact
+  ext/json slice: nested container depth errors now report the container token
+  that exceeds the requested depth, array/object state mismatches keep the
+  failing token location without consuming past it, unterminated arrays report
+  syntax rather than state mismatch at EOF, control-character decode failures
+  keep the containing string-token location, and invalid `json_decode()`
+  depth now maps to a catchable `ValueError`. Focused Rust coverage exercises
+  the corresponding `json_last_error()`/`json_last_error_msg()` rows and the
+  negative-depth catch path; selected PHPT proof covers
+  `ext/json/tests/007.phpt` and
+  `ext/json/tests/json_decode_error.phpt`. Remaining unsupported edges are
+  unchanged for full Unicode/UTF-8 normalization, multi-line and non-ASCII
+  diagnostic-location parity, `JSON_THROW_ON_ERROR`, full `JsonSerializable`
+  behavior, complete option interaction parity, other json extension
+  functions, and native lowering.
+
 ## 2026-05-27
 
 Implemented:

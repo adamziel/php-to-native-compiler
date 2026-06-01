@@ -11543,8 +11543,11 @@ Unsupported code should fail with an explicit parse, runtime, or codegen error.
   associative decode mode, selected JSON constants, bigint-as-string decode,
   numeric-string encoding, unicode and hex string escaping, pretty-print
   formatting, partial output for unsupported values, validation depth and
-  `JSON_INVALID_UTF8_IGNORE` checks, and request-local last-error state. Full
+  `JSON_INVALID_UTF8_IGNORE` checks, request-local last-error state, bounded
+  single-line decode error locations for depth/state/control/truncated-input
+  failures, and catchable `ValueError` diagnostics for invalid decode depth.
+  Full
   `JsonSerializable` parity, exact exception propagation for every serializer
-  shape, complete UTF-16/UTF-8 diagnostics, exact diagnostic locations, every
-  JSON option interaction, remaining json extension functions, and native
-  lowering remain unsupported.
+  shape, complete UTF-16/UTF-8 diagnostics, multi-line and non-ASCII
+  diagnostic-location parity, every JSON option interaction, remaining json
+  extension functions, and native lowering remain unsupported.
