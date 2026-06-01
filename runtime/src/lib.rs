@@ -32996,7 +32996,14 @@ impl PhpClassTable {
                 .add_property(PhpPropertyMetadata::instance(property, Visibility::Public))
                 .expect("DateTime core metadata should not duplicate properties");
         }
-        for method in ["__construct", "format"] {
+        for method in [
+            "__construct",
+            "format",
+            "getTimestamp",
+            "getTimezone",
+            "modify",
+            "setTimestamp",
+        ] {
             datetime
                 .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
                 .expect("DateTime core metadata should not duplicate methods");

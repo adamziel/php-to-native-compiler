@@ -5398,10 +5398,16 @@
   `true` for the bounded timezone identifiers used by the current date PHPT
   subset, updates `date_default_timezone_get()` and date/time formatting state,
   and returns `false` with a PHP-shaped notice for unknown identifiers.
+  `DateTime::getTimezone()` returns a bounded `DateTimeZone` object for
+  initialized `DateTime` instances, and `serialize()`/`unserialize()` round-trip
+  direct core `DateTimeZone` objects with valid type-1 fixed offsets, type-2
+  abbreviations, or type-3 identifiers through their public
+  `timezone_type`/`timezone` metadata.
   `date.timezone` PHPT INI overrides seed the same bounded timezone state,
   including PHPT-style trailing semicolon syntax. Full timezone database
-  validation, all historical transition rules, exact diagnostics, and native
-  lowering remain unsupported.
+  validation, all historical transition rules, general object serialization,
+  DateTimeZone subclass serialization, invalid DateTimeZone serialization
+  exception parity, exact diagnostics, and native lowering remain unsupported.
   `header($header, $replace = true, $response_code = 0)` accepts a string
   header line plus optional bool replacement flag and optional integer response
   code, records the raw header line in deterministic in-process CLI request

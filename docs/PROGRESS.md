@@ -1,5 +1,24 @@
 # Progress Log
 
+## 2026-06-01
+
+Implemented:
+
+- Added a bounded DateTimeZone serialization metadata slice for selected
+  ext/date PHPT rows. Direct core `DateTimeZone` objects now serialize their
+  public `timezone_type`/`timezone` metadata for valid type-1 fixed offsets,
+  type-2 abbreviations, and type-3 identifiers, and the existing object
+  unserializer can round-trip those rows back into `DateTimeZone` objects.
+  `DateTime::getTimezone()` now returns the bounded timezone object for an
+  initialized `DateTime`, including normalized fixed-offset names such as
+  `+01:00`. Focused proof covers the Rust date builtin test and selected PHPT
+  rows `DateTimeZone_serialize_type_1.phpt`,
+  `DateTimeZone_serialize_type_2.phpt`, and
+  `DateTimeZone_serialize_type_3.phpt`. General object serialization,
+  DateTimeZone subclass serialization, invalid DateTimeZone serialization
+  exception parity, broad timezone validation/transition data, exact
+  diagnostics, and native lowering remain unsupported.
+
 ## 2026-05-27
 
 Implemented:

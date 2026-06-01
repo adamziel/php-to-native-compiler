@@ -17601,6 +17601,26 @@ impl Interpreter {
                 })?;
                 Ok(Value::Int(state.timestamp))
             }
+            "gettimezone" => {
+                expect_expr_arity("DateTime::getTimezone", args.len(), 0, span)?;
+                let timezone_name = self
+                    .date_time_objects
+                    .get(&object.id())
+                    .map(|state| state.timezone.name.clone())
+                    .ok_or_else(|| {
+                        runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "DateTime::getTimezone()",
+                                "DateTime object is not initialized in the current subset",
+                            ),
+                        )
+                    })?;
+                let timezone_object =
+                    self.create_datetimezone_object_from_name(&timezone_name, span)?;
+                self.track_allocated_object(&timezone_object);
+                Ok(Value::Object(timezone_object))
+            }
             "settimestamp" => {
                 expect_expr_arity("DateTime::setTimestamp", args.len(), 1, span)?;
                 let value = self.evaluate(&args[0], caller_scope)?;
@@ -87381,7 +87401,8 @@ impl Interpreter {
     fn call_serialize_builtin(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("serialize()", args, 1, span)?;
         let mut output = String::new();
-        format_php_serialized_value(&args[0], &mut output).ok_or_else(|| {
+        self.format_php_serialized_value_for_builtin(&args[0], &mut output)
+            .ok_or_else(|| {
             runtime_error(
                 span,
                 RuntimeError::unsupported_call(
@@ -87394,6 +87415,43 @@ impl Interpreter {
             )
         })?;
         Ok(Value::String(output))
+    }
+
+    fn format_php_serialized_value_for_builtin(
+        &self,
+        value: &Value,
+        output: &mut String,
+    ) -> Option<()> {
+        match value {
+            Value::Object(object) => self.format_datetimezone_serialized_object(object, output),
+            _ => format_php_serialized_value(value, output),
+        }
+    }
+
+    fn format_datetimezone_serialized_object(
+        &self,
+        object: &PhpObject,
+        output: &mut String,
+    ) -> Option<()> {
+        if !object.class_name().eq_ignore_ascii_case("DateTimeZone") {
+            return None;
+        }
+        let timezone_type = match object.read_public_property("timezone_type").ok()? {
+            Value::Int(value) => value,
+            _ => return None,
+        };
+        let timezone = match object.read_public_property("timezone").ok()? {
+            Value::String(value) => bounded_datetimezone_serialized_name(timezone_type, &value)?,
+            _ => return None,
+        };
+
+        output.push_str("O:12:\"DateTimeZone\":2:{");
+        format_php_serialized_array_key(&ArrayKey::String("timezone_type".to_string()), output);
+        format_php_serialized_value(&Value::Int(timezone_type), output)?;
+        format_php_serialized_array_key(&ArrayKey::String("timezone".to_string()), output);
+        format_php_serialized_value(&Value::String(timezone), output)?;
+        output.push('}');
+        Some(())
     }
 
     fn call_unserialize_builtin(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -134696,9 +134754,33 @@ fn bounded_timezone_object_parts(name: &str) -> Option<(i64, String)> {
     if matches!(trimmed.as_bytes().first(), Some(b'+') | Some(b'-'))
         && parse_timezone_offset_token(trimmed).is_some()
     {
-        return Some((1, trimmed.to_string()));
+        let offset = parse_timezone_offset_token(trimmed)?;
+        return Some((1, format_timezone_offset(offset, true)));
     }
     bounded_timezone_from_name(trimmed).map(|timezone| (3, timezone.name))
+}
+
+fn bounded_datetimezone_serialized_name(timezone_type: i64, timezone: &str) -> Option<String> {
+    if timezone.as_bytes().contains(&b'\0') {
+        return None;
+    }
+    let trimmed = timezone.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    match timezone_type {
+        1 => {
+            parse_timezone_offset_token(trimmed).map(|offset| format_timezone_offset(offset, true))
+        }
+        2 => match trimmed.to_ascii_uppercase().as_str() {
+            "GMT" | "CET" | "CEST" | "EST" | "EDT" | "PST" | "PDT" | "ADT" | "AST" => {
+                Some(trimmed.to_ascii_uppercase())
+            }
+            _ => None,
+        },
+        3 => bounded_timezone_from_name(trimmed).map(|timezone| timezone.name),
+        _ => None,
+    }
 }
 
 fn bounded_datetime_timezone_hint(

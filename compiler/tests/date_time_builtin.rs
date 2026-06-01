@@ -210,6 +210,34 @@ var_dump(timezone_name_from_abbr("", -14400, 0));
 }
 
 #[test]
+fn datetimezone_serializes_type_metadata_for_bounded_rows() {
+    let execution = run_source(
+        r#"<?php
+date_default_timezone_set("Europe/London");
+$type1 = date_create("2012-01-01 10:00 +1:00")->getTimezone();
+$type2 = new DateTimeZone("EST");
+$type3 = new DateTimeZone("America/New_York");
+foreach ([$type1, $type2, $type3] as $tz) {
+    $serialized = serialize($tz);
+    echo $tz->getName(), "|", $serialized, "|", unserialize($serialized)->getName(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "+01:00|O:12:\"DateTimeZone\":2:{s:13:\"timezone_type\";i:1;s:8:\"timezone\";s:6:\"+01:00\";}|+01:00\n",
+            "EST|O:12:\"DateTimeZone\":2:{s:13:\"timezone_type\";i:2;s:8:\"timezone\";s:3:\"EST\";}|EST\n",
+            "America/New_York|O:12:\"DateTimeZone\":2:{s:13:\"timezone_type\";i:3;s:8:\"timezone\";s:16:\"America/New_York\";}|America/New_York\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn gettimeofday_uses_default_timezone_offset() {
     let execution = run_source(
         r#"<?php
