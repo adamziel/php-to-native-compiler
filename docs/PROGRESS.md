@@ -43250,3 +43250,25 @@ Next:
   split-lane batch. A checkpoint was still not created because
   `tools/checkpoint.sh` stages the full dirty tree and this worker was not
   asked to checkpoint.
+
+Next:
+
+- Added Milestone 2306, a bounded `parse_url()` residual for query-only and
+  fragment-only relative references. Inputs such as `?`, `#`, `?q`, `#f`,
+  `?#`, `?#f`, and `?q#f` now preserve their query/fragment components
+  without materializing a synthetic empty `path` entry, while the empty URL
+  still reports an empty path as PHP does.
+- Added focused Rust coverage plus a `phpc run` fixture with system-PHP
+  comparison for the PHPT-shaped query/fragment-only URL rows. This does not
+  add broader RFC/WHATWG validation, URL normalization, IDNA, percent-decoding
+  of parsed components, expanded IPv6/file URL edge cases, exact diagnostics,
+  or native lowering.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-bcs2-58d CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test parse_url_builtin -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-bcs2-58e CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone2306`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-bcs2-58e CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone2306`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-bcs2-58e CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- run tests/fixtures/milestone2306/parse_url_query_fragment_only.php`;
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo fmt --check`; and
+  `git diff --check`.
+- Full `tools/run-tests.sh` is deferred for this review-sized parse_url slice;
+  run it at the next checkpoint batch or before any checkpoint commit.
