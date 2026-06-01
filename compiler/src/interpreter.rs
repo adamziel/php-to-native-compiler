@@ -78164,6 +78164,39 @@ impl Interpreter {
         Ok(Value::Int(value(&metadata)))
     }
 
+    fn main_source_metadata(&self) -> Option<fs::Metadata> {
+        let source_file = self.main_source_file.as_deref()?;
+        let path = local_filesystem_metadata_path(source_file);
+        fs::metadata(path).ok()
+    }
+
+    fn call_main_source_int_metadata_builtin(
+        &mut self,
+        args: &[Value],
+        function: &str,
+        value: fn(&fs::Metadata) -> i64,
+        span: Span,
+    ) -> CompileResult<Value> {
+        expect_arity(function, args, 0, span)?;
+        let Some(metadata) = self.main_source_metadata() else {
+            return Ok(Value::Bool(false));
+        };
+        Ok(Value::Int(value(&metadata)))
+    }
+
+    fn call_main_source_timestamp_builtin(
+        &mut self,
+        args: &[Value],
+        function: &str,
+        span: Span,
+    ) -> CompileResult<Value> {
+        expect_arity(function, args, 0, span)?;
+        let Some(metadata) = self.main_source_metadata() else {
+            return Ok(Value::Bool(false));
+        };
+        Ok(Value::Int(filesystem_mtime_value(&metadata, span)?))
+    }
+
     fn call_filetype(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("filetype", args, 1, span)?;
         let Some(path) =
@@ -84871,6 +84904,25 @@ impl Interpreter {
             "getservbyname" => call_getservbyname(&args, span),
             "getservbyport" => call_getservbyport(&args, span),
             "get_current_user" => call_get_current_user(&args, self.main_source_file.as_deref(), span),
+            "getlastmod" => self.call_main_source_timestamp_builtin(&args, "getlastmod", span),
+            "getmyinode" => self.call_main_source_int_metadata_builtin(
+                &args,
+                "getmyinode",
+                filesystem_inode_value,
+                span,
+            ),
+            "getmyuid" => self.call_main_source_int_metadata_builtin(
+                &args,
+                "getmyuid",
+                filesystem_owner_value,
+                span,
+            ),
+            "getmygid" => self.call_main_source_int_metadata_builtin(
+                &args,
+                "getmygid",
+                filesystem_group_value,
+                span,
+            ),
             "umask" => self.call_umask(&args, span),
             "getmypid" => call_getmypid(&args, span),
             "php_uname" => call_php_uname(&args, span),
@@ -101591,6 +101643,7 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
         ),
         "connection_aborted" | "connection_status" => ("int", vec![]),
         "get_current_user" => ("string", vec![]),
+        "getlastmod" | "getmyinode" | "getmyuid" | "getmygid" => ("int|false", vec![]),
         "umask" => (
             "int",
             vec![reflection_internal_optional_null_param("mask", "?int")],
@@ -105676,6 +105729,10 @@ fn is_builtin(name: &str) -> bool {
             | "getservbyname"
             | "getservbyport"
             | "get_current_user"
+            | "getlastmod"
+            | "getmyinode"
+            | "getmyuid"
+            | "getmygid"
             | "umask"
             | "getmypid"
             | "php_uname"

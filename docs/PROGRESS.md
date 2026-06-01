@@ -4,6 +4,19 @@
 
 Implemented:
 
+- Added bounded `phpc run` support for script-file stat metadata helpers
+  `getlastmod()`, `getmyinode()`, `getmyuid()`, and `getmygid()`. The helpers
+  read the main source file's local filesystem metadata, return PHP-shaped
+  integer values for the selected `statpage.phpt` surface, return `false` when
+  no inspectable main source file exists, and expose function/reflection
+  metadata for `function_exists()`, `is_callable()`, and `ReflectionFunction`.
+  Focused proof covers Rust runtime/codegen metadata tests, the direct
+  `phpc run` fixture `tests/fixtures/milestone2305/script_metadata_statpage.php`,
+  and focused PHPT `ext/standard/tests/file/statpage.phpt`. Virtual sources,
+  include-caller metadata, SAPI differences, Windows UID/GID parity,
+  non-UTF-8 source paths, exact warning behavior for missing main files, and
+  native lowering remain unsupported.
+
 - Added a compact `parse_url()` relative-reference slice for query-only and
   fragment-only inputs. `parse_url("?q")`, `parse_url("#f")`, empty query or
   fragment forms, and component extraction no longer synthesize an empty
