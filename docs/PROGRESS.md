@@ -28,6 +28,14 @@ Implemented:
   selected ext/pcre PHPT rows `ext/pcre/tests/001.phpt` and
   `ext/pcre/tests/003.phpt`. The unsupported PCRE edges listed above remain
   outside the bounded Rust-regex-translatable subset.
+- Added the compact `$` final-LF anchor slice for `preg_match()` and
+  `preg_match_all()`. Non-`m` patterns with `$` and without `D` now retry the
+  search against a final-LF-stripped subject window when the direct Rust regex
+  search has no match, covering PHP's default `$`-before-final-LF behavior while
+  preserving `D` dollar-end-only matches. Focused proof covers the new Rust
+  regression plus selected ext/pcre PHPT row `ext/pcre/tests/dollar_endonly.phpt`.
+  Broader CRLF/newline anchor parity remains unsupported with the PCRE edges
+  listed above.
 
 ## 2026-05-27
 

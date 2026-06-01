@@ -3590,9 +3590,13 @@
   `preg_match_all()`. Patterns are parsed with PHP-style delimiters and then
   executed through the Rust regex engine after a bounded PCRE-to-regex
   translation for covered escapes and named groups. The covered modifier set
-  is `i`, `m`, `s`, `x`, `U`, `u`, `n`, plus ignored `A`, `D`, `S`, and `J`;
-  `n` suppresses unnamed captures in returned match arrays while retaining
-  named captures. Named captures are inserted in PHP's observable order:
+  is `i`, `m`, `s`, `x`, `U`, `u`, `n`, and `D`, plus ignored `A`, `S`, and
+  `J`; `n` suppresses unnamed captures in returned match arrays while
+  retaining named captures. For non-`m` patterns with `$` and without `D`,
+  matching retries against a final-LF-stripped search slice when the direct
+  Rust-regex match fails, covering PHP's default `$`-before-final-LF behavior
+  while keeping `D` dollar-end-only rows absolute-end anchored. Named captures
+  are inserted in PHP's observable order:
   full match `0` first, then each named string key immediately before its
   numeric capture key, for both single-match and `preg_match_all()` pattern- or
   set-order outputs. In default match arrays, unmatched captures before the last
@@ -3602,10 +3606,10 @@
   warning path and update `preg_last_error()`.
   Unsupported PCRE constructs that the Rust regex engine cannot compile,
   duplicate named groups despite ignored `J`, lookaround/backreferences beyond
-  the existing bounded translations, locale-sensitive behavior, full Unicode
-  property/case-folding parity, exact PCRE warning text/offsets, callbacks,
-  non-direct matches outputs, broad coercion edge cases, and native lowering
-  remain unsupported.
+  the existing bounded translations, broader CRLF/newline anchor parity,
+  locale-sensitive behavior, full Unicode property/case-folding parity, exact
+  PCRE warning text/offsets, callbacks, non-direct matches outputs, broad
+  coercion edge cases, and native lowering remain unsupported.
   `preg_replace_callback($pattern, $callback, $subject)` supports exactly the
   WordPress `wp_sanitize_redirect()` verbose UTF-8 sanitizer regex shape with
   the string callback `_wp_sanitize_utf8_in_redirect`. It percent-encodes
@@ -11154,10 +11158,10 @@
 - `preg_match()`/`preg_match_all()` outside the current
   Rust-regex-translatable PCRE subset: duplicate named groups despite ignored
   `J`, lookaround/backreferences beyond the existing bounded translations,
-  locale-sensitive behavior, full Unicode property/case-folding parity,
-  exact PCRE warning text/offsets, callbacks, non-direct matches outputs,
-  broad coercion edge cases, and native lowering beyond function-table
-  introspection
+  broader CRLF/newline anchor parity, locale-sensitive behavior, full Unicode
+  property/case-folding parity, exact PCRE warning text/offsets, callbacks,
+  non-direct matches outputs, broad coercion edge cases, and native lowering
+  beyond function-table introspection
 - `preg_replace()` outside the exact WordPress database-version cleanup pattern
   `/[^0-9.].*/`, path-tail cleanup pattern `#/[^/]*$#i`, and redirect
   sanitizer cleanup pattern `|[^a-z0-9-~+_.?#=&;,/:%!*\[\]()@]|i`, mail-host

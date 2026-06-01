@@ -119579,6 +119579,9 @@ impl Interpreter {
                 return Ok(None);
             }
         };
+        let allow_final_lf_dollar = !settings.dollar_end_only
+            && !settings.multi_line
+            && pcre_body_has_unescaped_dollar(&body);
         let body = translate_pcre_body_for_regex(&body);
         let mut builder = RegexBuilder::new(&body);
         builder.unicode(false);
@@ -119594,6 +119597,7 @@ impl Interpreter {
                 body,
                 utf8: settings.utf8,
                 no_auto_capture: settings.no_auto_capture,
+                allow_final_lf_dollar,
             })),
             Err(error) => {
                 self.emit_warning(context, format!("Compilation failed: {error}"), span)?;
@@ -119683,7 +119687,14 @@ impl Interpreter {
             self.pcre_last_error = PHP_PREG_BACKTRACK_LIMIT_ERROR;
             return Ok((Value::Bool(false), PhpArray::new()));
         }
-        let Some(captures) = regex.regex.captures(searched) else {
+        let captures = regex.regex.captures(searched).or_else(|| {
+            regex
+                .allow_final_lf_dollar
+                .then(|| searched.strip_suffix(b"\n"))
+                .flatten()
+                .and_then(|without_final_lf| regex.regex.captures(without_final_lf))
+        });
+        let Some(captures) = captures else {
             self.pcre_last_error = PHP_PREG_NO_ERROR;
             return Ok((Value::Int(0), PhpArray::new()));
         };
@@ -119721,17 +119732,27 @@ impl Interpreter {
         };
 
         let capture_len = regex.regex.captures_len();
-        let mut rows: Vec<Vec<Option<(usize, usize)>>> = Vec::new();
-        for captures in regex.regex.captures_iter(&subject[start..]) {
-            let mut row = Vec::with_capacity(capture_len);
-            for index in 0..capture_len {
-                row.push(
-                    captures
-                        .get(index)
-                        .map(|matched| (start + matched.start(), start + matched.end())),
-                );
+        let collect_rows = |searched: &[u8]| -> Vec<Vec<Option<(usize, usize)>>> {
+            let mut rows = Vec::new();
+            for captures in regex.regex.captures_iter(searched) {
+                let mut row = Vec::with_capacity(capture_len);
+                for index in 0..capture_len {
+                    row.push(
+                        captures
+                            .get(index)
+                            .map(|matched| (start + matched.start(), start + matched.end())),
+                    );
+                }
+                rows.push(row);
             }
-            rows.push(row);
+            rows
+        };
+        let searched = &subject[start..];
+        let mut rows = collect_rows(searched);
+        if rows.is_empty() && regex.allow_final_lf_dollar {
+            if let Some(without_final_lf) = searched.strip_suffix(b"\n") {
+                rows = collect_rows(without_final_lf);
+            }
         }
 
         let mut output = PhpArray::new();
@@ -120308,6 +120329,7 @@ struct PhpPcreRegex {
     body: String,
     utf8: bool,
     no_auto_capture: bool,
+    allow_final_lf_dollar: bool,
 }
 
 #[derive(Clone)]
@@ -120342,6 +120364,7 @@ struct PhpPcreSettings {
     swap_greed: bool,
     utf8: bool,
     no_auto_capture: bool,
+    dollar_end_only: bool,
 }
 
 impl PhpPcreSettings {
@@ -120356,7 +120379,8 @@ impl PhpPcreSettings {
                 'U' => settings.swap_greed = true,
                 'u' => settings.utf8 = true,
                 'n' => settings.no_auto_capture = true,
-                'A' | 'D' | 'S' | 'J' => {}
+                'D' => settings.dollar_end_only = true,
+                'A' | 'S' | 'J' => {}
                 ' ' | '\r' | '\n' => {}
                 other => return Err(format!("Unknown modifier '{other}'")),
             }
@@ -120437,6 +120461,25 @@ fn parse_php_pcre_pattern(pattern: &str) -> Result<(String, String), String> {
     let body = pattern[delimiter.len_utf8()..end].to_string();
     let modifiers = pattern[end + close.len_utf8()..].to_string();
     Ok((body, modifiers))
+}
+
+fn pcre_body_has_unescaped_dollar(body: &str) -> bool {
+    let mut in_class = false;
+    let mut escaped = false;
+    for ch in body.chars() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match ch {
+            '\\' => escaped = true,
+            '[' if !in_class => in_class = true,
+            ']' if in_class => in_class = false,
+            '$' if !in_class => return true,
+            _ => {}
+        }
+    }
+    false
 }
 
 fn translate_pcre_body_for_regex(body: &str) -> String {

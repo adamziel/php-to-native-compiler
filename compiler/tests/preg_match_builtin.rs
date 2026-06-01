@@ -383,6 +383,56 @@ echo "\n";
 }
 
 #[test]
+fn preg_match_supports_default_dollar_before_final_lf() {
+    let execution = run_source(
+        r#"<?php
+preg_match_all('/^\S+.+$/', "aeiou\n", $default);
+var_dump($default);
+preg_match_all('/^\S+.+$/D', "aeiou\n", $endOnly);
+var_dump($endOnly);
+preg_match_all('/^\S+\s$/D', "aeiou\n", $space);
+var_dump($space);
+preg_match('/abc$/', "abc\n", $single, PREG_OFFSET_CAPTURE);
+var_export($single);
+echo "\n";
+"#,
+    )
+    .unwrap();
+
+    let expected = concat!(
+        "array(1) {\n",
+        "  [0]=>\n",
+        "  array(1) {\n",
+        "    [0]=>\n",
+        "    string(5) \"aeiou\"\n",
+        "  }\n",
+        "}\n",
+        "array(1) {\n",
+        "  [0]=>\n",
+        "  array(0) {\n",
+        "  }\n",
+        "}\n",
+        "array(1) {\n",
+        "  [0]=>\n",
+        "  array(1) {\n",
+        "    [0]=>\n",
+        "    string(6) \"aeiou\n",
+        "\"\n",
+        "  }\n",
+        "}\n",
+        "array (\n",
+        "  0 => \n",
+        "  array (\n",
+        "    0 => 'abc',\n",
+        "    1 => 0,\n",
+        "  ),\n",
+        ")\n",
+    );
+    assert_eq!(execution.stdout, expected);
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn preg_match_handles_backtrack_offsets_utf8_and_trailing_unmatched_captures() {
     let execution = run_source(
         r#"<?php
