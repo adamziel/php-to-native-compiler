@@ -123207,8 +123207,8 @@ fn parse_url_port(value: &str) -> Option<i64> {
 
 fn call_urlencode(args: &[Value], span: Span) -> CompileResult<Value> {
     expect_arity("urlencode", args, 1, span)?;
-    let value = string_contains_argument("urlencode()", "string", &args[0], span)?;
-    Ok(Value::String(form_urlencode_component(&value)))
+    let value = string_compare_argument_bytes("urlencode()", "string", &args[0], span)?;
+    Ok(Value::String(form_urlencode_bytes(&value)))
 }
 
 fn call_urldecode(args: &[Value], span: Span) -> CompileResult<Value> {
@@ -123501,8 +123501,12 @@ fn call_rawurldecode(args: &[Value], span: Span) -> CompileResult<Value> {
 }
 
 fn form_urlencode_component(value: &str) -> String {
+    form_urlencode_bytes(value.as_bytes())
+}
+
+fn form_urlencode_bytes(value: &[u8]) -> String {
     let mut encoded = String::with_capacity(value.len());
-    for byte in value.bytes() {
+    for &byte in value {
         if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.') {
             encoded.push(byte as char);
         } else if byte == b' ' {

@@ -17,8 +17,7 @@ Implemented:
   `cargo build -p phpc`, a direct CLI exercise, and selected PHPT rows
   `ext/standard/tests/http/http_build_query/gh12745.phpt` plus
   `ext/standard/tests/http/http_build_query/http_build_query_object_just_stringable.phpt`.
-  Binary byte fidelity for `urlencode()` inputs outside UTF-8 strings, URL
-  normalization/validation, IDNA, decoded parsed-URL components,
+  URL normalization/validation, IDNA, decoded parsed-URL components,
   cyclic `http_build_query()` arrays, context-private object-property query
   extraction, `get_headers()` network behavior, and native lowering of direct
   URL/helper calls remain unsupported.
@@ -43,6 +42,21 @@ Implemented:
   `ext/standard/tests/http/http_build_query/bug26817.phpt`. Magic property
   hooks, exact diagnostics, cyclic arrays, binary key/value fidelity outside
   UTF-8 strings, object custom hooks, and native lowering remain unsupported.
+
+- Tightened `urlencode()` to encode PHP string bytes rather than lossy UTF-8
+  replacement text for binary strings produced by escapes or runtime helpers.
+  Form encoding now preserves non-UTF-8 bytes such as `\xA3\xFF A~` as
+  `%A3%FF+A%7E`, while `urldecode()` continues to return PHP-shaped binary
+  strings for non-UTF-8 decoded bytes. Focused proof covers the URL/helper
+  Rust test, `cargo build -p phpc`, a direct CLI exercise, and selected
+  non-network PHPT URL rows; residual invalid-byte PHPT candidates remain
+  blocked outside this helper because `ext/standard/tests/strings/utf8.phpt`
+  contains a non-UTF-8 source literal and requires `utf8_encode()`/
+  `utf8_decode()`, while the sha3/iconv/intl/filter urlencode rows require
+  unsupported extension behavior. PHP source files containing non-UTF-8
+  literal bytes, URL normalization/validation, IDNA, parsed-component percent
+  decoding, `http_build_query()` binary key/value fidelity, and native
+  lowering remain unsupported.
 
 ## 2026-05-27
 

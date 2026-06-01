@@ -74,6 +74,7 @@ echo $encoded, "\n";
 echo urldecode($encoded) === $raw ? "roundtrip" : "mismatch";
 echo "|", urldecode("plus+space%2Bplus%zz%"), "\n";
 echo bin2hex(urldecode("%00%FF%7E")), "\n";
+echo urlencode("\xA3\xFF A~"), "\n";
 echo function_exists("urldecode") ? "fn" : "missing";
 echo "|", is_callable("urlencode") ? "callable" : "missing";
 "##,
@@ -82,7 +83,7 @@ echo "|", is_callable("urlencode") ? "callable" : "missing";
 
     assert_eq!(
         execution.stdout,
-        "+%21%22%23%24%25%26%27%28%29%2A%2B%2C-.%2F0123456789%3A%3B%3C%3D%3E%3F%40ABCDEFGHIJKLMNOPQRSTUVWXYZ%5B%5C%5D%5E_%60abcdefghijklmnopqrstuvwxyz%7B%7C%7D%7E%00\nroundtrip|plus space+plus%zz%\n00ff7e\nfn|callable"
+        "+%21%22%23%24%25%26%27%28%29%2A%2B%2C-.%2F0123456789%3A%3B%3C%3D%3E%3F%40ABCDEFGHIJKLMNOPQRSTUVWXYZ%5B%5C%5D%5E_%60abcdefghijklmnopqrstuvwxyz%7B%7C%7D%7E%00\nroundtrip|plus space+plus%zz%\n00ff7e\n%A3%FF+A%7E\nfn|callable"
     );
     assert_eq!(execution.exit_code, 0);
 }

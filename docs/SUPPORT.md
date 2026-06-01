@@ -2748,15 +2748,15 @@
   `false` for the covered malformed host/port cases. `PHP_URL_*` constants are
   visible through bare reads, `defined()`, `constant()`, and
   `get_defined_constants()` alongside the existing supported builtin constants.
-  `urlencode()` and `urldecode()` support PHP form component encoding/decoding
-  for the current string subset, including `+` as space on decode and byte
-  percent decoding. `rawurlencode()` and `rawurldecode()` support RFC3986
-  byte-oriented percent encoding and decoding for the current string subset.
-  Exact RFC/WHATWG
-  validation, broader IPv6 and platform-specific file URL edge cases, binary
-  byte fidelity outside UTF-8 strings for `urlencode()`, URL normalization,
-  IDNA, percent-decoding of parsed URL components, and native lowering remain
-  unsupported.
+  `urlencode()` and `urldecode()` support PHP form component encoding/decoding,
+  including byte-oriented encoding of PHP string bytes, `+` as space on decode,
+  byte percent decoding, and binary-string decode results when percent-decoded
+  bytes are not valid UTF-8. `rawurlencode()` and `rawurldecode()` support
+  RFC3986 byte-oriented percent encoding and decoding for the current string
+  subset. Exact RFC/WHATWG validation, broader IPv6 and platform-specific file
+  URL edge cases, PHP source files containing non-UTF-8 literal bytes, URL
+  normalization, IDNA, percent-decoding of parsed URL components, and native
+  lowering remain unsupported.
 - `Uri\Rfc3986\Uri` supports bounded construction/parsing, raw string output,
   equivalence, host-type lookup, and URI-type lookup for the current ASCII
   subset. `Uri\WhatWg\Url` supports a bounded WHATWG URL subset for direct
