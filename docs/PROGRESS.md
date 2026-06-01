@@ -4,6 +4,26 @@
 
 Implemented:
 
+- Added a bounded `http_build_query()` query-formatting slice for direct named
+  arguments and self-recursive public object branches. The interpreter now
+  publishes internal parameter metadata for `data`, `numeric_prefix`,
+  `arg_separator`, and `encoding_type`, so direct named calls can reuse the
+  existing builtin argument normalizer and default filling. Query traversal now
+  tracks active object ids and elides a public object branch that points back to
+  an object already on the current traversal stack, matching the selected
+  empty-output PHPT shape without adding general cyclic array/reference support.
+  Focused supervisor verification passed `5 / 5` in
+  `http_build_query_builtin`, `cargo build -p phpc --bin phpc`, a direct
+  `phpc run` CLI exercise over RFC3986/self-recursive-object cases, and
+  selected PHPT proof `3 / 3` for
+  `ext/standard/tests/http/http_build_query/gh12745.phpt`,
+  `http_build_query_object_just_stringable.phpt`, and
+  `http_build_query_object_recursif.phpt`. Exact diagnostics, class-context
+  private/protected object-property inclusion, cyclic array/reference
+  structures, object custom hooks, INI-driven separators beyond the current
+  `&` fallback, binary key/value fidelity outside UTF-8 strings, and native
+  lowering remain unsupported.
+
 - Worker string slice: added bounded traditional `metaphone()` support for
   scalar/null string-convertible byte strings with optional non-negative
   integer-compatible `max_phonemes`, catchable negative-limit `ValueError`,
@@ -998,7 +1018,6 @@ Review notes:
 - Held the local tokenizer lexical-tail currentization after `bcs3` review found
   object-id lifetime risk plus numeric, `TOKEN_PARSE`, and cast-deprecation
   counterexamples. No tokenizer behavior is claimed by this entry.
-
 ## 2026-05-27
 
 Implemented:

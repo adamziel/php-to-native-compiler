@@ -545,8 +545,10 @@ seeds flat and bracketed URL-encoded body pairs into `$_POST`.
 `http_build_query()` uses the same ordered PHP-array model in the opposite
 direction for bounded query strings: it walks arrays or initialized public
 object properties, recurses with bracketed child keys, skips null/resource
-leaves, applies top-level numeric prefixes, and encodes components as
-RFC1738 form data by default or RFC3986 when requested.
+leaves, applies top-level numeric prefixes, honors the documented direct named
+arguments, guards self-recursive public object branches by eliding that branch,
+and encodes components as RFC1738 form data by default or RFC3986 when
+requested.
 `request_parse_body()` currently covers only the CLI validation edge of that
 request-body surface: it validates scalar option arrays, emits quantity
 warnings through the INI quantity parser, and throws the PHP-shaped
