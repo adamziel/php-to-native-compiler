@@ -1,5 +1,21 @@
 # Progress Log
 
+## 2026-06-01
+
+Implemented:
+
+- Added bounded `preg_last_error_msg()` support for the interpreter PCRE
+  runtime state. The function now reports PHP 8 message strings for the
+  current request-local `PREG_*_ERROR` code, shares arity and function-table
+  metadata with `preg_last_error()`, and folds through native
+  `function_exists()`/`is_callable()` metadata while direct native lowering
+  still rejects runtime calls. Focused gates cover no-error, internal-error
+  offset, backtrack-limit, bad-UTF-8-offset, and bad-UTF-8 messages, a direct
+  `phpc run` fixture, system-PHP fixture comparison, and `emit-ir`
+  metadata/rejection behavior. Exact extension-global lifetime across threads
+  or requests, JIT-specific state beyond the named code/message mapping,
+  broader PCRE diagnostics, and native lowering remain unsupported.
+
 ## 2026-05-27
 
 Implemented:

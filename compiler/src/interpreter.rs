@@ -84017,6 +84017,12 @@ impl Interpreter {
                 expect_arity("preg_last_error", &args, 0, span)?;
                 Ok(Value::Int(self.pcre_last_error))
             }
+            "preg_last_error_msg" => {
+                expect_arity("preg_last_error_msg", &args, 0, span)?;
+                Ok(Value::String(
+                    pcre_last_error_message(self.pcre_last_error).to_string(),
+                ))
+            }
             "get_defined_vars" => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
@@ -99445,6 +99451,8 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_optional_null_param("delimiter", "?string"),
             ],
         ),
+        "preg_last_error" => ("int", vec![]),
+        "preg_last_error_msg" => ("string", vec![]),
         "htmlspecialchars" | "htmlentities" => (
             "string",
             vec![
@@ -104155,6 +104163,7 @@ fn is_builtin(name: &str) -> bool {
             | "preg_replace_callback"
             | "preg_replace_callback_array"
             | "preg_last_error"
+            | "preg_last_error_msg"
             | "get_defined_vars"
             | "extract"
             | "compact"
@@ -120323,6 +120332,21 @@ fn pcre_int_value(value: &Value) -> Option<i64> {
         Value::Null => Some(0),
         Value::String(value) => value.parse::<i64>().ok(),
         _ => None,
+    }
+}
+
+fn pcre_last_error_message(code: i64) -> &'static str {
+    match code {
+        PHP_PREG_NO_ERROR => "No error",
+        PHP_PREG_INTERNAL_ERROR => "Internal error",
+        PHP_PREG_BACKTRACK_LIMIT_ERROR => "Backtrack limit exhausted",
+        PHP_PREG_RECURSION_LIMIT_ERROR => "Recursion limit exhausted",
+        PHP_PREG_BAD_UTF8_ERROR => "Malformed UTF-8 characters, possibly incorrectly encoded",
+        PHP_PREG_BAD_UTF8_OFFSET_ERROR => {
+            "The offset did not correspond to the beginning of a valid UTF-8 code point"
+        }
+        PHP_PREG_JIT_STACKLIMIT_ERROR => "JIT stack limit exhausted",
+        _ => "Internal error",
     }
 }
 

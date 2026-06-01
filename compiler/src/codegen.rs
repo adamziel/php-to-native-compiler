@@ -66461,6 +66461,7 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "preg_replace",
     "preg_split",
     "preg_replace_callback",
+    "preg_last_error_msg",
     "compact",
     "error_reporting",
     "ini_parse_quantity",
