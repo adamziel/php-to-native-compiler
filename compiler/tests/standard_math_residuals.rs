@@ -68,6 +68,31 @@ try {
 }
 
 #[test]
+fn round_preserves_phpt_prerounding_and_signed_zero_formatting() {
+    let execution = run_source(
+        r#"<?php
+var_dump(round(0.285, 2, PHP_ROUND_HALF_UP));
+var_dump(round(12.3456789000e10, 14));
+printf("%+.17g|%+.17g|%+.17g|%+.17g\n",
+    round(0.49999999999999994, 0, PHP_ROUND_HALF_UP),
+    round(-0.49999999999999994, 0, PHP_ROUND_HALF_UP),
+    round(0.5, 0, PHP_ROUND_HALF_DOWN),
+    round(-0.5, 0, PHP_ROUND_HALF_DOWN)
+);
+echo round(-0.0001, 2), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "float(0.29)\nfloat(123456789000)\n+0|-0|+0|-0\n-0\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn clamp_uses_php_comparison_and_reports_invalid_bounds() {
     let execution = run_source(
         r#"<?php

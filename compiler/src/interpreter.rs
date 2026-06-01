@@ -114190,7 +114190,7 @@ fn format_php_precision_float(value: f64, precision: usize) -> String {
         };
     }
     if value == 0.0 {
-        return "0".to_string();
+        return if value.is_sign_negative() { "-0" } else { "0" }.to_string();
     }
 
     let abs = value.abs();
@@ -125716,7 +125716,7 @@ impl Interpreter {
             SprintfPlaceholderKind::Float => {
                 let value = self.sprintf_float_argument(function, value, span)?;
                 let precision = self.sprintf_float_precision(function, precision, span)?;
-                if placeholder.show_plus && value >= 0.0 {
+                if placeholder.show_plus && value.is_finite() && !value.is_sign_negative() {
                     format!("+{value:.precision$}")
                 } else {
                     format!("{value:.precision$}")
@@ -125732,7 +125732,7 @@ impl Interpreter {
                         format!("{value:.precision$e}")
                     };
                 let formatted = normalize_sprintf_exponent(formatted);
-                if placeholder.show_plus && value >= 0.0 {
+                if placeholder.show_plus && value.is_finite() && !value.is_sign_negative() {
                     format!("+{formatted}")
                 } else {
                     formatted
@@ -125743,7 +125743,7 @@ impl Interpreter {
                 let precision = self.sprintf_general_precision(function, precision, span)?;
                 let upper = matches!(placeholder.kind, SprintfPlaceholderKind::GeneralUpper);
                 let formatted = format_sprintf_general_float(value, precision, upper);
-                if placeholder.show_plus && value >= 0.0 {
+                if placeholder.show_plus && value.is_finite() && !value.is_sign_negative() {
                     format!("+{formatted}")
                 } else {
                     formatted
@@ -126319,7 +126319,7 @@ fn format_sprintf_general_float(
         unreachable!("default precision handled above")
     };
     if value == 0.0 {
-        return "0".to_string();
+        return if value.is_sign_negative() { "-0" } else { "0" }.to_string();
     }
 
     let abs = value.abs();
@@ -128466,6 +128466,10 @@ fn round_float_value(value: f64, precision: i64, mode: BcRoundingMode) -> f64 {
     }
 
     let precision = precision.clamp(-308, 308) as i32;
+    if let Some(value) = round_float_value_decimal(value, precision, mode) {
+        return value;
+    }
+
     let scale = 10_f64.powi(precision.unsigned_abs() as i32);
     if !scale.is_finite() || scale == 0.0 {
         return if precision < 0 {
@@ -128495,6 +128499,17 @@ fn round_float_value(value: f64, precision: i64, mode: BcRoundingMode) -> f64 {
     } else {
         result
     }
+}
+
+fn round_float_value_decimal(value: f64, precision: i32, mode: BcRoundingMode) -> Option<f64> {
+    let decimal = BcDecimal::parse(&value.to_string())?;
+    let rounded = decimal.round(precision, mode);
+    if rounded.is_zero() {
+        return Some(signed_zero_like(value));
+    }
+
+    let output_scale = precision.max(0) as usize;
+    rounded.format_with_scale(output_scale).parse::<f64>().ok()
 }
 
 fn signed_zero_like(value: f64) -> f64 {

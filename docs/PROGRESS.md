@@ -1,5 +1,27 @@
 # Progress Log
 
+## 2026-06-01
+
+Implemented:
+
+- Tightened the interpreter `round()` residual slice for standard numeric
+  PHPT coverage. `round()` now rounds finite float inputs through a bounded
+  decimal representation before converting back to the runtime float value, so
+  the covered PHP prerounding cases such as `round(0.285, 2)`, large exponent
+  identity cases, and explicitly below-half values keep PHP-compatible results.
+  Runtime/default float string conversion plus `%g` formatting now preserve
+  signed negative zero for the covered `round()` rows. Focused proof rows:
+  `ext/standard/tests/math/round_gh12143_1.phpt`,
+  `ext/standard/tests/math/round_gh12143_3.phpt`,
+  `ext/standard/tests/math/round_large_exp.phpt`,
+  `ext/standard/tests/math/round_modes.phpt`,
+  `ext/standard/tests/math/round_modes_zeros.phpt`,
+  `ext/standard/tests/math/round_prerounding.phpt`, and
+  `ext/standard/tests/math/round_variation1.phpt`. Broader `round()` PHPTs
+  that require complex interpolation parsing, exhaustive binary-float edge
+  parity outside this bounded decimal formatter, exact coercion diagnostics,
+  native lowering, and object/resource conversions remain unsupported.
+
 ## 2026-05-27
 
 Implemented:

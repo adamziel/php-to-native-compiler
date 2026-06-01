@@ -45003,12 +45003,7 @@ fn format_php_float(value: f64) -> String {
         };
     }
 
-    let formatted = format_php_finite_float_default_precision(value, false);
-    if formatted == "-0" {
-        "0".to_string()
-    } else {
-        formatted
-    }
+    format_php_finite_float_default_precision(value, true)
 }
 
 fn format_php_float_for_string_key(value: f64) -> String {
@@ -59857,6 +59852,7 @@ mod tests {
         assert_eq!(Value::Bool(true).echo_string(), "1");
         assert_eq!(Value::Int(42).echo_string(), "42");
         assert_eq!(Value::Float(1.5).echo_string(), "1.5");
+        assert_eq!(Value::Float(-0.0).echo_string(), "-0");
         assert_eq!(Value::String("x".to_string()).echo_string(), "x");
     }
 
@@ -59871,6 +59867,7 @@ mod tests {
             ("true", Value::Bool(true), b"1", true),
             ("int", Value::Int(-42), b"-42", true),
             ("float", Value::Float(1.5), b"1.5", true),
+            ("negative zero", Value::Float(-0.0), b"-0", true),
             (
                 "string",
                 Value::String("php\0value".to_string()),
