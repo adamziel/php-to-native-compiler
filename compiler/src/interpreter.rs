@@ -95677,9 +95677,8 @@ fn parameter_default_type_diagnostic(param: &FunctionParam) -> Option<String> {
     let type_decl = param.type_decl.as_ref()?;
     let default = param.default.as_ref()?;
     let default_type = scalar_literal_default_type(default)?;
-    let normalized_type = normalized_scalar_parameter_type(&type_decl.text)?;
 
-    if scalar_literal_default_matches_parameter_type(default_type, normalized_type) {
+    if scalar_literal_default_matches_parameter_type_decl(default, &type_decl.text)? {
         return None;
     }
 
@@ -95700,24 +95699,51 @@ fn scalar_literal_default_type(default: &Expr) -> Option<&'static str> {
     }
 }
 
-fn normalized_scalar_parameter_type(type_decl: &str) -> Option<&'static str> {
-    let mut name = type_decl.trim();
-    if name.contains('|') || name.contains('&') {
+fn scalar_literal_default_matches_parameter_type_decl(
+    default: &Expr,
+    parameter_type: &str,
+) -> Option<bool> {
+    if parameter_type.contains('|') {
+        let mut saw_supported_part = false;
+        for part in parameter_type.split('|') {
+            if let Some(matches) = scalar_literal_default_matches_parameter_type_part(default, part)
+            {
+                saw_supported_part = true;
+                if matches {
+                    return Some(true);
+                }
+            }
+        }
+        return saw_supported_part.then_some(false);
+    }
+    if parameter_type.contains('&') {
         return None;
     }
-    name = name.strip_prefix('?').unwrap_or(name);
-    name = name.strip_prefix('\\').unwrap_or(name);
-    match name.to_ascii_lowercase().as_str() {
-        "int" | "integer" => Some("int"),
-        "float" | "double" => Some("float"),
-        "string" => Some("string"),
-        "bool" | "boolean" => Some("bool"),
-        _ => None,
-    }
+    scalar_literal_default_matches_parameter_type_part(default, parameter_type)
 }
 
-fn scalar_literal_default_matches_parameter_type(default_type: &str, parameter_type: &str) -> bool {
-    default_type == parameter_type || (default_type == "int" && parameter_type == "float")
+fn scalar_literal_default_matches_parameter_type_part(
+    default: &Expr,
+    type_part: &str,
+) -> Option<bool> {
+    let mut name = type_part.trim();
+    name = name.strip_prefix('?').unwrap_or(name);
+    name = name.strip_prefix('\\').unwrap_or(name);
+    let name = name.to_ascii_lowercase();
+    let matches = match default {
+        Expr::Bool(true, _) => matches!(name.as_str(), "bool" | "boolean" | "true" | "mixed"),
+        Expr::Bool(false, _) => {
+            matches!(name.as_str(), "bool" | "boolean" | "false" | "mixed")
+        }
+        Expr::Int(_, _) => matches!(
+            name.as_str(),
+            "int" | "integer" | "float" | "double" | "mixed"
+        ),
+        Expr::Float(_, _) => matches!(name.as_str(), "float" | "double" | "mixed"),
+        Expr::String(_, _) => matches!(name.as_str(), "string" | "mixed"),
+        _ => return None,
+    };
+    Some(matches)
 }
 
 fn collect_class_property_inheritance_startup_diagnostics(

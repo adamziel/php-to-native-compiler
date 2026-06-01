@@ -38024,6 +38024,19 @@ fn coerce_property_value_with_object_type_resolver_dyn(
                 value.clone(),
                 class_name,
                 property_name,
+                true,
+                object_type_resolver,
+            ) {
+                return Ok(value);
+            }
+        }
+
+        for part in type_decl.split('|') {
+            if let Ok(value) = coerce_property_value_with_object_type_resolver_dyn(
+                part.trim(),
+                value.clone(),
+                class_name,
+                property_name,
                 strict_scalars,
                 object_type_resolver,
             ) {
@@ -60037,6 +60050,36 @@ mod tests {
         assert_eq!(unique.get("true"), Some(&Value::Bool(true)));
         assert_eq!(unique.get("one"), None);
         assert_eq!(unique.get("keep"), Some(&Value::String("keep".to_string())));
+    }
+
+    #[test]
+    fn union_type_coercion_prefers_exact_scalar_matches_before_weak_coercion() {
+        assert_eq!(
+            coerce_property_value("int|float", Value::Float(2.0), "Packet", "amount").unwrap(),
+            Value::Float(2.0)
+        );
+        assert_eq!(
+            coerce_property_value(
+                "float|string",
+                Value::String("5".to_string()),
+                "Packet",
+                "amount",
+            )
+            .unwrap(),
+            Value::String("5".to_string())
+        );
+        assert_eq!(
+            coerce_property_value("float|string", Value::Int(3), "Packet", "amount").unwrap(),
+            Value::Float(3.0)
+        );
+        assert_eq!(
+            coerce_property_value("false|int", Value::Bool(false), "Packet", "flag").unwrap(),
+            Value::Bool(false)
+        );
+        assert_eq!(
+            coerce_property_value("true|int", Value::Bool(true), "Packet", "flag").unwrap(),
+            Value::Bool(true)
+        );
     }
 
     #[test]
