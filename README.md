@@ -62,7 +62,9 @@ cookies are not merged into `$_REQUEST`. `PHPC_FILES` seeds explicit
 `async-upload[name]=plugin.zip&async-upload[error]=0`; it does not parse
 multipart bodies or create temporary upload files. `is_uploaded_file()` and
 `move_uploaded_file()` use only the initial `PHPC_FILES` `tmp_name` entries
-with `error=0` as bounded local upload provenance. `PHPC_REQUEST_BODY` also
+with `error=0` as bounded local upload provenance. `request_parse_body()`
+currently covers only scalar option validation and the CLI no-content-type
+exception path; it does not parse request bodies. `PHPC_REQUEST_BODY` also
 seeds `php://input` for the interpreter only. `session_start()` now
 materializes a bounded in-memory `$_SESSION` array for the current CLI request;
 direct function-scope reads/writes route through that session root, including

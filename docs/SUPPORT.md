@@ -2780,6 +2780,18 @@
   INI-derived argument separators beyond the current `&` fallback, cyclic
   structures, object custom serialization hooks, and native lowering beyond
   function-table introspection remain unsupported.
+- `request_parse_body()` supports the bounded CLI option-validation path used
+  by the standard request-body PHPT rows. It accepts omitted, `null`, or array
+  `$options`; validates the known scalar quantity keys
+  `max_file_uploads`, `max_input_vars`, `max_multipart_body_parts`,
+  `post_max_size`, and `upload_max_filesize`; emits the same compatibility
+  warnings as `ini_parse_quantity()` for string quantities; raises catchable
+  `ValueError`s for invalid option keys or non-string/non-int option values;
+  and raises catchable `RequestParseBodyException` when no request content
+  type is available. Actual request body parsing, multipart/urlencoded result
+  arrays, SAPI `CONTENT_TYPE` dispatch, upload file construction, limit
+  enforcement beyond option validation, and native lowering remain
+  unsupported.
 - `$_FILES` is seeded as a bounded root superglobal for `phpc run`. By default
   it is an empty ordered array. When `PHPC_FILES` is set, the runtime treats it
   as an explicit URL-encoded upload metadata seed with `$_FILES`-style keys
@@ -3478,6 +3490,14 @@
   current CLI state is always normal, so both status and aborted calls return
   `0`. Real client disconnects, timeout transitions, request finishing, and
   web-server/SAPI connection lifecycle state remain unsupported.
+  `setlocale()` is currently a deterministic C/POSIX locale slice. It accepts
+  supported `LC_*` categories, returns `"C"` for reads or accepted C/POSIX
+  candidates, and returns `false` for unsupported locale names. `nl_langinfo()`
+  covers the C-locale day/month name constants `ABDAY_*`, `DAY_*`, `ABMON_*`,
+  `MON_*`, plus `RADIXCHAR`; unknown item ids emit PHP's warning and return
+  `false`. Host locale catalogs, locale mutation beyond C/POSIX, monetary/time
+  formats outside those constants, platform-specific constant values, and
+  native lowering remain unsupported.
   `printf($format, ...$values)`, `fprintf($stream, $format, ...$values)`,
   `sprintf($format, ...$values)`, `vsprintf($format, $values)`,
   `vprintf($format, $values)`, and `vfprintf($stream, $format, $values)` support
@@ -3503,9 +3523,13 @@
   minimum arity errors route through catchable PHP-shaped argument-count
   diagnostics, and vprintf/vfprintf argument type/count failures route through
   catchable PHP-shaped `TypeError`; this includes non-resource `vfprintf()`
-  stream arguments.
+  stream arguments. Caught formatter `Error`/`ArgumentCountError` objects can
+  be echoed or cast to strings through the bounded PHP Throwable string form,
+  and selected `sprintf()` argument-count errors preserve the internal builtin
+  frame used by reached PHPT rows.
   PHP's full format grammar, star width or precision, general placeholders,
-  locale behavior, broad argument reordering, object/resource conversions,
+  locale behavior, broad argument reordering, object/resource conversions
+  outside documented stringable and Throwable paths,
   exact warning behavior, full `precision=-1` exponent-threshold parity outside
   the covered constants path, partial-output behavior, and native lowering
   remain unsupported.
@@ -11317,7 +11341,8 @@
   `%s`/`%d`/`%b`/`%c`/`%u`/`%o`/`%x`/`%X`/`%f`/`%F`/`%e`/`%E` subset:
   PHP's full format grammar, star width or precision, general placeholders,
   locale behavior, broad argument reordering, binary byte fidelity for non-ASCII
-  `%c`, array/object/resource conversions, exact warning and arity object behavior,
+  `%c`, array/object/resource conversions outside documented stringable and
+  Throwable paths, exact warning and arity object behavior,
   partial-output behavior, and native lowering beyond function-table
   introspection
 - `strlen()` outside the current scalar/null string-convertible plus supported
@@ -11749,6 +11774,11 @@
   `request_order`, cookie merging into `$_REQUEST`, host environment imports,
   `$GLOBALS` aliasing, references/copy-on-write, mutation-ordering fidelity,
   exact warning behavior, and native lowering
+- `request_parse_body()` behavior beyond option key/value validation and the
+  no-content-type exception path: actual body parsing, multipart/urlencoded
+  result arrays, SAPI content-type dispatch, upload file construction,
+  request-limit enforcement beyond parsed option quantities, host SAPI state,
+  and native lowering
 - `$_FILES` behavior beyond the current explicit `PHPC_FILES` upload metadata
   seed, direct root-symbol routing, and bounded `tmp_name`/`error=0`
   upload-provenance checks: multipart/form upload parsing, runtime temporary
@@ -11806,8 +11836,9 @@
   severity, expression recovery values, and `error_reporting()` mask
   interactions
 - full PHP `Throwable`/`Error` objects, stack traces, warning/notice object
-  parity, and complete user-error-handler behavior; only documented bounded
-  handler slices are implemented
+  parity, and complete user-error-handler behavior; current caught core
+  Throwable objects support bounded PHP stringification for echo/string casts,
+  and only documented bounded handler slices are implemented
 - exact PHP output buffering and fatal-emission fidelity for every runtime
   failure; current PHP-shaped fatal paths preserve their modeled stdout/stderr
   shape, while remaining project-diagnostic runtime boundaries abort without

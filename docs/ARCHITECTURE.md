@@ -546,7 +546,12 @@ seeds flat and bracketed URL-encoded body pairs into `$_POST`.
 direction for bounded query strings: it walks arrays or initialized public
 object properties, recurses with bracketed child keys, skips null/resource
 leaves, applies top-level numeric prefixes, and encodes components as
-RFC1738 form data by default or RFC3986 when requested. `PHPC_COOKIE`
+RFC1738 form data by default or RFC3986 when requested.
+`request_parse_body()` currently covers only the CLI validation edge of that
+request-body surface: it validates scalar option arrays, emits quantity
+warnings through the INI quantity parser, and throws the PHP-shaped
+`RequestParseBodyException` when no content type is present; actual body
+parsing remains outside the deterministic request scaffold. `PHPC_COOKIE`
 is treated as an explicit semicolon-delimited cookie header seed for
 `$_COOKIE` and `$_SERVER["HTTP_COOKIE"]`. `PHPC_FILES` is treated as an
 explicit URL-encoded upload metadata seed for `$_FILES` using PHP-shaped keys

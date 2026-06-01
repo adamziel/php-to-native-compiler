@@ -116,6 +116,37 @@ try {
 }
 
 #[test]
+fn sprintf_caught_errors_echo_php_throwable_strings() {
+    let execution = run_source(
+        r#"<?php
+try {
+    var_dump(sprintf("%s/%s/%s", "foo", "bar"));
+} catch (Throwable $e) {
+    echo $e, "\n";
+}
+try {
+    var_dump(sprintf("%s", new stdClass()));
+} catch (Throwable $e) {
+    echo $e, "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "ArgumentCountError: 4 arguments are required, 3 given in Command line code:3\n\
+Stack trace:\n\
+#0 Command line code(3): sprintf('%s/%s/%s', 'foo', 'bar')\n\
+#1 {main}\n\
+Error: Object of class stdClass could not be converted to string in Command line code:8\n\
+Stack trace:\n\
+#0 {main}\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn vprintf_handles_flagged_percent_and_binary_char_output() {
     let execution = run_source(
         r#"<?php

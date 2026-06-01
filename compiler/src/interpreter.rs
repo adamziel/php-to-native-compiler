@@ -343,6 +343,7 @@ struct Interpreter {
     active_foreach_references: Vec<ActiveForeachReference>,
     function_context: Vec<String>,
     pending_uncaught_call_frames: Vec<PendingUncaughtCallFrame>,
+    throwable_string_traces: HashMap<i64, String>,
     class_context: Vec<ClassId>,
     called_class_context: Vec<ClassId>,
     trait_class_context: Vec<String>,
@@ -11218,6 +11219,7 @@ impl Interpreter {
             active_foreach_references: Vec::new(),
             function_context: Vec::new(),
             pending_uncaught_call_frames: Vec::new(),
+            throwable_string_traces: HashMap::new(),
             class_context: Vec::new(),
             called_class_context: Vec::new(),
             trait_class_context: Vec::new(),
@@ -20292,6 +20294,45 @@ impl Interpreter {
         }
     }
 
+    fn throwable_display_file(&self) -> String {
+        self.source_file
+            .clone()
+            .unwrap_or_else(|| "Command line code".to_string())
+    }
+
+    fn throwable_display_line(&self, object: &PhpObject, fallback: usize) -> usize {
+        let class_id = object.class_id();
+        let protected_class_ids = self.protected_class_ids_for_context(class_id);
+        match object.read_property_from_context("line", Some(class_id), &protected_class_ids) {
+            Ok(Value::Int(line)) if line >= 0 => line as usize,
+            _ => fallback,
+        }
+    }
+
+    fn throwable_to_php_string(&self, object: &PhpObject, span: Span) -> Option<String> {
+        if !Self::is_throwable_object(object) {
+            return None;
+        }
+
+        let class_name = object.class_name();
+        let message = self.throwable_message_for_fatal(object);
+        let message_suffix = if message.is_empty() {
+            String::new()
+        } else {
+            format!(": {message}")
+        };
+        let file = self.throwable_display_file();
+        let line = self.throwable_display_line(object, span.line);
+        let stack_trace = self
+            .throwable_string_traces
+            .get(&object.id())
+            .cloned()
+            .unwrap_or_else(|| "#0 {main}".to_string());
+        Some(format!(
+            "{class_name}{message_suffix} in {file}:{line}\nStack trace:\n{stack_trace}"
+        ))
+    }
+
     fn uncaught_throw_error(&self, object: &PhpObject, span: Span) -> Diagnostic {
         let message = self.throwable_message_for_fatal(object);
         let message_suffix = if message.is_empty() {
@@ -20586,6 +20627,10 @@ impl Interpreter {
                 &protected_class_ids,
             )
             .map_err(|error| runtime_error(Span { line: 0, column: 0 }, error))?;
+        let file = self.throwable_display_file();
+        let stack_trace = self.formatted_pending_uncaught_call_trace(&file);
+        self.throwable_string_traces
+            .insert(object.id(), stack_trace);
         self.track_allocated_object(&object);
         Ok(object)
     }
@@ -84484,6 +84529,7 @@ impl Interpreter {
                 ),
             )),
             "parse_url" => call_parse_url(&args, span),
+            "request_parse_body" => self.call_request_parse_body(&args, span),
             "http_build_query" => call_http_build_query(&args, span),
             "urlencode" => call_urlencode(&args, span),
             "rawurlencode" => call_rawurlencode(&args, span),
@@ -84545,7 +84591,7 @@ impl Interpreter {
             "json_last_error_msg" => self.call_json_last_error_msg(&args, span),
             "printf" => self.call_printf(&args, span),
             "fprintf" => self.call_fprintf(&args, span),
-            "sprintf" => self.call_sprintf(&args, span),
+            "sprintf" => self.call_sprintf_with_trace(&args, span),
             "vsprintf" => self.call_vsprintf_value(&args, span),
             "vprintf" => self.call_vprintf(&args, span),
             "vfprintf" => self.call_vfprintf(&args, span),
@@ -84804,6 +84850,7 @@ impl Interpreter {
                 Ok(Value::Array(bounded_timezone_abbreviations_array()))
             }
             "setlocale" => self.call_setlocale(&args, span),
+            "nl_langinfo" => self.call_nl_langinfo(&args, span),
             "getenv" => self.call_getenv(&args, span),
             "putenv" => self.call_putenv(&args, span),
             "get_cfg_var" => self.call_get_cfg_var(&args, span),
@@ -93028,8 +93075,11 @@ impl Interpreter {
                 return self.bcmath_number_object_string(&object, span);
             }
             if let Some(output) =
-                self.object_to_string_with_magic(object, "object-to-string", span)?
+                self.object_to_string_with_magic(object.clone(), "object-to-string", span)?
             {
+                return Ok(output);
+            }
+            if let Some(output) = self.throwable_to_php_string(&object, span) {
                 return Ok(output);
             }
         }
@@ -93051,8 +93101,11 @@ impl Interpreter {
                     .map(String::into_bytes);
             }
             if let Some(output) =
-                self.object_to_string_with_magic(object, "object-to-string", span)?
+                self.object_to_string_with_magic(object.clone(), "object-to-string", span)?
             {
+                return Ok(output.into_bytes());
+            }
+            if let Some(output) = self.throwable_to_php_string(&object, span) {
                 return Ok(output.into_bytes());
             }
         }
@@ -93238,6 +93291,8 @@ impl Interpreter {
                 if let Some(output) =
                     self.object_to_string_with_magic(object.clone(), "(string)", span)?
                 {
+                    Ok(Value::String(output))
+                } else if let Some(output) = self.throwable_to_php_string(&object, span) {
                     Ok(Value::String(output))
                 } else {
                     Err(runtime_error(
@@ -100553,6 +100608,10 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_optional_int_param("component", -1),
             ],
         ),
+        "request_parse_body" => (
+            "array",
+            vec![reflection_internal_optional_null_param("options", "?array")],
+        ),
         "json_encode" => (
             "string|false",
             vec![
@@ -100901,6 +100960,10 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_param("category", "int"),
                 reflection_internal_variadic_param("locales", "array|string|int|null"),
             ],
+        ),
+        "nl_langinfo" => (
+            "string|false",
+            vec![reflection_internal_param("item", "int")],
         ),
         "strftime" | "gmstrftime" => (
             "string|false",
@@ -103483,6 +103546,10 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
             return Some(("TypeError", format!("PhpToken::is(): {message}")));
         }
 
+        if let Some((class_name, message)) = request_parse_body_php_error_class_and_message(error) {
+            return Some((class_name, message));
+        }
+
         if let Some((class_name, message)) = stream_context_php_error_class_and_message(error) {
             return Some((class_name, message));
         }
@@ -104757,6 +104824,40 @@ fn builtin_resource_type_error_message(error: &Diagnostic) -> Option<String> {
     None
 }
 
+fn request_parse_body_php_error_class_and_message(
+    error: &Diagnostic,
+) -> Option<(&'static str, String)> {
+    if error.phase != Phase::Runtime {
+        return None;
+    }
+
+    let message = error
+        .message
+        .strip_prefix("unsupported call request_parse_body(): ")?;
+    if message == "Request does not provide a content type"
+        || message.starts_with("Content-Type \"")
+        || message.starts_with("POST Content-Length of ")
+        || message.starts_with("Input variables exceeded ")
+        || message.starts_with("Multipart body parts limit exceeded ")
+        || message == "Maximum number of allowable file uploads has been exceeded"
+        || message == "Invalid boundary in multipart/form-data POST data"
+        || message == "Missing boundary in multipart/form-data POST data"
+        || message == "File Upload Mime headers garbled"
+    {
+        return Some(("RequestParseBodyException", message.to_string()));
+    }
+
+    if message == "Invalid integer key in $options argument"
+        || message == "Invalid empty string key in $options argument"
+        || message.starts_with("Invalid key \"")
+        || (message.starts_with("Invalid ") && message.ends_with(" value in $options argument"))
+    {
+        return Some(("ValueError", message.to_string()));
+    }
+
+    None
+}
+
 fn stream_context_php_error_class_and_message(
     error: &Diagnostic,
 ) -> Option<(&'static str, String)> {
@@ -105095,6 +105196,7 @@ fn is_builtin(name: &str) -> bool {
             | "str_getcsv"
             | "parse_str"
             | "parse_url"
+            | "request_parse_body"
             | "http_build_query"
             | "urlencode"
             | "rawurlencode"
@@ -105246,6 +105348,7 @@ fn is_builtin(name: &str) -> bool {
             | "timezone_transitions_get"
             | "timezone_abbreviations_list"
             | "setlocale"
+            | "nl_langinfo"
             | "getenv"
             | "putenv"
             | "get_cfg_var"
@@ -106635,6 +106738,45 @@ const PHP_LC_COLLATE: i64 = 3;
 const PHP_LC_MONETARY: i64 = 4;
 const PHP_LC_MESSAGES: i64 = 5;
 const PHP_LC_ALL: i64 = 6;
+const PHP_NL_ABDAY_1: i64 = 65_536;
+const PHP_NL_ABDAY_2: i64 = 65_537;
+const PHP_NL_ABDAY_3: i64 = 65_538;
+const PHP_NL_ABDAY_4: i64 = 65_539;
+const PHP_NL_ABDAY_5: i64 = 65_540;
+const PHP_NL_ABDAY_6: i64 = 65_541;
+const PHP_NL_ABDAY_7: i64 = 65_542;
+const PHP_NL_DAY_1: i64 = 65_543;
+const PHP_NL_DAY_2: i64 = 65_544;
+const PHP_NL_DAY_3: i64 = 65_545;
+const PHP_NL_DAY_4: i64 = 65_546;
+const PHP_NL_DAY_5: i64 = 65_547;
+const PHP_NL_DAY_6: i64 = 65_548;
+const PHP_NL_DAY_7: i64 = 65_549;
+const PHP_NL_ABMON_1: i64 = 65_550;
+const PHP_NL_ABMON_2: i64 = 65_551;
+const PHP_NL_ABMON_3: i64 = 65_552;
+const PHP_NL_ABMON_4: i64 = 65_553;
+const PHP_NL_ABMON_5: i64 = 65_554;
+const PHP_NL_ABMON_6: i64 = 65_555;
+const PHP_NL_ABMON_7: i64 = 65_556;
+const PHP_NL_ABMON_8: i64 = 65_557;
+const PHP_NL_ABMON_9: i64 = 65_558;
+const PHP_NL_ABMON_10: i64 = 65_559;
+const PHP_NL_ABMON_11: i64 = 65_560;
+const PHP_NL_ABMON_12: i64 = 65_561;
+const PHP_NL_MON_1: i64 = 65_562;
+const PHP_NL_MON_2: i64 = 65_563;
+const PHP_NL_MON_3: i64 = 65_564;
+const PHP_NL_MON_4: i64 = 65_565;
+const PHP_NL_MON_5: i64 = 65_566;
+const PHP_NL_MON_6: i64 = 65_567;
+const PHP_NL_MON_7: i64 = 65_568;
+const PHP_NL_MON_8: i64 = 65_569;
+const PHP_NL_MON_9: i64 = 65_570;
+const PHP_NL_MON_10: i64 = 65_571;
+const PHP_NL_MON_11: i64 = 65_572;
+const PHP_NL_MON_12: i64 = 65_573;
+const PHP_NL_RADIXCHAR: i64 = 65_574;
 const PHP_CAL_GREGORIAN: i64 = 0;
 const PHP_CAL_JULIAN: i64 = 1;
 const PHP_CAL_JEWISH: i64 = 2;
@@ -106666,6 +106808,51 @@ const PHP_DATETIMEZONE_PER_COUNTRY: i64 = 4096;
 const PHP_SUNFUNCS_RET_TIMESTAMP: i64 = 0;
 const PHP_SUNFUNCS_RET_STRING: i64 = 1;
 const PHP_SUNFUNCS_RET_DOUBLE: i64 = 2;
+
+fn c_locale_nl_langinfo(item: i64) -> Option<&'static str> {
+    match item {
+        PHP_NL_ABDAY_1 => Some("Sun"),
+        PHP_NL_ABDAY_2 => Some("Mon"),
+        PHP_NL_ABDAY_3 => Some("Tue"),
+        PHP_NL_ABDAY_4 => Some("Wed"),
+        PHP_NL_ABDAY_5 => Some("Thu"),
+        PHP_NL_ABDAY_6 => Some("Fri"),
+        PHP_NL_ABDAY_7 => Some("Sat"),
+        PHP_NL_DAY_1 => Some("Sunday"),
+        PHP_NL_DAY_2 => Some("Monday"),
+        PHP_NL_DAY_3 => Some("Tuesday"),
+        PHP_NL_DAY_4 => Some("Wednesday"),
+        PHP_NL_DAY_5 => Some("Thursday"),
+        PHP_NL_DAY_6 => Some("Friday"),
+        PHP_NL_DAY_7 => Some("Saturday"),
+        PHP_NL_ABMON_1 => Some("Jan"),
+        PHP_NL_ABMON_2 => Some("Feb"),
+        PHP_NL_ABMON_3 => Some("Mar"),
+        PHP_NL_ABMON_4 => Some("Apr"),
+        PHP_NL_ABMON_5 => Some("May"),
+        PHP_NL_ABMON_6 => Some("Jun"),
+        PHP_NL_ABMON_7 => Some("Jul"),
+        PHP_NL_ABMON_8 => Some("Aug"),
+        PHP_NL_ABMON_9 => Some("Sep"),
+        PHP_NL_ABMON_10 => Some("Oct"),
+        PHP_NL_ABMON_11 => Some("Nov"),
+        PHP_NL_ABMON_12 => Some("Dec"),
+        PHP_NL_MON_1 => Some("January"),
+        PHP_NL_MON_2 => Some("February"),
+        PHP_NL_MON_3 => Some("March"),
+        PHP_NL_MON_4 => Some("April"),
+        PHP_NL_MON_5 => Some("May"),
+        PHP_NL_MON_6 => Some("June"),
+        PHP_NL_MON_7 => Some("July"),
+        PHP_NL_MON_8 => Some("August"),
+        PHP_NL_MON_9 => Some("September"),
+        PHP_NL_MON_10 => Some("October"),
+        PHP_NL_MON_11 => Some("November"),
+        PHP_NL_MON_12 => Some("December"),
+        PHP_NL_RADIXCHAR => Some("."),
+        _ => None,
+    }
+}
 
 fn php_array_from_strings(values: impl IntoIterator<Item = String>) -> PhpArray {
     let mut array = PhpArray::new();
@@ -107120,6 +107307,45 @@ const BUILTIN_GLOBAL_CONSTANT_NAMES: &[&str] = &[
     "LC_MONETARY",
     "LC_MESSAGES",
     "LC_ALL",
+    "ABDAY_1",
+    "ABDAY_2",
+    "ABDAY_3",
+    "ABDAY_4",
+    "ABDAY_5",
+    "ABDAY_6",
+    "ABDAY_7",
+    "DAY_1",
+    "DAY_2",
+    "DAY_3",
+    "DAY_4",
+    "DAY_5",
+    "DAY_6",
+    "DAY_7",
+    "ABMON_1",
+    "ABMON_2",
+    "ABMON_3",
+    "ABMON_4",
+    "ABMON_5",
+    "ABMON_6",
+    "ABMON_7",
+    "ABMON_8",
+    "ABMON_9",
+    "ABMON_10",
+    "ABMON_11",
+    "ABMON_12",
+    "MON_1",
+    "MON_2",
+    "MON_3",
+    "MON_4",
+    "MON_5",
+    "MON_6",
+    "MON_7",
+    "MON_8",
+    "MON_9",
+    "MON_10",
+    "MON_11",
+    "MON_12",
+    "RADIXCHAR",
     "CAL_GREGORIAN",
     "CAL_JULIAN",
     "CAL_JEWISH",
@@ -107525,6 +107751,45 @@ fn builtin_global_constant_value(name: &str) -> Option<Value> {
         "LC_MONETARY" => Some(Value::Int(PHP_LC_MONETARY)),
         "LC_MESSAGES" => Some(Value::Int(PHP_LC_MESSAGES)),
         "LC_ALL" => Some(Value::Int(PHP_LC_ALL)),
+        "ABDAY_1" => Some(Value::Int(PHP_NL_ABDAY_1)),
+        "ABDAY_2" => Some(Value::Int(PHP_NL_ABDAY_2)),
+        "ABDAY_3" => Some(Value::Int(PHP_NL_ABDAY_3)),
+        "ABDAY_4" => Some(Value::Int(PHP_NL_ABDAY_4)),
+        "ABDAY_5" => Some(Value::Int(PHP_NL_ABDAY_5)),
+        "ABDAY_6" => Some(Value::Int(PHP_NL_ABDAY_6)),
+        "ABDAY_7" => Some(Value::Int(PHP_NL_ABDAY_7)),
+        "DAY_1" => Some(Value::Int(PHP_NL_DAY_1)),
+        "DAY_2" => Some(Value::Int(PHP_NL_DAY_2)),
+        "DAY_3" => Some(Value::Int(PHP_NL_DAY_3)),
+        "DAY_4" => Some(Value::Int(PHP_NL_DAY_4)),
+        "DAY_5" => Some(Value::Int(PHP_NL_DAY_5)),
+        "DAY_6" => Some(Value::Int(PHP_NL_DAY_6)),
+        "DAY_7" => Some(Value::Int(PHP_NL_DAY_7)),
+        "ABMON_1" => Some(Value::Int(PHP_NL_ABMON_1)),
+        "ABMON_2" => Some(Value::Int(PHP_NL_ABMON_2)),
+        "ABMON_3" => Some(Value::Int(PHP_NL_ABMON_3)),
+        "ABMON_4" => Some(Value::Int(PHP_NL_ABMON_4)),
+        "ABMON_5" => Some(Value::Int(PHP_NL_ABMON_5)),
+        "ABMON_6" => Some(Value::Int(PHP_NL_ABMON_6)),
+        "ABMON_7" => Some(Value::Int(PHP_NL_ABMON_7)),
+        "ABMON_8" => Some(Value::Int(PHP_NL_ABMON_8)),
+        "ABMON_9" => Some(Value::Int(PHP_NL_ABMON_9)),
+        "ABMON_10" => Some(Value::Int(PHP_NL_ABMON_10)),
+        "ABMON_11" => Some(Value::Int(PHP_NL_ABMON_11)),
+        "ABMON_12" => Some(Value::Int(PHP_NL_ABMON_12)),
+        "MON_1" => Some(Value::Int(PHP_NL_MON_1)),
+        "MON_2" => Some(Value::Int(PHP_NL_MON_2)),
+        "MON_3" => Some(Value::Int(PHP_NL_MON_3)),
+        "MON_4" => Some(Value::Int(PHP_NL_MON_4)),
+        "MON_5" => Some(Value::Int(PHP_NL_MON_5)),
+        "MON_6" => Some(Value::Int(PHP_NL_MON_6)),
+        "MON_7" => Some(Value::Int(PHP_NL_MON_7)),
+        "MON_8" => Some(Value::Int(PHP_NL_MON_8)),
+        "MON_9" => Some(Value::Int(PHP_NL_MON_9)),
+        "MON_10" => Some(Value::Int(PHP_NL_MON_10)),
+        "MON_11" => Some(Value::Int(PHP_NL_MON_11)),
+        "MON_12" => Some(Value::Int(PHP_NL_MON_12)),
+        "RADIXCHAR" => Some(Value::Int(PHP_NL_RADIXCHAR)),
         "CAL_GREGORIAN" => Some(Value::Int(PHP_CAL_GREGORIAN)),
         "CAL_JULIAN" => Some(Value::Int(PHP_CAL_JULIAN)),
         "CAL_JEWISH" => Some(Value::Int(PHP_CAL_JEWISH)),
@@ -126274,6 +126539,19 @@ impl Interpreter {
             .map(SprintfOutput::into_value)
     }
 
+    fn call_sprintf_with_trace(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        let result = self.call_sprintf(args, span);
+        if let Err(error) = &result {
+            if matches!(
+                catchable_php_error_class_and_message(error),
+                Some(("ArgumentCountError", _))
+            ) {
+                self.record_pending_uncaught_internal_call_frame("sprintf", span, args, error);
+            }
+        }
+        result
+    }
+
     fn call_vsprintf_value(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         self.call_vsprintf(args, "vsprintf()", span)
             .map(SprintfOutput::into_value)
@@ -126473,6 +126751,8 @@ impl Interpreter {
                     self.object_to_string_with_magic(object.clone(), function, span)?
                 {
                     Ok(output)
+                } else if let Some(output) = self.throwable_to_php_string(object, span) {
+                    Ok(output)
                 } else {
                     Err(sprintf_format_type_error(function, value, span))
                 }
@@ -126497,6 +126777,8 @@ impl Interpreter {
                 if let Some(output) =
                     self.object_to_string_with_magic(object.clone(), function, span)?
                 {
+                    Ok(output)
+                } else if let Some(output) = self.throwable_to_php_string(object, span) {
                     Ok(output)
                 } else {
                     Err(object_to_string_error(object.class_name(), span))
@@ -133022,6 +133304,31 @@ impl Interpreter {
         Ok(Value::Bool(false))
     }
 
+    fn call_nl_langinfo(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("nl_langinfo", args, 1, span)?;
+        let item = match &args[0] {
+            Value::Int(item) => *item,
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "nl_langinfo()",
+                        format!(
+                            "item argument must be int in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ))
+            }
+        };
+
+        let Some(value) = c_locale_nl_langinfo(item) else {
+            self.emit_display_warning(format!("nl_langinfo(): Item '{item}' is not valid"), span)?;
+            return Ok(Value::Bool(false));
+        };
+        Ok(Value::String(value.to_string()))
+    }
+
     fn call_getenv(&self, args: &[Value], span: Span) -> CompileResult<Value> {
         if args.len() > 2 {
             return Err(runtime_error(
@@ -135464,6 +135771,105 @@ impl Interpreter {
         Ok(Value::Int(parsed.value))
     }
 
+    fn call_request_parse_body(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if args.len() > 1 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "request_parse_body()",
+                    ArityExpectation::Between { min: 0, max: 1 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        match args.first() {
+            None | Some(Value::Null) => {}
+            Some(Value::Array(options)) => {
+                self.validate_request_parse_body_options(options, span)?
+            }
+            Some(other) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "request_parse_body()",
+                        format!(
+                            "Argument #1 ($options) must be of type ?array, {} given",
+                            php_type_error_given(other)
+                        ),
+                    ),
+                ));
+            }
+        }
+
+        Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "request_parse_body()",
+                "Request does not provide a content type",
+            ),
+        ))
+    }
+
+    fn validate_request_parse_body_options(
+        &mut self,
+        options: &PhpArray,
+        span: Span,
+    ) -> CompileResult<()> {
+        for entry in options.entries() {
+            let key = match &entry.key {
+                ArrayKey::Int(_) => {
+                    return Err(request_parse_body_value_error(
+                        span,
+                        "Invalid integer key in $options argument",
+                    ));
+                }
+                ArrayKey::String(key) if key.is_empty() => {
+                    return Err(request_parse_body_value_error(
+                        span,
+                        "Invalid empty string key in $options argument",
+                    ));
+                }
+                ArrayKey::String(key) => key,
+            };
+
+            if !request_parse_body_option_key_is_supported(key) {
+                return Err(request_parse_body_value_error(
+                    span,
+                    format!("Invalid key \"{key}\" in $options argument"),
+                ));
+            }
+
+            match entry.value_cloned() {
+                Value::String(value) => {
+                    let parsed = parse_ini_quantity_value(&value);
+                    if let Some(warning) = parsed.warning {
+                        self.emit_display_warning(warning, span)?;
+                    }
+                }
+                Value::BinaryString(value) => {
+                    let value = String::from_utf8_lossy(&value).into_owned();
+                    let parsed = parse_ini_quantity_value(&value);
+                    if let Some(warning) = parsed.warning {
+                        self.emit_display_warning(warning, span)?;
+                    }
+                }
+                Value::Int(_) => {}
+                other => {
+                    return Err(request_parse_body_value_error(
+                        span,
+                        format!(
+                            "Invalid {} value in $options argument",
+                            request_parse_body_option_value_name(&other)
+                        ),
+                    ));
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     fn ini_value(&self, name: &str) -> Option<String> {
         let normalized = normalize_ini_name(name);
         if normalized == "include_path" {
@@ -137697,6 +138103,37 @@ fn php_ini_truthy(value: &str) -> bool {
         )
 }
 
+fn request_parse_body_option_key_is_supported(key: &str) -> bool {
+    matches!(
+        key.to_ascii_lowercase().as_str(),
+        "max_file_uploads"
+            | "max_input_vars"
+            | "max_multipart_body_parts"
+            | "post_max_size"
+            | "upload_max_filesize"
+    )
+}
+
+fn request_parse_body_option_value_name(value: &Value) -> &'static str {
+    match value {
+        Value::Null => "null",
+        Value::Bool(_) => "bool",
+        Value::Float(_) => "float",
+        Value::Array(_) => "array",
+        Value::Object(_) | Value::Closure(_) => "object",
+        Value::Resource(_) => "resource",
+        Value::Int(_) => "int",
+        Value::String(_) | Value::BinaryString(_) => "string",
+    }
+}
+
+fn request_parse_body_value_error(span: Span, message: impl Into<String>) -> Diagnostic {
+    runtime_error(
+        span,
+        RuntimeError::unsupported_call("request_parse_body()", message.into()),
+    )
+}
+
 fn mysqli_default_port_ini_value_is_valid(value: &str) -> bool {
     match value.trim().parse::<i64>() {
         Ok(port) => (0..=65535).contains(&port),
@@ -137831,7 +138268,7 @@ fn parse_ini_quantity_value(value: &str) -> IniQuantityValue {
         return IniQuantityValue {
             value: number.value,
             warning: Some(format!(
-                "Invalid quantity \"{value}\": unknown multiplier \"{suffix_lower}\", interpreting as \"{}\" for backwards compatibility",
+                "Invalid quantity \"{value}\": unknown multiplier \"{suffix}\", interpreting as \"{}\" for backwards compatibility",
                 number.text
             )),
         };

@@ -1,13 +1,13 @@
 # PHP Native Compiler PHPT Progress
 
-Updated: 2026-06-01 20:15 CEST
+Updated: 2026-06-01 20:46 CEST
 
 Primary/public branch: `origin/master`
 Latest source-bearing public head:
-`1fe2b233a9d433e0980289fc93a19bb47f71af7c checkpoint: repair PHPT regressions and add hash session rows`
+`2755fc15fd284ad1b5d5f1c65a92c033a243aed7 checkpoint: add superglobal pcre serialize math type rows`
 
 Semantic source for current published score:
-`1fe2b233a9d433e0980289fc93a19bb47f71af7c checkpoint: repair PHPT regressions and add hash session rows`
+`2755fc15fd284ad1b5d5f1c65a92c033a243aed7 checkpoint: add superglobal pcre serialize math type rows`
 
 Public PHPT metric:
 
@@ -16,29 +16,40 @@ Public PHPT metric:
 Pinned denominator: `20294` total pinned runnable php-src PHPTs. Raw runner
 denominators that exclude BORKED rows are not public progress.
 
-Current public score: **5481 / 20294 pinned runnable PHPTs = 27.01%**.
+Current public score: **5498 / 20294 pinned runnable PHPTs = 27.09%**.
 
-Accepted public gate: checkpoint `1fe2b233` completed the full pinned PHPT
-gate with `5481 / 20294 = 27.01%` and zero latest-published PASS regressions
-against the `43262ab5` baseline. The gate repaired the two regressions that
-blocked checkpoint `025c1325` (`array_keys_variation_005.phpt` and
-`bug70720.phpt`) and kept the JSON/hash/session/cookie validation wins. Full
-gate evidence is in
-`state/logs/phpt-full-batch024-repair-hash-session-20260601T180507Z-php-src-f97ff59-source-1fe2b233`;
-the aggregate had `5481` passed rows, `5477` normalized current passes, and
+Accepted public gate: checkpoint `2755fc15` completed the full pinned PHPT
+gate with `5498 / 20294 = 27.09%` and zero latest-published PASS regressions
+against the `1fe2b233` baseline. The gate accepted the 13-row focused batch
+covering unset initialized request superglobal roots, `preg_quote()` NUL/hash
+escaping, `unserialize()` extra-data and signed-length diagnostics,
+`deg2rad()`/`rad2deg()` precision-sensitive operation order, and the reached
+`gettype()`/direct-variable `settype()` error and side-effect rows. Full gate
+evidence is in
+`state/logs/phpt-full-batch024-next13-20260601T183739Z-php-src-f97ff59-source-2755fc15`;
+the aggregate had `5498` passed rows, `5494` normalized current passes, and
 `0` PASS regressions. The lone invalid-marker grep hit is the known expected
 socket `Permission denied` warning in `run-tests.log`, not a publication
 blocker.
 
+Previous accepted public gate: checkpoint `1fe2b233` completed the full pinned
+PHPT gate with `5481 / 20294 = 27.01%` and zero latest-published PASS
+regressions against the `43262ab5` baseline.
+
 Local supervisor note: the next post-public focused source batch is verified
-for 13 selected PHPT rows across unset initialized request superglobal roots,
-`preg_quote()` NUL/hash escaping, `unserialize()` extra-data and signed-length
-diagnostics, `deg2rad()`/`rad2deg()` precision-sensitive operation order, and
-`gettype()`/direct-variable `settype()` error and side-effect behavior.
-Focused Rust passed `102 / 102`, `cargo build -p phpc --bin phpc` passed, and
-selected PHPT proof passed `14 / 14` including the PCRE guard row. This is not
-a public score update until checkpoint validation and a full pinned PHPT gate
-complete.
+for 6 selected PHPT rows across `request_parse_body()` CLI option validation
+and no-content-type exception handling, C/POSIX `nl_langinfo()` day/month/radix
+metadata, and bounded caught `Throwable` stringification for the reached
+`sprintf()` error row. Focused Rust passed `383 / 383` across
+`request_parse_body_builtin`, `object_model`, `sprintf_builtin`, and
+`locale_string_builtins`; `cargo build -p phpc --bin phpc` passed; and
+selected PHPT proof passed `6 / 6` for
+`multipart_options_invalid_key.phpt`,
+`multipart_options_invalid_quantity.phpt`,
+`multipart_options_invalid_value_type.phpt`, `options_array_references.phpt`,
+`nl_langinfo_basic.phpt`, and `sprintf_rope_optimization_002.phpt`. This is
+not a public score update until checkpoint validation and a full pinned PHPT
+gate complete.
 
 Local supervisor note: the next worker-integrated focused source batch covers
 8 additional target PHPT rows: `substr.phpt`, `fread_error.phpt`,
@@ -502,7 +513,9 @@ Current rejected, reverted, stale, or still-pending Batch024 candidates:
 | Batch021 regression repair | 4685 / 20294 | 23.09% | 0 PASS regressions; sockets marker adjudicated |
 | Batch022 repair02 | 4949 / 20294 | 24.39% | 0 PASS regressions; sockets marker adjudicated |
 | Batch023 repair01 | 5173 / 20294 | 25.49% | 0 PASS regressions |
-| Batch024 regression repair | 5363 / 20294 | 26.43% | 0 PASS regressions; current public score |
+| Batch024 regression repair | 5363 / 20294 | 26.43% | 0 PASS regressions |
+| Batch024 repair hash/session | 5481 / 20294 | 27.01% | 0 PASS regressions; sockets marker adjudicated |
+| Batch024 next13 | 5498 / 20294 | 27.09% | 0 PASS regressions; current public score |
 
 ## Operating Rules / Gates
 
@@ -528,6 +541,10 @@ Current rejected, reverted, stale, or still-pending Batch024 candidates:
 - PHPT wrapper:
   `/home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper`
 - Current Batch024 gate evidence:
+  `/home/claude/supervised-php-compiler/state/logs/phpt-full-batch024-next13-20260601T183739Z-php-src-f97ff59-source-2755fc15`
+- Previous Batch024 repair hash/session evidence:
+  `/home/claude/supervised-php-compiler/state/logs/phpt-full-batch024-repair-hash-session-20260601T180507Z-php-src-f97ff59-source-1fe2b233`
+- Previous Batch024 regression repair evidence:
   `/home/claude/supervised-php-compiler/state/logs/phpt-full-batch024-regression-repair-20260601T145651Z-php-src-f97ff59-source-43262ab5`
 - Previous Batch023 baseline evidence:
   `/home/claude/supervised-php-compiler/state/logs/phpt-full-batch023-repair01-sharded-serialized-openbasedir-20260531T1308Z-php-src-f97ff59-public-54829387-source-54f3c2c3`

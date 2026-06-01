@@ -31947,9 +31947,16 @@ impl PhpClassTable {
         classes
             .set_parent(invalid_url_exception_id, exception_id)
             .expect("Uri\\WhatWg\\InvalidUrlException should extend Exception");
+        let request_parse_body_exception_id =
+            classes.declare_class("RequestParseBodyException").expect(
+                "core class table should contain Uri exceptions before RequestParseBodyException",
+            );
+        classes
+            .set_parent(request_parse_body_exception_id, exception_id)
+            .expect("RequestParseBodyException should extend Exception");
         classes
             .declare_class("stdClass")
-            .expect("core class table should contain Uri exceptions before stdClass");
+            .expect("core class table should contain RequestParseBodyException before stdClass");
         let php_token_id = classes
             .declare_class("PhpToken")
             .expect("core class table should contain stdClass before PhpToken");
@@ -80648,6 +80655,7 @@ mod tests {
                 "Error",
                 "Uri\\InvalidUriException",
                 "Uri\\WhatWg\\InvalidUrlException",
+                "RequestParseBodyException",
                 "stdClass",
                 "PhpToken",
                 "mysqli",
@@ -80749,16 +80757,30 @@ mod tests {
             vec!["getMessage", "getCode"]
         );
 
+        let request_parse_body_exception =
+            classes.lookup_class("requestparsebodyexception").unwrap();
+        assert_eq!(
+            request_parse_body_exception.name(),
+            "RequestParseBodyException"
+        );
+        assert_eq!(request_parse_body_exception.id().index(), 4);
+        assert_eq!(
+            request_parse_body_exception.parent_id(),
+            Some(exception.id())
+        );
+        assert!(request_parse_body_exception.properties().is_empty());
+        assert!(request_parse_body_exception.methods().is_empty());
+
         let stdclass = classes.lookup_class("stdclass").unwrap();
         assert_eq!(stdclass.name(), "stdClass");
-        assert_eq!(stdclass.id().index(), 4);
+        assert_eq!(stdclass.id().index(), 5);
         assert!(stdclass.parent_id().is_none());
         assert!(stdclass.properties().is_empty());
         assert!(stdclass.methods().is_empty());
 
         let mysqli = classes.lookup_class("mysqli").unwrap();
         assert_eq!(mysqli.name(), "mysqli");
-        assert_eq!(mysqli.id().index(), 6);
+        assert_eq!(mysqli.id().index(), 7);
         assert!(mysqli.parent_id().is_none());
         assert_eq!(
             mysqli
@@ -80779,21 +80801,21 @@ mod tests {
 
         let mysqli_result = classes.lookup_class("mysqli_result").unwrap();
         assert_eq!(mysqli_result.name(), "mysqli_result");
-        assert_eq!(mysqli_result.id().index(), 7);
+        assert_eq!(mysqli_result.id().index(), 8);
         assert!(mysqli_result.parent_id().is_none());
         assert!(mysqli_result.properties().is_empty());
         assert!(mysqli_result.methods().is_empty());
 
         let mysqli_stmt = classes.lookup_class("mysqli_stmt").unwrap();
         assert_eq!(mysqli_stmt.name(), "mysqli_stmt");
-        assert_eq!(mysqli_stmt.id().index(), 8);
+        assert_eq!(mysqli_stmt.id().index(), 9);
         assert!(mysqli_stmt.parent_id().is_none());
         assert!(mysqli_stmt.properties().is_empty());
         assert!(mysqli_stmt.methods().is_empty());
 
         let pdo = classes.lookup_class("pdo").unwrap();
         assert_eq!(pdo.name(), "PDO");
-        assert_eq!(pdo.id().index(), 10);
+        assert_eq!(pdo.id().index(), 11);
         assert!(pdo.parent_id().is_none());
         assert!(pdo.properties().is_empty());
         assert_eq!(
@@ -80817,14 +80839,14 @@ mod tests {
 
         let pdo_statement = classes.lookup_class("pdostatement").unwrap();
         assert_eq!(pdo_statement.name(), "PDOStatement");
-        assert_eq!(pdo_statement.id().index(), 11);
+        assert_eq!(pdo_statement.id().index(), 12);
         assert!(pdo_statement.parent_id().is_none());
         assert!(pdo_statement.properties().is_empty());
         assert!(pdo_statement.methods().is_empty());
 
         let rounding_mode = classes.lookup_class("roundingmode").unwrap();
         assert_eq!(rounding_mode.name(), "RoundingMode");
-        assert_eq!(rounding_mode.id().index(), 12);
+        assert_eq!(rounding_mode.id().index(), 13);
         assert!(rounding_mode.parent_id().is_none());
         assert_eq!(
             rounding_mode
@@ -80838,7 +80860,7 @@ mod tests {
 
         let bcmath_number = classes.lookup_class("bcmath\\number").unwrap();
         assert_eq!(bcmath_number.name(), "BcMath\\Number");
-        assert_eq!(bcmath_number.id().index(), 19);
+        assert_eq!(bcmath_number.id().index(), 20);
         assert!(bcmath_number.parent_id().is_none());
         assert_eq!(
             bcmath_number
@@ -80875,7 +80897,7 @@ mod tests {
 
         let datetimezone = classes.lookup_class("datetimezone").unwrap();
         assert_eq!(datetimezone.name(), "DateTimeZone");
-        assert_eq!(datetimezone.id().index(), 20);
+        assert_eq!(datetimezone.id().index(), 21);
         assert!(datetimezone.parent_id().is_none());
         assert_eq!(
             datetimezone
@@ -80907,14 +80929,14 @@ mod tests {
 
         let reflection_exception = classes.lookup_class("reflectionexception").unwrap();
         assert_eq!(reflection_exception.name(), "ReflectionException");
-        assert_eq!(reflection_exception.id().index(), 21);
+        assert_eq!(reflection_exception.id().index(), 22);
         assert_eq!(reflection_exception.parent_id(), Some(exception.id()));
         assert!(reflection_exception.properties().is_empty());
         assert!(reflection_exception.methods().is_empty());
 
         let attribute = classes.lookup_class("attribute").unwrap();
         assert_eq!(attribute.name(), "Attribute");
-        assert_eq!(attribute.id().index(), 22);
+        assert_eq!(attribute.id().index(), 23);
         assert!(attribute.parent_id().is_none());
         assert_eq!(
             attribute
@@ -80929,7 +80951,7 @@ mod tests {
 
         let reflection_class = classes.lookup_class("reflectionclass").unwrap();
         assert_eq!(reflection_class.name(), "ReflectionClass");
-        assert_eq!(reflection_class.id().index(), 23);
+        assert_eq!(reflection_class.id().index(), 24);
         assert!(reflection_class.parent_id().is_none());
         assert_eq!(
             reflection_class
@@ -80946,7 +80968,7 @@ mod tests {
 
         let reflection_object = classes.lookup_class("reflectionobject").unwrap();
         assert_eq!(reflection_object.name(), "ReflectionObject");
-        assert_eq!(reflection_object.id().index(), 24);
+        assert_eq!(reflection_object.id().index(), 25);
         assert_eq!(reflection_object.parent_id(), Some(reflection_class.id()));
         assert_eq!(
             reflection_object
@@ -80959,7 +80981,7 @@ mod tests {
 
         let reflection_function = classes.lookup_class("reflectionfunction").unwrap();
         assert_eq!(reflection_function.name(), "ReflectionFunction");
-        assert_eq!(reflection_function.id().index(), 25);
+        assert_eq!(reflection_function.id().index(), 26);
         assert!(reflection_function.parent_id().is_none());
         assert!(reflection_function.properties().is_empty());
         assert!(reflection_function.method("getParameters").is_some());
@@ -80968,7 +80990,7 @@ mod tests {
 
         let reflection_method = classes.lookup_class("reflectionmethod").unwrap();
         assert_eq!(reflection_method.name(), "ReflectionMethod");
-        assert_eq!(reflection_method.id().index(), 26);
+        assert_eq!(reflection_method.id().index(), 27);
         assert!(reflection_method.parent_id().is_none());
         assert!(reflection_method.properties().is_empty());
         assert!(reflection_method.constant("IS_PUBLIC").is_some());
@@ -80977,7 +80999,7 @@ mod tests {
 
         let reflection_parameter = classes.lookup_class("reflectionparameter").unwrap();
         assert_eq!(reflection_parameter.name(), "ReflectionParameter");
-        assert_eq!(reflection_parameter.id().index(), 27);
+        assert_eq!(reflection_parameter.id().index(), 28);
         assert!(reflection_parameter.parent_id().is_none());
         assert_eq!(
             reflection_parameter
@@ -80993,14 +81015,14 @@ mod tests {
 
         let reflection_type = classes.lookup_class("reflectiontype").unwrap();
         assert_eq!(reflection_type.name(), "ReflectionType");
-        assert_eq!(reflection_type.id().index(), 28);
+        assert_eq!(reflection_type.id().index(), 29);
         assert!(reflection_type.parent_id().is_none());
         assert!(reflection_type.properties().is_empty());
         assert!(reflection_type.method("allowsNull").is_some());
 
         let reflection_named_type = classes.lookup_class("reflectionnamedtype").unwrap();
         assert_eq!(reflection_named_type.name(), "ReflectionNamedType");
-        assert_eq!(reflection_named_type.id().index(), 29);
+        assert_eq!(reflection_named_type.id().index(), 30);
         assert_eq!(
             reflection_named_type.parent_id(),
             Some(reflection_type.id())
@@ -81011,7 +81033,7 @@ mod tests {
 
         let reflection_union_type = classes.lookup_class("reflectionuniontype").unwrap();
         assert_eq!(reflection_union_type.name(), "ReflectionUnionType");
-        assert_eq!(reflection_union_type.id().index(), 30);
+        assert_eq!(reflection_union_type.id().index(), 31);
         assert_eq!(
             reflection_union_type.parent_id(),
             Some(reflection_type.id())
@@ -81025,7 +81047,7 @@ mod tests {
             reflection_intersection_type.name(),
             "ReflectionIntersectionType"
         );
-        assert_eq!(reflection_intersection_type.id().index(), 31);
+        assert_eq!(reflection_intersection_type.id().index(), 32);
         assert_eq!(
             reflection_intersection_type.parent_id(),
             Some(reflection_type.id())
@@ -81035,7 +81057,7 @@ mod tests {
 
         let reflection_property = classes.lookup_class("reflectionproperty").unwrap();
         assert_eq!(reflection_property.name(), "ReflectionProperty");
-        assert_eq!(reflection_property.id().index(), 32);
+        assert_eq!(reflection_property.id().index(), 33);
         assert!(reflection_property.parent_id().is_none());
         assert_eq!(
             reflection_property
@@ -81051,7 +81073,7 @@ mod tests {
 
         let reflection_class_constant = classes.lookup_class("reflectionclassconstant").unwrap();
         assert_eq!(reflection_class_constant.name(), "ReflectionClassConstant");
-        assert_eq!(reflection_class_constant.id().index(), 33);
+        assert_eq!(reflection_class_constant.id().index(), 34);
         assert!(reflection_class_constant.parent_id().is_none());
         assert_eq!(
             reflection_class_constant
@@ -81067,7 +81089,7 @@ mod tests {
 
         let reflection_attribute = classes.lookup_class("reflectionattribute").unwrap();
         assert_eq!(reflection_attribute.name(), "ReflectionAttribute");
-        assert_eq!(reflection_attribute.id().index(), 34);
+        assert_eq!(reflection_attribute.id().index(), 35);
         assert!(reflection_attribute.parent_id().is_none());
         assert_eq!(
             reflection_attribute
@@ -81082,29 +81104,29 @@ mod tests {
 
         let type_error = classes.lookup_class("typeerror").unwrap();
         assert_eq!(type_error.name(), "TypeError");
-        assert_eq!(type_error.id().index(), 35);
+        assert_eq!(type_error.id().index(), 36);
         assert_eq!(type_error.parent_id(), Some(error.id()));
         assert!(type_error.properties().is_empty());
 
         let argument_count_error = classes.lookup_class("argumentcounterror").unwrap();
         assert_eq!(argument_count_error.name(), "ArgumentCountError");
-        assert_eq!(argument_count_error.id().index(), 36);
+        assert_eq!(argument_count_error.id().index(), 37);
         assert_eq!(argument_count_error.parent_id(), Some(type_error.id()));
         assert!(argument_count_error.properties().is_empty());
 
         let value_error = classes.lookup_class("valueerror").unwrap();
         assert_eq!(value_error.name(), "ValueError");
-        assert_eq!(value_error.id().index(), 37);
+        assert_eq!(value_error.id().index(), 38);
         assert_eq!(value_error.parent_id(), Some(error.id()));
 
         let arithmetic_error = classes.lookup_class("arithmeticerror").unwrap();
         assert_eq!(arithmetic_error.name(), "ArithmeticError");
-        assert_eq!(arithmetic_error.id().index(), 38);
+        assert_eq!(arithmetic_error.id().index(), 39);
         assert_eq!(arithmetic_error.parent_id(), Some(error.id()));
 
         let division_by_zero_error = classes.lookup_class("divisionbyzeroerror").unwrap();
         assert_eq!(division_by_zero_error.name(), "DivisionByZeroError");
-        assert_eq!(division_by_zero_error.id().index(), 39);
+        assert_eq!(division_by_zero_error.id().index(), 40);
         assert_eq!(
             division_by_zero_error.parent_id(),
             Some(arithmetic_error.id())
@@ -81112,7 +81134,7 @@ mod tests {
 
         let runtime_exception = classes.lookup_class("runtimeexception").unwrap();
         assert_eq!(runtime_exception.name(), "RuntimeException");
-        assert_eq!(runtime_exception.id().index(), 40);
+        assert_eq!(runtime_exception.id().index(), 41);
         assert_eq!(runtime_exception.parent_id(), Some(exception.id()));
         assert!(runtime_exception.properties().is_empty());
         assert!(runtime_exception.methods().is_empty());

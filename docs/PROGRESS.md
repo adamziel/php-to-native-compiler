@@ -4,6 +4,36 @@
 
 Implemented:
 
+- Integrated the next focused source batch after the `2755fc15` public gate.
+  The interpreter now covers bounded `request_parse_body()` CLI option
+  validation and no-content-type `RequestParseBodyException` handling, C/POSIX
+  `nl_langinfo()` day/month/radix metadata, and caught core `Throwable`
+  stringification for the reached `sprintf()` error row. Focused Rust passed
+  `383 / 383` across `request_parse_body_builtin`, `object_model`,
+  `sprintf_builtin`, and `locale_string_builtins`; `cargo build -p phpc --bin
+  phpc` passed; and selected PHPT proof passed `6 / 6` for
+  `multipart_options_invalid_key.phpt`,
+  `multipart_options_invalid_quantity.phpt`,
+  `multipart_options_invalid_value_type.phpt`, `options_array_references.phpt`,
+  `nl_langinfo_basic.phpt`, and `sprintf_rope_optimization_002.phpt`.
+  Unsupported edges remain actual request-body parsing, multipart/urlencoded
+  result arrays, SAPI content-type dispatch and upload construction, non-C
+  locale catalogs, broader `nl_langinfo()` items/platform values, full
+  Throwable trace/file internals, broad formatter object/resource conversion
+  parity, and native lowering.
+
+- Accepted checkpoint `2755fc15` as the current public PHPT score source after
+  a full pinned php-src gate completed with zero latest-published PASS
+  regressions. The public-comparable score is now `5498 / 20294 = 27.09%`,
+  up from `5481 / 20294 = 27.01%` at checkpoint `1fe2b233`. The accepted gate
+  evidence is
+  `state/logs/phpt-full-batch024-next13-20260601T183739Z-php-src-f97ff59-source-2755fc15`;
+  aggregate counts were `5498` passed, `13369` failed, `2761` skipped, `15`
+  xfailed, `687` borked, and `1` warned. The normalized PASS regression
+  comparison was `5494` current passes vs. `5477` baseline passes with `0`
+  regressions. The only invalid-marker grep hit was the known expected socket
+  `Permission denied` warning line, not a new proof blocker.
+
 - Integrated the next verified focused score batch after the `1fe2b233` public
   gate. The interpreter now covers PHP-shaped warnings for reads of explicitly
   unset initialized request superglobal roots, `preg_quote()` NUL and `#`
