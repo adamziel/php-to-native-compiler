@@ -220,6 +220,26 @@ echo count($missing_object);
 }
 
 #[test]
+fn array_keys_filters_resource_values_by_identity() {
+    let execution = run_source(
+        r#"<?php
+$file = fopen(__FILE__, "r");
+$dir = opendir(".");
+$items = [$file, $dir];
+foreach ([array_keys($items, $file), array_keys($items, $file, true), array_keys($items, $dir), array_keys($items, $dir, true)] as $keys) {
+    echo count($keys), ":", $keys[0], "\n";
+}
+fclose($file);
+closedir($dir);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "1:0\n1:0\n1:1\n1:1\n");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn array_keys_rejects_non_bool_strict_mode_argument() {
     let error = runtime_error("<?php\n$items = [1];\necho array_keys($items, 1, \"yes\");\n");
 

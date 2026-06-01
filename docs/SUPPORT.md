@@ -2849,12 +2849,18 @@
   fallback. Calling `session_start()` while the bounded session is already
   active emits a bounded `E_NOTICE` through that same handler stack or stderr
   fallback, returns `true`, leaves the existing `$_SESSION` data visible, and
-  keeps the session active even if `read_and_close` was requested. Session
+  keeps the session active even if `read_and_close` was requested.
+  `session_destroy()` accepts no arguments, returns `true`, closes an active
+  bounded session back to `PHP_SESSION_NONE`, leaves the visible `$_SESSION`
+  array in place for the rest of the request, and removes the request-local
+  snapshot for the current id without implementing real save-handler/file
+  deletion semantics. Session
   file locking, save handlers, session module configuration, integer top-level
   session keys, object/resource session serialization, exact malformed
   session-file recovery parity, session cookie encoding,
-  expiration-date formatting, cookie replacement, cache-limiter configuration
-  and cache-header variants beyond the default no-cache trio, garbage
+  expiration-date formatting, cookie replacement, cache-limiter variants beyond
+  empty suppression, `nocache`, `private`, `private_no_expire`, and `public`,
+  garbage
   collection, broader PHP session-id policy, trans-sid
   behavior, exact warning text, reference aliases that survive `_SESSION` root
   replacement on restart, full PHP reference containers, broader
@@ -3152,9 +3158,10 @@
   `strip_tags()` covers the current byte-string HTML/PHP/comment removal
   subset, allowed tag names from string and array forms, NUL removal, quoted
   attribute `>` handling, XML processing-instruction spans beginning with
-  `<?xml` or `<?XML` through the next tag end, and malformed nested-angle cases
-  such as `<foo<>bar>`, `<foo<!>bar>`, and `<foo<?>bar>` stripping through the
-  outer closing `>`. Broader malformed tag parser parity, full XML/HTML
+  `<?xml` or `<?XML` through the next `?>`, `/>`, or fallback tag end, including
+  object-operator arrows inside the processing-instruction body, and malformed
+  nested-angle cases such as `<foo<>bar>`, `<foo<!>bar>`, and `<foo<?>bar>`
+  stripping through the outer closing `>`. Broader malformed tag parser parity, full XML/HTML
   tokenizer behavior, and native lowering remain unsupported.
 - exact uppercase PHP error mask constants `E_ERROR`, `E_WARNING`, `E_PARSE`,
   `E_NOTICE`, `E_CORE_ERROR`, `E_CORE_WARNING`, `E_COMPILE_ERROR`,
@@ -3281,7 +3288,7 @@
   `get_include_path`, `set_include_path`, `min`, `rand`, `mt_rand`,
   `getrandmax`, `mt_getrandmax`, `srand`, `mt_srand`, `random_int`,
   `random_bytes`, `lcg_value`, `array_rand`, `uniqid`,
-  `crypt`, `hash`, `hash_algos`, `hash_hmac`, `md5`, `md5_file`, `get_current_user`, `getmypid`, `isset`, `empty`, `count`, `sizeof`, `compact`, `define`, `constant`, `defined`,
+  `crypt`, `hash`, `hash_algos`, `hash_hmac_algos`, `hash_hmac`, `hash_equals`, `md5`, `md5_file`, `get_current_user`, `getmypid`, `isset`, `empty`, `count`, `sizeof`, `compact`, `define`, `constant`, `defined`,
   `array_key_exists`, `key_exists`, `array_key_first`, `array_key_last`, `current`,
   `array_is_list`, `array_values`, `array_keys`, `array_rand`, `array_reverse`, `array_slice`, `array_chunk`,
   `array_pad`, `array_merge`, `array_replace`, `array_combine`,
@@ -3903,12 +3910,21 @@
   `sha512/224`, `sha512/256`, and `sha512`, returning lowercase hex output or
   raw binary-string output when the binary flag is truthy. `hash_algos()`
   returns that bounded algorithm list.
+  `hash_hmac_algos()` returns the bounded PHP cryptographic HMAC algorithm
+  metadata list used by the public hash PHPT row; only `hash_hmac('sha256',
+  ...)` execution is currently implemented from that list.
   `hash_hmac('sha256', $data, $key, false)` supports scalar/null
   string-convertible data and key values and returns lowercase hex output.
+  Invalid or non-cryptographic `hash_hmac()` algorithm names on the reached
+  direct-call path raise the PHP-shaped catchable `ValueError` diagnostic.
+  `hash_equals($known_string, $user_string)` supports strict string and binary
+  string operands, constant-work same-length byte comparison, and PHP-shaped
+  type diagnostics for non-string operands.
   Hash algorithms outside that bounded SHA set, non-empty `hash()` options
-  arrays, streaming hash contexts, `hash_equals()`, `hash_hmac_algos()`,
-  `hash_hmac()` raw binary output, exact time/entropy behavior, cryptographic
-  guarantees for generated IDs, array/object/resource coercions, exact
+  arrays, streaming hash contexts, `hash_hmac()` execution for algorithms
+  beyond SHA-256, `hash_hmac()` raw binary output, exact time/entropy behavior,
+  cryptographic guarantees for generated IDs, array/object/resource coercions
+  outside the documented strict `hash_equals()` type errors, broader exact
   diagnostics, and native lowering remain unsupported.
   `md5($string, $binary = false)` supports scalar/null string-convertible
   inputs, lowercase hex output, and the raw 16-byte binary-string result when
@@ -5694,8 +5710,10 @@
   one string argument sets a deterministic id and returns the previous id.
   While active, `session_id($id)` returns `false` without changing the id.
   `session_cache_limiter($value = null)` returns the current request-local
-  cache limiter string, defaults to `nocache`, and before output or active
-  session state accepts one string argument and returns the previous limiter.
+  cache limiter string, defaults to `nocache`, honors bounded
+  `session.cache_limiter` INI seeds and `ini_set()` updates, and before output
+  or active session state accepts one string argument and returns the previous
+  limiter.
   The empty string suppresses session cache headers on the next fresh start;
   `nocache` emits the deterministic `Expires`, `Cache-Control`, and `Pragma`
   trio. `private`, `private_no_expire`, and `public` emit bounded
@@ -5712,7 +5730,8 @@
   emission and make `session_start()` fail with a stable unsupported-call
   diagnostic in the current subset.
   `session_cache_expire($value = null)` returns the current request-local
-  expiration integer, defaults to `180`, and before output or active session
+  expiration integer, defaults to `180`, honors bounded `session.cache_expire`
+  INI seeds and `ini_set()` updates, and before output or active session
   state accepts one int argument and returns the previous expiration. The
   value is retained for future cache-header variants; the current `nocache`
   and empty-limiter header slice does not use it.
@@ -5727,9 +5746,13 @@
   PHP-compatible `sess_<id>` files for string-keyed scalar and array
   `$_SESSION` data across separate `phpc run` invocations. Malformed or
   unsupported existing session files emit one bounded warning and recover with
-  an empty session array. Session file
+  an empty session array.
+  `session_destroy()` accepts no arguments, returns `true`, closes an active
+  bounded session status back to `PHP_SESSION_NONE`, leaves the visible
+  `$_SESSION` array in place, and clears only the current request-local
+  snapshot for the active id. Session file
   locking, save handlers,
-  `session_name()`, `session_destroy()`,
+  `session_name()`,
   `session_abort()`, `session_reset()`, `session_unset()`,
   `session_regenerate_id()`, broader PHP session-id policy, option effects beyond
   the documented session-start options, session cookie encoding,
@@ -6872,8 +6895,9 @@
   zero. Empty-array comparisons against `null`, booleans, scalars, and arrays
   follow the reached PHP membership-search rows.
   `array_keys($array, $search_value, true)` uses the current scalar strict
-  identity rules, and `array_keys($array, $search_value, false)` uses the loose
-  path. These forms are available through string-valued dynamic function calls.
+  identity rules, including resource identity for the reached stream and
+  directory resource rows, and `array_keys($array, $search_value, false)` uses
+  the loose path. These forms are available through string-valued dynamic function calls.
   `array_rand($array)` returns the first inserted key as the deterministic
   current subset for PHP's randomized selection, and
   `array_rand($array, $num)` returns the first `$num` inserted keys in a
@@ -9515,12 +9539,13 @@
   returned key array from zero. Empty-array comparisons against `null`,
   booleans, scalars, and arrays follow the reached PHP membership-search rows.
   `array_keys($array, $search_value, true)` uses current
-  scalar strict identity semantics, and `array_keys($array, $search_value,
+  scalar strict identity semantics, including resource identity for reached
+  stream and directory resource rows, and `array_keys($array, $search_value,
   false)` uses the loose path. The third argument must evaluate to a boolean in
   the current subset. These forms are also available through string-valued
-  dynamic function calls. Object/resource search values or object/resource
-  values encountered during loose filtering fail with stable unsupported-call
-  diagnostics; recursive array comparison remains unsupported.
+  dynamic function calls. Object search values or object values encountered
+  during loose filtering fail with stable unsupported-call diagnostics;
+  recursive array comparison remains unsupported.
   `array_rand($array)` accepts arrays only and returns the first inserted key
   as an `int` or `string` in the current deterministic runtime subset.
   `array_rand($array, $num)` accepts an integer count and returns the first
@@ -11610,11 +11635,14 @@
   bounded `E_WARNING`, matching documented options-array keys
   ASCII-case-insensitively, using the last inserted value for duplicate
   differently cased documented keys, rejecting numeric options-array keys and
-  unknown string option keys, and
+  unknown string option keys, rejecting invalid `samesite` values with a
+  catchable `ValueError`, rejecting empty cookie names with a catchable
+  `ValueError`, and
   returning `true` for accepted pre-output cookies, with `setcookie()`
   percent-encoding values and `setrawcookie()` preserving raw string values:
   cookie name encoding, exact request-time/Date-header parity for
-  future `Max-Age` values, exact `ValueError` objects/text for invalid names/options,
+  future `Max-Age` values, exact `ValueError` objects/text beyond empty names
+  and invalid `samesite`,
   IDNA/trailing-dot/domain-policy canonicalization, SAPI/web-server
   emission, exact warning text, and native lowering beyond function-table introspection
 - `headers_sent()` behavior beyond the current output-started tracking and
@@ -11841,7 +11869,10 @@ Unsupported code should fail with an explicit parse, runtime, or codegen error.
   associative decode mode, selected JSON constants, bigint-as-string decode,
   numeric-string encoding, unicode and hex string escaping, pretty-print
   formatting, partial output for unsupported values, validation depth and
-  `JSON_INVALID_UTF8_IGNORE` checks, and request-local last-error state. Full
+  `JSON_INVALID_UTF8_IGNORE` checks, catchable direct-call depth diagnostics
+  for `json_decode()` / `json_validate()`, catchable exact-arity diagnostics
+  for `json_last_error()` / `json_last_error_msg()`, and request-local
+  last-error state. Full
   `JsonSerializable` parity, exact exception propagation for every serializer
   shape, complete UTF-16/UTF-8 diagnostics, exact diagnostic locations, every
   JSON option interaction, remaining json extension functions, and native

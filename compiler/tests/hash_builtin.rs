@@ -147,6 +147,69 @@ try {
 }
 
 #[test]
+fn hash_hmac_invalid_or_non_crypto_algorithms_are_catchable_value_errors() {
+    let execution = run_source(
+        r#"<?php
+foreach (["foo", "crc32"] as $algorithm) {
+    try {
+        hash_hmac($algorithm, "data", "key");
+    } catch (ValueError $e) {
+        echo $e->getMessage(), "\n";
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "hash_hmac(): Argument #1 ($algo) must be a valid cryptographic hashing algorithm\n\
+hash_hmac(): Argument #1 ($algo) must be a valid cryptographic hashing algorithm\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn hash_equals_and_hmac_algorithm_metadata_cover_phpt_rows() {
+    let execution = run_source(
+        r#"<?php
+echo hash_equals("same", "same") ? "same" : "bad";
+echo "|", hash_equals("not1same", "not2same") ? "bad" : "diff";
+echo "|", hash_equals("short", "longer") ? "bad" : "length";
+echo "|", hash_equals("", "") ? "empty" : "bad", "\n";
+
+$algos = hash_hmac_algos();
+echo count($algos), "|", $algos[0], "|", $algos[5], "|", $algos[43], "|";
+echo in_array("crc32", $algos, true) ? "bad" : "crypto-only";
+echo "\n";
+
+foreach ([
+    fn() => hash_equals(123, "NaN"),
+    fn() => hash_equals("NaN", 123),
+    fn() => hash_equals(null, null),
+] as $test) {
+    try {
+        var_dump($test());
+    } catch (\Error $e) {
+        echo get_class($e), ":", $e->getMessage(), "\n";
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "same|diff|length|empty\n\
+44|md2|sha256|haval256,5|crypto-only\n\
+TypeError:hash_equals(): Argument #1 ($known_string) must be of type string, int given\n\
+TypeError:hash_equals(): Argument #2 ($user_string) must be of type string, int given\n\
+TypeError:hash_equals(): Argument #1 ($known_string) must be of type string, null given\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn emit_ir_folds_hash_metadata_but_rejects_direct_calls() {
     let ir = emit_ir_source(
         r#"<?php
@@ -154,13 +217,17 @@ echo function_exists("hash") ? "1" : "0";
 echo is_callable("hash_algos") ? "1" : "0";
 echo function_exists("hash_hmac") ? "1" : "0";
 echo is_callable("hash_hmac") ? "1" : "0";
+echo function_exists("hash_hmac_algos") ? "1" : "0";
+echo is_callable("hash_hmac_algos") ? "1" : "0";
+echo function_exists("hash_equals") ? "1" : "0";
+echo is_callable("hash_equals") ? "1" : "0";
 echo function_exists("uniqid") ? "1" : "0";
 echo is_callable("uniqid") ? "1" : "0";
 "#,
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 6, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 10, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
 
@@ -171,6 +238,12 @@ echo is_callable("uniqid") ? "1" : "0";
     assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
 
     let error = emit_ir_source("<?php\nhash_hmac('sha256', 'data', 'key');\n").unwrap_err();
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source("<?php\nhash_equals('same', 'same');\n").unwrap_err();
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.line, 2);
     assert_eq!(error.column, 1);

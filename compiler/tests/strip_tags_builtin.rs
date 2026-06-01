@@ -77,6 +77,25 @@ echo strip_tags("NEAT <? cool > blah ?> STUFF");
 }
 
 #[test]
+fn strip_tags_xml_processing_instruction_ignores_object_operator_arrow() {
+    let execution = run_source(
+        r#"<?php
+var_dump(strip_tags('<?php $dom->test(); ?> this is a test'));
+var_dump(strip_tags('<?php $xml->test(); ?> this is a test'));
+var_dump(strip_tags('<?xml $xml->test(); ?> this is a test'));
+var_dump(strip_tags("<span class=sf-dump-> this is a test</span>"));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "string(15) \" this is a test\"\nstring(15) \" this is a test\"\nstring(15) \" this is a test\"\nstring(15) \" this is a test\"\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn strip_tags_strips_malformed_nested_angle_tag_until_outer_close() {
     let execution = run_source(
         r#"<?php

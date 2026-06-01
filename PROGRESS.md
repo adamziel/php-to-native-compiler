@@ -1,6 +1,6 @@
 # PHP Native Compiler PHPT Progress
 
-Updated: 2026-06-01 18:07 CEST
+Updated: 2026-06-01 19:55 CEST
 
 Primary/public branch: `origin/master`
 Latest source-bearing public head:
@@ -17,6 +17,18 @@ Pinned denominator: `20294` total pinned runnable php-src PHPTs. Raw runner
 denominators that exclude BORKED rows are not public progress.
 
 Current public score: **5363 / 20294 pinned runnable PHPTs = 26.43%**.
+
+Local supervisor note: checkpoint `025c1325` completed the full pinned PHPT
+gate with raw aggregate score `5451 / 20294 = 26.86%`, but publication was
+blocked by two latest-pass regressions:
+`array_keys_variation_005.phpt` and `bug70720.phpt`. Current source repairs
+both regressions and adds nine more selected PHPT wins across JSON/hash/session
+and cookie validation. Focused Rust passed for `json_builtins`,
+`hash_builtin`, `header_builtin`, `session_builtin`, `array_keys`, and
+`strip_tags_builtin`; `cargo build -p phpc --bin phpc` passed; selected PHPT
+proof passed `11 / 11`. This is not a public score update until checkpoint
+validation and another full pinned PHPT gate complete with zero pass
+regressions.
 
 Local supervisor note: the next worker-integrated focused source batch covers
 8 additional target PHPT rows: `substr.phpt`, `fread_error.phpt`,

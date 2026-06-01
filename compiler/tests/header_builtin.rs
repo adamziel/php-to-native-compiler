@@ -381,16 +381,19 @@ echo implode("|", $out);
 
 #[test]
 fn setcookie_rejects_invalid_cookie_names_before_header_mutation() {
-    let empty = runtime_error(
+    let empty = run_source(
         r#"<?php
 setcookie("", "value");
 "#,
-    );
-    assert_eq!(empty.line, 2);
-    assert_eq!(empty.column, 1);
-    assert_eq!(
-        empty.message,
-        "unsupported call setcookie(): name argument cannot be empty in the current subset"
+    )
+    .unwrap();
+    assert_eq!(empty.exit_code, 255);
+    assert!(
+        empty.stdout.contains(
+            "Fatal error: Uncaught ValueError: setcookie(): Argument #1 ($name) must not be empty"
+        ),
+        "{}",
+        empty.stdout
     );
 
     let invalid = runtime_error("<?php\nsetcookie(\"bad name\", \"value\");\n");
@@ -419,16 +422,19 @@ echo count($headers) . "|" . $headers[0] . "|" . $headers[1];
 
 #[test]
 fn setrawcookie_rejects_invalid_cookie_names_before_header_mutation() {
-    let empty = runtime_error(
+    let empty = run_source(
         r#"<?php
 setrawcookie("", "value");
 "#,
-    );
-    assert_eq!(empty.line, 2);
-    assert_eq!(empty.column, 1);
-    assert_eq!(
-        empty.message,
-        "unsupported call setrawcookie(): name argument cannot be empty in the current subset"
+    )
+    .unwrap();
+    assert_eq!(empty.exit_code, 255);
+    assert!(
+        empty.stdout.contains(
+            "Fatal error: Uncaught ValueError: setrawcookie(): Argument #1 ($name) must not be empty"
+        ),
+        "{}",
+        empty.stdout
     );
 
     let invalid = runtime_error("<?php\nsetrawcookie(\"bad=name\", \"value\");\n");
@@ -438,6 +444,41 @@ setrawcookie("", "value");
         invalid.message,
         "unsupported call setrawcookie(): name argument cannot contain \"=\", \",\", \";\", \" \", \"\\t\", \"\\r\", \"\\n\", \"\\013\", or \"\\014\" in the current subset"
     );
+}
+
+#[test]
+fn setcookie_samesite_and_empty_name_errors_are_catchable_value_errors() {
+    let execution = run_source(
+        r#"<?php
+try {
+    setcookie("", "value");
+} catch (ValueError $e) {
+    echo $e->getMessage();
+}
+echo "|";
+try {
+    setcookie("test", "value", ["samesite" => "Invalid"]);
+} catch (ValueError $e) {
+    echo $e->getMessage();
+}
+echo "|";
+try {
+    setrawcookie("test", "value", ["samesite" => "Invalid"]);
+} catch (ValueError $e) {
+    echo $e->getMessage();
+}
+echo "|";
+echo count(headers_list());
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "setcookie(): Argument #1 ($name) must not be empty|setcookie(): \"samesite\" option must be \"Strict\", \"Lax\", \"None\", or \"\"|setrawcookie(): \"samesite\" option must be \"Strict\", \"Lax\", \"None\", or \"\"|0"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

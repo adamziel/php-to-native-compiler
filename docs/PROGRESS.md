@@ -4,6 +4,30 @@
 
 Implemented:
 
+- Integrated the next focused repair/score batch after the `025c1325`
+  checkpoint gate exposed two PASS regressions. The current source now restores
+  `ext/standard/tests/array/array_keys_variation_005.phpt` by allowing
+  `array_keys()` search filtering to compare stream/directory resource values
+  by resource identity, and restores
+  `ext/standard/tests/strings/bug70720.phpt` by stripping XML processing
+  instructions through `?>`/`/>` before falling back to tag-end scanning, so
+  object-operator arrows no longer terminate the stripped span. The same batch
+  also integrates seven worker-produced JSON/hash/session/cookie PHPT rows
+  (`json_decode_error.phpt`, `json_last_error_error.phpt`,
+  `hash_hmac_error.phpt`, `session_cache_expire_variation1.phpt`,
+  `session_cache_expire_variation2.phpt`, `bug69523.phpt`, and
+  `setcookie_samesite_validation.phpt`) plus the two hash metadata/equality
+  rows `hash_equals.phpt` and `hash_hmac_algos.phpt`. Focused Rust passed for
+  `json_builtins`, `hash_builtin`, `header_builtin`, `session_builtin`,
+  `array_keys`, and `strip_tags_builtin`, `cargo build -p phpc --bin phpc`
+  passed, and the selected PHPT proof passed `11 / 11` through the PHPT
+  wrapper. The prior full pinned gate for checkpoint `025c1325` produced raw
+  `5451 / 20294 = 26.86%` but was publication-blocked by the two regressions
+  repaired here. Unsupported edges remain broader resource comparison parity,
+  full XML/HTML tokenization, HMAC execution beyond SHA-256, broad JSON option
+  parity, real SAPI cookie/session behavior, exact diagnostics beyond covered
+  rows, and native lowering.
+
 - Integrated five completed sidecar score lanes, adding eleven more focused
   PHPT candidates to the next checkpoint batch: `putenv.phpt`,
   `putenv_and_getenv_reject_null_bytes.phpt`,

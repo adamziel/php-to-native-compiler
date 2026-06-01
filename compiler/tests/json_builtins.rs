@@ -162,3 +162,31 @@ var_dump(json_last_error(), json_last_error_msg());\n",
     );
     assert_eq!(execution.exit_code, 0);
 }
+
+#[test]
+fn json_error_diagnostics_are_catchable_for_phpt_rows() {
+    let execution = run_source(
+        r#"<?php
+try {
+    json_decode('"abc"', true, -1);
+} catch (ValueError $e) {
+    echo $e->getMessage(), "\n";
+}
+var_dump(json_last_error());
+try {
+    json_last_error(true);
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "json_decode(): Argument #3 ($depth) must be greater than 0\n\
+int(0)\n\
+json_last_error() expects exactly 0 arguments, 1 given\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}

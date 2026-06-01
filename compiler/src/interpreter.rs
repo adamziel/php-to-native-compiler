@@ -11084,6 +11084,8 @@ impl Interpreter {
             .get("error_reporting")
             .and_then(|value| parse_ini_error_reporting_mask(value))
             .unwrap_or(PHP_E_ALL);
+        let session_cache_limiter = session_cache_limiter_from_ini_values(&ini_values);
+        let session_cache_expire = session_cache_expire_from_ini_values(&ini_values);
 
         let mut interpreter = Self {
             functions,
@@ -11215,8 +11217,8 @@ impl Interpreter {
             strict_types_stack: Vec::new(),
             session_status: PHP_SESSION_NONE,
             session_id: String::new(),
-            session_cache_limiter: "nocache".to_string(),
-            session_cache_expire: 180,
+            session_cache_limiter,
+            session_cache_expire,
             session_store: HashMap::new(),
             stdout: String::new(),
             stdout_bytes: Vec::new(),
@@ -83568,6 +83570,17 @@ impl Interpreter {
         Ok(Value::Bool(true))
     }
 
+    fn call_session_destroy(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("session_destroy", args, 0, span)?;
+        if self.session_status == PHP_SESSION_ACTIVE {
+            if !self.session_id.is_empty() {
+                self.session_store.remove(&self.session_id);
+            }
+            self.session_status = PHP_SESSION_NONE;
+        }
+        Ok(Value::Bool(true))
+    }
+
     fn call_headers_sent_direct(
         &mut self,
         args: &[Expr],
@@ -84833,7 +84846,9 @@ impl Interpreter {
             "crypt" => call_crypt(&args, span),
             "hash" => call_hash(&args, span),
             "hash_algos" => call_hash_algos(&args, span),
+            "hash_hmac_algos" => call_hash_hmac_algos(&args, span),
             "hash_hmac" => call_hash_hmac(&args, span),
+            "hash_equals" => call_hash_equals(&args, span),
             "filter_list" => call_filter_list(&args, span),
             "filter_id" => call_filter_id(&args, span),
             "filter_var" => self.call_filter_var(&args, span),
@@ -87108,6 +87123,7 @@ impl Interpreter {
             "session_cache_expire" => self.call_session_cache_expire(&args, span),
             "session_id" => self.call_session_id(&args, span),
             "session_write_close" => self.call_session_write_close(&args, span),
+            "session_destroy" => self.call_session_destroy(&args, span),
             "assert" => {
                 if !(1..=2).contains(&args.len()) {
                     return Err(runtime_error(
@@ -100019,6 +100035,23 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
             ],
         ),
         "hash_algos" => ("array", vec![]),
+        "hash_hmac_algos" => ("array", vec![]),
+        "hash_hmac" => (
+            "string",
+            vec![
+                reflection_internal_param("algo", "string"),
+                reflection_internal_param("data", "string"),
+                reflection_internal_param("key", "string"),
+                reflection_internal_optional_bool_param("binary", false),
+            ],
+        ),
+        "hash_equals" => (
+            "bool",
+            vec![
+                reflection_internal_param("known_string", "string"),
+                reflection_internal_param("user_string", "string"),
+            ],
+        ),
         "crypt" => (
             "string",
             vec![
@@ -103118,6 +103151,10 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
         return Some(("TypeError", message));
     }
 
+    if let Some(message) = json_exact_argument_count_error_message(error) {
+        return Some(("TypeError", message));
+    }
+
     if let Some(message) = reflection_constructor_argument_count_error_message(error) {
         return Some(("TypeError", message));
     }
@@ -103862,6 +103899,25 @@ fn random_exact_argument_count_error_message(error: &Diagnostic) -> Option<Strin
     ))
 }
 
+fn json_exact_argument_count_error_message(error: &Diagnostic) -> Option<String> {
+    if error.phase != Phase::Runtime {
+        return None;
+    }
+    let rest = error.message.strip_prefix("arity mismatch for ")?;
+    let (callable, expectation) = rest.split_once(": expected 0 argument(s), got ")?;
+    match callable {
+        "json_last_error()" | "json_last_error_msg()" => {}
+        _ => return None,
+    }
+    let actual = expectation.parse::<usize>().ok()?;
+    if actual == 0 {
+        return None;
+    }
+    Some(format!(
+        "{callable} expects exactly 0 arguments, {actual} given"
+    ))
+}
+
 fn reflection_constructor_argument_count_error_message(error: &Diagnostic) -> Option<String> {
     if error.phase != Phase::Runtime {
         return None;
@@ -104153,6 +104209,11 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
             Some(format!("{function}: {message}"))
         }
         (
+            "setcookie()" | "setrawcookie()",
+            "Argument #1 ($name) must not be empty"
+            | "\"samesite\" option must be \"Strict\", \"Lax\", \"None\", or \"\"",
+        ) => Some(format!("{function}: {message}")),
+        (
             "array_combine()",
             "Argument #1 ($keys) and argument #2 ($values) must have the same number of elements",
         )
@@ -104244,11 +104305,17 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
         | ("extract()", "Argument #2 ($flags) must be a valid extract type")
         | ("extract()", "Argument #3 ($prefix) is required when using this extract type")
         | ("extract()", "Argument #3 ($prefix) must be a valid identifier")
+        | ("json_decode()", "Argument #3 ($depth) must be greater than 0")
+        | ("json_decode()", "Argument #3 ($depth) must be less than 2147483647")
         | ("json_validate()", "Argument #2 ($depth) must be greater than 0")
         | ("json_validate()", "Argument #2 ($depth) must be less than 2147483647")
         | (
             "json_validate()",
             "Argument #3 ($flags) must be a valid flag (allowed flags: JSON_INVALID_UTF8_IGNORE)",
+        )
+        | (
+            "hash_hmac()",
+            "Argument #1 ($algo) must be a valid cryptographic hashing algorithm",
         )
         | ("ftruncate()", "Argument #2 ($size) must be greater than or equal to 0")
         | ("sleep()", "Argument #1 ($seconds) must be greater than or equal to 0")
@@ -105124,7 +105191,9 @@ fn is_builtin(name: &str) -> bool {
             | "crypt"
             | "hash"
             | "hash_algos"
+            | "hash_hmac_algos"
             | "hash_hmac"
+            | "hash_equals"
             | "filter_list"
             | "filter_id"
             | "filter_var"
@@ -105475,6 +105544,7 @@ fn is_builtin(name: &str) -> bool {
             | "session_cache_expire"
             | "session_id"
             | "session_write_close"
+            | "session_destroy"
             | "assert"
             | "get_class"
             | "is_object"
@@ -116213,7 +116283,9 @@ fn strip_tags_span(value: &[u8], start: usize, allowed: &HashSet<String>) -> Opt
     let next = *value.get(start + 1)?;
     if next == b'?' {
         let end = if strip_tags_is_xml_processing_instruction(value, start) {
-            strip_tags_find_tag_end(value, start + 1, false).unwrap_or(value.len())
+            strip_tags_find_xml_processing_instruction_end(value, start + 2)
+                .or_else(|| strip_tags_find_tag_end(value, start + 1, false))
+                .unwrap_or(value.len())
         } else {
             strip_tags_find_terminator(value, start + 2, b'?', b'>').unwrap_or(value.len())
         };
@@ -116251,6 +116323,16 @@ fn strip_tags_is_xml_processing_instruction(value: &[u8], start: usize) -> bool 
     value
         .get(start + 2..start + 5)
         .is_some_and(|prefix| prefix.eq_ignore_ascii_case(b"xml"))
+}
+
+fn strip_tags_find_xml_processing_instruction_end(value: &[u8], mut index: usize) -> Option<usize> {
+    while index + 1 < value.len() {
+        if (value[index] == b'?' || value[index] == b'/') && value[index + 1] == b'>' {
+            return Some(index + 2);
+        }
+        index += 1;
+    }
+    None
 }
 
 fn strip_tags_find_terminator(
@@ -126068,12 +126150,12 @@ impl Interpreter {
     }
 
     fn call_json_last_error(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
-        expect_arity("json_last_error()", args, 0, span)?;
+        expect_arity("json_last_error", args, 0, span)?;
         Ok(Value::Int(self.json_last_error))
     }
 
     fn call_json_last_error_msg(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
-        expect_arity("json_last_error_msg()", args, 0, span)?;
+        expect_arity("json_last_error_msg", args, 0, span)?;
         Ok(Value::String(self.json_last_error_message.clone()))
     }
 
@@ -127962,6 +128044,7 @@ fn parse_setcookie_options(
         options.httponly =
             cookie_option_case_insensitive(array, "httponly").is_some_and(Value::is_truthy);
         options.samesite = optional_cookie_string_option(array, "samesite", function_name, span)?;
+        validate_cookie_samesite_option(options.samesite.as_deref(), function_name, span)?;
         return Ok(options);
     }
 
@@ -128022,10 +128105,7 @@ fn validate_cookie_name(name: &str, function_name: &'static str, span: Span) -> 
     if name.is_empty() {
         return Err(runtime_error(
             span,
-            RuntimeError::unsupported_call(
-                function_name,
-                "name argument cannot be empty in the current subset",
-            ),
+            RuntimeError::unsupported_call(function_name, "Argument #1 ($name) must not be empty"),
         ));
     }
     if name.bytes().any(|byte| {
@@ -128043,6 +128123,29 @@ fn validate_cookie_name(name: &str, function_name: &'static str, span: Span) -> 
         ));
     }
     Ok(())
+}
+
+fn validate_cookie_samesite_option(
+    samesite: Option<&str>,
+    function_name: &'static str,
+    span: Span,
+) -> CompileResult<()> {
+    let Some(samesite) = samesite else {
+        return Ok(());
+    };
+    if matches!(
+        samesite.to_ascii_lowercase().as_str(),
+        "" | "strict" | "lax" | "none"
+    ) {
+        return Ok(());
+    }
+    Err(runtime_error(
+        span,
+        RuntimeError::unsupported_call(
+            function_name,
+            "\"samesite\" option must be \"Strict\", \"Lax\", \"None\", or \"\"",
+        ),
+    ))
 }
 
 fn cookie_option_case_insensitive<'a>(options: &'a PhpArray, name: &str) -> Option<&'a Value> {
@@ -128863,6 +128966,20 @@ fn apply_ascii_rot13_bytes_in_place(value: &mut [u8]) {
             _ => *byte,
         };
     }
+}
+
+fn session_cache_limiter_from_ini_values(ini_values: &HashMap<String, String>) -> String {
+    ini_values
+        .get("session.cache_limiter")
+        .cloned()
+        .unwrap_or_else(|| "nocache".to_string())
+}
+
+fn session_cache_expire_from_ini_values(ini_values: &HashMap<String, String>) -> i64 {
+    ini_values
+        .get("session.cache_expire")
+        .and_then(|value| parse_ini_i64_prefix(value))
+        .unwrap_or(180)
 }
 
 enum FileGetContentsRead {
@@ -130423,6 +130540,53 @@ const PHP_HASH_ALGORITHM_NAMES: &[&str] = &[
     "sha512",
 ];
 
+const PHP_HASH_HMAC_ALGORITHM_NAMES: &[&str] = &[
+    "md2",
+    "md4",
+    "md5",
+    "sha1",
+    "sha224",
+    "sha256",
+    "sha384",
+    "sha512/224",
+    "sha512/256",
+    "sha512",
+    "sha3-224",
+    "sha3-256",
+    "sha3-384",
+    "sha3-512",
+    "ripemd128",
+    "ripemd160",
+    "ripemd256",
+    "ripemd320",
+    "whirlpool",
+    "tiger128,3",
+    "tiger160,3",
+    "tiger192,3",
+    "tiger128,4",
+    "tiger160,4",
+    "tiger192,4",
+    "snefru",
+    "snefru256",
+    "gost",
+    "gost-crypto",
+    "haval128,3",
+    "haval160,3",
+    "haval192,3",
+    "haval224,3",
+    "haval256,3",
+    "haval128,4",
+    "haval160,4",
+    "haval192,4",
+    "haval224,4",
+    "haval256,4",
+    "haval128,5",
+    "haval160,5",
+    "haval192,5",
+    "haval224,5",
+    "haval256,5",
+];
+
 fn call_hash(args: &[Value], span: Span) -> CompileResult<Value> {
     if !(2..=4).contains(&args.len()) {
         return Err(runtime_error(
@@ -130486,6 +130650,17 @@ fn call_hash_algos(args: &[Value], span: Span) -> CompileResult<Value> {
     expect_arity("hash_algos", args, 0, span)?;
     let mut algorithms = PhpArray::new();
     for algorithm in PHP_HASH_ALGORITHM_NAMES {
+        algorithms
+            .append(Value::String((*algorithm).to_string()))
+            .map_err(|error| runtime_error(span, error))?;
+    }
+    Ok(Value::Array(algorithms))
+}
+
+fn call_hash_hmac_algos(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("hash_hmac_algos", args, 0, span)?;
+    let mut algorithms = PhpArray::new();
+    for algorithm in PHP_HASH_HMAC_ALGORITHM_NAMES {
         algorithms
             .append(Value::String((*algorithm).to_string()))
             .map_err(|error| runtime_error(span, error))?;
@@ -130564,6 +130739,15 @@ fn call_hash_hmac(args: &[Value], span: Span) -> CompileResult<Value> {
 
     let algorithm = string_builtin_argument("hash_hmac()", "algorithm", &args[0], span)?;
     if !algorithm.eq_ignore_ascii_case("sha256") {
+        if !is_php_hash_hmac_cryptographic_algorithm_name(&algorithm) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "hash_hmac()",
+                    "Argument #1 ($algo) must be a valid cryptographic hashing algorithm",
+                ),
+            ));
+        }
         return Err(runtime_error(
             span,
             RuntimeError::unsupported_call(
@@ -130612,6 +130796,96 @@ fn call_hash_hmac(args: &[Value], span: Span) -> CompileResult<Value> {
     })?;
     mac.update(data.as_bytes());
     Ok(Value::String(hex_bytes(&mac.finalize().into_bytes())))
+}
+
+fn call_hash_equals(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("hash_equals", args, 2, span)?;
+    let known = hash_equals_string_argument("known_string", 1, &args[0], span)?;
+    let user = hash_equals_string_argument("user_string", 2, &args[1], span)?;
+
+    if known.len() != user.len() {
+        return Ok(Value::Bool(false));
+    }
+
+    let mut diff = 0u8;
+    for (known, user) in known.iter().zip(user.iter()) {
+        diff |= known ^ user;
+    }
+    Ok(Value::Bool(diff == 0))
+}
+
+fn hash_equals_string_argument(
+    name: &str,
+    position: usize,
+    value: &Value,
+    span: Span,
+) -> CompileResult<Vec<u8>> {
+    match value {
+        Value::String(value) => Ok(value.as_bytes().to_vec()),
+        Value::BinaryString(value) => Ok(value.clone()),
+        other => Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "hash_equals()",
+                format!(
+                    "Argument #{position} (${name}) must be of type string, {} given",
+                    php_type_error_given(other)
+                ),
+            ),
+        )),
+    }
+}
+
+fn is_php_hash_hmac_cryptographic_algorithm_name(name: &str) -> bool {
+    matches!(
+        name.to_ascii_lowercase().as_str(),
+        "md2"
+            | "md4"
+            | "md5"
+            | "sha1"
+            | "sha224"
+            | "sha256"
+            | "sha384"
+            | "sha512/224"
+            | "sha512-224"
+            | "sha512/256"
+            | "sha512-256"
+            | "sha512"
+            | "sha3-224"
+            | "sha3-256"
+            | "sha3-384"
+            | "sha3-512"
+            | "ripemd128"
+            | "ripemd160"
+            | "ripemd256"
+            | "ripemd320"
+            | "whirlpool"
+            | "tiger128,3"
+            | "tiger160,3"
+            | "tiger192,3"
+            | "tiger128,4"
+            | "tiger160,4"
+            | "tiger192,4"
+            | "snefru"
+            | "snefru256"
+            | "gost"
+            | "gost-crypto"
+            | "haval128,3"
+            | "haval160,3"
+            | "haval192,3"
+            | "haval224,3"
+            | "haval256,3"
+            | "haval128,4"
+            | "haval160,4"
+            | "haval192,4"
+            | "haval224,4"
+            | "haval256,4"
+            | "haval128,5"
+            | "haval160,5"
+            | "haval192,5"
+            | "haval224,5"
+            | "haval256,5"
+    )
 }
 
 fn call_filter_list(args: &[Value], span: Span) -> CompileResult<Value> {
@@ -135011,6 +135285,11 @@ impl Interpreter {
         if normalized_name == "include_path" {
             self.include_path = value.clone();
         }
+        if normalized_name == "session.cache_limiter" {
+            self.session_cache_limiter = value.clone();
+        } else if normalized_name == "session.cache_expire" {
+            self.session_cache_expire = parse_ini_i64_prefix(&value).unwrap_or(180);
+        }
 
         if normalized_name == "date.timezone" {
             let Some(timezone) = (!value.is_empty())
@@ -137977,6 +138256,8 @@ fn compat_ini_value(normalized_name: &str) -> Option<&'static str> {
         "precision" => Some("14"),
         "sendmail_from" => Some(""),
         "sendmail_path" => Some(""),
+        "session.cache_expire" => Some("180"),
+        "session.cache_limiter" => Some("nocache"),
         "session.save_path" => Some(""),
         "upload_max_filesize" => Some("2M"),
         "upload_tmp_dir" => Some(""),
@@ -140830,13 +141111,6 @@ fn array_keys_loose_values_equal(left: &Value, right: &Value, span: Span) -> Com
                 ),
             ))
         }
-        (Value::Resource(_), _) | (_, Value::Resource(_)) => Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                "array_keys()",
-                "resource comparisons are not implemented",
-            ),
-        )),
         _ => left
             .php_cmp_checked(right, Comparison::Eq)
             .map_err(|error| runtime_error(span, error)),
@@ -140859,13 +141133,7 @@ fn array_keys_array_equals_non_array(
                 "object search values and object values are not implemented",
             ),
         )),
-        Value::Resource(_) => Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                "array_keys()",
-                "resource comparisons are not implemented",
-            ),
-        )),
+        Value::Resource(_) => Ok(false),
         Value::Array(_) => unreachable!("array operands are handled before non-array comparison"),
     }
 }
