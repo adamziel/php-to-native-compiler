@@ -1,5 +1,23 @@
 # Progress Log
 
+
+## 2026-06-01
+
+Implemented:
+
+- Added a bounded libxml metadata/runtime slice for the pinned
+  `ext/libxml/tests/001.phpt` internal-error row. `phpc run` now recognizes
+  `libxml_use_internal_errors()`, `libxml_get_errors()`,
+  `libxml_get_last_error()`, and `libxml_clear_errors()` with an empty
+  request-local libxml error buffer; exposes `extension_loaded("libxml")`,
+  `ReflectionExtension("libxml")`, a placeholder `LibXMLError` metadata class,
+  and deterministic libxml version/error-level constants; and keeps XML parsing,
+  SimpleXML/DOM parse diagnostics, produced `LibXMLError` objects, entity-loader
+  APIs, stream-context hooks, libxml option flags, host libxml discovery, exact
+  diagnostics, and native lowering explicitly unsupported. Focused proof covers
+  Rust interpreter tests, the milestone2305 CLI fixture, and a focused
+  `run-tests.php -p` PHPT pass for `ext/libxml/tests/001.phpt`.
+
 ## 2026-05-27
 
 Implemented:

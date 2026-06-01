@@ -32937,9 +32937,20 @@ impl PhpClassTable {
                 .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
                 .expect("SplObjectStorage core metadata should not duplicate methods");
         }
+        let libxml_error_id = classes
+            .declare_class("LibXMLError")
+            .expect("core class table should contain SplObjectStorage before LibXMLError");
+        let libxml_error = classes
+            .get_mut(libxml_error_id)
+            .expect("declared LibXMLError class id should resolve");
+        for property in ["level", "code", "column", "message", "file", "line"] {
+            libxml_error
+                .add_property(PhpPropertyMetadata::instance(property, Visibility::Public))
+                .expect("LibXMLError core metadata should not duplicate properties");
+        }
         let reflection_extension_id = classes
             .declare_class("ReflectionExtension")
-            .expect("core class table should contain SplObjectStorage before ReflectionExtension");
+            .expect("core class table should contain LibXMLError before ReflectionExtension");
         let reflection_extension = classes
             .get_mut(reflection_extension_id)
             .expect("declared ReflectionExtension class id should resolve");

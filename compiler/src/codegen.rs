@@ -66477,6 +66477,10 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "php_uname",
     "php_sapi_name",
     "phpversion",
+    "libxml_use_internal_errors",
+    "libxml_get_errors",
+    "libxml_get_last_error",
+    "libxml_clear_errors",
     "json_encode",
     "printf",
     "fprintf",
@@ -66930,7 +66934,7 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "var_export",
 ];
 
-const COMPAT_LOADED_EXTENSION_NAMES: &[&str] = &["json", "hash", "pdo", "pdo_mysql"];
+const COMPAT_LOADED_EXTENSION_NAMES: &[&str] = &["json", "hash", "libxml", "pdo", "pdo_mysql"];
 
 fn native_text_membership_candidates(candidates: &[&str]) -> Vec<String> {
     candidates
@@ -67168,6 +67172,13 @@ fn native_builtin_global_constant_c_value(name: &str) -> Option<CValue> {
         "CONNECTION_NORMAL" => Some(CValue::Int("0".to_string())),
         "CONNECTION_ABORTED" => Some(CValue::Int("1".to_string())),
         "CONNECTION_TIMEOUT" => Some(CValue::Int("2".to_string())),
+        "LIBXML_VERSION" => Some(CValue::Int("21308".to_string())),
+        "LIBXML_DOTTED_VERSION" => Some(CValue::String("2.13.8".to_string())),
+        "LIBXML_LOADED_VERSION" => Some(CValue::String("21308".to_string())),
+        "LIBXML_ERR_NONE" => Some(CValue::Int("0".to_string())),
+        "LIBXML_ERR_WARNING" => Some(CValue::Int("1".to_string())),
+        "LIBXML_ERR_ERROR" => Some(CValue::Int("2".to_string())),
+        "LIBXML_ERR_FATAL" => Some(CValue::Int("3".to_string())),
         "PATH_SEPARATOR" => Some(CValue::String(
             if cfg!(windows) { ";" } else { ":" }.to_string(),
         )),

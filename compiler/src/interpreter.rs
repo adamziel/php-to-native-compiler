@@ -269,6 +269,7 @@ struct Interpreter {
     active_autoloads: HashSet<String>,
     json_last_error: i64,
     json_last_error_message: String,
+    libxml_use_internal_errors: bool,
     mysqli_report_mode: i64,
     mysqli_results: HashMap<i64, MysqliResultState>,
     mysqli_pending_results: HashMap<i64, MysqliPendingResultState>,
@@ -11105,6 +11106,7 @@ impl Interpreter {
             active_autoloads: HashSet::new(),
             json_last_error: PHP_JSON_ERROR_NONE,
             json_last_error_message: json_error_base_message(PHP_JSON_ERROR_NONE).to_string(),
+            libxml_use_internal_errors: false,
             mysqli_report_mode: PHP_MYSQLI_REPORT_ERROR | PHP_MYSQLI_REPORT_STRICT,
             mysqli_results: HashMap::new(),
             mysqli_pending_results: HashMap::new(),
@@ -84052,6 +84054,10 @@ impl Interpreter {
             "php_uname" => call_php_uname(&args, span),
             "php_sapi_name" => call_php_sapi_name(&args, span),
             "phpversion" => call_phpversion(&args, span),
+            "libxml_use_internal_errors" => self.call_libxml_use_internal_errors(&args, span),
+            "libxml_get_errors" => call_libxml_get_errors(&args, span),
+            "libxml_get_last_error" => call_libxml_get_last_error(&args, span),
+            "libxml_clear_errors" => call_libxml_clear_errors(&args, span),
             "json_encode" => self.call_json_encode(&args, span),
             "json_decode" => self.call_json_decode(&args, span),
             "json_validate" => self.call_json_validate(&args, span),
@@ -100333,6 +100339,16 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 "?string",
             )],
         ),
+        "libxml_use_internal_errors" => (
+            "bool",
+            vec![reflection_internal_optional_null_param(
+                "use_errors",
+                "?bool",
+            )],
+        ),
+        "libxml_get_errors" => ("array", vec![]),
+        "libxml_get_last_error" => ("LibXMLError|false", vec![]),
+        "libxml_clear_errors" => ("void", vec![]),
         "extract" => ("int", vec![]),
         _ => return None,
     };
@@ -100356,7 +100372,9 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
 }
 
 fn reflection_internal_extension_name(name: &str) -> String {
-    if name.starts_with("bc") {
+    if name.starts_with("libxml_") {
+        "libxml".to_string()
+    } else if name.starts_with("bc") {
         "bcmath".to_string()
     } else if name.starts_with("ctype_") {
         "ctype".to_string()
@@ -101697,6 +101715,23 @@ const REFLECTION_EXTENSION_STANDARD_INI_ENTRIES: &[&str] = &["user_agent"];
 
 const REFLECTION_EXTENSION_CTYPE_CLASSES: &[&str] = &[];
 
+const REFLECTION_EXTENSION_LIBXML_CLASSES: &[&str] = &["LibXMLError"];
+const REFLECTION_EXTENSION_LIBXML_FUNCTIONS: &[&str] = &[
+    "libxml_use_internal_errors",
+    "libxml_get_errors",
+    "libxml_get_last_error",
+    "libxml_clear_errors",
+];
+const REFLECTION_EXTENSION_LIBXML_CONSTANTS: &[&str] = &[
+    "LIBXML_VERSION",
+    "LIBXML_DOTTED_VERSION",
+    "LIBXML_LOADED_VERSION",
+    "LIBXML_ERR_NONE",
+    "LIBXML_ERR_WARNING",
+    "LIBXML_ERR_ERROR",
+    "LIBXML_ERR_FATAL",
+];
+
 const REFLECTION_EXTENSION_DOM_CLASSES: &[&str] = &[
     "DOMException",
     "DOMNode",
@@ -101739,6 +101774,14 @@ fn reflection_extension_metadata(name: &str) -> Option<ReflectionExtensionMetada
             class_names: REFLECTION_EXTENSION_CTYPE_CLASSES,
             function_names: &[],
             constant_names: &[],
+            ini_entry_names: &[],
+            dependencies: &[],
+        }),
+        "libxml" => Some(ReflectionExtensionMetadata {
+            name: "libxml",
+            class_names: REFLECTION_EXTENSION_LIBXML_CLASSES,
+            function_names: REFLECTION_EXTENSION_LIBXML_FUNCTIONS,
+            constant_names: REFLECTION_EXTENSION_LIBXML_CONSTANTS,
             ini_entry_names: &[],
             dependencies: &[],
         }),
@@ -104171,6 +104214,10 @@ fn is_builtin(name: &str) -> bool {
             | "php_uname"
             | "php_sapi_name"
             | "phpversion"
+            | "libxml_use_internal_errors"
+            | "libxml_get_errors"
+            | "libxml_get_last_error"
+            | "libxml_clear_errors"
             | "json_encode"
             | "json_decode"
             | "json_validate"
@@ -105975,6 +106022,13 @@ const PHP_ROUND_HALF_UP: i64 = 1;
 const PHP_ROUND_HALF_DOWN: i64 = 2;
 const PHP_ROUND_HALF_EVEN: i64 = 3;
 const PHP_ROUND_HALF_ODD: i64 = 4;
+const PHP_LIBXML_VERSION: i64 = 21308;
+const PHP_LIBXML_DOTTED_VERSION: &str = "2.13.8";
+const PHP_LIBXML_LOADED_VERSION: &str = "21308";
+const PHP_LIBXML_ERR_NONE: i64 = 0;
+const PHP_LIBXML_ERR_WARNING: i64 = 1;
+const PHP_LIBXML_ERR_ERROR: i64 = 2;
+const PHP_LIBXML_ERR_FATAL: i64 = 3;
 
 const BUILTIN_GLOBAL_CONSTANT_NAMES: &[&str] = &[
     "PHP_VERSION",
@@ -106013,6 +106067,13 @@ const BUILTIN_GLOBAL_CONSTANT_NAMES: &[&str] = &[
     "CONNECTION_NORMAL",
     "CONNECTION_ABORTED",
     "CONNECTION_TIMEOUT",
+    "LIBXML_VERSION",
+    "LIBXML_DOTTED_VERSION",
+    "LIBXML_LOADED_VERSION",
+    "LIBXML_ERR_NONE",
+    "LIBXML_ERR_WARNING",
+    "LIBXML_ERR_ERROR",
+    "LIBXML_ERR_FATAL",
     "STDIN",
     "STDOUT",
     "STDERR",
@@ -106413,6 +106474,13 @@ fn builtin_global_constant_value(name: &str) -> Option<Value> {
         "CONNECTION_NORMAL" => Some(Value::Int(0)),
         "CONNECTION_ABORTED" => Some(Value::Int(1)),
         "CONNECTION_TIMEOUT" => Some(Value::Int(2)),
+        "LIBXML_VERSION" => Some(Value::Int(PHP_LIBXML_VERSION)),
+        "LIBXML_DOTTED_VERSION" => Some(Value::String(PHP_LIBXML_DOTTED_VERSION.to_string())),
+        "LIBXML_LOADED_VERSION" => Some(Value::String(PHP_LIBXML_LOADED_VERSION.to_string())),
+        "LIBXML_ERR_NONE" => Some(Value::Int(PHP_LIBXML_ERR_NONE)),
+        "LIBXML_ERR_WARNING" => Some(Value::Int(PHP_LIBXML_ERR_WARNING)),
+        "LIBXML_ERR_ERROR" => Some(Value::Int(PHP_LIBXML_ERR_ERROR)),
+        "LIBXML_ERR_FATAL" => Some(Value::Int(PHP_LIBXML_ERR_FATAL)),
         "DOM_INVALID_CHARACTER_ERR" => Some(Value::Int(5)),
         "STDIN" => Some(Value::Resource(1)),
         "STDOUT" => Some(Value::Resource(2)),
@@ -106867,7 +106935,7 @@ fn unsupported_runtime_constant_value_type(value: &Value) -> Option<&'static str
 fn is_compat_loaded_extension_name(name: &str) -> bool {
     matches!(
         name.to_ascii_lowercase().as_str(),
-        "bcmath" | "filter" | "json" | "hash" | "pdo" | "pdo_mysql"
+        "bcmath" | "filter" | "json" | "hash" | "libxml" | "pdo" | "pdo_mysql"
     )
 }
 
@@ -128269,6 +128337,55 @@ fn call_phpversion(args: &[Value], span: Span) -> CompileResult<Value> {
     }
 }
 
+impl Interpreter {
+    fn call_libxml_use_internal_errors(
+        &mut self,
+        args: &[Value],
+        span: Span,
+    ) -> CompileResult<Value> {
+        if args.len() > 1 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "libxml_use_internal_errors()",
+                    ArityExpectation::Between { min: 0, max: 1 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let previous = self.libxml_use_internal_errors;
+        if let Some(value) = args.first() {
+            if !matches!(value, Value::Null) {
+                self.libxml_use_internal_errors = php_internal_bool_argument(
+                    "libxml_use_internal_errors()",
+                    1,
+                    "use_errors",
+                    value,
+                    span,
+                )?;
+            }
+        }
+
+        Ok(Value::Bool(previous))
+    }
+}
+
+fn call_libxml_get_errors(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("libxml_get_errors", args, 0, span)?;
+    Ok(Value::Array(PhpArray::new()))
+}
+
+fn call_libxml_get_last_error(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("libxml_get_last_error", args, 0, span)?;
+    Ok(Value::Bool(false))
+}
+
+fn call_libxml_clear_errors(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("libxml_clear_errors", args, 0, span)?;
+    Ok(Value::Null)
+}
+
 fn call_set_time_limit(args: &[Value], span: Span) -> CompileResult<Value> {
     expect_arity("set_time_limit", args, 1, span)?;
     let _seconds = php_internal_int_argument("set_time_limit()", 1, "seconds", &args[0], span)?;
@@ -136230,7 +136347,15 @@ const OPCACHE_DIRECTIVES: &[&str] = &[
     "opcache.jit_blacklist_side_trace",
 ];
 
-const COMPAT_LOADED_EXTENSIONS: &[&str] = &["bcmath", "filter", "json", "hash", "pdo", "pdo_mysql"];
+const COMPAT_LOADED_EXTENSIONS: &[&str] = &[
+    "bcmath",
+    "filter",
+    "json",
+    "hash",
+    "libxml",
+    "pdo",
+    "pdo_mysql",
+];
 
 const COMPAT_INI_DIRECTIVES: &[&str] = &[
     "arg_separator.input",

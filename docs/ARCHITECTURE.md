@@ -3205,9 +3205,10 @@ built-in answer table. Bare global constant reads and `constant($name)` still
 stay behind the native global-constant boundary until generated code has a real
 constant table and version-policy model.
 Direct `extension_loaded($name)` calls with already-lowerable string names fold
-against the current deterministic bounded compatibility registry: `json` and
-`hash` fold to true, while other names fold to false. Native code does not
-query host PHP modules, `php.ini`, SAPI state, or dynamic extension loading.
+against the current deterministic bounded compatibility registry: `json`,
+`hash`, `libxml`, `pdo`, and `pdo_mysql` fold to true, while names outside the
+registry fold to false. Native code does not query host PHP modules, `php.ini`,
+SAPI state, or dynamic extension loading.
 `file_exists()` is currently an interpreter-only local filesystem metadata
 builtin for the WordPress bootstrap drop-in check. It accepts one string local
 path, rejects stream-wrapper paths, and returns a boolean for host filesystem
@@ -4315,8 +4316,11 @@ Zend extension loading is not an early target. Selected extensions will be
 implemented as runtime modules with documented dependencies and semantic gaps.
 Until that exists, `extension_loaded()` uses a bounded compiler/runtime
 compatibility registry. It is intentionally just enough for current WordPress
-bootstrap requirement checks and does not claim host extension support,
-extension functions/constants, extension versions, or dynamic loading.
+bootstrap requirement checks and selected PHPT metadata rows. The libxml entry
+is a metadata-only runtime slice: it exposes the empty internal-error buffer
+functions, a placeholder `LibXMLError` class, and deterministic version/error
+constants, but it does not introduce broad XML parsing, external-entity loader
+state, stream-context hooks, host libxml probing, or native libxml lowering.
 The current `mysqli_connect()` path is a placeholder-handle boundary used to
 get past WordPress-shaped procedural connection code; it does not mark the
 `mysqli` extension loaded and does not provide executable host database

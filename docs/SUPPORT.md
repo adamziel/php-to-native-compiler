@@ -3106,6 +3106,22 @@
 - `phpversion()` with no arguments, `null`, `standard`, or a known loaded
   extension name, returning the current deterministic `PHP_VERSION`
   compatibility string. Unknown extension names return `false`.
+- `libxml_use_internal_errors()`, `libxml_get_errors()`,
+  `libxml_get_last_error()`, and `libxml_clear_errors()` cover the empty
+  request-local libxml error-buffer metadata slice used by the pinned
+  `ext/libxml/tests/001.phpt` row: internal-error mode starts as `false`,
+  setting it returns the previous mode, no-argument reads return the current
+  mode, the error list is empty, the last error is `false`, and clearing
+  returns `NULL`. `extension_loaded("libxml")`, `function_exists()`/
+  `is_callable()` function-table checks, `ReflectionFunction`,
+  `ReflectionExtension("libxml")`, the placeholder `LibXMLError` class
+  metadata, and deterministic version/error-level constants
+  (`LIBXML_VERSION`, `LIBXML_DOTTED_VERSION`, `LIBXML_LOADED_VERSION`, and
+  `LIBXML_ERR_*`) are exposed for this metadata slice. XML parsing,
+  SimpleXML/XMLReader/XMLWriter integration, DOM parse diagnostics,
+  `LibXMLError` object production, external-entity loader APIs,
+  stream-context hooks, libxml option flags, host libxml discovery, exact
+  diagnostics, and native lowering remain unsupported.
 - Bounded network database helpers: `getprotobyname()`/`getprotobynumber()`
   recognize the deterministic `icmp`, `tcp`, and `udp` protocol slice, and
   `getservbyname()`/`getservbyport()` recognize a deterministic TCP service
@@ -5598,11 +5614,11 @@
   and native lowering remain unsupported.
   `extension_loaded($name)` accepts string extension names and currently
   answers from a deterministic bounded compiler/runtime compatibility registry.
-  It returns `true` for `json`, `hash`, `pdo`, and `pdo_mysql`, and `false`
-  for other names, including WordPress probe names such as `mbstring` and
-  `sodium`, without querying host PHP modules, `php.ini`, SAPI state, or
-  dynamically loading extensions; non-string names are rejected in the current
-  subset.
+  It returns `true` for `bcmath`, `filter`, `json`, `hash`, `libxml`, `pdo`,
+  and `pdo_mysql`, and `false` for other names, including WordPress probe names
+  such as `mbstring` and `sodium`, without querying host PHP modules,
+  `php.ini`, SAPI state, or dynamically loading extensions; non-string names
+  are rejected in the current subset.
   `get_class` returns the declared class name for current minimal object
   values, `is_object` reports whether a value is one of those current object
   values, `get_debug_type` returns scalar/array type names or the current
@@ -11448,10 +11464,11 @@
   introspection
 - `extension_loaded()` behavior outside the deterministic bounded compatibility
   registry, including exact extension inventory policy, aliases, host
-  PHP/module discovery, dynamic loading side effects, extension versions,
-  extension functions/constants, `php.ini`/SAPI differences, exact PHP
-  diagnostics for invalid arguments, and native lowering beyond direct
-  string-name folding for already-lowerable string names
+  PHP/module discovery, dynamic loading side effects, extension versions beyond
+  the documented deterministic `libxml` metadata constants, extension
+  functions/constants beyond the documented bounded slices, `php.ini`/SAPI
+  differences, exact PHP diagnostics for invalid arguments, and native lowering
+  beyond direct string-name folding for already-lowerable string names
 - PHP standard library beyond documented builtins
 - `empty(...)` operands outside direct variables, direct nested array offsets,
   direct object-property operands, direct object-property array offsets, and
