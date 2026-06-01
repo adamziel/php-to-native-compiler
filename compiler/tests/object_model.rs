@@ -6897,6 +6897,59 @@ echo "dump|", yn($dump->isDeprecated()), "|", $dump->getExtensionName();
 }
 
 #[test]
+fn reflection_class_reports_extension_name_for_core_and_user_classes() {
+    let execution = run_source(
+        r#"<?php
+class LocalMeta {}
+
+function show($label, $class) {
+    $reflection = new ReflectionClass($class);
+    $extension = $reflection->getExtensionName();
+    echo $label, "|", $reflection->getName(), "|", $extension === false ? "false" : $extension, "\n";
+}
+
+show("user", "LocalMeta");
+show("reflection", "ReflectionClass");
+show("dom", "DOMDocument");
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "user|LocalMeta|false\nreflection|ReflectionClass|Reflection\ndom|DOMDocument|dom\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reflection_get_modifier_names_reports_bounded_flag_names() {
+    let execution = run_source(
+        r#"<?php
+function printModifiers($modifiers) {
+    echo implode(",", Reflection::getModifierNames($modifiers)), "\n";
+}
+
+printModifiers(ReflectionProperty::IS_PRIVATE);
+printModifiers(ReflectionProperty::IS_PROTECTED | ReflectionProperty::IS_STATIC);
+printModifiers(ReflectionProperty::IS_PUBLIC | ReflectionProperty::IS_READONLY);
+printModifiers(ReflectionClass::IS_EXPLICIT_ABSTRACT);
+printModifiers(ReflectionMethod::IS_ABSTRACT | ReflectionMethod::IS_FINAL);
+printModifiers(ReflectionProperty::IS_VIRTUAL);
+printModifiers(ReflectionProperty::IS_PROTECTED_SET);
+printModifiers(ReflectionProperty::IS_PRIVATE_SET);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "private\nprotected,static\npublic,readonly\nabstract\nabstract,final\nvirtual\nprotected(set)\nprivate(set)\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reflection_get_attributes_reports_declared_targets_and_instances() {
     let execution = run_source(
         r#"<?php

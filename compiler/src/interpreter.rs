@@ -47789,6 +47789,13 @@ impl Interpreter {
                         .to_string(),
                 ))
             }
+            "getextensionname" => {
+                expect_expr_arity("ReflectionClass::getExtensionName", args.len(), 0, span)?;
+                Ok(self
+                    .reflection_class_extension_name(&state)
+                    .map(Value::String)
+                    .unwrap_or(Value::Bool(false)))
+            }
             "getfilename" => {
                 expect_expr_arity("ReflectionClass::getFileName", args.len(), 0, span)?;
                 Ok(state
@@ -48255,6 +48262,18 @@ impl Interpreter {
         }
     }
 
+    fn call_reflection_get_modifier_names(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        expect_expr_arity("Reflection::getModifierNames", args.len(), 1, span)?;
+        let value = self.evaluate(&args[0], caller_scope)?;
+        let modifiers = reflection_modifier_mask_argument(value, span)?;
+        Ok(Value::Array(reflection_modifier_names_array(modifiers)))
+    }
+
     fn reflection_class_is_user_defined(&self, state: &ReflectionClassState) -> bool {
         match state.kind {
             ReflectionClassKind::Class => state
@@ -48267,6 +48286,27 @@ impl Interpreter {
                 .trait_source_metadata
                 .contains_key(&state.name.to_ascii_lowercase()),
         }
+    }
+
+    fn reflection_class_extension_name(&self, state: &ReflectionClassState) -> Option<String> {
+        if self.reflection_class_is_user_defined(state) {
+            return None;
+        }
+
+        for extension in ["reflection", "standard", "ctype", "dom"] {
+            let Some(metadata) = reflection_extension_metadata(extension) else {
+                continue;
+            };
+            if metadata
+                .class_names
+                .iter()
+                .any(|class_name| class_name.eq_ignore_ascii_case(&state.name))
+            {
+                return Some(metadata.name.to_string());
+            }
+        }
+
+        None
     }
 
     fn reflection_class_is_abstract(&self, state: &ReflectionClassState) -> bool {
@@ -52794,6 +52834,11 @@ impl Interpreter {
         span: Span,
         caller_scope: &mut SymbolTable,
     ) -> CompileResult<Value> {
+        if class_name.eq_ignore_ascii_case("Reflection")
+            && method_name.eq_ignore_ascii_case("getModifierNames")
+        {
+            return self.call_reflection_get_modifier_names(args, span, caller_scope);
+        }
         let class_id = self
             .classes
             .lookup_class_id(class_name)
@@ -97719,6 +97764,26 @@ fn seed_core_class_constant_runtime_tables(
             }
         }
     }
+    if let Some(reflection_class_id) = classes.lookup_class_id("ReflectionClass") {
+        for (name, value) in [
+            ("IS_IMPLICIT_ABSTRACT", 16),
+            ("IS_EXPLICIT_ABSTRACT", 64),
+            ("IS_FINAL", 32),
+            ("IS_READONLY", 65536),
+        ] {
+            let span = Span::new(1, 1);
+            class_constants.insert(
+                (reflection_class_id, name.to_string()),
+                ClassConstantDecl {
+                    name: name.to_string(),
+                    visibility: ClassVisibility::Public,
+                    value: Expr::Int(value, span),
+                    attributes: Vec::new(),
+                    span,
+                },
+            );
+        }
+    }
     let Some(reflection_method_id) = classes.lookup_class_id("ReflectionMethod") else {
         return;
     };
@@ -97750,6 +97815,10 @@ fn seed_core_class_constant_runtime_tables(
         ("IS_PROTECTED", 2),
         ("IS_PRIVATE", 4),
         ("IS_STATIC", 16),
+        ("IS_READONLY", 128),
+        ("IS_PROTECTED_SET", 2048),
+        ("IS_PRIVATE_SET", 4096),
+        ("IS_VIRTUAL", 512),
     ] {
         let span = Span::new(1, 1);
         class_constants.insert(
@@ -100620,6 +100689,76 @@ fn reflection_method_modifier_mask(method: &ReflectionMethodState) -> i64 {
         mask |= 64;
     }
     mask
+}
+
+fn reflection_modifier_mask_argument(value: Value, span: Span) -> CompileResult<i64> {
+    match value {
+        Value::Bool(value) => Ok(i64::from(value)),
+        Value::Int(value) => Ok(value),
+        Value::Float(value) if value.is_finite() => Ok(value as i64),
+        Value::String(value) => parse_sprintf_numeric_string(&value)
+            .map(|value| value as i64)
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "Reflection::getModifierNames",
+                        "modifiers argument must be int-like scalar in the current subset",
+                    ),
+                )
+            }),
+        other => Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "Reflection::getModifierNames",
+                format!(
+                    "modifiers argument must be int-like scalar in the current subset, got {}",
+                    other.type_name()
+                ),
+            ),
+        )),
+    }
+}
+
+fn reflection_modifier_names_array(modifiers: i64) -> PhpArray {
+    let mut names = PhpArray::new();
+    if modifiers & 64 != 0 {
+        reflection_modifier_names_append(&mut names, "abstract");
+    }
+    if modifiers & 32 != 0 {
+        reflection_modifier_names_append(&mut names, "final");
+    }
+    if modifiers & 512 != 0 {
+        reflection_modifier_names_append(&mut names, "virtual");
+    }
+    if let Some(name) = match modifiers & 7 {
+        1 => Some("public"),
+        4 => Some("private"),
+        2 => Some("protected"),
+        _ => None,
+    } {
+        reflection_modifier_names_append(&mut names, name);
+    }
+    if let Some(name) = match modifiers & (2048 | 4096) {
+        2048 => Some("protected(set)"),
+        4096 => Some("private(set)"),
+        _ => None,
+    } {
+        reflection_modifier_names_append(&mut names, name);
+    }
+    if modifiers & 16 != 0 {
+        reflection_modifier_names_append(&mut names, "static");
+    }
+    if modifiers & (128 | 65536) != 0 {
+        reflection_modifier_names_append(&mut names, "readonly");
+    }
+    names
+}
+
+fn reflection_modifier_names_append(names: &mut PhpArray, name: &str) {
+    names
+        .append(Value::String(name.to_string()))
+        .expect("bounded modifier names fit in array keys");
 }
 
 fn reflection_method_matches_filter(method: &ReflectionMethodState, filter: Option<i64>) -> bool {

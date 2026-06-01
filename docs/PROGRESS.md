@@ -1,5 +1,24 @@
 # Progress Log
 
+## 2026-06-01
+
+Implemented:
+
+- Added a bounded reflection metadata slice for `ReflectionClass::getExtensionName()`
+  and `Reflection::getModifierNames()`. `ReflectionClass` now publishes the
+  current class modifier constants and reports extension names for the bounded
+  internal class lists (`Reflection`, `standard`, `ctype`, and `dom`) while
+  returning `false` for declared user classes. The static
+  `Reflection::getModifierNames()` helper maps int-like modifier masks to
+  PHP-ordered visibility/static/final/abstract/readonly/virtual/asymmetric-set
+  names, with focused PHPT proof for `018.phpt`,
+  `Reflection_getModifierNames_001.phpt`,
+  `ReflectionClass_getModifierNames_basic.phpt`,
+  `ReflectionClass_getExtensionName_basic.phpt`, and
+  `ReflectionClass_getExtensionName_variation.phpt`. Broader `Reflection`
+  core class metadata, a general extension registry, readonly/asymmetric
+  property semantics, and native lowering remain unsupported.
+
 ## 2026-05-27
 
 Implemented:

@@ -8966,9 +8966,13 @@
   `isTrait()`, `isInstantiable()`, `getParentClass()`,
   `getInterfaceNames()`, `getInterfaces()`, `getTraitNames()`, `getTraits()`,
   `hasMethod($name)`, `getFileName()`,
-  `getStartLine()`, `getEndLine()`, and `getDocComment()` over the current
-  metadata tables. ReflectionClass objects expose the bounded public `name`
-  property used by PHP's debug output and simple metadata reads. For declared
+  `getStartLine()`, `getEndLine()`, `getDocComment()`, and
+  `getExtensionName()` over the current metadata tables.
+  `getExtensionName()` returns bounded extension names for the current
+  internal class metadata lists (`Reflection`, `standard`, `ctype`, and
+  `dom`) and `false` for declared user classes. ReflectionClass objects
+  expose the bounded public `name` property used by PHP's debug output and
+  simple metadata reads. For declared
   user classes, interfaces, and traits loaded
   from a known CLI/fixture or include path, `getFileName()` returns that path,
   line numbers come from the parsed class-like declaration and closing brace,
@@ -8995,6 +8999,11 @@
   the current `ReflectionMethod::IS_*` constants; a zero mask returns an empty
   array. Interfaces report empty trait metadata because interface trait use is
   not a PHP construct.
+  `Reflection::getModifierNames($modifiers)` is available as a bounded static
+  helper for integer-like modifier masks and returns PHP-ordered names for
+  public/protected/private visibility, static, final, abstract, readonly,
+  virtual, and asymmetric set-visibility bits. This does not expose a full
+  `Reflection` core class metadata surface.
   `new ReflectionMethod($object_or_class, $method)` creates a bounded
   metadata object for methods declared in the current user class, interface,
   and trait tables, including inherited class methods and existing autoload
@@ -10842,13 +10851,16 @@
   declared user classes, interfaces, and traits. The executable method subset
   is `getName()`, `getShortName()`, `isInterface()`, `isTrait()`,
   `isInstantiable()`, `getParentClass()`, `getInterfaceNames()`,
-  `getInterfaces()`, `getTraitNames()`, `getTraits()`, `hasMethod($name)`, `getFileName()`,
-  `getStartLine()`, `getEndLine()`, `getDocComment()`,
-  `getMethod($name)`, `getMethods([$filter])`, `hasProperty($name)`,
-  `getProperty($name)`, and
+  `getInterfaces()`, `getTraitNames()`, `getTraits()`, `hasMethod($name)`,
+  `getFileName()`, `getStartLine()`, `getEndLine()`, `getDocComment()`,
+  `getExtensionName()`, `getMethod($name)`, `getMethods([$filter])`,
+  `hasProperty($name)`, `getProperty($name)`, and
   zero-argument `getProperties()`. `hasConstant($name)` and
   `getConstant($name)` accept string and scalar names in this bounded metadata
-  path. `ReflectionMethod` currently supports only bounded
+  path. `getExtensionName()` is limited to the current core class extension
+  lists and is not a general extension registry. `Reflection::getModifierNames()`
+  supports bounded int-like modifier masks, but the broader `Reflection` core
+  class surface remains unsupported. `ReflectionMethod` currently supports only bounded
   method metadata over declared user classes, interfaces, and traits with the
   source metadata, modifier, predicate, parameter-list, and return-type
   methods documented above, plus public non-static user-class by-value

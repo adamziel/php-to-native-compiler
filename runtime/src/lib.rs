@@ -32244,11 +32244,22 @@ impl PhpClassTable {
         reflection_class
             .add_property(PhpPropertyMetadata::instance("name", Visibility::Public))
             .expect("ReflectionClass core metadata should not duplicate properties");
+        for constant in [
+            "IS_IMPLICIT_ABSTRACT",
+            "IS_EXPLICIT_ABSTRACT",
+            "IS_FINAL",
+            "IS_READONLY",
+        ] {
+            reflection_class
+                .add_constant(PhpClassConstantMetadata::new(constant, Visibility::Public))
+                .expect("ReflectionClass core metadata should not duplicate constants");
+        }
         for method in [
             "__construct",
             "__toString",
             "getName",
             "getShortName",
+            "getExtensionName",
             "getFileName",
             "getStartLine",
             "getEndLine",
@@ -32502,7 +32513,16 @@ impl PhpClassTable {
                 .add_property(PhpPropertyMetadata::instance(property, Visibility::Public))
                 .expect("ReflectionProperty core metadata should not duplicate properties");
         }
-        for constant in ["IS_PUBLIC", "IS_PROTECTED", "IS_PRIVATE", "IS_STATIC"] {
+        for constant in [
+            "IS_PUBLIC",
+            "IS_PROTECTED",
+            "IS_PRIVATE",
+            "IS_STATIC",
+            "IS_READONLY",
+            "IS_PROTECTED_SET",
+            "IS_PRIVATE_SET",
+            "IS_VIRTUAL",
+        ] {
             reflection_property
                 .add_constant(PhpClassConstantMetadata::new(constant, Visibility::Public))
                 .expect("ReflectionProperty core metadata should not duplicate constants");
@@ -80995,6 +81015,24 @@ mod tests {
         assert_eq!(runtime_exception.parent_id(), Some(exception.id()));
         assert!(runtime_exception.properties().is_empty());
         assert!(runtime_exception.methods().is_empty());
+    }
+
+    #[test]
+    fn reflection_metadata_core_tables_include_extension_and_modifier_entries() {
+        let classes = PhpClassTable::with_core_classes();
+
+        let reflection_class = classes.lookup_class("reflectionclass").unwrap();
+        assert!(reflection_class.method("getExtensionName").is_some());
+        assert!(reflection_class.constant("IS_IMPLICIT_ABSTRACT").is_some());
+        assert!(reflection_class.constant("IS_EXPLICIT_ABSTRACT").is_some());
+        assert!(reflection_class.constant("IS_FINAL").is_some());
+        assert!(reflection_class.constant("IS_READONLY").is_some());
+
+        let reflection_property = classes.lookup_class("reflectionproperty").unwrap();
+        assert!(reflection_property.constant("IS_READONLY").is_some());
+        assert!(reflection_property.constant("IS_PROTECTED_SET").is_some());
+        assert!(reflection_property.constant("IS_PRIVATE_SET").is_some());
+        assert!(reflection_property.constant("IS_VIRTUAL").is_some());
     }
 
     #[test]
