@@ -124409,6 +124409,155 @@ impl<'a> JsonParser<'a> {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum JsonInvalidUtf8Mode {
+    Ignore,
+    Substitute,
+}
+
+fn json_encode_invalid_utf8_mode(options: JsonEncodeOptions) -> Option<JsonInvalidUtf8Mode> {
+    if options.has_flag(PHP_JSON_INVALID_UTF8_IGNORE) {
+        Some(JsonInvalidUtf8Mode::Ignore)
+    } else if options.has_flag(PHP_JSON_INVALID_UTF8_SUBSTITUTE) {
+        Some(JsonInvalidUtf8Mode::Substitute)
+    } else {
+        None
+    }
+}
+
+fn json_decode_invalid_utf8_mode(flags: i64) -> Option<JsonInvalidUtf8Mode> {
+    if flags & PHP_JSON_INVALID_UTF8_SUBSTITUTE != 0 {
+        Some(JsonInvalidUtf8Mode::Substitute)
+    } else if flags & PHP_JSON_INVALID_UTF8_IGNORE != 0 {
+        Some(JsonInvalidUtf8Mode::Ignore)
+    } else {
+        None
+    }
+}
+
+fn json_utf8_error() -> JsonDecodeError {
+    JsonDecodeError {
+        code: PHP_JSON_ERROR_UTF8,
+        message: json_error_base_message(PHP_JSON_ERROR_UTF8).to_string(),
+    }
+}
+
+fn json_string_from_invalid_utf8_bytes(bytes: &[u8], mode: JsonInvalidUtf8Mode) -> String {
+    match mode {
+        JsonInvalidUtf8Mode::Substitute => String::from_utf8_lossy(bytes).into_owned(),
+        JsonInvalidUtf8Mode::Ignore => {
+            let mut output = String::new();
+            let mut index = 0_usize;
+            while index < bytes.len() {
+                match std::str::from_utf8(&bytes[index..]) {
+                    Ok(valid) => {
+                        output.push_str(valid);
+                        break;
+                    }
+                    Err(error) => {
+                        let valid_up_to = error.valid_up_to();
+                        if valid_up_to > 0 {
+                            let valid = std::str::from_utf8(&bytes[index..index + valid_up_to])
+                                .expect("valid_up_to bytes form UTF-8");
+                            output.push_str(valid);
+                            index += valid_up_to;
+                        } else {
+                            index += error.error_len().unwrap_or(1);
+                        }
+                    }
+                }
+            }
+            output
+        }
+    }
+}
+
+fn json_update_string_scan_state(byte: u8, in_string: &mut bool, escaped: &mut bool) {
+    if *in_string {
+        if *escaped {
+            *escaped = false;
+        } else if byte == b'\\' {
+            *escaped = true;
+        } else if byte == b'"' {
+            *in_string = false;
+        }
+    } else if byte == b'"' {
+        *in_string = true;
+    }
+}
+
+fn json_push_valid_utf8_chunk_with_scan_state(
+    output: &mut String,
+    chunk: &str,
+    in_string: &mut bool,
+    escaped: &mut bool,
+) {
+    output.push_str(chunk);
+    for byte in chunk.bytes().filter(|byte| byte.is_ascii()) {
+        json_update_string_scan_state(byte, in_string, escaped);
+    }
+}
+
+fn json_decode_string_from_bytes(
+    bytes: &[u8],
+    mode: Option<JsonInvalidUtf8Mode>,
+) -> Result<String, JsonDecodeError> {
+    if let Ok(valid) = std::str::from_utf8(bytes) {
+        return Ok(valid.to_string());
+    }
+
+    let Some(mode) = mode else {
+        return Err(json_utf8_error());
+    };
+
+    let mut output = String::new();
+    let mut index = 0_usize;
+    let mut in_string = false;
+    let mut escaped = false;
+    while index < bytes.len() {
+        match std::str::from_utf8(&bytes[index..]) {
+            Ok(valid) => {
+                json_push_valid_utf8_chunk_with_scan_state(
+                    &mut output,
+                    valid,
+                    &mut in_string,
+                    &mut escaped,
+                );
+                break;
+            }
+            Err(error) => {
+                let valid_up_to = error.valid_up_to();
+                if valid_up_to > 0 {
+                    let valid = std::str::from_utf8(&bytes[index..index + valid_up_to])
+                        .expect("valid_up_to bytes form UTF-8");
+                    json_push_valid_utf8_chunk_with_scan_state(
+                        &mut output,
+                        valid,
+                        &mut in_string,
+                        &mut escaped,
+                    );
+                    index += valid_up_to;
+                    continue;
+                }
+
+                if !in_string {
+                    return Err(json_utf8_error());
+                }
+
+                if mode == JsonInvalidUtf8Mode::Substitute {
+                    output.push('\u{fffd}');
+                }
+                if escaped {
+                    escaped = false;
+                }
+                index += error.error_len().unwrap_or(1);
+            }
+        }
+    }
+
+    Ok(output)
+}
+
 fn json_array_is_list(array: &PhpArray) -> bool {
     array
         .entries()
@@ -124704,7 +124853,14 @@ impl Interpreter {
                     }
                     Ok(json_quote_string(value, options))
                 }
-                Err(_) => self.json_encode_error(PHP_JSON_ERROR_UTF8, options, state),
+                Err(_) => {
+                    if let Some(mode) = json_encode_invalid_utf8_mode(options) {
+                        let value = json_string_from_invalid_utf8_bytes(value, mode);
+                        Ok(json_quote_string(&value, options))
+                    } else {
+                        self.json_encode_error(PHP_JSON_ERROR_UTF8, options, state)
+                    }
+                }
             },
             Value::Array(array) => self.json_encode_array(array, options, state, depth, span),
             Value::Object(object) => self.json_encode_object(object, options, state, depth, span),
@@ -124851,6 +125007,12 @@ impl Interpreter {
             ));
         }
 
+        let flags = args
+            .get(3)
+            .map(|value| php_internal_int_argument("json_decode()", 4, "flags", value, span))
+            .transpose()?
+            .unwrap_or(0);
+
         let mut input = match &args[0] {
             Value::Null => {
                 self.emit_display_diagnostic(
@@ -124866,16 +125028,15 @@ impl Interpreter {
             Value::Int(value) => value.to_string(),
             Value::Float(value) => php_default_precision_float_string(*value),
             Value::String(value) => value.clone(),
-            Value::BinaryString(value) => match std::str::from_utf8(value) {
-                Ok(value) => value.to_string(),
-                Err(_) => {
-                    self.set_json_last_error(
-                        PHP_JSON_ERROR_UTF8,
-                        json_error_base_message(PHP_JSON_ERROR_UTF8).to_string(),
-                    );
-                    return Ok(Value::Null);
+            Value::BinaryString(value) => {
+                match json_decode_string_from_bytes(value, json_decode_invalid_utf8_mode(flags)) {
+                    Ok(value) => value,
+                    Err(error) => {
+                        self.set_json_last_error(error.code, error.message);
+                        return Ok(Value::Null);
+                    }
                 }
-            },
+            }
             other => {
                 return Err(runtime_error(
                     span,
@@ -124902,11 +125063,6 @@ impl Interpreter {
         }
 
         let assoc_arg = args.get(1);
-        let flags = args
-            .get(3)
-            .map(|value| php_internal_int_argument("json_decode()", 4, "flags", value, span))
-            .transpose()?
-            .unwrap_or(0);
         let assoc = if flags & PHP_JSON_OBJECT_AS_ARRAY != 0 {
             true
         } else {

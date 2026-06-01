@@ -1,0 +1,1 @@
+phpc run tests/fixtures/milestone2305/json_invalid_utf8_flags.php

@@ -162,3 +162,51 @@ var_dump(json_last_error(), json_last_error_msg());\n",
     );
     assert_eq!(execution.exit_code, 0);
 }
+
+#[test]
+fn json_invalid_utf8_flags_cover_selected_encode_decode_phpt_shapes() {
+    let execution = run_source(
+        "<?php\n\
+$bad = \"a\\xb0b\";\n\
+var_dump(json_encode($bad));\n\
+var_dump(json_last_error(), json_last_error_msg());\n\
+var_dump(json_encode($bad, JSON_INVALID_UTF8_IGNORE));\n\
+var_dump(json_last_error(), json_last_error_msg());\n\
+var_dump(json_encode($bad, JSON_INVALID_UTF8_SUBSTITUTE));\n\
+var_dump(json_last_error(), json_last_error_msg());\n\
+$json = \"\\\"a\\xb0b\\\"\";\n\
+var_dump(json_decode($json, true, 512, JSON_INVALID_UTF8_IGNORE));\n\
+var_dump(json_last_error(), json_last_error_msg());\n\
+var_dump(json_decode($json, true, 512, JSON_INVALID_UTF8_SUBSTITUTE));\n\
+var_dump(json_last_error(), json_last_error_msg());\n\
+$outside = \"[\\xb0]\";\n\
+var_dump(json_decode($outside, true, 512, JSON_INVALID_UTF8_IGNORE));\n\
+var_dump(json_last_error(), json_last_error_msg());\n",
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "bool(false)\n",
+            "int(5)\n",
+            "string(56) \"Malformed UTF-8 characters, possibly incorrectly encoded\"\n",
+            "string(4) \"\"ab\"\"\n",
+            "int(0)\n",
+            "string(8) \"No error\"\n",
+            "string(10) \"\"a\\ufffdb\"\"\n",
+            "int(0)\n",
+            "string(8) \"No error\"\n",
+            "string(2) \"ab\"\n",
+            "int(0)\n",
+            "string(8) \"No error\"\n",
+            "string(5) \"a�b\"\n",
+            "int(0)\n",
+            "string(8) \"No error\"\n",
+            "NULL\n",
+            "int(5)\n",
+            "string(56) \"Malformed UTF-8 characters, possibly incorrectly encoded\"\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}

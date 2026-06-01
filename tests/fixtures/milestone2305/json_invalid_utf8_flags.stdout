@@ -1,0 +1,6 @@
+"ab"|0:No error
+"a\ufffdb"|0:No error
+string(2) "ab"
+string(5) "a�b"
+NULL
+5:Malformed UTF-8 characters, possibly incorrectly encoded

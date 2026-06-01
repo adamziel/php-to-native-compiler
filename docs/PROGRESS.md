@@ -1,5 +1,24 @@
 # Progress Log
 
+## 2026-06-01
+
+Implemented:
+
+- Added bounded ext/json invalid-UTF-8 flag recovery for `phpc run`.
+  `json_encode()` now honors selected `JSON_INVALID_UTF8_IGNORE` and
+  `JSON_INVALID_UTF8_SUBSTITUTE` string payload rows without poisoning
+  request-local `json_last_error()` state, while unsupported invalid UTF-8
+  without those flags still reports `JSON_ERROR_UTF8`. `json_decode()` now
+  applies the same selected recovery only to invalid bytes inside JSON string
+  tokens, preserves `JSON_ERROR_UTF8` for invalid bytes outside strings, and
+  keeps the existing associative/object, bigint, syntax, depth, and
+  `json_validate()` boundaries. Focused Rust tests and Milestone 2305 fixture
+  coverage exercise encode/decode ignore/substitute outputs, last-error state,
+  direct `phpc run`, and system PHP comparison. Full invalid-byte recovery,
+  exact UTF-8/UTF-16 diagnostics, all option interactions, `JSON_THROW_ON_ERROR`
+  parity, native lowering, and broader json extension functions remain
+  unsupported.
+
 ## 2026-05-27
 
 Implemented:
