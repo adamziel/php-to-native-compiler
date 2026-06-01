@@ -102418,6 +102418,10 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
         return Some(("TypeError", message));
     }
 
+    if let Some(message) = json_last_error_argument_count_error_message(error) {
+        return Some(("TypeError", message));
+    }
+
     if let Some(message) = reflection_constructor_argument_count_error_message(error) {
         return Some(("TypeError", message));
     }
@@ -103121,6 +103125,24 @@ fn random_exact_argument_count_error_message(error: &Diagnostic) -> Option<Strin
     };
     Some(format!(
         "{callable} expects exactly {expected} {noun}, {actual} given"
+    ))
+}
+
+fn json_last_error_argument_count_error_message(error: &Diagnostic) -> Option<String> {
+    if error.phase != Phase::Runtime {
+        return None;
+    }
+    let rest = error.message.strip_prefix("arity mismatch for ")?;
+    let (callable, expectation) = rest.split_once(": expected ")?;
+    if !matches!(callable, "json_last_error()" | "json_last_error_msg()") {
+        return None;
+    }
+    let actual = expectation
+        .strip_prefix("0 argument(s), got ")?
+        .parse::<usize>()
+        .ok()?;
+    Some(format!(
+        "{callable} expects exactly 0 arguments, {actual} given"
     ))
 }
 
@@ -124872,6 +124894,9 @@ impl Interpreter {
     ) -> Result<String, i64> {
         state.record_error(code, json_error_base_message(code));
         if options.partial_output() {
+            if code == PHP_JSON_ERROR_INF_OR_NAN {
+                return Ok("0".to_string());
+            }
             Ok("null".to_string())
         } else {
             Err(code)
@@ -125176,12 +125201,12 @@ impl Interpreter {
     }
 
     fn call_json_last_error(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
-        expect_arity("json_last_error()", args, 0, span)?;
+        expect_arity("json_last_error", args, 0, span)?;
         Ok(Value::Int(self.json_last_error))
     }
 
     fn call_json_last_error_msg(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
-        expect_arity("json_last_error_msg()", args, 0, span)?;
+        expect_arity("json_last_error_msg", args, 0, span)?;
         Ok(Value::String(self.json_last_error_message.clone()))
     }
 

@@ -20,6 +20,24 @@ Implemented:
   behavior, complete option interaction parity, other json extension
   functions, and native lowering.
 
+- Added the next bounded JSON diagnostics slice for
+  `json_last_error()`/`json_last_error_msg()` argument-count failures. Extra
+  arguments now produce catchable `TypeError` messages matching the selected
+  ext/json rows while preserving request-local no-error state reads. Focused
+  Rust coverage exercises both catch paths, and selected PHPT proof covers
+  `ext/json/tests/json_last_error_error.phpt` plus
+  `ext/json/tests/json_last_error_msg_error.phpt`. Broader JSON exception
+  flags, serializer exception propagation, and remaining diagnostic-location
+  parity stay unsupported.
+
+- Added the bounded `json_encode()` `INF`/`NAN` partial-output diagnostic row:
+  non-partial encoding still returns `false` with
+  `JSON_ERROR_INF_OR_NAN`, while `JSON_PARTIAL_OUTPUT_ON_ERROR` now emits
+  `"0"` for those non-finite floats and preserves the same last-error state.
+  Focused Rust coverage exercises `INF` and `NAN`; selected PHPT proof covers
+  `ext/json/tests/inf_nan_error.phpt`. Other exception-flag behavior,
+  serializer propagation, and broader option interactions remain unsupported.
+
 ## 2026-05-27
 
 Implemented:

@@ -24,7 +24,10 @@ Focused Rust tests cover scalar/object/array encode/decode, JSON constants,
 last-error state, numeric-string encoding, big integers, and object-as-array
 decode. Focused PHPT proof covers the current JSON core encode/decode rows
 claimed by the Batch022 author packet plus the bounded depth/error-location
-rows `ext/json/tests/007.phpt` and `ext/json/tests/json_decode_error.phpt`.
+rows `ext/json/tests/007.phpt`, `ext/json/tests/json_decode_error.phpt`,
+`ext/json/tests/json_last_error_error.phpt`, and
+`ext/json/tests/json_last_error_msg_error.phpt`, plus the bounded
+`INF`/`NAN` partial-output row `ext/json/tests/inf_nan_error.phpt`.
 
 ## Semantic Gaps
 

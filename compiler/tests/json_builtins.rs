@@ -158,6 +158,68 @@ try {
 }
 
 #[test]
+fn json_last_error_accessors_raise_catchable_type_errors_for_extra_args() {
+    let execution = run_source(
+        r#"<?php
+var_dump(json_last_error());
+try {
+    json_last_error(true);
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+var_dump(json_last_error_msg());
+try {
+    json_last_error_msg(true);
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "int(0)\n",
+            "json_last_error() expects exactly 0 arguments, 1 given\n",
+            "string(8) \"No error\"\n",
+            "json_last_error_msg() expects exactly 0 arguments, 1 given\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn json_encode_partial_output_uses_zero_for_inf_and_nan() {
+    let execution = run_source(
+        r#"<?php
+var_dump(json_encode(INF));
+var_dump(json_last_error(), json_last_error_msg());
+var_dump(json_encode(INF, JSON_PARTIAL_OUTPUT_ON_ERROR));
+var_dump(json_last_error(), json_last_error_msg());
+var_dump(json_encode(NAN));
+var_dump(json_encode(NAN, JSON_PARTIAL_OUTPUT_ON_ERROR));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "bool(false)\n",
+            "int(7)\n",
+            "string(34) \"Inf and NaN cannot be JSON encoded\"\n",
+            "string(1) \"0\"\n",
+            "int(7)\n",
+            "string(34) \"Inf and NaN cannot be JSON encoded\"\n",
+            "bool(false)\n",
+            "string(1) \"0\"\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn json_validate_tracks_state_depth_flags_and_utf8() {
     let execution = run_source(
         "<?php\n\
