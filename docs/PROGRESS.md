@@ -44317,3 +44317,24 @@ Next:
   split-lane batch. A checkpoint was still not created because
   `tools/checkpoint.sh` stages the full dirty tree and this worker was not
   asked to checkpoint.
+
+Next:
+
+- Added Milestone 2306, a bounded `ext/tokenizer` `TOKEN_PARSE` lexical-context
+  slice. `token_get_all()` and `PhpToken::tokenize()` now pass the
+  `TOKEN_PARSE` flag into the scanner, so selected semi-reserved words remain
+  keyword tokens in plain mode but become `T_STRING` for valid contextual member
+  names, class constant names, and the reached trait adaptation
+  `namespace as` alias shape.
+- Added the PHP-comparable Milestone 2306 fixture with a direct `phpc run` CLI
+  snapshot, focused Rust tokenizer/runtime tests, and
+  `docs/probes/milestone2306-tokenizer-token-parse-lexical-context.md` with the
+  selected php-src PHPT provenance and unsupported edges.
+- Unsupported edges remain: full `TOKEN_PARSE` parse-error object parity,
+  broader trait adaptation grammar and comments inside `namespace as`, complete
+  heredoc/nowdoc token parity, and native lowering of tokenizer state.
+- Focused checks passed:
+  `cargo test -p phpc --test tokenizer_function_core -- --test-threads=1`;
+  `cargo run -p phpc -- test tests/fixtures/milestone2306`;
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone2306`;
+  `cargo fmt --check`; and `git diff --check`.

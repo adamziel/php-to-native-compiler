@@ -1,0 +1,13 @@
+exit: 0
+stdout:
+--plain
+T_CONTINUE:continue
+T_ARRAY:ARRAY
+T_NAMESPACE:namespace
+--parse
+T_STRING:continue
+T_STRING:ARRAY
+T_STRING:namespace
+--- stdout end ---
+stderr:
+--- stderr end ---

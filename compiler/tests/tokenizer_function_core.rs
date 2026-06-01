@@ -1,3 +1,7 @@
+use std::fs;
+use std::path::Path;
+use std::process::{Command, Output};
+
 use php_compiler::error::Phase;
 use php_compiler::php_tokenizer::{self, PhpTokenizerToken};
 use php_compiler::run_source;
@@ -10,6 +14,27 @@ fn runtime_error(source: &str) -> php_compiler::error::Diagnostic {
 
 fn token_text(token: &PhpTokenizerToken) -> String {
     String::from_utf8_lossy(token.text()).into_owned()
+}
+
+fn render_cli_snapshot(output: &Output) -> String {
+    let exit_code = output.status.code().unwrap_or(1);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    format!(
+        "exit: {exit_code}\nstdout:\n{stdout}--- stdout end ---\nstderr:\n{stderr}--- stderr end ---\n"
+    )
+}
+
+fn selected_contextual_token_names(tokens: &[PhpTokenizerToken]) -> Vec<String> {
+    tokens
+        .iter()
+        .filter_map(|token| {
+            let text = token_text(token);
+            matches!(text.as_str(), "continue" | "ARRAY" | "namespace")
+                .then(|| format!("{}:{text}", php_tokenizer::token_name(token.id())))
+        })
+        .collect()
 }
 
 #[test]
@@ -57,6 +82,26 @@ fn tokenizer_scans_core_stream_shape_namespaces_attributes_and_lines() {
 }
 
 #[test]
+fn tokenizer_token_parse_contextual_keywords_differ_from_plain_scan() {
+    let source = b"<?php X::continue; class C { const ARRAY = 1; use A { namespace as bar; } }";
+    let plain = php_tokenizer::tokenize(source);
+    let token_parse = php_tokenizer::tokenize_with_token_parse(source, true);
+
+    assert_eq!(
+        selected_contextual_token_names(&plain),
+        vec![
+            "T_CONTINUE:continue",
+            "T_ARRAY:ARRAY",
+            "T_NAMESPACE:namespace"
+        ]
+    );
+    assert_eq!(
+        selected_contextual_token_names(&token_parse),
+        vec!["T_STRING:continue", "T_STRING:ARRAY", "T_STRING:namespace"]
+    );
+}
+
+#[test]
 fn token_get_all_exposes_token_names_text_lengths_and_lines() {
     let execution = run_source(
         r#"<?php
@@ -80,6 +125,70 @@ foreach ($tokens as $token) {
         "T_OPEN_TAG:6:1\nT_ECHO:4:2\nT_VARIABLE:5:2\nT_COMMENT:5:2\n"
     );
     assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn token_get_all_token_parse_preserves_contextual_lexical_rows() {
+    let execution = run_source(
+        r#"<?php
+$code = '<?php
+X::continue;
+class C { const ARRAY = 1; use A { namespace as bar; } }
+';
+function dump_selected_tokens($label, $tokens) {
+    echo "--", $label, "\n";
+    foreach ($tokens as $token) {
+        if (is_array($token)) {
+            $name = token_name($token[0]);
+            if ($token[1] == "continue" || $token[1] == "ARRAY" || $token[1] == "namespace") {
+                echo $name, ":", $token[1], "\n";
+            }
+        }
+    }
+}
+dump_selected_tokens("plain", token_get_all($code));
+dump_selected_tokens("parse", token_get_all($code, TOKEN_PARSE));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "--plain\n",
+            "T_CONTINUE:continue\n",
+            "T_ARRAY:ARRAY\n",
+            "T_NAMESPACE:namespace\n",
+            "--parse\n",
+            "T_STRING:continue\n",
+            "T_STRING:ARRAY\n",
+            "T_STRING:namespace\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn tokenizer_contextual_lexical_fixture_runs_through_phpc_cli() {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("compiler has a workspace root");
+    let fixture_arg = "tests/fixtures/milestone2306/tokenizer_token_parse_lexical_context.php";
+    let output = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root)
+        .args(["run", fixture_arg])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run phpc for {fixture_arg}: {error}"));
+
+    let expected = fs::read_to_string(
+        workspace_root
+            .join("tests/fixtures/milestone2306/tokenizer_token_parse_lexical_context.cli"),
+    )
+    .unwrap_or_else(|error| panic!("failed to read CLI snapshot for {fixture_arg}: {error}"));
+    let actual = render_cli_snapshot(&output);
+
+    assert_eq!(actual, expected, "CLI snapshot mismatch for {fixture_arg}");
 }
 
 #[test]
@@ -292,7 +401,7 @@ fn tokenizer_rejects_unsupported_nonzero_flags() {
     assert!(
         error
             .message
-            .contains("TOKEN_PARSE and non-zero tokenizer flags are not implemented"),
+            .contains("non-zero tokenizer flags other than TOKEN_PARSE"),
         "{}",
         error.message
     );

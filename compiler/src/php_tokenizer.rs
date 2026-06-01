@@ -499,7 +499,11 @@ pub fn token_name(id: i64) -> &'static str {
 }
 
 pub fn tokenize(source: &[u8]) -> Vec<PhpTokenizerToken> {
-    let mut scanner = Scanner::new(source);
+    tokenize_with_token_parse(source, false)
+}
+
+pub fn tokenize_with_token_parse(source: &[u8], token_parse: bool) -> Vec<PhpTokenizerToken> {
+    let mut scanner = Scanner::new(source, token_parse);
     scanner.scan();
     scanner.tokens
 }
@@ -509,17 +513,19 @@ struct Scanner<'a> {
     index: usize,
     line: i64,
     in_php: bool,
+    token_parse: bool,
     last_significant_token: Option<i64>,
     tokens: Vec<PhpTokenizerToken>,
 }
 
 impl<'a> Scanner<'a> {
-    fn new(source: &'a [u8]) -> Self {
+    fn new(source: &'a [u8], token_parse: bool) -> Self {
         Self {
             source,
             index: 0,
             line: 1,
             in_php: false,
+            token_parse,
             last_significant_token: None,
             tokens: Vec::new(),
         }
@@ -930,7 +936,7 @@ impl<'a> Scanner<'a> {
             return;
         }
 
-        let id = if self.identifier_is_reserved_word_in_string_context() {
+        let id = if self.identifier_is_reserved_word_in_string_context(start, self.index) {
             T_STRING
         } else {
             token_id_for_identifier(&self.source[start..self.index]).unwrap_or(T_STRING)
@@ -1022,7 +1028,18 @@ impl<'a> Scanner<'a> {
         false
     }
 
-    fn identifier_is_reserved_word_in_string_context(&self) -> bool {
+    fn identifier_is_reserved_word_in_string_context(&self, start: usize, end: usize) -> bool {
+        if !self.token_parse {
+            return false;
+        }
+
+        if self.source[start..end].eq_ignore_ascii_case(b"namespace")
+            && self.last_significant_token == Some(b'{' as i64)
+            && self.next_non_whitespace_identifier_is(end, b"as")
+        {
+            return true;
+        }
+
         matches!(
             self.last_significant_token,
             Some(
@@ -1038,6 +1055,26 @@ impl<'a> Scanner<'a> {
                     | T_AMPERSAND_NOT_FOLLOWED_BY_VAR_OR_VARARG
             )
         )
+    }
+
+    fn next_non_whitespace_identifier_is(&self, mut cursor: usize, expected: &[u8]) -> bool {
+        while self
+            .source
+            .get(cursor)
+            .copied()
+            .is_some_and(is_php_whitespace)
+        {
+            cursor += 1;
+        }
+
+        self.source
+            .get(cursor..cursor + expected.len())
+            .is_some_and(|slice| slice.eq_ignore_ascii_case(expected))
+            && !self
+                .source
+                .get(cursor + expected.len())
+                .copied()
+                .is_some_and(|byte| byte == b'_' || byte.is_ascii_alphanumeric())
     }
 
     fn ampersand_is_followed_by_var_or_vararg(&self) -> bool {
