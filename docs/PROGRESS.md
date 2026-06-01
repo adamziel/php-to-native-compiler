@@ -1,5 +1,29 @@
 # Progress Log
 
+## 2026-06-01
+
+Implemented:
+
+- Added a bounded interpreter `iconv` scalar slice for encoding-adjacent PHPT
+  rows. `iconv_strlen()`, `iconv_strpos()`, `iconv_strrpos()`, and
+  `iconv_substr()` now operate over UTF-8, single-byte/ISO-8859-1/ASCII, and
+  simple EUC-JP character spans where the source text is already represented
+  as runtime bytes, while `iconv_get_encoding()`/`iconv_set_encoding()` expose
+  request-local input/output/internal encoding state with `default_charset`
+  fallback. The bounded extension registry and reflection metadata now include
+  the implemented `iconv_*` functions. Focused executable tests cover direct
+  interpreter behavior, metadata, and a `phpc run` CLI fixture, and focused
+  PHPT proof covers `ext/iconv/tests/bug37176.phpt`,
+  `bug37773.phpt`, `iconv_default_charset.phpt`,
+  `iconv_encoding_basic.phpt`, `iconv_get_encoding_basic.phpt`,
+  `iconv_ini_encoding.phpt`, `iconv_strlen_basic.phpt`,
+  `iconv_strpos_basic.phpt`, `iconv_strpos_variation5.phpt`,
+  `iconv_strrpos_basic.phpt`, `iconv_substr_basic.phpt`, and
+  `iconv_substr_out_of_bounds.phpt`. General `iconv()` transcoding,
+  MIME helpers, stream filters/output handlers, broad charset tables,
+  invalid-sequence policy, exact warning/deprecation text, non-UTF-8 source
+  file decoding, and native lowering remain unsupported.
+
 ## 2026-05-27
 
 Implemented:

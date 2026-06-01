@@ -2740,6 +2740,16 @@ publish reflection metadata. The `str_word_count()` scanner follows the
 current bounded PHP-shaped ASCII apostrophe/hyphen run boundary, while native
 lowering remains blocked until locale/binary parity, diagnostics,
 references/COW, and native string allocation semantics are modeled.
+The current encoding-adjacent scalar slice also keeps selected `iconv_*`
+helpers on the interpreter path. `iconv_strlen()`, `iconv_strpos()`,
+`iconv_strrpos()`, and `iconv_substr()` operate on already-materialized
+runtime bytes using bounded UTF-8, single-byte/ASCII/ISO-8859-1, and simple
+EUC-JP character spans; `iconv_get_encoding()` and `iconv_set_encoding()`
+read/write request-local input/output/internal encoding names with
+`default_charset` fallback. No general transcoding ABI exists yet, so
+`iconv()`, MIME helpers, stream filters, invalid-sequence policy, non-UTF-8
+source decoding, exact diagnostics, and native lowering remain explicit
+boundaries.
 `call_user_func()` is an interpreter-only bounded callable dispatcher for
 string callbacks resolving to current user functions or documented callable
 builtins, plus current ordinary closure values. For string user-functions and

@@ -3239,6 +3239,8 @@
   `str_shuffle`, `wordwrap`, `str_word_count`, `strnatcmp`, `strnatcasecmp`,
   `mb_strlen`, `mb_strpos`, `mb_stripos`, `mb_strrpos`, `mb_strripos`,
   `mb_strtolower`, `mb_strtoupper`, `similar_text`,
+  `iconv_strlen`, `iconv_strpos`, `iconv_strrpos`, `iconv_substr`,
+  `iconv_get_encoding`, `iconv_set_encoding`,
   `convert_uuencode`, `convert_uudecode`,
   `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `str_ireplace`, `substr_replace`, `substr_compare`, `substr_count`, `str_getcsv`, `parse_str`, `http_build_query`,
   `highlight_string`, `highlight_file`, `php_strip_whitespace`, `error_reporting`, `set_time_limit`, `ignore_user_abort`, `printf`, `fprintf`, `sprintf`, `vsprintf`, `vprintf`, `vfprintf`, `call_user_func`, `call_user_func_array`,
@@ -3739,6 +3741,15 @@
   PHP-shaped unknown-encoding and out-of-range offset `ValueError`s. Full
   encoding conversion tables, internal encoding state, normalization, invalid
   sequence policy, locale tailoring, and native lowering remain unsupported.
+  `iconv_strlen()`, `iconv_strpos()`, `iconv_strrpos()`, and
+  `iconv_substr()` support the bounded scalar UTF-8,
+  single-byte/ASCII/ISO-8859-1, and simple EUC-JP character-span cases used by
+  the current iconv focused rows, with request-local
+  `iconv_get_encoding()`/`iconv_set_encoding()` state and `default_charset`
+  fallback for input/output/internal encoding names. General `iconv()`
+  transcoding, MIME helpers, stream filters/output handlers, broad charset
+  tables, invalid-sequence policy, exact warning/deprecation text,
+  non-UTF-8 source-file decoding, and native lowering remain unsupported.
   Locale-aware word rules, Unicode word
   segmentation, arbitrary binary edge parity, exact natural-sort parity for
   every PHP numeric-string corner, `similar_text()` array/object/resource
@@ -5598,11 +5609,11 @@
   and native lowering remain unsupported.
   `extension_loaded($name)` accepts string extension names and currently
   answers from a deterministic bounded compiler/runtime compatibility registry.
-  It returns `true` for `json`, `hash`, `pdo`, and `pdo_mysql`, and `false`
-  for other names, including WordPress probe names such as `mbstring` and
-  `sodium`, without querying host PHP modules, `php.ini`, SAPI state, or
-  dynamically loading extensions; non-string names are rejected in the current
-  subset.
+  It returns `true` for `bcmath`, `filter`, `json`, `hash`, `iconv`, `pdo`,
+  and `pdo_mysql`, and `false` for other names, including WordPress probe names
+  such as `mbstring` and `sodium`, without querying host PHP modules,
+  `php.ini`, SAPI state, or dynamically loading extensions; non-string names
+  are rejected in the current subset.
   `get_class` returns the declared class name for current minimal object
   values, `is_object` reports whether a value is one of those current object
   values, `get_debug_type` returns scalar/array type names or the current
@@ -11151,6 +11162,13 @@
   represented runtime bytes, exact PHP diagnostics beyond empty-needle and
   offset/length bounds `ValueError`, and native lowering beyond function-table
   introspection
+- `iconv_strlen()`, `iconv_strpos()`, `iconv_strrpos()`, `iconv_substr()`,
+  `iconv_get_encoding()`, and `iconv_set_encoding()` outside the current
+  bounded UTF-8, single-byte/ASCII/ISO-8859-1, and simple EUC-JP scalar
+  character-span subset: broad charset tables, actual `iconv()` transcoding,
+  MIME encode/decode helpers, stream filters, output handlers, invalid byte
+  sequence policy, non-UTF-8 source-file decoding, exact warning/deprecation
+  text, process/global INI semantics, and native lowering
 - `preg_match()` outside the current slash-delimited literal
   contains/prefix/suffix/exact pattern subset, the two exact WordPress db-host
   named-capture patterns, the exact WordPress table-prefix validation pattern

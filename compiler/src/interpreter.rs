@@ -83946,6 +83946,12 @@ impl Interpreter {
                 true,
                 span,
             ),
+            "iconv_strlen" => self.call_iconv_strlen(&args, span),
+            "iconv_strpos" => self.call_iconv_strpos(&args, span),
+            "iconv_strrpos" => self.call_iconv_strrpos(&args, span),
+            "iconv_substr" => self.call_iconv_substr(&args, span),
+            "iconv_get_encoding" => self.call_iconv_get_encoding(&args, span),
+            "iconv_set_encoding" => self.call_iconv_set_encoding(&args, span),
             "str_split" => call_str_split(&args, span),
             "addslashes" => self.call_addslashes(&args, span),
             "stripslashes" => self.call_stripslashes(&args, span),
@@ -99573,6 +99579,50 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_optional_null_param("encoding", "?string"),
             ],
         ),
+        "iconv_strlen" => (
+            "int|false",
+            vec![
+                reflection_internal_param("string", "string"),
+                reflection_internal_optional_null_param("encoding", "?string"),
+            ],
+        ),
+        "iconv_strpos" => (
+            "int|false",
+            vec![
+                reflection_internal_param("haystack", "string"),
+                reflection_internal_param("needle", "string"),
+                reflection_internal_optional_int_param("offset", 0),
+                reflection_internal_optional_null_param("encoding", "?string"),
+            ],
+        ),
+        "iconv_strrpos" => (
+            "int|false",
+            vec![
+                reflection_internal_param("haystack", "string"),
+                reflection_internal_param("needle", "string"),
+                reflection_internal_optional_null_param("encoding", "?string"),
+            ],
+        ),
+        "iconv_substr" => (
+            "string|false",
+            vec![
+                reflection_internal_param("string", "string"),
+                reflection_internal_param("offset", "int"),
+                reflection_internal_optional_null_param("length", "?int"),
+                reflection_internal_optional_null_param("encoding", "?string"),
+            ],
+        ),
+        "iconv_get_encoding" => (
+            "array|string|false",
+            vec![reflection_internal_optional_string_param("type", "all")],
+        ),
+        "iconv_set_encoding" => (
+            "bool",
+            vec![
+                reflection_internal_param("type", "string"),
+                reflection_internal_param("encoding", "string"),
+            ],
+        ),
         "str_split" => (
             "array",
             vec![
@@ -100360,6 +100410,8 @@ fn reflection_internal_extension_name(name: &str) -> String {
         "bcmath".to_string()
     } else if name.starts_with("ctype_") {
         "ctype".to_string()
+    } else if name.starts_with("iconv_") {
+        "iconv".to_string()
     } else {
         "standard".to_string()
     }
@@ -101697,6 +101749,16 @@ const REFLECTION_EXTENSION_STANDARD_INI_ENTRIES: &[&str] = &["user_agent"];
 
 const REFLECTION_EXTENSION_CTYPE_CLASSES: &[&str] = &[];
 
+const REFLECTION_EXTENSION_ICONV_CLASSES: &[&str] = &[];
+const REFLECTION_EXTENSION_ICONV_FUNCTIONS: &[&str] = &[
+    "iconv_strlen",
+    "iconv_strpos",
+    "iconv_strrpos",
+    "iconv_substr",
+    "iconv_get_encoding",
+    "iconv_set_encoding",
+];
+
 const REFLECTION_EXTENSION_DOM_CLASSES: &[&str] = &[
     "DOMException",
     "DOMNode",
@@ -101740,6 +101802,18 @@ fn reflection_extension_metadata(name: &str) -> Option<ReflectionExtensionMetada
             function_names: &[],
             constant_names: &[],
             ini_entry_names: &[],
+            dependencies: &[],
+        }),
+        "iconv" => Some(ReflectionExtensionMetadata {
+            name: "iconv",
+            class_names: REFLECTION_EXTENSION_ICONV_CLASSES,
+            function_names: REFLECTION_EXTENSION_ICONV_FUNCTIONS,
+            constant_names: &[],
+            ini_entry_names: &[
+                "iconv.input_encoding",
+                "iconv.output_encoding",
+                "iconv.internal_encoding",
+            ],
             dependencies: &[],
         }),
         "dom" => Some(ReflectionExtensionMetadata {
@@ -103428,6 +103502,10 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
             "substr_compare()",
             "Argument #4 ($length) must be greater than or equal to 0",
         )
+        | (
+            "iconv_strpos()",
+            "Argument #3 ($offset) must be contained in argument #1 ($haystack)",
+        )
         | ("base_convert()", "Argument #2 ($from_base) must be between 2 and 36 (inclusive)")
         | ("base_convert()", "Argument #3 ($to_base) must be between 2 and 36 (inclusive)")
         | ("log()", "Argument #2 ($base) must be greater than 0")
@@ -104092,6 +104170,12 @@ fn is_builtin(name: &str) -> bool {
             | "mb_strripos"
             | "mb_strtolower"
             | "mb_strtoupper"
+            | "iconv_strlen"
+            | "iconv_strpos"
+            | "iconv_strrpos"
+            | "iconv_substr"
+            | "iconv_get_encoding"
+            | "iconv_set_encoding"
             | "str_split"
             | "range"
             | "addslashes"
@@ -106867,7 +106951,7 @@ fn unsupported_runtime_constant_value_type(value: &Value) -> Option<&'static str
 fn is_compat_loaded_extension_name(name: &str) -> bool {
     matches!(
         name.to_ascii_lowercase().as_str(),
-        "bcmath" | "filter" | "json" | "hash" | "pdo" | "pdo_mysql"
+        "bcmath" | "filter" | "json" | "hash" | "iconv" | "pdo" | "pdo_mysql"
     )
 }
 
@@ -118305,6 +118389,353 @@ fn mb_is_case_ignorable(ch: char) -> bool {
             | '\u{20D0}'..='\u{20FF}'
             | '\u{FE20}'..='\u{FE2F}'
     )
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum IconvScalarEncoding {
+    Utf8,
+    SingleByte,
+    EucJp,
+}
+
+impl Interpreter {
+    fn call_iconv_strlen(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(1..=2).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "iconv_strlen()",
+                    ArityExpectation::Between { min: 1, max: 2 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let encoding = self.iconv_scalar_encoding("iconv_strlen()", 2, args.get(1), span)?;
+        let value = string_compare_argument_bytes("iconv_strlen()", "string", &args[0], span)?;
+        Ok(Value::Int(iconv_char_spans(&value, encoding).len() as i64))
+    }
+
+    fn call_iconv_strpos(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(2..=4).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "iconv_strpos()",
+                    ArityExpectation::Between { min: 2, max: 4 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let haystack = string_compare_argument_bytes("iconv_strpos()", "haystack", &args[0], span)?;
+        let needle = string_compare_argument_bytes("iconv_strpos()", "needle", &args[1], span)?;
+        let offset = match args.get(2) {
+            Some(value) => php_internal_int_argument("iconv_strpos()", 3, "offset", value, span)?,
+            None => 0,
+        };
+        let encoding = self.iconv_scalar_encoding("iconv_strpos()", 4, args.get(3), span)?;
+
+        iconv_strpos_value("iconv_strpos()", &haystack, &needle, offset, encoding, span)
+    }
+
+    fn call_iconv_strrpos(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(2..=3).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "iconv_strrpos()",
+                    ArityExpectation::Between { min: 2, max: 3 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let haystack =
+            string_compare_argument_bytes("iconv_strrpos()", "haystack", &args[0], span)?;
+        let needle = string_compare_argument_bytes("iconv_strrpos()", "needle", &args[1], span)?;
+        let encoding = self.iconv_scalar_encoding("iconv_strrpos()", 3, args.get(2), span)?;
+
+        iconv_strrpos_value("iconv_strrpos()", &haystack, &needle, encoding)
+    }
+
+    fn call_iconv_substr(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(2..=4).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "iconv_substr()",
+                    ArityExpectation::Between { min: 2, max: 4 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let value = string_compare_argument_bytes("iconv_substr()", "string", &args[0], span)?;
+        let offset = php_internal_int_argument("iconv_substr()", 2, "offset", &args[1], span)?;
+        let length = match args.get(2) {
+            Some(Value::Null) | None => None,
+            Some(value) => Some(php_internal_int_argument(
+                "iconv_substr()",
+                3,
+                "length",
+                value,
+                span,
+            )?),
+        };
+        let encoding = self.iconv_scalar_encoding("iconv_substr()", 4, args.get(3), span)?;
+        Ok(interpreter_value_from_php_string_bytes(iconv_substr_bytes(
+            &value, offset, length, encoding,
+        )))
+    }
+
+    fn call_iconv_get_encoding(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if args.len() > 1 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "iconv_get_encoding()",
+                    ArityExpectation::Between { min: 0, max: 1 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let kind = match args.first() {
+            Some(Value::Null) | None => "all".to_string(),
+            Some(value) => value
+                .try_echo_string()
+                .map_err(|error| runtime_error(span, error))?,
+        };
+
+        match iconv_encoding_kind(&kind) {
+            Some("all") => Ok(Value::Array(self.iconv_encoding_array())),
+            Some(kind) => Ok(Value::String(self.iconv_encoding_value(kind))),
+            None => Ok(Value::Bool(false)),
+        }
+    }
+
+    fn call_iconv_set_encoding(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("iconv_set_encoding", args, 2, span)?;
+        let kind = args[0]
+            .try_echo_string()
+            .map_err(|error| runtime_error(span, error))?;
+        let Some(kind) = iconv_encoding_kind(&kind).filter(|kind| *kind != "all") else {
+            return Ok(Value::Bool(false));
+        };
+        let encoding = args[1]
+            .try_echo_string()
+            .map_err(|error| runtime_error(span, error))?;
+        self.ini_values
+            .insert(format!("iconv.{kind}"), encoding.to_string());
+        Ok(Value::Bool(true))
+    }
+
+    fn iconv_scalar_encoding(
+        &self,
+        function: &'static str,
+        position: usize,
+        value: Option<&Value>,
+        span: Span,
+    ) -> CompileResult<IconvScalarEncoding> {
+        let encoding = match value {
+            Some(Value::Null) | None => self.iconv_encoding_value("internal_encoding"),
+            Some(value) => value
+                .try_echo_string()
+                .map_err(|error| runtime_error(span, error))?,
+        };
+
+        iconv_scalar_encoding_name(&encoding).ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function,
+                    format!(
+                        "Argument #{position} ($encoding) must be a valid bounded iconv scalar encoding, \"{encoding}\" given"
+                    ),
+                ),
+            )
+        })
+    }
+
+    fn iconv_encoding_array(&self) -> PhpArray {
+        let mut encodings = PhpArray::new();
+        for kind in ["input_encoding", "output_encoding", "internal_encoding"] {
+            encodings.insert(
+                kind.to_string(),
+                Value::String(self.iconv_encoding_value(kind)),
+            );
+        }
+        encodings
+    }
+
+    fn iconv_encoding_value(&self, kind: &str) -> String {
+        let iconv_name = format!("iconv.{kind}");
+        self.ini_value(&iconv_name)
+            .filter(|value| !value.is_empty())
+            .or_else(|| self.ini_value(kind).filter(|value| !value.is_empty()))
+            .or_else(|| {
+                self.ini_value("default_charset")
+                    .filter(|value| !value.is_empty())
+            })
+            .unwrap_or_else(|| "UTF-8".to_string())
+    }
+}
+
+fn iconv_encoding_kind(kind: &str) -> Option<&'static str> {
+    match kind.to_ascii_lowercase().as_str() {
+        "all" => Some("all"),
+        "input_encoding" | "input-encoding" => Some("input_encoding"),
+        "output_encoding" | "output-encoding" => Some("output_encoding"),
+        "internal_encoding" | "internal-encoding" => Some("internal_encoding"),
+        _ => None,
+    }
+}
+
+fn iconv_scalar_encoding_name(encoding: &str) -> Option<IconvScalarEncoding> {
+    let normalized = encoding
+        .chars()
+        .filter(|ch| !matches!(ch, '-' | '_'))
+        .flat_map(char::to_lowercase)
+        .collect::<String>();
+
+    match normalized.as_str() {
+        "utf8" => Some(IconvScalarEncoding::Utf8),
+        "ascii" | "usascii" | "iso88591" | "latin1" | "8bit" => {
+            Some(IconvScalarEncoding::SingleByte)
+        }
+        "eucjp" | "eucjpms" | "eucjpwin" => Some(IconvScalarEncoding::EucJp),
+        _ => None,
+    }
+}
+
+fn iconv_char_spans(bytes: &[u8], encoding: IconvScalarEncoding) -> Vec<(usize, usize)> {
+    match encoding {
+        IconvScalarEncoding::SingleByte => {
+            (0..bytes.len()).map(|index| (index, index + 1)).collect()
+        }
+        IconvScalarEncoding::Utf8 => iconv_utf8_char_spans(bytes),
+        IconvScalarEncoding::EucJp => iconv_euc_jp_char_spans(bytes),
+    }
+}
+
+fn iconv_utf8_char_spans(bytes: &[u8]) -> Vec<(usize, usize)> {
+    let Ok(value) = std::str::from_utf8(bytes) else {
+        return (0..bytes.len()).map(|index| (index, index + 1)).collect();
+    };
+
+    let mut spans = Vec::new();
+    for (start, ch) in value.char_indices() {
+        spans.push((start, start + ch.len_utf8()));
+    }
+    spans
+}
+
+fn iconv_euc_jp_char_spans(bytes: &[u8]) -> Vec<(usize, usize)> {
+    let mut spans = Vec::new();
+    let mut index = 0usize;
+    while index < bytes.len() {
+        let width = iconv_euc_jp_char_width(bytes, index);
+        let end = (index + width).min(bytes.len());
+        spans.push((index, end));
+        index = end;
+    }
+    spans
+}
+
+fn iconv_euc_jp_char_width(bytes: &[u8], index: usize) -> usize {
+    let byte = bytes[index];
+    if byte <= 0x7f {
+        return 1;
+    }
+    if byte == 0x8f && index + 2 < bytes.len() {
+        return 3;
+    }
+    if (byte == 0x8e || (0xa1..=0xfe).contains(&byte)) && index + 1 < bytes.len() {
+        return 2;
+    }
+    1
+}
+
+fn iconv_substr_bytes(
+    value: &[u8],
+    offset: i64,
+    length: Option<i64>,
+    encoding: IconvScalarEncoding,
+) -> Vec<u8> {
+    let spans = iconv_char_spans(value, encoding);
+    let (start, end) = mb_window_bounds(spans.len(), offset, length);
+    let byte_start = iconv_char_boundary_byte(&spans, value.len(), start);
+    let byte_end = iconv_char_boundary_byte(&spans, value.len(), end);
+    value[byte_start..byte_end].to_vec()
+}
+
+fn iconv_strpos_value(
+    function: &'static str,
+    haystack: &[u8],
+    needle: &[u8],
+    offset: i64,
+    encoding: IconvScalarEncoding,
+    span: Span,
+) -> CompileResult<Value> {
+    let haystack_spans = iconv_char_spans(haystack, encoding);
+    let needle_spans = iconv_char_spans(needle, encoding);
+    let start = mb_normalize_offset(function, haystack_spans.len(), offset, span)?;
+    if needle_spans.is_empty() || needle_spans.len() > haystack_spans.len() {
+        return Ok(Value::Bool(false));
+    }
+
+    let max_start = haystack_spans.len() - needle_spans.len();
+    if start > max_start {
+        return Ok(Value::Bool(false));
+    }
+
+    let found = (start..=max_start).find(|&index| {
+        iconv_haystack_window(haystack, &haystack_spans, index, needle_spans.len()) == needle
+    });
+    Ok(found
+        .map(|index| Value::Int(index as i64))
+        .unwrap_or(Value::Bool(false)))
+}
+
+fn iconv_strrpos_value(
+    _function: &'static str,
+    haystack: &[u8],
+    needle: &[u8],
+    encoding: IconvScalarEncoding,
+) -> CompileResult<Value> {
+    let haystack_spans = iconv_char_spans(haystack, encoding);
+    let needle_spans = iconv_char_spans(needle, encoding);
+    if needle_spans.is_empty() || needle_spans.len() > haystack_spans.len() {
+        return Ok(Value::Bool(false));
+    }
+
+    let max_start = haystack_spans.len() - needle_spans.len();
+    let found = (0..=max_start).rev().find(|&index| {
+        iconv_haystack_window(haystack, &haystack_spans, index, needle_spans.len()) == needle
+    });
+    Ok(found
+        .map(|index| Value::Int(index as i64))
+        .unwrap_or(Value::Bool(false)))
+}
+
+fn iconv_haystack_window<'a>(
+    haystack: &'a [u8],
+    spans: &[(usize, usize)],
+    start: usize,
+    char_len: usize,
+) -> &'a [u8] {
+    let byte_start = iconv_char_boundary_byte(spans, haystack.len(), start);
+    let byte_end = iconv_char_boundary_byte(spans, haystack.len(), start + char_len);
+    &haystack[byte_start..byte_end]
+}
+
+fn iconv_char_boundary_byte(spans: &[(usize, usize)], byte_len: usize, char_index: usize) -> usize {
+    if char_index >= spans.len() {
+        byte_len
+    } else {
+        spans[char_index].0
+    }
 }
 
 fn call_strstr(
@@ -136230,7 +136661,15 @@ const OPCACHE_DIRECTIVES: &[&str] = &[
     "opcache.jit_blacklist_side_trace",
 ];
 
-const COMPAT_LOADED_EXTENSIONS: &[&str] = &["bcmath", "filter", "json", "hash", "pdo", "pdo_mysql"];
+const COMPAT_LOADED_EXTENSIONS: &[&str] = &[
+    "bcmath",
+    "filter",
+    "json",
+    "hash",
+    "iconv",
+    "pdo",
+    "pdo_mysql",
+];
 
 const COMPAT_INI_DIRECTIVES: &[&str] = &[
     "arg_separator.input",
@@ -136241,6 +136680,7 @@ const COMPAT_INI_DIRECTIVES: &[&str] = &[
     "date.sunrise_zenith",
     "date.sunset_zenith",
     "date.timezone",
+    "default_charset",
     "default_mimetype",
     "disable_functions",
     "display_errors",
@@ -136248,6 +136688,10 @@ const COMPAT_INI_DIRECTIVES: &[&str] = &[
     "error_log",
     "error_prepend_string",
     "html_errors",
+    "iconv.input_encoding",
+    "iconv.internal_encoding",
+    "iconv.output_encoding",
+    "input_encoding",
     "internal_encoding",
     "mail.add_x_header",
     "max_execution_time",
@@ -136257,6 +136701,7 @@ const COMPAT_INI_DIRECTIVES: &[&str] = &[
     "mysqlnd.collect_statistics",
     "open_basedir",
     "output_handler",
+    "output_encoding",
     "pcre.backtrack_limit",
     "pcre.recursion_limit",
     "post_max_size",
@@ -136982,6 +137427,7 @@ fn compat_ini_value(normalized_name: &str) -> Option<&'static str> {
         "date.sunrise_zenith" => Some("90.833333"),
         "date.sunset_zenith" => Some("90.833333"),
         "date.timezone" => Some("UTC"),
+        "default_charset" => Some("UTF-8"),
         "default_mimetype" => Some("text/html"),
         "disable_functions" => Some(""),
         "display_errors" => Some(""),
@@ -136989,6 +137435,10 @@ fn compat_ini_value(normalized_name: &str) -> Option<&'static str> {
         "error_log" => Some(""),
         "error_prepend_string" => Some(""),
         "html_errors" => Some("0"),
+        "iconv.input_encoding" => Some(""),
+        "iconv.internal_encoding" => Some(""),
+        "iconv.output_encoding" => Some(""),
+        "input_encoding" => Some(""),
         "internal_encoding" => Some(""),
         "mail.add_x_header" => Some("0"),
         "max_execution_time" => Some("30"),
@@ -136998,6 +137448,7 @@ fn compat_ini_value(normalized_name: &str) -> Option<&'static str> {
         "mysqlnd.collect_statistics" => Some("1"),
         "open_basedir" => Some(""),
         "output_handler" => Some(""),
+        "output_encoding" => Some(""),
         "pcre.backtrack_limit" => Some("1000000"),
         "pcre.recursion_limit" => Some("100000"),
         "post_max_size" => Some("8M"),

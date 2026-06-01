@@ -83,6 +83,21 @@ impl NativeTextSurface {
         }
     }
 }
+
+fn native_text_membership_constant_result<S: AsRef<str>>(
+    value: &str,
+    candidates: &[S],
+    case_insensitive: bool,
+) -> bool {
+    candidates.iter().any(|candidate| {
+        let candidate = candidate.as_ref();
+        if case_insensitive {
+            candidate.eq_ignore_ascii_case(value)
+        } else {
+            candidate == value
+        }
+    })
+}
 const NATIVE_FILESYSTEM_PATH_HAS_PATH: u8 = 8;
 const NATIVE_DECLARED_CLASS_PROPERTY_PUBLIC: u8 = 1;
 const NATIVE_DECLARED_CLASS_PROPERTY_PROTECTED: u8 = 2;
@@ -16161,6 +16176,14 @@ impl LlvmGenerator {
         span: Span,
         rejection: &'static str,
     ) -> CompileResult<IrValue> {
+        if let IrValue::String(value) = &value {
+            return Ok(IrValue::Bool(native_text_membership_constant_result(
+                value,
+                candidates,
+                case_insensitive,
+            )));
+        }
+
         let (value_handle, reference_handle, owned_value) = match value {
             IrValue::NativeReference(reference) => ("zeroinitializer".to_string(), reference, None),
             value => {
@@ -55697,6 +55720,14 @@ impl CGenerator {
         span: Span,
         rejection: &'static str,
     ) -> CompileResult<CValue> {
+        if let CValue::String(value) = &value {
+            return Ok(CValue::Bool(native_text_membership_constant_result(
+                value,
+                candidates,
+                case_insensitive,
+            )));
+        }
+
         let value = match value {
             CValue::NativeReferenceHandle(reference) => {
                 CNativeValueReferenceSlot::reference(reference)
@@ -66930,7 +66961,15 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "var_export",
 ];
 
-const COMPAT_LOADED_EXTENSION_NAMES: &[&str] = &["json", "hash", "pdo", "pdo_mysql"];
+const COMPAT_LOADED_EXTENSION_NAMES: &[&str] = &[
+    "bcmath",
+    "filter",
+    "json",
+    "hash",
+    "iconv",
+    "pdo",
+    "pdo_mysql",
+];
 
 fn native_text_membership_candidates(candidates: &[&str]) -> Vec<String> {
     candidates

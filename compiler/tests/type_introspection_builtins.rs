@@ -268,18 +268,20 @@ echo extension_loaded("mbstring") ? "1" : "0";
 echo extension_loaded("MBSTRING") ? "1" : "0";
 echo extension_loaded("json") ? "1" : "0";
 echo extension_loaded("HASH") ? "1" : "0";
+echo extension_loaded("iconv") ? "1" : "0";
 echo extension_loaded("pdo") ? "1" : "0";
 echo extension_loaded("pdo_mysql") ? "1" : "0";
 echo "\n";
 $call = "extension_loaded";
 echo $call("simplexml") ? "1" : "0";
 echo $call("hash") ? "1" : "0";
+echo $call("iconv") ? "1" : "0";
 echo $call("pdo_mysql") ? "1" : "0";
 "#,
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "001111\n011");
+    assert_eq!(execution.stdout, "0011111\n0111");
     assert_eq!(execution.exit_code, 0);
 }
 
@@ -423,6 +425,7 @@ echo extension_loaded("mbstring") ? "1" : "0";
 echo extension_loaded("MBSTRING") ? "1" : "0";
 echo extension_loaded("json") ? "1" : "0";
 echo extension_loaded("HASH") ? "1" : "0";
+echo extension_loaded("iconv") ? "1" : "0";
 echo extension_loaded("pdo") ? "1" : "0";
 echo extension_loaded("pdo_mysql") ? "1" : "0";
 echo extension_loaded($name) ? "1" : "0";
@@ -431,8 +434,12 @@ echo "\n";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 4, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 5, "{ir}");
     assert_eq!(ir.matches("c\"0\\00\"").count(), 3, "{ir}");
+    assert!(
+        !ir.contains("phpc_native_text_membership_with_reference_slot_with_diagnostic"),
+        "{ir}"
+    );
     assert!(!ir.contains("extension_loaded"), "{ir}");
 }
 
