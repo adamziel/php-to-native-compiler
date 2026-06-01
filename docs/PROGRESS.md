@@ -43250,3 +43250,34 @@ Next:
   split-lane batch. A checkpoint was still not created because
   `tools/checkpoint.sh` stages the full dirty tree and this worker was not
   asked to checkpoint.
+
+Next:
+
+- Added bounded SPL `ArrayObject`/`ArrayIterator` user-comparator sorting for
+  `uasort()` and `uksort()` through `phpc run`. Core metadata now exposes both
+  methods, method calls route through the existing user-array comparator
+  callback boundary, array-backed storage preserves keys, public object-backed
+  storage rewrites public properties in sorted order, cursors reset after the
+  sort, and wrong argument counts raise catchable `ArgumentCountError` messages
+  matching the selected SPL rows.
+- Added Milestone 2305 with a direct `phpc run` CLI exercise and system PHP
+  comparison for ArrayObject and ArrayIterator `uasort()`/`uksort()` order plus
+  the ArrayObject arity path. Focused PHPT proof covered these php-src rows:
+  `arrayObject_uasort_basic1.phpt`, `arrayObject_uasort_error1.phpt`,
+  `arrayObject_uksort_basic1.phpt`, `arrayObject_uksort_error1.phpt`, and
+  the closure/dump callback row `ArrayObject_dump_during_sort.phpt`; the full
+  ArrayObject focused cluster now reports `39 / 108` selected tests passing
+  with the remaining failures still in the named unsupported areas below.
+- `disable_functions` parity for the method/procedural sorter relationship,
+  nested ArrayObject-backed comparator sorting, broad SPL wrapper iterators,
+  by-reference SPL iteration, serialization parity, full COW/reference
+  identity, and native lowering remain unsupported.
+- Focused checks passed:
+  `cargo test -q -p phpc --test object_model array_object_user -- --test-threads=1`;
+  `cargo test -q -p phpc --test object_model array_object_array_iterator_user_comparator_sorts_and_arity_errors -- --test-threads=1`;
+  `cargo run -q -p phpc -- test tests/fixtures/milestone2305`;
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone2305`;
+  direct `cargo run -q -p phpc -- run tests/fixtures/milestone2305/array_object_user_comparator_sort.php`;
+  focused PHPT `4 / 4` for the direct uasort/uksort rows with lowercase
+  `run-tests.php -p` through `phpc-phpt-wrapper`; and the broader
+  `ext/spl/tests/ArrayObject/*.phpt` focused cluster at `39 / 108`.

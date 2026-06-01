@@ -14927,6 +14927,107 @@ foreach ($it as $key => $value) {
 }
 
 #[test]
+fn array_object_user_sort_methods_are_registered_in_core_metadata() {
+    let classes = class_metadata_source("").unwrap();
+    for class_name in ["ArrayObject", "ArrayIterator"] {
+        let class = classes.lookup_class(class_name).unwrap();
+        assert!(class.method("uasort").is_some(), "{class_name}::uasort");
+        assert!(class.method("uksort").is_some(), "{class_name}::uksort");
+    }
+}
+
+#[test]
+fn array_object_array_iterator_user_comparator_sorts_and_arity_errors() {
+    let source = r#"<?php
+error_reporting(0);
+function descending($left, $right) {
+    if ($left == $right) {
+        return 0;
+    }
+    return $left < $right ? 1 : -1;
+}
+
+$ao = new ArrayObject(array(2, 3, 1));
+var_dump($ao->uasort('descending'));
+foreach ($ao->getArrayCopy() as $key => $value) {
+    echo "ao-value:$key:$value\n";
+}
+var_dump($ao->uksort('descending'));
+foreach ($ao->getArrayCopy() as $key => $value) {
+    echo "ao-key:$key:$value\n";
+}
+
+$it = new ArrayIterator(array('b' => 2, 'a' => 3, 'c' => 1));
+var_dump($it->uasort('descending'));
+foreach ($it as $key => $value) {
+    echo "it-value:$key:$value\n";
+}
+var_dump($it->uksort('descending'));
+foreach ($it as $key => $value) {
+    echo "it-key:$key:$value\n";
+}
+
+$std = new stdClass();
+$std->b = 2;
+$std->a = 3;
+$std->c = 1;
+$wrapped = new ArrayObject($std);
+$wrapped->uasort('descending');
+foreach ($wrapped->getArrayCopy() as $key => $value) {
+    echo "obj-value:$key:$value\n";
+}
+$wrapped->uksort('descending');
+foreach ($wrapped->getArrayCopy() as $key => $value) {
+    echo "obj-key:$key:$value\n";
+}
+
+try {
+    $ao->uasort();
+} catch (ArgumentCountError $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    $it->uksort('descending', 'extra');
+} catch (ArgumentCountError $e) {
+    echo $e->getMessage(), "\n";
+}
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "bool(true)\n",
+            "ao-value:1:3\n",
+            "ao-value:0:2\n",
+            "ao-value:2:1\n",
+            "bool(true)\n",
+            "ao-key:2:1\n",
+            "ao-key:1:3\n",
+            "ao-key:0:2\n",
+            "bool(true)\n",
+            "it-value:a:3\n",
+            "it-value:b:2\n",
+            "it-value:c:1\n",
+            "bool(true)\n",
+            "it-key:c:1\n",
+            "it-key:b:2\n",
+            "it-key:a:3\n",
+            "obj-value:a:3\n",
+            "obj-value:b:2\n",
+            "obj-value:c:1\n",
+            "obj-key:c:1\n",
+            "obj-key:b:2\n",
+            "obj-key:a:3\n",
+            "ArrayObject::uasort() expects exactly 1 argument, 0 given\n",
+            "ArrayIterator::uksort() expects exactly 1 argument, 2 given\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn array_object_nested_storage_mutations_reach_inner_array_object() {
     let source = r#"<?php
 $base = new ArrayObject(array(1 => "one", 2 => "two", 3 => "three"));

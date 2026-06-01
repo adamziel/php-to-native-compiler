@@ -1,0 +1,20 @@
+ao-value:1:3
+ao-value:0:2
+ao-value:2:1
+ao-key:2:1
+ao-key:1:3
+ao-key:0:2
+it-value:a:3
+it-value:b:2
+it-value:c:1
+it-key:c:1
+it-key:b:2
+it-key:a:3
+obj-value:a:3
+obj-value:b:2
+obj-value:c:1
+obj-key:c:1
+obj-key:b:2
+obj-key:a:3
+ArrayObject::uasort() expects exactly 1 argument, 0 given
+

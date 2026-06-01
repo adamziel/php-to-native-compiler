@@ -12875,6 +12875,59 @@ impl Interpreter {
                 self.array_objects.insert(object.id(), state);
                 Ok(Value::Bool(true))
             }
+            "uasort" | "uksort" => {
+                if args.len() != 1 {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{class_name}::{method_name}()"),
+                            format!(
+                                "{class_name}::{method_name}() expects exactly 1 argument, {} given",
+                                args.len()
+                            ),
+                        ),
+                    ));
+                }
+                let operation = match method_name.to_ascii_lowercase().as_str() {
+                    "uasort" => UserArraySortOperation::Uasort,
+                    "uksort" => UserArraySortOperation::Uksort,
+                    _ => unreachable!("user sort method matched"),
+                };
+                let callback = args.first().expect("arity checked");
+                let context = format!("{class_name}::{method_name}()");
+                let mut state = self.array_object_state(&object, method_name, span)?.clone();
+                match &mut state.storage {
+                    Value::Array(array) => {
+                        self.sort_array_with_user_comparator_in_context(
+                            array, operation, callback, span, &context,
+                        )?;
+                    }
+                    Value::Object(storage_object)
+                        if !self.is_array_object_storage_object(storage_object) =>
+                    {
+                        let mut array = Self::public_object_properties_array(storage_object);
+                        self.sort_array_with_user_comparator_in_context(
+                            &mut array, operation, callback, span, &context,
+                        )?;
+                        storage_object
+                            .replace_public_properties_from_array(&array)
+                            .map_err(|error| runtime_error(span, error))?;
+                    }
+                    _ => {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                context,
+                                "user-comparator sorting nested ArrayObject-backed storage is not implemented in the current subset",
+                            ),
+                        ));
+                    }
+                }
+                state.cursor = 0;
+                self.sync_array_object_properties(&object, &state, span)?;
+                self.array_objects.insert(object.id(), state);
+                Ok(Value::Bool(true))
+            }
             _ => Err(runtime_error(
                 span,
                 RuntimeError::undefined_function(format!("{class_name}::{method_name}()")),
@@ -66765,6 +66818,23 @@ impl Interpreter {
         callback: &Value,
         span: Span,
     ) -> CompileResult<()> {
+        self.sort_array_with_user_comparator_in_context(
+            array,
+            operation,
+            callback,
+            span,
+            operation.callable(),
+        )
+    }
+
+    fn sort_array_with_user_comparator_in_context(
+        &mut self,
+        array: &mut PhpArray,
+        operation: UserArraySortOperation,
+        callback: &Value,
+        span: Span,
+        context: &str,
+    ) -> CompileResult<()> {
         let mut entries = array.entries().to_vec();
         let mut warned_bool_comparator = false;
         for index in 1..entries.len() {
@@ -66777,6 +66847,7 @@ impl Interpreter {
                     &entries[cursor - 1],
                     span,
                     &mut warned_bool_comparator,
+                    context,
                 )?;
                 if ordering != Ordering::Less {
                     break;
@@ -66798,6 +66869,7 @@ impl Interpreter {
         right: &ArrayEntry,
         span: Span,
         warned_bool_comparator: &mut bool,
+        context: &str,
     ) -> CompileResult<Ordering> {
         let args = if operation.compares_keys() {
             vec![
@@ -66807,18 +66879,9 @@ impl Interpreter {
         } else {
             vec![left.value_cloned(), right.value_cloned()]
         };
-        let result = self.call_user_array_sort_callback_with_values(
-            callback,
-            args,
-            span,
-            operation.callable(),
-        )?;
-        self.user_array_sort_ordering_from_result(
-            operation.callable(),
-            result,
-            span,
-            warned_bool_comparator,
-        )
+        let result =
+            self.call_user_array_sort_callback_with_values(callback, args, span, context)?;
+        self.user_array_sort_ordering_from_result(context, result, span, warned_bool_comparator)
     }
 
     fn user_array_sort_ordering_from_result(
