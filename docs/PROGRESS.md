@@ -19,9 +19,20 @@ Implemented:
   `ext/standard/tests/http/http_build_query/http_build_query_object_just_stringable.phpt`.
   Binary byte fidelity for `urlencode()` inputs outside UTF-8 strings, URL
   normalization/validation, IDNA, decoded parsed-URL components,
-  cyclic `http_build_query()` structures, context-private object-property query
+  cyclic `http_build_query()` arrays, context-private object-property query
   extraction, `get_headers()` network behavior, and native lowering of direct
   URL/helper calls remain unsupported.
+
+- Added bounded recursive object branch elision for `http_build_query()`.
+  Object values already present on the active query-building object path are
+  skipped instead of recursing until stack overflow, while repeated shared
+  objects on separate sibling branches still serialize normally. Focused proof
+  covers the query-helper Rust tests, `cargo build -p phpc`, a direct CLI
+  exercise, and selected PHPT row
+  `ext/standard/tests/http/http_build_query/http_build_query_object_recursif.phpt`.
+  Cyclic arrays, context-private/protected object-property extraction, exact
+  diagnostics, binary key/value fidelity outside UTF-8 strings, object custom
+  hooks, and native lowering remain unsupported.
 
 ## 2026-05-27
 

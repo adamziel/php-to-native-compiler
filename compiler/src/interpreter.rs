@@ -123228,8 +123228,8 @@ fn call_http_build_query(args: &[Value], span: Span) -> CompileResult<Value> {
     }
 
     let root = match &args[0] {
-        Value::Array(array) => array.clone(),
-        Value::Object(object) => public_object_properties_for_http_query(object),
+        Value::Array(array) => HttpQueryRoot::Array(array.clone()),
+        Value::Object(object) => HttpQueryRoot::Object(object.clone()),
         other => {
             return Err(runtime_error(
                 span,
@@ -123280,12 +123280,27 @@ fn call_http_build_query(args: &[Value], span: Span) -> CompileResult<Value> {
     };
 
     let mut pairs = Vec::new();
-    for entry in root.entries() {
-        let key = http_query_top_level_key(&entry.key, &numeric_prefix);
-        collect_http_query_pairs(key, &entry.value_cloned(), &mut pairs, encoding, span)?;
-    }
+    let mut visited = HttpQueryVisit::default();
+    collect_http_query_root_pairs(
+        root,
+        &numeric_prefix,
+        &mut pairs,
+        encoding,
+        &mut visited,
+        span,
+    )?;
 
     Ok(Value::String(pairs.join(&separator)))
+}
+
+enum HttpQueryRoot {
+    Array(PhpArray),
+    Object(PhpObject),
+}
+
+#[derive(Default)]
+struct HttpQueryVisit {
+    objects: HashSet<i64>,
 }
 
 fn public_object_properties_for_http_query(object: &PhpObject) -> PhpArray {
@@ -123312,11 +123327,56 @@ fn http_query_child_key(parent: &str, key: &ArrayKey) -> String {
     format!("{parent}[{}]", key.display_key())
 }
 
+fn collect_http_query_root_pairs(
+    root: HttpQueryRoot,
+    numeric_prefix: &str,
+    pairs: &mut Vec<String>,
+    encoding: HttpQueryEncoding,
+    visited: &mut HttpQueryVisit,
+    span: Span,
+) -> CompileResult<()> {
+    match root {
+        HttpQueryRoot::Array(array) => {
+            for entry in array.entries() {
+                let key = http_query_top_level_key(&entry.key, numeric_prefix);
+                collect_http_query_pairs(
+                    key,
+                    &entry.value_cloned(),
+                    pairs,
+                    encoding,
+                    visited,
+                    span,
+                )?;
+            }
+        }
+        HttpQueryRoot::Object(object) => {
+            if !visited.objects.insert(object.id()) {
+                return Ok(());
+            }
+            let array = public_object_properties_for_http_query(&object);
+            for entry in array.entries() {
+                let key = http_query_top_level_key(&entry.key, numeric_prefix);
+                collect_http_query_pairs(
+                    key,
+                    &entry.value_cloned(),
+                    pairs,
+                    encoding,
+                    visited,
+                    span,
+                )?;
+            }
+            visited.objects.remove(&object.id());
+        }
+    }
+    Ok(())
+}
+
 fn collect_http_query_pairs(
     key: String,
     value: &Value,
     pairs: &mut Vec<String>,
     encoding: HttpQueryEncoding,
+    visited: &mut HttpQueryVisit,
     span: Span,
 ) -> CompileResult<()> {
     match value {
@@ -123328,12 +123388,16 @@ fn collect_http_query_pairs(
                     &entry.value_cloned(),
                     pairs,
                     encoding,
+                    visited,
                     span,
                 )?;
             }
             Ok(())
         }
         Value::Object(object) => {
+            if !visited.objects.insert(object.id()) {
+                return Ok(());
+            }
             let array = public_object_properties_for_http_query(object);
             for entry in array.entries() {
                 collect_http_query_pairs(
@@ -123341,9 +123405,11 @@ fn collect_http_query_pairs(
                     &entry.value_cloned(),
                     pairs,
                     encoding,
+                    visited,
                     span,
                 )?;
             }
+            visited.objects.remove(&object.id());
             Ok(())
         }
         Value::Closure(_) => Err(runtime_error(

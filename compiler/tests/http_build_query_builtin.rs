@@ -147,3 +147,36 @@ var_dump(http_build_query($object, numeric_prefix: "prefix_"));
     );
     assert_eq!(execution.exit_code, 0);
 }
+
+#[test]
+fn http_build_query_skips_recursive_object_branches() {
+    let execution = run_source(
+        r#"<?php
+class KeyVal {
+    public $public = "input";
+}
+$one = new KeyVal();
+$one->public = $one;
+var_dump(http_build_query($one));
+
+class SelfNamed {
+    public $name = "ok";
+    public $self = null;
+}
+$two = new SelfNamed();
+$two->self = $two;
+var_dump(http_build_query($two));
+
+$shared = new KeyVal();
+$shared->public = "input";
+var_dump(http_build_query(["a" => $shared, "b" => $shared]));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "string(0) \"\"\nstring(7) \"name=ok\"\nstring(39) \"a%5Bpublic%5D=input&b%5Bpublic%5D=input\"\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}

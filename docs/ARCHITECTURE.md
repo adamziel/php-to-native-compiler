@@ -543,8 +543,10 @@ direction for bounded query strings: it walks arrays or initialized public
 object properties, recurses with bracketed child keys, skips null/resource
 leaves, applies top-level numeric prefixes, and encodes components as
 RFC1738 form data by default or RFC3986 when requested, including direct named
-optional arguments through the builtin metadata table. The direct URL component
-helpers share those byte-oriented encoding boundaries:
+optional arguments through the builtin metadata table. Recursive object branches
+are skipped when the same object is already on the active query-building path,
+while repeated shared objects on sibling branches can serialize again. The
+direct URL component helpers share those byte-oriented encoding boundaries:
 `urlencode()`/`urldecode()` use form encoding with `+` decoding to a space,
 while `rawurlencode()`/`rawurldecode()` use RFC3986 percent encoding without
 that `+` special case. `PHPC_COOKIE`
