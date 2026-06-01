@@ -32196,6 +32196,12 @@ impl PhpClassTable {
                 Visibility::Public,
             ))
             .expect("DateTimeZone core metadata should not duplicate methods");
+        datetimezone
+            .add_method(PhpMethodMetadata::static_method(
+                "__set_state",
+                Visibility::Public,
+            ))
+            .expect("DateTimeZone core metadata should not duplicate methods");
         let reflection_exception_id = classes
             .declare_class("ReflectionException")
             .expect("core class table should contain DateTimeZone before ReflectionException");

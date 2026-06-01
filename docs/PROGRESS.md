@@ -15,9 +15,21 @@ Implemented:
   rows `DateTimeZone_serialize_type_1.phpt`,
   `DateTimeZone_serialize_type_2.phpt`, and
   `DateTimeZone_serialize_type_3.phpt`. General object serialization,
-  DateTimeZone subclass serialization, invalid DateTimeZone serialization
+  DateTimeZone subclass serialization, invalid DateTimeZone `unserialize()`
   exception parity, broad timezone validation/transition data, exact
   diagnostics, and native lowering remain unsupported.
+
+- Added a bounded `DateTimeZone::__set_state($data)` recreation slice for
+  selected ext/date metadata rows. The static method accepts the same valid
+  direct core `timezone_type`/`timezone` metadata array shapes used by the
+  current DateTimeZone serializer, recreates bounded `DateTimeZone` objects for
+  `var_export()`/`eval()` round-trips, and raises catchable `Error` for the
+  focused invalid metadata shapes. Focused proof covers the Rust date builtin
+  test and selected PHPT rows `DateTimeZone_set_state.phpt` and
+  `DateTimeZone_set_state_exception.phpt`. DateTimeZone subclass
+  serialization/set-state hooks, general object serialization, invalid
+  DateTimeZone `unserialize()` exception parity, complete timezone validation,
+  exact diagnostics, and native lowering remain unsupported.
 
 ## 2026-05-27
 

@@ -238,6 +238,45 @@ foreach ([$type1, $type2, $type3] as $tz) {
 }
 
 #[test]
+fn datetimezone_set_state_recreates_bounded_metadata_rows() {
+    let execution = run_source(
+        r#"<?php
+$copy = DateTimeZone::__set_state([
+    "timezone_type" => 3,
+    "timezone" => "UTC",
+]);
+echo $copy->getName(), "|", serialize($copy), "\n";
+$exported = var_export(new DateTimeZone("UTC"), true);
+eval('$recreated = ' . $exported . ';');
+echo $recreated->getName(), "\n";
+foreach ([
+    ["timezone_type" => 3.4, "timezone" => "Europe/Kyiv"],
+    ["timezone_type" => 3, "timezone" => "Europe/K\0v"],
+] as $state) {
+    try {
+        DateTimeZone::__set_state($state);
+    } catch (Error $e) {
+        echo $e::class, ": ", $e->getMessage(), "\n";
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "UTC|O:12:\"DateTimeZone\":2:{s:13:\"timezone_type\";i:3;s:8:\"timezone\";s:3:\"UTC\";}\n",
+            "UTC\n",
+            "Error: Invalid serialization data for DateTimeZone object\n",
+            "Error: Invalid serialization data for DateTimeZone object\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn gettimeofday_uses_default_timezone_offset() {
     let execution = run_source(
         r#"<?php
