@@ -6,6 +6,7 @@ Status: bounded interpreter subset implemented.
 
 - `json_encode($value, int $flags = 0, int $depth = 512)`
 - `json_decode($json, ?bool $associative = null, int $depth = 512, int $flags = 0)`
+- `json_validate($json, int $depth = 512, int $flags = 0)`
 - `json_last_error()`
 - `json_last_error_msg()`
 
@@ -21,13 +22,15 @@ None beyond the boxed runtime value model.
 
 Focused Rust tests cover scalar/object/array encode/decode, JSON constants,
 last-error state, numeric-string encoding, big integers, and object-as-array
-decode. Focused PHPT proof covers the current JSON core encode/decode rows
-claimed by the Batch022 author packet.
+decode. Focused tests and fixtures also cover selected U+2028/U+2029
+line-terminator escaping with `JSON_UNESCAPED_LINE_TERMINATORS`. Focused PHPT
+proof covers the current JSON core encode/decode rows claimed by the Batch022
+author packet plus the selected line-terminator option row.
 
 ## Semantic Gaps
 
 The subset is intentionally bounded. It does not implement the full
 `JsonSerializable` contract, exact exception propagation for every
 serializer shape, exact byte-for-byte diagnostic locations, all UTF-16/UTF-8
-corner cases, host-extension option catalogs, native lowering, or JSON
-functions beyond the four listed above.
+corner cases, every JSON flag interaction, host-extension option catalogs,
+native lowering, or JSON functions beyond the five listed above.

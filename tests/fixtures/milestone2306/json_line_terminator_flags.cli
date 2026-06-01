@@ -1,0 +1,1 @@
+phpc run tests/fixtures/milestone2306/json_line_terminator_flags.php

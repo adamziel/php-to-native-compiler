@@ -1,5 +1,20 @@
 # Progress Log
 
+## 2026-06-01
+
+Implemented:
+
+- Added bounded ext/json U+2028/U+2029 line-terminator escaping parity for
+  `json_encode()` in `phpc run`. `JSON_UNESCAPED_UNICODE` alone now keeps line
+  and paragraph separators escaped as `\u2028`/`\u2029`, while the selected
+  `JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_LINE_TERMINATORS` combination emits
+  the raw UTF-8 separators; neighboring Unicode separators continue to follow
+  the existing unescaped-unicode path. Focused Rust coverage and Milestone 2306
+  fixture proof exercise the selected ext/json PHPT row and direct `phpc run`
+  path. Full JSON option interaction breadth, invalid UTF-8/UTF-16 diagnostic
+  parity, `JSON_THROW_ON_ERROR`, native lowering, and broader json extension
+  functions remain unsupported.
+
 ## 2026-05-27
 
 Implemented:

@@ -162,3 +162,34 @@ var_dump(json_last_error(), json_last_error_msg());\n",
     );
     assert_eq!(execution.exit_code, 0);
 }
+
+#[test]
+fn json_encode_line_terminator_flags_match_selected_phpt_row() {
+    let execution = run_source(
+        "<?php\n\
+var_dump(json_encode(\"a\\xE2\\x80\\xA7b\"));\n\
+var_dump(json_encode(\"a\\xE2\\x80\\xA7b\", JSON_UNESCAPED_UNICODE));\n\
+var_dump(json_encode(\"a\\xE2\\x80\\xA8b\"));\n\
+var_dump(json_encode(\"a\\xE2\\x80\\xA8b\", JSON_UNESCAPED_UNICODE));\n\
+var_dump(json_encode(\"a\\xE2\\x80\\xA8b\", JSON_UNESCAPED_LINE_TERMINATORS));\n\
+var_dump(json_encode(\"a\\xE2\\x80\\xA8b\", JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_LINE_TERMINATORS));\n\
+var_dump(json_encode(\"a\\xE2\\x80\\xA9b\", JSON_UNESCAPED_UNICODE));\n\
+var_dump(json_encode(\"a\\xE2\\x80\\xA9b\", JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_LINE_TERMINATORS));\n",
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "string(10) \"\"a\\u2027b\"\"\n",
+            "string(7) \"\"a‧b\"\"\n",
+            "string(10) \"\"a\\u2028b\"\"\n",
+            "string(10) \"\"a\\u2028b\"\"\n",
+            "string(10) \"\"a\\u2028b\"\"\n",
+            "string(7) \"\"a b\"\"\n",
+            "string(10) \"\"a\\u2029b\"\"\n",
+            "string(7) \"\"a b\"\"\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
