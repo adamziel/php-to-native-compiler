@@ -113,6 +113,52 @@ listed"
 }
 
 #[test]
+fn hash_md5_and_small_pure_digest_algorithms_are_available() {
+    let execution = run_source(
+        r#"<?php
+echo hash("md5", ""), "\n";
+echo hash("md5", "a"), "\n";
+echo hash("md5", "012345678901234567890123456789012345678901234567890123456789"), "\n";
+var_dump(hash("md5", "string") === md5("string"));
+echo bin2hex(hash("md5", "string", true)), "\n";
+echo hash("adler32", ""), "\n";
+echo hash("adler32", "abc"), "\n";
+echo hash("fnv132", ""), "\n";
+echo hash("fnv132", "foobar"), "\n";
+echo bin2hex(hash("fnv132", "", true)), "\n";
+echo hash("fnv1a32", "a"), "\n";
+echo hash("fnv164", ""), "\n";
+echo hash("fnv164", "foobar"), "\n";
+echo hash("fnv1a64", "9"), "\n";
+echo hash("joaat", "hello world"), "\n";
+echo bin2hex(hash("joaat", "", true)), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "d41d8cd98f00b204e9800998ecf8427e\n\
+0cc175b9c0f1b6a831c399e269772661\n\
+1ced811af47ead374872fcca9d73dd71\n\
+bool(true)\n\
+b45cffe084dd3d20d928bee85e7b0f21\n\
+00000001\n\
+024d0127\n\
+811c9dc5\n\
+31f0b262\n\
+811c9dc5\n\
+e40c292c\n\
+cbf29ce484222325\n\
+340d8765a4dda9c2\n\
+af63b44c8601a894\n\
+3e4a5a57\n\
+00000000\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn hash_crc_algorithms_and_php82_algorithm_listing_are_available() {
     let execution = run_source(
         r#"<?php

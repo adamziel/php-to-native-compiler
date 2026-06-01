@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added a bounded ext/hash algorithm execution lane for `hash()` over `md5`,
+  `adler32`, `fnv132`, `fnv1a32`, `fnv164`, `fnv1a64`, and `joaat`, reusing
+  the existing hash dispatcher and raw/hex output path rather than adding
+  native lowering. MD5 uses the existing digest crate already used by `md5()`;
+  Adler-32, FNV-1/FNV-1a 32/64-bit, and Jenkins one-at-a-time are pure byte
+  algorithms with PHP-compatible digest byte order. Focused Rust passed `11 /
+  11` in `hash_builtin`; `cargo build -p phpc --bin phpc`, a direct `phpc run`
+  digest fixture, selected PHPT proof `7 / 7`, `cargo fmt --check`, and
+  `git diff --check` passed on the supervisor-currentized source. Unsupported
+  edges remain hash execution outside the bounded SHA, MD5, CRC, FNV,
+  Adler-32, and joaat subset, non-empty `hash()` options arrays,
+  `hash_file()`, HMAC execution beyond the existing SHA-256 branch, HMAC raw
+  output, streaming `HashContext`, HKDF/PBKDF2, broad exact
+  diagnostics/coercions, and native lowering.
+
 - Added the bounded procedural `date_timezone_set()` alias for mutable
   `DateTime` objects. The interpreter reuses the existing DateTime and
   DateTimeZone object-state helpers, preserves the stored timestamp while

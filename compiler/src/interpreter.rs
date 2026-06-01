@@ -116454,6 +116454,18 @@ fn php_crc32_bytes(bytes: &[u8]) -> i64 {
     i64::from(!crc)
 }
 
+fn php_hash_adler32_digest_bytes(bytes: &[u8]) -> [u8; 4] {
+    const MOD_ADLER: u32 = 65_521;
+
+    let mut low = 1u32;
+    let mut high = 0u32;
+    for byte in bytes {
+        low = (low + u32::from(*byte)) % MOD_ADLER;
+        high = (high + low) % MOD_ADLER;
+    }
+    ((high << 16) | low).to_be_bytes()
+}
+
 fn php_hash_crc32_digest_bytes(bytes: &[u8]) -> [u8; 4] {
     let mut crc = 0xffff_ffffu32;
     for byte in bytes {
@@ -116497,6 +116509,55 @@ fn php_hash_crc32c_digest_bytes(bytes: &[u8]) -> [u8; 4] {
         }
     }
     (!crc).to_be_bytes()
+}
+
+fn php_hash_fnv132_digest_bytes(bytes: &[u8]) -> [u8; 4] {
+    let mut hash = 0x811c_9dc5u32;
+    for byte in bytes {
+        hash = hash.wrapping_mul(0x0100_0193);
+        hash ^= u32::from(*byte);
+    }
+    hash.to_be_bytes()
+}
+
+fn php_hash_fnv1a32_digest_bytes(bytes: &[u8]) -> [u8; 4] {
+    let mut hash = 0x811c_9dc5u32;
+    for byte in bytes {
+        hash ^= u32::from(*byte);
+        hash = hash.wrapping_mul(0x0100_0193);
+    }
+    hash.to_be_bytes()
+}
+
+fn php_hash_fnv164_digest_bytes(bytes: &[u8]) -> [u8; 8] {
+    let mut hash = 0xcbf2_9ce4_8422_2325u64;
+    for byte in bytes {
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+        hash ^= u64::from(*byte);
+    }
+    hash.to_be_bytes()
+}
+
+fn php_hash_fnv1a64_digest_bytes(bytes: &[u8]) -> [u8; 8] {
+    let mut hash = 0xcbf2_9ce4_8422_2325u64;
+    for byte in bytes {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    hash.to_be_bytes()
+}
+
+fn php_hash_joaat_digest_bytes(bytes: &[u8]) -> [u8; 4] {
+    let mut hash = 0u32;
+    for byte in bytes {
+        hash = hash.wrapping_add(u32::from(*byte));
+        hash = hash.wrapping_add(hash << 10);
+        hash ^= hash >> 6;
+    }
+    hash = hash.wrapping_add(hash << 3);
+    hash ^= hash >> 11;
+    hash = hash.wrapping_add(hash << 15);
+    hash.to_be_bytes()
 }
 
 fn call_levenshtein(args: &[Value], span: Span) -> CompileResult<Value> {
@@ -131960,6 +132021,7 @@ fn call_uniqid(args: &[Value], span: Span) -> CompileResult<Value> {
 
 #[derive(Clone, Copy)]
 enum PhpHashAlgorithm {
+    Md5,
     Sha1,
     Sha224,
     Sha256,
@@ -131967,9 +132029,15 @@ enum PhpHashAlgorithm {
     Sha512_224,
     Sha512_256,
     Sha512,
+    Adler32,
     Crc32,
     Crc32b,
     Crc32c,
+    Fnv132,
+    Fnv1a32,
+    Fnv164,
+    Fnv1a64,
+    Joaat,
 }
 
 const PHP_HASH_ALGORITHM_NAMES: &[&str] = &[
@@ -132197,6 +132265,7 @@ fn hash_raw_output_argument(value: Option<&Value>, span: Span) -> CompileResult<
 
 fn php_hash_algorithm(name: &str) -> Option<PhpHashAlgorithm> {
     match name.to_ascii_lowercase().as_str() {
+        "md5" => Some(PhpHashAlgorithm::Md5),
         "sha1" => Some(PhpHashAlgorithm::Sha1),
         "sha224" => Some(PhpHashAlgorithm::Sha224),
         "sha256" => Some(PhpHashAlgorithm::Sha256),
@@ -132204,15 +132273,22 @@ fn php_hash_algorithm(name: &str) -> Option<PhpHashAlgorithm> {
         "sha512/224" | "sha512-224" => Some(PhpHashAlgorithm::Sha512_224),
         "sha512/256" | "sha512-256" => Some(PhpHashAlgorithm::Sha512_256),
         "sha512" => Some(PhpHashAlgorithm::Sha512),
+        "adler32" => Some(PhpHashAlgorithm::Adler32),
         "crc32" => Some(PhpHashAlgorithm::Crc32),
         "crc32b" => Some(PhpHashAlgorithm::Crc32b),
         "crc32c" => Some(PhpHashAlgorithm::Crc32c),
+        "fnv132" => Some(PhpHashAlgorithm::Fnv132),
+        "fnv1a32" => Some(PhpHashAlgorithm::Fnv1a32),
+        "fnv164" => Some(PhpHashAlgorithm::Fnv164),
+        "fnv1a64" => Some(PhpHashAlgorithm::Fnv1a64),
+        "joaat" => Some(PhpHashAlgorithm::Joaat),
         _ => None,
     }
 }
 
 fn php_hash_digest_bytes(algorithm: PhpHashAlgorithm, bytes: &[u8]) -> Vec<u8> {
     match algorithm {
+        PhpHashAlgorithm::Md5 => Md5::digest(bytes).to_vec(),
         PhpHashAlgorithm::Sha1 => sha1_digest_bytes(bytes).to_vec(),
         PhpHashAlgorithm::Sha224 => Sha224::digest(bytes).to_vec(),
         PhpHashAlgorithm::Sha256 => Sha256::digest(bytes).to_vec(),
@@ -132220,9 +132296,15 @@ fn php_hash_digest_bytes(algorithm: PhpHashAlgorithm, bytes: &[u8]) -> Vec<u8> {
         PhpHashAlgorithm::Sha512_224 => Sha512_224::digest(bytes).to_vec(),
         PhpHashAlgorithm::Sha512_256 => Sha512_256::digest(bytes).to_vec(),
         PhpHashAlgorithm::Sha512 => Sha512::digest(bytes).to_vec(),
+        PhpHashAlgorithm::Adler32 => php_hash_adler32_digest_bytes(bytes).to_vec(),
         PhpHashAlgorithm::Crc32 => php_hash_crc32_digest_bytes(bytes).to_vec(),
         PhpHashAlgorithm::Crc32b => php_hash_crc32b_digest_bytes(bytes).to_vec(),
         PhpHashAlgorithm::Crc32c => php_hash_crc32c_digest_bytes(bytes).to_vec(),
+        PhpHashAlgorithm::Fnv132 => php_hash_fnv132_digest_bytes(bytes).to_vec(),
+        PhpHashAlgorithm::Fnv1a32 => php_hash_fnv1a32_digest_bytes(bytes).to_vec(),
+        PhpHashAlgorithm::Fnv164 => php_hash_fnv164_digest_bytes(bytes).to_vec(),
+        PhpHashAlgorithm::Fnv1a64 => php_hash_fnv1a64_digest_bytes(bytes).to_vec(),
+        PhpHashAlgorithm::Joaat => php_hash_joaat_digest_bytes(bytes).to_vec(),
     }
 }
 

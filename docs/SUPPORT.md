@@ -3973,11 +3973,12 @@
   unsupported.
   `hash($algo, $data, $binary = false, $options = [])` supports scalar/null
   string-convertible data for `sha1`, `sha224`, `sha256`, `sha384`,
-  `sha512/224`, `sha512/256`, `sha512`, `crc32`, `crc32b`, and `crc32c`,
-  returning lowercase hex output or raw binary-string output when the binary
-  flag is truthy. `hash_algos()` returns the PHP 8.2 algorithm metadata list
-  used by the public hash PHPT rows, though execution remains bounded to the
-  named SHA and CRC algorithms.
+  `sha512/224`, `sha512/256`, `sha512`, `md5`, `adler32`, `crc32`, `crc32b`,
+  `crc32c`, `fnv132`, `fnv1a32`, `fnv164`, `fnv1a64`, and `joaat`, returning
+  lowercase hex output or raw binary-string output when the binary flag is
+  truthy. `hash_algos()` returns the PHP 8.2 algorithm metadata list used by
+  the public hash PHPT rows, though execution remains bounded to the named
+  SHA/MD5/checksum algorithms.
   `hash_hmac_algos()` returns the bounded PHP cryptographic HMAC algorithm
   metadata list used by the public hash PHPT row; only `hash_hmac('sha256',
   ...)` execution is currently implemented from that list.
@@ -3988,12 +3989,13 @@
   `hash_equals($known_string, $user_string)` supports strict string and binary
   string operands, constant-work same-length byte comparison, and PHP-shaped
   type diagnostics for non-string operands.
-  Hash algorithms outside that bounded SHA/CRC execution set, non-empty `hash()` options
-  arrays, streaming hash contexts, `hash_hmac()` execution for algorithms
-  beyond SHA-256, `hash_hmac()` raw binary output, exact time/entropy behavior,
-  cryptographic guarantees for generated IDs, array/object/resource coercions
-  outside the documented strict `hash_equals()` type errors, broader exact
-  diagnostics, and native lowering remain unsupported.
+  Hash algorithms outside that bounded SHA/MD5/checksum execution set,
+  non-empty `hash()` options arrays, streaming hash contexts, `hash_hmac()`
+  execution for algorithms beyond SHA-256, `hash_hmac()` raw binary output,
+  exact time/entropy behavior, cryptographic guarantees for generated IDs,
+  array/object/resource coercions outside the documented strict
+  `hash_equals()` type errors, broader exact diagnostics, and native lowering
+  remain unsupported.
   `md5($string, $binary = false)` supports scalar/null string-convertible
   inputs, lowercase hex output, and the raw 16-byte binary-string result when
   the second argument is truthy. `md5_file($filename, $binary = false)` hashes
