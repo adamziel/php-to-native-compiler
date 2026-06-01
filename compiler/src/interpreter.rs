@@ -103793,6 +103793,9 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
             "Variable is not assigned by any conversion specifiers"
             | "Different numbers of variable names and field specifiers",
         ) => Some(message.to_string()),
+        ("fscanf()" | "sscanf()", "\"%n$\" argument index out of range") => {
+            Some(message.to_string())
+        }
         ("fscanf()" | "sscanf()", message) if message.starts_with("Bad scan conversion character") => {
             Some(message.to_string())
         }
@@ -124040,8 +124043,8 @@ fn scan_fscanf_integer(
         return None;
     }
     let digits: String = input[digits_start..*position].iter().collect();
-    let magnitude = i128::from_str_radix(&digits, radix).ok()?;
-    Some(Value::Int(clamp_i128_to_i32(sign * magnitude)))
+    let magnitude = i128::from_str_radix(&digits, radix).unwrap_or(i128::MAX);
+    Some(Value::Int(clamp_i128_to_i64(sign * magnitude)))
 }
 
 fn scan_fscanf_unsigned_decimal(
@@ -124071,11 +124074,15 @@ fn scan_fscanf_unsigned_decimal(
         return None;
     }
     let digits: String = input[digits_start..*position].iter().collect();
-    let magnitude = i128::from_str_radix(&digits, 10).ok()?;
+    let magnitude = u128::from_str_radix(&digits, 10).unwrap_or(u128::MAX);
     let wrapped = if negative {
-        (0_u128.wrapping_sub(magnitude as u128) & 0xffff_ffff) as u32
+        if magnitude > u64::MAX as u128 {
+            u64::MAX
+        } else {
+            (0_u128.wrapping_sub(magnitude) & u64::MAX as u128) as u64
+        }
     } else {
-        magnitude.min(u32::MAX as i128) as u32
+        magnitude.min(u64::MAX as u128) as u64
     };
     Some(scanf_unsigned_decimal_value(wrapped))
 }
@@ -124112,8 +124119,8 @@ fn scan_fscanf_hex(input: &[char], position: &mut usize, width: Option<usize>) -
         return None;
     }
     let digits: String = input[digits_start..*position].iter().collect();
-    let magnitude = i128::from_str_radix(&digits, 16).ok()?;
-    Some(Value::Int(clamp_i128_to_i32(sign * magnitude)))
+    let magnitude = i128::from_str_radix(&digits, 16).unwrap_or(i128::MAX);
+    Some(Value::Int(clamp_i128_to_i64(sign * magnitude)))
 }
 
 fn scan_fscanf_float(input: &[char], position: &mut usize, width: Option<usize>) -> Option<Value> {
@@ -124183,12 +124190,12 @@ fn scan_fscanf_scanset(
     (*position > start).then(|| Value::String(input[start..*position].iter().collect()))
 }
 
-fn clamp_i128_to_i32(value: i128) -> i64 {
-    value.clamp(i32::MIN as i128, i32::MAX as i128) as i64
+fn clamp_i128_to_i64(value: i128) -> i64 {
+    value.clamp(i64::MIN as i128, i64::MAX as i128) as i64
 }
 
-fn scanf_unsigned_decimal_value(value: u32) -> Value {
-    if value <= i32::MAX as u32 {
+fn scanf_unsigned_decimal_value(value: u64) -> Value {
+    if value <= i64::MAX as u64 {
         Value::Int(value as i64)
     } else {
         Value::String(value.to_string())

@@ -43256,3 +43256,20 @@ Next:
 - Added a compact Batch024 `ext/standard/tests/strings` scanf/formatting slice for `phpc run`. `sscanf()` now accepts positional `%n$` targets, `%n` consumed-character conversions, direct variable-root literal array-offset assignment targets such as `$res[0]`, and PHP-shaped failed-conversion writeback that preserves already-initialized later direct targets while materializing missing targets as `null`. `printf()`/`sprintf()` formatting now treats an empty precision such as `"%.f"` as precision `0` for the reached float formatting row.
 - Focused PHPT proof passed 5/5 with `/home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper`: `ext/standard/tests/strings/bug21730.phpt`, `bug38322.phpt`, `bug42107.phpt`, `bug47322.phpt`, and `gh18897.phpt`. Evidence: `/home/claude/supervised-php-compiler/state/artifacts/bcs2-30-strings-sscanf-sprintf-20260601T230601+0200/focused-phpt-strings-sscanf-sprintf.log`.
 - Focused Rust checks passed: `cargo test -p phpc --test scanf_builtins -- --nocapture`, `cargo test -p phpc --test sprintf_builtin -- --nocapture`, `cargo check -p phpc`, and `cargo fmt -- --check`. Non-literal scan assignment offsets, nested/object/static-property scan targets, dynamic scan keys, full scanf grammar, locale-specific parsing, non-UTF-8 byte inputs, exact PHP warning parity, and native lowering remain unsupported.
+- Added a second compact Batch024 `ext/standard/tests/strings` scanf slice for
+  `phpc run`. `%d` scanf conversions now use PHP-shaped 64-bit integer
+  clamping, `%u` uses bounded 64-bit unsigned parsing/wrapping with decimal
+  strings above `i64::MAX`, and oversized `%n$` positional indexes route
+  through a catchable/fatal PHP-shaped `ValueError`.
+- Focused PHPT proof passed 2/2 with
+  `/home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper`:
+  `ext/standard/tests/strings/bug47842.phpt` and
+  `ext/standard/tests/strings/gh15552.phpt`. Evidence:
+  `/home/claude/supervised-php-compiler/state/artifacts/bcs2-30-strings-sscanf-64bit-20260601T232524+0200/focused-phpt-strings-sscanf-64bit.log`.
+- Focused Rust/build checks passed:
+  `cargo test -p phpc --test scanf_builtins -- --nocapture`,
+  `cargo build -p phpc --bin phpc`, and `cargo fmt -- --check`. Remaining
+  unsupported edges are 32-bit platform scanf parity, full scanf grammar,
+  locale-specific parsing, non-UTF-8 byte inputs, exact PHP warning parity,
+  native lowering, and the existing non-literal/nested/object/static scan
+  assignment target restrictions.

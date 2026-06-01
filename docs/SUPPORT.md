@@ -3429,11 +3429,16 @@
   int/string keys. Sequential and positional `%n$` conversion targets, `%n`
   consumed-character counts, string/integer/float/char/scanset conversions,
   width, assignment suppression, and literal percent signs are covered for the
-  current ASCII PHPT rows. Failed later conversions leave existing direct
-  targets unchanged while materializing missing direct targets as `null`.
-  Non-literal scan assignment offsets, nested/object/static-property targets,
-  dynamic keys, full scanf grammar, locale-specific parsing, non-UTF-8 byte
-  inputs, exact PHP warnings, and native lowering remain unsupported.
+  current ASCII PHPT rows. Decimal scans use the current 64-bit CLI subset:
+  signed `%d` clamps to PHP integer bounds, unsigned `%u` wraps negative
+  values within `u64`, saturates overflow at `u64::MAX`, and returns a PHP int
+  through `i64::MAX` or a decimal string above that. Oversized positional
+  argument indexes raise a PHP-shaped `ValueError`. Failed later conversions
+  leave existing direct targets unchanged while materializing missing direct
+  targets as `null`. Non-literal scan assignment offsets,
+  nested/object/static-property targets, dynamic keys, 32-bit platform scanf
+  parity, full scanf grammar, locale-specific parsing, non-UTF-8 byte inputs,
+  exact PHP warnings, and native lowering remain unsupported.
   `chr($codepoint)` accepts integer-compatible values, returns the low byte
   using PHP's modulo-256 behavior, and emits PHP's deprecation diagnostic when
   the integer is outside the `[0, 255]` byte range. Array/object/resource

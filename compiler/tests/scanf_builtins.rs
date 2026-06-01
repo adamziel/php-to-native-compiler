@@ -19,7 +19,30 @@ try {
 
     assert_eq!(
         execution.stdout,
-        "Widget|1234789|25\nint(6)\nint(2147483647)\nstring(10) \"2147483648\"\nstring(10) \"4294967295\"\nstring(10) \"4294967285\"\nint(11)\nint(11)\ncaught:Variable is not assigned by any conversion specifiers\n"
+        "Widget|1234789|25\nint(6)\nstring(20) \"18446744071562067967\"\nint(2147483648)\nint(34359738369)\nstring(20) \"18446744073709551605\"\nint(11)\nint(11)\ncaught:Variable is not assigned by any conversion specifiers\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn sscanf_uses_php_64_bit_decimal_bounds_and_large_position_value_error() {
+    let execution = run_source(
+        r#"<?php
+$count = sscanf("2147483647 4294967295 9223372036854775807 18446744073709551615 -1 9223372036854775808", "%d %u %d %u %u %d", $a, $b, $c, $d, $e, $f);
+var_dump($count, $a, $b, $c, $d, $e, $f);
+try {
+    sscanf('hello', '%2147483648$s');
+} catch (ValueError $e) {
+    echo "caught:" . $e->getMessage() . "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "int(6)\nint(2147483647)\nint(4294967295)\nint(9223372036854775807)\nstring(20) \"18446744073709551615\"\nstring(20) \"18446744073709551615\"\nint(9223372036854775807)\ncaught:\"%n$\" argument index out of range\n"
     );
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);
