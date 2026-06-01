@@ -33073,6 +33073,26 @@ impl PhpClassTable {
                 .add_property(PhpPropertyMetadata::instance(property, Visibility::Public))
                 .expect("DateTime core metadata should not duplicate properties");
         }
+        for constant in [
+            "ATOM",
+            "COOKIE",
+            "ISO8601",
+            "ISO8601_EXPANDED",
+            "RFC822",
+            "RFC850",
+            "RFC1036",
+            "RFC1123",
+            "RFC7231",
+            "RFC2822",
+            "RFC3339",
+            "RFC3339_EXTENDED",
+            "RSS",
+            "W3C",
+        ] {
+            datetime
+                .add_constant(PhpClassConstantMetadata::new(constant, Visibility::Public))
+                .expect("DateTime core metadata should not duplicate constants");
+        }
         for method in [
             "__construct",
             "format",

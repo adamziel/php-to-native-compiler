@@ -37948,6 +37948,14 @@ impl Interpreter {
         name: &str,
         span: Span,
     ) -> CompileResult<()> {
+        if name == "DATE_RFC7231" {
+            self.emit_display_diagnostic(
+                "Deprecated",
+                PHP_E_DEPRECATED,
+                "Constant DATE_RFC7231 is deprecated since 8.5, as this format ignores the associated timezone and always uses GMT",
+                span,
+            )?;
+        }
         if matches!(
             name,
             "SUNFUNCS_RET_TIMESTAMP" | "SUNFUNCS_RET_STRING" | "SUNFUNCS_RET_DOUBLE"
@@ -54848,6 +54856,7 @@ impl Interpreter {
                 span,
             )?;
         }
+        self.emit_builtin_class_constant_deprecation(&resolved.declaring_name, constant, span)?;
 
         self.evaluate_reflection_constant_expr(
             resolved.declaring_class_id,
@@ -54857,6 +54866,23 @@ impl Interpreter {
             &resolved.value,
             span,
         )
+    }
+
+    fn emit_builtin_class_constant_deprecation(
+        &mut self,
+        declaring_name: &str,
+        constant: &str,
+        span: Span,
+    ) -> CompileResult<()> {
+        if declaring_name.eq_ignore_ascii_case("DateTime") && constant == "RFC7231" {
+            self.emit_display_diagnostic(
+                "Deprecated",
+                PHP_E_DEPRECATED,
+                "Constant DateTimeInterface::RFC7231 is deprecated since 8.5, as this format ignores the associated timezone and always uses GMT",
+                span,
+            )?;
+        }
+        Ok(())
     }
 
     fn evaluate_interface_constant(
@@ -98725,6 +98751,23 @@ fn register_class_member_runtime_tables(
     Ok(())
 }
 
+const PHP_DATETIME_FORMAT_CLASS_CONSTANTS: &[(&str, &str)] = &[
+    ("ATOM", "Y-m-d\\TH:i:sP"),
+    ("COOKIE", "l, d-M-Y H:i:s T"),
+    ("ISO8601", "Y-m-d\\TH:i:sO"),
+    ("ISO8601_EXPANDED", "X-m-d\\TH:i:sP"),
+    ("RFC822", "D, d M y H:i:s O"),
+    ("RFC850", "l, d-M-y H:i:s T"),
+    ("RFC1036", "D, d M y H:i:s O"),
+    ("RFC1123", "D, d M Y H:i:s O"),
+    ("RFC7231", "D, d M Y H:i:s \\G\\M\\T"),
+    ("RFC2822", "D, d M Y H:i:s O"),
+    ("RFC3339", "Y-m-d\\TH:i:sP"),
+    ("RFC3339_EXTENDED", "Y-m-d\\TH:i:s.vP"),
+    ("RSS", "D, d M Y H:i:s O"),
+    ("W3C", "Y-m-d\\TH:i:sP"),
+];
+
 fn seed_core_class_constant_runtime_tables(
     classes: &PhpClassTable,
     class_constants: &mut HashMap<(ClassId, String), ClassConstantDecl>,
@@ -98779,6 +98822,21 @@ fn seed_core_class_constant_runtime_tables(
                     name: name.to_string(),
                     visibility: ClassVisibility::Public,
                     value: Expr::Int(value, span),
+                    attributes: Vec::new(),
+                    span,
+                },
+            );
+        }
+    }
+    if let Some(datetime_id) = classes.lookup_class_id("DateTime") {
+        for (name, value) in PHP_DATETIME_FORMAT_CLASS_CONSTANTS {
+            let span = Span::new(1, 1);
+            class_constants.insert(
+                (datetime_id, name.to_string()),
+                ClassConstantDecl {
+                    name: name.to_string(),
+                    visibility: ClassVisibility::Public,
+                    value: Expr::String(value.to_string(), span),
                     attributes: Vec::new(),
                     span,
                 },

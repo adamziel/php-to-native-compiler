@@ -160,6 +160,41 @@ var_dump(strtotime("mayy 2 2009"));
 }
 
 #[test]
+fn datetime_class_format_constants_alias_global_date_constants() {
+    let execution = run_source(
+        r#"<?php
+var_dump(
+    DATE_ATOM === DateTime::ATOM,
+    DATE_COOKIE === DateTime::COOKIE,
+    DATE_ISO8601 === DateTime::ISO8601,
+    DATE_ISO8601_EXPANDED === DateTime::ISO8601_EXPANDED,
+    DATE_RFC822 === DateTime::RFC822,
+    DATE_RFC850 === DateTime::RFC850,
+    DATE_RFC1036 === DateTime::RFC1036,
+    DATE_RFC1123 === DateTime::RFC1123,
+    DATE_RFC7231 === DateTime::RFC7231,
+    DATE_RFC2822 === DateTime::RFC2822,
+    DATE_RFC3339 === DateTime::RFC3339,
+    DATE_RFC3339_EXTENDED === DateTime::RFC3339_EXTENDED,
+    DATE_RSS === DateTime::RSS,
+    DATE_W3C === DateTime::W3C
+);
+"#,
+    )
+    .unwrap();
+
+    assert!(execution.stdout.contains(
+        "Deprecated: Constant DATE_RFC7231 is deprecated since 8.5, as this format ignores the associated timezone and always uses GMT"
+    ));
+    assert!(execution.stdout.contains(
+        "Deprecated: Constant DateTimeInterface::RFC7231 is deprecated since 8.5, as this format ignores the associated timezone and always uses GMT"
+    ));
+    assert_eq!(execution.stdout.matches("bool(true)").count(), 14);
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn datetime_fixed_offset_abbreviations_match_bounded_timelib_rows() {
     let execution = run_source(
         r#"<?php

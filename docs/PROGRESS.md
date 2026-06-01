@@ -21,6 +21,20 @@ Implemented:
   native lowering. This is not a public score update until a full pinned PHPT
   gate accepts a checkpoint.
 
+- Added a focused ext/date constants slice after checkpoint `2546094a`.
+  `DateTime` now exposes the bounded date-format class constants that alias the
+  existing global `DATE_*` format constants, and reads of `DATE_RFC7231` plus
+  `DateTime::RFC7231` emit PHP-shaped deprecation diagnostics for the reached
+  PHPT rows. Focused Rust passed `14 / 14` across `date_time_builtin` and the
+  runtime class-table metadata filter; `cargo build -p phpc --bin phpc`
+  passed; and selected PHPT proof passed `2 / 2` for
+  `DateTime_constants.phpt` and `date_constants.phpt`. Unsupported edges
+  remain broad `DateTimeInterface` runtime/interface parity beyond the reached
+  constant diagnostic text, `DateTimeImmutable`, exact diagnostics outside the
+  covered constants, full timezone database parity, and native lowering. This
+  is not a public score update until a full pinned PHPT gate accepts a
+  checkpoint.
+
 - Accepted checkpoint `4f1c81d5` as the current public PHPT score source after
   a full pinned php-src gate completed with zero latest-published PASS
   regressions. The public-comparable score is now `5513 / 20294 = 27.17%`,

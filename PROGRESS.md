@@ -1,6 +1,6 @@
 # PHP Native Compiler PHPT Progress
 
-Updated: 2026-06-01 22:32 CEST
+Updated: 2026-06-01 22:41 CEST
 
 Primary/public branch: `origin/master`
 Latest accepted public-score source:
@@ -87,6 +87,15 @@ warning counts; the full selected lane passed `6 / 6` for
 `array_intersect_variation9.phpt`, `similar_text_basic.phpt`,
 `str_word_count.phpt`, and `str_word_count1.phpt`. Focused Rust passed
 `12 / 12` across `array_intersect` and `array_count_values`; build passed.
+This is not a public score update until checkpoint validation and a full pinned
+PHPT gate complete.
+
+Local supervisor note: the next focused DateTime constants slice is integrated
+for 2 additional target PHPT rows: `DateTime_constants.phpt` and
+`date_constants.phpt`. `DateTime` now exposes bounded date-format class
+constants matching the existing global `DATE_*` constants, with reached
+`DATE_RFC7231` / `DateTime::RFC7231` deprecation diagnostics. Focused Rust
+passed `14 / 14`, build passed, and selected PHPT verification passed `2 / 2`.
 This is not a public score update until checkpoint validation and a full pinned
 PHPT gate complete.
 
