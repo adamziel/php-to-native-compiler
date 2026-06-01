@@ -6,41 +6,124 @@ const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects 
 const LLVM_ARRAY_REJECTION: &str = "LLVM array lowering rejects arrays, array literals, array indexing, array assignment, foreach array iteration, array offset unset, and array builtin function calls until native array storage layout, key normalization, copy-on-write, references, callbacks, and exact native error behavior exist; phpc run handles current array behavior";
 
 #[test]
-fn rand_returns_current_deterministic_no_arg_value() {
+fn rand_and_mt_rand_support_ranges_and_metadata() {
     let execution = run_source(
         r#"<?php
-$call = "rand";
-echo function_exists($call) ? "yes" : "no";
-echo "|";
-echo is_callable($call) ? "callable" : "missing";
-echo "|";
+$names = ["rand", "mt_rand", "getrandmax", "mt_getrandmax", "srand", "mt_srand"];
+foreach ($names as $name) {
+    echo function_exists($name) ? "yes" : "no";
+    echo is_callable($name) ? ":callable|" : ":missing|";
+}
 echo rand();
 echo "|";
-echo $call();
+echo mt_rand();
+echo "|";
+echo rand(20, 10);
+echo "|";
+echo mt_rand(10, 20);
+echo "|";
+echo getrandmax();
+echo "|";
+echo mt_getrandmax();
+srand(1234);
+mt_srand(null, 0);
 "#,
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "yes|callable|123456789|123456789");
+    assert_eq!(
+        execution.stdout,
+        "yes:callable|yes:callable|yes:callable|yes:callable|yes:callable|yes:callable|123456789|123456789|15|15|2147483647|2147483647"
+    );
     assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
-fn rand_rejects_min_max_forms_for_now() {
-    let error = run_source(
+fn mt_rand_reports_php_value_error_for_inverted_range() {
+    let execution = run_source(
         r#"<?php
-rand(1, 10);
+try {
+    mt_rand(20, 10);
+} catch (ValueError $e) {
+    echo $e->getMessage();
+}
 "#,
     )
-    .unwrap_err();
+    .unwrap();
 
-    assert_eq!(error.phase, Phase::Runtime);
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 1);
     assert_eq!(
-        error.message,
-        "unsupported call rand(): min/max arguments are not implemented; call rand() without arguments in the current subset"
+        execution.stdout,
+        "mt_rand(): Argument #2 ($max) must be greater than or equal to argument #1 ($min)"
     );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn random_int_bytes_and_lcg_value_use_php_shapes() {
+    let execution = run_source(
+        r#"<?php
+echo is_int(random_int(10, 100)) ? "int" : "bad";
+echo "|";
+echo random_int(42, 42);
+echo "|";
+echo strlen(bin2hex(random_bytes(16)));
+echo "|";
+echo is_string(random_bytes(10)) ? "string" : "bad";
+echo "|";
+$lcg = lcg_value();
+echo is_float($lcg) && $lcg >= 0 && $lcg <= 1 ? "float" : "bad";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "int|42|32|string|float");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn random_int_and_bytes_report_php_value_errors() {
+    let execution = run_source(
+        r#"<?php
+try {
+    random_int(42, 0);
+} catch (ValueError $e) {
+    echo $e->getMessage() . "\n";
+}
+try {
+    random_bytes(0);
+} catch (ValueError $e) {
+    echo $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "random_int(): Argument #1 ($min) must be less than or equal to argument #2 ($max)\nrandom_bytes(): Argument #1 ($length) must be greater than 0"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reflection_reports_random_function_arity() {
+    let execution = run_source(
+        r#"<?php
+$rf = new ReflectionFunction('random_bytes');
+echo $rf->getNumberOfParameters();
+echo "|";
+echo $rf->getNumberOfRequiredParameters();
+echo "|";
+$rf = new ReflectionFunction('random_int');
+echo $rf->getNumberOfParameters();
+echo "|";
+echo $rf->getNumberOfRequiredParameters();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "1|1|2|2");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

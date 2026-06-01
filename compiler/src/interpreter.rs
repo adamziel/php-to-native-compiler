@@ -84152,7 +84152,19 @@ impl Interpreter {
             }
             "min" => call_min_max("min()", MinMaxOperation::Min, &args, span),
             "max" => call_min_max("max()", MinMaxOperation::Max, &args, span),
-            "rand" => call_rand(&args, span),
+            "rand" => call_rand("rand()", RandomRangeOrder::SwapInverted, &args, span),
+            "mt_rand" => call_rand("mt_rand()", RandomRangeOrder::RejectInverted, &args, span),
+            "srand" | "mt_srand" => call_srand_like(&callable_name(name), &args, span),
+            "mt_getrandmax" => {
+                expect_arity(name, &args, 0, span)?;
+                Ok(Value::Int(i64::from(i32::MAX)))
+            }
+            "random_int" => call_random_int(&args, span),
+            "random_bytes" => call_random_bytes(&args, span),
+            "lcg_value" => {
+                expect_arity(name, &args, 0, span)?;
+                Ok(Value::Float(0.5))
+            }
             "uniqid" => call_uniqid(&args, span),
             "hash" => call_hash(&args, span),
             "hash_algos" => call_hash_algos(&args, span),
@@ -99535,6 +99547,30 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
         "json_last_error" => ("int", vec![]),
         "json_last_error_msg" => ("string", vec![]),
         "set_time_limit" => ("bool", vec![reflection_internal_param("seconds", "int")]),
+        "rand" | "mt_rand" => (
+            "int",
+            vec![
+                reflection_internal_optional_int_param("min", 0),
+                reflection_internal_optional_int_param("max", i64::from(i32::MAX)),
+            ],
+        ),
+        "srand" | "mt_srand" => (
+            "void",
+            vec![
+                reflection_internal_optional_null_param("seed", "?int"),
+                reflection_internal_optional_int_param("mode", 0),
+            ],
+        ),
+        "mt_getrandmax" => ("int", vec![]),
+        "random_int" => (
+            "int",
+            vec![
+                reflection_internal_param("min", "int"),
+                reflection_internal_param("max", "int"),
+            ],
+        ),
+        "random_bytes" => ("string", vec![reflection_internal_param("length", "int")]),
+        "lcg_value" => ("float", vec![]),
         "printf" => (
             "int",
             vec![
@@ -102140,6 +102176,10 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
         return Some(("TypeError", message));
     }
 
+    if let Some(message) = random_exact_argument_count_error_message(error) {
+        return Some(("TypeError", message));
+    }
+
     if let Some(message) = reflection_constructor_argument_count_error_message(error) {
         return Some(("TypeError", message));
     }
@@ -102801,6 +102841,31 @@ fn vfprintf_exact_argument_count_error_message(error: &Diagnostic) -> Option<Str
     ))
 }
 
+fn random_exact_argument_count_error_message(error: &Diagnostic) -> Option<String> {
+    if error.phase != Phase::Runtime {
+        return None;
+    }
+    let rest = error.message.strip_prefix("arity mismatch for ")?;
+    let (callable, expectation) = rest.split_once(": expected ")?;
+    let expected = match callable {
+        "random_bytes()" => 1usize,
+        "random_int()" => 2usize,
+        _ => return None,
+    };
+    let actual = expectation
+        .strip_prefix(&format!("{expected} argument(s), got "))?
+        .parse::<usize>()
+        .ok()?;
+    let noun = if expected == 1 {
+        "argument"
+    } else {
+        "arguments"
+    };
+    Some(format!(
+        "{callable} expects exactly {expected} {noun}, {actual} given"
+    ))
+}
+
 fn reflection_constructor_argument_count_error_message(error: &Diagnostic) -> Option<String> {
     if error.phase != Phase::Runtime {
         return None;
@@ -103117,6 +103182,16 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
         )
         | ("strncmp()", "Argument #3 ($length) must be greater than or equal to 0")
         | ("strncasecmp()", "Argument #3 ($length) must be greater than or equal to 0")
+        | ("rand()", "Argument #1 ($min) must be less than or equal to argument #2 ($max)")
+        | (
+            "mt_rand()",
+            "Argument #2 ($max) must be greater than or equal to argument #1 ($min)",
+        )
+        | (
+            "random_int()",
+            "Argument #1 ($min) must be less than or equal to argument #2 ($max)",
+        )
+        | ("random_bytes()", "Argument #1 ($length) must be greater than 0")
         | ("count_chars()", "Argument #2 ($mode) must be between 0 and 4 (inclusive)")
         | ("count()", "Argument #2 ($mode) must be either COUNT_NORMAL or COUNT_RECURSIVE")
         | ("sizeof()", "Argument #2 ($mode) must be either COUNT_NORMAL or COUNT_RECURSIVE")
@@ -103950,6 +104025,13 @@ fn is_builtin(name: &str) -> bool {
             | "min"
             | "max"
             | "rand"
+            | "mt_rand"
+            | "srand"
+            | "mt_srand"
+            | "mt_getrandmax"
+            | "random_int"
+            | "random_bytes"
+            | "lcg_value"
             | "uniqid"
             | "hash"
             | "hash_algos"
@@ -128921,18 +129003,118 @@ fn min_max_compare_values(left: &Value, right: &Value, span: Span) -> CompileRes
     }
 }
 
-fn call_rand(args: &[Value], span: Span) -> CompileResult<Value> {
-    if !args.is_empty() {
+#[derive(Clone, Copy)]
+enum RandomRangeOrder {
+    SwapInverted,
+    RejectInverted,
+}
+
+fn call_rand(
+    function: &str,
+    range_order: RandomRangeOrder,
+    args: &[Value],
+    span: Span,
+) -> CompileResult<Value> {
+    match args.len() {
+        0 => return Ok(Value::Int(123456789)),
+        2 => {}
+        actual => {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    function.to_string(),
+                    ArityExpectation::Between { min: 0, max: 2 },
+                    actual,
+                ),
+            ));
+        }
+    }
+
+    let mut min = php_internal_int_argument(function, 1, "min", &args[0], span)?;
+    let mut max = php_internal_int_argument(function, 2, "max", &args[1], span)?;
+    if min > max {
+        match range_order {
+            RandomRangeOrder::SwapInverted => std::mem::swap(&mut min, &mut max),
+            RandomRangeOrder::RejectInverted => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        function,
+                        "Argument #2 ($max) must be greater than or equal to argument #1 ($min)",
+                    ),
+                ));
+            }
+        }
+    }
+
+    Ok(Value::Int(deterministic_random_int_inclusive(min, max)))
+}
+
+fn call_srand_like(function: &str, args: &[Value], span: Span) -> CompileResult<Value> {
+    if args.len() > 2 {
         return Err(runtime_error(
             span,
-            RuntimeError::unsupported_call(
-                "rand()",
-                "min/max arguments are not implemented; call rand() without arguments in the current subset",
+            RuntimeError::arity_mismatch(
+                function.to_string(),
+                ArityExpectation::Between { min: 0, max: 2 },
+                args.len(),
             ),
         ));
     }
+    if let Some(seed) = args.first() {
+        let _ = php_internal_nullable_int_argument(function, 1, "seed", seed, span)?;
+    }
+    if let Some(mode) = args.get(1) {
+        let _ = php_internal_int_argument(function, 2, "mode", mode, span)?;
+    }
+    Ok(Value::Null)
+}
 
-    Ok(Value::Int(123456789))
+fn call_random_int(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("random_int", args, 2, span)?;
+    let min = php_internal_int_argument("random_int()", 1, "min", &args[0], span)?;
+    let max = php_internal_int_argument("random_int()", 2, "max", &args[1], span)?;
+    if min > max {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "random_int()",
+                "Argument #1 ($min) must be less than or equal to argument #2 ($max)",
+            ),
+        ));
+    }
+    Ok(Value::Int(deterministic_random_int_inclusive(min, max)))
+}
+
+fn call_random_bytes(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("random_bytes", args, 1, span)?;
+    let length = php_internal_int_argument("random_bytes()", 1, "length", &args[0], span)?;
+    if length <= 0 {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "random_bytes()",
+                "Argument #1 ($length) must be greater than 0",
+            ),
+        ));
+    }
+    let length = usize::try_from(length).map_err(|_| {
+        runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "random_bytes()",
+                "Argument #1 ($length) is too large for the current subset",
+            ),
+        )
+    })?;
+    let bytes: Vec<u8> = (0..length).map(|index| b'A' + (index % 26) as u8).collect();
+    let value = String::from_utf8(bytes).expect("deterministic random bytes are ASCII");
+    Ok(Value::String(value))
+}
+
+fn deterministic_random_int_inclusive(min: i64, max: i64) -> i64 {
+    let span = i128::from(max) - i128::from(min);
+    (i128::from(min) + span / 2) as i64
 }
 
 fn call_uniqid(args: &[Value], span: Span) -> CompileResult<Value> {
