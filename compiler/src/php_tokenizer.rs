@@ -515,6 +515,7 @@ struct Scanner<'a> {
     in_php: bool,
     token_parse: bool,
     last_significant_token: Option<i64>,
+    halt_compiler_significant_after: Option<usize>,
     tokens: Vec<PhpTokenizerToken>,
 }
 
@@ -527,6 +528,7 @@ impl<'a> Scanner<'a> {
             in_php: false,
             token_parse,
             last_significant_token: None,
+            halt_compiler_significant_after: None,
             tokens: Vec::new(),
         }
     }
@@ -562,6 +564,17 @@ impl<'a> Scanner<'a> {
     }
 
     fn scan_php_token(&mut self) {
+        if self
+            .halt_compiler_significant_after
+            .is_some_and(|count| count >= 3)
+        {
+            let start = self.index;
+            self.index = self.source.len();
+            self.push_token(T_INLINE_HTML, start, self.index);
+            self.in_php = false;
+            return;
+        }
+
         if self.starts_with(b"?>") {
             let start = self.index;
             self.index += 2;
@@ -646,6 +659,10 @@ impl<'a> Scanner<'a> {
 
         if byte == b'_' || byte.is_ascii_alphabetic() {
             self.consume_identifier_or_keyword();
+            return;
+        }
+
+        if self.consume_heredoc_start() {
             return;
         }
 
@@ -1011,6 +1028,151 @@ impl<'a> Scanner<'a> {
         self.push_token(id, start, self.index);
     }
 
+    fn consume_heredoc_start(&mut self) -> bool {
+        if !self.starts_with(b"<<<") || self.source.get(self.index..self.index + 3) != Some(b"<<<")
+        {
+            return false;
+        }
+
+        let start = self.index;
+        let mut cursor = self.index + 3;
+        let Some((label_start, label_end, after_label)) = self.parse_heredoc_label(cursor) else {
+            return false;
+        };
+        cursor = after_label;
+
+        while self
+            .source
+            .get(cursor)
+            .copied()
+            .is_some_and(|byte| matches!(byte, b' ' | b'\t'))
+        {
+            cursor += 1;
+        }
+
+        let newline_end = match self.source.get(cursor).copied() {
+            Some(b'\n') => cursor + 1,
+            Some(b'\r') if self.source.get(cursor + 1) == Some(&b'\n') => cursor + 2,
+            Some(b'\r') => cursor + 1,
+            _ => return false,
+        };
+
+        let label = self.source[label_start..label_end].to_vec();
+        self.index = newline_end;
+        self.push_token(T_START_HEREDOC, start, self.index);
+        self.consume_simple_heredoc_body(&label);
+        true
+    }
+
+    fn parse_heredoc_label(&self, cursor: usize) -> Option<(usize, usize, usize)> {
+        match self.source.get(cursor).copied()? {
+            b'\'' | b'"' => {
+                let quote = self.source[cursor];
+                let label_start = cursor + 1;
+                if !self
+                    .source
+                    .get(label_start)
+                    .copied()
+                    .is_some_and(is_identifier_start)
+                {
+                    return None;
+                }
+                let mut label_end = label_start + 1;
+                while self
+                    .source
+                    .get(label_end)
+                    .copied()
+                    .is_some_and(is_identifier_continue)
+                {
+                    label_end += 1;
+                }
+                if self.source.get(label_end) != Some(&quote) {
+                    return None;
+                }
+                Some((label_start, label_end, label_end + 1))
+            }
+            byte if is_identifier_start(byte) => {
+                let label_start = cursor;
+                let mut label_end = cursor + 1;
+                while self
+                    .source
+                    .get(label_end)
+                    .copied()
+                    .is_some_and(is_identifier_continue)
+                {
+                    label_end += 1;
+                }
+                Some((label_start, label_end, label_end))
+            }
+            _ => None,
+        }
+    }
+
+    fn consume_simple_heredoc_body(&mut self, label: &[u8]) {
+        let body_start = self.index;
+        let mut cursor = self.index;
+        while cursor < self.source.len() {
+            let line_start = cursor;
+            let line_end = self.line_end(cursor);
+            if let Some(end_label_end) = self.heredoc_end_label_end(line_start, line_end, label) {
+                if body_start < line_start {
+                    self.index = line_start;
+                    self.push_token(T_ENCAPSED_AND_WHITESPACE, body_start, line_start);
+                }
+                self.index = end_label_end;
+                self.push_token(T_END_HEREDOC, line_start, end_label_end);
+                return;
+            }
+            cursor = self.next_line_start(line_end);
+        }
+
+        if body_start < self.source.len() {
+            self.index = self.source.len();
+            self.push_token(T_ENCAPSED_AND_WHITESPACE, body_start, self.index);
+        }
+    }
+
+    fn heredoc_end_label_end(
+        &self,
+        line_start: usize,
+        line_end: usize,
+        label: &[u8],
+    ) -> Option<usize> {
+        let mut cursor = line_start;
+        while cursor < line_end && matches!(self.source[cursor], b' ' | b'\t') {
+            cursor += 1;
+        }
+        let label_end = cursor.checked_add(label.len())?;
+        if self.source.get(cursor..label_end) != Some(label) {
+            return None;
+        }
+        match self.source.get(label_end).copied() {
+            None | Some(b';' | b'\n' | b'\r') => Some(label_end),
+            _ if label_end == line_end => Some(label_end),
+            _ => None,
+        }
+    }
+
+    fn line_end(&self, mut cursor: usize) -> usize {
+        while cursor < self.source.len() && !matches!(self.source[cursor], b'\n' | b'\r') {
+            cursor += 1;
+        }
+        cursor
+    }
+
+    fn next_line_start(&self, line_end: usize) -> usize {
+        if self.source.get(line_end) == Some(&b'\r') {
+            if self.source.get(line_end + 1) == Some(&b'\n') {
+                return line_end + 2;
+            }
+            return line_end + 1;
+        }
+        if self.source.get(line_end) == Some(&b'\n') {
+            return line_end + 1;
+        }
+        self.source.len()
+    }
+
     fn consume_operator_token(&mut self) -> bool {
         for (pattern, id) in [
             (b"**=".as_slice(), T_POW_EQUAL),
@@ -1159,6 +1321,7 @@ impl<'a> Scanner<'a> {
         self.line += byte_line_count(&text);
         if let Some(symbol) = text.first() {
             self.last_significant_token = Some(*symbol as i64);
+            self.note_halt_compiler_significant(*symbol as i64);
         }
         self.tokens.push(PhpTokenizerToken::Symbol {
             text,
@@ -1203,12 +1366,29 @@ impl<'a> Scanner<'a> {
                 | T_OPEN_TAG_WITH_ECHO
         ) {
             self.last_significant_token = Some(id);
+            self.note_halt_compiler_significant(id);
+        }
+    }
+
+    fn note_halt_compiler_significant(&mut self, id: i64) {
+        if id == T_HALT_COMPILER {
+            self.halt_compiler_significant_after = Some(0);
+        } else if let Some(count) = &mut self.halt_compiler_significant_after {
+            *count += 1;
         }
     }
 }
 
 fn is_php_whitespace(byte: u8) -> bool {
     matches!(byte, b' ' | b'\n' | b'\r' | b'\t' | 0x0b | 0x0c)
+}
+
+fn is_identifier_start(byte: u8) -> bool {
+    byte == b'_' || byte.is_ascii_alphabetic()
+}
+
+fn is_identifier_continue(byte: u8) -> bool {
+    byte == b'_' || byte.is_ascii_alphanumeric()
 }
 
 fn is_bad_character(byte: u8) -> bool {

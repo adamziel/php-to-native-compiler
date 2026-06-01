@@ -42,10 +42,16 @@
   tokenized non-canonical `(double)` and `(real)` casts through the current
   error-handler stack. The tokenizer recognizes the selected underscore
   decimal/octal numeric separator shape and classifies selected large
-  octal-shaped integer overflows as `T_DNUMBER`. Full parse-error validation
-  for `TOKEN_PARSE`, complete numeric-literal validation, binary/hex numeric
+  octal-shaped integer overflows as `T_DNUMBER`. It also covers the bounded
+  tokenizer-only heredoc slice with simple identifier/quoted labels, literal
+  body text as `T_ENCAPSED_AND_WHITESPACE`, `T_END_HEREDOC` before a following
+  semicolon/newline, and `__halt_compiler` tail text after three following
+  significant tokens as `T_INLINE_HTML`. Full parse-error validation for
+  `TOKEN_PARSE`, complete numeric-literal validation, binary/hex numeric
   separator parity, exact deprecation line/file provenance for tokenized source
-  text, and complete heredoc/nowdoc token parity remain unsupported.
+  text, nested/interpolated heredoc token streams, flexible heredoc parse-error
+  parity, general nowdoc/heredoc parity, and runtime `__halt_compiler()`
+  execution semantics remain unsupported.
 - static variables backed by per-scope materialized symbol tables
 - direct variable removal: `unset($name)` removes static variables from the
   current scope and treats undefined names as no-ops; when a removed direct

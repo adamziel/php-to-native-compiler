@@ -211,6 +211,76 @@ fn tokenizer_scans_invalid_octal_boundaries_and_underscores() {
 }
 
 #[test]
+fn tokenizer_scans_simple_heredoc_bodies_end_labels_and_following_semicolons() {
+    let tokens = php_tokenizer::tokenize(
+        b"<?php\n$x=<<<DD\njhdsjkfhjdsh\nDD\n.\"\";\n$a=<<<DDDD\njhdsjkfhjdsh\nDDDD;\n?>",
+    );
+    let simplified = tokens
+        .iter()
+        .map(|token| {
+            (
+                php_tokenizer::token_name(token.id()),
+                token_text(token),
+                token.line(),
+            )
+        })
+        .collect::<Vec<_>>();
+
+    assert!(
+        simplified.contains(&("T_START_HEREDOC", "<<<DD\n".to_string(), 2)),
+        "expected first heredoc opener: {simplified:?}"
+    );
+    assert!(
+        simplified.contains(&("T_ENCAPSED_AND_WHITESPACE", "jhdsjkfhjdsh\n".to_string(), 3)),
+        "expected first heredoc body: {simplified:?}"
+    );
+    assert!(
+        simplified.contains(&("T_END_HEREDOC", "DD".to_string(), 4)),
+        "expected first heredoc terminator without trailing semicolon: {simplified:?}"
+    );
+    assert!(
+        simplified.contains(&("T_START_HEREDOC", "<<<DDDD\n".to_string(), 6)),
+        "expected second heredoc opener: {simplified:?}"
+    );
+    assert!(
+        simplified.contains(&("T_END_HEREDOC", "DDDD".to_string(), 8)),
+        "expected second heredoc terminator before following semicolon: {simplified:?}"
+    );
+
+    let first_end = tokens
+        .iter()
+        .position(|token| token.id() == php_tokenizer::T_END_HEREDOC && token_text(token) == "DD")
+        .expect("first end heredoc token");
+    assert_eq!(tokens[first_end + 1].id(), php_tokenizer::T_WHITESPACE);
+    assert_eq!(token_text(&tokens[first_end + 2]), ".");
+
+    let second_end = tokens
+        .iter()
+        .position(|token| token.id() == php_tokenizer::T_END_HEREDOC && token_text(token) == "DDDD")
+        .expect("second end heredoc token");
+    assert_eq!(token_text(&tokens[second_end + 1]), ";");
+}
+
+#[test]
+fn tokenizer_halt_compiler_merges_tail_after_three_significant_tokens() {
+    let completed = php_tokenizer::tokenize(b"<?php __halt_compiler();ABC");
+    let completed_tail = completed
+        .last()
+        .expect("completed halt compiler tail token should exist");
+    assert_eq!(completed_tail.id(), php_tokenizer::T_INLINE_HTML);
+    assert_eq!(token_text(completed_tail), "ABC");
+    assert_eq!(completed_tail.line(), 1);
+
+    let incomplete = php_tokenizer::tokenize(b"<?php __halt_compiler\nabc\ndef\nghi ABC");
+    let incomplete_tail = incomplete
+        .last()
+        .expect("incomplete halt compiler tail token should exist");
+    assert_eq!(incomplete_tail.id(), php_tokenizer::T_INLINE_HTML);
+    assert_eq!(token_text(incomplete_tail), " ABC");
+    assert_eq!(incomplete_tail.line(), 4);
+}
+
+#[test]
 fn tokenizer_token_parse_deprecated_cast_calls_error_handler() {
     let execution = run_source(
         r#"<?php

@@ -20,6 +20,19 @@ Implemented:
   parse-error validation, exact tokenizer source span/file provenance for
   deprecations, binary/hex numeric separator breadth, exact numeric-literal
   validation, and heredoc/nowdoc parity remain unsupported.
+- Added a second compact tokenizer PHPT slice for
+  `ext/tokenizer/tests/bug26463.phpt` and
+  `ext/tokenizer/tests/bug54089.phpt`. The scanner now recognizes simple
+  heredoc/nowdoc-style start labels, emits literal body text as
+  `T_ENCAPSED_AND_WHITESPACE`, leaves `T_END_HEREDOC` before the following
+  semicolon or newline, and folds the post-`__halt_compiler` tail into
+  `T_INLINE_HTML` after three following significant tokens. Focused proof
+  passed with the tokenizer Rust integration test (13/13), the `phpc` binary
+  build, and the selected PHPT wrapper run for those two rows.
+  Nested/interpolated heredoc token
+  streams, flexible heredoc parse-error parity, complete heredoc/nowdoc
+  coverage, runtime `__halt_compiler()` execution semantics, and object-handle
+  reuse for `PhpToken` var_dump numbering remain unsupported.
 
 ## 2026-05-27
 
