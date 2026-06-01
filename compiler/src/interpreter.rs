@@ -17235,6 +17235,16 @@ impl Interpreter {
                     ),
                 )
             })?;
+        self.assign_datetimezone_object_parts(object, timezone_type, timezone_name, span)
+    }
+
+    fn assign_datetimezone_object_parts(
+        &self,
+        object: &PhpObject,
+        timezone_type: i64,
+        timezone_name: String,
+        span: Span,
+    ) -> CompileResult<()> {
         object
             .write_public_property("timezone_type", Value::Int(timezone_type))
             .map_err(|error| runtime_error(span, error))?;
@@ -17242,6 +17252,98 @@ impl Interpreter {
             .write_public_property("timezone", Value::String(timezone_name))
             .map_err(|error| runtime_error(span, error))?;
         Ok(())
+    }
+
+    fn create_datetimezone_object_from_parts(
+        &mut self,
+        timezone_type: i64,
+        timezone_name: String,
+        span: Span,
+    ) -> CompileResult<PhpObject> {
+        let class_id = self
+            .classes
+            .lookup_class_id("DateTimeZone")
+            .ok_or_else(|| runtime_error(span, RuntimeError::undefined_class("DateTimeZone")))?;
+        let object_id = self.allocate_object_id();
+        let class = self
+            .classes
+            .get(class_id)
+            .expect("DateTimeZone class id should resolve");
+        let object = PhpObject::from_class_with_relationship_metadata_with_id(
+            class,
+            &[],
+            Vec::new(),
+            Vec::new(),
+            object_id,
+        );
+        self.assign_datetimezone_object_parts(&object, timezone_type, timezone_name, span)?;
+        Ok(object)
+    }
+
+    fn datetimezone_serialized_parts_from_array(
+        array: &PhpArray,
+        function: &'static str,
+        span: Span,
+    ) -> CompileResult<(i64, String)> {
+        let timezone_type = match array.get_cloned("timezone_type") {
+            Some(Value::Int(value)) => value,
+            Some(other) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        function,
+                        format!(
+                            "timezone_type must be int in the current DateTimeZone serialization subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+            None => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        function,
+                        "timezone_type is required in the current DateTimeZone serialization subset",
+                    ),
+                ));
+            }
+        };
+        let timezone = match array.get_cloned("timezone") {
+            Some(Value::String(value)) => value,
+            Some(other) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        function,
+                        format!(
+                            "timezone must be string in the current DateTimeZone serialization subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+            None => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        function,
+                        "timezone is required in the current DateTimeZone serialization subset",
+                    ),
+                ));
+            }
+        };
+        let timezone_name =
+            bounded_timezone_serialized_name(timezone_type, &timezone).ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        function,
+                        "invalid DateTimeZone serialization data for the current subset",
+                    ),
+                )
+            })?;
+        Ok((timezone_type, timezone_name))
     }
 
     fn datetimezone_name(
@@ -17389,6 +17491,51 @@ impl Interpreter {
                 expect_expr_arity("DateTimeZone::getLocation", args.len(), 0, span)?;
                 let name = Self::datetimezone_name(&object, "DateTimeZone::getLocation()", span)?;
                 Ok(bounded_timezone_location_value(&name))
+            }
+            "__serialize" => {
+                expect_expr_arity("DateTimeZone::__serialize", args.len(), 0, span)?;
+                let timezone_type = match object.read_public_property("timezone_type") {
+                    Ok(Value::Int(value)) => value,
+                    _ => {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "DateTimeZone::__serialize()",
+                                "DateTimeZone object is not initialized in the current subset",
+                            ),
+                        ));
+                    }
+                };
+                let timezone_name =
+                    Self::datetimezone_name(&object, "DateTimeZone::__serialize()", span)?;
+                let mut array = PhpArray::new();
+                array.insert("timezone_type", Value::Int(timezone_type));
+                array.insert("timezone", Value::String(timezone_name));
+                Ok(Value::Array(array))
+            }
+            "__unserialize" => {
+                expect_expr_arity("DateTimeZone::__unserialize", args.len(), 1, span)?;
+                let value = self.evaluate(&args[0], caller_scope)?;
+                let Value::Array(array) = value else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "DateTimeZone::__unserialize()",
+                            format!(
+                                "Argument #1 ($data) must be array in the current subset, got {}",
+                                value.type_name()
+                            ),
+                        ),
+                    ));
+                };
+                let (timezone_type, timezone_name) =
+                    Self::datetimezone_serialized_parts_from_array(
+                        &array,
+                        "DateTimeZone::__unserialize()",
+                        span,
+                    )?;
+                self.assign_datetimezone_object_parts(&object, timezone_type, timezone_name, span)?;
+                Ok(Value::Null)
             }
             _ => Err(runtime_error(
                 span,
@@ -52862,6 +53009,33 @@ impl Interpreter {
                 values.push(self.evaluate_by_value_argument_with_cow_source(arg, caller_scope)?);
             }
             return call_timezone_identifiers_list(&values, span);
+        }
+        if receiver_class_name.eq_ignore_ascii_case("DateTimeZone")
+            && method_name.eq_ignore_ascii_case("__set_state")
+        {
+            expect_expr_arity("DateTimeZone::__set_state", args.len(), 1, span)?;
+            let value = self.evaluate(&args[0], caller_scope)?;
+            let Value::Array(array) = value else {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "DateTimeZone::__set_state()",
+                        format!(
+                            "Argument #1 ($array) must be array in the current subset, got {}",
+                            value.type_name()
+                        ),
+                    ),
+                ));
+            };
+            let (timezone_type, timezone_name) = Self::datetimezone_serialized_parts_from_array(
+                &array,
+                "DateTimeZone::__set_state()",
+                span,
+            )?;
+            let object =
+                self.create_datetimezone_object_from_parts(timezone_type, timezone_name, span)?;
+            self.track_allocated_object(&object);
+            return Ok(Value::Object(object));
         }
         if receiver_class_name.eq_ignore_ascii_case("DateTimeZone")
             && method_name.eq_ignore_ascii_case("listAbbreviations")
@@ -134741,6 +134915,31 @@ fn bounded_timezone_object_parts(name: &str) -> Option<(i64, String)> {
         return Some((1, trimmed.to_string()));
     }
     bounded_timezone_from_name(trimmed).map(|timezone| (3, timezone.name))
+}
+
+fn bounded_timezone_serialized_name(timezone_type: i64, timezone: &str) -> Option<String> {
+    if timezone.as_bytes().contains(&b'\0') {
+        return None;
+    }
+    let trimmed = timezone.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    match timezone_type {
+        1 => {
+            parse_timezone_offset_token(trimmed).map(|offset| format_timezone_offset(offset, true))
+        }
+        2 => {
+            let upper = trimmed.to_ascii_uppercase();
+            matches!(
+                upper.as_str(),
+                "GMT" | "CET" | "CEST" | "EST" | "EDT" | "PST" | "PDT"
+            )
+            .then_some(upper)
+        }
+        3 => bounded_timezone_from_name(trimmed).map(|timezone| timezone.name),
+        _ => None,
+    }
 }
 
 fn bounded_datetime_timezone_hint(

@@ -5407,12 +5407,17 @@
   `America/Halifax`, `Australia/Brisbane`, and `Asia/Yerevan` rows, and
   return `false` outside that bounded location table. DateTimeZone subclasses
   may dispatch those core DateTimeZone methods through `parent::` when a
-  current `$this` object is available.
+  current `$this` object is available. `DateTimeZone::__serialize()`,
+  `DateTimeZone::__unserialize($data)`, and `DateTimeZone::__set_state($data)`
+  round-trip the same bounded `timezone_type`/`timezone` metadata for valid
+  type-1 fixed offsets, type-2 abbreviations, and type-3 identifiers.
   `date.timezone` PHPT INI overrides seed the same bounded timezone state,
   including PHPT-style trailing semicolon syntax. Full timezone database
   validation, complete abbreviation and location catalogs, all historical
-  transition rules, exact diagnostics, broad subclass/native method parity,
-  and native lowering remain unsupported.
+  transition rules, general object `serialize()`/`unserialize()` integration
+  for DateTimeZone, invalid DateTimeZone serialization exception parity, exact
+  diagnostics, broad subclass/native method parity, and native lowering remain
+  unsupported.
   `header($header, $replace = true, $response_code = 0)` accepts a string
   header line plus optional bool replacement flag and optional integer response
   code, records the raw header line in deterministic in-process CLI request

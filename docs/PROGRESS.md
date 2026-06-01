@@ -23,6 +23,18 @@ Implemented:
   native-method parity, exact diagnostics, and native lowering remain
   unsupported.
 
+- Added a bounded DateTimeZone state metadata slice for selected ext/date PHPT
+  rows. `DateTimeZone::__serialize()`, `DateTimeZone::__unserialize($data)`,
+  and `DateTimeZone::__set_state($data)` now round-trip valid
+  `timezone_type`/`timezone` pairs for the current type-1 fixed offset,
+  type-2 abbreviation, and type-3 identifier subset without enabling general
+  object serialization. Focused proof covers Rust date builtin tests and
+  selected PHPT rows `DateTimeZone_serialization.phpt` and
+  `DateTimeZone_set_state.phpt`. General DateTimeZone object
+  `serialize()`/`unserialize()` integration, invalid serialization exception
+  parity, complete timezone validation, broader magic state hooks, exact
+  diagnostics, and native lowering remain unsupported.
+
 ## 2026-05-27
 
 Implemented:

@@ -257,6 +257,73 @@ echo new DateTimeZoneExtForParent("America/Los_Angeles"), "\n";
 }
 
 #[test]
+fn datetimezone_state_helpers_round_trip_bounded_metadata() {
+    let execution = run_source(
+        r#"<?php
+$ce = new DateTimeZone("CEST");
+var_dump($ce->__serialize());
+$tz = new DateTimeZone("UTC");
+$tz->__unserialize([
+    "timezone_type" => 3,
+    "timezone" => "Europe/London",
+]);
+echo $tz->getName(), "|";
+$tz->__unserialize([
+    "timezone_type" => 2,
+    "timezone" => "CEST",
+]);
+echo $tz->getName(), "|";
+$tz->__unserialize([
+    "timezone_type" => 1,
+    "timezone" => "+0130",
+]);
+echo $tz->getName(), "\n";
+$copy = DateTimeZone::__set_state([
+    "timezone_type" => 3,
+    "timezone" => "UTC",
+]);
+var_dump($copy);
+$exported = var_export($copy, true);
+echo $exported, "\n";
+eval('$recreated = ' . $exported . ';');
+var_dump($recreated);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "array(2) {\n",
+            "  [\"timezone_type\"]=>\n",
+            "  int(2)\n",
+            "  [\"timezone\"]=>\n",
+            "  string(4) \"CEST\"\n",
+            "}\n",
+            "Europe/London|CEST|+01:30\n",
+            "object(DateTimeZone)#3 (2) {\n",
+            "  [\"timezone_type\"]=>\n",
+            "  int(3)\n",
+            "  [\"timezone\"]=>\n",
+            "  string(3) \"UTC\"\n",
+            "}\n",
+            "\\DateTimeZone::__set_state(array(\n",
+            "   'timezone_type' => 3,\n",
+            "   'timezone' => 'UTC',\n",
+            "))\n",
+            "object(DateTimeZone)#4 (2) {\n",
+            "  [\"timezone_type\"]=>\n",
+            "  int(3)\n",
+            "  [\"timezone\"]=>\n",
+            "  string(3) \"UTC\"\n",
+            "}\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn gettimeofday_uses_default_timezone_offset() {
     let execution = run_source(
         r#"<?php
