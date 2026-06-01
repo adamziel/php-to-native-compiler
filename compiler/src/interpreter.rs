@@ -797,6 +797,9 @@ struct ReflectionZendExtensionState {
 struct ReflectionExtensionMetadata {
     name: &'static str,
     class_names: &'static [&'static str],
+    function_names: &'static [&'static str],
+    constant_names: &'static [&'static str],
+    ini_entry_names: &'static [&'static str],
     dependencies: &'static [(&'static str, &'static str)],
 }
 
@@ -51929,6 +51932,21 @@ impl Interpreter {
                 expect_expr_arity("ReflectionExtension::getVersion", args.len(), 0, span)?;
                 Ok(Value::String(php_version_string()))
             }
+            "getfunctions" => {
+                expect_expr_arity("ReflectionExtension::getFunctions", args.len(), 0, span)?;
+                self.reflection_extension_functions_array(&state, span)
+                    .map(Value::Array)
+            }
+            "getconstants" => {
+                expect_expr_arity("ReflectionExtension::getConstants", args.len(), 0, span)?;
+                Ok(Value::Array(reflection_extension_constants_array(&state)))
+            }
+            "getinientries" => {
+                expect_expr_arity("ReflectionExtension::getINIEntries", args.len(), 0, span)?;
+                Ok(Value::Array(
+                    self.reflection_extension_ini_entries_array(&state),
+                ))
+            }
             "getclassnames" => {
                 expect_expr_arity("ReflectionExtension::getClassNames", args.len(), 0, span)?;
                 Ok(Value::Array(reflection_extension_class_names_array(&state)))
@@ -51967,6 +51985,37 @@ impl Interpreter {
                 RuntimeError::undefined_function(format!("ReflectionExtension::{method_name}()")),
             )),
         }
+    }
+
+    fn reflection_extension_functions_array(
+        &mut self,
+        state: &ReflectionExtensionState,
+        span: Span,
+    ) -> CompileResult<PhpArray> {
+        let mut functions = PhpArray::new();
+        let Some(metadata) = reflection_extension_metadata(&state.name) else {
+            return Ok(functions);
+        };
+        for function_name in metadata.function_names {
+            let Some(function_state) = reflection_internal_function_state(function_name) else {
+                continue;
+            };
+            let function = self.create_reflection_function_object(function_state, span)?;
+            functions.insert(ArrayKey::String((*function_name).to_string()), function);
+        }
+        Ok(functions)
+    }
+
+    fn reflection_extension_ini_entries_array(&self, state: &ReflectionExtensionState) -> PhpArray {
+        let mut entries = PhpArray::new();
+        if let Some(metadata) = reflection_extension_metadata(&state.name) {
+            for entry_name in metadata.ini_entry_names {
+                if let Some(value) = self.ini_value(entry_name) {
+                    entries.insert((*entry_name).to_string(), Value::String(value));
+                }
+            }
+        }
+        entries
     }
 
     fn reflection_extension_classes_array(
@@ -99743,6 +99792,7 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
             "bool",
             vec![reflection_internal_param("assignment", "string")],
         ),
+        "sleep" => ("int", vec![reflection_internal_param("seconds", "int")]),
         "stream_get_wrappers" => ("array", vec![]),
         "stream_get_transports" => ("array", vec![]),
         "stream_wrapper_register" => (
@@ -101305,7 +101355,28 @@ const REFLECTION_EXTENSION_STANDARD_CLASSES: &[&str] = &[
     "php_user_filter",
 ];
 
+const REFLECTION_EXTENSION_STANDARD_FUNCTIONS: &[&str] = &["sleep"];
+const REFLECTION_EXTENSION_STANDARD_CONSTANTS: &[&str] = &[
+    "CONNECTION_NORMAL",
+    "CONNECTION_ABORTED",
+    "CONNECTION_TIMEOUT",
+];
+const REFLECTION_EXTENSION_STANDARD_INI_ENTRIES: &[&str] = &["user_agent"];
+
 const REFLECTION_EXTENSION_CTYPE_CLASSES: &[&str] = &[];
+
+const REFLECTION_EXTENSION_DOM_CLASSES: &[&str] = &[
+    "DOMException",
+    "DOMNode",
+    "DOMAttr",
+    "DOMElement",
+    "DOMDocument",
+];
+const REFLECTION_EXTENSION_DOM_DEPENDENCIES: &[(&str, &str)] = &[
+    ("libxml", "Required"),
+    ("lexbor", "Required"),
+    ("domxml", "Conflicts"),
+];
 
 const REFLECTION_EXTENSION_STANDARD_DEPENDENCIES: &[(&str, &str)] = &[
     ("random", "Required"),
@@ -101318,17 +101389,34 @@ fn reflection_extension_metadata(name: &str) -> Option<ReflectionExtensionMetada
         "reflection" => Some(ReflectionExtensionMetadata {
             name: "Reflection",
             class_names: REFLECTION_EXTENSION_REFLECTION_CLASSES,
+            function_names: &[],
+            constant_names: &[],
+            ini_entry_names: &[],
             dependencies: &[],
         }),
         "standard" => Some(ReflectionExtensionMetadata {
             name: "standard",
             class_names: REFLECTION_EXTENSION_STANDARD_CLASSES,
+            function_names: REFLECTION_EXTENSION_STANDARD_FUNCTIONS,
+            constant_names: REFLECTION_EXTENSION_STANDARD_CONSTANTS,
+            ini_entry_names: REFLECTION_EXTENSION_STANDARD_INI_ENTRIES,
             dependencies: REFLECTION_EXTENSION_STANDARD_DEPENDENCIES,
         }),
         "ctype" => Some(ReflectionExtensionMetadata {
             name: "ctype",
             class_names: REFLECTION_EXTENSION_CTYPE_CLASSES,
+            function_names: &[],
+            constant_names: &[],
+            ini_entry_names: &[],
             dependencies: &[],
+        }),
+        "dom" => Some(ReflectionExtensionMetadata {
+            name: "dom",
+            class_names: REFLECTION_EXTENSION_DOM_CLASSES,
+            function_names: &[],
+            constant_names: &[],
+            ini_entry_names: &[],
+            dependencies: REFLECTION_EXTENSION_DOM_DEPENDENCIES,
         }),
         _ => None,
     }
@@ -101345,6 +101433,18 @@ fn reflection_extension_class_names_array(state: &ReflectionExtensionState) -> P
         }
     }
     class_names
+}
+
+fn reflection_extension_constants_array(state: &ReflectionExtensionState) -> PhpArray {
+    let mut constants = PhpArray::new();
+    if let Some(metadata) = reflection_extension_metadata(&state.name) {
+        for constant_name in metadata.constant_names {
+            if let Some(value) = builtin_global_constant_value(constant_name) {
+                constants.insert(ArrayKey::String((*constant_name).to_string()), value);
+            }
+        }
+    }
+    constants
 }
 
 fn reflection_extension_dependencies_array(state: &ReflectionExtensionState) -> PhpArray {
