@@ -3071,13 +3071,20 @@
   ancestor, missing direct-property fallback through visible non-static
   `__isset($name)`, and supported static property operands
 - exact uppercase built-in global constants `CASE_LOWER`, `CASE_UPPER`,
-  `ARRAY_FILTER_USE_KEY`, `ARRAY_FILTER_USE_BOTH`, `PREG_SPLIT_DELIM_CAPTURE`, `SORT_REGULAR`,
-  `SORT_NUMERIC`, `SORT_STRING`, `SEEK_SET`, `SEEK_CUR`, `SEEK_END`,
-  `DIRECTORY_SEPARATOR`, `PHP_VERSION_ID`, `PHP_VERSION`,
-  `PHP_INT_MAX`, `PHP_INT_SIZE`, and `PHP_SAPI`. The small integer constants evaluate to
-  their documented PHP values (`CASE_LOWER` `0`, `CASE_UPPER` `1`,
-  `ARRAY_FILTER_USE_KEY` `2`, `ARRAY_FILTER_USE_BOTH` `1`,
-  `PREG_SPLIT_DELIM_CAPTURE` `2`, `SORT_REGULAR` `0`, `SORT_NUMERIC` `1`,
+  `ARRAY_FILTER_USE_KEY`, `ARRAY_FILTER_USE_BOTH`, `PREG_PATTERN_ORDER`,
+  `PREG_SET_ORDER`, `PREG_OFFSET_CAPTURE`, `PREG_UNMATCHED_AS_NULL`,
+  `PREG_GREP_INVERT`, the `PREG_*_ERROR` family currently used by
+  `preg_last_error()`, `PREG_SPLIT_NO_EMPTY`, `PREG_SPLIT_DELIM_CAPTURE`,
+  `PREG_SPLIT_OFFSET_CAPTURE`, `SORT_REGULAR`, `SORT_NUMERIC`,
+  `SORT_STRING`, `SEEK_SET`, `SEEK_CUR`, `SEEK_END`, `DIRECTORY_SEPARATOR`,
+  `PHP_VERSION_ID`, `PHP_VERSION`, `PHP_INT_MAX`, `PHP_INT_SIZE`, and
+  `PHP_SAPI`. The small integer constants evaluate to their documented PHP
+  values (`CASE_LOWER` `0`, `CASE_UPPER` `1`, `ARRAY_FILTER_USE_KEY` `2`,
+  `ARRAY_FILTER_USE_BOTH` `1`, `PREG_PATTERN_ORDER` `1`,
+  `PREG_SET_ORDER` `2`, `PREG_OFFSET_CAPTURE` `256`,
+  `PREG_UNMATCHED_AS_NULL` `512`, `PREG_GREP_INVERT` `1`,
+  `PREG_SPLIT_NO_EMPTY` `1`, `PREG_SPLIT_DELIM_CAPTURE` `2`,
+  `PREG_SPLIT_OFFSET_CAPTURE` `4`, `SORT_REGULAR` `0`, `SORT_NUMERIC` `1`,
   `SORT_STRING` `2`, `SEEK_SET` `0`, `SEEK_CUR` `1`, and `SEEK_END` `2`),
   and `PHP_VERSION_ID` evaluates to the current
   deterministic PHP 8.3 compatibility target `80300`; `PHP_VERSION` evaluates
@@ -3574,38 +3581,28 @@
   catchable `ValueError` messages. Array/object/resource operands, broader
   exact diagnostics, encoding-sensitive edge cases beyond represented runtime
   bytes, and native lowering remain unsupported.
-  `preg_match($pattern, $subject, $matches = null)` supports two scalar/null
-  string-convertible arguments and an optional third direct-variable matches
-  output argument. The current regex slice supports
-  slash-delimited literal contains/prefix/suffix/exact patterns with `^` and
-  `$` anchors plus a small literal escape subset, accepts the `u` modifier as
-  a no-op over the current valid UTF-8 runtime strings, returns integer `1`
-  for a match and `0` for no match, and exists to cover the reached WordPress
-  `wp_fix_server_vars()` SAPI-name pattern plus `_wp_can_use_pcre_u()`'s
-  `//u` startup probe. With a direct `$matches` variable, literal patterns
-  populate match `0`, failed matches clear the variable to an empty array, and
-  the two exact WordPress `wpdb::parse_db_host()` named-capture patterns
-  populate `0`, `host`/`1`, and optional `port`/`2` entries for the current
-  IPv4-ish and bracketed IPv6-ish startup paths. The exact WordPress table
-  prefix validation pattern `|[^a-z0-9_]|i` is also supported, returning a
-  match for the first non-alphanumeric/non-underscore character and no match
-  for conventional prefixes such as `wp_`. The exact WordPress safe-collation
-  query classifier `/^(?:SHOW|DESCRIBE|DESC|EXPLAIN|CREATE)\s/i` is supported
-  with ASCII-case-insensitive keyword matching and one following ASCII
-  whitespace character. The exact adjacent `wpdb::query()` classifiers
-  `/^\s*(create|alter|truncate|drop)\s/i`,
-  `/^\s*(insert|delete|update|replace)\s/i`, and
-  `/^\s*(insert|replace)\s/i` are supported with optional leading ASCII
-  whitespace, ASCII-case-insensitive keyword matching, one following ASCII
-  whitespace character, and match `0` population for direct `$matches`
-  variables. The exact WordPress `wpdb::check_ascii()` non-ASCII
-  byte detector `/[^\x00-\x7F]/` is supported over the current valid UTF-8
-  runtime string model, returning whether any represented character is
-  non-ASCII. Non-direct matches outputs, flags, offsets, optional
-  unmatched-group fidelity, broad named-capture support, full PCRE syntax,
-  modifiers other than the documented exact WordPress `i` patterns and `u`,
-  invalid-pattern warnings, byte/Unicode edge cases, broad coercions, exact
-  diagnostics, and native lowering remain unsupported.
+  `preg_match($pattern, $subject, $matches = null, $flags = 0,
+  $offset = 0)` and `preg_match_all($pattern, $subject, $matches = null,
+  $flags = PREG_PATTERN_ORDER, $offset = 0)` support scalar/null
+  string-convertible pattern and subject arguments, direct-variable matches
+  output, integer-compatible flags/offsets, `PREG_OFFSET_CAPTURE`,
+  `PREG_UNMATCHED_AS_NULL`, and `PREG_PATTERN_ORDER`/`PREG_SET_ORDER` for
+  `preg_match_all()`. Patterns are parsed with PHP-style delimiters and then
+  executed through the Rust regex engine after a bounded PCRE-to-regex
+  translation for covered escapes and named groups. The covered modifier set
+  is `i`, `m`, `s`, `x`, `U`, `u`, `n`, plus ignored `A`, `D`, `S`, and `J`;
+  `n` suppresses unnamed captures in returned match arrays while retaining
+  named captures. Named captures are inserted in PHP's observable order:
+  full match `0` first, then each named string key immediately before its
+  numeric capture key, for both single-match and `preg_match_all()` pattern- or
+  set-order outputs. Invalid patterns return `false` with the current bounded
+  warning path and update `preg_last_error()`.
+  Unsupported PCRE constructs that the Rust regex engine cannot compile,
+  duplicate named groups despite ignored `J`, lookaround/backreferences beyond
+  the existing bounded translations, locale-sensitive behavior, full Unicode
+  property/case-folding parity, exact PCRE warning text/offsets, callbacks,
+  non-direct matches outputs, broad coercion edge cases, and native lowering
+  remain unsupported.
   `preg_replace_callback($pattern, $callback, $subject)` supports exactly the
   WordPress `wp_sanitize_redirect()` verbose UTF-8 sanitizer regex shape with
   the string callback `_wp_sanitize_utf8_in_redirect`. It percent-encodes
@@ -11151,19 +11148,13 @@
   represented runtime bytes, exact PHP diagnostics beyond empty-needle and
   offset/length bounds `ValueError`, and native lowering beyond function-table
   introspection
-- `preg_match()` outside the current slash-delimited literal
-  contains/prefix/suffix/exact pattern subset, the two exact WordPress db-host
-  named-capture patterns, the exact WordPress table-prefix validation pattern
-  `|[^a-z0-9_]|i`, the exact WordPress safe-collation query classifier, and
-  the exact adjacent WordPress `wpdb::query()` DDL/DML classifiers, and the
-  exact WordPress ASCII-check byte-range pattern: non-direct matches
-  outputs, flags, offsets, optional unmatched-group fidelity, broad
-  capture-group behavior, full PCRE syntax, bracket classes and ranges beyond
-  the documented exact WordPress pattern, modifiers other than the documented
-  exact WordPress `i` patterns and `u`,
-  invalid-pattern warnings, byte/Unicode behavior beyond the current valid
-  UTF-8 string model, broad coercions, exact diagnostics, and native lowering
-  beyond function-table introspection
+- `preg_match()`/`preg_match_all()` outside the current
+  Rust-regex-translatable PCRE subset: duplicate named groups despite ignored
+  `J`, lookaround/backreferences beyond the existing bounded translations,
+  locale-sensitive behavior, full Unicode property/case-folding parity,
+  exact PCRE warning text/offsets, callbacks, non-direct matches outputs,
+  broad coercion edge cases, and native lowering beyond function-table
+  introspection
 - `preg_replace()` outside the exact WordPress database-version cleanup pattern
   `/[^0-9.].*/`, path-tail cleanup pattern `#/[^/]*$#i`, and redirect
   sanitizer cleanup pattern `|[^a-z0-9-~+_.?#=&;,/:%!*\[\]()@]|i`, mail-host

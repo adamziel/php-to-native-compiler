@@ -1,5 +1,26 @@
 # Progress Log
 
+## 2026-06-01
+
+Implemented:
+
+- Added a compact PCRE match-array fidelity slice for `preg_match()` and
+  `preg_match_all()`. Named captures now use PHP's observable insertion order
+  (`0`, then each named string key immediately before its numeric key) for
+  single-match results, pattern-order `preg_match_all()` results, and
+  set-order rows, including `PREG_OFFSET_CAPTURE` and
+  `PREG_UNMATCHED_AS_NULL`. The bounded `n` modifier is accepted for
+  no-auto-capture result shaping, suppressing unnamed captures while retaining
+  named captures. Focused proof covers the new Rust regression plus selected
+  ext/pcre PHPT rows:
+  `ext/pcre/tests/match_flags2.phpt`, `bug34790.phpt`, `bug61780_2.phpt`,
+  `gh17122.phpt`, and `preg_match_non_capture.phpt`. Duplicate named groups
+  despite ignored `J`, unsupported Rust-regex PCRE constructs, lookaround/
+  backreference breadth beyond existing translations, locale-sensitive
+  behavior, full Unicode property/case-folding parity, exact PCRE warning text
+  and offsets, non-direct matches outputs, broad coercion edge cases, and
+  native lowering remain unsupported.
+
 ## 2026-05-27
 
 Implemented:

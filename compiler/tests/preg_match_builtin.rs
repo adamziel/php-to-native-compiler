@@ -222,6 +222,122 @@ echo preg_match('/wp/i', 'WP');
 }
 
 #[test]
+fn preg_match_preserves_named_capture_order_and_no_auto_capture_modifier() {
+    let execution = run_source(
+        r#"<?php
+preg_match('/(?P<first>.)(x)(?P<tail>\S+)/', 'zxax', $match, PREG_OFFSET_CAPTURE);
+var_export($match);
+echo "\n--\n";
+preg_match_all('/(?<a>4)?(?<b>2)?\d/', '123456', $all, PREG_UNMATCHED_AS_NULL);
+var_export($all);
+echo "\n--\n";
+preg_match_all('/(?<a>4)?(?<b>2)?\d/', '123456', $set, PREG_SET_ORDER | PREG_UNMATCHED_AS_NULL);
+var_export($set[1]);
+echo "\n--\n";
+preg_match('/.(.)./n', 'abc', $auto);
+var_export($auto);
+echo "\n";
+preg_match('/.(?P<named>.)./n', 'abc', $named);
+var_export($named);
+echo "\n";
+"#,
+    )
+    .unwrap();
+
+    let expected = concat!(
+        "array (\n",
+        "  0 => \n",
+        "  array (\n",
+        "    0 => 'zxax',\n",
+        "    1 => 0,\n",
+        "  ),\n",
+        "  'first' => \n",
+        "  array (\n",
+        "    0 => 'z',\n",
+        "    1 => 0,\n",
+        "  ),\n",
+        "  1 => \n",
+        "  array (\n",
+        "    0 => 'z',\n",
+        "    1 => 0,\n",
+        "  ),\n",
+        "  2 => \n",
+        "  array (\n",
+        "    0 => 'x',\n",
+        "    1 => 1,\n",
+        "  ),\n",
+        "  'tail' => \n",
+        "  array (\n",
+        "    0 => 'ax',\n",
+        "    1 => 2,\n",
+        "  ),\n",
+        "  3 => \n",
+        "  array (\n",
+        "    0 => 'ax',\n",
+        "    1 => 2,\n",
+        "  ),\n",
+        ")\n",
+        "--\n",
+        "array (\n",
+        "  0 => \n",
+        "  array (\n",
+        "    0 => '1',\n",
+        "    1 => '23',\n",
+        "    2 => '45',\n",
+        "    3 => '6',\n",
+        "  ),\n",
+        "  'a' => \n",
+        "  array (\n",
+        "    0 => NULL,\n",
+        "    1 => NULL,\n",
+        "    2 => '4',\n",
+        "    3 => NULL,\n",
+        "  ),\n",
+        "  1 => \n",
+        "  array (\n",
+        "    0 => NULL,\n",
+        "    1 => NULL,\n",
+        "    2 => '4',\n",
+        "    3 => NULL,\n",
+        "  ),\n",
+        "  'b' => \n",
+        "  array (\n",
+        "    0 => NULL,\n",
+        "    1 => '2',\n",
+        "    2 => NULL,\n",
+        "    3 => NULL,\n",
+        "  ),\n",
+        "  2 => \n",
+        "  array (\n",
+        "    0 => NULL,\n",
+        "    1 => '2',\n",
+        "    2 => NULL,\n",
+        "    3 => NULL,\n",
+        "  ),\n",
+        ")\n",
+        "--\n",
+        "array (\n",
+        "  0 => '23',\n",
+        "  'a' => NULL,\n",
+        "  1 => NULL,\n",
+        "  'b' => '2',\n",
+        "  2 => '2',\n",
+        ")\n",
+        "--\n",
+        "array (\n",
+        "  0 => 'abc',\n",
+        ")\n",
+        "array (\n",
+        "  0 => 'abc',\n",
+        "  'named' => 'b',\n",
+        "  1 => 'b',\n",
+        ")\n",
+    );
+    assert_eq!(execution.stdout, expected);
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn preg_match_handles_backtrack_offsets_utf8_and_trailing_unmatched_captures() {
     let execution = run_source(
         r#"<?php
