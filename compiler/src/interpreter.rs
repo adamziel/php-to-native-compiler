@@ -47893,6 +47893,14 @@ impl Interpreter {
                     self.reflection_class_is_subclass_of(&state, &target),
                 ))
             }
+            "implementsinterface" => {
+                expect_expr_arity("ReflectionClass::implementsInterface", args.len(), 1, span)?;
+                let value = self.evaluate(&args[0], caller_scope)?;
+                let target = self.resolve_reflection_interface_argument(value, span)?;
+                Ok(Value::Bool(
+                    self.reflection_class_implements_interface(&state, &target),
+                ))
+            }
             "isiterable" | "isiterateable" => {
                 let method = if method_name.eq_ignore_ascii_case("isIterable") {
                     "ReflectionClass::isIterable"
@@ -48396,6 +48404,102 @@ impl Interpreter {
                 format!("target {name} must name a declared class, interface, or trait"),
             ),
         ))
+    }
+
+    fn resolve_reflection_interface_argument(
+        &mut self,
+        value: Value,
+        span: Span,
+    ) -> CompileResult<ReflectionClassState> {
+        match value {
+            Value::Object(object) if object.is_instance_of_class_name("ReflectionClass") => {
+                let state = self
+                    .reflection_classes
+                    .get(&object.id())
+                    .cloned()
+                    .ok_or_else(|| {
+                        runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "ReflectionClass::implementsInterface",
+                                "missing ReflectionClass runtime metadata",
+                            ),
+                        )
+                    })?;
+                if state.kind != ReflectionClassKind::Interface {
+                    return Err(reflection_exception_error(
+                        span,
+                        format!("{} is not an interface", state.name),
+                    ));
+                }
+                Ok(state)
+            }
+            Value::Null => {
+                self.emit_display_diagnostic(
+                    "Deprecated",
+                    PHP_E_DEPRECATED,
+                    "ReflectionClass::implementsInterface(): Passing null to parameter #1 ($interface) of type ReflectionClass|string is deprecated",
+                    span,
+                )?;
+                self.resolve_reflection_interface_name("", span)
+            }
+            other => {
+                let name = reflection_scalar_name_argument(other, span)?;
+                self.resolve_reflection_interface_name(&name, span)
+            }
+        }
+    }
+
+    fn resolve_reflection_interface_name(
+        &self,
+        name: &str,
+        span: Span,
+    ) -> CompileResult<ReflectionClassState> {
+        if let Some(interface) = self.interface_lookup.get(&name.to_ascii_lowercase()) {
+            return Ok(self.reflection_class_state_for(
+                interface.name.clone(),
+                ReflectionClassKind::Interface,
+                None,
+            ));
+        }
+        if let Some(class) = self.classes.lookup_class(name) {
+            return Err(reflection_exception_error(
+                span,
+                format!("{} is not an interface", class.name()),
+            ));
+        }
+        if let Some(trait_decl) = self.trait_lookup.get(&name.to_ascii_lowercase()) {
+            return Err(reflection_exception_error(
+                span,
+                format!("{} is not an interface", trait_decl.name),
+            ));
+        }
+        Err(reflection_exception_error(
+            span,
+            format!("Interface \"{name}\" does not exist"),
+        ))
+    }
+
+    fn reflection_class_implements_interface(
+        &self,
+        state: &ReflectionClassState,
+        interface: &ReflectionClassState,
+    ) -> bool {
+        match state.kind {
+            ReflectionClassKind::Class => {
+                state.class_id.is_some_and(|class_id| {
+                    self.class_implements_or_matches_core_interface(class_id, &interface.name)
+                }) || self
+                    .reflection_class_interface_names(state)
+                    .iter()
+                    .any(|name| name.eq_ignore_ascii_case(&interface.name))
+            }
+            ReflectionClassKind::Interface => {
+                state.name.eq_ignore_ascii_case(&interface.name)
+                    || self.interface_extends_interface(&state.name, &interface.name)
+            }
+            ReflectionClassKind::Trait => false,
+        }
     }
 
     fn reflection_class_is_subclass_of(
@@ -49569,6 +49673,12 @@ impl Interpreter {
                         .unwrap_or(Value::Null));
                 }
                 Ok(Value::String(state.name))
+            }
+            "isvariadic" => {
+                expect_expr_arity("ReflectionFunction::isVariadic", args.len(), 0, span)?;
+                Ok(Value::Bool(
+                    state.params.iter().any(|param| param.is_variadic),
+                ))
             }
             "hasreturntype" => {
                 expect_expr_arity("ReflectionFunction::hasReturnType", args.len(), 0, span)?;
@@ -102494,6 +102604,11 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
         return Some(("TypeError", message));
     }
 
+    if let Some(message) = reflection_class_implements_interface_argument_count_error_message(error)
+    {
+        return Some(("ArgumentCountError", message));
+    }
+
     if let Some(message) = array_walk_callback_too_few_arguments_message(error) {
         return Some(("TypeError", message));
     }
@@ -103216,6 +103331,25 @@ fn reflection_constructor_argument_count_error_message(error: &Diagnostic) -> Op
         }
     }
     None
+}
+
+fn reflection_class_implements_interface_argument_count_error_message(
+    error: &Diagnostic,
+) -> Option<String> {
+    if error.phase != Phase::Runtime {
+        return None;
+    }
+    let actual = error
+        .message
+        .strip_prefix("arity mismatch for ReflectionClass::implementsInterface(): expected 1 argument(s), got ")?
+        .parse::<usize>()
+        .ok()?;
+    if actual == 1 {
+        return None;
+    }
+    Some(format!(
+        "ReflectionClass::implementsInterface() expects exactly 1 argument, {actual} given"
+    ))
 }
 
 fn user_function_too_few_arguments_message(error: &Diagnostic) -> Option<String> {

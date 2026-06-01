@@ -6914,6 +6914,33 @@ type_line("raw-return", (new ReflectionFunction("raw_hook"))->getReturnType());
 }
 
 #[test]
+fn reflection_function_reports_variadic_metadata() {
+    let execution = run_source(
+        r#"<?php
+function plain($value) {}
+function all_variadic(...$values) {}
+function tail_variadic($first, ...$rest) {}
+
+function yn($value) {
+    return $value ? "1" : "0";
+}
+
+foreach (array("plain", "all_variadic", "tail_variadic") as $name) {
+    $function = new ReflectionFunction($name);
+    echo $name, "|", yn($function->isVariadic()), "|", $function->getNumberOfParameters(), "|", $function->getNumberOfRequiredParameters(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "plain|0|1|1\nall_variadic|1|1|0\ntail_variadic|1|2|1\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reflection_function_reports_namespace_identity_and_extension_metadata() {
     let execution = run_source(
         r#"<?php
@@ -11387,6 +11414,54 @@ echo "iterable|", yn($plugin->isIterable()), yn($plugin->isIterateable()), yn($p
     assert_eq!(
         execution.stdout,
         "names|1|App\\Meta|Plugin\nmods|64|10|32|01\norigin|10|01\nsubclass|110\ninstance|100\niterable|110"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reflection_class_reports_implements_interface_metadata() {
+    let execution = run_source(
+        r#"<?php
+interface I1 {}
+interface I2 extends I1 {}
+class A implements I1 {}
+class B extends A {}
+class C implements I2 {}
+class Plain {}
+
+function yn($value) {
+    return $value ? "1" : "0";
+}
+
+function probe($child, $target) {
+    $childReflection = new ReflectionClass($child);
+    $targetReflection = new ReflectionClass($target);
+    echo $child, ">", $target, "|", yn($childReflection->implementsInterface($targetReflection)), yn($childReflection->implementsInterface($target)), "\n";
+}
+
+probe("A", "I1");
+probe("A", "I2");
+probe("B", "I1");
+probe("C", "I1");
+probe("C", "I2");
+probe("I1", "I1");
+probe("I2", "I1");
+probe("I1", "I2");
+
+foreach (array("A", "Plain", "2") as $target) {
+    try {
+        (new ReflectionClass("A"))->implementsInterface($target);
+    } catch (ReflectionException $e) {
+        echo "error|", $e->getMessage(), "\n";
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "A>I1|11\nA>I2|00\nB>I1|11\nC>I1|11\nC>I2|11\nI1>I1|11\nI2>I1|11\nI1>I2|00\nerror|A is not an interface\nerror|Plain is not an interface\nerror|Interface \"2\" does not exist\n"
     );
     assert_eq!(execution.exit_code, 0);
 }

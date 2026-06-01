@@ -8987,6 +8987,11 @@
   values are bounded `ReflectionClass` metadata objects for implemented or
   extended user interfaces in the current metadata tables; exact engine
   ordering beyond the covered sorted PHPT shapes remains unsupported.
+  `implementsInterface($interface)` accepts a `ReflectionClass` object or
+  string-compatible scalar interface name, rejects class/trait targets with a
+  `ReflectionException`, reports declared user-class implementations through
+  inherited class metadata and parent interfaces, and reports declared
+  interface self/parent-interface matches.
   `getConstructor()` returns a bounded `ReflectionMethod` metadata object for
   a declared or inherited `__construct()` method on current user classes, and
   `null` when no constructor exists in the class chain.
@@ -9058,7 +9063,8 @@
   `getName()`, `getFileName()`, `getStartLine()`, `getEndLine()`,
   `getDocComment()`, `getParameters()`, `getNumberOfParameters()`,
   `getNumberOfRequiredParameters()`, `hasReturnType()`, `getReturnType()`,
-  `returnsReference()`, and `__toString()` over parsed user-function metadata.
+  `returnsReference()`, `isVariadic()`, and `__toString()` over parsed
+  user-function metadata.
   `getFileName()`
   returns the current CLI/fixture source path for declarations loaded from a
   known file and `false` for source strings without one; line numbers come from
@@ -10856,7 +10862,8 @@
   declared user classes, interfaces, and traits. The executable method subset
   is `getName()`, `getShortName()`, `isInterface()`, `isTrait()`,
   `isInstantiable()`, `getParentClass()`, `getInterfaceNames()`,
-  `getInterfaces()`, `getTraitNames()`, `getTraits()`, `hasMethod($name)`, `getFileName()`,
+  `getInterfaces()`, `implementsInterface($interface)`, `getTraitNames()`,
+  `getTraits()`, `getConstructor()`, `hasMethod($name)`, `getFileName()`,
   `getStartLine()`, `getEndLine()`, `getDocComment()`,
   `getMethod($name)`, `getMethods([$filter])`, `hasProperty($name)`,
   `getProperty($name)`, and
@@ -10876,8 +10883,8 @@
   `function_exists`, `get_current_user`, `getmypid`, and `php_sapi_name`. Closure metadata is supported for
   current closure values. The supported
   metadata methods are the name, file/start/end/doc-comment, parameter-list,
-  return-type, by-reference-return, and stringification methods documented
-  above.
+  return-type, by-reference-return, variadic predicate, and stringification
+  methods documented above.
   `ReflectionParameter` currently supports only method parameters from that
   same metadata slice, declared user-function parameters named by string,
   supported internal-function parameters, and current closure parameters.
@@ -10919,6 +10926,9 @@
   `ReflectionClass::getMethod()`/`getMethods()` exception objects/text for
   missing methods, non-string names, non-int filter arguments, and exact
   `getMethods()` ordering for adapted trait method compositions,
+  `ReflectionClass::implementsInterface()` autoload/import alias expansion,
+  internal/core interface catalog parity beyond currently declared interface
+  metadata, and object arguments other than bounded `ReflectionClass`,
   recursive trait conflict/adaptation edge cases, exact `ReflectionException`
   object construction, throwing, catching, messages/codes/stack traces, and
   missing-reflection-member exception text, namespace/import alias expansion

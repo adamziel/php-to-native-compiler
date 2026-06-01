@@ -1,5 +1,27 @@
 # Progress Log
 
+## 2026-06-01
+
+Implemented:
+
+- Added a bounded reflection metadata slice for
+  `ReflectionClass::implementsInterface()` and
+  `ReflectionFunction::isVariadic()`. `implementsInterface()` now accepts a
+  `ReflectionClass` object or string-compatible scalar interface name, reports
+  declared user-class interface implementations through inherited class and
+  parent-interface metadata, reports declared interface self/parent matches,
+  and preserves the PHPT-covered argument-count, `null` deprecation,
+  non-interface, and missing-interface diagnostics. `isVariadic()` reports
+  function-level variadic metadata from the reflected parameter table for
+  declared user functions and the existing bounded reflection-function target
+  state. Focused proof covers Rust reflection metadata tests and the selected
+  PHPT rows `ReflectionClass_implementsInterface_001.phpt` and
+  `ReflectionFunction_isVariadic_basic.phpt`. Autoload/import expansion for
+  `implementsInterface()` target names, internal/core interface catalog
+  parity beyond currently declared metadata, object arguments other than
+  bounded `ReflectionClass`, `ReflectionFunction::isGenerator()`,
+  `ReflectionFunction::isDisabled()`, and native lowering remain unsupported.
+
 ## 2026-05-27
 
 Implemented:
