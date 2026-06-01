@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Worker string slice: added bounded traditional `metaphone()` support for
+  scalar/null string-convertible byte strings with optional non-negative
+  integer-compatible `max_phonemes`, catchable negative-limit `ValueError`,
+  builtin discovery, reflection metadata, and native function-existence
+  membership. Focused Rust passed `5 / 5` in
+  `string_algorithm_builtins`; `cargo build -p phpc --bin phpc` passed; and
+  selected PHPT proof passed `3 / 3` for
+  `ext/standard/tests/strings/metaphone.phpt`,
+  `ext/standard/tests/strings/bug44242.phpt`, and
+  `ext/standard/tests/strings/bug47443.phpt`. Unsupported edges remain
+  locale/Unicode alphabetic handling, object/resource operands, exact
+  embedded-NUL/binary parity beyond the PHP-compatible C-string boundary,
+  exact diagnostics outside the covered negative-limit path, references/COW,
+  and native lowering.
+
 - Added a focused math/general worker slice for bounded `pow()` parity.
   `pow()` now accepts covered int-like/null/bool/numeric-string operands on
   either side without the prior artificial `u32` exponent cap, preserves

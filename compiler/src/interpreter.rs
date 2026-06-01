@@ -84660,6 +84660,7 @@ impl Interpreter {
             "levenshtein" => call_levenshtein(&args, span),
             "similar_text" => call_similar_text(&args, span),
             "soundex" => call_soundex(&args, span),
+            "metaphone" => call_metaphone(&args, span),
             "count_chars" => call_count_chars(&args, span),
             "base64_encode" => call_base64_encode(&args, span),
             "base64_decode" => call_base64_decode(&args, span),
@@ -100625,6 +100626,13 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
             "string",
             vec![reflection_internal_param("string", "string")],
         ),
+        "metaphone" => (
+            "string",
+            vec![
+                reflection_internal_param("string", "string"),
+                reflection_internal_optional_int_param("max_phonemes", 0),
+            ],
+        ),
         "count_chars" => (
             "array|string",
             vec![
@@ -104824,6 +104832,7 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
         | ("hash()", "Argument #1 ($algo) must be a valid hashing algorithm")
         | ("parse_str()", "Argument #1 ($string) must not contain any null bytes")
         | ("strpbrk()", "Argument #2 ($characters) must be a non-empty string")
+        | ("metaphone()", "Argument #2 ($max_phonemes) must be greater than or equal to 0")
         | ("substr_count()", "Argument #2 ($needle) must not be empty")
         | (
             "substr_count()",
@@ -105516,6 +105525,7 @@ fn is_builtin(name: &str) -> bool {
             | "levenshtein"
             | "similar_text"
             | "soundex"
+            | "metaphone"
             | "count_chars"
             | "base64_encode"
             | "base64_decode"
@@ -116597,6 +116607,305 @@ fn php_soundex_code(byte: u8) -> u8 {
         b'H' | b'W' => 7,
         _ => 0,
     }
+}
+
+fn call_metaphone(args: &[Value], span: Span) -> CompileResult<Value> {
+    if !(1..=2).contains(&args.len()) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "metaphone()",
+                ArityExpectation::Between { min: 1, max: 2 },
+                args.len(),
+            ),
+        ));
+    }
+
+    let value = string_compare_argument_bytes("metaphone()", "string", &args[0], span)?;
+    let max_phonemes = match args.get(1) {
+        Some(value) => php_internal_int_argument("metaphone()", 2, "max_phonemes", value, span)?,
+        None => 0,
+    };
+    if max_phonemes < 0 {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "metaphone()",
+                "Argument #2 ($max_phonemes) must be greater than or equal to 0",
+            ),
+        ));
+    }
+
+    Ok(Value::String(php_metaphone_bytes(
+        &value,
+        usize::try_from(max_phonemes).unwrap_or(usize::MAX),
+    )))
+}
+
+fn php_metaphone_bytes(bytes: &[u8], max_phonemes: usize) -> String {
+    let mut word_index = 0_usize;
+    let mut output = String::new();
+
+    while !metaphone_is_alpha(metaphone_raw_at(bytes, word_index)) {
+        if metaphone_raw_at(bytes, word_index) == 0 {
+            return output;
+        }
+        word_index += 1;
+    }
+
+    let first = metaphone_upper_at(bytes, word_index);
+    match first {
+        b'A' => {
+            if metaphone_next(bytes, word_index) == b'E' {
+                output.push('E');
+                word_index += 2;
+            } else {
+                output.push('A');
+                word_index += 1;
+            }
+        }
+        b'G' | b'K' | b'P' => {
+            if metaphone_next(bytes, word_index) == b'N' {
+                output.push('N');
+                word_index += 2;
+            }
+        }
+        b'W' => {
+            let next = metaphone_next(bytes, word_index);
+            if next == b'R' {
+                output.push('R');
+                word_index += 2;
+            } else if next == b'H' || metaphone_is_vowel(next) {
+                output.push('W');
+                word_index += 2;
+            }
+        }
+        b'X' => {
+            output.push('S');
+            word_index += 1;
+        }
+        b'E' | b'I' | b'O' | b'U' => {
+            output.push(first as char);
+            word_index += 1;
+        }
+        _ => {}
+    }
+
+    while metaphone_raw_at(bytes, word_index) != 0
+        && (max_phonemes == 0 || output.len() < max_phonemes)
+    {
+        let raw = metaphone_raw_at(bytes, word_index);
+        if !metaphone_is_alpha(raw) {
+            word_index += 1;
+            continue;
+        }
+
+        let current = raw.to_ascii_uppercase();
+        let previous = metaphone_look_back(bytes, word_index, 1);
+        if current == previous && current != b'C' {
+            word_index += 1;
+            continue;
+        }
+
+        let mut skip = 0_usize;
+        match current {
+            b'B' => {
+                if previous != b'M' {
+                    output.push('B');
+                }
+            }
+            b'C' => {
+                let next = metaphone_next(bytes, word_index);
+                if metaphone_makes_soft(next) {
+                    if next == b'I' && metaphone_after_next(bytes, word_index) == b'A' {
+                        output.push('X');
+                    } else if previous == b'S' {
+                        // SC[IEY] is handled by S.
+                    } else {
+                        output.push('S');
+                    }
+                } else if next == b'H' {
+                    output.push('X');
+                    skip += 1;
+                } else {
+                    output.push('K');
+                }
+            }
+            b'D' => {
+                if metaphone_next(bytes, word_index) == b'G'
+                    && metaphone_makes_soft(metaphone_after_next(bytes, word_index))
+                {
+                    output.push('J');
+                    skip += 1;
+                } else {
+                    output.push('T');
+                }
+            }
+            b'G' => {
+                let next = metaphone_next(bytes, word_index);
+                if next == b'H' {
+                    if !(metaphone_no_gh_to_f(metaphone_look_back(bytes, word_index, 3))
+                        || metaphone_look_back(bytes, word_index, 4) == b'H')
+                    {
+                        output.push('F');
+                        skip += 1;
+                    }
+                } else if next == b'N' {
+                    let after_next = metaphone_after_next(bytes, word_index);
+                    if metaphone_is_break(after_next)
+                        || (after_next == b'E'
+                            && metaphone_look_ahead(bytes, word_index, 3) == b'D')
+                    {
+                        // Silent GN/GNED.
+                    } else {
+                        output.push('K');
+                    }
+                } else if metaphone_makes_soft(next) && previous != b'G' {
+                    output.push('J');
+                } else {
+                    output.push('K');
+                }
+            }
+            b'H' => {
+                if metaphone_is_vowel(metaphone_next(bytes, word_index))
+                    && !metaphone_affects_h(previous)
+                {
+                    output.push('H');
+                }
+            }
+            b'K' => {
+                if previous != b'C' {
+                    output.push('K');
+                }
+            }
+            b'P' => {
+                if metaphone_next(bytes, word_index) == b'H' {
+                    output.push('F');
+                } else {
+                    output.push('P');
+                }
+            }
+            b'Q' => output.push('K'),
+            b'S' => {
+                let next = metaphone_next(bytes, word_index);
+                let after_next = metaphone_after_next(bytes, word_index);
+                if next == b'I' && (after_next == b'O' || after_next == b'A') {
+                    output.push('X');
+                } else if next == b'H' {
+                    output.push('X');
+                    skip += 1;
+                } else {
+                    output.push('S');
+                }
+            }
+            b'T' => {
+                let next = metaphone_next(bytes, word_index);
+                let after_next = metaphone_after_next(bytes, word_index);
+                if next == b'I' && (after_next == b'O' || after_next == b'A') {
+                    output.push('X');
+                } else if next == b'H' {
+                    output.push('0');
+                    skip += 1;
+                } else if !(next == b'C' && after_next == b'H') {
+                    output.push('T');
+                }
+            }
+            b'V' => output.push('F'),
+            b'W' => {
+                if metaphone_is_vowel(metaphone_next(bytes, word_index)) {
+                    output.push('W');
+                }
+            }
+            b'X' => {
+                output.push('K');
+                output.push('S');
+            }
+            b'Y' => {
+                if metaphone_is_vowel(metaphone_next(bytes, word_index)) {
+                    output.push('Y');
+                }
+            }
+            b'Z' => output.push('S'),
+            b'F' | b'J' | b'L' | b'M' | b'N' | b'R' => output.push(current as char),
+            _ => {}
+        }
+
+        word_index += skip + 1;
+    }
+
+    output
+}
+
+fn metaphone_raw_at(bytes: &[u8], index: usize) -> u8 {
+    bytes.get(index).copied().unwrap_or(0)
+}
+
+fn metaphone_upper_at(bytes: &[u8], index: usize) -> u8 {
+    metaphone_raw_at(bytes, index).to_ascii_uppercase()
+}
+
+fn metaphone_next(bytes: &[u8], index: usize) -> u8 {
+    metaphone_upper_at(bytes, index + 1)
+}
+
+fn metaphone_after_next(bytes: &[u8], index: usize) -> u8 {
+    if metaphone_raw_at(bytes, index + 1) == 0 {
+        0
+    } else {
+        metaphone_upper_at(bytes, index + 2)
+    }
+}
+
+fn metaphone_look_back(bytes: &[u8], index: usize, count: usize) -> u8 {
+    if index >= count {
+        metaphone_upper_at(bytes, index - count)
+    } else {
+        0
+    }
+}
+
+fn metaphone_look_ahead(bytes: &[u8], index: usize, count: usize) -> u8 {
+    let mut offset = 0_usize;
+    while metaphone_raw_at(bytes, index + offset) != 0 && offset < count {
+        offset += 1;
+    }
+    metaphone_upper_at(bytes, index + offset)
+}
+
+fn metaphone_code(byte: u8) -> u8 {
+    match byte {
+        b'A' | b'O' | b'U' => 1,
+        b'E' | b'I' => 9,
+        b'F' | b'J' | b'L' | b'M' | b'N' | b'R' => 2,
+        b'C' | b'G' | b'P' | b'S' | b'T' => 4,
+        b'Y' => 8,
+        b'B' | b'D' | b'H' => 16,
+        _ => 0,
+    }
+}
+
+fn metaphone_is_alpha(byte: u8) -> bool {
+    byte.is_ascii_alphabetic()
+}
+
+fn metaphone_is_vowel(byte: u8) -> bool {
+    metaphone_code(byte) & 1 != 0
+}
+
+fn metaphone_affects_h(byte: u8) -> bool {
+    metaphone_code(byte) & 4 != 0
+}
+
+fn metaphone_makes_soft(byte: u8) -> bool {
+    metaphone_code(byte) & 8 != 0
+}
+
+fn metaphone_no_gh_to_f(byte: u8) -> bool {
+    metaphone_code(byte) & 16 != 0
+}
+
+fn metaphone_is_break(byte: u8) -> bool {
+    !metaphone_is_alpha(byte)
 }
 
 fn call_count_chars(args: &[Value], span: Span) -> CompileResult<Value> {
