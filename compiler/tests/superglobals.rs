@@ -1023,3 +1023,21 @@ fn other_superglobals_remain_ordinary_missing_variables_for_now() {
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);
 }
+
+#[test]
+fn unset_initialized_request_superglobal_reports_global_variable_warning() {
+    let execution = run_source(
+        r#"<?php
+unset($_SERVER);
+var_dump($_SERVER);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "Warning: Undefined global variable $_SERVER in Command line code on line 3\nNULL\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}

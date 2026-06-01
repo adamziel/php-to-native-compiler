@@ -1,13 +1,13 @@
 # PHP Native Compiler PHPT Progress
 
-Updated: 2026-06-01 19:55 CEST
+Updated: 2026-06-01 20:15 CEST
 
 Primary/public branch: `origin/master`
 Latest source-bearing public head:
-`43262ab5f81fe293a49829c9c270137be98f5e6d checkpoint: repair PHPT gate regressions`
+`1fe2b233a9d433e0980289fc93a19bb47f71af7c checkpoint: repair PHPT regressions and add hash session rows`
 
 Semantic source for current published score:
-`43262ab5f81fe293a49829c9c270137be98f5e6d checkpoint: repair PHPT gate regressions`
+`1fe2b233a9d433e0980289fc93a19bb47f71af7c checkpoint: repair PHPT regressions and add hash session rows`
 
 Public PHPT metric:
 
@@ -16,19 +16,29 @@ Public PHPT metric:
 Pinned denominator: `20294` total pinned runnable php-src PHPTs. Raw runner
 denominators that exclude BORKED rows are not public progress.
 
-Current public score: **5363 / 20294 pinned runnable PHPTs = 26.43%**.
+Current public score: **5481 / 20294 pinned runnable PHPTs = 27.01%**.
 
-Local supervisor note: checkpoint `025c1325` completed the full pinned PHPT
-gate with raw aggregate score `5451 / 20294 = 26.86%`, but publication was
-blocked by two latest-pass regressions:
-`array_keys_variation_005.phpt` and `bug70720.phpt`. Current source repairs
-both regressions and adds nine more selected PHPT wins across JSON/hash/session
-and cookie validation. Focused Rust passed for `json_builtins`,
-`hash_builtin`, `header_builtin`, `session_builtin`, `array_keys`, and
-`strip_tags_builtin`; `cargo build -p phpc --bin phpc` passed; selected PHPT
-proof passed `11 / 11`. This is not a public score update until checkpoint
-validation and another full pinned PHPT gate complete with zero pass
-regressions.
+Accepted public gate: checkpoint `1fe2b233` completed the full pinned PHPT
+gate with `5481 / 20294 = 27.01%` and zero latest-published PASS regressions
+against the `43262ab5` baseline. The gate repaired the two regressions that
+blocked checkpoint `025c1325` (`array_keys_variation_005.phpt` and
+`bug70720.phpt`) and kept the JSON/hash/session/cookie validation wins. Full
+gate evidence is in
+`state/logs/phpt-full-batch024-repair-hash-session-20260601T180507Z-php-src-f97ff59-source-1fe2b233`;
+the aggregate had `5481` passed rows, `5477` normalized current passes, and
+`0` PASS regressions. The lone invalid-marker grep hit is the known expected
+socket `Permission denied` warning in `run-tests.log`, not a publication
+blocker.
+
+Local supervisor note: the next post-public focused source batch is verified
+for 13 selected PHPT rows across unset initialized request superglobal roots,
+`preg_quote()` NUL/hash escaping, `unserialize()` extra-data and signed-length
+diagnostics, `deg2rad()`/`rad2deg()` precision-sensitive operation order, and
+`gettype()`/direct-variable `settype()` error and side-effect behavior.
+Focused Rust passed `102 / 102`, `cargo build -p phpc --bin phpc` passed, and
+selected PHPT proof passed `14 / 14` including the PCRE guard row. This is not
+a public score update until checkpoint validation and a full pinned PHPT gate
+complete.
 
 Local supervisor note: the next worker-integrated focused source batch covers
 8 additional target PHPT rows: `substr.phpt`, `fread_error.phpt`,

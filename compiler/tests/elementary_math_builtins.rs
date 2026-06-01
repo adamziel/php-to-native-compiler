@@ -119,3 +119,32 @@ echo function_exists("ceil") && function_exists("floor") && function_exists("sqr
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);
 }
+
+#[test]
+fn angle_conversions_match_php_operation_order_for_precision_edges() {
+    let execution = run_source(
+        r#"<?php
+var_dump(deg2rad(23));
+var_dump(deg2rad("23.45"));
+var_dump(deg2rad(9223372034707292160));
+var_dump(rad2deg(9223372034707292160));
+var_dump(rad2deg(-2147483649));
+var_dump(rad2deg(4294967295));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "float(0.40142572795869574)\n",
+            "float(0.40927970959267024)\n",
+            "float(1.6097821014201098E+17)\n",
+            "float(5.284602904677184E+20)\n",
+            "float(-123041749661.05348)\n",
+            "float(246083499150.21957)\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}

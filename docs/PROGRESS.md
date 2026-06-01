@@ -4,6 +4,40 @@
 
 Implemented:
 
+- Integrated the next verified focused score batch after the `1fe2b233` public
+  gate. The interpreter now covers PHP-shaped warnings for reads of explicitly
+  unset initialized request superglobal roots, `preg_quote()` NUL and `#`
+  escaping parity for the reached PCRE rows, `unserialize()` extra-data and
+  signed-length diagnostics, PHP operation-order precision for `deg2rad()` and
+  `rad2deg()`, and the reached `gettype()` / direct-variable `settype()` error
+  and side-effect rows. Focused Rust passed `102 / 102` across `superglobals`,
+  `preg_quote_builtin`, `preg_match_builtin`, `preg_split_builtin`,
+  `serialize_builtin`, `elementary_math_builtins`, `scalar_casts`, and
+  `type_introspection_builtins`; `cargo build -p phpc --bin phpc` passed; and
+  selected PHPT proof passed `14 / 14` for `globals_001.phpt`,
+  `globals_002.phpt`, `globals_003.phpt`, `globals_004.phpt`,
+  `bug26927.phpt`, `bug75355.phpt`, `preg_quote_basic.phpt`,
+  `unserialize_extra_data_001.phpt`, `invalid_signs_in_lengths.phpt`,
+  `deg2rad_basiclong_64bit.phpt`, `deg2rad_variation.phpt`,
+  `rad2deg_basiclong_64bit.phpt`, `gettype_settype_error.phpt`, and
+  `type.phpt`. Unsupported edges remain broad SAPI/superglobal parity, full
+  PCRE escape and regex semantics, object/reference serialization, exact
+  malformed-input offsets outside the covered rows, broad scalar/settype
+  lvalues, complete numeric/libm parity, references/COW, and native lowering.
+
+- Accepted checkpoint `1fe2b233` as the current public PHPT score source after
+  a full pinned php-src gate completed with zero latest-published PASS
+  regressions. The public-comparable score is now `5481 / 20294 = 27.01%`,
+  up from `5363 / 20294 = 26.43%` at checkpoint `43262ab5` and from the
+  blocked raw `5451 / 20294 = 26.86%` checkpoint `025c1325` gate. The accepted
+  gate evidence is
+  `state/logs/phpt-full-batch024-repair-hash-session-20260601T180507Z-php-src-f97ff59-source-1fe2b233`;
+  aggregate counts were `5481` passed, `13386` failed, `2761` skipped, `15`
+  xfailed, `687` borked, and `1` warned. The normalized PASS regression
+  comparison was `5477` current passes vs. `5359` baseline passes with `0`
+  regressions. The only invalid-marker grep hit was the known expected socket
+  `Permission denied` warning line, not a new proof blocker.
+
 - Integrated the next focused repair/score batch after the `025c1325`
   checkpoint gate exposed two PASS regressions. The current source now restores
   `ext/standard/tests/array/array_keys_variation_005.phpt` by allowing

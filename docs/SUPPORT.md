@@ -2804,6 +2804,11 @@
   `variables_order`, host SAPI imports, `$GLOBALS` aliasing, references,
   copy-on-write, exact PHP warnings, permission/TOCTOU fidelity, and native
   lowering remain unsupported.
+  If an initialized request superglobal root is explicitly unset, later direct
+  reads and by-value call-argument reads report PHP's undefined-global warning
+  and recover as `null` for `$_SERVER`, `$_COOKIE`, `$_GET`, `$_POST`,
+  `$_REQUEST`, and `$_FILES`; other read/write shapes remain outside this
+  bounded warning slice.
 - `$_SESSION` is not seeded at startup, matching the current bounded session
   lifecycle. `session_start()` materializes it as an empty ordered array in the
   root symbol table when no unbuffered output has started, and direct
@@ -3277,7 +3282,7 @@
   `mb_strlen`, `mb_substr`, `mb_strpos`, `mb_stripos`, `mb_strrpos`, `mb_strripos`,
   `mb_strtolower`, `mb_strtoupper`, `similar_text`,
   `convert_uuencode`, `convert_uudecode`,
-  `preg_match`, `preg_last_error`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `str_ireplace`, `substr_replace`, `substr_compare`, `substr_count`, `str_getcsv`, `parse_str`, `http_build_query`,
+  `preg_match`, `preg_last_error`, `preg_quote`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `str_ireplace`, `substr_replace`, `substr_compare`, `substr_count`, `str_getcsv`, `parse_str`, `http_build_query`,
   `escapeshellarg`, `highlight_string`, `highlight_file`, `php_strip_whitespace`, `error_reporting`, `set_time_limit`, `usleep`, `ignore_user_abort`, `printf`, `fprintf`, `sprintf`, `vsprintf`, `vprintf`, `vfprintf`, `call_user_func`, `call_user_func_array`,
   `implode`, `basename`, `dirname`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`,
   `file_put_contents`, `readfile`, `unlink`, `mkdir`, `rmdir`, `copy`, `rename`, `chdir`, `scandir`, `stat`, `lstat`, `fileperms`, `chmod`, `chown`, `chgrp`,
@@ -3364,7 +3369,9 @@
   `spl_autoload_functions`, `spl_autoload_unregister`, `spl_autoload_call`,
   `var_dump`, and `print_r`;
   `gettype` returns PHP legacy type names for the current value model
-  (`NULL`, `boolean`, `integer`, `double`, `string`, `array`, and `object`);
+  (`NULL`, `boolean`, `integer`, `double`, `string`, `array`, `object`,
+  `resource`, and `resource (closed)` for the current supported stream
+  resource model);
   `is_null`, `is_bool`, `is_int`/`is_integer`/`is_long`,
   `is_float`/`is_double`, `is_string`, `is_array`, and `is_scalar` inspect
   the current boxed value variant without coercion. `is_numeric` returns true
@@ -3383,9 +3390,14 @@
   built-in engine interface inheritance semantics exist.
   `settype($var, $type)` executes for direct variables only and supports the
   current cast subset for `bool`/`boolean`, `int`/`integer`, `float`/`double`,
-  `string`, `array`, `object`, and `null`; `resource`, non-direct lvalues,
-  aliases/reference edge cases, exact PHP diagnostics, and native lowering
-  remain unsupported.
+  `string`, `array`, `object`, and `null`. Valid direct-variable targets that
+  were undefined are materialized as `null` before conversion, invalid type
+  names raise PHP-shaped catchable `ValueError`s without materializing the
+  variable, and the reached object-to-string failure path preserves PHP's
+  empty-string side effect before throwing. `resource`, non-direct lvalues,
+  aliases/reference edge cases, broader object/string magic failure parity,
+  exact PHP diagnostics beyond the covered rows, and native lowering remain
+  unsupported.
   `is_callable($value)` supports the current string function-name subset: it
   returns true for names that resolve to current user functions or documented
   callable builtins, and false for missing names or non-string values.
@@ -3706,8 +3718,12 @@
   diagnostics, and native lowering remain unsupported. `preg_last_error()`
   reports the bounded error code from these current PCRE paths, including the
   backtrack-limit, bad-UTF8, and bad-UTF8-offset cases covered by focused
-  tests; exact PCRE engine state, error messages, JIT/study behavior, and
-  broader pattern failure modes remain unsupported.
+  tests. `preg_quote()` escapes current string bytes for the bounded delimiter
+  subset, including NUL as `\\000`; the PCRE translator maps that escape back
+  to a NUL byte for the supported pattern paths, and escaped `#` remains
+  escaped under extended-mode patterns. Exact PCRE engine state, complete
+  escape/delimiter policy, error messages, JIT/study behavior, and broader
+  pattern failure modes remain unsupported.
   `preg_replace_callback($pattern, $callback, $subject)` supports exactly the
   WordPress `wp_sanitize_redirect()` verbose UTF-8 sanitizer regex shape with
   the string callback `_wp_sanitize_utf8_in_redirect`. It percent-encodes
@@ -5800,8 +5816,9 @@
   `sqrt()`, `ceil()`, `floor()`, `exp()`, `expm1()`, `log()`, `log10()`,
   `log1p()`, `fmod()`, `fdiv()`, `fpow()`, `hypot()`, `deg2rad()`, and
   `rad2deg()` over the current numeric scalar coercion subset.
-  `deg2rad()` and `rad2deg()` use PHP's operation order for the covered PHPT
-  precision-sensitive cases. Locale-sensitive parsing, exact warnings for all
+  `deg2rad()` and `rad2deg()` use PHP's multiplication/division operation
+  order for the covered PHPT precision-sensitive cases. Locale-sensitive
+  parsing, exact warnings for all
   malformed numeric inputs, and native lowering remain unsupported.
   `extension_loaded($name)` accepts string extension names and currently
   answers from a deterministic bounded compiler/runtime compatibility registry.
@@ -9498,10 +9515,13 @@
   `serialize()` emits PHP wire text for the current null/bool/int/float/string
   and ordered-array value subset, including uppercase `INF`, `-INF`, and `NAN`
   spellings for non-finite floats. `unserialize()` accepts the matching
-  scalar/array payload subset. Object/resource/closure serialization, custom
-  serialization hooks, non-UTF-8 binary string payloads, exact malformed-input
-  warning offsets, full `serialize_precision` float parity, and native lowering
-  remain unsupported.
+  scalar/array payload subset, returns a valid parsed prefix with PHP-shaped
+  extra-data warnings, reports reached malformed-input parser offsets with
+  `of N bytes` text, and rejects signed serialized lengths.
+  Object/resource/closure serialization, custom serialization hooks,
+  non-UTF-8 binary string payloads, exact malformed-input offset parity beyond
+  the covered rows, full `serialize_precision` float parity, and native
+  lowering remain unsupported.
   `strlen` accepts scalar/null string-convertible values and supported
   `__toString()` objects, and rejects arrays, resources, closures, and objects
   without supported `__toString()`. `count` accepts arrays only.

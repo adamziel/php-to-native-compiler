@@ -306,6 +306,38 @@ echo function_exists("settype") ? "exists" : "missing";
 }
 
 #[test]
+fn settype_handles_undefined_variable_validation_and_string_failure_side_effect() {
+    let execution = run_source(
+        r#"<?php
+try {
+    settype($missing, "unknown");
+} catch (ValueError $e) {
+    echo $e->getMessage(), "\n";
+}
+var_dump(isset($missing));
+settype($stringDefault, "string");
+var_dump($stringDefault);
+settype($intDefault, "integer");
+var_dump($intDefault);
+$object = new stdClass();
+try {
+    settype($object, "string");
+} catch (Error $e) {
+    echo "Error: ", $e->getMessage(), "\n";
+}
+var_dump($object);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "settype(): Argument #2 ($type) must be a valid type\nbool(false)\nstring(0) \"\"\nint(0)\nError: Object of class stdClass could not be converted to string\nstring(0) \"\"\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn remaining_casts_have_stable_parse_error() {
     let error = run_source("<?php\necho (unset) \"1\";\n").unwrap_err();
 

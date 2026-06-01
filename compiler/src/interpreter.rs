@@ -63,6 +63,11 @@ const PHP_EXTR_IF_EXISTS: i64 = 6;
 const PHP_EXTR_REFS: i64 = 256;
 const PHP_FIRST_USER_RESOURCE_ID: i64 = 4;
 const ARRAY_PAD_MAX_PADDING: u64 = 1_048_576;
+
+fn is_standard_stream_resource_id(id: i64) -> bool {
+    (1..PHP_FIRST_USER_RESOURCE_ID).contains(&id)
+}
+
 const DEFERRED_INSTANCE_PROPERTY_DEFAULT_UNDEFINED_CONSTANT_PREFIX: &str =
     "deferred instance property default undefined constant ";
 const PHP_JSON_HEX_TAG: i64 = 1;
@@ -1099,6 +1104,13 @@ fn is_auto_global_name(name: &str) -> bool {
     matches!(
         name,
         "_SERVER" | "_COOKIE" | "_GET" | "_POST" | "_REQUEST" | "_FILES" | "_SESSION"
+    )
+}
+
+fn is_initialized_request_auto_global_name(name: &str) -> bool {
+    matches!(
+        name,
+        "_SERVER" | "_COOKIE" | "_GET" | "_POST" | "_REQUEST" | "_FILES"
     )
 }
 
@@ -14989,7 +15001,7 @@ impl Interpreter {
                 }
 
                 let Some(value) = scope.read_named(name) else {
-                    self.emit_display_warning(format!("Undefined variable ${name}"), *span)?;
+                    self.emit_undefined_variable_warning(name, *span)?;
                     return Ok((Value::Null, None));
                 };
                 let source = if matches!(value, Value::Array(_)) {
@@ -18781,7 +18793,12 @@ impl Interpreter {
     }
 
     fn emit_undefined_variable_warning(&mut self, name: &str, span: Span) -> CompileResult<()> {
-        self.emit_display_warning(format!("Undefined variable ${name}"), span)
+        let message = if is_initialized_request_auto_global_name(name) {
+            format!("Undefined global variable ${name}")
+        } else {
+            format!("Undefined variable ${name}")
+        };
+        self.emit_display_warning(message, span)
     }
 
     fn emit_undefined_property_warning(
@@ -82384,13 +82401,17 @@ impl Interpreter {
     }
 
     fn value_is_open_resource(&self, value: &Value) -> bool {
-        matches!(value, Value::Resource(id) if self.streams.contains_key(id)
+        matches!(value, Value::Resource(id) if is_standard_stream_resource_id(*id)
+            || self.streams.contains_key(id)
             || self.stream_contexts.contains_key(id)
             || self.directories.contains_key(id))
     }
 
     fn resource_type_label(&self, id: i64) -> &'static str {
-        if self.streams.contains_key(&id) || self.directories.contains_key(&id) {
+        if is_standard_stream_resource_id(id)
+            || self.streams.contains_key(&id)
+            || self.directories.contains_key(&id)
+        {
             "stream"
         } else if self.stream_contexts.contains_key(&id) {
             "stream-context"
@@ -86109,7 +86130,7 @@ impl Interpreter {
             }
             "gettype" => {
                 expect_arity(name, &args, 1, span)?;
-                Ok(Value::String(args[0].gettype_name().to_string()))
+                Ok(Value::String(self.gettype_name(&args[0]).to_string()))
             }
             "is_null" => {
                 expect_arity(name, &args, 1, span)?;
@@ -88003,9 +88024,24 @@ impl Interpreter {
         };
         match parser.parse_value_with_object_factory(&mut object_factory) {
             Some(value) if parser.is_finished() => Ok(value),
+            Some(value) => {
+                self.emit_display_warning(
+                    &format!(
+                        "unserialize(): Extra data starting at offset {} of {} bytes",
+                        parser.position(),
+                        parser.len()
+                    ),
+                    span,
+                )?;
+                Ok(value)
+            }
             _ => {
                 self.emit_display_warning(
-                    "unserialize(): Error at offset 0 of input in the current subset",
+                    &format!(
+                        "unserialize(): Error at offset {} of {} bytes",
+                        parser.position(),
+                        parser.len()
+                    ),
                     span,
                 )?;
                 Ok(Value::Bool(false))
@@ -93093,10 +93129,61 @@ impl Interpreter {
 
         let type_value = self.evaluate_by_value_argument_with_cow_source(&args[1], caller_scope)?;
         let target_type = string_builtin_argument("settype()", "type", &type_value, span)?;
-        let value = caller_scope.read_static(name, args[0].span())?;
-        let converted = self.settype_cast_value(value, &target_type, span)?;
-        caller_scope.write_static(name, converted);
-        Ok(Value::Bool(true))
+        Self::validate_settype_target_type(&target_type, span)?;
+
+        let value = caller_scope.read_named(name).unwrap_or(Value::Null);
+        match self.settype_cast_value(value, &target_type, span) {
+            Ok(converted) => {
+                caller_scope.write_static(name, converted);
+                Ok(Value::Bool(true))
+            }
+            Err(error)
+                if Self::settype_string_conversion_has_empty_string_side_effect(
+                    &target_type,
+                    &error,
+                ) =>
+            {
+                caller_scope.write_static(name, Value::String(String::new()));
+                Err(error)
+            }
+            Err(error) => Err(error),
+        }
+    }
+
+    fn gettype_name(&self, value: &Value) -> &'static str {
+        match value {
+            Value::Resource(_) if !self.value_is_open_resource(value) => "resource (closed)",
+            _ => value.gettype_name(),
+        }
+    }
+
+    fn validate_settype_target_type(target_type: &str, span: Span) -> CompileResult<()> {
+        match target_type.to_ascii_lowercase().as_str() {
+            "bool" | "boolean" | "int" | "integer" | "float" | "double" | "string" | "array"
+            | "object" | "null" | "resource" => Ok(()),
+            _ => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "settype()",
+                    "Argument #2 ($type) must be a valid type",
+                ),
+            )),
+        }
+    }
+
+    fn settype_string_conversion_has_empty_string_side_effect(
+        target_type: &str,
+        error: &Diagnostic,
+    ) -> bool {
+        if !target_type.eq_ignore_ascii_case("string") {
+            return false;
+        }
+
+        let Some(message) = error.message.strip_prefix("unsupported call (string): ") else {
+            return false;
+        };
+        message.starts_with("Object of class ")
+            && message.ends_with(" could not be converted to string")
     }
 
     fn settype_cast_value(
@@ -104190,6 +104277,9 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
         }
         ("array_multisort()", "Array sizes are inconsistent") => Some(message.to_string()),
         ("settype()", "Cannot convert to resource type") => Some(message.to_string()),
+        ("settype()", "Argument #2 ($type) must be a valid type") => {
+            Some(format!("{function}: {message}"))
+        }
         (
             "php_uname()",
             "Argument #1 ($mode) must be a single character"
@@ -116727,6 +116817,10 @@ fn call_preg_quote(args: &[Value], span: Span) -> CompileResult<Value> {
 
     let mut output = Vec::with_capacity(value.len());
     for byte in value {
+        if byte == 0 {
+            output.extend_from_slice(b"\\000");
+            continue;
+        }
         if matches!(
             byte,
             b'.' | b'\\'
@@ -121394,8 +121488,11 @@ fn translate_pcre_body_for_regex(body: &str) -> String {
     let mut escaped = false;
     while let Some(ch) = chars.next() {
         if escaped {
-            if matches!(ch, '/' | '#') {
-                output.push(ch);
+            let mut lookahead = chars.clone();
+            if ch == '0' && lookahead.next() == Some('0') && lookahead.next() == Some('0') {
+                chars.next();
+                chars.next();
+                output.push_str("\\x00");
             } else if ch == 'X' {
                 output.push('.');
             } else if ch == 'k' && chars.peek() == Some(&'<') {
@@ -127824,6 +127921,14 @@ impl<'a> PhpSerializedParser<'a> {
         self.position >= self.data.len()
     }
 
+    fn len(&self) -> usize {
+        self.data.len()
+    }
+
+    fn position(&self) -> usize {
+        self.position
+    }
+
     fn take_until_byte(&mut self, needle: u8) -> Option<String> {
         let start = self.position;
         while self.position < self.data.len() && self.data[self.position] != needle {
@@ -127854,6 +127959,7 @@ impl<'a> PhpSerializedParser<'a> {
     where
         F: FnMut(&str, Vec<(String, Value)>) -> Option<Value>,
     {
+        let value_start = self.position;
         match self.data.get(self.position).copied()? {
             b'N' => {
                 self.position += 1;
@@ -127886,12 +127992,12 @@ impl<'a> PhpSerializedParser<'a> {
             }
             b's' => {
                 self.position += 1;
-                Some(Value::String(self.parse_serialized_string()?))
+                Some(Value::String(self.parse_serialized_string(value_start)?))
             }
             b'a' => {
                 self.position += 1;
                 self.expect_byte(b':')?;
-                let len = self.parse_usize_until_byte(b':')?;
+                let len = self.parse_unsigned_usize_until_byte(b':', value_start)?;
                 self.expect_byte(b'{')?;
                 let mut array = PhpArray::new();
                 for _ in 0..len {
@@ -127904,9 +128010,9 @@ impl<'a> PhpSerializedParser<'a> {
             }
             b'O' => {
                 self.position += 1;
-                let class_name = self.parse_serialized_string_payload()?;
+                let class_name = self.parse_serialized_string_payload(value_start)?;
                 self.expect_byte(b':')?;
-                let len = self.parse_usize_until_byte(b':')?;
+                let len = self.parse_unsigned_usize_until_byte(b':', value_start)?;
                 self.expect_byte(b'{')?;
                 let mut properties = Vec::with_capacity(len);
                 for _ in 0..len {
@@ -127935,21 +128041,23 @@ impl<'a> PhpSerializedParser<'a> {
             }
             b's' => {
                 self.position += 1;
-                Some(ArrayKey::String(self.parse_serialized_string()?))
+                Some(ArrayKey::String(
+                    self.parse_serialized_string(self.position - 1)?,
+                ))
             }
             _ => None,
         }
     }
 
-    fn parse_serialized_string(&mut self) -> Option<String> {
-        let value = self.parse_serialized_string_payload()?;
+    fn parse_serialized_string(&mut self, error_offset: usize) -> Option<String> {
+        let value = self.parse_serialized_string_payload(error_offset)?;
         self.expect_byte(b';')?;
         Some(value)
     }
 
-    fn parse_serialized_string_payload(&mut self) -> Option<String> {
+    fn parse_serialized_string_payload(&mut self, error_offset: usize) -> Option<String> {
         self.expect_byte(b':')?;
-        let len = self.parse_usize_until_byte(b':')?;
+        let len = self.parse_unsigned_usize_until_byte(b':', error_offset)?;
         self.expect_byte(b'"')?;
         let end = self.position.checked_add(len)?;
         let bytes = self.data.get(self.position..end)?;
@@ -127964,7 +128072,15 @@ impl<'a> PhpSerializedParser<'a> {
         Some(value)
     }
 
-    fn parse_usize_until_byte(&mut self, delimiter: u8) -> Option<usize> {
+    fn parse_unsigned_usize_until_byte(
+        &mut self,
+        delimiter: u8,
+        error_offset: usize,
+    ) -> Option<usize> {
+        if matches!(self.data.get(self.position), Some(b'+' | b'-')) {
+            self.position = error_offset;
+            return None;
+        }
         let value = self.take_until_byte(delimiter)?;
         self.expect_byte(delimiter)?;
         value.parse::<usize>().ok()

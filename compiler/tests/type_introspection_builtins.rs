@@ -30,6 +30,23 @@ echo $call(true), "\n";
 }
 
 #[test]
+fn gettype_reports_closed_resource_legacy_name() {
+    let execution = run_source(
+        r#"<?php
+$stream = fopen("php://memory", "w+");
+echo gettype($stream), "\n";
+fclose($stream);
+echo gettype($stream), "\n";
+echo gettype(STDIN), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "resource\nresource (closed)\nresource\n");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn type_predicates_cover_current_value_model_and_aliases() {
     let execution = run_source(
         r#"<?php
