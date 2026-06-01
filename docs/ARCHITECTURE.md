@@ -3326,7 +3326,11 @@ bounded request-local `realpath_cache_get()` table keyed by resolved path with
 the current PHP-shaped `key`, `is_dir`, `realpath`, and `expires` fields.
 Successful local `file_get_contents()` reads, local `fopen()` calls for paths
 that existed before opening, and successful local include/require reads also
-populate one bounded entry for the resolved target path. `clearstatcache(false)`
+populate one bounded entry for the resolved target path. When the main source
+file is inspectable locally, interpreter startup also seeds one bounded entry
+for that source directory so `realpath_cache_get()[__DIR__]` can observe the
+same local metadata before user code performs an explicit path operation.
+`clearstatcache(false)`
 leaves that table intact,
 `clearstatcache(true, $filename)` removes only a non-empty exact matching
 cached resolved-path key, and one-argument `clearstatcache(true)` clears all
@@ -3338,8 +3342,8 @@ instead of being modeled. Symlink policy differences, exact warning plus
 `false` fidelity, include-path lookup, `open_basedir`, non-UTF-8 paths,
 realpath-cache ancestor entries, cache entries from filesystem operations
 beyond successful `realpath()`, local `file_get_contents()`, pre-existing local
-`fopen()` paths, and successful local include/require reads, exact
-realpath-cache key hashes and expiration policy,
+`fopen()` paths, successful local include/require reads, and the main source
+directory seed, exact realpath-cache key hashes and expiration policy,
 exact `realpath_cache_size()` memory-byte accounting, and native filesystem
 lowering remain out of scope.
 Native function-table introspection recognizes the names, while direct native

@@ -11246,6 +11246,7 @@ impl Interpreter {
         if let Some(message) = timezone_startup_warning {
             interpreter.emit_startup_warning(message);
         }
+        interpreter.seed_main_source_directory_realpath_cache();
         interpreter.uploaded_file_paths =
             uploaded_file_paths_from_metadata_pairs(options.upload_files.as_deref().unwrap_or(""));
         interpreter.initialize_superglobals(
@@ -21078,6 +21079,25 @@ impl Interpreter {
         {
             self.cache_realpath_entry(resolved, &metadata);
         }
+    }
+
+    fn seed_main_source_directory_realpath_cache(&mut self) {
+        let Some(source_file) = self.main_source_file.as_deref() else {
+            return;
+        };
+        let source_path = local_filesystem_metadata_path(source_file);
+        if fs::metadata(&source_path).is_err() {
+            return;
+        }
+        let Some(parent) = source_path.parent() else {
+            return;
+        };
+        let directory = if parent.as_os_str().is_empty() {
+            PathBuf::from(".")
+        } else {
+            parent.to_path_buf()
+        };
+        self.cache_bounded_realpath_entry_for_local_path(&directory);
     }
 
     fn realpath_cache_array(&self) -> PhpArray {

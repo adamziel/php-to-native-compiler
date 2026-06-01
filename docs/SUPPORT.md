@@ -5454,7 +5454,10 @@
   with `key`, `is_dir`, `realpath`, and `expires` fields. Successful local
   `file_get_contents()` reads, local `fopen()` calls for paths that existed
   before opening, and successful local include/require reads also populate one
-  bounded cache entry for the resolved target path. `clearstatcache(false)`
+  bounded cache entry for the resolved target path. When a main source file is
+  inspectable locally, `phpc run` seeds one bounded cache entry for that source
+  directory before user code executes, matching the reached
+  `realpath_cache_get()[__DIR__]` behavior. `clearstatcache(false)`
   leaves those entries intact,
   `clearstatcache(true, $filename)` removes only
   the non-empty exact matching cached resolved-path key, and
@@ -5470,8 +5473,9 @@
   exact warning plus `false` fidelity, include-path lookup, `open_basedir`,
   stream wrappers, non-UTF-8 paths, realpath-cache ancestor entries, cache
   entries from filesystem operations beyond successful `realpath()`, local
-  `file_get_contents()`, pre-existing local `fopen()` target paths, and
-  successful local include/require reads, exact realpath-cache `key` hash
+  `file_get_contents()`, pre-existing local `fopen()` target paths, successful
+  local include/require reads, and the main source directory seed, exact
+  realpath-cache `key` hash
   values and expiration policy, exact
   `realpath_cache_size()` byte accounting, TOCTOU semantics, host filesystem coupling,
   partial-output behavior, and native lowering remain unsupported. Native

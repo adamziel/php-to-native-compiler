@@ -4,6 +4,18 @@
 
 Implemented:
 
+- Added a focused source-directory seeding lane for `realpath_cache.phpt`.
+  `phpc run` now initializes the bounded request-local realpath cache with the
+  main source directory when the source file is inspectable locally, so
+  `realpath_cache_get()[__DIR__]` is visible before user code performs an
+  explicit path operation and `clearstatcache(true, __DIR__)` invalidates that
+  single entry. Focused Rust coverage exercises both `run_source_with_source_file`
+  and an actual `phpc run` CLI fixture. Unsupported edges remain exact
+  realpath-cache key hashes and memory accounting, ancestor cache entries,
+  broader filesystem-operation cache side effects, invalid-CWD behavior,
+  symlink policy differences, non-UTF-8 paths, `open_basedir` cache
+  interaction, TOCTOU semantics, and native lowering.
+
 - Currentized the bounded filesystem predicate residual lane for the selected
   local metadata PHPT rows. `is_dir()` now uses a reusable predicate path
   argument helper shared with `is_writable()` / `is_writeable()`, accepting
