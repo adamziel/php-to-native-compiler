@@ -122,6 +122,48 @@ var_dump(next(f()));
 }
 
 #[test]
+fn prev_function_temporary_uses_notice_copy_and_array_literal_fatal() {
+    let execution = run_source(
+        r#"<?php
+function f() {
+    $array = array(1, 2);
+    end($array);
+    return $array;
+}
+var_dump(prev(f()));
+"#,
+    )
+    .unwrap();
+
+    assert!(
+        execution
+            .stdout
+            .contains("Notice: Only variables should be passed by reference"),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution.stdout.ends_with("int(1)\n"),
+        "{}",
+        execution.stdout
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let fatal = run_source_with_source_file(
+        "<?php\nvar_dump(prev(array(1, 2)));\n",
+        "/tmp/prev_array_literal.php",
+    )
+    .unwrap();
+
+    assert_eq!(
+        fatal.stdout,
+        "Fatal error: Uncaught Error: prev(): Argument #1 ($array) could not be passed by reference in /tmp/prev_array_literal.php:2\nStack trace:\n#0 {main}\n  thrown in /tmp/prev_array_literal.php on line 2"
+    );
+    assert_eq!(fatal.stderr, "");
+    assert_eq!(fatal.exit_code, 255);
+}
+
+#[test]
 fn key_prev_reset_and_end_observe_and_mutate_array_pointers() {
     let execution = run_source(
         r#"<?php

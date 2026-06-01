@@ -62,6 +62,7 @@ const PHP_EXTR_PREFIX_IF_EXISTS: i64 = 5;
 const PHP_EXTR_IF_EXISTS: i64 = 6;
 const PHP_EXTR_REFS: i64 = 256;
 const PHP_FIRST_USER_RESOURCE_ID: i64 = 4;
+const ARRAY_PAD_MAX_PADDING: u64 = 1_048_576;
 const DEFERRED_INSTANCE_PROPERTY_DEFAULT_UNDEFINED_CONSTANT_PREFIX: &str =
     "deferred instance property default undefined constant ";
 const PHP_JSON_HEX_TAG: i64 = 1;
@@ -55429,6 +55430,25 @@ impl Interpreter {
         }
     }
 
+    fn lookup_array_callback_class_id_with_autoload(
+        &mut self,
+        context: &str,
+        class_name: &str,
+        span: Span,
+    ) -> CompileResult<ClassId> {
+        if let Some(class_id) = self.classes.lookup_class_id(class_name) {
+            return Ok(class_id);
+        }
+
+        if !class_name.is_empty() {
+            self.run_autoload_callbacks(class_name, AutoloadKind::Class, span)?;
+        }
+
+        self.classes
+            .lookup_class_id(class_name)
+            .ok_or_else(|| Self::array_callback_class_not_found_error(context, class_name, span))
+    }
+
     fn invalid_callback_visibility_error(
         context: &str,
         class_name: &str,
@@ -57366,6 +57386,9 @@ impl Interpreter {
                 if key == "sscanf" {
                     return self.call_sscanf_direct(args, span, caller_scope);
                 }
+                if key == "is_callable" {
+                    return self.call_is_callable_direct(args, span, caller_scope);
+                }
                 let values = self.evaluate_builtin_value_call_arguments(
                     &key,
                     &callable_name(name),
@@ -57574,6 +57597,9 @@ impl Interpreter {
                 }
                 if key == "sscanf" {
                     return self.call_sscanf_direct(args, span, caller_scope);
+                }
+                if key == "is_callable" {
+                    return self.call_is_callable_direct(args, span, caller_scope);
                 }
                 let values = self.evaluate_builtin_value_call_arguments(
                     &key,
@@ -58038,6 +58064,89 @@ impl Interpreter {
                 ),
             )),
         }
+    }
+
+    fn is_callable_value(&self, value: &Value, syntax_only: bool) -> bool {
+        match value {
+            Value::String(_) if syntax_only => true,
+            Value::String(name) => self.lookup_function(name).is_some(),
+            Value::Array(array) if syntax_only => is_array_callable_syntax_shape(array),
+            Value::Array(array) => is_array_callable_for_is_callable(&self.classes, array),
+            _ => false,
+        }
+    }
+
+    fn call_is_callable_direct(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        if !(1..=3).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "is_callable()",
+                    ArityExpectation::Between { min: 1, max: 3 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let values = self.evaluate_builtin_value_call_arguments(
+            "is_callable",
+            "is_callable()",
+            &args[..args.len().min(2)],
+            caller_scope,
+        )?;
+        if self.exit_signal.is_some() {
+            return Ok(Value::Null);
+        }
+        let syntax_only = match values.get(1) {
+            None => false,
+            Some(Value::Bool(value)) => *value,
+            Some(other) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "is_callable()",
+                        format!(
+                            "syntax_only argument must be bool in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+        };
+
+        if let Some(output_arg) = args.get(2) {
+            match output_arg {
+                Expr::Variable(name, _) => {
+                    caller_scope
+                        .write_static(name, Value::String(callable_name_output(&values[0])));
+                }
+                Expr::NamedArgument { span, .. } | Expr::SpreadArgument { span, .. } => {
+                    return Err(runtime_error(
+                        *span,
+                        RuntimeError::unsupported_call(
+                            "is_callable()",
+                            "named arguments and unpacking are not implemented for is_callable() callable_name output in the current subset",
+                        ),
+                    ));
+                }
+                other => {
+                    return Err(runtime_error(
+                        other.span(),
+                        RuntimeError::unsupported_call(
+                            "is_callable()",
+                            "callable_name output must be a direct variable in the current subset",
+                        ),
+                    ));
+                }
+            }
+        }
+
+        Ok(Value::Bool(self.is_callable_value(&values[0], syntax_only)))
     }
 
     fn evaluate_builtin_value_call_arguments(
@@ -58673,9 +58782,8 @@ impl Interpreter {
                 )
             }
             Value::String(class_name) => {
-                let class_id = self.classes.lookup_class_id(class_name).ok_or_else(|| {
-                    Self::array_callback_class_not_found_error(context, class_name, span)
-                })?;
+                let class_id =
+                    self.lookup_array_callback_class_id_with_autoload(context, class_name, span)?;
                 let receiver_class_name = self
                     .classes
                     .get(class_id)
@@ -58908,9 +59016,8 @@ impl Interpreter {
                 )
             }
             Value::String(class_name) => {
-                let class_id = self.classes.lookup_class_id(class_name).ok_or_else(|| {
-                    Self::array_callback_class_not_found_error(context, class_name, span)
-                })?;
+                let class_id =
+                    self.lookup_array_callback_class_id_with_autoload(context, class_name, span)?;
                 let receiver_class_name = self
                     .classes
                     .get(class_id)
@@ -64912,14 +65019,16 @@ impl Interpreter {
                             break;
                         }
                     }
-                    AutoloadCallback::Closure(_) => {
-                        return Err(runtime_error(
+                    AutoloadCallback::Closure(closure) => {
+                        let _ = self.invoke_closure_value(
+                            closure,
+                            vec![Value::String(class_name.to_string())],
                             span,
-                            RuntimeError::unsupported_call(
-                                "autoload",
-                                "closure autoload callback invocation is not implemented",
-                            ),
-                        ));
+                            "autoload",
+                        )?;
+                        if self.class_like_exists(class_name, kind) {
+                            break;
+                        }
                     }
                 }
             }
@@ -67522,6 +67631,17 @@ impl Interpreter {
                 span,
                 caller_scope,
             );
+        }
+
+        if key == "prev" {
+            if Self::is_reference_call_argument_expr(&args[0]) {
+                return self.call_array_pointer_value_fallback(key, &args[0], span, caller_scope);
+            }
+
+            if matches!(&args[0], Expr::Array { .. }) {
+                self.emit_builtin_reference_argument_fatal("prev()", 0, "array", args[0].span());
+                return Ok(Value::Null);
+            }
         }
 
         Err(runtime_error(
@@ -80299,7 +80419,7 @@ impl Interpreter {
                     span,
                     RuntimeError::unsupported_call(
                         "fgets()",
-                        "length argument must be positive in the current subset",
+                        "Argument #2 ($length) must be greater than 0",
                     ),
                 ));
             }
@@ -80320,6 +80440,9 @@ impl Interpreter {
         let stream_id = self.stream_resource_id("fgets", &args[0], span)?;
         if !self.stream_is_readable(stream_id) {
             self.emit_bad_file_descriptor_notice("fgets()", "Read", 8192, span)?;
+            return Ok(Value::Bool(false));
+        }
+        if matches!(max_bytes, Some(0)) {
             return Ok(Value::Bool(false));
         }
         match self
@@ -84125,18 +84248,7 @@ impl Interpreter {
             }
             "strlen" => {
                 expect_arity(name, &args, 1, span)?;
-                if matches!(&args[0], Value::Array(_)) {
-                    return Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            "strlen()",
-                            "Argument #1 ($string) must be of type string, array given",
-                        ),
-                    ));
-                }
-                let value = args[0]
-                    .try_echo_bytes()
-                    .map_err(|error| runtime_error(span, error))?;
+                let value = self.strlen_argument_bytes(&args[0], span)?;
                 Ok(Value::Int(value.len() as i64))
             }
             "token_name" => call_token_name(&args, span),
@@ -84276,7 +84388,7 @@ impl Interpreter {
             "ltrim" => self.call_trim_family(&args, span, "ltrim()", TrimMode::Left),
             "rtrim" => self.call_trim_family(&args, span, "rtrim()", TrimMode::Right),
             "chop" => self.call_trim_family(&args, span, "chop()", TrimMode::Right),
-            "strcmp" => call_strcmp(&args, span),
+            "strcmp" => call_strcmp(&args, self.php_scalar_precision(), span),
             "strcasecmp" => call_strcasecmp(&args, span),
             "strncmp" => call_strncmp(&args, span),
             "strncasecmp" => call_strncasecmp(&args, span),
@@ -84290,8 +84402,8 @@ impl Interpreter {
             "strspn" => call_strspn(&args, span),
             "strcspn" => call_strcspn(&args, span),
             "strpbrk" => call_strpbrk(&args, span),
-            "strpos" => call_strpos(&args, span),
-            "stripos" => call_strpos_like(&args, "stripos()", true, span),
+            "strpos" => call_strpos(self, &args, span),
+            "stripos" => call_strpos_like(self, &args, "stripos()", true, span),
             "strrpos" => call_strrpos(&args, "strrpos()", false, span),
             "strripos" => call_strrpos(&args, "strripos()", true, span),
             "strstr" => call_strstr(self, &args, "strstr()", false, span),
@@ -84909,7 +85021,10 @@ impl Interpreter {
                         span,
                         RuntimeError::unsupported_call(
                             "array_is_list()",
-                            format!("argument must be array, got {}", other.type_name()),
+                            format!(
+                                "Argument #1 ($array) must be of type array, {} given",
+                                php_type_error_given(other)
+                            ),
                         ),
                     )),
                 }
@@ -85007,11 +85122,19 @@ impl Interpreter {
                 [Value::Array(array)] => {
                     Ok(Value::Array(array.keys_with_ascii_case(ArrayKeyCase::Lower)))
                 }
-                [Value::Array(array), Value::Int(case)] => {
-                    Ok(Value::Array(array.keys_with_ascii_case(
-                        ArrayKeyCase::from_flag(*case),
-                    )))
+                [Value::Array(array), Value::Int(0)] => {
+                    Ok(Value::Array(array.keys_with_ascii_case(ArrayKeyCase::Lower)))
                 }
+                [Value::Array(array), Value::Int(1)] => {
+                    Ok(Value::Array(array.keys_with_ascii_case(ArrayKeyCase::Upper)))
+                }
+                [Value::Array(_), Value::Int(_)] => Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "array_change_key_case()",
+                        "Argument #2 ($case) must be either CASE_LOWER or CASE_UPPER",
+                    ),
+                )),
                 [Value::Array(_), other] => Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
@@ -85168,22 +85291,18 @@ impl Interpreter {
                         Ok(Value::Array(array.chunked_reindexed(length)))
                     }
                 }
-                [Value::Array(_), Value::Int(length)] => Err(runtime_error(
+                [Value::Array(_), Value::Int(_)] => Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
                         "array_chunk()",
-                        format!(
-                            "length argument must be greater than 0 in the current subset, got {length}"
-                        ),
+                        "Argument #2 ($length) must be greater than 0",
                     ),
                 )),
                 [Value::Array(_), Value::Int(length), _] if *length <= 0 => Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
                         "array_chunk()",
-                        format!(
-                            "length argument must be greater than 0 in the current subset, got {length}"
-                        ),
+                        "Argument #2 ($length) must be greater than 0",
                     ),
                 )),
                 [Value::Array(_), Value::Int(_), other] => Err(runtime_error(
@@ -85225,10 +85344,27 @@ impl Interpreter {
             "array_pad" => {
                 expect_arity(name, &args, 3, span)?;
                 match args.as_slice() {
-                    [Value::Array(array), Value::Int(length), value] => array
-                        .padded(*length, value.clone())
-                        .map(Value::Array)
-                        .map_err(|error| runtime_error(span, error)),
+                    [Value::Array(array), Value::Int(length), value] => {
+                        let requested_len = length.unsigned_abs();
+                        let current_len =
+                            u64::try_from(array.len()).expect("array length fits in u64");
+                        if requested_len > current_len
+                            && requested_len - current_len > ARRAY_PAD_MAX_PADDING
+                        {
+                            return Err(runtime_error(
+                                span,
+                                RuntimeError::unsupported_call(
+                                    "array_pad()",
+                                    "Argument #2 ($length) must not exceed the maximum allowed array size",
+                                ),
+                            ));
+                        }
+
+                        array
+                            .padded(*length, value.clone())
+                            .map(Value::Array)
+                            .map_err(|error| runtime_error(span, error))
+                    }
                     [Value::Array(_), other, _] => Err(runtime_error(
                         span,
                         RuntimeError::unsupported_call(
@@ -85358,6 +85494,19 @@ impl Interpreter {
                     php_internal_int_argument("array_fill()", 1, "start_index", &args[0], span)?;
                 let count =
                     php_internal_int_argument("array_fill()", 2, "count", &args[1], span)?;
+                if count == i64::from(i32::MAX) {
+                    let file = self
+                        .source_file
+                        .clone()
+                        .unwrap_or_else(|| "Command line code".to_string());
+                    self.push_uncaught_fatal_separator();
+                    self.push_unbuffered_stdout_text(&format!(
+                        "Fatal error: Possible integer overflow in memory allocation (2147483647 * 32 + 32) in {file} on line {}",
+                        span.line
+                    ));
+                    self.exit_signal = Some(255);
+                    return Ok(Value::Null);
+                }
                 PhpArray::filled_from(start_key, count, args[2].clone())
                     .map(Value::Array)
                     .map_err(|error| runtime_error(span, error))
@@ -85990,18 +86139,7 @@ impl Interpreter {
                 }
 
                 let syntax_only = matches!(args.get(1), Some(Value::Bool(true)));
-                match &args[0] {
-                    Value::String(name) if syntax_only => Ok(Value::Bool(true)),
-                    Value::String(name) => Ok(Value::Bool(self.lookup_function(name).is_some())),
-                    Value::Array(array) if syntax_only => {
-                        Ok(Value::Bool(is_array_callable_syntax_shape(array)))
-                    }
-                    Value::Array(array) => Ok(Value::Bool(is_array_callable_for_is_callable(
-                        &self.classes,
-                        array,
-                    ))),
-                    _ => Ok(Value::Bool(false)),
-                }
+                Ok(Value::Bool(self.is_callable_value(&args[0], syntax_only)))
             }
             "function_exists" => {
                 expect_arity(name, &args, 1, span)?;
@@ -87719,14 +87857,16 @@ impl Interpreter {
             }
             "print_r" => match args.as_slice() {
                 [value] => {
-                    self.append_output_at(&format_print_r(value), span);
+                    let output = format_print_r_bytes(value);
+                    self.append_output_bytes_at(&output, span);
                     Ok(Value::Bool(true))
                 }
-                [value, return_output] if return_output.is_truthy() => {
-                    Ok(Value::String(format_print_r(value)))
-                }
+                [value, return_output] if return_output.is_truthy() => Ok(
+                    interpreter_value_from_php_string_bytes(format_print_r_bytes(value)),
+                ),
                 [value, _] => {
-                    self.append_output_at(&format_print_r(value), span);
+                    let output = format_print_r_bytes(value);
+                    self.append_output_bytes_at(&output, span);
                     Ok(Value::Bool(true))
                 }
                 _ => Err(runtime_error(
@@ -92724,6 +92864,54 @@ impl Interpreter {
                     ),
                 ),
             )),
+        }
+    }
+
+    fn strlen_argument_bytes(&mut self, value: &Value, span: Span) -> CompileResult<Vec<u8>> {
+        match value {
+            Value::Null => {
+                self.emit_display_diagnostic(
+                    "Deprecated",
+                    PHP_E_DEPRECATED,
+                    "strlen(): Passing null to parameter #1 ($string) of type string is deprecated",
+                    span,
+                )?;
+                Ok(Vec::new())
+            }
+            Value::Float(value) => {
+                Ok(format_php_precision_float(*value, self.php_scalar_precision()).into_bytes())
+            }
+            Value::Object(object) => {
+                if let Some(output) =
+                    self.object_to_string_with_magic(object.clone(), "strlen()", span)?
+                {
+                    Ok(output.into_bytes())
+                } else {
+                    Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "strlen()",
+                            format!(
+                                "Argument #1 ($string) must be of type string, {} given",
+                                php_type_error_given(value)
+                            ),
+                        ),
+                    ))
+                }
+            }
+            Value::Array(_) | Value::Closure(_) | Value::Resource(_) => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "strlen()",
+                    format!(
+                        "Argument #1 ($string) must be of type string, {} given",
+                        php_type_error_given(value)
+                    ),
+                ),
+            )),
+            _ => value
+                .try_echo_bytes()
+                .map_err(|error| runtime_error(span, error)),
         }
     }
 
@@ -102665,6 +102853,22 @@ fn is_array_callable_syntax_shape(array: &PhpArray) -> bool {
     array_callable_parts(array).is_some()
 }
 
+fn callable_name_output(value: &Value) -> String {
+    match value {
+        Value::Array(array) => array_callable_parts(array)
+            .map(|(target, method_name)| match target {
+                Value::Object(object) => format!("{}::{method_name}", object.class_name()),
+                Value::String(class_name) => format!("{class_name}::{method_name}"),
+                _ => "Array".to_string(),
+            })
+            .unwrap_or_else(|| "Array".to_string()),
+        Value::Object(object) => format!("{}::__invoke", object.class_name()),
+        Value::Closure(_) => "Closure::__invoke".to_string(),
+        Value::Resource(id) => format!("Resource id #{id}"),
+        other => other.try_echo_string().unwrap_or_default(),
+    }
+}
+
 fn is_array_callable_resolved(classes: &PhpClassTable, array: &PhpArray) -> bool {
     let Some((target, method_name)) = array_callable_parts(array) else {
         return false;
@@ -102823,6 +103027,10 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
     }
 
     if let Some(message) = sprintf_argument_count_error_message(error) {
+        return Some(("ArgumentCountError", message));
+    }
+
+    if let Some(message) = chr_exact_argument_count_error_message(error) {
         return Some(("ArgumentCountError", message));
     }
 
@@ -103478,11 +103686,31 @@ fn sprintf_argument_count_error_message(error: &Diagnostic) -> Option<String> {
 
     if let Some(actual) = error
         .message
+        .strip_prefix("arity mismatch for printf(): expected at least 1 argument(s), got ")
+        .and_then(|actual| actual.parse::<usize>().ok())
+    {
+        return Some(format!(
+            "printf() expects at least 1 argument, {actual} given"
+        ));
+    }
+
+    if let Some(actual) = error
+        .message
         .strip_prefix("arity mismatch for sprintf(): expected at least 1 argument(s), got ")
         .and_then(|actual| actual.parse::<usize>().ok())
     {
         return Some(format!(
             "sprintf() expects at least 1 argument, {actual} given"
+        ));
+    }
+
+    if let Some(actual) = error
+        .message
+        .strip_prefix("arity mismatch for fprintf(): expected at least 2 argument(s), got ")
+        .and_then(|actual| actual.parse::<usize>().ok())
+    {
+        return Some(format!(
+            "fprintf() expects at least 2 arguments, {actual} given"
         ));
     }
 
@@ -103513,6 +103741,20 @@ fn vfprintf_exact_argument_count_error_message(error: &Diagnostic) -> Option<Str
     Some(format!(
         "vfprintf() expects exactly 3 arguments, {actual} given"
     ))
+}
+
+fn chr_exact_argument_count_error_message(error: &Diagnostic) -> Option<String> {
+    if error.phase != Phase::Runtime {
+        return None;
+    }
+    let actual = error
+        .message
+        .strip_prefix("arity mismatch for chr(): expected 1 argument(s), got ")
+        .and_then(|actual| actual.parse::<usize>().ok())?;
+    if actual == 1 {
+        return None;
+    }
+    Some(format!("chr() expects exactly 1 argument, {actual} given"))
 }
 
 fn random_exact_argument_count_error_message(error: &Diagnostic) -> Option<String> {
@@ -103807,10 +104049,19 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
         )
         | ("array_fill()", "Argument #2 ($count) must be greater than or equal to 0")
         | ("array_fill()", "Argument #2 ($count) is too large")
+        | ("array_chunk()", "Argument #2 ($length) must be greater than 0")
+        | (
+            "array_pad()",
+            "Argument #2 ($length) must not exceed the maximum allowed array size",
+        )
         | ("array_rand()", "Argument #1 ($array) must not be empty")
         | (
             "array_rand()",
             "Argument #2 ($num) must be between 1 and the number of elements in argument #1 ($array)",
+        )
+        | (
+            "array_change_key_case()",
+            "Argument #2 ($case) must be either CASE_LOWER or CASE_UPPER",
         )
         | (
             "array_filter()",
@@ -103879,6 +104130,7 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
             "Argument #3 ($flags) must be a valid flag (allowed flags: JSON_INVALID_UTF8_IGNORE)",
         )
         | ("ftruncate()", "Argument #2 ($size) must be greater than or equal to 0")
+        | ("fgets()", "Argument #2 ($length) must be greater than 0")
         | ("stream_get_contents()", "Argument #2 ($length) must be greater than or equal to -1")
         | (
             "touch()",
@@ -114595,6 +114847,7 @@ fn base36_digit_value(byte: u8) -> Option<u32> {
 }
 
 fn format_php_precision_float(value: f64, precision: usize) -> String {
+    let precision = precision.max(1).min(100);
     if value.is_nan() {
         return "NAN".to_string();
     }
@@ -114610,12 +114863,14 @@ fn format_php_precision_float(value: f64, precision: usize) -> String {
     }
 
     let abs = value.abs();
-    if abs < 1e-4 || abs >= 10_f64.powi(precision.min(308) as i32) {
+    let exponent = abs.log10().floor() as i32;
+    if !(-4..precision as i32).contains(&exponent) {
         let fractional = precision.saturating_sub(1);
         return normalize_php_scientific_float(format!("{value:.fractional$E}"));
     }
 
-    Value::Float(value).echo_string()
+    let decimals = (precision as i32 - 1 - exponent).max(0) as usize;
+    trim_decimal_suffix(&format!("{value:.decimals$}"))
 }
 
 fn format_php_float_to_int_deprecation_value(value: f64) -> String {
@@ -117708,11 +117963,15 @@ fn call_strcasecmp(args: &[Value], span: Span) -> CompileResult<Value> {
     Ok(Value::Int(ascii_case_insensitive_compare(&left, &right)))
 }
 
-fn call_strcmp(args: &[Value], span: Span) -> CompileResult<Value> {
+fn call_strcmp(args: &[Value], precision: usize, span: Span) -> CompileResult<Value> {
     expect_arity("strcmp", args, 2, span)?;
 
-    let left = string_compare_argument_bytes("strcmp()", "first", &args[0], span)?;
-    let right = string_compare_argument_bytes("strcmp()", "second", &args[1], span)?;
+    let left = string_compare_argument_bytes_with_precision(
+        "strcmp()", "first", &args[0], precision, span,
+    )?;
+    let right = string_compare_argument_bytes_with_precision(
+        "strcmp()", "second", &args[1], precision, span,
+    )?;
 
     Ok(Value::Int(byte_compare(&left, &right)))
 }
@@ -118138,11 +118397,12 @@ fn php_byte_window_bounds(subject_len: usize, offset: i64, length: Option<i64>) 
     }
 }
 
-fn call_strpos(args: &[Value], span: Span) -> CompileResult<Value> {
-    call_strpos_like(args, "strpos()", false, span)
+fn call_strpos(interpreter: &mut Interpreter, args: &[Value], span: Span) -> CompileResult<Value> {
+    call_strpos_like(interpreter, args, "strpos()", false, span)
 }
 
 fn call_strpos_like(
+    interpreter: &mut Interpreter,
     args: &[Value],
     function: &'static str,
     case_insensitive: bool,
@@ -118159,22 +118419,12 @@ fn call_strpos_like(
         ));
     }
 
-    let haystack = string_compare_argument_bytes(function, "haystack", &args[0], span)?;
-    let needle = string_compare_argument_bytes(function, "needle", &args[1], span)?;
+    let haystack =
+        string_position_argument_bytes(interpreter, function, 1, "haystack", &args[0], span)?;
+    let needle =
+        string_position_argument_bytes(interpreter, function, 2, "needle", &args[1], span)?;
     let offset = match args.get(2) {
-        Some(Value::Int(offset)) => *offset,
-        Some(other) => {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    function,
-                    format!(
-                        "offset argument must be int in the current subset, got {}",
-                        other.type_name()
-                    ),
-                ),
-            ));
-        }
+        Some(value) => php_internal_int_argument(function, 3, "offset", value, span)?,
         None => 0,
     };
 
@@ -118211,6 +118461,28 @@ fn call_strpos_like(
         })
         .map(|index| Value::Int((start + index) as i64))
         .unwrap_or(Value::Bool(false)))
+}
+
+fn string_position_argument_bytes(
+    interpreter: &mut Interpreter,
+    function: &'static str,
+    position: usize,
+    name: &str,
+    value: &Value,
+    span: Span,
+) -> CompileResult<Vec<u8>> {
+    if matches!(value, Value::Null) {
+        interpreter.emit_display_diagnostic(
+            "Deprecated",
+            PHP_E_DEPRECATED,
+            format!(
+                "{function}: Passing null to parameter #{position} (${name}) of type string is deprecated"
+            ),
+            span,
+        )?;
+    }
+
+    string_compare_argument_bytes(function, name, value, span)
 }
 
 fn call_strrpos(
@@ -123186,6 +123458,31 @@ fn string_compare_argument_bytes(
         .map_err(|error| runtime_error(span, error))
 }
 
+fn string_compare_argument_bytes_with_precision(
+    function: &str,
+    label: &str,
+    value: &Value,
+    precision: usize,
+    span: Span,
+) -> CompileResult<Vec<u8>> {
+    if matches!(value, Value::Array(_)) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                format!("{label} argument arrays are not implemented in the current subset"),
+            ),
+        ));
+    }
+
+    match value {
+        Value::Float(value) => Ok(format_php_precision_float(*value, precision).into_bytes()),
+        _ => value
+            .try_echo_bytes()
+            .map_err(|error| runtime_error(span, error)),
+    }
+}
+
 fn ascii_case_insensitive_compare(left: &[u8], right: &[u8]) -> i64 {
     for (&left, &right) in left.iter().zip(right.iter()) {
         let left = left.to_ascii_lowercase();
@@ -126849,7 +127146,9 @@ impl Interpreter {
                 array,
             ),
             [separator, value] => {
-                let message = if matches!(separator, Value::String(_) | Value::BinaryString(_)) {
+                let message = if matches!(value, Value::Null)
+                    && matches!(separator, Value::String(_) | Value::BinaryString(_))
+                {
                     format!(
                         "If argument #1 ($separator) is of type string, argument #2 ($array) must be of type array, {} given",
                         php_type_error_given(value)
@@ -140607,76 +140906,86 @@ fn format_var_dump_float_with_precision(value: f64, precision: usize) -> String 
     }
 }
 
-fn format_print_r(value: &Value) -> String {
-    format_print_r_with_indent(value, 0)
+fn format_print_r_bytes(value: &Value) -> Vec<u8> {
+    let mut output = Vec::new();
+    append_print_r_bytes_with_indent(&mut output, value, 0);
+    output
 }
 
-fn format_print_r_with_indent(value: &Value, indent: usize) -> String {
+fn append_print_r_bytes_with_indent(output: &mut Vec<u8>, value: &Value, indent: usize) {
     match value {
-        Value::Array(array) => format_print_r_array(array, indent),
-        Value::Object(object) => format_print_r_object(object, indent),
-        _ => value.echo_string(),
+        Value::Array(array) => append_print_r_array_bytes(output, array, indent),
+        Value::Object(object) => append_print_r_object_bytes(output, object, indent),
+        _ => append_print_r_scalar_bytes(output, value),
     }
 }
 
-fn format_print_r_array(array: &PhpArray, indent: usize) -> String {
+fn append_print_r_array_bytes(output: &mut Vec<u8>, array: &PhpArray, indent: usize) {
     let padding = "    ".repeat(indent);
     let child_padding = "    ".repeat(indent + 1);
-    let mut output = String::new();
 
-    output.push_str("Array\n");
-    output.push_str(&format!("{padding}(\n"));
+    output.extend_from_slice(b"Array\n");
+    output.extend_from_slice(format!("{padding}(\n").as_bytes());
     for entry in array.entries() {
-        output.push_str(&format!("{child_padding}[{}] => ", entry.key.display_key()));
+        output.extend_from_slice(
+            format!("{child_padding}[{}] => ", entry.key.display_key()).as_bytes(),
+        );
         let value = entry.value_cloned();
         match value {
             Value::Array(value) => {
-                output.push_str(&format_print_r_array(&value, indent + 2));
-                output.push('\n');
+                append_print_r_array_bytes(output, &value, indent + 2);
+                output.push(b'\n');
             }
             Value::Object(value) => {
-                output.push_str(&format_print_r_object(&value, indent + 2));
-                output.push('\n');
+                append_print_r_object_bytes(output, &value, indent + 2);
+                output.push(b'\n');
             }
             value => {
-                output.push_str(&value.echo_string());
-                output.push('\n');
+                append_print_r_scalar_bytes(output, &value);
+                output.push(b'\n');
             }
         }
     }
-    output.push_str(&format!("{padding})\n"));
-    output
+    output.extend_from_slice(format!("{padding})\n").as_bytes());
 }
 
-fn format_print_r_object(object: &PhpObject, indent: usize) -> String {
+fn append_print_r_object_bytes(output: &mut Vec<u8>, object: &PhpObject, indent: usize) {
     let padding = "    ".repeat(indent);
     let child_padding = "    ".repeat(indent + 1);
-    let mut output = String::new();
 
-    output.push_str(&format!("{} Object\n", object.class_name()));
-    output.push_str(&format!("{padding}(\n"));
+    output.extend_from_slice(format!("{} Object\n", object.class_name()).as_bytes());
+    output.extend_from_slice(format!("{padding}(\n").as_bytes());
     for property in display_object_properties(object) {
-        output.push_str(&format!(
-            "{child_padding}[{}] => ",
-            format_print_r_object_property(&property)
-        ));
+        output.extend_from_slice(
+            format!(
+                "{child_padding}[{}] => ",
+                format_print_r_object_property(&property)
+            )
+            .as_bytes(),
+        );
         match property.value_cloned() {
             Value::Array(value) => {
-                output.push_str(&format_print_r_array(&value, indent + 2));
-                output.push('\n');
+                append_print_r_array_bytes(output, &value, indent + 2);
+                output.push(b'\n');
             }
             Value::Object(value) => {
-                output.push_str(&format_print_r_object(&value, indent + 2));
-                output.push('\n');
+                append_print_r_object_bytes(output, &value, indent + 2);
+                output.push(b'\n');
             }
             value => {
-                output.push_str(&value.echo_string());
-                output.push('\n');
+                append_print_r_scalar_bytes(output, &value);
+                output.push(b'\n');
             }
         }
     }
-    output.push_str(&format!("{padding})\n"));
-    output
+    output.extend_from_slice(format!("{padding})\n").as_bytes());
+}
+
+fn append_print_r_scalar_bytes(output: &mut Vec<u8>, value: &Value) {
+    match value {
+        Value::BinaryString(bytes) => output.extend_from_slice(bytes),
+        _ => output.extend_from_slice(value.echo_string().as_bytes()),
+    }
 }
 
 fn format_print_r_object_property(property: &ObjectProperty) -> String {

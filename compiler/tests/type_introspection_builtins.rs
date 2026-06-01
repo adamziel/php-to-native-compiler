@@ -171,7 +171,7 @@ echo is_callable(["Box", "named"], false) ? "1" : "0";
 }
 
 #[test]
-fn is_callable_rejects_unsupported_output_arguments_and_invokes_array_callables() {
+fn is_callable_writes_current_callable_name_output_subset_and_invokes_array_callables() {
     let syntax_error = run_source("<?php\nvar_dump(is_callable(\"missing\", 1));\n").unwrap_err();
 
     assert_eq!(syntax_error.phase, Phase::Runtime);
@@ -182,16 +182,47 @@ fn is_callable_rejects_unsupported_output_arguments_and_invokes_array_callables(
         "unsupported call is_callable(): syntax_only argument must be bool in the current subset, got int"
     );
 
-    let output_error =
+    let output_target_error =
         run_source("<?php\nvar_dump(is_callable(\"missing\", true, null));\n").unwrap_err();
 
-    assert_eq!(output_error.phase, Phase::Runtime);
-    assert_eq!(output_error.line, 2);
-    assert_eq!(output_error.column, 10);
+    assert_eq!(output_target_error.phase, Phase::Runtime);
+    assert_eq!(output_target_error.line, 2);
+    assert_eq!(output_target_error.column, 39);
     assert_eq!(
-        output_error.message,
-        "arity mismatch for is_callable(): expected 1 to 2 argument(s), got 3"
+        output_target_error.message,
+        "unsupported call is_callable(): callable_name output must be a direct variable in the current subset"
     );
+
+    let metadata = run_source(
+        r#"<?php
+$cases = [
+    null,
+    0,
+    123,
+    -2.0,
+    .567,
+    false,
+    [1, 2, 3],
+    "strlen",
+    "missing",
+];
+foreach ($cases as $case) {
+    $name = "seed";
+    echo is_callable($case, true, $name) ? "1" : "0", ":", $name, "\n";
+}
+$name = "seed";
+echo is_callable("strlen", false, $name) ? "1" : "0", ":", $name, "\n";
+$name = "seed";
+echo is_callable("missing", false, $name) ? "1" : "0", ":", $name;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        metadata.stdout,
+        "0:\n0:0\n0:123\n0:-2\n0:0.567\n0:\n0:Array\n1:strlen\n1:missing\n1:strlen\n0:missing"
+    );
+    assert_eq!(metadata.exit_code, 0);
 
     let execution = run_source(
         r#"<?php

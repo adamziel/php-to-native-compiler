@@ -1,8 +1,4 @@
-exit: 255
-stdout:
 Fatal error: Uncaught ValueError: array_pad(): Argument #2 ($length) must not exceed the maximum allowed array size in tests/fixtures/runtime_errors/array_pad_length_too_large.php:2
 Stack trace:
 #0 {main}
-  thrown in tests/fixtures/runtime_errors/array_pad_length_too_large.php on line 2--- stdout end ---
-stderr:
---- stderr end ---
+  thrown in tests/fixtures/runtime_errors/array_pad_length_too_large.php on line 2

@@ -66,13 +66,31 @@ echo "|", stream_get_contents($stream);
 
 #[test]
 fn fprintf_and_vfprintf_reject_unsupported_operands() {
-    let arity = runtime_error("<?php\nfprintf();\n");
-    assert_eq!(arity.line, 2);
-    assert_eq!(arity.column, 1);
+    let arity = run_source(
+        r#"<?php
+try {
+    var_dump(fprintf());
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    var_dump(fprintf(3));
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    var_dump(fprintf(NULL));
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
     assert_eq!(
-        arity.message,
-        "arity mismatch for fprintf(): expected at least 2 argument(s), got 0"
+        arity.stdout,
+        "fprintf() expects at least 2 arguments, 0 given\nfprintf() expects at least 2 arguments, 1 given\nfprintf() expects at least 2 arguments, 1 given\n"
     );
+    assert_eq!(arity.exit_code, 0);
 
     let stream = runtime_error("<?php\nfprintf(\"not-stream\", \"%s\", \"x\");\n");
     assert_eq!(stream.line, 2);

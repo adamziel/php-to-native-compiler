@@ -38,6 +38,37 @@ echo fclose($memory) ? "closed" : "open";
 }
 
 #[test]
+fn fgets_nonpositive_lengths_are_catchable_and_length_one_reads_false() {
+    let execution = run_source(
+        r#"<?php
+$stream = fopen("php://memory", "w+");
+fwrite($stream, "alpha\nbeta");
+rewind($stream);
+try {
+    var_dump(fgets($stream, 0));
+} catch (ValueError $e) {
+    echo $e->getMessage() . "\n";
+}
+try {
+    var_dump(fgets($stream, -10));
+} catch (ValueError $e) {
+    echo $e->getMessage() . "\n";
+}
+var_dump(fgets($stream, 1));
+echo fgets($stream, 2);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "fgets(): Argument #2 ($length) must be greater than 0\nfgets(): Argument #2 ($length) must be greater than 0\nbool(false)\na"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn get_resource_id_matches_integer_cast_for_open_and_closed_resources() {
     let execution = run_source(
         r#"<?php

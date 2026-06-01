@@ -4,6 +4,32 @@
 
 Implemented:
 
+- Integrated the next high-parallel focused PHPT score batch. The interpreter
+  now covers the reached PHP-shaped diagnostics and bounded behavior for
+  `array_change_key_case_flag_error.phpt`, `array_chunk2.phpt`,
+  `array_chunk_variation5.phpt`, `array_fill_error2.phpt`,
+  `array_pad_too_large_padding.phpt`, `array_is_list.phpt`,
+  `prev_error2.phpt`, `prev_error3.phpt`, `fgets_error.phpt`,
+  `call_user_func_002.phpt`, `is_callable_variation2.phpt`,
+  `join_error1.phpt`, `chr_error.phpt`, `printf_error.phpt`,
+  `fprintf_error.phpt`, `printf_64bit.phpt`, `strcmp.phpt`, `strpos.phpt`,
+  `stripos.phpt`, `stripos_error.phpt`, `strlen_basic.phpt`, `strlen.phpt`,
+  `Zend/tests/strlen.phpt`, and
+  `Zend/tests/strlen_deprecation_to_exception.phpt`. The batch adds catchable
+  `ValueError`/`TypeError`/argument-count bridges for the focused array,
+  stream, join/implode, chr, `is_callable()`, `strpos()`/`stripos()`,
+  `strlen()`, and printf/fprintf rows; bounded class-string array callback
+  autoload for `call_user_func()`; active-precision float stringification for
+  `strlen()`/`strcmp()`; binary-preserving `print_r()` output for represented
+  strings; a bounded pass-by-reference notice/fatal path for `prev()`
+  temporaries and array literals; `fgets($stream, 1) === false`; and a
+  PHP-shaped fatal guard for the 64-bit `array_fill()` `INT_MAX` count row.
+  Focused verification passed `218 / 218` Rust tests across the touched
+  builtin suites, `cargo build -p phpc --bin phpc`, and `24 / 24` selected
+  PHPT rows. Unsupported edges remain broad references/COW parity, exact native
+  error object internals, full stream and formatter edge behavior, broad array
+  lvalues, huge allocation semantics, and native lowering.
+
 - Added a focused `intval()` base-coercion score lane for
   `intval_binary_prefix.phpt`: the base argument now uses PHP-shaped
   int-compatible scalar coercion, emits the current null/precision-loss

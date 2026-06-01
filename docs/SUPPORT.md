@@ -2893,7 +2893,7 @@
   Private parent methods remain separately redeclarable.
 - object instantiation with `new ClassName(...)` for declared classes, plus
   `new $class(...)` when `$class` is a direct variable containing a string class
-  name. Missing class names invoke currently registered string user-function,
+  name. Missing class names invoke currently registered closure, string user-function,
   public `"ClassName::method"` static-method string,
   public `[object, "method"]` instance-method, and public
   `["ClassName", "method"]` static-method autoload callbacks once before the
@@ -3240,7 +3240,7 @@
   properties
 - builtins for the documented subset: `strlen`, `chr`, `bin2hex`, `hex2bin`,
   `pack`, `unpack`, `strtolower`, `strtoupper`, `trim`, `ltrim`,
-  `rtrim`, `strcasecmp`, `strncmp`, `strncasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`, `strspn`, `strcspn`, `strpbrk`, `strpos`, `stripos`, `strrpos`, `strripos`, `strstr`, `strchr`, `stristr`, `strtok`, `substr`,
+  `rtrim`, `strcmp`, `strcasecmp`, `strncmp`, `strncasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`, `strspn`, `strcspn`, `strpbrk`, `strpos`, `stripos`, `strrpos`, `strripos`, `strstr`, `strchr`, `stristr`, `strtok`, `substr`,
   `str_shuffle`, `wordwrap`, `str_word_count`, `strnatcmp`, `strnatcasecmp`,
   `mb_strlen`, `mb_substr`, `mb_strpos`, `mb_stripos`, `mb_strrpos`, `mb_strripos`,
   `mb_strtolower`, `mb_strtoupper`, `similar_text`,
@@ -3368,13 +3368,16 @@
   missing/inaccessible methods when the class declares or inherits public
   static `__callStatic`. This `is_callable()` magic-method introspection does
   not broaden the currently executable array-callback dispatch subset.
-  Callable-name output, object `__invoke` callables outside the bounded
-  closure first-class callable slice, private/protected caller-context method
-  callability, `__callStatic` parity for declared public non-static methods,
-  full PHP `Closure` object parity for first-class callables,
-  namespace/autoload behavior, exact native `TypeError` behavior, native
-  lowering, and the environment-specific legacy `is_real` alias are not
-  implemented.
+  Direct interpreter calls with a third direct-variable argument write the
+  bounded callable-name output string for scalar/null values, arrays, objects,
+  closures, and resources; this output slice does not imply broader callable
+  dispatch support. Callable-name output targets beyond direct variables,
+  object `__invoke` callables outside the bounded closure first-class callable
+  slice, private/protected caller-context method callability, `__callStatic`
+  parity for declared public non-static methods, full PHP `Closure` object
+  parity for first-class callables, namespace/autoload behavior, exact native
+  `TypeError` behavior, native lowering, and the environment-specific legacy
+  `is_real` alias are not implemented.
   `version_compare($version1, $version2, $operator = null)` supports string
   versions made of dot, hyphen, or underscore separated non-negative integer
   components. With two arguments it returns `-1`, `0`, or `1`; with a string
@@ -3439,7 +3442,9 @@
   placeholders accept null/bool/int/float/numeric-string values, plus current
   PHP array truthiness, in the current finite numeric subset. Unknown format
   specifiers and invalid positional argument numbers raise a catchable
-  `ValueError` before output in this bounded path, and vprintf/vfprintf
+  `ValueError` before output in this bounded path, missing format arguments
+  and reached `printf()`/`fprintf()` minimum arity errors route through
+  catchable PHP-shaped argument-count diagnostics, and vprintf/vfprintf
   argument type/count failures route through catchable PHP-shaped `TypeError`;
   this includes non-resource `vfprintf()` stream arguments.
   PHP's full format grammar, star width or precision, general placeholders,
@@ -3448,9 +3453,17 @@
   unsupported.
   `chr($codepoint)` accepts integer-compatible values, returns the low byte
   using PHP's modulo-256 behavior, and emits PHP's deprecation diagnostic when
-  the integer is outside the `[0, 255]` byte range. Array/object/resource
-  coercions, exact diagnostics for every unsupported scalar conversion, and
-  native lowering remain unsupported.
+  the integer is outside the `[0, 255]` byte range. Reached zero-argument and
+  extra-argument calls raise catchable PHP-shaped argument-count diagnostics.
+  Array/object/resource coercions, exact diagnostics for every unsupported
+  scalar conversion, and native lowering remain unsupported.
+  `strlen($value)` accepts current scalar/null string-convertible values,
+  emits the PHP null-to-string deprecation through the current error-handler
+  path, formats float operands with the active `precision` setting, and
+  accepts supported objects with `__toString()`. Arrays, resources, closures,
+  objects without supported `__toString()`, exact string-conversion
+  diagnostics, and native lowering beyond the documented direct-folding slice
+  remain unsupported.
   `strtolower($value)` supports exactly one scalar/null string-convertible
   argument and applies ASCII lowercase mapping over the current runtime string
   bytes, preserving non-ASCII bytes. Locale-sensitive case mapping, full
@@ -3505,6 +3518,13 @@
   broader binary string edge cases beyond represented runtime bytes,
   locale-sensitive behavior, exact PHP diagnostics, and native lowering
   outside the current string-int helper remain unsupported.
+  `strcmp($left, $right)` supports exactly two scalar/null string-convertible
+  arguments, compares the current runtime byte strings, returns PHP's first
+  differing byte delta with sign values for prefix-length differences, and
+  formats float operands with the active `precision` setting. Array operands,
+  object/resource coercions, broader binary string edge cases beyond
+  represented runtime bytes, exact PHP diagnostics, and native lowering beyond
+  function-table introspection remain unsupported.
   `strncmp($string1, $string2, $length)` and
   `strncasecmp($string1, $string2, $length)` support scalar/null
   string-convertible operands, an int-compatible non-negative length, binary
@@ -3533,24 +3553,28 @@
   beyond valid UTF-8 runtime strings, exact PHP diagnostics, and native
   lowering outside the shared direct string-predicate ABI remain unsupported.
   `strpos($haystack, $needle, $offset = 0)` supports scalar/null
-  string-convertible haystack and needle arguments, an optional integer offset,
+  string-convertible haystack and needle arguments, null haystack/needle
+  deprecations, an optional PHP-internal-int-compatible offset, byte-position
+  matching over the current runtime string bytes, empty needles returning the
+  effective offset, negative offsets measured from the end of the haystack,
+  catchable `TypeError` handling for non-int-compatible offsets, catchable
+  `ValueError` handling for offsets outside the haystack bounds, and `false`
+  for no match. Direct interpreter calls and runtime callable string dispatch
+  use this same bounded result path. Array/object/resource coercions,
+  encoding-sensitive edge cases beyond represented runtime strings, exact
+  diagnostics beyond the documented offset messages, and native lowering remain
+  unsupported.
+  `stripos($haystack, $needle, $offset = 0)` supports scalar/null
+  string-convertible haystack and needle arguments, null haystack/needle
+  deprecations, an optional PHP-internal-int-compatible offset, forward
   byte-position matching over the current runtime string bytes, empty needles
   returning the effective offset, negative offsets measured from the end of the
-  haystack, catchable `ValueError` handling for offsets outside the haystack
-  bounds, and `false` for no match. Direct interpreter calls and runtime
-  callable string dispatch use this same bounded result path. Offset coercions
-  beyond integers, array/object/resource coercions, encoding-sensitive edge
-  cases beyond represented runtime strings, exact diagnostics beyond the
-  documented offset bounds message, and native lowering remain unsupported.
-  `stripos($haystack, $needle, $offset = 0)` supports scalar/null
-  string-convertible haystack and needle arguments, an optional integer offset,
-  forward byte-position matching over the current runtime string bytes, empty
-  needles returning the effective offset, negative offsets measured from the end
-  of the haystack, and `false` for no match. `stripos()` applies ASCII-only case
-  folding. Offset coercions beyond integers, non-ASCII case folding, PHP-exact
-  `ValueError` diagnostics, array/object/resource coercions,
-  encoding-sensitive edge cases beyond represented runtime strings, and native
-  lowering remain unsupported.
+  haystack, catchable `TypeError` handling for non-int-compatible offsets,
+  catchable `ValueError` handling for offsets outside the haystack bounds, and
+  `false` for no match. `stripos()` applies ASCII-only case folding. Non-ASCII
+  case folding, array/object/resource coercions, encoding-sensitive edge cases
+  beyond represented runtime strings, exact diagnostics beyond the documented
+  offset messages, and native lowering remain unsupported.
   `strrpos($haystack, $needle, $offset = 0)` and
   `strripos($haystack, $needle, $offset = 0)` support the same scalar/null
   string-convertible haystack and needle subset, reverse byte-position
@@ -3843,11 +3867,15 @@
   beyond current truthiness, FIPS/provider policy, streaming hash contexts,
   remote stream wrappers, and native lowering remain unsupported.
   `call_user_func($callback, ...$args)` supports string callbacks resolving to
-  current user functions or documented callable builtins and forwards evaluated
-  positional values through the current value-call path. Array callables,
-  closure invocation, `__invoke`, references, variadic unpacking, exact PHP
-  warning behavior, and native lowering remain unsupported. The callable
-  builtin subset includes runtime string-search `strpos(...)`;
+  current user functions or documented callable builtins, current ordinary
+  closure values, and public `[object, method]` / `[class, method]` array
+  callbacks, and forwards evaluated positional values through the current
+  value-call path. Missing class-string array callback targets invoke bounded
+  SPL autoload callbacks before reporting the catchable invalid-callback
+  `TypeError`. Arbitrary array callables, `__invoke`, references, variadic
+  unpacking, exact PHP warning behavior, and native lowering remain
+  unsupported. The callable builtin subset includes runtime string-search
+  `strpos(...)`;
   `substr_count(...)` remains direct-call interpreter support only.
   `call_user_func_array($callback, $args)` supports string callbacks resolving
   to current user functions or documented callable builtins, public
@@ -3886,12 +3914,15 @@
   in the literal path, closure
   and `__invoke` callbacks, non-public methods, other callable array shapes,
   exact PHP warning behavior, and native lowering remain unsupported.
-  `implode($array)` and `implode($separator, $array)` support current arrays
-  containing only `null`, bool, int, float, and string values, preserve
-  insertion order, ignore keys, and join values using PHP-shaped echo string
-  conversion with an empty default separator. The legacy reversed argument
-  order, nested arrays, object/resource values, exact warning behavior,
-  partial-output behavior, and native lowering remain unsupported.
+  `implode($array)`, `implode($separator, $array)`, and the `join()` alias
+  support current arrays containing only `null`, bool, int, float, and string
+  values, preserve insertion order, ignore keys, and join values using
+  PHP-shaped echo string conversion with an empty default separator. Reached
+  two-argument non-array pieces report PHP-shaped catchable `TypeError`
+  messages, including the special null-pieces diagnostic for string
+  separators. The legacy reversed argument order, nested arrays,
+  object/resource values, exact warning behavior, partial-output behavior, and
+  native lowering remain unsupported.
   `function_exists($name)` checks string names against the current runtime
   function table, including current user functions and documented callable
   builtins. Conditional/nested user-function declarations become visible only
@@ -5417,15 +5448,18 @@
   valid string callable, object/static array callable, or closure plus an
   optional integer error-level mask, pushes it onto a request-local bounded
   handler stack, and returns the previous handler value or `null`. The current
-  invocation slice routes only recoverable `file_get_contents()` `E_WARNING`
-  events through the top registered string user-function handler or public
-  object/static array callable handler. Handler masks filter whether that top
-  handler receives those warnings; `false` return values fall through to the
-  bounded stderr warning path, and other return values suppress that fallback.
+  invocation slice routes recoverable `file_get_contents()` `E_WARNING`
+  events and selected string null-to-string `E_DEPRECATED` events such as
+  `strlen(null)` through the top registered string user-function handler or
+  public object/static array callable handler. Handler masks filter whether
+  that top handler receives those diagnostics; `false` return values fall
+  through to the bounded stderr warning path, and other return values suppress
+  that fallback.
   `restore_error_handler()` accepts no arguments, pops the current bounded
   handler registration so the previous registration becomes active again, and
   returns `true`. Warnings/notices/deprecations outside the current
-  `file_get_contents()` recovery path, closure handler invocation, handler
+  `file_get_contents()` and selected string null-to-string recovery paths,
+  closure handler invocation, handler
   stack mutation edge cases during active handler dispatch, by-reference
   callback behavior, output buffering, shutdown/fatal interaction, exact
   handler `errstr` diagnostics, and native lowering remain unsupported.
@@ -6727,14 +6761,15 @@
   or `false` past the last element for direct variable array paths, including
   selected nested paths such as `$array[$key]`, and the reached direct
   object-property array-offset shape. Direct function-returned array
-  temporaries passed to `next()` emit PHP's bounded by-reference notice and
-  operate on a temporary copy; direct array literals passed to `next()` produce
-  the bounded pass-by-reference fatal. Through `call_user_func()` the
+  temporaries passed to `next()` or `prev()` emit PHP's bounded by-reference
+  notice and operate on a temporary copy; direct array literals passed to
+  `next()` or `prev()` produce the bounded pass-by-reference fatal. Through
+  `call_user_func()` the
   covered callback form advances a copied array, emits the bounded
   reference-parameter warning, and leaves the caller cursor unchanged; through
   `call_user_func_array()` a literal or stored reference element mutates the
   referenced array cursor. Full PHP internal pointer semantics,
-  `reset()`/`end()`/`prev()` interaction, object operands, broad lvalue
+  broader `reset()`/`end()` interaction, object operands, broad lvalue
   targets, references/copy-on-write, exact warnings, and native lowering
   remain unsupported.
   `array_shift($array)` removes and returns the first inserted value for direct
@@ -6758,8 +6793,9 @@
   returns true for empty arrays and arrays whose entries are ordered with exact
   integer keys `0..n-1`; numeric string keys such as `"0"` participate through
   the current array-key normalization, while string keys such as `"01"`, gaps,
-  negative keys, and out-of-order integer keys return false. It is also
-  available through string-valued dynamic function calls. `array_values($array)`
+  negative keys, and out-of-order integer keys return false. Non-array
+  operands raise a PHP-shaped catchable `TypeError` in the interpreter path.
+  It is also available through string-valued dynamic function calls. `array_values($array)`
   returns a new ordered array containing the original values in insertion order
   with integer keys starting at zero.
   `array_keys($array)` returns a new ordered array containing the original
@@ -8051,7 +8087,7 @@
   to a string that case-insensitively resolves exactly to a user-defined function or to
   one of the documented callable builtins: `strlen`, `bin2hex`, `hex2bin`,
   `pack`, `unpack`, `strtolower`, `strtoupper`, `str_increment`,
-  `str_decrement`, `trim`, `ltrim`, `rtrim`, `strcasecmp`, `strncmp`, `strncasecmp`,
+  `str_decrement`, `trim`, `ltrim`, `rtrim`, `strcmp`, `strcasecmp`, `strncmp`, `strncasecmp`,
   `str_contains`, `str_starts_with`, `str_ends_with`, `strspn`, `strcspn`, `strpbrk`, `strpos`, `stripos`, `strrpos`, `strripos`, `strstr`, `strchr`, `stristr`, `strtok`, `substr`, `str_shuffle`, `wordwrap`, `str_word_count`, `strnatcmp`, `strnatcasecmp`, `mb_strlen`, `mb_strpos`, `mb_stripos`, `mb_strrpos`, `mb_strripos`, `mb_strtolower`, `mb_strtoupper`, `similar_text`, `convert_uuencode`, `convert_uudecode`, `substr_replace`, `substr_compare`, `substr_count`, `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `str_getcsv`, `error_reporting`,
   `printf`, `fprintf`, `sprintf`, `vsprintf`, `vprintf`, `vfprintf`, `call_user_func`, `call_user_func_array`, `implode`, `basename`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`,
   `file_put_contents`, `readfile`, `unlink`, `mkdir`, `rmdir`, `copy`, `rename`, `chdir`, `scandir`, `stat`, `lstat`, `fileperms`, `chmod`, `chown`, `chgrp`,
@@ -8299,7 +8335,7 @@
   resolution, autoload interaction, and native lowering for type declarations
   are unsupported.
 - Builtins: `strlen`, `bin2hex`, `hex2bin`, `pack`, `unpack`, `strtolower`, `strtoupper`, `str_increment`,
-  `str_decrement`, `trim`, `ltrim`, `rtrim`, `strcasecmp`, `strncmp`, `strncasecmp`, `str_contains`,
+  `str_decrement`, `trim`, `ltrim`, `rtrim`, `strcmp`, `strcasecmp`, `strncmp`, `strncasecmp`, `str_contains`,
   `str_starts_with`, `str_ends_with`, `strspn`, `strcspn`, `strpbrk`, `strpos`, `stripos`, `strrpos`, `strripos`, `strstr`, `strchr`, `stristr`, `strtok`, `substr`, `substr_replace`, `substr_compare`, `substr_count`, `similar_text`, `str_replace`, `str_getcsv`, `parse_str`, `printf`, `fprintf`, `sprintf`, `vsprintf`, `vprintf`, `vfprintf`,
   `call_user_func`, `call_user_func_array`, `implode`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`,
   `file_put_contents`, `readfile`, `unlink`, `mkdir`, `rmdir`, `copy`, `rename`, `chdir`, `scandir`, `stat`, `lstat`, `fileperms`, `chmod`, `chown`, `chgrp`,
@@ -8404,13 +8440,17 @@
   class declares or inherits public static `__callStatic`. This
   `is_callable()` magic-method introspection does not broaden the currently
   executable array-callback dispatch subset. Scalar non-string values return
-  false. Native lowering folds only direct calls whose value
+  false. Direct interpreter calls with a third direct-variable argument write
+  the bounded callable-name output string for scalar/null values, arrays,
+  objects, closures, and resources; output targets beyond direct variables
+  remain unsupported. Native lowering
+  folds only direct calls whose value
   argument is an already-lowerable string or non-string scalar/null value and
   whose optional syntax-only flag is an already-lowerable boolean; true
   syntax-only flags return true for string values, non-string scalar/null
   values return false, while false or omitted flags use the documented native
-  builtin lookup table for strings. Additional callable forms, the
-  callable-name output parameter,
+  builtin lookup table for strings. Additional callable forms, native
+  callable-name output parameters,
   environment-specific legacy aliases such as `is_real`,
   extension/resource-aware type checks, full internal interface signature
   enforcement, tentative return-type notices, object `foreach`,
@@ -8803,11 +8843,11 @@
   `str_ends_with(...)` calls with lowerable operands route through the shared
   native string-predicate ABI, while unsupported forms still reject before
   misleading code is emitted.
-  `strpos`, `stripos`, `strrpos`, and `strripos` accept the same current scalar/null
-  string-convertible haystack and needle subset plus an optional integer
-  offset as the builtin section above; direct native calls to `stripos()` and
-  the reverse variants still reject under the function-call boundary, while native
-  function-table introspection recognizes the names.
+  `strpos`, `stripos`, `strrpos`, and `strripos` accept the same current
+  scalar/null string-convertible haystack and needle subset plus an optional
+  int-compatible offset as the builtin section above; direct native calls to
+  `stripos()` and the reverse variants still reject under the function-call
+  boundary, while native function-table introspection recognizes the names.
   `substr` accepts the same current scalar/null string-convertible input,
   integer offset, and optional integer length subset as the builtin section
   above; direct native `substr(...)` calls still reject under the function-call
@@ -8854,12 +8894,13 @@
   tokenization and replacement-by-offset subsets as the builtin section above;
   direct native calls still reject under the function-call boundary, while
   native function-table introspection recognizes the names.
-  `call_user_func` accepts the same current string-callable and closure
-  callback subset as the builtin section above, including PHP-matching
-  by-value invocation plus bounded `E_WARNING` recovery for reached
-  non-variadic by-reference parameters; direct native `call_user_func(...)`
-  calls still reject under the function-call boundary, while native
-  function-table introspection recognizes the name.
+  `call_user_func` accepts the same current string-callable, closure, and
+  public array-callable callback subset as the builtin section above,
+  including PHP-matching by-value invocation plus bounded `E_WARNING` recovery
+  for reached non-variadic by-reference parameters and bounded SPL autoload for
+  missing class-string array callback targets; direct native
+  `call_user_func(...)` calls still reject under the function-call boundary,
+  while native function-table introspection recognizes the name.
   `call_user_func_array` accepts the same current string/array callable,
   integer-keyed positional argument-array, literal direct-variable or direct
   visible named object-property array-offset by-reference argument, and direct stored
@@ -8964,8 +9005,7 @@
   `spl_autoload_register` accepts closure, string user-function, public
   `"ClassName::method"` static-method string, public object-method array,
   public class-string static-method array, and public invokable-object
-  callbacks in `phpc run`; supported non-closure callbacks are stored for
-  truthy-autoload
+  callbacks in `phpc run`; supported callbacks are stored for truthy-autoload
   `class_exists()`/`interface_exists()`/`trait_exists()` misses, missing `new`
   class instantiation, and missing included-declaration
   `extends`/`implements`/trait-use dependencies. `spl_autoload_functions`
@@ -8973,9 +9013,9 @@
   removes matching bounded callback values, `spl_autoload_call` manually
   invokes the stored bounded callback list for a class/interface/trait string
   name, and `spl_autoload` probes lowercased local files through the current
-  request-local extension list and include resolver. Closure invocation and
-  direct native calls still reject under explicit boundaries. Native
-  function-table introspection recognizes the names.
+  request-local extension list and include resolver. Direct native calls still
+  reject under explicit boundaries. Native function-table introspection
+  recognizes the names.
   `get_class($object)` returns the declared class name for current minimal
   object values and rejects non-object arguments. `is_object($value)` returns
   true only for current minimal object values and false for scalars and arrays.
@@ -9151,7 +9191,7 @@
   as the method path. The bounded internal target slice also accepts
   `new ReflectionFunction(...)` for `strlen`, `strtolower`, `strtoupper`,
   `str_increment`, `str_decrement`, `trim`, `ltrim`,
-  `rtrim`, `strcasecmp`, `strncmp`, `strncasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`,
+  `rtrim`, `strcmp`, `strcasecmp`, `strncmp`, `strncasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`,
   `strpos`, `stripos`, `strrpos`, `strripos`, `substr`, `str_shuffle`, `printf`, `fprintf`, `sprintf`, `vprintf`, `vfprintf`, `implode`, `basename`, `dirname`, `number_format`, `defined`,
   `function_exists`, `is_array`, `is_object`, `is_string`, `is_scalar`,
   `count`, `sizeof`, `array_key_exists`, `is_callable`, `get_current_user`, `getmypid`, and `php_sapi_name`, exposes
@@ -9340,8 +9380,11 @@
   `spl_object_hash($object)` accepts current object values and returns a stable
   current-subset handle hash; non-object arguments fail with a stable
   type-boundary diagnostic.
-  `print_r` can also render the current minimal object values. `strlen` remains
-  scalar-only and rejects arrays and objects. `count` accepts arrays only.
+  `print_r()` emits and returns represented binary string bytes without
+  UTF-8 replacement for the current scalar/array/object value model.
+  `strlen` accepts scalar/null string-convertible values and supported
+  `__toString()` objects, and rejects arrays, resources, closures, and objects
+  without supported `__toString()`. `count` accepts arrays only.
   `array_key_exists($key, $array)` and `key_exists($key, $array)` accept integer
   and string keys over the current ordered array value model, plus `null`
   keys as the empty-string key, boolean keys as integer `0`/`1`, and integral
@@ -9360,9 +9403,10 @@
   returns false for gaps, negative keys, string keys, and out-of-order integer
   keys. Numeric string keys that normalize to integer keys use the current
   array-key normalization before the list check. It is also available through
-  string-valued dynamic function calls. Exact native `TypeError` objects,
-  references, copy-on-write containers, and native lowering are not
-  implemented. `array_values($array)` accepts arrays
+  string-valued dynamic function calls. Non-array operands raise a PHP-shaped
+  catchable `TypeError`; exact native error object internals, references,
+  copy-on-write containers, and native lowering are not implemented.
+  `array_values($array)` accepts arrays
   only, preserves value insertion order, and returns a new ordered array
   reindexed with integer keys `0..n-1`; it is also available through
   string-valued dynamic function calls. `array_keys($array)` accepts arrays
@@ -9388,6 +9432,16 @@
   reproducibility, reference/copy-on-write side effects, non-int count
   coercions outside the current argument helper, object/resource values, or
   native lowering.
+  `array_fill($start_index, $count, $value)` accepts current PHP-internal
+  integer-compatible scalar coercions for the first two arguments, builds
+  ordered integer-keyed arrays for bounded counts, and returns catchable
+  `ValueError` diagnostics for negative counts or counts above the bounded
+  runtime cap. The PHP 64-bit `INT_MAX` count row is handled as a fatal
+  "Possible integer overflow in memory allocation" diagnostic instead of
+  attempting allocation. Broader huge-count memory-limit behavior, exact
+  allocation-size accounting on other architectures, references,
+  copy-on-write behavior, object/resource value behavior, and native lowering
+  remain unsupported.
   `array_reverse($array)` and `array_reverse($array, false)` accept arrays only,
   return a new array in
   reverse insertion order, reindex integer-keyed entries from zero, preserve
@@ -9423,23 +9477,23 @@
   array for empty input arrays, and is available through string-valued dynamic
   function calls. `array_chunk($array, $length, true)` preserves original
   integer and string keys inside each chunk, and boolean `false` uses the
-  default chunk-key reindexing path. Non-bool preserve-key coercion, non-int
-  length coercion, non-positive length native `ValueError` objects,
-  reference/copy-on-write behavior, object handle identity preservation,
-  resource values, exact native `TypeError` objects, and native lowering are
-  not implemented.
+  default chunk-key reindexing path. Non-positive lengths raise a PHP-shaped
+  catchable `ValueError`. Non-bool preserve-key coercion, non-int length
+  coercion, reference/copy-on-write behavior, object handle identity
+  preservation, resource values, exact native `TypeError` object internals,
+  and native lowering are not implemented.
   `array_pad($array, $length, $value)` accepts arrays and integer lengths. When
   `abs($length)` is not larger than the input size it returns a cloned array
   with the original key shape and append index. Positive lengths right-pad and
   negative lengths left-pad to the requested size, preserving string keys while
   reindexing integer-keyed input entries from zero when padding is needed.
   Padding values are cloned into each new slot. Requests that would insert more
-  than 1,048,576 padding entries fail with a stable project diagnostic instead
-  of allocating unbounded memory. Non-int length coercion, exact native
-  `ValueError`/`TypeError` objects, references, copy-on-write behavior, object
-  handle identity preservation, resource values, and native lowering are not
-  implemented. `array_pad` is also available through string-valued dynamic
-  function calls.
+  than 1,048,576 padding entries raise a PHP-shaped catchable `ValueError`
+  instead of allocating unbounded memory. Non-int length coercion, exact native
+  `ValueError`/`TypeError` object internals, references, copy-on-write
+  behavior, object handle identity preservation, resource values, and native
+  lowering are not implemented. `array_pad` is also available through
+  string-valued dynamic function calls.
   `array_merge()` accepts zero arguments and returns an empty array.
   `array_merge($array, ...)` accepts any number of array operands, processes
   them left to right in insertion order, appends integer-keyed entries with new
@@ -9565,17 +9619,16 @@
   `array_change_key_case($array)` and
   `array_change_key_case($array, CASE_LOWER)` return a new ordered array with
   ASCII string keys lowercased and integer keys preserved.
-  `array_change_key_case($array, CASE_UPPER)` and
-  `array_change_key_case($array, $case)` with any nonzero integer case flag
-  uppercase ASCII string keys.
+  `array_change_key_case($array, CASE_UPPER)` uppercases ASCII string keys.
   Duplicate converted keys are overwritten by later source entries without
   moving the first converted-key position, the source array is not mutated, and
   the builtin is available through string-valued dynamic function calls.
-  Case flags must be integers in the current subset; integer `0` lowercases
-  and any nonzero integer uppercases. Non-int case values still fail with a
-  stable project diagnostic. Unicode/locale-aware casing, scalar flag
-  coercions, references/copy-on-write, exact native warning/`TypeError`
-  behavior, and native lowering are not implemented.
+  Case flags must be integers in the current subset; integer values other than
+  `CASE_LOWER`/`0` and `CASE_UPPER`/`1` raise PHP-shaped catchable
+  `ValueError`s. Non-int case values still fail with a stable project
+  diagnostic. Unicode/locale-aware casing, scalar flag coercions,
+  references/copy-on-write, exact native warning/`TypeError` behavior, and
+  native lowering are not implemented.
   `array_column($rows, $column_key)` accepts an array first argument plus
   null, int, string, weak bool/float, binary-string, or object-with-`__toString`
   column keys. Array rows use the current int/string key normalization rules;
@@ -10821,8 +10874,8 @@
 - `array_flip` reference/copy-on-write behavior, exact native
   warning/`TypeError` objects, and native lowering
 - `array_change_key_case` Unicode/locale-aware casing, non-int case coercions,
-  reference/copy-on-write behavior, exact native warning/`TypeError` objects,
-  resource keys, and native lowering
+  exact native `ValueError`/`TypeError` object internals,
+  reference/copy-on-write behavior, resource keys, and native lowering
 - `array_column` first-argument coercions outside arrays, column or index keys
   outside int/string/null, lossy or non-finite float index values,
   array/object/resource index values, magic `__get`, `ArrayAccess`, exact
@@ -10963,7 +11016,7 @@
   user-function metadata named by string, plus bounded internal metadata and
   by-value invocation for `strlen`, `strtolower`, `strtoupper`,
   `str_increment`, `str_decrement`, `trim`, `ltrim`, `rtrim`,
-  `strcasecmp`, `strncmp`, `strncasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`, `strpos`, `stripos`, `strrpos`, `strripos`,
+  `strcmp`, `strcasecmp`, `strncmp`, `strncasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`, `strpos`, `stripos`, `strrpos`, `strripos`,
   `substr`, `str_shuffle`, `printf`, `fprintf`, `sprintf`, `vprintf`, `vfprintf`, `implode`, `basename`, `dirname`, `number_format`, `defined`,
   `function_exists`, `get_current_user`, `getmypid`, and `php_sapi_name`. Closure metadata is supported for
   current closure values. The supported
@@ -11061,11 +11114,11 @@
   semantics, `Traversable` forwarding, and native lowering
 - executable attribute declarations and reflection metadata beyond the current
   syntax-only skip boundary
-- `is_callable` callable-name output parameter, object `__invoke` callables
-  outside the bounded closure first-class callable slice, private/protected
-  caller-context method callability, inherited/trait/interface method lookup,
-  full PHP `Closure` object parity for first-class callables,
-  namespace/autoload-aware resolution, exact native
+- `is_callable` callable-name output targets beyond direct variables, object
+  `__invoke` callables outside the bounded closure first-class callable slice,
+  private/protected caller-context method callability,
+  inherited/trait/interface method lookup, full PHP `Closure` object parity
+  for first-class callables, namespace/autoload-aware resolution, exact native
   `TypeError` behavior, and native lowering beyond direct known string
   builtin/missing-name folding with optional known boolean syntax-only flags
   and direct non-string scalar/null false folding
@@ -11111,9 +11164,18 @@
   `%s`/`%d`/`%b`/`%c`/`%u`/`%o`/`%x`/`%X`/`%f`/`%F`/`%e`/`%E` subset:
   PHP's full format grammar, star width or precision, general placeholders,
   locale behavior, broad argument reordering, binary byte fidelity for non-ASCII
-  `%c`, array/object/resource conversions, exact warning behavior,
+  `%c`, array/object/resource conversions, exact warning and arity object behavior,
   partial-output behavior, and native lowering beyond function-table
   introspection
+- `strlen()` outside the current scalar/null string-convertible plus supported
+  `__toString()` object subset: arrays, resources, closures, objects without
+  supported `__toString()`, exact string-conversion diagnostics, and native
+  lowering beyond the direct known-string folding slice
+- `strcmp()` outside the current exact-two-argument scalar/null
+  string-convertible subset with active-`precision` float formatting: array
+  operands, object/resource coercions, broader binary string edge cases beyond
+  represented runtime bytes, exact PHP diagnostics, and native lowering beyond
+  function-table introspection
 - `strcasecmp()` outside the current exact-two-argument scalar/null
   string-convertible subset: array operands, object/resource coercions, binary
   string edge cases beyond valid UTF-8 runtime strings, locale-sensitive
@@ -11228,11 +11290,12 @@
   runtime strings, array/object/resource coercions, exact PHP diagnostics, and
   native lowering beyond the shared direct string-predicate ABI
 - `strpos()`/`stripos()` outside the current scalar/null string-convertible
-  haystack and needle plus optional integer offset subset: PHP-exact offset
-  coercions and diagnostics beyond the covered offset-bounds `ValueError`,
+  haystack and needle plus optional int-compatible offset subset:
   array/object/resource coercions, non-ASCII case-folding parity for
   `stripos()`, encoding-sensitive edge cases beyond represented runtime
-  strings, and native lowering beyond function-table introspection
+  strings, exact diagnostics beyond the covered null deprecations,
+  non-int-compatible offset `TypeError`, and offset-bounds `ValueError`, and
+  native lowering beyond function-table introspection
 - `strrpos()`/`strripos()` outside the current scalar/null string-convertible
   haystack and needle plus optional integer offset subset: PHP-exact offset
   coercions beyond integer values, non-ASCII case folding for `strripos()`,
@@ -11332,10 +11395,10 @@
   null-argument deprecations, array conversion, resource-search TypeError, and
   the callback by-value count warning, and native lowering beyond
   function-table introspection
-- `implode()` outside the current scalar/null array-value subset: legacy
-  reversed argument order, nested arrays, object/resource values, exact warning
-  behavior, partial-output behavior, and native lowering beyond function-table
-  introspection
+- `implode()`/`join()` outside the current scalar/null array-value subset:
+  legacy reversed argument order, nested arrays, object/resource values, exact
+  warning and type-error object behavior, partial-output behavior, and native
+  lowering beyond function-table introspection
 - `dirname()` path behavior outside the current lexical Unix-style local path
   subset, including Windows drive and UNC paths, stream wrappers, filesystem
   canonicalization, symlink resolution, null-byte behavior, exact
@@ -11545,15 +11608,15 @@
   callable/dynamic invocation, boolean/float/array/object argument handling,
   PHP's exact exit-status normalization, shutdown functions, destructors,
   finally ordering, output buffering, SAPI interaction, and native lowering
-- `spl_autoload_register()` behavior beyond invoking string user-functions,
-  public `"ClassName::method"` static-method strings, public object-method
-  arrays, public class-string static-method arrays, and public invokable
-  objects for truthy-autoload
+- `spl_autoload_register()` behavior beyond invoking closures, string
+  user-functions, public `"ClassName::method"` static-method strings, public
+  object-method arrays, public class-string static-method arrays, and public
+  invokable objects for truthy-autoload
   `class_exists()`/`interface_exists()`/`trait_exists()` misses, missing `new`
   class instantiation, and included class declaration class/interface/trait
   dependencies, plus bounded callback-list introspection, unregistering, and
   manual `spl_autoload_call()` dispatch:
-  closure invocation, nonexistent string callback validation,
+  nonexistent string callback validation,
   non-public/static `__invoke`, invokable-object dispatch outside autoloading,
   non-public methods, class-string non-static methods, object static methods,
   `self::`/`parent::`/`static::` callback strings, enum autoload lookup,
@@ -11625,8 +11688,10 @@ Unsupported code should fail with an explicit parse, runtime, or codegen error.
   stream-wrapper link targets remain unsupported.
 - Bounded line-oriented stream reads in `phpc run`: `fgetc()` returns the next
   UTF-8 character from local file and memory streams, `fgets()` returns the next
-  line or bounded positive-length slice, `fgetcsv()` reads one bounded line
-  from local file or memory streams into numeric CSV fields with one-character
+  line or bounded positive-length slice, rejects nonpositive lengths with a
+  PHP-shaped catchable `ValueError`, and returns `false` for the zero-byte
+  `length === 1` read cap. `fgetcsv()` reads one bounded line from local file
+  or memory streams into numeric CSV fields with one-character
   delimiter/enclosure/escape handling and direct named `escape:` support, and
   `fscanf()` reads one bounded line from local file or memory streams into an
   array or direct variable assignments for bounded string, integer, float,

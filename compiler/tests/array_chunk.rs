@@ -128,15 +128,41 @@ fn array_chunk_requires_int_length_argument() {
 }
 
 #[test]
-fn array_chunk_requires_positive_length_argument() {
-    let error = runtime_error("<?php\n$items = [1];\necho array_chunk($items, 0);\n");
+fn array_chunk_non_positive_lengths_are_catchable_value_errors() {
+    let execution = run_source(
+        r#"<?php
+$items = [1, 2, 3];
+foreach ([0, -1] as $length) {
+    try {
+        var_dump(array_chunk($items, $length));
+    } catch (ValueError $e) {
+        echo get_class($e), ":", $e->getMessage(), "\n";
+    }
+    try {
+        var_dump(array_chunk($items, $length, true));
+    } catch (ValueError $e) {
+        echo get_class($e), ":", $e->getMessage(), "\n";
+    }
+    try {
+        var_dump(array_chunk($items, $length, false));
+    } catch (ValueError $e) {
+        echo get_class($e), ":", $e->getMessage(), "\n";
+    }
+}
+"#,
+    )
+    .unwrap();
 
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 6);
     assert_eq!(
-        error.message,
-        "unsupported call array_chunk(): length argument must be greater than 0 in the current subset, got 0"
+        execution.stdout,
+        "ValueError:array_chunk(): Argument #2 ($length) must be greater than 0\n\
+ValueError:array_chunk(): Argument #2 ($length) must be greater than 0\n\
+ValueError:array_chunk(): Argument #2 ($length) must be greater than 0\n\
+ValueError:array_chunk(): Argument #2 ($length) must be greater than 0\n\
+ValueError:array_chunk(): Argument #2 ($length) must be greater than 0\n\
+ValueError:array_chunk(): Argument #2 ($length) must be greater than 0\n"
     );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

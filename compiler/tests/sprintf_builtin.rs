@@ -4,12 +4,6 @@ use php_compiler::run_source;
 
 const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
 
-fn runtime_error(source: &str) -> php_compiler::error::Diagnostic {
-    let error = run_source(source).unwrap_err();
-    assert_eq!(error.phase, Phase::Runtime);
-    error
-}
-
 #[test]
 fn sprintf_executes_current_string_placeholder_subset() {
     let execution = run_source(
@@ -71,6 +65,36 @@ echo "\n", $length, "\n";
     .unwrap();
 
     assert_eq!(execution.stdout, "id:0007:ff\n10\n");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn printf_arity_and_missing_format_arguments_are_catchable() {
+    let execution = run_source(
+        r#"<?php
+try {
+    var_dump(printf());
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    var_dump(printf("%s"));
+} catch (ArgumentCountError $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    var_dump(printf("%s%s", "one"));
+} catch (ArgumentCountError $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "printf() expects at least 1 argument, 0 given\n2 arguments are required, 1 given\n3 arguments are required, 2 given\n"
+    );
     assert_eq!(execution.exit_code, 0);
 }
 

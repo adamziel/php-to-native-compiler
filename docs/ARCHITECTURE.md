@@ -154,13 +154,14 @@ array-path mutation helper. The helper evaluates a variable-root path such as
 `$array[$key]["child"]`, mutates the selected `PhpArray`, and writes the
 updated value back through the root symbol while preserving reference-backed
 slots via slot setters. `array_push()`, `array_unshift()`, `array_pop()`,
-`array_shift()`, and `next()` use this path; pop/shift detach aliases for the
-removed leaf before mutation, and array-entry removal adjusts the ordered-array
-cursor when the removed slot was before the cursor. `array_shift()` additionally
-has a bounded by-value expression fallback that emits PHP's reference notice and
-shifts a temporary copy. `next()` has the same bounded notice-and-temporary path
-for supported function-returned arrays, while direct array literals use the
-bounded pass-by-reference fatal path. Object-property array roots for
+`array_shift()`, `next()`, `prev()`, `reset()`, and `end()` use this path;
+pop/shift detach aliases for the removed leaf before mutation, and array-entry
+removal adjusts the ordered-array cursor when the removed slot was before the
+cursor. `array_shift()` additionally has a bounded by-value expression fallback
+that emits PHP's reference notice and shifts a temporary copy. `next()` and
+`prev()` have the same bounded notice-and-temporary path for supported
+function-returned arrays, while direct array literals use the bounded
+pass-by-reference fatal path. Object-property array roots for
 push/pop/shift/unshift, broad lvalues, string-keyed unpacking, and native
 lowering remain outside this interpreter path.
 
@@ -2794,12 +2795,13 @@ named callback arguments, positional arguments after string-keyed named
 arguments, closure invocation, `__invoke`, broader
 named-argument semantics, exact warning behavior, and native lowering remain
 unsupported.
-`implode()` is an interpreter-only bounded array-to-string builtin for current
-WordPress bootstrap message paths. It joins scalar/null array values in
-insertion order with either an empty default separator or a string separator.
-Native function-table introspection recognizes the name, while direct native
-calls reject until array iteration, string allocation, and conversion
-diagnostics have a lowered runtime model.
+`implode()`/`join()` are interpreter-only bounded array-to-string builtins for
+current WordPress bootstrap message paths. They join scalar/null array values
+in insertion order with either an empty default separator or a string
+separator, and route the reached non-array pieces diagnostics through the
+PHP-shaped catchable `TypeError` bridge. Native function-table introspection
+recognizes the names, while direct native calls reject until array iteration,
+string allocation, and conversion diagnostics have a lowered runtime model.
 `ob_start()`, `ob_get_level()`, `ob_get_contents()`, `ob_get_length()`,
 `ob_list_handlers()`, `ob_get_status()`, `ob_get_clean()`, `ob_get_flush()`,
 `ob_clean()`, `ob_flush()`, `ob_end_clean()`, and `ob_end_flush()` are

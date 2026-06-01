@@ -28,6 +28,42 @@ echo is_callable("strcmp") ? "callable" : "missing";
 }
 
 #[test]
+fn strcmp_float_operands_use_active_precision() {
+    let execution = run_source(
+        r#"<?php
+ini_set("precision", "12");
+echo strcmp(10.55555555555555555555555555, 10.5555555556);
+echo "\n";
+echo strcmp(10.55555555555555555555555555, 10.555555556);
+echo "\n";
+echo strcmp(10.55555555595555555555555555, 10.555555556);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "0\n-1\n0");
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn strcmp_phpt_setup_preserves_binary_print_r_bytes() {
+    let execution = run_source(
+        r#"<?php
+print_r(array(chr(128), chr(255), chr(0)));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout_bytes,
+        b"Array\n(\n    [0] => \x80\n    [1] => \xff\n    [2] => \0\n)\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn strcmp_rejects_current_unsupported_argument_shapes() {
     let error = run_source("<?php\nstrcmp(['a'], 'a');\n").unwrap_err();
     assert!(

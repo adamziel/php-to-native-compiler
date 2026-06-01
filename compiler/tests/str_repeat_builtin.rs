@@ -114,6 +114,31 @@ var_dump("\0" == chr(256));
 }
 
 #[test]
+fn chr_argument_count_errors_are_catchable_with_internal_message() {
+    let execution = run_source(
+        r#"<?php
+try {
+    var_dump(chr());
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    var_dump(chr(72, 10));
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "chr() expects exactly 1 argument, 0 given\nchr() expects exactly 1 argument, 2 given\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn str_repeat_rejects_forms_outside_current_subset() {
     let negative = run_source(
         r#"<?php

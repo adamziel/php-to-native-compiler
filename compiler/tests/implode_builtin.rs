@@ -92,7 +92,7 @@ echo implode(",", "not-array");
     assert_eq!(array.stderr, "");
     assert!(
         array.stdout.contains(
-            "TypeError: implode(): If argument #1 ($separator) is of type string, argument #2 ($array) must be of type array, string given"
+            "TypeError: implode(): Argument #2 ($array) must be of type ?array, string given"
         ),
         "{}",
         array.stdout

@@ -1,6 +1,6 @@
 # PHP Native Compiler PHPT Progress
 
-Updated: 2026-06-01 17:41 CEST
+Updated: 2026-06-01 18:07 CEST
 
 Primary/public branch: `origin/master`
 Latest source-bearing public head:
@@ -22,6 +22,20 @@ Local supervisor note: post-Batch024 focused source work is verified for
 `count_symbol_table.phpt`, `strcasecmp_basic.phpt`, trim/rtrim rows, and
 replacement-family rows. Focused Rust passed `68 / 68`, focused `php_runtime`
 passed `2 / 2`, and focused PHPT passed `7 / 7`. This is not a public score
+update until checkpoint validation and a full pinned PHPT gate complete.
+
+Local supervisor note: the current high-parallel focused batch is verified for
+24 selected PHPT rows: `array_change_key_case_flag_error.phpt`,
+`array_chunk2.phpt`, `array_chunk_variation5.phpt`,
+`array_fill_error2.phpt`, `array_pad_too_large_padding.phpt`,
+`array_is_list.phpt`, `prev_error2.phpt`, `prev_error3.phpt`,
+`fgets_error.phpt`, `call_user_func_002.phpt`,
+`is_callable_variation2.phpt`, `join_error1.phpt`, `chr_error.phpt`,
+`printf_error.phpt`, `fprintf_error.phpt`, `printf_64bit.phpt`,
+`strcmp.phpt`, `strpos.phpt`, `stripos.phpt`, `stripos_error.phpt`,
+`strlen_basic.phpt`, `strlen.phpt`, `Zend/tests/strlen.phpt`, and
+`Zend/tests/strlen_deprecation_to_exception.phpt`. Focused Rust passed
+`218 / 218`, and focused PHPT passed `24 / 24`. This is not a public score
 update until checkpoint validation and a full pinned PHPT gate complete.
 
 Local supervisor note: the next focused source batch is in progress for

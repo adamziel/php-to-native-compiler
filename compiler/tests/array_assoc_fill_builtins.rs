@@ -45,6 +45,28 @@ try {
 }
 
 #[test]
+fn array_fill_int_max_count_uses_php_overflow_fatal() {
+    let source = r#"<?php
+$intMax = 2147483647;
+try {
+    array_fill(0, $intMax + 1, 1);
+} catch (ValueError $e) {
+    echo $e->getMessage(), "\n";
+}
+array_fill(0, $intMax, 1);
+echo "unreachable";
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "array_fill(): Argument #2 ($count) is too large\n\nFatal error: Possible integer overflow in memory allocation (2147483647 * 32 + 32) in Command line code on line 8"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 255);
+}
+
+#[test]
 fn array_auto_keys_continue_from_negative_integer_keys() {
     let execution = run_source(
         r#"<?php

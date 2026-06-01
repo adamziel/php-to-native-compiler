@@ -495,6 +495,47 @@ try {
 }
 
 #[test]
+fn call_user_func_invalid_array_callbacks_match_autoload_type_error_slice() {
+    let execution = run_source(
+        r#"<?php
+
+spl_autoload_register(function ($class) {
+    var_dump($class);
+});
+
+try {
+    call_user_func(array('foo', 'bar'));
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    call_user_func(array('', 'bar'));
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    call_user_func(array($foo, 'bar'));
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    call_user_func(array($foo, ''));
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "string(3) \"foo\"\ncall_user_func(): Argument #1 ($callback) must be a valid callback, class \"foo\" not found\ncall_user_func(): Argument #1 ($callback) must be a valid callback, class \"\" not found\n\nWarning: Undefined variable $foo in Command line code on line 18\ncall_user_func(): Argument #1 ($callback) must be a valid callback, first array member is not a valid class name or object\n\nWarning: Undefined variable $foo in Command line code on line 23\ncall_user_func(): Argument #1 ($callback) must be a valid callback, first array member is not a valid class name or object\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn closures_capture_alias_backed_array_and_property_slots_by_reference() {
     let execution = run_source(
         r#"<?php
