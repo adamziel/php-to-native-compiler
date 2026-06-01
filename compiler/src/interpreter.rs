@@ -112766,8 +112766,11 @@ struct PackFormatItem {
 impl PackFormatItem {
     fn code_name(&self) -> &'static str {
         match self.code {
+            b'a' => "a",
             b'A' => "A",
             b'Z' => "Z",
+            b'N' => "N",
+            b'L' => "L",
             b'V' => "V",
             b'l' => "l",
             b'i' => "i",
@@ -112839,7 +112842,7 @@ impl Interpreter {
                         span,
                     )?);
                 }
-                b'A' | b'Z' => {
+                b'a' | b'A' | b'Z' => {
                     let value = pack_next_value(args, &mut value_index, item.code_name(), span)?;
                     let value = string_compare_argument_bytes("pack()", "value", value, span)?;
                     output.extend(pack_string_field(item.code, item.repeat, &value));
@@ -112859,7 +112862,7 @@ impl Interpreter {
                         }
                     }
                 }
-                b'V' | b'l' | b'i' | b'I' | b'Q' | b'J' | b'P' | b'q' => {
+                b'N' | b'L' | b'V' | b'l' | b'i' | b'I' | b'Q' | b'J' | b'P' | b'q' => {
                     let count = pack_numeric_repeat_count(item.repeat, args.len(), value_index);
                     for _ in 0..count {
                         let value =
@@ -112952,7 +112955,7 @@ impl Interpreter {
                     );
                     cursor += byte_count;
                 }
-                b'A' | b'Z' => {
+                b'a' | b'A' | b'Z' => {
                     let count = unpack_string_repeat_count(item.repeat, data.len(), cursor);
                     if !self.unpack_has_bytes(&data, cursor, count, item.code, span)? {
                         return Ok(Value::Bool(false));
@@ -112968,8 +112971,8 @@ impl Interpreter {
                     );
                     cursor += count;
                 }
-                b'e' | b'E' | b'g' | b'G' | b'V' | b'l' | b'i' | b'I' | b'Q' | b'J' | b'P'
-                | b'q' => {
+                b'e' | b'E' | b'g' | b'G' | b'N' | b'L' | b'V' | b'l' | b'i' | b'I' | b'Q'
+                | b'J' | b'P' | b'q' => {
                     let size = pack_fixed_item_size(item.code).expect("fixed-size pack code");
                     let count = unpack_numeric_repeat_count(item.repeat, data.len(), cursor, size);
                     for index in 0..count {
@@ -113048,11 +113051,12 @@ impl Interpreter {
         if cursor.saturating_add(needed) <= data.len() {
             return Ok(true);
         }
+        let provided = data.len().saturating_sub(cursor);
+        let verb = if provided == 1 { "was" } else { "were" };
         self.emit_display_warning(
             format!(
-                "unpack(): Type {}: not enough input values, need {needed} values but only {} was provided",
+                "unpack(): Type {}: not enough input values, need {needed} values but only {provided} {verb} provided",
                 code as char,
-                data.len().saturating_sub(cursor)
             ),
             span,
         )?;
@@ -113081,8 +113085,11 @@ fn parse_pack_format_items(
                     | b'@'
                     | b'H'
                     | b'h'
+                    | b'a'
                     | b'A'
                     | b'Z'
+                    | b'N'
+                    | b'L'
                     | b'V'
                     | b'l'
                     | b'i'
@@ -113101,8 +113108,11 @@ fn parse_pack_format_items(
                 code,
                 b'x' | b'H'
                     | b'h'
+                    | b'a'
                     | b'A'
                     | b'Z'
+                    | b'N'
+                    | b'L'
                     | b'V'
                     | b'l'
                     | b'i'
@@ -113251,6 +113261,15 @@ fn pack_numeric_repeat_count(repeat: PackRepeat, arg_count: usize, value_index: 
 
 fn pack_string_field(code: u8, repeat: PackRepeat, value: &[u8]) -> Vec<u8> {
     match code {
+        b'a' => {
+            let count = match repeat {
+                PackRepeat::Star => value.len(),
+                PackRepeat::Count(count) => count,
+            };
+            let mut output = value.iter().copied().take(count).collect::<Vec<_>>();
+            output.resize(count, 0);
+            output
+        }
         b'A' => {
             let count = match repeat {
                 PackRepeat::Star => value.len(),
@@ -113282,7 +113301,7 @@ fn pack_string_field(code: u8, repeat: PackRepeat, value: &[u8]) -> Vec<u8> {
 
 fn pack_fixed_item_size(code: u8) -> Option<usize> {
     match code {
-        b'g' | b'G' | b'V' | b'l' | b'i' | b'I' => Some(4),
+        b'g' | b'G' | b'N' | b'L' | b'V' | b'l' | b'i' | b'I' => Some(4),
         b'e' | b'E' | b'Q' | b'J' | b'P' | b'q' => Some(8),
         _ => None,
     }
@@ -113290,6 +113309,8 @@ fn pack_fixed_item_size(code: u8) -> Option<usize> {
 
 fn pack_integer_bytes(code: u8, value: i64) -> Vec<u8> {
     match code {
+        b'N' => (value as u32).to_be_bytes().to_vec(),
+        b'L' => (value as u32).to_le_bytes().to_vec(),
         b'V' | b'I' => (value as u32).to_le_bytes().to_vec(),
         b'l' | b'i' => (value as i32).to_le_bytes().to_vec(),
         b'Q' | b'P' => (value as u64).to_le_bytes().to_vec(),
@@ -113320,6 +113341,7 @@ fn unpack_numeric_repeat_count(
 
 fn unpack_string_field(code: u8, value: &[u8]) -> Vec<u8> {
     match code {
+        b'a' => value.to_vec(),
         b'A' => {
             let mut end = value.len();
             while end > 0 && matches!(value[end - 1], 0 | b' ' | b'\t' | b'\r' | b'\n') {
@@ -113340,6 +113362,8 @@ fn unpack_string_field(code: u8, value: &[u8]) -> Vec<u8> {
 
 fn unpack_fixed_value(code: u8, bytes: &[u8]) -> Value {
     match code {
+        b'N' => Value::Int(u32::from_be_bytes(bytes.try_into().unwrap()) as i64),
+        b'L' => Value::Int(u32::from_le_bytes(bytes.try_into().unwrap()) as i64),
         b'V' | b'I' => Value::Int(u32::from_le_bytes(bytes.try_into().unwrap()) as i64),
         b'l' | b'i' => Value::Int(i32::from_le_bytes(bytes.try_into().unwrap()) as i64),
         b'Q' | b'P' => Value::Int(u64::from_le_bytes(bytes.try_into().unwrap()) as i64),

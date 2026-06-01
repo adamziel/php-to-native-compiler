@@ -33,8 +33,12 @@ printf("0x%08x 0x%08x\n", unpack("l", $data, 3)[1], unpack("@4/l", $data, 3)[1])
 fn pack_unpack_string_fields_and_cursor_controls() {
     let execution = run_source(
         r#"<?php
+echo bin2hex(pack("a5", "foo")), "\n";
 echo bin2hex(pack("A5", "foo ")), "\n";
 echo bin2hex(pack("Z4", "fooo")), "\n";
+echo bin2hex(unpack("a5", "str\0\0")[1]), "\n";
+echo bin2hex(unpack("a*", "str\0\0")[1]), "\n";
+var_dump(unpack("a6", "str\0\0"));
 var_dump(unpack("A*", "foo\0\rbar\0 \t\r\n"));
 var_dump(unpack("A4", "foo\0\rbar\0 \t\r\n"));
 var_dump(unpack("Z*", "foo\0\rbar\0 \t\r\n"));
@@ -48,13 +52,37 @@ var_dump(unpack('V1a/X4/V1b/V1c/X4/V1d', $data));
     )
     .unwrap();
 
+    assert!(execution.stdout.contains("666f6f0000\n"));
     assert!(execution.stdout.contains("666f6f2020\n"));
     assert!(execution.stdout.contains("666f6f00\n"));
+    assert!(execution.stdout.contains("7374720000\n"));
+    assert!(execution
+        .stdout
+        .contains("need 6 values but only 5 were provided"));
+    assert!(execution.stdout.contains("bool(false)"));
     assert!(execution.stdout.contains("string(8) \"foo\0\rbar\""));
     assert!(execution.stdout.contains("string(3) \"foo\""));
     assert!(execution.stdout.contains("string(2) \"AB\""));
     assert!(execution.stdout.contains("[\"a\"]=>\n  int(1)"));
     assert!(execution.stdout.contains("[\"d\"]=>\n  int(2)"));
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn pack_unpack_machine_and_network_32_bit_integer_codes() {
+    let execution = run_source(
+        r#"<?php
+print_r(unpack("N", pack("N", -30000)));
+print_r(unpack("l", pack("l", -30000)));
+print_r(unpack("I", pack("L", -30000)));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "Array\n(\n    [1] => 4294937296\n)\nArray\n(\n    [1] => -30000\n)\nArray\n(\n    [1] => 4294937296\n)\n"
+    );
     assert_eq!(execution.exit_code, 0);
 }
 

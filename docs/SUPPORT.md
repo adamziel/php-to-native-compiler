@@ -3688,9 +3688,11 @@
   `pack($format, ...$values)` and `unpack($format, $string, $offset = 0)`
   support the bounded binary format subset used by the current string
   pack/unpack PHPT rows: hexadecimal `H`/`h`, padding `x`, cursor controls
-  `X` and `@` for unpacking, space/NUL string fields `A`/`Z`, 32-bit
-  little-endian integers `V`, native 32-bit integer aliases `l`/`i`/`I`,
-  64-bit integer forms `Q`/`J`/`P`/`q`, and float/double forms
+  `X` and `@` for unpacking, NUL/space/NUL-terminated string fields
+  `a`/`A`/`Z`, unsigned 32-bit big-endian `N`, current little-endian machine
+  unsigned long/integer forms `L`/`I`, 32-bit little-endian integers `V`,
+  native signed 32-bit integer aliases `l`/`i`, 64-bit integer forms
+  `Q`/`J`/`P`/`q`, and float/double forms
   `e`/`E`/`g`/`G`. Unpack names, repeated values, `*` repeaters for the
   covered scalar formats, offset validation, and the invalid-format
   `ValueError` shape are covered. Broad host-portable endian matrices,

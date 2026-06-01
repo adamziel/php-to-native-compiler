@@ -34,6 +34,17 @@ Implemented:
   full HTML entity tables, full HTML parsing, and additional malformed tag
   parity remain unsupported.
 
+- Added a bounded pack/unpack residual slice for three more
+  `ext/standard/tests/strings` rows. The runtime pack/unpack path now covers
+  `a` NUL-padded string fields, unsigned 32-bit network-order `N`, and the
+  current little-endian machine-order unsigned long/integer forms needed for
+  `L`/`I`, including the PHPT warning wording for insufficient `a` input.
+  Selected PHPT proof targets `ext/standard/tests/strings/bug38770.phpt`,
+  `ext/standard/tests/strings/bug61038.phpt`, and
+  `ext/standard/tests/strings/bug61764.phpt`. Full pack/unpack format
+  coverage, host-portable endian matrices beyond the current target, alignment
+  codes, and native lowering remain unsupported.
+
 ## 2026-05-27
 
 Implemented:
