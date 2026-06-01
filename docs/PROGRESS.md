@@ -4,6 +4,16 @@
 
 Implemented:
 
+- Added a compact ext/standard math constants formatting slice. Bounded
+  `printf()`/`sprintf()` string conversion of float values now honors
+  `precision=-1` with shortest round-trip text for the selected predefined
+  math constants row, while preserving the existing default-precision path
+  otherwise. Added focused Rust coverage plus Milestone 2305 CLI fixture
+  coverage. Focused PHPT proof covers
+  `ext/standard/tests/math/constants.phpt`. Broader `precision=-1` float
+  formatting outside selected constant values, other precision modes, exact
+  conversion diagnostics, and native lowering remain unsupported.
+
 - Added a compact ext/standard math angle-conversion slice for `deg2rad()`
   and `rad2deg()`. The interpreter now follows PHP's operation order
   (`($degrees / 180) * M_PI` and `($radians / M_PI) * 180`) instead of Rust's

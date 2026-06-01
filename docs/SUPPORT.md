@@ -5599,6 +5599,12 @@
   scalar and 64-bit integer compatibility rows. Broader libm/platform parity
   for unrelated transcendental functions, exact diagnostics for all coercions,
   and native lowering remain unsupported.
+  Predefined math constants such as `M_E`, `M_LOG2E`, and `M_PI` are available
+  as builtin constants. Bounded `printf()`/`sprintf()` `%s` conversion of those
+  float constants honors `precision=-1` with shortest round-trip text for the
+  selected constants row. Broader `precision=-1` float formatting outside
+  selected constant values, other precision modes, exact conversion
+  diagnostics, and native lowering remain unsupported.
   `number_format($num, $decimals = 0, $decimal_separator = ".", $thousands_separator = ",")`
   accepts current finite numeric scalar values, full typed numeric strings,
   optional integer decimals including negative decimal positions, and
@@ -11222,6 +11228,10 @@
   slice: broader libm/platform parity for unrelated math builtins, exact
   diagnostics for every coercion path, and native lowering beyond
   function-table introspection
+- Predefined math constant formatting outside the selected `precision=-1`
+  `printf()`/`sprintf()` `%s` slice: broader shortest-float formatting for
+  arbitrary float magnitudes, other precision modes, exact conversion
+  diagnostics, and native lowering beyond function-table introspection
 - `count()`/`sizeof()` outside the current array and bounded `Countable` object subset:
   full interface signature enforcement, magic `__call` fallback,
   resources/extensions, non-integer object count results, exact diagnostics,

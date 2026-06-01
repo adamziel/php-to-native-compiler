@@ -114054,6 +114054,19 @@ impl Interpreter {
             .and_then(|precision| usize::try_from(precision).ok())
             .map(|precision| precision.min(100))
     }
+
+    fn php_string_precision_float_string(&self, value: f64) -> String {
+        if self
+            .ini_value("precision")
+            .as_deref()
+            .and_then(parse_ini_i64_prefix)
+            == Some(-1)
+        {
+            php_shortest_precision_float_string(value)
+        } else {
+            php_default_precision_float_string(value)
+        }
+    }
 }
 
 fn parse_base_conversion_integer_string(
@@ -125349,7 +125362,7 @@ impl Interpreter {
                 tree_walk_binary_string_utf8(value, function, span).map(str::to_owned)
             }
             Value::Null | Value::Bool(_) | Value::Int(_) => Ok(value.echo_string()),
-            Value::Float(value) => Ok(php_default_precision_float_string(*value)),
+            Value::Float(value) => Ok(self.php_string_precision_float_string(*value)),
             Value::Array(_) | Value::Resource(_) | Value::Closure(_) => {
                 Err(sprintf_format_type_error(function, value, span))
             }
@@ -125377,7 +125390,7 @@ impl Interpreter {
                 Ok("Array".to_string())
             }
             Value::Resource(id) => Ok(format!("Resource id #{id}")),
-            Value::Float(value) => Ok(php_default_precision_float_string(*value)),
+            Value::Float(value) => Ok(self.php_string_precision_float_string(*value)),
             Value::Object(object) => {
                 if let Some(output) =
                     self.object_to_string_with_magic(object.clone(), function, span)?
@@ -126574,6 +126587,28 @@ fn php_default_precision_float_string(value: f64) -> String {
         format!("{value:.decimals$}")
     };
     trim_php_float_string(&formatted)
+}
+
+fn php_shortest_precision_float_string(value: f64) -> String {
+    if value.is_nan() {
+        return "NAN".to_string();
+    }
+    if value.is_infinite() {
+        return if value.is_sign_positive() {
+            "INF".to_string()
+        } else {
+            "-INF".to_string()
+        };
+    }
+    if value == 0.0 {
+        return if value.is_sign_negative() {
+            "-0".to_string()
+        } else {
+            "0".to_string()
+        };
+    }
+
+    value.to_string()
 }
 
 fn php_float_to_int_warning_string(value: f64) -> String {
@@ -140579,6 +140614,44 @@ mod tests {
                 "float(0.40927970959267024)\n",
                 "float(246083499150.21957)\n",
                 "float(-123041749661.05348)\n",
+            )
+        );
+    }
+
+    #[test]
+    fn precision_minus_one_formats_math_constants_with_shortest_string() {
+        assert_eq!(
+            php_shortest_precision_float_string(std::f64::consts::E),
+            "2.718281828459045"
+        );
+        assert_eq!(
+            php_shortest_precision_float_string(std::f64::consts::LOG2_E),
+            "1.4426950408889634"
+        );
+        assert_eq!(
+            php_shortest_precision_float_string(std::f64::consts::PI),
+            "3.141592653589793"
+        );
+
+        let source = concat!(
+            "<?php\n",
+            "ini_set(\"precision\", \"-1\");\n",
+            "printf(\"%-10s: %s\\n\", \"M_E\", constant(\"M_E\"));\n",
+            "printf(\"%-10s: %s\\n\", \"M_LOG2E\", constant(\"M_LOG2E\"));\n",
+            "printf(\"%-10s: %s\\n\", \"M_PI\", constant(\"M_PI\"));\n",
+        );
+        let program = parse_source(source).unwrap();
+        let execution =
+            run_program_with_source_file(&program, "math-constants-precision.php").unwrap();
+
+        assert_eq!(execution.exit_code, 0);
+        assert_eq!(execution.stderr, "");
+        assert_eq!(
+            execution.stdout,
+            concat!(
+                "M_E       : 2.718281828459045\n",
+                "M_LOG2E   : 1.4426950408889634\n",
+                "M_PI      : 3.141592653589793\n",
             )
         );
     }

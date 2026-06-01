@@ -2994,6 +2994,11 @@ builtins over the shared math scalar coercion path. Their arithmetic uses
 PHP's observable operation order, `($degrees / 180) * M_PI` and
 `($radians / M_PI) * 180`, rather than host-language fused helpers, because
 the selected PHPT rows assert exact boundary float strings.
+Predefined `M_*` math constants are exposed through the shared builtin
+constant table. The current formatting compatibility slice keeps
+`printf()`/`sprintf()` `%s` float conversion aware of `precision=-1` for the
+selected constants row by using shortest round-trip text for those bounded
+values; broader float-to-string formatting remains documented as unsupported.
 `microtime(true)` is an interpreter-only host-clock boundary for bootstrap
 timing checks. It returns a finite float seconds value from `SystemTime`, while
 the string-return forms stay unsupported until time virtualization, formatting,
