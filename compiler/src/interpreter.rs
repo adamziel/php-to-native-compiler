@@ -82160,24 +82160,38 @@ impl Interpreter {
             self.emit_directory_open_denied_after_open_basedir(function, path, span)?;
             return Ok(Value::Bool(false));
         }
-        let Ok(metadata) = fs::metadata(&directory_path) else {
-            return Ok(Value::Bool(false));
+        let metadata = match fs::metadata(&directory_path) {
+            Ok(metadata) => metadata,
+            Err(error) => {
+                self.emit_directory_open_warning(
+                    function,
+                    path,
+                    Self::filesystem_io_warning_message(&error),
+                    span,
+                )?;
+                return Ok(Value::Bool(false));
+            }
         };
         if !metadata.is_dir() {
+            self.emit_directory_open_warning(function, path, "Not a directory", span)?;
             return Ok(Value::Bool(false));
         }
 
         let mut entries = vec![".".to_string(), "..".to_string()];
         let mut host_entries = Vec::new();
-        for entry in fs::read_dir(&directory_path).map_err(|error| {
-            runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    format!("{function}()"),
-                    format!("local directory read failed: {error}"),
-                ),
-            )
-        })? {
+        let read_dir = match fs::read_dir(&directory_path) {
+            Ok(read_dir) => read_dir,
+            Err(error) => {
+                self.emit_directory_open_warning(
+                    function,
+                    path,
+                    Self::filesystem_io_warning_message(&error),
+                    span,
+                )?;
+                return Ok(Value::Bool(false));
+            }
+        };
+        for entry in read_dir {
             let entry = entry.map_err(|error| {
                 runtime_error(
                     span,
@@ -82212,6 +82226,22 @@ impl Interpreter {
         );
         self.last_opened_directory = Some(id);
         Ok(Value::Resource(id))
+    }
+
+    fn emit_directory_open_warning(
+        &mut self,
+        function: &str,
+        path: &str,
+        reason: impl AsRef<str>,
+        span: Span,
+    ) -> CompileResult<()> {
+        self.emit_display_warning(
+            format!(
+                "{function}({path}): Failed to open directory: {}",
+                reason.as_ref()
+            ),
+            span,
+        )
     }
 
     fn call_opendir(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {

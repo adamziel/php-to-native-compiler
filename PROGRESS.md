@@ -1,13 +1,13 @@
 # PHP Native Compiler PHPT Progress
 
-Updated: 2026-06-01 20:46 CEST
+Updated: 2026-06-01 21:39 CEST
 
 Primary/public branch: `origin/master`
-Latest source-bearing public head:
-`2755fc15fd284ad1b5d5f1c65a92c033a243aed7 checkpoint: add superglobal pcre serialize math type rows`
+Latest accepted public-score source:
+`4f1c81d5a4cee2530a74eb8206c24b518a735ef3 checkpoint: add stream ini array metadata rows`
 
 Semantic source for current published score:
-`2755fc15fd284ad1b5d5f1c65a92c033a243aed7 checkpoint: add superglobal pcre serialize math type rows`
+`4f1c81d5a4cee2530a74eb8206c24b518a735ef3 checkpoint: add stream ini array metadata rows`
 
 Public PHPT metric:
 
@@ -16,25 +16,24 @@ Public PHPT metric:
 Pinned denominator: `20294` total pinned runnable php-src PHPTs. Raw runner
 denominators that exclude BORKED rows are not public progress.
 
-Current public score: **5498 / 20294 pinned runnable PHPTs = 27.09%**.
+Current public score: **5513 / 20294 pinned runnable PHPTs = 27.17%**.
 
-Accepted public gate: checkpoint `2755fc15` completed the full pinned PHPT
-gate with `5498 / 20294 = 27.09%` and zero latest-published PASS regressions
-against the `1fe2b233` baseline. The gate accepted the 13-row focused batch
-covering unset initialized request superglobal roots, `preg_quote()` NUL/hash
-escaping, `unserialize()` extra-data and signed-length diagnostics,
-`deg2rad()`/`rad2deg()` precision-sensitive operation order, and the reached
-`gettype()`/direct-variable `settype()` error and side-effect rows. Full gate
-evidence is in
-`state/logs/phpt-full-batch024-next13-20260601T183739Z-php-src-f97ff59-source-2755fc15`;
-the aggregate had `5498` passed rows, `5494` normalized current passes, and
+Accepted public gate: checkpoint `4f1c81d5` completed the full pinned PHPT
+gate with `5513 / 20294 = 27.17%` and zero latest-published PASS regressions
+against the `2755fc15` baseline. The gate accepted the 6-row stream/INI/array
+focused batch covering `bug71884.phpt`,
+`stream_context_create_error.phpt`, `get_extension_funcs_basic.phpt`,
+`ini_set_types.phpt`, `array_fill_keys_variation1.phpt`, and
+`array_fill_keys_variation2.phpt`. Full gate evidence is in
+`state/logs/phpt-full-batch024-next14-20260601T192923Z-php-src-f97ff59-public-2755fc15-source-4f1c81d5`;
+the aggregate had `5513` passed rows, `5509` normalized current passes, and
 `0` PASS regressions. The lone invalid-marker grep hit is the known expected
 socket `Permission denied` warning in `run-tests.log`, not a publication
 blocker.
 
-Previous accepted public gate: checkpoint `1fe2b233` completed the full pinned
-PHPT gate with `5481 / 20294 = 27.01%` and zero latest-published PASS
-regressions against the `43262ab5` baseline.
+Previous accepted public gate: checkpoint `2755fc15` completed the full pinned
+PHPT gate with `5498 / 20294 = 27.09%` and zero latest-published PASS
+regressions against the `1fe2b233` baseline.
 
 Local source checkpoint note: checkpoint `1efcacf6` passed
 `tools/checkpoint.sh` for the next post-public focused source batch. It covers
@@ -51,15 +50,23 @@ PHPT proof passed `6 / 6` for
 `nl_langinfo_basic.phpt`, and `sprintf_rope_optimization_002.phpt`. This is
 not a public score update until a full pinned PHPT gate completes.
 
-Local supervisor note: the next post-`1efcacf6` worker batch is verified for
-6 selected PHPT rows: `bug71884.phpt`,
-`stream_context_create_error.phpt`, `get_extension_funcs_basic.phpt`,
-`ini_set_types.phpt`, `array_fill_keys_variation1.phpt`, and
-`array_fill_keys_variation2.phpt`. Focused Rust passed `66 / 66` across
+Public checkpoint note: checkpoint `4f1c81d5` passed `tools/checkpoint.sh` for
+the next post-`1efcacf6` worker batch and then passed the full pinned PHPT gate
+described above. Focused Rust passed `66 / 66` across
 `stream_resource_builtin`, `general_function_builtins`, `ini_builtins`, and
-`array_fill_keys`; `cargo build -p phpc --bin phpc` passed; and selected PHPT
-proof passed `6 / 6`. This is not a public score update until checkpoint
-validation and a full pinned PHPT gate complete.
+`array_fill_keys`; `cargo build -p phpc --bin phpc` passed; selected PHPT proof
+passed `6 / 6`; and the public comparable gate accepted the batch with zero
+PASS regressions.
+
+Local supervisor note: the next focused source slice is integrated for 3
+additional target PHPT rows: `dir_variation5.phpt`, `dir_variation6.phpt`, and
+`opendir_error2.phpt`. It preserves existing local directory resource and
+`open_basedir` behavior while adding PHP-shaped `Failed to open directory`
+warnings for missing, non-directory, or unreadable local paths before returning
+`false`. Focused Rust passed `1 / 1`, build passed, `cargo fmt --check` and
+`git diff --check` passed, selected directory PHPT verification passed `4 / 4`,
+and the broader completed-worker smoke passed `17 / 17`. This is not a public
+score update until checkpoint validation and a full pinned PHPT gate complete.
 
 Local supervisor note: the next worker-integrated focused source batch covers
 8 additional target PHPT rows: `substr.phpt`, `fread_error.phpt`,

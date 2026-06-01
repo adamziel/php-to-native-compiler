@@ -1325,9 +1325,24 @@ echo opendir("{}") === false ? "missing-false" : "missing-open";
     );
     let execution = run_source(&source).unwrap();
 
-    assert_eq!(
-        execution.stdout,
-        "resource|.:..|alpha:beta:nested:3|.|missing-false"
+    assert!(
+        execution
+            .stdout
+            .starts_with("resource|.:..|alpha:beta:nested:3|.|\nWarning: opendir("),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution
+            .stdout
+            .contains("): Failed to open directory: No such file or directory"),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution.stdout.ends_with("missing-false"),
+        "{}",
+        execution.stdout
     );
     assert_eq!(execution.exit_code, 0);
     let _ = fs::remove_dir_all(root);

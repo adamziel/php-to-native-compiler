@@ -5297,10 +5297,11 @@
   directory handles are also supported:
   `opendir($path)` accepts one local UTF-8 directory path, rejects stream
   wrappers and context arguments, returns a directory resource for existing
-  directories, returns `false` for missing or non-directory local paths, and
-  applies the same bounded request-local `open_basedir` denial check used by
-  local streams. Denied directory opens emit a PHP-shaped open_basedir warning
-  plus a bounded `Failed to open directory` warning before returning `false`.
+  directories, returns `false` for missing, non-directory, or unreadable local
+  paths with a bounded `Failed to open directory` display warning, and applies
+  the same bounded request-local `open_basedir` denial check used by local
+  streams. Denied directory opens emit a PHP-shaped open_basedir warning plus a
+  bounded `Failed to open directory` warning before returning `false`.
   `readdir($dir)` returns the next entry name or `false` at the end,
   `rewinddir($dir)` resets the cursor and returns `null`, and `closedir($dir)`
   closes the directory resource and returns `null`. Directory entries are

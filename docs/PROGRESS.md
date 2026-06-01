@@ -4,6 +4,33 @@
 
 Implemented:
 
+- Accepted checkpoint `4f1c81d5` as the current public PHPT score source after
+  a full pinned php-src gate completed with zero latest-published PASS
+  regressions. The public-comparable score is now `5513 / 20294 = 27.17%`,
+  up from `5498 / 20294 = 27.09%` at checkpoint `2755fc15`. The accepted gate
+  evidence is
+  `state/logs/phpt-full-batch024-next14-20260601T192923Z-php-src-f97ff59-public-2755fc15-source-4f1c81d5`;
+  aggregate counts were `5513` passed, `13354` failed, `2761` skipped, `15`
+  xfailed, `687` borked, and `1` warned. The normalized PASS regression
+  comparison was `5509` current passes vs. `5494` baseline passes with `0`
+  regressions. The only invalid-marker grep hit was the known expected socket
+  `Permission denied` warning line, not a new proof blocker.
+
+- Integrated the next bounded directory-open diagnostic slice after the
+  `4f1c81d5` public gate. `dir()` and `opendir()` now preserve the existing
+  local directory resource and `open_basedir` denial behavior while emitting
+  PHP-shaped `Failed to open directory` display warnings before returning
+  `false` for missing, non-directory, or unreadable local UTF-8 paths. Focused
+  Rust coverage in `compiler/tests/directory_metadata_helpers.rs` passed
+  (`1 passed`), `cargo build -p phpc --bin phpc` passed, `cargo fmt --check`
+  and `git diff --check` passed, and selected PHPT proof passed `4 / 4` for
+  `dir_variation5.phpt`, `dir_variation6.phpt`, `opendir_error2.phpt`, and
+  the adjacent already-supported `scandir_invalid_flag.phpt`. Unsupported
+  edges remain directory stream wrappers and contexts, non-UTF-8 paths/entries,
+  exact host iteration order, platform-specific permission parity, broader
+  diagnostic text beyond the covered failed-open warnings, references/COW, and
+  native lowering.
+
 - Integrated the next post-`1efcacf6` worker batch for six focused rows. The
   interpreter now covers bounded stream context option-shape diagnostics for
   the reached context rows, `get_extension_funcs("standard")` metadata,
