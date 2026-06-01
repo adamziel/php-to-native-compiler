@@ -1,5 +1,33 @@
 # Progress Log
 
+## 2026-06-01
+
+Implemented:
+
+- Added a compact standard math/array scalar slice for php-src PHPT coverage:
+  `min()` and `max()` now surface PHP-shaped catchable diagnostics for the
+  covered one-argument non-array `TypeError` rows and empty-array `ValueError`
+  rows, while preserving the current scalar comparison behavior for the
+  deterministic int/float/string/bool boundaries reached by
+  `ext/standard/tests/array/min.phpt` and `max.phpt`. Array-to-array ordering,
+  object/resource operands, full mixed-type parity, and native lowering remain
+  unsupported.
+- Extended `number_format()`'s exact integer formatter to preserve bounded
+  large positive decimal padding through 4096 places for integer inputs,
+  covering php-src `ext/standard/tests/math/bug21523.phpt` without broadening
+  high-positive-decimal float parity or unbounded allocation behavior.
+
+Proof:
+
+- Focused Rust checks passed: `cargo check -p phpc`,
+  `cargo test -p phpc --test min_builtin -- --test-threads=1`,
+  `cargo test -p phpc --test number_format_builtin -- --test-threads=1`, and
+  `cargo fmt --check`.
+- Focused PHPT proof passed `3 / 3` with lowercase `run-tests.php -p` through
+  `phpc-phpt-wrapper` for `ext/standard/tests/math/bug21523.phpt`,
+  `ext/standard/tests/array/min.phpt`, and
+  `ext/standard/tests/array/max.phpt`.
+
 ## 2026-05-27
 
 Implemented:

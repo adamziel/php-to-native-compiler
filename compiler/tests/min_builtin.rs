@@ -72,15 +72,81 @@ echo $max(9, 4, 7);
 }
 
 #[test]
-fn min_and_max_reject_current_subset_gaps() {
-    let empty_array = run_source("<?php\nmin([]);\n").unwrap_err();
-    assert_eq!(empty_array.phase, Phase::Runtime);
-    assert_eq!(empty_array.line, 2);
-    assert_eq!(empty_array.column, 1);
+fn min_and_max_match_scalar_phpt_error_recovery_and_boundaries() {
+    let execution = run_source(
+        r#"<?php
+foreach (["min", "max"] as $fn) {
+    try {
+        var_dump($fn(1));
+    } catch (TypeError $e) {
+        echo $e->getMessage(), "\n";
+    }
+
+    try {
+        var_dump($fn([]));
+    } catch (ValueError $e) {
+        echo $e->getMessage(), "\n";
+    }
+
+    try {
+        var_dump($fn(new stdclass));
+    } catch (TypeError $e) {
+        echo $e->getMessage(), "\n";
+    }
+}
+
+var_dump(min(2, 1, 2));
+var_dump(min(2.1, 2.11, 2.09));
+var_dump(min("", "t", "b"));
+var_dump(min(false, true, false));
+var_dump(min(true, false, true));
+var_dump(min(1, true, false, true));
+var_dump(min(0, true, false, true));
+
+var_dump(max(2, 1, 2));
+var_dump(max(2.1, 2.11, 2.09));
+var_dump(max("", "t", "b"));
+var_dump(max(false, true, false));
+var_dump(max(true, false, true));
+var_dump(max(1, true, false, true));
+var_dump(max(0, true, false, true));
+"#,
+    )
+    .unwrap();
+
     assert_eq!(
-        empty_array.message,
-        "unsupported call min(): empty array argument forms are not implemented in the current subset"
+        execution.stdout,
+        "min(): Argument #1 ($value) must be of type array, int given\n\
+min(): Argument #1 ($value) must contain at least one element\n\
+min(): Argument #1 ($value) must be of type array, stdClass given\n\
+max(): Argument #1 ($value) must be of type array, int given\n\
+max(): Argument #1 ($value) must contain at least one element\n\
+max(): Argument #1 ($value) must be of type array, stdClass given\n\
+int(1)\n\
+float(2.09)\n\
+string(0) \"\"\n\
+bool(false)\n\
+bool(false)\n\
+bool(false)\n\
+int(0)\n\
+int(2)\n\
+float(2.11)\n\
+string(1) \"t\"\n\
+bool(true)\n\
+bool(true)\n\
+int(1)\n\
+bool(true)\n"
     );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn min_and_max_reject_current_subset_gaps() {
+    let empty_array = run_source("<?php\nmin([]);\n").unwrap();
+    assert!(empty_array.stdout.contains(
+        "Fatal error: Uncaught ValueError: min(): Argument #1 ($value) must contain at least one element"
+    ));
+    assert_eq!(empty_array.exit_code, 255);
 
     let array_to_array = run_source("<?php\nmax([1], [2]);\n").unwrap_err();
     assert_eq!(array_to_array.phase, Phase::Runtime);
@@ -91,14 +157,11 @@ fn min_and_max_reject_current_subset_gaps() {
         "unsupported call min()/max(): array-to-array ordering is not implemented in the current subset"
     );
 
-    let too_few = run_source("<?php\nmin(3);\n").unwrap_err();
-    assert_eq!(too_few.phase, Phase::Runtime);
-    assert_eq!(too_few.line, 2);
-    assert_eq!(too_few.column, 1);
-    assert_eq!(
-        too_few.message,
-        "arity mismatch for min(): expected at least 2 argument(s), got 1"
-    );
+    let single_non_array = run_source("<?php\nmin(3);\n").unwrap();
+    assert!(single_non_array.stdout.contains(
+        "Fatal error: Uncaught TypeError: min(): Argument #1 ($value) must be of type array, int given"
+    ));
+    assert_eq!(single_non_array.exit_code, 255);
 
     let no_args = run_source("<?php\nmax();\n").unwrap_err();
     assert_eq!(no_args.phase, Phase::Runtime);

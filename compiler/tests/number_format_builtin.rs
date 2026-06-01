@@ -91,6 +91,21 @@ echo $reflection->getName(), "|", $reflection->invoke(1234.5678, 2);
 }
 
 #[test]
+fn number_format_preserves_large_integer_fraction_padding_from_math_phpt() {
+    let execution = run_source(
+        r#"<?php
+$formatted = number_format(-2000, 2768);
+echo strlen($formatted), "|", substr($formatted, 0, 7), "|", substr($formatted, -5);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "2775|-2,000.|00000");
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn number_format_rejects_trailing_junk_numeric_strings() {
     let execution = run_source(
         r#"<?php

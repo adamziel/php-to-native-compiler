@@ -3754,10 +3754,14 @@
   object/resource coercions, non-integer offset/length coercions, multibyte
   character-index parity, references/copy-on-write, and native lowering remain
   unsupported.
-  `min($value, ...$values)` supports two or more integer arguments and returns
-  the smallest integer. Array-form `min([..])`, mixed-type comparison rules,
-  float/string/bool/null/object/resource operands, exact PHP diagnostics, and
-  native lowering remain unsupported.
+  `min($value, ...$values)` and `max($value, ...$values)` support the current
+  interpreter comparison subset for scalar values, including the deterministic
+  int/float/string/bool rows covered by php-src's basic min/max PHPTs. A single
+  array argument selects over the array values when non-empty. Single non-array
+  arguments now surface catchable PHP-shaped `TypeError` diagnostics, and empty
+  array arguments surface a catchable `ValueError`. Array-to-array ordering,
+  object/resource operands, full PHP mixed-type comparison parity, exact
+  diagnostics beyond the covered rows, and native lowering remain unsupported.
   `count($value)` and its `sizeof($value)` alias support current arrays and
   objects whose class metadata records `implements Countable`. Concrete
   `Countable` implementors must
@@ -5591,11 +5595,13 @@
   scalar/null separators, returning grouped PHP-style decimal text.
   Multi-character decimal and thousands separators are preserved. Integer
   inputs and integer-shaped numeric strings keep exact 64-bit integer
-  precision for grouping and negative-decimal rounding. String arguments with
-  trailing non-whitespace bytes after a numeric prefix are rejected instead of
-  prefix-parsed. Non-finite values, enormous precision beyond the bounded
-  formatter, locale-aware grouping, exact PHP diagnostics for all coercions,
-  and native lowering remain unsupported.
+  precision for grouping, negative-decimal rounding, and bounded positive
+  decimal padding through the current 4096-place integer formatter used by the
+  reached math PHPT. String arguments with trailing non-whitespace bytes after
+  a numeric prefix are rejected instead of prefix-parsed. Non-finite values,
+  enormous precision beyond the bounded formatter, high-positive-decimal float
+  parity, locale-aware grouping, exact PHP diagnostics for all coercions, and
+  native lowering remain unsupported.
   `extension_loaded($name)` accepts string extension names and currently
   answers from a deterministic bounded compiler/runtime compatibility registry.
   It returns `true` for `json`, `hash`, `pdo`, and `pdo_mysql`, and `false`
@@ -11195,10 +11201,10 @@
   mask-set subset: warning/notice/deprecation filtering, ini integration,
   disabled-function policy, non-integer coercions, exact diagnostics, and
   native lowering beyond function-table introspection
-- `min()` outside the current two-or-more integer argument subset: array-form
-  calls, mixed-type comparison rules, float/string/bool/null/object/resource
-  operands, exact PHP diagnostics, and native lowering beyond function-table
-  introspection
+- `min()`/`max()` outside the current scalar and single-array value subset:
+  array-to-array ordering, object/resource operands, full PHP mixed-type
+  comparison parity, exact diagnostics beyond the covered `TypeError`/
+  `ValueError` rows, and native lowering beyond function-table introspection
 - `count()`/`sizeof()` outside the current array and bounded `Countable` object subset:
   full interface signature enforcement, magic `__call` fallback,
   resources/extensions, non-integer object count results, exact diagnostics,
@@ -11368,10 +11374,10 @@
   array/object/resource operands, NaN/infinity behavior, exact diagnostics, and
   native lowering beyond function-table introspection
 - `number_format()` behavior beyond the current finite scalar formatting
-  subset: non-finite values, precision beyond the bounded formatter,
-  locale-aware grouping, exact PHP diagnostics for every coercion, resource
-  and object conversions, and native lowering beyond function-table
-  introspection
+  subset: non-finite values, integer decimal padding beyond the bounded
+  4096-place formatter, high-positive-decimal float parity, locale-aware
+  grouping, exact PHP diagnostics for every coercion, resource and object
+  conversions, and native lowering beyond function-table introspection
 - session behavior beyond the current in-memory CLI request slice:
   persistence across requests, file locking, save handlers, session module INI
   configuration, `session_name()`, `session_destroy()`, `session_abort()`,

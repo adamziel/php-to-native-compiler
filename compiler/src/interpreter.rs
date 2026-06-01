@@ -103392,6 +103392,8 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
         | ("array_fill()", "Argument #2 ($count) must be greater than or equal to 0")
         | ("array_fill()", "Argument #2 ($count) is too large")
         | ("array_rand()", "Argument #1 ($array) must not be empty")
+        | ("min()", "Argument #1 ($value) must contain at least one element")
+        | ("max()", "Argument #1 ($value) must contain at least one element")
         | (
             "array_rand()",
             "Argument #2 ($num) must be between 1 and the number of elements in argument #1 ($array)",
@@ -128905,7 +128907,7 @@ fn format_number_format_integer(
     decimal_separator: &str,
     thousands_separator: &str,
 ) -> String {
-    let decimals = decimals.clamp(i32::MIN as i64, 100);
+    let decimals = decimals.clamp(i32::MIN as i64, NUMBER_FORMAT_MAX_INTEGER_DECIMALS);
     let mut abs = u128::from(number.unsigned_abs());
     if decimals < 0 {
         abs = round_number_format_integer_abs(abs, decimals.saturating_neg() as u32);
@@ -128924,6 +128926,8 @@ fn format_number_format_integer(
         width = decimals as usize
     )
 }
+
+const NUMBER_FORMAT_MAX_INTEGER_DECIMALS: i64 = 4096;
 
 fn round_number_format_integer_abs(number: u128, places: u32) -> u128 {
     if number == 0 {
@@ -129212,7 +129216,7 @@ fn call_min_max(
                     span,
                     RuntimeError::unsupported_call(
                         callable,
-                        "empty array argument forms are not implemented in the current subset",
+                        "Argument #1 ($value) must contain at least one element",
                     ),
                 ));
             }
@@ -129222,10 +129226,16 @@ fn call_min_max(
                 .map(ArrayEntry::value_cloned)
                 .collect::<Vec<_>>()
         }
-        [_] => {
+        [value] => {
             return Err(runtime_error(
                 span,
-                RuntimeError::arity_mismatch(callable, ArityExpectation::AtLeast(2), args.len()),
+                RuntimeError::unsupported_call(
+                    callable,
+                    format!(
+                        "Argument #1 ($value) must be of type array, {} given",
+                        php_type_error_given(value)
+                    ),
+                ),
             ));
         }
         [] => {
