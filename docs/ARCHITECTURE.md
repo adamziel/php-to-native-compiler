@@ -2972,6 +2972,12 @@ for focused CLI compatibility. It returns the current main source file owner
 name when local metadata and the bounded `/etc/passwd` lookup are available,
 with `USER`/`LOGNAME` environment fallback, and it does not model NSS,
 remote directory services, web-server identities, or native runtime identity.
+`getlastmod()`, `getmyinode()`, `getmyuid()`, and `getmygid()` share that
+main-source-file metadata boundary for the focused `statpage` PHPT shape:
+they return the source file's modification timestamp, inode, uid, or gid, or
+`false` if no main source metadata is available. Alternate executing-script
+identity, web-SAPI metadata, non-local wrappers, cross-request cache effects,
+exact uid/gid portability, and native lowering remain outside this boundary.
 Direct native reads, indexed reads, `isset(...)`, and `empty(...)` over the
 current request superglobals `$_SERVER`, `$_COOKIE`, `$_GET`, `$_POST`,
 `$_REQUEST`, and `$_FILES` reject through a request-state codegen boundary
@@ -3393,7 +3399,10 @@ stream-context resource without applying wrapper-specific context behavior.
 Local open failures,
 including missing read targets, emit a bounded `E_WARNING`, return `false`,
 and continue through the current request-local warning-handler stack before
-the stderr fallback. The same shared local filesystem policy guard handles
+the stderr fallback. Invalid mode strings now use the same warning-plus-`false`
+recovery instead of aborting the interpreter, while broader mode grammar
+outside the documented simple modes remains unsupported. The same shared local
+filesystem policy guard handles
 bounded `open_basedir` denials for covered local metadata and mutation helpers
 by emitting PHP-shaped display warnings and returning each helper's `false`
 failure value. `stream_context_create()`
@@ -3950,7 +3959,7 @@ argument semantics for string keys. A named internal-function slice re-enters
 the existing builtin dispatcher for `strlen`, `strtolower`, `trim`, `ltrim`,
 `rtrim`, `strcasecmp`, `strncmp`, `strncasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`,
 `strpos`, `substr`, `sprintf`, `implode`, `basename`, `dirname`, `defined`,
-`function_exists`, `count`, `sizeof`, `get_current_user`, `getmypid`, and `php_sapi_name`. Closure expressions also register a
+`function_exists`, `count`, `sizeof`, `get_current_user`, `getlastmod`, `getmyinode`, `getmyuid`, `getmygid`, `getmypid`, and `php_sapi_name`. Closure expressions also register a
 request-local `ReflectionFunction` metadata snapshot, parsed body, and captured
 by-value snapshot keyed by closure id, so direct closure invocation,
 closure-valued `call_user_func()`/`call_user_func_array()` callbacks, and

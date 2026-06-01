@@ -76843,13 +76843,13 @@ impl Interpreter {
         };
 
         let Some(stream_mode) = parse_stream_mode(mode) else {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "fopen()",
-                    format!("mode {mode:?} is not supported in the current stream subset"),
+            self.emit_display_warning(
+                format!(
+                    "fopen({path}): Failed to open stream: `{mode}' is not a valid mode for fopen"
                 ),
-            ));
+                span,
+            )?;
+            return Ok(Value::Bool(false));
         };
 
         let id = self.next_resource_id;
@@ -84048,6 +84048,10 @@ impl Interpreter {
             "getservbyname" => call_getservbyname(&args, span),
             "getservbyport" => call_getservbyport(&args, span),
             "get_current_user" => call_get_current_user(&args, self.main_source_file.as_deref(), span),
+            "getlastmod" => call_getlastmod(&args, self.main_source_file.as_deref(), span),
+            "getmyinode" => call_getmyinode(&args, self.main_source_file.as_deref(), span),
+            "getmyuid" => call_getmyuid(&args, self.main_source_file.as_deref(), span),
+            "getmygid" => call_getmygid(&args, self.main_source_file.as_deref(), span),
             "getmypid" => call_getmypid(&args, span),
             "php_uname" => call_php_uname(&args, span),
             "php_sapi_name" => call_php_sapi_name(&args, span),
@@ -100320,6 +100324,7 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
         ),
         "connection_aborted" | "connection_status" => ("int", vec![]),
         "get_current_user" => ("string", vec![]),
+        "getlastmod" | "getmyinode" | "getmyuid" | "getmygid" => ("int|false", vec![]),
         "getmypid" => ("int|false", vec![]),
         "php_uname" => (
             "string",
@@ -104167,6 +104172,10 @@ fn is_builtin(name: &str) -> bool {
             | "getservbyname"
             | "getservbyport"
             | "get_current_user"
+            | "getlastmod"
+            | "getmyinode"
+            | "getmyuid"
+            | "getmygid"
             | "getmypid"
             | "php_uname"
             | "php_sapi_name"
@@ -128167,6 +128176,59 @@ fn call_get_current_user(
 ) -> CompileResult<Value> {
     expect_arity("get_current_user", args, 0, span)?;
     Ok(Value::String(current_user_name(main_source_file)))
+}
+
+fn main_source_file_metadata(main_source_file: Option<&str>) -> Option<fs::Metadata> {
+    let source_file = main_source_file?;
+    fs::metadata(local_filesystem_metadata_path(source_file)).ok()
+}
+
+fn call_getlastmod(
+    args: &[Value],
+    main_source_file: Option<&str>,
+    span: Span,
+) -> CompileResult<Value> {
+    expect_arity("getlastmod", args, 0, span)?;
+    let Some(metadata) = main_source_file_metadata(main_source_file) else {
+        return Ok(Value::Bool(false));
+    };
+    Ok(Value::Int(filesystem_mtime_value(&metadata, span)?))
+}
+
+fn call_getmyinode(
+    args: &[Value],
+    main_source_file: Option<&str>,
+    span: Span,
+) -> CompileResult<Value> {
+    expect_arity("getmyinode", args, 0, span)?;
+    let Some(metadata) = main_source_file_metadata(main_source_file) else {
+        return Ok(Value::Bool(false));
+    };
+    Ok(Value::Int(filesystem_inode_value(&metadata)))
+}
+
+fn call_getmyuid(
+    args: &[Value],
+    main_source_file: Option<&str>,
+    span: Span,
+) -> CompileResult<Value> {
+    expect_arity("getmyuid", args, 0, span)?;
+    let Some(metadata) = main_source_file_metadata(main_source_file) else {
+        return Ok(Value::Bool(false));
+    };
+    Ok(Value::Int(filesystem_owner_value(&metadata)))
+}
+
+fn call_getmygid(
+    args: &[Value],
+    main_source_file: Option<&str>,
+    span: Span,
+) -> CompileResult<Value> {
+    expect_arity("getmygid", args, 0, span)?;
+    let Some(metadata) = main_source_file_metadata(main_source_file) else {
+        return Ok(Value::Bool(false));
+    };
+    Ok(Value::Int(filesystem_group_value(&metadata)))
 }
 
 fn current_user_name(main_source_file: Option<&str>) -> String {

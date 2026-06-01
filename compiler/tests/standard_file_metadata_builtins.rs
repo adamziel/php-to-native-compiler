@@ -4,6 +4,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use php_compiler::run_source;
+use php_compiler::run_source_with_source_file;
 
 #[test]
 fn file_metadata_builtins_cover_local_owner_inode_group_and_type_queries() {
@@ -312,6 +313,31 @@ echo "alive";
     );
     assert!(execution.stdout.ends_with("bool(false)\nalive"));
     assert_eq!(execution.stdout.matches("bool(false)").count(), 2);
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn script_metadata_builtins_cover_statpage_phpt_slice() {
+    let source_file = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("compiler has a workspace root")
+        .join("tests/fixtures/milestone1308/filesize_local_metadata.php");
+    let execution = run_source_with_source_file(
+        r#"<?php
+foreach (["getlastmod", "getmyinode", "getmyuid", "getmygid"] as $call) {
+    echo function_exists($call) ? "fn:" : "missing:";
+    $value = $call();
+    echo is_int($value) ? "int" : "bad";
+    echo "\n";
+}
+echo is_int(getmypid()) ? "pid" : "bad";
+"#,
+        source_file.display().to_string(),
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "fn:int\nfn:int\nfn:int\nfn:int\npid");
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);
 }

@@ -1234,14 +1234,22 @@ fn stream_resource_builtins_reject_forms_outside_current_subset() {
         .stderr
         .contains("Unable to find the wrapper \"http\""));
 
-    let bad_mode = run_source("<?php\nfopen('php://memory', 'q');\n").unwrap_err();
-    assert_eq!(bad_mode.phase, Phase::Runtime);
-    assert_eq!(bad_mode.line, 2);
-    assert_eq!(bad_mode.column, 1);
-    assert_eq!(
-        bad_mode.message,
-        "unsupported call fopen(): mode \"q\" is not supported in the current stream subset"
+    let bad_mode =
+        run_source("<?php\nvar_dump(fopen('php://memory', 'q'));\necho 'after';\n").unwrap();
+    assert!(
+        bad_mode.stdout.contains("Warning: fopen(php://memory):")
+            && bad_mode
+                .stdout
+                .contains("Failed to open stream: `q' is not a valid mode for fopen"),
+        "{}",
+        bad_mode.stdout
     );
+    assert!(
+        bad_mode.stdout.ends_with("bool(false)\nafter"),
+        "{}",
+        bad_mode.stdout
+    );
+    assert_eq!(bad_mode.stderr, "");
 
     let bad_context =
         run_source("<?php\nfile_get_contents('php://input', false, 'ctx');\n").unwrap_err();

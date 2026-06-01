@@ -1,5 +1,23 @@
 # Progress Log
 
+## 2026-06-01
+
+Implemented:
+
+- Added a compact standard-filesystem PHPT slice for script metadata and
+  invalid local stream modes. `getlastmod()`, `getmyinode()`, `getmyuid()`,
+  and `getmygid()` now read the current `phpc run` source-file metadata and
+  are visible to runtime function lookup/reflection and native
+  function-table introspection. `fopen()` now reports PHP-shaped warning plus
+  `false` recovery for invalid mode strings instead of aborting execution.
+  Focused proof covers `ext/standard/tests/file/statpage.phpt` and
+  `ext/standard/tests/file/bug76735.phpt`, plus Rust tests for the script
+  metadata builtins and invalid-mode recovery. The slice remains bounded to
+  host-local source-file metadata and simple local/php stream mode validation;
+  no stream-wrapper expansion, shell-backed rows, directory-open diagnostics,
+  chmod/is_readable/is_writable/umask behavior, native stat ABI, or exact PHP
+  diagnostic parity beyond the covered warning shape is claimed.
+
 ## 2026-05-27
 
 Implemented:

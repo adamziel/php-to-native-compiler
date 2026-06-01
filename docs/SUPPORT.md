@@ -3094,6 +3094,14 @@
   is available, with `USER`/`LOGNAME` environment fallback. String-valued
   dynamic calls, `function_exists()`, `is_callable()`, and
   `ReflectionFunction` metadata recognize the builtin.
+- `getlastmod()`, `getmyinode()`, `getmyuid()`, and `getmygid()` with no
+  arguments read the current `phpc run` main source file metadata and return
+  the host modification timestamp, inode, owner uid, and group gid
+  respectively, or `false` when no source-file metadata is available. This is
+  a local CLI/source-file metadata slice; web-SAPI script identity policy,
+  cross-request metadata cache behavior, non-local wrappers, exact uid/gid
+  portability, and native lowering beyond function-table introspection remain
+  unsupported.
 - `getmypid()` with no arguments, returning the current `phpc run` process id
   as an integer. String-valued dynamic calls, `function_exists()`,
   `is_callable()`, and `ReflectionFunction` metadata recognize the builtin.
@@ -3248,7 +3256,7 @@
   `disk_free_space`, `diskfreespace`, `disk_total_space`, `clearstatcache`, `realpath`, `realpath_cache_get`, `realpath_cache_size`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_executable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_length`, `ob_list_handlers`, `ob_get_status`, `ob_get_clean`, `ob_get_flush`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `date_default_timezone_set`,
   `version_compare`, `microtime`, `ini_get`, `ini_set`,
   `get_include_path`, `set_include_path`, `min`, `rand`, `array_rand`, `uniqid`,
-  `hash`, `hash_algos`, `hash_hmac`, `md5`, `md5_file`, `get_current_user`, `getmypid`, `isset`, `empty`, `count`, `sizeof`, `compact`, `define`, `constant`, `defined`,
+  `hash`, `hash_algos`, `hash_hmac`, `md5`, `md5_file`, `get_current_user`, `getlastmod`, `getmyinode`, `getmyuid`, `getmygid`, `getmypid`, `isset`, `empty`, `count`, `sizeof`, `compact`, `define`, `constant`, `defined`,
   `array_key_exists`, `key_exists`, `array_key_first`, `array_key_last`, `current`,
   `array_is_list`, `array_values`, `array_keys`, `array_rand`, `array_reverse`, `array_slice`, `array_chunk`,
   `array_pad`, `array_merge`, `array_replace`, `array_combine`,
@@ -5021,6 +5029,10 @@
   including missing read targets, emit a bounded PHP-style `E_WARNING`, return
   `false`, and continue; that warning can route through the same current
   bounded `set_error_handler()` stack described for `file_get_contents()`.
+  Invalid mode strings emit a bounded PHP-style `E_WARNING`, return `false`,
+  and continue instead of aborting the request. Unsupported mode grammar
+  outside simple primary modes plus optional `+`, `b`, and `t` flags remains
+  unsupported.
   `php://input` handles are read-only streams over the explicit
   `PHPC_REQUEST_BODY` request seed and report bounded PHP/Input/`rb` metadata.
   `stream_context_create($options = null, $params = null)` creates an
@@ -7549,7 +7561,7 @@
   an already-lowerable string value with a uniform known answer in the current
   documented builtin table: documented callable builtins, including
   `strtolower`, `strtoupper`, `trim`, `ltrim`, `rtrim`, `strncmp`, `strncasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`, `strspn`, `strcspn`, `strpbrk`, `strpos`, `stripos`, `strrpos`, `strripos`, `strstr`, `strchr`, `stristr`, `strtok`, `substr`, `substr_replace`, `substr_compare`, `substr_count`, `similar_text`, `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`,
-  `error_reporting`, `min`, `rand`, `uniqid`, `hash`, `hash_algos`, `hash_hmac`, `md5`, `md5_file`, `get_current_user`, `getmypid`, `basename`, `dirname`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`, `str_getcsv`, `parse_str`,
+  `error_reporting`, `min`, `rand`, `uniqid`, `hash`, `hash_algos`, `hash_hmac`, `md5`, `md5_file`, `get_current_user`, `getlastmod`, `getmyinode`, `getmyuid`, `getmygid`, `getmypid`, `basename`, `dirname`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`, `str_getcsv`, `parse_str`,
   `file_put_contents`, `readfile`, `unlink`, `mkdir`, `rmdir`, `copy`, `rename`, `chdir`, `scandir`, `stat`, `lstat`, `fileperms`, `chmod`, `chown`, `chgrp`,
   `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_params`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `stream_context_set_params`, `fwrite`, `fscanf`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fflush`, `ftruncate`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`,
   `disk_free_space`, `diskfreespace`, `disk_total_space`, `realpath`, `realpath_cache_get`, `realpath_cache_size`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_executable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`,
@@ -7961,7 +7973,7 @@
   `printf`, `fprintf`, `sprintf`, `vsprintf`, `vprintf`, `vfprintf`, `call_user_func`, `call_user_func_array`, `implode`, `basename`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`,
   `file_put_contents`, `readfile`, `unlink`, `mkdir`, `rmdir`, `copy`, `rename`, `chdir`, `scandir`, `stat`, `lstat`, `fileperms`, `chmod`, `chown`, `chgrp`,
   `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_params`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `stream_context_set_params`, `fwrite`, `fscanf`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fflush`, `ftruncate`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`, `disk_free_space`, `diskfreespace`, `disk_total_space`, `clearstatcache`, `realpath`, `realpath_cache_get`, `realpath_cache_size`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_executable`, `is_link`, `abs`,
-  `number_format`, `microtime`, `ini_get`, `min`, `get_current_user`, `getmypid`, `count`, `compact`,
+  `number_format`, `microtime`, `ini_get`, `min`, `get_current_user`, `getlastmod`, `getmyinode`, `getmyuid`, `getmygid`, `getmypid`, `count`, `compact`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `current`, `next`, `array_is_list`,
   `array_values`, `array_keys`, `array_reverse`, `array_slice`, `array_chunk`,
   `array_pad`, `array_merge`, `array_replace`, `array_combine`, `define`,
@@ -8208,7 +8220,7 @@
   `str_starts_with`, `str_ends_with`, `strspn`, `strcspn`, `strpbrk`, `strpos`, `stripos`, `strrpos`, `strripos`, `strstr`, `strchr`, `stristr`, `strtok`, `substr`, `substr_replace`, `substr_compare`, `substr_count`, `similar_text`, `str_replace`, `str_getcsv`, `parse_str`, `printf`, `fprintf`, `sprintf`, `vsprintf`, `vprintf`, `vfprintf`,
   `call_user_func`, `call_user_func_array`, `implode`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`,
   `file_put_contents`, `readfile`, `unlink`, `mkdir`, `rmdir`, `copy`, `rename`, `chdir`, `scandir`, `stat`, `lstat`, `fileperms`, `chmod`, `chown`, `chgrp`,
-  `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_params`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `stream_context_set_params`, `fwrite`, `fscanf`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fflush`, `ftruncate`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`, `disk_free_space`, `diskfreespace`, `disk_total_space`, `clearstatcache`, `realpath`, `realpath_cache_get`, `realpath_cache_size`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_executable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_length`, `ob_list_handlers`, `ob_get_status`, `ob_get_clean`, `ob_get_flush`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `date_default_timezone_set`, `abs`, `number_format`, `microtime`, `ini_get`, `min`, `get_current_user`, `isset`, `empty`, `count`,
+  `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_params`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `stream_context_set_params`, `fwrite`, `fscanf`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fflush`, `ftruncate`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`, `disk_free_space`, `diskfreespace`, `disk_total_space`, `clearstatcache`, `realpath`, `realpath_cache_get`, `realpath_cache_size`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_executable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_length`, `ob_list_handlers`, `ob_get_status`, `ob_get_clean`, `ob_get_flush`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `date_default_timezone_set`, `abs`, `number_format`, `microtime`, `ini_get`, `min`, `get_current_user`, `getlastmod`, `getmyinode`, `getmyuid`, `getmygid`, `isset`, `empty`, `count`,
   `define`, `constant`,
   `defined`, `array_key_exists`, `array_key_first`, `array_key_last`,
   `current`, `array_is_list`, `array_values`, `array_keys`, `array_reverse`,
@@ -8838,6 +8850,11 @@
   until native source-file metadata, account lookup policy, process/request
   identity, references/copy-on-write, and exact native diagnostics exist,
   while native function-table introspection recognizes the name.
+  `getlastmod`, `getmyinode`, `getmyuid`, and `getmygid` accept the same
+  current no-argument main-source metadata subset as the builtin section
+  above; direct native calls still reject under the function-call boundary
+  until native source-file metadata and process/request identity policy exist,
+  while native function-table introspection recognizes the names.
   `clearstatcache` accepts the same bounded stat-cache mutation slice
   as the builtin section above; direct native `clearstatcache(...)` calls stop
   at a dedicated stat-cache mutation boundary until native filesystem metadata
@@ -9058,7 +9075,7 @@
   `rtrim`, `strcasecmp`, `strncmp`, `strncasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`,
   `strpos`, `stripos`, `strrpos`, `strripos`, `substr`, `str_shuffle`, `printf`, `fprintf`, `sprintf`, `vprintf`, `vfprintf`, `implode`, `basename`, `dirname`, `number_format`, `defined`,
   `function_exists`, `is_array`, `is_object`, `is_string`, `is_scalar`,
-  `count`, `sizeof`, `array_key_exists`, `is_callable`, `get_current_user`, `getmypid`, and `php_sapi_name`, exposes
+  `count`, `sizeof`, `array_key_exists`, `is_callable`, `get_current_user`, `getlastmod`, `getmyinode`, `getmyuid`, `getmygid`, `getmypid`, and `php_sapi_name`, exposes
   their name, false file/start/end/doc-comment metadata, current
   parameter/default metadata, return type, and by-reference-return predicate,
   and executes them through `invoke()`/`invokeArgs()`.
@@ -10859,7 +10876,7 @@
   `str_increment`, `str_decrement`, `trim`, `ltrim`, `rtrim`,
   `strcasecmp`, `strncmp`, `strncasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`, `strpos`, `stripos`, `strrpos`, `strripos`,
   `substr`, `str_shuffle`, `printf`, `fprintf`, `sprintf`, `vprintf`, `vfprintf`, `implode`, `basename`, `dirname`, `number_format`, `defined`,
-  `function_exists`, `get_current_user`, `getmypid`, and `php_sapi_name`. Closure metadata is supported for
+  `function_exists`, `get_current_user`, `getlastmod`, `getmyinode`, `getmyuid`, `getmygid`, `getmypid`, and `php_sapi_name`. Closure metadata is supported for
   current closure values. The supported
   metadata methods are the name, file/start/end/doc-comment, parameter-list,
   return-type, by-reference-return, and stringification methods documented
@@ -11363,6 +11380,11 @@
   effective UID versus script-owner policy variants, account database changes
   during a request, exact diagnostics, and native lowering beyond
   function-table introspection
+- `getlastmod()`, `getmyinode()`, `getmyuid()`, and `getmygid()` behavior
+  beyond the current main source-file metadata slice: alternate executing
+  script identity, web-SAPI request metadata, non-local stream wrappers,
+  cross-request stat cache effects, exact platform uid/gid portability, and
+  native lowering beyond function-table introspection
 - `abs()` behavior beyond the current integer and finite-float subset:
   integer-minimum overflow, numeric string coercion, bool/null coercion,
   array/object/resource operands, NaN/infinity behavior, exact diagnostics, and
