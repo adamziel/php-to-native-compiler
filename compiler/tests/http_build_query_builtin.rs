@@ -95,6 +95,38 @@ echo http_build_query(array("space" => "a b", "tilde" => "~"), "", "&", PHP_QUER
 }
 
 #[test]
+fn http_build_query_supports_named_arguments_and_skips_recursive_objects() {
+    let execution = run_source(
+        r#"<?php
+class StringableObject {
+    public function __toString(): string {
+        return "Stringable";
+    }
+}
+class KeyVal {
+    public $public = "input";
+}
+
+$stringable = new StringableObject();
+var_dump(http_build_query(["hello", $stringable], numeric_prefix: "prefix_"));
+var_dump(http_build_query($stringable, numeric_prefix: "prefix_"));
+var_dump(http_build_query(["hello" => "world", "foo" => "bar"], encoding_type: PHP_QUERY_RFC3986));
+
+$recursive = new KeyVal();
+$recursive->public = $recursive;
+var_dump(http_build_query($recursive));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "string(14) \"prefix_0=hello\"\nstring(0) \"\"\nstring(19) \"hello=world&foo=bar\"\nstring(0) \"\"\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn http_build_query_metadata_and_query_encoding_constants_are_visible() {
     let execution = run_source(
         r#"<?php

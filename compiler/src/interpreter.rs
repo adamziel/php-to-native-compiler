@@ -99757,6 +99757,15 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_optional_int_param("component", -1),
             ],
         ),
+        "http_build_query" => (
+            "string",
+            vec![
+                reflection_internal_param("data", "array|object"),
+                reflection_internal_optional_string_param("numeric_prefix", ""),
+                reflection_internal_optional_null_param("arg_separator", "?string"),
+                reflection_internal_optional_int_param("encoding_type", PHP_QUERY_RFC1738),
+            ],
+        ),
         "json_encode" => (
             "string|false",
             vec![
@@ -123200,9 +123209,13 @@ fn call_http_build_query(args: &[Value], span: Span) -> CompileResult<Value> {
         ));
     }
 
+    let mut active_objects = HashSet::new();
     let root = match &args[0] {
         Value::Array(array) => array.clone(),
-        Value::Object(object) => public_object_properties_for_http_query(object),
+        Value::Object(object) => {
+            active_objects.insert(object.id());
+            public_object_properties_for_http_query(object)
+        }
         other => {
             return Err(runtime_error(
                 span,
@@ -123255,7 +123268,14 @@ fn call_http_build_query(args: &[Value], span: Span) -> CompileResult<Value> {
     let mut pairs = Vec::new();
     for entry in root.entries() {
         let key = http_query_top_level_key(&entry.key, &numeric_prefix);
-        collect_http_query_pairs(key, &entry.value_cloned(), &mut pairs, encoding, span)?;
+        collect_http_query_pairs(
+            key,
+            &entry.value_cloned(),
+            &mut pairs,
+            encoding,
+            span,
+            &mut active_objects,
+        )?;
     }
 
     Ok(Value::String(pairs.join(&separator)))
@@ -123291,6 +123311,7 @@ fn collect_http_query_pairs(
     pairs: &mut Vec<String>,
     encoding: HttpQueryEncoding,
     span: Span,
+    active_objects: &mut HashSet<i64>,
 ) -> CompileResult<()> {
     match value {
         Value::Null | Value::Resource(_) => Ok(()),
@@ -123302,22 +123323,31 @@ fn collect_http_query_pairs(
                     pairs,
                     encoding,
                     span,
+                    active_objects,
                 )?;
             }
             Ok(())
         }
         Value::Object(object) => {
-            let array = public_object_properties_for_http_query(object);
-            for entry in array.entries() {
-                collect_http_query_pairs(
-                    http_query_child_key(&key, &entry.key),
-                    &entry.value_cloned(),
-                    pairs,
-                    encoding,
-                    span,
-                )?;
+            if !active_objects.insert(object.id()) {
+                return Ok(());
             }
-            Ok(())
+            let array = public_object_properties_for_http_query(object);
+            let result = (|| {
+                for entry in array.entries() {
+                    collect_http_query_pairs(
+                        http_query_child_key(&key, &entry.key),
+                        &entry.value_cloned(),
+                        pairs,
+                        encoding,
+                        span,
+                        active_objects,
+                    )?;
+                }
+                Ok(())
+            })();
+            active_objects.remove(&object.id());
+            result
         }
         Value::Closure(_) => Err(runtime_error(
             span,

@@ -1,5 +1,29 @@
 # Progress Log
 
+## 2026-06-01
+
+Implemented:
+
+- Added a bounded `http_build_query()` query-formatting slice for direct named
+  arguments and self-recursive public object branches. The interpreter now
+  publishes internal parameter metadata for `data`, `numeric_prefix`,
+  `arg_separator`, and `encoding_type`, so direct named calls can reuse the
+  existing builtin argument normalizer and default filling. Query traversal now
+  tracks active object ids and elides a public object branch that points back to
+  an object already on the current traversal stack, matching the selected
+  empty-output PHPT shape without adding general cyclic array/reference support.
+  Focused proof: `cargo fmt --check`, `cargo test -p phpc --test
+  http_build_query_builtin`, `cargo build -p phpc`, a `phpc run` CLI exercise
+  over named-prefix/RFC3986/self-recursive-object cases, and focused PHPT
+  `3 / 3` for `ext/standard/tests/http/http_build_query/gh12745.phpt`,
+  `http_build_query_object_just_stringable.phpt`, and
+  `http_build_query_object_recursif.phpt` with evidence under
+  `/home/claude/supervised-php-compiler/state/artifacts/bcs2-29-url-http-final-20260601T210037Z`.
+  Exact diagnostics, class-context private/protected object-property inclusion,
+  cyclic array/reference structures, object custom hooks, INI-driven separators
+  beyond the current `&` fallback, binary key/value fidelity outside UTF-8
+  strings, and native lowering remain unsupported.
+
 ## 2026-05-27
 
 Implemented:

@@ -2767,12 +2767,13 @@
 - `http_build_query()` supports ordered arrays and initialized public object
   properties, including recursive nested arrays/objects, top-level numeric
   prefixes, explicit argument separators, null/resource elision,
-  reference-backed array values, and `PHP_QUERY_RFC1738` or
-  `PHP_QUERY_RFC3986` component encoding. Closure values, exact PHP
-  diagnostics, binary string/key byte fidelity outside UTF-8 strings,
-  INI-derived argument separators beyond the current `&` fallback, cyclic
-  structures, object custom serialization hooks, and native lowering beyond
-  function-table introspection remain unsupported.
+  reference-backed array values, direct named arguments for the documented
+  parameters, self-recursive public object branches skipped as empty output,
+  and `PHP_QUERY_RFC1738` or `PHP_QUERY_RFC3986` component encoding. Closure
+  values, exact PHP diagnostics, binary string/key byte fidelity outside UTF-8
+  strings, INI-derived argument separators beyond the current `&` fallback,
+  cyclic array/reference structures, object custom serialization hooks, and
+  native lowering beyond function-table introspection remain unsupported.
 - `$_FILES` is seeded as a bounded root superglobal for `phpc run`. By default
   it is an empty ordered array. When `PHPC_FILES` is set, the runtime treats it
   as an explicit URL-encoded upload metadata seed with `$_FILES`-style keys
@@ -11291,10 +11292,11 @@
 - `http_build_query()` behavior beyond ordered array and initialized public
   object-property data, recursive arrays/objects, scalar value conversion,
   null/resource elision, top-level numeric prefixes, explicit separators, and
-  `PHP_QUERY_RFC1738`/`PHP_QUERY_RFC3986` encoding: exact diagnostics, cyclic
-  structures, binary key/value fidelity outside UTF-8 strings, INI-derived
-  argument separators beyond the current `&` fallback, object custom hooks,
-  and native lowering beyond function-table introspection
+  `PHP_QUERY_RFC1738`/`PHP_QUERY_RFC3986` encoding, plus documented named
+  arguments and self-recursive public object branch elision: exact diagnostics,
+  cyclic array/reference structures, binary key/value fidelity outside UTF-8
+  strings, INI-derived argument separators beyond the current `&` fallback,
+  object custom hooks, and native lowering beyond function-table introspection
 - `http_response_code()` behavior beyond no-argument reads and integer writes
   of request-local status state, including previous-value return behavior:
   real SAPI emission, exact valid-code ranges, reason phrases, web-server
