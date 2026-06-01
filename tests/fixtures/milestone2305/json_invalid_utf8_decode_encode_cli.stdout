@@ -1,0 +1,6 @@
+string(2) "ab"
+string(10) "61efbfbd62"
+string(4) ""aA""
+string(10) ""a\ufffdA""
+json_decode(): Argument #3 ($depth) must be greater than 0
+

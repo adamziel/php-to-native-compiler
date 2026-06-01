@@ -162,3 +162,78 @@ var_dump(json_last_error(), json_last_error_msg());\n",
     );
     assert_eq!(execution.exit_code, 0);
 }
+
+#[test]
+fn json_decode_reports_bounded_error_locations_and_catchable_depth_value_error() {
+    let execution = run_source(
+        r#"<?php
+var_dump(json_decode("[[1]]", false, 2));
+var_dump(json_last_error(), json_last_error_msg());
+var_dump(json_decode("[1}"));
+var_dump(json_last_error(), json_last_error_msg());
+var_dump(json_decode('["' . chr(0) . 'abcd"]'));
+var_dump(json_last_error(), json_last_error_msg());
+var_dump(json_decode("[1"));
+var_dump(json_last_error(), json_last_error_msg());
+try {
+    json_decode('"abc"', true, -1);
+} catch (ValueError $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "NULL\n",
+            "int(1)\n",
+            "string(46) \"Maximum stack depth exceeded near location 1:2\"\n",
+            "NULL\n",
+            "int(2)\n",
+            "string(60) \"State mismatch (invalid or malformed JSON) near location 1:3\"\n",
+            "NULL\n",
+            "int(3)\n",
+            "string(71) \"Control character error, possibly incorrectly encoded near location 1:2\"\n",
+            "NULL\n",
+            "int(4)\n",
+            "string(30) \"Syntax error near location 1:3\"\n",
+            "json_decode(): Argument #3 ($depth) must be greater than 0\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn json_invalid_utf8_ignore_and_substitute_cover_decode_and_encode_binary_strings() {
+    let execution = run_source(
+        r#"<?php
+$bad = '"a' . chr(0xb0) . 'b"';
+var_dump(json_decode($bad));
+var_dump(json_decode($bad, true, 512, JSON_INVALID_UTF8_IGNORE));
+var_dump(bin2hex(json_decode($bad, true, 512, JSON_INVALID_UTF8_SUBSTITUTE)));
+
+$raw = "a" . chr(0xf0) . chr(0x80) . chr(0x80) . "A";
+var_dump(json_encode($raw));
+var_dump(json_encode($raw, JSON_INVALID_UTF8_IGNORE));
+var_dump(json_encode($raw, JSON_INVALID_UTF8_SUBSTITUTE));
+var_dump(bin2hex(json_encode($raw, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE)));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "NULL\n",
+            "string(2) \"ab\"\n",
+            "string(10) \"61efbfbd62\"\n",
+            "bool(false)\n",
+            "string(4) \"\"aA\"\"\n",
+            "string(10) \"\"a\\ufffdA\"\"\n",
+            "string(14) \"2261efbfbd4122\"\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}

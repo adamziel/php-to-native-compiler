@@ -1,5 +1,25 @@
 # Progress Log
 
+## 2026-06-01
+
+Implemented:
+
+- Tightened the bounded interpreter JSON lane for deterministic PHPT rows:
+  `json_decode()` now reports the covered one-line depth, state-mismatch,
+  control-character, and EOF syntax locations used by the php-src JSON error
+  rows; invalid decode depth is catchable as `ValueError`; and binary-string
+  inputs honor `JSON_INVALID_UTF8_IGNORE` / `JSON_INVALID_UTF8_SUBSTITUTE`
+  for the covered decode and encode shapes. Focused Rust tests cover the new
+  error-location, catchable-depth, and invalid-UTF-8 encode/decode behavior.
+  A milestone2305 CLI fixture compares the portable invalid-UTF-8
+  ignore/substitute and catchable-depth slice against system PHP.
+  Focused PHPT proof with `/home/claude/php-src-phpt` passed
+  `ext/json/tests/007.phpt`, `json_decode_error.phpt`,
+  `json_decode_invalid_utf8.phpt`, and `json_encode_invalid_utf8.phpt`, plus a
+  neighboring JSON smoke set. `JSON_THROW_ON_ERROR`, broad
+  byte-for-byte JSON diagnostic location parity, every invalid UTF-8/UTF-16
+  edge, and native lowering remain unsupported.
+
 ## 2026-05-27
 
 Implemented:

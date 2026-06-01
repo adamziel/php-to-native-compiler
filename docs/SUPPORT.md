@@ -11542,9 +11542,13 @@ Unsupported code should fail with an explicit parse, runtime, or codegen error.
   scalar, array, and public-property object values, `stdClass` decode results,
   associative decode mode, selected JSON constants, bigint-as-string decode,
   numeric-string encoding, unicode and hex string escaping, pretty-print
-  formatting, partial output for unsupported values, validation depth and
-  `JSON_INVALID_UTF8_IGNORE` checks, and request-local last-error state. Full
-  `JsonSerializable` parity, exact exception propagation for every serializer
-  shape, complete UTF-16/UTF-8 diagnostics, exact diagnostic locations, every
-  JSON option interaction, remaining json extension functions, and native
-  lowering remain unsupported.
+  formatting, partial output for unsupported values, bounded invalid UTF-8
+  ignore/substitute handling for binary-string encode/decode inputs, covered
+  one-line decode error locations, validation depth and
+  `JSON_INVALID_UTF8_IGNORE` checks, and request-local last-error state.
+  Invalid `json_decode()` depth is catchable as `ValueError` in the interpreter
+  path. Full `JsonSerializable` parity, `JSON_THROW_ON_ERROR`, exact exception
+  propagation for every serializer shape, complete UTF-16/UTF-8 diagnostics,
+  broad byte-for-byte diagnostic-location parity, every JSON option
+  interaction, remaining json extension functions, and native lowering remain
+  unsupported.
