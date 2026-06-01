@@ -83538,11 +83538,13 @@ impl Interpreter {
                 ),
             ));
         }
-        ensure_tokenizer_flags("token_get_all()", args.get(1), span)?;
+        let token_parse = ensure_tokenizer_flags("token_get_all()", args.get(1), span)?;
         let source = tokenizer_source_bytes("token_get_all()", &args[0], span)?;
-        Ok(Value::Array(tokenizer_tokens_array(
-            &php_tokenizer::tokenize(&source),
-        )?))
+        let tokens = php_tokenizer::tokenize_with_parse_mode(&source, token_parse);
+        if token_parse {
+            self.emit_noncanonical_tokenizer_cast_deprecations("token_get_all()", &tokens, span)?;
+        }
+        Ok(Value::Array(tokenizer_tokens_array(&tokens)?))
     }
 
     fn call_php_token_static_tokenize(
@@ -83566,8 +83568,16 @@ impl Interpreter {
             .iter()
             .map(|arg| self.evaluate_by_value_argument_with_cow_source(arg, caller_scope))
             .collect::<CompileResult<Vec<_>>>()?;
-        ensure_tokenizer_flags("PhpToken::tokenize()", values.get(1), span)?;
+        let token_parse = ensure_tokenizer_flags("PhpToken::tokenize()", values.get(1), span)?;
         let source = tokenizer_source_bytes("PhpToken::tokenize()", &values[0], span)?;
+        let tokens = php_tokenizer::tokenize_with_parse_mode(&source, token_parse);
+        if token_parse {
+            self.emit_noncanonical_tokenizer_cast_deprecations(
+                "PhpToken::tokenize()",
+                &tokens,
+                span,
+            )?;
+        }
         if self.abstract_classes.contains(&token_class_id) {
             let class_name = self
                 .classes
@@ -83583,7 +83593,7 @@ impl Interpreter {
             ));
         }
         let mut array = PhpArray::new();
-        for token in php_tokenizer::tokenize(&source) {
+        for token in tokens {
             array
                 .append(Value::Object(self.create_php_token_object(
                     token_class_id,
@@ -83593,6 +83603,29 @@ impl Interpreter {
                 .map_err(|error| runtime_error(span, error))?;
         }
         Ok(Value::Array(array))
+    }
+
+    fn emit_noncanonical_tokenizer_cast_deprecations(
+        &mut self,
+        callable: &'static str,
+        tokens: &[PhpTokenizerToken],
+        span: Span,
+    ) -> CompileResult<()> {
+        if tokenizer_tokens_contain_noncanonical_cast(tokens, b"(double)") {
+            self.emit_deprecated(
+                callable,
+                "Non-canonical cast (double) is deprecated, use the (float) cast instead",
+                span,
+            )?;
+        }
+        if tokenizer_tokens_contain_noncanonical_cast(tokens, b"(real)") {
+            self.emit_deprecated(
+                callable,
+                "Non-canonical cast (real) is deprecated, use the (float) cast instead",
+                span,
+            )?;
+        }
+        Ok(())
     }
 
     fn create_php_token_object(
@@ -139136,14 +139169,15 @@ fn ensure_tokenizer_flags(
     callable: &'static str,
     value: Option<&Value>,
     span: Span,
-) -> CompileResult<()> {
+) -> CompileResult<bool> {
     match value {
-        None | Some(Value::Int(0)) | Some(Value::Int(PHP_TOKEN_PARSE)) => Ok(()),
+        None | Some(Value::Int(0)) => Ok(false),
+        Some(Value::Int(PHP_TOKEN_PARSE)) => Ok(true),
         Some(Value::Int(_)) => Err(runtime_error(
             span,
             RuntimeError::unsupported_call(
                 callable,
-                "TOKEN_PARSE and non-zero tokenizer flags are not implemented in the current subset",
+                "non-zero tokenizer flags other than TOKEN_PARSE are not implemented in the current subset",
             ),
         )),
         Some(other) => Err(runtime_error(
@@ -139157,6 +139191,12 @@ fn ensure_tokenizer_flags(
             ),
         )),
     }
+}
+
+fn tokenizer_tokens_contain_noncanonical_cast(tokens: &[PhpTokenizerToken], cast: &[u8]) -> bool {
+    tokens.iter().any(|token| {
+        token.id() == php_tokenizer::T_DOUBLE_CAST && token.text().eq_ignore_ascii_case(cast)
+    })
 }
 
 fn tokenizer_source_bytes(

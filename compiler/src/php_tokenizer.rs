@@ -499,7 +499,11 @@ pub fn token_name(id: i64) -> &'static str {
 }
 
 pub fn tokenize(source: &[u8]) -> Vec<PhpTokenizerToken> {
-    let mut scanner = Scanner::new(source);
+    tokenize_with_parse_mode(source, false)
+}
+
+pub fn tokenize_with_parse_mode(source: &[u8], token_parse: bool) -> Vec<PhpTokenizerToken> {
+    let mut scanner = Scanner::new(source, token_parse);
     scanner.scan();
     scanner.tokens
 }
@@ -509,17 +513,19 @@ struct Scanner<'a> {
     index: usize,
     line: i64,
     in_php: bool,
+    token_parse: bool,
     last_significant_token: Option<i64>,
     tokens: Vec<PhpTokenizerToken>,
 }
 
 impl<'a> Scanner<'a> {
-    fn new(source: &'a [u8]) -> Self {
+    fn new(source: &'a [u8], token_parse: bool) -> Self {
         Self {
             source,
             index: 0,
             line: 1,
             in_php: false,
+            token_parse,
             last_significant_token: None,
             tokens: Vec::new(),
         }
@@ -853,7 +859,10 @@ impl<'a> Scanner<'a> {
             return;
         }
 
-        while self.peek().is_some_and(|byte| byte.is_ascii_digit()) {
+        while self
+            .peek()
+            .is_some_and(|byte| byte == b'_' || byte.is_ascii_digit())
+        {
             self.index += 1;
         }
 
@@ -884,11 +893,31 @@ impl<'a> Scanner<'a> {
             }
         }
 
+        if !is_float {
+            is_float = self.octal_like_literal_overflows_to_double(start, self.index);
+        }
+
         self.push_token(
             if is_float { T_DNUMBER } else { T_LNUMBER },
             start,
             self.index,
         );
+    }
+
+    fn octal_like_literal_overflows_to_double(&self, start: usize, end: usize) -> bool {
+        let literal = &self.source[start..end];
+        if literal.len() < 2 || literal.first() != Some(&b'0') || literal.contains(&b'_') {
+            return false;
+        }
+        if !literal.iter().all(u8::is_ascii_digit) || !literal.iter().any(|byte| *byte >= b'8') {
+            return false;
+        }
+
+        // PHP classifies very large invalid octal literals as T_DNUMBER during
+        // tokenization once they exceed signed integer width. Keep the boundary
+        // conservative so ordinary invalid octals remain T_LNUMBER for the
+        // non-TOKEN_PARSE token stream.
+        literal.len() > 19
     }
 
     fn consume_identifier_or_keyword(&mut self) {
@@ -1037,7 +1066,21 @@ impl<'a> Scanner<'a> {
                     | T_AMPERSAND_FOLLOWED_BY_VAR_OR_VARARG
                     | T_AMPERSAND_NOT_FOLLOWED_BY_VAR_OR_VARARG
             )
-        )
+        ) || (self.token_parse
+            && self.peek_identifier_at_last_token_is_namespace()
+            && self.last_significant_token == Some(b'{' as i64))
+    }
+
+    fn peek_identifier_at_last_token_is_namespace(&self) -> bool {
+        let mut cursor = self.index;
+        while cursor > 0
+            && (self.source[cursor - 1].is_ascii_alphanumeric() || self.source[cursor - 1] == b'_')
+        {
+            cursor -= 1;
+        }
+        self.source
+            .get(cursor..self.index)
+            .is_some_and(|identifier| identifier.eq_ignore_ascii_case(b"namespace"))
     }
 
     fn ampersand_is_followed_by_var_or_vararg(&self) -> bool {
