@@ -16,6 +16,20 @@ Implemented:
   Unicode normalization/diagnostic-location parity, remaining ext/json
   functions, and native lowering remain unsupported.
 
+- Added a second compact ext/json PHPT slice for deterministic
+  `json_decode()`/`json_validate()` diagnostics. The runtime now propagates
+  decoded-property-name failures with NUL object keys through enclosing arrays
+  and objects, preserves the property-key source location in
+  `json_last_error_msg()`, and matches selected single-line ASCII syntax,
+  unterminated-string/control-character, invalid-escape, and deep-structure
+  location rows. Focused PHPT proof covers `ext/json/tests/bug68546.phpt`,
+  `json_last_error_msg_error_location_001.phpt`, and
+  `json_last_error_msg_error_location_004.phpt`, plus Rust JSON builtin tests.
+  Multi-line row/column location parity, complete UTF-16/UTF-8 diagnostic
+  parity, `JSON_THROW_ON_ERROR`/exact `JsonException` behavior, full option
+  validation, remaining ext/json functions, and native lowering remain
+  unsupported.
+
 ## 2026-05-27
 
 Implemented:

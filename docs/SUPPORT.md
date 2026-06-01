@@ -11545,9 +11545,12 @@ Unsupported code should fail with an explicit parse, runtime, or codegen error.
   formatting including the bounded U+2028/U+2029 line-terminator option
   interaction, partial output for unsupported values and non-finite numbers,
   bounded invalid-UTF-8 ignore/substitute handling for encode/decode string
-  payloads, validation depth and `JSON_INVALID_UTF8_IGNORE` checks, selected
-  UTF-16/control-character/depth diagnostic locations, and request-local
-  last-error state. Full `JsonSerializable` parity, exact exception propagation
-  for every serializer shape, complete UTF-16/UTF-8 diagnostics, every JSON
-  option interaction, remaining json extension functions, and native lowering
-  remain unsupported.
+  payloads, validation depth and `JSON_INVALID_UTF8_IGNORE` checks, nested
+  invalid decoded-property-name propagation for NUL object keys, selected
+  single-line ASCII syntax/control-character/depth/UTF-16 diagnostic
+  locations, selected deep-structure diagnostic locations, and request-local
+  last-error state. Multi-line row/column location parity, full
+  `JsonSerializable` parity, exact exception propagation for every serializer
+  shape including `JSON_THROW_ON_ERROR`/`JsonException`, complete
+  UTF-16/UTF-8 diagnostics, every JSON option interaction, remaining json
+  extension functions, and native lowering remain unsupported.

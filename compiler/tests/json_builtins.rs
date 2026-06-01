@@ -248,3 +248,64 @@ var_dump(json_encode(array(\"\\x80\" => 1), JSON_PARTIAL_OUTPUT_ON_ERROR));\n",
     );
     assert_eq!(execution.exit_code, 0);
 }
+
+#[test]
+fn json_decode_invalid_property_names_propagate_to_root_with_location() {
+    let execution = run_source(
+        r#"<?php
+var_dump(json_decode('{"key": {"\u0000": "aa"}}'));
+var_dump(json_last_error() === JSON_ERROR_INVALID_PROPERTY_NAME);
+var_dump(json_decode('[{"key1": 0, "\u1234": 1, "\u0000": 1}]'));
+var_dump(json_last_error() === JSON_ERROR_INVALID_PROPERTY_NAME);
+var_dump(json_last_error_msg());
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "NULL\n",
+            "bool(true)\n",
+            "NULL\n",
+            "bool(true)\n",
+            "string(55) \"The decoded property name is invalid near location 1:27\"\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn json_validate_ascii_location_edges() {
+    let execution = run_source(
+        "<?php\n\
+var_dump(json_validate('{\"name\": \"value}'));\n\
+var_dump(json_last_error(), json_last_error_msg());\n\
+var_dump(json_validate('{\"name\" \"value\"}'));\n\
+var_dump(json_last_error(), json_last_error_msg());\n\
+var_dump(json_validate('{\"test\": \"\\\\x\"}'));\n\
+var_dump(json_last_error(), json_last_error_msg());\n\
+var_dump(json_validate('{\"test\": \"' . \"\\n\" . '\"}'));\n\
+var_dump(json_last_error(), json_last_error_msg());\n",
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "bool(false)\n",
+            "int(3)\n",
+            "string(72) \"Control character error, possibly incorrectly encoded near location 1:10\"\n",
+            "bool(false)\n",
+            "int(4)\n",
+            "string(30) \"Syntax error near location 1:9\"\n",
+            "bool(false)\n",
+            "int(4)\n",
+            "string(31) \"Syntax error near location 1:10\"\n",
+            "bool(false)\n",
+            "int(3)\n",
+            "string(72) \"Control character error, possibly incorrectly encoded near location 1:10\"\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}

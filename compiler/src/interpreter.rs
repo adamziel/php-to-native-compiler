@@ -124101,7 +124101,14 @@ enum JsonParsedValue {
     Float(f64),
     String(String),
     Array(Vec<JsonParsedValue>),
-    Object(Vec<(String, JsonParsedValue)>),
+    Object(Vec<JsonObjectEntry>),
+}
+
+#[derive(Debug, Clone)]
+struct JsonObjectEntry {
+    key: String,
+    key_position: usize,
+    value: JsonParsedValue,
 }
 
 #[derive(Debug, Clone)]
@@ -124219,6 +124226,7 @@ impl<'a> JsonParser<'a> {
             if self.peek() != Some('"') {
                 return Err(self.error(PHP_JSON_ERROR_SYNTAX, "Syntax error"));
             }
+            let key_position = self.position;
             let key = self.parse_string()?;
             self.skip_whitespace();
             self.expect_char(':')?;
@@ -124227,7 +124235,11 @@ impl<'a> JsonParser<'a> {
                 return Err(self.error(PHP_JSON_ERROR_DEPTH, "Maximum stack depth exceeded"));
             }
             let value = self.parse_value(depth + 1)?;
-            values.push((key, value));
+            values.push(JsonObjectEntry {
+                key,
+                key_position,
+                value,
+            });
             self.skip_whitespace();
             if self.consume_if('}') {
                 break;
@@ -124307,7 +124319,11 @@ impl<'a> JsonParser<'a> {
         let mut output = String::new();
         loop {
             let Some(ch) = self.next() else {
-                return Err(self.error(PHP_JSON_ERROR_SYNTAX, "Syntax error"));
+                return Err(self.error_at(
+                    PHP_JSON_ERROR_CTRL_CHAR,
+                    "Control character error, possibly incorrectly encoded",
+                    string_start,
+                ));
             };
             match ch {
                 '"' => return Ok(output),
@@ -124335,7 +124351,7 @@ impl<'a> JsonParser<'a> {
             Some('r') => Ok('\r'),
             Some('t') => Ok('\t'),
             Some('u') => self.parse_unicode_escape(string_start),
-            _ => Err(self.error(PHP_JSON_ERROR_SYNTAX, "Syntax error")),
+            _ => Err(self.error_at(PHP_JSON_ERROR_SYNTAX, "Syntax error", string_start)),
         }
     }
 
@@ -124404,7 +124420,7 @@ impl<'a> JsonParser<'a> {
             self.position += 1;
             Ok(())
         } else {
-            let code = if expected == ',' || expected == ':' {
+            let code = if expected == ',' {
                 PHP_JSON_ERROR_STATE_MISMATCH
             } else {
                 PHP_JSON_ERROR_SYNTAX
@@ -125210,24 +125226,36 @@ impl Interpreter {
             JsonParsedValue::Array(values) => {
                 let mut array = PhpArray::new();
                 for value in values {
+                    let value = self.json_parsed_to_value(value, assoc, span)?;
+                    if self.json_last_error == PHP_JSON_ERROR_INVALID_PROPERTY_NAME {
+                        return Ok(Value::Null);
+                    }
                     array
-                        .append(self.json_parsed_to_value(value, assoc, span)?)
+                        .append(value)
                         .map_err(|error| runtime_error(span, error))?;
                 }
                 Value::Array(array)
             }
             JsonParsedValue::Object(entries) if assoc => {
                 let mut array = PhpArray::new();
-                for (key, value) in entries {
-                    array.insert(key, self.json_parsed_to_value(value, assoc, span)?);
+                for entry in entries {
+                    let value = self.json_parsed_to_value(entry.value, assoc, span)?;
+                    if self.json_last_error == PHP_JSON_ERROR_INVALID_PROPERTY_NAME {
+                        return Ok(Value::Null);
+                    }
+                    array.insert(entry.key, value);
                 }
                 Value::Array(array)
             }
             JsonParsedValue::Object(entries) => {
-                if entries.iter().any(|(key, _)| key.contains('\0')) {
+                if let Some(entry) = entries.iter().find(|entry| entry.key.contains('\0')) {
                     self.set_json_last_error(
                         PHP_JSON_ERROR_INVALID_PROPERTY_NAME,
-                        json_error_base_message(PHP_JSON_ERROR_INVALID_PROPERTY_NAME).to_string(),
+                        json_error_message_at(
+                            PHP_JSON_ERROR_INVALID_PROPERTY_NAME,
+                            json_error_base_message(PHP_JSON_ERROR_INVALID_PROPERTY_NAME),
+                            entry.key_position,
+                        ),
                     );
                     return Ok(Value::Null);
                 }
@@ -125246,10 +125274,13 @@ impl Interpreter {
                     .get(class_id)
                     .expect("stdClass id should resolve to metadata");
                 let object = PhpObject::from_class_with_id(class, object_id);
-                for (key, value) in entries {
-                    let value = self.json_parsed_to_value(value, assoc, span)?;
+                for entry in entries {
+                    let value = self.json_parsed_to_value(entry.value, assoc, span)?;
+                    if self.json_last_error == PHP_JSON_ERROR_INVALID_PROPERTY_NAME {
+                        return Ok(Value::Null);
+                    }
                     object
-                        .write_dynamic_public_property(&key, value)
+                        .write_dynamic_public_property(&entry.key, value)
                         .map_err(|error| runtime_error(span, error))?;
                 }
                 self.allocated_objects.push(object.clone());
