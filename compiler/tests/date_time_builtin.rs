@@ -210,6 +210,33 @@ var_dump(timezone_name_from_abbr("", -14400, 0));
 }
 
 #[test]
+fn compact_europe_paris_timezone_row_is_available() {
+    let execution = run_source(
+        r#"<?php
+$name = timezone_name_from_abbr("", 3600, 0);
+echo $name, "\n";
+$tz = timezone_open($name);
+echo $tz->getName(), "\n";
+date_default_timezone_set($name);
+$winter = strtotime("2020-01-01 12:00:00");
+$summer = strtotime("2020-07-01 12:00:00");
+echo date("T|Z|Y-m-d H:i", $winter), "\n";
+echo date("T|Z|Y-m-d H:i", $summer), "\n";
+$zones = timezone_identifiers_list(DateTimeZone::EUROPE);
+echo in_array("Europe/Paris", $zones) ? "listed" : "missing", "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "Europe/Paris\nEurope/Paris\nCET|3600|2020-01-01 12:00\nCEST|7200|2020-07-01 12:00\nlisted\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn gettimeofday_uses_default_timezone_offset() {
     let execution = run_source(
         r#"<?php

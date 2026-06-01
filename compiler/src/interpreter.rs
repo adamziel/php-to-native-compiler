@@ -134227,7 +134227,7 @@ impl BoundedTimezone {
             | "Africa/Abidjan" | "Zulu" => 0,
             "Asia/Jerusalem" => 10_800,
             "Asia/Calcutta" | "Asia/Kolkata" => 19_800,
-            "Europe/Berlin" | "Europe/Oslo" => {
+            "Europe/Berlin" | "Europe/Oslo" | "Europe/Paris" => {
                 if bounded_month_is_in_dst_window(month, day, 3, 27, 10, 31) {
                     7_200
                 } else {
@@ -134326,7 +134326,7 @@ impl BoundedTimezone {
             "America/Chicago" => -21_600,
             "US/Eastern" | "America/New_York" => -18_000,
             "Europe/London" => 0,
-            "Europe/Berlin" | "Europe/Oslo" => 3_600,
+            "Europe/Berlin" | "Europe/Oslo" | "Europe/Paris" => 3_600,
             "America/Halifax" => -14_400,
             "US/Alaska" => -32_400,
             "America/Los_Angeles" => -28_800,
@@ -134374,7 +134374,7 @@ impl BoundedTimezone {
                     "GMT"
                 }
             }
-            "Europe/Berlin" => {
+            "Europe/Berlin" | "Europe/Paris" => {
                 if self.is_dst(parts) {
                     "CEST"
                 } else {
@@ -134500,6 +134500,7 @@ fn bounded_timezone_from_name(name: &str) -> Option<BoundedTimezone> {
         "America/Sao_Paulo" => "America/Sao_Paulo",
         "Europe/Amsterdam" => "Europe/Amsterdam",
         "Europe/Berlin" => "Europe/Berlin",
+        "Europe/Paris" => "Europe/Paris",
         "Europe/Kyiv" => "Europe/Kyiv",
         "Europe/London" => "Europe/London",
         "Europe/Moscow" => "Europe/Moscow",
@@ -134669,6 +134670,7 @@ const BOUNDED_TIMEZONE_IDENTIFIERS: &[(&str, i64, bool)] = &[
     ("Europe/London", PHP_DATETIMEZONE_EUROPE, false),
     ("Europe/Moscow", PHP_DATETIMEZONE_EUROPE, false),
     ("Europe/Oslo", PHP_DATETIMEZONE_EUROPE, false),
+    ("Europe/Paris", PHP_DATETIMEZONE_EUROPE, false),
     ("Europe/Rome", PHP_DATETIMEZONE_EUROPE, false),
     ("GMT", PHP_DATETIMEZONE_UTC, false),
     ("GMT0", PHP_DATETIMEZONE_UTC, false),

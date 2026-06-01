@@ -5402,6 +5402,14 @@
   including PHPT-style trailing semicolon syntax. Full timezone database
   validation, all historical transition rules, exact diagnostics, and native
   lowering remain unsupported.
+  The bounded timezone table includes a compact `Europe/Paris` row surfaced
+  through `timezone_name_from_abbr("", 3600, 0)`, `timezone_open()`,
+  `date_default_timezone_set()`, `date()`/`strtotime()` formatting, and
+  `timezone_identifiers_list(DateTimeZone::EUROPE)`. This row uses the
+  current simplified CET/CEST date-window logic shared with the neighboring
+  bounded central-European rows; full IANA transition parity, historical
+  Paris-specific rules, country filtering, and native lowering remain
+  unsupported.
   `header($header, $replace = true, $response_code = 0)` accepts a string
   header line plus optional bool replacement flag and optional integer response
   code, records the raw header line in deterministic in-process CLI request

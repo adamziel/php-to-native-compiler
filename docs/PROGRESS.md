@@ -43250,3 +43250,25 @@ Next:
   split-lane batch. A checkpoint was still not created because
   `tools/checkpoint.sh` stages the full dirty tree and this worker was not
   asked to checkpoint.
+
+Next:
+
+- Added Milestone 2353, a compact `Europe/Paris` timezone row for the current
+  ext/date interpreter subset. The row is reachable through
+  `timezone_name_from_abbr("", 3600, 0)`, `timezone_open()`,
+  `date_default_timezone_set()`, `date()`/`strtotime()` formatting, and
+  `timezone_identifiers_list(DateTimeZone::EUROPE)`, using the existing
+  simplified CET/CEST window shared with the bounded central-European rows.
+- Added the Milestone 2353 fixture with committed `phpc run` output and system
+  PHP comparison coverage for the abbreviation lookup, DateTimeZone object
+  creation, winter/summer formatting offsets, and Europe-group identifier
+  listing.
+- Full IANA timezone database parity, historical Paris-specific transition
+  rules, country filtering, exact diagnostics, and native lowering remain
+  unsupported.
+- Focused checks passed:
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 cargo test -p phpc --test date_time_builtin compact_europe_paris_timezone_row_is_available -- --test-threads=1`;
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone2353`;
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -q -p phpc -- run tests/fixtures/milestone2353/europe_paris_timezone_row.php`;
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo check -q -p phpc`;
+  `cargo fmt --check`; and `git diff --check`.
