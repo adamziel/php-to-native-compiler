@@ -4,6 +4,24 @@
 
 Implemented:
 
+- Added a bounded `ReflectionClass` extension-ownership lane for the selected
+  ext/reflection rows. `ReflectionClass::getExtensionName()` and
+  `ReflectionClass::getExtension()` now resolve only through the existing
+  deterministic `ReflectionExtension` registry, returning `dom` and a
+  `ReflectionExtension` object for the registered `DOMDocument`/DOM class
+  slice while preserving `false`/`null` for user classes and unregistered
+  internal classes such as `stdClass`. Focused Rust passed the
+  `reflection_class_reports_bounded_extension_owner_metadata` object-model
+  test; `cargo build -p phpc --bin phpc` passed; a direct `phpc run` fixture
+  proved the DOM/user/unregistered fallback path; and selected PHPT proof
+  passed `4 / 4` for `ReflectionClass_getExtensionName_basic.phpt`,
+  `ReflectionClass_getExtensionName_variation.phpt`,
+  `ReflectionClass_getExtension_basic.phpt`, and
+  `ReflectionClass_getExtension_variation.phpt`. Unsupported edges remain host
+  extension inventory discovery, broad internal-class-to-extension ownership
+  outside the current `ReflectionExtension` registry class lists, exact
+  extension inventories/version policy, dynamic modules, and native lowering.
+
 - Added a focused source-directory seeding lane for `realpath_cache.phpt`.
   `phpc run` now initializes the bounded request-local realpath cache with the
   main source directory when the source file is inspectable locally, so

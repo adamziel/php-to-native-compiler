@@ -9566,8 +9566,13 @@
   `getName()`, `getVersion()`, `getFunctions()`, `getConstants()`,
   `getINIEntries()`, `getClassNames()`, `getClasses()`, `getDependencies()`,
   `info()`, `isPersistent()`, and `isTemporary()` over that bounded registry.
-  Host extension discovery, exact extension inventories, version coupling,
-  native module loading, and native lowering remain unsupported.
+  `ReflectionClass::getExtensionName()` and `ReflectionClass::getExtension()`
+  use the same registry class-name lists for bounded ownership lookups,
+  including the current DOM core class slice; user classes and unregistered
+  internal classes return the PHP-shaped `false`/`null` fallback. Host
+  extension discovery, broad internal-class ownership outside the current
+  registry, exact extension inventories, version coupling, native module
+  loading, and native lowering remain unsupported.
   Simple class-body `use TraitName;`, repeated simple trait-use declarations,
   and `use TraitA, TraitB;` compose already-declared public trait constants and
   supported trait properties plus public instance/static trait methods onto the

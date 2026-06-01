@@ -4103,8 +4103,12 @@ deterministic compatibility registry, not host PHP module discovery.
 Reflection extension objects carry request-local metadata for the current
 `Reflection`, `standard`, `ctype`, and `dom` slices and can build bounded
 arrays of functions, constants, INI entries, class names/classes, and
-dependencies. Exact extension inventories, dynamic modules, extension version
-policy, and native lowering remain out of scope.
+dependencies. `ReflectionClass::getExtensionName()` and
+`ReflectionClass::getExtension()` use that same registry's class-name lists to
+report ownership for registered core classes such as `DOMDocument`, and return
+the PHP-shaped false/null fallback for user classes or unregistered internal
+classes. Exact extension inventories, broad host class ownership, dynamic
+modules, extension version policy, and native lowering remain out of scope.
 `get_called_class()` is a zero-argument runtime builtin that reads the
 interpreter's called-class context in current instance and static method calls;
 outside method or static class context it fails with a stable unsupported-call

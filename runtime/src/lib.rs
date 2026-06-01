@@ -32328,6 +32328,8 @@ impl PhpClassTable {
             "getStartLine",
             "getEndLine",
             "getDocComment",
+            "getExtensionName",
+            "getExtension",
             "inNamespace",
             "getNamespaceName",
             "isInternal",

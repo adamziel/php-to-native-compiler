@@ -6989,6 +6989,51 @@ echo "dump|", yn($dump->isDeprecated()), "|", $dump->getExtensionName();
 }
 
 #[test]
+fn reflection_class_reports_bounded_extension_owner_metadata() {
+    let execution = run_source(
+        r#"<?php
+class MyClass
+{
+    public $varX;
+    public $varY;
+}
+
+$dom = new ReflectionClass('domDocument');
+$user = new ReflectionClass('MyClass');
+$std = new ReflectionClass('stdClass');
+
+echo method_exists('ReflectionClass', 'getExtensionName') ? "method-name" : "missing-name";
+echo "|";
+echo method_exists('ReflectionClass', 'getExtension') ? "method-object" : "missing-object";
+echo "\n";
+var_dump($dom->getExtensionName());
+$extension = $dom->getExtension();
+echo get_class($extension), "|", $extension->getName(), "\n";
+var_dump($user->getExtensionName());
+var_dump($user->getExtension());
+var_dump($std->getExtensionName());
+var_dump($std->getExtension());
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "method-name|method-object\n",
+            "string(3) \"dom\"\n",
+            "ReflectionExtension|dom\n",
+            "bool(false)\n",
+            "NULL\n",
+            "bool(false)\n",
+            "NULL\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reflection_get_attributes_reports_declared_targets_and_instances() {
     let execution = run_source(
         r#"<?php
