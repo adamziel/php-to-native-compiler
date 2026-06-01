@@ -66470,6 +66470,7 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "similar_text",
     "soundex",
     "metaphone",
+    "hebrev",
     "count_chars",
     "strrev",
     "str_shuffle",

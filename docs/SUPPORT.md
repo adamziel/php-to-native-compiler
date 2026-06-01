@@ -3900,7 +3900,12 @@
   non-negative integer-compatible maximum phoneme limits. It preserves PHP's
   current focused behavior for non-letter prefixes, punctuation breaks,
   traditional `CH`/`TH`/`X` encodings, and negative-limit `ValueError`
-  diagnostics. `convert_uuencode()` and
+  diagnostics. `hebrev($string, $max_chars_per_line = 0)` supports PHP's
+  traditional byte-oriented logical-Hebrew to visual-Hebrew conversion for
+  scalar/null string-convertible input. The current slice recognizes Hebrew
+  bytes in the ISO-8859-8 `0xe0..=0xfa` range, mirrors paired punctuation
+  inside Hebrew runs, and applies the optional line-wrapping/word-avoidance
+  path used by the focused PHPT row. `convert_uuencode()` and
   `convert_uudecode()` support the bounded uuencode/uudecode byte format used
   by the focused standard-library rows. `mb_strlen()`, `mb_substr()`,
   `mb_strpos()`,
@@ -3919,7 +3924,9 @@
   every PHP numeric-string corner, `similar_text()` array/object/resource
   operands, non-variable or indirect percent outputs, `metaphone()` locale or
   non-ASCII alphabetic handling, object/resource operands and embedded-NUL
-  parity beyond the current PHP C-string-compatible boundary, malformed
+  parity beyond the current PHP C-string-compatible boundary, `hebrev()`
+  UTF-8/Unicode Hebrew handling, `hebrevc()`, object/resource operands, exact
+  diagnostics beyond the current bounded arity/coercion surface, malformed
   uuencoded diagnostics beyond the bounded warning/false recovery,
   object/resource coercions, references/COW, and native lowering remain
   unsupported.
@@ -8298,7 +8305,7 @@
   one of the documented callable builtins: `strlen`, `bin2hex`, `hex2bin`,
   `pack`, `unpack`, `strtolower`, `strtoupper`, `str_increment`,
   `str_decrement`, `trim`, `ltrim`, `rtrim`, `strcmp`, `strcasecmp`, `strncmp`, `strncasecmp`,
-  `str_contains`, `str_starts_with`, `str_ends_with`, `strspn`, `strcspn`, `strpbrk`, `strpos`, `stripos`, `strrpos`, `strripos`, `strstr`, `strchr`, `stristr`, `strtok`, `substr`, `str_shuffle`, `wordwrap`, `str_word_count`, `strnatcmp`, `strnatcasecmp`, `mb_strlen`, `mb_strpos`, `mb_stripos`, `mb_strrpos`, `mb_strripos`, `mb_strtolower`, `mb_strtoupper`, `similar_text`, `metaphone`, `convert_uuencode`, `convert_uudecode`, `substr_replace`, `substr_compare`, `substr_count`, `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `str_getcsv`, `error_reporting`,
+  `str_contains`, `str_starts_with`, `str_ends_with`, `strspn`, `strcspn`, `strpbrk`, `strpos`, `stripos`, `strrpos`, `strripos`, `strstr`, `strchr`, `stristr`, `strtok`, `substr`, `str_shuffle`, `wordwrap`, `str_word_count`, `strnatcmp`, `strnatcasecmp`, `mb_strlen`, `mb_strpos`, `mb_stripos`, `mb_strrpos`, `mb_strripos`, `mb_strtolower`, `mb_strtoupper`, `similar_text`, `metaphone`, `hebrev`, `convert_uuencode`, `convert_uudecode`, `substr_replace`, `substr_compare`, `substr_count`, `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `str_getcsv`, `error_reporting`,
   `printf`, `fprintf`, `sprintf`, `vsprintf`, `vprintf`, `vfprintf`, `call_user_func`, `call_user_func_array`, `implode`, `basename`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`,
   `file_put_contents`, `readfile`, `unlink`, `mkdir`, `rmdir`, `copy`, `rename`, `chdir`, `scandir`, `stat`, `lstat`, `fileperms`, `chmod`, `chown`, `chgrp`,
   `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_params`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `stream_context_set_params`, `fwrite`, `fscanf`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fflush`, `ftruncate`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`, `disk_free_space`, `diskfreespace`, `disk_total_space`, `clearstatcache`, `realpath`, `realpath_cache_get`, `realpath_cache_size`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_executable`, `is_link`, `abs`,
@@ -8549,7 +8556,7 @@
   are unsupported.
 - Builtins: `strlen`, `bin2hex`, `hex2bin`, `pack`, `unpack`, `strtolower`, `strtoupper`, `str_increment`,
   `str_decrement`, `trim`, `ltrim`, `rtrim`, `strcmp`, `strcasecmp`, `strncmp`, `strncasecmp`, `str_contains`,
-  `str_starts_with`, `str_ends_with`, `strspn`, `strcspn`, `strpbrk`, `strpos`, `stripos`, `strrpos`, `strripos`, `strstr`, `strchr`, `stristr`, `strtok`, `substr`, `substr_replace`, `substr_compare`, `substr_count`, `similar_text`, `metaphone`, `str_replace`, `str_getcsv`, `parse_str`, `printf`, `fprintf`, `sprintf`, `vsprintf`, `vprintf`, `vfprintf`,
+  `str_starts_with`, `str_ends_with`, `strspn`, `strcspn`, `strpbrk`, `strpos`, `stripos`, `strrpos`, `strripos`, `strstr`, `strchr`, `stristr`, `strtok`, `substr`, `substr_replace`, `substr_compare`, `substr_count`, `similar_text`, `metaphone`, `hebrev`, `str_replace`, `str_getcsv`, `parse_str`, `printf`, `fprintf`, `sprintf`, `vsprintf`, `vprintf`, `vfprintf`,
   `call_user_func`, `call_user_func_array`, `implode`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`,
   `file_put_contents`, `readfile`, `unlink`, `mkdir`, `rmdir`, `copy`, `rename`, `chdir`, `scandir`, `stat`, `lstat`, `fileperms`, `chmod`, `chown`, `chgrp`,
   `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_params`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `stream_context_set_params`, `fwrite`, `fscanf`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fflush`, `ftruncate`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`, `disk_free_space`, `diskfreespace`, `disk_total_space`, `clearstatcache`, `realpath`, `realpath_cache_get`, `realpath_cache_size`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_executable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_length`, `ob_list_handlers`, `ob_get_status`, `ob_get_clean`, `ob_get_flush`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `date_default_timezone_set`, `abs`, `number_format`, `microtime`, `ini_get`, `min`, `get_current_user`, `umask`, `isset`, `empty`, `count`,
@@ -11470,6 +11477,11 @@
   operands, exact embedded-NUL/binary parity beyond the PHP-compatible
   C-string boundary, exact diagnostics beyond the covered negative-limit
   `ValueError`, and native lowering beyond function-table introspection
+- `hebrev()` outside the current scalar/null string-convertible byte-oriented
+  ISO-8859-8-style Hebrew subset with optional integer-compatible
+  `max_chars_per_line`: UTF-8/Unicode Hebrew text, `hebrevc()`,
+  object/resource operands, exact diagnostics beyond bounded arity/coercion,
+  references/COW, and native lowering beyond function-table introspection
 - `str_getcsv()` outside the current one-record string parser with one-byte
   separator/enclosure and empty or one-byte escape arguments: broader CSV
   dialect parity, named arguments beyond direct by-value calls with declared

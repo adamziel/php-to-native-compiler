@@ -4,6 +4,20 @@
 
 Implemented:
 
+- Added a bounded `hebrev()` interpreter/runtime slice for the ext/standard
+  string residual queue. The runtime now converts byte-oriented logical Hebrew
+  text to visual order using PHP's traditional ISO-8859-8 Hebrew byte range,
+  mirrors paired punctuation inside Hebrew runs, applies the optional
+  `max_chars_per_line` word-avoidance wrapping path, and exposes builtin
+  discovery, dynamic-call, `is_callable()`, `ReflectionFunction`, and native
+  function-existence metadata. Focused Rust proof passed `4 / 4` in
+  `hebrev_builtin`; the Milestone 2307 `phpc run` fixture passed `1 / 1`;
+  and direct `phpc run` output diff matched the fixture for
+  `ext/standard/tests/strings/hebrev_basic.phpt` plus selected byte/wrapping
+  edges. UTF-8/Unicode Hebrew handling, `hebrevc()`, object and resource
+  operands, exact diagnostics beyond the covered arity/coercion surface,
+  references/COW, and native lowering remain unsupported.
+
 - Added a compact `parse_url()` relative-reference slice for query-only and
   fragment-only inputs. `parse_url("?q")`, `parse_url("#f")`, empty query or
   fragment forms, and component extraction no longer synthesize an empty
