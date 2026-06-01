@@ -66404,6 +66404,7 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "str_pad",
     "chunk_split",
     "mb_strlen",
+    "mb_substr",
     "mb_strpos",
     "mb_stripos",
     "mb_strrpos",

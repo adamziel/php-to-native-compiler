@@ -43,6 +43,32 @@ try {
 }
 
 #[test]
+fn mb_substr_uses_character_windows_and_internal_encoding_default() {
+    let execution = run_source(
+        r#"<?php
+$japanese = base64_decode("5pel5pys6Kqe44OG44Kt44K544OI44Gn44GZ44CCMDEyMzTvvJXvvJbvvJfvvJjvvJnjgII=");
+var_dump(base64_encode(mb_substr($japanese, 2, 7, "UTF-8")));
+var_dump(base64_encode(mb_substr($japanese, -10, 4, "UTF-8")));
+var_dump(base64_encode(mb_substr($japanese, 1, -10, "UTF-8")));
+ini_set("internal_encoding", "ISO-8859-1");
+var_dump(base64_encode(mb_substr($japanese, 2, 7)));
+try {
+    mb_substr("abc", 0, 1, "unknown-encoding");
+} catch (ValueError $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "string(28) \"6Kqe44OG44Kt44K544OI44Gn44GZ\"\nstring(8) \"MTIzNA==\"\nstring(40) \"5pys6Kqe44OG44Kt44K544OI44Gn44GZ44CCMA==\"\nstring(12) \"peacrOiqng==\"\nmb_substr(): Argument #4 ($encoding) must be a valid encoding, \"unknown-encoding\" given\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mb_stripos_casefolds_utf8_and_reports_offset_errors_for_reverse_variants() {
     let execution = run_source(
         r#"<?php
@@ -95,7 +121,7 @@ var_dump(mb_strtolower("a" . str_repeat(".", 64) . "Σ", "UTF-8"));
 fn mbstring_metadata_and_encoding_value_errors_are_available() {
     let execution = run_source(
         r#"<?php
-foreach (["mb_strlen", "mb_strpos", "mb_strtolower"] as $fn) {
+foreach (["mb_strlen", "mb_substr", "mb_strpos", "mb_strtolower"] as $fn) {
     echo function_exists($fn) ? "1" : "0";
     echo is_callable($fn) ? "1" : "0";
 }
@@ -118,7 +144,7 @@ foreach ([
 
     assert_eq!(
         execution.stdout,
-        "111111|mb_stripos:2/4\nmb_strlen(): Argument #2 ($encoding) must be a valid encoding, \"unknown-encoding\" given\nmb_strpos(): Argument #4 ($encoding) must be a valid encoding, \"unknown-encoding\" given\nmb_strtoupper(): Argument #2 ($encoding) must be a valid encoding, \"unknown-encoding\" given\n"
+        "11111111|mb_stripos:2/4\nmb_strlen(): Argument #2 ($encoding) must be a valid encoding, \"unknown-encoding\" given\nmb_strpos(): Argument #4 ($encoding) must be a valid encoding, \"unknown-encoding\" given\nmb_strtoupper(): Argument #2 ($encoding) must be a valid encoding, \"unknown-encoding\" given\n"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -128,12 +154,13 @@ fn emit_ir_folds_mbstring_function_membership() {
     let ir = emit_ir_source(
         r#"<?php
 echo function_exists("mb_strlen") ? "1" : "0";
+echo function_exists("mb_substr") ? "1" : "0";
 echo is_callable("mb_stripos") ? "1" : "0";
 "#,
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 2, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 3, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
 }

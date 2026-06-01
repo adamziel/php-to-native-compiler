@@ -83631,13 +83631,54 @@ impl Interpreter {
             "str_pad" => call_str_pad(&args, span),
             "wordwrap" => call_wordwrap(&args, span),
             "chunk_split" => call_chunk_split(&args, span),
-            "mb_strlen" => call_mb_strlen(&args, span),
-            "mb_strpos" => call_mb_strpos(&args, "mb_strpos()", false, false, span),
-            "mb_stripos" => call_mb_strpos(&args, "mb_stripos()", true, false, span),
-            "mb_strrpos" => call_mb_strpos(&args, "mb_strrpos()", false, true, span),
-            "mb_strripos" => call_mb_strpos(&args, "mb_strripos()", true, true, span),
-            "mb_strtolower" => call_mb_strcase(&args, "mb_strtolower()", false, span),
-            "mb_strtoupper" => call_mb_strcase(&args, "mb_strtoupper()", true, span),
+            "mb_strlen" => call_mb_strlen(&args, self.mb_default_encoding(), span),
+            "mb_substr" => call_mb_substr(&args, self.mb_default_encoding(), span),
+            "mb_strpos" => call_mb_strpos(
+                &args,
+                "mb_strpos()",
+                self.mb_default_encoding(),
+                false,
+                false,
+                span,
+            ),
+            "mb_stripos" => call_mb_strpos(
+                &args,
+                "mb_stripos()",
+                self.mb_default_encoding(),
+                true,
+                false,
+                span,
+            ),
+            "mb_strrpos" => call_mb_strpos(
+                &args,
+                "mb_strrpos()",
+                self.mb_default_encoding(),
+                false,
+                true,
+                span,
+            ),
+            "mb_strripos" => call_mb_strpos(
+                &args,
+                "mb_strripos()",
+                self.mb_default_encoding(),
+                true,
+                true,
+                span,
+            ),
+            "mb_strtolower" => call_mb_strcase(
+                &args,
+                "mb_strtolower()",
+                self.mb_default_encoding(),
+                false,
+                span,
+            ),
+            "mb_strtoupper" => call_mb_strcase(
+                &args,
+                "mb_strtoupper()",
+                self.mb_default_encoding(),
+                true,
+                span,
+            ),
             "str_split" => call_str_split(&args, span),
             "addslashes" => self.call_addslashes(&args, span),
             "stripslashes" => self.call_stripslashes(&args, span),
@@ -99157,6 +99198,15 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_optional_null_param("encoding", "?string"),
             ],
         ),
+        "mb_substr" => (
+            "string",
+            vec![
+                reflection_internal_param("string", "string"),
+                reflection_internal_param("start", "int"),
+                reflection_internal_optional_null_param("length", "?int"),
+                reflection_internal_optional_null_param("encoding", "?string"),
+            ],
+        ),
         "mb_strpos" | "mb_stripos" | "mb_strrpos" | "mb_strripos" => (
             "int|false",
             vec![
@@ -103000,6 +103050,11 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
         {
             Some(format!("{function}: {message}"))
         }
+        ("mb_substr()", message)
+            if message.starts_with("Argument #4 ($encoding) must be a valid encoding, ") =>
+        {
+            Some(format!("{function}: {message}"))
+        }
         (
             "mb_strpos()" | "mb_stripos()" | "mb_strrpos()" | "mb_strripos()",
             message,
@@ -103507,6 +103562,7 @@ fn is_builtin(name: &str) -> bool {
             | "wordwrap"
             | "chunk_split"
             | "mb_strlen"
+            | "mb_substr"
             | "mb_strpos"
             | "mb_stripos"
             | "mb_strrpos"
@@ -117283,22 +117339,7 @@ enum MbScalarEncoding {
     SingleByte,
 }
 
-fn mb_scalar_encoding(
-    function: &'static str,
-    position: usize,
-    value: Option<&Value>,
-    span: Span,
-) -> CompileResult<MbScalarEncoding> {
-    let Some(value) = value else {
-        return Ok(MbScalarEncoding::Utf8);
-    };
-    if matches!(value, Value::Null) {
-        return Ok(MbScalarEncoding::Utf8);
-    }
-
-    let encoding = value
-        .try_echo_string()
-        .map_err(|error| runtime_error(span, error))?;
+fn mb_scalar_encoding_name(encoding: &str) -> Option<MbScalarEncoding> {
     let normalized = encoding
         .chars()
         .filter(|ch| !matches!(ch, '-' | '_'))
@@ -117306,11 +117347,31 @@ fn mb_scalar_encoding(
         .collect::<String>();
 
     match normalized.as_str() {
-        "utf8" => Ok(MbScalarEncoding::Utf8),
-        "ascii" | "usascii" | "iso88591" | "latin1" | "8bit" => {
-            Ok(MbScalarEncoding::SingleByte)
-        }
-        _ => Err(runtime_error(
+        "utf8" => Some(MbScalarEncoding::Utf8),
+        "ascii" | "usascii" | "iso88591" | "latin1" | "8bit" => Some(MbScalarEncoding::SingleByte),
+        _ => None,
+    }
+}
+
+fn mb_scalar_encoding(
+    function: &'static str,
+    position: usize,
+    value: Option<&Value>,
+    default_encoding: MbScalarEncoding,
+    span: Span,
+) -> CompileResult<MbScalarEncoding> {
+    let Some(value) = value else {
+        return Ok(default_encoding);
+    };
+    if matches!(value, Value::Null) {
+        return Ok(default_encoding);
+    }
+
+    let encoding = value
+        .try_echo_string()
+        .map_err(|error| runtime_error(span, error))?;
+    mb_scalar_encoding_name(&encoding).ok_or_else(|| {
+        runtime_error(
             span,
             RuntimeError::unsupported_call(
                 function,
@@ -117318,8 +117379,8 @@ fn mb_scalar_encoding(
                     "Argument #{position} ($encoding) must be a valid encoding, \"{encoding}\" given"
                 ),
             ),
-        )),
-    }
+        )
+    })
 }
 
 fn mb_utf8_lossy(bytes: Vec<u8>) -> String {
@@ -117327,7 +117388,11 @@ fn mb_utf8_lossy(bytes: Vec<u8>) -> String {
         .unwrap_or_else(|error| String::from_utf8_lossy(&error.into_bytes()).into_owned())
 }
 
-fn call_mb_strlen(args: &[Value], span: Span) -> CompileResult<Value> {
+fn call_mb_strlen(
+    args: &[Value],
+    default_encoding: MbScalarEncoding,
+    span: Span,
+) -> CompileResult<Value> {
     if !(1..=2).contains(&args.len()) {
         return Err(runtime_error(
             span,
@@ -117339,7 +117404,7 @@ fn call_mb_strlen(args: &[Value], span: Span) -> CompileResult<Value> {
         ));
     }
 
-    let encoding = mb_scalar_encoding("mb_strlen()", 2, args.get(1), span)?;
+    let encoding = mb_scalar_encoding("mb_strlen()", 2, args.get(1), default_encoding, span)?;
     let value = string_compare_argument_bytes("mb_strlen()", "string", &args[0], span)?;
     let length = match encoding {
         MbScalarEncoding::Utf8 => mb_utf8_lossy(value).chars().count(),
@@ -117348,9 +117413,51 @@ fn call_mb_strlen(args: &[Value], span: Span) -> CompileResult<Value> {
     Ok(Value::Int(length as i64))
 }
 
+fn call_mb_substr(
+    args: &[Value],
+    default_encoding: MbScalarEncoding,
+    span: Span,
+) -> CompileResult<Value> {
+    if !(2..=4).contains(&args.len()) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "mb_substr()",
+                ArityExpectation::Between { min: 2, max: 4 },
+                args.len(),
+            ),
+        ));
+    }
+
+    let value = string_compare_argument_bytes("mb_substr()", "string", &args[0], span)?;
+    let start = php_internal_int_argument("mb_substr()", 2, "start", &args[1], span)?;
+    let length = match args.get(2) {
+        Some(Value::Null) | None => None,
+        Some(value) => Some(php_internal_int_argument(
+            "mb_substr()",
+            3,
+            "length",
+            value,
+            span,
+        )?),
+    };
+    let encoding = mb_scalar_encoding("mb_substr()", 4, args.get(3), default_encoding, span)?;
+
+    match encoding {
+        MbScalarEncoding::Utf8 => {
+            let input = mb_utf8_lossy(value);
+            Ok(Value::String(mb_utf8_substr(&input, start, length)))
+        }
+        MbScalarEncoding::SingleByte => Ok(interpreter_value_from_php_string_bytes(
+            mb_byte_substr(&value, start, length),
+        )),
+    }
+}
+
 fn call_mb_strpos(
     args: &[Value],
     function: &'static str,
+    default_encoding: MbScalarEncoding,
     case_insensitive: bool,
     reverse: bool,
     span: Span,
@@ -117372,7 +117479,7 @@ fn call_mb_strpos(
         Some(value) => php_internal_int_argument(function, 3, "offset", value, span)?,
         None => 0,
     };
-    let encoding = mb_scalar_encoding(function, 4, args.get(3), span)?;
+    let encoding = mb_scalar_encoding(function, 4, args.get(3), default_encoding, span)?;
 
     match encoding {
         MbScalarEncoding::Utf8 => mb_utf8_strpos(
@@ -117414,6 +117521,38 @@ fn mb_normalize_offset(
         ));
     }
     Ok(start as usize)
+}
+
+fn mb_window_bounds(length: usize, start: i64, slice_length: Option<i64>) -> (usize, usize) {
+    let length = length as i64;
+    let start = if start >= 0 {
+        start.min(length)
+    } else {
+        (length + start).max(0)
+    };
+
+    let end = match slice_length {
+        Some(slice_length) if slice_length >= 0 => start.saturating_add(slice_length).min(length),
+        Some(slice_length) => (length + slice_length).max(0).min(length),
+        None => length,
+    };
+
+    if end < start {
+        (start as usize, start as usize)
+    } else {
+        (start as usize, end as usize)
+    }
+}
+
+fn mb_byte_substr(value: &[u8], start: i64, length: Option<i64>) -> Vec<u8> {
+    let (start, end) = mb_window_bounds(value.len(), start, length);
+    value[start..end].to_vec()
+}
+
+fn mb_utf8_substr(value: &str, start: i64, length: Option<i64>) -> String {
+    let chars = value.chars().collect::<Vec<_>>();
+    let (start, end) = mb_window_bounds(chars.len(), start, length);
+    chars[start..end].iter().collect()
 }
 
 fn mb_single_byte_strpos(
@@ -117522,6 +117661,7 @@ fn mb_casefold_char(ch: char) -> String {
 fn call_mb_strcase(
     args: &[Value],
     function: &'static str,
+    default_encoding: MbScalarEncoding,
     uppercase: bool,
     span: Span,
 ) -> CompileResult<Value> {
@@ -117536,7 +117676,7 @@ fn call_mb_strcase(
         ));
     }
 
-    let encoding = mb_scalar_encoding(function, 2, args.get(1), span)?;
+    let encoding = mb_scalar_encoding(function, 2, args.get(1), default_encoding, span)?;
     let value = string_compare_argument_bytes(function, "string", &args[0], span)?;
     if encoding == MbScalarEncoding::SingleByte {
         let output = if uppercase {
@@ -133347,6 +133487,13 @@ impl Interpreter {
             .filter(|value| *value > 0)
             .unwrap_or(PHP_STANDARD_STRING_MEMORY_LIMIT_BYTES)
     }
+
+    fn mb_default_encoding(&self) -> MbScalarEncoding {
+        self.ini_value("internal_encoding")
+            .as_deref()
+            .and_then(mb_scalar_encoding_name)
+            .unwrap_or(MbScalarEncoding::Utf8)
+    }
 }
 
 fn apply_putenv_assignment(assignment: &str, span: Span) -> CompileResult<Value> {
@@ -135470,6 +135617,7 @@ const COMPAT_INI_DIRECTIVES: &[&str] = &[
     "error_log",
     "error_prepend_string",
     "html_errors",
+    "internal_encoding",
     "mail.add_x_header",
     "max_execution_time",
     "mbstring.func_overload",
@@ -136210,6 +136358,7 @@ fn compat_ini_value(normalized_name: &str) -> Option<&'static str> {
         "error_log" => Some(""),
         "error_prepend_string" => Some(""),
         "html_errors" => Some("0"),
+        "internal_encoding" => Some(""),
         "mail.add_x_header" => Some("0"),
         "max_execution_time" => Some("30"),
         "mbstring.func_overload" => Some("0"),
