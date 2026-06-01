@@ -3595,7 +3595,10 @@
   named captures. Named captures are inserted in PHP's observable order:
   full match `0` first, then each named string key immediately before its
   numeric capture key, for both single-match and `preg_match_all()` pattern- or
-  set-order outputs. Invalid patterns return `false` with the current bounded
+  set-order outputs. In default match arrays, unmatched captures before the last
+  included matched capture are represented as empty strings; trailing unmatched
+  captures remain omitted unless `PREG_UNMATCHED_AS_NULL` requests explicit
+  `null` entries. Invalid patterns return `false` with the current bounded
   warning path and update `preg_last_error()`.
   Unsupported PCRE constructs that the Rust regex engine cannot compile,
   duplicate named groups despite ignored `J`, lookaround/backreferences beyond

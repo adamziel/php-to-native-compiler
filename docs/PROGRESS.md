@@ -20,6 +20,14 @@ Implemented:
   behavior, full Unicode property/case-folding parity, exact PCRE warning text
   and offsets, non-direct matches outputs, broad coercion edge cases, and
   native lowering remain unsupported.
+- Added the adjacent `preg_match()`/`preg_match_all()` default-unmatched
+  capture slice for named capture rows with later matched captures. Intermediate
+  unmatched captures are now preserved as empty strings before later named or
+  numeric captures, while trailing unmatched captures remain omitted without
+  `PREG_UNMATCHED_AS_NULL`. Focused proof covers the new Rust regression plus
+  selected ext/pcre PHPT rows `ext/pcre/tests/001.phpt` and
+  `ext/pcre/tests/003.phpt`. The unsupported PCRE edges listed above remain
+  outside the bounded Rust-regex-translatable subset.
 
 ## 2026-05-27
 

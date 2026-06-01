@@ -121137,9 +121137,6 @@ fn pcre_capture_array_from_row_with_names(
             continue;
         }
         let capture = row.get(index).copied().flatten();
-        if capture.is_none() && !unmatched_as_null {
-            continue;
-        }
         let value = pcre_capture_value(subject, capture, flags, span)?;
         if let Some(name) = name {
             array.insert(name.to_string(), value.clone());

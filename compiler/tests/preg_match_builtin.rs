@@ -338,6 +338,51 @@ echo "\n";
 }
 
 #[test]
+fn preg_match_preserves_intermediate_unmatched_captures() {
+    let execution = run_source(
+        r#"<?php
+preg_match('/(?P<date>(?P<year>(\d{2})?\d\d)-(?P<month>(?:\d\d|[a-zA-Z]{2,3}))-(?P<day>[0-3]?\d))/', '06-12-12', $match);
+var_export($match);
+echo "\n--\n";
+preg_match_all('/(?P<date>(?P<year>(\d{2})?\d\d)-(?P<month>(?:\d\d|[a-zA-Z]{2,3}))-(?P<day>[0-3]?\d))/', '2006-05-13 12-Aug-37', $matches, PREG_SET_ORDER);
+var_export($matches[1]);
+echo "\n";
+"#,
+    )
+    .unwrap();
+
+    let expected = concat!(
+        "array (\n",
+        "  0 => '06-12-12',\n",
+        "  'date' => '06-12-12',\n",
+        "  1 => '06-12-12',\n",
+        "  'year' => '06',\n",
+        "  2 => '06',\n",
+        "  3 => '',\n",
+        "  'month' => '12',\n",
+        "  4 => '12',\n",
+        "  'day' => '12',\n",
+        "  5 => '12',\n",
+        ")\n",
+        "--\n",
+        "array (\n",
+        "  0 => '12-Aug-37',\n",
+        "  'date' => '12-Aug-37',\n",
+        "  1 => '12-Aug-37',\n",
+        "  'year' => '12',\n",
+        "  2 => '12',\n",
+        "  3 => '',\n",
+        "  'month' => 'Aug',\n",
+        "  4 => 'Aug',\n",
+        "  'day' => '37',\n",
+        "  5 => '37',\n",
+        ")\n",
+    );
+    assert_eq!(execution.stdout, expected);
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn preg_match_handles_backtrack_offsets_utf8_and_trailing_unmatched_captures() {
     let execution = run_source(
         r#"<?php
