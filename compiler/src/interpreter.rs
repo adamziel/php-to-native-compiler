@@ -57843,11 +57843,17 @@ impl Interpreter {
         let result = parsed.scan_line(&input);
         let mut assigned = 0_i64;
         for (arg, value) in variable_args.iter().zip(result.values.into_iter()) {
-            let value = value.unwrap_or(Value::Null);
-            if !matches!(value, Value::Null) {
+            if let Some(value) = value {
                 assigned += 1;
+                Self::assign_scanf_direct_target("sscanf()", arg, value, caller_scope)?;
+            } else {
+                Self::assign_scanf_direct_target_if_unset(
+                    "sscanf()",
+                    arg,
+                    Value::Null,
+                    caller_scope,
+                )?;
             }
-            Self::assign_scanf_direct_target("sscanf()", arg, value, caller_scope)?;
         }
         Ok(Value::Int(assigned))
     }
@@ -57871,6 +57877,31 @@ impl Interpreter {
                 caller_scope.write_static(name, value);
                 Ok(())
             }
+            Expr::Index {
+                target,
+                index,
+                span,
+            } => {
+                let Expr::Variable(name, _) = target.as_ref() else {
+                    return Err(runtime_error(
+                        target.span(),
+                        RuntimeError::unsupported_call(
+                            function,
+                            "by-reference scan array-offset targets require a direct variable root in the current subset",
+                        ),
+                    ));
+                };
+                let Some(key) = Self::scanf_direct_array_offset_key(index.as_ref()) else {
+                    return Err(runtime_error(
+                        index.span(),
+                        RuntimeError::unsupported_call(
+                            function,
+                            "by-reference scan array-offset targets require literal int/string keys in the current subset",
+                        ),
+                    ));
+                };
+                Self::write_scanf_direct_array_offset_target(caller_scope, name, key, value, *span)
+            }
             Expr::NamedArgument { span, .. } | Expr::SpreadArgument { span, .. } => Err(
                 runtime_error(
                     *span,
@@ -57891,6 +57922,80 @@ impl Interpreter {
                 ),
             )),
         }
+    }
+
+    fn assign_scanf_direct_target_if_unset(
+        function: &'static str,
+        arg: &Expr,
+        value: Value,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<()> {
+        match arg {
+            Expr::Variable(name, _) if caller_scope.read_named(name).is_some() => Ok(()),
+            Expr::Index {
+                target,
+                index,
+                span,
+            } => {
+                let Expr::Variable(name, _) = target.as_ref() else {
+                    return Self::assign_scanf_direct_target(function, arg, value, caller_scope);
+                };
+                let Some(key) = Self::scanf_direct_array_offset_key(index.as_ref()) else {
+                    return Self::assign_scanf_direct_target(function, arg, value, caller_scope);
+                };
+                if caller_scope
+                    .read_named(name)
+                    .is_some_and(|slot| match slot {
+                        Value::Array(array) => array.contains_key(key.clone()),
+                        _ => false,
+                    })
+                {
+                    Ok(())
+                } else {
+                    Self::write_scanf_direct_array_offset_target(
+                        caller_scope,
+                        name,
+                        key,
+                        value,
+                        *span,
+                    )
+                }
+            }
+            _ => Self::assign_scanf_direct_target(function, arg, value, caller_scope),
+        }
+    }
+
+    fn scanf_direct_array_offset_key(expr: &Expr) -> Option<ArrayKey> {
+        match expr {
+            Expr::Int(value, _) => Some(ArrayKey::Int(*value)),
+            Expr::String(value, _) => Some(ArrayKey::String(value.clone())),
+            _ => None,
+        }
+    }
+
+    fn write_scanf_direct_array_offset_target(
+        caller_scope: &mut SymbolTable,
+        name: &str,
+        key: ArrayKey,
+        value: Value,
+        span: Span,
+    ) -> CompileResult<()> {
+        let mut array = match caller_scope.read_named(name) {
+            Some(Value::Array(array)) => array,
+            Some(Value::Null) | None => PhpArray::new(),
+            Some(other) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::invalid_array_access(format!(
+                        "cannot write offset on {}",
+                        other.type_name()
+                    )),
+                ))
+            }
+        };
+        array.insert(key, value);
+        caller_scope.write_static(name, Value::Array(array));
+        Ok(())
     }
 
     fn evaluate_builtin_value_call_arguments(
@@ -123494,6 +123599,7 @@ struct FscanfConversion {
     kind: FscanfConversionKind,
     width: Option<usize>,
     suppressed: bool,
+    target_index: Option<usize>,
 }
 
 #[derive(Debug, Clone)]
@@ -123505,6 +123611,7 @@ enum FscanfConversionKind {
     Hex,
     Float,
     Char,
+    CountConsumed,
     Scanset(FscanfScanset),
 }
 
@@ -123554,7 +123661,7 @@ impl FscanfFormat {
     fn scan_line(&self, line: &str) -> FscanfScanResult {
         let input: Vec<char> = line.chars().collect();
         let mut position = 0_usize;
-        let mut values = Vec::with_capacity(self.assignable_count);
+        let mut values = vec![None; self.assignable_count];
         let mut whitespace_directive_at_end = false;
 
         for item in &self.items {
@@ -123572,24 +123679,26 @@ impl FscanfFormat {
                     }
                 }
                 FscanfItem::Conversion(conversion) => {
-                    let scanned = if whitespace_directive_at_end {
+                    let scanned = if whitespace_directive_at_end
+                        && !matches!(conversion.kind, FscanfConversionKind::CountConsumed)
+                    {
                         None
                     } else {
                         conversion.scan(&input, &mut position)
                     };
                     whitespace_directive_at_end = false;
                     if !conversion.suppressed {
-                        values.push(scanned.clone());
+                        if let Some(target_index) = conversion.target_index {
+                            if let Some(slot) = values.get_mut(target_index) {
+                                *slot = scanned.clone();
+                            }
+                        }
                     }
                     if scanned.is_none() {
                         break;
                     }
                 }
             }
-        }
-
-        while values.len() < self.assignable_count {
-            values.push(None);
         }
         FscanfScanResult { values }
     }
@@ -123611,6 +123720,7 @@ impl FscanfConversion {
             FscanfConversionKind::Hex => scan_fscanf_hex(input, position, self.width),
             FscanfConversionKind::Float => scan_fscanf_float(input, position, self.width),
             FscanfConversionKind::Char => scan_fscanf_char(input, position, self.width),
+            FscanfConversionKind::CountConsumed => Some(Value::Int(*position as i64)),
             FscanfConversionKind::Scanset(scanset) => {
                 scan_fscanf_scanset(input, position, self.width, scanset)
             }
@@ -123633,6 +123743,7 @@ fn parse_fscanf_format(format: &str, span: Span) -> CompileResult<FscanfFormat> 
     let mut items = Vec::new();
     let mut index = 0_usize;
     let mut assignable_count = 0_usize;
+    let mut next_target_index = 0_usize;
 
     while index < chars.len() {
         let character = chars[index];
@@ -123658,6 +123769,34 @@ fn parse_fscanf_format(format: &str, span: Span) -> CompileResult<FscanfFormat> 
             index += 1;
             continue;
         }
+
+        let positional_start = index;
+        while chars.get(index).is_some_and(|ch| ch.is_ascii_digit()) {
+            index += 1;
+        }
+        let positional_target = if index > positional_start && chars.get(index) == Some(&'$') {
+            let position = chars[positional_start..index]
+                .iter()
+                .collect::<String>()
+                .parse::<usize>()
+                .ok();
+            let Some(position) =
+                position.filter(|position| *position > 0 && *position <= i32::MAX as usize)
+            else {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "fscanf()",
+                        "\"%n$\" argument index out of range",
+                    ),
+                ));
+            };
+            index += 1;
+            Some(position - 1)
+        } else {
+            index = positional_start;
+            None
+        };
 
         let suppressed = if chars[index] == '*' {
             index += 1;
@@ -123716,6 +123855,10 @@ fn parse_fscanf_format(format: &str, span: Span) -> CompileResult<FscanfFormat> 
                 index += 1;
                 FscanfConversionKind::Char
             }
+            'n' => {
+                index += 1;
+                FscanfConversionKind::CountConsumed
+            }
             '[' => {
                 let (scanset, next_index) = parse_fscanf_scanset(&chars, index + 1, span)?;
                 index = next_index;
@@ -123723,13 +123866,22 @@ fn parse_fscanf_format(format: &str, span: Span) -> CompileResult<FscanfFormat> 
             }
             other => return fscanf_bad_conversion(other, span),
         };
-        if !suppressed {
-            assignable_count += 1;
-        }
+        let target_index = if suppressed {
+            None
+        } else if let Some(target_index) = positional_target {
+            assignable_count = assignable_count.max(target_index + 1);
+            Some(target_index)
+        } else {
+            let target_index = next_target_index;
+            next_target_index += 1;
+            assignable_count = assignable_count.max(next_target_index);
+            Some(target_index)
+        };
         items.push(FscanfItem::Conversion(FscanfConversion {
             kind,
             width,
             suppressed,
+            target_index,
         }));
     }
 
@@ -125495,14 +125647,6 @@ fn parse_sprintf_placeholder(
                     while matches!(bytes.get(index), Some(b'0'..=b'9')) {
                         index += 1;
                     }
-                    if precision_start == index {
-                        return Err(match format[index..].chars().next() {
-                            Some(ch) => SprintfParseError::ValueError(format!(
-                                "Unknown format specifier \"{ch}\""
-                            )),
-                            None => SprintfParseError::MissingFormatSpecifier,
-                        });
-                    }
                     precision = Some(SprintfSizeSpec::Literal(parse_sprintf_precision_literal(
                         &format[precision_start..index],
                     )?));
@@ -125593,6 +125737,9 @@ fn parse_sprintf_width_literal(value: &str) -> Result<usize, SprintfParseError> 
 }
 
 fn parse_sprintf_precision_literal(value: &str) -> Result<usize, SprintfParseError> {
+    if value.is_empty() {
+        return Ok(0);
+    }
     let precision = value.parse::<usize>().map_err(|_| {
         SprintfParseError::ValueError("Precision must be between 0 and 2147483647".to_string())
     })?;

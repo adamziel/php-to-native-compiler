@@ -33,6 +33,21 @@ echo sprintf('%g|%.3G|%*.*f|%.*s|%d', 1.234567, 12345.0, 8, 2, 1.25, 3, "abcdef"
 }
 
 #[test]
+fn sprintf_empty_float_precision_matches_string_phpt_regression() {
+    let execution = run_source(
+        r#"<?php
+printf("%.f\n", 3.1415926535);
+printf("%.0f\n", 3.1415926535);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "3\n3\n");
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn sprintf_and_vsprintf_are_available_through_string_valued_calls() {
     let execution = run_source(
         r#"<?php

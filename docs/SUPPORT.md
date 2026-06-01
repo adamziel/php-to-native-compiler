@@ -3241,7 +3241,7 @@
   `mb_strtolower`, `mb_strtoupper`, `similar_text`,
   `convert_uuencode`, `convert_uudecode`,
   `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `str_ireplace`, `substr_replace`, `substr_compare`, `substr_count`, `str_getcsv`, `parse_str`, `http_build_query`,
-  `highlight_string`, `highlight_file`, `php_strip_whitespace`, `error_reporting`, `set_time_limit`, `ignore_user_abort`, `printf`, `fprintf`, `sprintf`, `vsprintf`, `vprintf`, `vfprintf`, `call_user_func`, `call_user_func_array`,
+  `highlight_string`, `highlight_file`, `php_strip_whitespace`, `error_reporting`, `set_time_limit`, `ignore_user_abort`, `printf`, `fprintf`, `sprintf`, `vsprintf`, `vprintf`, `vfprintf`, `sscanf`, `call_user_func`, `call_user_func_array`,
   `implode`, `basename`, `dirname`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`,
   `file_put_contents`, `readfile`, `unlink`, `mkdir`, `rmdir`, `copy`, `rename`, `chdir`, `scandir`, `stat`, `lstat`, `fileperms`, `chmod`, `chown`, `chgrp`,
   `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_params`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `stream_context_set_params`, `fwrite`, `fscanf`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fflush`, `ftruncate`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`,
@@ -3404,9 +3404,10 @@
   `vprintf($format, $values)`, and `vfprintf($stream, $format, $values)` support
   string format values with literal text, escaped percent signs `%%`,
   sequential and positional `%s`, `%d`, `%b`, `%c`, `%u`, `%o`, `%x`, `%X`,
-  `%f`, `%F`, `%e`, and `%E` placeholders, plus the reached WordPress width, precision,
-  sign, zero/custom padding, left-align, and ignored integer length-modifier
-  subset. `printf()` and `vprintf()` output the formatted string and return
+  `%f`, `%F`, `%e`, and `%E` placeholders, plus the reached WordPress width,
+  precision (including empty precision as zero), sign, zero/custom padding,
+  left-align, and ignored integer length-modifier subset. `printf()` and
+  `vprintf()` output the formatted string and return
   its byte length; `%c` writes the current raw byte to CLI stdout while the
   text snapshot remains UTF-8-lossy for tests. `fprintf()` and `vfprintf()`
   write formatted bytes to current writable stream resources and return the
@@ -3422,6 +3423,17 @@
   locale behavior, broad argument reordering, object/resource conversions,
   exact warning behavior, partial-output behavior, and native lowering remain
   unsupported.
+  `sscanf($string, $format)` shares the bounded scanf parser used by `fscanf()`
+  for scalar string inputs. It returns numeric arrays or assigns into direct
+  variable targets and direct variable-root array offsets with literal
+  int/string keys. Sequential and positional `%n$` conversion targets, `%n`
+  consumed-character counts, string/integer/float/char/scanset conversions,
+  width, assignment suppression, and literal percent signs are covered for the
+  current ASCII PHPT rows. Failed later conversions leave existing direct
+  targets unchanged while materializing missing direct targets as `null`.
+  Non-literal scan assignment offsets, nested/object/static-property targets,
+  dynamic keys, full scanf grammar, locale-specific parsing, non-UTF-8 byte
+  inputs, exact PHP warnings, and native lowering remain unsupported.
   `chr($codepoint)` accepts integer-compatible values, returns the low byte
   using PHP's modulo-256 behavior, and emits PHP's deprecation diagnostic when
   the integer is outside the `[0, 255]` byte range. Array/object/resource
@@ -7958,7 +7970,7 @@
   `pack`, `unpack`, `strtolower`, `strtoupper`, `str_increment`,
   `str_decrement`, `trim`, `ltrim`, `rtrim`, `strcasecmp`, `strncmp`, `strncasecmp`,
   `str_contains`, `str_starts_with`, `str_ends_with`, `strspn`, `strcspn`, `strpbrk`, `strpos`, `stripos`, `strrpos`, `strripos`, `strstr`, `strchr`, `stristr`, `strtok`, `substr`, `str_shuffle`, `wordwrap`, `str_word_count`, `strnatcmp`, `strnatcasecmp`, `mb_strlen`, `mb_strpos`, `mb_stripos`, `mb_strrpos`, `mb_strripos`, `mb_strtolower`, `mb_strtoupper`, `similar_text`, `convert_uuencode`, `convert_uudecode`, `substr_replace`, `substr_compare`, `substr_count`, `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `str_getcsv`, `error_reporting`,
-  `printf`, `fprintf`, `sprintf`, `vsprintf`, `vprintf`, `vfprintf`, `call_user_func`, `call_user_func_array`, `implode`, `basename`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`,
+  `printf`, `fprintf`, `sprintf`, `vsprintf`, `vprintf`, `vfprintf`, `sscanf`, `call_user_func`, `call_user_func_array`, `implode`, `basename`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`,
   `file_put_contents`, `readfile`, `unlink`, `mkdir`, `rmdir`, `copy`, `rename`, `chdir`, `scandir`, `stat`, `lstat`, `fileperms`, `chmod`, `chown`, `chgrp`,
   `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_params`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `stream_context_set_params`, `fwrite`, `fscanf`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fflush`, `ftruncate`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`, `disk_free_space`, `diskfreespace`, `disk_total_space`, `clearstatcache`, `realpath`, `realpath_cache_get`, `realpath_cache_size`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_executable`, `is_link`, `abs`,
   `number_format`, `microtime`, `ini_get`, `min`, `get_current_user`, `getmypid`, `count`, `compact`,
@@ -8205,7 +8217,7 @@
   are unsupported.
 - Builtins: `strlen`, `bin2hex`, `hex2bin`, `pack`, `unpack`, `strtolower`, `strtoupper`, `str_increment`,
   `str_decrement`, `trim`, `ltrim`, `rtrim`, `strcasecmp`, `strncmp`, `strncasecmp`, `str_contains`,
-  `str_starts_with`, `str_ends_with`, `strspn`, `strcspn`, `strpbrk`, `strpos`, `stripos`, `strrpos`, `strripos`, `strstr`, `strchr`, `stristr`, `strtok`, `substr`, `substr_replace`, `substr_compare`, `substr_count`, `similar_text`, `str_replace`, `str_getcsv`, `parse_str`, `printf`, `fprintf`, `sprintf`, `vsprintf`, `vprintf`, `vfprintf`,
+  `str_starts_with`, `str_ends_with`, `strspn`, `strcspn`, `strpbrk`, `strpos`, `stripos`, `strrpos`, `strripos`, `strstr`, `strchr`, `stristr`, `strtok`, `substr`, `substr_replace`, `substr_compare`, `substr_count`, `similar_text`, `str_replace`, `str_getcsv`, `parse_str`, `printf`, `fprintf`, `sprintf`, `vsprintf`, `vprintf`, `vfprintf`, `sscanf`,
   `call_user_func`, `call_user_func_array`, `implode`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`,
   `file_put_contents`, `readfile`, `unlink`, `mkdir`, `rmdir`, `copy`, `rename`, `chdir`, `scandir`, `stat`, `lstat`, `fileperms`, `chmod`, `chown`, `chgrp`,
   `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_params`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `stream_context_set_params`, `fwrite`, `fscanf`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fflush`, `ftruncate`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`, `disk_free_space`, `diskfreespace`, `disk_total_space`, `clearstatcache`, `realpath`, `realpath_cache_get`, `realpath_cache_size`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_executable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_length`, `ob_list_handlers`, `ob_get_status`, `ob_get_clean`, `ob_get_flush`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `date_default_timezone_set`, `abs`, `number_format`, `microtime`, `ini_get`, `min`, `get_current_user`, `isset`, `empty`, `count`,
@@ -8731,10 +8743,10 @@
   section above; direct native `min(...)` calls still reject under the
   function-call boundary, while native function-table introspection recognizes
   the name.
-  `printf`, `fprintf`, `sprintf`, `vsprintf`, `vprintf`, and `vfprintf` accept the same current
+  `printf`, `fprintf`, `sprintf`, `vsprintf`, `vprintf`, `vfprintf`, and `sscanf` accept the same current
   bounded format subset as the builtin section above; direct native
   `printf(...)`, `fprintf(...)`, `sprintf(...)`, `vsprintf(...)`,
-  `vprintf(...)`, and `vfprintf(...)` calls
+  `vprintf(...)`, `vfprintf(...)`, and `sscanf(...)` calls
   still reject under the function-call boundary, while native function-table
   introspection recognizes those names.
   `strcasecmp` accepts the same current scalar/null string-convertible subset
@@ -11508,8 +11520,9 @@ Unsupported code should fail with an explicit parse, runtime, or codegen error.
   delimiter/enclosure/escape handling and direct named `escape:` support, and
   `fscanf()` reads one bounded line from local file or memory streams into an
   array or direct variable assignments for bounded string, integer, float,
-  character, scanset, width, ignored-assignment, and literal-percent format
-  conversions. Return-array `fscanf()` covers the current blank,
+  character, scanset, width, positional-target, consumed-count `%n`,
+  ignored-assignment, and literal-percent format conversions. Return-array
+  `fscanf()` covers the current blank,
   whitespace-only, NUL-leading, scanset-miss, `%c`, and width/float file rows;
   signed integer scan results clamp to the bounded 32-bit C-int range. These
   helpers preserve stream position and return `false` at EOF. Binary/non-UTF-8
