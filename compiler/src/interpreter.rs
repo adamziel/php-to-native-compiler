@@ -119728,12 +119728,8 @@ impl Interpreter {
         let mut output = PhpArray::new();
         if set_order {
             for row in &rows {
-                let mut match_array = PhpArray::new();
-                for capture in row {
-                    match_array
-                        .append(pcre_capture_value(&subject, *capture, flags, span)?)
-                        .map_err(|error| runtime_error(span, error))?;
-                }
+                let match_array =
+                    pcre_capture_row_array(&regex.regex, &subject, row, flags, true, span)?;
                 output
                     .append(Value::Array(match_array))
                     .map_err(|error| runtime_error(span, error))?;
@@ -119747,7 +119743,11 @@ impl Interpreter {
                         .append(pcre_capture_value(&subject, capture, flags, span)?)
                         .map_err(|error| runtime_error(span, error))?;
                 }
-                output.insert(capture_index as i64, Value::Array(capture_array));
+                let value = Value::Array(capture_array);
+                if let Some(Some(name)) = regex.regex.capture_names().nth(capture_index) {
+                    output.insert(name.to_string(), value.clone());
+                }
+                output.insert(capture_index as i64, value);
             }
         }
 
@@ -121035,36 +121035,47 @@ fn pcre_capture_array(
     flags: i64,
     span: Span,
 ) -> CompileResult<PhpArray> {
+    let row = (0..captures.len())
+        .map(|index| {
+            captures
+                .get(index)
+                .map(|matched| (base + matched.start(), base + matched.end()))
+        })
+        .collect::<Vec<_>>();
+    pcre_capture_row_array(regex, subject, &row, flags, true, span)
+}
+
+fn pcre_capture_row_array(
+    regex: &Regex,
+    subject: &[u8],
+    row: &[Option<(usize, usize)>],
+    flags: i64,
+    trim_trailing_unmatched: bool,
+    span: Span,
+) -> CompileResult<PhpArray> {
     let mut array = PhpArray::new();
-    let unmatched_as_null = flags & PHP_PREG_UNMATCHED_AS_NULL != 0;
-    let last_capture_index = if unmatched_as_null {
-        captures.len().saturating_sub(1)
-    } else {
-        (0..captures.len())
-            .rev()
-            .find(|index| captures.get(*index).is_some())
-            .unwrap_or(0)
-    };
-    for index in 0..=last_capture_index {
-        let capture = captures
-            .get(index)
-            .map(|matched| (base + matched.start(), base + matched.end()));
-        array
-            .append(pcre_capture_value(subject, capture, flags, span)?)
-            .map_err(|error| runtime_error(span, error))?;
+    if row.is_empty() {
+        return Ok(array);
     }
-    for (index, name) in regex.capture_names().enumerate().skip(1) {
-        let Some(name) = name else {
-            continue;
-        };
-        let capture = captures
-            .get(index)
-            .map(|matched| (base + matched.start(), base + matched.end()));
-        if capture.is_none() && !unmatched_as_null {
-            continue;
-        }
+    let unmatched_as_null = flags & PHP_PREG_UNMATCHED_AS_NULL != 0;
+    let last_capture_index = if trim_trailing_unmatched && !unmatched_as_null {
+        row.iter()
+            .rposition(Option::is_some)
+            .unwrap_or(0)
+            .min(row.len().saturating_sub(1))
+    } else {
+        row.len().saturating_sub(1)
+    };
+
+    for index in 0..=last_capture_index {
+        let capture = row.get(index).copied().flatten();
         let value = pcre_capture_value(subject, capture, flags, span)?;
-        array.insert(name.to_string(), value);
+        if index > 0 {
+            if let Some(Some(name)) = regex.capture_names().nth(index) {
+                array.insert(name.to_string(), value.clone());
+            }
+        }
+        array.insert(index as i64, value);
     }
     Ok(array)
 }

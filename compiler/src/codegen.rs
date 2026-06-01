@@ -66458,6 +66458,7 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "similar_text",
     "preg_quote",
     "preg_match",
+    "preg_match_all",
     "preg_replace",
     "preg_split",
     "preg_replace_callback",

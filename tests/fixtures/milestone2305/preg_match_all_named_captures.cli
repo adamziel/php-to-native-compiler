@@ -1,0 +1,6 @@
+$ phpc run tests/fixtures/milestone2305/preg_match_all_named_captures.php
+0,word,1,num,2|ab:0|12:3
+2|0,word,1,num,2
+cd:6|ab:0|12:3
+0,a,1|0,a,1,b,2
+no-b|a|b

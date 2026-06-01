@@ -1,5 +1,24 @@
 # Progress Log
 
+## 2026-06-01
+
+Implemented:
+
+- Added PHP-order named-capture materialization for the interpreter PCRE
+  match paths. Shared capture-array construction now inserts each named
+  capture before its numeric duplicate, `preg_match_all()` pattern-order
+  output includes named capture columns, and set-order rows share the same
+  ordering while trimming trailing unmatched groups unless
+  `PREG_UNMATCHED_AS_NULL` is set. `preg_match_all()` is also exposed to
+  native function-table metadata folds while direct native lowering still
+  rejects the call. Focused gates cover named captures with
+  `PREG_OFFSET_CAPTURE`, set-order trailing unmatched groups, direct
+  `phpc run` fixture execution, system-PHP fixture comparison, and
+  `emit-ir` metadata/rejection behavior. Duplicate named captures and true
+  `J` semantics, zero-length `preg_match_all()` iteration parity, full PCRE
+  syntax/diagnostics, broader byte/Unicode edge cases, and native lowering
+  remain unsupported.
+
 ## 2026-05-27
 
 Implemented:
