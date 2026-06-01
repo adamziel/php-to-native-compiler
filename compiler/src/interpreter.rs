@@ -78521,7 +78521,7 @@ impl Interpreter {
                     span,
                     RuntimeError::unsupported_call(
                         "sleep()",
-                        "seconds argument must be non-negative in the current subset",
+                        "Argument #1 ($seconds) must be greater than or equal to 0",
                     ),
                 ));
             }
@@ -78542,6 +78542,28 @@ impl Interpreter {
             std::thread::sleep(Duration::from_secs(seconds));
         }
         Ok(Value::Int(0))
+    }
+
+    fn call_usleep(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("usleep", args, 1, span)?;
+        let microseconds =
+            php_internal_int_argument("usleep()", 1, "microseconds", &args[0], span)?;
+        if microseconds < 0 {
+            let error = runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "usleep()",
+                    "Argument #1 ($microseconds) must be greater than or equal to 0",
+                ),
+            );
+            self.record_pending_uncaught_internal_call_frame("usleep", span, args, &error);
+            return Err(error);
+        }
+
+        if microseconds > 0 {
+            std::thread::sleep(Duration::from_micros(microseconds as u64));
+        }
+        Ok(Value::Null)
     }
 
     fn file_put_contents_data_bytes(
@@ -80994,13 +81016,13 @@ impl Interpreter {
     fn call_fread(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("fread", args, 2, span)?;
         let length = match &args[1] {
-            Value::Int(length) if *length >= 0 => *length as usize,
+            Value::Int(length) if *length > 0 => *length as usize,
             Value::Int(_) => {
                 return Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
                         "fread()",
-                        "length argument must be non-negative in the current subset",
+                        "Argument #2 ($length) must be greater than 0",
                     ),
                 ));
             }
@@ -84309,6 +84331,7 @@ impl Interpreter {
             "strrev" => call_strrev(&args, span),
             "str_shuffle" => call_str_shuffle(&args, span),
             "str_rot13" => call_str_rot13(&args, span),
+            "escapeshellarg" => call_escapeshellarg(&args, span),
             "ucfirst" => call_ucfirst(&args, span),
             "lcfirst" => call_lcfirst(&args, span),
             "ucwords" => call_ucwords(&args, span),
@@ -84807,6 +84830,7 @@ impl Interpreter {
                 Ok(Value::Float(0.5))
             }
             "uniqid" => call_uniqid(&args, span),
+            "crypt" => call_crypt(&args, span),
             "hash" => call_hash(&args, span),
             "hash_algos" => call_hash_algos(&args, span),
             "hash_hmac" => call_hash_hmac(&args, span),
@@ -85031,18 +85055,16 @@ impl Interpreter {
             }
             "array_keys" => match args.as_slice() {
                 [Value::Array(array)] => Ok(Value::Array(array.keys_reindexed())),
-                [Value::Array(array), search_value] => array
-                    .keys_matching_loose_scalar(search_value)
-                    .map(Value::Array)
-                    .map_err(|error| runtime_error(span, error)),
+                [Value::Array(array), search_value] => {
+                    array_keys_matching_loose(array, search_value, span).map(Value::Array)
+                }
                 [Value::Array(array), search_value, Value::Bool(true)] => array
                     .keys_matching_strict_scalar(search_value)
                     .map(Value::Array)
                     .map_err(|error| runtime_error(span, error)),
-                [Value::Array(array), search_value, Value::Bool(false)] => array
-                    .keys_matching_loose_scalar(search_value)
-                    .map(Value::Array)
-                    .map_err(|error| runtime_error(span, error)),
+                [Value::Array(array), search_value, Value::Bool(false)] => {
+                    array_keys_matching_loose(array, search_value, span).map(Value::Array)
+                }
                 [Value::Array(_), _, other] => Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
@@ -86329,7 +86351,14 @@ impl Interpreter {
             "touch" => self.call_touch(&args, span),
             "tempnam" => self.call_tempnam(&args, span),
             "sys_get_temp_dir" => self.call_sys_get_temp_dir(&args, span),
-            "sleep" => self.call_sleep(&args, span),
+            "sleep" => {
+                let result = self.call_sleep(&args, span);
+                if let Err(error) = &result {
+                    self.record_pending_uncaught_internal_call_frame("sleep", span, &args, error);
+                }
+                result
+            }
+            "usleep" => self.call_usleep(&args, span),
             "readlink" => self.call_readlink(&args, span),
             "symlink" => self.call_symlink(&args, span),
             "link" => self.call_link(&args, span),
@@ -86338,6 +86367,9 @@ impl Interpreter {
                 expect_arity(name, &args, 1, span)?;
                 match &args[0] {
                     Value::String(path) => {
+                        if path.is_empty() {
+                            return Ok(Value::Bool(false));
+                        }
                         if path.contains("://") {
                             return Err(runtime_error(
                                 span,
@@ -86359,6 +86391,7 @@ impl Interpreter {
                         }
                         Ok(Value::Bool(metadata_path.try_exists().unwrap_or(false)))
                     }
+                    Value::Bool(false) => Ok(Value::Bool(false)),
                     other => Err(runtime_error(
                         span,
                         RuntimeError::unsupported_call(
@@ -86537,6 +86570,16 @@ impl Interpreter {
                         let contents = match fs::read(&filesystem_path) {
                             Ok(contents) => contents,
                             Err(error) => {
+                                if fs::metadata(&filesystem_path)
+                                    .map(|metadata| metadata.is_dir())
+                                    .unwrap_or(false)
+                                {
+                                    self.emit_display_notice(
+                                        "file_get_contents(): Read of 8192 bytes failed with errno=21 Is a directory",
+                                        span,
+                                    )?;
+                                    return Ok(Value::Bool(false));
+                                }
                                 self.emit_display_warning(
                                     format!(
                                         "file_get_contents({path}): Failed to open stream: {}",
@@ -86951,45 +86994,56 @@ impl Interpreter {
                     )),
                 }
             }
-            "is_writable" => {
+            "is_writable" | "is_writeable" => {
                 expect_arity(name, &args, 1, span)?;
-                match &args[0] {
-                    Value::String(path) => {
-                        if path.contains("://") {
-                            return Err(runtime_error(
-                                span,
-                                RuntimeError::unsupported_call(
-                                    "is_writable()",
-                                    "stream wrappers are not supported in the current subset",
-                                ),
-                            ));
-                        }
-                        let metadata_path =
-                            self.resolve_local_filesystem_operation_path("is_writable", path, false, span)?;
-                        if !self.enforce_bounded_open_basedir(
-                            "is_writable()",
-                            path,
-                            &metadata_path,
-                            span,
-                        )? {
-                            return Ok(Value::Bool(false));
-                        }
-                        let Ok(metadata) = fs::metadata(&metadata_path) else {
-                            return Ok(Value::Bool(false));
-                        };
-                        Ok(Value::Bool(!metadata.permissions().readonly()))
+                let function_label = format!("{name}()");
+                let path = match &args[0] {
+                    Value::String(path) => path.clone(),
+                    Value::BinaryString(bytes) => {
+                        tree_walk_binary_string_utf8(bytes, "filesystem path", span)?.to_string()
                     }
-                    other => Err(runtime_error(
+                    Value::Null | Value::Bool(_) | Value::Int(_) | Value::Float(_) => {
+                        args[0].echo_string()
+                    }
+                    other => {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                function_label,
+                                format!(
+                                    "path argument must be string in the current subset, got {}",
+                                    other.type_name()
+                                ),
+                            ),
+                        ));
+                    }
+                };
+                if path.is_empty() || path.contains('\0') {
+                    return Ok(Value::Bool(false));
+                }
+                if path.contains("://") {
+                    return Err(runtime_error(
                         span,
                         RuntimeError::unsupported_call(
-                            "is_writable()",
-                            format!(
-                                "path argument must be string in the current subset, got {}",
-                                other.type_name()
-                            ),
+                            function_label.clone(),
+                            "stream wrappers are not supported in the current subset",
                         ),
-                    )),
+                    ));
                 }
+                let metadata_path =
+                    self.resolve_local_filesystem_operation_path(name, &path, false, span)?;
+                if !self.enforce_bounded_open_basedir(
+                    &function_label,
+                    &path,
+                    &metadata_path,
+                    span,
+                )? {
+                    return Ok(Value::Bool(false));
+                }
+                let Ok(metadata) = fs::metadata(&metadata_path) else {
+                    return Ok(Value::Bool(false));
+                };
+                Ok(Value::Bool(!metadata.permissions().readonly()))
             }
             "is_link" => {
                 expect_arity(name, &args, 1, span)?;
@@ -89463,7 +89517,8 @@ impl Interpreter {
                             args.len(),
                             span,
                             true,
-                        )?;
+                        )
+                        .map_err(array_user_compare_callback_diagnostic)?;
                         ensure_supported_function_signature(function, args.len(), span)?;
                         self.ensure_user_function_call_depth(function, span)?;
                         self.call_user_function_with_checked_values(
@@ -93145,6 +93200,15 @@ impl Interpreter {
         name: &str,
         span: Span,
     ) -> CompileResult<Option<ArrayColumnKey>> {
+        if self.current_strict_types()
+            && !matches!(
+                value,
+                Value::Null | Value::Int(_) | Value::String(_) | Value::BinaryString(_)
+            )
+        {
+            return Err(self.array_column_key_type_error(value, position, name, span));
+        }
+
         match value {
             Value::Null => Ok(None),
             Value::Bool(false) => Ok(Some(ArrayColumnKey::Int(0))),
@@ -99955,6 +100019,13 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
             ],
         ),
         "hash_algos" => ("array", vec![]),
+        "crypt" => (
+            "string",
+            vec![
+                reflection_internal_param("string", "string"),
+                reflection_internal_param("salt", "string"),
+            ],
+        ),
         "md5" => (
             "string",
             vec![
@@ -100042,6 +100113,7 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
             "string",
             vec![reflection_internal_param("string", "string")],
         ),
+        "escapeshellarg" => ("string", vec![reflection_internal_param("arg", "string")]),
         "preg_quote" => (
             "string",
             vec![
@@ -100729,6 +100801,10 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
             vec![reflection_internal_param("assignment", "string")],
         ),
         "sleep" => ("int", vec![reflection_internal_param("seconds", "int")]),
+        "usleep" => (
+            "void",
+            vec![reflection_internal_param("microseconds", "int")],
+        ),
         "stream_get_wrappers" => ("array", vec![]),
         "stream_get_transports" => ("array", vec![]),
         "stream_wrapper_register" => (
@@ -102291,7 +102367,7 @@ const REFLECTION_EXTENSION_STANDARD_CLASSES: &[&str] = &[
     "php_user_filter",
 ];
 
-const REFLECTION_EXTENSION_STANDARD_FUNCTIONS: &[&str] = &["sleep"];
+const REFLECTION_EXTENSION_STANDARD_FUNCTIONS: &[&str] = &["sleep", "usleep"];
 const REFLECTION_EXTENSION_STANDARD_CONSTANTS: &[&str] = &[
     "CONNECTION_NORMAL",
     "CONNECTION_ABORTED",
@@ -103048,6 +103124,10 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
 
     if let Some(message) = array_walk_callback_too_few_arguments_message(error) {
         return Some(("TypeError", message));
+    }
+
+    if let Some(message) = array_user_compare_callback_argument_count_error_message(error) {
+        return Some(("ArgumentCountError", message));
     }
 
     if let Some(message) = user_function_too_few_arguments_message(error) {
@@ -103881,6 +103961,19 @@ fn array_walk_callback_diagnostic(error: Diagnostic) -> Diagnostic {
     error
 }
 
+fn array_user_compare_callback_diagnostic(error: Diagnostic) -> Diagnostic {
+    if error.phase == Phase::Runtime && error.message.starts_with("arity mismatch for ") {
+        return Diagnostic {
+            phase: error.phase,
+            file: error.file,
+            line: error.line,
+            column: error.column,
+            message: format!("array user compare callback {}", error.message),
+        };
+    }
+    error
+}
+
 fn callback_context_diagnostic(context: &str, error: Diagnostic) -> Diagnostic {
     match context {
         "array_map()" => array_map_callback_diagnostic(error),
@@ -103940,6 +104033,27 @@ fn array_walk_callback_too_few_arguments_message(error: &Diagnostic) -> Option<S
     let rest = error
         .message
         .strip_prefix("array_walk callback arity mismatch for ")?;
+    let (callable, expectation) = rest.split_once(": expected ")?;
+    let (expected, actual) = expectation.split_once(" argument(s), got ")?;
+    let expected = expected.parse::<usize>().ok()?;
+    let actual = actual.parse::<usize>().ok()?;
+    if actual >= expected {
+        return None;
+    }
+
+    Some(format!(
+        "Too few arguments to function {callable}, {actual} passed and exactly {expected} expected"
+    ))
+}
+
+fn array_user_compare_callback_argument_count_error_message(error: &Diagnostic) -> Option<String> {
+    if error.phase != Phase::Runtime {
+        return None;
+    }
+
+    let rest = error
+        .message
+        .strip_prefix("array user compare callback arity mismatch for ")?;
     let (callable, expectation) = rest.split_once(": expected ")?;
     let (expected, actual) = expectation.split_once(" argument(s), got ")?;
     let expected = expected.parse::<usize>().ok()?;
@@ -104028,6 +104142,13 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
         ("getprotobyname()" | "getservbyname()" | "getservbyport()", message)
             if message.starts_with("Argument #")
                 && message.ends_with(" must not contain any null bytes") =>
+        {
+            Some(format!("{function}: {message}"))
+        }
+        ("getenv()" | "putenv()", message)
+            if message.starts_with("Argument #")
+                && (message.ends_with(" must not contain any null bytes")
+                    || message.ends_with(" must have a valid syntax")) =>
         {
             Some(format!("{function}: {message}"))
         }
@@ -104130,7 +104251,10 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
             "Argument #3 ($flags) must be a valid flag (allowed flags: JSON_INVALID_UTF8_IGNORE)",
         )
         | ("ftruncate()", "Argument #2 ($size) must be greater than or equal to 0")
+        | ("sleep()", "Argument #1 ($seconds) must be greater than or equal to 0")
         | ("fgets()", "Argument #2 ($length) must be greater than 0")
+        | ("fread()", "Argument #2 ($length) must be greater than 0")
+        | ("usleep()", "Argument #1 ($microseconds) must be greater than or equal to 0")
         | ("stream_get_contents()", "Argument #2 ($length) must be greater than or equal to -1")
         | (
             "touch()",
@@ -104230,6 +104354,7 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
         (
             "sprintf()" | "printf()" | "vsprintf()" | "vprintf()" | "fprintf()" | "vfprintf()",
             "Missing format specifier at end of string"
+            | "Missing padding character"
             | "Precision must be an integer"
             | "Precision must be between -1 and 2147483647"
             | "Precision must be between 0 and 2147483647"
@@ -104240,6 +104365,11 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
         ) => Some(message.to_string()),
         ("sprintf()" | "printf()" | "vsprintf()" | "vprintf()" | "fprintf()" | "vfprintf()", message)
             if message.starts_with("Unknown format specifier ") =>
+        {
+            Some(message.to_string())
+        }
+        ("pack()", message)
+            if message.starts_with("Type ") && message.ends_with(": too few arguments") =>
         {
             Some(message.to_string())
         }
@@ -104734,6 +104864,7 @@ fn is_builtin(name: &str) -> bool {
             | "strrev"
             | "str_shuffle"
             | "str_rot13"
+            | "escapeshellarg"
             | "ucfirst"
             | "lcfirst"
             | "ucwords"
@@ -104990,6 +105121,7 @@ fn is_builtin(name: &str) -> bool {
             | "random_bytes"
             | "lcg_value"
             | "uniqid"
+            | "crypt"
             | "hash"
             | "hash_algos"
             | "hash_hmac"
@@ -105237,6 +105369,7 @@ fn is_builtin(name: &str) -> bool {
             | "tempnam"
             | "sys_get_temp_dir"
             | "sleep"
+            | "usleep"
             | "readlink"
             | "symlink"
             | "link"
@@ -105311,6 +105444,7 @@ fn is_builtin(name: &str) -> bool {
             | "is_file"
             | "is_readable"
             | "is_writable"
+            | "is_writeable"
             | "is_link"
             | "clearstatcache"
             | "register_shutdown_function"
@@ -113378,6 +113512,7 @@ impl PackFormatItem {
             b'l' => "l",
             b'i' => "i",
             b'I' => "I",
+            b'c' => "c",
             b'Q' => "Q",
             b'J' => "J",
             b'P' => "P",
@@ -113465,7 +113600,7 @@ impl Interpreter {
                         }
                     }
                 }
-                b'V' | b'l' | b'i' | b'I' | b'Q' | b'J' | b'P' | b'q' => {
+                b'c' | b'V' | b'l' | b'i' | b'I' | b'Q' | b'J' | b'P' | b'q' => {
                     let count = pack_numeric_repeat_count(item.repeat, args.len(), value_index);
                     for _ in 0..count {
                         let value =
@@ -113527,7 +113662,15 @@ impl Interpreter {
                     )?);
                 }
                 b'X' => {
-                    let count = pack_repeat_count("unpack()", "X", item.repeat, 0, span)?;
+                    let count = match item.repeat {
+                        PackRepeat::Star => {
+                            self.emit_display_warning("unpack(): Type X: '*' ignored", span)?;
+                            0
+                        }
+                        PackRepeat::Count(_) => {
+                            pack_repeat_count("unpack()", "X", item.repeat, 0, span)?
+                        }
+                    };
                     cursor = cursor.saturating_sub(count);
                 }
                 b'@' => {
@@ -113689,6 +113832,7 @@ fn parse_pack_format_items(
                     | b'h'
                     | b'A'
                     | b'Z'
+                    | b'c'
                     | b'V'
                     | b'l'
                     | b'i'
@@ -113709,6 +113853,7 @@ fn parse_pack_format_items(
                     | b'h'
                     | b'A'
                     | b'Z'
+                    | b'c'
                     | b'V'
                     | b'l'
                     | b'i'
@@ -113812,10 +113957,7 @@ fn pack_next_value<'a>(
     let Some(value) = args.get(*value_index) else {
         return Err(runtime_error(
             span,
-            RuntimeError::unsupported_call(
-                "pack()",
-                format!("not enough arguments for {code} format values in the current subset"),
-            ),
+            RuntimeError::unsupported_call("pack()", format!("Type {code}: too few arguments")),
         ));
     };
     *value_index += 1;
@@ -113896,6 +114038,7 @@ fn pack_fixed_item_size(code: u8) -> Option<usize> {
 
 fn pack_integer_bytes(code: u8, value: i64) -> Vec<u8> {
     match code {
+        b'c' => vec![value as u8],
         b'V' | b'I' => (value as u32).to_le_bytes().to_vec(),
         b'l' | b'i' => (value as i32).to_le_bytes().to_vec(),
         b'Q' | b'P' => (value as u64).to_le_bytes().to_vec(),
@@ -114448,7 +114591,10 @@ impl Interpreter {
 
         let value = string_compare_argument_bytes("hex2bin()", "string", &args[0], span)?;
         if value.len() % 2 != 0 {
-            self.emit_display_warning("hex2bin(): Input string must be hexadecimal string", span)?;
+            self.emit_display_warning(
+                "hex2bin(): Hexadecimal input string must have an even length",
+                span,
+            )?;
             return Ok(Value::Bool(false));
         }
 
@@ -114714,6 +114860,21 @@ impl Interpreter {
             .min(100)
     }
 
+    fn php_scalar_float_string(&self, value: f64) -> String {
+        match self
+            .ini_value("precision")
+            .as_deref()
+            .and_then(parse_ini_i64_prefix)
+        {
+            Some(-1) => format_php_shortest_float(value),
+            Some(precision) if precision > 0 => {
+                let precision = usize::try_from(precision).unwrap_or(100).min(100);
+                format_php_precision_float(value, precision)
+            }
+            _ => php_default_precision_float_string(value),
+        }
+    }
+
     fn php_serialize_precision(&self) -> Option<usize> {
         self.ini_value("serialize_precision")
             .as_deref()
@@ -114871,6 +115032,24 @@ fn format_php_precision_float(value: f64, precision: usize) -> String {
 
     let decimals = (precision as i32 - 1 - exponent).max(0) as usize;
     trim_decimal_suffix(&format!("{value:.decimals$}"))
+}
+
+fn format_php_shortest_float(value: f64) -> String {
+    if value.is_nan() {
+        return "NAN".to_string();
+    }
+    if value.is_infinite() {
+        return if value.is_sign_positive() {
+            "INF".to_string()
+        } else {
+            "-INF".to_string()
+        };
+    }
+    if value == 0.0 {
+        return "0".to_string();
+    }
+
+    value.to_string()
 }
 
 fn format_php_float_to_int_deprecation_value(value: f64) -> String {
@@ -115087,6 +115266,23 @@ fn call_str_rot13(args: &[Value], span: Span) -> CompileResult<Value> {
         };
     }
     Ok(interpreter_value_from_php_string_bytes(value))
+}
+
+fn call_escapeshellarg(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("escapeshellarg", args, 1, span)?;
+
+    let value = string_compare_argument_bytes("escapeshellarg()", "arg", &args[0], span)?;
+    let mut output = Vec::with_capacity(value.len() + 2);
+    output.push(b'\'');
+    for byte in value {
+        if byte == b'\'' {
+            output.extend_from_slice(b"'\\''");
+        } else {
+            output.push(byte);
+        }
+    }
+    output.push(b'\'');
+    Ok(interpreter_value_from_php_string_bytes(output))
 }
 
 fn call_crc32(args: &[Value], span: Span) -> CompileResult<Value> {
@@ -116016,10 +116212,12 @@ fn strip_tags_bytes(value: &[u8], allowed: &HashSet<String>) -> Vec<u8> {
 fn strip_tags_span(value: &[u8], start: usize, allowed: &HashSet<String>) -> Option<StripTagSpan> {
     let next = *value.get(start + 1)?;
     if next == b'?' {
-        return Some(StripTagSpan {
-            end: strip_tags_find_terminator(value, start + 2, b'?', b'>').unwrap_or(value.len()),
-            keep: false,
-        });
+        let end = if strip_tags_is_xml_processing_instruction(value, start) {
+            strip_tags_find_tag_end(value, start + 1, false).unwrap_or(value.len())
+        } else {
+            strip_tags_find_terminator(value, start + 2, b'?', b'>').unwrap_or(value.len())
+        };
+        return Some(StripTagSpan { end, keep: false });
     }
     if next == b'%' {
         return Some(StripTagSpan {
@@ -116039,13 +116237,20 @@ fn strip_tags_span(value: &[u8], start: usize, allowed: &HashSet<String>) -> Opt
         return None;
     }
 
-    let end = strip_tags_find_tag_end(value, start + 1)?;
+    let count_nested_lt = next == b'/' || next.is_ascii_alphabetic();
+    let end = strip_tags_find_tag_end(value, start + 1, count_nested_lt)?;
     let keep = strip_tags_html_tag_name(value, start + 1).is_some_and(
         |(name, name_end, boundary_valid)| {
             boundary_valid && name_end < end && allowed.contains(&name)
         },
     );
     Some(StripTagSpan { end, keep })
+}
+
+fn strip_tags_is_xml_processing_instruction(value: &[u8], start: usize) -> bool {
+    value
+        .get(start + 2..start + 5)
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case(b"xml"))
 }
 
 fn strip_tags_find_terminator(
@@ -116073,8 +116278,9 @@ fn strip_tags_find_comment_end(value: &[u8], mut index: usize) -> Option<usize> 
     None
 }
 
-fn strip_tags_find_tag_end(value: &[u8], mut index: usize) -> Option<usize> {
+fn strip_tags_find_tag_end(value: &[u8], mut index: usize, count_nested_lt: bool) -> Option<usize> {
     let mut quote = None;
+    let mut depth = 0usize;
     while index < value.len() {
         let byte = value[index];
         if let Some(current_quote) = quote {
@@ -116083,7 +116289,17 @@ fn strip_tags_find_tag_end(value: &[u8], mut index: usize) -> Option<usize> {
             }
         } else if byte == b'\'' || byte == b'"' {
             quote = Some(byte);
+        } else if count_nested_lt
+            && byte == b'<'
+            && !matches!(value.get(index + 1), Some(next) if next.is_ascii_whitespace())
+        {
+            depth += 1;
         } else if byte == b'>' {
+            if depth > 0 {
+                depth -= 1;
+                index += 1;
+                continue;
+            }
             return Some(index + 1);
         }
         index += 1;
@@ -119182,6 +119398,7 @@ fn call_substr(args: &[Value], span: Span) -> CompileResult<Value> {
     };
 
     let end = match args.get(2) {
+        Some(Value::Null) => value_len,
         Some(Value::Int(length)) if *length >= 0 => (start + *length).min(value_len),
         Some(Value::Int(length)) => (value_len + *length).max(0),
         Some(other) => {
@@ -126068,7 +126285,7 @@ impl Interpreter {
                 tree_walk_binary_string_utf8(value, function, span).map(str::to_owned)
             }
             Value::Null | Value::Bool(_) | Value::Int(_) => Ok(value.echo_string()),
-            Value::Float(value) => Ok(php_default_precision_float_string(*value)),
+            Value::Float(value) => Ok(self.php_scalar_float_string(*value)),
             Value::Array(_) | Value::Resource(_) | Value::Closure(_) => {
                 Err(sprintf_format_type_error(function, value, span))
             }
@@ -126096,7 +126313,7 @@ impl Interpreter {
                 Ok("Array".to_string())
             }
             Value::Resource(id) => Ok(format!("Resource id #{id}")),
-            Value::Float(value) => Ok(php_default_precision_float_string(*value)),
+            Value::Float(value) => Ok(self.php_scalar_float_string(*value)),
             Value::Object(object) => {
                 if let Some(output) =
                     self.object_to_string_with_magic(object.clone(), function, span)?
@@ -126193,10 +126410,9 @@ fn parse_sprintf_placeholder(
             }
             b'\'' => {
                 index += 1;
-                let ch = format[index..]
-                    .chars()
-                    .next()
-                    .ok_or(SprintfParseError::MissingFormatSpecifier)?;
+                let ch = format[index..].chars().next().ok_or_else(|| {
+                    SprintfParseError::ValueError("Missing padding character".to_string())
+                })?;
                 pad = ch;
                 index += ch.len_utf8();
             }
@@ -127458,6 +127674,16 @@ fn format_php_serialized_value(value: &Value, output: &mut String) -> Option<()>
 }
 
 fn format_php_serialized_float(value: f64) -> String {
+    if value.is_nan() {
+        return "NAN".to_string();
+    }
+    if value.is_infinite() {
+        return if value.is_sign_positive() {
+            "INF".to_string()
+        } else {
+            "-INF".to_string()
+        };
+    }
     if value != 0.0 && value.is_finite() && value.abs() < 0.0001 {
         return format!("{value:.16E}")
             .replace("E-0", "E-")
@@ -130267,6 +130493,24 @@ fn call_hash_algos(args: &[Value], span: Span) -> CompileResult<Value> {
     Ok(Value::Array(algorithms))
 }
 
+fn call_crypt(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("crypt", args, 2, span)?;
+
+    let _string = string_builtin_argument("crypt()", "string", &args[0], span)?;
+    let salt = string_builtin_argument("crypt()", "salt", &args[1], span)?;
+    if salt == "_" {
+        return Ok(Value::String("*0".to_string()));
+    }
+
+    Err(runtime_error(
+        span,
+        RuntimeError::unsupported_call(
+            "crypt()",
+            "only the invalid '_' salt fallback is implemented in the current subset",
+        ),
+    ))
+}
+
 fn hash_raw_output_argument(value: Option<&Value>, span: Span) -> CompileResult<bool> {
     match value {
         Some(Value::Array(_)) => Err(runtime_error(
@@ -132442,7 +132686,7 @@ impl Interpreter {
                 span,
                 RuntimeError::unsupported_call(
                     "getenv()",
-                    "name argument cannot contain null bytes in the current subset",
+                    "Argument #1 ($name) must not contain any null bytes",
                 ),
             ));
         }
@@ -134862,7 +135106,7 @@ fn apply_putenv_assignment(assignment: &str, span: Span) -> CompileResult<Value>
             span,
             RuntimeError::unsupported_call(
                 "putenv()",
-                "assignment argument cannot contain null bytes in the current subset",
+                "Argument #1 ($assignment) must not contain any null bytes",
             ),
         ));
     }
@@ -134873,7 +135117,7 @@ fn apply_putenv_assignment(assignment: &str, span: Span) -> CompileResult<Value>
                 span,
                 RuntimeError::unsupported_call(
                     "putenv()",
-                    "assignment argument must start with a non-empty name in the current subset",
+                    "Argument #1 ($assignment) must have a valid syntax",
                 ),
             ));
         }
@@ -134884,7 +135128,7 @@ fn apply_putenv_assignment(assignment: &str, span: Span) -> CompileResult<Value>
                 span,
                 RuntimeError::unsupported_call(
                     "putenv()",
-                    "assignment argument must be non-empty in the current subset",
+                    "Argument #1 ($assignment) must have a valid syntax",
                 ),
             ));
         }
@@ -140551,6 +140795,79 @@ fn arity_expectation(required: usize, total: usize, variadic: bool) -> ArityExpe
 fn callable_name(name: &str) -> String {
     let name = name.trim_start_matches('\\');
     format!("{name}()")
+}
+
+fn array_keys_matching_loose(
+    array: &PhpArray,
+    search_value: &Value,
+    span: Span,
+) -> CompileResult<PhpArray> {
+    let mut keys = PhpArray::new();
+    for entry in array.entries() {
+        if array_keys_loose_values_equal(search_value, entry.value(), span)? {
+            let key = i64::try_from(keys.len()).expect("array length fits in i64");
+            keys.insert(key, value_from_array_key(&entry.key));
+        }
+    }
+
+    Ok(keys)
+}
+
+fn array_keys_loose_values_equal(left: &Value, right: &Value, span: Span) -> CompileResult<bool> {
+    match (left, right) {
+        (Value::Array(left), Value::Array(right)) => left
+            .php_equality_checked(right)
+            .map_err(|error| runtime_error(span, error)),
+        (Value::Array(array), other) | (other, Value::Array(array)) => {
+            array_keys_array_equals_non_array(array, other, span)
+        }
+        (Value::Object(_) | Value::Closure(_), _) | (_, Value::Object(_) | Value::Closure(_)) => {
+            Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "array_keys()",
+                    "object search values and object values are not implemented",
+                ),
+            ))
+        }
+        (Value::Resource(_), _) | (_, Value::Resource(_)) => Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "array_keys()",
+                "resource comparisons are not implemented",
+            ),
+        )),
+        _ => left
+            .php_cmp_checked(right, Comparison::Eq)
+            .map_err(|error| runtime_error(span, error)),
+    }
+}
+
+fn array_keys_array_equals_non_array(
+    array: &PhpArray,
+    other: &Value,
+    span: Span,
+) -> CompileResult<bool> {
+    match other {
+        Value::Null => Ok(array.is_empty()),
+        Value::Bool(value) => Ok(array.is_empty() != *value),
+        Value::Int(_) | Value::Float(_) | Value::String(_) | Value::BinaryString(_) => Ok(false),
+        Value::Object(_) | Value::Closure(_) => Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "array_keys()",
+                "object search values and object values are not implemented",
+            ),
+        )),
+        Value::Resource(_) => Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "array_keys()",
+                "resource comparisons are not implemented",
+            ),
+        )),
+        Value::Array(_) => unreachable!("array operands are handled before non-array comparison"),
+    }
 }
 
 fn mysqli_stmt_execute_function_label(key: &str) -> Option<&'static str> {

@@ -33,6 +33,34 @@ echo is_writable({missing}) ? "writable" : "missing";
 }
 
 #[test]
+fn is_writeable_alias_matches_current_is_writable_slice() {
+    let temp = TempWritableFixture::new("alias");
+    temp.write_file("target.txt", "target");
+
+    let source = format!(
+        r#"<?php
+$call = "is_writeable";
+echo function_exists($call) ? "known" : "missing";
+echo "|";
+echo is_callable($call) ? "callable" : "not-callable";
+echo "|";
+echo is_writeable({target}) ? "writable" : "not-writable";
+echo "|";
+echo is_writeable({missing}) ? "writable" : "missing";
+echo "|";
+echo $call({target}) ? "dynamic" : "not-dynamic";
+"#,
+        target = php_string(&temp.path("target.txt")),
+        missing = php_string(&temp.path("missing.txt")),
+    );
+
+    let execution = run_source(&source).unwrap();
+
+    assert_eq!(execution.stdout, "known|callable|writable|missing|dynamic");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn is_writable_is_available_through_string_valued_calls() {
     let temp = TempWritableFixture::new("dynamic");
     temp.write_file("target.txt", "target");
@@ -56,6 +84,28 @@ echo $call({target}) ? "writable" : "not-writable";
 }
 
 #[test]
+fn is_writable_scalar_false_cases_match_bounded_metadata_slice() {
+    let execution = run_source(
+        r#"<?php
+var_dump(is_writeable(false));
+var_dump(is_writable(0));
+var_dump(is_writable(-2.34555));
+var_dump(is_writeable(true));
+var_dump(is_writable(""));
+var_dump(is_writeable("contains\0nul"));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "bool(false)\nbool(false)\nbool(false)\nbool(false)\nbool(false)\nbool(false)\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn is_writable_rejects_forms_outside_current_subset() {
     let arity = run_source("<?php\necho is_writable();\n").unwrap();
     assert_eq!(arity.exit_code, 255);
@@ -68,15 +118,6 @@ fn is_writable_rejects_forms_outside_current_subset() {
         arity.stdout
     );
 
-    let type_error = run_source("<?php\necho is_writable(42);\n").unwrap_err();
-    assert_eq!(type_error.phase, Phase::Runtime);
-    assert_eq!(type_error.line, 2);
-    assert_eq!(type_error.column, 6);
-    assert_eq!(
-        type_error.message,
-        "unsupported call is_writable(): path argument must be string in the current subset, got int"
-    );
-
     let stream = run_source("<?php\necho is_writable('php://memory');\n").unwrap_err();
     assert_eq!(stream.phase, Phase::Runtime);
     assert_eq!(stream.line, 2);
@@ -84,6 +125,15 @@ fn is_writable_rejects_forms_outside_current_subset() {
     assert_eq!(
         stream.message,
         "unsupported call is_writable(): stream wrappers are not supported in the current subset"
+    );
+
+    let alias_type_error = run_source("<?php\necho is_writeable([]);\n").unwrap_err();
+    assert_eq!(alias_type_error.phase, Phase::Runtime);
+    assert_eq!(alias_type_error.line, 2);
+    assert_eq!(alias_type_error.column, 6);
+    assert_eq!(
+        alias_type_error.message,
+        "unsupported call is_writeable(): path argument must be string in the current subset, got array"
     );
 }
 

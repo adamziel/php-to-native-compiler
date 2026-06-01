@@ -39,6 +39,26 @@ echo file_exists(__DIR__ . "/missing-file.php") ? "exists" : "missing";
 }
 
 #[test]
+fn file_exists_returns_false_for_false_and_empty_path_inputs() {
+    let execution = run_source_with_source_file(
+        r#"<?php
+echo file_exists(false) ? "true" : "false";
+echo "|";
+echo file_exists("") ? "true" : "false";
+echo "|";
+echo file_exists(" ") ? "true" : "false";
+echo "|";
+echo file_exists("|") ? "true" : "false";
+"#,
+        fixture_source_file(),
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "false|false|false|false");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn file_exists_is_available_through_string_valued_calls() {
     let execution = run_source_with_source_file(
         r#"<?php

@@ -99,6 +99,23 @@ try {
 }
 
 #[test]
+fn sprintf_missing_custom_padding_character_is_catchable_valueerror() {
+    let execution = run_source(
+        r#"<?php
+try {
+    var_dump(sprintf("%'", "foo"));
+} catch (ValueError $e) {
+    echo $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "Missing padding character");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn vprintf_handles_flagged_percent_and_binary_char_output() {
     let execution = run_source(
         r#"<?php

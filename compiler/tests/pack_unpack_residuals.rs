@@ -30,6 +30,25 @@ printf("0x%08x 0x%08x\n", unpack("l", $data, 3)[1], unpack("@4/l", $data, 3)[1])
 }
 
 #[test]
+fn pack_signed_char_writes_low_byte_values() {
+    let execution = run_source(
+        r#"<?php
+echo bin2hex(pack("c", -1)), "\n";
+echo bin2hex(pack("c", 0)), "\n";
+echo bin2hex(pack("c", 127)), "\n";
+echo bin2hex(pack("c", 128)), "\n";
+echo bin2hex(pack("c", 255)), "\n";
+echo bin2hex(pack("c", 256)), "\n";
+echo base64_encode(pack("c", 255)), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "ff\n00\n7f\n80\nff\n00\n/w==\n");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn pack_unpack_string_fields_and_cursor_controls() {
     let execution = run_source(
         r#"<?php
@@ -119,5 +138,35 @@ foreach ([10, -1] as $offset) {
 unpack(): Argument #3 ($offset) must be contained in argument #2 ($data)\n\
 unpack(): Argument #3 ($offset) must be contained in argument #2 ($data)\n"
     );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn pack_unpack_cover_star_cursor_warning_and_too_few_valueerror() {
+    let execution = run_source(
+        r#"<?php
+var_dump(unpack("X*", ""));
+try {
+    var_dump(pack("E2E2147483647H*", 0x0, 0x0, 0x0));
+} catch (ValueError $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert!(
+        execution
+            .stdout
+            .contains("Warning: unpack(): Type X: '*' ignored"),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution.stdout.contains("array(0) {\n}"),
+        "{}",
+        execution.stdout
+    );
+    assert!(execution.stdout.ends_with("Type E: too few arguments\n"));
     assert_eq!(execution.exit_code, 0);
 }

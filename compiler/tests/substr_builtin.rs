@@ -20,12 +20,14 @@ echo substr("abcdef", -4, 2);
 echo "|";
 echo substr("abcdef", 99) === "" ? "empty" : "nonempty";
 echo "|";
+echo substr("abcdef", 2, null);
+echo "|";
 echo substr(12345, 1, 3);
 "#,
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "cdef|cde|ef|abcde|cd|empty|234");
+    assert_eq!(execution.stdout, "cdef|cde|ef|abcde|cd|empty|cdef|234");
     assert_eq!(execution.exit_code, 0);
 }
 

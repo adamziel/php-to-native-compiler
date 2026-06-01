@@ -96,6 +96,35 @@ echo $dynamic[0], "|", $dynamic[1], "|", $dynamic[2];
 }
 
 #[test]
+fn array_keys_loose_mode_matches_empty_arrays_like_php_membership_searches() {
+    let source = r#"<?php
+$items = [1 => "1", 0 => "0", -1 => "-1", 2 => null, 3 => [], "php" => "php", "" => ""];
+
+function show_keys($keys) {
+    echo count($keys), ":";
+    foreach ($keys as $key) {
+        echo "[", $key === "" ? "<empty>" : $key, "]";
+    }
+    echo "\n";
+}
+
+show_keys(array_keys($items, []));
+show_keys(array_keys($items, false));
+show_keys(array_keys($items, true));
+show_keys(array_keys($items, null));
+show_keys(array_keys($items, ""));
+show_keys(array_keys($items, 0));
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "2:[2][3]\n4:[0][2][3][<empty>]\n3:[1][-1][php]\n3:[2][3][<empty>]\n2:[2][<empty>]\n2:[0][2]\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn array_keys_strict_mode_filters_values_with_scalar_identity() {
     let source = r#"<?php
 $items = [];
@@ -203,27 +232,7 @@ fn array_keys_rejects_non_bool_strict_mode_argument() {
 }
 
 #[test]
-fn array_keys_rejects_loose_array_and_object_search_gaps() {
-    let array_search_value_error =
-        runtime_error("<?php\n$items = [1];\necho array_keys($items, []);\n");
-
-    assert_eq!(array_search_value_error.line, 3);
-    assert_eq!(array_search_value_error.column, 6);
-    assert_eq!(
-        array_search_value_error.message,
-        "unsupported call array_keys(): array search values and array values are not implemented"
-    );
-
-    let array_value_error =
-        runtime_error("<?php\n$items = [[]];\necho array_keys($items, \"needle\");\n");
-
-    assert_eq!(array_value_error.line, 3);
-    assert_eq!(array_value_error.column, 6);
-    assert_eq!(
-        array_value_error.message,
-        "unsupported call array_keys(): array search values and array values are not implemented"
-    );
-
+fn array_keys_rejects_loose_object_search_gaps() {
     let object_error = runtime_error(
         r#"<?php
 class Box {}

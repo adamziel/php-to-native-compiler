@@ -69,6 +69,36 @@ echo fgets($stream, 2);
 }
 
 #[test]
+fn fread_nonpositive_lengths_are_catchable() {
+    let execution = run_source(
+        r#"<?php
+$stream = fopen("php://memory", "w+");
+fwrite($stream, "abcdef");
+rewind($stream);
+try {
+    var_dump(fread($stream, 0));
+} catch (ValueError $e) {
+    echo $e->getMessage() . "\n";
+}
+try {
+    var_dump(fread($stream, -10));
+} catch (ValueError $e) {
+    echo $e->getMessage() . "\n";
+}
+echo fread($stream, 2);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "fread(): Argument #2 ($length) must be greater than 0\nfread(): Argument #2 ($length) must be greater than 0\nab"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn get_resource_id_matches_integer_cast_for_open_and_closed_resources() {
     let execution = run_source(
         r#"<?php
@@ -1349,13 +1379,13 @@ fn stream_resource_builtins_reject_forms_outside_current_subset() {
     );
 
     let bad_length =
-        run_source("<?php\n$s = fopen('php://memory', 'w+'); fread($s, -1);\n").unwrap_err();
+        run_source("<?php\n$s = fopen('php://memory', 'w+'); fread($s, 'bad');\n").unwrap_err();
     assert_eq!(bad_length.phase, Phase::Runtime);
     assert_eq!(bad_length.line, 2);
     assert_eq!(bad_length.column, 35);
     assert_eq!(
         bad_length.message,
-        "unsupported call fread(): length argument must be non-negative in the current subset"
+        "unsupported call fread(): length argument must be int in the current subset, got string"
     );
 
     let bad_whence =

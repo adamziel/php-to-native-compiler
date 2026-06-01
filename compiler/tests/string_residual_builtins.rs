@@ -88,6 +88,34 @@ var_dump(hex2bin("AH"));
 }
 
 #[test]
+fn hex2bin_reports_odd_length_before_hex_digit_validation() {
+    let execution = run_source(
+        r#"<?php
+var_dump(hex2bin("123"));
+var_dump(hex2bin("AH"));
+"#,
+    )
+    .unwrap();
+
+    assert!(
+        execution
+            .stdout
+            .contains("Warning: hex2bin(): Hexadecimal input string must have an even length"),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution
+            .stdout
+            .contains("Warning: hex2bin(): Input string must be hexadecimal string"),
+        "{}",
+        execution.stdout
+    );
+    assert_eq!(execution.stdout.matches("bool(false)").count(), 2);
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn bounded_pack_unpack_hex_and_padding_formats_preserve_bytes() {
     let execution = run_source(
         r#"<?php

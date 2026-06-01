@@ -26,6 +26,67 @@ var_dump(intdiv(-3, 2));
 }
 
 #[test]
+fn math_constants_use_precision_minus_one_for_string_formatting() {
+    let execution = run_source(
+        r#"<?php
+ini_set("precision", "-1");
+$constants = array(
+    "M_E",
+    "M_LOG2E",
+    "M_LOG10E",
+    "M_LN2",
+    "M_LN10",
+    "M_PI",
+    "M_PI_2",
+    "M_PI_4",
+    "M_1_PI",
+    "M_2_PI",
+    "M_SQRTPI",
+    "M_2_SQRTPI",
+    "M_LNPI",
+    "M_EULER",
+    "M_SQRT2",
+    "M_SQRT1_2",
+    "M_SQRT3"
+);
+foreach ($constants as $constant) {
+    printf("%-10s: %s\n", $constant, constant($constant));
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "M_E       : 2.718281828459045\nM_LOG2E   : 1.4426950408889634\nM_LOG10E  : 0.4342944819032518\nM_LN2     : 0.6931471805599453\nM_LN10    : 2.302585092994046\nM_PI      : 3.141592653589793\nM_PI_2    : 1.5707963267948966\nM_PI_4    : 0.7853981633974483\nM_1_PI    : 0.3183098861837907\nM_2_PI    : 0.6366197723675814\nM_SQRTPI  : 1.772453850905516\nM_2_SQRTPI: 1.1283791670955126\nM_LNPI    : 1.1447298858494002\nM_EULER   : 0.5772156649015329\nM_SQRT2   : 1.4142135623730951\nM_SQRT1_2 : 0.7071067811865476\nM_SQRT3   : 1.7320508075688772\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn serialize_uses_php_nonfinite_float_spellings() {
+    let execution = run_source(
+        r#"<?php
+var_dump(serialize(-INF));
+var_dump(unserialize(serialize(-INF)));
+var_dump(serialize(INF));
+var_dump(unserialize(serialize(INF)));
+var_dump(serialize(NAN));
+var_dump(unserialize(serialize(NAN)));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "string(7) \"d:-INF;\"\nfloat(-INF)\nstring(6) \"d:INF;\"\nfloat(INF)\nstring(6) \"d:NAN;\"\nfloat(NAN)\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn set_time_limit_accepts_supported_cli_noop() {
     let execution = run_source(
         r#"<?php

@@ -276,6 +276,40 @@ echo $value === false ? "false" : "value";
 }
 
 #[test]
+fn file_get_contents_directory_read_emits_notice_and_returns_false() {
+    let directory = std::env::temp_dir().join(format!(
+        "{}-{}-phpc-file-get-contents-directory",
+        std::process::id(),
+        line!()
+    ));
+    fs::create_dir_all(&directory).expect("temporary directory can be created");
+    let source = format!(
+        r#"<?php
+$value = file_get_contents("{}");
+echo $value === false ? "false" : "value";
+"#,
+        directory.display()
+    );
+    let execution = run_source(&source).unwrap();
+
+    assert!(
+        execution.stdout.contains(
+            "Notice: file_get_contents(): Read of 8192 bytes failed with errno=21 Is a directory"
+        ),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution.stdout.ends_with("\nfalse"),
+        "{}",
+        execution.stdout
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+    let _ = fs::remove_dir_all(directory);
+}
+
+#[test]
 fn file_get_contents_recoverable_warnings_route_through_bounded_error_handlers() {
     let handled = run_source_with_source_file(
         r#"<?php

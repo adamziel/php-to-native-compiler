@@ -59,3 +59,44 @@ try {
     );
     assert_eq!(execution.exit_code, 0);
 }
+
+#[test]
+fn array_udiff_callback_return_and_arity_edges_match_php() {
+    let execution = run_source(
+        r#"<?php
+echo "*** Testing array_udiff() : usage variation ***\n";
+
+$arr1 = array(1);
+$arr2 = array(1);
+
+echo "\n-- comparison function with an incorrect return value --\n";
+function incorrect_return_value($val1, $val2) {
+    return array(1);
+}
+var_dump(array_udiff($arr1, $arr2, "incorrect_return_value"));
+
+echo "\n-- comparison function taking too many parameters --\n";
+function too_many_parameters($val1, $val2, $val3) {
+    return 0;
+}
+try {
+    var_dump(array_udiff($arr1, $arr2, "too_many_parameters"));
+} catch (Throwable $e) {
+    echo "Exception: " . $e->getMessage() . "\n";
+}
+
+echo "\n-- comparison function taking too few parameters --\n";
+function too_few_parameters($val1) {
+    return 0;
+}
+var_dump(array_udiff($arr1, $arr2, "too_few_parameters"));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "*** Testing array_udiff() : usage variation ***\n\n-- comparison function with an incorrect return value --\narray(1) {\n  [0]=>\n  int(1)\n}\n\n-- comparison function taking too many parameters --\nException: Too few arguments to function too_many_parameters(), 2 passed and exactly 3 expected\n\n-- comparison function taking too few parameters --\narray(0) {\n}\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}

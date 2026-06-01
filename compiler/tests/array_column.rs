@@ -189,6 +189,43 @@ try {
 }
 
 #[test]
+fn array_column_rejects_non_int_string_null_keys_in_strict_types() {
+    let source = r#"<?php
+declare(strict_types=1);
+
+$rows = [["php7", "foo"], ["php8", "bar"]];
+$indexed = [["php" => 7, "foo"], ["php" => 8, "bar"]];
+
+foreach ([false, true, 1.0, []] as $key) {
+    try {
+        var_dump(array_column($rows, $key));
+    } catch (TypeError $e) {
+        echo $e->getMessage(), "\n";
+    }
+}
+
+foreach ([false, true, 1.0, []] as $key) {
+    try {
+        var_dump(array_column($indexed, "php", $key));
+    } catch (TypeError $e) {
+        echo $e->getMessage(), "\n";
+    }
+}
+
+print_r(array_column($rows, 0));
+print_r(array_column($rows, "1"));
+print_r(array_column($rows, null));
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "array_column(): Argument #2 ($column_key) must be of type string|int|null, false given\narray_column(): Argument #2 ($column_key) must be of type string|int|null, true given\narray_column(): Argument #2 ($column_key) must be of type string|int|null, float given\narray_column(): Argument #2 ($column_key) must be of type string|int|null, array given\narray_column(): Argument #3 ($index_key) must be of type string|int|null, false given\narray_column(): Argument #3 ($index_key) must be of type string|int|null, true given\narray_column(): Argument #3 ($index_key) must be of type string|int|null, float given\narray_column(): Argument #3 ($index_key) must be of type string|int|null, array given\nArray\n(\n    [0] => php7\n    [1] => php8\n)\nArray\n(\n    [0] => foo\n    [1] => bar\n)\nArray\n(\n    [0] => Array\n        (\n            [0] => php7\n            [1] => foo\n        )\n\n    [1] => Array\n        (\n            [0] => php8\n            [1] => bar\n        )\n\n)\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn array_column_uses_object_string_keys_numeric_object_properties_and_magic_get() {
     let source = r#"<?php
 class ColumnKey {

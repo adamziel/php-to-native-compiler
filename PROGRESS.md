@@ -18,6 +18,44 @@ denominators that exclude BORKED rows are not public progress.
 
 Current public score: **5363 / 20294 pinned runnable PHPTs = 26.43%**.
 
+Local supervisor note: the next worker-integrated focused source batch covers
+8 additional target PHPT rows: `substr.phpt`, `fread_error.phpt`,
+`sleep_error.phpt`, `usleep_basic.phpt`, `usleep_error.phpt`,
+`is_writable_error.phpt`, `base64_encode_basic_001.phpt`, and
+`base64_loop_001.phpt`. Worker PHPT verification passed `8 / 8`; supervisor
+focused Rust passed `59 / 59`, build passed, and integrated PHPT verification
+passed `8 / 8`. This is not a public score update until checkpoint validation
+and a full pinned PHPT gate complete.
+
+Local supervisor note: the next string/security worker batch is integrated in
+source for `bug45485.phpt`, `bug78003.phpt`, `bug51059.phpt`, and
+`escapeshellarg_basic.phpt`; worker PHPT verification passed `4 / 4`,
+supervisor focused Rust passed `11 / 11`, build passed, and integrated PHPT
+verification passed `4 / 4`. This is not a public score update until
+checkpoint validation and a full pinned PHPT gate complete.
+
+Local supervisor note: the next array worker batch is integrated in source for
+`array_keys_variation_003.phpt` and `array_udiff_variation5.phpt`; worker PHPT
+verification passed `2 / 2`, supervisor focused Rust passed `12 / 12`, build
+passed, and integrated PHPT verification passed `2 / 2`. The combined
+supervisor focused gate across all touched worker suites passed `82 / 82` Rust
+tests, and the combined selected PHPT check passed `14 / 14`.
+This is not a public score update until checkpoint validation and a full pinned
+PHPT gate complete.
+
+Local supervisor note: five completed sidecar lanes are now integrated in
+source for 11 additional focused PHPT rows: `putenv.phpt`,
+`putenv_and_getenv_reject_null_bytes.phpt`, `file_exists_variation1.phpt`,
+`file_get_contents_error_folder.phpt`, `bug61660.phpt`, `bug67249.phpt`,
+`bug75075.phpt`, `bug78833.phpt`,
+`array_column_scalar_index_strict_types.phpt`, `math/constants.phpt`, and
+`math/bug27646.phpt`, plus the unique `is_writable_variation1.phpt` and
+`is_writable_variation3.phpt` rows from the filesystem metadata lane. This is
+verified by the supervisor with `162 / 162` focused Rust tests,
+`cargo build -p phpc --bin phpc`, and `27 / 27` selected PHPT rows. This is
+not a public score update until checkpoint validation and a full pinned PHPT
+gate complete.
+
 Local supervisor note: post-Batch024 focused source work is verified for
 `count_symbol_table.phpt`, `strcasecmp_basic.phpt`, trim/rtrim rows, and
 replacement-family rows. Focused Rust passed `68 / 68`, focused `php_runtime`

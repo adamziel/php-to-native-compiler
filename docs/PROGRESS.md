@@ -4,6 +4,78 @@
 
 Implemented:
 
+- Integrated five completed sidecar score lanes, adding eleven more focused
+  PHPT candidates to the next checkpoint batch: `putenv.phpt`,
+  `putenv_and_getenv_reject_null_bytes.phpt`,
+  `file_exists_variation1.phpt`, `file_get_contents_error_folder.phpt`,
+  `bug61660.phpt`, `bug67249.phpt`, `bug75075.phpt`, `bug78833.phpt`,
+  `array_column_scalar_index_strict_types.phpt`, `math/constants.phpt`, and
+  `math/bug27646.phpt`, `is_writable_variation1.phpt`, and
+  `is_writable_variation3.phpt`. The interpreter now covers PHP-shaped catchable env
+  `ValueError`s; false/empty `file_exists()` path forms; local-directory
+  `file_get_contents()` notice-plus-`false`; `hex2bin()` odd-length warnings;
+  missing custom sprintf padding diagnostics; `unpack("X*")` warning-and-ignore
+  behavior; pack-side too-few-value `ValueError`s; strict-types
+  `array_column()` key rejection; active-precision float string conversion for
+  formatter `%s`; non-finite float `serialize()` spellings; and scalar
+  false-case `is_writable()` / `is_writeable()` metadata predicates.
+  Supervisor verification passed `162 / 162` focused Rust tests across the
+  touched suites, `cargo build -p phpc --bin phpc`, and `27 / 27` selected
+  PHPT rows using `/tmp/phpc-target-integrate-batch-workers/debug/phpc`.
+  Unsupported edges remain broad scalar/path coercion parity, full stream and
+  formatter/pack grammars, broad strict-types enforcement, exact
+  precision/serialization parity beyond the covered rows, references/COW, and
+  native lowering.
+
+- Integrated the next worker-produced PHPT score batch. The interpreter now
+  covers `substr($string, $offset, null)` as omitted length; PHP-shaped
+  catchable nonpositive-length `fread()` errors; negative `sleep()` and
+  `usleep()` `ValueError` diagnostics with internal builtin frames; bounded
+  direct/dynamic/reflection `usleep()`; the runtime `is_writeable()` alias for
+  the existing local `is_writable()` slice; and pack-side signed-byte
+  `pack("c", ...)` so the reached base64 PHPT loops can feed existing binary
+  base64 support. Focused worker PHPT verification passed `8 / 8` for
+  `substr.phpt`, `fread_error.phpt`, `sleep_error.phpt`, `usleep_basic.phpt`,
+  `usleep_error.phpt`, `is_writable_error.phpt`,
+  `base64_encode_basic_001.phpt`, and `base64_loop_001.phpt`; supervisor
+  focused Rust passed `59 / 59`, `cargo build -p phpc --bin phpc` passed, and
+  integrated PHPT verification passed `8 / 8` from
+  `/tmp/phpc-target-integrate-batch-workers`. Unsupported edges remain broad
+  scalar coercion parity, interrupted/precise sleep timing, full stream
+  resources, unpack-side byte formats, unsigned-byte `C`, native lowering, and
+  exact diagnostics beyond the focused rows.
+
+- Integrated the next string/security focused worker batch. Bounded
+  `strip_tags()` now strips XML processing-instruction spans beginning
+  `<?xml`/`<?XML` through the next tag end and strips the reached malformed
+  nested-angle forms `<foo<>bar>`, `<foo<!>bar>`, and `<foo<?>bar>` through the
+  outer close. The interpreter also recognizes Unix `escapeshellarg()` for the
+  focused single-quote escaping PHPT row and recognizes `crypt($string, "_")`
+  as the PHP invalid-salt fallback marker `*0`. Focused worker PHPT
+  verification passed `4 / 4` for `bug45485.phpt`, `bug78003.phpt`,
+  `bug51059.phpt`, and `escapeshellarg_basic.phpt`; supervisor focused Rust
+  passed `11 / 11`, `cargo build -p phpc --bin phpc` passed, and integrated
+  PHPT verification passed `4 / 4` from
+  `/tmp/phpc-target-integrate-batch-workers`.
+  Unsupported edges remain full malformed HTML/XML tokenizer parity, shell
+  execution/platform quoting, real crypt algorithms/salt validation,
+  cryptographic guarantees, broad coercion diagnostics, and native lowering.
+
+- Integrated the next focused array worker batch. Loose `array_keys()` filtering
+  now handles bounded PHP membership-style array comparisons for arrays against
+  `null`, booleans, scalars, and arrays, covering
+  `array_keys_variation_003.phpt` while leaving object/resource/reference and
+  recursive array comparison edges unsupported. `array_udiff()` string
+  user-compare callbacks now report callbacks requiring more than the two
+  supplied comparison values as catchable `ArgumentCountError`s with PHP's
+  callback message text, covering `array_udiff_variation5.phpt` without
+  broadening unrelated callback forms. Worker PHPT verification passed `2 / 2`;
+  supervisor focused Rust passed `12 / 12`, `cargo build -p phpc --bin phpc`
+  passed, and integrated PHPT verification passed `2 / 2` from
+  `/tmp/phpc-target-integrate-batch-workers`. The combined supervisor focused
+  gate across all touched worker suites passed `82 / 82` Rust tests, and the
+  combined selected PHPT check passed `14 / 14`.
+
 - Integrated the next high-parallel focused PHPT score batch. The interpreter
   now covers the reached PHP-shaped diagnostics and bounded behavior for
   `array_change_key_case_flag_error.phpt`, `array_chunk2.phpt`,
