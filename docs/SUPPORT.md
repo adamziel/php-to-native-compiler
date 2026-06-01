@@ -5594,6 +5594,11 @@
   rows. Full decimal prerounding parity, high positive precision/exponent
   parity, every floating-point boundary case, exact cross-version diagnostics,
   and native lowering remain unsupported.
+  `deg2rad($num)` and `rad2deg($num)` accept the current bounded math scalar
+  numeric coercions and use PHP's observable operation order for the selected
+  scalar and 64-bit integer compatibility rows. Broader libm/platform parity
+  for unrelated transcendental functions, exact diagnostics for all coercions,
+  and native lowering remain unsupported.
   `number_format($num, $decimals = 0, $decimal_separator = ".", $thousands_separator = ",")`
   accepts current finite numeric scalar values, full typed numeric strings,
   optional integer decimals including negative decimal positions, and
@@ -11213,6 +11218,10 @@
   very large positive precision/exponent parity, broad historical PHP-version
   rounding differences, unsupported parser shapes in broader PHPT drivers, and
   native lowering beyond function-table introspection
+- `deg2rad()`/`rad2deg()` outside the selected scalar numeric interpreter
+  slice: broader libm/platform parity for unrelated math builtins, exact
+  diagnostics for every coercion path, and native lowering beyond
+  function-table introspection
 - `count()`/`sizeof()` outside the current array and bounded `Countable` object subset:
   full interface signature enforcement, magic `__call` fallback,
   resources/extensions, non-integer object count results, exact diagnostics,

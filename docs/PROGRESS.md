@@ -4,6 +4,18 @@
 
 Implemented:
 
+- Added a compact ext/standard math angle-conversion slice for `deg2rad()`
+  and `rad2deg()`. The interpreter now follows PHP's operation order
+  (`($degrees / 180) * M_PI` and `($radians / M_PI) * 180`) instead of Rust's
+  fused conversion helpers, matching selected PHPT boundary output for scalar
+  and 64-bit integer rows. Added focused Rust coverage plus Milestone 2305 CLI
+  fixture coverage. Focused PHPT proof covers
+  `ext/standard/tests/math/deg2rad_basiclong_64bit.phpt`,
+  `ext/standard/tests/math/deg2rad_variation.phpt`, and
+  `ext/standard/tests/math/rad2deg_basiclong_64bit.phpt`. Broader libm
+  platform parity for unrelated transcendental functions, exact diagnostics,
+  and native lowering remain unsupported.
+
 - Added a compact ext/standard math negative-zero slice for `round()` results.
   The interpreter/runtime now preserves `-0` through scalar float-to-string
   conversion and the bounded `printf()`/`sprintf()` general-float sign path, so

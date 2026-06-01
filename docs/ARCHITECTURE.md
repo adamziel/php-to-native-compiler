@@ -2989,6 +2989,11 @@ bounded `RoundingMode` cases, and the runtime scalar/`printf` formatting layer
 preserves negative-zero results for the focused math compatibility rows.
 Decimal prerounding/high-precision parity and native lowering remain explicit
 future work.
+`deg2rad()` and `rad2deg()` are interpreter-only bounded unary numeric
+builtins over the shared math scalar coercion path. Their arithmetic uses
+PHP's observable operation order, `($degrees / 180) * M_PI` and
+`($radians / M_PI) * 180`, rather than host-language fused helpers, because
+the selected PHPT rows assert exact boundary float strings.
 `microtime(true)` is an interpreter-only host-clock boundary for bootstrap
 timing checks. It returns a finite float seconds value from `SystemTime`, while
 the string-return forms stay unsupported until time virtualization, formatting,

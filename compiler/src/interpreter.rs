@@ -84240,14 +84240,14 @@ impl Interpreter {
                 "deg2rad",
                 "deg2rad()",
                 &args,
-                f64::to_radians,
+                php_deg2rad,
                 span,
             ),
             "rad2deg" => self.call_php_unary_float_math(
                 "rad2deg",
                 "rad2deg()",
                 &args,
-                f64::to_degrees,
+                php_rad2deg,
                 span,
             ),
             "pow" => call_pow(self, &args, span),
@@ -128300,6 +128300,14 @@ fn call_pi(args: &[Value], span: Span) -> CompileResult<Value> {
     Ok(Value::Float(std::f64::consts::PI))
 }
 
+fn php_deg2rad(value: f64) -> f64 {
+    (value / 180.0) * std::f64::consts::PI
+}
+
+fn php_rad2deg(value: f64) -> f64 {
+    (value / std::f64::consts::PI) * 180.0
+}
+
 fn call_getrandmax(args: &[Value], span: Span) -> CompileResult<Value> {
     expect_arity("getrandmax", args, 0, span)?;
     Ok(Value::Int(i64::from(i32::MAX)))
@@ -140531,6 +140539,48 @@ mod tests {
         assert_eq!(execution.exit_code, 0);
         assert_eq!(execution.stderr, "");
         assert_eq!(execution.stdout, "-0\n-0\n-0\n");
+    }
+
+    #[test]
+    fn angle_conversions_use_php_operation_order_for_phpt_boundaries() {
+        assert_eq!(
+            format_var_dump_float(php_deg2rad(23.0)),
+            "0.40142572795869574"
+        );
+        assert_eq!(
+            format_var_dump_float(php_deg2rad(1000.0)),
+            "17.453292519943293"
+        );
+        assert_eq!(
+            format_var_dump_float(php_rad2deg(4_294_967_295.0)),
+            "246083499150.21957"
+        );
+        assert_eq!(
+            format_var_dump_float(php_rad2deg(-2_147_483_649.0)),
+            "-123041749661.05348"
+        );
+
+        let source = concat!(
+            "<?php\n",
+            "var_dump(deg2rad(23));\n",
+            "var_dump(deg2rad(\"23.45\"));\n",
+            "var_dump(rad2deg(4294967295));\n",
+            "var_dump(rad2deg(-2147483649));\n",
+        );
+        let program = parse_source(source).unwrap();
+        let execution = run_program_with_source_file(&program, "angle-conversions.php").unwrap();
+
+        assert_eq!(execution.exit_code, 0);
+        assert_eq!(execution.stderr, "");
+        assert_eq!(
+            execution.stdout,
+            concat!(
+                "float(0.40142572795869574)\n",
+                "float(0.40927970959267024)\n",
+                "float(246083499150.21957)\n",
+                "float(-123041749661.05348)\n",
+            )
+        );
     }
 
     #[test]
