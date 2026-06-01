@@ -1,5 +1,28 @@
 # Progress Log
 
+## 2026-06-01
+
+Implemented:
+
+- Tightened the bounded SPL `ArrayObject`/`ArrayIterator` runtime slice for
+  pinned PHPT coverage. `(array)` casts on these objects now expose current
+  backing storage unless the current wrapper has `STD_PROP_LIST`, where the
+  cast returns only current public standard properties; nested wrappers used as
+  backing storage continue through the existing storage-recursive path rather
+  than leaking the private `storage` property. `ArrayObject::exchangeArray()`
+  now emits the PHP-shaped object-backing deprecation before accepting object,
+  `ArrayObject`, or `ArrayIterator` storage, and out-of-range
+  `ArrayIterator::seek()` failures are raised as catchable
+  `OutOfBoundsException`s. Focused Rust tests cover the cast modes,
+  exchange-array deprecation, and catchable seek exception; selected PHPT proof
+  passes `ext/spl/tests/ArrayObject/array_001.phpt`,
+  `ArrayObject_proptable_canonicalization.phpt`,
+  `ArrayObject_std_props_no_recursion.phpt`,
+  `arrayObject_exchangeArray_basic2.phpt`, and `array_014.phpt`. SPL wrapper
+  iterators such as `NoRewindIterator`, by-reference SPL iterator execution,
+  serialization, exact object id reuse, full object handler/COW identity, and
+  native lowering remain unsupported.
+
 ## 2026-05-27
 
 Implemented:

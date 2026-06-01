@@ -14927,6 +14927,102 @@ foreach ($it as $key => $value) {
 }
 
 #[test]
+fn array_object_array_cast_uses_storage_or_current_std_props() {
+    let source = r#"<?php
+class PublicProps extends ArrayObject {
+    public $shown = "std";
+}
+
+$ao = new ArrayObject(array(0 => "zero", 1 => "one"));
+$ao[2] = "two";
+print_r((array) $ao);
+
+$object = new stdClass;
+$object->a = "aye";
+$wrapped = new ArrayObject($object);
+$wrapped["b"] = "bee";
+print_r((array) $wrapped);
+
+$std = new PublicProps(array("ignored" => "array"), ArrayObject::STD_PROP_LIST);
+print_r((array) $std);
+
+$inner = new PublicProps(array("inner" => "storage"), ArrayObject::STD_PROP_LIST);
+$outer = new ArrayObject($inner, 0);
+print_r((array) $outer);
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert!(execution.stdout.contains(
+        "Array\n(\n    [0] => zero\n    [1] => one\n    [2] => two\n)\n"
+    ));
+    assert!(execution.stdout.contains(
+        "Deprecated: ArrayObject::__construct(): Using an object as a backing array for ArrayObject is deprecated"
+    ));
+    assert!(execution.stdout.contains(
+        "Array\n(\n    [a] => aye\n    [b] => bee\n)\n"
+    ));
+    assert!(execution.stdout.contains(
+        "Array\n(\n    [shown] => std\n)\n"
+    ));
+    assert!(execution.stdout.ends_with(
+        "Array\n(\n    [inner] => storage\n)\n"
+    ));
+}
+
+#[test]
+fn array_object_exchange_array_deprecates_object_backing_storage() {
+    let source = r#"<?php
+$ao = new ArrayObject();
+$ao->exchangeArray(array("key" => "array"));
+echo $ao["key"], "\n";
+
+$object = new stdClass;
+$object->key = "object";
+$ao->exchangeArray($object);
+echo $ao["key"], "\n";
+
+$iterator = new ArrayIterator(array("key" => "iterator"));
+$ao->exchangeArray($iterator);
+echo $ao["key"], "\n";
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(execution.stderr, "");
+    assert!(execution.stdout.starts_with("array\n"));
+    assert!(execution.stdout.contains(
+        "Deprecated: ArrayObject::exchangeArray(): Using an object as a backing array for ArrayObject is deprecated"
+    ));
+    assert!(execution.stdout.contains("\nobject\n"));
+    assert!(execution.stdout.ends_with("iterator\n"));
+}
+
+#[test]
+fn array_iterator_seek_out_of_range_is_catchable_exception() {
+    let source = r#"<?php
+$it = new ArrayIterator(range(0, 3));
+try {
+    $it->seek(-1);
+} catch (Exception $e) {
+    echo get_class($e), ":", $e->getMessage(), "\n";
+}
+try {
+    $it->seek(4);
+} catch (Exception $e) {
+    echo get_class($e), ":", $e->getMessage(), "\n";
+}
+$it->seek(2);
+echo $it->current(), "\n";
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(execution.stderr, "");
+    assert_eq!(
+        execution.stdout,
+        "OutOfBoundsException:Seek position -1 is out of range\nOutOfBoundsException:Seek position 4 is out of range\n2\n"
+    );
+}
+
+#[test]
 fn array_object_nested_storage_mutations_reach_inner_array_object() {
     let source = r#"<?php
 $base = new ArrayObject(array(1 => "one", 2 => "two", 3 => "three"));

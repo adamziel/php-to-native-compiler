@@ -12564,6 +12564,16 @@ impl Interpreter {
                 };
                 let mut state = self.array_object_state(&object, method_name, span)?.clone();
                 let old = self.array_object_storage_to_array(&state.storage, method_name, span)?;
+                if matches!(replacement, Value::Object(_)) {
+                    self.emit_display_diagnostic(
+                        "Deprecated",
+                        PHP_E_DEPRECATED,
+                        format!(
+                            "{class_name}::exchangeArray(): Using an object as a backing array for {class_name} is deprecated, as it allows violating class constraints and invariants"
+                        ),
+                        span,
+                    )?;
+                }
                 state.storage = replacement;
                 state.cursor = 0;
                 self.sync_array_object_properties(&object, &state, span)?;
@@ -93235,6 +93245,17 @@ impl Interpreter {
                     Ok(Value::Array(array))
                 }
                 Value::Object(object) => {
+                    if self.is_array_object_storage_object(&object) {
+                        let state = self.array_object_state(&object, "(array)", span)?;
+                        let array = if state.flags & ARRAY_OBJECT_STD_PROP_LIST
+                            == ARRAY_OBJECT_STD_PROP_LIST
+                        {
+                            Self::public_object_properties_array(&object)
+                        } else {
+                            self.array_object_storage_to_array(&state.storage, "(array)", span)?
+                        };
+                        return Ok(Value::Array(array));
+                    }
                     Ok(Value::Array(object.initialized_mangled_properties_array()))
                 }
                 Value::Closure(_) => Err(runtime_error(
@@ -102816,6 +102837,13 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
                     && reason.ends_with("::offsetSet() instead")
                 {
                     return Some(("Error", reason.to_string()));
+                }
+                if prefix.contains("ArrayIterator")
+                    && method == "seek()"
+                    && reason.starts_with("Seek position ")
+                    && reason.ends_with(" is out of range")
+                {
+                    return Some(("OutOfBoundsException", reason.to_string()));
                 }
                 if reason.contains(" must be of type ")
                     || reason.contains(" must be a class name derived from ArrayIterator")

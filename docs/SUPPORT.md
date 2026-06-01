@@ -2569,16 +2569,24 @@
   for array-backed construction, offset reads/writes/unsets/appends,
   `getArrayCopy()`, `exchangeArray()`, flags, iterator class metadata,
   sorting over array storage, and ordinary by-value iteration through their
-  iterator methods. When one `ArrayObject` or `ArrayIterator` is constructed
-  with another one as its backing storage, reads and writes recurse through the
-  inner object's storage so copy-constructor-style offset mutation updates the
-  shared backing object. Object-backed storage exposes public properties and
-  keyed `offsetSet()` writes; appending to object-backed `ArrayIterator` or
-  `ArrayObject` storage throws the PHP-shaped `Error` directing callers to
-  `offsetSet()`. General SPL wrapper iterators such as `LimitIterator`,
-  `IteratorIterator`, and `NoRewindIterator`, by-reference iteration over SPL
-  iterator objects, serialization parity, full COW/reference identity, and
-  native lowering remain unsupported.
+  iterator methods. `(array)` casts on these objects return a copy of the
+  current backing storage, including object-backed public-property storage and
+  nested `ArrayObject`/`ArrayIterator` backing storage; when the current wrapper
+  has `STD_PROP_LIST`, the cast returns the current public standard properties
+  instead. `ArrayObject::exchangeArray()` accepts arrays, objects, and nested
+  `ArrayObject`/`ArrayIterator` backing storage and emits the bounded
+  PHP-shaped deprecation for object-backed replacements. Out-of-range
+  `ArrayIterator::seek()` throws a catchable `OutOfBoundsException`. When one
+  `ArrayObject` or `ArrayIterator` is constructed with another one as its
+  backing storage, reads and writes recurse through the inner object's storage
+  so copy-constructor-style offset mutation updates the shared backing object.
+  Object-backed storage exposes public properties and keyed `offsetSet()`
+  writes; appending to object-backed `ArrayIterator` or `ArrayObject` storage
+  throws the PHP-shaped `Error` directing callers to `offsetSet()`. General SPL
+  wrapper iterators such as `LimitIterator`, `IteratorIterator`, and
+  `NoRewindIterator`, by-reference iteration over SPL iterator objects,
+  serialization parity, exact object-id reuse, full object-handler
+  COW/reference identity, and native lowering remain unsupported.
 - `break;` for the innermost currently executing `while`, `for`,
   `do ... while`, `foreach`, or `switch`; `continue;` for the innermost
   currently executing loop
