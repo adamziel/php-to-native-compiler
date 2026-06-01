@@ -3905,12 +3905,14 @@ object stores request-local reflection state and dispatches the current
 `getName()`, `getShortName()`, `isInterface()`, `isTrait()`,
 `isInstantiable()`, `getParentClass()`, `getInterfaceNames()`,
 `getInterfaces()`, `hasMethod($name)`, `getFileName()`, `getStartLine()`,
-`getEndLine()`, `getDocComment()`, and `getExtensionName()` methods directly
-through the interpreter. `getExtensionName()` is bounded to the current core
-class metadata lists for `Reflection`, `standard`, `ctype`, and `dom`, and
-returns `false` for declared user classes. ReflectionClass objects also
-materialize the bounded public `name` property so debug output and simple
-metadata reads observe the reflected
+`getEndLine()`, `getDocComment()`, `getExtensionName()`, and
+`getExtension()` methods directly through the interpreter.
+`getExtensionName()` is bounded to the current core class metadata lists for
+`Reflection`, `standard`, `ctype`, and `dom`, and returns `false` for
+declared user classes. `getExtension()` reuses that bounded lookup to return a
+`ReflectionExtension` object or `null` for declared user classes.
+ReflectionClass objects also materialize the bounded public `name` property so
+debug output and simple metadata reads observe the reflected
 class-like name. Class-like source
 paths are tracked in interpreter-side metadata when class, interface, and
 trait declarations are loaded from a known CLI/fixture or include path; start
@@ -3946,7 +3948,11 @@ machinery.
 state pattern for declared user functions named by string. It stores parsed
 user-function metadata for `getName()`, source file, start/end lines, direct
 docblock text, parameter counts, `getParameters()`, `hasReturnType()`,
-`getReturnType()`, `returnsReference()`, and `__toString()`. Source paths are
+`getReturnType()`, `returnsReference()`, `getExtensionName()`,
+`getExtension()`, and `__toString()`. Internal-function extension objects are
+bounded to the existing reflection metadata heuristic, and declared user
+functions return `false` for `getExtensionName()` and `null` for
+`getExtension()`. Source paths are
 tracked beside registered function declarations because the AST remains
 source-text scoped;
 included files record the include source path at declaration-registration time.

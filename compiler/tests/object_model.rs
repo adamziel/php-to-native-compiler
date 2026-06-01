@@ -6950,6 +6950,39 @@ printModifiers(ReflectionProperty::IS_PRIVATE_SET);
 }
 
 #[test]
+fn reflection_class_and_function_return_bounded_extension_objects() {
+    let execution = run_source(
+        r#"<?php
+class LocalExtensionProbe {}
+function local_extension_probe() {}
+
+function extensionNameOrNull($extension) {
+    return $extension === null ? "null" : $extension->getName();
+}
+
+$dom = (new ReflectionClass("DOMDocument"))->getExtension();
+echo "class|DOMDocument|", extensionNameOrNull($dom), "\n";
+
+$localClass = (new ReflectionClass("LocalExtensionProbe"))->getExtension();
+echo "class|LocalExtensionProbe|", extensionNameOrNull($localClass), "\n";
+
+$sort = (new ReflectionFunction("sort"))->getExtension();
+echo "function|sort|", extensionNameOrNull($sort), "\n";
+
+$localFunction = (new ReflectionFunction("local_extension_probe"))->getExtension();
+echo "function|local_extension_probe|", extensionNameOrNull($localFunction), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "class|DOMDocument|dom\nclass|LocalExtensionProbe|null\nfunction|sort|standard\nfunction|local_extension_probe|null\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reflection_get_attributes_reports_declared_targets_and_instances() {
     let execution = run_source(
         r#"<?php

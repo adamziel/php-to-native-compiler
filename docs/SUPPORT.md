@@ -8966,13 +8966,15 @@
   `isTrait()`, `isInstantiable()`, `getParentClass()`,
   `getInterfaceNames()`, `getInterfaces()`, `getTraitNames()`, `getTraits()`,
   `hasMethod($name)`, `getFileName()`,
-  `getStartLine()`, `getEndLine()`, `getDocComment()`, and
-  `getExtensionName()` over the current metadata tables.
+  `getStartLine()`, `getEndLine()`, `getDocComment()`,
+  `getExtensionName()`, and `getExtension()` over the current metadata tables.
   `getExtensionName()` returns bounded extension names for the current
   internal class metadata lists (`Reflection`, `standard`, `ctype`, and
-  `dom`) and `false` for declared user classes. ReflectionClass objects
-  expose the bounded public `name` property used by PHP's debug output and
-  simple metadata reads. For declared
+  `dom`) and `false` for declared user classes; `getExtension()` returns a
+  bounded `ReflectionExtension` object for those same internal class lists and
+  `null` for declared user classes. ReflectionClass objects expose the bounded
+  public `name` property used by PHP's debug output and simple metadata reads.
+  For declared
   user classes, interfaces, and traits loaded
   from a known CLI/fixture or include path, `getFileName()` returns that path,
   line numbers come from the parsed class-like declaration and closing brace,
@@ -9051,7 +9053,8 @@
   invocation. `new ReflectionFunction($function)` creates a bounded metadata
   object for declared user functions named by string. It supports
   `getName()`, `getFileName()`, `getStartLine()`, `getEndLine()`,
-  `getDocComment()`, `getParameters()`, `getNumberOfParameters()`,
+  `getDocComment()`, `getExtensionName()`, `getExtension()`,
+  `getParameters()`, `getNumberOfParameters()`,
   `getNumberOfRequiredParameters()`, `hasReturnType()`, `getReturnType()`,
   `returnsReference()`, and `__toString()` over parsed user-function metadata.
   `getFileName()`
@@ -9068,8 +9071,9 @@
   `strpos`, `stripos`, `strrpos`, `strripos`, `substr`, `str_shuffle`, `printf`, `fprintf`, `sprintf`, `vprintf`, `vfprintf`, `implode`, `basename`, `dirname`, `number_format`, `defined`,
   `function_exists`, `is_array`, `is_object`, `is_string`, `is_scalar`,
   `count`, `sizeof`, `array_key_exists`, `is_callable`, `get_current_user`, `getmypid`, and `php_sapi_name`, exposes
-  their name, false file/start/end/doc-comment metadata, current
-  parameter/default metadata, return type, and by-reference-return predicate,
+  their name, bounded extension name/object metadata, false
+  file/start/end/doc-comment metadata, current parameter/default metadata,
+  return type, and by-reference-return predicate,
   and executes them through `invoke()`/`invokeArgs()`.
   `ReflectionFunction::invoke(...$args)` and
   `ReflectionFunction::invokeArgs($args)` execute declared user functions,
@@ -10853,13 +10857,15 @@
   `isInstantiable()`, `getParentClass()`, `getInterfaceNames()`,
   `getInterfaces()`, `getTraitNames()`, `getTraits()`, `hasMethod($name)`,
   `getFileName()`, `getStartLine()`, `getEndLine()`, `getDocComment()`,
-  `getExtensionName()`, `getMethod($name)`, `getMethods([$filter])`,
+  `getExtensionName()`, `getExtension()`, `getMethod($name)`,
+  `getMethods([$filter])`,
   `hasProperty($name)`, `getProperty($name)`, and
   zero-argument `getProperties()`. `hasConstant($name)` and
   `getConstant($name)` accept string and scalar names in this bounded metadata
-  path. `getExtensionName()` is limited to the current core class extension
-  lists and is not a general extension registry. `Reflection::getModifierNames()`
-  supports bounded int-like modifier masks, but the broader `Reflection` core
+  path. `getExtensionName()` and `getExtension()` are limited to the current
+  core class extension lists and are not a general extension registry.
+  `Reflection::getModifierNames()` supports bounded int-like modifier masks,
+  but the broader `Reflection` core
   class surface remains unsupported. `ReflectionMethod` currently supports only bounded
   method metadata over declared user classes, interfaces, and traits with the
   source metadata, modifier, predicate, parameter-list, and return-type

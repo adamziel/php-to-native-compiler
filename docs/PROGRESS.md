@@ -18,6 +18,17 @@ Implemented:
   `ReflectionClass_getExtensionName_variation.phpt`. Broader `Reflection`
   core class metadata, a general extension registry, readonly/asymmetric
   property semantics, and native lowering remain unsupported.
+- Added the matching bounded extension object path for
+  `ReflectionClass::getExtension()` and `ReflectionFunction::getExtension()`.
+  Internal classes in the current `Reflection`/`standard`/`ctype`/`dom`
+  metadata lists and internal functions in the existing reflection-function
+  metadata heuristic now return `ReflectionExtension` objects, while declared
+  user classes/functions return `null`. Focused PHPT proof covers
+  `ReflectionClass_getExtension_basic.phpt`,
+  `ReflectionClass_getExtension_variation.phpt`, and
+  `ReflectionFunction_getExtension.phpt`. A general extension registry,
+  broader `ReflectionExtension` catalogs, and native lowering remain
+  unsupported.
 
 ## 2026-05-27
 

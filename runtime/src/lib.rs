@@ -32260,6 +32260,7 @@ impl PhpClassTable {
             "getName",
             "getShortName",
             "getExtensionName",
+            "getExtension",
             "getFileName",
             "getStartLine",
             "getEndLine",
@@ -32332,6 +32333,7 @@ impl PhpClassTable {
             "isAnonymous",
             "isDeprecated",
             "getExtensionName",
+            "getExtension",
             "getFileName",
             "getStartLine",
             "getEndLine",
@@ -81033,6 +81035,17 @@ mod tests {
         assert!(reflection_property.constant("IS_PROTECTED_SET").is_some());
         assert!(reflection_property.constant("IS_PRIVATE_SET").is_some());
         assert!(reflection_property.constant("IS_VIRTUAL").is_some());
+    }
+
+    #[test]
+    fn reflection_metadata_core_tables_include_get_extension_methods() {
+        let classes = PhpClassTable::with_core_classes();
+
+        let reflection_class = classes.lookup_class("reflectionclass").unwrap();
+        assert!(reflection_class.method("getExtension").is_some());
+
+        let reflection_function = classes.lookup_class("reflectionfunction").unwrap();
+        assert!(reflection_function.method("getExtension").is_some());
     }
 
     #[test]

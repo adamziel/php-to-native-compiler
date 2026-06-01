@@ -47796,6 +47796,16 @@ impl Interpreter {
                     .map(Value::String)
                     .unwrap_or(Value::Bool(false)))
             }
+            "getextension" => {
+                expect_expr_arity("ReflectionClass::getExtension", args.len(), 0, span)?;
+                match self.reflection_class_extension_name(&state) {
+                    Some(name) => self.create_reflection_extension_object(
+                        ReflectionExtensionState { name },
+                        span,
+                    ),
+                    None => Ok(Value::Null),
+                }
+            }
             "getfilename" => {
                 expect_expr_arity("ReflectionClass::getFileName", args.len(), 0, span)?;
                 Ok(state
@@ -49461,6 +49471,19 @@ impl Interpreter {
                     )))
                 } else {
                     Ok(Value::Bool(false))
+                }
+            }
+            "getextension" => {
+                expect_expr_arity("ReflectionFunction::getExtension", args.len(), 0, span)?;
+                if state.is_internal {
+                    self.create_reflection_extension_object(
+                        ReflectionExtensionState {
+                            name: reflection_internal_extension_name(&state.name),
+                        },
+                        span,
+                    )
+                } else {
+                    Ok(Value::Null)
                 }
             }
             "getfilename" => {
