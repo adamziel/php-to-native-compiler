@@ -69,6 +69,61 @@ try {
 }
 
 #[test]
+fn mb_substr_count_counts_non_overlapping_ascii_and_utf8_matches() {
+    let execution = run_source(
+        r#"<?php
+$ascii = "This is an English string. 0123456789.";
+$japanese = base64_decode("5pel5pys6Kqe44OG44Kt44K544OI44Gn44GZ44CCMDEyMzTvvJXvvJbvvJfvvJjvvJnjgII=");
+$period = base64_decode("44CC");
+$phrase = base64_decode("44GT44KT44Gr44Gh44Gv44CB5LiW55WM");
+var_dump(mb_substr_count($ascii, "is"));
+var_dump(mb_substr_count($ascii, "hello, world"));
+var_dump(mb_substr_count($japanese, $period));
+var_dump(mb_substr_count($japanese, $phrase));
+var_dump(mb_substr_count("abcabcabc", "abcabc"));
+var_dump(mb_substr_count($japanese . $japanese, $japanese, "utf-8"));
+var_dump(mb_substr_count("A" . chr(0) . "B" . chr(0), chr(0), "8bit"));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "int(3)\nint(0)\nint(2)\nint(0)\nint(1)\nint(2)\nint(2)\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn mb_substr_count_reports_empty_needle_and_encoding_errors() {
+    let execution = run_source(
+        r#"<?php
+try {
+    mb_substr_count("abc", "");
+} catch (ValueError $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    mb_substr_count("Hello, World!", "Hello", "unknown-encoding");
+} catch (ValueError $e) {
+    echo $e->getMessage(), "\n";
+}
+$call = "mb_substr_count";
+echo function_exists($call) ? "fn" : "missing";
+echo is_callable($call) ? ":callable:" : ":missing:";
+echo $call("abcabcabc", "abcabc");
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "mb_substr_count(): Argument #2 ($needle) must not be empty\nmb_substr_count(): Argument #3 ($encoding) must be a valid encoding, \"unknown-encoding\" given\nfn:callable:1"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mb_stripos_casefolds_utf8_and_reports_offset_errors_for_reverse_variants() {
     let execution = run_source(
         r#"<?php
@@ -155,12 +210,13 @@ fn emit_ir_folds_mbstring_function_membership() {
         r#"<?php
 echo function_exists("mb_strlen") ? "1" : "0";
 echo function_exists("mb_substr") ? "1" : "0";
+echo function_exists("mb_substr_count") ? "1" : "0";
 echo is_callable("mb_stripos") ? "1" : "0";
 "#,
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 3, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 4, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
 }

@@ -84755,6 +84755,9 @@ impl Interpreter {
             "chunk_split" => call_chunk_split(&args, span),
             "mb_strlen" => call_mb_strlen(&args, self.mb_default_encoding(), span),
             "mb_substr" => call_mb_substr(&args, self.mb_default_encoding(), span),
+            "mb_substr_count" => {
+                call_mb_substr_count(&args, self.mb_default_encoding(), span)
+            }
             "mb_strpos" => call_mb_strpos(
                 &args,
                 "mb_strpos()",
@@ -100859,6 +100862,14 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_optional_null_param("encoding", "?string"),
             ],
         ),
+        "mb_substr_count" => (
+            "int",
+            vec![
+                reflection_internal_param("haystack", "string"),
+                reflection_internal_param("needle", "string"),
+                reflection_internal_optional_null_param("encoding", "?string"),
+            ],
+        ),
         "mb_strpos" | "mb_stripos" | "mb_strrpos" | "mb_strripos" => (
             "int|false",
             vec![
@@ -105061,6 +105072,15 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
             Some(format!("{function}: {message}"))
         }
         (
+            "mb_substr_count()",
+            "Argument #2 ($needle) must not be empty",
+        ) => Some(format!("{function}: {message}")),
+        ("mb_substr_count()", message)
+            if message.starts_with("Argument #3 ($encoding) must be a valid encoding, ") =>
+        {
+            Some(format!("{function}: {message}"))
+        }
+        (
             "mb_strpos()" | "mb_stripos()" | "mb_strrpos()" | "mb_strripos()",
             message,
         ) if message.starts_with("Argument #4 ($encoding) must be a valid encoding, ") => {
@@ -105647,6 +105667,7 @@ fn is_builtin(name: &str) -> bool {
             | "chunk_split"
             | "mb_strlen"
             | "mb_substr"
+            | "mb_substr_count"
             | "mb_strpos"
             | "mb_stripos"
             | "mb_strrpos"
@@ -120191,6 +120212,64 @@ fn call_mb_substr(
             mb_byte_substr(&value, start, length),
         )),
     }
+}
+
+fn call_mb_substr_count(
+    args: &[Value],
+    default_encoding: MbScalarEncoding,
+    span: Span,
+) -> CompileResult<Value> {
+    if !(2..=3).contains(&args.len()) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "mb_substr_count()",
+                ArityExpectation::Between { min: 2, max: 3 },
+                args.len(),
+            ),
+        ));
+    }
+
+    let haystack = string_compare_argument_bytes("mb_substr_count()", "haystack", &args[0], span)?;
+    let needle = string_compare_argument_bytes("mb_substr_count()", "needle", &args[1], span)?;
+    let encoding = mb_scalar_encoding("mb_substr_count()", 3, args.get(2), default_encoding, span)?;
+    if needle.is_empty() {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "mb_substr_count()",
+                "Argument #2 ($needle) must not be empty",
+            ),
+        ));
+    }
+
+    let count = match encoding {
+        MbScalarEncoding::Utf8 => {
+            let haystack = mb_utf8_lossy(haystack).chars().collect::<Vec<_>>();
+            let needle = mb_utf8_lossy(needle).chars().collect::<Vec<_>>();
+            mb_non_overlapping_slice_count(&haystack, &needle)
+        }
+        MbScalarEncoding::SingleByte => mb_non_overlapping_slice_count(&haystack, &needle),
+    };
+    Ok(Value::Int(count as i64))
+}
+
+fn mb_non_overlapping_slice_count<T: PartialEq>(haystack: &[T], needle: &[T]) -> usize {
+    if needle.is_empty() {
+        return 0;
+    }
+
+    let mut count = 0usize;
+    let mut index = 0usize;
+    while index + needle.len() <= haystack.len() {
+        if haystack[index..index + needle.len()] == needle[..] {
+            count += 1;
+            index += needle.len();
+        } else {
+            index += 1;
+        }
+    }
+    count
 }
 
 fn call_mb_strpos(

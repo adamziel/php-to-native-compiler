@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Added a narrow mbstring string-counting lane for
+  `mb_substr_count_basic.phpt`, `mb_substr_count_error2.phpt`, and
+  `mb_substr_count_variation4.phpt`. `mb_substr_count()` is now a direct and
+  string-valued dynamic interpreter builtin for scalar/null string-convertible
+  haystacks and needles over the current UTF-8 or single-byte encoding
+  boundary. It counts non-overlapping occurrences, rejects empty needles with a
+  catchable PHP-shaped `ValueError`, validates the optional encoding through
+  the existing mbstring unknown-encoding path, and is visible to
+  function/callability metadata plus native `function_exists()` folding.
+  Full encoding conversion tables, invalid sequence policy, broad
+  array/object/resource coercions, exact diagnostics beyond the covered
+  empty-needle and unknown-encoding rows, references/COW, and native lowering
+  remain unsupported. Focused proof on currentized source passed `9 / 9` in
+  `mbstring_scalar_builtins`, `cargo build -p phpc --bin phpc`, and selected
+  PHPT proof `3 / 3` for `mb_substr_count_basic.phpt`,
+  `mb_substr_count_error2.phpt`, and `mb_substr_count_variation4.phpt`.
+
 - Added bounded `phpc run` support for script-file stat metadata helpers
   `getlastmod()`, `getmyinode()`, `getmyuid()`, and `getmygid()`. The helpers
   read the main source file's local filesystem metadata, return PHP-shaped
