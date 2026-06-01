@@ -115758,6 +115758,10 @@ fn call_preg_quote(args: &[Value], span: Span) -> CompileResult<Value> {
 
     let mut output = Vec::with_capacity(value.len());
     for byte in value {
+        if byte == b'\0' {
+            output.extend_from_slice(b"\\000");
+            continue;
+        }
         if matches!(
             byte,
             b'.' | b'\\'
@@ -120398,8 +120402,20 @@ fn translate_pcre_body_for_regex(body: &str) -> String {
     let mut escaped = false;
     while let Some(ch) = chars.next() {
         if escaped {
-            if matches!(ch, '/' | '#') {
-                output.push(ch);
+            if ch == '/' {
+                output.push_str("\\x2F");
+            } else if ch == '#' {
+                output.push_str("\\x23");
+            } else if ch == '0' {
+                let mut lookahead = chars.clone();
+                if lookahead.next() == Some('0') && lookahead.next() == Some('0') {
+                    chars.next();
+                    chars.next();
+                    output.push_str("\\x00");
+                } else {
+                    output.push('\\');
+                    output.push(ch);
+                }
             } else if ch == 'X' {
                 output.push('.');
             } else if ch == 'k' && chars.peek() == Some(&'<') {

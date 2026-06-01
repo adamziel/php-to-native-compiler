@@ -98,6 +98,24 @@ echo preg_match('/' . $quoted . '/', $before);
 }
 
 #[test]
+fn preg_quote_escapes_nul_and_xmode_hash_literal_patterns() {
+    let execution = run_source(
+        r#"<?php
+$nul = "a\000b";
+$quoted = preg_quote($nul);
+echo strlen($quoted), "|", $quoted, "|", preg_match("!" . $quoted . "!", $nul), "\n";
+echo preg_quote('#'), "\n";
+$quoted = preg_quote('hello#world', '~');
+echo preg_match('~^(' . $quoted . ')\z~x', 'hello#world', $matches), "|", $matches[1];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "6|a\\000b|1\n\\#\n1|hello#world");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn emit_ir_folds_preg_split_metadata_but_rejects_direct_calls() {
     let ir = emit_ir_source(
         r#"<?php

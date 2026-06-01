@@ -1,5 +1,26 @@
 # Progress Log
 
+## 2026-06-01
+
+Implemented:
+
+- Added a compact PCRE quoting slice for pinned `ext/pcre` rows:
+  `preg_quote()` now emits PHP-shaped `\000` escapes for NUL bytes, and the
+  interpreter regex translation keeps `preg_quote()`-produced escaped slash
+  and `#` literals matchable by rewriting them to byte-safe regex escapes.
+  This covers `ext/pcre/tests/bug26927.phpt` and
+  `ext/pcre/tests/bug75355.phpt`, including the reached ignore-whitespace
+  `x` pattern in `bug75355`, without widening into full PCRE engine parity.
+  Focused proof: `cargo test -p phpc --test preg_split_builtin -- --nocapture`,
+  `cargo test -p phpc --test preg_match_builtin -- --nocapture`,
+  `./target/debug/phpc run /tmp/phpc-preg-quote-slice.php`, and
+  `/home/claude/php-src-phpt/run-tests.php -q -p
+  /home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper
+  ext/pcre/tests/bug26927.phpt ext/pcre/tests/bug75355.phpt` with
+  `PHPC_BIN` set to this worktree's `target/debug/phpc` all passed. Broad
+  PCRE syntax, exact diagnostics, delimiter validation/deprecation behavior,
+  array/object/resource operands, and native lowering remain unsupported.
+
 ## 2026-05-27
 
 Implemented:
