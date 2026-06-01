@@ -1,5 +1,26 @@
 # Progress Log
 
+## 2026-06-01
+
+Implemented:
+
+- Added a bounded tokenizer/`PhpToken` lexical-tail slice for four
+  `ext/tokenizer/tests` rows. `token_get_all()` and `PhpToken::tokenize()` now
+  route `TOKEN_PARSE` into the scanner so the supported trait-alias
+  `namespace as` context reports `namespace` as `T_STRING`; tokenized
+  non-canonical `(double)`/`(real)` casts emit bounded deprecation diagnostics
+  through the current error-handler stack before `PhpToken` objects are
+  materialized; and the scanner keeps selected underscore-separated numeric
+  literals together while classifying selected large octal-shaped integer
+  overflows as `T_DNUMBER`. Focused proof targets
+  `ext/tokenizer/tests/bug77966.phpt`,
+  `ext/tokenizer/tests/gh19507_eval.phpt`,
+  `ext/tokenizer/tests/invalid_large_octal_with_underscores.phpt`, and
+  `ext/tokenizer/tests/invalid_octal_dnumber.phpt`. Full `TOKEN_PARSE`
+  parse-error validation, exact tokenizer source span/file provenance for
+  deprecations, binary/hex numeric separator breadth, exact numeric-literal
+  validation, and heredoc/nowdoc parity remain unsupported.
+
 ## 2026-05-27
 
 Implemented:

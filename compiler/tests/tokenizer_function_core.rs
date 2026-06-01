@@ -162,6 +162,87 @@ foreach ($tokens as $token) {
 }
 
 #[test]
+fn tokenizer_parse_mode_keeps_trait_alias_namespace_as_string() {
+    let execution = run_source(
+        r#"<?php
+$tokens = PhpToken::tokenize('<?php
+class C {
+    use A {
+        namespace as bar;
+    }
+}
+', TOKEN_PARSE);
+foreach ($tokens as $token) {
+    if ($token->text == "namespace") {
+        echo $token->getTokenName(), ":", $token->text, "\n";
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "T_STRING:namespace\n");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn tokenizer_scans_invalid_octal_boundaries_and_underscores() {
+    let tokens = php_tokenizer::tokenize(b"<?php 0_10000000000000000000009;");
+    let number = tokens
+        .iter()
+        .find(|token| token_text(token) == "0_10000000000000000000009")
+        .expect("underscored invalid octal is a single numeric token");
+    assert_eq!(number.id(), php_tokenizer::T_LNUMBER);
+
+    let overflow = php_tokenizer::tokenize(b"<?php 0177777777777777777777787");
+    let number = overflow
+        .iter()
+        .find(|token| token_text(token) == "0177777777777777777777787")
+        .expect("overflowing invalid octal is a single numeric token");
+    assert_eq!(number.id(), php_tokenizer::T_DNUMBER);
+
+    let invalid_separator = php_tokenizer::tokenize(b"<?php 1__2;");
+    assert!(invalid_separator
+        .iter()
+        .any(|token| token.id() == php_tokenizer::T_LNUMBER && token_text(token) == "1"));
+    assert!(invalid_separator
+        .iter()
+        .any(|token| token.id() == php_tokenizer::T_STRING && token_text(token) == "__2"));
+}
+
+#[test]
+fn tokenizer_token_parse_deprecated_cast_calls_error_handler() {
+    let execution = run_source(
+        r#"<?php
+set_error_handler(function (int $errno, string $msg) {
+    echo "handler:", $msg, "\n";
+});
+$tokens = PhpToken::tokenize('<?php echo "(double)"; (double) $x;', TOKEN_PARSE);
+foreach ($tokens as $token) {
+    if (!$token->isIgnorable()) {
+        echo $token->getTokenName(), "\n";
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "handler:Non-canonical cast (double) is deprecated, use the (float) cast instead\n",
+            "T_ECHO\n",
+            "T_CONSTANT_ENCAPSED_STRING\n",
+            ";\n",
+            "T_DOUBLE_CAST\n",
+            "T_VARIABLE\n",
+            ";\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn php_token_objects_support_constructor_methods_subclasses_and_ampersands() {
     let execution = run_source(
         r#"<?php
@@ -292,7 +373,7 @@ fn tokenizer_rejects_unsupported_nonzero_flags() {
     assert!(
         error
             .message
-            .contains("TOKEN_PARSE and non-zero tokenizer flags are not implemented"),
+            .contains("unsupported non-zero tokenizer flags are not implemented"),
         "{}",
         error.message
     );
