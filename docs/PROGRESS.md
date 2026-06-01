@@ -1,5 +1,11 @@
 # Progress Log
 
+## 2026-06-01
+
+Implemented:
+
+- Added a bounded interpreter `hebrev()` slice for ext/standard string residual coverage. The runtime now executes the legacy byte-oriented logical-to-visual Hebrew conversion used by PHP's `hebrev_basic.phpt`, including ASCII English-block reversal, punctuation mirroring, max-character line breaking with word-boundary avoidance, negative max behavior, visible `__toString()` inputs, and function metadata/callability folding. Focused Rust tests and `tests/fixtures/milestone2306/hebrev_basic.php` cover the PHPT rows plus line-breaking and punctuation edges. Exact locale-dependent classification, null deprecation timing, broader resource coercion, references/COW, and native lowering beyond function-table introspection remain unsupported.
+
 ## 2026-05-27
 
 Implemented:

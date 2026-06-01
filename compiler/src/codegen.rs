@@ -66382,6 +66382,7 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "quoted_printable_encode",
     "similar_text",
     "soundex",
+    "hebrev",
     "count_chars",
     "strrev",
     "str_shuffle",

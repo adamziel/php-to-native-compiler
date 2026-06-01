@@ -83857,6 +83857,7 @@ impl Interpreter {
             "levenshtein" => call_levenshtein(&args, span),
             "similar_text" => call_similar_text(&args, span),
             "soundex" => call_soundex(&args, span),
+            "hebrev" => self.call_hebrev(&args, span),
             "count_chars" => call_count_chars(&args, span),
             "base64_encode" => call_base64_encode(&args, span),
             "base64_decode" => call_base64_decode(&args, span),
@@ -99401,6 +99402,13 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
             "string",
             vec![reflection_internal_param("string", "string")],
         ),
+        "hebrev" => (
+            "string",
+            vec![
+                reflection_internal_param("string", "string"),
+                reflection_internal_optional_int_param("max_chars_per_line", 0),
+            ],
+        ),
         "count_chars" => (
             "array|string",
             vec![
@@ -104045,6 +104053,7 @@ fn is_builtin(name: &str) -> bool {
             | "levenshtein"
             | "similar_text"
             | "soundex"
+            | "hebrev"
             | "count_chars"
             | "base64_encode"
             | "base64_decode"
@@ -114842,6 +114851,251 @@ fn php_soundex_code(byte: u8) -> u8 {
         b'R' => 6,
         b'H' | b'W' => 7,
         _ => 0,
+    }
+}
+
+impl Interpreter {
+    fn call_hebrev(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(1..=2).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "hebrev()",
+                    ArityExpectation::Between { min: 1, max: 2 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let value = self.hebrev_string_argument_bytes(&args[0], span)?;
+        let max_chars_per_line = match args.get(1) {
+            Some(value) => {
+                php_internal_int_argument("hebrev()", 2, "max_chars_per_line", value, span)?
+            }
+            None => 0,
+        };
+
+        Ok(interpreter_value_from_php_string_bytes(php_hebrev_bytes(
+            &value,
+            max_chars_per_line,
+        )))
+    }
+
+    fn hebrev_string_argument_bytes(
+        &mut self,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<Vec<u8>> {
+        if let Value::Object(object) = value {
+            if let Some(value) =
+                self.object_to_string_with_magic(object.clone(), "hebrev()", span)?
+            {
+                return Ok(value.into_bytes());
+            }
+        }
+
+        if matches!(
+            value,
+            Value::Array(_) | Value::Object(_) | Value::Closure(_) | Value::Resource(_)
+        ) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "hebrev()",
+                    format!(
+                        "Argument #1 ($string) must be of type string, {} given",
+                        php_type_error_given(value)
+                    ),
+                ),
+            ));
+        }
+
+        value
+            .try_echo_bytes()
+            .map_err(|error| runtime_error(span, error))
+    }
+}
+
+fn php_hebrev_bytes(value: &[u8], max_chars_per_line: i64) -> Vec<u8> {
+    if value.is_empty() {
+        return Vec::new();
+    }
+
+    let mut hebrew_visual = vec![0; value.len()];
+    let mut target = value.len();
+    let mut block_start = 0usize;
+    let mut block_end = 0usize;
+    let mut cursor = 0usize;
+    let mut block_type = if hebrev_is_hebrew(value[0]) {
+        HebrevBlockType::Hebrew
+    } else {
+        HebrevBlockType::English
+    };
+
+    loop {
+        match block_type {
+            HebrevBlockType::Hebrew => {
+                while block_end < value.len() - 1 {
+                    let next = hebrev_raw_at(value, cursor + 1);
+                    if hebrev_is_hebrew(next)
+                        || hebrev_is_blank(next)
+                        || hebrev_is_punctuation(next)
+                        || next == b'\n'
+                    {
+                        cursor += 1;
+                        block_end += 1;
+                    } else {
+                        break;
+                    }
+                }
+
+                for source in block_start..=block_end {
+                    target -= 1;
+                    hebrew_visual[target] = hebrev_mirrored_hebrew_byte(value[source]);
+                }
+                block_type = HebrevBlockType::English;
+            }
+            HebrevBlockType::English => {
+                while block_end < value.len() - 1 {
+                    let next = hebrev_raw_at(value, cursor + 1);
+                    if !hebrev_is_hebrew(next) && next != b'\n' {
+                        cursor += 1;
+                        block_end += 1;
+                    } else {
+                        break;
+                    }
+                }
+
+                while (hebrev_is_blank(hebrev_raw_at(value, cursor))
+                    || hebrev_is_punctuation(hebrev_raw_at(value, cursor)))
+                    && hebrev_raw_at(value, cursor) != b'/'
+                    && hebrev_raw_at(value, cursor) != b'-'
+                    && block_end > block_start
+                {
+                    cursor -= 1;
+                    block_end -= 1;
+                }
+
+                for source in (block_start..=block_end).rev() {
+                    target -= 1;
+                    hebrew_visual[target] = value[source];
+                }
+                block_type = HebrevBlockType::Hebrew;
+            }
+        }
+
+        block_start = block_end + 1;
+        if block_end >= value.len() - 1 {
+            break;
+        }
+    }
+
+    hebrev_break_visual_lines(hebrew_visual, max_chars_per_line)
+}
+
+#[derive(Clone, Copy)]
+enum HebrevBlockType {
+    English,
+    Hebrew,
+}
+
+fn hebrev_break_visual_lines(mut value: Vec<u8>, max_chars_per_line: i64) -> Vec<u8> {
+    let mut begin = value.len() - 1;
+    let mut end = value.len() - 1;
+    let mut output = Vec::with_capacity(value.len());
+
+    loop {
+        let mut char_count = 0i64;
+        while (max_chars_per_line == 0
+            || (max_chars_per_line > 0 && char_count < max_chars_per_line))
+            && begin > 0
+        {
+            char_count += 1;
+            begin -= 1;
+            if hebrev_is_newline(value[begin]) {
+                while begin > 0 && hebrev_is_newline(value[begin - 1]) {
+                    begin -= 1;
+                    char_count += 1;
+                }
+                break;
+            }
+        }
+
+        if max_chars_per_line >= 0 && char_count == max_chars_per_line {
+            let mut new_char_count = char_count;
+            let mut new_begin = begin;
+            while new_char_count > 0 {
+                if hebrev_is_blank(value[new_begin]) || hebrev_is_newline(value[new_begin]) {
+                    break;
+                }
+                new_begin += 1;
+                new_char_count -= 1;
+            }
+            if new_char_count > 0 {
+                begin = new_begin;
+            }
+        }
+
+        let original_begin = begin;
+        if hebrev_is_blank(value[begin]) {
+            value[begin] = b'\n';
+        }
+        while begin <= end && hebrev_is_newline(value[begin]) {
+            begin += 1;
+        }
+        for byte in value.iter().take(end + 1).skip(begin) {
+            output.push(*byte);
+        }
+        let mut newline_index = original_begin;
+        while newline_index <= end && hebrev_is_newline(value[newline_index]) {
+            output.push(value[newline_index]);
+            newline_index += 1;
+        }
+
+        begin = original_begin;
+        if begin == 0 {
+            break;
+        }
+        begin -= 1;
+        end = begin;
+    }
+
+    output
+}
+
+fn hebrev_raw_at(value: &[u8], index: usize) -> u8 {
+    value.get(index).copied().unwrap_or(0)
+}
+
+fn hebrev_is_hebrew(byte: u8) -> bool {
+    (224..=250).contains(&byte)
+}
+
+fn hebrev_is_blank(byte: u8) -> bool {
+    byte == b' ' || byte == b'\t'
+}
+
+fn hebrev_is_newline(byte: u8) -> bool {
+    byte == b'\n' || byte == b'\r'
+}
+
+fn hebrev_is_punctuation(byte: u8) -> bool {
+    byte.is_ascii_punctuation()
+}
+
+fn hebrev_mirrored_hebrew_byte(byte: u8) -> u8 {
+    match byte {
+        b'(' => b')',
+        b')' => b'(',
+        b'[' => b']',
+        b']' => b'[',
+        b'{' => b'}',
+        b'}' => b'{',
+        b'<' => b'>',
+        b'>' => b'<',
+        b'\\' => b'/',
+        b'/' => b'\\',
+        _ => byte,
     }
 }
 
