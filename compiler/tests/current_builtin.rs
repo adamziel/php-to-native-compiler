@@ -1,5 +1,5 @@
 use php_compiler::error::Phase;
-use php_compiler::{emit_ir_source, run_source};
+use php_compiler::{emit_ir_source, run_source, run_source_with_source_file};
 
 const LLVM_ARRAY_REJECTION: &str = "LLVM array lowering rejects arrays, array literals, array indexing, array assignment, foreach array iteration, array offset unset, and array builtin function calls until native array storage layout, key normalization, copy-on-write, references, callbacks, and exact native error behavior exist; phpc run handles current array behavior";
 
@@ -57,6 +57,68 @@ echo $call($more);
 
     assert_eq!(execution.stdout, "first|second|second|bool(false)\nb");
     assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn current_tracks_unset_then_append_after_end_pointer() {
+    let execution = run_source(
+        r#"<?php
+$array = array("foo" => 1, "bar" => 2, "baz" => 3);
+reset($array);
+while ($cur = current($array)) {
+    var_dump($cur);
+    next($array);
+}
+
+unset($array["baz"]);
+$array[] = 4;
+var_dump(current($array));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "int(1)\nint(2)\nint(3)\nint(4)\n");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn next_function_temporary_uses_notice_copy_and_array_literal_fatal() {
+    let execution = run_source(
+        r#"<?php
+function f() {
+    return array(1, 2);
+}
+var_dump(next(f()));
+"#,
+    )
+    .unwrap();
+
+    assert!(
+        execution
+            .stdout
+            .contains("Notice: Only variables should be passed by reference"),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution.stdout.ends_with("int(2)\n"),
+        "{}",
+        execution.stdout
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let fatal = run_source_with_source_file(
+        "<?php\nvar_dump(next(array(1, 2)));\n",
+        "/tmp/next_array_literal.php",
+    )
+    .unwrap();
+
+    assert_eq!(
+        fatal.stdout,
+        "Fatal error: Uncaught Error: next(): Argument #1 ($array) could not be passed by reference in /tmp/next_array_literal.php:2\nStack trace:\n#0 {main}\n  thrown in /tmp/next_array_literal.php on line 2"
+    );
+    assert_eq!(fatal.stderr, "");
+    assert_eq!(fatal.exit_code, 255);
 }
 
 #[test]

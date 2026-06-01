@@ -194,6 +194,32 @@ echo is_callable(\"floatval\") ? \"callable\" : \"not-callable\", \"\\n\";\n",
 }
 
 #[test]
+fn intval_base_argument_coercions_match_current_php_subset() {
+    let execution = run_source(
+        r#"<?php
+echo intval("101", "2"), "|";
+echo intval("101", 2.0), "|";
+echo intval("101", true), "|";
+echo intval("101", 37), "|";
+echo intval(101, 37), "\n";
+try {
+    intval("101", "2abc");
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "5|5|0|0|101\nintval(): Argument #2 ($base) must be of type int, string given\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn array_casts_execute_for_current_null_scalar_and_array_subset() {
     let execution = run_source(
         r#"<?php

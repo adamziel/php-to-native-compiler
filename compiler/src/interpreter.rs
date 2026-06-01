@@ -57372,6 +57372,9 @@ impl Interpreter {
                     args,
                     caller_scope,
                 )?;
+                if self.exit_signal.is_some() {
+                    return Ok(Value::Null);
+                }
                 self.call_builtin(&key, values, span)
             }
             Callable::User(function) => {
@@ -57578,6 +57581,9 @@ impl Interpreter {
                     args,
                     caller_scope,
                 )?;
+                if self.exit_signal.is_some() {
+                    return Ok(Value::Null);
+                }
                 self.call_builtin(&key, values, span)
             }
             Callable::User(function) => {
@@ -58062,6 +58068,9 @@ impl Interpreter {
                     saw_spread = true;
                     let value =
                         self.evaluate_by_value_argument_with_cow_source(expr, caller_scope)?;
+                    if self.exit_signal.is_some() {
+                        return Ok(values);
+                    }
                     let Value::Array(array) = value else {
                         return Err(runtime_error(
                             *span,
@@ -58109,8 +58118,12 @@ impl Interpreter {
                             ),
                         ));
                     }
-                    values
-                        .push(self.evaluate_by_value_argument_with_cow_source(expr, caller_scope)?);
+                    let value =
+                        self.evaluate_by_value_argument_with_cow_source(expr, caller_scope)?;
+                    if self.exit_signal.is_some() {
+                        return Ok(values);
+                    }
+                    values.push(value);
                 }
             }
         }
@@ -58186,8 +58199,12 @@ impl Interpreter {
                             ),
                         ));
                     }
-                    values_by_param[param_index] =
-                        Some(self.evaluate_by_value_argument_with_cow_source(expr, caller_scope)?);
+                    let value =
+                        self.evaluate_by_value_argument_with_cow_source(expr, caller_scope)?;
+                    if self.exit_signal.is_some() {
+                        return Ok(Vec::new());
+                    }
+                    values_by_param[param_index] = Some(value);
                 }
                 Expr::SpreadArgument { span, .. } => {
                     return Err(runtime_error(
@@ -58206,9 +58223,12 @@ impl Interpreter {
                         .map(|index| positional_index >= index)
                         .unwrap_or(false)
                     {
-                        variadic_values.push(
-                            self.evaluate_by_value_argument_with_cow_source(expr, caller_scope)?,
-                        );
+                        let value =
+                            self.evaluate_by_value_argument_with_cow_source(expr, caller_scope)?;
+                        if self.exit_signal.is_some() {
+                            return Ok(Vec::new());
+                        }
+                        variadic_values.push(value);
                         positional_index += 1;
                         continue;
                     }
@@ -58222,8 +58242,12 @@ impl Interpreter {
                             ),
                         ));
                     };
-                    *slot =
-                        Some(self.evaluate_by_value_argument_with_cow_source(expr, caller_scope)?);
+                    let value =
+                        self.evaluate_by_value_argument_with_cow_source(expr, caller_scope)?;
+                    if self.exit_signal.is_some() {
+                        return Ok(Vec::new());
+                    }
+                    *slot = Some(value);
                     positional_index += 1;
                 }
             }
@@ -59264,6 +59288,28 @@ impl Interpreter {
         self.exit_signal = Some(255);
     }
 
+    fn emit_builtin_reference_argument_fatal(
+        &mut self,
+        callable: &str,
+        param_index: usize,
+        param_name: &str,
+        span: Span,
+    ) {
+        let file = self
+            .source_file
+            .clone()
+            .unwrap_or_else(|| "Command line code".to_string());
+        self.push_uncaught_fatal_separator();
+        self.push_unbuffered_stdout_text(&format!(
+            "Fatal error: Uncaught Error: {callable}: Argument #{} (${}) could not be passed by reference in {file}:{}\nStack trace:\n#0 {{main}}\n  thrown in {file} on line {}",
+            param_index + 1,
+            param_name,
+            span.line,
+            span.line
+        ));
+        self.exit_signal = Some(255);
+    }
+
     fn evaluate_user_function_call_argument_for_param(
         &mut self,
         function: &FunctionDecl,
@@ -59645,6 +59691,9 @@ impl Interpreter {
         let callable = format!("{key}()");
         let values =
             self.evaluate_builtin_value_call_arguments(key, &callable, args, caller_scope)?;
+        if self.exit_signal.is_some() {
+            return Ok(Value::Null);
+        }
         self.call_builtin_callback_with_values(key, values, span, true)
     }
 
@@ -67484,6 +67533,39 @@ impl Interpreter {
         ))
     }
 
+    fn call_array_pointer_value_fallback(
+        &mut self,
+        key: &str,
+        expr: &Expr,
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        let value = self.evaluate(expr, caller_scope)?;
+        if self.exit_signal.is_some() {
+            return Ok(Value::Null);
+        }
+        self.emit_reference_call_value_fallback_notice(
+            ReferenceCallValueFallback::Parameter,
+            span,
+        )?;
+        let Value::Array(mut array) = value else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{key}()"),
+                    format!("argument must be array, got {}", value.type_name()),
+                ),
+            ));
+        };
+        Ok(match key {
+            "next" => array.next_value(),
+            "prev" => array.prev_value(),
+            "reset" => array.reset_value(),
+            "end" => array.end_value(),
+            _ => unreachable!("array pointer fallback dispatch validates key"),
+        })
+    }
+
     fn call_ksort(
         &mut self,
         args: &[Expr],
@@ -67913,6 +67995,15 @@ impl Interpreter {
                 span,
                 caller_scope,
             );
+        }
+
+        if Self::is_reference_call_argument_expr(&args[0]) {
+            return self.call_array_pointer_value_fallback("next", &args[0], span, caller_scope);
+        }
+
+        if matches!(&args[0], Expr::Array { .. }) {
+            self.emit_builtin_reference_argument_fatal("next()", 0, "array", args[0].span());
+            return Ok(Value::Null);
         }
 
         match &args[0] {
@@ -92706,33 +92797,11 @@ impl Interpreter {
         }
 
         if let Some(base) = args.get(1) {
-            let Value::Int(base) = base else {
-                return Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "intval()",
-                        format!(
-                            "base argument must be int in the current subset, got {}",
-                            base.type_name()
-                        ),
-                    ),
-                ));
-            };
-            if *base != 0 && !(2..=36).contains(base) {
-                return Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "intval()",
-                        "base argument must be between 2 and 36, or 0 for prefix detection",
-                    ),
-                ));
-            }
+            let base = intval_base_argument(self, base, span)?;
 
             return match &args[0] {
-                Value::String(value) => cast_string_to_int_with_base(value, *base, span),
-                Value::BinaryString(value) => {
-                    cast_binary_string_to_int_with_base(value, *base, span)
-                }
+                Value::String(value) => Ok(cast_string_to_int_with_base(value, base)),
+                Value::BinaryString(value) => Ok(cast_binary_string_to_int_with_base(value, base)),
                 value => self.int_cast_value(value.clone(), "(int)", span),
             };
         }
@@ -93627,20 +93696,76 @@ fn cast_binary_string_to_int(value: &[u8], span: Span) -> CompileResult<Value> {
     }
 }
 
-fn cast_string_to_int_with_base(value: &str, base: i64, span: Span) -> CompileResult<Value> {
-    let Ok(base) = u32::try_from(base) else {
-        return Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                "intval()",
-                "base argument must be between 2 and 36, or 0 for prefix detection",
-            ),
-        ));
-    };
+fn intval_base_argument(
+    interpreter: &mut Interpreter,
+    value: &Value,
+    span: Span,
+) -> CompileResult<i64> {
+    match value {
+        Value::Null => {
+            interpreter.emit_display_diagnostic(
+                "Deprecated",
+                PHP_E_DEPRECATED,
+                "intval(): Passing null to parameter #2 ($base) of type int is deprecated",
+                span,
+            )?;
+            Ok(0)
+        }
+        Value::Float(float) => {
+            if float.is_finite() && float.trunc() != *float {
+                interpreter.emit_display_diagnostic(
+                    "Deprecated",
+                    PHP_E_DEPRECATED,
+                    format!(
+                        "Implicit conversion from float {} to int loses precision",
+                        format_php_float_to_int_deprecation_value(*float)
+                    ),
+                    span,
+                )?;
+            }
+            php_float_to_internal_i64(*float)
+                .ok_or_else(|| php_internal_int_type_error("intval()", 2, "base", value, span))
+        }
+        Value::String(text) => {
+            if let Ok(parsed) = text.trim().parse::<f64>() {
+                if parsed.is_finite() && parsed.trunc() != parsed {
+                    interpreter.emit_display_diagnostic(
+                        "Deprecated",
+                        PHP_E_DEPRECATED,
+                        format!(
+                            "Implicit conversion from float-string \"{text}\" to int loses precision"
+                        ),
+                        span,
+                    )?;
+                }
+            }
+            php_internal_int_argument("intval()", 2, "base", value, span)
+        }
+        Value::BinaryString(bytes) => {
+            if let Ok(text) = std::str::from_utf8(bytes) {
+                if let Ok(parsed) = text.trim().parse::<f64>() {
+                    if parsed.is_finite() && parsed.trunc() != parsed {
+                        interpreter.emit_display_diagnostic(
+                            "Deprecated",
+                            PHP_E_DEPRECATED,
+                            format!(
+                                "Implicit conversion from float-string \"{text}\" to int loses precision"
+                            ),
+                            span,
+                        )?;
+                    }
+                }
+            }
+            php_internal_int_argument("intval()", 2, "base", value, span)
+        }
+        _ => php_internal_int_argument("intval()", 2, "base", value, span),
+    }
+}
 
+fn cast_string_to_int_with_base(value: &str, base: i64) -> Value {
     let trimmed = value.trim_matches(is_php_numeric_whitespace);
     if trimmed.is_empty() {
-        return Ok(Value::Int(0));
+        return Value::Int(0);
     }
 
     let bytes = trimmed.as_bytes();
@@ -93690,6 +93815,10 @@ fn cast_string_to_int_with_base(value: &str, base: i64, span: Span) -> CompileRe
     {
         index += 2;
     }
+    if !(2..=36).contains(&radix) {
+        return Value::Int(0);
+    }
+    let radix = radix as u32;
 
     let mut parsed_any = false;
     let mut magnitude: i128 = 0;
@@ -93705,22 +93834,18 @@ fn cast_string_to_int_with_base(value: &str, base: i64, span: Span) -> CompileRe
     }
 
     if !parsed_any {
-        return Ok(Value::Int(0));
+        return Value::Int(0);
     }
 
     let signed = magnitude.saturating_mul(sign);
     let clamped = signed.clamp(i64::MIN as i128, i64::MAX as i128);
-    Ok(Value::Int(clamped as i64))
+    Value::Int(clamped as i64)
 }
 
-fn cast_binary_string_to_int_with_base(
-    value: &[u8],
-    base: i64,
-    span: Span,
-) -> CompileResult<Value> {
+fn cast_binary_string_to_int_with_base(value: &[u8], base: i64) -> Value {
     match std::str::from_utf8(value) {
-        Ok(value) => cast_string_to_int_with_base(value, base, span),
-        Err(_) => Ok(Value::Int(0)),
+        Ok(value) => cast_string_to_int_with_base(value, base),
+        Err(_) => Value::Int(0),
     }
 }
 

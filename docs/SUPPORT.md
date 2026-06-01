@@ -6720,12 +6720,16 @@
   available through string-valued dynamic function calls. `current($array)`
   returns the value at the current cursor for the current ordered array model,
   initially the first inserted value, and returns `false` for empty or
-  exhausted arrays. It is available through string-valued dynamic function
-  calls.
+  exhausted arrays. Supported array unsets keep that cursor coherent when the
+  removed slot was before the cursor. It is available through string-valued
+  dynamic function calls.
   `next($array)` advances the current array cursor and returns the next value
   or `false` past the last element for direct variable array paths, including
   selected nested paths such as `$array[$key]`, and the reached direct
-  object-property array-offset shape. Through `call_user_func()` the
+  object-property array-offset shape. Direct function-returned array
+  temporaries passed to `next()` emit PHP's bounded by-reference notice and
+  operate on a temporary copy; direct array literals passed to `next()` produce
+  the bounded pass-by-reference fatal. Through `call_user_func()` the
   covered callback form advances a copied array, emits the bounded
   reference-parameter warning, and leaves the caller cursor unchanged; through
   `call_user_func_array()` a literal or stored reference element mutates the
@@ -7017,8 +7021,10 @@
   convert arrays to `0` or `1`, resources to their runtime id, and objects or
   closures to `1` after the current PHP warning. String integer conversion
   covers well-formed numeric strings, bounded leading-numeric prefixes, and
-  `intval()` bases `0` and `2..=36`, including `0b`/`0B` binary prefixes for
-  base `0` and base `2`; empty or non-numeric strings become `0`.
+  `intval()` bases `0` and `2..=36`, including int-compatible scalar base
+  arguments and `0b`/`0B` binary prefixes for base `0` and base `2`; invalid
+  string-conversion bases outside that range return `0`, while the base is
+  ignored for non-string values. Empty or non-numeric strings become `0`.
   `(bool)`/`(boolean)` and `boolval()` use current PHP-shaped truthiness:
   `null`, `false`, integer/float zero, `""`, `"0"`, and empty arrays are
   false; other current scalars, non-empty arrays, current objects, and
@@ -11194,13 +11200,14 @@
   references/copy-on-write beyond selected array-offset alias detachment,
   exact warnings/errors, and native lowering beyond function-table
   introspection
-- `current()` outside the current ordered-array first-value subset: PHP's
-  mutable internal array-pointer model, interaction with `next()`/`reset()`,
-  object operands, references/copy-on-write, exact warnings/errors, and native
-  lowering beyond function-table introspection
+- `current()` outside the current ordered-array cursor subset: full PHP mutable
+  internal array-pointer semantics, object operands, references/copy-on-write,
+  exact warnings/errors, and native lowering beyond function-table
+  introspection
 - `next()` outside the current direct variable and direct object-property
-  array-offset pointer-mutation subset and selected callback slice: broad
-  lvalue targets, full internal array-pointer semantics, object operands,
+  array-offset pointer-mutation subset, selected by-value temporary fallback,
+  direct array-literal fatal, and selected callback slice: broad lvalue
+  targets, full internal array-pointer semantics, object operands,
   `reset()`/`end()`/`prev()` interaction, references/copy-on-write, exact
   warnings/errors, and native lowering beyond function-table introspection
 - `str_increment()` and `str_decrement()` outside the current one-argument

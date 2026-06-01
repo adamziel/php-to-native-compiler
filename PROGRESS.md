@@ -1,6 +1,6 @@
 # PHP Native Compiler PHPT Progress
 
-Updated: 2026-06-01 17:28 CEST
+Updated: 2026-06-01 17:41 CEST
 
 Primary/public branch: `origin/master`
 Latest source-bearing public head:
@@ -23,6 +23,12 @@ Local supervisor note: post-Batch024 focused source work is verified for
 replacement-family rows. Focused Rust passed `68 / 68`, focused `php_runtime`
 passed `2 / 2`, and focused PHPT passed `7 / 7`. This is not a public score
 update until checkpoint validation and a full pinned PHPT gate complete.
+
+Local supervisor note: the next focused source batch is in progress for
+`intval_binary_prefix.phpt`, array pointer rows, and follow-on array diagnostic
+lanes. The current intval/array-pointer subset has focused Rust `25 / 25` and
+focused PHPT `4 / 4` passing. This is not a public score update until
+checkpoint validation and a full pinned PHPT gate complete.
 
 Local supervisor note: strict-identity `--emit-ir` Rust assertions were
 refreshed for the already-present boxed diagnostic-result echo boundary. The

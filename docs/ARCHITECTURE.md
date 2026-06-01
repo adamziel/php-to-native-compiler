@@ -155,11 +155,14 @@ array-path mutation helper. The helper evaluates a variable-root path such as
 updated value back through the root symbol while preserving reference-backed
 slots via slot setters. `array_push()`, `array_unshift()`, `array_pop()`,
 `array_shift()`, and `next()` use this path; pop/shift detach aliases for the
-removed leaf before mutation. `array_shift()` additionally has a bounded
-by-value expression fallback that emits PHP's reference notice and shifts a
-temporary copy. Object-property array roots for push/pop/shift/unshift, broad
-lvalues, string-keyed unpacking, and native lowering remain outside this
-interpreter path.
+removed leaf before mutation, and array-entry removal adjusts the ordered-array
+cursor when the removed slot was before the cursor. `array_shift()` additionally
+has a bounded by-value expression fallback that emits PHP's reference notice and
+shifts a temporary copy. `next()` has the same bounded notice-and-temporary path
+for supported function-returned arrays, while direct array literals use the
+bounded pass-by-reference fatal path. Object-property array roots for
+push/pop/shift/unshift, broad lvalues, string-keyed unpacking, and native
+lowering remain outside this interpreter path.
 
 Nested append assignment reuses the same assignment-value metadata path before
 storing the appended value. When the RHS is a proven copied-source array from a

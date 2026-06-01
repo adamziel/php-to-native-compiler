@@ -4,6 +4,38 @@
 
 Implemented:
 
+- Added a focused `intval()` base-coercion score lane for
+  `intval_binary_prefix.phpt`: the base argument now uses PHP-shaped
+  int-compatible scalar coercion, emits the current null/precision-loss
+  deprecations, treats string inputs with invalid converted bases as `0`, and
+  ignores out-of-range bases for non-string values. Focused
+  `CARGO_TARGET_DIR=/tmp/phpc-target-batch2-intval CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test scalar_casts -- --test-threads=1`
+  passed `16 / 16`; the combined Batch025 focused gate
+  `CARGO_TARGET_DIR=/tmp/phpc-target-batch2-combined CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test scalar_casts --test current_builtin -- --test-threads=1`
+  passed `25 / 25`; and focused PHPT verification passed `4 / 4` for
+  `intval_binary_prefix.phpt`, `array_next_error1.phpt`,
+  `array_next_error2.phpt`, and `current_variation6.phpt`.
+
+- Prepared the array-pointer integration candidate on top of checkpoint
+  `d2002fb1` for the focused public rows `array_next_error1.phpt`,
+  `array_next_error2.phpt`, and `current_variation6.phpt`. Removing an
+  ordered-array entry now keeps the internal cursor coherent when the cursor was
+  after the removed slot, so an exhausted cursor can observe a later append
+  after the former tail is unset. Direct `next()` on supported
+  function-returned array temporaries emits PHP's bounded "Only variables should
+  be passed by reference" notice and advances the temporary copy, while direct
+  array literals now use the bounded pass-by-reference fatal path. Broad
+  lvalues, object operands, full references/COW parity, exact pointer semantics
+  beyond this focused slice, and native lowering remain unsupported. Focused
+  verification passed:
+  `cargo fmt --check`; `git diff --check -- compiler/src/interpreter.rs compiler/tests/current_builtin.rs runtime/src/lib.rs docs/ARCHITECTURE.md docs/SUPPORT.md docs/PROGRESS.md`;
+  `CARGO_TARGET_DIR=/tmp/phpc-target-array-pointer-integration-d2002 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test current_builtin -- --test-threads=1`
+  with `9 passed / 0 failed`;
+  `CARGO_TARGET_DIR=/tmp/phpc-target-array-pointer-integration-d2002 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo build -p phpc --bin phpc`;
+  and
+  `PHPC_BIN=/tmp/phpc-target-array-pointer-integration-d2002/debug/phpc TEST_PHP_EXECUTABLE=/home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper TEST_PHP_ARGS= TMPDIR=/tmp/phpc-array-pointer-integration-d2002-phpt TEMP=/tmp/phpc-array-pointer-integration-d2002-phpt TMP=/tmp/phpc-array-pointer-integration-d2002-phpt php run-tests.php -q -p /home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper ext/standard/tests/array/array_next_error1.phpt ext/standard/tests/array/array_next_error2.phpt ext/standard/tests/array/current_variation6.phpt`
+  with `3 passed / 0 failed / 0 skipped`.
+
 - Added a post-Batch024 focused score batch with direct PHPT wins:
   string-keyed `$GLOBALS` unsets now remove root symbols so `count($GLOBALS)`
   tracks the reached symbol-table PHPT row; `strcasecmp()` now returns PHP's

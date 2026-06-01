@@ -28562,6 +28562,14 @@ impl PhpArray {
         let key = key.into().normalized();
         if let Some(index) = self.index_for_key_mut(&key) {
             self.entries.remove(index);
+            if let Ok(cursor) = usize::try_from(self.cursor) {
+                if cursor > index {
+                    self.cursor -= 1;
+                }
+                if self.cursor > self.entries.len() as isize {
+                    self.cursor = self.entries.len() as isize;
+                }
+            }
             self.invalidate_key_index();
             return true;
         }
