@@ -77758,6 +77758,34 @@ impl Interpreter {
         }
     }
 
+    fn filesystem_predicate_path_argument(
+        &mut self,
+        function: &str,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<String> {
+        match value {
+            Value::String(path) => Ok(path.clone()),
+            Value::BinaryString(bytes) => {
+                let path = tree_walk_binary_string_utf8(bytes, "filesystem path", span)?;
+                Ok(path.to_string())
+            }
+            Value::Null | Value::Bool(_) | Value::Int(_) | Value::Float(_) => {
+                Ok(value.echo_string())
+            }
+            other => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{function}()"),
+                    format!(
+                        "path argument must be string in the current subset, got {}",
+                        other.type_name()
+                    ),
+                ),
+            )),
+        }
+    }
+
     fn filesystem_scalar_metadata_path_argument(
         &mut self,
         function: &str,
@@ -87328,44 +87356,34 @@ impl Interpreter {
             }
             "is_dir" => {
                 expect_arity(name, &args, 1, span)?;
-                match &args[0] {
-                    Value::String(path) => {
-                        if path.contains("://") {
-                            return Err(runtime_error(
-                                span,
-                                RuntimeError::unsupported_call(
-                                    "is_dir()",
-                                    "stream wrappers are not supported in the current subset",
-                                ),
-                            ));
-                        }
-                        let metadata_path =
-                            self.resolve_local_filesystem_operation_path("is_dir", path, false, span)?;
-                        if !self.enforce_bounded_open_basedir(
-                            "is_dir()",
-                            path,
-                            &metadata_path,
-                            span,
-                        )? {
-                            return Ok(Value::Bool(false));
-                        }
-                        Ok(Value::Bool(
-                            fs::metadata(&metadata_path)
-                                .map(|metadata| metadata.is_dir())
-                                .unwrap_or(false),
-                        ))
-                    }
-                    other => Err(runtime_error(
+                let path = self.filesystem_predicate_path_argument("is_dir", &args[0], span)?;
+                if path.is_empty() || path.contains('\0') {
+                    return Ok(Value::Bool(false));
+                }
+                if path.contains("://") {
+                    return Err(runtime_error(
                         span,
                         RuntimeError::unsupported_call(
                             "is_dir()",
-                            format!(
-                                "path argument must be string in the current subset, got {}",
-                                other.type_name()
-                            ),
+                            "stream wrappers are not supported in the current subset",
                         ),
-                    )),
+                    ));
                 }
+                let metadata_path =
+                    self.resolve_local_filesystem_operation_path("is_dir", &path, false, span)?;
+                if !self.enforce_bounded_open_basedir(
+                    "is_dir()",
+                    &path,
+                    &metadata_path,
+                    span,
+                )? {
+                    return Ok(Value::Bool(false));
+                }
+                Ok(Value::Bool(
+                    fs::metadata(&metadata_path)
+                        .map(|metadata| metadata.is_dir())
+                        .unwrap_or(false),
+                ))
             }
             "is_file" => {
                 expect_arity(name, &args, 1, span)?;
@@ -87453,27 +87471,7 @@ impl Interpreter {
             "is_writable" | "is_writeable" => {
                 expect_arity(name, &args, 1, span)?;
                 let function_label = format!("{name}()");
-                let path = match &args[0] {
-                    Value::String(path) => path.clone(),
-                    Value::BinaryString(bytes) => {
-                        tree_walk_binary_string_utf8(bytes, "filesystem path", span)?.to_string()
-                    }
-                    Value::Null | Value::Bool(_) | Value::Int(_) | Value::Float(_) => {
-                        args[0].echo_string()
-                    }
-                    other => {
-                        return Err(runtime_error(
-                            span,
-                            RuntimeError::unsupported_call(
-                                function_label,
-                                format!(
-                                    "path argument must be string in the current subset, got {}",
-                                    other.type_name()
-                                ),
-                            ),
-                        ));
-                    }
-                };
+                let path = self.filesystem_predicate_path_argument(name, &args[0], span)?;
                 if path.is_empty() || path.contains('\0') {
                     return Ok(Value::Bool(false));
                 }

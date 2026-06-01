@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Currentized the bounded filesystem predicate residual lane for the selected
+  local metadata PHPT rows. `is_dir()` now uses a reusable predicate path
+  argument helper shared with `is_writable()` / `is_writeable()`, accepting
+  string and valid UTF-8 binary-string paths plus bounded scalar/null
+  false-case operands while keeping arrays, objects, resources, stream
+  wrappers, exact diagnostics, stat-cache fidelity, and native lowering outside
+  the supported surface. Existing `is_readable_variation3.phpt` and
+  `is_writable_variation2.phpt` were retained as non-repeat guards and stayed
+  green; no script metadata/statpage helpers were duplicated. Focused Rust
+  passed `20 / 20` across `is_dir_builtin`, `is_readable_builtin`, and
+  `is_writable_builtin`; `cargo build -p phpc --bin phpc` passed; selected
+  PHPT proof passed `3 / 3` for `is_dir_variation3.phpt`,
+  `is_readable_variation3.phpt`, and `is_writable_variation2.phpt`; `cargo
+  fmt --check` and `git diff --check` passed.
+
 - Added a bounded ext/hash algorithm execution lane for `hash()` over `md5`,
   `adler32`, `fnv132`, `fnv1a32`, `fnv164`, `fnv1a64`, and `joaat`, reusing
   the existing hash dispatcher and raw/hex output path rather than adding

@@ -5491,14 +5491,17 @@
   dedicated current-directory codegen boundary before argument lowering or
   backend output, while native function-table introspection can still see the
   known builtin name.
-  `is_dir($path)` accepts one string local path, rejects stream-wrapper paths,
-  returns `true` for host directories, and returns `false` for missing paths or
-  non-directory paths. It shares the same current relative path policy as
-  `file_exists`, including bounded request-local `open_basedir` denials that
+  `is_dir($path)` accepts string and binary-string local paths plus the
+  bounded scalar false-case forms reached by PHPT (`null`, booleans,
+  integers, floats, empty strings, and NUL-containing paths), rejects
+  stream-wrapper paths, returns `true` for host directories, and returns
+  `false` for missing paths or non-directory paths. It shares the same current
+  relative path policy as `file_exists`, including bounded request-local
+  `open_basedir` denials that
   emit a PHP-style warning and return `false`. Include-path lookup, stream wrappers,
   canonicalization/symlink policy, portable permissions, warning behavior
   beyond the documented denial slice,
-  non-string coercions, stat-cache behavior, partial-output
+  array/object/resource path coercions, stat-cache behavior, partial-output
   behavior, and native lowering remain unsupported.
   `is_file($path)` accepts one string local path, rejects stream-wrapper paths,
   returns `true` for host regular files, and returns `false` for missing paths,
@@ -11723,11 +11726,12 @@
   portable permissions, stat-cache behavior, TOCTOU semantics, broad scalar
   coercions, exact diagnostics, and native lowering beyond the dedicated
   direct-call rejection plus function-table introspection
-- `is_dir()` behavior beyond the current one-string local path metadata slice:
+- `is_dir()` behavior beyond the current scalar/string local path metadata
+  slice:
   include-path lookup, stream wrappers, symlink/canonicalization policy,
   permission behavior, `open_basedir` policy beyond the shared local allow-list
-  check, non-string coercions, stat-cache behavior, exact diagnostics, and
-  native lowering beyond function-table introspection
+  check, array/object/resource coercions, stat-cache behavior, exact
+  diagnostics, and native lowering beyond function-table introspection
 - `getcwd()` behavior beyond the current no-argument UTF-8 process-current-dir
   slice: `chdir()` state mutation, failure returning `false`, non-UTF-8 host
   paths, SAPI-specific working directory policy, include-path interaction,
@@ -11978,7 +11982,9 @@ Unsupported code should fail with an explicit parse, runtime, or codegen error.
   `open_basedir` warnings plus `false` for denied paths. `file_exists()`,
   `filesize()`, `is_dir()`, `is_file()`, `is_readable()`, `is_writable()`,
   and `is_link()` share that same bounded denial path, including
-  relative-parent escape checks after `open_basedir=.`. `is_executable()` uses
+  relative-parent escape checks after `open_basedir=.`. `is_dir()`,
+  `is_readable()`, and `is_writable()` also return silent `false` for the
+  documented bounded scalar/null false-case path operands. `is_executable()` uses
   the bounded Unix owner-execute mode bit for local filesystem paths, silently
   returning `false` for missing, empty, null-byte, regular-file
   trailing-separator, or open_basedir-denied paths after the documented warning
