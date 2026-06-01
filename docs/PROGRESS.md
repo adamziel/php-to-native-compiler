@@ -1,5 +1,22 @@
 # Progress Log
 
+## 2026-06-01
+
+Implemented:
+
+- Added a compact ext/standard math negative-zero slice for `round()` results.
+  The interpreter/runtime now preserves `-0` through scalar float-to-string
+  conversion and the bounded `printf()`/`sprintf()` general-float sign path, so
+  selected deterministic round rows keep PHP-shaped negative-zero output. Added
+  focused Rust/unit coverage plus Milestone 2305 CLI fixture coverage. Focused
+  PHPT proof covers
+  `ext/standard/tests/math/round_gh12143_1.phpt`,
+  `ext/standard/tests/math/round_gh12143_3.phpt`, and
+  `ext/standard/tests/math/round_modes_zeros.phpt`. Decimal prerounding,
+  high-positive-precision/exponent parity, broader floating-point boundary
+  behavior, unsupported parser shapes in larger round PHPT drivers, and native
+  lowering remain unsupported.
+
 ## 2026-05-27
 
 Implemented:

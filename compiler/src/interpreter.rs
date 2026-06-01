@@ -125716,7 +125716,7 @@ impl Interpreter {
             SprintfPlaceholderKind::Float => {
                 let value = self.sprintf_float_argument(function, value, span)?;
                 let precision = self.sprintf_float_precision(function, precision, span)?;
-                if placeholder.show_plus && value >= 0.0 {
+                if placeholder.show_plus && !value.is_sign_negative() {
                     format!("+{value:.precision$}")
                 } else {
                     format!("{value:.precision$}")
@@ -125732,7 +125732,7 @@ impl Interpreter {
                         format!("{value:.precision$e}")
                     };
                 let formatted = normalize_sprintf_exponent(formatted);
-                if placeholder.show_plus && value >= 0.0 {
+                if placeholder.show_plus && !value.is_sign_negative() {
                     format!("+{formatted}")
                 } else {
                     formatted
@@ -125743,7 +125743,7 @@ impl Interpreter {
                 let precision = self.sprintf_general_precision(function, precision, span)?;
                 let upper = matches!(placeholder.kind, SprintfPlaceholderKind::GeneralUpper);
                 let formatted = format_sprintf_general_float(value, precision, upper);
-                if placeholder.show_plus && value >= 0.0 {
+                if placeholder.show_plus && !value.is_sign_negative() {
                     format!("+{formatted}")
                 } else {
                     formatted
@@ -126304,6 +126304,13 @@ fn format_sprintf_general_float(
         };
         return value.to_string();
     }
+    if value == 0.0 {
+        return if value.is_sign_negative() {
+            "-0".to_string()
+        } else {
+            "0".to_string()
+        };
+    }
 
     if precision == SprintfGeneralPrecision::PhpDefault {
         let decimals = 16;
@@ -126318,9 +126325,6 @@ fn format_sprintf_general_float(
     let SprintfGeneralPrecision::Digits(precision) = precision else {
         unreachable!("default precision handled above")
     };
-    if value == 0.0 {
-        return "0".to_string();
-    }
 
     let abs = value.abs();
     let exponent = abs.log10().floor() as i32;
@@ -126550,7 +126554,11 @@ fn php_default_precision_float_string(value: f64) -> String {
         };
     }
     if value == 0.0 {
-        return "0".to_string();
+        return if value.is_sign_negative() {
+            "-0".to_string()
+        } else {
+            "0".to_string()
+        };
     }
 
     let abs = value.abs();
@@ -140500,6 +140508,29 @@ mod tests {
         assert_eq!(format_var_dump_float(1.0e17), "1.0E+17");
         assert_eq!(format_var_dump_float(1.0e-5), "1.0E-5");
         assert_eq!(format_var_dump_float(0.0001), "0.0001");
+    }
+
+    #[test]
+    fn round_negative_zero_preserves_php_string_and_printf_sign() {
+        assert_eq!(Value::Float(-0.0).echo_string(), "-0");
+        assert_eq!(php_default_precision_float_string(-0.0), "-0");
+        assert_eq!(
+            format_sprintf_general_float(-0.0, SprintfGeneralPrecision::Digits(17), false),
+            "-0"
+        );
+
+        let source = concat!(
+            "<?php\n",
+            "echo round(-0.0), \"\\n\";\n",
+            "printf(\"%+.17g\\n\", round(-0.5, 0, PHP_ROUND_HALF_DOWN));\n",
+            "printf(\"%+.17g\\n\", round(-0.49999999999999994, 0, PHP_ROUND_HALF_UP));\n",
+        );
+        let program = parse_source(source).unwrap();
+        let execution = run_program_with_source_file(&program, "round-negative-zero.php").unwrap();
+
+        assert_eq!(execution.exit_code, 0);
+        assert_eq!(execution.stderr, "");
+        assert_eq!(execution.stdout, "-0\n-0\n-0\n");
     }
 
     #[test]

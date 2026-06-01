@@ -45002,13 +45002,16 @@ fn format_php_float(value: f64) -> String {
             "-INF".to_string()
         };
     }
+    if value == 0.0 {
+        return if value.is_sign_negative() {
+            "-0".to_string()
+        } else {
+            "0".to_string()
+        };
+    }
 
     let formatted = format_php_finite_float_default_precision(value, false);
-    if formatted == "-0" {
-        "0".to_string()
-    } else {
-        formatted
-    }
+    formatted
 }
 
 fn format_php_float_for_string_key(value: f64) -> String {

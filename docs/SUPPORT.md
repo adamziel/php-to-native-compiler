@@ -5585,6 +5585,15 @@
   Integer-minimum overflow, numeric string coercion, bool/null coercion,
   array/object/resource operands, NaN/infinity behavior, exact diagnostics, and
   native lowering remain unsupported.
+  `round($num, $precision = 0, $mode = PHP_ROUND_HALF_UP)` accepts current
+  int/float values plus the existing bounded scalar numeric coercions,
+  integer precision arguments, `PHP_ROUND_HALF_*` integer modes, and the
+  bounded `RoundingMode` enum-like cases. Zero-valued float results preserve
+  the negative-zero sign through scalar string conversion and the bounded
+  `printf()`/`sprintf()` general-float sign path used by the focused math
+  rows. Full decimal prerounding parity, high positive precision/exponent
+  parity, every floating-point boundary case, exact cross-version diagnostics,
+  and native lowering remain unsupported.
   `number_format($num, $decimals = 0, $decimal_separator = ".", $thousands_separator = ",")`
   accepts current finite numeric scalar values, full typed numeric strings,
   optional integer decimals including negative decimal positions, and
@@ -11199,6 +11208,11 @@
   calls, mixed-type comparison rules, float/string/bool/null/object/resource
   operands, exact PHP diagnostics, and native lowering beyond function-table
   introspection
+- `round()` outside the current bounded scalar numeric and mode subset:
+  exact decimal prerounding such as all `0.285`-style binary/decimal cases,
+  very large positive precision/exponent parity, broad historical PHP-version
+  rounding differences, unsupported parser shapes in broader PHPT drivers, and
+  native lowering beyond function-table introspection
 - `count()`/`sizeof()` outside the current array and bounded `Countable` object subset:
   full interface signature enforcement, magic `__call` fallback,
   resources/extensions, non-integer object count results, exact diagnostics,

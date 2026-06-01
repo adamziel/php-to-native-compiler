@@ -2983,6 +2983,12 @@ request bags as ordinary missing native variables.
 finite-float values. It is intentionally narrower than PHP coercion until
 numeric string, bool/null coercion, overflow, NaN/infinity, and native runtime
 numeric diagnostics are modeled.
+`round()` is an interpreter-only bounded numeric builtin over the current
+boxed scalar argument path. It supports the documented `PHP_ROUND_HALF_*` and
+bounded `RoundingMode` cases, and the runtime scalar/`printf` formatting layer
+preserves negative-zero results for the focused math compatibility rows.
+Decimal prerounding/high-precision parity and native lowering remain explicit
+future work.
 `microtime(true)` is an interpreter-only host-clock boundary for bootstrap
 timing checks. It returns a finite float seconds value from `SystemTime`, while
 the string-return forms stay unsupported until time virtualization, formatting,
