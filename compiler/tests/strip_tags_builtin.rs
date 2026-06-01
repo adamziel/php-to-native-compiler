@@ -42,6 +42,31 @@ echo strip_tags($array, ['p' => 'a']);
 }
 
 #[test]
+fn strip_tags_handles_self_closing_allowed_tags_and_malformed_slash_boundaries() {
+    let execution = run_source(
+        r#"<?php
+$str = '<br /><br  />USD<input type="text"/><br/>CDN<br><input type="text" />';
+var_dump(strip_tags($str, '<input>'));
+var_dump(strip_tags($str, '<br><input>') === $str);
+var_dump(strip_tags($str));
+var_dump(strip_tags('<a/b>', '<a>'));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "string(47) \"USD<input type=\"text\"/>CDN<input type=\"text\" />\"\n",
+            "bool(true)\n",
+            "string(6) \"USDCDN\"\n",
+            "string(0) \"\"\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn strip_tags_ignores_angle_brackets_inside_quoted_attributes() {
     let execution = run_source(
         r#"<?php

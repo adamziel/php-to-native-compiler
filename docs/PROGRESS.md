@@ -20,6 +20,20 @@ Implemented:
   stringification/default spelling parity beyond the named bounded internal
   slice remain unsupported.
 
+- Added a follow-on `ext/standard/tests/strings` residual slice for selected
+  HTML and tag-stripping helpers. `html_entity_decode()` now emits ISO-8859-1
+  bytes for numeric and named entities that fit in one byte and leaves
+  non-representable named entities such as `&OElig;` unchanged; `strip_tags()`
+  now preserves allowed self-closing tags while stripping malformed slash
+  boundaries such as `<a/b>`. Focused Rust coverage pins the byte output,
+  quote-flag behavior, non-representable ISO entity fallback, and tag boundary
+  behavior. Selected PHPT proof targets
+  `ext/standard/tests/strings/bug53021.phpt`,
+  `ext/standard/tests/strings/bug53319.phpt`, and
+  `ext/standard/tests/strings/bug61374.phpt`. Broader legacy charset output,
+  full HTML entity tables, full HTML parsing, and additional malformed tag
+  parity remain unsupported.
+
 ## 2026-05-27
 
 Implemented:

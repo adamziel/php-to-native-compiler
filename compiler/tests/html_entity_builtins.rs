@@ -43,6 +43,28 @@ echo html_entity_decode("&apos;", ENT_QUOTES | ENT_HTML401, "UTF-8"), "\n";
 }
 
 #[test]
+fn html_entity_decode_respects_selected_iso_8859_1_entities() {
+    let execution = run_source(
+        r#"<?php
+var_dump(bin2hex(html_entity_decode("&#233;", ENT_QUOTES, "ISO-8859-1")));
+var_dump(bin2hex(html_entity_decode("&eacute;", ENT_QUOTES, "ISO-8859-1")));
+echo html_entity_decode("&OElig;", ENT_NOQUOTES, "ISO-8859-1"), "\n";
+echo html_entity_decode("&quot;|&#34;|&quot;|&#34;", ENT_NOQUOTES, "UTF-8"), "\n";
+echo html_entity_decode("&quot;|&#34;|&quot;|&#34;", ENT_QUOTES, "UTF-8"), "\n";
+echo html_entity_decode("&#39;|&#39;", ENT_NOQUOTES, "UTF-8"), "\n";
+echo html_entity_decode("&#39;|&#39;", ENT_QUOTES, "UTF-8"), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "string(2) \"e9\"\nstring(2) \"e9\"\n&OElig;\n&quot;|&#34;|&quot;|&#34;\n\"|\"|\"|\"\n&#39;|&#39;\n'|'\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn htmlspecialchars_reports_unsupported_charsets_and_uses_utf8_fallback() {
     let execution = run_source(
         r#"<?php

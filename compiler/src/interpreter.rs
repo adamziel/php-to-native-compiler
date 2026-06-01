@@ -115009,6 +115009,12 @@ enum HtmlQuoteMode {
     Both,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum HtmlDecodeCharset {
+    Utf8,
+    Iso88591,
+}
+
 fn html_quote_mode(flags: i64) -> HtmlQuoteMode {
     if flags & PHP_ENT_QUOTES == PHP_ENT_QUOTES {
         HtmlQuoteMode::Both
@@ -115073,15 +115079,40 @@ fn html_validate_encoding_arg(
     Ok(())
 }
 
-fn html_charset_is_supported(bytes: &[u8]) -> bool {
-    let normalized: String = bytes
-        .iter()
-        .filter_map(|byte| match *byte {
-            b'-' | b'_' | b' ' => None,
-            byte => Some(byte.to_ascii_uppercase() as char),
-        })
-        .collect();
+fn html_decode_charset_arg(
+    interpreter: &mut Interpreter,
+    args: &[Value],
+    index: usize,
+    function: &str,
+    span: Span,
+) -> CompileResult<HtmlDecodeCharset> {
+    let Some(value) = args.get(index) else {
+        return Ok(HtmlDecodeCharset::Utf8);
+    };
+    if matches!(value, Value::Null) {
+        return Ok(HtmlDecodeCharset::Utf8);
+    }
+    let bytes = string_compare_argument_bytes(function, "encoding", value, span)?;
+    if !html_charset_is_supported(&bytes) {
+        interpreter.emit_display_warning(
+            format!(
+                "{function}: Charset \"{}\" is not supported, assuming UTF-8",
+                String::from_utf8_lossy(&bytes)
+            ),
+            span,
+        )?;
+        return Ok(HtmlDecodeCharset::Utf8);
+    }
 
+    if html_charset_normalized(&bytes) == "ISO88591" {
+        Ok(HtmlDecodeCharset::Iso88591)
+    } else {
+        Ok(HtmlDecodeCharset::Utf8)
+    }
+}
+
+fn html_charset_is_supported(bytes: &[u8]) -> bool {
+    let normalized = html_charset_normalized(bytes);
     matches!(
         normalized.as_str(),
         "" | "UTF8"
@@ -115101,6 +115132,16 @@ fn html_charset_is_supported(bytes: &[u8]) -> bool {
             | "CP866"
             | "IBM866"
     )
+}
+
+fn html_charset_normalized(bytes: &[u8]) -> String {
+    bytes
+        .iter()
+        .filter_map(|byte| match *byte {
+            b'-' | b'_' | b' ' => None,
+            byte => Some(byte.to_ascii_uppercase() as char),
+        })
+        .collect()
 }
 
 fn call_htmlspecialchars(
@@ -115169,7 +115210,10 @@ fn call_htmlspecialchars_decode(args: &[Value], span: Span) -> CompileResult<Val
         string_compare_argument_bytes("htmlspecialchars_decode()", "string", &args[0], span)?;
     let flags = html_default_flags(args, 1, "htmlspecialchars_decode()", span)?;
     Ok(interpreter_value_from_php_string_bytes(html_decode_bytes(
-        &value, flags, false,
+        &value,
+        flags,
+        false,
+        HtmlDecodeCharset::Utf8,
     )))
 }
 
@@ -115191,9 +115235,9 @@ fn call_html_entity_decode(
 
     let value = string_compare_argument_bytes("html_entity_decode()", "string", &args[0], span)?;
     let flags = html_default_flags(args, 1, "html_entity_decode()", span)?;
-    html_validate_encoding_arg(interpreter, args, 2, "html_entity_decode()", span)?;
+    let charset = html_decode_charset_arg(interpreter, args, 2, "html_entity_decode()", span)?;
     Ok(interpreter_value_from_php_string_bytes(html_decode_bytes(
-        &value, flags, true,
+        &value, flags, true, charset,
     )))
 }
 
@@ -115496,9 +115540,13 @@ fn strip_tags_html_tag_name(value: &[u8], mut index: usize) -> Option<(String, u
     if start == index || !value[start].is_ascii_alphabetic() {
         return None;
     }
-    let boundary_valid = value
-        .get(index)
-        .is_some_and(|byte| byte.is_ascii_whitespace() || matches!(*byte, b'/' | b'>'));
+    let boundary_valid = match value.get(index).copied() {
+        Some(byte) if byte.is_ascii_whitespace() || byte == b'>' => true,
+        Some(b'/') => value
+            .get(index + 1)
+            .is_some_and(|byte| byte.is_ascii_whitespace() || *byte == b'>'),
+        _ => false,
+    };
     let name = value[start..index]
         .iter()
         .map(|byte| byte.to_ascii_lowercase() as char)
@@ -115589,7 +115637,12 @@ fn html_entity_like_end(value: &[u8], amp_index: usize) -> Option<usize> {
     (index > start && value.get(index) == Some(&b';')).then_some(index)
 }
 
-fn html_decode_bytes(value: &[u8], flags: i64, all_entities: bool) -> Vec<u8> {
+fn html_decode_bytes(
+    value: &[u8],
+    flags: i64,
+    all_entities: bool,
+    charset: HtmlDecodeCharset,
+) -> Vec<u8> {
     let mut output = Vec::with_capacity(value.len());
     let quote_mode = html_quote_mode(flags);
     let mut index = 0;
@@ -115601,7 +115654,7 @@ fn html_decode_bytes(value: &[u8], flags: i64, all_entities: bool) -> Vec<u8> {
         }
 
         if let Some((consumed, decoded)) =
-            html_decode_entity_at(value, index, flags, quote_mode, all_entities)
+            html_decode_entity_at(value, index, flags, quote_mode, all_entities, charset)
         {
             output.extend_from_slice(&decoded);
             index += consumed;
@@ -115619,6 +115672,7 @@ fn html_decode_entity_at(
     flags: i64,
     quote_mode: HtmlQuoteMode,
     all_entities: bool,
+    charset: HtmlDecodeCharset,
 ) -> Option<(usize, Vec<u8>)> {
     let rest = &value[amp_index..];
     for (entity, decoded) in HTML_BASIC_DECODE_ENTITIES {
@@ -115641,24 +115695,57 @@ fn html_decode_entity_at(
     if all_entities {
         for (decoded, entity) in HTML_ENTITY_EXTRA_TRANSLATIONS {
             if rest.starts_with(entity.as_bytes()) {
-                return Some((entity.len(), decoded.to_vec()));
+                if let Some(decoded) = html_entity_decoded_bytes_for_charset(decoded, charset) {
+                    return Some((entity.len(), decoded));
+                }
             }
         }
     }
 
     html_numeric_entity_at(value, amp_index).and_then(|(consumed, codepoint)| {
         if html_numeric_decode_allowed(codepoint, quote_mode, all_entities) {
-            let mut buffer = [0_u8; 4];
-            char::from_u32(codepoint).map(|character| {
-                (
-                    consumed,
-                    character.encode_utf8(&mut buffer).as_bytes().to_vec(),
-                )
-            })
+            html_numeric_decoded_bytes_for_charset(codepoint, charset)
+                .map(|decoded| (consumed, decoded))
         } else {
             None
         }
     })
+}
+
+fn html_entity_decoded_bytes_for_charset(
+    decoded: &[u8],
+    charset: HtmlDecodeCharset,
+) -> Option<Vec<u8>> {
+    match charset {
+        HtmlDecodeCharset::Utf8 => Some(decoded.to_vec()),
+        HtmlDecodeCharset::Iso88591 => {
+            if decoded.len() == 1 && decoded[0].is_ascii() {
+                return Some(decoded.to_vec());
+            }
+            let decoded = std::str::from_utf8(decoded).ok()?;
+            let mut chars = decoded.chars();
+            let character = chars.next()?;
+            if chars.next().is_some() {
+                return None;
+            }
+            let codepoint = character as u32;
+            (codepoint <= 0xff).then_some(vec![codepoint as u8])
+        }
+    }
+}
+
+fn html_numeric_decoded_bytes_for_charset(
+    codepoint: u32,
+    charset: HtmlDecodeCharset,
+) -> Option<Vec<u8>> {
+    match charset {
+        HtmlDecodeCharset::Utf8 => {
+            let mut buffer = [0_u8; 4];
+            char::from_u32(codepoint)
+                .map(|character| character.encode_utf8(&mut buffer).as_bytes().to_vec())
+        }
+        HtmlDecodeCharset::Iso88591 => (codepoint <= 0xff).then_some(vec![codepoint as u8]),
+    }
 }
 
 fn html_numeric_entity_at(value: &[u8], amp_index: usize) -> Option<(usize, u32)> {

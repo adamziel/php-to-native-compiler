@@ -3120,14 +3120,18 @@
   `get_html_translation_table` cover the current byte-string special-character
   subset, quote-style flags, double-encode preservation, selected Latin-1
   named entities, bounded charset validation with UTF-8 fallback warnings,
+  selected `html_entity_decode()` ISO-8859-1 byte output for numeric and named
+  entities representable as single-byte code points while leaving
+  non-representable named entities unchanged,
   bounded internal `ReflectionFunction::__toString()` metadata for the selected
   `htmlspecialchars()`/`get_html_translation_table()` parameter defaults and
   return types, and the `HTML_*` / `ENT_*` constants. Recognized charset
   names are limited to the current UTF-8, ISO-8859-1/15, Shift-JIS, EUC-JP,
   Windows-1251/1252, and IBM866 spellings reached by PHPT coverage. Full
   HTML4/HTML5 translation tables, all legacy encodings, invalid Unicode
-  substitution/disallowed-character parity, exact reflection metadata for every
-  HTML-entity function and PHP version, and native lowering remain unsupported.
+  substitution/disallowed-character parity, byte-output decoding for other
+  non-UTF-8 charsets, exact reflection metadata for every HTML-entity function
+  and PHP version, and native lowering remain unsupported.
 - exact uppercase PHP error mask constants `E_ERROR`, `E_WARNING`, `E_PARSE`,
   `E_NOTICE`, `E_CORE_ERROR`, `E_CORE_WARNING`, `E_COMPILE_ERROR`,
   `E_COMPILE_WARNING`, `E_USER_ERROR`, `E_USER_WARNING`, `E_USER_NOTICE`,
@@ -3466,6 +3470,13 @@
   Character-mask ranges, empty masks, binary/null-byte edge cases beyond the
   current represented runtime-string subset, array/object/resource coercions,
   exact PHP diagnostics, and native lowering remain unsupported.
+  `strip_tags($string, $allowed_tags = null)` supports scalar/null
+  string-convertible input, allowed tags from the current string and array
+  forms, PHP/comment stripping, NUL-byte removal, quote-aware tag ends,
+  preserving selected normal and self-closing allowed tags, and stripping the
+  malformed slash-boundary shape covered by `<a/b>`. Full HTML parsing,
+  malformed tag parity beyond the covered slash-boundary row, broad argument
+  coercions, exact diagnostics, and native lowering remain unsupported.
   `array_push($array, ...$values)` supports direct calls and string-valued
   direct dynamic calls when the first argument is a direct variable array path,
   including selected nested paths such as `$array[$key]`. It evaluates pushed
