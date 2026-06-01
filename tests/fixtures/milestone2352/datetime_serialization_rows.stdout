@@ -1,0 +1,8 @@
+O:12:"DateTimeZone":2:{s:13:"timezone_type";i:3;s:8:"timezone";s:11:"Europe/Oslo";}
+Europe/Oslo|a:2:{s:13:"timezone_type";i:3;s:8:"timezone";s:11:"Europe/Oslo";}
+O:12:"DateTimeZone":2:{s:13:"timezone_type";i:1;s:8:"timezone";s:6:"+04:00";}
+O:8:"DateTime":3:{s:4:"date";s:26:"2005-07-14 22:30:41.000000";s:13:"timezone_type";i:2;s:8:"timezone";s:3:"GMT";}
+1121380241|GMT|2005-07-14 22:30:41
+1121380241|GMT|2005-07-14 22:30:41
+tz-method|dt-method
+

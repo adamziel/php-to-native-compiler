@@ -17272,12 +17272,86 @@ impl Interpreter {
         name: &str,
         span: Span,
     ) -> CompileResult<()> {
+        self.assign_datetimezone_object_name_for_function(
+            object,
+            name,
+            "DateTimeZone::__construct()",
+            span,
+        )
+    }
+
+    fn assign_datetimezone_object_from_serialized_array(
+        &self,
+        object: &PhpObject,
+        data: &PhpArray,
+        function: &'static str,
+        span: Span,
+    ) -> CompileResult<()> {
+        match data.get("timezone_type") {
+            Some(Value::Int(_)) => {}
+            Some(other) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        function,
+                        format!(
+                            "timezone_type entry must be int in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+            None => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        function,
+                        "timezone_type entry is required in the current subset",
+                    ),
+                ));
+            }
+        }
+        let timezone = match data.get("timezone") {
+            Some(Value::String(value)) => value,
+            Some(other) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        function,
+                        format!(
+                            "timezone entry must be string in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+            None => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        function,
+                        "timezone entry is required in the current subset",
+                    ),
+                ));
+            }
+        };
+
+        self.assign_datetimezone_object_name_for_function(object, timezone, function, span)
+    }
+
+    fn assign_datetimezone_object_name_for_function(
+        &self,
+        object: &PhpObject,
+        name: &str,
+        function: &'static str,
+        span: Span,
+    ) -> CompileResult<()> {
         let (timezone_type, timezone_name) =
             bounded_timezone_object_parts(name).ok_or_else(|| {
                 runtime_error(
                     span,
                     RuntimeError::unsupported_call(
-                        "DateTimeZone::__construct()",
+                        function,
                         format!(
                             "timezone identifier {name} is not implemented in the current subset"
                         ),
@@ -17291,6 +17365,38 @@ impl Interpreter {
             .write_public_property("timezone", Value::String(timezone_name))
             .map_err(|error| runtime_error(span, error))?;
         Ok(())
+    }
+
+    fn datetimezone_serialization_array(
+        object: &PhpObject,
+        function: &'static str,
+        span: Span,
+    ) -> CompileResult<PhpArray> {
+        Self::datetime_core_serialization_array(object, function, span)
+    }
+
+    fn datetime_core_serialization_array(
+        object: &PhpObject,
+        function: &'static str,
+        span: Span,
+    ) -> CompileResult<PhpArray> {
+        let mut array = PhpArray::new();
+        for property in display_object_properties(object) {
+            if !property.is_initialized() {
+                continue;
+            }
+            if property.visibility() != Visibility::Public {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        function,
+                        "non-public date object serialization properties are not implemented in the current subset",
+                    ),
+                ));
+            }
+            array.insert(property.name(), property.value_cloned());
+        }
+        Ok(array)
     }
 
     fn datetimezone_name(
@@ -17434,6 +17540,34 @@ impl Interpreter {
                     &name, start, end,
                 )))
             }
+            "__serialize" => {
+                expect_expr_arity("DateTimeZone::__serialize", args.len(), 0, span)?;
+                Self::datetimezone_serialization_array(&object, "DateTimeZone::__serialize()", span)
+                    .map(Value::Array)
+            }
+            "__unserialize" => {
+                expect_expr_arity("DateTimeZone::__unserialize", args.len(), 1, span)?;
+                let value = self.evaluate(&args[0], caller_scope)?;
+                let Value::Array(data) = value else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "DateTimeZone::__unserialize()",
+                            format!(
+                                "data argument must be array in the current subset, got {}",
+                                value.type_name()
+                            ),
+                        ),
+                    ));
+                };
+                self.assign_datetimezone_object_from_serialized_array(
+                    &object,
+                    &data,
+                    "DateTimeZone::__unserialize()",
+                    span,
+                )?;
+                Ok(Value::Null)
+            }
             _ => Err(runtime_error(
                 span,
                 RuntimeError::undefined_function(format!("DateTimeZone::{method_name}()")),
@@ -17534,6 +17668,117 @@ impl Interpreter {
             },
         );
         Ok(())
+    }
+
+    fn assign_datetime_object_from_serialized_array(
+        &mut self,
+        object: &PhpObject,
+        data: &PhpArray,
+        function: &'static str,
+        span: Span,
+    ) -> CompileResult<()> {
+        let date = match data.get("date") {
+            Some(Value::String(value)) => value,
+            Some(other) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        function,
+                        format!(
+                            "date entry must be string in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+            None => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        function,
+                        "date entry is required in the current subset",
+                    ),
+                ));
+            }
+        };
+        match data.get("timezone_type") {
+            Some(Value::Int(_)) => {}
+            Some(other) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        function,
+                        format!(
+                            "timezone_type entry must be int in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+            None => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        function,
+                        "timezone_type entry is required in the current subset",
+                    ),
+                ));
+            }
+        }
+        let timezone_name = match data.get("timezone") {
+            Some(Value::String(value)) => value,
+            Some(other) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        function,
+                        format!(
+                            "timezone entry must be string in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+            None => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        function,
+                        "timezone entry is required in the current subset",
+                    ),
+                ));
+            }
+        };
+        let timezone = bounded_timezone_from_name(timezone_name).ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function,
+                    format!(
+                        "timezone identifier {timezone_name} is not implemented in the current subset"
+                    ),
+                ),
+            )
+        })?;
+        let timestamp =
+            parse_bounded_serialized_datetime_date(date, &timezone).ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        function,
+                        format!("date entry {date:?} is not implemented in the current subset"),
+                    ),
+                )
+            })?;
+        self.assign_datetime_object_state(object, timestamp, timezone, span)
+    }
+
+    fn datetime_serialization_array(
+        object: &PhpObject,
+        function: &'static str,
+        span: Span,
+    ) -> CompileResult<PhpArray> {
+        Self::datetime_core_serialization_array(object, function, span)
     }
 
     fn create_datetime_object_from_values(
@@ -17772,6 +18017,34 @@ impl Interpreter {
                 };
                 self.modify_datetime_object(&object, &modifier, "DateTime::modify()", span)?;
                 Ok(Value::Object(object))
+            }
+            "__serialize" => {
+                expect_expr_arity("DateTime::__serialize", args.len(), 0, span)?;
+                Self::datetime_serialization_array(&object, "DateTime::__serialize()", span)
+                    .map(Value::Array)
+            }
+            "__unserialize" => {
+                expect_expr_arity("DateTime::__unserialize", args.len(), 1, span)?;
+                let value = self.evaluate(&args[0], caller_scope)?;
+                let Value::Array(data) = value else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "DateTime::__unserialize()",
+                            format!(
+                                "data argument must be array in the current subset, got {}",
+                                value.type_name()
+                            ),
+                        ),
+                    ));
+                };
+                self.assign_datetime_object_from_serialized_array(
+                    &object,
+                    &data,
+                    "DateTime::__unserialize()",
+                    span,
+                )?;
+                Ok(Value::Null)
             }
             _ => Err(runtime_error(
                 span,
@@ -88416,6 +88689,31 @@ impl Interpreter {
                 .write_dynamic_public_property(&name, value)
                 .map_err(|error| runtime_error(span, error))?;
         }
+        if object.is_instance_of_class_name("DateTimeZone") {
+            let data = Self::datetime_core_serialization_array(
+                &object,
+                "DateTimeZone::__unserialize()",
+                span,
+            )?;
+            self.assign_datetimezone_object_from_serialized_array(
+                &object,
+                &data,
+                "DateTimeZone::__unserialize()",
+                span,
+            )?;
+        } else if object.is_instance_of_class_name("DateTime") {
+            let data = Self::datetime_core_serialization_array(
+                &object,
+                "DateTime::__unserialize()",
+                span,
+            )?;
+            self.assign_datetime_object_from_serialized_array(
+                &object,
+                &data,
+                "DateTime::__unserialize()",
+                span,
+            )?;
+        }
         self.track_allocated_object(&object);
         Ok(Value::Object(object))
     }
@@ -128990,8 +129288,35 @@ fn format_php_serialized_value(value: &Value, output: &mut String) -> Option<()>
             }
             output.push('}');
         }
+        Value::Object(object) if is_bounded_date_serializable_object(object) => {
+            format_php_serialized_object(object, output)?
+        }
         Value::Object(_) | Value::Closure(_) | Value::Resource(_) => return None,
     }
+    Some(())
+}
+
+fn is_bounded_date_serializable_object(object: &PhpObject) -> bool {
+    object.is_instance_of_class_name("DateTimeZone") || object.is_instance_of_class_name("DateTime")
+}
+
+fn format_php_serialized_object(object: &PhpObject, output: &mut String) -> Option<()> {
+    let properties = display_object_properties(object)
+        .into_iter()
+        .filter(|property| property.is_initialized())
+        .collect::<Vec<_>>();
+    output.push_str("O:");
+    output.push_str(&object.class_name().len().to_string());
+    output.push_str(":\"");
+    output.push_str(object.class_name());
+    output.push_str("\":");
+    output.push_str(&properties.len().to_string());
+    output.push_str(":{");
+    for property in properties {
+        format_php_serialized_array_key(&ArrayKey::String(property.mangled_name()), output);
+        format_php_serialized_value(&property.value_cloned(), output)?;
+    }
+    output.push('}');
     Some(())
 }
 
@@ -137409,7 +137734,8 @@ fn bounded_timezone_object_parts(name: &str) -> Option<(i64, String)> {
     if matches!(trimmed.as_bytes().first(), Some(b'+') | Some(b'-'))
         && parse_timezone_offset_token(trimmed).is_some()
     {
-        return Some((1, trimmed.to_string()));
+        let offset = parse_timezone_offset_token(trimmed)?;
+        return Some((1, format_timezone_offset(offset, true)));
     }
     bounded_timezone_from_name(trimmed).map(|timezone| (3, timezone.name))
 }
@@ -137799,6 +138125,19 @@ fn parse_bounded_strtotime(input: &str, default_timezone: &BoundedTimezone) -> O
     }
 
     parse_bounded_textual_datetime(trimmed, default_timezone)
+}
+
+fn parse_bounded_serialized_datetime_date(
+    input: &str,
+    default_timezone: &BoundedTimezone,
+) -> Option<i64> {
+    let trimmed = input.trim();
+    if let Some((head, fraction)) = trimmed.split_once('.') {
+        if fraction.len() == 6 && fraction.chars().all(|ch| ch.is_ascii_digit()) {
+            return parse_bounded_strtotime(head, default_timezone);
+        }
+    }
+    parse_bounded_strtotime(trimmed, default_timezone)
 }
 
 fn apply_bounded_datetime_modifier(

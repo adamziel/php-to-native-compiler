@@ -1,0 +1,1 @@
+$ phpc run tests/fixtures/milestone2352/datetime_serialization_rows.php

@@ -4,6 +4,32 @@
 
 Implemented:
 
+- Added Milestone 2352, bounded `DateTimeZone`/`DateTime` serialization rows
+  for the current ext/date interpreter subset. `DateTimeZone::__serialize()`,
+  `DateTimeZone::__unserialize()`, `DateTime::__serialize()`,
+  `DateTime::__unserialize()`, `serialize()`, and `unserialize()` now
+  round-trip the public date/timezone debug rows for bounded timezone
+  identifiers and serialized `Y-m-d H:i:s.000000` date strings, including the
+  compact `+HH:MM` display normalization for numeric timezone offsets.
+  Core method metadata now advertises the executable DateTimeZone
+  serialization methods and the currently executable DateTime
+  `getTimestamp()`, `setTimestamp()`, `modify()`, and serialization methods.
+- Added the Milestone 2352 fixture with committed `phpc run` output and system
+  PHP comparison coverage for DateTimeZone serialization, direct
+  `__unserialize()` offset normalization, DateTime serialization round trips,
+  direct DateTime `__unserialize()`, and method metadata probes.
+- Invalid serialized date/timezone diagnostics, exact PHP warning/Error object
+  parity, `__set_state()`, `DateTimeImmutable`, full timelib parsing,
+  arbitrary microsecond behavior, non-public/internal property semantics,
+  dynamic-property deprecation parity, full timezone database parity, and
+  native lowering remain unsupported.
+- Focused checks passed:
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 cargo test -p phpc --test date_time_builtin -- --test-threads=1`;
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone2352`;
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -q -p phpc -- run tests/fixtures/milestone2352/datetime_serialization_rows.php`;
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo check -q -p phpc`;
+  `cargo fmt --check`; and `git diff --check`.
+
 - Added a compact `parse_url()` relative-reference slice for query-only and
   fragment-only inputs. `parse_url("?q")`, `parse_url("#f")`, empty query or
   fragment forms, and component extraction no longer synthesize an empty

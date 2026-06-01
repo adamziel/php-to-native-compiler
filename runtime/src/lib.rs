@@ -32260,7 +32260,14 @@ impl PhpClassTable {
                 Visibility::Public,
             ))
             .expect("DateTimeZone core metadata should not duplicate methods");
-        for method in ["__construct", "getName", "getOffset", "getTransitions"] {
+        for method in [
+            "__construct",
+            "getName",
+            "getOffset",
+            "getTransitions",
+            "__serialize",
+            "__unserialize",
+        ] {
             datetimezone
                 .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
                 .expect("DateTimeZone core metadata should not duplicate methods");
@@ -33102,6 +33109,8 @@ impl PhpClassTable {
             "getOffset",
             "getTimezone",
             "setTimezone",
+            "__serialize",
+            "__unserialize",
         ] {
             datetime
                 .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
@@ -80943,6 +80952,8 @@ mod tests {
         assert!(datetimezone.method("listIdentifiers").is_some());
         assert!(datetimezone.method("listAbbreviations").is_some());
         assert!(datetimezone.method("getName").is_some());
+        assert!(datetimezone.method("__serialize").is_some());
+        assert!(datetimezone.method("__unserialize").is_some());
 
         let datetime = classes.lookup_class("datetime").unwrap();
         assert_eq!(datetime.name(), "DateTime");
@@ -80955,8 +80966,19 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec!["date", "timezone_type", "timezone"]
         );
+        assert!(datetime.constant("ATOM").is_some());
+        assert!(datetime.constant("RFC7231").is_some());
+        assert!(datetime.constant("W3C").is_some());
         assert!(datetime.method("__construct").is_some());
         assert!(datetime.method("format").is_some());
+        assert!(datetime.method("getTimestamp").is_some());
+        assert!(datetime.method("setTimestamp").is_some());
+        assert!(datetime.method("modify").is_some());
+        assert!(datetime.method("getOffset").is_some());
+        assert!(datetime.method("getTimezone").is_some());
+        assert!(datetime.method("setTimezone").is_some());
+        assert!(datetime.method("__serialize").is_some());
+        assert!(datetime.method("__unserialize").is_some());
 
         let reflection_exception = classes.lookup_class("reflectionexception").unwrap();
         assert_eq!(reflection_exception.name(), "ReflectionException");

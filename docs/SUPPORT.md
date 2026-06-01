@@ -5688,6 +5688,23 @@
   argument, `DateTimeImmutable`, broad `DateTimeInterface` runtime/interface
   parity beyond the reached constant diagnostic text, all historical
   transition rules, exact diagnostics, and native lowering remain unsupported.
+  `DateTimeZone` and `DateTime` expose bounded interpreter metadata and
+  serialization rows for the current date PHPT subset. `DateTimeZone` supports
+  `__serialize()`, `__unserialize(array $data)`, `serialize()`, and
+  `unserialize()` for arrays containing `timezone_type` plus `timezone` when
+  the timezone identifier is in the bounded table; numeric offsets are
+  normalized to the compact `+HH:MM`/`-HH:MM` display form. `DateTime`
+  supports the same serialization path for arrays containing `date`,
+  `timezone_type`, and `timezone` when `date` is a bounded
+  `Y-m-d H:i:s.000000`-style value and the timezone is in the bounded table.
+  `DateTime` method metadata includes the currently executable
+  `getTimestamp()`, `setTimestamp()`, `modify()`, `getOffset()`,
+  `getTimezone()`, `setTimezone()`, `__serialize()`, and `__unserialize()`
+  rows. Invalid serialized date/timezone diagnostics, exact PHP
+  `Error`/warning objects and text, `__set_state()`, `DateTimeImmutable`,
+  full timelib parsing, arbitrary microsecond behavior, non-public/internal
+  property semantics, dynamic-property deprecation parity, full timezone
+  database parity, and native lowering remain unsupported.
   `header($header, $replace = true, $response_code = 0)` accepts a string
   header line plus optional bool replacement flag and optional integer response
   code, records the raw header line in deterministic in-process CLI request
