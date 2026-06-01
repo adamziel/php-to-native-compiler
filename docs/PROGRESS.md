@@ -22,6 +22,20 @@ Implemented:
   bounded `ReflectionClass`, `ReflectionFunction::isGenerator()`,
   `ReflectionFunction::isDisabled()`, and native lowering remain unsupported.
 
+- Added a bounded `ReflectionClass` extension metadata slice for current core
+  class-table entries. `ReflectionClass::getExtensionName()` now returns the
+  existing `ReflectionExtension` metadata-table name for mapped internal
+  classes such as `DOMDocument` and `false` for declared user classes;
+  `ReflectionClass::getExtension()` returns a bounded `ReflectionExtension`
+  object for mapped internal classes and `null` for declared user classes.
+  Focused proof covers the selected PHPT rows
+  `ReflectionClass_getExtensionName_basic.phpt`,
+  `ReflectionClass_getExtensionName_variation.phpt`,
+  `ReflectionClass_getExtension_basic.phpt`, and
+  `ReflectionClass_getExtension_variation.phpt`. Exact engine extension/class
+  catalogs beyond the current `ReflectionExtension` metadata table, dynamic
+  extension loading, and native lowering remain unsupported.
+
 ## 2026-05-27
 
 Implemented:

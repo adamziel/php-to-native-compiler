@@ -11467,6 +11467,29 @@ foreach (array("A", "Plain", "2") as $target) {
 }
 
 #[test]
+fn reflection_class_reports_extension_metadata() {
+    let execution = run_source(
+        r#"<?php
+class LocalClass {}
+
+$dom = new ReflectionClass("domDocument");
+$local = new ReflectionClass("LocalClass");
+$extension = $dom->getExtension();
+
+echo "dom|", $dom->getExtensionName(), "|", get_class($extension), "|", $extension->getName(), "\n";
+echo "local|", ($local->getExtensionName() === false ? "false" : "wrong"), "|", ($local->getExtension() === null ? "null" : "wrong"), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "dom|dom|ReflectionExtension|dom\nlocal|false|null\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reflection_class_reports_static_and_default_property_metadata() {
     let execution = run_source(
         r#"<?php

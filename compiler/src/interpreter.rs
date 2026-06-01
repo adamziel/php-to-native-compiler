@@ -47794,6 +47794,24 @@ impl Interpreter {
                         .to_string(),
                 ))
             }
+            "getextensionname" => {
+                expect_expr_arity("ReflectionClass::getExtensionName", args.len(), 0, span)?;
+                Ok(reflection_extension_name_for_class(&state.name)
+                    .map(|name| Value::String(name.to_string()))
+                    .unwrap_or(Value::Bool(false)))
+            }
+            "getextension" => {
+                expect_expr_arity("ReflectionClass::getExtension", args.len(), 0, span)?;
+                let Some(extension_name) = reflection_extension_name_for_class(&state.name) else {
+                    return Ok(Value::Null);
+                };
+                self.create_reflection_extension_object(
+                    ReflectionExtensionState {
+                        name: extension_name.to_string(),
+                    },
+                    span,
+                )
+            }
             "getfilename" => {
                 expect_expr_arity("ReflectionClass::getFileName", args.len(), 0, span)?;
                 Ok(state
@@ -101934,6 +101952,19 @@ fn reflection_extension_metadata(name: &str) -> Option<ReflectionExtensionMetada
         }),
         _ => None,
     }
+}
+
+fn reflection_extension_name_for_class(class_name: &str) -> Option<&'static str> {
+    ["reflection", "standard", "ctype", "dom"]
+        .into_iter()
+        .filter_map(reflection_extension_metadata)
+        .find(|metadata| {
+            metadata
+                .class_names
+                .iter()
+                .any(|candidate| candidate.eq_ignore_ascii_case(class_name))
+        })
+        .map(|metadata| metadata.name)
 }
 
 fn reflection_extension_class_names_array(state: &ReflectionExtensionState) -> PhpArray {

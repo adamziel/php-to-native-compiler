@@ -32249,6 +32249,8 @@ impl PhpClassTable {
             "__toString",
             "getName",
             "getShortName",
+            "getExtensionName",
+            "getExtension",
             "getFileName",
             "getStartLine",
             "getEndLine",

@@ -8964,9 +8964,10 @@
   immediate parent to root. This is enough for covered userland recursive
   trait-helper patterns that combine `class_parents()` with `class_uses()`.
   `new ReflectionClass($object_or_class)` creates a bounded metadata object
-  for declared user classes, interfaces, and traits. It accepts object values
-  and string class-like names, invokes the existing autoload path for string
-  misses, and supports `getName()`, `getShortName()`, `isInterface()`,
+  for declared user classes, interfaces, traits, and current core class-table
+  entries. It accepts object values and string class-like names, invokes the
+  existing autoload path for string misses, and supports `getName()`,
+  `getShortName()`, `getExtensionName()`, `getExtension()`, `isInterface()`,
   `isTrait()`, `isInstantiable()`, `getParentClass()`,
   `getInterfaceNames()`, `getInterfaces()`, `getTraitNames()`, `getTraits()`,
   `hasMethod($name)`, `getFileName()`,
@@ -8977,7 +8978,11 @@
   from a known CLI/fixture or include path, `getFileName()` returns that path,
   line numbers come from the parsed class-like declaration and closing brace,
   and `getDocComment()` returns the directly preceding `/** ... */` docblock
-  or `false`. For declared user classes that directly use supported traits,
+  or `false`. For current core class-table entries, `getExtensionName()`
+  returns a bounded extension name when the class appears in the existing
+  `ReflectionExtension` metadata table and `false` otherwise;
+  `getExtension()` returns a bounded `ReflectionExtension` object or `null`.
+  For declared user classes that directly use supported traits,
   `getTraitNames()` returns a zero-indexed array of those direct trait names
   and `getTraits()` returns an associative array keyed by trait name whose
   values are bounded `ReflectionClass` metadata objects for the traits. For
@@ -10859,8 +10864,9 @@
   class-like names, reflection-object integration, exact PHP ordering for all
   engine metadata, and native lowering
 - `ReflectionClass` currently supports only bounded metadata objects over
-  declared user classes, interfaces, and traits. The executable method subset
-  is `getName()`, `getShortName()`, `isInterface()`, `isTrait()`,
+  declared user classes, interfaces, traits, and current core class-table
+  entries. The executable method subset is `getName()`, `getShortName()`,
+  `getExtensionName()`, `getExtension()`, `isInterface()`, `isTrait()`,
   `isInstantiable()`, `getParentClass()`, `getInterfaceNames()`,
   `getInterfaces()`, `implementsInterface($interface)`, `getTraitNames()`,
   `getTraits()`, `getConstructor()`, `hasMethod($name)`, `getFileName()`,
@@ -10929,6 +10935,8 @@
   `ReflectionClass::implementsInterface()` autoload/import alias expansion,
   internal/core interface catalog parity beyond currently declared interface
   metadata, and object arguments other than bounded `ReflectionClass`,
+  exact engine extension/class catalogs beyond the current
+  `ReflectionExtension` metadata table,
   recursive trait conflict/adaptation edge cases, exact `ReflectionException`
   object construction, throwing, catching, messages/codes/stack traces, and
   missing-reflection-member exception text, namespace/import alias expansion
