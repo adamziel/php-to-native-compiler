@@ -1,7 +1,7 @@
 use php_compiler::error::Phase;
-use php_compiler::{emit_asm_source, emit_ir_source, run_source};
+use php_compiler::{emit_asm_source, emit_ir_source, run_source, run_source_with_source_file};
 
-const LLVM_CAST_REJECTION: &str = "LLVM cast lowering rejects (string), (int)/(integer), (bool)/(boolean), (float)/(double), (array), and (object) casts plus strval(), boolval(), floatval(), and doubleval() until native PHP scalar conversion, array/object materialization, warning/recovery behavior, object/resource handling, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded cast behavior";
+const LLVM_CAST_REJECTION: &str = "LLVM cast lowering rejects (string), (int)/(integer), (bool)/(boolean), (float)/(double), (array), (object), and (void) casts plus strval(), boolval(), floatval(), and doubleval() until native PHP scalar conversion, array/object materialization, warning/recovery behavior, object/resource handling, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded cast behavior";
 
 #[test]
 fn string_casts_execute_for_current_scalar_and_null_subset() {
@@ -510,6 +510,87 @@ fn remaining_casts_have_stable_parse_error() {
         error.message,
         "unsupported cast expression: only (string), (int), (bool), (float), (array), and (object) casts are implemented"
     );
+}
+
+#[test]
+fn void_cast_discards_values_and_suppresses_no_discard_warning() {
+    let execution = run_source_with_source_file(
+        r#"<?php
+class WithDestructor {
+    public function __destruct() {
+        echo "WithDestructor::__destruct\n";
+    }
+}
+
+function make_with_destructor() {
+    return new WithDestructor();
+}
+
+$count = 0;
+
+#[NoDiscard]
+function incCount() {
+    global $count;
+    $count++;
+    return $count;
+}
+
+echo "Before\n";
+(void)make_with_destructor();
+echo "After\n";
+
+for ($count = 0, (void)incCount(), incCount(); (void)incCount(), incCount() < 6; incCount(), $count++, incCount(), (void)incCount()) {
+    echo $count . "\n";
+}
+"#,
+        "/tmp/void_cast.php",
+    )
+    .unwrap();
+
+    assert!(execution
+        .stdout
+        .contains("Before\nWithDestructor::__destruct\nAfter\n"));
+    assert_eq!(
+        execution
+            .stdout
+            .matches("The return value of function incCount() should either be used or intentionally ignored by casting it as (void)")
+            .count(),
+        3
+    );
+    assert!(execution
+        .stdout
+        .contains("After\n\nWarning: The return value"));
+    assert!(execution.stdout.contains("Warning: The return value of function incCount() should either be used or intentionally ignored by casting it as (void) in /tmp/void_cast.php on line "));
+    assert!(execution
+        .stdout
+        .contains("\n4\n\nWarning: The return value of function incCount() should either be used"));
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn void_cast_has_statement_only_parse_boundary() {
+    let error = run_source("<?php\n$tmp = (void)$dummy;\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Parse);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.message, "syntax error, unexpected token \"(void)\"");
+
+    let error = run_source("<?php\nfor (;(void)true;);\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Parse);
+    assert_eq!(error.line, 2);
+    assert_eq!(
+        error.message,
+        "syntax error, unexpected token \";\", expecting \",\""
+    );
+}
+
+#[test]
+fn emit_ir_rejects_void_cast_statement_until_native_cast_lowering_exists() {
+    let error = emit_ir_source("<?php\n(void) 42;\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.message, LLVM_CAST_REJECTION);
 }
 
 #[test]

@@ -199,8 +199,8 @@ const LLVM_EMPTY_REJECTION: &str = "LLVM empty lowering rejects array offset ope
 const ASSEMBLY_EMPTY_REJECTION: &str = "assembly empty lowering rejects array offset operands, object property operands, complex operands, arrays, unset/mutation interactions, and ambiguous truthiness until native symbol-table storage, PHP truthiness, references/copy-on-write, and exact native error behavior exist; phpc run handles current empty behavior";
 const LLVM_ERROR_CONTROL_REJECTION: &str = "LLVM error-control lowering rejects @expr until native diagnostic severity, warning/notice/deprecation suppression, error_reporting() mask interaction, recoverable expression values, and exact native diagnostics exist; phpc run handles current bounded error-control diagnostic suppression";
 const ASSEMBLY_ERROR_CONTROL_REJECTION: &str = "assembly error-control lowering rejects @expr until native diagnostic severity, warning/notice/deprecation suppression, error_reporting() mask interaction, recoverable expression values, and exact native diagnostics exist; phpc run handles current bounded error-control diagnostic suppression";
-const LLVM_CAST_REJECTION: &str = "LLVM cast lowering rejects (string), (int)/(integer), (bool)/(boolean), (float)/(double), (array), and (object) casts plus strval(), boolval(), floatval(), and doubleval() until native PHP scalar conversion, array/object materialization, warning/recovery behavior, object/resource handling, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded cast behavior";
-const ASSEMBLY_CAST_REJECTION: &str = "assembly cast lowering rejects (string), (int)/(integer), (bool)/(boolean), (float)/(double), (array), and (object) casts plus strval(), boolval(), floatval(), and doubleval() until native PHP scalar conversion, array/object materialization, warning/recovery behavior, object/resource handling, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded cast behavior";
+const LLVM_CAST_REJECTION: &str = "LLVM cast lowering rejects (string), (int)/(integer), (bool)/(boolean), (float)/(double), (array), (object), and (void) casts plus strval(), boolval(), floatval(), and doubleval() until native PHP scalar conversion, array/object materialization, warning/recovery behavior, object/resource handling, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded cast behavior";
+const ASSEMBLY_CAST_REJECTION: &str = "assembly cast lowering rejects (string), (int)/(integer), (bool)/(boolean), (float)/(double), (array), (object), and (void) casts plus strval(), boolval(), floatval(), and doubleval() until native PHP scalar conversion, array/object materialization, warning/recovery behavior, object/resource handling, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded cast behavior";
 const LLVM_UNARY_REJECTION: &str = "LLVM unary lowering rejects unsupported unary operators, cast expressions, or operands until native PHP numeric coercion, truthiness conversion, scalar casts, overflow behavior, references/copy-on-write, and exact native error behavior exist; phpc run handles current unary and cast behavior";
 const ASSEMBLY_UNARY_REJECTION: &str = "assembly unary lowering rejects unsupported unary operators, cast expressions, or operands until native PHP numeric coercion, truthiness conversion, scalar casts, overflow behavior, references/copy-on-write, and exact native error behavior exist; phpc run handles current unary and cast behavior";
 const LLVM_ARITHMETIC_REJECTION: &str = "LLVM arithmetic lowering rejects unsupported binary arithmetic operators or operands until native PHP numeric coercion, division/modulo zero checks, modulo coercions, references/copy-on-write, and exact native error behavior exist; phpc run handles current arithmetic behavior";
@@ -3391,6 +3391,7 @@ fn native_value_cast_op_tag(kind: CastKind) -> &'static str {
         CastKind::Float => "PHPC_NATIVE_VALUE_CAST_FLOAT",
         CastKind::Array => "PHPC_NATIVE_VALUE_CAST_ARRAY",
         CastKind::Object => "PHPC_NATIVE_VALUE_CAST_OBJECT",
+        CastKind::Void => unreachable!("void casts are rejected before native lowering"),
     }
 }
 
@@ -16894,6 +16895,15 @@ impl LlvmGenerator {
         &mut self,
         expr: &Expr,
     ) -> CompileResult<()> {
+        if let Expr::Cast {
+            kind: CastKind::Void,
+            span,
+            ..
+        } = expr
+        {
+            return Err(self.unsupported(*span, LLVM_CAST_REJECTION));
+        }
+
         let result = self.emit_native_diagnostic_result_expr_operand(
             NativeDiagnosticResultOperandSurface::Statement,
             expr,
@@ -20527,6 +20537,15 @@ impl CGenerator {
         &mut self,
         expr: &Expr,
     ) -> CompileResult<()> {
+        if let Expr::Cast {
+            kind: CastKind::Void,
+            span,
+            ..
+        } = expr
+        {
+            return Err(self.unsupported(*span, ASSEMBLY_CAST_REJECTION));
+        }
+
         let result = self.emit_native_diagnostic_result_expr_operand(
             NativeDiagnosticResultOperandSurface::Statement,
             expr,
@@ -38549,6 +38568,15 @@ impl CGenerator {
     }
 
     fn emit_discarded_expr_statement(&mut self, expr: &Expr) -> CompileResult<()> {
+        if let Expr::Cast {
+            kind: CastKind::Void,
+            span,
+            ..
+        } = expr
+        {
+            return Err(self.unsupported(*span, ASSEMBLY_CAST_REJECTION));
+        }
+
         if let Expr::Call { name, args, span } = expr {
             if name.eq_ignore_ascii_case("print_r")
                 && args.len() == 1
@@ -60782,7 +60810,7 @@ impl CGenerator {
                 )))
             }
             Expr::Cast { kind, expr, span } => {
-                if matches!(kind, CastKind::Object) {
+                if matches!(kind, CastKind::Object | CastKind::Void) {
                     return Err(self.unsupported(*span, ASSEMBLY_CAST_REJECTION));
                 }
                 let value = self.materialize_native_value_result_operand(expr, failure_cleanup)?;

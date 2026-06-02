@@ -2431,6 +2431,27 @@ impl Parser {
         }
 
         loop {
+            if self.check_void_cast_start() {
+                let condition = self.parse_void_discard_expression()?;
+                conditions.push(condition);
+                if !self.match_token(|kind| matches!(kind, TokenKind::Comma)) {
+                    return Err(self.error_at(
+                        self.peek().span,
+                        format!(
+                            "syntax error, unexpected token \"{}\", expecting \",\"",
+                            token_name(&self.peek().kind)
+                        ),
+                    ));
+                }
+                if self.check(|kind| matches!(kind, TokenKind::Semicolon)) {
+                    return Err(self.error_at(
+                        self.peek().span,
+                        "expected expression after ',' in for condition",
+                    ));
+                }
+                continue;
+            }
+
             conditions.push(self.parse_expression()?);
             if !self.match_token(|kind| matches!(kind, TokenKind::Comma)) {
                 break;
@@ -2496,6 +2517,11 @@ impl Parser {
                 });
             }
             self.current = saved;
+        }
+
+        if self.check_void_cast_start() {
+            let expr = self.parse_void_discard_expression()?;
+            return Ok(ForAction::Expr { expr });
         }
 
         let expr = self.parse_expression()?;
@@ -5462,6 +5488,13 @@ impl Parser {
     }
 
     fn parse_expression_statement(&mut self) -> CompileResult<Stmt> {
+        if self.check_void_cast_start() {
+            let expr = self.parse_void_discard_expression()?;
+            let span = expr.span();
+            self.consume_keyword(TokenKind::Semicolon, "expected ';' after expression")?;
+            return Ok(Stmt::Expr { expr, span });
+        }
+
         let expr = self.parse_expression()?;
         let span = expr.span();
         self.consume_keyword(TokenKind::Semicolon, "expected ';' after expression")?;
@@ -6282,12 +6315,36 @@ impl Parser {
             "float" | "double" => Ok(Some(CastKind::Float)),
             "array" => Ok(Some(CastKind::Array)),
             "object" => Ok(Some(CastKind::Object)),
+            "void" => Err(self.error_at(
+                self.peek().span,
+                "syntax error, unexpected token \"(void)\"",
+            )),
             "real" | "unset" | "binary" => Err(self.error_at(
                 self.peek().span,
                 "unsupported cast expression: only (string), (int), (bool), (float), (array), and (object) casts are implemented",
             )),
             _ => Ok(None),
         }
+    }
+
+    fn check_void_cast_start(&self) -> bool {
+        matches!(
+            (&self.peek().kind, &self.peek_next().kind, &self.peek_n(2).kind),
+            (TokenKind::LParen, TokenKind::Identifier(name), TokenKind::RParen)
+                if name.eq_ignore_ascii_case("void")
+        )
+    }
+
+    fn parse_void_discard_expression(&mut self) -> CompileResult<Expr> {
+        let span = self.advance().span;
+        self.advance();
+        self.consume_keyword(TokenKind::RParen, "expected ')' after cast type")?;
+        let expr = self.parse_unary()?;
+        Ok(Expr::Cast {
+            kind: CastKind::Void,
+            expr: Box::new(expr),
+            span,
+        })
     }
 
     fn parse_postfix(&mut self) -> CompileResult<Expr> {

@@ -51,6 +51,22 @@ impl Diagnostic {
         self.file = Some(file.into());
         self
     }
+
+    pub fn cli_display(&self) -> String {
+        if matches!(self.phase, Phase::Parse) && self.message.starts_with("syntax error,") {
+            let file = self
+                .file
+                .as_ref()
+                .map(|file| file.display().to_string())
+                .unwrap_or_else(|| "Command line code".to_string());
+            return format!(
+                "Parse error: {} in {file} on line {}",
+                self.message, self.line
+            );
+        }
+
+        self.to_string()
+    }
 }
 
 impl fmt::Display for Diagnostic {

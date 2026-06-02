@@ -22,7 +22,7 @@ fn main() -> ExitCode {
     match real_main() {
         Ok(code) => ExitCode::from(code),
         Err(error) => {
-            eprintln!("{error}");
+            eprintln!("{}", error.cli_display());
             ExitCode::from(1)
         }
     }

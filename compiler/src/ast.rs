@@ -1402,6 +1402,7 @@ pub enum CastKind {
     Float,
     Array,
     Object,
+    Void,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

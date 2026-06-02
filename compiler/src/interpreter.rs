@@ -24184,10 +24184,7 @@ impl Interpreter {
                 Ok(Flow::Normal)
             }
             Stmt::Expr { expr, .. } => {
-                let value = self.evaluate(expr, scope)?;
-                if let Value::Object(object) = &value {
-                    self.retire_unrooted_temporary_object_handle(object, scope)?;
-                }
+                self.execute_discard_expression(expr, scope)?;
                 Ok(Flow::Normal)
             }
             Stmt::Goto { label, span } => Ok(Flow::Goto {
@@ -25419,11 +25416,49 @@ impl Interpreter {
             ForAction::IncrementDecrement { target, op, span } => {
                 self.execute_increment_decrement(target, *op, *span, scope)
             }
-            ForAction::Expr { expr } => {
-                self.evaluate(expr, scope)?;
-                Ok(())
-            }
+            ForAction::Expr { expr } => self.execute_discard_expression(expr, scope),
         }
+    }
+
+    fn execute_discard_expression(
+        &mut self,
+        expr: &Expr,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<()> {
+        if let Expr::Cast {
+            kind: CastKind::Void,
+            expr: inner,
+            ..
+        } = expr
+        {
+            let value = self.evaluate(inner, scope)?;
+            self.finalize_released_value(Some(value), scope)?;
+            return Ok(());
+        }
+
+        let value = self.evaluate(expr, scope)?;
+        self.finalize_released_value(Some(value), scope)?;
+        self.emit_no_discard_warning_for_expr(expr)
+    }
+
+    fn emit_no_discard_warning_for_expr(&mut self, expr: &Expr) -> CompileResult<()> {
+        let Expr::Call { name, span, .. } = expr else {
+            return Ok(());
+        };
+        let Some(Callable::User(function)) = self.lookup_direct_function_call(name) else {
+            return Ok(());
+        };
+        if !attributes_include_no_discard(&function.attributes) {
+            return Ok(());
+        }
+
+        self.emit_display_warning(
+            format!(
+                "The return value of function {}() should either be used or intentionally ignored by casting it as (void)",
+                function.name
+            ),
+            *span,
+        )
     }
 
     fn execute_file_include(
@@ -103358,6 +103393,7 @@ impl Interpreter {
                 self.track_allocated_object(&object);
                 Ok(Value::Object(object))
             }
+            CastKind::Void => Ok(Value::Null),
         }
     }
 }
@@ -109411,6 +109447,12 @@ fn attributes_include_deprecated(attributes: &[AttributeDecl]) -> bool {
 fn attribute_name_is_deprecated(attribute: &AttributeDecl) -> bool {
     attribute.name.eq_ignore_ascii_case("Deprecated")
         || attribute.name.eq_ignore_ascii_case("\\Deprecated")
+}
+
+fn attributes_include_no_discard(attributes: &[AttributeDecl]) -> bool {
+    attributes
+        .iter()
+        .any(|attribute| normalized_attribute_name(&attribute.name) == "nodiscard")
 }
 
 fn attribute_name_is_attribute(attribute: &AttributeDecl) -> bool {
