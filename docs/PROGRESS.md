@@ -4,6 +4,24 @@
 
 Implemented:
 
+- Added a bounded array literal unpacking lane. `phpc run` now parses and
+  executes `...$array` entries in both short and long array literals, unpacking
+  array operands left-to-right with PHP-shaped merge behavior: integer keys
+  append/reindex, string keys overwrite existing buckets without moving their
+  insertion position, and reference-backed runtime slots remain shared.
+  Non-array operands now reach a focused runtime diagnostic that names the PHP
+  unpacking rule instead of failing at parse time. The Milestone 2343 CLI
+  fixture exercises the public `phpc run` path, and the old unsupported array
+  spread fixture was removed from the unsupported-syntax snapshot set. Focused
+  proof covers the `array_literal_spread` Rust regression, the adjusted
+  syntax-boundary row, the Milestone 2343 fixture, direct CLI probes, selected
+  public PHPT rows `Zend/tests/array_unpack_string_keys.phpt` and
+  `ext/standard/tests/array/array_find_types.phpt`, build, fmt, diff, and
+  source-shape checks. Unsupported edges remain Traversable/object unpacking,
+  exact PHP `Error` object parity for non-array operands, arbitrary
+  copied-source provenance through spread operands, broader reference/COW graph
+  parity beyond preserved runtime slots, and native lowering.
+
 - Added a bounded `substr_compare()` case-insensitive flag bool-boundary lane.
   Direct and string-valued dynamic interpreter calls now route optional
   `$case_insensitive` operands through the shared PHP-internal bool boundary,

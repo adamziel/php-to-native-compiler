@@ -176,6 +176,14 @@
   reads such as `array($copy)[0]` and assigned
   `array_values(array($copy))` wrapper arrays can preserve selected
   reference-backed leaves from supported magic/`ArrayAccess` copied arrays.
+  Array literals in `phpc run` also accept array unpack entries such as
+  `[...$items]` and `array(...$items)`: array operands are unpacked
+  left-to-right, integer keys are appended/reindexed, string keys overwrite
+  existing buckets without moving their position, and reference-backed runtime
+  slots are preserved through the copied entries. Traversable/object
+  unpacking, exact PHP `Error` object parity for non-array operands, full
+  copied-source provenance through arbitrary spread operands, and native
+  lowering for these literals remain unsupported.
   The same literal-transform metadata remapping covers assigned
   `array_merge(array(...), ...)` wrappers, including integer-key reindexing
   and string-key overwrite cases, for copied arrays from supported magic
@@ -6437,8 +6445,10 @@
 - explicit lex diagnostics for unsupported backtick shell execution operators
   such as `` `whoami` ``; command interpolation, process I/O, platform error
   behavior, references/copy-on-write, and native lowering are not implemented
-- explicit parse diagnostics for unsupported array spread elements and
-  reference array keys
+- explicit parse diagnostics for unsupported reference array keys; array
+  literal spread syntax is supported for array operands in `phpc run`, while
+  Traversable/object unpacking and exact non-array `Error` parity remain
+  bounded runtime gaps
 - explicit parse diagnostics for unsupported array/list destructuring beyond
   the current positional `list($a, $b) = expr;` statement slice with variable
   or skipped slots, such as `[$name] = $array`, expression-position
@@ -10825,9 +10835,10 @@
   generated array reads/writes or non-empty array storage, object/resource/
   reference storage beyond null-only ABI shapes, WordPress host-state ABI, and
   C fallback assembly helper calls remain unsupported.
-- Array gaps: array spread elements, reference array keys,
+- Array gaps: Traversable/object array unpacking, reference array keys,
   expression-position `list(...)`, and keyed, nested, reference, or
-  non-variable destructuring targets are rejected with stable parse diagnostics.
+  non-variable destructuring targets remain unsupported; the reference-key and
+  destructuring forms are rejected with stable parse diagnostics.
   Array literal reference values are parsed and
   evaluated by current value only; real aliases, reference containers, and
   copy-on-write are not implemented. Object-property reference-assignment
@@ -11056,7 +11067,7 @@
   `__CLASS__`, and `__METHOD__` with a specific codegen diagnostic until
   source mapping, path canonicalization, and function/class/method-context
   lowering exist.
-- array literal spread elements and array literal reference keys
+- Traversable/object array unpacking and array literal reference keys
 - `unset(...)` forms outside direct variables, direct/nested array offsets,
   direct/dynamic object properties, nested object-property array offsets, and
   static-property diagnostic operands, including append-offset unset and

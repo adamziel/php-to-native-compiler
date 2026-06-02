@@ -214,26 +214,15 @@ fn emit_ir_rejects_interpolated_heredoc_until_native_string_runtime_exists() {
 
 #[test]
 fn unsupported_array_item_forms_are_rejected_with_stable_parse_error() {
-    let cases = [
-        (
-            r#"<?php
-$values = [1, 2];
-$items = array(...$values);
+    let cases = [(
+        r#"<?php
+$key = "name";
+$items = [&$key => "value"];
 "#,
-            3,
-            16,
-            "unsupported array spread: spread elements are not implemented",
-        ),
-        (
-            r#"<?php
-$values = [1, 2];
-$items = [...$values];
-"#,
-            3,
-            11,
-            "unsupported array spread: spread elements are not implemented",
-        ),
-    ];
+        3,
+        12,
+        "unsupported array reference key: reference keys are not implemented",
+    )];
 
     for (source, line, column, message) in cases {
         let error = parse_error(source);

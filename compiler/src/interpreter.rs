@@ -38658,6 +38658,67 @@ impl Interpreter {
         }
     }
 
+    fn array_literal_spread_expr(item: &ArrayItem) -> Option<&Expr> {
+        if item.key.is_some() || item.by_reference {
+            return None;
+        }
+        let Expr::SpreadArgument { expr, .. } = &item.value else {
+            return None;
+        };
+        Some(expr)
+    }
+
+    fn evaluate_array_literal_spread_array(
+        &mut self,
+        expr: &Expr,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<PhpArray> {
+        let (value, array_copy_source) = self.evaluate_value_with_array_copy_source(expr, scope)?;
+        let value = scope.value_with_object_property_aliases_from_array_copy(
+            value,
+            array_copy_source,
+            true,
+        );
+        match value {
+            Value::Array(array) => Ok(array),
+            other => Err(runtime_error(
+                expr.span(),
+                RuntimeError::unsupported_call(
+                    "array unpack",
+                    format!(
+                        "Only arrays and Traversables can be unpacked, {} given",
+                        other.type_name()
+                    ),
+                ),
+            )),
+        }
+    }
+
+    fn append_array_literal_spread_entries(
+        array: &mut PhpArray,
+        source: &PhpArray,
+        span: Span,
+        next_auto_index: &mut i64,
+        auto_index_exhausted: &mut bool,
+    ) -> CompileResult<()> {
+        for entry in source.entries() {
+            match &entry.key {
+                ArrayKey::Int(_) => {
+                    let key = Self::array_literal_next_auto_key(
+                        next_auto_index,
+                        auto_index_exhausted,
+                        span,
+                    )?;
+                    array.insert_slot(key, entry.slot().clone());
+                }
+                ArrayKey::String(key) => {
+                    array.insert_slot(key.clone(), entry.slot().clone());
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn evaluate_array(
         &mut self,
         items: &[ArrayItem],
@@ -38669,6 +38730,18 @@ impl Interpreter {
         let mut auto_index_exhausted = false;
 
         for item in items {
+            if let Some(expr) = Self::array_literal_spread_expr(item) {
+                let source = self.evaluate_array_literal_spread_array(expr, scope)?;
+                Self::append_array_literal_spread_entries(
+                    &mut array,
+                    &source,
+                    expr.span(),
+                    &mut next_auto_index,
+                    &mut auto_index_exhausted,
+                )?;
+                continue;
+            }
+
             let key = match &item.key {
                 Some(expr) => {
                     let key = self.evaluate_array_key(expr, scope)?;
@@ -38723,6 +38796,18 @@ impl Interpreter {
         let mut auto_index_exhausted = false;
 
         for item in items {
+            if let Some(expr) = Self::array_literal_spread_expr(item) {
+                let source = self.evaluate_array_literal_spread_array(expr, scope)?;
+                Self::append_array_literal_spread_entries(
+                    &mut array,
+                    &source,
+                    expr.span(),
+                    &mut next_auto_index,
+                    &mut auto_index_exhausted,
+                )?;
+                continue;
+            }
+
             let key = match &item.key {
                 Some(expr) => {
                     let key = self.evaluate_array_key(expr, scope)?;

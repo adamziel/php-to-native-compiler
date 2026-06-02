@@ -7435,29 +7435,44 @@ impl Parser {
 
         loop {
             self.reject_unsupported_array_item_syntax()?;
-            let first_by_reference = self.match_token(|kind| matches!(kind, TokenKind::Ampersand));
-            let first = self.parse_expression()?;
-            let item = if self.match_token(|kind| matches!(kind, TokenKind::FatArrow)) {
-                if first_by_reference {
-                    return Err(self.error_at(
-                        first.span(),
-                        "unsupported array reference key: reference keys are not implemented",
-                    ));
-                }
-                let by_reference = self.match_token(|kind| matches!(kind, TokenKind::Ampersand));
-                ArrayItem {
-                    key: Some(first),
-                    value: self.parse_expression()?,
-                    by_reference,
-                }
-            } else {
-                ArrayItem {
+            if self.match_token(|kind| matches!(kind, TokenKind::Ellipsis)) {
+                let spread_span = self.previous().span;
+                let value = self.parse_expression()?;
+                items.push(ArrayItem {
                     key: None,
-                    value: first,
-                    by_reference: first_by_reference,
-                }
-            };
-            items.push(item);
+                    value: Expr::SpreadArgument {
+                        expr: Box::new(value),
+                        span: spread_span,
+                    },
+                    by_reference: false,
+                });
+            } else {
+                let first_by_reference =
+                    self.match_token(|kind| matches!(kind, TokenKind::Ampersand));
+                let first = self.parse_expression()?;
+                let item = if self.match_token(|kind| matches!(kind, TokenKind::FatArrow)) {
+                    if first_by_reference {
+                        return Err(self.error_at(
+                            first.span(),
+                            "unsupported array reference key: reference keys are not implemented",
+                        ));
+                    }
+                    let by_reference =
+                        self.match_token(|kind| matches!(kind, TokenKind::Ampersand));
+                    ArrayItem {
+                        key: Some(first),
+                        value: self.parse_expression()?,
+                        by_reference,
+                    }
+                } else {
+                    ArrayItem {
+                        key: None,
+                        value: first,
+                        by_reference: first_by_reference,
+                    }
+                };
+                items.push(item);
+            }
 
             if !self.match_token(|kind| matches!(kind, TokenKind::Comma)) {
                 break;
@@ -7531,9 +7546,6 @@ impl Parser {
     fn reject_unsupported_array_item_syntax(&self) -> CompileResult<()> {
         let token = self.peek();
         match &token.kind {
-            TokenKind::Ellipsis => {
-                Err(self.error_at(token.span, unsupported_array_spread_message()))
-            }
             TokenKind::Ampersand => Ok(()),
             _ => Ok(()),
         }
@@ -9392,10 +9404,6 @@ fn unsupported_namespace_qualified_constant_name_message() -> &'static str {
 
 fn unsupported_fully_qualified_constant_name_message() -> &'static str {
     "unsupported fully-qualified constant name: leading global namespace constant reads require exact constant-table lookup, namespace fallback bypass, import interaction, and native lowering"
-}
-
-fn unsupported_array_spread_message() -> &'static str {
-    "unsupported array spread: spread elements are not implemented"
 }
 
 fn unsupported_array_destructuring_assignment_message() -> &'static str {
