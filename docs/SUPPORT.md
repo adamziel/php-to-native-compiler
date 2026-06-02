@@ -45,8 +45,14 @@
   keyword followed by optional whitespace, `(`, optional whitespace, `)`,
   optional whitespace, and `;`, the remaining source bytes are emitted as one
   `T_INLINE_HTML` payload token; the reached multiline malformed-tail fallback
-  from `bug54089.phpt` is also preserved. Full parse-error validation for
-  `TOKEN_PARSE`, complete heredoc/nowdoc token parity, exact malformed
+  from `bug54089.phpt` is also preserved. Heredoc and nowdoc are tokenized for
+  the bounded valid-label tokenizer surface: unquoted, double-quoted, and
+  single-quoted identifier labels emit `T_START_HEREDOC`, payload text emits
+  `T_ENCAPSED_AND_WHITESPACE`, simple heredoc interpolation emits variable,
+  array-offset, object-property, `${name}`, and `{$name}` token shapes, and
+  exact or indented closing labels emit `T_END_HEREDOC`; nowdoc payloads remain
+  literal. Full parse-error validation for `TOKEN_PARSE`, complete
+  heredoc/nowdoc token parity beyond that bounded surface, exact malformed
   `__halt_compiler` recovery outside that row, and parser/runtime execution of
   `__halt_compiler()` remain unsupported.
 - static variables backed by per-scope materialized symbol tables

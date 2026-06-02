@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Added a bounded tokenizer heredoc/nowdoc classification lane for
+  `token_get_all()` and `PhpToken::tokenize()`. Valid `<<<LABEL`,
+  `<<<"LABEL"`, and `<<<'LABEL'` starts now emit `T_START_HEREDOC`, content
+  is scanned until an exact or indented closing label that emits
+  `T_END_HEREDOC`, nowdoc payloads stay literal, and heredoc payloads split the
+  current simple interpolation token shapes including `$name`, numeric/string
+  offsets, object properties, `${name}`, and `{$name}`. Parser/runtime heredoc
+  execution and native lowering remain unchanged. Focused proof covers the
+  Rust `tokenizer_classifies_heredoc_and_nowdoc_boundaries` regression, the
+  full `tokenizer_function_core` test file, a direct `phpc run` tokenizer
+  probe, and selected public PHPT row `ext/tokenizer/tests/bug76991.phpt`.
+  Unsupported edges remain full malformed heredoc/nowdoc parse recovery,
+  nested heredoc expressions inside complex interpolation, complete heredoc
+  indentation/strip semantics beyond token classification, `TOKEN_PARSE`
+  parse-error validation, broader dynamic interpolation side effects,
+  references/COW, and native lowering.
+
 - Added a bounded disk-space metadata stringable-directory lane.
   `disk_free_space()`, its `diskfreespace()` alias, and
   `disk_total_space()` now accept supported visible `__toString()` objects for

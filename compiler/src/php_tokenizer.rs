@@ -632,6 +632,10 @@ impl<'a> Scanner<'a> {
             return;
         }
 
+        if self.consume_heredoc_or_nowdoc() {
+            return;
+        }
+
         if byte == b'$' {
             self.consume_variable_or_symbol();
             return;
@@ -843,6 +847,318 @@ impl<'a> Scanner<'a> {
             let close_quote = self.index;
             self.index += 1;
             self.push_symbol(close_quote, close_quote + 1);
+        }
+    }
+
+    fn consume_heredoc_or_nowdoc(&mut self) -> bool {
+        let Some(start) = self.heredoc_start_at_current() else {
+            return false;
+        };
+
+        let token_start = self.index;
+        self.index = start.content_start;
+        self.push_token(T_START_HEREDOC, token_start, start.content_start);
+
+        if let Some((content_end, label_end)) =
+            self.find_heredoc_end(&start.label, start.content_start)
+        {
+            self.index = start.content_start;
+            self.consume_heredoc_content(content_end, start.interpolate);
+            self.index = label_end;
+            self.push_token(T_END_HEREDOC, content_end, label_end);
+        } else if start.content_start < self.source.len() {
+            self.index = self.source.len();
+            self.push_token(T_ENCAPSED_AND_WHITESPACE, start.content_start, self.index);
+        }
+
+        true
+    }
+
+    fn heredoc_start_at_current(&self) -> Option<HeredocStart> {
+        if !self.starts_with(b"<<<") {
+            return None;
+        }
+
+        let mut cursor = self.index + 3;
+        while self
+            .source
+            .get(cursor)
+            .copied()
+            .is_some_and(|byte| matches!(byte, b' ' | b'\t'))
+        {
+            cursor += 1;
+        }
+
+        let quote = self
+            .source
+            .get(cursor)
+            .copied()
+            .filter(|byte| matches!(byte, b'\'' | b'"'));
+        let interpolate = quote != Some(b'\'');
+        if quote.is_some() {
+            cursor += 1;
+        }
+
+        let label_start = cursor;
+        if !self
+            .source
+            .get(cursor)
+            .copied()
+            .is_some_and(is_php_identifier_start)
+        {
+            return None;
+        }
+        cursor += 1;
+        while self
+            .source
+            .get(cursor)
+            .copied()
+            .is_some_and(is_php_identifier_part)
+        {
+            cursor += 1;
+        }
+        let label = self.source[label_start..cursor].to_vec();
+
+        if let Some(quote) = quote {
+            if self.source.get(cursor).copied() != Some(quote) {
+                return None;
+            }
+            cursor += 1;
+        }
+
+        let content_start = match self.source.get(cursor).copied() {
+            Some(b'\n') => cursor + 1,
+            Some(b'\r') if self.source.get(cursor + 1).copied() == Some(b'\n') => cursor + 2,
+            Some(b'\r') => cursor + 1,
+            _ => return None,
+        };
+
+        Some(HeredocStart {
+            label,
+            content_start,
+            interpolate,
+        })
+    }
+
+    fn find_heredoc_end(&self, label: &[u8], content_start: usize) -> Option<(usize, usize)> {
+        let mut line_start = content_start;
+        while line_start <= self.source.len() {
+            if let Some(label_end) = self.heredoc_end_label_end_at(line_start, label) {
+                return Some((line_start, label_end));
+            }
+
+            let Some(newline_offset) = self.source[line_start..]
+                .iter()
+                .position(|byte| *byte == b'\n')
+            else {
+                break;
+            };
+            line_start += newline_offset + 1;
+        }
+        None
+    }
+
+    fn heredoc_end_label_end_at(&self, line_start: usize, label: &[u8]) -> Option<usize> {
+        let mut cursor = line_start;
+        while self
+            .source
+            .get(cursor)
+            .copied()
+            .is_some_and(|byte| matches!(byte, b' ' | b'\t'))
+        {
+            cursor += 1;
+        }
+
+        if self.source.get(cursor..cursor + label.len()) != Some(label) {
+            return None;
+        }
+
+        let label_end = cursor + label.len();
+        match self.source.get(label_end).copied() {
+            None | Some(b';' | b',' | b')' | b']' | b'\r' | b'\n') => Some(label_end),
+            _ => None,
+        }
+    }
+
+    fn consume_heredoc_content(&mut self, content_end: usize, interpolate: bool) {
+        while self.index < content_end {
+            if interpolate && self.consume_heredoc_interpolation(content_end) {
+                continue;
+            }
+
+            let start = self.index;
+            while self.index < content_end
+                && !(interpolate && self.heredoc_interpolation_starts_here(content_end))
+            {
+                self.index += 1;
+            }
+            if start < self.index {
+                self.push_token(T_ENCAPSED_AND_WHITESPACE, start, self.index);
+            }
+        }
+    }
+
+    fn heredoc_interpolation_starts_here(&self, content_end: usize) -> bool {
+        if self.index >= content_end {
+            return false;
+        }
+
+        match self.source[self.index] {
+            b'$' => {
+                (self.index + 1 < content_end
+                    && self
+                        .source
+                        .get(self.index + 1)
+                        .copied()
+                        .is_some_and(is_php_identifier_start))
+                    || (self.index + 2 < content_end
+                        && self.source.get(self.index + 1).copied() == Some(b'{')
+                        && self
+                            .source
+                            .get(self.index + 2)
+                            .copied()
+                            .is_some_and(is_php_identifier_start))
+            }
+            b'{' => {
+                self.index + 2 < content_end
+                    && self.source.get(self.index + 1).copied() == Some(b'$')
+                    && self
+                        .source
+                        .get(self.index + 2)
+                        .copied()
+                        .is_some_and(is_php_identifier_start)
+            }
+            _ => false,
+        }
+    }
+
+    fn consume_heredoc_interpolation(&mut self, content_end: usize) -> bool {
+        if self.index >= content_end {
+            return false;
+        }
+
+        if self.source[self.index] == b'$' {
+            if self.index + 1 < content_end
+                && self
+                    .source
+                    .get(self.index + 1)
+                    .copied()
+                    .is_some_and(is_php_identifier_start)
+            {
+                self.consume_variable_or_symbol();
+                self.consume_heredoc_variable_suffix(content_end);
+                return true;
+            }
+
+            if self.index + 2 < content_end
+                && self.source.get(self.index + 1).copied() == Some(b'{')
+                && self
+                    .source
+                    .get(self.index + 2)
+                    .copied()
+                    .is_some_and(is_php_identifier_start)
+            {
+                let start = self.index;
+                self.index += 2;
+                self.push_token(T_DOLLAR_OPEN_CURLY_BRACES, start, self.index);
+                self.consume_string_varname_token(content_end);
+                if self.index < content_end && self.peek() == Some(b'}') {
+                    let close = self.index;
+                    self.index += 1;
+                    self.push_symbol(close, self.index);
+                }
+                return true;
+            }
+        }
+
+        if self.source[self.index] == b'{'
+            && self.index + 2 < content_end
+            && self.source.get(self.index + 1).copied() == Some(b'$')
+            && self
+                .source
+                .get(self.index + 2)
+                .copied()
+                .is_some_and(is_php_identifier_start)
+        {
+            let open = self.index;
+            self.index += 1;
+            self.push_token(T_CURLY_OPEN, open, self.index);
+            self.consume_variable_or_symbol();
+            self.consume_heredoc_variable_suffix(content_end);
+            if self.index < content_end && self.peek() == Some(b'}') {
+                let close = self.index;
+                self.index += 1;
+                self.push_symbol(close, self.index);
+            }
+            return true;
+        }
+
+        false
+    }
+
+    fn consume_string_varname_token(&mut self, content_end: usize) {
+        let start = self.index;
+        if self.index < content_end {
+            self.index += 1;
+        }
+        while self.index < content_end && self.peek().is_some_and(is_php_identifier_part) {
+            self.index += 1;
+        }
+        self.push_token(T_STRING_VARNAME, start, self.index);
+    }
+
+    fn consume_heredoc_variable_suffix(&mut self, content_end: usize) {
+        if self.index < content_end && self.peek() == Some(b'[') {
+            let open = self.index;
+            self.index += 1;
+            self.push_symbol(open, self.index);
+
+            if self.index < content_end {
+                let start = self.index;
+                if self.peek().is_some_and(|byte| byte.is_ascii_digit()) {
+                    self.index += 1;
+                    while self.index < content_end
+                        && self.peek().is_some_and(|byte| byte.is_ascii_digit())
+                    {
+                        self.index += 1;
+                    }
+                    self.push_token(T_NUM_STRING, start, self.index);
+                } else if self.peek().is_some_and(is_php_identifier_start) {
+                    self.index += 1;
+                    while self.index < content_end
+                        && self.peek().is_some_and(is_php_identifier_part)
+                    {
+                        self.index += 1;
+                    }
+                    self.push_token(T_STRING, start, self.index);
+                }
+            }
+
+            if self.index < content_end && self.peek() == Some(b']') {
+                let close = self.index;
+                self.index += 1;
+                self.push_symbol(close, self.index);
+            }
+        }
+
+        if self.index + 2 < content_end
+            && self.source.get(self.index..self.index + 2) == Some(b"->")
+            && self
+                .source
+                .get(self.index + 2)
+                .copied()
+                .is_some_and(is_php_identifier_start)
+        {
+            let operator = self.index;
+            self.index += 2;
+            self.push_token(T_OBJECT_OPERATOR, operator, self.index);
+
+            let property = self.index;
+            self.index += 1;
+            while self.index < content_end && self.peek().is_some_and(is_php_identifier_part) {
+                self.index += 1;
+            }
+            self.push_token(T_STRING, property, self.index);
         }
     }
 
@@ -1225,8 +1541,22 @@ impl<'a> Scanner<'a> {
     }
 }
 
+struct HeredocStart {
+    label: Vec<u8>,
+    content_start: usize,
+    interpolate: bool,
+}
+
 fn is_php_whitespace(byte: u8) -> bool {
     matches!(byte, b' ' | b'\n' | b'\r' | b'\t' | 0x0b | 0x0c)
+}
+
+fn is_php_identifier_start(byte: u8) -> bool {
+    byte == b'_' || byte.is_ascii_alphabetic()
+}
+
+fn is_php_identifier_part(byte: u8) -> bool {
+    is_php_identifier_start(byte) || byte.is_ascii_digit()
 }
 
 fn is_bad_character(byte: u8) -> bool {

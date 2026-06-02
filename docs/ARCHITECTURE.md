@@ -876,6 +876,15 @@ subset. That scanner has its own bounded `__halt_compiler()` stop-point state:
 after the keyword, optional whitespace, `(`, optional whitespace, `)`, optional
 whitespace, and `;`, all remaining bytes are represented as one
 `T_INLINE_HTML` payload token instead of continuing PHP lexical classification.
+The same compatibility scanner now has a tokenizer-only heredoc/nowdoc path:
+valid `<<<LABEL`, `<<<"LABEL"`, and `<<<'LABEL'` starts emit
+`T_START_HEREDOC`, content is scanned until an exact or indented closing label,
+heredoc content reuses the current simple interpolation token splitter, and
+nowdoc content remains one literal `T_ENCAPSED_AND_WHITESPACE` run. This is
+token classification support for `token_get_all()` and `PhpToken::tokenize()`;
+full malformed heredoc recovery, nested heredoc expressions inside complex
+interpolation, and broader parser/runtime semantics are still handled by the
+separate language lexer boundary.
 When the lexer sees `?>`, it emits the intervening inline HTML up to the next
 PHP open tag as a token consumed by the parser into an echo statement. The
 current slice consumes one immediate newline after `?>`, matching PHP's common

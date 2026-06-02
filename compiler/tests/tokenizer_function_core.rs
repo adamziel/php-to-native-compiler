@@ -258,6 +258,103 @@ foreach ($codes as $code) {
 }
 
 #[test]
+fn tokenizer_classifies_heredoc_and_nowdoc_boundaries() {
+    let execution = run_source(
+        r#"<?php
+$code = <<<'CODE'
+<?php
+$x = <<<TXT
+hello $name
+TXT;
+$y = <<<'NOW'
+raw $name
+NOW;
+$z = <<<TXT
+${name} {$plain} $arr[0] $arr[key] $obj->p
+  TXT;
+CODE;
+
+function selected_tokenizer_token($name) {
+    return $name == "T_START_HEREDOC"
+        || $name == "T_END_HEREDOC"
+        || $name == "T_ENCAPSED_AND_WHITESPACE"
+        || $name == "T_VARIABLE"
+        || $name == "T_DOLLAR_OPEN_CURLY_BRACES"
+        || $name == "T_CURLY_OPEN"
+        || $name == "T_STRING_VARNAME"
+        || $name == "T_NUM_STRING"
+        || $name == "T_OBJECT_OPERATOR"
+        || $name == "T_STRING";
+}
+
+$inside_heredoc = false;
+foreach (token_get_all($code) as $token) {
+    if (!is_array($token)) {
+        continue;
+    }
+    $name = token_name($token[0]);
+    if ($name == "T_START_HEREDOC") {
+        $inside_heredoc = true;
+    }
+    if ($inside_heredoc && selected_tokenizer_token($name)) {
+        echo $name, ":", str_replace("\n", "\\n", $token[1]), ":", $token[2], "\n";
+    }
+    if ($name == "T_END_HEREDOC") {
+        $inside_heredoc = false;
+    }
+}
+
+echo "--\n";
+$inside_heredoc = false;
+foreach (PhpToken::tokenize($code) as $token) {
+    $name = $token->getTokenName();
+    if ($name == "T_START_HEREDOC") {
+        $inside_heredoc = true;
+    }
+    if ($inside_heredoc && selected_tokenizer_token($name)) {
+        echo $name, ":", str_replace("\n", "\\n", $token->text), ":", $token->line, "\n";
+    }
+    if ($name == "T_END_HEREDOC") {
+        $inside_heredoc = false;
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    let expected = concat!(
+        "T_START_HEREDOC:<<<TXT\\n:2\n",
+        "T_ENCAPSED_AND_WHITESPACE:hello :3\n",
+        "T_VARIABLE:$name:3\n",
+        "T_ENCAPSED_AND_WHITESPACE:\\n:3\n",
+        "T_END_HEREDOC:TXT:4\n",
+        "T_START_HEREDOC:<<<'NOW'\\n:5\n",
+        "T_ENCAPSED_AND_WHITESPACE:raw $name\\n:6\n",
+        "T_END_HEREDOC:NOW:7\n",
+        "T_START_HEREDOC:<<<TXT\\n:8\n",
+        "T_DOLLAR_OPEN_CURLY_BRACES:${:9\n",
+        "T_STRING_VARNAME:name:9\n",
+        "T_ENCAPSED_AND_WHITESPACE: :9\n",
+        "T_CURLY_OPEN:{:9\n",
+        "T_VARIABLE:$plain:9\n",
+        "T_ENCAPSED_AND_WHITESPACE: :9\n",
+        "T_VARIABLE:$arr:9\n",
+        "T_NUM_STRING:0:9\n",
+        "T_ENCAPSED_AND_WHITESPACE: :9\n",
+        "T_VARIABLE:$arr:9\n",
+        "T_STRING:key:9\n",
+        "T_ENCAPSED_AND_WHITESPACE: :9\n",
+        "T_VARIABLE:$obj:9\n",
+        "T_OBJECT_OPERATOR:->:9\n",
+        "T_STRING:p:9\n",
+        "T_ENCAPSED_AND_WHITESPACE:\\n:9\n",
+        "T_END_HEREDOC:  TXT:10\n",
+    );
+    assert_eq!(execution.stdout, format!("{expected}--\n{expected}"));
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn php_token_objects_support_constructor_methods_subclasses_and_ampersands() {
     let execution = run_source(
         r#"<?php
