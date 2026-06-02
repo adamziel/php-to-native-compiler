@@ -4,6 +4,17 @@
 
 Implemented:
 
+- Accepted checkpoint `dcd07a3c` as the current public PHPT score source after
+  the replacement full pinned php-src gate completed with zero
+  latest-published PASS regressions. The public-comparable score is now
+  `6265 / 20294 = 30.87%`, up from `6194 / 20294 = 30.52%` at checkpoint
+  `423a03d4`. The accepted gate evidence is
+  `state/logs/phpt-full-current-score-20260602T224641Z-php-src-f97ff59-public-dcd07a3c-source-dcd07a3c`;
+  aggregate counts were `6265` passed, `12741` failed, `2759` skipped, `16`
+  xfailed, `549` borked, and `1` warned. The normalized PASS regression
+  comparison was `6261` current passes vs. `6190` baseline passes with `0`
+  regressions, and the invalid-proof-marker summary reported `0` hits.
+
 - Repaired the full-gate DateTime `%a` PASS regressions for spring/fall DST
   transition `DateTime::diff()` day rows. `DateInterval::$days` now derives
   from the computed interval date component instead of the raw endpoint
