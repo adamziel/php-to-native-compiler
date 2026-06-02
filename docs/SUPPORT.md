@@ -2613,6 +2613,10 @@
   built-in sorting over array storage, `uasort()` / `uksort()` user-comparator
   sorting over array-backed and plain object-backed public-property storage,
   and ordinary by-value iteration through their iterator methods.
+  Direct `asort()`, `ksort()`, `natsort()`, `natcasesort()`, `uasort()`, and
+  `uksort()` method calls honor bounded `disable_functions` entries after
+  ordinary method arity/type validation and emit PHP-shaped `Error`s, including
+  the covered direct internal-method fatal frame when the error is uncaught.
   Comparator-time mutation of the sorted object through covered ArrayObject
   mutators raises the PHP-shaped `Error` message. By-value `foreach` over
   `IteratorAggregate` objects,
@@ -2631,12 +2635,12 @@
   `LimitIterator`, `IteratorIterator`, and `NoRewindIterator`, weak
   scalar/null/float/numeric-string coercions for `ArrayIterator::seek()`
   offsets, nested ArrayObject-backed `uasort()` / `uksort()` storage sorting,
-  exact disabled-function uncaught internal-method stack traces for
-  `uasort()` / `uksort()`, comparator side effects outside the covered storage
-  mutation guard, object-handle reuse outside these unrooted foreach iterator
-  temporaries, full destructor/unwinding lifetime parity, by-reference
-  iteration over SPL iterator objects, serialization parity, full COW/reference
-  identity, and native lowering remain unsupported.
+  disabled-function internal-method stack traces outside direct method-call
+  dispatch, comparator side effects outside the covered storage mutation guard,
+  object-handle reuse outside these unrooted foreach iterator temporaries, full
+  destructor/unwinding lifetime parity, by-reference iteration over SPL
+  iterator objects, serialization parity, full COW/reference identity, and
+  native lowering remain unsupported.
 - SPL `SplFixedArray` has a bounded fixed-size storage model for construction,
   `fromArray()`, `toArray()`, `count()`/`getSize()`, `setSize()`, offset
   reads/writes/unsets/existence checks, and ordinary by-value iteration.

@@ -12872,7 +12872,7 @@ impl Interpreter {
         })
     }
 
-    fn ensure_array_object_user_sort_enabled(
+    fn ensure_array_object_sort_enabled(
         &self,
         class_name: &str,
         method_name: &str,
@@ -13285,6 +13285,7 @@ impl Interpreter {
                 } else {
                     None
                 };
+                self.ensure_array_object_sort_enabled(class_name, method_name, span)?;
                 let mut state = self.array_object_state(&object, method_name, span)?.clone();
                 match &mut state.storage {
                     Value::Array(array) => {
@@ -13320,7 +13321,7 @@ impl Interpreter {
             }
             "uasort" | "uksort" => {
                 Self::array_object_expect_exact_args(class_name, method_name, &args, 1, span)?;
-                self.ensure_array_object_user_sort_enabled(class_name, method_name, span)?;
+                self.ensure_array_object_sort_enabled(class_name, method_name, span)?;
                 let operation = match method_name.to_ascii_lowercase().as_str() {
                     "uasort" => UserArraySortOperation::Uasort,
                     "uksort" => UserArraySortOperation::Uksort,
@@ -13349,6 +13350,22 @@ impl Interpreter {
                 RuntimeError::undefined_function(format!("{class_name}::{method_name}()")),
             )),
         }
+    }
+
+    fn call_array_object_method_with_values_and_uncaught_frame(
+        &mut self,
+        object: PhpObject,
+        method_name: &str,
+        args: Vec<Value>,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let callable = format!("{}->{method_name}", object.class_name());
+        let result =
+            self.call_array_object_method_with_values(object, method_name, args.clone(), span);
+        if let Err(error) = &result {
+            self.record_pending_uncaught_internal_call_frame(callable, span, &args, error);
+        }
+        result
     }
 
     fn by_reference_foreach_variable_root(
@@ -52485,7 +52502,12 @@ impl Interpreter {
                 .map(|arg| self.evaluate(arg, caller_scope))
                 .collect::<CompileResult<Vec<_>>>()?;
             return self
-                .call_array_object_method_with_values(object, method_name, values, span)
+                .call_array_object_method_with_values_and_uncaught_frame(
+                    object,
+                    method_name,
+                    values,
+                    span,
+                )
                 .map(|value| (value, None));
         }
 

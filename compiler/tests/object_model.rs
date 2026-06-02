@@ -15857,7 +15857,28 @@ $guarded->uasort(function ($left, $right) use ($guarded, &$i) {
     return $left <=> $right;
 });
 
-ini_set("disable_functions", "uasort, uksort");
+ini_set("disable_functions", "asort, ksort, natsort, natcasesort, uasort, uksort");
+$disabled = new ArrayObject(array("hello", "world"));
+try {
+    $disabled->asort();
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    $disabled->ksort();
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    $disabled->natsort();
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    $disabled->natcasesort();
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
 try {
     $values->uasort("desc_cmp");
 } catch (Error $e) {
@@ -15873,10 +15894,32 @@ try {
     let execution = run_source(source).unwrap();
     assert_eq!(
         execution.stdout,
-        "bool(true)\nv:1=3;v:0=2;v:2=1;\nbool(true)\nk:6=3;k:5=2;k:3=0;k:2=1;k:1=4;\nArrayObject::uasort() expects exactly 1 argument, 0 given\nArrayObject::uksort() expects exactly 1 argument, 2 given\nModification of ArrayObject during sorting is prohibited\nguard:3:1\nCannot call method uasort when function uasort is disabled\nCannot call method uksort when function uksort is disabled\n"
+        "bool(true)\nv:1=3;v:0=2;v:2=1;\nbool(true)\nk:6=3;k:5=2;k:3=0;k:2=1;k:1=4;\nArrayObject::uasort() expects exactly 1 argument, 0 given\nArrayObject::uksort() expects exactly 1 argument, 2 given\nModification of ArrayObject during sorting is prohibited\nguard:3:1\nCannot call method asort when function asort is disabled\nCannot call method ksort when function ksort is disabled\nCannot call method natsort when function natsort is disabled\nCannot call method natcasesort when function natcasesort is disabled\nCannot call method uasort when function uasort is disabled\nCannot call method uksort when function uksort is disabled\n"
     );
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn array_object_disabled_sort_fatal_records_internal_method_frame() {
+    let execution = run_source(
+        r#"<?php
+ini_set("disable_functions", "asort");
+$ao = new ArrayObject(array(2, 1));
+$ao->asort();
+"#,
+    )
+    .unwrap();
+
+    assert!(execution.stdout.contains(
+        "Fatal error: Uncaught Error: Cannot call method asort when function asort is disabled in Command line code:4"
+    ));
+    assert!(execution
+        .stdout
+        .contains("#0 Command line code(4): ArrayObject->asort()"));
+    assert!(execution.stdout.contains("#1 {main}"));
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 255);
 }
 
 #[test]

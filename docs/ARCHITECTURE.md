@@ -107,9 +107,13 @@ Core `ArrayObject` and `ArrayIterator` objects share a bounded runtime storage
 record. Array-backed storage, plain object-backed public-property storage, and
 selected nested ArrayObject-backed reads/writes are routed through that record;
 ordinary built-in sorts and `uasort()` / `uksort()` operate on materialized
-storage entries and write the sorted storage back. While a user comparator is
-running for one of those ArrayObject sorts, covered mutating methods on the
-same object reject the write with PHP's storage-modification `Error` message.
+storage entries and write the sorted storage back. Direct ArrayObject and
+ArrayIterator sort-method calls consult the bounded `disable_functions` INI
+state after ordinary arity/type validation, so disabled comparator-free and
+user-comparator sort methods raise PHP-shaped `Error`s with the covered
+internal method frame. While a user comparator is running for one of those
+ArrayObject sorts, covered mutating methods on the same object reject the
+write with PHP's storage-modification `Error` message.
 Core `EmptyIterator`, `InfiniteIterator`, and `LimitIterator` objects are
 modeled as small interpreter-side wrapper states: empty iterators have no
 payload, infinite iterators retain an inner `Iterator`, and limit iterators

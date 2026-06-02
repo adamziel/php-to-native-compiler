@@ -4,6 +4,27 @@
 
 Implemented:
 
+- Added a bounded direct `ArrayObject` / `ArrayIterator` disabled sort-method
+  diagnostics lane on the interpreter path. Comparator-free `asort()`,
+  `ksort()`, `natsort()`, and `natcasesort()` methods now share the existing
+  `disable_functions` check used by `uasort()` / `uksort()` after ordinary
+  method arity/type validation, and direct disabled sort-method fatals record
+  the covered internal method frame. Focused proof covers the Rust
+  `array_object_user_sort_methods_use_comparators_and_guard_reentrant_mutation`
+  and `array_object_disabled_sort_fatal_records_internal_method_frame`
+  regressions and selected public PHPT rows
+  `ext/spl/tests/ArrayObject/asort_disabled.phpt`,
+  `ext/spl/tests/ArrayObject/ksort_disabled.phpt`,
+  `ext/spl/tests/ArrayObject/natsort_disabled.phpt`,
+  `ext/spl/tests/ArrayObject/natcasesort_disabled.phpt`,
+  `ext/spl/tests/ArrayObject/uasort_disabled.phpt`, and
+  `ext/spl/tests/ArrayObject/uksort_disabled.phpt`. Unsupported edges remain
+  disabled-function internal-method stack traces outside direct method-call
+  dispatch, nested ArrayObject-backed user sorting, comparator side effects
+  beyond the covered storage mutation guard, callback forms outside the shared
+  user-array sort callback surface, serialization/unserialization, full
+  reference/COW identity, and native lowering.
+
 - Accepted checkpoint `c307401c` as the current public PHPT score source after
   the full pinned php-src gate completed with zero latest-published PASS
   regressions. The public-comparable score is now `6090 / 20294 = 30.01%`,
