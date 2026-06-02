@@ -107,6 +107,13 @@ ordinary built-in sorts and `uasort()` / `uksort()` operate on materialized
 storage entries and write the sorted storage back. While a user comparator is
 running for one of those ArrayObject sorts, covered mutating methods on the
 same object reject the write with PHP's storage-modification `Error` message.
+Core `EmptyIterator`, `InfiniteIterator`, and `LimitIterator` objects are
+modeled as small interpreter-side wrapper states: empty iterators have no
+payload, infinite iterators retain an inner `Iterator`, and limit iterators
+retain an inner `Iterator` plus offset, limit, and logical position. Wrapper
+methods delegate through the same required-iterator method dispatch used by
+`foreach`, so userland overrides on inner iterators and `parent::` calls on
+wrapper subclasses share the normal object method path.
 Bounded non-direct named and dynamic property holder expressions in
 by-reference `foreach`, such as `$holders["bag"]->items["child"]`,
 `$holders["bag"]->{$name}["child"]`, method-context

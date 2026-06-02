@@ -2696,6 +2696,24 @@
   multiline/deprecation/default-escape parity, binary or non-UTF-8 line
   storage, independent nested iterator cursors, serialization parity,
   references/COW, and native lowering remain unsupported.
+- SPL `EmptyIterator`, `InfiniteIterator`, and `LimitIterator` have a bounded
+  interpreter runtime model over existing bounded `Iterator` objects.
+  `EmptyIterator` supports no-op `rewind()` / `next()` and false `valid()` for
+  ordinary foreach. `InfiniteIterator` stores its inner iterator, delegates
+  `rewind()`, `valid()`, `current()`, `key()`, and `next()`, and rewinds the
+  inner iterator after `next()` observes it became invalid. `LimitIterator`
+  stores its inner iterator plus offset, limit, and logical position; validates
+  constructor offset/limit bounds, advances to the requested offset during
+  `rewind()`, raises the bounded `OutOfBoundsException` shape when the offset
+  cannot be reached, enforces the limit in `valid()`, and delegates
+  current/key/next to the inner iterator. `getInnerIterator()` returns the
+  stored inner iterator for `InfiniteIterator` and `LimitIterator`. The exact
+  SPL `OuterIterator` / `IteratorIterator` class hierarchy,
+  `SeekableIterator` and `LimitIterator::seek()` parity, named/spread
+  arguments on these wrapper methods, `EmptyIterator::current()` / `key()`
+  exception parity beyond no-current foreach rows, independent cloned iterator
+  cursors, serialization parity, references/COW, and native lowering remain
+  unsupported.
 - SPL iterator helper functions `iterator_count()` and `iterator_to_array()`
   accept arrays and the bounded `Iterator` / `IteratorAggregate` object
   surface. Array inputs are counted or copied directly. `Iterator` inputs are

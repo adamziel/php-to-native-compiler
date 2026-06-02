@@ -61,6 +61,9 @@ const CORE_CLASS_NAMES: &[&str] = &[
     "SplStack",
     "SplObjectStorage",
     "SplFileObject",
+    "EmptyIterator",
+    "InfiniteIterator",
+    "LimitIterator",
     "ReflectionExtension",
     "ReflectionZendExtension",
     "DateTime",
@@ -16158,6 +16161,101 @@ array(2) {
 }
 SplFileObject::setCsvControl(): Argument #1 ($separator) must be a single character
 "#
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn spl_empty_infinite_and_limit_iterators_wrap_bounded_iterators() {
+    let source = r#"<?php
+class EmptyIteratorEx extends EmptyIterator {
+    function rewind(): void {
+        echo __METHOD__ . "\n";
+        parent::rewind();
+    }
+    function valid(): false {
+        echo __METHOD__ . "\n";
+        return parent::valid();
+    }
+}
+
+class ArrayIteratorEx extends ArrayIterator {
+    function rewind(): void {
+        echo __METHOD__ . "\n";
+        parent::rewind();
+    }
+    function valid(): bool {
+        echo __METHOD__ . "\n";
+        return parent::valid();
+    }
+    function current(): mixed {
+        echo __METHOD__ . "\n";
+        return parent::current();
+    }
+    function key(): string|int|null {
+        echo __METHOD__ . "\n";
+        return parent::key();
+    }
+    function next(): void {
+        echo __METHOD__ . "\n";
+        parent::next();
+    }
+}
+
+echo "empty\n";
+foreach (new EmptyIteratorEx() as $value) {
+    echo "unreachable";
+}
+
+echo "infinite\n";
+$it = new InfiniteIterator(new ArrayIteratorEx(range(0, 2)));
+$pos = 0;
+foreach ($it as $value) {
+    echo "value=$value\n";
+    if ($pos++ > 5) {
+        break;
+    }
+}
+
+echo "limit-empty\n";
+foreach (new LimitIterator(new EmptyIterator(), 0, 3) as $key => $value) {
+    echo "$key=>$value\n";
+}
+
+echo "limit-infinite\n";
+$it = new ArrayIterator(array(0 => "A", 1 => "B", 2 => "C", 3 => "D"));
+$it = new LimitIterator(new InfiniteIterator($it), 2, 5);
+foreach ($it as $key => $value) {
+    echo "$key=>$value\n";
+}
+
+echo "nested\n";
+$it = new ArrayIterator(array(0 => "A", 1 => "B", 2 => "C", 3 => "D"));
+$it = new LimitIterator(new InfiniteIterator(new LimitIterator($it, 1, 2)), 2, 5);
+foreach ($it as $key => $value) {
+    echo "$key=>$value\n";
+}
+
+try {
+    new LimitIterator(new ArrayIterator(array(1)), -1);
+} catch (ValueError $e) {
+    echo $e->getMessage(), "\n";
+}
+
+try {
+    foreach (new LimitIterator(new ArrayIterator(array("x")), 3) as $value) {
+        echo $value;
+    }
+} catch (OutOfBoundsException $e) {
+    echo $e->getMessage(), "\n";
+}
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "empty\nEmptyIteratorEx::rewind\nEmptyIteratorEx::valid\ninfinite\nArrayIteratorEx::rewind\nArrayIteratorEx::valid\nArrayIteratorEx::current\nArrayIteratorEx::key\nvalue=0\nArrayIteratorEx::next\nArrayIteratorEx::valid\nArrayIteratorEx::current\nArrayIteratorEx::key\nvalue=1\nArrayIteratorEx::next\nArrayIteratorEx::valid\nArrayIteratorEx::current\nArrayIteratorEx::key\nvalue=2\nArrayIteratorEx::next\nArrayIteratorEx::valid\nArrayIteratorEx::rewind\nArrayIteratorEx::valid\nArrayIteratorEx::current\nArrayIteratorEx::key\nvalue=0\nArrayIteratorEx::next\nArrayIteratorEx::valid\nArrayIteratorEx::current\nArrayIteratorEx::key\nvalue=1\nArrayIteratorEx::next\nArrayIteratorEx::valid\nArrayIteratorEx::current\nArrayIteratorEx::key\nvalue=2\nArrayIteratorEx::next\nArrayIteratorEx::valid\nArrayIteratorEx::rewind\nArrayIteratorEx::valid\nArrayIteratorEx::current\nArrayIteratorEx::key\nvalue=0\nlimit-empty\nlimit-infinite\n2=>C\n3=>D\n0=>A\n1=>B\n2=>C\nnested\n1=>B\n2=>C\n1=>B\n2=>C\n1=>B\nLimitIterator::__construct(): Argument #2 ($offset) must be greater than or equal to 0\nSeek position 3 is out of range\n"
     );
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);

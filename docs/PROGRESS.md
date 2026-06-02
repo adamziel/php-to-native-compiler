@@ -4,6 +4,27 @@
 
 Implemented:
 
+- Added a bounded SPL iterator-wrapper lane on the interpreter path.
+  `EmptyIterator`, `InfiniteIterator`, and `LimitIterator` are now core
+  metadata classes implementing `Iterator`; `InfiniteIterator` and
+  `LimitIterator` retain their inner iterator object in runtime state, delegate
+  `rewind()`, `valid()`, `current()`, `key()`, and `next()` through the
+  existing iterator method path, preserve wrapper-held inner iterator liveness,
+  and expose `LimitIterator` constructor bounds validation plus the bounded
+  out-of-range `OutOfBoundsException` path when `rewind()` cannot reach the
+  requested offset. Focused proof covers the Rust
+  `spl_empty_infinite_and_limit_iterators_wrap_bounded_iterators` regression,
+  core class metadata snapshots, the direct CLI fixture
+  `tests/fixtures/milestone2363/spl_empty_infinite_limit_iterators.php`, and
+  selected public PHPT rows for `EmptyIterator`, `InfiniteIterator`,
+  `LimitIterator` over empty/infinite/ArrayIterator inputs, constructor bounds,
+  string keys, and large-offset failure. Unsupported edges remain the exact
+  SPL `OuterIterator` / `IteratorIterator` class hierarchy, `SeekableIterator`
+  and `LimitIterator::seek()` parity, named/spread arguments on these wrapper
+  methods, `EmptyIterator::current()` / `key()` exception parity beyond
+  no-current foreach rows, independent cloned iterator cursors, serialization
+  parity, references/COW, and native lowering.
+
 - Added a bounded `SplFixedArray` storage-presentation and independent
   by-value iteration lane on the interpreter path. `SplFixedArray` now emits
   the PHP-shaped nullable-size deprecation for `__construct(null)` and

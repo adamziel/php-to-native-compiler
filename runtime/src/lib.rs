@@ -33072,9 +33072,67 @@ impl PhpClassTable {
                 .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
                 .expect("SplFileObject core metadata should not duplicate methods");
         }
+        let empty_iterator_id = classes
+            .declare_class("EmptyIterator")
+            .expect("core class table should contain SplFileObject before EmptyIterator");
+        classes
+            .set_interfaces(empty_iterator_id, vec!["Iterator".to_string()])
+            .expect("EmptyIterator should implement Iterator");
+        let empty_iterator = classes
+            .get_mut(empty_iterator_id)
+            .expect("declared EmptyIterator class id should resolve");
+        for method in ["current", "key", "next", "rewind", "valid"] {
+            empty_iterator
+                .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("EmptyIterator core metadata should not duplicate methods");
+        }
+        let infinite_iterator_id = classes
+            .declare_class("InfiniteIterator")
+            .expect("core class table should contain EmptyIterator before InfiniteIterator");
+        classes
+            .set_interfaces(infinite_iterator_id, vec!["Iterator".to_string()])
+            .expect("InfiniteIterator should implement Iterator");
+        let infinite_iterator = classes
+            .get_mut(infinite_iterator_id)
+            .expect("declared InfiniteIterator class id should resolve");
+        for method in [
+            "__construct",
+            "current",
+            "getInnerIterator",
+            "key",
+            "next",
+            "rewind",
+            "valid",
+        ] {
+            infinite_iterator
+                .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("InfiniteIterator core metadata should not duplicate methods");
+        }
+        let limit_iterator_id = classes
+            .declare_class("LimitIterator")
+            .expect("core class table should contain InfiniteIterator before LimitIterator");
+        classes
+            .set_interfaces(limit_iterator_id, vec!["Iterator".to_string()])
+            .expect("LimitIterator should implement Iterator");
+        let limit_iterator = classes
+            .get_mut(limit_iterator_id)
+            .expect("declared LimitIterator class id should resolve");
+        for method in [
+            "__construct",
+            "current",
+            "getInnerIterator",
+            "key",
+            "next",
+            "rewind",
+            "valid",
+        ] {
+            limit_iterator
+                .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("LimitIterator core metadata should not duplicate methods");
+        }
         let reflection_extension_id = classes
             .declare_class("ReflectionExtension")
-            .expect("core class table should contain SplFileObject before ReflectionExtension");
+            .expect("core class table should contain LimitIterator before ReflectionExtension");
         let reflection_extension = classes
             .get_mut(reflection_extension_id)
             .expect("declared ReflectionExtension class id should resolve");
@@ -81130,6 +81188,9 @@ mod tests {
                 "SplStack",
                 "SplObjectStorage",
                 "SplFileObject",
+                "EmptyIterator",
+                "InfiniteIterator",
+                "LimitIterator",
                 "ReflectionExtension",
                 "ReflectionZendExtension",
                 "DateTime",

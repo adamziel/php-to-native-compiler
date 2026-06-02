@@ -333,6 +333,7 @@ struct Interpreter {
     spl_object_storage_get_hash_depth: usize,
     spl_doubly_linked_lists: HashMap<i64, SplDoublyLinkedListState>,
     spl_file_objects: HashMap<i64, SplFileObjectState>,
+    spl_iterator_wrappers: HashMap<i64, SplIteratorWrapperState>,
     date_time_objects: HashMap<i64, BoundedDateTimeObjectState>,
     uri_rfc3986_empty_port_objects: HashSet<i64>,
     source_file: Option<String>,
@@ -683,6 +684,20 @@ impl Default for SplFileObjectState {
             csv_escape: Some('\\'),
         }
     }
+}
+
+#[derive(Debug, Clone)]
+enum SplIteratorWrapperState {
+    Infinite {
+        inner: PhpObject,
+        valid_after_next: Option<bool>,
+    },
+    Limit {
+        inner: PhpObject,
+        offset: i64,
+        limit: i64,
+        position: i64,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -10241,6 +10256,19 @@ fn spl_fixed_array_state_contains_object_id(
         .any(|value| value_contains_object_id(value, object_id, visited))
 }
 
+fn spl_iterator_wrapper_state_contains_object_id(
+    state: &SplIteratorWrapperState,
+    object_id: i64,
+    visited: &mut LiveRootVisit,
+) -> bool {
+    match state {
+        SplIteratorWrapperState::Infinite { inner, .. }
+        | SplIteratorWrapperState::Limit { inner, .. } => {
+            object_contains_object_id(inner, object_id, visited)
+        }
+    }
+}
+
 fn symbol_table_contains_object_id(
     symbols: &SymbolTable,
     object_id: i64,
@@ -11257,6 +11285,7 @@ impl Interpreter {
             spl_object_storage_get_hash_depth: 0,
             spl_doubly_linked_lists: HashMap::new(),
             spl_file_objects: HashMap::new(),
+            spl_iterator_wrappers: HashMap::new(),
             date_time_objects: HashMap::new(),
             uri_rfc3986_empty_port_objects: HashSet::new(),
             main_source_file: source_file.clone(),
@@ -11503,6 +11532,37 @@ impl Interpreter {
         self.classes
             .lookup_class_id("SplFileObject")
             .is_some_and(|file_id| class_id == file_id)
+    }
+
+    fn is_spl_empty_iterator_class_id(&self, class_id: ClassId) -> bool {
+        self.classes
+            .lookup_class_id("EmptyIterator")
+            .is_some_and(|iterator_id| {
+                class_id == iterator_id || self.classes.is_subclass_of(class_id, iterator_id)
+            })
+    }
+
+    fn is_spl_infinite_iterator_class_id(&self, class_id: ClassId) -> bool {
+        self.classes
+            .lookup_class_id("InfiniteIterator")
+            .is_some_and(|iterator_id| {
+                class_id == iterator_id || self.classes.is_subclass_of(class_id, iterator_id)
+            })
+    }
+
+    fn is_spl_limit_iterator_class_id(&self, class_id: ClassId) -> bool {
+        self.classes
+            .lookup_class_id("LimitIterator")
+            .is_some_and(|iterator_id| {
+                class_id == iterator_id || self.classes.is_subclass_of(class_id, iterator_id)
+            })
+    }
+
+    fn resolved_method_is_core_spl_iterator_wrapper(&self, class_id: ClassId) -> bool {
+        ["EmptyIterator", "InfiniteIterator", "LimitIterator"]
+            .iter()
+            .filter_map(|class_name| self.classes.lookup_class_id(class_name))
+            .any(|core_id| class_id == core_id)
     }
 
     fn spl_file_object_method_parameter_index(method_name: &str, name: &str) -> Option<usize> {
@@ -14325,6 +14385,12 @@ impl Interpreter {
                 .map(|value| (value, None));
         }
 
+        if self.resolved_method_is_core_spl_iterator_wrapper(class_id) {
+            return self
+                .call_spl_iterator_wrapper_method_with_values(object, method_name, Vec::new(), span)
+                .map(|value| (value, None));
+        }
+
         let function = self.method_function(class_id, &class_name, &resolved_method_name, span)?;
         let function = function.as_ref();
         if function.returns_by_reference {
@@ -15267,9 +15333,8 @@ impl Interpreter {
                     span,
                     scope,
                 )?;
+            let iterator_key = self.call_required_iterator_method(object.clone(), "key", span)?;
             if let Some(key) = key {
-                let iterator_key =
-                    self.call_required_iterator_method(object.clone(), "key", span)?;
                 scope.write_static(key, iterator_key);
             }
             let target_is_alias = value
@@ -16694,16 +16759,517 @@ impl Interpreter {
         if object.class_name().eq_ignore_ascii_case("Generator") {
             return self.call_generator_method_with_values(object, method_name, Vec::new(), span);
         }
-        self.call_magic_instance_method_with_values(object.clone(), method_name, Vec::new(), span)?
-            .ok_or_else(|| {
-                runtime_error(
+
+        let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
+            self.resolve_instance_method(object.class_id(), method_name)
+        else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::undefined_function(format!(
+                    "{}::{method_name}()",
+                    object.class_name()
+                )),
+            ));
+        };
+
+        if is_static {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{class_name}::{method_name}()"),
+                    "static Iterator methods are not implemented in the current subset",
+                ),
+            ));
+        }
+
+        self.ensure_instance_method_visible(class_id, &class_name, method_name, visibility, span)?;
+
+        if self.resolved_method_is_core_array_object(class_id) {
+            return self.call_array_object_method_with_values(
+                object,
+                method_name,
+                Vec::new(),
+                span,
+            );
+        }
+
+        if self.resolved_method_is_core_spl_object_storage(class_id) {
+            return self.call_spl_object_storage_method_with_values(
+                object,
+                method_name,
+                Vec::new(),
+                span,
+            );
+        }
+
+        if self.resolved_method_is_core_spl_fixed_array(class_id) {
+            return self.call_spl_fixed_array_method_with_values(
+                object,
+                method_name,
+                Vec::new(),
+                span,
+            );
+        }
+
+        if self.resolved_method_is_core_spl_doubly_linked_list(class_id) {
+            return self.call_spl_doubly_linked_list_method_with_values(
+                object,
+                method_name,
+                Vec::new(),
+                span,
+            );
+        }
+
+        if self.resolved_method_is_core_spl_file_object(class_id) {
+            return self.call_spl_file_object_method_with_values(
+                object,
+                method_name,
+                Vec::new(),
+                span,
+            );
+        }
+
+        if self.resolved_method_is_core_spl_iterator_wrapper(class_id) {
+            return self.call_spl_iterator_wrapper_method_with_values(
+                object,
+                method_name,
+                Vec::new(),
+                span,
+            );
+        }
+
+        let function = self.method_function(class_id, &class_name, &resolved_method_name, span)?;
+        let function = function.as_ref();
+        ensure_user_function_arity(function, 0, span)?;
+        ensure_supported_function_signature(function, 0, span)?;
+        self.ensure_user_function_call_depth(function, span)?;
+
+        let called_class_id = object.class_id();
+        self.call_user_function_with_this(
+            function,
+            object,
+            Vec::new(),
+            Some(class_id),
+            Some(called_class_id),
+        )
+    }
+
+    fn spl_iterator_wrapper_state(
+        &self,
+        object: &PhpObject,
+        method_name: &str,
+        span: Span,
+    ) -> CompileResult<&SplIteratorWrapperState> {
+        self.spl_iterator_wrappers.get(&object.id()).ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{}::{method_name}()", object.class_name()),
+                    "missing SPL iterator wrapper runtime state",
+                ),
+            )
+        })
+    }
+
+    fn spl_iterator_wrapper_inner_argument(
+        &self,
+        function: &str,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<PhpObject> {
+        let Value::Object(object) = value else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function,
+                    format!(
+                        "Argument #1 ($iterator) must be of type Iterator, {} given",
+                        php_type_error_given(value)
+                    ),
+                ),
+            ));
+        };
+        if !self
+            .classes
+            .implements_interface(object.class_id(), "Iterator")
+        {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function,
+                    format!(
+                        "Argument #1 ($iterator) must be of type Iterator, {} given",
+                        object.class_name()
+                    ),
+                ),
+            ));
+        }
+        Ok(object.clone())
+    }
+
+    fn spl_limit_iterator_bound_argument(
+        function: &str,
+        position: usize,
+        name: &str,
+        value: Option<&Value>,
+        default: i64,
+        minimum: i64,
+        span: Span,
+    ) -> CompileResult<i64> {
+        let Some(value) = value else {
+            return Ok(default);
+        };
+        let bound = php_internal_int_argument(function, position, name, value, span)?;
+        if bound < minimum {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function,
+                    format!(
+                        "{function}: Argument #{position} (${name}) must be greater than or equal to {minimum}"
+                    ),
+                ),
+            ));
+        }
+        Ok(bound)
+    }
+
+    fn spl_limit_iterator_offset_out_of_range(offset: i64, span: Span) -> Diagnostic {
+        runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "LimitIterator::rewind()",
+                format!("Seek position {offset} is out of range"),
+            ),
+        )
+    }
+
+    fn spl_iterator_valid_bool(&mut self, inner: PhpObject, span: Span) -> CompileResult<bool> {
+        Ok(self
+            .call_required_iterator_method(inner, "valid", span)?
+            .is_truthy())
+    }
+
+    fn advance_limit_iterator_to_offset(
+        &mut self,
+        inner: PhpObject,
+        offset: i64,
+        span: Span,
+    ) -> CompileResult<()> {
+        let mut advanced = 0_i64;
+        while advanced < offset {
+            if !self.spl_iterator_valid_bool(inner.clone(), span)? {
+                return Err(Self::spl_limit_iterator_offset_out_of_range(offset, span));
+            }
+            self.call_required_iterator_method(inner.clone(), "next", span)?;
+            advanced = advanced.saturating_add(1);
+        }
+        Ok(())
+    }
+
+    fn initialize_infinite_iterator(
+        &mut self,
+        object: &PhpObject,
+        args: &[Value],
+        span: Span,
+    ) -> CompileResult<()> {
+        expect_arity("InfiniteIterator::__construct", args, 1, span)?;
+        let inner = self.spl_iterator_wrapper_inner_argument(
+            "InfiniteIterator::__construct()",
+            &args[0],
+            span,
+        )?;
+        self.spl_iterator_wrappers.insert(
+            object.id(),
+            SplIteratorWrapperState::Infinite {
+                inner,
+                valid_after_next: None,
+            },
+        );
+        Ok(())
+    }
+
+    fn initialize_limit_iterator(
+        &mut self,
+        object: &PhpObject,
+        args: &[Value],
+        span: Span,
+    ) -> CompileResult<()> {
+        if !(1..=3).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "LimitIterator::__construct()",
+                    ArityExpectation::Between { min: 1, max: 3 },
+                    args.len(),
+                ),
+            ));
+        }
+        let inner = self.spl_iterator_wrapper_inner_argument(
+            "LimitIterator::__construct()",
+            &args[0],
+            span,
+        )?;
+        let offset = Self::spl_limit_iterator_bound_argument(
+            "LimitIterator::__construct()",
+            2,
+            "offset",
+            args.get(1),
+            0,
+            0,
+            span,
+        )?;
+        let limit = Self::spl_limit_iterator_bound_argument(
+            "LimitIterator::__construct()",
+            3,
+            "limit",
+            args.get(2),
+            -1,
+            -1,
+            span,
+        )?;
+        self.spl_iterator_wrappers.insert(
+            object.id(),
+            SplIteratorWrapperState::Limit {
+                inner,
+                offset,
+                limit,
+                position: 0,
+            },
+        );
+        Ok(())
+    }
+
+    fn call_spl_iterator_wrapper_method_with_values(
+        &mut self,
+        object: PhpObject,
+        method_name: &str,
+        args: Vec<Value>,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let method = method_name.to_ascii_lowercase();
+        if self.is_spl_empty_iterator_class_id(object.class_id()) {
+            return match method.as_str() {
+                "rewind" | "next" => {
+                    expect_arity(&format!("EmptyIterator::{method_name}"), &args, 0, span)?;
+                    Ok(Value::Null)
+                }
+                "valid" => {
+                    expect_arity("EmptyIterator::valid", &args, 0, span)?;
+                    Ok(Value::Bool(false))
+                }
+                "current" => {
+                    expect_arity("EmptyIterator::current", &args, 0, span)?;
+                    Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "EmptyIterator::current()",
+                            "Cannot access value of an EmptyIterator",
+                        ),
+                    ))
+                }
+                "key" => {
+                    expect_arity("EmptyIterator::key", &args, 0, span)?;
+                    Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "EmptyIterator::key()",
+                            "Cannot access key of an EmptyIterator",
+                        ),
+                    ))
+                }
+                _ => Err(runtime_error(
                     span,
                     RuntimeError::undefined_function(format!(
                         "{}::{method_name}()",
                         object.class_name()
                     )),
-                )
-            })
+                )),
+            };
+        }
+
+        if self.is_spl_infinite_iterator_class_id(object.class_id()) {
+            return match method.as_str() {
+                "__construct" => {
+                    self.initialize_infinite_iterator(&object, &args, span)?;
+                    Ok(Value::Null)
+                }
+                "rewind" => {
+                    expect_arity("InfiniteIterator::rewind", &args, 0, span)?;
+                    let inner = match self.spl_iterator_wrapper_state(&object, method_name, span)? {
+                        SplIteratorWrapperState::Infinite { inner, .. } => inner.clone(),
+                        SplIteratorWrapperState::Limit { .. } => unreachable!(),
+                    };
+                    self.call_required_iterator_method(inner, "rewind", span)?;
+                    if let Some(SplIteratorWrapperState::Infinite {
+                        valid_after_next, ..
+                    }) = self.spl_iterator_wrappers.get_mut(&object.id())
+                    {
+                        *valid_after_next = None;
+                    }
+                    Ok(Value::Null)
+                }
+                "valid" => {
+                    expect_arity("InfiniteIterator::valid", &args, 0, span)?;
+                    let (inner, valid_after_next) = match self
+                        .spl_iterator_wrappers
+                        .get_mut(&object.id())
+                        .ok_or_else(|| {
+                            runtime_error(
+                                span,
+                                RuntimeError::unsupported_call(
+                                    "InfiniteIterator::valid()",
+                                    "missing SPL iterator wrapper runtime state",
+                                ),
+                            )
+                        })? {
+                        SplIteratorWrapperState::Infinite {
+                            inner,
+                            valid_after_next,
+                        } => (inner.clone(), valid_after_next.take()),
+                        SplIteratorWrapperState::Limit { .. } => unreachable!(),
+                    };
+                    if let Some(true) = valid_after_next {
+                        return Ok(Value::Bool(true));
+                    }
+                    Ok(Value::Bool(self.spl_iterator_valid_bool(inner, span)?))
+                }
+                "current" | "key" => {
+                    expect_arity(&format!("InfiniteIterator::{method_name}"), &args, 0, span)?;
+                    let inner = match self.spl_iterator_wrapper_state(&object, method_name, span)? {
+                        SplIteratorWrapperState::Infinite { inner, .. } => inner.clone(),
+                        SplIteratorWrapperState::Limit { .. } => unreachable!(),
+                    };
+                    self.call_required_iterator_method(inner, method_name, span)
+                }
+                "next" => {
+                    expect_arity("InfiniteIterator::next", &args, 0, span)?;
+                    let inner = match self.spl_iterator_wrapper_state(&object, method_name, span)? {
+                        SplIteratorWrapperState::Infinite { inner, .. } => inner.clone(),
+                        SplIteratorWrapperState::Limit { .. } => unreachable!(),
+                    };
+                    self.call_required_iterator_method(inner.clone(), "next", span)?;
+                    if self.spl_iterator_valid_bool(inner.clone(), span)? {
+                        if let Some(SplIteratorWrapperState::Infinite {
+                            valid_after_next, ..
+                        }) = self.spl_iterator_wrappers.get_mut(&object.id())
+                        {
+                            *valid_after_next = Some(true);
+                        }
+                    } else {
+                        self.call_required_iterator_method(inner, "rewind", span)?;
+                        if let Some(SplIteratorWrapperState::Infinite {
+                            valid_after_next, ..
+                        }) = self.spl_iterator_wrappers.get_mut(&object.id())
+                        {
+                            *valid_after_next = None;
+                        }
+                    }
+                    Ok(Value::Null)
+                }
+                "getinneriterator" => {
+                    expect_arity("InfiniteIterator::getInnerIterator", &args, 0, span)?;
+                    let inner = match self.spl_iterator_wrapper_state(&object, method_name, span)? {
+                        SplIteratorWrapperState::Infinite { inner, .. } => inner.clone(),
+                        SplIteratorWrapperState::Limit { .. } => unreachable!(),
+                    };
+                    Ok(Value::Object(inner))
+                }
+                _ => Err(runtime_error(
+                    span,
+                    RuntimeError::undefined_function(format!(
+                        "{}::{method_name}()",
+                        object.class_name()
+                    )),
+                )),
+            };
+        }
+
+        if self.is_spl_limit_iterator_class_id(object.class_id()) {
+            return match method.as_str() {
+                "__construct" => {
+                    self.initialize_limit_iterator(&object, &args, span)?;
+                    Ok(Value::Null)
+                }
+                "rewind" => {
+                    expect_arity("LimitIterator::rewind", &args, 0, span)?;
+                    let (inner, offset) =
+                        match self.spl_iterator_wrapper_state(&object, method_name, span)? {
+                            SplIteratorWrapperState::Limit { inner, offset, .. } => {
+                                (inner.clone(), *offset)
+                            }
+                            SplIteratorWrapperState::Infinite { .. } => unreachable!(),
+                        };
+                    self.call_required_iterator_method(inner.clone(), "rewind", span)?;
+                    self.advance_limit_iterator_to_offset(inner, offset, span)?;
+                    if let Some(SplIteratorWrapperState::Limit { position, .. }) =
+                        self.spl_iterator_wrappers.get_mut(&object.id())
+                    {
+                        *position = 0;
+                    }
+                    Ok(Value::Null)
+                }
+                "valid" => {
+                    expect_arity("LimitIterator::valid", &args, 0, span)?;
+                    let (inner, limit, position) =
+                        match self.spl_iterator_wrapper_state(&object, method_name, span)? {
+                            SplIteratorWrapperState::Limit {
+                                inner,
+                                limit,
+                                position,
+                                ..
+                            } => (inner.clone(), *limit, *position),
+                            SplIteratorWrapperState::Infinite { .. } => unreachable!(),
+                        };
+                    if limit >= 0 && position >= limit {
+                        return Ok(Value::Bool(false));
+                    }
+                    Ok(Value::Bool(self.spl_iterator_valid_bool(inner, span)?))
+                }
+                "current" | "key" => {
+                    expect_arity(&format!("LimitIterator::{method_name}"), &args, 0, span)?;
+                    let inner = match self.spl_iterator_wrapper_state(&object, method_name, span)? {
+                        SplIteratorWrapperState::Limit { inner, .. } => inner.clone(),
+                        SplIteratorWrapperState::Infinite { .. } => unreachable!(),
+                    };
+                    self.call_required_iterator_method(inner, method_name, span)
+                }
+                "next" => {
+                    expect_arity("LimitIterator::next", &args, 0, span)?;
+                    let inner = match self.spl_iterator_wrapper_state(&object, method_name, span)? {
+                        SplIteratorWrapperState::Limit { inner, .. } => inner.clone(),
+                        SplIteratorWrapperState::Infinite { .. } => unreachable!(),
+                    };
+                    self.call_required_iterator_method(inner, "next", span)?;
+                    if let Some(SplIteratorWrapperState::Limit { position, .. }) =
+                        self.spl_iterator_wrappers.get_mut(&object.id())
+                    {
+                        *position = position.saturating_add(1);
+                    }
+                    Ok(Value::Null)
+                }
+                "getinneriterator" => {
+                    expect_arity("LimitIterator::getInnerIterator", &args, 0, span)?;
+                    let inner = match self.spl_iterator_wrapper_state(&object, method_name, span)? {
+                        SplIteratorWrapperState::Limit { inner, .. } => inner.clone(),
+                        SplIteratorWrapperState::Infinite { .. } => unreachable!(),
+                    };
+                    Ok(Value::Object(inner))
+                }
+                _ => Err(runtime_error(
+                    span,
+                    RuntimeError::undefined_function(format!(
+                        "{}::{method_name}()",
+                        object.class_name()
+                    )),
+                )),
+            };
+        }
+
+        Err(runtime_error(
+            span,
+            RuntimeError::undefined_function(format!("{}::{method_name}()", object.class_name())),
+        ))
     }
 
     fn spl_file_object_state(
@@ -20411,9 +20977,8 @@ impl Interpreter {
                     span,
                     scope,
                 )?;
+            let iterator_key = self.call_required_iterator_method(object.clone(), "key", span)?;
             if let Some(key) = key {
-                let iterator_key =
-                    self.call_required_iterator_method(object.clone(), "key", span)?;
                 scope.write_static(key, iterator_key);
             }
             let target_is_alias = value
@@ -25426,6 +25991,21 @@ impl Interpreter {
             return Ok(Value::Object(object));
         }
 
+        if self.resolved_method_is_core_spl_iterator_wrapper(constructor_class_id) {
+            let values = args
+                .iter()
+                .map(|arg| self.evaluate(arg, scope))
+                .collect::<CompileResult<Vec<_>>>()?;
+            self.call_spl_iterator_wrapper_method_with_values(
+                object.clone(),
+                "__construct",
+                values,
+                span,
+            )?;
+            self.track_allocated_object(&object);
+            return Ok(Value::Object(object));
+        }
+
         if self.resolved_method_is_core_mysqli(constructor_class_id) {
             if args.len() > 6 {
                 return Err(runtime_error(
@@ -25889,6 +26469,7 @@ impl Interpreter {
         self.spl_object_storages.remove(&object_id);
         self.spl_doubly_linked_lists.remove(&object_id);
         self.spl_file_objects.remove(&object_id);
+        self.spl_iterator_wrappers.remove(&object_id);
         self.date_time_objects.remove(&object_id);
         self.uri_rfc3986_empty_port_objects.remove(&object_id);
 
@@ -25974,6 +26555,12 @@ impl Interpreter {
             .values()
             .any(|state| spl_fixed_array_state_contains_object_id(state, object_id, &mut visited))
         {
+            return true;
+        }
+
+        if self.spl_iterator_wrappers.values().any(|state| {
+            spl_iterator_wrapper_state_contains_object_id(state, object_id, &mut visited)
+        }) {
             return true;
         }
 
@@ -26198,6 +26785,9 @@ impl Interpreter {
         }
         if let Some(state) = self.spl_file_objects.get(&object.id()).cloned() {
             self.spl_file_objects.insert(clone.id(), state);
+        }
+        if let Some(state) = self.spl_iterator_wrappers.get(&object.id()).cloned() {
+            self.spl_iterator_wrappers.insert(clone.id(), state);
         }
         if let Some(state) = self.date_time_objects.get(&object.id()).cloned() {
             self.date_time_objects.insert(clone.id(), state);
@@ -49785,6 +50375,12 @@ impl Interpreter {
                 .map(Some);
         }
 
+        if self.resolved_method_is_core_spl_iterator_wrapper(class_id) {
+            return self
+                .call_spl_iterator_wrapper_method_with_values(object, method_name, args, span)
+                .map(Some);
+        }
+
         if self.resolved_method_is_core_php_token(class_id)
             && php_token_core_instance_method(method_name)
         {
@@ -49970,6 +50566,12 @@ impl Interpreter {
         if self.resolved_method_is_core_spl_file_object(class_id) {
             return self
                 .call_spl_file_object_method_with_values(object, method_name, args, span)
+                .map(Some);
+        }
+
+        if self.resolved_method_is_core_spl_iterator_wrapper(class_id) {
+            return self
+                .call_spl_iterator_wrapper_method_with_values(object, method_name, args, span)
                 .map(Some);
         }
 
@@ -50657,6 +51259,24 @@ impl Interpreter {
             )?;
             let callable = format!("{}->{method_name}", object.class_name());
             let result = self.call_spl_file_object_method_with_values(
+                object,
+                method_name,
+                values.clone(),
+                span,
+            );
+            if let Err(error) = &result {
+                self.record_pending_uncaught_internal_call_frame(callable, span, &values, error);
+            }
+            return result.map(|value| (value, None));
+        }
+
+        if self.resolved_method_is_core_spl_iterator_wrapper(class_id) {
+            let values = args
+                .iter()
+                .map(|arg| self.evaluate(arg, caller_scope))
+                .collect::<CompileResult<Vec<_>>>()?;
+            let callable = format!("{}->{method_name}", object.class_name());
+            let result = self.call_spl_iterator_wrapper_method_with_values(
                 object,
                 method_name,
                 values.clone(),
@@ -55805,6 +56425,31 @@ impl Interpreter {
                 .map(|arg| self.evaluate(arg, caller_scope))
                 .collect::<CompileResult<Vec<_>>>()?;
             return self.call_spl_file_object_method_with_values(
+                this_object,
+                method_name,
+                values,
+                span,
+            );
+        }
+
+        if self.resolved_method_is_core_spl_iterator_wrapper(class_id) {
+            let this_object = match caller_scope.read_named("this") {
+                Some(Value::Object(object)) => object.clone(),
+                _ => {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{class_name}::{method_name}()"),
+                            "non-static method dispatch through parent:: requires current $this object context",
+                        ),
+                    ));
+                }
+            };
+            let values = args
+                .iter()
+                .map(|arg| self.evaluate(arg, caller_scope))
+                .collect::<CompileResult<Vec<_>>>()?;
+            return self.call_spl_iterator_wrapper_method_with_values(
                 this_object,
                 method_name,
                 values,
@@ -75579,9 +76224,8 @@ impl Interpreter {
                     span,
                     scope,
                 )?;
+            let iterator_key = self.call_required_iterator_method(object.clone(), "key", span)?;
             if let Some(key) = key {
-                let iterator_key =
-                    self.call_required_iterator_method(object.clone(), "key", span)?;
                 scope.write_static(key, iterator_key);
             }
             let target_is_alias = value
@@ -109406,6 +110050,29 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
             }
             if message.contains(" must be of type ") {
                 return Some(("TypeError", message));
+            }
+        }
+
+        for prefix in [
+            "unsupported call InfiniteIterator::",
+            "unsupported call LimitIterator::",
+            "unsupported call EmptyIterator::",
+        ] {
+            if let Some(message) = error
+                .message
+                .strip_prefix(prefix)
+                .and_then(|message| message.split_once(": "))
+                .map(|(_, message)| message.to_string())
+            {
+                if message.starts_with("Seek position ") && message.ends_with(" is out of range") {
+                    return Some(("OutOfBoundsException", message));
+                }
+                if message.contains("must be greater than or equal") {
+                    return Some(("ValueError", message));
+                }
+                if message.contains(" must be of type ") {
+                    return Some(("TypeError", message));
+                }
             }
         }
 

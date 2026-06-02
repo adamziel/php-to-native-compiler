@@ -61,21 +61,24 @@ Array
     [51] => SplStack
     [52] => SplObjectStorage
     [53] => SplFileObject
-    [54] => ReflectionExtension
-    [55] => ReflectionZendExtension
-    [56] => DateTime
-    [57] => DateTimeImmutable
-    [58] => DOMException
-    [59] => DOMNode
-    [60] => DOMAttr
-    [61] => DOMElement
-    [62] => DOMDocument
-    [63] => Generator
-    [64] => App\State\Box
-    [65] => App\State\Mode
-    [66] => App\State\Status
-    [67] => App\State\Mode
-    [68] => App\State\Status
+    [54] => EmptyIterator
+    [55] => InfiniteIterator
+    [56] => LimitIterator
+    [57] => ReflectionExtension
+    [58] => ReflectionZendExtension
+    [59] => DateTime
+    [60] => DateTimeImmutable
+    [61] => DOMException
+    [62] => DOMNode
+    [63] => DOMAttr
+    [64] => DOMElement
+    [65] => DOMDocument
+    [66] => Generator
+    [67] => App\State\Box
+    [68] => App\State\Mode
+    [69] => App\State\Status
+    [70] => App\State\Mode
+    [71] => App\State\Status
 )--- stdout end ---
 stderr:
 --- stderr end ---
