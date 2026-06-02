@@ -409,6 +409,153 @@ echo "|reflection=" . $reflection->getNumberOfRequiredParameters() . "/" . $refl
 }
 
 #[test]
+fn output_buffer_handlers_discard_produced_output_and_emit_deprecation_on_flush() {
+    let execution = run_source(
+        r#"<?php
+function handler($string) {
+    if ($string === "DO ECHO\n") {
+        echo "handler-output";
+    }
+    return $string;
+}
+ob_start("handler");
+echo "DO ECHO\n";
+ob_flush();
+echo "NO ECHO\n";
+ob_flush();
+ob_end_clean();
+"#,
+    )
+    .unwrap();
+
+    assert!(
+        execution.stdout.contains(
+            "Deprecated: ob_flush(): Producing output from user output handler handler is deprecated"
+        ),
+        "{}",
+        execution.stdout
+    );
+    assert!(execution.stdout.contains("DO ECHO\nNO ECHO\n"));
+    assert!(!execution.stdout.contains("handler-output"));
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn nested_output_buffer_handler_deprecations_flow_through_parent_handlers() {
+    let execution = run_source(
+        r#"<?php
+$log = [];
+
+function first_handler($string) {
+    global $log;
+    $log[] = "first_handler: <<<" . $string . ">>>";
+    echo "first-produced";
+    return "FIRST\n";
+}
+
+function second_handler($string) {
+    global $log;
+    $log[] = "second_handler: <<<" . $string . ">>>";
+    echo "second-produced";
+    return "SECOND\n";
+}
+
+function third_handler($string) {
+    global $log;
+    $log[] = "third_handler: <<<" . $string . ">>>";
+    echo "third-produced";
+    return "THIRD\n";
+}
+
+ob_start("first_handler");
+ob_start("second_handler");
+ob_start("third_handler");
+echo "Testing...";
+ob_end_flush();
+ob_end_flush();
+ob_end_flush();
+
+echo "\nLog:\n";
+echo implode("\n", $log);
+"#,
+    )
+    .unwrap();
+
+    assert!(
+        execution.stdout.starts_with(
+            "Deprecated: ob_end_flush(): Producing output from user output handler first_handler"
+        ),
+        "{}",
+        execution.stdout
+    );
+    assert!(execution.stdout.contains("\nFIRST\n\nLog:\n"));
+    assert!(execution.stdout.contains("third_handler: <<<Testing...>>>"));
+    assert!(execution.stdout.contains(
+        "second_handler: <<<\nDeprecated: ob_end_flush(): Producing output from user output handler third_handler"
+    ));
+    assert!(execution.stdout.contains(
+        "first_handler: <<<\nDeprecated: ob_end_flush(): Producing output from user output handler second_handler"
+    ));
+    assert!(!execution.stdout.contains("first-produced"));
+    assert!(!execution.stdout.contains("second-produced"));
+    assert!(!execution.stdout.contains("third-produced"));
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn output_handler_deprecation_converted_to_error_exception_preserves_returned_output() {
+    let execution = run_source(
+        r#"<?php
+set_error_handler(function ($errno, $errstr, $errfile, $errline) {
+    throw new ErrorException($errstr, 0, $errno, $errfile, $errline);
+});
+
+function handler($string) {
+    echo "handler-output";
+    return "RETURNED\n";
+}
+
+ob_start("handler");
+echo "BODY";
+try {
+    ob_end_flush();
+} catch (ErrorException $e) {
+    echo "caught:", get_class($e), ":", $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "RETURNED\ncaught:ErrorException:ob_end_flush(): Producing output from user output handler handler is deprecated\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn output_handler_that_throws_is_disabled_after_caught_flush_failure() {
+    let execution = run_source(
+        r#"<?php
+ob_start(function () {
+    throw new Exception("ob_start");
+});
+try {
+    ob_flush();
+} catch (Throwable $e) {
+    echo "caught\n";
+}
+ob_flush();
+echo "done";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "caught\ndone");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn ob_start_chunk_size_runs_handlers_on_threshold_clean_and_final_clean() {
     let execution = run_source(
         r#"<?php

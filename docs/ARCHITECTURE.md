@@ -3038,11 +3038,16 @@ when flags allow removal they close the buffer, and when flags disallow the
 operation they emit bounded notices and leave the buffer active. `ob_clean()`
 and `ob_end_clean()` run supported handlers with clean/final-clean phases and
 discard handler output, while `ob_flush()` and `ob_end_flush()` move handled
-contents outward. Remaining buffers flush outward through supported handlers to
-stdout when execution completes or the bounded `exit()` path returns. Native
-function-table introspection recognizes the names, and generated code routes
-direct calls through the existing output-buffer runtime ABI rather than
-pretending to inline-lower the stack.
+contents outward. Handler callbacks execute behind a temporary
+output-capture boundary so PHP-visible output produced by the handler itself
+is discarded, the returned handler output is preserved, and the PHP-shaped
+produced-output deprecation is emitted to the same outward destination; a
+throwing handler on a covered flush path is disabled for that buffer before
+later flush attempts. Remaining buffers flush outward through supported
+handlers to stdout when execution completes or the bounded `exit()` path
+returns. Native function-table introspection recognizes the names, and
+generated code routes direct calls through the existing output-buffer runtime
+ABI rather than pretending to inline-lower the stack.
 `register_shutdown_function()` is modeled as an interpreter-only request/SAPI
 shutdown queue. Registration evaluates and stores the callback plus extra
 arguments in request-local interpreter state. Normal completion and the
@@ -4329,7 +4334,8 @@ model attributes or every PHP trivia edge case.
 `get_defined_functions()` is a request-local metadata view over the same
 registries rather than a host PHP probe: its bounded `internal` list combines
 core metadata names with the deterministic standard-extension compatibility
-function registry used by `get_extension_funcs("standard")`. Runtime
+function registry used by `get_extension_funcs("standard")`, including
+bounded output metadata entries such as `phpcredits()`. Runtime
 `get_extension_funcs($extension)` calls use the same bounded extension-name
 string boundary as `extension_loaded()` before selecting that registry, while
 its `user` list is built from the interpreter's lowercased registered

@@ -51,6 +51,7 @@ echo "Simple testcase for get_extension_funcs() function\n";
 $result = get_extension_funcs("standard");
 var_dump(gettype($result));
 var_dump(in_array("cos", $result));
+var_dump(in_array("phpcredits", $result));
 var_dump(get_extension_funcs("foo"));
 var_dump(in_array("strlen", get_extension_funcs("STANDARD")));
 var_dump(in_array("get_defined_functions", get_extension_funcs("standard")));
@@ -62,6 +63,7 @@ var_dump(in_array("get_defined_functions", get_extension_funcs("standard")));
         execution.stdout,
         "Simple testcase for get_extension_funcs() function\n\
 string(5) \"array\"\n\
+bool(true)\n\
 bool(true)\n\
 bool(false)\n\
 bool(true)\n\
@@ -167,6 +169,40 @@ flag-ok|exists|callable|0/1|exclude_disabled"
 }
 
 #[test]
+fn phpcredits_emits_bounded_output_and_reports_metadata() {
+    let execution = run_source(
+        r#"<?php
+ob_start();
+$return = phpcredits();
+$output = ob_get_clean();
+echo ($return === true ? "true" : "not-true"), "|", trim($output), "|";
+echo function_exists("phpcredits") ? "exists" : "missing";
+echo "|", is_callable("phpcredits") ? "callable" : "not-callable";
+$reflection = new ReflectionFunction("phpcredits");
+echo "|", $reflection->getNumberOfRequiredParameters(), "/", $reflection->getNumberOfParameters();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "true|PHP Credits|exists|callable|0/0");
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn phpcredits_rejects_arguments() {
+    let error = run_source("<?php\nphpcredits(1);\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Runtime);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "arity mismatch for phpcredits(): expected 0 argument(s), got 1"
+    );
+}
+
+#[test]
 fn getmypid_rejects_arguments() {
     let error = run_source("<?php\ngetmypid(1);\n").unwrap_err();
 
@@ -213,11 +249,13 @@ echo is_callable("phpversion") ? "1" : "0";
 echo function_exists("getmypid") ? "1" : "0";
 echo function_exists("get_defined_functions") ? "1" : "0";
 echo is_callable("get_defined_functions") ? "1" : "0";
+echo function_exists("phpcredits") ? "1" : "0";
+echo is_callable("phpcredits") ? "1" : "0";
 "#,
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 5, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 7, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
 
@@ -237,6 +275,12 @@ echo is_callable("get_defined_functions") ? "1" : "0";
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.line, 2);
     assert_eq!(error.column, 6);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source("<?php\nphpcredits();\n").unwrap_err();
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
     assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
 
     let error = emit_ir_source("<?php\necho get_defined_functions();\n").unwrap_err();

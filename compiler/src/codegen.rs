@@ -66589,6 +66589,7 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "php_uname",
     "php_sapi_name",
     "phpversion",
+    "phpcredits",
     "json_encode",
     "printf",
     "fprintf",

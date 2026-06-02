@@ -3423,6 +3423,12 @@
 - `phpversion()` with no arguments, `null`, `standard`, or a known loaded
   extension name, returning the current deterministic `PHP_VERSION`
   compatibility string. Unknown extension names return `false`.
+- `phpcredits()` with no arguments, emitting a deterministic bounded credits
+  header through the current output pipeline and returning `true`.
+  String-valued dynamic calls, `function_exists()`, `is_callable()`,
+  `get_defined_functions()`, `get_extension_funcs("standard")`, and
+  `ReflectionFunction` metadata recognize the builtin. Native lowering
+  currently exposes only metadata/folded membership and rejects direct calls.
 - Bounded network database helpers: `getprotobyname()`/`getprotobynumber()`
   recognize the deterministic `icmp`, `tcp`, and `udp` protocol slice, and
   `getservbyname()`/`getservbyport()` recognize a deterministic TCP service
@@ -3768,7 +3774,8 @@
   for arrays, resources, closures, and non-stringable objects.
   `get_extension_funcs("standard")` returns a deterministic bounded metadata
   subset for the current standard-extension compatibility surface, including
-  reached scalar/string/math names such as `strlen`, `ini_set`, and `cos`.
+  reached scalar/string/math/output names such as `strlen`, `phpcredits`,
+  `ini_set`, and `cos`.
   Unknown extension names return `false`. Host extension inventories, exact
   standard function ordering/completeness, exact invalid `__toString()` return
   diagnostics, dynamically loaded extensions, and native lowering remain
@@ -6187,6 +6194,15 @@
   when either capability is absent it emits bounded notices and leaves the
   buffer active, and when no buffer is active it emits the bounded
   delete-and-flush no-buffer notice and returns `false`.
+  Supported output handlers run inside an output-capture boundary:
+  PHP-visible output produced by the handler itself is discarded, the handler
+  return value is preserved, and the PHP-shaped produced-output deprecation is
+  emitted to the same outward destination that receives the handled contents.
+  A custom error handler that converts this deprecation to `ErrorException`
+  observes the returned handler output before the caught exception flow. When
+  a handler throws during a covered flush path, that buffer's handler is
+  disabled before later flush attempts so subsequent output uses the raw
+  buffer contents.
   `ob_get_status($full_status = false)`
   accepts no arguments or one bool argument. Without an active buffer it
   returns an empty array. With the default false flag it returns the innermost
@@ -6198,9 +6214,11 @@
   beyond the bounded fields, automatic threshold checks for output-producing
   builtins outside the covered echo/print and handled-flush paths,
   invalid-callback warning/false recovery, by-reference output handlers,
-  handler reentrancy/nesting edge cases, output-started interaction with
-  headers, fatal-error cleanup, exact warning behavior, and inline native
-  lowering beyond the runtime ABI remain unsupported.
+  exact `ErrorException::__toString()` internal stack frames for
+  deprecation-converted handlers, handler reentrancy/nesting edge cases,
+  output-started interaction with headers, fatal-error cleanup, exact warning
+  behavior, and inline native lowering beyond the runtime ABI remain
+  unsupported.
   `date_default_timezone_set($timezoneId)` accepts one string argument, returns
   `true` for the bounded timezone identifiers used by the current date PHPT
   subset, updates `date_default_timezone_get()` and date/time formatting state,
@@ -12829,12 +12847,13 @@
   `ob_list_handlers()`/`ob_get_status()`/`ob_get_clean()`/`ob_get_flush()`/
   `ob_clean()`/`ob_flush()`/`ob_end_clean()`/`ob_end_flush()` behavior beyond
   the current interpreter-owned buffer stack and supported one-argument
-  `ob_start()` callback lane: chunk sizes, flags, automatic threshold
-  flushing, invalid-callback warning/false recovery, by-reference output
-  handlers, exact handler status metadata, handler reentrancy/nesting edge
+  `ob_start()` callback/chunk-size/flags lane: invalid-callback warning/false
+  recovery, by-reference output handlers, exact handler status metadata, exact
+  `ErrorException::__toString()` internal stack frames for
+  deprecation-converted handlers, broader handler reentrancy/nesting edge
   cases, output-started/header interaction, fatal-error cleanup, exact
-  warnings beyond the documented no-active-buffer notices, and native lowering
-  beyond function-table introspection
+  warnings beyond the documented no-active-buffer and produced-output
+  diagnostics, and native lowering beyond function-table introspection
 - `php_sapi_name()` behavior beyond the current no-argument deterministic
   `cli` result: host PHP SAPI discovery, web-server/CGI/FPM SAPI states,
   request-specific SAPI switching, exact diagnostics, and native lowering

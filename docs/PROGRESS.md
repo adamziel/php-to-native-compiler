@@ -39,6 +39,30 @@ Implemented:
   one-character separator paths, object/resource coercions, references/COW,
   and native lowering.
 
+- Added a bounded output-handler produced-output and `phpcredits()` lane on
+  the interpreter path. Supported output handlers now execute behind a
+  temporary output-capture boundary so PHP-visible output produced by the
+  handler itself is discarded, returned handler output is preserved, and the
+  PHP-shaped produced-output deprecation is emitted to the destination that
+  receives the handled contents. Covered throwing handlers are disabled before
+  later flush attempts, and a bounded `ErrorException` shell supports custom
+  error handlers that convert produced-output deprecations. `phpcredits()` is
+  registered as bounded no-argument output metadata for interpreter calls and
+  function/reflection metadata. Focused proof covers Rust `output_buffer`,
+  `general_function_builtins`, `object_model`, and runtime class-table
+  regressions, build/fmt/diff checks, and selected public PHPT rows
+  `tests/output/gh15181.phpt`,
+  `tests/output/ob_start_callback_output/handler_inconsistent_echo.phpt`,
+  `tests/output/ob_start_callback_output/multiple_handlers.phpt`,
+  `tests/output/ob_start_callback_output/exception_handler_nested.phpt`,
+  `tests/output/ob_start_callback_output/functions_that_output.phpt`, and
+  `tests/output/ob_start_callback_output/functions_that_output_nested.phpt`.
+  Unsupported edges remain exact `ErrorException::__toString()` internal stack
+  frames for deprecation-converted handlers, full `phpcredits()` content pages
+  and flags, invalid output-handler callback recovery, by-reference output
+  handlers, broader reentrancy/stack-mutation edge cases, references/COW, and
+  native lowering.
+
 - Added a bounded generalized hash HMAC / PBKDF2 / HKDF lane on the
   interpreter path. `hash_hmac()` now supports lowercase hex and raw binary
   output for the bounded MD2/MD4/MD5/SHA-1/SHA-2/SHA-3/Whirlpool digest set,

@@ -578,7 +578,8 @@ incorrect native code.
   declared string class names, bounded `class_parents()` parent-chain arrays
   for current object values or declared string class names, bounded
   `get_defined_functions()` metadata for the current core/standard
-  compatibility slice and registered user-function table, bounded
+  compatibility slice, including no-argument `phpcredits()` output metadata,
+  and registered user-function table, bounded
   `ReflectionClass` metadata objects with `getName()`, `getShortName()`,
   `isInterface()`, `isTrait()`, `isInstantiable()`, `getParentClass()`,
   `getInterfaceNames()`, `getTraitNames()`, `getTraits()`,
@@ -1009,6 +1010,7 @@ direct `realpath_cache_get()`/`realpath_cache_size()` realpath-cache
 introspection calls,
 direct `getcwd()` current-directory calls,
 direct `php_sapi_name()` SAPI identity calls,
+direct no-argument `phpcredits()` bounded output metadata calls,
 direct `ob_start()` with no argument, one supported callback, or bounded
 `chunk_size`/`flags` options plus `ob_get_level()`/`ob_get_contents()`/
 `ob_get_length()`/`ob_list_handlers()`/`ob_get_status()`/`ob_get_clean()`/

@@ -78,6 +78,8 @@ const CORE_CLASS_NAMES: &[&str] = &[
     "DOMElement",
     "DOMDocument",
     "DOMDocumentType",
+    "ErrorException",
+    "Reflection",
     "Generator",
 ];
 const CORE_INTERFACE_NAMES: &[&str] = &[

@@ -391,6 +391,7 @@ struct Interpreter {
     response_headers: Vec<String>,
     response_status_code: Option<i64>,
     output_buffers: Vec<OutputBuffer>,
+    output_handler_output_captures: Vec<String>,
     output_start: Option<OutputStart>,
     strict_types_stack: Vec<bool>,
     session_status: i64,
@@ -1071,6 +1072,21 @@ struct OutputBuffer {
     chunk_size: usize,
     flags: i64,
     span: Span,
+}
+
+#[derive(Debug, Clone)]
+struct OutputHandlerResult {
+    output: String,
+    handler_name: Option<String>,
+    produced_output: bool,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum OutputHandlerAppendTarget {
+    Stdout,
+    BelowActiveBuffer,
+    BelowBufferIndex(usize),
+    Discard,
 }
 
 #[derive(Debug, Clone)]
@@ -11401,6 +11417,7 @@ impl Interpreter {
             response_headers: Vec::new(),
             response_status_code: None,
             output_buffers: Vec::new(),
+            output_handler_output_captures: Vec::new(),
             output_start: None,
             strict_types_stack: Vec::new(),
             session_status: PHP_SESSION_NONE,
@@ -23034,6 +23051,10 @@ impl Interpreter {
     }
 
     fn append_output_bytes_at(&mut self, output: &[u8], span: Span) {
+        if let Some(capture) = self.output_handler_output_captures.last_mut() {
+            capture.push_str(&String::from_utf8_lossy(output));
+            return;
+        }
         if let Some(buffer) = self.output_buffers.last_mut() {
             buffer.contents.push_str(&String::from_utf8_lossy(output));
         } else {
@@ -23790,6 +23811,10 @@ impl Interpreter {
     }
 
     fn append_output_from(&mut self, output: &str, span: Option<Span>) {
+        if let Some(capture) = self.output_handler_output_captures.last_mut() {
+            capture.push_str(output);
+            return;
+        }
         if let Some(buffer) = self.output_buffers.last_mut() {
             buffer.contents.push_str(output);
         } else {
@@ -23801,13 +23826,18 @@ impl Interpreter {
 
     fn flush_output_buffers(&mut self) -> CompileResult<()> {
         while let Some(buffer) = self.output_buffers.pop() {
-            let output = self.apply_output_buffer_handler(
+            let result = self.apply_output_buffer_handler(
                 buffer.handler.as_ref(),
                 buffer.contents,
                 Self::output_buffer_handler_phase(buffer.handler_started, PHP_OUTPUT_HANDLER_FINAL),
                 buffer.span,
             )?;
-            self.append_output(&output);
+            self.append_output_handler_result(
+                result,
+                OutputHandlerAppendTarget::Stdout,
+                "ob_end_flush()",
+                buffer.span,
+            )?;
             self.maybe_flush_active_output_buffer_for_chunk(buffer.span)?;
         }
         Ok(())
@@ -28335,6 +28365,10 @@ impl Interpreter {
         span: Span,
         scope: &mut SymbolTable,
     ) -> CompileResult<()> {
+        if declared_class_name.eq_ignore_ascii_case("ErrorException") {
+            return self
+                .initialize_core_error_exception_object(object, class_id, args, span, scope);
+        }
         if args.len() > 3 {
             return Err(runtime_error(
                 span,
@@ -28381,6 +28415,77 @@ impl Interpreter {
             .write_property_from_context(
                 "line",
                 Value::Int(span.line as i64),
+                Some(class_id),
+                &protected_class_ids,
+            )
+            .map_err(|error| runtime_error(span, error))?;
+        Ok(())
+    }
+
+    fn initialize_core_error_exception_object(
+        &mut self,
+        object: &PhpObject,
+        class_id: ClassId,
+        args: &[Expr],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<()> {
+        if args.len() > 6 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_object_instantiation(
+                    "ErrorException",
+                    "ErrorException constructor supports message, code, severity, filename, line, and previous arguments only in the current subset",
+                ),
+            ));
+        }
+
+        let message = match args.first() {
+            Some(expr) => self.evaluate_exception_message_argument(expr, scope)?,
+            None => String::new(),
+        };
+        let code = match args.get(1) {
+            Some(expr) => self.evaluate_exception_code_argument(expr, scope)?,
+            None => 0,
+        };
+        if let Some(expr) = args.get(2) {
+            let _ = self.evaluate_exception_code_argument(expr, scope)?;
+        }
+        if let Some(expr) = args.get(3) {
+            let _ = self.evaluate_exception_message_argument(expr, scope)?;
+        }
+        let line = match args.get(4) {
+            Some(expr) => self.evaluate_exception_code_argument(expr, scope)?,
+            None => span.line as i64,
+        };
+        let previous = match args.get(5) {
+            Some(expr) => self.evaluate_exception_previous_argument(expr, scope)?,
+            None => Value::Null,
+        };
+        let protected_class_ids = self.protected_class_ids_for_context(class_id);
+        object
+            .write_property_from_context(
+                "message",
+                Value::String(message),
+                Some(class_id),
+                &protected_class_ids,
+            )
+            .map_err(|error| runtime_error(span, error))?;
+        object
+            .write_property_from_context(
+                "code",
+                Value::Int(code),
+                Some(class_id),
+                &protected_class_ids,
+            )
+            .map_err(|error| runtime_error(span, error))?;
+        object
+            .write_property_from_context("previous", previous, Some(class_id), &protected_class_ids)
+            .map_err(|error| runtime_error(span, error))?;
+        object
+            .write_property_from_context(
+                "line",
+                Value::Int(line),
                 Some(class_id),
                 &protected_class_ids,
             )
@@ -89444,18 +89549,25 @@ impl Interpreter {
     }
 
     fn output_buffer_handler_name(&self, buffer: &OutputBuffer) -> String {
-        match buffer.handler.as_ref() {
-            Some(Value::Closure(_)) => "Closure::__invoke".to_string(),
-            Some(Value::String(name)) => name.clone(),
-            Some(Value::Array(callback)) => array_callable_parts(callback)
+        buffer
+            .handler
+            .as_ref()
+            .map(|handler| self.output_handler_value_name(handler))
+            .unwrap_or_else(|| "default output handler".to_string())
+    }
+
+    fn output_handler_value_name(&self, handler: &Value) -> String {
+        match handler {
+            Value::Closure(_) => "Closure::__invoke".to_string(),
+            Value::String(name) => name.clone(),
+            Value::Array(callback) => array_callable_parts(callback)
                 .map(|(target, method_name)| match target {
                     Value::Object(object) => format!("{}::{method_name}", object.class_name()),
                     Value::String(class_name) => format!("{class_name}::{method_name}"),
                     _ => "Array".to_string(),
                 })
                 .unwrap_or_else(|| "Array".to_string()),
-            Some(other) => other.try_echo_string().unwrap_or_default(),
-            None => "default output handler".to_string(),
+            other => other.try_echo_string().unwrap_or_default(),
         }
     }
 
@@ -89607,9 +89719,19 @@ impl Interpreter {
         else {
             return Ok(());
         };
-        let handled_output =
-            self.apply_output_buffer_handler(handler.as_ref(), output, phase, span)?;
-        self.append_output_below_buffer_at_index(buffer_index, &handled_output, span)
+        let result = self.apply_output_buffer_handler_at_index(
+            buffer_index,
+            handler.as_ref(),
+            output,
+            phase,
+            span,
+        )?;
+        self.append_output_handler_result(
+            result,
+            OutputHandlerAppendTarget::BelowBufferIndex(buffer_index),
+            "ob_start()",
+            span,
+        )
     }
 
     fn call_ob_get_clean(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -89663,13 +89785,18 @@ impl Interpreter {
             .pop()
             .expect("active output buffer was checked before pop");
         let raw_output = buffer.contents;
-        let handled_output = self.apply_output_buffer_handler(
+        let result = self.apply_output_buffer_handler(
             buffer.handler.as_ref(),
             raw_output.clone(),
             Self::output_buffer_handler_phase(buffer.handler_started, PHP_OUTPUT_HANDLER_FINAL),
             span,
         )?;
-        self.append_output_at(&handled_output, span);
+        self.append_output_handler_result(
+            result,
+            OutputHandlerAppendTarget::Stdout,
+            "ob_get_flush()",
+            span,
+        )?;
         self.maybe_flush_active_output_buffer_for_chunk(span)?;
         Ok(Value::String(raw_output))
     }
@@ -89702,7 +89829,13 @@ impl Interpreter {
                 (output, handler, phase)
             })
             .expect("active output buffer was checked before clean");
-        let _ = self.apply_output_buffer_handler(handler.as_ref(), output, phase, span)?;
+        self.apply_and_discard_output_buffer_handler(
+            handler.as_ref(),
+            output,
+            phase,
+            "ob_clean()",
+            span,
+        )?;
         Ok(Value::Bool(true))
     }
 
@@ -89730,9 +89863,24 @@ impl Interpreter {
         }) else {
             return Ok(Value::Bool(false));
         };
-        let handled_output =
-            self.apply_output_buffer_handler(handler.as_ref(), output, phase, span)?;
-        self.append_output_below_active_buffer_at(&handled_output, span)?;
+        let active_index = self
+            .output_buffers
+            .len()
+            .checked_sub(1)
+            .expect("active output buffer was checked before flush");
+        let result = self.apply_output_buffer_handler_at_index(
+            active_index,
+            handler.as_ref(),
+            output,
+            phase,
+            span,
+        )?;
+        self.append_output_handler_result(
+            result,
+            OutputHandlerAppendTarget::BelowActiveBuffer,
+            "ob_flush()",
+            span,
+        )?;
         Ok(Value::Bool(true))
     }
 
@@ -89762,10 +89910,11 @@ impl Interpreter {
             buffer.handler_started,
             PHP_OUTPUT_HANDLER_CLEAN | PHP_OUTPUT_HANDLER_FINAL,
         );
-        let _ = self.apply_output_buffer_handler(
+        self.apply_and_discard_output_buffer_handler(
             buffer.handler.as_ref(),
             buffer.contents,
             phase,
+            "ob_end_clean()",
             span,
         )?;
         Ok(Value::Bool(true))
@@ -89793,13 +89942,18 @@ impl Interpreter {
             .output_buffers
             .pop()
             .expect("active output buffer was checked before pop");
-        let handled_output = self.apply_output_buffer_handler(
+        let result = self.apply_output_buffer_handler(
             buffer.handler.as_ref(),
             buffer.contents,
             Self::output_buffer_handler_phase(buffer.handler_started, PHP_OUTPUT_HANDLER_FINAL),
             span,
         )?;
-        self.append_output_at(&handled_output, span);
+        self.append_output_handler_result(
+            result,
+            OutputHandlerAppendTarget::Stdout,
+            "ob_end_flush()",
+            span,
+        )?;
         self.maybe_flush_active_output_buffer_for_chunk(span)?;
         Ok(Value::Bool(true))
     }
@@ -89818,21 +89972,209 @@ impl Interpreter {
         output: String,
         phase: i64,
         span: Span,
-    ) -> CompileResult<String> {
+    ) -> CompileResult<OutputHandlerResult> {
         let Some(handler) = handler else {
-            return Ok(output);
+            return Ok(OutputHandlerResult {
+                output,
+                handler_name: None,
+                produced_output: false,
+            });
         };
+        let handler_name = self.output_handler_value_name(handler);
+        self.output_handler_output_captures.push(String::new());
         let value = self.call_output_buffer_handler_value(
             handler,
             vec![Value::String(output.clone()), Value::Int(phase)],
             span,
-        )?;
-        if matches!(value, Value::Bool(false)) {
-            return Ok(output);
+        );
+        let produced_output = self
+            .output_handler_output_captures
+            .pop()
+            .map(|captured| !captured.is_empty())
+            .unwrap_or(false);
+        let value = value?;
+        let output = if matches!(value, Value::Bool(false)) {
+            output
+        } else {
+            value
+                .try_echo_string()
+                .map_err(|error| runtime_error(span, error))?
+        };
+        Ok(OutputHandlerResult {
+            output,
+            handler_name: Some(handler_name),
+            produced_output,
+        })
+    }
+
+    fn diagnostic_would_call_error_handler(&self, level: i64) -> bool {
+        if self.error_handler_active {
+            return false;
         }
-        value
-            .try_echo_string()
-            .map_err(|error| runtime_error(span, error))
+        self.error_handlers
+            .last()
+            .is_some_and(|handler| handler.mask.is_none_or(|mask| mask & level != 0))
+    }
+
+    fn emit_output_handler_produced_output_deprecation(
+        &mut self,
+        function: &str,
+        handler_name: &str,
+        target: OutputHandlerAppendTarget,
+        span: Span,
+    ) -> CompileResult<()> {
+        let message = format!(
+            "{function}: Producing output from user output handler {handler_name} is deprecated"
+        );
+        self.emit_display_diagnostic_to_output_handler_target(
+            "Deprecated",
+            PHP_E_DEPRECATED,
+            message,
+            target,
+            span,
+        )
+    }
+
+    fn emit_display_diagnostic_to_output_handler_target(
+        &mut self,
+        label: &str,
+        level: i64,
+        message: impl AsRef<str>,
+        target: OutputHandlerAppendTarget,
+        span: Span,
+    ) -> CompileResult<()> {
+        let message = message.as_ref().to_string();
+        let file = self
+            .source_file
+            .clone()
+            .unwrap_or_else(|| "Command line code".to_string());
+        if self.diagnostics_are_suppressed() {
+            return Ok(());
+        }
+        if self.call_error_handler_for_diagnostic(level, &message, &file, span)? {
+            return Ok(());
+        }
+        if self.error_reporting_mask & level == 0 {
+            return Ok(());
+        }
+
+        let output_handler_result_will_append_to_parent_buffer =
+            matches!(target, OutputHandlerAppendTarget::Stdout) && !self.output_buffers.is_empty();
+        let current_output_is_empty = !output_handler_result_will_append_to_parent_buffer
+            && self.stdout.is_empty()
+            && self
+                .output_buffers
+                .iter()
+                .all(|buffer| buffer.contents.is_empty());
+        let mut output = String::new();
+        if !current_output_is_empty {
+            output.push('\n');
+        }
+        output.push_str(&format!(
+            "{label}: {message} in {file} on line {}\n",
+            span.line
+        ));
+
+        let diagnostic_target = match target {
+            OutputHandlerAppendTarget::Discard => OutputHandlerAppendTarget::Stdout,
+            other => other,
+        };
+        self.append_output_handler_result_to_target(&output, diagnostic_target, span)
+    }
+
+    fn append_output_handler_result(
+        &mut self,
+        result: OutputHandlerResult,
+        target: OutputHandlerAppendTarget,
+        function: &str,
+        span: Span,
+    ) -> CompileResult<()> {
+        let deprecation_after_output =
+            result.produced_output && self.diagnostic_would_call_error_handler(PHP_E_DEPRECATED);
+        if result.produced_output && !deprecation_after_output {
+            if let Some(handler_name) = result.handler_name.as_deref() {
+                self.emit_output_handler_produced_output_deprecation(
+                    function,
+                    handler_name,
+                    target,
+                    span,
+                )?;
+            }
+        }
+        self.append_output_handler_result_to_target(&result.output, target, span)?;
+        if deprecation_after_output {
+            if let Some(handler_name) = result.handler_name.as_deref() {
+                self.emit_output_handler_produced_output_deprecation(
+                    function,
+                    handler_name,
+                    target,
+                    span,
+                )?;
+            }
+        }
+        Ok(())
+    }
+
+    fn append_output_handler_result_to_target(
+        &mut self,
+        output: &str,
+        target: OutputHandlerAppendTarget,
+        span: Span,
+    ) -> CompileResult<()> {
+        match target {
+            OutputHandlerAppendTarget::Stdout => {
+                self.append_output_at(output, span);
+                Ok(())
+            }
+            OutputHandlerAppendTarget::BelowActiveBuffer => {
+                self.append_output_below_active_buffer_at(output, span)
+            }
+            OutputHandlerAppendTarget::BelowBufferIndex(index) => {
+                self.append_output_below_buffer_at_index(index, output, span)
+            }
+            OutputHandlerAppendTarget::Discard => Ok(()),
+        }
+    }
+
+    fn apply_and_discard_output_buffer_handler(
+        &mut self,
+        handler: Option<&Value>,
+        output: String,
+        phase: i64,
+        function: &str,
+        span: Span,
+    ) -> CompileResult<()> {
+        let result = self.apply_output_buffer_handler(handler, output, phase, span)?;
+        self.append_output_handler_result(
+            result,
+            OutputHandlerAppendTarget::Discard,
+            function,
+            span,
+        )
+    }
+
+    fn disable_output_buffer_after_handler_error(&mut self, buffer_index: usize) {
+        if let Some(buffer) = self.output_buffers.get_mut(buffer_index) {
+            buffer.handler = None;
+            buffer.contents.clear();
+        }
+    }
+
+    fn apply_output_buffer_handler_at_index(
+        &mut self,
+        buffer_index: usize,
+        handler: Option<&Value>,
+        output: String,
+        phase: i64,
+        span: Span,
+    ) -> CompileResult<OutputHandlerResult> {
+        match self.apply_output_buffer_handler(handler, output, phase, span) {
+            Ok(result) => Ok(result),
+            Err(error) => {
+                self.disable_output_buffer_after_handler_error(buffer_index);
+                Err(error)
+            }
+        }
     }
 
     fn call_output_buffer_handler_value(
@@ -91651,6 +91993,7 @@ impl Interpreter {
             "php_uname" => call_php_uname(&args, span),
             "php_sapi_name" => call_php_sapi_name(&args, span),
             "phpversion" => call_phpversion(&args, span),
+            "phpcredits" => call_phpcredits(self, &args, span),
             "json_encode" => self.call_json_encode(&args, span),
             "json_decode" => self.call_json_decode(&args, span),
             "json_validate" => self.call_json_validate(&args, span),
@@ -109865,6 +110208,7 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
             vec![reflection_internal_optional_string_param("mode", "a")],
         ),
         "php_sapi_name" => ("string", vec![]),
+        "phpcredits" => ("bool", vec![]),
         "ob_start" => (
             "bool",
             vec![
@@ -113040,7 +113384,7 @@ fn catchable_uncaught_throw_class_and_message(
         return None;
     }
 
-    for class_name in ["Exception", "Error"] {
+    for class_name in ["Exception", "Error", "ErrorException"] {
         let prefix = format!(
             "unsupported call throw: uncaught {class_name} propagation beyond catch/finally is not implemented"
         );
@@ -114696,6 +115040,7 @@ fn is_builtin(name: &str) -> bool {
             | "php_uname"
             | "php_sapi_name"
             | "phpversion"
+            | "phpcredits"
             | "json_encode"
             | "json_decode"
             | "json_validate"
@@ -140828,6 +141173,16 @@ fn call_getmypid(args: &[Value], span: Span) -> CompileResult<Value> {
     Ok(Value::Int(std::process::id() as i64))
 }
 
+fn call_phpcredits(
+    interpreter: &mut Interpreter,
+    args: &[Value],
+    span: Span,
+) -> CompileResult<Value> {
+    expect_arity("phpcredits", args, 0, span)?;
+    interpreter.append_output_from("PHP Credits\n", Some(span));
+    Ok(Value::Bool(true))
+}
+
 fn call_connection_aborted(args: &[Value], span: Span) -> CompileResult<Value> {
     expect_arity("connection_aborted", args, 0, span)?;
     Ok(Value::Int(0))
@@ -151573,6 +151928,7 @@ const COMPAT_STANDARD_EXTENSION_FUNCTIONS: &[&str] = &[
     "get_loaded_extensions",
     "get_extension_funcs",
     "get_defined_functions",
+    "phpcredits",
     "abs",
     "min",
     "max",

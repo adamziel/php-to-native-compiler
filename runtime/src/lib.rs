@@ -33537,9 +33537,18 @@ impl PhpClassTable {
                 .add_property(PhpPropertyMetadata::instance(property, Visibility::Public))
                 .expect("DOMDocumentType core metadata should not duplicate properties");
         }
+        let error_exception_id = classes
+            .declare_class("ErrorException")
+            .expect("core class table should contain DOMDocumentType before ErrorException");
+        let exception_id = classes
+            .lookup_class_id("Exception")
+            .expect("core Exception class id should resolve for ErrorException");
+        classes
+            .set_parent(error_exception_id, exception_id)
+            .expect("ErrorException should extend Exception");
         let reflection_id = classes
             .declare_class("Reflection")
-            .expect("core class table should contain DOMDocumentType before Reflection");
+            .expect("core class table should contain ErrorException before Reflection");
         classes
             .get_mut(reflection_id)
             .expect("declared Reflection class id should resolve")
@@ -81384,6 +81393,7 @@ mod tests {
                 "DOMElement",
                 "DOMDocument",
                 "DOMDocumentType",
+                "ErrorException",
                 "Reflection",
             ]
         );
