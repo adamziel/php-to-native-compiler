@@ -197,6 +197,35 @@ Implemented:
   reflection parity beyond existence/constants/core implementation metadata,
   references/COW, and native lowering.
 
+- Added a bounded DateInterval construction/format/diff metadata lane on the
+  interpreter path. `DateInterval` is now a visible core class with public
+  component metadata and inherited-constructor subclass allocation;
+  `DateInterval::__construct()` accepts integer ISO duration components such as
+  `P2Y4DT6H8M` and `P32D`; `DateInterval::format()` and
+  `date_interval_format()` cover component, sign, `%a`, `%%`, and unknown
+  percent-token formatting; and malformed covered duration strings raise
+  catchable PHP-shaped `DateMalformedIntervalStringException`s.
+  `DateInterval::createFromDateString()` and
+  `date_interval_create_from_date_string()` accept simple relative
+  year/month/week/day/hour/minute/second sequences such as `2 weeks` and
+  `1 year + 1 day`. `DateTime::diff()`, `DateTimeImmutable::diff()`, and
+  `date_diff()` produce bounded `DateInterval` objects for initialized mutable
+  and immutable DateTime operands, including total-day metadata for the reached
+  UTC public rows. Focused proof covers the Rust
+  `dateinterval_metadata_format_and_diff_cover_bounded_rows` regression,
+  adjacent runtime class-table/object-model metadata checks, and selected
+  public PHPT rows `ext/date/tests/DateInterval_format.phpt`,
+  `ext/date/tests/DateInterval_format_a.phpt`,
+  `ext/date/tests/date_interval_format.phpt`,
+  `ext/date/tests/DateInterval_days_prop1.phpt`,
+  `ext/date/tests/date_interval_create_from_date_string.phpt`,
+  `ext/date/tests/DateInterval_createFromDateString_broken.phpt`,
+  and `ext/date/tests/DateInterval_write_property_return.phpt`. Unsupported
+  edges remain DateTime add/sub arithmetic, DatePeriod, DateInterval
+  serialization and `__set_state()`, full timelib interval/relative grammars,
+  fractional or negative ISO duration components, exact object-dump handler
+  parity for `from_string` intervals, references/COW, and native lowering.
+
 - Accepted checkpoint `663e3142` as the current public PHPT score source
   after the repaired full pinned php-src gate completed with zero
   latest-published PASS regressions. The public-comparable score is now

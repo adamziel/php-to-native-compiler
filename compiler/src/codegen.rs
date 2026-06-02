@@ -66406,10 +66406,14 @@ fn is_builtin_class_name(name: &str) -> bool {
     matches!(
         name.to_ascii_lowercase().as_str(),
         "exception"
+            | "datemalformedintervalstringexception"
+            | "dateinterval"
             | "pdo"
             | "pdostatement"
             | "directory"
             | "datetimezone"
+            | "datetime"
+            | "datetimeimmutable"
             | "reflectionclass"
             | "reflectionmethod"
     )
@@ -66634,8 +66638,11 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "date_sun_info",
     "date_create",
     "date_create_immutable",
+    "date_diff",
     "date_modify",
     "date_format",
+    "date_interval_format",
+    "date_interval_create_from_date_string",
     "date_timestamp_get",
     "date_timestamp_set",
     "date_date_set",

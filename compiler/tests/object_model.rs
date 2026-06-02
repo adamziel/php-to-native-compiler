@@ -66,6 +66,8 @@ const CORE_CLASS_NAMES: &[&str] = &[
     "LimitIterator",
     "ReflectionExtension",
     "ReflectionZendExtension",
+    "DateMalformedIntervalStringException",
+    "DateInterval",
     "DateTime",
     "DateTimeImmutable",
     "DOMException",

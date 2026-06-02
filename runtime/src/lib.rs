@@ -33184,9 +33184,56 @@ impl PhpClassTable {
                 .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
                 .expect("ReflectionZendExtension core metadata should not duplicate methods");
         }
+        let date_malformed_interval_exception_id = classes
+            .declare_class("DateMalformedIntervalStringException")
+            .expect(
+                "core class table should contain ReflectionZendExtension before DateMalformedIntervalStringException",
+            );
+        let exception_id = classes.lookup_class_id("Exception").expect(
+            "core Exception class id should resolve for DateMalformedIntervalStringException",
+        );
+        classes
+            .set_parent(date_malformed_interval_exception_id, exception_id)
+            .expect("DateMalformedIntervalStringException should extend Exception");
+        let date_interval_id = classes
+            .declare_class("DateInterval")
+            .expect(
+                "core class table should contain DateMalformedIntervalStringException before DateInterval",
+            );
+        let date_interval = classes
+            .get_mut(date_interval_id)
+            .expect("declared DateInterval class id should resolve");
+        for property in [
+            "y",
+            "m",
+            "d",
+            "h",
+            "i",
+            "s",
+            "f",
+            "invert",
+            "days",
+            "from_string",
+            "date_string",
+        ] {
+            date_interval
+                .add_property(PhpPropertyMetadata::instance(property, Visibility::Public))
+                .expect("DateInterval core metadata should not duplicate properties");
+        }
+        for method in ["__construct", "format"] {
+            date_interval
+                .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("DateInterval core metadata should not duplicate methods");
+        }
+        date_interval
+            .add_method(PhpMethodMetadata::static_method(
+                "createFromDateString",
+                Visibility::Public,
+            ))
+            .expect("DateInterval core metadata should not duplicate static methods");
         let datetime_id = classes
             .declare_class("DateTime")
-            .expect("core class table should contain ReflectionZendExtension before DateTime");
+            .expect("core class table should contain DateInterval before DateTime");
         classes
             .set_interfaces(datetime_id, vec!["DateTimeInterface".to_string()])
             .expect("DateTime should implement DateTimeInterface");
@@ -33232,6 +33279,7 @@ impl PhpClassTable {
             "setDate",
             "setISODate",
             "setTime",
+            "diff",
         ] {
             datetime
                 .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
@@ -33288,6 +33336,7 @@ impl PhpClassTable {
             "setDate",
             "setISODate",
             "setTime",
+            "diff",
         ] {
             datetime_immutable
                 .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
@@ -81255,6 +81304,8 @@ mod tests {
                 "LimitIterator",
                 "ReflectionExtension",
                 "ReflectionZendExtension",
+                "DateMalformedIntervalStringException",
+                "DateInterval",
                 "DateTime",
                 "DateTimeImmutable",
                 "DOMException",
@@ -81468,6 +81519,48 @@ mod tests {
         assert!(datetimezone.method("listIdentifiers").is_some());
         assert!(datetimezone.method("listAbbreviations").is_some());
         assert!(datetimezone.method("getName").is_some());
+
+        let date_malformed_interval_exception = classes
+            .lookup_class("datemalformedintervalstringexception")
+            .unwrap();
+        assert_eq!(
+            date_malformed_interval_exception.name(),
+            "DateMalformedIntervalStringException"
+        );
+        assert_eq!(
+            date_malformed_interval_exception.parent_id(),
+            Some(exception.id())
+        );
+
+        let date_interval = classes.lookup_class("dateinterval").unwrap();
+        assert_eq!(date_interval.name(), "DateInterval");
+        assert!(date_interval.parent_id().is_none());
+        assert_eq!(
+            date_interval
+                .properties()
+                .iter()
+                .map(PhpPropertyMetadata::name)
+                .collect::<Vec<_>>(),
+            vec![
+                "y",
+                "m",
+                "d",
+                "h",
+                "i",
+                "s",
+                "f",
+                "invert",
+                "days",
+                "from_string",
+                "date_string"
+            ]
+        );
+        assert!(date_interval.method("__construct").is_some());
+        assert!(date_interval.method("format").is_some());
+        assert!(date_interval
+            .method("createFromDateString")
+            .expect("DateInterval::createFromDateString should be registered")
+            .is_static());
 
         let datetime = classes.lookup_class("datetime").unwrap();
         assert_eq!(datetime.name(), "DateTime");

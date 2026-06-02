@@ -60,17 +60,19 @@ Array
     [57] => LimitIterator
     [58] => ReflectionExtension
     [59] => ReflectionZendExtension
-    [60] => DateTime
-    [61] => DateTimeImmutable
-    [62] => DOMException
-    [63] => DOMNode
-    [64] => DOMAttr
-    [65] => DOMElement
-    [66] => DOMDocument
-    [67] => DOMDocumentType
-    [68] => Generator
-    [69] => Box
-    [70] => Profile
+    [60] => DateMalformedIntervalStringException
+    [61] => DateInterval
+    [62] => DateTime
+    [63] => DateTimeImmutable
+    [64] => DOMException
+    [65] => DOMNode
+    [66] => DOMAttr
+    [67] => DOMElement
+    [68] => DOMDocument
+    [69] => DOMDocumentType
+    [70] => Generator
+    [71] => Box
+    [72] => Profile
 )
-71|Exception|Error|Uri\InvalidUriException
+73|Exception|Error|Uri\InvalidUriException
 Exception|Error|Uri\InvalidUriException

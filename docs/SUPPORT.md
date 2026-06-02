@@ -6206,7 +6206,22 @@
   and `DateTimeImmutable::createFromInterface()` copy bounded timestamp/timezone
   state into the called mutable or immutable target class, with uninitialized
   source objects reporting catchable `DateObjectError`s for the covered
-  DateTime and DateTimeImmutable inheritance cases. `DateTime::format()`,
+  DateTime and DateTimeImmutable inheritance cases. `DateTime::diff()`,
+  `DateTimeImmutable::diff()`, and `date_diff()` produce bounded
+  `DateInterval` objects for initialized mutable/immutable DateTime operands,
+  including `%Y/%M/%D/%H/%I/%S`, lowercase component tokens, `%R/%r`, `%a`,
+  `%%`, and unknown percent-token preservation through `DateInterval::format()`
+  and `date_interval_format()`. `DateInterval::__construct()` accepts integer
+  ISO-8601 duration components such as `P2Y4DT6H8M` and `P32D`, exposes the
+  public component metadata `y`, `m`, `d`, `h`, `i`, `s`, `f`, `invert`,
+  `days`, and `from_string`, supports bounded subclass construction through
+  the inherited constructor, and raises catchable PHP-shaped
+  `DateMalformedIntervalStringException`s for the covered malformed duration
+  strings. `DateInterval::createFromDateString()` and
+  `date_interval_create_from_date_string()` accept simple signed relative
+  year/month/week/day/hour/minute/second sequences such as `2 weeks` and
+  `1 year + 1 day`, exposing the corresponding component properties.
+  `DateTime::format()`,
   `DateTimeImmutable::format()`, `date_format()`, `date()`, `gmdate()`,
   `strftime()`, `gmstrftime()`, and `idate()` route `$format` through the
   shared PHP-shaped string boundary for scalar conversion, `null` deprecation,
@@ -6249,7 +6264,12 @@
   state arrays outside the bounded exported `date`/`timezone_type`/`timezone`
   and `timezone_type`/`timezone` shapes, DateTime manual `__serialize()` /
   `__unserialize()` methods, private/protected serialized properties on
-  DateTimeImmutable subclasses, exact invalid-modifier
+  DateTimeImmutable subclasses, DateInterval arithmetic through
+  `DateTimeInterface::add()` / `sub()`, DatePeriod, DateInterval
+  serialization/unserialization and `__set_state()`, full timelib relative
+  string grammar, fractional or negative ISO interval components, exact
+  DateInterval object-dump handler parity for `from_string` intervals, exact
+  invalid-modifier
   `DateMalformedStringException` behavior, exact
   diagnostics for constructor/timezone/state coercions outside the covered
   slices, weak scalar timestamp/date-part coercions for `idate()` / date

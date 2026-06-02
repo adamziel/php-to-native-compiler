@@ -965,6 +965,68 @@ echo ($returned === $object ? "same" : "different"), "\n";
 }
 
 #[test]
+fn dateinterval_metadata_format_and_diff_cover_bounded_rows() {
+    let execution = run_source(
+        r#"<?php
+date_default_timezone_set("UTC");
+$date1 = new DateTime("2000-01-01 00:00:00");
+$date2 = new DateTime("2001-03-04 04:05:06");
+$interval = $date1->diff($date2);
+echo $interval->format("Y=%Y M=%M D=%D H=%H I=%I S=%S R=%R a=%a"), "\n";
+echo $interval->format("y=%y m=%m d=%d h=%h i=%i s=%s r=%r"), "\n";
+$reverse = date_diff($date2, $date1);
+echo $reverse->format("inverted R=%R r=%r %=%% x=%x"), "\n";
+$absolute = $date2->diff($date1, true);
+echo $absolute->format("absolute R=%R r=%r"), "\n";
+$direct = new DateInterval("P2Y4DT6H8M");
+echo date_interval_format($direct, "%d days"), "|";
+echo $direct->days === false ? "false" : "bad", "|";
+echo $direct->f = 0.5, "\n";
+$weeks = date_interval_create_from_date_string("2 weeks");
+$combo = DateInterval::createFromDateString("1 year + 1 day");
+echo $weeks->d, "|", $combo->y, "|", $combo->d, "\n";
+class Z extends DateInterval {}
+$sub = new Z("P32D");
+echo get_class($sub), "|", $sub->format("%d days"), "\n";
+try {
+    new DateInterval("");
+} catch (DateMalformedIntervalStringException $e) {
+    echo $e::class, ": ", $e->getMessage(), "\n";
+}
+try {
+    new DateInterval("2007-05-11T15:30:00Z/");
+} catch (DateMalformedIntervalStringException $e) {
+    echo $e::class, ": ", $e->getMessage(), "\n";
+}
+try {
+    DateInterval::createFromDateString("foobar");
+} catch (DateMalformedIntervalStringException $e) {
+    echo $e::class, ": ", $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "Y=01 M=02 D=03 H=04 I=05 S=06 R=+ a=428\n",
+            "y=1 m=2 d=3 h=4 i=5 s=6 r=\n",
+            "inverted R=- r=- %=% x=%x\n",
+            "absolute R=+ r=\n",
+            "4 days|false|0.5\n",
+            "14|1|1\n",
+            "Z|32 days\n",
+            "DateMalformedIntervalStringException: Unknown or bad format ()\n",
+            "DateMalformedIntervalStringException: Failed to parse interval (2007-05-11T15:30:00Z/)\n",
+            "DateMalformedIntervalStringException: Unknown or bad format (foobar) at position 0 (f): The timezone could not be found in the database\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn datetime_mutable_date_time_setters_normalize_bounded_parts() {
     let execution = run_source(
         r#"<?php

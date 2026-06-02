@@ -337,6 +337,7 @@ struct Interpreter {
     spl_file_objects: HashMap<i64, SplFileObjectState>,
     spl_iterator_wrappers: HashMap<i64, SplIteratorWrapperState>,
     date_time_objects: HashMap<i64, BoundedDateTimeObjectState>,
+    date_interval_objects: HashMap<i64, BoundedDateIntervalState>,
     uri_rfc3986_empty_port_objects: HashSet<i64>,
     source_file: Option<String>,
     main_source_file: Option<String>,
@@ -714,6 +715,21 @@ enum SplIteratorWrapperState {
 struct BoundedDateTimeObjectState {
     timestamp: i64,
     timezone: BoundedTimezone,
+}
+
+#[derive(Debug, Clone)]
+struct BoundedDateIntervalState {
+    years: i64,
+    months: i64,
+    days: i64,
+    hours: i64,
+    minutes: i64,
+    seconds: i64,
+    fraction: f64,
+    invert: i64,
+    total_days: Option<i64>,
+    from_string: bool,
+    date_string: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -11311,6 +11327,7 @@ impl Interpreter {
             spl_file_objects: HashMap::new(),
             spl_iterator_wrappers: HashMap::new(),
             date_time_objects: HashMap::new(),
+            date_interval_objects: HashMap::new(),
             uri_rfc3986_empty_port_objects: HashSet::new(),
             main_source_file: source_file.clone(),
             source_file,
@@ -11643,6 +11660,21 @@ impl Interpreter {
         self.classes
             .lookup_class_id("DateTimeZone")
             .is_some_and(|timezone_id| class_id == timezone_id)
+    }
+
+    fn is_dateinterval_class_id(&self, class_id: ClassId) -> bool {
+        self.classes
+            .lookup_class_id("DateInterval")
+            .is_some_and(|dateinterval_id| {
+                class_id == dateinterval_id
+                    || self.classes.is_subclass_of(class_id, dateinterval_id)
+            })
+    }
+
+    fn resolved_method_is_core_dateinterval(&self, class_id: ClassId) -> bool {
+        self.classes
+            .lookup_class_id("DateInterval")
+            .is_some_and(|dateinterval_id| class_id == dateinterval_id)
     }
 
     fn is_datetime_class_id(&self, class_id: ClassId) -> bool {
@@ -19674,6 +19706,271 @@ impl Interpreter {
         Ok(object)
     }
 
+    fn initialize_dateinterval_object(
+        &mut self,
+        object: &PhpObject,
+        args: &[Expr],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<()> {
+        expect_expr_arity("DateInterval::__construct", args.len(), 1, span)?;
+        let value = self.evaluate(&args[0], scope)?;
+        let duration = self.php_string_argument_with_magic(
+            "DateInterval::__construct()",
+            1,
+            "duration",
+            &value,
+            span,
+        )?;
+        let state = parse_bounded_dateinterval_iso(&duration)
+            .map_err(|message| dateinterval_malformed_error(span, message))?;
+        self.assign_dateinterval_object_state(object, state, span)
+    }
+
+    fn create_dateinterval_object_from_state(
+        &mut self,
+        class_id: ClassId,
+        state: BoundedDateIntervalState,
+        span: Span,
+    ) -> CompileResult<PhpObject> {
+        let object_id = self.allocate_object_id();
+        let inherited_properties = self.inherited_instance_properties(class_id);
+        let mut ancestor_class_names = self.inherited_class_names(class_id);
+        ancestor_class_names.extend(self.class_alias_names(class_id));
+        let interface_names = self.class_implements_interface_names(class_id);
+        let class = self
+            .classes
+            .get(class_id)
+            .expect("DateInterval-compatible class id should resolve");
+        let object = PhpObject::from_class_with_relationship_metadata_with_id(
+            class,
+            &inherited_properties,
+            ancestor_class_names,
+            interface_names,
+            object_id,
+        );
+        self.assign_dateinterval_object_state(&object, state, span)?;
+        Ok(object)
+    }
+
+    fn create_core_dateinterval_object_from_state(
+        &mut self,
+        state: BoundedDateIntervalState,
+        span: Span,
+    ) -> CompileResult<PhpObject> {
+        let class_id = self
+            .classes
+            .lookup_class_id("DateInterval")
+            .ok_or_else(|| runtime_error(span, RuntimeError::undefined_class("DateInterval")))?;
+        self.create_dateinterval_object_from_state(class_id, state, span)
+    }
+
+    fn assign_dateinterval_object_state(
+        &mut self,
+        object: &PhpObject,
+        state: BoundedDateIntervalState,
+        span: Span,
+    ) -> CompileResult<()> {
+        for (name, value) in [
+            ("y", Value::Int(state.years)),
+            ("m", Value::Int(state.months)),
+            ("d", Value::Int(state.days)),
+            ("h", Value::Int(state.hours)),
+            ("i", Value::Int(state.minutes)),
+            ("s", Value::Int(state.seconds)),
+        ] {
+            object
+                .write_public_property(name, value)
+                .map_err(|error| runtime_error(span, error))?;
+        }
+        object
+            .write_public_property("f", Value::Float(state.fraction))
+            .map_err(|error| runtime_error(span, error))?;
+        object
+            .write_public_property("invert", Value::Int(state.invert))
+            .map_err(|error| runtime_error(span, error))?;
+        object
+            .write_public_property(
+                "days",
+                state
+                    .total_days
+                    .map(Value::Int)
+                    .unwrap_or(Value::Bool(false)),
+            )
+            .map_err(|error| runtime_error(span, error))?;
+        object
+            .write_public_property("from_string", Value::Bool(state.from_string))
+            .map_err(|error| runtime_error(span, error))?;
+        if let Some(date_string) = &state.date_string {
+            object
+                .write_public_property("date_string", Value::String(date_string.clone()))
+                .map_err(|error| runtime_error(span, error))?;
+        }
+        self.date_interval_objects.insert(object.id(), state);
+        Ok(())
+    }
+
+    fn dateinterval_object_argument(
+        function: &'static str,
+        args: &[Value],
+        index: usize,
+        span: Span,
+    ) -> CompileResult<PhpObject> {
+        match args.get(index) {
+            Some(Value::Object(object)) if object.is_instance_of_class_name("DateInterval") => {
+                Ok(object.clone())
+            }
+            Some(other) => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function,
+                    format!(
+                        "Argument #{} must be a DateInterval object, {} given",
+                        index + 1,
+                        other.type_name()
+                    ),
+                ),
+            )),
+            None => Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    function,
+                    ArityExpectation::AtLeast(index + 1),
+                    args.len(),
+                ),
+            )),
+        }
+    }
+
+    fn dateinterval_object_state(
+        &self,
+        object: &PhpObject,
+        function: &'static str,
+        span: Span,
+    ) -> CompileResult<BoundedDateIntervalState> {
+        let fallback = self
+            .date_interval_objects
+            .get(&object.id())
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        function,
+                        "DateInterval object is not initialized in the current subset",
+                    ),
+                )
+            })?;
+        Ok(BoundedDateIntervalState {
+            years: Self::dateinterval_int_property(object, "y").unwrap_or(fallback.years),
+            months: Self::dateinterval_int_property(object, "m").unwrap_or(fallback.months),
+            days: Self::dateinterval_int_property(object, "d").unwrap_or(fallback.days),
+            hours: Self::dateinterval_int_property(object, "h").unwrap_or(fallback.hours),
+            minutes: Self::dateinterval_int_property(object, "i").unwrap_or(fallback.minutes),
+            seconds: Self::dateinterval_int_property(object, "s").unwrap_or(fallback.seconds),
+            fraction: Self::dateinterval_float_property(object, "f").unwrap_or(fallback.fraction),
+            invert: Self::dateinterval_int_property(object, "invert").unwrap_or(fallback.invert),
+            total_days: Self::dateinterval_days_property(object).unwrap_or(fallback.total_days),
+            from_string: Self::dateinterval_bool_property(object, "from_string")
+                .unwrap_or(fallback.from_string),
+            date_string: Self::dateinterval_string_property(object, "date_string")
+                .or_else(|| fallback.date_string.clone()),
+        })
+    }
+
+    fn dateinterval_int_property(object: &PhpObject, name: &str) -> Option<i64> {
+        match object.read_public_property(name).ok()? {
+            Value::Int(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    fn dateinterval_float_property(object: &PhpObject, name: &str) -> Option<f64> {
+        match object.read_public_property(name).ok()? {
+            Value::Float(value) => Some(value),
+            Value::Int(value) => Some(value as f64),
+            _ => None,
+        }
+    }
+
+    fn dateinterval_bool_property(object: &PhpObject, name: &str) -> Option<bool> {
+        match object.read_public_property(name).ok()? {
+            Value::Bool(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    fn dateinterval_string_property(object: &PhpObject, name: &str) -> Option<String> {
+        match object.read_public_property(name).ok()? {
+            Value::String(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    fn dateinterval_days_property(object: &PhpObject) -> Option<Option<i64>> {
+        match object.read_public_property("days").ok()? {
+            Value::Int(value) => Some(Some(value)),
+            Value::Bool(false) => Some(None),
+            _ => None,
+        }
+    }
+
+    fn call_dateinterval_method(
+        &mut self,
+        object: PhpObject,
+        method_name: &str,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        match method_name.to_ascii_lowercase().as_str() {
+            "__construct" => {
+                self.initialize_dateinterval_object(&object, args, span, caller_scope)?;
+                Ok(Value::Null)
+            }
+            "format" => {
+                expect_expr_arity("DateInterval::format", args.len(), 1, span)?;
+                let value = self.evaluate(&args[0], caller_scope)?;
+                let format = self.php_string_argument_with_magic(
+                    "DateInterval::format()",
+                    1,
+                    "format",
+                    &value,
+                    span,
+                )?;
+                let state =
+                    self.dateinterval_object_state(&object, "DateInterval::format()", span)?;
+                Ok(Value::String(format_bounded_dateinterval(&format, &state)))
+            }
+            _ => Err(runtime_error(
+                span,
+                RuntimeError::undefined_function(format!("DateInterval::{method_name}()")),
+            )),
+        }
+    }
+
+    fn call_dateinterval_create_from_date_string_static(
+        &mut self,
+        _class_id: ClassId,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        expect_expr_arity("DateInterval::createFromDateString", args.len(), 1, span)?;
+        let value = self.evaluate(&args[0], caller_scope)?;
+        let datetime = self.php_string_argument_with_magic(
+            "DateInterval::createFromDateString()",
+            1,
+            "datetime",
+            &value,
+            span,
+        )?;
+        let state = parse_bounded_dateinterval_relative(&datetime)
+            .map_err(|message| dateinterval_malformed_error(span, message))?;
+        let object = self.create_core_dateinterval_object_from_state(state, span)?;
+        self.track_allocated_object(&object);
+        Ok(Value::Object(object))
+    }
+
     fn assign_datetime_object_serialization_state(
         &mut self,
         object: &PhpObject,
@@ -20026,6 +20323,33 @@ impl Interpreter {
         }
     }
 
+    fn datetime_interface_value_argument(
+        function: &'static str,
+        value: &Value,
+        position: usize,
+        span: Span,
+    ) -> CompileResult<PhpObject> {
+        match value {
+            Value::Object(object)
+                if object.is_instance_of_class_name("DateTime")
+                    || object.is_instance_of_class_name("DateTimeImmutable") =>
+            {
+                Ok(object.clone())
+            }
+            other => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function,
+                    format!(
+                        "Argument #{} must be a DateTimeInterface object, {} given",
+                        position,
+                        other.type_name()
+                    ),
+                ),
+            )),
+        }
+    }
+
     fn call_datetime_method(
         &mut self,
         object: PhpObject,
@@ -20251,6 +20575,32 @@ impl Interpreter {
                     self.date_modifier_string_argument("DateTime::modify()", 1, &value, span)?;
                 self.modify_datetime_object(&object, &modifier, "DateTime::modify()", span)?;
                 Ok(Value::Object(object))
+            }
+            "diff" => {
+                if !(1..=2).contains(&args.len()) {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::arity_mismatch(
+                            "DateTime::diff",
+                            ArityExpectation::Between { min: 1, max: 2 },
+                            args.len(),
+                        ),
+                    ));
+                }
+                let target = self.evaluate(&args[0], caller_scope)?;
+                let target =
+                    Self::datetime_interface_value_argument("DateTime::diff()", &target, 1, span)?;
+                let absolute = match args.get(1) {
+                    Some(arg) => self.evaluate(arg, caller_scope)?.is_truthy(),
+                    None => false,
+                };
+                self.create_dateinterval_from_datetime_diff(
+                    &object,
+                    &target,
+                    absolute,
+                    "DateTime::diff()",
+                    span,
+                )
             }
             _ => Err(runtime_error(
                 span,
@@ -20527,6 +20877,36 @@ impl Interpreter {
                 self.track_allocated_object(&copy);
                 Ok(Value::Object(copy))
             }
+            "diff" => {
+                if !(1..=2).contains(&args.len()) {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::arity_mismatch(
+                            "DateTimeImmutable::diff",
+                            ArityExpectation::Between { min: 1, max: 2 },
+                            args.len(),
+                        ),
+                    ));
+                }
+                let target = self.evaluate(&args[0], caller_scope)?;
+                let target = Self::datetime_interface_value_argument(
+                    "DateTimeImmutable::diff()",
+                    &target,
+                    1,
+                    span,
+                )?;
+                let absolute = match args.get(1) {
+                    Some(arg) => self.evaluate(arg, caller_scope)?.is_truthy(),
+                    None => false,
+                };
+                self.create_dateinterval_from_datetime_diff(
+                    &object,
+                    &target,
+                    absolute,
+                    "DateTimeImmutable::diff()",
+                    span,
+                )
+            }
             _ => Err(runtime_error(
                 span,
                 RuntimeError::undefined_function(format!("DateTimeImmutable::{method_name}()")),
@@ -20547,6 +20927,22 @@ impl Interpreter {
             state.timezone,
             span,
         )
+    }
+
+    fn create_dateinterval_from_datetime_diff(
+        &mut self,
+        source: &PhpObject,
+        target: &PhpObject,
+        absolute: bool,
+        function: &'static str,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let source_state = self.datetime_object_state(source, function, span)?;
+        let target_state = self.datetime_object_state(target, function, span)?;
+        let interval = bounded_datetime_diff_interval(&source_state, &target_state, absolute);
+        let object = self.create_core_dateinterval_object_from_state(interval, span)?;
+        self.track_allocated_object(&object);
+        Ok(Value::Object(object))
     }
 
     fn call_date_create(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -20577,6 +20973,57 @@ impl Interpreter {
             ));
         }
         let object = self.create_datetimeimmutable_object_from_values(args, span)?;
+        self.track_allocated_object(&object);
+        Ok(Value::Object(object))
+    }
+
+    fn call_date_diff(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(2..=3).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "date_diff()",
+                    ArityExpectation::Between { min: 2, max: 3 },
+                    args.len(),
+                ),
+            ));
+        }
+        let source = self.datetime_interface_object_argument("date_diff()", args, 0, span)?;
+        let target = self.datetime_interface_object_argument("date_diff()", args, 1, span)?;
+        let absolute = args.get(2).is_some_and(Value::is_truthy);
+        self.create_dateinterval_from_datetime_diff(&source, &target, absolute, "date_diff()", span)
+    }
+
+    fn call_date_interval_format(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("date_interval_format", args, 2, span)?;
+        let object = Self::dateinterval_object_argument("date_interval_format()", args, 0, span)?;
+        let format = self.php_string_argument_with_magic(
+            "date_interval_format()",
+            2,
+            "format",
+            &args[1],
+            span,
+        )?;
+        let state = self.dateinterval_object_state(&object, "date_interval_format()", span)?;
+        Ok(Value::String(format_bounded_dateinterval(&format, &state)))
+    }
+
+    fn call_date_interval_create_from_date_string(
+        &mut self,
+        args: &[Value],
+        span: Span,
+    ) -> CompileResult<Value> {
+        expect_arity("date_interval_create_from_date_string", args, 1, span)?;
+        let datetime = self.php_string_argument_with_magic(
+            "date_interval_create_from_date_string()",
+            1,
+            "datetime",
+            &args[0],
+            span,
+        )?;
+        let state = parse_bounded_dateinterval_relative(&datetime)
+            .map_err(|message| dateinterval_malformed_error(span, message))?;
+        let object = self.create_core_dateinterval_object_from_state(state, span)?;
         self.track_allocated_object(&object);
         Ok(Value::Object(object))
     }
@@ -26226,6 +26673,11 @@ impl Interpreter {
                 self.track_allocated_object(&object);
                 return Ok(Value::Object(object));
             }
+            if self.is_dateinterval_class_id(class_id) {
+                self.initialize_dateinterval_object(&object, args, span, scope)?;
+                self.track_allocated_object(&object);
+                return Ok(Value::Object(object));
+            }
             if self.is_datetime_class_id(class_id) {
                 self.initialize_datetime_object(&object, args, span, scope)?;
                 self.track_allocated_object(&object);
@@ -26371,6 +26823,12 @@ impl Interpreter {
 
         if self.resolved_method_is_core_datetimezone(constructor_class_id) {
             self.initialize_datetimezone_object(&object, args, span, scope)?;
+            self.track_allocated_object(&object);
+            return Ok(Value::Object(object));
+        }
+
+        if self.resolved_method_is_core_dateinterval(constructor_class_id) {
+            self.initialize_dateinterval_object(&object, args, span, scope)?;
             self.track_allocated_object(&object);
             return Ok(Value::Object(object));
         }
@@ -51416,6 +51874,11 @@ impl Interpreter {
                 .call_datetimezone_method(object, method_name, args, span, caller_scope)
                 .map(|value| (value, None));
         }
+        if object.is_instance_of_class_name("DateInterval") {
+            return self
+                .call_dateinterval_method(object, method_name, args, span, caller_scope)
+                .map(|value| (value, None));
+        }
         if object.is_instance_of_class_name("DateTime") {
             return self
                 .call_datetime_method(object, method_name, args, span, caller_scope)
@@ -57248,6 +57711,16 @@ impl Interpreter {
             && method_name.eq_ignore_ascii_case("__set_state")
         {
             return self.call_datetimezone_set_state_static(class_id, args, span, caller_scope);
+        }
+        if self.is_dateinterval_class_id(class_id)
+            && method_name.eq_ignore_ascii_case("createFromDateString")
+        {
+            return self.call_dateinterval_create_from_date_string_static(
+                class_id,
+                args,
+                span,
+                caller_scope,
+            );
         }
         if self.resolved_method_is_core_datetime(class_id)
             && method_name.eq_ignore_ascii_case("__set_state")
@@ -90637,8 +91110,13 @@ impl Interpreter {
             "date_sun_info" => self.call_date_sun_info(&args, span),
             "date_create" => self.call_date_create(&args, span),
             "date_create_immutable" => self.call_date_create_immutable(&args, span),
+            "date_diff" => self.call_date_diff(&args, span),
             "date_modify" => self.call_date_modify(&args, span),
             "date_format" => self.call_date_format(&args, span),
+            "date_interval_format" => self.call_date_interval_format(&args, span),
+            "date_interval_create_from_date_string" => {
+                self.call_date_interval_create_from_date_string(&args, span)
+            }
             "date_timestamp_get" => self.call_date_timestamp_get(&args, span),
             "date_timestamp_set" => self.call_date_timestamp_set(&args, span),
             "date_date_set" => self.call_date_date_set(&args, span),
@@ -110695,6 +111173,7 @@ const DATETIME_INVALID_SERIALIZATION_MESSAGE: &str =
 const DATETIMEIMMUTABLE_INVALID_SERIALIZATION_MESSAGE: &str =
     "Invalid serialization data for DateTimeImmutable object";
 const DATE_OBJECT_ERROR_DIAGNOSTIC_PREFIX: &str = "DateObjectError: ";
+const DATE_MALFORMED_INTERVAL_DIAGNOSTIC_PREFIX: &str = "DateMalformedIntervalStringException: ";
 
 fn datetimezone_invalid_serialization_error(span: Span) -> Diagnostic {
     runtime_error(
@@ -110716,6 +111195,16 @@ fn datetimeimmutable_invalid_serialization_error(span: Span) -> Diagnostic {
         RuntimeError::unsupported_call(
             "unserialize()",
             DATETIMEIMMUTABLE_INVALID_SERIALIZATION_MESSAGE,
+        ),
+    )
+}
+
+fn dateinterval_malformed_error(span: Span, message: String) -> Diagnostic {
+    runtime_error(
+        span,
+        RuntimeError::unsupported_call(
+            "DateInterval",
+            format!("{DATE_MALFORMED_INTERVAL_DIAGNOSTIC_PREFIX}{message}"),
         ),
     )
 }
@@ -110806,6 +111295,12 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
             .split_once(DATE_OBJECT_ERROR_DIAGNOSTIC_PREFIX)
         {
             return Some(("DateObjectError", message.to_string()));
+        }
+        if let Some((_, message)) = error
+            .message
+            .split_once(DATE_MALFORMED_INTERVAL_DIAGNOSTIC_PREFIX)
+        {
+            return Some(("DateMalformedIntervalStringException", message.to_string()));
         }
     }
 
@@ -113143,8 +113638,11 @@ fn is_builtin(name: &str) -> bool {
             | "date_sun_info"
             | "date_create"
             | "date_create_immutable"
+            | "date_diff"
             | "date_modify"
             | "date_format"
+            | "date_interval_format"
+            | "date_interval_create_from_date_string"
             | "date_timestamp_get"
             | "date_timestamp_set"
             | "date_date_set"
@@ -148329,6 +148827,265 @@ fn format_bounded_date_token(
         ),
         'U' => timestamp.to_string(),
         other => other.to_string(),
+    }
+}
+
+fn parse_bounded_dateinterval_iso(input: &str) -> Result<BoundedDateIntervalState, String> {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return Err(format!("Unknown or bad format ({input})"));
+    }
+    if trimmed.contains('/') {
+        return Err(format!("Failed to parse interval ({input})"));
+    }
+    let chars = trimmed.chars().collect::<Vec<_>>();
+    if chars.first() != Some(&'P') {
+        return Err(format!("Unknown or bad format ({input})"));
+    }
+
+    let mut state = empty_bounded_dateinterval_state();
+    let mut index = 1_usize;
+    let mut in_time = false;
+    let mut saw_component = false;
+    while index < chars.len() {
+        if chars[index] == 'T' {
+            if in_time {
+                return Err(format!("Unknown or bad format ({input})"));
+            }
+            in_time = true;
+            index += 1;
+            continue;
+        }
+        let start = index;
+        while chars.get(index).is_some_and(|ch| ch.is_ascii_digit()) {
+            index += 1;
+        }
+        if start == index {
+            return Err(format!("Unknown or bad format ({input})"));
+        }
+        let number = chars[start..index]
+            .iter()
+            .collect::<String>()
+            .parse::<i64>()
+            .map_err(|_| format!("Unknown or bad format ({input})"))?;
+        let Some(unit) = chars.get(index).copied() else {
+            return Err(format!("Unknown or bad format ({input})"));
+        };
+        index += 1;
+        match (unit, in_time) {
+            ('Y', false) => state.years = number,
+            ('M', false) => state.months = number,
+            ('D', false) => state.days = number,
+            ('H', true) => state.hours = number,
+            ('M', true) => state.minutes = number,
+            ('S', true) => state.seconds = number,
+            _ => return Err(format!("Unknown or bad format ({input})")),
+        }
+        saw_component = true;
+    }
+
+    if !saw_component {
+        return Err(format!("Unknown or bad format ({input})"));
+    }
+    Ok(state)
+}
+
+fn parse_bounded_dateinterval_relative(input: &str) -> Result<BoundedDateIntervalState, String> {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return Err(bounded_dateinterval_relative_error(input));
+    }
+    let mut tokens = trimmed.split_whitespace().filter(|token| *token != "+");
+    let mut state = empty_bounded_dateinterval_state();
+    state.from_string = true;
+    state.date_string = Some(trimmed.to_string());
+    let mut saw_component = false;
+
+    while let Some(number_token) = tokens.next() {
+        let number = parse_signed_ascii_i64(number_token)
+            .ok_or_else(|| bounded_dateinterval_relative_error(input))?;
+        let unit = tokens
+            .next()
+            .ok_or_else(|| bounded_dateinterval_relative_error(input))?;
+        match unit.to_ascii_lowercase().as_str() {
+            "year" | "years" => state.years += number,
+            "month" | "months" => state.months += number,
+            "week" | "weeks" => state.days += number * 7,
+            "day" | "days" => state.days += number,
+            "hour" | "hours" => state.hours += number,
+            "minute" | "minutes" => state.minutes += number,
+            "second" | "seconds" => state.seconds += number,
+            _ => return Err(bounded_dateinterval_relative_error(input)),
+        }
+        saw_component = true;
+    }
+
+    if saw_component {
+        Ok(state)
+    } else {
+        Err(bounded_dateinterval_relative_error(input))
+    }
+}
+
+fn bounded_dateinterval_relative_error(input: &str) -> String {
+    let first = input.chars().next().unwrap_or('\0');
+    format!(
+        "Unknown or bad format ({input}) at position 0 ({first}): The timezone could not be found in the database"
+    )
+}
+
+fn empty_bounded_dateinterval_state() -> BoundedDateIntervalState {
+    BoundedDateIntervalState {
+        years: 0,
+        months: 0,
+        days: 0,
+        hours: 0,
+        minutes: 0,
+        seconds: 0,
+        fraction: 0.0,
+        invert: 0,
+        total_days: None,
+        from_string: false,
+        date_string: None,
+    }
+}
+
+fn format_bounded_dateinterval(format: &str, interval: &BoundedDateIntervalState) -> String {
+    let mut output = String::new();
+    let mut chars = format.chars();
+    while let Some(ch) = chars.next() {
+        if ch != '%' {
+            output.push(ch);
+            continue;
+        }
+        let Some(token) = chars.next() else {
+            output.push('%');
+            break;
+        };
+        output.push_str(&format_bounded_dateinterval_token(token, interval));
+    }
+    output
+}
+
+fn format_bounded_dateinterval_token(token: char, interval: &BoundedDateIntervalState) -> String {
+    match token {
+        '%' => "%".to_string(),
+        'Y' => zero_pad(interval.years, 2),
+        'M' => zero_pad(interval.months, 2),
+        'D' => zero_pad(interval.days, 2),
+        'H' => zero_pad(interval.hours, 2),
+        'I' => zero_pad(interval.minutes, 2),
+        'S' => zero_pad(interval.seconds, 2),
+        'y' => interval.years.to_string(),
+        'm' => interval.months.to_string(),
+        'd' => interval.days.to_string(),
+        'h' => interval.hours.to_string(),
+        'i' => interval.minutes.to_string(),
+        's' => interval.seconds.to_string(),
+        'R' => {
+            if interval.invert != 0 {
+                "-".to_string()
+            } else {
+                "+".to_string()
+            }
+        }
+        'r' => {
+            if interval.invert != 0 {
+                "-".to_string()
+            } else {
+                String::new()
+            }
+        }
+        'a' => interval
+            .total_days
+            .map(|days| days.to_string())
+            .unwrap_or_else(|| "(unknown)".to_string()),
+        other => format!("%{other}"),
+    }
+}
+
+fn bounded_datetime_diff_interval(
+    source: &BoundedDateTimeObjectState,
+    target: &BoundedDateTimeObjectState,
+    absolute: bool,
+) -> BoundedDateIntervalState {
+    let source_before_target = source.timestamp <= target.timestamp;
+    let (start, end) = if source_before_target {
+        (source, target)
+    } else {
+        (target, source)
+    };
+    let start_parts = bounded_datetime_parts(
+        start.timestamp,
+        start.timezone.offset_at_timestamp(start.timestamp),
+    );
+    let end_parts = bounded_datetime_parts(
+        end.timestamp,
+        end.timezone.offset_at_timestamp(end.timestamp),
+    );
+
+    let mut years = end_parts.year - start_parts.year;
+    let mut months = end_parts.month - start_parts.month;
+    let mut days = end_parts.day - start_parts.day;
+    let mut hours = end_parts.hour - start_parts.hour;
+    let mut minutes = end_parts.minute - start_parts.minute;
+    let mut seconds = end_parts.second - start_parts.second;
+
+    if seconds < 0 {
+        seconds += 60;
+        minutes -= 1;
+    }
+    if minutes < 0 {
+        minutes += 60;
+        hours -= 1;
+    }
+    if hours < 0 {
+        hours += 24;
+        days -= 1;
+    }
+    if days < 0 {
+        months -= 1;
+        let (borrow_year, borrow_month) = normalize_year_month(end_parts.year, end_parts.month - 1);
+        days += days_in_month(borrow_year, borrow_month);
+    }
+    if months < 0 {
+        months += 12;
+        years -= 1;
+    }
+
+    let total_seconds = if source.timestamp >= target.timestamp {
+        source.timestamp as i128 - target.timestamp as i128
+    } else {
+        target.timestamp as i128 - source.timestamp as i128
+    };
+    let total_days = (total_seconds / 86_400).min(i64::MAX as i128) as i64;
+
+    BoundedDateIntervalState {
+        years,
+        months,
+        days,
+        hours,
+        minutes,
+        seconds,
+        fraction: 0.0,
+        invert: if absolute || source_before_target {
+            0
+        } else {
+            1
+        },
+        total_days: Some(total_days),
+        from_string: false,
+        date_string: None,
+    }
+}
+
+fn parse_signed_ascii_i64(value: &str) -> Option<i64> {
+    if let Some(rest) = value.strip_prefix('+') {
+        parse_ascii_i64(rest)
+    } else if let Some(rest) = value.strip_prefix('-') {
+        parse_ascii_i64(rest)?.checked_neg()
+    } else {
+        parse_ascii_i64(value)
     }
 }
 
