@@ -665,8 +665,12 @@ impl SplDoublyLinkedListState {
 
 #[derive(Debug, Clone)]
 struct SplFileObjectState {
+    contents: String,
     lines: Vec<String>,
     cursor: usize,
+    byte_position: usize,
+    eof: bool,
+    max_line_len: usize,
     flags: i64,
     csv_separator: char,
     csv_enclosure: char,
@@ -676,8 +680,12 @@ struct SplFileObjectState {
 impl Default for SplFileObjectState {
     fn default() -> Self {
         Self {
+            contents: String::new(),
             lines: Vec::new(),
             cursor: 0,
+            byte_position: 0,
+            eof: true,
+            max_line_len: 0,
             flags: 0,
             csv_separator: ',',
             csv_enclosure: '"',
@@ -17409,12 +17417,53 @@ impl Interpreter {
             .collect()
     }
 
+    fn spl_file_object_cursor_for_byte_position(contents: &str, byte_position: usize) -> usize {
+        let position = utf8_boundary_at_or_before(contents, byte_position.min(contents.len()));
+        contents[..position]
+            .as_bytes()
+            .iter()
+            .filter(|byte| **byte == b'\n')
+            .count()
+    }
+
+    fn spl_file_object_byte_position_for_cursor(state: &SplFileObjectState) -> usize {
+        state
+            .lines
+            .iter()
+            .take(state.cursor)
+            .map(String::len)
+            .sum::<usize>()
+            .min(state.contents.len())
+    }
+
+    fn spl_file_object_sync_cursor_from_byte_position(state: &mut SplFileObjectState) {
+        state.byte_position = utf8_boundary_at_or_before(
+            &state.contents,
+            state.byte_position.min(state.contents.len()),
+        );
+        state.cursor =
+            Self::spl_file_object_cursor_for_byte_position(&state.contents, state.byte_position);
+    }
+
+    fn spl_file_object_sync_byte_position_from_cursor(state: &mut SplFileObjectState) {
+        state.byte_position = Self::spl_file_object_byte_position_for_cursor(state);
+    }
+
+    fn spl_file_object_apply_max_line_len(state: &SplFileObjectState, line: &str) -> String {
+        if state.max_line_len == 0 {
+            return line.to_string();
+        }
+        let end = utf8_boundary_at_or_before(line, state.max_line_len.min(line.len()));
+        line[..end].to_string()
+    }
+
     fn spl_file_object_line_string(state: &SplFileObjectState, line: &str) -> String {
-        if state.flags & SPL_FILE_OBJECT_DROP_NEW_LINE != 0 {
+        let line = if state.flags & SPL_FILE_OBJECT_DROP_NEW_LINE != 0 {
             csv_record_without_line_ending(line).to_string()
         } else {
             line.to_string()
-        }
+        };
+        Self::spl_file_object_apply_max_line_len(state, &line)
     }
 
     fn spl_file_object_csv_array_from_line(
@@ -17624,11 +17673,16 @@ impl Interpreter {
             )
         })?;
         self.cache_bounded_realpath_entry_for_local_path(&filesystem_path);
+        let lines = Self::spl_file_object_split_lines(&contents);
+        let eof = lines.is_empty();
         self.spl_file_objects.insert(
             object.id(),
             SplFileObjectState {
-                lines: Self::spl_file_object_split_lines(&contents),
+                contents,
+                lines,
                 cursor: 0,
+                byte_position: 0,
+                eof,
                 ..SplFileObjectState::default()
             },
         );
@@ -17652,6 +17706,23 @@ impl Interpreter {
                 let state = self.spl_file_object_state(&object, method_name, span)?;
                 Ok(Self::spl_file_object_current_value(state))
             }
+            "fgetc" => {
+                expect_arity("SplFileObject::fgetc", &args, 0, span)?;
+                let state = self.spl_file_object_state_mut(&object, method_name, span)?;
+                if state.byte_position >= state.contents.len() {
+                    state.eof = true;
+                    return Ok(Value::Bool(false));
+                }
+                let start = utf8_boundary_at_or_before(&state.contents, state.byte_position);
+                let Some(character) = state.contents[start..].chars().next() else {
+                    state.eof = true;
+                    return Ok(Value::Bool(false));
+                };
+                state.byte_position = start + character.len_utf8();
+                state.eof = false;
+                Self::spl_file_object_sync_cursor_from_byte_position(state);
+                Ok(Value::String(character.to_string()))
+            }
             "fgets" => {
                 expect_arity("SplFileObject::fgets", &args, 0, span)?;
                 let state = self.spl_file_object_state_mut(&object, method_name, span)?;
@@ -17659,12 +17730,69 @@ impl Interpreter {
                     .lines
                     .get(state.cursor)
                     .cloned()
+                    .map(|line| Self::spl_file_object_apply_max_line_len(state, &line))
                     .map(Value::String)
                     .unwrap_or(Value::Bool(false));
                 if state.cursor < state.lines.len() {
                     state.cursor += 1;
+                    Self::spl_file_object_sync_byte_position_from_cursor(state);
+                    state.eof = state.cursor >= state.lines.len();
+                } else {
+                    state.eof = true;
                 }
                 Ok(line)
+            }
+            "fread" => {
+                expect_arity("SplFileObject::fread", &args, 1, span)?;
+                let length = php_internal_int_argument(
+                    "SplFileObject::fread()",
+                    1,
+                    "length",
+                    &args[0],
+                    span,
+                )?;
+                if length <= 0 {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "SplFileObject::fread()",
+                            "SplFileObject::fread(): Argument #1 ($length) must be greater than 0",
+                        ),
+                    ));
+                }
+                let length = length as usize;
+                let state = self.spl_file_object_state_mut(&object, method_name, span)?;
+                let start = utf8_boundary_at_or_before(
+                    &state.contents,
+                    state.byte_position.min(state.contents.len()),
+                );
+                let end = utf8_boundary_at_or_before(
+                    &state.contents,
+                    start.saturating_add(length).min(state.contents.len()),
+                );
+                let contents = state.contents[start..end].to_string();
+                state.byte_position = end;
+                state.eof = end >= state.contents.len() && contents.len() < length;
+                Self::spl_file_object_sync_cursor_from_byte_position(state);
+                Ok(Value::String(contents))
+            }
+            "fpassthru" => {
+                expect_arity("SplFileObject::fpassthru", &args, 0, span)?;
+                let contents = {
+                    let state = self.spl_file_object_state_mut(&object, method_name, span)?;
+                    let start = utf8_boundary_at_or_before(
+                        &state.contents,
+                        state.byte_position.min(state.contents.len()),
+                    );
+                    let contents = state.contents[start..].to_string();
+                    state.byte_position = state.contents.len();
+                    state.eof = true;
+                    Self::spl_file_object_sync_cursor_from_byte_position(state);
+                    contents
+                };
+                let length = contents.len() as i64;
+                self.append_output_at(&contents, span);
+                Ok(Value::Int(length))
             }
             "fgetcsv" => {
                 if args.len() > 3 {
@@ -17717,9 +17845,12 @@ impl Interpreter {
                 };
                 let state = self.spl_file_object_state_mut(&object, method_name, span)?;
                 let Some(line) = state.lines.get(state.cursor).cloned() else {
+                    state.eof = true;
                     return Ok(Value::Bool(false));
                 };
                 state.cursor += 1;
+                Self::spl_file_object_sync_byte_position_from_cursor(state);
+                state.eof = state.cursor >= state.lines.len();
                 Ok(Self::spl_file_object_csv_array_from_line(
                     &line, separator, enclosure, escape,
                 ))
@@ -17733,6 +17864,11 @@ impl Interpreter {
                 expect_arity("SplFileObject::getFlags", &args, 0, span)?;
                 let state = self.spl_file_object_state(&object, method_name, span)?;
                 Ok(Value::Int(state.flags))
+            }
+            "getmaxlinelen" => {
+                expect_arity("SplFileObject::getMaxLineLen", &args, 0, span)?;
+                let state = self.spl_file_object_state(&object, method_name, span)?;
+                Ok(Value::Int(state.max_line_len as i64))
             }
             "setcsvcontrol" => {
                 if args.len() > 3 {
@@ -17790,6 +17926,28 @@ impl Interpreter {
                 state.flags = flags;
                 Ok(Value::Null)
             }
+            "setmaxlinelen" => {
+                expect_arity("SplFileObject::setMaxLineLen", &args, 1, span)?;
+                let max_length = php_internal_int_argument(
+                    "SplFileObject::setMaxLineLen()",
+                    1,
+                    "maxLength",
+                    &args[0],
+                    span,
+                )?;
+                if max_length < 0 {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "SplFileObject::setMaxLineLen()",
+                            "SplFileObject::setMaxLineLen(): Argument #1 ($maxLength) must be greater than or equal to 0",
+                        ),
+                    ));
+                }
+                let state = self.spl_file_object_state_mut(&object, method_name, span)?;
+                state.max_line_len = max_length as usize;
+                Ok(Value::Null)
+            }
             "key" => {
                 expect_arity("SplFileObject::key", &args, 0, span)?;
                 let state = self.spl_file_object_state(&object, method_name, span)?;
@@ -17799,12 +17957,16 @@ impl Interpreter {
                 expect_arity("SplFileObject::next", &args, 0, span)?;
                 let state = self.spl_file_object_state_mut(&object, method_name, span)?;
                 state.cursor = state.cursor.saturating_add(1).min(state.lines.len());
+                Self::spl_file_object_sync_byte_position_from_cursor(state);
+                state.eof = state.cursor >= state.lines.len();
                 Ok(Value::Null)
             }
             "rewind" => {
                 expect_arity("SplFileObject::rewind", &args, 0, span)?;
                 let state = self.spl_file_object_state_mut(&object, method_name, span)?;
                 state.cursor = 0;
+                state.byte_position = 0;
+                state.eof = state.lines.is_empty();
                 Ok(Value::Null)
             }
             "seek" => {
@@ -17822,17 +17984,19 @@ impl Interpreter {
                 }
                 let state = self.spl_file_object_state_mut(&object, method_name, span)?;
                 state.cursor = (line as usize).min(state.lines.len());
+                Self::spl_file_object_sync_byte_position_from_cursor(state);
+                state.eof = state.cursor >= state.lines.len();
                 Ok(Value::Null)
             }
             "valid" => {
                 expect_arity("SplFileObject::valid", &args, 0, span)?;
                 let state = self.spl_file_object_state(&object, method_name, span)?;
-                Ok(Value::Bool(state.cursor < state.lines.len()))
+                Ok(Value::Bool(!state.eof && state.cursor < state.lines.len()))
             }
             "eof" => {
                 expect_arity("SplFileObject::eof", &args, 0, span)?;
                 let state = self.spl_file_object_state(&object, method_name, span)?;
-                Ok(Value::Bool(state.cursor >= state.lines.len()))
+                Ok(Value::Bool(state.eof))
             }
             _ => Err(runtime_error(
                 span,
@@ -110160,7 +110324,9 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
             .and_then(|message| message.split_once(": "))
             .map(|(_, message)| message.to_string())
         {
-            if message.contains("must be greater than or equal to 0") {
+            if message.contains("must be greater than or equal to 0")
+                || message.contains("must be greater than 0")
+            {
                 return Some(("ValueError", message));
             }
             if message.starts_with("Cannot open file") {

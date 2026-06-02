@@ -4,6 +4,26 @@
 
 Implemented:
 
+- Added a bounded `SplFileObject` byte-read and max-line-length lane on the
+  interpreter path. Local UTF-8 `SplFileObject` instances now expose
+  `fgetc()`, `fread()`, `fpassthru()`, `setMaxLineLen()`, and
+  `getMaxLineLen()` through core metadata and dispatch. Bounded byte reads
+  share a local byte cursor, derive `key()` from consumed newline boundaries,
+  and set EOF after the failed/terminal read boundary used by the reached rows;
+  max-line length limits the covered line presentation path and rejects
+  negative lengths with the PHP-shaped `ValueError`. Focused proof covers the
+  Rust `spl_file_object_byte_reads_passthru_and_max_line_length` regression,
+  selected public PHPT rows `fileobject_002.phpt`, `bug65545.phpt`,
+  `SplFileObject_fpassthru_basic.phpt`,
+  `fileobject_getmaxlinelen_basic.phpt`,
+  `fileobject_setmaxlinelen_basic.phpt`,
+  `fileobject_setmaxlinelen_error001.phpt`, and `bug67805.phpt`, plus build,
+  fmt, and diff checks. Unsupported edges remain non-local/user stream
+  wrappers, write/append modes, `SplTempFileObject`, `SplFileInfo`
+  inheritance metadata, full max-line chunked cursor parity for every mixed
+  read/seek path, binary/non-UTF-8 byte fidelity, independent nested iterator
+  cursors, serialization parity, references/COW, and native lowering.
+
 - Added a bounded class/object introspection diagnostics lane on the
   interpreter path. `get_class()` now raises a catchable PHP-shaped
   `TypeError` for non-object operands, `get_parent_class()` now runs bounded

@@ -2680,11 +2680,16 @@
 - SPL `SplFileObject` has a bounded local UTF-8 line-cursor runtime model for
   construction from local paths and local `file://` URLs in read-only `r`,
   `rb`, or `rt` modes, plus `current()`, `getCurrentLine()`, `fgets()`,
-  `key()`, `next()`, `rewind()`, `seek()`, `valid()`, `eof()`, and ordinary
-  by-value `foreach` through the `Iterator` surface. Lines retain their
+  `fgetc()`, `fread()`, `fpassthru()`, `key()`, `next()`, `rewind()`,
+  `seek()`, `valid()`, `eof()`, and ordinary by-value `foreach` through the
+  `Iterator` surface. Lines retain their
   trailing newline when present, out-of-range non-negative `seek()` positions
   move to the invalid end cursor, and negative `seek()` raises the bounded
-  PHP-shaped `ValueError`. The local line state also supports the
+  PHP-shaped `ValueError`. Bounded byte reads advance a local UTF-8 byte cursor
+  and derive `key()` from consumed newline boundaries, while `setMaxLineLen()`
+  / `getMaxLineLen()` apply the current max-line presentation to
+  `current()` / `getCurrentLine()` / `fgets()` in the covered local-file
+  slice. The local line state also supports the
   `DROP_NEW_LINE`, `READ_AHEAD`, `SKIP_EMPTY`, and `READ_CSV` constants,
   `setFlags()` / `getFlags()`, newline trimming for `current()` /
   `getCurrentLine()` under `DROP_NEW_LINE`, `setCsvControl()` /
@@ -2692,7 +2697,8 @@
   `READ_CSV`, and local-file `fgetcsv()` over the bounded CSV parser.
   Non-local/user stream wrappers, write/append modes, `SplTempFileObject`,
   `SplFileInfo` inheritance metadata, `fputcsv()` / `fwrite()` on
-  `SplFileObject`, full `READ_AHEAD` / `SKIP_EMPTY` side effects, broad CSV
+  `SplFileObject`, full max-line chunked cursor parity for every mixed
+  read/seek path, full `READ_AHEAD` / `SKIP_EMPTY` side effects, broad CSV
   multiline/deprecation/default-escape parity, binary or non-UTF-8 line
   storage, independent nested iterator cursors, serialization parity,
   references/COW, and native lowering remain unsupported.

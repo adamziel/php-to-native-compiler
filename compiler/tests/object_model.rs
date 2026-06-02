@@ -16364,6 +16364,56 @@ try {
 }
 
 #[test]
+fn spl_file_object_byte_reads_passthru_and_max_line_length() {
+    use std::fs;
+
+    let fixture_dir =
+        std::env::temp_dir().join(format!("phpc-spl-file-object-read-{}", std::process::id()));
+    fs::create_dir_all(&fixture_dir).unwrap();
+    let fixture = fixture_dir.join("read.txt");
+    fs::write(&fixture, "0\n1\n2").unwrap();
+    let fixture_path = fixture.display().to_string().replace('\\', "\\\\");
+
+    let source = format!(
+        r#"<?php
+$file = new SplFileObject("{fixture_path}");
+var_dump($file->key());
+var_dump($file->fgetc());
+var_dump($file->key(), $file->eof());
+var_dump($file->fgetc());
+var_dump($file->key(), $file->eof());
+var_dump($file->fread(1));
+var_dump($file->key());
+var_dump($file->fread(99));
+var_dump($file->key(), $file->eof());
+var_dump($file->fgetc());
+
+$again = new SplFileObject("{fixture_path}");
+var_dump($again->fpassthru());
+var_dump($again->eof(), $again->key());
+
+$limited = new SplFileObject("{fixture_path}");
+$limited->setMaxLineLen(1);
+var_dump($limited->getMaxLineLen());
+var_dump($limited->getCurrentLine());
+try {{
+    $limited->setMaxLineLen(-1);
+}} catch (ValueError $e) {{
+    echo $e->getMessage(), "\n";
+}}
+"#
+    );
+
+    let execution = run_source(&source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "int(0)\nstring(1) \"0\"\nint(0)\nbool(false)\nstring(1) \"\n\"\nint(1)\nbool(false)\nstring(1) \"1\"\nint(1)\nstring(2) \"\n2\"\nint(2)\nbool(true)\nbool(false)\n0\n1\n2int(5)\nbool(true)\nint(2)\nint(1)\nstring(1) \"0\"\nSplFileObject::setMaxLineLen(): Argument #1 ($maxLength) must be greater than or equal to 0\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn spl_doubly_linked_list_debug_info_and_uncaught_type_error_shape() {
     let source = r#"<?php
 $list = new SplDoublyLinkedList();
