@@ -4,6 +4,19 @@
 
 Implemented:
 
+- Added a bounded `array_slice()` non-array first-argument diagnostics lane.
+  Direct and string-valued dynamic interpreter calls now raise catchable
+  PHP-shaped `TypeError`s when argument #1 is not an array. Existing slice
+  ordering, integer offset handling, nullable length coercion,
+  `$preserve_keys` bool coercion, reference-backed result slots, metadata
+  visibility, and native-lowering rejection remain unchanged. Focused proof
+  covers the Rust `array_slice` regression suite, the direct runtime-error CLI
+  snapshot, and selected public `array_slice` PHPT rows. Unsupported edges
+  remain non-int offset coercion, PHP deprecation warnings for weak
+  nullable-int length or bool preserve-key coercions, reference/COW graph
+  parity beyond existing result-slot behavior, object handle identity/resource
+  parity, exact native object internals, and native lowering.
+
 - Added a bounded JSON input string-argument boundary lane. `json_decode()`
   and `json_validate()` now route their `$json` operands through the shared
   PHP-shaped string byte boundary, so scalar values keep the existing parser
@@ -33505,7 +33518,8 @@ Tested:
   exits 255 and reports an uncaught PHP-shaped `TypeError` for non-coercible
   `array_reverse()` `preserve_keys` values.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_slice_non_array.php`
-  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_slice_non_array.php:2:6: unsupported call array_slice(): first argument must be array, got int`.
+  exits 255 and reports an uncaught PHP-shaped `TypeError` for non-array
+  `array_slice()` first operands.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_slice_offset_non_int.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_slice_offset_non_int.php:3:6: unsupported call array_slice(): offset argument must be int in the current subset, got string`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_slice_length_non_int.php`

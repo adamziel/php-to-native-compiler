@@ -6270,7 +6270,7 @@
   `empty` operands, non-array `array_key_first`/`array_key_last` operands,
   non-array `current` operands, non-array `array_is_list` operands,
   non-array `array_reverse` operands, non-coercible `array_reverse`
-  preserve-key flag values, non-array `array_slice` operands, non-int `array_slice`
+  preserve-key flag values, non-int `array_slice`
   offsets, invalid `array_slice` nullable-int lengths, invalid
   `array_slice` bool preserve-key flag values, non-array `array_chunk` operands,
   non-int/non-positive `array_chunk` lengths, non-coercible `array_chunk`
@@ -7332,6 +7332,7 @@
   that insertion-order offset to the end, supports negative offsets counted
   back from the end, reindexes integer-keyed entries from zero, preserves
   string keys, and is available through string-valued dynamic function calls.
+  Non-array first operands raise catchable PHP-shaped `TypeError`s.
   `array_slice($array, $offset, $length)` accepts nullable PHP-internal integer
   lengths, including integer, boolean, finite-float, and numeric-string values
   that truncate inside the 64-bit PHP integer range. Positive lengths limit the
@@ -7698,8 +7699,8 @@
   `array_keys` operands, unsupported `array_keys` search-value comparisons,
   non-coercible `array_keys` strict-mode flag values,
   non-array `array_reverse` operands, non-coercible
-  `array_reverse` preserve-key flag values, non-array `array_slice`
-  operands, non-int `array_slice` offsets, invalid `array_slice`
+  `array_reverse` preserve-key flag values, non-int `array_slice` offsets,
+  invalid `array_slice`
   nullable-int lengths, invalid `array_slice` bool preserve-key flag values, non-array
   `array_chunk` operands, non-int/non-positive `array_chunk` lengths,
   non-coercible `array_chunk` preserve-key flag values, non-array `array_pad`
@@ -10071,7 +10072,8 @@
   entries from that insertion-order offset to the end, supports negative
   offsets counted back from the end, reindexes integer-keyed entries from zero,
   preserves string keys, and is available through string-valued dynamic
-  function calls. `array_slice($array, $offset, $length)` also accepts
+  function calls. Non-array first operands raise catchable PHP-shaped
+  `TypeError`s. `array_slice($array, $offset, $length)` also accepts
   nullable PHP-internal integer lengths, including integer, boolean,
   finite-float, and numeric-string values that truncate inside the 64-bit PHP
   integer range, with positive lengths limiting the number of returned entries,

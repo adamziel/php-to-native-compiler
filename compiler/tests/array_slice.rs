@@ -190,14 +190,34 @@ var_dump(array_slice($items, 1, 2, true));
 
 #[test]
 fn array_slice_requires_array_first_argument() {
-    let error = runtime_error("<?php\necho array_slice(42, 0);\n");
+    let source = r#"<?php
+foreach ([null, 42, "items", true, false] as $value) {
+    try {
+        array_slice($value, 0);
+    } catch (TypeError $e) {
+        echo $e->getMessage(), "\n";
+    }
+}
 
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 6);
+$call = "array_slice";
+try {
+    $call(42, 0);
+} catch (TypeError $e) {
+    echo $e->getMessage();
+}
+"#;
+
+    let execution = run_source(source).unwrap();
     assert_eq!(
-        error.message,
-        "unsupported call array_slice(): first argument must be array, got int"
+        execution.stdout,
+        "array_slice(): Argument #1 ($array) must be of type array, null given\n\
+array_slice(): Argument #1 ($array) must be of type array, int given\n\
+array_slice(): Argument #1 ($array) must be of type array, string given\n\
+array_slice(): Argument #1 ($array) must be of type array, true given\n\
+array_slice(): Argument #1 ($array) must be of type array, false given\n\
+array_slice(): Argument #1 ($array) must be of type array, int given"
     );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
