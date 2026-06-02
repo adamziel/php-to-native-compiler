@@ -4,6 +4,17 @@
 
 Implemented:
 
+- Accepted checkpoint `6ca895a9` as the current public PHPT score source after
+  the replacement full pinned php-src gate completed with zero
+  latest-published PASS regressions. The public-comparable score is now
+  `6141 / 20294 = 30.26%`, up from `6090 / 20294 = 30.01%` at checkpoint
+  `c307401c`. The accepted gate evidence is
+  `state/logs/phpt-full-current-score-20260602T200309Z-php-src-f97ff59-public-6ca895a9-source-6ca895a9`;
+  aggregate counts were `6141` passed, `12865` failed, `2759` skipped, `16`
+  xfailed, `549` borked, and `1` warned. The normalized PASS regression
+  comparison was `6137` current passes vs. `6086` baseline passes with `0`
+  regressions, and the invalid-proof-marker summary reported `0` hits.
+
 - Added a bounded generalized hash HMAC / PBKDF2 / HKDF lane on the
   interpreter path. `hash_hmac()` now supports lowercase hex and raw binary
   output for the bounded MD2/MD4/MD5/SHA-1/SHA-2/SHA-3/Whirlpool digest set,
@@ -108,9 +119,9 @@ Implemented:
   user-array sort callback surface, serialization/unserialization, full
   reference/COW identity, and native lowering.
 
-- Accepted checkpoint `c307401c` as the current public PHPT score source after
+- Accepted checkpoint `c307401c` as the previous public PHPT score source after
   the full pinned php-src gate completed with zero latest-published PASS
-  regressions. The public-comparable score is now `6090 / 20294 = 30.01%`,
+  regressions. The public-comparable score was `6090 / 20294 = 30.01%`,
   up from `5941 / 20294 = 29.27%` at checkpoint `663e3142`. The accepted gate
   evidence is
   `state/logs/phpt-full-current-score-20260602T185136Z-php-src-f97ff59-public-c307401c-source-c307401c`;
