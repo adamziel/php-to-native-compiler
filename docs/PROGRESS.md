@@ -4,6 +4,24 @@
 
 Implemented:
 
+- Added a bounded date constructor argument-count diagnostics lane.
+  `DateTime::__construct()` now raises a catchable PHP-shaped
+  `ArgumentCountError` when called with more than the supported two
+  arguments, and `DateTimeZone::__construct()` raises catchable PHP-shaped
+  `ArgumentCountError`s when called with anything other than one argument.
+  Existing bounded DateTime construction, DateTimeZone metadata, timezone
+  parsing, `date_create()` behavior, metadata visibility, and native-lowering
+  rejection remain unchanged. Focused proof covers the
+  `datetime_core_constructors_report_catchable_argument_count_errors` Rust
+  regression, the full DateTime Rust file, direct CLI probes, selected public
+  PHPT rows `DateTime_construct_error.phpt` and
+  `DateTimeZone_construct_error.phpt`, build, fmt, and diff checks.
+  Unsupported edges remain exact internal DateTime/DateTimeZone constructor
+  diagnostics beyond arity, scalar/stringable timezone coercions outside the
+  covered slices, invalid timezone exception-class parity, DateTimeImmutable,
+  DateInterval arithmetic, full timezone database/history, references/COW,
+  and native lowering.
+
 - Added a bounded digest `$binary` bool-boundary lane. `md5()`, `sha1()`,
   `md5_file()`, and `sha1_file()` now route optional `$binary` operands
   through the shared PHP-internal bool boundary, so scalar values keep

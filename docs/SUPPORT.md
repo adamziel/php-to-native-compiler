@@ -6007,9 +6007,13 @@
   ?DateTimeZone $timezone = null)` accepts the optional bounded timezone
   object for strings without an explicit timezone, while timestamp strings
   such as `@0` and explicit timezone tokens retain their own timezone
-  identity. `idate()` covers the current integer-returning date/time token
-  subset, including ISO weekday `N`, week number `W`, and week-numbering year
-  `o`. Procedural `date_format()`, `date_timestamp_get()`,
+  identity. `DateTime::__construct()` reports a catchable PHP-shaped
+  `ArgumentCountError` for calls with more than two arguments, and
+  `DateTimeZone::__construct()` reports catchable PHP-shaped
+  `ArgumentCountError`s for calls with fewer or more than its one supported
+  timezone argument. `idate()` covers the current integer-returning date/time
+  token subset, including ISO weekday `N`, week number `W`, and
+  week-numbering year `o`. Procedural `date_format()`, `date_timestamp_get()`,
   `date_timestamp_set()`, `date_date_set()`, `date_isodate_set()`,
   `date_time_set()`, `date_offset_get()`, `date_timezone_get()`, and
   `date_timezone_set()` share that object state. `DateTime::__set_state()`
@@ -6031,8 +6035,9 @@
   `DateTimeZone` objects for supported named or fixed-offset identifiers, and
   emits a PHP-shaped warning plus `false` for unsupported or malformed
   identifiers in the covered local CLI row. Full timezone database validation,
-  exact internal `DateTimeZone` constructor diagnostics and scalar
-  coercion/deprecation parity, `DateTimeImmutable`, broad `DateTimeInterface`
+  exact internal `DateTime` / `DateTimeZone` constructor diagnostics beyond
+  the covered arity slice and scalar coercion/deprecation parity,
+  `DateTimeImmutable`, broad `DateTimeInterface`
   runtime/interface parity beyond the reached constant diagnostic text, all
   historical transition rules, DateTime state arrays outside the bounded
   exported `date`/`timezone_type`/`timezone` shape, exact invalid-modifier

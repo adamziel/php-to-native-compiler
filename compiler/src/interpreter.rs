@@ -105839,6 +105839,10 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
         return Some(("TypeError", message));
     }
 
+    if let Some(message) = date_constructor_argument_count_error_message(error) {
+        return Some(("ArgumentCountError", message));
+    }
+
     if let Some(message) = reflection_constructor_argument_count_error_message(error) {
         return Some(("TypeError", message));
     }
@@ -106632,6 +106636,40 @@ fn json_exact_argument_count_error_message(error: &Diagnostic) -> Option<String>
     Some(format!(
         "{callable} expects exactly 0 arguments, {actual} given"
     ))
+}
+
+fn date_constructor_argument_count_error_message(error: &Diagnostic) -> Option<String> {
+    if error.phase != Phase::Runtime {
+        return None;
+    }
+
+    if let Some(actual) = error
+        .message
+        .strip_prefix(
+            "arity mismatch for DateTime::__construct(): expected 0 to 2 argument(s), got ",
+        )
+        .and_then(|actual| actual.parse::<usize>().ok())
+    {
+        if actual > 2 {
+            return Some(format!(
+                "DateTime::__construct() expects at most 2 arguments, {actual} given"
+            ));
+        }
+        return None;
+    }
+
+    let actual = error
+        .message
+        .strip_prefix(
+            "arity mismatch for DateTimeZone::__construct(): expected 1 argument(s), got ",
+        )
+        .and_then(|actual| actual.parse::<usize>().ok())?;
+    if actual != 1 {
+        return Some(format!(
+            "DateTimeZone::__construct() expects exactly 1 argument, {actual} given"
+        ));
+    }
+    None
 }
 
 fn reflection_constructor_argument_count_error_message(error: &Diagnostic) -> Option<String> {

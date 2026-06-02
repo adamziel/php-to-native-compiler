@@ -124,6 +124,42 @@ echo $timestamp->getTimezone()->getName(), "|", $timestamp->format("Y-m-d H:i:s"
 }
 
 #[test]
+fn datetime_core_constructors_report_catchable_argument_count_errors() {
+    let execution = run_source(
+        r#"<?php
+date_default_timezone_set("UTC");
+try {
+    new DateTime("GMT", timezone_open("GMT"), 99);
+} catch (TypeError $e) {
+    echo $e::class, ": ", $e->getMessage(), "\n";
+}
+try {
+    new DateTimeZone();
+} catch (TypeError $e) {
+    echo $e::class, ": ", $e->getMessage(), "\n";
+}
+try {
+    new DateTimeZone("GMT", 99);
+} catch (TypeError $e) {
+    echo $e::class, ": ", $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "ArgumentCountError: DateTime::__construct() expects at most 2 arguments, 3 given\n",
+            "ArgumentCountError: DateTimeZone::__construct() expects exactly 1 argument, 0 given\n",
+            "ArgumentCountError: DateTimeZone::__construct() expects exactly 1 argument, 2 given\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn datetime_set_state_recreates_exported_bounded_state() {
     let execution = run_source(
         r#"<?php
