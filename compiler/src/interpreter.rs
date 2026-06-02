@@ -85460,6 +85460,8 @@ impl Interpreter {
                 filesystem_group_value,
                 span,
             ),
+            "posix_getpwuid" => call_posix_getpwuid(&args, span),
+            "posix_getgrgid" => call_posix_getgrgid(&args, span),
             "umask" => self.call_umask(&args, span),
             "getmypid" => call_getmypid(&args, span),
             "php_uname" => call_php_uname(&args, span),
@@ -102298,6 +102300,14 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
         "connection_aborted" | "connection_status" => ("int", vec![]),
         "get_current_user" => ("string", vec![]),
         "getlastmod" | "getmyinode" | "getmyuid" | "getmygid" => ("int|false", vec![]),
+        "posix_getpwuid" => (
+            "array|false",
+            vec![reflection_internal_param("user_id", "int")],
+        ),
+        "posix_getgrgid" => (
+            "array|false",
+            vec![reflection_internal_param("group_id", "int")],
+        ),
         "umask" => (
             "int",
             vec![reflection_internal_optional_null_param("mask", "?int")],
@@ -102349,6 +102359,8 @@ fn reflection_internal_extension_name(name: &str) -> String {
         "bcmath".to_string()
     } else if name.starts_with("ctype_") {
         "ctype".to_string()
+    } else if name.starts_with("posix_") {
+        "posix".to_string()
     } else {
         "standard".to_string()
     }
@@ -106477,6 +106489,8 @@ fn is_builtin(name: &str) -> bool {
             | "getmyinode"
             | "getmyuid"
             | "getmygid"
+            | "posix_getpwuid"
+            | "posix_getgrgid"
             | "umask"
             | "getmypid"
             | "php_uname"
@@ -131634,17 +131648,128 @@ fn username_for_file_metadata(_metadata: &fs::Metadata) -> Option<String> {
 
 #[cfg(unix)]
 fn username_for_uid(uid: u32) -> Option<String> {
+    posix_passwd_entry_for_uid(uid).map(|entry| entry.name)
+}
+
+#[derive(Debug, Clone)]
+struct PosixPasswdEntry {
+    name: String,
+    passwd: String,
+    uid: u32,
+    gid: u32,
+    gecos: String,
+    dir: String,
+    shell: String,
+}
+
+#[derive(Debug, Clone)]
+struct PosixGroupEntry {
+    name: String,
+    passwd: String,
+    members: Vec<String>,
+    gid: u32,
+}
+
+fn call_posix_getpwuid(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("posix_getpwuid", args, 1, span)?;
+    let uid = php_internal_int_argument("posix_getpwuid()", 1, "user_id", &args[0], span)?;
+    let Ok(uid) = u32::try_from(uid) else {
+        return Ok(Value::Bool(false));
+    };
+
+    Ok(posix_passwd_entry_for_uid(uid)
+        .map(posix_passwd_entry_value)
+        .unwrap_or(Value::Bool(false)))
+}
+
+fn call_posix_getgrgid(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("posix_getgrgid", args, 1, span)?;
+    let gid = php_internal_int_argument("posix_getgrgid()", 1, "group_id", &args[0], span)?;
+    let Ok(gid) = u32::try_from(gid) else {
+        return Ok(Value::Bool(false));
+    };
+
+    Ok(posix_group_entry_for_gid(gid)
+        .map(posix_group_entry_value)
+        .unwrap_or(Value::Bool(false)))
+}
+
+fn posix_passwd_entry_for_uid(uid: u32) -> Option<PosixPasswdEntry> {
     let passwd = fs::read_to_string("/etc/passwd").ok()?;
     passwd.lines().find_map(|line| {
-        let mut parts = line.split(':');
+        let mut parts = line.splitn(7, ':');
         let name = parts.next()?;
         if name.is_empty() {
             return None;
         }
-        parts.next()?;
+        let passwd = parts.next()?;
         let entry_uid = parts.next()?.parse::<u32>().ok()?;
-        (entry_uid == uid).then(|| name.to_string())
+        let gid = parts.next()?.parse::<u32>().ok()?;
+        let gecos = parts.next()?;
+        let dir = parts.next()?;
+        let shell = parts.next()?;
+        (entry_uid == uid).then(|| PosixPasswdEntry {
+            name: name.to_string(),
+            passwd: passwd.to_string(),
+            uid: entry_uid,
+            gid,
+            gecos: gecos.to_string(),
+            dir: dir.to_string(),
+            shell: shell.to_string(),
+        })
     })
+}
+
+fn posix_group_entry_for_gid(gid: u32) -> Option<PosixGroupEntry> {
+    let group = fs::read_to_string("/etc/group").ok()?;
+    group.lines().find_map(|line| {
+        let mut parts = line.splitn(4, ':');
+        let name = parts.next()?;
+        if name.is_empty() {
+            return None;
+        }
+        let passwd = parts.next()?;
+        let entry_gid = parts.next()?.parse::<u32>().ok()?;
+        let members = parts
+            .next()
+            .unwrap_or_default()
+            .split(',')
+            .filter(|member| !member.is_empty())
+            .map(str::to_string)
+            .collect::<Vec<_>>();
+        (entry_gid == gid).then(|| PosixGroupEntry {
+            name: name.to_string(),
+            passwd: passwd.to_string(),
+            members,
+            gid: entry_gid,
+        })
+    })
+}
+
+fn posix_passwd_entry_value(entry: PosixPasswdEntry) -> Value {
+    let mut array = PhpArray::new();
+    array.insert("name", Value::String(entry.name));
+    array.insert("passwd", Value::String(entry.passwd));
+    array.insert("uid", Value::Int(i64::from(entry.uid)));
+    array.insert("gid", Value::Int(i64::from(entry.gid)));
+    array.insert("gecos", Value::String(entry.gecos));
+    array.insert("dir", Value::String(entry.dir));
+    array.insert("shell", Value::String(entry.shell));
+    Value::Array(array)
+}
+
+fn posix_group_entry_value(entry: PosixGroupEntry) -> Value {
+    let mut members = PhpArray::new();
+    for member in entry.members {
+        let _ = members.append(Value::String(member));
+    }
+
+    let mut array = PhpArray::new();
+    array.insert("name", Value::String(entry.name));
+    array.insert("passwd", Value::String(entry.passwd));
+    array.insert("members", Value::Array(members));
+    array.insert("gid", Value::Int(i64::from(entry.gid)));
+    Value::Array(array)
 }
 
 fn call_php_sapi_name(args: &[Value], span: Span) -> CompileResult<Value> {

@@ -4,6 +4,24 @@
 
 Implemented:
 
+- Added a bounded POSIX account/group lookup lane for filesystem metadata
+  diagnostics. `phpc run` now supports `posix_getpwuid($user_id)` and
+  `posix_getgrgid($group_id)` for integer-like IDs against the local
+  `/etc/passwd` and `/etc/group` text databases, returning PHP-shaped arrays
+  with the standard `name`/`passwd`/`uid`/`gid`/`gecos`/`dir`/`shell` and
+  `name`/`passwd`/`members`/`gid` fields or `false` for negative,
+  out-of-range, missing, or unreadable entries. Dynamic-call,
+  `function_exists()`, `is_callable()`, and `ReflectionFunction` metadata
+  recognize the names, while native direct calls remain behind the existing
+  function-call boundary. Focused proof covers the new Rust
+  `posix_lookup_builtins` tests, direct UID/GID and reflection probes, and the
+  selected public PHPT error rows
+  `ext/posix/tests/posix_getpwuid_error.phpt` and
+  `ext/posix/tests/posix_getgrgid_error.phpt`. Unsupported edges remain NSS,
+  LDAP, shadow/group database backends outside the local text files,
+  non-UTF-8 account/group database entries, exact platform-specific warnings,
+  the rest of the POSIX extension, and native lowering.
+
 - Added a bounded leading namespace-separator introspection lookup lane for the
   selected `Zend/tests/namespaces/bug47593.phpt` surface. String-name
   `function_exists()` now treats one leading `\` as PHP's global namespace

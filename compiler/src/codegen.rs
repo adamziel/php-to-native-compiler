@@ -66576,6 +66576,8 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "getmyinode",
     "getmyuid",
     "getmygid",
+    "posix_getpwuid",
+    "posix_getgrgid",
     "getmypid",
     "php_uname",
     "php_sapi_name",

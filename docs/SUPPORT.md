@@ -3169,6 +3169,13 @@
   file or `false` when no inspectable main source file is available.
   String-valued dynamic calls, `function_exists()`, `is_callable()`, and
   `ReflectionFunction` metadata recognize the builtins.
+- `posix_getpwuid($user_id)` and `posix_getgrgid($group_id)` over integer-like
+  IDs, using the local `/etc/passwd` and `/etc/group` text databases. Existing
+  entries return PHP-shaped arrays with the standard passwd/group keys;
+  negative, out-of-range, missing, and unreadable entries return `false`.
+  String-valued dynamic calls, `function_exists()`, `is_callable()`, and
+  `ReflectionFunction` metadata recognize the builtins as POSIX-extension
+  functions.
 - `getmypid()` with no arguments, returning the current `phpc run` process id
   as an integer. String-valued dynamic calls, `function_exists()`,
   `is_callable()`, and `ReflectionFunction` metadata recognize the builtin.
@@ -3359,7 +3366,7 @@
   `get_include_path`, `set_include_path`, `min`, `rand`, `mt_rand`,
   `getrandmax`, `mt_getrandmax`, `srand`, `mt_srand`, `random_int`,
   `random_bytes`, `lcg_value`, `array_rand`, `uniqid`,
-  `crypt`, `hash`, `hash_algos`, `hash_hmac_algos`, `hash_hmac`, `hash_pbkdf2`, `hash_equals`, `md5`, `md5_file`, `get_current_user`, `umask`, `getmypid`, `isset`, `empty`, `count`, `sizeof`, `compact`, `define`, `constant`, `defined`,
+  `crypt`, `hash`, `hash_algos`, `hash_hmac_algos`, `hash_hmac`, `hash_pbkdf2`, `hash_equals`, `md5`, `md5_file`, `get_current_user`, `posix_getpwuid`, `posix_getgrgid`, `umask`, `getmypid`, `isset`, `empty`, `count`, `sizeof`, `compact`, `define`, `constant`, `defined`,
   `array_key_exists`, `key_exists`, `array_key_first`, `array_key_last`, `current`,
   `array_is_list`, `array_values`, `array_keys`, `array_rand`, `array_reverse`, `array_slice`, `array_chunk`,
   `array_pad`, `array_merge`, `array_replace`, `array_combine`,
@@ -9356,6 +9363,12 @@
   until native source-file stat metadata, SAPI source identity, platform UID/GID
   policy, references/copy-on-write, and exact native diagnostics exist, while
   native function-table introspection recognizes the names.
+  `posix_getpwuid` and `posix_getgrgid` accept the same current local text
+  passwd/group database lookup subset as the builtin section above; direct
+  native calls still reject under the function-call boundary until native
+  account/group database lookup policy, platform identity APIs,
+  references/copy-on-write, and exact native diagnostics exist, while native
+  function-table introspection recognizes the names.
   `umask` accepts the same request-local metadata subset as the builtin
   section above; direct native `umask(...)` calls still reject under the
   function-call boundary until native filesystem creation state, process-mask
@@ -9595,7 +9608,8 @@
   `rtrim`, `strcmp`, `strcasecmp`, `strncmp`, `strncasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`,
   `strpos`, `stripos`, `strrpos`, `strripos`, `substr`, `str_shuffle`, `printf`, `fprintf`, `sprintf`, `vprintf`, `vfprintf`, `implode`, `basename`, `dirname`, `number_format`, `defined`,
   `function_exists`, `is_array`, `is_object`, `is_string`, `is_scalar`,
-  `count`, `sizeof`, `array_key_exists`, `is_callable`, `get_current_user`, `getmypid`, and `php_sapi_name`, exposes
+  `count`, `sizeof`, `array_key_exists`, `is_callable`, `get_current_user`,
+  `posix_getpwuid`, `posix_getgrgid`, `getmypid`, and `php_sapi_name`, exposes
   their name, false file/start/end/doc-comment metadata, current
   parameter/default metadata, return type, and by-reference-return predicate,
   and executes them through `invoke()`/`invokeArgs()`.
@@ -11474,7 +11488,8 @@
   `str_increment`, `str_decrement`, `trim`, `ltrim`, `rtrim`,
   `strcmp`, `strcasecmp`, `strncmp`, `strncasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`, `strpos`, `stripos`, `strrpos`, `strripos`,
   `substr`, `str_shuffle`, `printf`, `fprintf`, `sprintf`, `vprintf`, `vfprintf`, `implode`, `basename`, `dirname`, `number_format`, `defined`,
-  `function_exists`, `get_current_user`, `umask`, `getmypid`, and `php_sapi_name`. Closure metadata is supported for
+  `function_exists`, `get_current_user`, `posix_getpwuid`, `posix_getgrgid`,
+  `umask`, `getmypid`, and `php_sapi_name`. Closure metadata is supported for
   current closure values. The supported
   metadata methods are the name, file/start/end/doc-comment, parameter-list,
   return-type, by-reference-return, and stringification methods documented
@@ -12015,6 +12030,11 @@
   effective UID versus script-owner policy variants, account database changes
   during a request, exact diagnostics, and native lowering beyond
   function-table introspection
+- `posix_getpwuid()` and `posix_getgrgid()` behavior beyond the current local
+  `/etc/passwd` and `/etc/group` text-file slice: NSS, LDAP, shadow/group
+  database backends outside those files, non-UTF-8 account/group database
+  entries, exact platform-specific diagnostics, the rest of the POSIX
+  extension, and native lowering beyond function-table introspection
 - `umask()` behavior beyond the current request-local metadata slice:
   process-wide host umask mutation, non-Unix permission parity, exact default
   process mask discovery beyond the bounded initial `0022` value, creation
@@ -12176,6 +12196,13 @@ Unsupported code should fail with an explicit parse, runtime, or codegen error.
   helpers return `false`. Virtual sources, include-caller metadata, SAPI
   differences, Windows UID/GID parity, non-UTF-8 source paths, exact warning
   behavior for missing main files, and native lowering remain unsupported.
+- POSIX account/group lookup helpers in `phpc run`: `posix_getpwuid($user_id)`
+  reads a bounded local `/etc/passwd` entry and `posix_getgrgid($group_id)`
+  reads a bounded local `/etc/group` entry for integer-like IDs. Successful
+  lookups return PHP-shaped arrays; negative, out-of-range, missing, or
+  unreadable entries return `false`. NSS/LDAP, shadow/group database backends
+  outside those local text files, non-UTF-8 entries, exact diagnostics, broader
+  POSIX-extension functions, and native lowering remain unsupported.
 - Additional local filesystem link helpers in `phpc run`: `readlink()` returns
   UTF-8 local symlink targets and reports invalid local paths as inline PHP
   warnings plus `false`; `symlink()` creates bounded local symbolic links,

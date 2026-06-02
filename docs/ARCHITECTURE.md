@@ -3022,6 +3022,14 @@ for focused CLI compatibility. It returns the current main source file owner
 name when local metadata and the bounded `/etc/passwd` lookup are available,
 with `USER`/`LOGNAME` environment fallback, and it does not model NSS,
 remote directory services, web-server identities, or native runtime identity.
+`posix_getpwuid()` and `posix_getgrgid()` are interpreter-only POSIX account
+and group lookup boundaries for focused filesystem metadata diagnostics. They
+coerce one integer-like ID argument, read bounded local `/etc/passwd` and
+`/etc/group` text entries, return PHP-shaped account/group arrays on a match,
+and return `false` for negative, out-of-range, missing, or unreadable entries.
+They do not model NSS, LDAP, shadow databases, non-UTF-8 account data,
+platform-specific diagnostics, other POSIX-extension functions, or native
+runtime account lookup.
 Direct native reads, indexed reads, `isset(...)`, and `empty(...)` over the
 current request superglobals `$_SERVER`, `$_COOKIE`, `$_GET`, `$_POST`,
 `$_REQUEST`, and `$_FILES` reject through a request-state codegen boundary
@@ -4052,7 +4060,8 @@ argument semantics for string keys. A named internal-function slice re-enters
 the existing builtin dispatcher for `strlen`, `strtolower`, `trim`, `ltrim`,
 `rtrim`, `strcasecmp`, `strncmp`, `strncasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`,
 `strpos`, `substr`, `sprintf`, `implode`, `basename`, `dirname`, `defined`,
-`function_exists`, `count`, `sizeof`, `get_current_user`, `getmypid`, and `php_sapi_name`. Closure expressions also register a
+`function_exists`, `count`, `sizeof`, `get_current_user`, `posix_getpwuid`,
+`posix_getgrgid`, `getmypid`, and `php_sapi_name`. Closure expressions also register a
 request-local `ReflectionFunction` metadata snapshot, parsed body, and captured
 by-value snapshot keyed by closure id, so direct closure invocation,
 closure-valued `call_user_func()`/`call_user_func_array()` callbacks, and
