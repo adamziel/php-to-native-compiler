@@ -3695,16 +3695,19 @@
   array/object/resource coercions, and native lowering remain unsupported.
   `trim($value)`, `ltrim($value)`, `rtrim($value)`, and `chop($value)`
   support scalar/null string-convertible arguments, supported `__toString()`
-  objects, and PHP's default byte mask
-  including space, tab, LF, CR, vertical tab, form feed, and NUL. The optional
-  character mask supports literal bytes, empty masks, and simple incrementing
-  `x..y` byte ranges for represented runtime strings. Invalid `..` ranges such
-  as missing left/right endpoints, descending ranges, and ambiguous chained
-  ranges emit PHP-style warnings and return the original string. Broader
-  binary/null-byte edge cases beyond the current represented runtime-string
-  subset, arrays, resources, closures, objects without supported
-  `__toString()`, exact PHP diagnostics for every charlist spelling, and
-  native lowering remain unsupported.
+  objects, and PHP's default byte mask including space, tab, LF, CR, vertical
+  tab, form feed, and NUL. The subject and optional character mask use the
+  PHP-shaped internal string boundary: `null` emits the PHP deprecation before
+  becoming an empty byte string, and arrays, resources, closures, or objects
+  without supported visible `__toString()` raise catchable PHP-shaped
+  `TypeError`s. The optional character mask supports literal bytes, empty
+  masks, and simple incrementing `x..y` byte ranges for represented runtime
+  strings. Invalid `..` ranges such as missing left/right endpoints,
+  descending ranges, and ambiguous chained ranges emit PHP-style warnings and
+  return the original string. Broader binary/null-byte edge cases beyond the
+  current represented runtime-string subset, exact invalid `__toString()`
+  return diagnostics, exact PHP diagnostics for every charlist spelling,
+  references/COW, and native lowering remain unsupported.
   `array_push($array, ...$values)` supports direct calls and string-valued
   direct dynamic calls when the first argument is a direct variable array path,
   including selected nested paths such as `$array[$key]`. It evaluates pushed

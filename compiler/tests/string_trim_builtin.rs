@@ -10,13 +10,12 @@ fn trim_executes_current_default_mask_subset() {
         "<?php\n\
 echo trim(\" \\t128M\\n\"), \"|\";\n\
 echo trim(\"\\tabc\\n\"), \"|\";\n\
-echo trim(null), \"|\";\n\
 echo trim(42), \"|\";\n\
 echo trim(\"\\fABC\\f\");\n",
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "128M|abc||42|ABC");
+    assert_eq!(execution.stdout, "128M|abc|42|ABC");
     assert_eq!(execution.exit_code, 0);
 }
 
@@ -74,6 +73,68 @@ echo $call(\" ABC \");\n",
 }
 
 #[test]
+fn trim_family_uses_php_string_argument_boundary() {
+    let execution = run_source(
+        r#"<?php
+class Subject {
+    public function __toString() {
+        return " value ";
+    }
+}
+class Mask {
+    public function __toString() {
+        return "X";
+    }
+}
+class SlashMask {
+    public function __toString() {
+        return "/";
+    }
+}
+
+echo "[" . trim(new Subject) . "]|";
+$call = "ltrim";
+echo "[" . $call(new Subject) . "]|";
+echo rtrim("valueXX", new Mask), "|";
+$call = "chop";
+echo $call("value//", new SlashMask), "|";
+try {
+    trim([]);
+} catch (TypeError $e) {
+    echo $e->getMessage(), "|";
+}
+try {
+    ltrim("value", []);
+} catch (TypeError $e) {
+    echo $e->getMessage(), "|";
+}
+try {
+    rtrim(new stdClass);
+} catch (TypeError $e) {
+    echo $e->getMessage(), "|";
+}
+try {
+    chop("value", new stdClass);
+} catch (TypeError $e) {
+    echo $e->getMessage(), "|";
+}
+set_error_handler(function($_, $message) {
+    echo "deprecated:", $message, "|";
+});
+echo trim(null), "|";
+echo ltrim(" value ", null);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "[value]|[value ]|value|value|trim(): Argument #1 ($string) must be of type string, array given|ltrim(): Argument #2 ($characters) must be of type string, array given|rtrim(): Argument #1 ($string) must be of type string, stdClass given|chop(): Argument #2 ($characters) must be of type string, stdClass given|deprecated:trim(): Passing null to parameter #1 ($string) of type string is deprecated||deprecated:ltrim(): Passing null to parameter #2 ($characters) of type string is deprecated| value "
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn ltrim_executes_current_default_and_slash_mask_subset() {
     let execution = run_source(
         "<?php\n\
@@ -81,16 +142,12 @@ echo ltrim(\" \\t128M\\n\"), \"|\";\n\
 echo ltrim(\"///wp-content\", \"/\"), \"|\";\n\
 echo ltrim(\"\\r\\n\\t (SELECT\", \"\\r\\n\\t (\"), \"|\";\n\
 echo ltrim(\"AZpayload\", \"A..Z\"), \"|\";\n\
-echo ltrim(null), \"|\";\n\
 $call = \"ltrim\";\n\
 echo $call(\"//plugins\", \"/\");\n",
     )
     .unwrap();
 
-    assert_eq!(
-        execution.stdout,
-        "128M\n|wp-content|SELECT|payload||plugins"
-    );
+    assert_eq!(execution.stdout, "128M\n|wp-content|SELECT|payload|plugins");
     assert_eq!(execution.exit_code, 0);
 }
 
@@ -102,7 +159,6 @@ echo rtrim(\" \\t128M\\n\"), \"|\";\n\
 echo rtrim(\"localhost/\", \"/\"), \"|\";\n\
 echo rtrim(\"/wp-admin///\", \"/\"), \"|\";\n\
 echo rtrim(\"PAYLOADaz\", \"a..z\"), \"|\";\n\
-echo rtrim(null), \"|\";\n\
 $call = \"rtrim\";\n\
 echo $call(\"example.test///\", \"/\");\n",
     )
@@ -110,7 +166,7 @@ echo $call(\"example.test///\", \"/\");\n",
 
     assert_eq!(
         execution.stdout,
-        " \t128M|localhost|/wp-admin|PAYLOAD||example.test"
+        " \t128M|localhost|/wp-admin|PAYLOAD|example.test"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -163,13 +219,19 @@ echo $call(\"example.test///\", \"/\");\n",
 
 #[test]
 fn trim_rejects_forms_outside_supported_mask_semantics() {
-    let array_arg = run_source("<?php\ntrim(['ABC']);\n").unwrap_err();
-    assert_eq!(array_arg.phase, Phase::Runtime);
-    assert_eq!(array_arg.line, 2);
-    assert_eq!(array_arg.column, 1);
+    let array_arg = run_source(
+        r#"<?php
+try {
+    trim(['ABC']);
+} catch (TypeError $e) {
+    echo $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
     assert_eq!(
-        array_arg.message,
-        "unsupported call trim(): arrays are not supported"
+        array_arg.stdout,
+        "trim(): Argument #1 ($string) must be of type string, array given"
     );
 
     let too_few = run_source("<?php\ntrim();\n").unwrap_err();
@@ -184,22 +246,34 @@ fn trim_rejects_forms_outside_supported_mask_semantics() {
 
 #[test]
 fn ltrim_rejects_forms_outside_supported_mask_semantics() {
-    let array_arg = run_source("<?php\nltrim(['ABC']);\n").unwrap_err();
-    assert_eq!(array_arg.phase, Phase::Runtime);
-    assert_eq!(array_arg.line, 2);
-    assert_eq!(array_arg.column, 1);
+    let array_arg = run_source(
+        r#"<?php
+try {
+    ltrim(['ABC']);
+} catch (TypeError $e) {
+    echo $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
     assert_eq!(
-        array_arg.message,
-        "unsupported call ltrim(): arrays are not supported"
+        array_arg.stdout,
+        "ltrim(): Argument #1 ($string) must be of type string, array given"
     );
 
-    let mask_array = run_source("<?php\nltrim('ABC', ['A']);\n").unwrap_err();
-    assert_eq!(mask_array.phase, Phase::Runtime);
-    assert_eq!(mask_array.line, 2);
-    assert_eq!(mask_array.column, 1);
+    let mask_array = run_source(
+        r#"<?php
+try {
+    ltrim('ABC', ['A']);
+} catch (TypeError $e) {
+    echo $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
     assert_eq!(
-        mask_array.message,
-        "unsupported call ltrim(): character mask arrays are not supported"
+        mask_array.stdout,
+        "ltrim(): Argument #2 ($characters) must be of type string, array given"
     );
 
     let too_few = run_source("<?php\nltrim();\n").unwrap_err();
@@ -214,22 +288,34 @@ fn ltrim_rejects_forms_outside_supported_mask_semantics() {
 
 #[test]
 fn rtrim_rejects_forms_outside_supported_mask_semantics() {
-    let array_arg = run_source("<?php\nrtrim(['ABC']);\n").unwrap_err();
-    assert_eq!(array_arg.phase, Phase::Runtime);
-    assert_eq!(array_arg.line, 2);
-    assert_eq!(array_arg.column, 1);
+    let array_arg = run_source(
+        r#"<?php
+try {
+    rtrim(['ABC']);
+} catch (TypeError $e) {
+    echo $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
     assert_eq!(
-        array_arg.message,
-        "unsupported call rtrim(): arrays are not supported"
+        array_arg.stdout,
+        "rtrim(): Argument #1 ($string) must be of type string, array given"
     );
 
-    let mask_array = run_source("<?php\nrtrim('ABC', ['C']);\n").unwrap_err();
-    assert_eq!(mask_array.phase, Phase::Runtime);
-    assert_eq!(mask_array.line, 2);
-    assert_eq!(mask_array.column, 1);
+    let mask_array = run_source(
+        r#"<?php
+try {
+    rtrim('ABC', ['C']);
+} catch (TypeError $e) {
+    echo $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
     assert_eq!(
-        mask_array.message,
-        "unsupported call rtrim(): character mask arrays are not supported"
+        mask_array.stdout,
+        "rtrim(): Argument #2 ($characters) must be of type string, array given"
     );
 
     let too_few = run_source("<?php\nrtrim();\n").unwrap_err();

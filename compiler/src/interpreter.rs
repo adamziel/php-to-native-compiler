@@ -120219,25 +120219,11 @@ impl Interpreter {
             ));
         }
 
-        if matches!(args[0], Value::Array(_)) {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(function, "arrays are not supported"),
-            ));
-        }
-
-        let value = self.trim_string_argument_bytes(function, &args[0], span)?;
+        let value =
+            self.php_string_argument_bytes_with_magic(function, 1, "string", &args[0], span)?;
         let mask = if let Some(mask) = args.get(1) {
-            if matches!(mask, Value::Array(_)) {
-                return Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        function,
-                        "character mask arrays are not supported",
-                    ),
-                ));
-            }
-            let mask = self.trim_string_argument_bytes(function, mask, span)?;
+            let mask =
+                self.php_string_argument_bytes_with_magic(function, 2, "characters", mask, span)?;
             match expanded_trim_mask(&mask) {
                 TrimMaskExpansion::Expanded(mask) => mask,
                 TrimMaskExpansion::Invalid(message) => {
@@ -120252,30 +120238,6 @@ impl Interpreter {
         Ok(interpreter_value_from_php_string_bytes(
             trim_bytes_with_mask(&value, &mask, mode),
         ))
-    }
-
-    fn trim_string_argument_bytes(
-        &mut self,
-        function: &'static str,
-        value: &Value,
-        span: Span,
-    ) -> CompileResult<Vec<u8>> {
-        match value {
-            Value::Object(object) => {
-                if let Some(output) =
-                    self.object_to_string_with_magic(object.clone(), function, span)?
-                {
-                    Ok(output.into_bytes())
-                } else {
-                    value
-                        .try_echo_bytes()
-                        .map_err(|error| runtime_error(span, error))
-                }
-            }
-            _ => value
-                .try_echo_bytes()
-                .map_err(|error| runtime_error(span, error)),
-        }
     }
 
     fn call_strnatcmp(

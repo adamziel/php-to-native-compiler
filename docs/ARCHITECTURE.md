@@ -2695,14 +2695,19 @@ the optional separator byte list. Unicode titlecasing, locale behavior, exact
 invalid `__toString()` return diagnostics, references/COW, and native lowering
 remain out of scope.
 `trim()` is an interpreter-only bounded string-normalization builtin for
-current scalar/null string-convertible values and supported `__toString()`
-objects. The current slice implements PHP's default whitespace byte mask,
+current scalar/null string-convertible values and supported visible
+`__toString()` objects. The current slice routes the subject and optional
+`$characters` mask through the shared PHP-shaped string argument boundary, so
+`null` emits the PHP deprecation before becoming an empty byte string and
+arrays, resources, closures, or non-stringable objects raise catchable
+PHP-shaped `TypeError`s. It implements PHP's default whitespace byte mask,
 including form-feed, and simple increasing custom byte ranges such as `A..Z`
-for represented runtime strings. Broader charlist parsing, resource/array
-operands, exact diagnostics, and native lowering remain out of scope.
-`ltrim()` and `rtrim()` are interpreter-only bounded one-sided string
-normalization builtins for the same values. They share the same default mask,
-custom-range expansion, and supported `__toString()` coercion boundaries.
+for represented runtime strings. Broader charlist parsing, exact invalid
+`__toString()` return diagnostics, references/COW, and native lowering remain
+out of scope. `ltrim()` and `rtrim()` are interpreter-only bounded one-sided
+string normalization builtins for the same values. They share the same default
+mask, custom-range expansion, `chop()` alias behavior for `rtrim()`, and
+string boundary.
 `str_contains()`, `str_starts_with()`, and `str_ends_with()` are bounded string
 predicate builtins for current scalar/null string-convertible haystack and
 needle values. They use the current UTF-8 runtime string representation, keep

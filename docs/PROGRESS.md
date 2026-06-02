@@ -4,6 +4,24 @@
 
 Implemented:
 
+- Added a bounded trim-family PHP-shaped string-argument boundary.
+  `trim()`, `ltrim()`, `rtrim()`, and `chop()` now route their subject and
+  optional `$characters` operands through the shared internal string boundary:
+  scalar values are converted to bytes, `null` emits PHP-shaped deprecations
+  before converting to `""`, supported visible `__toString()` objects are
+  accepted, and arrays, resources, closures, or non-stringable objects raise
+  catchable PHP-shaped `TypeError`s with the function-specific parameter
+  names. Existing default whitespace masks, custom literal bytes, simple
+  increasing `x..y` byte ranges, invalid-range warnings, string-valued dynamic
+  calls, `chop()` alias behavior, metadata visibility, and native-lowering
+  rejection remain unchanged. Focused proof covers the Rust
+  `trim_family_uses_php_string_argument_boundary` regression, the full trim
+  builtin test file, direct runtime/native-boundary probes, and selected
+  public PHPT rows `trim_basic.phpt`, `ltrim_basic.phpt`, and
+  `rtrim_basic.phpt`. Unsupported edges remain exact invalid `__toString()`
+  return diagnostics, broader charlist parsing and binary edge parity beyond
+  represented runtime bytes, references/COW, and native lowering.
+
 - Added a bounded `str_repeat()` string/count argument boundary lane. Direct
   and string-valued dynamic `str_repeat()` calls now route `$string` through
   the shared PHP-shaped string argument boundary, accepting supported visible
