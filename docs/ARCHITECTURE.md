@@ -3295,8 +3295,11 @@ constant table and version-policy model.
 Direct `extension_loaded($name)` calls with already-lowerable string names fold
 against the current deterministic bounded compatibility registry: `json`,
 `hash`, `pdo`, `pdo_mysql`, and `posix` fold to true, while other names fold
-to false. Native code does not query host PHP modules, `php.ini`, SAPI state,
-or dynamic extension loading.
+to false. The interpreter path routes runtime extension-name operands through
+the bounded PHP-internal string boundary, including scalar/null conversion,
+null deprecations, supported visible `__toString()` objects, and catchable
+`TypeError`s for unsupported operands. Native code does not query host PHP
+modules, `php.ini`, SAPI state, or dynamic extension loading.
 `file_exists()` is currently an interpreter-only local filesystem metadata
 builtin for the WordPress bootstrap drop-in check. It accepts one string local
 path, rejects stream-wrapper paths, and returns a boolean for host filesystem
@@ -4117,8 +4120,11 @@ model attributes or every PHP trivia edge case.
 `get_defined_functions()` is a request-local metadata view over the same
 registries rather than a host PHP probe: its bounded `internal` list combines
 core metadata names with the deterministic standard-extension compatibility
-function registry used by `get_extension_funcs("standard")`, while its `user`
-list is built from the interpreter's lowercased registered user-function table.
+function registry used by `get_extension_funcs("standard")`. Runtime
+`get_extension_funcs($extension)` calls use the same bounded extension-name
+string boundary as `extension_loaded()` before selecting that registry, while
+its `user` list is built from the interpreter's lowercased registered
+user-function table.
 It therefore tracks top-level and executed nested function declarations through
 the same registration path used by normal calls, but it does not claim host
 extension catalog completeness, disabled-function filtering, or PHP's exact

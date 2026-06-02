@@ -3578,12 +3578,18 @@
   warnings through the current error-reporting mask. Host INI catalogs,
   non-scalar operands, exact native warning objects, every malformed quantity
   spelling, and native lowering remain unsupported.
+  `get_extension_funcs($extension)` accepts scalar/null string-compatible
+  extension names and supported visible `__toString()` objects through the
+  same bounded PHP-internal string boundary used by `extension_loaded()`,
+  including PHP-shaped null-to-string deprecations and catchable `TypeError`s
+  for arrays, resources, closures, and non-stringable objects.
   `get_extension_funcs("standard")` returns a deterministic bounded metadata
   subset for the current standard-extension compatibility surface, including
   reached scalar/string/math names such as `strlen`, `ini_set`, and `cos`.
   Unknown extension names return `false`. Host extension inventories, exact
-  standard function ordering/completeness, dynamically loaded extensions, and
-  native lowering remain unsupported.
+  standard function ordering/completeness, exact invalid `__toString()` return
+  diagnostics, dynamically loaded extensions, and native lowering remain
+  unsupported.
   `get_loaded_extensions($zend_extensions = false)` returns the deterministic
   compatibility extension list for the normal runtime slice and an empty array
   for `true`. Dynamic host extension discovery, exact load ordering,
@@ -6111,14 +6117,17 @@
   malformed numeric inputs, exponentiation operator syntax (`**`/`**=`), broad
   libm/platform parity outside the covered rows, and native lowering remain
   unsupported.
-  `extension_loaded($name)` accepts string extension names and currently
-  answers from a deterministic bounded compiler/runtime compatibility registry.
-  At runtime it returns `true` for the deterministic `get_loaded_extensions()`
-  entries including `bcmath`, `filter`, `json`, `hash`, `pdo`, `pdo_mysql`,
-  and `posix`, and `false` for other names, including WordPress probe names
-  such as `mbstring` and `sodium`, without querying host PHP modules,
-  `php.ini`, SAPI state, or dynamically loading extensions; non-string names
-  are rejected in the current subset.
+  `extension_loaded($name)` accepts scalar/null string-compatible extension
+  names and supported visible `__toString()` objects through a bounded
+  PHP-internal string boundary, including PHP-shaped null-to-string
+  deprecations and catchable `TypeError`s for arrays, resources, closures, and
+  non-stringable objects. It answers from a deterministic bounded
+  compiler/runtime compatibility registry: at runtime `true` for
+  `get_loaded_extensions()` entries including `bcmath`, `filter`, `json`,
+  `hash`, `pdo`, `pdo_mysql`, and `posix`, and `false` for other names,
+  including WordPress probe names such as `mbstring` and `sodium`, without
+  querying host PHP modules, `php.ini`, SAPI state, or dynamically loading
+  extensions.
   `get_class` returns the declared class name for current minimal object
   values, `is_object` reports whether a value is one of those current object
   values, `get_debug_type` returns scalar/array type names or the current

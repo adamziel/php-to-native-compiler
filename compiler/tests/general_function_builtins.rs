@@ -72,6 +72,54 @@ bool(true)\n"
 }
 
 #[test]
+fn get_extension_funcs_coerces_extension_names_and_reports_type_errors() {
+    let execution = run_source(
+        r#"<?php
+set_error_handler(function($_, $message) {
+    echo "deprecated:", $message, "\n";
+    return true;
+});
+
+class StandardName {
+    public function __toString() {
+        return "standard";
+    }
+}
+
+var_dump(is_array(get_extension_funcs(new StandardName())));
+var_dump(get_extension_funcs(null));
+foreach ([false, true, 42, 3.5] as $name) {
+    var_dump(get_extension_funcs($name));
+}
+
+foreach ([[], new stdClass()] as $name) {
+    try {
+        get_extension_funcs($name);
+    } catch (Throwable $e) {
+        echo $e::class, ": ", $e->getMessage(), "\n";
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "bool(true)\n\
+deprecated:get_extension_funcs(): Passing null to parameter #1 ($extension) of type string is deprecated\n\
+bool(false)\n\
+bool(false)\n\
+bool(false)\n\
+bool(false)\n\
+bool(false)\n\
+TypeError: get_extension_funcs(): Argument #1 ($extension) must be of type string, array given\n\
+TypeError: get_extension_funcs(): Argument #1 ($extension) must be of type string, stdClass given\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn get_defined_functions_reports_bounded_internal_and_user_metadata() {
     let execution = run_source(
         r#"<?php

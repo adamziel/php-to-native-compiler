@@ -87275,19 +87275,9 @@ impl Interpreter {
             }
             "extension_loaded" => {
                 expect_arity(name, &args, 1, span)?;
-                match &args[0] {
-                    Value::String(name) => Ok(Value::Bool(is_compat_loaded_extension_name(name))),
-                    other => Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            "extension_loaded()",
-                            format!(
-                                "extension name argument must be string in the current subset, got {}",
-                                other.type_name()
-                            ),
-                        ),
-                    )),
-                }
+                let name =
+                    self.php_extension_name_argument("extension_loaded()", &args[0], span)?;
+                Ok(Value::Bool(is_compat_loaded_extension_name(&name)))
             }
             "mysqli_connect" => self.call_mysqli_connect(&args, span),
             "mysqli_real_connect" => self.call_mysqli_real_connect(&args, span),
@@ -137794,9 +137784,9 @@ impl Interpreter {
             .unwrap_or(Value::Bool(false)))
     }
 
-    fn call_get_extension_funcs(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+    fn call_get_extension_funcs(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("get_extension_funcs", args, 1, span)?;
-        let name = string_builtin_argument("get_extension_funcs()", "extension", &args[0], span)?;
+        let name = self.php_extension_name_argument("get_extension_funcs()", &args[0], span)?;
         if !name.eq_ignore_ascii_case("standard") {
             return Ok(Value::Bool(false));
         }
@@ -137842,6 +137832,59 @@ impl Interpreter {
             extensions.insert(index as i64, Value::String((*extension).to_string()));
         }
         Ok(Value::Array(extensions))
+    }
+
+    fn php_extension_name_argument(
+        &mut self,
+        function: &'static str,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<String> {
+        match value {
+            Value::Null => {
+                self.emit_display_diagnostic(
+                    "Deprecated",
+                    PHP_E_DEPRECATED,
+                    format!(
+                        "{function}: Passing null to parameter #1 ($extension) of type string is deprecated"
+                    ),
+                    span,
+                )?;
+                Ok(String::new())
+            }
+            Value::Array(_) | Value::Closure(_) | Value::Resource(_) => {
+                Err(Self::php_extension_name_type_error(function, value, span))
+            }
+            Value::Object(object) => {
+                if let Some(name) =
+                    self.object_to_string_with_magic(object.clone(), function, span)?
+                {
+                    Ok(name)
+                } else {
+                    Err(Self::php_extension_name_type_error(function, value, span))
+                }
+            }
+            _ => value
+                .try_echo_string()
+                .map_err(|error| runtime_error(span, error)),
+        }
+    }
+
+    fn php_extension_name_type_error(
+        function: &'static str,
+        value: &Value,
+        span: Span,
+    ) -> Diagnostic {
+        runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                format!(
+                    "Argument #1 ($extension) must be of type string, {} given",
+                    php_type_error_given(value)
+                ),
+            ),
+        )
     }
 
     fn call_parse_ini_file(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {

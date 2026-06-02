@@ -372,16 +372,47 @@ echo $call("posix") ? "1" : "0";
 }
 
 #[test]
-fn extension_loaded_rejects_non_string_names_for_now() {
-    let error = run_source("<?php\nvar_dump(extension_loaded(42));\n").unwrap_err();
+fn extension_loaded_coerces_extension_names_and_reports_type_errors() {
+    let execution = run_source(
+        r#"<?php
+set_error_handler(function($_, $message) {
+    echo "deprecated:", $message, "\n";
+    return true;
+});
 
-    assert_eq!(error.phase, Phase::Runtime);
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 10);
+class ExtensionName {
+    public function __toString() {
+        return "json";
+    }
+}
+
+echo extension_loaded(new ExtensionName()) ? "1" : "0";
+echo extension_loaded(null) ? "1" : "0";
+foreach ([false, true, 42, 3.5] as $name) {
+    echo extension_loaded($name) ? "1" : "0";
+}
+echo "\n";
+
+foreach ([[], new stdClass()] as $name) {
+    try {
+        extension_loaded($name);
+    } catch (Throwable $e) {
+        echo $e::class, ": ", $e->getMessage(), "\n";
+    }
+}
+"#,
+    )
+    .unwrap();
+
     assert_eq!(
-        error.message,
-        "unsupported call extension_loaded(): extension name argument must be string in the current subset, got int"
+        execution.stdout,
+        "1deprecated:extension_loaded(): Passing null to parameter #1 ($extension) of type string is deprecated\n\
+00000\n\
+TypeError: extension_loaded(): Argument #1 ($extension) must be of type string, array given\n\
+TypeError: extension_loaded(): Argument #1 ($extension) must be of type string, stdClass given\n"
     );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

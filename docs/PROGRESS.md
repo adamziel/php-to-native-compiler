@@ -4,6 +4,26 @@
 
 Implemented:
 
+- Added a bounded extension metadata string-argument diagnostics lane.
+  `phpc run` now routes `extension_loaded($extension)` and
+  `get_extension_funcs($extension)` through a shared PHP-internal string
+  boundary for the extension name: scalar values are converted to strings,
+  `null` emits the PHP-shaped deprecation before converting to `""`,
+  supported visible `__toString()` objects are accepted, and arrays, resources,
+  closures, or non-stringable objects raise catchable PHP-shaped `TypeError`s.
+  The deterministic extension registry itself is unchanged:
+  `extension_loaded()` still answers from the bounded compatibility list, and
+  `get_extension_funcs()` still exposes the current bounded extension-function
+  metadata slices. Focused proof covers the Rust
+  `extension_loaded_coerces_extension_names_and_reports_type_errors` and
+  `get_extension_funcs_coerces_extension_names_and_reports_type_errors`
+  regressions, a direct CLI probe, and the selected public PHPT row
+  `ext/standard/tests/general_functions/get_extension_funcs_basic.phpt`.
+  Unsupported edges remain exact invalid `__toString()` return diagnostics,
+  host extension discovery, complete extension inventories and ordering, broad
+  binary/encoding edge cases, references/COW, and native lowering for these
+  dynamic argument shapes.
+
 - Added a bounded `posix_ctermid()` terminal-path metadata lane for POSIX
   diagnostics. `phpc run` now calls the host Unix `ctermid(3)` boundary,
   returning a non-empty UTF-8 terminal path string or `false` if the host call
