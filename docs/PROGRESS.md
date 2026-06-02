@@ -4,6 +4,33 @@
 
 Implemented:
 
+- Added a bounded `DateTime` / `DateTimeImmutable` / `DateTimeZone` clone and
+  non-strict comparison lane on the interpreter path. Cloning exact and
+  subclassed date/timezone objects preserves the represented bounded internal
+  state and public properties, exact core `DateTime` and `DateTimeZone`
+  dynamic property creation now emits PHP-shaped deprecations before storing
+  the property, `DateTime` / `DateTimeImmutable` non-strict comparisons use
+  stored timestamps, and `DateTimeZone` non-strict comparisons cover
+  same-kind equality/inequality with catchable `DateException` /
+  `DateObjectError` diagnostics for mixed-kind or uninitialized operands.
+  Focused proof covers the Rust
+  `date_objects_clone_dynamic_properties_and_compare_bounded_metadata`
+  regression, runtime class-table and object-model guards, full
+  `date_time_builtin`, build/fmt/diff checks, and selected public PHPT rows
+  `ext/date/tests/DateTime_clone_basic2.phpt`,
+  `ext/date/tests/DateTime_clone_basic3.phpt`,
+  `ext/date/tests/DateTime_compare.phpt`,
+  `ext/date/tests/DateTime_compare_basic1.phpt`,
+  `ext/date/tests/DateTimeZone_clone_basic2.phpt`,
+  `ext/date/tests/DateTimeZone_clone_basic3.phpt`,
+  `ext/date/tests/DateTimeZone_compare.phpt`, and
+  `ext/date/tests/DateTimeZone_compare_basic1.phpt`. Unsupported edges remain
+  broad userland dynamic-property deprecation parity outside the bounded date
+  object write path, full DateTimeZone ordering semantics beyond represented
+  same-kind/mixed-kind rows, uninitialized date-object behavior outside
+  covered comparison and method-call paths, references/COW, and native
+  lowering.
+
 - Added a bounded `SplFileObject` CSV parameter semantics lane on the
   interpreter path. `SplFileObject::fgetcsv()` and `setCsvControl()` now emit
   PHP-shaped default-escape deprecations when `$escape` is omitted,

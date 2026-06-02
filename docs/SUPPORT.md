@@ -6246,7 +6246,15 @@
   and `DateTimeImmutable::createFromInterface()` copy bounded timestamp/timezone
   state into the called mutable or immutable target class, with uninitialized
   source objects reporting catchable `DateObjectError`s for the covered
-  DateTime and DateTimeImmutable inheritance cases. `DateTime::diff()`,
+  DateTime and DateTimeImmutable inheritance cases. Cloning exact and
+  subclassed `DateTime`, `DateTimeImmutable`, and `DateTimeZone` objects
+  preserves the bounded internal state and public properties represented by
+  the current runtime object model; exact core `DateTime` and `DateTimeZone`
+  dynamic property creation emits the PHP-shaped deprecation before storing the
+  property. Non-strict `DateTime` / `DateTimeImmutable` comparisons use stored
+  timestamps, ignoring class and public property differences, and report
+  catchable `DateObjectError`s for uninitialized operands in the covered
+  comparison path. `DateTime::diff()`,
   `DateTimeImmutable::diff()`, and `date_diff()` produce bounded
   `DateInterval` objects for initialized mutable/immutable DateTime operands,
   including `%Y/%M/%D/%H/%I/%S`, lowercase component tokens, `%R/%r`, `%a`,
@@ -6292,9 +6300,13 @@
   in each abbreviation bucket. `DateTimeZone::listAbbreviations()` and
   `timezone_abbreviations_list()` expose the bounded 144-key abbreviation
   inventory used by the reached date PHPT rows, with full `acst` rows and the
-  first row for the other abbreviation buckets. Full timezone database
-  validation,
-  exact internal `DateTime`, `DateTimeImmutable`, and `DateTimeZone`
+  first row for the other abbreviation buckets. DateTimeZone non-strict
+  comparisons cover same-kind equality and inequality
+  for represented fixed-offset, abbreviation, and named zones, and raise
+  catchable `DateException` / `DateObjectError` diagnostics for mixed timezone
+  kinds or uninitialized operands in the covered comparison rows.
+  Full timezone database validation, exact internal `DateTime`,
+  `DateTimeImmutable`, and `DateTimeZone`
   constructor diagnostics beyond the covered arity slice and scalar
   coercion/deprecation parity, broad `DateTimeInterface` reflection/runtime
   parity beyond existence/constants/core implementation metadata, all
@@ -6319,8 +6331,10 @@
   formatting and setter helpers beyond bounded integers and `int|null`
   timestamp slots, exact invalid `__toString()` return diagnostics for
   modifier and formatter strings, binary format strings beyond represented
-  runtime text, non-zero DateTime microsecond mutation/formatting, and native
-  lowering remain unsupported.
+  runtime text, broad userland dynamic-property deprecation parity outside the
+  bounded date object write path, DateTimeZone ordering semantics beyond the
+  represented same-kind/mixed-kind comparison rows, non-zero DateTime
+  microsecond mutation/formatting, and native lowering remain unsupported.
   `header($header, $replace = true, $response_code = 0)` accepts a string
   header line plus optional bool replacement flag and optional integer response
   code, records the raw header line in deterministic in-process CLI request

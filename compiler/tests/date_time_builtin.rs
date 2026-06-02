@@ -265,6 +265,77 @@ try {
 }
 
 #[test]
+fn date_objects_clone_dynamic_properties_and_compare_bounded_metadata() {
+    let execution = run_source(
+        r#"<?php
+date_default_timezone_set("Europe/London");
+class DateTimeExt extends DateTime { public $label = "ext"; }
+class MyDateTime extends DateTime { function __construct() {} }
+class MyDateTimeZone extends DateTimeZone { function __construct() {} }
+
+$date = new DateTime("2009-02-03 12:34:41 GMT");
+$date->property1 = 99;
+$dateClone = clone $date;
+echo "date-clone=", $dateClone->property1, "|", $dateClone->format("Y-m-d H:i:s T"), "\n";
+$dateClone->property1 = 100;
+echo "date-separate=", $date->property1, "|", $dateClone->property1, "\n";
+$subclass = new DateTimeExt("2009-02-03 12:34:41 GMT");
+echo "date-subclass=", (clone $subclass)->label, "|", (clone $subclass)->format("Y-m-d H:i:s T"), "\n";
+
+$zone = new DateTimeZone("Europe/London");
+$zone->property1 = "tz";
+$zoneClone = clone $zone;
+echo "zone-clone=", $zoneClone->property1, "|", $zoneClone->getName(), "\n";
+
+$sameMutable = new DateTime("2023-01-16 17:09:08 UTC");
+$sameImmutable = new DateTimeImmutable("2023-01-16 17:09:08 +0000");
+$later = new DateTime("2023-01-16 17:09:09 UTC");
+var_dump($sameMutable == $sameImmutable, $sameMutable < $sameImmutable, $sameMutable < $later, $later > $sameImmutable);
+
+$fixed = new DateTimeZone("+0200");
+var_dump($fixed == new DateTimeZone("+02:00"), $fixed < new DateTimeZone("-0200"));
+try { var_dump(new DateTimeZone("Europe/Berlin") == new DateTimeZone("CET")); }
+catch (DateException $e) { echo $e::class, ": ", $e->getMessage(), "\n"; }
+try { var_dump(new MyDateTimeZone() == new MyDateTimeZone()); }
+catch (DateObjectError $e) { echo $e::class, ": ", $e->getMessage(), "\n"; }
+try { var_dump($sameMutable < new MyDateTime()); }
+catch (DateObjectError $e) { echo $e::class, ": ", $e->getMessage(), "\n"; }
+"#,
+    )
+    .unwrap();
+
+    assert!(execution
+        .stdout
+        .contains("Deprecated: Creation of dynamic property DateTime::$property1 is deprecated"));
+    assert!(execution.stdout.contains(
+        "Deprecated: Creation of dynamic property DateTimeZone::$property1 is deprecated"
+    ));
+    assert!(execution
+        .stdout
+        .contains("date-clone=99|2009-02-03 12:34:41 GMT\n"));
+    assert!(execution.stdout.contains("date-separate=99|100\n"));
+    assert!(execution
+        .stdout
+        .contains("date-subclass=ext|2009-02-03 12:34:41 GMT\n"));
+    assert!(execution.stdout.contains("zone-clone=tz|Europe/London\n"));
+    assert!(execution
+        .stdout
+        .contains("bool(true)\nbool(false)\nbool(true)\nbool(true)\n"));
+    assert!(execution.stdout.contains("bool(true)\nbool(false)\n"));
+    assert!(execution
+        .stdout
+        .contains("DateException: Cannot compare two different kinds of DateTimeZone objects\n"));
+    assert!(execution
+        .stdout
+        .contains("DateObjectError: Trying to compare uninitialized DateTimeZone objects\n"));
+    assert!(execution.stdout.contains(
+        "DateObjectError: Trying to compare an incomplete DateTime or DateTimeImmutable object\n"
+    ));
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn date_modify_mutates_bounded_datetime_relative_forms() {
     let execution = run_source(
         r#"<?php

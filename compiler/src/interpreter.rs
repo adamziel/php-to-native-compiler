@@ -720,6 +720,11 @@ struct BoundedDateTimeObjectState {
     timezone: BoundedTimezone,
 }
 
+struct DateTimeZoneComparisonState {
+    timezone_type: i64,
+    timezone_name: String,
+}
+
 #[derive(Debug, Clone)]
 struct BoundedDateIntervalState {
     years: i64,
@@ -11731,6 +11736,154 @@ impl Interpreter {
         }
     }
 
+    fn apply_date_object_comparison(
+        &self,
+        op: BinaryOp,
+        left: &PhpObject,
+        right: &PhpObject,
+        span: Span,
+    ) -> Option<CompileResult<Value>> {
+        if !Self::is_non_strict_comparison_op(op) {
+            return None;
+        }
+
+        let left_is_datetime = self.is_datetime_class_id(left.class_id())
+            || self.is_datetimeimmutable_class_id(left.class_id());
+        let right_is_datetime = self.is_datetime_class_id(right.class_id())
+            || self.is_datetimeimmutable_class_id(right.class_id());
+        if left_is_datetime && right_is_datetime {
+            return Some(self.compare_datetime_objects(op, left, right, span));
+        }
+
+        if self.is_datetimezone_class_id(left.class_id())
+            && self.is_datetimezone_class_id(right.class_id())
+        {
+            return Some(self.compare_datetimezone_objects(op, left, right, span));
+        }
+
+        None
+    }
+
+    fn is_non_strict_comparison_op(op: BinaryOp) -> bool {
+        matches!(
+            op,
+            BinaryOp::Eq
+                | BinaryOp::Ne
+                | BinaryOp::Lt
+                | BinaryOp::Le
+                | BinaryOp::Gt
+                | BinaryOp::Ge
+                | BinaryOp::Spaceship
+        )
+    }
+
+    fn compare_datetime_objects(
+        &self,
+        op: BinaryOp,
+        left: &PhpObject,
+        right: &PhpObject,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let left_state = self.date_time_objects.get(&left.id()).ok_or_else(|| {
+            date_object_error(
+                span,
+                "Trying to compare an incomplete DateTime or DateTimeImmutable object",
+            )
+        })?;
+        let right_state = self.date_time_objects.get(&right.id()).ok_or_else(|| {
+            date_object_error(
+                span,
+                "Trying to compare an incomplete DateTime or DateTimeImmutable object",
+            )
+        })?;
+        let ordering = left_state.timestamp.cmp(&right_state.timestamp);
+        Ok(Self::comparison_result_value(op, ordering))
+    }
+
+    fn compare_datetimezone_objects(
+        &self,
+        op: BinaryOp,
+        left: &PhpObject,
+        right: &PhpObject,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let left_state = Self::datetimezone_comparison_state(left, span)?;
+        let right_state = Self::datetimezone_comparison_state(right, span)?;
+        if left_state.timezone_type != right_state.timezone_type {
+            return Err(date_exception_error(
+                span,
+                "Cannot compare two different kinds of DateTimeZone objects",
+            ));
+        }
+
+        let equal = left_state.timezone_name == right_state.timezone_name;
+        let ordering = if equal {
+            Ordering::Equal
+        } else {
+            Ordering::Greater
+        };
+        Ok(match op {
+            BinaryOp::Lt | BinaryOp::Gt => Value::Bool(false),
+            BinaryOp::Le | BinaryOp::Ge => Value::Bool(equal),
+            BinaryOp::Spaceship => Value::Int(if equal { 0 } else { 1 }),
+            _ => Self::comparison_result_value(op, ordering),
+        })
+    }
+
+    fn datetimezone_comparison_state(
+        object: &PhpObject,
+        span: Span,
+    ) -> CompileResult<DateTimeZoneComparisonState> {
+        let timezone_type = match object.read_public_property("timezone_type") {
+            Ok(Value::Int(value)) => value,
+            _ => {
+                return Err(date_object_error(
+                    span,
+                    "Trying to compare uninitialized DateTimeZone objects",
+                ));
+            }
+        };
+        let timezone_name = match object.read_public_property("timezone") {
+            Ok(Value::String(value)) => value,
+            _ => {
+                return Err(date_object_error(
+                    span,
+                    "Trying to compare uninitialized DateTimeZone objects",
+                ));
+            }
+        };
+        let Some(canonical_name) =
+            normalized_datetimezone_serialization_state(timezone_type, &timezone_name)
+        else {
+            return Err(date_object_error(
+                span,
+                "Trying to compare uninitialized DateTimeZone objects",
+            ));
+        };
+
+        Ok(DateTimeZoneComparisonState {
+            timezone_type,
+            timezone_name: canonical_name,
+        })
+    }
+
+    fn comparison_result_value(op: BinaryOp, ordering: Ordering) -> Value {
+        match op {
+            BinaryOp::Eq => Value::Bool(ordering == Ordering::Equal),
+            BinaryOp::Ne => Value::Bool(ordering != Ordering::Equal),
+            BinaryOp::Lt => Value::Bool(ordering == Ordering::Less),
+            BinaryOp::Le => Value::Bool(matches!(ordering, Ordering::Less | Ordering::Equal)),
+            BinaryOp::Gt => Value::Bool(ordering == Ordering::Greater),
+            BinaryOp::Ge => Value::Bool(matches!(ordering, Ordering::Greater | Ordering::Equal)),
+            BinaryOp::Spaceship => Value::Int(match ordering {
+                Ordering::Less => -1,
+                Ordering::Equal => 0,
+                Ordering::Greater => 1,
+            }),
+            _ => unreachable!("comparison_result_value only accepts comparison operators"),
+        }
+    }
+
     fn spl_fixed_array_state(
         &self,
         object: &PhpObject,
@@ -12474,6 +12627,41 @@ impl Interpreter {
     ) -> CompileResult<()> {
         if !self.is_array_object_storage_object(object)
             || self.array_object_array_as_props_enabled(object)
+        {
+            return Ok(());
+        }
+
+        match object.property_visibility_from_context(
+            property,
+            current_class_id,
+            protected_class_ids,
+        ) {
+            Ok(_) => Ok(()),
+            Err(error) if Self::is_undefined_property_error(&error) => self
+                .emit_display_diagnostic(
+                    "Deprecated",
+                    PHP_E_DEPRECATED,
+                    format!(
+                        "Creation of dynamic property {}::${property} is deprecated",
+                        object.class_name()
+                    ),
+                    span,
+                ),
+            Err(_) => Ok(()),
+        }
+    }
+
+    fn emit_date_object_dynamic_property_deprecation_if_needed(
+        &mut self,
+        object: &PhpObject,
+        property: &str,
+        current_class_id: Option<ClassId>,
+        protected_class_ids: &[ClassId],
+        span: Span,
+    ) -> CompileResult<()> {
+        if !(object.is_instance_of_class_name("DateTime")
+            || object.is_instance_of_class_name("DateTimeImmutable")
+            || object.is_instance_of_class_name("DateTimeZone"))
         {
             return Ok(());
         }
@@ -36977,6 +37165,13 @@ impl Interpreter {
                             &protected_class_ids,
                             *span,
                         )?;
+                        self.emit_date_object_dynamic_property_deprecation_if_needed(
+                            &object_value,
+                            property,
+                            current_class_id,
+                            &protected_class_ids,
+                            *span,
+                        )?;
                         self.emit_float_string_to_int_deprecation_for_object_property(
                             &object_value,
                             property,
@@ -37992,6 +38187,13 @@ impl Interpreter {
                         }
 
                         self.emit_array_object_dynamic_property_deprecation_if_needed(
+                            &object_value,
+                            &property,
+                            current_class_id,
+                            &protected_class_ids,
+                            *span,
+                        )?;
+                        self.emit_date_object_dynamic_property_deprecation_if_needed(
                             &object_value,
                             &property,
                             current_class_id,
@@ -101500,6 +101702,14 @@ impl Interpreter {
             return Ok(interpreter_value_from_php_string_bytes(bytes));
         }
 
+        if let (Value::Object(left_object), Value::Object(right_object)) = (&left, &right) {
+            if let Some(result) =
+                self.apply_date_object_comparison(op, left_object, right_object, span)
+            {
+                return result;
+            }
+        }
+
         if matches!(op, BinaryOp::Eq | BinaryOp::Ne) {
             if let (Value::Object(left_object), Value::Object(right_object)) = (&left, &right) {
                 if self.is_spl_object_storage_object(left_object)
@@ -111808,6 +112018,7 @@ const DATETIME_INVALID_SERIALIZATION_MESSAGE: &str =
 const DATETIMEIMMUTABLE_INVALID_SERIALIZATION_MESSAGE: &str =
     "Invalid serialization data for DateTimeImmutable object";
 const DATE_OBJECT_ERROR_DIAGNOSTIC_PREFIX: &str = "DateObjectError: ";
+const DATE_EXCEPTION_DIAGNOSTIC_PREFIX: &str = "DateException: ";
 const DATE_MALFORMED_INTERVAL_DIAGNOSTIC_PREFIX: &str = "DateMalformedIntervalStringException: ";
 
 fn datetimezone_invalid_serialization_error(span: Span) -> Diagnostic {
@@ -111840,6 +112051,26 @@ fn dateinterval_malformed_error(span: Span, message: String) -> Diagnostic {
         RuntimeError::unsupported_call(
             "DateInterval",
             format!("{DATE_MALFORMED_INTERVAL_DIAGNOSTIC_PREFIX}{message}"),
+        ),
+    )
+}
+
+fn date_object_error(span: Span, message: &str) -> Diagnostic {
+    runtime_error(
+        span,
+        RuntimeError::unsupported_call(
+            "DateTime",
+            format!("{DATE_OBJECT_ERROR_DIAGNOSTIC_PREFIX}{message}"),
+        ),
+    )
+}
+
+fn date_exception_error(span: Span, message: &str) -> Diagnostic {
+    runtime_error(
+        span,
+        RuntimeError::unsupported_call(
+            "DateTimeZone",
+            format!("{DATE_EXCEPTION_DIAGNOSTIC_PREFIX}{message}"),
         ),
     )
 }
@@ -111930,6 +112161,9 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
             .split_once(DATE_OBJECT_ERROR_DIAGNOSTIC_PREFIX)
         {
             return Some(("DateObjectError", message.to_string()));
+        }
+        if let Some((_, message)) = error.message.split_once(DATE_EXCEPTION_DIAGNOSTIC_PREFIX) {
+            return Some(("DateException", message.to_string()));
         }
         if let Some((_, message)) = error
             .message
@@ -155119,6 +155353,17 @@ fn display_object_properties(object: &PhpObject) -> Vec<ObjectProperty> {
                         .declaring_class_name()
                         .eq_ignore_ascii_case("ArrayIterator"));
             (is_core_storage, *index)
+        });
+    }
+
+    if object.is_instance_of_class_name("DateTime")
+        || object.is_instance_of_class_name("DateTimeImmutable")
+        || object.is_instance_of_class_name("DateTimeZone")
+    {
+        indexed_properties.sort_by_key(|(index, property)| {
+            let is_core_date_metadata = property.visibility() == Visibility::Public
+                && matches!(property.name(), "date" | "timezone_type" | "timezone");
+            (is_core_date_metadata, *index)
         });
     }
 
