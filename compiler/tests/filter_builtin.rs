@@ -125,6 +125,108 @@ foreach ([
 }
 
 #[test]
+fn filter_validator_edge_flags_and_ranges_match_php_boundaries() {
+    let execution = run_source(
+        r#"<?php
+foreach ([
+    "0x7fffffffffffffff",
+    "0x8000000000000000",
+    "0xffffffffffffffff",
+    "0x10000000000000000",
+    "0777777777777777777777",
+    "01000000000000000000000",
+    "01777777777777777777777",
+    "02000000000000000000000",
+] as $value) {
+    var_dump(filter_var($value, FILTER_VALIDATE_INT, FILTER_FLAG_ALLOW_HEX | FILTER_FLAG_ALLOW_OCTAL));
+}
+var_dump(defined("FILTER_FLAG_GLOBAL_RANGE"));
+var_dump(FILTER_FLAG_GLOBAL_RANGE);
+var_dump(FILTER_FLAG_HOSTNAME);
+foreach ([
+    "0.0.0.0",
+    "100.127.255.255",
+    "192.88.99.1",
+    "185.85.0.29",
+    "::",
+    "::ffff:ffff:ffff",
+    "64:ff9b::",
+    "100::ffff:ffff:ffff:ffff",
+    "2001:1f:ffff:ffff:ffff:ffff:ffff:ffff",
+    "240b:10::1",
+] as $ip) {
+    var_dump(filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_GLOBAL_RANGE));
+}
+foreach ([
+    "0.255.255.255",
+    "127.255.255.255",
+    "169.254.0.0",
+    "224.0.0.0",
+    "240.0.0.0",
+    "255.255.255.255",
+] as $ip) {
+    var_dump(filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4 | FILTER_FLAG_NO_RES_RANGE));
+}
+foreach ([
+    "http://t[est@127.0.0.1",
+    "http://t[est@[::1]",
+    "http://test@127.0.0.1",
+    "http://test@[2001:db8:3333:4444:5555:6666:1.2.3.4]",
+    "http://test@[::1]",
+] as $url) {
+    var_dump(filter_var($url, FILTER_VALIDATE_URL));
+}
+foreach (["a-.bc.com", "a.bc-.com", "a.bc.com-"] as $domain) {
+    var_dump(filter_var($domain, FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME));
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "int(9223372036854775807)\n",
+            "int(-9223372036854775808)\n",
+            "int(-1)\n",
+            "bool(false)\n",
+            "int(9223372036854775807)\n",
+            "int(-9223372036854775808)\n",
+            "int(-1)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "int(268435456)\n",
+            "int(1048576)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "string(11) \"192.88.99.1\"\n",
+            "string(11) \"185.85.0.29\"\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "string(9) \"64:ff9b::\"\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "string(10) \"240b:10::1\"\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "string(9) \"224.0.0.0\"\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "string(21) \"http://test@127.0.0.1\"\n",
+            "string(50) \"http://test@[2001:db8:3333:4444:5555:6666:1.2.3.4]\"\n",
+            "string(17) \"http://test@[::1]\"\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn filter_var_sanitizes_scalars_and_warns_for_unknown_filters() {
     let execution = run_source(
         r#"<?php

@@ -2964,19 +2964,26 @@
   from the bounded superglobal seeds. `FILTER_VALIDATE_FLOAT` covers bounded
   grouped-thousands validation with `FILTER_FLAG_ALLOW_THOUSAND`, finite
   underflow rejection, and `min_range` / `max_range` option checks.
+  `FILTER_VALIDATE_INT` accepts the covered unsigned hexadecimal and
+  legacy-octal boundary forms up to the 64-bit unsigned limit and returns
+  wrapped signed integer values for inputs above `PHP_INT_MAX`.
   `filter_var()` accepts weak scalar `$options` flags, and descriptor-array
   `filter` / `flags` entries accept string-valued integer IDs without mutating
   caller option arrays. `FILTER_VALIDATE_IP` honors the current IPv4/IPv6
-  selector flags,
-  current IPv4 private and loopback/broadcast reserved ranges, IPv6
-  `fc00::/7` private-range rejection, and bounded IPv6 reserved-range
-  rejection for unspecified, loopback, IPv4-mapped, and link-local addresses.
+  selector flags, current IPv4 private ranges, bounded IPv4 reserved ranges
+  for `0.0.0.0/8`, `127.0.0.0/8`, `169.254.0.0/16`, and `240.0.0.0/4`,
+  IPv6 `fc00::/7` private-range rejection, bounded IPv6 reserved-range
+  rejection for unspecified, loopback, IPv4-mapped, and link-local addresses,
+  and `FILTER_FLAG_GLOBAL_RANGE` over the reached IPv4/IPv6 non-global range
+  table. `FILTER_FLAG_HOSTNAME` is visible for `FILTER_VALIDATE_DOMAIN`, using
+  the current bounded hostname label rules, and `FILTER_VALIDATE_URL` rejects
+  raw bracket characters in URL userinfo before host parsing.
   Remaining ext/filter option coercion and diagnostics,
-  `filter_input_array()`, `FILTER_FLAG_GLOBAL_RANGE`, full RFC 6890 IPv4/IPv6
-  range breadth, Unicode email/IDNA policy, broad URL/domain/IP validation
-  parity, sanitizer deprecation diagnostics, object/resource coercions,
-  references/COW beyond the current array-slot path, and native lowering
-  remain unsupported.
+  `filter_input_array()`, `FILTER_THROW_ON_FAILURE`, exact full RFC 6890/RFC
+  8190 IPv4/IPv6 range-table parity beyond the covered prefixes, Unicode
+  email/IDNA policy, broad URL/domain/IP validation parity, sanitizer
+  deprecation diagnostics, object/resource coercions, references/COW beyond
+  the current array-slot path, and native lowering remain unsupported.
 - `request_parse_body()` supports the bounded CLI option-validation path used
   by the standard request-body PHPT rows. It accepts omitted, `null`, or array
   `$options`; validates the known scalar quantity keys

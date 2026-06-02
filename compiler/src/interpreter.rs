@@ -113581,6 +113581,7 @@ const PHP_FILTER_FLAG_ALLOW_SCIENTIFIC: i64 = 16384;
 const PHP_FILTER_FLAG_PATH_REQUIRED: i64 = 262_144;
 const PHP_FILTER_FLAG_QUERY_REQUIRED: i64 = 524_288;
 const PHP_FILTER_FLAG_IPV4: i64 = 1_048_576;
+const PHP_FILTER_FLAG_HOSTNAME: i64 = PHP_FILTER_FLAG_IPV4;
 const PHP_FILTER_FLAG_IPV6: i64 = 2_097_152;
 const PHP_FILTER_FLAG_NO_RES_RANGE: i64 = 4_194_304;
 const PHP_FILTER_FLAG_NO_PRIV_RANGE: i64 = 8_388_608;
@@ -113588,6 +113589,7 @@ const PHP_FILTER_REQUIRE_ARRAY: i64 = 16_777_216;
 const PHP_FILTER_REQUIRE_SCALAR: i64 = 33_554_432;
 const PHP_FILTER_FORCE_ARRAY: i64 = 67_108_864;
 const PHP_FILTER_NULL_ON_FAILURE: i64 = 134_217_728;
+const PHP_FILTER_FLAG_GLOBAL_RANGE: i64 = 268_435_456;
 const PHP_SETLOCALE_MAX_LOCALE_NAME_BYTES: usize = 255;
 const PHP_LC_CTYPE: i64 = 0;
 const PHP_LC_NUMERIC: i64 = 1;
@@ -114139,10 +114141,12 @@ const BUILTIN_GLOBAL_CONSTANT_NAMES: &[&str] = &[
     "FILTER_FLAG_ALLOW_SCIENTIFIC",
     "FILTER_FLAG_PATH_REQUIRED",
     "FILTER_FLAG_QUERY_REQUIRED",
+    "FILTER_FLAG_HOSTNAME",
     "FILTER_FLAG_IPV4",
     "FILTER_FLAG_IPV6",
     "FILTER_FLAG_NO_RES_RANGE",
     "FILTER_FLAG_NO_PRIV_RANGE",
+    "FILTER_FLAG_GLOBAL_RANGE",
     "FILTER_REQUIRE_ARRAY",
     "FILTER_REQUIRE_SCALAR",
     "FILTER_FORCE_ARRAY",
@@ -114598,10 +114602,12 @@ fn builtin_global_constant_value(name: &str) -> Option<Value> {
         "FILTER_FLAG_ALLOW_SCIENTIFIC" => Some(Value::Int(PHP_FILTER_FLAG_ALLOW_SCIENTIFIC)),
         "FILTER_FLAG_PATH_REQUIRED" => Some(Value::Int(PHP_FILTER_FLAG_PATH_REQUIRED)),
         "FILTER_FLAG_QUERY_REQUIRED" => Some(Value::Int(PHP_FILTER_FLAG_QUERY_REQUIRED)),
+        "FILTER_FLAG_HOSTNAME" => Some(Value::Int(PHP_FILTER_FLAG_HOSTNAME)),
         "FILTER_FLAG_IPV4" => Some(Value::Int(PHP_FILTER_FLAG_IPV4)),
         "FILTER_FLAG_IPV6" => Some(Value::Int(PHP_FILTER_FLAG_IPV6)),
         "FILTER_FLAG_NO_RES_RANGE" => Some(Value::Int(PHP_FILTER_FLAG_NO_RES_RANGE)),
         "FILTER_FLAG_NO_PRIV_RANGE" => Some(Value::Int(PHP_FILTER_FLAG_NO_PRIV_RANGE)),
+        "FILTER_FLAG_GLOBAL_RANGE" => Some(Value::Int(PHP_FILTER_FLAG_GLOBAL_RANGE)),
         "FILTER_REQUIRE_ARRAY" => Some(Value::Int(PHP_FILTER_REQUIRE_ARRAY)),
         "FILTER_REQUIRE_SCALAR" => Some(Value::Int(PHP_FILTER_REQUIRE_SCALAR)),
         "FILTER_FORCE_ARRAY" => Some(Value::Int(PHP_FILTER_FORCE_ARRAY)),
@@ -140710,7 +140716,7 @@ fn parse_filter_int(value: &str, flags: i64) -> Option<i64> {
             if hex.is_empty() {
                 return None;
             }
-            return i64::from_str_radix(hex, 16).ok();
+            return parse_filter_unsigned_wrapping_int(hex, 16);
         }
     }
     if flags & PHP_FILTER_FLAG_ALLOW_OCTAL != 0 {
@@ -140721,13 +140727,19 @@ fn parse_filter_int(value: &str, flags: i64) -> Option<i64> {
             if octal.is_empty() {
                 return None;
             }
-            return i64::from_str_radix(octal, 8).ok();
+            return parse_filter_unsigned_wrapping_int(octal, 8);
         }
         if unsigned.len() > 1 && unsigned.starts_with('0') {
-            return i64::from_str_radix(&unsigned[1..], 8).ok();
+            return parse_filter_unsigned_wrapping_int(&unsigned[1..], 8);
         }
     }
     parse_filter_decimal_int(trimmed)
+}
+
+fn parse_filter_unsigned_wrapping_int(value: &str, radix: u32) -> Option<i64> {
+    u64::from_str_radix(value, radix)
+        .ok()
+        .map(|value| value as i64)
 }
 
 fn parse_filter_decimal_int(value: &str) -> Option<i64> {
@@ -141070,9 +141082,14 @@ fn filter_validate_url(value: &Value, flags: i64) -> Option<String> {
             if flags & PHP_FILTER_FLAG_QUERY_REQUIRED != 0 && !path_query.contains('?') {
                 return None;
             }
-            let host_port = authority
-                .rsplit_once('@')
-                .map_or(authority, |(_, right)| right);
+            let host_port = if let Some((userinfo, right)) = authority.rsplit_once('@') {
+                if userinfo.contains(['[', ']']) {
+                    return None;
+                }
+                right
+            } else {
+                authority
+            };
             if host_port.starts_with('[') {
                 let end = host_port.find(']')?;
                 let host = &host_port[1..end];
@@ -141140,6 +141157,9 @@ fn filter_validate_ip(value: &Value, flags: i64) -> Option<String> {
     let value = value.try_echo_string().ok()?;
     if flags & PHP_FILTER_FLAG_IPV6 == 0 {
         if let Ok(addr) = value.parse::<Ipv4Addr>() {
+            if flags & PHP_FILTER_FLAG_GLOBAL_RANGE != 0 && !ipv4_is_global(addr) {
+                return None;
+            }
             if flags & PHP_FILTER_FLAG_NO_PRIV_RANGE != 0 && ipv4_is_private(addr) {
                 return None;
             }
@@ -141151,6 +141171,9 @@ fn filter_validate_ip(value: &Value, flags: i64) -> Option<String> {
     }
     if flags & PHP_FILTER_FLAG_IPV4 == 0 {
         if let Ok(addr) = value.parse::<Ipv6Addr>() {
+            if flags & PHP_FILTER_FLAG_GLOBAL_RANGE != 0 && !ipv6_is_global(addr) {
+                return None;
+            }
             if flags & PHP_FILTER_FLAG_NO_PRIV_RANGE != 0 && ipv6_is_private(addr) {
                 return None;
             }
@@ -141171,8 +141194,32 @@ fn ipv4_is_private(addr: Ipv4Addr) -> bool {
 }
 
 fn ipv4_is_reserved(addr: Ipv4Addr) -> bool {
-    let octets = addr.octets();
-    octets[0] == 127 || octets == [255, 255, 255, 255]
+    ipv4_in_prefix(addr, [0, 0, 0, 0], 8)
+        || ipv4_in_prefix(addr, [127, 0, 0, 0], 8)
+        || ipv4_in_prefix(addr, [169, 254, 0, 0], 16)
+        || ipv4_in_prefix(addr, [240, 0, 0, 0], 4)
+        || addr.octets() == [255, 255, 255, 255]
+}
+
+fn ipv4_is_global(addr: Ipv4Addr) -> bool {
+    !ipv4_in_prefix(addr, [0, 0, 0, 0], 8)
+        && !ipv4_in_prefix(addr, [10, 0, 0, 0], 8)
+        && !ipv4_in_prefix(addr, [100, 64, 0, 0], 10)
+        && !ipv4_in_prefix(addr, [127, 0, 0, 0], 8)
+        && !ipv4_in_prefix(addr, [169, 254, 0, 0], 16)
+        && !ipv4_in_prefix(addr, [172, 16, 0, 0], 12)
+        && !ipv4_in_prefix(addr, [192, 0, 0, 0], 24)
+        && !ipv4_in_prefix(addr, [192, 0, 2, 0], 24)
+        && !ipv4_in_prefix(addr, [192, 168, 0, 0], 16)
+        && !ipv4_in_prefix(addr, [198, 18, 0, 0], 15)
+        && !ipv4_in_prefix(addr, [198, 51, 100, 0], 24)
+        && !ipv4_in_prefix(addr, [203, 0, 113, 0], 24)
+        && !ipv4_in_prefix(addr, [240, 0, 0, 0], 4)
+}
+
+fn ipv4_in_prefix(addr: Ipv4Addr, network: [u8; 4], prefix_bits: u32) -> bool {
+    let mask = u32::MAX.checked_shl(32 - prefix_bits).unwrap_or(0);
+    u32::from(addr) & mask == u32::from(Ipv4Addr::from(network)) & mask
 }
 
 fn ipv6_is_private(addr: Ipv6Addr) -> bool {
@@ -141186,6 +141233,24 @@ fn ipv6_is_reserved(addr: Ipv6Addr) -> bool {
         || segments == [0, 0, 0, 0, 0, 0, 0, 1]
         || segments[0..6] == [0, 0, 0, 0, 0, 0xffff]
         || (0xfe80..=0xfebf).contains(&segments[0])
+}
+
+fn ipv6_is_global(addr: Ipv6Addr) -> bool {
+    !ipv6_in_prefix(addr, [0; 8], 128)
+        && !ipv6_in_prefix(addr, [0, 0, 0, 0, 0, 0, 0, 1], 128)
+        && !ipv6_in_prefix(addr, [0, 0, 0, 0, 0, 0xffff, 0, 0], 96)
+        && !ipv6_in_prefix(addr, [0x0100, 0, 0, 0, 0, 0, 0, 0], 64)
+        && !ipv6_in_prefix(addr, [0x2001, 0, 0, 0, 0, 0, 0, 0], 23)
+        && !ipv6_in_prefix(addr, [0x2001, 0x0002, 0, 0, 0, 0, 0, 0], 48)
+        && !ipv6_in_prefix(addr, [0x2001, 0x0db8, 0, 0, 0, 0, 0, 0], 32)
+        && !ipv6_in_prefix(addr, [0x2001, 0x0010, 0, 0, 0, 0, 0, 0], 28)
+        && !ipv6_in_prefix(addr, [0xfc00, 0, 0, 0, 0, 0, 0, 0], 7)
+        && !ipv6_in_prefix(addr, [0xfe80, 0, 0, 0, 0, 0, 0, 0], 10)
+}
+
+fn ipv6_in_prefix(addr: Ipv6Addr, network: [u16; 8], prefix_bits: u32) -> bool {
+    let mask = u128::MAX.checked_shl(128 - prefix_bits).unwrap_or(0);
+    u128::from(addr) & mask == u128::from(Ipv6Addr::from(network)) & mask
 }
 
 fn filter_validate_mac(value: &Value) -> Option<String> {

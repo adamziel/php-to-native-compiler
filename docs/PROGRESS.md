@@ -4,6 +4,29 @@
 
 Implemented:
 
+- Added a bounded ext/filter validator edge lane on the interpreter path.
+  `FILTER_FLAG_HOSTNAME` and `FILTER_FLAG_GLOBAL_RANGE` are now visible
+  constants, `FILTER_VALIDATE_INT` accepts unsigned hexadecimal and
+  legacy-octal inputs up to the 64-bit unsigned boundary and returns the
+  PHP-shaped wrapped signed integer values, `FILTER_VALIDATE_IP` honors a
+  bounded global-address rejection table plus broader IPv4 `NO_RES_RANGE`
+  rejection for the reached RFC 6890 rows, and `FILTER_VALIDATE_URL` rejects
+  raw `[` / `]` in userinfo before parsing the host authority. Focused proof
+  covers the Rust
+  `filter_validator_edge_flags_and_ranges_match_php_boundaries` regression,
+  the full `filter_builtin` Rust file, the direct CLI fixture
+  `tests/fixtures/milestone2362/filter_validator_edge_flags.php`, selected
+  public PHPT rows `ext/filter/tests/047.phpt`,
+  `ext/filter/tests/048.phpt`, `ext/filter/tests/bug77221.phpt`,
+  `ext/filter/tests/filter_ipv4_rfc6890.phpt`,
+  `ext/filter/tests/gh16523.phpt`, and
+  `ext/filter/tests/ghsa-w8qr-v226-r27w.phpt`, build, fmt, and diff checks.
+  Unsupported edges remain `FILTER_THROW_ON_FAILURE`, exact full
+  RFC 6890/RFC 8190 range-table parity beyond the covered prefixes, Unicode
+  email/IDNA policy, broad URL/domain/IP validation parity, sanitizer
+  deprecation diagnostics, object/resource coercions, references/COW beyond
+  the current array-slot path, and native lowering.
+
 - Added a bounded `SplFileObject` byte-read and max-line-length lane on the
   interpreter path. Local UTF-8 `SplFileObject` instances now expose
   `fgetc()`, `fread()`, `fpassthru()`, `setMaxLineLen()`, and
