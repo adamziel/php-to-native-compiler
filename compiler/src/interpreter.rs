@@ -127704,6 +127704,53 @@ fn json_repair_invalid_utf8_in_strings(
     Some(output)
 }
 
+fn json_repair_invalid_utf8_for_encode(bytes: &[u8], repair: JsonInvalidUtf8Repair) -> String {
+    let mut output = String::with_capacity(bytes.len());
+    let mut index = 0;
+
+    while index < bytes.len() {
+        let byte = bytes[index];
+        if byte.is_ascii() {
+            output.push(byte as char);
+            index += 1;
+            continue;
+        }
+
+        let width = json_utf8_lead_width(byte);
+        if width > 1 && index + width <= bytes.len() {
+            if let Ok(valid) = std::str::from_utf8(&bytes[index..index + width]) {
+                output.push_str(valid);
+                index += width;
+                continue;
+            }
+        }
+
+        if matches!(repair, JsonInvalidUtf8Repair::Substitute) {
+            output.push('\u{fffd}');
+        }
+        index += json_invalid_utf8_encode_sequence_len(bytes, index, width);
+    }
+
+    output
+}
+
+fn json_utf8_lead_width(byte: u8) -> usize {
+    match byte {
+        0xc0..=0xdf => 2,
+        0xe0..=0xef => 3,
+        0xf0..=0xf7 => 4,
+        _ => 1,
+    }
+}
+
+fn json_invalid_utf8_encode_sequence_len(bytes: &[u8], index: usize, width: usize) -> usize {
+    let mut len = 1;
+    while len < width && index + len < bytes.len() && matches!(bytes[index + len], 0x80..=0xbf) {
+        len += 1;
+    }
+    len
+}
+
 fn json_key_string(key: &ArrayKey) -> String {
     match key {
         ArrayKey::Int(value) => value.to_string(),
@@ -127918,17 +127965,27 @@ impl Interpreter {
                 }
                 Ok(json_quote_string(value, options))
             }
-            Value::BinaryString(value) => match std::str::from_utf8(value) {
-                Ok(value) => {
-                    if options.has_flag(PHP_JSON_NUMERIC_CHECK) {
-                        if let Some(encoded) = json_numeric_check_string(value) {
-                            return Ok(encoded);
-                        }
+            Value::BinaryString(value) => {
+                let value = match std::str::from_utf8(value) {
+                    Ok(value) => value.to_string(),
+                    Err(_) if options.has_flag(PHP_JSON_INVALID_UTF8_IGNORE) => {
+                        json_repair_invalid_utf8_for_encode(value, JsonInvalidUtf8Repair::Ignore)
                     }
-                    Ok(json_quote_string(value, options))
+                    Err(_) if options.has_flag(PHP_JSON_INVALID_UTF8_SUBSTITUTE) => {
+                        json_repair_invalid_utf8_for_encode(
+                            value,
+                            JsonInvalidUtf8Repair::Substitute,
+                        )
+                    }
+                    Err(_) => return self.json_encode_error(PHP_JSON_ERROR_UTF8, options, state),
+                };
+                if options.has_flag(PHP_JSON_NUMERIC_CHECK) {
+                    if let Some(encoded) = json_numeric_check_string(&value) {
+                        return Ok(encoded);
+                    }
                 }
-                Err(_) => self.json_encode_error(PHP_JSON_ERROR_UTF8, options, state),
-            },
+                Ok(json_quote_string(&value, options))
+            }
             Value::Array(array) => self.json_encode_array(array, options, state, depth, span),
             Value::Object(object) => self.json_encode_object(object, options, state, depth, span),
             Value::Resource(_) | Value::Closure(_) => {

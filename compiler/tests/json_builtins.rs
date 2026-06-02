@@ -214,6 +214,56 @@ echo json_last_error(), "|", json_last_error_msg();
 }
 
 #[test]
+fn json_encode_invalid_utf8_flags_repair_binary_strings() {
+    let execution = run_source(
+        r#"<?php
+$one = "\x61\xb0\x62";
+var_dump(json_encode($one));
+var_dump(json_last_error(), json_last_error_msg());
+var_dump(json_encode($one, JSON_INVALID_UTF8_IGNORE));
+var_dump(json_last_error(), json_last_error_msg());
+var_dump(json_encode($one, JSON_INVALID_UTF8_SUBSTITUTE));
+var_dump(json_last_error(), json_last_error_msg());
+echo bin2hex(json_encode($one, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE)), "\n";
+
+$overlong = "\x61\xf0\x80\x80\x41";
+var_dump(json_encode($overlong, JSON_INVALID_UTF8_IGNORE));
+var_dump(json_encode($overlong, JSON_INVALID_UTF8_SUBSTITUTE));
+echo bin2hex(json_encode($overlong, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE)), "\n";
+
+$array = array($one, "ok");
+echo json_encode($array, JSON_INVALID_UTF8_IGNORE), "\n";
+echo json_encode($array, JSON_INVALID_UTF8_SUBSTITUTE), "\n";
+echo json_encode($one, JSON_INVALID_UTF8_IGNORE | JSON_INVALID_UTF8_SUBSTITUTE), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "bool(false)\n",
+            "int(5)\n",
+            "string(56) \"Malformed UTF-8 characters, possibly incorrectly encoded\"\n",
+            "string(4) \"\"ab\"\"\n",
+            "int(0)\n",
+            "string(8) \"No error\"\n",
+            "string(10) \"\"a\\ufffdb\"\"\n",
+            "int(0)\n",
+            "string(8) \"No error\"\n",
+            "2261efbfbd6222\n",
+            "string(4) \"\"aA\"\"\n",
+            "string(10) \"\"a\\ufffdA\"\"\n",
+            "2261efbfbd4122\n",
+            "[\"ab\",\"ok\"]\n",
+            "[\"a\\ufffdb\",\"ok\"]\n",
+            "\"ab\"\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn json_validate_tracks_state_depth_flags_and_utf8() {
     let execution = run_source(
         "<?php\n\

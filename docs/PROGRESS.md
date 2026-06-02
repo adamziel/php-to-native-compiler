@@ -4,6 +4,25 @@
 
 Implemented:
 
+- Added a bounded `json_encode()` invalid UTF-8 flag lane for the selected
+  `json_encode_invalid_utf8.phpt` surface. Binary PHP strings with malformed
+  UTF-8 now honor `JSON_INVALID_UTF8_IGNORE` by dropping malformed encode
+  sequences and `JSON_INVALID_UTF8_SUBSTITUTE` by inserting `U+FFFD` before
+  the existing JSON string quoting path runs; encode-specific flag precedence
+  matches PHP with ignore winning when both invalid-UTF8 flags are supplied.
+  The repair path is used by scalar values plus existing array/object traversal
+  through `json_encode_value()`, while the no-flag path still records
+  `JSON_ERROR_UTF8` and returns `false`. Focused proof covers the Rust
+  `json_encode_invalid_utf8_flags_repair_binary_strings` test, the full
+  `json_builtins` file, direct fixture comparison for
+  `tests/fixtures/milestone2319/json_encode_invalid_utf8_flags.php`, native
+  boundary rejection, and selected PHPT row
+  `ext/json/tests/json_encode_invalid_utf8.phpt`. Unsupported edges remain
+  exact invalid-byte grouping beyond the covered bounded encoder lane, broad
+  UTF-8/UTF-16 diagnostic-location parity, `JSON_THROW_ON_ERROR`, full
+  `JsonSerializable` behavior, complete JSON option interaction parity,
+  remaining json extension functions, and native lowering.
+
 - Added a bounded `FILTER_VALIDATE_IP` IPv6 range-flag lane for the selected
   ext/filter `bug47435.phpt` and `gh16944.phpt` surfaces. The interpreter now
   applies `FILTER_FLAG_NO_PRIV_RANGE` to IPv6 unique-local `fc00::/7`

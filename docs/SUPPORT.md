@@ -12210,7 +12210,9 @@ Unsupported code should fail with an explicit parse, runtime, or codegen error.
   scalar, array, and public-property object values, `stdClass` decode results,
   associative decode mode, selected JSON constants, bigint-as-string decode,
   numeric-string encoding, unicode and hex string escaping, pretty-print
-  formatting, partial output for unsupported values, validation depth and
+  formatting, partial output for unsupported values, `json_encode()` invalid
+  UTF-8 handling for PHP binary strings through `JSON_INVALID_UTF8_IGNORE` and
+  `JSON_INVALID_UTF8_SUBSTITUTE`, validation depth and
   `JSON_INVALID_UTF8_IGNORE` checks, `json_decode()` invalid UTF-8 handling
   for malformed byte units inside quoted JSON string tokens through
   `JSON_INVALID_UTF8_IGNORE` and `JSON_INVALID_UTF8_SUBSTITUTE`, catchable
@@ -12222,6 +12224,7 @@ Unsupported code should fail with an explicit parse, runtime, or codegen error.
   diagnostics for invalid decode depth. Full
   `JsonSerializable` parity, exact exception propagation for every serializer
   shape, exact escaped-string invalid-byte parity, complete UTF-16/UTF-8
-  diagnostics, multi-line and non-ASCII diagnostic-location parity, every JSON
-  option interaction, remaining json extension functions, and native lowering
-  remain unsupported.
+  diagnostics and invalid-byte grouping beyond the covered bounded
+  encode/decode lanes, multi-line and non-ASCII diagnostic-location parity,
+  every JSON option interaction, remaining json extension functions, and
+  native lowering remain unsupported.

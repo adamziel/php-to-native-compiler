@@ -1,0 +1,16 @@
+bool(false)
+int(5)
+string(56) "Malformed UTF-8 characters, possibly incorrectly encoded"
+string(4) ""ab""
+int(0)
+string(8) "No error"
+string(10) ""a\ufffdb""
+int(0)
+string(8) "No error"
+2261efbfbd6222
+string(4) ""aA""
+string(10) ""a\ufffdA""
+2261efbfbd4122
+["ab","ok"]
+["a\ufffdb","ok"]
+"ab"
