@@ -32226,9 +32226,22 @@ impl PhpClassTable {
         classes
             .set_parent(date_object_error_id, error_id)
             .expect("DateObjectError should extend Error");
+        let hash_context_id = classes
+            .declare_class("HashContext")
+            .expect("core class table should contain DateObjectError before HashContext");
+        classes
+            .get_mut(hash_context_id)
+            .expect("declared HashContext class id should resolve")
+            .add_method(PhpMethodMetadata::instance_with_flags(
+                "__construct",
+                Visibility::Private,
+                false,
+                true,
+            ))
+            .expect("HashContext core metadata should not duplicate constructor");
         let datetimezone_id = classes
             .declare_class("DateTimeZone")
-            .expect("core class table should contain DateObjectError before DateTimeZone");
+            .expect("core class table should contain HashContext before DateTimeZone");
         let datetimezone = classes
             .get_mut(datetimezone_id)
             .expect("declared DateTimeZone class id should resolve");

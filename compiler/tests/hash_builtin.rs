@@ -1,8 +1,22 @@
+use std::fs;
+use std::time::{SystemTime, UNIX_EPOCH};
+
 use php_compiler::emit_ir_source;
 use php_compiler::error::Phase;
 use php_compiler::run_source;
 
 const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
+
+fn temp_hash_path(label: &str) -> String {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system time should be after epoch")
+        .as_nanos();
+    std::env::temp_dir()
+        .join(format!("phpc-hash-{label}-{nanos}.txt"))
+        .display()
+        .to_string()
+}
 
 #[test]
 fn hash_hmac_sha256_and_uniqid_cover_current_placeholder_slice() {
@@ -392,14 +406,106 @@ ValueError:hash_init(): Argument #3 ($key) must not be empty when HMAC is reques
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);
 
-    let boundary = run_source("<?php\nhash_init('md5');\n").unwrap_err();
+    let boundary = run_source("<?php\nhash_init('ripemd160');\n").unwrap_err();
     assert_eq!(boundary.phase, Phase::Runtime);
     assert_eq!(boundary.line, 2);
     assert_eq!(boundary.column, 1);
     assert_eq!(
         boundary.message,
-        "unsupported call hash_init(): HashContext allocation and streaming updates are not implemented in the current subset"
+        "unsupported call hash_init(): algorithm ripemd160 is not implemented in the current hash context subset"
     );
+}
+
+#[test]
+fn hash_context_streaming_and_file_paths_cover_bounded_rows() {
+    let path = temp_hash_path("streaming");
+    fs::write(&path, b"abc").unwrap();
+
+    let source = format!(
+        r#"<?php
+$file = {path:?};
+foreach (["hash_update", "hash_final", "hash_copy", "hash_file", "hash_update_file", "hash_update_stream"] as $name) {{
+    echo function_exists($name) && is_callable($name) ? "1" : "0";
+}}
+echo "\n";
+
+$context = hash_init("md5");
+echo $context instanceof HashContext ? "ctx" : "bad", "\n";
+var_dump(hash_update($context, "a"));
+$copy = hash_copy($context);
+hash_update($context, "bc");
+hash_update($copy, "-copy");
+echo hash_final($context), "\n";
+echo hash_final($copy), "\n";
+
+echo hash_file("md5", $file), "|";
+echo hash_file("sha1", $file), "|";
+echo hash_file("sha256", $file), "|";
+echo strlen(hash_file("md5", $file, true)), "\n";
+
+$context = hash_init("md5");
+var_dump(hash_update_file($context, $file));
+echo hash_final($context), "\n";
+
+$stream = tmpfile();
+fwrite($stream, "abc");
+rewind($stream);
+$context = hash_init("md5");
+echo hash_update_stream($context, $stream), "|", hash_final($context), "\n";
+
+$stream = tmpfile();
+fwrite($stream, "abc");
+rewind($stream);
+$context = hash_init("md5");
+echo hash_update_stream($context, $stream, 0), "|", hash_final($context), "\n";
+
+$context = hash_init("sha1");
+hash_final($context);
+foreach ([fn() => hash_update($context, "x"), fn() => hash_final($context), fn() => hash_copy($context)] as $test) {{
+    try {{
+        var_dump($test());
+    }} catch (\Error $e) {{
+        echo get_class($e), ":", $e->getMessage(), "\n";
+    }}
+}}
+
+try {{
+    hash_file("not-real", $file);
+}} catch (\Error $e) {{
+    echo get_class($e), ":", $e->getMessage(), "\n";
+}}
+
+try {{
+    new HashContext();
+}} catch (\Error $e) {{
+    echo get_class($e), ":", $e->getMessage(), "\n";
+}}
+"#
+    );
+
+    let execution = run_source(&source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "111111\n\
+ctx\n\
+bool(true)\n\
+900150983cd24fb0d6963f7d28e17f72\n\
+b20a7076f5694be21ed71dfcd3164ff5\n\
+900150983cd24fb0d6963f7d28e17f72|a9993e364706816aba3e25717850c26c9cd0d89d|ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad|16\n\
+bool(true)\n\
+900150983cd24fb0d6963f7d28e17f72\n\
+3|900150983cd24fb0d6963f7d28e17f72\n\
+0|d41d8cd98f00b204e9800998ecf8427e\n\
+TypeError:hash_update(): Argument #1 ($context) must be a valid, non-finalized HashContext\n\
+TypeError:hash_final(): Argument #1 ($context) must be a valid, non-finalized HashContext\n\
+TypeError:hash_copy(): Argument #1 ($context) must be a valid, non-finalized HashContext\n\
+ValueError:hash_file(): Argument #1 ($algo) must be a valid hashing algorithm\n\
+Error:Call to private HashContext::__construct() from global scope\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+
+    let _ = fs::remove_file(path);
 }
 
 #[test]
@@ -498,6 +604,18 @@ echo function_exists("hash") ? "1" : "0";
 echo is_callable("hash_algos") ? "1" : "0";
 echo function_exists("hash_init") ? "1" : "0";
 echo is_callable("hash_init") ? "1" : "0";
+echo function_exists("hash_update") ? "1" : "0";
+echo is_callable("hash_update") ? "1" : "0";
+echo function_exists("hash_final") ? "1" : "0";
+echo is_callable("hash_final") ? "1" : "0";
+echo function_exists("hash_copy") ? "1" : "0";
+echo is_callable("hash_copy") ? "1" : "0";
+echo function_exists("hash_file") ? "1" : "0";
+echo is_callable("hash_file") ? "1" : "0";
+echo function_exists("hash_update_file") ? "1" : "0";
+echo is_callable("hash_update_file") ? "1" : "0";
+echo function_exists("hash_update_stream") ? "1" : "0";
+echo is_callable("hash_update_stream") ? "1" : "0";
 echo function_exists("hash_hmac") ? "1" : "0";
 echo is_callable("hash_hmac") ? "1" : "0";
 echo function_exists("hash_pbkdf2") ? "1" : "0";
@@ -512,7 +630,7 @@ echo is_callable("uniqid") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 14, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 26, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
 

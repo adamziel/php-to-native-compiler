@@ -28,6 +28,7 @@ const CORE_CLASS_NAMES: &[&str] = &[
     "Uri\\WhatWg\\Url",
     "BcMath\\Number",
     "DateObjectError",
+    "HashContext",
     "DateTimeZone",
     "ReflectionException",
     "Attribute",

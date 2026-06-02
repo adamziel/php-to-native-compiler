@@ -4363,6 +4363,10 @@
   `hash_algos()` returns the PHP 8.2 algorithm metadata list used by the
   public hash PHPT rows, though execution remains bounded to the named
   MD2/MD4/MD5/SHA-1/SHA-2/SHA-3/Whirlpool/checksum algorithms.
+  `hash_file($algo, $filename, $binary = false, $options = [])` supports the
+  same bounded execution algorithms over local paths and local `file://` URLs,
+  returning lowercase hex, raw binary output, or `false` with a PHP-shaped
+  warning when the file cannot be opened.
   `hash_hmac_algos()` returns the bounded PHP cryptographic HMAC algorithm
   metadata list used by the public hash PHPT row; only `hash_hmac('sha256',
   ...)` execution is currently implemented from that list.
@@ -4371,12 +4375,23 @@
   Invalid or non-cryptographic `hash_hmac()` algorithm names on the reached
   direct-call path raise the PHP-shaped catchable `ValueError` diagnostic.
   `HASH_HMAC` is exposed as the PHP HMAC-mode flag. `hash_init($algo, $flags,
-  $key = "", $options = [])` currently supports the bounded validation surface
-  for unknown algorithm names, HMAC mode over known non-cryptographic
-  algorithms, missing/empty HMAC keys, and the null-key deprecation; those
-  validation failures raise PHP-shaped catchable `ValueError` diagnostics.
-  Successful `HashContext` allocation remains rejected until streaming state is
-  implemented.
+  $key = "", $options = [])` supports non-HMAC `HashContext` allocation for
+  the same bounded MD2/MD4/MD5/SHA-1/SHA-2/SHA-3/Whirlpool/checksum execution
+  set and keeps the bounded validation surface for unknown algorithm names,
+  HMAC mode over known non-cryptographic algorithms, missing/empty HMAC keys,
+  and the null-key deprecation; those validation failures raise PHP-shaped
+  catchable `ValueError` diagnostics.
+  `hash_update($context, $data)` appends string-convertible bytes to a
+  non-finalized context, `hash_final($context, $binary = false)` finalizes the
+  context and returns lowercase hex or raw binary digest output, and
+  `hash_copy($context)` clones a non-finalized buffered context. Finalized or
+  otherwise invalid contexts raise PHP-shaped catchable `TypeError`s for the
+  direct covered calls.
+  `hash_update_file($context, $filename, $options = [])` appends bytes from
+  bounded local paths/local `file://` URLs and returns `true` on success or
+  `false` with a PHP-shaped warning when the file cannot be opened.
+  `hash_update_stream($context, $stream, $length = -1)` appends bytes from the
+  current readable stream subset and returns the number of bytes consumed.
   `hash_pbkdf2($algo, $password, $salt, $iterations, $length = 0,
   $binary = false)` is exposed as a validation-only interpreter boundary for
   the selected error surface: invalid or non-cryptographic algorithms,
@@ -4387,13 +4402,13 @@
   string operands, constant-work same-length byte comparison, and PHP-shaped
   type diagnostics for non-string operands.
   Hash algorithms outside that bounded MD2/MD4/MD5/SHA-1/SHA-2/SHA-3/
-  Whirlpool/checksum execution set, non-empty `hash()` options arrays,
-  `HashContext` allocation and streaming hash updates/finalization,
-  `hash_hmac()` execution for algorithms beyond SHA-256, `hash_hmac()` raw
-  binary output, `hash_init()` HMAC context execution and non-empty options
-  arrays, `hash_pbkdf2()` derivation output, exact time/entropy behavior,
-  cryptographic guarantees for generated IDs, array/object/resource coercions
-  outside the documented strict
+  Whirlpool/checksum execution set, non-empty `hash()`/`hash_file()`/
+  `hash_init()`/`hash_update_file()` options arrays, `hash_init()` HMAC context
+  execution, `hash_hmac()` execution for algorithms beyond SHA-256,
+  `hash_hmac()` raw binary output, `hash_pbkdf2()` derivation output, remote
+  stream wrappers, binary stream reads outside the UTF-8 stream subset, exact
+  time/entropy behavior, cryptographic guarantees for generated IDs,
+  array/object/resource coercions outside the documented strict
   `hash_equals()` type errors, broader exact diagnostics, and native lowering
   remain unsupported.
   `md5($string, $binary = false)` and `sha1($string, $binary = false)`
@@ -4407,9 +4422,8 @@
   arrays, objects, closures, and resources raise catchable PHP-shaped
   `TypeError`s. Array string operands use the current PHP-shaped type
   diagnostics; object/resource input-string coercions, exact null-to-bool and
-  lossy scalar flag deprecation diagnostics, FIPS/provider policy, streaming
-  hash contexts, remote stream wrappers, and native lowering remain
-  unsupported.
+  lossy scalar flag deprecation diagnostics, FIPS/provider policy, remote
+  stream wrappers, and native lowering remain unsupported.
   `call_user_func($callback, ...$args)` supports string callbacks resolving to
   current user functions or documented callable builtins, current ordinary
   closure values, and public `[object, method]` / `[class, method]` array

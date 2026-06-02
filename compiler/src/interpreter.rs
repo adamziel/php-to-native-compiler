@@ -338,6 +338,7 @@ struct Interpreter {
     spl_iterator_wrappers: HashMap<i64, SplIteratorWrapperState>,
     date_time_objects: HashMap<i64, BoundedDateTimeObjectState>,
     date_interval_objects: HashMap<i64, BoundedDateIntervalState>,
+    hash_contexts: HashMap<i64, BoundedHashContextState>,
     uri_rfc3986_empty_port_objects: HashSet<i64>,
     source_file: Option<String>,
     main_source_file: Option<String>,
@@ -732,6 +733,13 @@ struct BoundedDateIntervalState {
     total_days: Option<i64>,
     from_string: bool,
     date_string: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct BoundedHashContextState {
+    algorithm: PhpHashAlgorithm,
+    data: Vec<u8>,
+    finalized: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -11330,6 +11338,7 @@ impl Interpreter {
             spl_iterator_wrappers: HashMap::new(),
             date_time_objects: HashMap::new(),
             date_interval_objects: HashMap::new(),
+            hash_contexts: HashMap::new(),
             uri_rfc3986_empty_port_objects: HashSet::new(),
             main_source_file: source_file.clone(),
             source_file,
@@ -26985,6 +26994,14 @@ impl Interpreter {
         if declared_class_name.eq_ignore_ascii_case("BcMath\\Number") {
             return self.instantiate_bcmath_number(args, span, scope);
         }
+        if declared_class_name.eq_ignore_ascii_case("HashContext") {
+            return Err(Diagnostic::new(
+                Phase::Runtime,
+                span.line,
+                span.column,
+                "Call to private HashContext::__construct() from global scope",
+            ));
+        }
         if declared_class_name.eq_ignore_ascii_case("Uri\\Rfc3986\\Uri") {
             return self.instantiate_uri_rfc3986(args, span, scope);
         }
@@ -27657,6 +27674,7 @@ impl Interpreter {
         self.spl_file_objects.remove(&object_id);
         self.spl_iterator_wrappers.remove(&object_id);
         self.date_time_objects.remove(&object_id);
+        self.hash_contexts.remove(&object_id);
         self.uri_rfc3986_empty_port_objects.remove(&object_id);
 
         if self.next_object_id == object_id.saturating_add(1) {
@@ -27981,6 +27999,15 @@ impl Interpreter {
         }
         if let Some(state) = self.date_time_objects.get(&object.id()).cloned() {
             self.date_time_objects.insert(clone.id(), state);
+        }
+        if let Some(state) = self.hash_contexts.get(&object.id()).cloned() {
+            if state.finalized {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call("clone", "Cannot clone a finalized HashContext"),
+                ));
+            }
+            self.hash_contexts.insert(clone.id(), state);
         }
 
         if let Some((class_id, class_name, method_name, visibility, is_static)) =
@@ -83181,6 +83208,17 @@ impl Interpreter {
         value: &Value,
         span: Span,
     ) -> CompileResult<String> {
+        self.filesystem_filename_argument_for_parameter(function, 1, "filename", value, span)
+    }
+
+    fn filesystem_filename_argument_for_parameter(
+        &mut self,
+        function: &str,
+        position: usize,
+        name: &str,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<String> {
         let path = match value {
             Value::String(path) => path.clone(),
             Value::BinaryString(bytes) => {
@@ -83193,7 +83231,7 @@ impl Interpreter {
                     RuntimeError::unsupported_call(
                         format!("{function}()"),
                         format!(
-                            "Argument #1 ($filename) must be of type string, {} given",
+                            "Argument #{position} (${name}) must be of type string, {} given",
                             php_type_error_given(other)
                         ),
                     ),
@@ -83211,7 +83249,7 @@ impl Interpreter {
                 span,
                 RuntimeError::unsupported_call(
                     format!("{function}()"),
-                    "Argument #1 ($filename) must not contain any null bytes",
+                    format!("Argument #{position} (${name}) must not contain any null bytes"),
                 ),
             ));
         }
@@ -91623,6 +91661,12 @@ impl Interpreter {
             "uniqid" => call_uniqid(&args, span),
             "crypt" => call_crypt(&args, span),
             "hash_init" => call_hash_init(self, &args, span),
+            "hash_update" => self.call_hash_update(&args, span),
+            "hash_final" => self.call_hash_final(&args, span),
+            "hash_copy" => self.call_hash_copy(&args, span),
+            "hash_file" => self.call_hash_file(&args, span),
+            "hash_update_file" => self.call_hash_update_file(&args, span),
+            "hash_update_stream" => self.call_hash_update_stream(&args, span),
             "hash" => call_hash(&args, span),
             "hash_algos" => call_hash_algos(&args, span),
             "hash_hmac_algos" => call_hash_hmac_algos(&args, span),
@@ -105752,7 +105796,7 @@ fn seed_interpreter_generator_class(classes: &mut PhpClassTable) -> CompileResul
 }
 
 fn seed_core_final_class_markers(classes: &PhpClassTable, final_classes: &mut HashSet<ClassId>) {
-    for class_name in ["BcMath\\Number"] {
+    for class_name in ["BcMath\\Number", "HashContext"] {
         if let Some(class_id) = classes.lookup_class_id(class_name) {
             final_classes.insert(class_id);
         }
@@ -108287,6 +108331,49 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                     Expr::String(String::new(), Span::new(0, 0)),
                 ),
                 reflection_internal_optional_empty_array_param("options", "array"),
+            ],
+        ),
+        "hash_update" => (
+            "bool",
+            vec![
+                reflection_internal_param("context", "HashContext"),
+                reflection_internal_param("data", "string"),
+            ],
+        ),
+        "hash_final" => (
+            "string",
+            vec![
+                reflection_internal_param("context", "HashContext"),
+                reflection_internal_optional_bool_param("binary", false),
+            ],
+        ),
+        "hash_copy" => (
+            "HashContext",
+            vec![reflection_internal_param("context", "HashContext")],
+        ),
+        "hash_file" => (
+            "string|false",
+            vec![
+                reflection_internal_param("algo", "string"),
+                reflection_internal_param("filename", "string"),
+                reflection_internal_optional_bool_param("binary", false),
+                reflection_internal_optional_empty_array_param("options", "array"),
+            ],
+        ),
+        "hash_update_file" => (
+            "bool",
+            vec![
+                reflection_internal_param("context", "HashContext"),
+                reflection_internal_param("filename", "string"),
+                reflection_internal_optional_empty_array_param("options", "array"),
+            ],
+        ),
+        "hash_update_stream" => (
+            "int",
+            vec![
+                reflection_internal_param("context", "HashContext"),
+                reflection_internal_param("stream", "resource"),
+                reflection_internal_optional_int_param("length", -1),
             ],
         ),
         "hash" => (
@@ -111897,6 +111984,10 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
             return Some(("Error", error.message.clone()));
         }
 
+        if error.message == "Call to private HashContext::__construct() from global scope" {
+            return Some(("Error", error.message.clone()));
+        }
+
         if error
             .message
             .starts_with("Cannot instantiate abstract class ")
@@ -112090,6 +112181,10 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
 
         if let Some((class_name, message)) = stream_context_php_error_class_and_message(error) {
             return Some((class_name, message));
+        }
+
+        if let Some(message) = hash_context_php_type_error_message(error) {
+            return Some(("TypeError", message));
         }
 
         if let Some(message) = array_reduce_callback_too_few_arguments_message(error) {
@@ -113065,6 +113160,7 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
         )
         | ("str_word_count()", "Argument #2 ($format) must be a valid format value")
         | ("hash()", "Argument #1 ($algo) must be a valid hashing algorithm")
+        | ("hash_file()", "Argument #1 ($algo) must be a valid hashing algorithm")
         | ("parse_str()", "Argument #1 ($string) must not contain any null bytes")
         | ("strpbrk()", "Argument #2 ($characters) must be a non-empty string")
         | ("metaphone()", "Argument #2 ($max_phonemes) must be greater than or equal to 0")
@@ -113152,6 +113248,7 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
         | ("fread()", "Argument #2 ($length) must be greater than 0")
         | ("usleep()", "Argument #1 ($microseconds) must be greater than or equal to 0")
         | ("stream_get_contents()", "Argument #2 ($length) must be greater than or equal to -1")
+        | ("hash_update_stream()", "Argument #3 ($length) must be greater than or equal to -1")
         | (
             "touch()",
             "Argument #2 ($mtime) cannot be null when argument #3 ($atime) is an integer",
@@ -113325,14 +113422,20 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
         }
         (
             "file_get_contents()" | "file_put_contents()" | "readfile()" | "md5_file()"
-            | "sha1_file()",
+            | "sha1_file()" | "hash_file()" | "hash_update_file()",
             "Argument #1 ($filename) must not contain any null bytes",
         ) => {
             Some(format!("{function}: {message}"))
         }
         (
+            "hash_file()" | "hash_update_file()",
+            "Argument #2 ($filename) must not contain any null bytes",
+        ) => {
+            Some(format!("{function}: {message}"))
+        }
+        (
             "file_get_contents()" | "file_put_contents()" | "readfile()" | "md5_file()"
-            | "sha1_file()",
+            | "sha1_file()" | "hash_file()" | "hash_update_file()",
             "Path must not be empty",
         ) => Some("Path must not be empty".to_string()),
         (
@@ -113601,6 +113704,27 @@ fn stream_context_php_error_class_and_message(
         }
     }
 
+    None
+}
+
+fn hash_context_php_type_error_message(error: &Diagnostic) -> Option<String> {
+    if error.phase != Phase::Runtime {
+        return None;
+    }
+    let message = error.message.strip_prefix("unsupported call ")?;
+    let (function, reason) = message.split_once(": ")?;
+    if matches!(
+        function,
+        "hash_update()"
+            | "hash_final()"
+            | "hash_copy"
+            | "hash_copy()"
+            | "hash_update_file()"
+            | "hash_update_stream()"
+    ) && reason == "Argument #1 ($context) must be a valid, non-finalized HashContext"
+    {
+        return Some(format!("{function}: {reason}"));
+    }
     None
 }
 
@@ -114182,6 +114306,12 @@ fn is_builtin(name: &str) -> bool {
             | "uniqid"
             | "crypt"
             | "hash_init"
+            | "hash_update"
+            | "hash_final"
+            | "hash_copy"
+            | "hash_file"
+            | "hash_update_file"
+            | "hash_update_stream"
             | "hash"
             | "hash_algos"
             | "hash_hmac_algos"
@@ -141356,7 +141486,7 @@ fn call_uniqid(args: &[Value], span: Span) -> CompileResult<Value> {
     Ok(Value::String(value))
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 enum PhpHashAlgorithm {
     Md2,
     Md4,
@@ -141670,13 +141800,327 @@ fn call_hash_init(
         }
     }
 
-    Err(runtime_error(
-        span,
-        RuntimeError::unsupported_call(
-            "hash_init()",
-            "HashContext allocation and streaming updates are not implemented in the current subset",
-        ),
-    ))
+    if hmac_requested {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "hash_init()",
+                "HMAC HashContext allocation is not implemented in the current hash context subset",
+            ),
+        ));
+    }
+
+    let Some(algorithm_kind) = php_hash_algorithm(&algorithm) else {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "hash_init()",
+                format!(
+                    "algorithm {} is not implemented in the current hash context subset",
+                    algorithm.to_ascii_lowercase()
+                ),
+            ),
+        ));
+    };
+
+    let state = BoundedHashContextState {
+        algorithm: algorithm_kind,
+        data: Vec::new(),
+        finalized: false,
+    };
+    interpreter
+        .create_hash_context_object(state, span)
+        .map(Value::Object)
+}
+
+impl Interpreter {
+    fn create_hash_context_object(
+        &mut self,
+        state: BoundedHashContextState,
+        span: Span,
+    ) -> CompileResult<PhpObject> {
+        let class_id = self
+            .classes
+            .lookup_class_id("HashContext")
+            .ok_or_else(|| runtime_error(span, RuntimeError::undefined_class("HashContext")))?;
+        let object_id = self.allocate_object_id();
+        let inherited_properties = self.inherited_instance_properties(class_id);
+        let mut ancestor_class_names = self.inherited_class_names(class_id);
+        ancestor_class_names.extend(self.class_alias_names(class_id));
+        let interface_names = self.class_implements_interface_names(class_id);
+        let class = self
+            .classes
+            .get(class_id)
+            .expect("HashContext class id should resolve");
+        let object = PhpObject::from_class_with_relationship_metadata_with_id(
+            class,
+            &inherited_properties,
+            ancestor_class_names,
+            interface_names,
+            object_id,
+        );
+        self.apply_instance_property_defaults(&object, class_id, span)?;
+        self.hash_contexts.insert(object.id(), state);
+        self.track_allocated_object(&object);
+        Ok(object)
+    }
+
+    fn hash_context_object_id(
+        &self,
+        function: &'static str,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<i64> {
+        let Value::Object(object) = value else {
+            return Err(hash_context_invalid_error(function, span));
+        };
+        if !object.is_instance_of_class_name("HashContext") {
+            return Err(hash_context_invalid_error(function, span));
+        }
+        let Some(state) = self.hash_contexts.get(&object.id()) else {
+            return Err(hash_context_invalid_error(function, span));
+        };
+        if state.finalized {
+            return Err(hash_context_invalid_error(function, span));
+        }
+        Ok(object.id())
+    }
+
+    fn hash_context_state_mut(
+        &mut self,
+        function: &'static str,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<&mut BoundedHashContextState> {
+        let id = self.hash_context_object_id(function, value, span)?;
+        self.hash_contexts
+            .get_mut(&id)
+            .ok_or_else(|| hash_context_invalid_error(function, span))
+    }
+
+    fn call_hash_update(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("hash_update", args, 2, span)?;
+        let data = string_compare_argument_bytes("hash_update()", "data", &args[1], span)?;
+        let state = self.hash_context_state_mut("hash_update()", &args[0], span)?;
+        state.data.extend(data);
+        Ok(Value::Bool(true))
+    }
+
+    fn call_hash_final(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(1..=2).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "hash_final()",
+                    ArityExpectation::Between { min: 1, max: 2 },
+                    args.len(),
+                ),
+            ));
+        }
+        let raw_output = match args.get(1) {
+            Some(value) => php_internal_bool_argument("hash_final()", 2, "binary", value, span)?,
+            None => false,
+        };
+        let state = self.hash_context_state_mut("hash_final()", &args[0], span)?;
+        let digest = php_hash_digest_bytes(state.algorithm, &state.data);
+        state.finalized = true;
+        if raw_output {
+            Ok(Value::BinaryString(digest))
+        } else {
+            Ok(Value::String(hex_bytes(&digest)))
+        }
+    }
+
+    fn call_hash_copy(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("hash_copy", args, 1, span)?;
+        let state = self
+            .hash_contexts
+            .get(&self.hash_context_object_id("hash_copy()", &args[0], span)?)
+            .cloned()
+            .ok_or_else(|| hash_context_invalid_error("hash_copy()", span))?;
+        self.create_hash_context_object(state, span)
+            .map(Value::Object)
+    }
+
+    fn call_hash_file(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(2..=4).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "hash_file()",
+                    ArityExpectation::Between { min: 2, max: 4 },
+                    args.len(),
+                ),
+            ));
+        }
+        let algorithm = string_builtin_argument("hash_file()", "algo", &args[0], span)?;
+        if !is_php_hash_algorithm_name(&algorithm) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "hash_file()",
+                    "Argument #1 ($algo) must be a valid hashing algorithm",
+                ),
+            ));
+        }
+        let Some(algorithm_kind) = php_hash_algorithm(&algorithm) else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "hash_file()",
+                    format!(
+                        "algorithm {} is not implemented in the current hash file subset",
+                        algorithm.to_ascii_lowercase()
+                    ),
+                ),
+            ));
+        };
+        let path = self.filesystem_filename_argument_for_parameter(
+            "hash_file",
+            2,
+            "filename",
+            &args[1],
+            span,
+        )?;
+        let raw_output = match args.get(2) {
+            Some(value) => php_internal_bool_argument("hash_file()", 3, "binary", value, span)?,
+            None => false,
+        };
+        validate_hash_options_argument("hash_file()", 4, args.get(3), span)?;
+        let Some(contents) = self.hash_file_contents("hash_file", &path, span)? else {
+            return Ok(Value::Bool(false));
+        };
+        let digest = php_hash_digest_bytes(algorithm_kind, &contents);
+        if raw_output {
+            Ok(Value::BinaryString(digest))
+        } else {
+            Ok(Value::String(hex_bytes(&digest)))
+        }
+    }
+
+    fn call_hash_update_file(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(2..=3).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "hash_update_file()",
+                    ArityExpectation::Between { min: 2, max: 3 },
+                    args.len(),
+                ),
+            ));
+        }
+        let context_id = self.hash_context_object_id("hash_update_file()", &args[0], span)?;
+        let path = self.filesystem_filename_argument_for_parameter(
+            "hash_update_file",
+            2,
+            "filename",
+            &args[1],
+            span,
+        )?;
+        validate_hash_options_argument("hash_update_file()", 3, args.get(2), span)?;
+        let Some(contents) = self.hash_file_contents("hash_update_file", &path, span)? else {
+            return Ok(Value::Bool(false));
+        };
+        let state = self
+            .hash_contexts
+            .get_mut(&context_id)
+            .ok_or_else(|| hash_context_invalid_error("hash_update_file()", span))?;
+        state.data.extend(contents);
+        Ok(Value::Bool(true))
+    }
+
+    fn call_hash_update_stream(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(2..=3).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "hash_update_stream()",
+                    ArityExpectation::Between { min: 2, max: 3 },
+                    args.len(),
+                ),
+            ));
+        }
+        let context_id = self.hash_context_object_id("hash_update_stream()", &args[0], span)?;
+        let length = match args.get(2) {
+            Some(value) => {
+                let length =
+                    php_internal_int_argument("hash_update_stream()", 3, "length", value, span)?;
+                if length < -1 {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "hash_update_stream()",
+                            "Argument #3 ($length) must be greater than or equal to -1",
+                        ),
+                    ));
+                }
+                (length >= 0).then_some(length as usize)
+            }
+            None => None,
+        };
+        let contents = self.stream_read_to_string("hash_update_stream", &args[1], length, span)?;
+        let byte_count = contents.len();
+        let state = self
+            .hash_contexts
+            .get_mut(&context_id)
+            .ok_or_else(|| hash_context_invalid_error("hash_update_stream()", span))?;
+        state.data.extend(contents.into_bytes());
+        Ok(Value::Int(byte_count as i64))
+    }
+
+    fn hash_file_contents(
+        &mut self,
+        function: &str,
+        path: &str,
+        span: Span,
+    ) -> CompileResult<Option<Vec<u8>>> {
+        let callable = format!("{function}()");
+        if !self.ensure_stream_wrapper_can_open_path(&callable, path, span)? {
+            return Ok(None);
+        }
+        let filesystem_path = if let Some(file_url_path) = bounded_local_file_url_path(path) {
+            file_url_path.map_err(|message| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(callable.clone(), message),
+                )
+            })?
+        } else if path.contains("://") {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    callable,
+                    "only local file:// URLs and local file paths are supported in the current stream-wrapper subset",
+                ),
+            ));
+        } else {
+            self.resolve_file_get_contents_path(path, false)
+        };
+        if !self.enforce_bounded_open_basedir(
+            &format!("{function}()"),
+            path,
+            &filesystem_path,
+            span,
+        )? {
+            return Ok(None);
+        }
+        match fs::read(&filesystem_path) {
+            Ok(contents) => {
+                self.cache_bounded_realpath_entry_for_local_path(&filesystem_path);
+                Ok(Some(contents))
+            }
+            Err(error) => {
+                self.emit_display_warning(
+                    format!(
+                        "{function}({path}): Failed to open stream: {}",
+                        php_filesystem_open_error_message(&error)
+                    ),
+                    span,
+                )?;
+                Ok(None)
+            }
+        }
+    }
 }
 
 fn call_crypt(args: &[Value], span: Span) -> CompileResult<Value> {
@@ -141709,6 +142153,45 @@ fn hash_raw_output_argument(value: Option<&Value>, span: Span) -> CompileResult<
         Some(value) => Ok(value.is_truthy()),
         None => Ok(false),
     }
+}
+
+fn validate_hash_options_argument(
+    function: &'static str,
+    position: usize,
+    value: Option<&Value>,
+    span: Span,
+) -> CompileResult<()> {
+    match value {
+        Some(Value::Array(array)) if array.is_empty() => Ok(()),
+        Some(Value::Array(_)) => Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                "non-empty options arrays are not implemented in the current hash subset",
+            ),
+        )),
+        Some(other) => Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                format!(
+                    "Argument #{position} ($options) must be of type array, {} given",
+                    php_type_error_given(other)
+                ),
+            ),
+        )),
+        None => Ok(()),
+    }
+}
+
+fn hash_context_invalid_error(function: &'static str, span: Span) -> Diagnostic {
+    runtime_error(
+        span,
+        RuntimeError::unsupported_call(
+            function,
+            "Argument #1 ($context) must be a valid, non-finalized HashContext",
+        ),
+    )
 }
 
 fn php_hash_algorithm(name: &str) -> Option<PhpHashAlgorithm> {

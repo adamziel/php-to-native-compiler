@@ -4,6 +4,25 @@
 
 Implemented:
 
+- Added a bounded non-HMAC hash streaming and file hashing lane. `hash_init()`
+  now materializes interpreter `HashContext` objects for the supported
+  MD2/MD4/MD5/SHA-1/SHA-2/SHA-3/Whirlpool/checksum algorithm set;
+  `hash_update()`, `hash_final()`, and `hash_copy()` operate on buffered
+  non-finalized context state; `hash_file()` hashes bounded local paths/local
+  `file://` URLs; and `hash_update_file()`/`hash_update_stream()` append file
+  or readable-stream bytes to a context. Direct `new HashContext()` reports
+  the private-constructor error, and finalized contexts raise PHP-shaped
+  `TypeError`s for the covered calls. Focused proof covers the Rust
+  `hash_context_streaming_and_file_paths_cover_bounded_rows` regression,
+  hash metadata folding, selected public PHPT rows `hash_file_basic.phpt`,
+  `hash_file_error.phpt`, `new-context.phpt`, `reuse.phpt`,
+  `hash_update_file.phpt`, `hash_update_stream.phpt`, and `gh12186_1.phpt`,
+  build/fmt/diff checks. Unsupported edges remain HMAC contexts, advertised
+  algorithms outside the bounded execution set, non-empty options arrays,
+  remote stream wrappers, binary stream reads outside the current UTF-8 stream
+  subset, serialization/debug-info parity, broader exact diagnostics, and
+  native lowering.
+
 - Added a bounded internal DateTime reflection-parameter metadata lane on the
   interpreter path. `ReflectionMethod::getParameters()` now exposes PHP-shaped
   names, types, optional/default flags, default values, constant-default names,
@@ -550,7 +569,6 @@ Implemented:
   inheritance metadata, flags/CSV/drop-newline/read-ahead behavior,
   binary/non-UTF-8 line storage, independent nested iterator cursors,
   serialization parity, references/COW, and native lowering.
-
 - Accepted checkpoint `538c136c` as the current public PHPT score source after
   a full pinned php-src gate completed with zero latest-published PASS
   regressions. The public-comparable score is now `5816 / 20294 = 28.66%`,

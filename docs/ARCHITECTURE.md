@@ -2814,27 +2814,28 @@ range, max, seed, `random_int()`, `random_bytes()`, and `lcg_value()` call
 shapes so compatibility probes are reproducible. They are not entropy sources;
 PHP random-state compatibility, distribution, real seeding, cryptographic
 randomness, and native lowering remain out of scope.
-`uniqid()`, `hash()`, `hash_algos()`, `hash_hmac()`, `hash_pbkdf2()`, `md5()`,
-and `md5_file()` are interpreter-only deterministic hash boundaries for the
-same placeholder-escape path and focused file-content checks. `uniqid()`
-returns a fixed prefix-based ID with a PHP-shaped more-entropy suffix length,
+`uniqid()`, `hash()`, `hash_file()`, `hash_algos()`, `hash_init()`,
+`hash_update()`, `hash_final()`, `hash_copy()`, `hash_update_file()`,
+`hash_update_stream()`, `hash_hmac()`, `hash_pbkdf2()`, `md5()`, and
+`md5_file()` are interpreter-only deterministic hash boundaries for the same
+placeholder-escape path and focused file-content checks. `uniqid()` returns a
+fixed prefix-based ID with a PHP-shaped more-entropy suffix length,
 `hash_hmac()` currently supports lowercase hex HMAC-SHA256 through the `hmac`
-and `sha2` crates, `hash()` covers a bounded MD2/MD4/MD5/SHA-1/SHA-2/SHA-3
-and Whirlpool digest set with lowercase hex or raw binary output,
-`hash_pbkdf2()` covers only the current algorithm/iteration/length validation
-surface before rejecting successful PBKDF2 derivation, `md5()` supports
-scalar/null string-convertible input with lowercase hex or raw binary output
-through the `md-5` crate, and `md5_file()` uses the bounded local-file path
-policy shared with `sha1_file()`. The `md5()`/`sha1()` direct helpers and the
-bounded local-file digest helpers share the PHP-internal bool boundary for
-their `$binary` flags, so scalar truthiness selects hex or raw output while
-arrays, objects, closures, and resources stop at catchable type diagnostics.
-`HASH_HMAC` and `hash_init()` cover the current validation-only HMAC-mode
-boundary for unknown algorithms, known non-cryptographic algorithms, and
-missing HMAC keys before explicitly rejecting successful `HashContext`
-allocation. Streaming hash contexts, PBKDF2 output derivation, exact
+and `sha2` crates, and `hash()`/`hash_file()`/non-HMAC `HashContext` streaming
+cover the bounded MD2/MD4/MD5/SHA-1/SHA-2/SHA-3/Whirlpool/checksum digest set
+with lowercase hex or raw binary output. `hash_update_file()` reads bounded
+local paths through the same policy as `md5_file()`/`sha1_file()`, and
+`hash_update_stream()` consumes the current readable stream subset into the
+buffered interpreter context state. `hash_pbkdf2()` covers only the current
+algorithm/iteration/length validation surface before rejecting successful
+PBKDF2 derivation, `md5()` supports scalar/null string-convertible input with
+lowercase hex or raw binary output through the `md-5` crate, and `md5_file()`
+uses the bounded local-file path policy shared with `sha1_file()`. HMAC
+`HashContext` execution, advertised algorithms outside the bounded execution
+set, non-empty hash options arrays, PBKDF2 output derivation, exact
 null/lossy bool deprecations, exact entropy/time behavior, FIPS/provider
-policy, and native lowering remain out of scope.
+policy, remote stream wrappers, binary stream reads outside the UTF-8 stream
+subset, and native lowering remain out of scope.
 `strcasecmp()` is an interpreter-only bounded string comparison builtin for
 current scalar/null string-convertible values. It compares valid UTF-8 runtime
 strings and binary-string values by bytes with ASCII case folding and returns
