@@ -121807,46 +121807,22 @@ fn call_substr(args: &[Value], span: Span) -> CompileResult<Value> {
     }
 
     let value = string_contains_argument("substr()", "string", &args[0], span)?;
-    let offset = match args.get(1) {
-        Some(Value::Int(offset)) => *offset,
-        Some(other) => {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "substr()",
-                    format!(
-                        "offset argument must be int in the current subset, got {}",
-                        other.type_name()
-                    ),
-                ),
-            ));
-        }
-        None => unreachable!("arity checked above"),
-    };
+    let offset = php_internal_int_argument("substr()", 2, "offset", &args[1], span)?;
     let value_len = value.len() as i64;
     let start = if offset >= 0 {
         offset.min(value_len)
     } else {
-        (value_len + offset).max(0)
+        value_len.saturating_add(offset).max(0)
     };
 
-    let end = match args.get(2) {
-        Some(Value::Null) => value_len,
-        Some(Value::Int(length)) if *length >= 0 => (start + *length).min(value_len),
-        Some(Value::Int(length)) => (value_len + *length).max(0),
-        Some(other) => {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "substr()",
-                    format!(
-                        "length argument must be int in the current subset, got {}",
-                        other.type_name()
-                    ),
-                ),
-            ));
-        }
+    let length = match args.get(2) {
+        Some(value) => php_internal_nullable_int_argument("substr()", 3, "length", value, span)?,
+        None => None,
+    };
+    let end = match length {
         None => value_len,
+        Some(length) if length >= 0 => start.saturating_add(length).min(value_len),
+        Some(length) => value_len.saturating_add(length).max(0),
     };
     let end = end.max(start).min(value_len);
     let bytes = value.as_bytes()[start as usize..end as usize].to_vec();

@@ -23,11 +23,28 @@ echo "|";
 echo substr("abcdef", 2, null);
 echo "|";
 echo substr(12345, 1, 3);
+echo "|";
+echo substr("abcdef", "2", "3");
+echo "|";
+echo substr("abcdef", 1.9, "2.8");
+echo "|";
+echo substr("abcdef", false, true);
+echo "|";
+echo substr("abcdef", null, 2);
+echo "|";
+echo substr("abcdef", -2.7, null);
+echo "|";
+echo substr("x", PHP_INT_MIN);
+echo "|";
+echo substr("x", 0, PHP_INT_MIN) === "" ? "empty" : "nonempty";
 "#,
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "cdef|cde|ef|abcde|cd|empty|cdef|234");
+    assert_eq!(
+        execution.stdout,
+        "cdef|cde|ef|abcde|cd|empty|cdef|234|cde|bc|a|ab|ef|x|empty"
+    );
     assert_eq!(execution.exit_code, 0);
 }
 
@@ -60,22 +77,49 @@ fn substr_rejects_forms_outside_current_subset() {
         "unsupported call substr(): string argument arrays are not implemented in the current subset"
     );
 
-    let bad_offset = run_source("<?php\nsubstr('abc', '1');\n").unwrap_err();
-    assert_eq!(bad_offset.phase, Phase::Runtime);
-    assert_eq!(bad_offset.line, 2);
-    assert_eq!(bad_offset.column, 1);
+    let bad_offset = run_source(
+        r#"<?php
+try {
+    substr('abc', 'bad');
+} catch (TypeError $e) {
+    echo $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
     assert_eq!(
-        bad_offset.message,
-        "unsupported call substr(): offset argument must be int in the current subset, got string"
+        bad_offset.stdout,
+        "substr(): Argument #2 ($offset) must be of type int, string given"
     );
 
-    let bad_length = run_source("<?php\nsubstr('abc', 0, '1');\n").unwrap_err();
-    assert_eq!(bad_length.phase, Phase::Runtime);
-    assert_eq!(bad_length.line, 2);
-    assert_eq!(bad_length.column, 1);
+    let bad_length = run_source(
+        r#"<?php
+try {
+    substr('abc', 0, 'bad');
+} catch (TypeError $e) {
+    echo $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
     assert_eq!(
-        bad_length.message,
-        "unsupported call substr(): length argument must be int in the current subset, got string"
+        bad_length.stdout,
+        "substr(): Argument #3 ($length) must be of type ?int, string given"
+    );
+
+    let array_offset = run_source(
+        r#"<?php
+try {
+    substr('abc', []);
+} catch (TypeError $e) {
+    echo $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
+    assert_eq!(
+        array_offset.stdout,
+        "substr(): Argument #2 ($offset) must be of type int, array given"
     );
 
     let too_few = run_source("<?php\nsubstr('abc');\n").unwrap_err();

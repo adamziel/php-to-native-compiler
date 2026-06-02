@@ -4,6 +4,22 @@
 
 Implemented:
 
+- Added a bounded `substr()` weak offset/nullable-length coercion lane.
+  Direct and string-valued dynamic `substr()` calls now route `$offset`
+  through the shared PHP-internal int boundary and `$length` through the
+  shared nullable-int boundary, accepting null, booleans, finite floats, and
+  numeric strings while retaining PHP-shaped `int` / `?int` `TypeError`
+  diagnostics for array/object operands. Negative offset/length window math
+  now uses saturating bounds, so `PHP_INT_MIN` offset and length values clamp
+  to PHP-shaped slices instead of overflowing the interpreter's integer math.
+  Focused proof covers the Rust `substr_executes_current_scalar_string_subset`
+  and `substr_rejects_forms_outside_current_subset` regressions, direct
+  `phpc run` probes for scalar coercions and `PHP_INT_MIN`, and selected
+  public PHPT `substr` rows. Unsupported edges remain deprecation warnings for
+  null/lossy scalar coercions, object/resource string operands, invalid UTF-8
+  byte ranges, exact diagnostics beyond the covered type boundary, and native
+  lowering.
+
 - Added a bounded `ArrayObject::getIterator()` temporary foreach iterator
   lifetime lane for the selected `arrayObject_getIteratorClass_basic1.phpt`
   surface. By-value `foreach` over `IteratorAggregate` objects now retires the
