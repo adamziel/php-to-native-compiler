@@ -2861,7 +2861,11 @@ PHP-shaped ASCII apostrophe/hyphen run boundary. `mb_strcut()` and
 boundary; `mb_strcut()` applies byte offsets and lengths while rounding UTF-8
 cuts to scalar boundaries, and `mb_substr_count()` counts non-overlapping
 needle occurrences, with empty-needle and unknown-encoding diagnostics routed
-through the catchable `ValueError` path. Native lowering remains blocked until locale/binary/encoding parity, diagnostics,
+through the catchable `ValueError` path. Optional nullable mbstring
+`$encoding` operands use the shared PHP-shaped string boundary, so supported
+visible `__toString()` objects can select the same bounded encoding catalog
+while arrays, closures, resources, and non-stringable objects stop at the
+catchable `?string` `TypeError` boundary. Native lowering remains blocked until locale/binary/encoding parity, diagnostics,
 references/COW, and native string allocation semantics are modeled.
 `call_user_func()` is an interpreter-only bounded callable dispatcher for
 string callbacks resolving to current user functions or documented callable

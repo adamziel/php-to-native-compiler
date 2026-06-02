@@ -230,6 +230,63 @@ var_dump(mb_strtolower("a" . str_repeat(".", 64) . "Σ", "UTF-8"));
 }
 
 #[test]
+fn mb_scalar_helpers_accept_stringable_encoding_arguments_and_report_type_errors() {
+    let execution = run_source(
+        r#"<?php
+class Utf8Encoding {
+    public function __toString(): string {
+        return "UTF-8";
+    }
+}
+class Latin1Encoding {
+    public function __toString(): string {
+        return "latin1";
+    }
+}
+class MissingEncoding {}
+
+$utf8 = new Utf8Encoding();
+$latin1 = new Latin1Encoding();
+var_dump(mb_strlen("é", $utf8));
+var_dump(mb_strlen("é", $latin1));
+var_dump(strlen(mb_substr("éx", 0, 1, $utf8)));
+var_dump(mb_strpos("éx", "x", 0, $utf8));
+var_dump(mb_strpos("éx", "x", 0, $latin1));
+var_dump(mb_substr_count("éé", "é", $utf8));
+try {
+    mb_strtoupper("x", new MissingEncoding());
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    mb_strtolower("x", []);
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+ini_set("internal_encoding", "ISO-8859-1");
+var_dump(mb_strlen("é", null));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "int(1)\n",
+            "int(2)\n",
+            "int(2)\n",
+            "int(1)\n",
+            "int(2)\n",
+            "int(2)\n",
+            "mb_strtoupper(): Argument #2 ($encoding) must be of type ?string, MissingEncoding given\n",
+            "mb_strtolower(): Argument #2 ($encoding) must be of type ?string, array given\n",
+            "int(2)\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mbstring_metadata_and_encoding_value_errors_are_available() {
     let execution = run_source(
         r#"<?php

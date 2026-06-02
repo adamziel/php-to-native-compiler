@@ -4111,8 +4111,11 @@
   current substring/cut helpers, non-overlapping substring counts,
   empty-needle `ValueError`s,
   Unicode case mapping, contextual Greek final sigma lowercasing, current
-  `ini_set("internal_encoding", ...)` default encoding lookup, and PHP-shaped
-  unknown-encoding and out-of-range offset `ValueError`s. Full
+  `ini_set("internal_encoding", ...)` default encoding lookup, PHP-shaped
+  unknown-encoding and out-of-range offset `ValueError`s, and supported
+  visible `__toString()` objects for optional nullable `$encoding` operands.
+  Arrays, closures, resources, and non-stringable objects passed as encoding
+  operands raise catchable PHP-shaped `?string` `TypeError`s. Full
   encoding conversion tables, mbstring API-owned internal encoding state,
   normalization, invalid
   sequence policy, locale tailoring, and native lowering remain unsupported.
@@ -11948,15 +11951,17 @@
   lowering beyond function-table introspection
 - `mb_substr_count()` outside the current scalar/null string-convertible
   UTF-8 and single-byte non-overlapping count subset: full encoding conversion
-  tables, invalid sequence policy, array/object/resource operands, exact
+  tables, invalid sequence policy, array/object/resource data operands, exact
+  invalid `__toString()` return diagnostics for encoding operands, exact
   diagnostics beyond empty needles and unknown encodings, references/COW, and
   native lowering beyond function-table introspection
 - `mb_strcut()` outside the current scalar/null string-convertible UTF-8 and
   single-byte byte-window subset: full encoding conversion tables,
   UTF-16/UCS/EUC-JP/JIS/stateful cut rules, invalid sequence and substitute
-  character policy, array/object/resource operands, exact diagnostics beyond
-  unknown encodings, references/COW, and native lowering beyond function-table
-  introspection
+  character policy, array/object/resource data operands, exact invalid
+  `__toString()` return diagnostics for encoding operands, exact diagnostics
+  beyond unknown encodings, references/COW, and native lowering beyond
+  function-table introspection
 - `metaphone()` outside the current scalar/null string-convertible traditional
   byte-oriented subset with optional non-negative integer-compatible
   `max_phonemes`: locale or Unicode alphabetic rules, object/resource

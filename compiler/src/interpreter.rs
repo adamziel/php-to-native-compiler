@@ -85860,55 +85860,53 @@ impl Interpreter {
             "str_pad" => call_str_pad(&args, span),
             "wordwrap" => call_wordwrap(&args, span),
             "chunk_split" => call_chunk_split(&args, span),
-            "mb_strlen" => call_mb_strlen(&args, self.mb_default_encoding(), span),
-            "mb_substr" => call_mb_substr(&args, self.mb_default_encoding(), span),
-            "mb_strcut" => call_mb_strcut(&args, self.mb_default_encoding(), span),
-            "mb_substr_count" => {
-                call_mb_substr_count(&args, self.mb_default_encoding(), span)
-            }
+            "mb_strlen" => call_mb_strlen(self, &args, span),
+            "mb_substr" => call_mb_substr(self, &args, span),
+            "mb_strcut" => call_mb_strcut(self, &args, span),
+            "mb_substr_count" => call_mb_substr_count(self, &args, span),
             "mb_strpos" => call_mb_strpos(
+                self,
                 &args,
                 "mb_strpos()",
-                self.mb_default_encoding(),
                 false,
                 false,
                 span,
             ),
             "mb_stripos" => call_mb_strpos(
+                self,
                 &args,
                 "mb_stripos()",
-                self.mb_default_encoding(),
                 true,
                 false,
                 span,
             ),
             "mb_strrpos" => call_mb_strpos(
+                self,
                 &args,
                 "mb_strrpos()",
-                self.mb_default_encoding(),
                 false,
                 true,
                 span,
             ),
             "mb_strripos" => call_mb_strpos(
+                self,
                 &args,
                 "mb_strripos()",
-                self.mb_default_encoding(),
                 true,
                 true,
                 span,
             ),
             "mb_strtolower" => call_mb_strcase(
+                self,
                 &args,
                 "mb_strtolower()",
-                self.mb_default_encoding(),
                 false,
                 span,
             ),
             "mb_strtoupper" => call_mb_strcase(
+                self,
                 &args,
                 "mb_strtoupper()",
-                self.mb_default_encoding(),
                 true,
                 span,
             ),
@@ -122203,22 +122201,22 @@ fn mb_scalar_encoding_name(encoding: &str) -> Option<MbScalarEncoding> {
 }
 
 fn mb_scalar_encoding(
+    interpreter: &mut Interpreter,
     function: &'static str,
     position: usize,
     value: Option<&Value>,
-    default_encoding: MbScalarEncoding,
     span: Span,
 ) -> CompileResult<MbScalarEncoding> {
     let Some(value) = value else {
-        return Ok(default_encoding);
+        return Ok(interpreter.mb_default_encoding());
     };
     if matches!(value, Value::Null) {
-        return Ok(default_encoding);
+        return Ok(interpreter.mb_default_encoding());
     }
 
-    let encoding = value
-        .try_echo_string()
-        .map_err(|error| runtime_error(span, error))?;
+    let encoding = interpreter.php_string_argument_with_magic_type(
+        function, position, "encoding", "?string", false, value, span,
+    )?;
     mb_scalar_encoding_name(&encoding).ok_or_else(|| {
         runtime_error(
             span,
@@ -122238,8 +122236,8 @@ fn mb_utf8_lossy(bytes: Vec<u8>) -> String {
 }
 
 fn call_mb_strlen(
+    interpreter: &mut Interpreter,
     args: &[Value],
-    default_encoding: MbScalarEncoding,
     span: Span,
 ) -> CompileResult<Value> {
     if !(1..=2).contains(&args.len()) {
@@ -122253,7 +122251,7 @@ fn call_mb_strlen(
         ));
     }
 
-    let encoding = mb_scalar_encoding("mb_strlen()", 2, args.get(1), default_encoding, span)?;
+    let encoding = mb_scalar_encoding(interpreter, "mb_strlen()", 2, args.get(1), span)?;
     let value = string_compare_argument_bytes("mb_strlen()", "string", &args[0], span)?;
     let length = match encoding {
         MbScalarEncoding::Utf8 => mb_utf8_lossy(value).chars().count(),
@@ -122263,8 +122261,8 @@ fn call_mb_strlen(
 }
 
 fn call_mb_substr(
+    interpreter: &mut Interpreter,
     args: &[Value],
-    default_encoding: MbScalarEncoding,
     span: Span,
 ) -> CompileResult<Value> {
     if !(2..=4).contains(&args.len()) {
@@ -122290,7 +122288,7 @@ fn call_mb_substr(
             span,
         )?),
     };
-    let encoding = mb_scalar_encoding("mb_substr()", 4, args.get(3), default_encoding, span)?;
+    let encoding = mb_scalar_encoding(interpreter, "mb_substr()", 4, args.get(3), span)?;
 
     match encoding {
         MbScalarEncoding::Utf8 => {
@@ -122304,8 +122302,8 @@ fn call_mb_substr(
 }
 
 fn call_mb_strcut(
+    interpreter: &mut Interpreter,
     args: &[Value],
-    default_encoding: MbScalarEncoding,
     span: Span,
 ) -> CompileResult<Value> {
     if !(2..=4).contains(&args.len()) {
@@ -122331,7 +122329,7 @@ fn call_mb_strcut(
             span,
         )?),
     };
-    let encoding = mb_scalar_encoding("mb_strcut()", 4, args.get(3), default_encoding, span)?;
+    let encoding = mb_scalar_encoding(interpreter, "mb_strcut()", 4, args.get(3), span)?;
 
     match encoding {
         MbScalarEncoding::Utf8 => {
@@ -122345,8 +122343,8 @@ fn call_mb_strcut(
 }
 
 fn call_mb_substr_count(
+    interpreter: &mut Interpreter,
     args: &[Value],
-    default_encoding: MbScalarEncoding,
     span: Span,
 ) -> CompileResult<Value> {
     if !(2..=3).contains(&args.len()) {
@@ -122362,7 +122360,7 @@ fn call_mb_substr_count(
 
     let haystack = string_compare_argument_bytes("mb_substr_count()", "haystack", &args[0], span)?;
     let needle = string_compare_argument_bytes("mb_substr_count()", "needle", &args[1], span)?;
-    let encoding = mb_scalar_encoding("mb_substr_count()", 3, args.get(2), default_encoding, span)?;
+    let encoding = mb_scalar_encoding(interpreter, "mb_substr_count()", 3, args.get(2), span)?;
     if needle.is_empty() {
         return Err(runtime_error(
             span,
@@ -122403,9 +122401,9 @@ fn mb_non_overlapping_slice_count<T: PartialEq>(haystack: &[T], needle: &[T]) ->
 }
 
 fn call_mb_strpos(
+    interpreter: &mut Interpreter,
     args: &[Value],
     function: &'static str,
-    default_encoding: MbScalarEncoding,
     case_insensitive: bool,
     reverse: bool,
     span: Span,
@@ -122427,7 +122425,7 @@ fn call_mb_strpos(
         Some(value) => php_internal_int_argument(function, 3, "offset", value, span)?,
         None => 0,
     };
-    let encoding = mb_scalar_encoding(function, 4, args.get(3), default_encoding, span)?;
+    let encoding = mb_scalar_encoding(interpreter, function, 4, args.get(3), span)?;
 
     match encoding {
         MbScalarEncoding::Utf8 => mb_utf8_strpos(
@@ -122641,9 +122639,9 @@ fn mb_casefold_char(ch: char) -> String {
 }
 
 fn call_mb_strcase(
+    interpreter: &mut Interpreter,
     args: &[Value],
     function: &'static str,
-    default_encoding: MbScalarEncoding,
     uppercase: bool,
     span: Span,
 ) -> CompileResult<Value> {
@@ -122658,7 +122656,7 @@ fn call_mb_strcase(
         ));
     }
 
-    let encoding = mb_scalar_encoding(function, 2, args.get(1), default_encoding, span)?;
+    let encoding = mb_scalar_encoding(interpreter, function, 2, args.get(1), span)?;
     let value = string_compare_argument_bytes(function, "string", &args[0], span)?;
     if encoding == MbScalarEncoding::SingleByte {
         let output = if uppercase {

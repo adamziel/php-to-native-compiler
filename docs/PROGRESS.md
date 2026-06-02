@@ -4,6 +4,29 @@
 
 Implemented:
 
+- Added a bounded mbstring encoding string-boundary lane for the existing
+  scalar helper subset. Optional `$encoding` operands on `mb_strlen()`,
+  `mb_substr()`, `mb_strcut()`, `mb_substr_count()`, `mb_strpos()`,
+  `mb_stripos()`, `mb_strrpos()`, `mb_strripos()`, `mb_strtolower()`, and
+  `mb_strtoupper()` now route through the shared PHP-shaped nullable string
+  boundary: omitted or `null` operands keep the current default encoding,
+  scalar operands keep the existing valid/unknown encoding behavior after
+  conversion, supported visible `__toString()` objects are accepted, and
+  arrays, resources, closures, or non-stringable objects raise catchable
+  PHP-shaped `?string` `TypeError`s. Existing string/haystack/needle scalar
+  conversion, UTF-8 and single-byte windows, `mb_strcut()` byte cuts,
+  non-overlapping counts, case mapping, offset checks, empty-needle and
+  unknown-encoding `ValueError`s, metadata visibility, and native-lowering
+  rejection remain unchanged. Focused proof covers the Rust
+  `mb_scalar_helpers_accept_stringable_encoding_arguments_and_report_type_errors`
+  regression, the full `mbstring_scalar_builtins` test file, a direct
+  stringable/dynamic-call CLI probe, and selected public unknown-encoding PHPT
+  guard rows. Unsupported edges remain string/haystack/needle
+  object-resource-array boundary parity, exact invalid `__toString()` return
+  diagnostics, full encoding conversion tables and mbstring extension-global
+  state, invalid sequence/substitute policy, references/COW, and native
+  lowering.
+
 - Added a bounded SPL iterator helper lane for `iterator_count()` and
   `iterator_to_array()`. Both helpers now accept arrays and the runtime's
   bounded `Iterator` / `IteratorAggregate` object surface: arrays are counted
