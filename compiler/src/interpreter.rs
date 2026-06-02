@@ -135632,7 +135632,7 @@ impl Interpreter {
             .try_echo_string()
             .map_err(|error| runtime_error(span, error))?;
         if format.chars().count() != 1 {
-            self.emit_warning("idate()", "idate format is one char", span)?;
+            self.emit_display_warning("idate(): idate format is one char", span)?;
             return Ok(Value::Bool(false));
         }
         let token = format.chars().next().unwrap_or_default();
@@ -135641,7 +135641,7 @@ impl Interpreter {
         let timezone = bounded_timezone_from_name(&self.default_timezone)
             .expect("stored default timezone should be bounded");
         let Some(value) = bounded_idate_token(token, timestamp, &timezone) else {
-            self.emit_warning("idate()", "Unrecognized date format token", span)?;
+            self.emit_display_warning("idate(): Unrecognized date format token", span)?;
             return Ok(Value::Bool(false));
         };
         Ok(Value::Int(value))
@@ -140396,8 +140396,10 @@ fn bounded_idate_token(token: char, timestamp: i64, timezone: &BoundedTimezone) 
         's' => Some(parts.second),
         't' => Some(days_in_month(parts.year, parts.month)),
         'U' => Some(timestamp),
+        'N' => Some(if parts.weekday == 0 { 7 } else { parts.weekday }),
         'w' => Some(parts.weekday),
         'W' => Some(iso_year_week(parts).1),
+        'o' => Some(iso_year_week(parts).0),
         'y' => Some(positive_mod(parts.year, 100)),
         'Y' => Some(parts.year),
         'z' => Some(parts.yday),

@@ -4,6 +4,19 @@
 
 Implemented:
 
+- Added a bounded `idate()` ISO integer-format token lane. The interpreter now
+  supports `idate("N", $timestamp)` for ISO weekday numbers and
+  `idate("o", $timestamp)` for ISO week-numbering years, reusing the existing
+  bounded date-part and ISO week helpers used by `date()` / `gmdate()` while
+  displaying PHP-shaped warnings and returning `false` for non-integer date
+  format tokens such as `O` or multi-character format strings. Focused proof
+  covers the Rust
+  `idate_supports_iso_weekday_and_week_year_tokens` regression, a direct
+  `phpc run` comparison over year-boundary ISO weeks, and selected public PHPT
+  `idate` rows. Unsupported edges remain weak scalar timestamp coercions
+  beyond `int|null`, exact warning/deprecation parity for broad timestamp
+  operands, broader timezone database and DST history, and native lowering.
+
 - Added a bounded `SplDoublyLinkedList::prev()` cursor lane for the selected
   `dllist_010.phpt` / `dllist_011.phpt` surface. Core
   `SplDoublyLinkedList`, `SplQueue`, and `SplStack` method dispatch now

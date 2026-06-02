@@ -5845,7 +5845,9 @@
   ?DateTimeZone $timezone = null)` accepts the optional bounded timezone
   object for strings without an explicit timezone, while timestamp strings
   such as `@0` and explicit timezone tokens retain their own timezone
-  identity. Procedural `date_format()`, `date_timestamp_get()`,
+  identity. `idate()` covers the current integer-returning date/time token
+  subset, including ISO weekday `N`, week number `W`, and week-numbering year
+  `o`. Procedural `date_format()`, `date_timestamp_get()`,
   `date_timestamp_set()`, `date_offset_get()`, `date_timezone_get()`, and
   `date_timezone_set()` share that object state. `DateTime::__set_state()`
   reconstructs a fresh bounded mutable `DateTime` object from the exported
@@ -5868,8 +5870,9 @@
   historical transition rules, DateTime state arrays outside the bounded
   exported `date`/`timezone_type`/`timezone` shape, exact invalid-modifier
   `DateMalformedStringException` behavior, exact diagnostics for
-  constructor/timezone/state coercions outside the covered slices, and native
-  lowering remain unsupported.
+  constructor/timezone/state coercions outside the covered slices, weak scalar
+  timestamp coercions for `idate()` / date formatting helpers beyond
+  `int|null`, and native lowering remain unsupported.
   `header($header, $replace = true, $response_code = 0)` accepts a string
   header line plus optional bool replacement flag and optional integer response
   code, records the raw header line in deterministic in-process CLI request

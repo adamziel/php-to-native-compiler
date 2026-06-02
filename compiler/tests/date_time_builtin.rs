@@ -23,6 +23,37 @@ echo idate("B", mktime(0, 0, 0, 6, 27, 2006)), "\n";
 }
 
 #[test]
+fn idate_supports_iso_weekday_and_week_year_tokens() {
+    let execution = run_source(
+        r#"<?php
+date_default_timezone_set("UTC");
+foreach (["2018-12-31", "2021-01-03", "2021-01-04"] as $date) {
+    $timestamp = strtotime($date);
+    echo $date, "|N=", idate("N", $timestamp);
+    echo "|W=", idate("W", $timestamp);
+    echo "|o=", idate("o", $timestamp);
+    echo "|Y=", idate("Y", $timestamp), "\n";
+}
+var_dump(idate("O", strtotime("2021-01-01")));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "2018-12-31|N=1|W=1|o=2019|Y=2018\n",
+            "2021-01-03|N=7|W=53|o=2020|Y=2021\n",
+            "2021-01-04|N=1|W=1|o=2021|Y=2021\n",
+            "\nWarning: idate(): Unrecognized date format token in Command line code on line 10\n",
+            "bool(false)\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn datetime_timestamp_helpers_get_and_set_bounded_state() {
     let execution = run_source(
         r#"<?php
