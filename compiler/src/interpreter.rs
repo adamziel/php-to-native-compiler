@@ -11625,6 +11625,14 @@ impl Interpreter {
                 "escape" => Some(2),
                 _ => None,
             },
+            "fputcsv" => match name {
+                "fields" => Some(0),
+                "separator" | "delimiter" => Some(1),
+                "enclosure" => Some(2),
+                "escape" => Some(3),
+                "eol" => Some(4),
+                _ => None,
+            },
             _ => None,
         }
     }
@@ -18081,27 +18089,40 @@ impl Interpreter {
                         ),
                     )
                 })?;
+                let separator = csv_single_character_argument(
+                    "SplFileObject::fputcsv()",
+                    "separator",
+                    args.get(1),
+                    state.csv_separator,
+                    false,
+                    span,
+                )?
+                .expect("non-empty separator has a character");
+                let enclosure = csv_single_character_argument(
+                    "SplFileObject::fputcsv()",
+                    "enclosure",
+                    args.get(2),
+                    state.csv_enclosure,
+                    false,
+                    span,
+                )?
+                .expect("non-empty enclosure has a character");
+                let escape = csv_single_character_argument(
+                    "SplFileObject::fputcsv()",
+                    "escape",
+                    args.get(3),
+                    state.csv_escape.unwrap_or('\\'),
+                    true,
+                    span,
+                )?;
                 let mut fputcsv_args = Vec::with_capacity(6);
                 fputcsv_args.push(Value::Resource(stream_id));
                 fputcsv_args.push(args[0].clone());
-                fputcsv_args.push(
-                    args.get(1)
-                        .cloned()
-                        .unwrap_or_else(|| Value::String(state.csv_separator.to_string())),
-                );
-                fputcsv_args.push(
-                    args.get(2)
-                        .cloned()
-                        .unwrap_or_else(|| Value::String(state.csv_enclosure.to_string())),
-                );
-                fputcsv_args.push(args.get(3).cloned().unwrap_or_else(|| {
-                    Value::String(
-                        state
-                            .csv_escape
-                            .map(|escape| escape.to_string())
-                            .unwrap_or_default(),
-                    )
-                }));
+                fputcsv_args.push(Value::String(separator.to_string()));
+                fputcsv_args.push(Value::String(enclosure.to_string()));
+                fputcsv_args.push(Value::String(
+                    escape.map(|escape| escape.to_string()).unwrap_or_default(),
+                ));
                 fputcsv_args.push(
                     args.get(4)
                         .cloned()
@@ -18168,6 +18189,14 @@ impl Interpreter {
                     .expect("non-empty enclosure has a character"),
                     None => state_snapshot.csv_enclosure,
                 };
+                if args.get(2).is_none() {
+                    self.emit_display_diagnostic(
+                        "Deprecated",
+                        PHP_E_DEPRECATED,
+                        "SplFileObject::fgetcsv(): the $escape parameter must be provided, as its default value will change, either explicitly or via SplFileObject::setCsvControl()",
+                        span,
+                    )?;
+                }
                 let escape = match args.get(2) {
                     Some(value) => csv_single_character_argument(
                         "SplFileObject::fgetcsv()",
@@ -18216,6 +18245,14 @@ impl Interpreter {
                             args.len(),
                         ),
                     ));
+                }
+                if args.get(2).is_none() {
+                    self.emit_display_diagnostic(
+                        "Deprecated",
+                        PHP_E_DEPRECATED,
+                        "SplFileObject::setCsvControl(): the $escape parameter must be provided as its default value will change",
+                        span,
+                    )?;
                 }
                 let separator = csv_single_character_argument(
                     "SplFileObject::setCsvControl()",
@@ -109604,6 +109641,26 @@ fn reflection_internal_method_params(
             reflection_internal_optional_null_param("countryCode", "?string"),
         ];
     }
+    if class_name.eq_ignore_ascii_case("SplFileObject") {
+        if method_name.eq_ignore_ascii_case("fgetcsv")
+            || method_name.eq_ignore_ascii_case("setCsvControl")
+        {
+            return vec![
+                reflection_internal_optional_string_param("separator", ","),
+                reflection_internal_optional_string_param("enclosure", "\""),
+                reflection_internal_optional_string_param("escape", "\\"),
+            ];
+        }
+        if method_name.eq_ignore_ascii_case("fputcsv") {
+            return vec![
+                reflection_internal_param("fields", "array"),
+                reflection_internal_optional_string_param("separator", ","),
+                reflection_internal_optional_string_param("enclosure", "\""),
+                reflection_internal_optional_string_param("escape", "\\"),
+                reflection_internal_optional_string_param("eol", "\n"),
+            ];
+        }
+    }
     Vec::new()
 }
 
@@ -113530,6 +113587,15 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
         }
         ("SplFileObject::fgetcsv()", "escape argument must contain exactly one character") => {
             Some("SplFileObject::fgetcsv(): Argument #3 ($escape) must be empty or a single character".to_string())
+        }
+        ("SplFileObject::fputcsv()", "separator argument must contain exactly one character") => {
+            Some("SplFileObject::fputcsv(): Argument #2 ($separator) must be a single character".to_string())
+        }
+        ("SplFileObject::fputcsv()", "enclosure argument must contain exactly one character") => {
+            Some("SplFileObject::fputcsv(): Argument #3 ($enclosure) must be a single character".to_string())
+        }
+        ("SplFileObject::fputcsv()", "escape argument must contain exactly one character") => {
+            Some("SplFileObject::fputcsv(): Argument #4 ($escape) must be empty or a single character".to_string())
         }
         (
             "pathinfo()",

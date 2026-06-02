@@ -16379,15 +16379,85 @@ array(3) {
 }
 green apples=10
 yellow bananas=20
+
+Deprecated: SplFileObject::fgetcsv(): the $escape parameter must be provided, as its default value will change, either explicitly or via SplFileObject::setCsvControl() in Command line code on line 15
 array(2) {
   [0]=>
   string(12) "green apples"
   [1]=>
   string(2) "10"
 }
+
+Deprecated: SplFileObject::setCsvControl(): the $escape parameter must be provided as its default value will change in Command line code on line 17
 SplFileObject::setCsvControl(): Argument #1 ($separator) must be a single character
 "#
     );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn spl_file_object_csv_escape_diagnostics_and_reflection_metadata() {
+    use std::fs;
+
+    let fixture_dir = std::env::temp_dir().join(format!(
+        "phpc-spl-file-object-csv-params-{}",
+        std::process::id()
+    ));
+    fs::create_dir_all(&fixture_dir).unwrap();
+    let input = fixture_dir.join("records.csv");
+    let output = fixture_dir.join("write.csv");
+    fs::write(&input, "first,second\n").unwrap();
+    let input_path = input.display().to_string().replace('\\', "\\\\");
+    let output_path = output.display().to_string().replace('\\', "\\\\");
+
+    let source = format!(
+        r#"<?php
+$reader = new SplFileObject("{input_path}");
+var_dump($reader->fgetcsv());
+$control = new SplFileObject("{input_path}");
+$control->setCsvControl();
+$writer = new SplFileObject("{output_path}", "w");
+try {{
+    $writer->fputcsv(array("water", "fruit"), ",,", "\"");
+}} catch (ValueError $e) {{
+    echo $e->getMessage(), "\n";
+}}
+try {{
+    $writer->fputcsv(array("water", "fruit"), ",", "\"\"");
+}} catch (ValueError $e) {{
+    echo $e->getMessage(), "\n";
+}}
+
+$method = new ReflectionMethod("SplFileObject", "setCsvControl");
+foreach ($method->getParameters() as $param) {{
+    echo $param->getName(), "|";
+}}
+echo "\n";
+$method = new ReflectionMethod("SplFileObject", "fputcsv");
+foreach ($method->getParameters() as $param) {{
+    echo $param->getName(), "|";
+}}
+echo "\n";
+"#
+    );
+
+    let execution = run_source(&source).unwrap();
+    assert!(execution.stdout.contains(
+        "Deprecated: SplFileObject::fgetcsv(): the $escape parameter must be provided, as its default value will change, either explicitly or via SplFileObject::setCsvControl() in Command line code on line 3"
+    ));
+    assert!(execution.stdout.contains(
+        "Deprecated: SplFileObject::setCsvControl(): the $escape parameter must be provided as its default value will change in Command line code on line 5"
+    ));
+    assert!(execution.stdout.contains(
+        "SplFileObject::fputcsv(): Argument #2 ($separator) must be a single character\n"
+    ));
+    assert!(execution.stdout.contains(
+        "SplFileObject::fputcsv(): Argument #3 ($enclosure) must be a single character\n"
+    ));
+    assert!(execution
+        .stdout
+        .contains("separator|enclosure|escape|\nfields|separator|enclosure|escape|eol|\n"));
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);
 }

@@ -4,6 +4,31 @@
 
 Implemented:
 
+- Added a bounded `SplFileObject` CSV parameter semantics lane on the
+  interpreter path. `SplFileObject::fgetcsv()` and `setCsvControl()` now emit
+  PHP-shaped default-escape deprecations when `$escape` is omitted,
+  `SplFileObject::fputcsv()` validates separator, enclosure, and escape through
+  method-shaped `ValueError` diagnostics while preserving object CSV-control
+  defaults for omitted method arguments, and `ReflectionMethod::getParameters()`
+  exposes internal parameter metadata for `SplFileObject::fgetcsv()`,
+  `setCsvControl()`, and `fputcsv()`. Named-argument ordering for
+  `SplFileObject::fputcsv()` now matches the reflected method parameters.
+  Focused proof covers the Rust
+  `spl_file_object_csv_escape_diagnostics_and_reflection_metadata`,
+  `spl_file_object_flags_and_csv_controls_use_local_line_state`, and
+  `spl_file_object_writable_modes_fwrite_and_fputcsv_use_local_stream_state`
+  regressions plus selected public PHPT rows
+  `ext/spl/tests/SplFileObject/SplFileObject_fgetcsv_escape_default.phpt`,
+  `ext/spl/tests/SplFileObject/SplFileObject_setCsvControl_variation001.phpt`,
+  `ext/spl/tests/SplFileObject/bug60201.phpt`,
+  `ext/spl/tests/SplFileObject/bug68479.phpt`,
+  `ext/spl/tests/SplFileObject/SplFileObject_fputcsv_variation13.phpt`, and
+  `ext/spl/tests/SplFileObject/SplFileObject_fputcsv_variation14.phpt`.
+  Unsupported edges remain `SplTempFileObject`, broader
+  multiline/default-escape CSV parity outside the covered method omissions,
+  non-local/user stream wrappers, serialization/debug-info parity,
+  references/COW, and native lowering.
+
 - Added a bounded direct `ArrayObject` / `ArrayIterator` disabled sort-method
   diagnostics lane on the interpreter path. Comparator-free `asort()`,
   `ksort()`, `natsort()`, and `natcasesort()` methods now share the existing

@@ -121,6 +121,10 @@ retain an inner `Iterator` plus offset, limit, and logical position. Wrapper
 methods delegate through the same required-iterator method dispatch used by
 `foreach`, so userland overrides on inner iterators and `parent::` calls on
 wrapper subclasses share the normal object method path.
+Core `SplFileObject` instances are modeled as bounded local-file cursor states
+with optional local stream resources; covered CSV controls, default-escape
+diagnostics, method-shaped CSV argument errors, and internal CSV method
+reflection metadata are handled on that interpreter object state.
 Bounded non-direct named and dynamic property holder expressions in
 by-reference `foreach`, such as `$holders["bag"]->items["child"]`,
 `$holders["bag"]->{$name}["child"]`, method-context

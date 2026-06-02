@@ -2709,17 +2709,21 @@
   `getCsvControl()`, CSV row materialization for `current()` / foreach under
   `READ_CSV`, local-file `fgetcsv()` over the bounded CSV parser, and
   local-file `fputcsv()` using the object's current CSV controls when method
-  arguments are omitted. Write-capable local modes are backed by the existing
-  local stream resource model and update the bounded line cursor after
-  covered writes.
+  arguments are omitted. The covered CSV methods also expose bounded internal
+  reflection parameter names, emit the PHP-shaped default-escape deprecations
+  for omitted `fgetcsv()` / `setCsvControl()` escape arguments, and report
+  method-shaped `fputcsv()` separator/enclosure/escape `ValueError`
+  diagnostics. Write-capable local modes are backed by the existing local
+  stream resource model and update the bounded line cursor after covered
+  writes.
   Non-local/user stream wrappers, `SplTempFileObject`,
   `SplFileInfo` inheritance metadata, `fseek()` / `ftruncate()` /
   `fstat()` / `flock()` as `SplFileObject` methods, full max-line chunked
   cursor parity for every mixed read/seek path, full `READ_AHEAD` /
-  `SKIP_EMPTY` side effects, broad CSV multiline/deprecation/default-escape
-  parity, binary or non-UTF-8 line storage, independent nested iterator
-  cursors, serialization parity, references/COW, and native lowering remain
-  unsupported.
+  `SKIP_EMPTY` side effects, broad CSV multiline/default-escape parity beyond
+  the covered method omissions, binary or non-UTF-8 line storage, independent
+  nested iterator cursors, serialization parity, references/COW, and native
+  lowering remain unsupported.
 - SPL `EmptyIterator`, `InfiniteIterator`, and `LimitIterator` have a bounded
   interpreter runtime model over existing bounded `Iterator` objects.
   `EmptyIterator` supports no-op `rewind()` / `next()` and false `valid()` for
