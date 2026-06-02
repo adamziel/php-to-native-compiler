@@ -89805,18 +89805,11 @@ impl Interpreter {
         }
         let handler = match args.first() {
             None | Some(Value::Null) => None,
-            Some(Value::String(_) | Value::Array(_) | Value::Closure(_)) => Some(args[0].clone()),
-            Some(other) => {
-                return Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "ob_start()",
-                        format!(
-                            "callback must be null, string, closure, or array callable in the current subset, got {}",
-                            other.type_name()
-                        ),
-                    ),
-                ));
+            Some(value) => {
+                if !self.validate_ob_start_handler(value, span)? {
+                    return Ok(Value::Bool(false));
+                }
+                Some(value.clone())
             }
         };
         let chunk_size = match args.get(1) {
@@ -89837,6 +89830,131 @@ impl Interpreter {
             span,
         });
         Ok(Value::Bool(true))
+    }
+
+    fn validate_ob_start_handler(&mut self, handler: &Value, span: Span) -> CompileResult<bool> {
+        match handler {
+            Value::Null | Value::Closure(_) => Ok(true),
+            Value::String(name) => self.validate_ob_start_string_handler(name, span),
+            Value::Array(callback) => self.validate_ob_start_array_handler(callback, span),
+            _ => self.reject_ob_start_handler("no array or string given", span),
+        }
+    }
+
+    fn reject_ob_start_handler(
+        &mut self,
+        reason: impl AsRef<str>,
+        span: Span,
+    ) -> CompileResult<bool> {
+        self.emit_display_warning(format!("ob_start(): {}", reason.as_ref()), span)?;
+        self.emit_display_notice("ob_start(): Failed to create buffer", span)?;
+        Ok(false)
+    }
+
+    fn validate_ob_start_string_handler(&mut self, name: &str, span: Span) -> CompileResult<bool> {
+        if let Some((class_name, method_name)) = static_method_callable_string(name) {
+            return self.validate_ob_start_static_method_handler(class_name, method_name, span);
+        }
+        if self.lookup_function(name).is_some() {
+            return Ok(true);
+        }
+        self.reject_ob_start_handler(
+            format!("function \"{name}\" not found or invalid function name"),
+            span,
+        )
+    }
+
+    fn validate_ob_start_array_handler(
+        &mut self,
+        callback: &PhpArray,
+        span: Span,
+    ) -> CompileResult<bool> {
+        let Some((target, method_name)) = array_callable_parts(callback) else {
+            return self
+                .reject_ob_start_handler("array callback must have exactly two members", span);
+        };
+
+        match target {
+            Value::Object(object) => {
+                self.validate_ob_start_object_method_handler(object, method_name, span)
+            }
+            Value::String(class_name) => {
+                self.validate_ob_start_static_method_handler(class_name, method_name, span)
+            }
+            _ => self.reject_ob_start_handler("array callback must have exactly two members", span),
+        }
+    }
+
+    fn validate_ob_start_object_method_handler(
+        &mut self,
+        object: &PhpObject,
+        method_name: &str,
+        span: Span,
+    ) -> CompileResult<bool> {
+        let receiver_class_name = self
+            .classes
+            .get(object.class_id())
+            .map(|class| class.name().to_string())
+            .unwrap_or_else(|| object.class_name().to_string());
+        let Some((_, declaring_class_name, resolved_method_name, visibility, _)) =
+            self.resolve_instance_method(object.class_id(), method_name)
+        else {
+            return self.reject_ob_start_handler(
+                format!("class {receiver_class_name} does not have a method \"{method_name}\""),
+                span,
+            );
+        };
+        if visibility != Visibility::Public {
+            return self.reject_ob_start_handler(
+                format!(
+                    "cannot access {} method {declaring_class_name}::{resolved_method_name}()",
+                    visibility_name(visibility)
+                ),
+                span,
+            );
+        }
+        Ok(true)
+    }
+
+    fn validate_ob_start_static_method_handler(
+        &mut self,
+        class_name: &str,
+        method_name: &str,
+        span: Span,
+    ) -> CompileResult<bool> {
+        let Some(class_id) = self.classes.lookup_class_id(class_name) else {
+            return self.reject_ob_start_handler(format!("class \"{class_name}\" not found"), span);
+        };
+        let receiver_class_name = self
+            .classes
+            .get(class_id)
+            .expect("class id should resolve to class metadata")
+            .name()
+            .to_string();
+        let Some((_, declaring_class_name, resolved_method_name, visibility, is_static)) =
+            self.resolve_instance_method(class_id, method_name)
+        else {
+            return self.reject_ob_start_handler(
+                format!("class {receiver_class_name} does not have a method \"{method_name}\""),
+                span,
+            );
+        };
+        if visibility != Visibility::Public {
+            return self.reject_ob_start_handler(
+                format!(
+                    "cannot access {} method {declaring_class_name}::{resolved_method_name}()",
+                    visibility_name(visibility)
+                ),
+                span,
+            );
+        }
+        if !is_static {
+            return self.reject_ob_start_handler(
+                format!("non-static method {declaring_class_name}::{resolved_method_name}() cannot be called statically"),
+                span,
+            );
+        }
+        Ok(true)
     }
 
     fn call_ob_get_level(&self, args: &[Value], span: Span) -> CompileResult<Value> {

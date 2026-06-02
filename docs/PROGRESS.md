@@ -4,6 +4,30 @@
 
 Implemented:
 
+- Added a bounded `ob_start()` invalid-handler recovery lane on the
+  interpreter path. `ob_start()` now validates scalar callback operands,
+  string function/static-method handlers, and array handlers at buffer
+  creation time; invalid callback types, missing functions/classes/methods,
+  malformed callback arrays, and non-static class-string method handlers emit
+  PHP-shaped warnings plus the `Failed to create buffer` notice, return
+  `false`, and leave the output-buffer stack unchanged. Valid public
+  object-method array handlers continue to run through the existing handler
+  dispatch. Focused proof covers the Rust
+  `ob_start_invalid_handlers_warn_and_do_not_create_buffers` regression, the
+  full `output_buffer_builtin` Rust target, build/fmt/diff checks, and
+  selected public PHPT rows `tests/output/ob_start_basic_005.phpt`,
+  `tests/output/ob_start_basic_006.phpt`,
+  `tests/output/ob_start_error_001.phpt`,
+  `tests/output/ob_start_error_002.phpt`,
+  `tests/output/ob_start_error_003.phpt`, and
+  `tests/output/ob_start_error_004.phpt`. Unsupported edges remain
+  invokable-object output handlers, by-reference output handlers, reentrant
+  output-buffer operations from inside display handlers, exact handler status
+  metadata beyond the bounded fields, exact
+  `ErrorException::__toString()` internal stack frames for
+  deprecation-converted handlers, fatal-error cleanup, broader callback
+  autoload/scope edge cases, references/COW, and native lowering.
+
 - Added a bounded class-constant visibility diagnostics lane on the interpreter
   path. Class constants now carry invalid `static` / `abstract` modifier
   metadata to startup diagnostics, protected/private class-constant access

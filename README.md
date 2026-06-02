@@ -1014,7 +1014,8 @@ direct `getcwd()` current-directory calls,
 direct `php_sapi_name()` SAPI identity calls,
 direct no-argument `phpcredits()` bounded output metadata calls,
 direct `ob_start()` with no argument, one supported callback, or bounded
-`chunk_size`/`flags` options plus `ob_get_level()`/`ob_get_contents()`/
+`chunk_size`/`flags` options, including PHP-shaped warning/false recovery for
+bounded invalid handler callbacks, plus `ob_get_level()`/`ob_get_contents()`/
 `ob_get_length()`/`ob_list_handlers()`/`ob_get_status()`/`ob_get_clean()`/
 `ob_get_flush()`/`ob_clean()`/`ob_flush()`/`ob_end_clean()`/
 `ob_end_flush()` output-buffer calls,

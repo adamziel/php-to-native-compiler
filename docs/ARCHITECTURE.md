@@ -3060,7 +3060,13 @@ output-capture boundary so PHP-visible output produced by the handler itself
 is discarded, the returned handler output is preserved, and the PHP-shaped
 produced-output deprecation is emitted to the same outward destination; a
 throwing handler on a covered flush path is disabled for that buffer before
-later flush attempts. Remaining buffers flush outward through supported
+later flush attempts. Invalid bounded `ob_start()` handler operands are
+validated before a buffer is pushed; malformed callback arrays, missing
+functions/classes/methods, non-static class-string handlers, and non-callable
+scalar operands emit PHP-shaped warning/notice recovery and return `false`
+without changing the buffer stack. Invokable-object handlers, by-reference
+handlers, and reentrant output-buffer operations from inside display handlers
+remain outside this lane. Remaining buffers flush outward through supported
 handlers to stdout when execution completes or the bounded `exit()` path
 returns. Native function-table introspection recognizes the names, and
 generated code routes direct calls through the existing output-buffer runtime

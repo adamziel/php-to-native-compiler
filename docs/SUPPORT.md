@@ -6195,6 +6195,11 @@
   through the interpreter constant table. While a buffer is active,
   PHP-visible output from `echo`, `print`, `exit("...")`, `var_dump()`, and
   `print_r()` is appended to the innermost buffer instead of final stdout.
+  Invalid bounded `ob_start()` handlers, including non-string/non-array
+  callback operands, missing string functions, missing classes or methods,
+  malformed callback arrays, and non-static class-string method handlers, emit
+  the PHP-shaped warning plus `Failed to create buffer` notice, return
+  `false`, and leave the output-buffer stack unchanged.
   `ob_get_level()` accepts no arguments and returns the active buffer depth.
   `ob_get_contents()` accepts no arguments and returns the innermost active
   buffer contents without closing that buffer or running its handler, or
@@ -6252,7 +6257,7 @@
   outward through supported handlers to stdout. Exact handler status metadata
   beyond the bounded fields, automatic threshold checks for output-producing
   builtins outside the covered echo/print and handled-flush paths,
-  invalid-callback warning/false recovery, by-reference output handlers,
+  invokable-object output handlers, by-reference output handlers,
   exact `ErrorException::__toString()` internal stack frames for
   deprecation-converted handlers, handler reentrancy/nesting edge cases,
   output-started interaction with headers, fatal-error cleanup, exact warning
@@ -12916,8 +12921,8 @@
   `ob_list_handlers()`/`ob_get_status()`/`ob_get_clean()`/`ob_get_flush()`/
   `ob_clean()`/`ob_flush()`/`ob_end_clean()`/`ob_end_flush()` behavior beyond
   the current interpreter-owned buffer stack and supported one-argument
-  `ob_start()` callback/chunk-size/flags lane: invalid-callback warning/false
-  recovery, by-reference output handlers, exact handler status metadata, exact
+  `ob_start()` callback/chunk-size/flags lane: invokable-object output
+  handlers, by-reference output handlers, exact handler status metadata, exact
   `ErrorException::__toString()` internal stack frames for
   deprecation-converted handlers, broader handler reentrancy/nesting edge
   cases, output-started/header interaction, fatal-error cleanup, exact

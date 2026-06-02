@@ -644,6 +644,68 @@ var_dump($peek);
 }
 
 #[test]
+fn ob_start_invalid_handlers_warn_and_do_not_create_buffers() {
+    let execution = run_source(
+        r#"<?php
+class C {
+    public static function g($string) { return $string; }
+    public function h($string) { return $string; }
+}
+$c = new C();
+var_dump(ob_start(1.5));
+var_dump(ob_start(array("Missing", "f")));
+var_dump(ob_start(array("C", "missing")));
+var_dump(ob_start("C::h"));
+var_dump(ob_start(array($c)));
+var_dump(ob_start(array($c, "missing")));
+echo "level=", ob_get_level(), "\n";
+var_dump(ob_start(array($c, "h")));
+echo "payload";
+ob_end_flush();
+echo "|level=", ob_get_level();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "Warning: ob_start(): no array or string given in Command line code on line 7\n\
+\n\
+Notice: ob_start(): Failed to create buffer in Command line code on line 7\n\
+bool(false)\n\
+\n\
+Warning: ob_start(): class \"Missing\" not found in Command line code on line 8\n\
+\n\
+Notice: ob_start(): Failed to create buffer in Command line code on line 8\n\
+bool(false)\n\
+\n\
+Warning: ob_start(): class C does not have a method \"missing\" in Command line code on line 9\n\
+\n\
+Notice: ob_start(): Failed to create buffer in Command line code on line 9\n\
+bool(false)\n\
+\n\
+Warning: ob_start(): non-static method C::h() cannot be called statically in Command line code on line 10\n\
+\n\
+Notice: ob_start(): Failed to create buffer in Command line code on line 10\n\
+bool(false)\n\
+\n\
+Warning: ob_start(): array callback must have exactly two members in Command line code on line 11\n\
+\n\
+Notice: ob_start(): Failed to create buffer in Command line code on line 11\n\
+bool(false)\n\
+\n\
+Warning: ob_start(): class C does not have a method \"missing\" in Command line code on line 12\n\
+\n\
+Notice: ob_start(): Failed to create buffer in Command line code on line 12\n\
+bool(false)\n\
+level=0\n\
+bool(true)\n\
+payload|level=0"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn output_buffer_builtins_reject_forms_outside_current_subset() {
     let start_arg = runtime_error(
         r#"<?php
