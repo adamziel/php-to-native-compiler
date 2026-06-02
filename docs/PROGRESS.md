@@ -4,6 +4,33 @@
 
 Implemented:
 
+- Accepted checkpoint `0793abd4` as the current public PHPT score source after
+  a full pinned php-src gate completed with zero latest-published PASS
+  regressions. The public-comparable score is now `5744 / 20294 = 28.30%`,
+  up from `5690 / 20294 = 28.04%` at checkpoint `12c1be0a`. The accepted gate
+  evidence is
+  `state/logs/phpt-full-current-score-20260602T121433Z-php-src-f97ff59-public-0793abd4-source-0793abd4`;
+  aggregate counts were `5744` passed, `13260` failed, `2761` skipped, `16`
+  xfailed, `549` borked, and `1` warned. The normalized PASS regression
+  comparison was `5740` current passes vs. `5686` baseline passes with `0`
+  regressions, and the invalid-proof-marker summary reported `0` hits.
+
+- Repaired the `SplFixedArray::offsetUnset()` destructor/reentrant mutation
+  edge that blocked the first post-SplFixedArray score gate. Releasing an object
+  stored in a fixed-array slot now finalizes that released value before later
+  reads/dumps, while fixed-array backing storage remains rooted while the
+  object itself is live. This converts the focused public PHPT row
+  `ext/spl/tests/gh16478.phpt` back to PASS after the intermediate
+  `6a124890` gate reported it as the only latest-published PASS regression.
+  Focused proof covers the Rust
+  `spl_fixed_array_offset_unset_finalizes_released_slot_before_var_dump`
+  regression, prior SplFixedArray storage regressions, direct runtime output,
+  selected public SPL PHPT rows including `gh16478.phpt`, build, fmt, and diff
+  checks. Unsupported edges remain broader nested object dumps,
+  `print_r()` / `(array)` / `get_mangled_object_vars()` storage parity,
+  serialization/unserialization, full reference/COW identity, broader
+  destructor/reentrant mutation parity, and native lowering.
+
 - Added a bounded `SplFixedArray` runtime-storage `var_dump()` lane. Top-level
   `var_dump($fixedArray)` now renders the fixed-size indexed storage from the
   interpreter's `SplFixedArrayState`, including null slots, nested array values,
