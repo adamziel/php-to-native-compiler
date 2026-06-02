@@ -143501,17 +143501,100 @@ fn call_crypt(args: &[Value], span: Span) -> CompileResult<Value> {
 
     let _string = string_builtin_argument("crypt()", "string", &args[0], span)?;
     let salt = string_builtin_argument("crypt()", "salt", &args[1], span)?;
-    if salt == "_" {
-        return Ok(Value::String("*0".to_string()));
+    if let Some(marker) = crypt_invalid_salt_fallback_marker(&salt) {
+        return Ok(Value::String(marker.to_string()));
     }
 
     Err(runtime_error(
         span,
         RuntimeError::unsupported_call(
             "crypt()",
-            "only the invalid '_' salt fallback is implemented in the current subset",
+            "only invalid salt fallback markers are implemented in the current subset",
         ),
     ))
+}
+
+fn crypt_invalid_salt_fallback_marker(salt: &str) -> Option<&'static str> {
+    if salt == "*0" {
+        return Some("*1");
+    }
+    if salt.starts_with('*') || salt.as_bytes().contains(&0) {
+        return Some("*0");
+    }
+
+    if let Some(rest) = salt.strip_prefix("$2") {
+        return crypt_bcrypt_invalid_salt_fallback_marker(rest);
+    }
+
+    if salt.starts_with('$') && !crypt_has_supported_modular_prefix(salt) {
+        return Some("*0");
+    }
+
+    if let Some(marker) = crypt_des_invalid_salt_fallback_marker(salt) {
+        return Some(marker);
+    }
+
+    None
+}
+
+fn crypt_bcrypt_invalid_salt_fallback_marker(rest: &str) -> Option<&'static str> {
+    let bytes = rest.as_bytes();
+    let Some((&variant, after_variant)) = bytes.split_first() else {
+        return Some("*0");
+    };
+    if !matches!(variant, b'a' | b'b' | b'x' | b'y') {
+        return Some("*0");
+    }
+    if after_variant.first() != Some(&b'$') {
+        return Some("*0");
+    }
+    if after_variant.len() < 4 {
+        return Some("*0");
+    }
+    let cost_tens = after_variant[1];
+    let cost_ones = after_variant[2];
+    if after_variant[3] != b'$' || !cost_tens.is_ascii_digit() || !cost_ones.is_ascii_digit() {
+        return Some("*0");
+    }
+    let cost = (cost_tens - b'0') * 10 + (cost_ones - b'0');
+    if !(4..=31).contains(&cost) {
+        return Some("*0");
+    }
+    let salt_body = &after_variant[4..];
+    if salt_body.len() < 22 || salt_body[..22].contains(&b'$') {
+        return Some("*0");
+    }
+    None
+}
+
+fn crypt_has_supported_modular_prefix(salt: &str) -> bool {
+    salt.starts_with("$1$")
+        || salt.starts_with("$5$")
+        || salt.starts_with("$6$")
+        || salt.starts_with("$2a$")
+        || salt.starts_with("$2b$")
+        || salt.starts_with("$2x$")
+        || salt.starts_with("$2y$")
+}
+
+fn crypt_des_invalid_salt_fallback_marker(salt: &str) -> Option<&'static str> {
+    let bytes = salt.as_bytes();
+    if bytes.first() == Some(&b'_') {
+        if bytes.len() < 9 || bytes[..9].iter().any(|byte| !is_crypt_salt64(*byte)) {
+            return Some("*0");
+        }
+        return None;
+    }
+
+    if bytes.len() < 2 || bytes[..2].iter().any(|byte| !is_crypt_salt64(*byte)) {
+        return Some("*0");
+    }
+
+    None
+}
+
+fn is_crypt_salt64(byte: u8) -> bool {
+    matches!(byte, b'.' | b'/' | b'0'..=b'9' | b'A'..=b'Z' | b'a'..=b'z')
 }
 
 fn hash_raw_output_argument(value: Option<&Value>, span: Span) -> CompileResult<bool> {

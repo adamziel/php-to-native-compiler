@@ -4,6 +4,24 @@
 
 Implemented:
 
+- Added a bounded `crypt()` invalid-salt fallback lane on the interpreter path.
+  Malformed modular salts, invalid bcrypt algorithm/cost/salt-body forms,
+  invalid DES/extended-DES salts, NUL-containing SHA modular salts, and the
+  `*0` fallback toggle now return PHP-shaped `*0`/`*1` markers instead of
+  stopping at the generic unsupported-call boundary. Focused proof covers the
+  Rust `crypt_invalid_modular_and_des_salts_use_php_fallback_markers`
+  regression and selected public PHPT rows
+  `ext/standard/tests/crypt/bcrypt_invalid_algorithm.phpt`,
+  `ext/standard/tests/crypt/bcrypt_invalid_cost.phpt`,
+  `ext/standard/tests/crypt/des_fallback_invalid_salt.phpt`,
+  `ext/standard/tests/strings/crypt_des_error.phpt`,
+  `ext/standard/tests/strings/crypt_blowfish_variation1.phpt`,
+  `ext/standard/tests/strings/crypt_blowfish_variation2.phpt`, and
+  `ext/standard/tests/strings/bug62443.phpt`. Valid DES, extended DES,
+  MD5-crypt, bcrypt/Blowfish, SHA-256, SHA-512, provider/platform policy,
+  cryptographic guarantees, exact diagnostics, and native lowering remain
+  unsupported.
+
 - Accepted checkpoint `423a03d4` as the current public PHPT score source after
   the replacement full pinned php-src gate completed with zero
   latest-published PASS regressions. The public-comparable score is now

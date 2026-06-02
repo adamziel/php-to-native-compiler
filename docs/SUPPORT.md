@@ -4384,12 +4384,12 @@
   string-convertible prefixes and a boolean entropy flag, returning a
   deterministic PHP-shaped ID for the reached WordPress placeholder hash path,
   including the nine-digit suffix used by the `more_entropy=true` form.
-  `crypt($string, $salt)` supports only the PHP invalid-salt fallback for the
-  focused underscore salt, returning the bounded `*0` marker used by the
-  reached `bug51059.phpt` row. DES, extended DES, Blowfish, SHA-256, SHA-512,
-  platform/provider policy, salt validation beyond this underscore fallback,
-  cryptographic guarantees, exact diagnostics, and native lowering remain
-  unsupported.
+  `crypt($string, $salt)` supports PHP invalid-salt fallback markers for the
+  bounded DES, extended-DES, modular, and bcrypt salt-validation cases reached
+  by focused PHPT rows, including `*0` -> `*1` fallback toggling. Valid DES,
+  extended DES, MD5-crypt, Blowfish/bcrypt, SHA-256, SHA-512, platform/provider
+  policy, cryptographic guarantees, exact diagnostics, and native lowering
+  remain unsupported.
   `hash($algo, $data, $binary = false, $options = [])` supports scalar/null
   string-convertible data for `md2`, `md4`, `md5`, `sha1`, `sha224`,
   `sha256`, `sha384`, `sha512/224`, `sha512/256`, `sha512`, `sha3-224`,
