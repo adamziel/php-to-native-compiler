@@ -2372,7 +2372,9 @@
   modulo `%` over the current integer-coercion subset for `null`, booleans,
   integers, floats, well-formed numeric strings, and bounded leading-numeric
   prefixes, returning integer remainders and reporting catchable modulo-by-zero
-  diagnostics
+  diagnostics. Lossy finite float-shaped strings emit PHP's float-string-to-int
+  deprecation diagnostic when `%` coerces them to integer operands; compatible
+  float strings such as `"1.0"` remain quiet.
 - unary `-` and `!`; unary minus accepts the same bounded numeric string and
   leading-numeric string subset as arithmetic, while non-numeric strings
   produce a catchable `TypeError`
@@ -2404,7 +2406,11 @@
   shifts, then concatenation, comparisons/equality before `&`, then `^`, then
   `|`, then `&&` and `||`. Direct static-variable, direct array-offset, and
   supported direct object-property compound assignments support `&=`, `|=`,
-  `^=`, `<<=`, and `>>=` through the same runtime helper semantics.
+  `^=`, `<<=`, and `>>=` through the same runtime helper semantics. Mixed
+  string/non-string bitwise operands and shift operands emit PHP's lossy
+  float-string-to-int deprecation diagnostic for finite fractional numeric
+  strings; bytewise string-vs-string bitwise operations keep string semantics
+  and do not use that integer diagnostic path.
 - full ternary conditional expressions `$condition ? $if_true : $if_false`
   and short ternary expressions `$value ?: $fallback` over the current
   expression/value subset, including truthiness-based condition selection,
@@ -2699,7 +2705,9 @@
   `float`, `string`, `array`, `object`, nullable forms, unions,
   intersections, and class/interface object names visible on runtime object
   metadata. Scalar parameters and returns use the current weak coercion model,
-  and return-type mismatches in this subset report PHP-shaped `TypeError`
+  including PHP's float-string-to-int deprecation diagnostic for lossy finite
+  numeric strings coerced through exact weak `int` parameters and returns, and
+  return-type mismatches in this subset report PHP-shaped `TypeError`
   messages. `void` return types reject value returns at declaration startup;
   `never` return types are accepted for bodies that throw before returning and
   reject explicit value returns at declaration startup. Typed by-reference
@@ -7017,8 +7025,10 @@
   instantiated are accepted in the covered simple class/interface type subset;
   weak scalar coercions are covered for writes to `int`, `float`, `bool`, and
   `string`, including numeric strings and bool/int/float/string conversions in
-  the current scalar value model. Integer writes to `float` are stored as
-  floats. Direct
+  the current scalar value model. Lossy finite float-shaped strings assigned to
+  visible declared exact `int` properties emit PHP's float-string-to-int
+  deprecation diagnostic; compatible float strings such as `"1.0"` remain
+  quiet. Integer writes to `float` are stored as floats. Direct
   `unset($object->typedProperty)` over a visible declared instance typed
   property restores the slot to the same uninitialized state: later direct
   reads fail, `isset(...)` reports false, `empty(...)` reports true,

@@ -4,6 +4,26 @@
 
 Implemented:
 
+- Added a bounded float-string-to-int deprecation diagnostics lane for
+  `phpc run`. Lossy finite well-formed numeric strings such as `"1.5"` now
+  emit PHP-shaped `Deprecated: Implicit conversion from float-string ... to int
+  loses precision` diagnostics when coerced through modulo, mixed
+  bitwise/shift operators, matching compound assignments, `chr()`, weak exact
+  `int` user parameters and returns, and visible declared `int` typed-property
+  writes. Compatible float strings with no fractional loss such as `"1.0"`
+  remain quiet. Focused proof covers the Rust
+  `float_string_to_int_deprecations` regression and selected public PHPT rows
+  `warnings_string_float_literals.phpt`,
+  `warnings_string_float_literals_assignment_ops.phpt`,
+  `warnings_string_float_vars.phpt`,
+  `no_warning_compatible_string_float_literals.phpt`, and
+  `no_warnings_compatible_string_float_vars.phpt`. Unsupported edges remain
+  non-finite or out-of-range float-string-to-int warning/recovery parity,
+  union scalar preference diagnostics such as `int|string`, strict-types exact
+  `TypeError` parity beyond the current boundary, array-key and string-offset
+  float-string warning breadth, non-UTF-8 binary-string diagnostics, and native
+  lowering beyond the existing runtime ABI paths.
+
 - Accepted checkpoint `0793abd4` as the current public PHPT score source after
   a full pinned php-src gate completed with zero latest-published PASS
   regressions. The public-comparable score is now `5744 / 20294 = 28.30%`,

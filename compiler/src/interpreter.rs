@@ -33875,6 +33875,14 @@ impl Interpreter {
                             &protected_class_ids,
                             *span,
                         )?;
+                        self.emit_float_string_to_int_deprecation_for_object_property(
+                            &object_value,
+                            property,
+                            current_class_id,
+                            &protected_class_ids,
+                            &value,
+                            *span,
+                        )?;
                         match object_value
                             .write_property_from_context_with_object_type_resolver_returning_value_strict(
                                 property,
@@ -34886,6 +34894,14 @@ impl Interpreter {
                             &property,
                             current_class_id,
                             &protected_class_ids,
+                            *span,
+                        )?;
+                        self.emit_float_string_to_int_deprecation_for_object_property(
+                            &object_value,
+                            &property,
+                            current_class_id,
+                            &protected_class_ids,
+                            &value,
                             *span,
                         )?;
                         let stored_value = match object_value
@@ -38473,6 +38489,8 @@ impl Interpreter {
             return Ok(interpreter_value_from_php_string_bytes(bytes));
         }
 
+        self.emit_float_string_to_int_compound_deprecations(op, &left, &right, span)?;
+
         let value = match op {
             CompoundAssignOp::Add => left.php_add(&right),
             CompoundAssignOp::Sub => left.php_sub(&right),
@@ -38490,6 +38508,32 @@ impl Interpreter {
         };
 
         value.map_err(|error| runtime_error(span, error))
+    }
+
+    fn emit_float_string_to_int_compound_deprecations(
+        &mut self,
+        op: CompoundAssignOp,
+        left: &Value,
+        right: &Value,
+        span: Span,
+    ) -> CompileResult<()> {
+        let should_check = match op {
+            CompoundAssignOp::Mod | CompoundAssignOp::ShiftLeft | CompoundAssignOp::ShiftRight => {
+                true
+            }
+            CompoundAssignOp::BitwiseAnd
+            | CompoundAssignOp::BitwiseOr
+            | CompoundAssignOp::BitwiseXor => {
+                !(value_is_string_like(left) && value_is_string_like(right))
+            }
+            _ => false,
+        };
+        if !should_check {
+            return Ok(());
+        }
+
+        self.emit_float_string_to_int_deprecation_for_value(left, span)?;
+        self.emit_float_string_to_int_deprecation_for_value(right, span)
     }
 
     fn execute_increment_decrement(
@@ -55856,7 +55900,7 @@ impl Interpreter {
     }
 
     fn coerce_static_property_value(
-        &self,
+        &mut self,
         declaring_class_id: ClassId,
         declaring_class_name: &str,
         property: &str,
@@ -55868,12 +55912,20 @@ impl Interpreter {
             .get(declaring_class_id)
             .and_then(|class| class.property(property))
             .and_then(|property| property.type_decl())
+            .map(str::to_string)
         else {
             return Ok(value);
         };
 
+        self.emit_float_string_to_int_deprecation_for_type_decl(
+            &type_decl,
+            &value,
+            self.current_strict_types(),
+            span,
+        )?;
+
         coerce_property_value_with_object_type_resolver(
-            type_decl,
+            &type_decl,
             value,
             declaring_class_name,
             property,
@@ -78540,7 +78592,7 @@ impl Interpreter {
     }
 
     fn coerce_call_frame_values(
-        &self,
+        &mut self,
         function: &FunctionDecl,
         args: Vec<Value>,
     ) -> CompileResult<Vec<Value>> {
@@ -78573,7 +78625,7 @@ impl Interpreter {
     }
 
     fn coerce_call_argument_value(
-        &self,
+        &mut self,
         function: &FunctionDecl,
         param_index: usize,
         param: &FunctionParam,
@@ -78586,6 +78638,12 @@ impl Interpreter {
             return Ok(value);
         }
         let actual_type = value.type_name();
+        self.emit_float_string_to_int_deprecation_for_type_decl(
+            &type_decl.text,
+            &value,
+            self.current_strict_types(),
+            function.span,
+        )?;
         coerce_property_value_with_object_type_resolver(
             &type_decl.text,
             value,
@@ -78611,7 +78669,7 @@ impl Interpreter {
     }
 
     fn coerce_call_return_value(
-        &self,
+        &mut self,
         function: &FunctionDecl,
         class_context: Option<ClassId>,
         value: Value,
@@ -78683,13 +78741,19 @@ impl Interpreter {
     }
 
     fn coerce_call_value_for_type_decl(
-        &self,
+        &mut self,
         function: &FunctionDecl,
         type_decl: &TypeDecl,
         label: &str,
         value: Value,
     ) -> CompileResult<Value> {
         let actual_type = value.type_name();
+        self.emit_float_string_to_int_deprecation_for_type_decl(
+            &type_decl.text,
+            &value,
+            function.strict_types,
+            function.span,
+        )?;
         coerce_property_value_with_object_type_resolver(
             &type_decl.text,
             value,
@@ -97108,6 +97172,8 @@ impl Interpreter {
             return Ok(result);
         }
 
+        self.emit_float_string_to_int_operator_deprecations(op, &left, &right, span)?;
+
         if let Some(error) = resource_arithmetic_type_error(op, &left, &right, span) {
             return Err(error);
         }
@@ -97211,6 +97277,78 @@ impl Interpreter {
             BinaryOp::ShiftRight => Some(">>"),
             _ => None,
         }
+    }
+
+    fn emit_float_string_to_int_operator_deprecations(
+        &mut self,
+        op: BinaryOp,
+        left: &Value,
+        right: &Value,
+        span: Span,
+    ) -> CompileResult<()> {
+        let should_check = match op {
+            BinaryOp::Mod | BinaryOp::ShiftLeft | BinaryOp::ShiftRight => true,
+            BinaryOp::BitwiseAnd | BinaryOp::BitwiseOr | BinaryOp::BitwiseXor => {
+                !(value_is_string_like(left) && value_is_string_like(right))
+            }
+            _ => false,
+        };
+        if !should_check {
+            return Ok(());
+        }
+
+        self.emit_float_string_to_int_deprecation_for_value(left, span)?;
+        self.emit_float_string_to_int_deprecation_for_value(right, span)
+    }
+
+    fn emit_float_string_to_int_deprecation_for_value(
+        &mut self,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<()> {
+        if let Some(message) = float_string_to_int_deprecation_message(value) {
+            self.emit_display_diagnostic("Deprecated", PHP_E_DEPRECATED, message, span)?;
+        }
+        Ok(())
+    }
+
+    fn emit_float_string_to_int_deprecation_for_type_decl(
+        &mut self,
+        type_decl: &str,
+        value: &Value,
+        strict_scalars: bool,
+        span: Span,
+    ) -> CompileResult<()> {
+        if !strict_scalars && type_decl.eq_ignore_ascii_case("int") {
+            self.emit_float_string_to_int_deprecation_for_value(value, span)?;
+        }
+        Ok(())
+    }
+
+    fn emit_float_string_to_int_deprecation_for_object_property(
+        &mut self,
+        object: &PhpObject,
+        property: &str,
+        current_class_id: Option<ClassId>,
+        protected_class_ids: &[ClassId],
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<()> {
+        let Some(type_decl) = visible_object_property_type_decl(
+            object,
+            property,
+            current_class_id,
+            protected_class_ids,
+        ) else {
+            return Ok(());
+        };
+
+        self.emit_float_string_to_int_deprecation_for_type_decl(
+            &type_decl,
+            value,
+            self.current_strict_types(),
+            span,
+        )
     }
 
     fn apply_leading_numeric_string_arithmetic(
@@ -97437,6 +97575,69 @@ impl SettypeNanTarget {
             Self::Object => "object",
             Self::Null => "null",
         }
+    }
+}
+
+fn value_is_string_like(value: &Value) -> bool {
+    matches!(value, Value::String(_) | Value::BinaryString(_))
+}
+
+fn visible_object_property_type_decl(
+    object: &PhpObject,
+    name: &str,
+    current_class_id: Option<ClassId>,
+    protected_class_ids: &[ClassId],
+) -> Option<String> {
+    let properties = object.properties();
+    if current_class_id.is_some() {
+        if let Some(property) = properties.iter().rev().find(|property| {
+            property.name() == name
+                && property.visibility() != Visibility::Public
+                && object_property_visible_in_context(
+                    property,
+                    current_class_id,
+                    protected_class_ids,
+                )
+        }) {
+            return property.type_decl().map(str::to_string);
+        }
+    }
+
+    properties
+        .iter()
+        .rev()
+        .find(|property| property.name() == name && property.visibility() == Visibility::Public)
+        .and_then(|property| property.type_decl().map(str::to_string))
+}
+
+fn object_property_visible_in_context(
+    property: &ObjectProperty,
+    current_class_id: Option<ClassId>,
+    protected_class_ids: &[ClassId],
+) -> bool {
+    match property.visibility() {
+        Visibility::Public => true,
+        Visibility::Private => current_class_id == Some(property.declaring_class_id()),
+        Visibility::Protected => protected_class_ids.contains(&property.declaring_class_id()),
+    }
+}
+
+fn float_string_to_int_deprecation_message(value: &Value) -> Option<String> {
+    let text = match value {
+        Value::String(text) => text.as_str(),
+        Value::BinaryString(bytes) => std::str::from_utf8(bytes).ok()?,
+        _ => return None,
+    };
+
+    match classify_php_numeric_string(text) {
+        PhpNumericStringClassification::Float(parsed)
+            if parsed.is_finite() && parsed.trunc() != parsed =>
+        {
+            Some(format!(
+                "Implicit conversion from float-string \"{text}\" to int loses precision"
+            ))
+        }
+        _ => None,
     }
 }
 
@@ -117712,6 +117913,7 @@ impl Interpreter {
                 )?;
             }
         }
+        self.emit_float_string_to_int_deprecation_for_value(&args[0], span)?;
 
         let codepoint = integer_argument_current_subset("chr()", "codepoint", &args[0], span)?;
         if !(0..=255).contains(&codepoint) {

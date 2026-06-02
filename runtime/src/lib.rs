@@ -37868,6 +37868,10 @@ impl ObjectProperty {
         &self.declaring_class_name
     }
 
+    pub fn type_decl(&self) -> Option<&str> {
+        self.type_decl.as_deref()
+    }
+
     pub fn value(&self) -> &Value {
         match &self.storage {
             ObjectPropertyStorage::Value(cell) => cell.value(),
