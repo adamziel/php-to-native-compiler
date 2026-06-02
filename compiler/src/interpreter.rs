@@ -65242,15 +65242,16 @@ impl Interpreter {
         autoload: bool,
         span: Span,
     ) -> CompileResult<bool> {
-        if self.class_like_exists(name, kind) {
+        let lookup_name = normalize_leading_namespace_separator(name);
+        if self.class_like_exists(lookup_name, kind) {
             return Ok(true);
         }
-        if !autoload {
+        if !autoload || name.is_empty() {
             return Ok(false);
         }
 
-        self.run_autoload_callbacks(name, kind, span)?;
-        Ok(self.class_like_exists(name, kind))
+        self.run_autoload_callbacks(lookup_name, kind, span)?;
+        Ok(self.class_like_exists(lookup_name, kind))
     }
 
     fn call_class_alias(
@@ -65313,6 +65314,7 @@ impl Interpreter {
     }
 
     fn class_like_exists(&self, name: &str, kind: AutoloadKind) -> bool {
+        let name = normalize_leading_namespace_separator(name);
         match kind {
             AutoloadKind::Class => {
                 self.classes.lookup_class(name).is_some()
@@ -68716,7 +68718,7 @@ impl Interpreter {
     }
 
     fn lookup_function(&self, name: &str) -> Option<Callable> {
-        self.lookup_function_exact(name)
+        self.lookup_function_exact(normalize_leading_namespace_separator(name))
     }
 
     fn lookup_function_exact(&self, name: &str) -> Option<Callable> {
@@ -104252,6 +104254,10 @@ fn metadata_exists_class_like_name(
             ),
         )),
     }
+}
+
+fn normalize_leading_namespace_separator(name: &str) -> &str {
+    name.strip_prefix('\\').unwrap_or(name)
 }
 
 fn metadata_exists_autoload_flag(

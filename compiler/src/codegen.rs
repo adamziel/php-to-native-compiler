@@ -13570,7 +13570,9 @@ impl LlvmGenerator {
 
     fn function_exists_result_for_value(&self, value: &IrValue) -> Option<bool> {
         match value {
-            IrValue::String(value) => Some(is_native_known_function_name(value)),
+            IrValue::String(value) => Some(is_native_known_function_name(
+                exact_function_call_lookup_name(value),
+            )),
             IrValue::StringPtr(_) => {
                 let values = self.known_string_values_for_value(value)?;
                 known_strings_have_uniform_function_exists_result(&values)
@@ -57042,6 +57044,7 @@ impl CGenerator {
     }
 
     fn is_known_function_available(&self, name: &str) -> bool {
+        let name = exact_function_call_lookup_name(name);
         is_native_known_function_name(name)
             || self
                 .user_functions
@@ -57051,6 +57054,13 @@ impl CGenerator {
     fn function_exists_text_membership_candidates(&self) -> Vec<String> {
         let mut candidates = native_text_membership_candidates(NATIVE_KNOWN_FUNCTION_NAMES);
         candidates.extend(self.user_function_order.iter().cloned());
+        let unprefixed = candidates.clone();
+        candidates.extend(
+            unprefixed
+                .into_iter()
+                .filter(|name| !name.starts_with('\\'))
+                .map(|name| format!("\\{name}")),
+        );
         candidates
     }
 
@@ -66408,7 +66418,7 @@ fn is_builtin_class_name(name: &str) -> bool {
 fn known_strings_have_uniform_function_exists_result(values: &KnownString) -> Option<bool> {
     let mut result = None;
     for value in values.values() {
-        let current = is_native_known_function_name(value);
+        let current = is_native_known_function_name(exact_function_call_lookup_name(value));
         if let Some(previous) = result {
             if previous != current {
                 return None;

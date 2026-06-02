@@ -308,6 +308,45 @@ echo function_exists("namespaced_name") ? "1" : "0";
 }
 
 #[test]
+fn existence_helpers_accept_fully_qualified_lookup_strings() {
+    let execution = run_source(
+        r#"<?php
+namespace Test\Lookup;
+
+class Box {}
+interface Face {}
+trait Mix {}
+function helper() {}
+
+echo class_exists("Test\\Lookup\\Box") ? "1" : "0";
+echo class_exists("\\Test\\Lookup\\Box") ? "1" : "0";
+echo interface_exists("Test\\Lookup\\Face") ? "1" : "0";
+echo interface_exists("\\Test\\Lookup\\Face") ? "1" : "0";
+echo trait_exists("Test\\Lookup\\Mix") ? "1" : "0";
+echo trait_exists("\\Test\\Lookup\\Mix") ? "1" : "0";
+echo function_exists("Test\\Lookup\\helper") ? "1" : "0";
+echo function_exists("\\Test\\Lookup\\helper") ? "1" : "0";
+echo function_exists("\\strlen") ? "1" : "0";
+echo function_exists("helper") ? "1" : "0";
+echo "\n";
+
+spl_autoload_register(function ($class_name) {
+    echo "autoload:$class_name\n";
+});
+var_dump(interface_exists("\\Test\\Lookup\\MissingFace"));
+var_dump(trait_exists("\\Test\\Lookup\\MissingMix"));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "1111111110\nautoload:Test\\Lookup\\MissingFace\nbool(false)\nautoload:Test\\Lookup\\MissingMix\nbool(false)\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn extension_loaded_uses_current_compatibility_registry() {
     let execution = run_source(
         r#"<?php
@@ -438,8 +477,11 @@ fn emit_ir_folds_direct_function_exists_string_names() {
         r#"<?php
 $known = "assert";
 $missing = "missing_native_function";
+$fq_known = "\\assert";
+$fq_missing = "\\missing_native_function";
 
 echo function_exists("strlen") ? "1" : "0";
+echo function_exists("\\strlen") ? "1" : "0";
 echo function_exists("STRLEN") ? "1" : "0";
 echo function_exists("function_exists") ? "1" : "0";
 echo function_exists("extension_loaded") ? "1" : "0";
@@ -451,13 +493,15 @@ echo function_exists("ASSERT") ? "1" : "0";
 echo function_exists("missing_native_function") ? "1" : "0";
 echo function_exists($known) ? "1" : "0";
 echo function_exists($missing) ? "1" : "0";
+echo function_exists($fq_known) ? "1" : "0";
+echo function_exists($fq_missing) ? "1" : "0";
 echo "\n";
 "#,
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 10, "{ir}");
-    assert_eq!(ir.matches("c\"0\\00\"").count(), 2, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 12, "{ir}");
+    assert_eq!(ir.matches("c\"0\\00\"").count(), 3, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
 }
 

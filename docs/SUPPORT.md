@@ -4136,9 +4136,12 @@
   native lowering remain unsupported.
   `function_exists($name)` checks string names against the current runtime
   function table, including current user functions and documented callable
-  builtins. Conditional/nested user-function declarations become visible only
-  after their declaration statement executes. Non-string names are rejected in
-  the current subset.
+  builtins; a single leading global namespace separator is ignored for lookup
+  strings such as `\App\fn`. Conditional/nested user-function declarations
+  become visible only after their declaration statement executes. Non-string
+  names, namespace/import expansion for arbitrary dynamic strings, and native
+  function-table breadth beyond the documented metadata subset remain
+  unsupported.
   `mysqli_connect(...)` accepts zero to six current connection arguments and
   returns a placeholder `mysqli` object with clean `connect_errno` and
   `connect_error` state. Direct and dynamic string-valued calls use the same
@@ -6053,15 +6056,16 @@
   values, `is_object` reports whether a value is one of those current object
   values, `get_debug_type` returns scalar/array type names or the current
   object's declared class name, `class_exists` checks the current declared
-  class metadata by string name without autoloading, `interface_exists`
-  accepts string names and checks the bounded core interface catalog plus
-  current declared interface metadata without autoloading, including child
+  class metadata by string name with a bounded truthy-autoload miss path,
+  `interface_exists` accepts string names and checks the bounded core
+  interface catalog plus current declared interface metadata, including child
   interfaces declared with one or more already-declared user parent
-  interfaces, `trait_exists`
-  accepts string names and checks current declared
-  trait metadata without autoloading,
-  `enum_exists` accepts string names and checks current declared unit-enum
-  metadata without autoloading,
+  interfaces and the same bounded autoload miss path, `trait_exists`
+  accepts string names and checks current declared trait metadata with the
+  same bounded autoload miss path, `enum_exists` accepts string names and
+  checks current declared unit-enum metadata. These class-like existence
+  helpers ignore one leading global namespace separator in string lookup names
+  and pass the normalized name to bounded SPL autoload callbacks.
   `property_exists` checks
   case-sensitive declared and inherited property metadata for current object values or
   string class names, `method_exists` checks case-insensitive declared and
@@ -6760,9 +6764,11 @@
   string-valued dynamic function calls. `class_exists($name)` and
   `class_exists($name, $autoload)` accept string class names, perform
   case-insensitive lookup against classes declared in the current parsed
-  program, accept current bool-like scalar autoload flags, and are available
-  through string-valued dynamic function calls. A truthy autoload flag invokes
-  currently registered bounded autoload callbacks on misses.
+  program, ignore one leading global namespace separator in lookup strings,
+  accept current bool-like scalar autoload flags, and are available through
+  string-valued dynamic function calls. A truthy autoload flag invokes
+  currently registered bounded autoload callbacks on misses with the
+  normalized class-like name.
   `class_alias($class, $alias, $autoload = true)` accepts string source and
   alias names plus a current bool-like scalar autoload flag. A truthy autoload
   flag loads the source class or interface through the current bounded
@@ -6779,22 +6785,28 @@
   `interface_exists($name)` and `interface_exists($name, $autoload)` accept
   string interface names, perform case-insensitive lookup against the bounded
   `Stringable` core interface plus interfaces declared in the current parsed
-  program, and are available through string-valued dynamic function calls. The
-  autoload flag accepts current bool-like scalar values and invokes currently
-  registered bounded autoload callbacks on misses.
+  program, ignore one leading global namespace separator in lookup strings,
+  and are available through string-valued dynamic function calls. The autoload
+  flag accepts current bool-like scalar values and invokes currently
+  registered bounded autoload callbacks on misses with the normalized
+  class-like name.
   `trait_exists($name)` and `trait_exists($name, $autoload)` accept string
   trait names, perform case-insensitive lookup against top-level traits
   declared in the current parsed program, including traits with currently
-  supported public constants, supported properties, and public instance/static methods, and are available through
-  string-valued dynamic function calls. The autoload flag accepts current
-  bool-like scalar values and invokes currently registered bounded autoload
-  callbacks on misses.
+  supported public constants, supported properties, and public instance/static
+  methods, ignore one leading global namespace separator in lookup strings,
+  and are available through string-valued dynamic function calls. The autoload
+  flag accepts current bool-like scalar values and invokes currently
+  registered bounded autoload callbacks on misses with the normalized
+  class-like name.
   `enum_exists($name)` and `enum_exists($name, $autoload)` accept string enum
   names, perform case-insensitive lookup against top-level unit enums declared
-  in the current parsed program, and are available through string-valued
-  dynamic function calls. The autoload flag accepts current bool-like scalar
-  values and does not trigger autoloading. `class_exists()` also reports true
-  for declared enums in the current class-like metadata slice.
+  in the current parsed program, ignore one leading global namespace separator
+  in lookup strings, and are available through string-valued dynamic function
+  calls. The autoload flag accepts current bool-like scalar values and does
+  not trigger enum loading beyond the current metadata recheck. `class_exists()`
+  also reports true for declared enums in the current class-like metadata
+  slice.
   `property_exists($object_or_class, $property)` accepts a current object value
   or string class name and a string property name. It checks the current
   declared and inherited property metadata with case-sensitive property names,
@@ -9396,35 +9408,40 @@
   `get_debug_type($value)` returns current scalar/array type names and the
   declared class name for current minimal object values. `class_exists($name)`
   and `class_exists($name, $autoload)` accept string class names, return whether
-  the current parsed program declared that class, and accept current bool-like
-  scalar autoload flags. Truthy autoload misses and missing `new` class
-  instantiation invoke currently registered bounded autoload callbacks before
-  the metadata check returns. Included class declarations use the same callback
-  path for missing `extends` parent classes before inheritance validation.
+  the current parsed program declared that class, ignore one leading global
+  namespace separator in lookup strings, and accept current bool-like scalar
+  autoload flags. Truthy autoload misses and missing `new` class instantiation
+  invoke currently registered bounded autoload callbacks before the metadata
+  check returns; existence probes pass the normalized class-like name to those
+  callbacks. Included class declarations use the same callback path for missing
+  `extends` parent classes before inheritance validation.
   `null`, arrays,
   objects, references, and exact PHP deprecation/`TypeError` behavior remain
   unsupported for that flag.
   `interface_exists($name)` and `interface_exists($name, $autoload)` accept
   string interface names and perform case-insensitive lookup against the
   bounded core interface catalog plus interfaces declared in the current parsed
-  program; the autoload flag accepts current bool-like scalar values and
-  invokes currently registered bounded autoload callbacks on misses. Included
-  class/interface declarations use the same callback path for missing direct
-  `implements` interface names and parent interfaces reached during interface
-  inheritance validation.
+  program, ignoring one leading global namespace separator in lookup strings;
+  the autoload flag accepts current bool-like scalar values and invokes
+  currently registered bounded autoload callbacks on misses with the normalized
+  class-like name. Included class/interface declarations use the same callback
+  path for missing direct `implements` interface names and parent interfaces
+  reached during interface inheritance validation.
   `trait_exists($name)` and `trait_exists($name, $autoload)` accept string
   trait names and perform case-insensitive lookup against top-level traits
   declared in the current parsed program, including traits with currently
-  supported public constants, supported properties, and public instance/static methods; the autoload flag
-  accepts current bool-like scalar values and invokes currently registered
-  bounded autoload callbacks on misses. Included class declarations use the
-  same callback path for missing direct trait `use` names before trait
-  method/constant composition.
+  supported public constants, supported properties, and public instance/static
+  methods, ignoring one leading global namespace separator in lookup strings;
+  the autoload flag accepts current bool-like scalar values and invokes
+  currently registered bounded autoload callbacks on misses with the normalized
+  class-like name. Included class declarations use the same callback path for
+  missing direct trait `use` names before trait method/constant composition.
   `enum_exists($name)` and `enum_exists($name, $autoload)` accept string enum
   names and perform case-insensitive lookup against top-level unit enums
-  declared in the current parsed program; the autoload flag accepts current
-  bool-like scalar values and does not trigger autoloading. `class_exists()`
-  also reports true for declared enums.
+  declared in the current parsed program, ignoring one leading global namespace
+  separator in lookup strings; the autoload flag accepts current bool-like
+  scalar values and does not trigger enum loading beyond the current metadata
+  recheck. `class_exists()` also reports true for declared enums.
   `property_exists($object_or_class, $property)` checks declared and inherited
   property metadata for current object values or string class names with
   case-sensitive property names and invokes bounded class autoload callbacks

@@ -4,6 +4,24 @@
 
 Implemented:
 
+- Added a bounded leading namespace-separator introspection lookup lane for the
+  selected `Zend/tests/namespaces/bug47593.phpt` surface. String-name
+  `function_exists()` now treats one leading `\` as PHP's global namespace
+  separator before checking the current function table, and
+  `class_exists()`/`interface_exists()`/`trait_exists()`/`enum_exists()` use
+  the same normalized class-like metadata lookup. Truthy-autoload class-like
+  misses also pass the normalized name to the bounded SPL autoload callback
+  path, so `interface_exists('\Name')` probes no longer call loaders with a
+  non-PHP leading separator. Focused proof covers the Rust
+  `existence_helpers_accept_fully_qualified_lookup_strings` regression plus
+  the existing native `function_exists()` folding regression, direct `phpc run`
+  probe for the public row shape, and the selected PHPT row.
+  Unsupported edges remain namespace/import expansion for arbitrary dynamic
+  strings, native class-like metadata lowering for leading-separator true
+  results, direct dynamic execution of every fully qualified callable spelling,
+  broad class-like alias/import resolution, exact autoload warning/throw
+  behavior, and native lowering.
+
 - Added a bounded `ArrayIterator::seek()` invalid-position exception lane for
   the selected `array_014.phpt` surface. Core ArrayIterator out-of-range
   `seek()` calls now remain on the existing cursor implementation but convert

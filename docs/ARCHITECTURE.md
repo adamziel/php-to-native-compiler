@@ -2653,10 +2653,12 @@ scalar/null values return false, while false flags use the documented builtin
 lookup table for strings.
 Direct `function_exists($name)` calls fold only when `$name` is an
 already-lowerable string value with a uniform known answer in the documented
-builtin table. Documented builtin names fold to true and missing names fold to
-false; user-defined function tables, namespace/autoload-aware lookup,
-extension-loaded functions outside the documented table, dynamic callees, and
-runtime callable dispatch remain outside native lowering.
+builtin table. Documented builtin names, including spellings with one leading
+global namespace separator, fold to true and missing names fold to false;
+broader user-defined function tables in LLVM, namespace/import expansion,
+autoload-aware lookup, extension-loaded functions outside the documented
+table, dynamic callees, and runtime callable dispatch remain outside native
+lowering.
 `dirname()` is currently an interpreter-only path builtin for lexical
 Unix-style local paths. Native `function_exists("dirname")` and
 `is_callable("dirname")` use the known-function table, but direct native
@@ -3873,12 +3875,14 @@ function calls. `get_debug_type($value)` reports current scalar/array type
 names and the declared class name for current object values.
 `class_exists($name[, $autoload])` checks the interpreter's already-registered
 class metadata table by string class name, using the same case-insensitive
-class lookup as instantiation. The autoload flag accepts current bool-like
+class lookup as instantiation and ignoring one leading global namespace
+separator in the lookup string. The autoload flag accepts current bool-like
 scalar values; when truthy and the initial lookup misses, currently registered
 string user-function callbacks, public `"ClassName::method"` static-method
 string callbacks, public `[object, "method"]` instance-method array callables,
 and public `["ClassName", "method"]` static-method array callables run before
-the metadata check returns.
+the metadata check returns. Existence probes pass the normalized class-like
+name to those callbacks.
 Missing named or direct-variable string class names in `new` expressions use
 the same bounded autoload callback path before reporting the current
 undefined-class diagnostic.
@@ -3886,14 +3890,16 @@ undefined-class diagnostic.
 deprecation/`TypeError` behavior remain unsupported for that flag.
 `interface_exists($name[, $autoload])`, `trait_exists($name[, $autoload])`,
 and `enum_exists($name[, $autoload])` accept the same string-name and
-bool-like scalar autoload boundary. `interface_exists()` shares the bounded
-autoload callback path with `class_exists()`, and `trait_exists()` uses that
-same path for declared top-level trait metadata. Enum lookups still check only
-already-declared metadata. Invokable objects, closures at invocation time,
-non-public methods, class-string non-static methods, object static methods,
-arbitrary callable arrays, exact PHP warning/throw behavior, and native
-autoload lowering remain unsupported. `class_exists()` also reports true for
-declared enums in the current class-like metadata slice.
+bool-like scalar autoload boundary and the same leading global namespace
+separator normalization. `interface_exists()` shares the bounded autoload
+callback path with `class_exists()`, and `trait_exists()` uses that same path
+for declared top-level trait metadata. Enum lookups still check only
+already-declared metadata after the current metadata recheck. Invokable
+objects, closures at invocation time, non-public methods, class-string
+non-static methods, object static methods, arbitrary callable arrays, exact PHP
+warning/throw behavior, and native autoload lowering remain unsupported.
+`class_exists()` also reports true for declared enums in the current
+class-like metadata slice.
 `property_exists($object_or_class, $property)` checks the same declared and
 inherited property metadata for current object values or string class names,
 with case-sensitive property names. Non-empty unresolved string class names
