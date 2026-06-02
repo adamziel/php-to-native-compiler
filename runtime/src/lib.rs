@@ -44542,12 +44542,14 @@ fn php_float_to_operator_int(value: f64) -> i64 {
     }
 
     let truncated = value.trunc();
-    const PHP_INT_64_ABS_LIMIT: f64 = 9_223_372_036_854_775_808.0;
-    if truncated >= PHP_INT_64_ABS_LIMIT || truncated <= -PHP_INT_64_ABS_LIMIT {
-        i64::MIN
-    } else {
-        truncated as i64
+    const PHP_INT_64_MAX_EXCLUSIVE_AS_F64: f64 = 9_223_372_036_854_775_808.0;
+    if truncated >= i64::MIN as f64 && truncated < PHP_INT_64_MAX_EXCLUSIVE_AS_F64 {
+        return truncated as i64;
     }
+
+    const PHP_UINT_64_MODULUS_AS_F64: f64 = 18_446_744_073_709_551_616.0;
+    let modulo = truncated.rem_euclid(PHP_UINT_64_MODULUS_AS_F64);
+    (modulo as u64) as i64
 }
 
 impl<'a> PhpPrimitiveValue<'a> {

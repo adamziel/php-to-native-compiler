@@ -85,25 +85,27 @@ $s[1] = "";
         "invalid array access: cannot assign an empty string to a string offset"
     );
 
-    let string_key = runtime_error(
+    let string_key = run_source(
         r#"<?php
 $s = "abc";
 $s["name"] = "X";
 "#,
-    );
-    assert_eq!(
-        string_key.message,
-        "invalid array access: cannot write offset on string"
-    );
+    )
+    .unwrap();
+    assert!(string_key.stdout.contains(
+        "Fatal error: Uncaught TypeError: Cannot access offset of type string on string"
+    ));
+    assert_eq!(string_key.exit_code, 255);
 
-    let decimal_key = runtime_error(
+    let decimal_key = run_source(
         r#"<?php
 $s = "abc";
 $s["1.0"] = "X";
 "#,
-    );
-    assert_eq!(
-        decimal_key.message,
-        "invalid array access: cannot write offset on string"
-    );
+    )
+    .unwrap();
+    assert!(decimal_key.stdout.contains(
+        "Fatal error: Uncaught TypeError: Cannot access offset of type string on string"
+    ));
+    assert_eq!(decimal_key.exit_code, 255);
 }

@@ -4,6 +4,33 @@
 
 Implemented:
 
+- Added a bounded non-representable float-to-int coercion lane for `phpc run`
+  and the runtime ABI operator helper. Non-finite and 64-bit out-of-range
+  floats now emit PHP-shaped `Warning: The float ... is not representable as
+  an int, cast occurred` diagnostics and recover through PHP's 64-bit low-bit
+  wrapping in `(int)` / `intval()`, array literal and dynamic keys, direct
+  array reads, `isset()` / `unset()` key checks, `array_key_exists()`,
+  `sprintf()` integer conversions, and runtime integer-operator coercions.
+  String numeric casts keep PHP's warning-free saturating boundary behavior,
+  string offsets keep their existing `String offset cast occurred` warning
+  without the representability warning, and `(string) NAN` emits PHP's
+  `unexpected NAN value was coerced to string` warning. Focused proof covers
+  the full `scalar_casts`, `string_offsets`, and `array_key_exists` Rust test
+  files, direct runtime and native-IR probes, selected public PHPT rows
+  `dval_to_lval_64.phpt`,
+  `warning_float_does_not_fit_zend_long_arrays.phpt`,
+  `warning_float_does_not_fit_zend_long_strings.phpt`,
+  `explicit_casts_should_not_warn.phpt`,
+  `non-rep-float-as-int-extra2.phpt`, and
+  `non-rep-float-as-int-extra3.phpt`, build, fmt, and diff checks.
+  Unsupported edges remain `array_key_exists()` reentrant caller-array
+  replacement during the float-key warning handler
+  (`non-rep-float-as-int-extra4.phpt`), 32-bit integer parity, exact
+  diagnostic ordering outside the covered coercion sites, broader
+  object/resource numeric-cast parity outside the current scalar cast subset,
+  references/COW, and direct native lowering beyond the runtime ABI helper
+  path.
+
 - Added a bounded exact-core date object serialization-state lane. Generic
   `serialize()` / `unserialize()` now round-trip exact core `DateTime` objects
   whose public `date`, `timezone_type`, and `timezone` state matches the

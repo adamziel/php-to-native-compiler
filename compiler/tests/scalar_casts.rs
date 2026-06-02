@@ -10,12 +10,17 @@ fn string_casts_execute_for_current_scalar_and_null_subset() {
 echo "[", (string) null, "]\n";
 echo "[", (string) false, "]\n";
 echo (STRING) true, "|", (string) 42, "|", (string) 3.5, "|", (string) "ok", "\n";
+echo (string) fdiv(0, 0), "\n";
 echo ((string) true) === "1" ? "string" : "other";
 "#,
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "[]\n[]\n1|42|3.5|ok\nstring");
+    assert!(execution
+        .stdout
+        .contains("Warning: unexpected NAN value was coerced to string"));
+    assert!(execution.stdout.ends_with("\nNAN\nstring"));
+    assert!(execution.stdout.starts_with("[]\n[]\n1|42|3.5|ok\n"));
     assert_eq!(execution.exit_code, 0);
 }
 
@@ -139,15 +144,84 @@ echo (int) [], "|", (int) [1], "|", (int) STDERR, "|", (int) new CountableBox(),
     assert!(execution.stdout.ends_with("1\n"));
     assert_eq!(execution.exit_code, 0);
 
-    let error = run_source("<?php\necho (int) \"9223372036854775808x\";\n").unwrap_err();
+    let execution = run_source("<?php\necho (int) \"9223372036854775808x\";\n").unwrap();
 
-    assert_eq!(error.phase, Phase::Runtime);
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 6);
-    assert_eq!(
-        error.message,
-        "unsupported call (int): non-finite or out-of-range float-to-int cast behavior is not implemented"
-    );
+    assert_eq!(execution.stdout, "9223372036854775807");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn int_casts_warn_and_wrap_nonrepresentable_float_values() {
+    let execution = run_source(
+        r#"<?php
+$values = [10e120, 10e300, fdiv(0, 0), -4000000000000000000000.];
+foreach ($values as $value) {
+    var_dump((int) $value);
+}
+var_dump((int) (string) 10e120);
+"#,
+    )
+    .unwrap();
+
+    assert!(execution
+        .stdout
+        .contains("Warning: The float 1.0E+121 is not representable as an int, cast occurred"));
+    assert!(execution
+        .stdout
+        .contains("Warning: The float 1.0E+301 is not representable as an int, cast occurred"));
+    assert!(execution
+        .stdout
+        .contains("Warning: The float NAN is not representable as an int, cast occurred"));
+    assert!(execution
+        .stdout
+        .contains("Warning: The float -4.0E+21 is not representable as an int, cast occurred"));
+    assert!(execution.stdout.contains("int(2943463994972700672)"));
+    assert!(execution.stdout.ends_with("int(9223372036854775807)\n"));
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn array_and_string_offsets_warn_and_wrap_nonrepresentable_float_keys() {
+    let execution = run_source(
+        r#"<?php
+set_error_handler(function ($errno, $errstr) {
+    echo $errstr, "\n";
+});
+
+$array = [0 => "zero"];
+unset($array[1.0E+42]);
+var_dump(isset($array[1.0E+42]));
+var_dump(array_key_exists(1.0E+42, $array));
+
+$array = [10e120 => "large"];
+var_dump($array[10e120]);
+
+$string = "abc";
+var_dump($string[10e120]);
+$string[10e120] = "Z";
+var_dump($string);
+"#,
+    )
+    .unwrap();
+
+    assert!(execution
+        .stdout
+        .contains("The float 1.0E+42 is not representable as an int, cast occurred\nbool(false)"));
+    assert!(execution
+        .stdout
+        .contains("The float 1.0E+42 is not representable as an int, cast occurred\nbool(false)"));
+    assert!(execution.stdout.contains(
+        "The float 1.0E+121 is not representable as an int, cast occurred\n\
+The float 1.0E+121 is not representable as an int, cast occurred\n\
+string(5) \"large\""
+    ));
+    assert!(execution
+        .stdout
+        .contains("String offset cast occurred\nstring(1) \"a\""));
+    assert!(execution
+        .stdout
+        .contains("String offset cast occurred\nstring(3) \"Zbc\""));
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

@@ -7775,13 +7775,16 @@
   without `__toString()` to catchable `Error` objects in `try/catch`.
   `(int)`/`(integer)` and `intval()` convert `null`/`false` to `0`, `true` to
   `1`, keep integers unchanged, truncate finite in-range floats toward zero,
-  convert arrays to `0` or `1`, resources to their runtime id, and objects or
-  closures to `1` after the current PHP warning. String integer conversion
-  covers well-formed numeric strings, bounded leading-numeric prefixes, and
-  `intval()` bases `0` and `2..=36`, including int-compatible scalar base
-  arguments and `0b`/`0B` binary prefixes for base `0` and base `2`; invalid
-  string-conversion bases outside that range return `0`, while the base is
-  ignored for non-string values. Empty or non-numeric strings become `0`.
+  warn and recover with PHP's 64-bit low-bit wrapping for non-finite or
+  out-of-range floats, convert arrays to `0` or `1`, resources to their
+  runtime id, and objects or closures to `1` after the current PHP warning.
+  String integer conversion covers well-formed numeric strings, bounded
+  leading-numeric prefixes, warning-free saturation of out-of-range
+  float-shaped strings, and `intval()` bases `0` and `2..=36`, including
+  int-compatible scalar base arguments and `0b`/`0B` binary prefixes for base
+  `0` and base `2`; invalid string-conversion bases outside that range return
+  `0`, while the base is ignored for non-string values. Empty or non-numeric
+  strings become `0`.
   `(bool)`/`(boolean)` and `boolval()` use current PHP-shaped truthiness:
   `null`, `false`, integer/float zero, `""`, `"0"`, and empty arrays are
   false; other current scalars, non-empty arrays, current objects, and
@@ -7800,9 +7803,9 @@
   `scalar` property, arrays become public properties keyed by the current
   display key, and objects are unchanged. Closure array/object casts, resource
   array/object casts, numeric grammar outside the current bounded prefix
-  scanner, non-finite or out-of-range float cast behavior, `(real)`,
-  `(unset)`, and `(binary)` cast forms, exact PHP diagnostics, and native
-  lowering remain unsupported.
+  scanner, 32-bit integer parity for non-representable float casts, `(real)`,
+  `(unset)`, and `(binary)` cast forms, exact PHP diagnostics outside the
+  covered coercion sites, and native lowering remain unsupported.
 - Scalar comparisons: loose equality and relational operators are implemented
   for the current scalar values using PHP 8-style behavior for booleans,
   numeric strings, non-numeric strings, empty strings, `null`, integers, and
@@ -11713,10 +11716,13 @@
   invocation, `__invoke`, first-class callable syntax, non-public method
   callbacks, by-reference argument propagation, named arguments, and
   namespace/autoload-aware callable resolution
-- `array_key_exists` lossy or non-finite float key coercion and PHP
-  warning/deprecation behavior, array/object/resource/reference keys, exact
-  native `TypeError` objects, reference/copy-on-write behavior, and native
-  lowering
+- `array_key_exists` accepts the documented scalar key subset, including the
+  same bounded float-to-int warning/recovery split for fractional,
+  non-finite, and out-of-range float keys that array offset coercion uses.
+  Reentrant caller-array replacement while the float-key warning handler is
+  running, array/object/resource/reference keys, exact native `TypeError`
+  objects, reference/copy-on-write behavior, and native lowering remain
+  unsupported.
 - `array_key_first`/`array_key_last`/`current`/`array_is_list` exact native
   `TypeError` objects, reference/copy-on-write container behavior, and native
   lowering

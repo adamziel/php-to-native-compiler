@@ -20337,7 +20337,7 @@ impl Interpreter {
             }
             Value::Float(value) => {
                 self.emit_display_warning("String offset cast occurred", expr.span())?;
-                let value = Self::float_to_offset_i64(value, expr.span())?;
+                let value = php_float_to_wrapping_i64(value);
                 Ok((value, value.to_string()))
             }
             Value::Null => {
@@ -20398,19 +20398,36 @@ impl Interpreter {
         )
     }
 
-    fn float_to_offset_i64(value: f64, span: Span) -> CompileResult<i64> {
-        if !value.is_finite() || value.trunc() < i64::MIN as f64 || value.trunc() >= i64::MAX as f64
-        {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "array offset",
-                    "non-finite or out-of-range float offset cast behavior is not implemented",
+    fn float_to_array_key_i64(&mut self, value: f64, span: Span) -> CompileResult<i64> {
+        if php_float_to_int_is_not_representable(value) {
+            self.emit_float_not_representable_warning(value, span)?;
+        } else if value.trunc() != value {
+            self.emit_display_diagnostic(
+                "Deprecated",
+                PHP_E_DEPRECATED,
+                format!(
+                    "Implicit conversion from float {} to int loses precision",
+                    format_php_float_to_int_deprecation_value(value)
                 ),
-            ));
+                span,
+            )?;
         }
 
-        Ok(value.trunc() as i64)
+        Ok(php_float_to_wrapping_i64(value))
+    }
+
+    fn emit_float_not_representable_warning(
+        &mut self,
+        value: f64,
+        span: Span,
+    ) -> CompileResult<()> {
+        self.emit_display_warning(
+            format!(
+                "The float {} is not representable as an int, cast occurred",
+                php_float_to_int_warning_string(value)
+            ),
+            span,
+        )
     }
 
     fn read_ascii_string_offset_at(
@@ -33112,6 +33129,10 @@ impl Interpreter {
                             .implements_interface(object.class_id(), "ArrayAccess")
                     });
                 let key = match index {
+                    Some(index) if scope.read_named_string(name).is_some() => {
+                        let (offset, _) = self.evaluate_string_offset_index(index, scope)?;
+                        Some(ArrayKey::Int(offset))
+                    }
                     Some(index) if suppress_null_offset_deprecation => {
                         Some(self.evaluate_array_key_without_null_offset_deprecation(index, scope)?)
                     }
@@ -57919,18 +57940,7 @@ impl Interpreter {
         let key = self.evaluate(expr, scope)?;
         match key {
             Value::Float(value) => {
-                let offset = Self::float_to_offset_i64(value, expr.span())?;
-                if value.fract() != 0.0 {
-                    self.emit_display_diagnostic(
-                        "Deprecated",
-                        PHP_E_DEPRECATED,
-                        format!(
-                            "Implicit conversion from float {} to int loses precision",
-                            format_php_float_to_int_deprecation_value(value)
-                        ),
-                        expr.span(),
-                    )?;
-                }
+                let offset = self.float_to_array_key_i64(value, expr.span())?;
                 Ok(ArrayKey::Int(offset))
             }
             Value::Resource(id) => {
@@ -57979,6 +57989,10 @@ impl Interpreter {
                 expr.span(),
             )?;
             return Ok(ArrayKey::Int(*id));
+        }
+        if let Value::Float(value) = &key {
+            let offset = self.float_to_array_key_i64(*value, expr.span())?;
+            return Ok(ArrayKey::Int(offset));
         }
         if emit_null_offset_deprecation && matches!(key, Value::Null) {
             self.emit_display_diagnostic(
@@ -96766,7 +96780,13 @@ impl Interpreter {
         span: Span,
     ) -> CompileResult<Value> {
         match value {
-            Value::Null | Value::Bool(_) | Value::Int(_) | Value::Float(_) | Value::String(_) => {
+            Value::Float(value) => {
+                if value.is_nan() {
+                    self.emit_display_warning("unexpected NAN value was coerced to string", span)?;
+                }
+                Ok(Value::String(Value::Float(value).echo_string()))
+            }
+            Value::Null | Value::Bool(_) | Value::Int(_) | Value::String(_) => {
                 Ok(Value::String(value.echo_string()))
             }
             Value::BinaryString(value) => Ok(Value::BinaryString(value)),
@@ -97108,25 +97128,7 @@ impl Interpreter {
             Value::Bool(true) => Ok(ArrayKey::Int(1)),
             Value::Int(value) => Ok(ArrayKey::Int(*value)),
             Value::Float(value) => {
-                let Some(key) = php_base_conversion_float_to_i64(*value) else {
-                    return Err(runtime_error(
-                        span,
-                        RuntimeError::invalid_array_key(
-                            "lossy or non-finite float keys are not supported for array_key_exists(); only null, bool, int, string, and finite float key values are implemented",
-                        ),
-                    ));
-                };
-                if value.trunc() != *value {
-                    self.emit_display_diagnostic(
-                        "Deprecated",
-                        PHP_E_DEPRECATED,
-                        format!(
-                            "Implicit conversion from float {} to int loses precision",
-                            format_php_float_to_int_deprecation_value(*value)
-                        ),
-                        span,
-                    )?;
-                }
+                let key = self.float_to_array_key_i64(*value, span)?;
                 Ok(ArrayKey::Int(key))
             }
             Value::String(value) => Ok(ArrayKey::string(value.clone())),
@@ -97150,14 +97152,19 @@ impl Interpreter {
     fn int_cast_value(
         &mut self,
         value: Value,
-        callable: &'static str,
+        _callable: &'static str,
         span: Span,
     ) -> CompileResult<Value> {
         match value {
             Value::Null => Ok(Value::Int(0)),
             Value::Bool(value) => Ok(Value::Int(if value { 1 } else { 0 })),
             Value::Int(value) => Ok(Value::Int(value)),
-            Value::Float(value) => cast_float_to_int(value, callable, span),
+            Value::Float(value) => {
+                if php_float_to_int_is_not_representable(value) {
+                    self.emit_float_not_representable_warning(value, span)?;
+                }
+                Ok(Value::Int(php_float_to_wrapping_i64(value)))
+            }
             Value::String(value) => cast_string_to_int(&value, span),
             Value::BinaryString(value) => cast_binary_string_to_int(&value, span),
             Value::Array(value) => Ok(Value::Int(if value.is_empty() { 0 } else { 1 })),
@@ -97744,7 +97751,7 @@ fn cast_string_to_int(value: &str, span: Span) -> CompileResult<Value> {
         return Ok(Value::Int(value));
     }
     if let Ok(value) = trimmed.parse::<f64>() {
-        return cast_float_to_int(value, "(int)", span);
+        return Ok(Value::Int(php_string_float_to_int(value)));
     }
 
     if let Some(prefix) = leading_numeric_prefix(trimmed) {
@@ -97752,7 +97759,7 @@ fn cast_string_to_int(value: &str, span: Span) -> CompileResult<Value> {
             return Ok(Value::Int(value));
         }
         if let Ok(value) = prefix.parse::<f64>() {
-            return cast_float_to_int(value, "(int)", span);
+            return Ok(Value::Int(php_string_float_to_int(value)));
         }
     }
 
@@ -101371,18 +101378,43 @@ fn magic_method_signature_type_accepts(type_decl: Option<&TypeDecl>, expected: &
     })
 }
 
-fn cast_float_to_int(value: f64, callable: &'static str, span: Span) -> CompileResult<Value> {
-    if !value.is_finite() || value < i64::MIN as f64 || value >= 9_223_372_036_854_775_808.0 {
-        return Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                callable,
-                "non-finite or out-of-range float-to-int cast behavior is not implemented",
-            ),
-        ));
+const PHP_INT_64_MAX_EXCLUSIVE_AS_F64: f64 = 9_223_372_036_854_775_808.0;
+const PHP_UINT_64_MODULUS_AS_F64: f64 = 18_446_744_073_709_551_616.0;
+
+fn php_float_to_int_is_not_representable(value: f64) -> bool {
+    !value.is_finite()
+        || value.trunc() < i64::MIN as f64
+        || value.trunc() >= PHP_INT_64_MAX_EXCLUSIVE_AS_F64
+}
+
+fn php_float_to_wrapping_i64(value: f64) -> i64 {
+    if !value.is_finite() {
+        return 0;
     }
 
-    Ok(Value::Int(value.trunc() as i64))
+    let truncated = value.trunc();
+    if !php_float_to_int_is_not_representable(value) {
+        return truncated as i64;
+    }
+
+    let modulo = truncated.rem_euclid(PHP_UINT_64_MODULUS_AS_F64);
+    (modulo as u64) as i64
+}
+
+fn php_string_float_to_int(value: f64) -> i64 {
+    if value.is_nan() {
+        0
+    } else if value >= PHP_INT_64_MAX_EXCLUSIVE_AS_F64 {
+        i64::MAX
+    } else if value < i64::MIN as f64 {
+        i64::MIN
+    } else {
+        value.trunc() as i64
+    }
+}
+
+fn cast_float_to_int(value: f64, _callable: &'static str, _span: Span) -> CompileResult<Value> {
+    Ok(Value::Int(php_float_to_wrapping_i64(value)))
 }
 
 fn seed_interpreter_generator_class(classes: &mut PhpClassTable) -> CompileResult<()> {
@@ -132513,20 +132545,12 @@ impl Interpreter {
     }
 
     fn sprintf_float_to_int_argument(&mut self, value: f64, span: Span) -> CompileResult<i64> {
-        if value >= i64::MIN as f64 && value < 9_223_372_036_854_775_808.0 {
+        if !php_float_to_int_is_not_representable(value) {
             return Ok(value as i64);
         }
 
-        self.emit_display_warning(
-            format!(
-                "The float {} is not representable as an int, cast occurred",
-                php_float_to_int_warning_string(value)
-            ),
-            span,
-        )?;
-
-        let modulo = value.trunc().rem_euclid(18_446_744_073_709_551_616.0);
-        Ok((modulo as u64) as i64)
+        self.emit_float_not_representable_warning(value, span)?;
+        Ok(php_float_to_wrapping_i64(value))
     }
 
     fn sprintf_float_argument(
