@@ -2611,6 +2611,16 @@
   temporaries, full destructor/unwinding lifetime parity, by-reference
   iteration over SPL iterator objects, serialization parity, full
   COW/reference identity, and native lowering remain unsupported.
+- SPL `SplFixedArray` has a bounded fixed-size storage model for construction,
+  `fromArray()`, `toArray()`, `count()`/`getSize()`, `setSize()`, offset
+  reads/writes/unsets/existence checks, and ordinary by-value iteration. A
+  top-level `var_dump($fixedArray)` renders the runtime storage slots,
+  including explicit `NULL` holes and initialized subclass/dynamic object
+  properties after the indexed slots. Nested/non-top-level `SplFixedArray`
+  dumps through the generic object formatter, `print_r()` / `(array)` /
+  `get_mangled_object_vars()` storage parity, serialization/unserialization,
+  exact reference/COW identity, destructor/reentrant mutation parity, and
+  native lowering remain unsupported.
 - SPL `SplDoublyLinkedList`, `SplQueue`, and `SplStack` have a bounded runtime
   list model for push/pop/shift/unshift, indexed add and ArrayAccess
   operations, top/bottom, `count()`, `isEmpty()`, iterator mode flags, debug

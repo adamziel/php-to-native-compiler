@@ -84462,6 +84462,9 @@ impl Interpreter {
                     .format_spl_object_storage_var_dump(object, 0, span)
                     .map(String::into_bytes);
             }
+            if self.is_spl_fixed_array_object(object) {
+                return self.format_spl_fixed_array_var_dump(object, 0, span);
+            }
         }
         format_var_dump_bytes_with_resource_type(
             value,
@@ -84469,6 +84472,67 @@ impl Interpreter {
             self.php_serialize_precision(),
             |id| self.resource_type_label(id),
         )
+    }
+
+    fn format_spl_fixed_array_var_dump(
+        &self,
+        object: &PhpObject,
+        indent: usize,
+        span: Span,
+    ) -> CompileResult<Vec<u8>> {
+        let padding = "  ".repeat(indent);
+        let child_padding = "  ".repeat(indent + 1);
+        let serialize_precision = self.php_serialize_precision();
+        let state = self.spl_fixed_array_state(object, "var_dump", span)?;
+        let properties = display_object_properties(object);
+        let mut output = format!(
+            "{padding}object({})#{} ({}) {{\n",
+            object.class_name(),
+            object.id(),
+            state.values.len() + properties.len()
+        )
+        .into_bytes();
+
+        for (index, value) in state.values.iter().enumerate() {
+            output.extend_from_slice(format!("{child_padding}[{index}]=>\n").as_bytes());
+            output.extend_from_slice(&format_spl_fixed_array_var_dump_value(
+                object,
+                value,
+                indent + 1,
+                span,
+                serialize_precision,
+                &|id| self.resource_type_label(id),
+            )?);
+        }
+
+        for property in properties {
+            output.extend_from_slice(
+                format!(
+                    "{child_padding}[{}]=>\n",
+                    format_var_dump_object_property(&property)
+                )
+                .as_bytes(),
+            );
+            let property_value = property.value_cloned();
+            let mut property_output = format_spl_fixed_array_var_dump_value(
+                object,
+                &property_value,
+                indent + 1,
+                span,
+                serialize_precision,
+                &|id| self.resource_type_label(id),
+            )?;
+            if property.is_reference() {
+                let property_padding = "  ".repeat(indent + 1).into_bytes();
+                if property_output.starts_with(&property_padding) {
+                    property_output.insert(property_padding.len(), b'&');
+                }
+            }
+            output.extend_from_slice(&property_output);
+        }
+
+        output.extend_from_slice(format!("{padding}}}\n").as_bytes());
+        Ok(output)
     }
 
     fn format_spl_object_storage_var_dump(
@@ -147611,6 +147675,23 @@ where
         _ => format_var_dump_with_indent(value, indent, span, serialize_precision, resource_type)
             .map(String::into_bytes),
     }
+}
+
+fn format_spl_fixed_array_var_dump_value<F>(
+    owner: &PhpObject,
+    value: &Value,
+    indent: usize,
+    span: Span,
+    serialize_precision: Option<usize>,
+    resource_type: &F,
+) -> CompileResult<Vec<u8>>
+where
+    F: Fn(i64) -> &'static str,
+{
+    if matches!(value, Value::Object(object) if object.id() == owner.id()) {
+        return Ok(format!("{}*RECURSION*\n", "  ".repeat(indent)).into_bytes());
+    }
+    format_var_dump_bytes_with_indent(value, indent, span, serialize_precision, resource_type)
 }
 
 fn format_enum_like_var_dump(object: &PhpObject, padding: &str) -> Option<String> {

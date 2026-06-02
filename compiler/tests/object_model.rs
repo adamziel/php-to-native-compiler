@@ -15236,6 +15236,30 @@ try {
 }
 
 #[test]
+fn spl_fixed_array_var_dump_uses_runtime_storage_slots() {
+    let source = r#"<?php
+$from = SplFixedArray::fromArray(array(1 => "one", 3 => false));
+var_dump($from);
+
+class FixedDumpChild extends SplFixedArray {
+    public $label = "declared";
+}
+
+$child = new FixedDumpChild(2);
+$child[0] = "slot";
+var_dump($child);
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "object(SplFixedArray)#1 (4) {\n  [0]=>\n  NULL\n  [1]=>\n  string(3) \"one\"\n  [2]=>\n  NULL\n  [3]=>\n  bool(false)\n}\nobject(FixedDumpChild)#2 (3) {\n  [0]=>\n  string(4) \"slot\"\n  [1]=>\n  NULL\n  [\"label\"]=>\n  string(8) \"declared\"\n}\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn array_object_array_iterator_offsets_iteration_clone_and_sort() {
     let source = r#"<?php
 $ao = new ArrayObject(array('b' => 2, 'a' => 1));

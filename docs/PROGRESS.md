@@ -4,6 +4,28 @@
 
 Implemented:
 
+- Added a bounded `SplFixedArray` runtime-storage `var_dump()` lane. Top-level
+  `var_dump($fixedArray)` now renders the fixed-size indexed storage from the
+  interpreter's `SplFixedArrayState`, including null slots, nested array values,
+  resized storage, and initialized subclass/dynamic object properties after the
+  fixed-array slots, instead of falling through to an empty ordinary object
+  dump. Existing fixed-array construction, `fromArray()`, offset mutation,
+  `setSize()`, iteration, `toArray()`, object metadata visibility, and native
+  lowering remain unchanged. Focused proof covers the Rust
+  `spl_fixed_array_var_dump_uses_runtime_storage_slots` regression, the direct
+  CLI fixture `tests/fixtures/milestone2355/spl_fixed_array_var_dump_storage.php`,
+  and selected public PHPT rows `SplFixedArray_fromarray_indexes.phpt`,
+  `SplFixedArray_fromarray_non_indexes.phpt`,
+  `SplFixedArray_fromarray_param_multiarray.phpt`,
+  `SplFixedArray_offsetUnset_string.phpt`,
+  `SplFixedArray_setSize_filled_to_smaller.phpt`,
+  `SplFixedArray_setsize_001.phpt`, `SplFixedArray_setsize_shrink.phpt`, and
+  `fixedarray_016.phpt`. Unsupported edges remain nested/non-top-level
+  `SplFixedArray` object dumps through the generic object formatter,
+  `print_r()` / `(array)` / `get_mangled_object_vars()` storage parity,
+  serialization/unserialization, exact reference/COW identity,
+  destructor/reentrant mutation parity, and native lowering.
+
 - Added a bounded `DateTimeImmutable` copy/construction/setter lane. `phpc run`
   now exposes `DateTimeImmutable` metadata, `date_create_immutable()`,
   `DateTimeImmutable::__set_state()`, `DateTimeImmutable::createFromMutable()`,
