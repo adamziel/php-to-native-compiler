@@ -1248,6 +1248,25 @@ Implemented:
   binary/encoding edge cases, references/COW, and native lowering for these
   dynamic argument shapes.
 
+- Added a bounded `SplDoublyLinkedList` Countable/ArrayAccess/DELETE-iteration
+  bridge. Core `SplDoublyLinkedList`, `SplQueue`, and `SplStack` objects now
+  dispatch `count($object)` / `sizeof($object)` and generic object-offset
+  syntax such as `$list[] = $value`, `$list[$index] = $value`, and
+  `$list[$index]` through the existing internal list storage methods. List
+  subclasses that override `count()` can call `parent::count()` through the
+  same internal parent-method bridge, and `IT_MODE_DELETE` now removes the
+  current element during `next()` for the covered single-cursor FIFO/LIFO
+  method and `foreach` paths. Focused proof covers the Rust
+  `spl_doubly_linked_list_count_arrayaccess_and_delete_iteration` regression
+  and selected public PHPT rows `dllist_001.phpt`, `dllist_003.phpt`,
+  `dllist_004.phpt`, `dllist_005.phpt`, `dllist_006.phpt`, `dllist_008.phpt`,
+  and `dllist_013.phpt`. Unsupported edges remain independent nested iterator
+  cursors, recursive list storage dumps, serialization/unserialization, exact
+  invalid cursor key values before the first or after the last entry, recovery
+  from invalid cursor boundary states by later `next()` / `prev()` calls,
+  by-reference SPL iterator execution, full COW/reference identity, and native
+  lowering.
+
 - Added a bounded `posix_ctermid()` terminal-path metadata lane for POSIX
   diagnostics. `phpc run` now calls the host Unix `ctermid(3)` boundary,
   returning a non-empty UTF-8 terminal path string or `false` if the host call

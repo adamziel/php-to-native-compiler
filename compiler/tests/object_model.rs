@@ -15907,6 +15907,59 @@ var_dump($empty->current());
 }
 
 #[test]
+fn spl_doubly_linked_list_count_arrayaccess_and_delete_iteration() {
+    let source = r#"<?php
+class CountedList extends SplDoublyLinkedList {
+    public function count(): int {
+        return -parent::count();
+    }
+}
+
+$list = new SplDoublyLinkedList();
+$list->push(null);
+$list->push(null);
+echo count($list), "|", $list->count(), "\n";
+var_dump($list->pop());
+var_dump($list->pop());
+
+$list[] = "append";
+$list[0] = "first";
+echo count($list), "|", $list[0], "\n";
+
+$list->push("second");
+$list->push("third");
+$list->setIteratorMode(SplDoublyLinkedList::IT_MODE_FIFO | SplDoublyLinkedList::IT_MODE_DELETE);
+foreach ($list as $key => $value) {
+    echo "$key=$value;";
+}
+echo "\n", count($list), "\n";
+
+$lifo = new SplDoublyLinkedList();
+$lifo->push("a");
+$lifo->push("b");
+$lifo->push("c");
+$lifo->setIteratorMode(SplDoublyLinkedList::IT_MODE_LIFO | SplDoublyLinkedList::IT_MODE_DELETE);
+foreach ($lifo as $key => $value) {
+    echo "$key=$value;";
+}
+echo "\n", count($lifo), "\n";
+
+$counted = new CountedList();
+$counted[] = "one";
+$counted[] = "two";
+echo count($counted), "\n";
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "2|2\nNULL\nNULL\n1|first\n0=first;0=second;0=third;\n0\n2=c;1=b;0=a;\n0\n-2\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn spl_file_object_local_file_line_cursor_methods() {
     use std::fs;
 

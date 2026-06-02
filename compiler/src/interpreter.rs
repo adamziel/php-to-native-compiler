@@ -18020,13 +18020,38 @@ impl Interpreter {
             }
             "next" => {
                 expect_arity("SplDoublyLinkedList::next", &args, 0, span)?;
-                let state = self.spl_doubly_linked_list_state_mut(&object, method_name, span)?;
-                state.cursor = match (state.cursor, state.active_lifo) {
-                    (Some(0), true) => None,
-                    (Some(cursor), true) => Some(cursor - 1),
-                    (Some(cursor), false) => Some(cursor.saturating_add(1)),
-                    (None, _) => None,
+                let deleted = {
+                    let state =
+                        self.spl_doubly_linked_list_state_mut(&object, method_name, span)?;
+                    if state.iterator_mode & SPL_DLL_IT_MODE_DELETE != 0 {
+                        state.cursor = match (state.cursor, state.active_lifo) {
+                            (Some(cursor), _) if cursor >= state.values.len() => None,
+                            (Some(cursor), true) => {
+                                state.values.remove(cursor);
+                                cursor
+                                    .checked_sub(1)
+                                    .or_else(|| (!state.values.is_empty()).then_some(0))
+                            }
+                            (Some(cursor), false) => {
+                                state.values.remove(cursor);
+                                (cursor < state.values.len()).then_some(cursor)
+                            }
+                            (None, _) => None,
+                        };
+                        true
+                    } else {
+                        state.cursor = match (state.cursor, state.active_lifo) {
+                            (Some(0), true) => None,
+                            (Some(cursor), true) => Some(cursor - 1),
+                            (Some(cursor), false) => Some(cursor.saturating_add(1)),
+                            (None, _) => None,
+                        };
+                        false
+                    }
                 };
+                if deleted {
+                    self.sync_spl_doubly_linked_list_object_properties(&object, span)?;
+                }
                 Ok(Value::Null)
             }
             "prev" => {
@@ -55586,6 +55611,31 @@ impl Interpreter {
                 .map(|arg| self.evaluate(arg, caller_scope))
                 .collect::<CompileResult<Vec<_>>>()?;
             return self.call_spl_fixed_array_method_with_values(
+                this_object,
+                method_name,
+                values,
+                span,
+            );
+        }
+
+        if self.resolved_method_is_core_spl_doubly_linked_list(class_id) {
+            let this_object = match caller_scope.read_named("this") {
+                Some(Value::Object(object)) => object.clone(),
+                _ => {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{class_name}::{method_name}()"),
+                            "non-static method dispatch through parent:: requires current $this object context",
+                        ),
+                    ));
+                }
+            };
+            let values = args
+                .iter()
+                .map(|arg| self.evaluate(arg, caller_scope))
+                .collect::<CompileResult<Vec<_>>>()?;
+            return self.call_spl_doubly_linked_list_method_with_values(
                 this_object,
                 method_name,
                 values,
@@ -96853,6 +96903,14 @@ impl Interpreter {
                     span,
                 );
             }
+            if self.resolved_method_is_core_spl_doubly_linked_list(class_id) {
+                return self.call_spl_doubly_linked_list_method_with_values(
+                    object,
+                    method_name,
+                    args,
+                    span,
+                );
+            }
             let function =
                 self.method_function(class_id, &class_name, &resolved_method_name, span)?;
             let function = function.as_ref();
@@ -96993,6 +97051,14 @@ impl Interpreter {
                     span,
                 );
             }
+            if self.resolved_method_is_core_spl_doubly_linked_list(class_id) {
+                return self.call_spl_doubly_linked_list_method_with_values(
+                    object,
+                    method_name,
+                    args,
+                    span,
+                );
+            }
             let function =
                 self.method_function(class_id, &class_name, &resolved_method_name, span)?;
             let function = function.as_ref();
@@ -97101,6 +97167,16 @@ impl Interpreter {
             if self.resolved_method_is_core_spl_fixed_array(class_id) {
                 return self
                     .call_spl_fixed_array_method_with_values(
+                        object,
+                        "offsetGet",
+                        vec![offset_arg],
+                        span,
+                    )
+                    .map(|value| (value, None));
+            }
+            if self.resolved_method_is_core_spl_doubly_linked_list(class_id) {
+                return self
+                    .call_spl_doubly_linked_list_method_with_values(
                         object,
                         "offsetGet",
                         vec![offset_arg],
@@ -97628,6 +97704,15 @@ impl Interpreter {
 
         if self.resolved_method_is_core_spl_fixed_array(class_id) {
             return self.call_spl_fixed_array_method_with_values(object, "count", Vec::new(), span);
+        }
+
+        if self.resolved_method_is_core_spl_doubly_linked_list(class_id) {
+            return self.call_spl_doubly_linked_list_method_with_values(
+                object,
+                "count",
+                Vec::new(),
+                span,
+            );
         }
 
         let function = self.method_function(class_id, &class_name, &resolved_method_name, span)?;
