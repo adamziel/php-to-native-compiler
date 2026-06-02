@@ -6449,7 +6449,8 @@
   extensions.
   `get_class` returns the declared class name for current minimal object
   values, `is_object` reports whether a value is one of those current object
-  values, `get_debug_type` returns scalar/array type names or the current
+  values, and non-object `get_class` arguments raise catchable PHP-shaped
+  `TypeError`s. `get_debug_type` returns scalar/array type names or the current
   object's declared class name, `class_exists` checks the current declared
   class metadata by string name with a bounded truthy-autoload miss path,
   `interface_exists` accepts string names and checks the bounded core
@@ -6469,9 +6470,14 @@
   with class-string probes hiding inherited private methods while object probes
   still report inherited private methods and with catchable PHP-shaped
   `TypeError`s for unsupported argument types,
-  `get_class_methods` returns public declared and inherited method names in
-  child-to-parent declaration order for current object values or declared
-  string class names, `get_class_vars` returns public declared and inherited
+  `get_class_methods` returns declared and inherited method names visible from
+  the current method context, or public names outside a method, in
+  child-to-parent declaration order for current object values, declared string
+  class names, and declared user interface names. It includes implemented
+  interface method names first, invokes bounded class-like autoload on
+  non-empty unresolved string names, and raises catchable PHP-shaped
+  `TypeError`s for invalid values. `get_class_vars` returns public declared
+  and inherited
   property names with instance properties before static properties and `null`
   values for declared string class names, `get_object_vars` returns
   initialized properties visible in the current method context, or initialized
@@ -7240,10 +7246,17 @@
   PHP-shaped `TypeError`s with the PHP argument names. Empty string class names
   return false without autoload, and magic `__call` does not make a missing
   method name report as existing.
-  `get_class_methods($object_or_class)` accepts a current object value or a
-  declared string class name and returns a zero-indexed array of public method
-  names in declaration order, including public static methods. It is available
-  through string-valued dynamic function calls.
+  `get_class_methods($object_or_class)` accepts a current object value,
+  declared string class name, or declared user interface name and returns a
+  zero-indexed array of visible method names in declaration order, including
+  static methods. Outside a method context this is the public method slice;
+  inside a method, private methods from the current class and protected
+  methods from related classes are also visible. Implemented interface methods
+  are listed before class methods and duplicate class implementations are
+  reported once. Non-empty unresolved string names run the bounded
+  class-like autoload path, and invalid or unresolved values raise catchable
+  PHP-shaped `TypeError`s with the PHP argument name. It is available through
+  string-valued dynamic function calls.
   `get_class_vars($class_name)` accepts declared string class names and returns
   an array of public declared and inherited properties with instance properties
   before static properties, walking the current class toward parents within
@@ -9929,8 +9942,11 @@
   $method)` checks declared and inherited method metadata for current object
   values or string class names with case-insensitive method names and the same
   bounded class autoload behavior. `get_class_methods($object_or_class)` returns
-  a zero-indexed array of public declared method names for current object
-  values or declared string class names. `get_class_vars($class_name)` returns
+  a zero-indexed array of visible declared method names for current object
+  values, declared string class names, and declared user interface names, with
+  implemented interface method names listed before class methods and invalid
+  or unresolved values surfaced as catchable PHP-shaped `TypeError`s.
+  `get_class_vars($class_name)` returns
   public declared and inherited property names with instance properties before
   static properties and `null` values for declared string class names.
   `get_object_vars($object)` returns public exact and
@@ -11929,9 +11945,10 @@
   traits, interfaces, aliases/imports, namespace-aware names, visibility behavior
   beyond metadata reporting, exact native `TypeError` objects, object operands,
   and native lowering beyond direct string/string false folding
-- `get_class_methods` inheritance beyond current single-parent chain, traits,
-  interfaces, aliases/imports, namespace-aware names, autoloading, non-public/context-sensitive visibility
-  listing, exact native ordering and `TypeError` behavior, and native lowering
+- `get_class_methods` inheritance beyond current single-parent chain, trait
+  edge cases beyond composed method metadata, aliases/imports, namespace-aware
+  names, core/internal interface method inventories, exact native ordering for
+  every duplicate/conflict case, and native lowering
 - `get_class_vars` property defaults beyond the current constant-expression
   subset, inheritance beyond the current single-parent chain, traits, interfaces,
   aliases/imports, namespace-aware names, autoloading,

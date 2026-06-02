@@ -59709,6 +59709,123 @@ impl Interpreter {
         }
     }
 
+    fn call_get_class_methods(
+        &mut self,
+        object_or_class: &Value,
+        span: Span,
+    ) -> CompileResult<Value> {
+        match object_or_class {
+            Value::Object(object) => Ok(Value::Array(
+                self.visible_class_methods_array(object.class_id()),
+            )),
+            Value::String(class_name) => {
+                let lookup_name = normalize_leading_namespace_separator(class_name);
+                let interface_key = lookup_name.to_ascii_lowercase();
+                if !lookup_name.is_empty()
+                    && self.classes.lookup_class(lookup_name).is_none()
+                    && !self.interface_lookup.contains_key(&interface_key)
+                {
+                    self.run_autoload_callbacks(lookup_name, AutoloadKind::Any, span)?;
+                }
+
+                if let Some(class) = self.classes.lookup_class(lookup_name) {
+                    return Ok(Value::Array(self.visible_class_methods_array(class.id())));
+                }
+                if let Some(interface) = self.interface_lookup.get(&interface_key) {
+                    return Ok(Value::Array(
+                        self.visible_interface_methods_array(interface),
+                    ));
+                }
+
+                Err(introspection_object_or_class_type_error(
+                    "get_class_methods()",
+                    object_or_class,
+                    span,
+                ))
+            }
+            other => Err(introspection_object_or_class_type_error(
+                "get_class_methods()",
+                other,
+                span,
+            )),
+        }
+    }
+
+    fn visible_interface_methods_array(&self, interface: &InterfaceDecl) -> PhpArray {
+        let mut methods = PhpArray::new();
+        let mut seen = HashSet::new();
+        self.append_visible_interface_methods(interface, &mut methods, &mut seen);
+        methods
+    }
+
+    fn visible_class_methods_array(&self, class_id: ClassId) -> PhpArray {
+        let mut methods = PhpArray::new();
+        let mut seen = HashSet::new();
+
+        for interface_name in self.class_implements_interface_names(class_id) {
+            if let Some(interface) = self
+                .interface_lookup
+                .get(&interface_name.to_ascii_lowercase())
+            {
+                self.append_visible_interface_methods(interface, &mut methods, &mut seen);
+            }
+        }
+
+        let mut current = Some(class_id);
+        while let Some(current_id) = current {
+            let current_class = self
+                .classes
+                .get(current_id)
+                .expect("class id should resolve to metadata");
+            for method in current_class.methods() {
+                if self
+                    .method_visible_for_get_class_methods(current_class.id(), method.visibility())
+                {
+                    append_unique_method_name(&mut methods, &mut seen, method.name());
+                }
+            }
+            current = current_class.parent_id();
+        }
+
+        methods
+    }
+
+    fn append_visible_interface_methods(
+        &self,
+        interface: &InterfaceDecl,
+        methods: &mut PhpArray,
+        seen: &mut HashSet<String>,
+    ) {
+        for (_, method) in expanded_interface_methods(&self.interface_lookup, interface) {
+            append_unique_method_name(methods, seen, &method.function.name);
+        }
+    }
+
+    fn method_visible_for_get_class_methods(
+        &self,
+        declaring_class_id: ClassId,
+        visibility: Visibility,
+    ) -> bool {
+        match visibility {
+            Visibility::Public => true,
+            Visibility::Private => self.class_context.last().copied() == Some(declaring_class_id),
+            Visibility::Protected => {
+                self.class_context
+                    .last()
+                    .copied()
+                    .is_some_and(|current_class_id| {
+                        current_class_id == declaring_class_id
+                            || self
+                                .classes
+                                .is_subclass_of(current_class_id, declaring_class_id)
+                            || self
+                                .classes
+                                .is_subclass_of(declaring_class_id, current_class_id)
+                    })
+            }
+        }
+    }
+
     fn class_parent_names(&self, class_id: ClassId) -> Vec<String> {
         let mut names = Vec::new();
         let mut current = self
@@ -92159,12 +92276,11 @@ impl Interpreter {
                 expect_arity(name, &args, 1, span)?;
                 match &args[0] {
                     Value::Object(object) => Ok(Value::String(object.class_name().to_string())),
-                    other => Err(runtime_error(
+                    other => Err(introspection_object_type_error(
+                        "get_class()",
+                        "object",
+                        other,
                         span,
-                        RuntimeError::unsupported_call(
-                            "get_class()",
-                            format!("argument must be object, got {}", other.type_name()),
-                        ),
                     )),
                 }
             }
@@ -92604,51 +92720,7 @@ impl Interpreter {
                 )),
             },
             "get_class_methods" => match args.as_slice() {
-                [object_or_class] => {
-                    let class = match object_or_class {
-                        Value::Object(object) => self.classes.get(object.class_id()),
-                        Value::String(class_name) => self.classes.lookup_class(class_name),
-                        other => {
-                            return Err(runtime_error(
-                                span,
-                                RuntimeError::unsupported_call(
-                                    "get_class_methods()",
-                                    format!(
-                                        "object_or_class argument must be object or declared class string, got {}",
-                                        other.type_name()
-                                    ),
-                                ),
-                            ));
-                        }
-                    };
-                    let Some(class) = class else {
-                        return Err(runtime_error(
-                            span,
-                            RuntimeError::unsupported_call(
-                                "get_class_methods()",
-                                "string argument must name a declared class in the current subset",
-                            ),
-                        ));
-                    };
-
-                    let mut methods = PhpArray::new();
-                    let mut current = Some(class.id());
-                    while let Some(class_id) = current {
-                        let current_class = self
-                            .classes
-                            .get(class_id)
-                            .expect("class id should resolve to metadata");
-                        for method in current_class.methods() {
-                            if method.visibility() == Visibility::Public {
-                                methods
-                                    .append(Value::String(method.name().to_string()))
-                                    .expect("method count fits in array keys");
-                            }
-                        }
-                        current = current_class.parent_id();
-                    }
-                    Ok(Value::Array(methods))
-                }
+                [object_or_class] => self.call_get_class_methods(object_or_class, span),
                 _ => Err(runtime_error(
                     span,
                     RuntimeError::arity_mismatch(
@@ -92846,13 +92918,17 @@ impl Interpreter {
                     .map(Value::String)
                     .unwrap_or(Value::Bool(false))),
                 [Value::String(class_name)] => {
-                    let Some(class) = self.classes.lookup_class(class_name) else {
-                        return Err(runtime_error(
+                    let lookup_name = normalize_leading_namespace_separator(class_name);
+                    if !lookup_name.is_empty()
+                        && self.classes.lookup_class_id(lookup_name).is_none()
+                    {
+                        self.run_autoload_callbacks(lookup_name, AutoloadKind::Class, span)?;
+                    }
+                    let Some(class) = self.classes.lookup_class(lookup_name) else {
+                        return Err(introspection_object_or_class_type_error(
+                            "get_parent_class()",
+                            &args[0],
                             span,
-                            RuntimeError::unsupported_call(
-                                "get_parent_class()",
-                                "string argument must name a declared class in the current subset",
-                            ),
                         ));
                     };
                     Ok(self
@@ -92860,15 +92936,10 @@ impl Interpreter {
                         .map(Value::String)
                         .unwrap_or(Value::Bool(false)))
                 }
-                [other] => Err(runtime_error(
+                [other] => Err(introspection_object_or_class_type_error(
+                    "get_parent_class()",
+                    other,
                     span,
-                    RuntimeError::unsupported_call(
-                        "get_parent_class()",
-                        format!(
-                            "object_or_class argument must be object or string, got {}",
-                            other.type_name()
-                        ),
-                    ),
                 )),
                 _ => Err(runtime_error(
                     span,
@@ -109140,6 +109211,53 @@ fn runtime_error(span: Span, error: RuntimeError) -> Diagnostic {
     Diagnostic::new(Phase::Runtime, span.line, span.column, error.message())
 }
 
+fn introspection_object_type_error(
+    function_name: &'static str,
+    parameter_name: &'static str,
+    value: &Value,
+    span: Span,
+) -> Diagnostic {
+    runtime_error(
+        span,
+        RuntimeError::unsupported_call(
+            function_name,
+            format!(
+                "Argument #1 (${parameter_name}) must be of type object, {} given",
+                php_type_error_given(value)
+            ),
+        ),
+    )
+}
+
+fn introspection_object_or_class_type_error(
+    function_name: &'static str,
+    value: &Value,
+    span: Span,
+) -> Diagnostic {
+    runtime_error(
+        span,
+        RuntimeError::unsupported_call(
+            function_name,
+            format!(
+                "Argument #1 ($object_or_class) must be an object or a valid class name, {} given",
+                php_type_error_given(value)
+            ),
+        ),
+    )
+}
+
+fn append_unique_method_name(
+    methods: &mut PhpArray,
+    seen: &mut HashSet<String>,
+    method_name: &str,
+) {
+    if seen.insert(method_name.to_ascii_lowercase()) {
+        methods
+            .append(Value::String(method_name.to_string()))
+            .expect("method count fits in array keys");
+    }
+}
+
 fn remap_deferred_instance_property_default_error(mut error: Diagnostic, span: Span) -> Diagnostic {
     if let Some(name) = error
         .message
@@ -111458,6 +111576,8 @@ fn is_call_argument_type_error_message(message: &str) -> bool {
     message.contains(" must be of type ")
         && (message.contains("(): Argument #") || message.contains("(): If argument #"))
         || (message.contains(" must be a valid class name, ") && message.contains("(): Argument #"))
+        || (message.contains(" must be an object or a valid class name, ")
+            && message.contains("(): Argument #"))
 }
 
 fn is_internal_method_argument_type_error_message(message: &str) -> bool {

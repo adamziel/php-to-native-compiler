@@ -2395,14 +2395,22 @@ echo $call($profile), "\n";
 
 #[test]
 fn get_class_requires_object_argument() {
-    let error = runtime_error("<?php\necho get_class(42);\n");
+    let execution = run_source(
+        r#"<?php
+try {
+    get_class(42);
+} catch (TypeError $e) {
+    echo get_class($e), ":", $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
 
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 6);
     assert_eq!(
-        error.message,
-        "unsupported call get_class(): argument must be object, got int"
+        execution.stdout,
+        "TypeError:get_class(): Argument #1 ($object) must be of type object, int given"
     );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
@@ -5321,24 +5329,111 @@ echo $dynamic[0], "|", $dynamic[1];
 }
 
 #[test]
-fn get_class_methods_requires_object_or_declared_class_string_argument() {
-    let target_error = runtime_error("<?php\nvar_dump(get_class_methods(42));\n");
+fn get_class_methods_lists_methods_visible_from_current_scope_and_interfaces() {
+    let source = r#"<?php
+class C {
+    private function privC() {}
+    protected function protC() {}
+    public function pubC() {}
 
-    assert_eq!(target_error.line, 2);
-    assert_eq!(target_error.column, 10);
+    public static function testFromC() {
+        echo "C:C=", implode(",", get_class_methods("C")), "\n";
+        echo "C:D=", implode(",", get_class_methods("D")), "\n";
+        echo "C:X=", implode(",", get_class_methods("X")), "\n";
+    }
+}
+
+class D extends C {
+    private function privD() {}
+    protected function protD() {}
+    public function pubD() {}
+
+    public static function testFromD() {
+        echo "D:C=", implode(",", get_class_methods("C")), "\n";
+        echo "D:D=", implode(",", get_class_methods("D")), "\n";
+        echo "D:X=", implode(",", get_class_methods("X")), "\n";
+    }
+}
+
+class X {
+    private function privX() {}
+    protected function protX() {}
+    public function pubX() {}
+
+    public static function testFromX() {
+        echo "X:C=", implode(",", get_class_methods("C")), "\n";
+        echo "X:D=", implode(",", get_class_methods("D")), "\n";
+        echo "X:X=", implode(",", get_class_methods("X")), "\n";
+    }
+}
+
+interface I {
+    public function pubI();
+}
+
+class IC implements I {
+    public function pubI() {}
+    private function privIC() {}
+    protected function protIC() {}
+    public function pubIC() {}
+
+    public static function testFromIC() {
+        echo "IC:I=", implode(",", get_class_methods("I")), "\n";
+        echo "IC:IC=", implode(",", get_class_methods("IC")), "\n";
+    }
+}
+
+echo "global:D=", implode(",", get_class_methods("D")), "\n";
+C::testFromC();
+D::testFromD();
+X::testFromX();
+echo "global:I=", implode(",", get_class_methods("I")), "\n";
+echo "global:IC=", implode(",", get_class_methods("IC")), "\n";
+IC::testFromIC();
+"#;
+
+    let execution = run_source(source).unwrap();
     assert_eq!(
-        target_error.message,
-        "unsupported call get_class_methods(): object_or_class argument must be object or declared class string, got int"
+        execution.stdout,
+        "global:D=pubD,testFromD,pubC,testFromC\n\
+C:C=privC,protC,pubC,testFromC\n\
+C:D=protD,pubD,testFromD,privC,protC,pubC,testFromC\n\
+C:X=pubX,testFromX\n\
+D:C=protC,pubC,testFromC\n\
+D:D=privD,protD,pubD,testFromD,protC,pubC,testFromC\n\
+D:X=pubX,testFromX\n\
+X:C=pubC,testFromC\n\
+X:D=pubD,testFromD,pubC,testFromC\n\
+X:X=privX,protX,pubX,testFromX\n\
+global:I=pubI\n\
+global:IC=pubI,pubIC,testFromIC\n\
+IC:I=pubI\n\
+IC:IC=pubI,privIC,protIC,pubIC,testFromIC\n"
     );
+    assert_eq!(execution.exit_code, 0);
+}
 
-    let missing_class_error = runtime_error("<?php\nvar_dump(get_class_methods(\"Missing\"));\n");
+#[test]
+fn get_class_methods_requires_object_or_valid_class_name_argument() {
+    let execution = run_source(
+        r#"<?php
+foreach (array(42, "Missing") as $value) {
+    try {
+        get_class_methods($value);
+    } catch (TypeError $e) {
+        echo get_class($e), ":", $e->getMessage(), "\n";
+    }
+}
+"#,
+    )
+    .unwrap();
 
-    assert_eq!(missing_class_error.line, 2);
-    assert_eq!(missing_class_error.column, 10);
     assert_eq!(
-        missing_class_error.message,
-        "unsupported call get_class_methods(): string argument must name a declared class in the current subset"
+        execution.stdout,
+        "TypeError:get_class_methods(): Argument #1 ($object_or_class) must be an object or a valid class name, int given\n\
+TypeError:get_class_methods(): Argument #1 ($object_or_class) must be an object or a valid class name, string given\n"
     );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
@@ -5783,23 +5878,30 @@ if ($call($child) === "Box") {
 
 #[test]
 fn get_parent_class_requires_object_or_string_argument() {
-    let target_error = runtime_error("<?php\nvar_dump(get_parent_class(42));\n");
+    let execution = run_source(
+        r#"<?php
+spl_autoload_register(function ($class) {
+    echo "autoload:$class\n";
+});
 
-    assert_eq!(target_error.line, 2);
-    assert_eq!(target_error.column, 10);
+foreach (array(42, "Missing") as $value) {
+    try {
+        get_parent_class($value);
+    } catch (TypeError $e) {
+        echo get_class($e), ":", $e->getMessage(), "\n";
+    }
+}
+"#,
+    )
+    .unwrap();
+
     assert_eq!(
-        target_error.message,
-        "unsupported call get_parent_class(): object_or_class argument must be object or string, got int"
+        execution.stdout,
+        "TypeError:get_parent_class(): Argument #1 ($object_or_class) must be an object or a valid class name, int given\n\
+autoload:Missing\n\
+TypeError:get_parent_class(): Argument #1 ($object_or_class) must be an object or a valid class name, string given\n"
     );
-
-    let missing_class_error = runtime_error("<?php\nvar_dump(get_parent_class(\"Missing\"));\n");
-
-    assert_eq!(missing_class_error.line, 2);
-    assert_eq!(missing_class_error.column, 10);
-    assert_eq!(
-        missing_class_error.message,
-        "unsupported call get_parent_class(): string argument must name a declared class in the current subset"
-    );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

@@ -4,6 +4,30 @@
 
 Implemented:
 
+- Added a bounded class/object introspection diagnostics lane on the
+  interpreter path. `get_class()` now raises a catchable PHP-shaped
+  `TypeError` for non-object operands, `get_parent_class()` now runs bounded
+  class autoload for non-empty unresolved strings and raises the PHP-shaped
+  object-or-valid-class-name `TypeError` for invalid or unresolved operands,
+  and `get_class_methods()` now accepts current objects, declared class
+  strings, and declared user interface strings. The method list includes
+  implemented interface method names before class methods, filters class
+  methods through the active class context for public/protected/private
+  visibility, deduplicates case-insensitively, and raises catchable
+  PHP-shaped `TypeError`s for invalid or unresolved values. Focused proof
+  covers the Rust `get_class_requires_object_argument`,
+  `get_class_methods`, and `get_parent_class` object-model regressions, build,
+  fmt, diff checks, and selected public class/object PHPT rows
+  `get_class_variation_001.phpt`, `get_parent_class_variation_002.phpt`,
+  `get_class_methods_basic_001.phpt`,
+  `get_class_methods_basic_002.phpt`,
+  `get_class_methods_basic_003.phpt`, and
+  `get_class_methods_variation_001.phpt`. Unsupported edges remain broader
+  trait/interface conflict inventories, aliases/imports, namespace-aware
+  names beyond the current metadata lookup surface, exact ordering for every
+  duplicate/conflict case, core/internal interface method inventories,
+  references/COW, and native lowering.
+
 - Added a bounded SPL iterator-wrapper lane on the interpreter path.
   `EmptyIterator`, `InfiniteIterator`, and `LimitIterator` are now core
   metadata classes implementing `Iterator`; `InfiniteIterator` and

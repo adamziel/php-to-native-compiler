@@ -990,6 +990,13 @@ the same class-body `use` declaration.
 The current executable interaction slice also allows that selected winning
 method to be exposed through a same-block explicit-public alias, such as
 `use TraitA, TraitB { TraitA::method insteadof TraitB; TraitA::method as public alias; }`.
+Runtime class-method introspection reads this same composed metadata.
+`get_class_methods()` resolves current objects, class strings, and declared
+user interface strings through the class/interface tables, runs the bounded
+autoload path for non-empty unresolved class-like strings, prepends implemented
+interface method names before class methods, and filters class methods through
+the active method context: public methods are always visible, private methods
+only from the active class, and protected methods from related classes.
 When a consuming class declares a public instance/static method with the same name as
 a composed public trait method or alias, the class method takes precedence and
 the trait method is skipped in the effective class method table. This lets a
