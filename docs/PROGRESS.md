@@ -4,6 +4,17 @@
 
 Implemented:
 
+- Accepted checkpoint `663e3142` as the current public PHPT score source
+  after the repaired full pinned php-src gate completed with zero
+  latest-published PASS regressions. The public-comparable score is now
+  `5941 / 20294 = 29.27%`, up from `5892 / 20294 = 29.03%` at checkpoint
+  `ac94984a`. The accepted gate evidence is
+  `state/logs/phpt-full-current-score-20260602T160646Z-php-src-f97ff59-public-663e3142-source-663e3142`;
+  aggregate counts were `5941` passed, `13064` failed, `2760` skipped, `16`
+  xfailed, `549` borked, and `1` warned. The normalized PASS regression
+  comparison was `5937` current passes vs. `5888` baseline passes with `0`
+  regressions, and the invalid-proof-marker summary reported `0` hits.
+
 - Repaired the blocked full-gate PASS regression in
   `tests/classes/iterators_008.phpt`. Plain userland `Iterator` foreach loops
   without a key target no longer probe `key()` at the engine level, while the
