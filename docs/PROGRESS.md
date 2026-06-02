@@ -4,6 +4,25 @@
 
 Implemented:
 
+- Added a bounded unary byte string-helper argument-boundary lane.
+  `strrev()`, `str_rot13()`, and `str_shuffle()` now route direct and
+  string-valued dynamic interpreter operands through the shared PHP-shaped
+  string argument boundary: scalar values keep the existing byte reverse,
+  ROT13, and deterministic shuffle behavior after conversion, `null` emits
+  the PHP-shaped deprecation before converting to `""`, supported visible
+  `__toString()` objects are accepted, and arrays, resources, closures, or
+  non-stringable objects raise catchable PHP-shaped `TypeError`s. Existing
+  metadata visibility, direct native scalar lowering for `strrev()` and
+  `str_rot13()`, and `str_shuffle()` native-lowering rejection remain
+  unchanged. Focused proof covers the Rust
+  `unary_byte_helpers_use_php_string_argument_boundary` regression, the full
+  `string_residual_builtins` test file, direct CLI probes, and selected public
+  PHPT rows for `strrev()` and `str_rot13()`. Unsupported edges remain exact
+  invalid `__toString()` return diagnostics, exact deterministic
+  `str_shuffle()` RNG parity, binary/string fidelity beyond represented
+  runtime bytes, references/COW, and native lowering for the broadened
+  interpreter-only object/null operands.
+
 - Added a bounded `DateTime::modify()` modifier string-boundary lane. Mutable
   `DateTime::modify()` and procedural `date_modify()` now route their
   `$modifier` operands through the shared PHP-shaped string boundary: scalar

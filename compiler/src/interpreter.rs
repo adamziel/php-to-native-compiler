@@ -85906,9 +85906,9 @@ impl Interpreter {
             "ctype_xdigit" => {
                 self.call_ctype("ctype_xdigit()", &args, ctype_byte_is_xdigit, span)
             }
-            "strrev" => call_strrev(&args, span),
-            "str_shuffle" => call_str_shuffle(&args, span),
-            "str_rot13" => call_str_rot13(&args, span),
+            "strrev" => call_strrev(self, &args, span),
+            "str_shuffle" => call_str_shuffle(self, &args, span),
+            "str_rot13" => call_str_rot13(self, &args, span),
             "escapeshellarg" => call_escapeshellarg(&args, span),
             "ucfirst" => call_ucfirst(self, &args, span),
             "lcfirst" => call_lcfirst(self, &args, span),
@@ -118281,20 +118281,31 @@ fn ctype_byte_is_xdigit(byte: u8) -> bool {
     byte.is_ascii_hexdigit()
 }
 
-fn call_strrev(args: &[Value], span: Span) -> CompileResult<Value> {
+fn call_strrev(interpreter: &mut Interpreter, args: &[Value], span: Span) -> CompileResult<Value> {
     expect_arity("strrev", args, 1, span)?;
 
-    let mut value = string_compare_argument_bytes("strrev()", "string", &args[0], span)?;
+    let mut value = interpreter
+        .php_string_argument_bytes_with_magic("strrev()", 1, "string", &args[0], span)?;
     value.reverse();
     Ok(interpreter_value_from_php_string_bytes(value))
 }
 
 static STR_SHUFFLE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
-fn call_str_shuffle(args: &[Value], span: Span) -> CompileResult<Value> {
+fn call_str_shuffle(
+    interpreter: &mut Interpreter,
+    args: &[Value],
+    span: Span,
+) -> CompileResult<Value> {
     expect_arity("str_shuffle", args, 1, span)?;
 
-    let value = string_compare_argument_bytes("str_shuffle()", "string", &args[0], span)?;
+    let value = interpreter.php_string_argument_bytes_with_magic(
+        "str_shuffle()",
+        1,
+        "string",
+        &args[0],
+        span,
+    )?;
     Ok(interpreter_value_from_php_string_bytes(shuffle_bytes(
         value,
     )))
@@ -118336,10 +118347,20 @@ fn shuffle_bytes(mut value: Vec<u8>) -> Vec<u8> {
     value
 }
 
-fn call_str_rot13(args: &[Value], span: Span) -> CompileResult<Value> {
+fn call_str_rot13(
+    interpreter: &mut Interpreter,
+    args: &[Value],
+    span: Span,
+) -> CompileResult<Value> {
     expect_arity("str_rot13", args, 1, span)?;
 
-    let mut value = string_compare_argument_bytes("str_rot13()", "string", &args[0], span)?;
+    let mut value = interpreter.php_string_argument_bytes_with_magic(
+        "str_rot13()",
+        1,
+        "string",
+        &args[0],
+        span,
+    )?;
     for byte in &mut value {
         *byte = match *byte {
             b'a'..=b'm' | b'A'..=b'M' => *byte + 13,

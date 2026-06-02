@@ -4082,17 +4082,22 @@
   Array/object/resource coercions, empty delimiter diagnostics, broader binary
   edge cases, request isolation beyond one interpreter execution, and native
   lowering remain unsupported.
-  `str_shuffle()` supports scalar/null string-convertible input and returns a
-  deterministic byte permutation sequence that preserves the input byte
-  multiset and cycles through all small-string permutations. It is not
-  PHP-random-state compatible. `rand()`/`mt_rand()` return deterministic
-  integer values in the current arity/range subset, `srand()`/`mt_srand()`
-  accept the current seed/mode argument shapes as no-op state boundaries,
-  `getrandmax()`/`mt_getrandmax()` return the deterministic maximum, and
-  `random_int()`/`random_bytes()`/`lcg_value()` return PHP-shaped but
-  deterministic placeholder values. These APIs are not cryptographic entropy
-  sources and do not model PHP's RNG state, distribution, seeding, or native
-  lowering. `ucfirst()`, `lcfirst()`, and
+  `strrev()`, `str_rot13()`, and `str_shuffle()` support scalar/null and
+  supported visible `__toString()` inputs through the shared PHP-shaped string
+  boundary. `null` emits the bounded PHP deprecation before becoming an empty
+  byte string, and arrays, closures, resources, or non-stringable objects raise
+  catchable PHP-shaped string `TypeError`s. `strrev()` reverses current runtime
+  bytes, `str_rot13()` applies ASCII ROT13 while preserving other bytes, and
+  `str_shuffle()` returns a deterministic byte permutation sequence that
+  preserves the input byte multiset and cycles through all small-string
+  permutations. It is not PHP-random-state compatible. `rand()`/`mt_rand()`
+  return deterministic integer values in the current arity/range subset,
+  `srand()`/`mt_srand()` accept the current seed/mode argument shapes as no-op
+  state boundaries, `getrandmax()`/`mt_getrandmax()` return the deterministic
+  maximum, and `random_int()`/`random_bytes()`/`lcg_value()` return PHP-shaped
+  but deterministic placeholder values. These APIs are not cryptographic
+  entropy sources and do not model PHP's RNG state, distribution, seeding, or
+  native lowering. `ucfirst()`, `lcfirst()`, and
   `ucwords($string, $separators = " \t\r\n\v\f")` support scalar/null
   string-convertible input and supported visible `__toString()` objects over
   current runtime bytes. `ucwords()` also applies the same string boundary to
@@ -9397,6 +9402,14 @@
   under the function-call boundary, while native function-table introspection
   recognizes the names and native constant folding recognizes the connection
   state constants.
+  `strrev` and `str_rot13` accept the same current interpreter string-boundary
+  subset as the builtin section above; direct native calls lower only for
+  lowerable scalar operands through the current byte string-result operation,
+  while broadened null and supported `__toString()` object operands remain
+  interpreter-only. `str_shuffle` accepts the same current interpreter
+  string-boundary subset as the builtin section above; direct native
+  `str_shuffle(...)` calls still reject under the function-call boundary,
+  while native function-table introspection recognizes the name.
   `strtolower` accepts the same current interpreter string-boundary subset as
   the builtin section above; direct native `strtolower(...)` calls lower for
   lowerable scalar operands through the current ASCII byte operation, while
@@ -12091,6 +12104,12 @@
   classes, non-ASCII bytes, empty strings, non-alphanumeric bytes,
   `str_decrement()` inputs that start with `0`, decrement underflow,
   array/object/resource coercions, and native lowering
+- `strrev()`/`str_rot13()`/`str_shuffle()` outside the current scalar/null and
+  supported visible `__toString()` object string-boundary subset: exact invalid
+  `__toString()` return diagnostics, exact deterministic `str_shuffle()` RNG
+  parity, binary/string fidelity beyond represented runtime bytes,
+  references/COW, and native lowering for broadened interpreter-only
+  object/null operands
 - `str_contains()` outside the current exact-two-argument scalar/null
   string-convertible subset: binary string edge cases beyond valid UTF-8
   runtime strings, array/object/resource coercions, exact PHP diagnostics, and

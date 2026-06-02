@@ -83,6 +83,49 @@ var_dump(strrev(""));
 }
 
 #[test]
+fn unary_byte_helpers_use_php_string_argument_boundary() {
+    let execution = run_source(
+        r#"<?php
+class Pair {
+    public function __toString() {
+        return "Ab";
+    }
+}
+
+set_error_handler(function($_, $message) {
+    echo $message, "|";
+    return true;
+});
+echo strrev(null), "|";
+restore_error_handler();
+echo strrev(new Pair), "|";
+echo str_rot13(new Pair), "|";
+$call = "str_shuffle";
+$shuffled = $call(new Pair);
+echo strlen($shuffled), ":", substr_count($shuffled, "A"), ":", substr_count($shuffled, "b"), "|";
+try {
+    str_rot13([]);
+} catch (TypeError $e) {
+    echo $e->getMessage(), "|";
+}
+try {
+    str_shuffle(new stdClass);
+} catch (TypeError $e) {
+    echo $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "strrev(): Passing null to parameter #1 ($string) of type string is deprecated||bA|No|2:1:1|str_rot13(): Argument #1 ($string) must be of type string, array given|str_shuffle(): Argument #1 ($string) must be of type string, stdClass given"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn ord_and_hex2bin_emit_php_shaped_warnings() {
     let execution = run_source(
         r#"<?php
