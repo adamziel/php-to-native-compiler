@@ -2820,6 +2820,16 @@ byte, and returns either the suffix beginning at the first matching byte or
 or Unicode-aware matching, exact invalid `__toString()` return diagnostics,
 broader binary edge parity, references/COW, and native lowering remain outside
 the current model.
+`strrpos()` and `strripos()` are interpreter-only bounded reverse byte-search
+builtins for current scalar/null string-convertible haystack and needle
+values. Their optional offsets use the shared PHP-internal int boundary before
+the existing reverse window checks, so null, booleans, finite floats, and
+numeric strings reach the positive lower-bound or negative-from-end search
+logic while non-int-compatible operands keep catchable `TypeError`s.
+`strripos()` applies ASCII-only folding. Exact deprecation warnings for null
+or lossy scalar offset coercions, supported visible `__toString()` conversion
+for searched operands, non-ASCII folding, broader binary/encoding edge parity,
+references/COW, and native lowering remain out of scope.
 `strtok()` is an interpreter-only stateful tokenizer with one saved byte cursor
 per interpreter execution. It accepts scalar/null string-convertible input and
 delimiter values, preserves embedded NUL delimiter behavior for current

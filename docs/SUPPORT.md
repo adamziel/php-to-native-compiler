@@ -3839,13 +3839,15 @@
   `strrpos($haystack, $needle, $offset = 0)` and
   `strripos($haystack, $needle, $offset = 0)` support the same scalar/null
   string-convertible haystack and needle subset, reverse byte-position
-  matching, positive lower-bound offsets, negative offsets measured from the
-  end of the haystack, empty needles returning the PHP effective reverse
-  boundary, and catchable `ValueError` handling for offsets outside the
-  haystack bounds. `strripos()` applies ASCII-only case folding. Offset
-  coercions beyond integers, non-ASCII case folding, array/object/resource
-  coercions, encoding-sensitive edge cases beyond represented runtime strings,
-  and native lowering remain unsupported.
+  matching, optional PHP-internal-int-compatible offsets, positive lower-bound
+  offsets, negative offsets measured from the end of the haystack, empty
+  needles returning the PHP effective reverse boundary, catchable `TypeError`
+  handling for non-int-compatible offsets, and catchable `ValueError` handling
+  for offsets outside the haystack bounds. `strripos()` applies ASCII-only
+  case folding. Exact deprecation warnings for null or lossy scalar offset
+  coercions, non-ASCII case folding, array/object/resource coercions,
+  encoding-sensitive edge cases beyond represented runtime strings, and native
+  lowering remain unsupported.
   `strstr($haystack, $needle, $before_needle = false)`, alias
   `strchr(...)`, and `stristr(...)` support scalar/null and stringable-object
   haystack/needle conversion over the current runtime bytes, empty needles,
@@ -12037,11 +12039,11 @@
   non-int-compatible offset `TypeError`, and offset-bounds `ValueError`, and
   native lowering beyond function-table introspection
 - `strrpos()`/`strripos()` outside the current scalar/null string-convertible
-  haystack and needle plus optional integer offset subset: PHP-exact offset
-  coercions beyond integer values, non-ASCII case folding for `strripos()`,
-  array/object/resource coercions, encoding-sensitive edge cases beyond
-  represented runtime strings, and native lowering beyond function-table
-  introspection
+  haystack and needle plus optional int-compatible offset subset: exact
+  deprecation warnings for null or lossy scalar offset coercions, non-ASCII
+  case folding for `strripos()`, array/object/resource coercions,
+  encoding-sensitive edge cases beyond represented runtime strings, and native
+  lowering beyond function-table introspection
 - `strstr()`/`strchr()`/`stristr()` outside the current scalar/null or
   stringable-object haystack and needle plus optional bool-compatible
   `before_needle` subset: array/closure/resource operands, non-stringable

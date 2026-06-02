@@ -121903,12 +121903,7 @@ fn call_strrpos(
     let haystack = string_compare_argument_bytes(function, "haystack", &args[0], span)?;
     let needle = string_compare_argument_bytes(function, "needle", &args[1], span)?;
     let offset = match args.get(2) {
-        Some(Value::Int(offset)) => *offset,
-        Some(other) => {
-            return Err(php_internal_int_type_error(
-                function, 3, "offset", other, span,
-            ));
-        }
+        Some(value) => php_internal_int_argument(function, 3, "offset", value, span)?,
         None => 0,
     };
 

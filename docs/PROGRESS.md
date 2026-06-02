@@ -4,6 +4,25 @@
 
 Implemented:
 
+- Added a bounded reverse string-position offset coercion lane.
+  `strrpos()` and `strripos()` now route optional `$offset` operands through
+  the shared PHP-internal int boundary used by adjacent forward search helpers,
+  so null, booleans, finite floats, and numeric strings reach the existing
+  reverse byte-search window logic while arrays, objects, closures, resources,
+  non-numeric strings, and out-of-range floats keep catchable PHP-shaped
+  `TypeError`s. Existing scalar haystack/needle conversion, positive
+  lower-bound and negative-from-end offset semantics, empty-needle reverse
+  boundary behavior, out-of-bounds `ValueError`s, binary byte offsets,
+  `strripos()` ASCII folding, metadata visibility, and native-lowering
+  rejection remain unchanged. Focused proof covers the Rust
+  `reverse_position_builtins_coerce_php_internal_offsets` regression, the full
+  `strrpos_builtin` test file, direct CLI probes, and selected public reverse
+  offset PHPT rows. Unsupported edges remain exact deprecation warnings for
+  null or lossy scalar offset coercions, supported visible `__toString()`
+  haystack/needle conversion, non-ASCII case folding, broader binary/encoding
+  parity beyond represented runtime bytes, references/COW, and native
+  lowering.
+
 - Added a bounded `array_slice()` non-array first-argument diagnostics lane.
   Direct and string-valued dynamic interpreter calls now raise catchable
   PHP-shaped `TypeError`s when argument #1 is not an array. Existing slice
