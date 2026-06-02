@@ -2578,16 +2578,19 @@
   for array-backed construction, offset reads/writes/unsets/appends,
   `getArrayCopy()`, `exchangeArray()`, flags, iterator class metadata,
   sorting over array storage, and ordinary by-value iteration through their
-  iterator methods. When one `ArrayObject` or `ArrayIterator` is constructed
-  with another one as its backing storage, reads and writes recurse through the
-  inner object's storage so copy-constructor-style offset mutation updates the
-  shared backing object. Object-backed storage exposes public properties and
-  keyed `offsetSet()` writes; appending to object-backed `ArrayIterator` or
-  `ArrayObject` storage throws the PHP-shaped `Error` directing callers to
-  `offsetSet()`. General SPL wrapper iterators such as `LimitIterator`,
-  `IteratorIterator`, and `NoRewindIterator`, by-reference iteration over SPL
-  iterator objects, serialization parity, full COW/reference identity, and
-  native lowering remain unsupported.
+  iterator methods. `ArrayIterator::seek()` accepts the current int-only
+  offset path and reports out-of-range positions as catchable
+  `OutOfBoundsException`s. When one `ArrayObject` or `ArrayIterator` is
+  constructed with another one as its backing storage, reads and writes
+  recurse through the inner object's storage so copy-constructor-style offset
+  mutation updates the shared backing object. Object-backed storage exposes
+  public properties and keyed `offsetSet()` writes; appending to object-backed
+  `ArrayIterator` or `ArrayObject` storage throws the PHP-shaped `Error`
+  directing callers to `offsetSet()`. General SPL wrapper iterators such as
+  `LimitIterator`, `IteratorIterator`, and `NoRewindIterator`, weak
+  scalar/null/float/numeric-string coercions for `ArrayIterator::seek()`
+  offsets, by-reference iteration over SPL iterator objects, serialization
+  parity, full COW/reference identity, and native lowering remain unsupported.
 - `break;` for the innermost currently executing `while`, `for`,
   `do ... while`, `foreach`, or `switch`; `continue;` for the innermost
   currently executing loop

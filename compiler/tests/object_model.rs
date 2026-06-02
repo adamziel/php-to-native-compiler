@@ -15178,6 +15178,38 @@ foreach ($it as $key => $value) {
 }
 
 #[test]
+fn array_iterator_seek_out_of_range_errors_are_catchable() {
+    let source = r#"<?php
+$it = new ArrayIterator(array(0, 1, 2));
+$it->seek(1);
+echo $it->key(), ":", $it->current(), "\n";
+
+try {
+    $it->seek(-1);
+} catch (OutOfBoundsException $e) {
+    echo get_class($e), ":", $e->getMessage(), "\n";
+}
+
+try {
+    $it->seek(3);
+} catch (Exception $e) {
+    echo get_class($e), ":", $e->getMessage(), "\n";
+}
+
+$it->seek(2);
+echo $it->key(), ":", $it->current(), "\n";
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "1:1\nOutOfBoundsException:Seek position -1 is out of range\nOutOfBoundsException:Seek position 3 is out of range\n2:2\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn array_object_nested_storage_mutations_reach_inner_array_object() {
     let source = r#"<?php
 $base = new ArrayObject(array(1 => "one", 2 => "two", 3 => "three"));

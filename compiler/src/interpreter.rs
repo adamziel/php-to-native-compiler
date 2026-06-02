@@ -104880,6 +104880,9 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
                 {
                     return Some(("Error", reason.to_string()));
                 }
+                if reason.starts_with("Seek position ") && reason.ends_with(" is out of range") {
+                    return Some(("OutOfBoundsException", reason.to_string()));
+                }
                 if reason.contains(" must be of type ")
                     || reason.contains(" must be a class name derived from ArrayIterator")
                 {

@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Added a bounded `ArrayIterator::seek()` invalid-position exception lane for
+  the selected `array_014.phpt` surface. Core ArrayIterator out-of-range
+  `seek()` calls now remain on the existing cursor implementation but convert
+  `Seek position ... is out of range` failures into catchable
+  `OutOfBoundsException`s, so `catch (Exception)` and
+  `catch (OutOfBoundsException)` observe PHP-shaped behavior instead of an
+  uncaught unsupported runtime error. Focused proof covers the Rust
+  `array_iterator_seek_out_of_range_errors_are_catchable` regression, the
+  direct `phpc run` fixture
+  `tests/fixtures/milestone2320/array_iterator_seek_out_of_bounds.php`, and
+  the selected PHPT row `ext/spl/tests/ArrayObject/array_014.phpt`.
+  Unsupported edges remain weak scalar/null/float/numeric-string coercions for
+  `seek()` offsets, exact invalid-offset `TypeError` text beyond the existing
+  bounded int-only path, cursor invalidation parity for arbitrary concurrent
+  storage mutation, by-reference SPL iterator iteration, serialization parity,
+  full COW/reference identity, and native lowering.
+
 - Added a bounded `json_encode()` partial non-finite float replacement lane for
   the selected `inf_nan_error.phpt` surface. `JSON_PARTIAL_OUTPUT_ON_ERROR`
   now preserves the `JSON_ERROR_INF_OR_NAN` last-error state while emitting
