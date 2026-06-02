@@ -85859,10 +85859,10 @@ impl Interpreter {
             "connection_aborted" => call_connection_aborted(&args, span),
             "connection_status" => call_connection_status(&args, span),
             "ignore_user_abort" => self.call_ignore_user_abort(args, span),
-            "getprotobyname" => call_getprotobyname(&args, span),
+            "getprotobyname" => self.call_getprotobyname(&args, span),
             "getprotobynumber" => call_getprotobynumber(&args, span),
-            "getservbyname" => call_getservbyname(&args, span),
-            "getservbyport" => call_getservbyport(&args, span),
+            "getservbyname" => self.call_getservbyname(&args, span),
+            "getservbyport" => self.call_getservbyport(&args, span),
             "get_current_user" => call_get_current_user(&args, self.main_source_file.as_deref(), span),
             "getlastmod" => self.call_main_source_timestamp_builtin(&args, "getlastmod", span),
             "getmyinode" => self.call_main_source_int_metadata_builtin(
@@ -132427,15 +132427,6 @@ impl Interpreter {
     }
 }
 
-fn call_getprotobyname(args: &[Value], span: Span) -> CompileResult<Value> {
-    expect_arity("getprotobyname", args, 1, span)?;
-    let protocol =
-        network_database_string_argument("getprotobyname()", 1, "protocol", &args[0], span)?;
-    Ok(bounded_protocol_number(&protocol)
-        .map(Value::Int)
-        .unwrap_or(Value::Bool(false)))
-}
-
 fn call_getprotobynumber(args: &[Value], span: Span) -> CompileResult<Value> {
     expect_arity("getprotobynumber", args, 1, span)?;
     let protocol = php_internal_int_argument("getprotobynumber()", 1, "protocol", &args[0], span)?;
@@ -132444,53 +132435,129 @@ fn call_getprotobynumber(args: &[Value], span: Span) -> CompileResult<Value> {
         .unwrap_or(Value::Bool(false)))
 }
 
-fn call_getservbyname(args: &[Value], span: Span) -> CompileResult<Value> {
-    expect_arity("getservbyname", args, 2, span)?;
-    let service =
-        network_database_string_argument("getservbyname()", 1, "service", &args[0], span)?;
-    let protocol =
-        network_database_string_argument("getservbyname()", 2, "protocol", &args[1], span)?;
-
-    Ok(bounded_service_port(&service, &protocol)
-        .map(Value::Int)
-        .unwrap_or(Value::Bool(false)))
-}
-
-fn call_getservbyport(args: &[Value], span: Span) -> CompileResult<Value> {
-    expect_arity("getservbyport", args, 2, span)?;
-    let port = php_internal_int_argument("getservbyport()", 1, "port", &args[0], span)?;
-    let protocol =
-        network_database_string_argument("getservbyport()", 2, "protocol", &args[1], span)?;
-
-    if !(0..=65535).contains(&port) {
-        return Ok(Value::Bool(false));
+impl Interpreter {
+    fn call_getprotobyname(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("getprotobyname", args, 1, span)?;
+        let protocol = self.network_database_string_argument(
+            "getprotobyname()",
+            1,
+            "protocol",
+            &args[0],
+            span,
+        )?;
+        Ok(bounded_protocol_number(&protocol)
+            .map(Value::Int)
+            .unwrap_or(Value::Bool(false)))
     }
 
-    Ok(bounded_service_name(port, &protocol)
-        .map(|service| Value::String(service.to_string()))
-        .unwrap_or(Value::Bool(false)))
-}
+    fn call_getservbyname(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("getservbyname", args, 2, span)?;
+        let service =
+            self.network_database_string_argument("getservbyname()", 1, "service", &args[0], span)?;
+        let protocol = self.network_database_string_argument(
+            "getservbyname()",
+            2,
+            "protocol",
+            &args[1],
+            span,
+        )?;
 
-fn network_database_string_argument(
-    function: &str,
-    position: usize,
-    name: &str,
-    value: &Value,
-    span: Span,
-) -> CompileResult<String> {
-    let value = value
-        .try_echo_string()
-        .map_err(|error| runtime_error(span, error))?;
-    if value.contains('\0') {
-        return Err(runtime_error(
+        Ok(bounded_service_port(&service, &protocol)
+            .map(Value::Int)
+            .unwrap_or(Value::Bool(false)))
+    }
+
+    fn call_getservbyport(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("getservbyport", args, 2, span)?;
+        let port = php_internal_int_argument("getservbyport()", 1, "port", &args[0], span)?;
+        let protocol = self.network_database_string_argument(
+            "getservbyport()",
+            2,
+            "protocol",
+            &args[1],
+            span,
+        )?;
+
+        if !(0..=65535).contains(&port) {
+            return Ok(Value::Bool(false));
+        }
+
+        Ok(bounded_service_name(port, &protocol)
+            .map(|service| Value::String(service.to_string()))
+            .unwrap_or(Value::Bool(false)))
+    }
+
+    fn network_database_string_argument(
+        &mut self,
+        function: &'static str,
+        position: usize,
+        name: &str,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<String> {
+        let value = match value {
+            Value::Null => {
+                self.emit_display_diagnostic(
+                    "Deprecated",
+                    PHP_E_DEPRECATED,
+                    format!(
+                        "{function}: Passing null to parameter #{position} (${name}) of type string is deprecated"
+                    ),
+                    span,
+                )?;
+                String::new()
+            }
+            Value::Object(object) => {
+                if let Some(value) =
+                    self.object_to_string_with_magic(object.clone(), function, span)?
+                {
+                    value
+                } else {
+                    return Err(Self::network_database_string_type_error(
+                        function, position, name, value, span,
+                    ));
+                }
+            }
+            Value::Array(_) | Value::Closure(_) | Value::Resource(_) => {
+                return Err(Self::network_database_string_type_error(
+                    function, position, name, value, span,
+                ));
+            }
+            _ => value
+                .try_echo_string()
+                .map_err(|error| runtime_error(span, error))?,
+        };
+
+        if value.contains('\0') {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function,
+                    format!("Argument #{position} (${name}) must not contain any null bytes"),
+                ),
+            ));
+        }
+        Ok(value)
+    }
+
+    fn network_database_string_type_error(
+        function: &'static str,
+        position: usize,
+        name: &str,
+        value: &Value,
+        span: Span,
+    ) -> Diagnostic {
+        runtime_error(
             span,
             RuntimeError::unsupported_call(
                 function,
-                format!("Argument #{position} (${name}) must not contain any null bytes"),
+                format!(
+                    "Argument #{position} (${name}) must be of type string, {} given",
+                    php_type_error_given(value)
+                ),
             ),
-        ));
+        )
     }
-    Ok(value)
 }
 
 fn bounded_protocol_number(protocol: &str) -> Option<i64> {

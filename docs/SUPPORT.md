@@ -3256,7 +3256,13 @@
   `http`/`www`, `pop3`, and `imap`. Unknown names, protocols, and out-of-range
   ports return `false`. Protocol lookup names are ASCII-case-insensitive, while
   service lookup names and the service lookup protocol are case-sensitive in
-  the current bounded table. String-valued dynamic calls, `function_exists()`,
+  the current bounded table. The string protocol/service operands for
+  `getprotobyname()`, `getservbyname()`, and `getservbyport()` use the current
+  PHP-internal string boundary: scalars are converted, `null` emits the
+  bounded deprecation before becoming `""`, supported visible `__toString()`
+  objects are accepted, invalid arrays/resources/closures/non-stringable
+  objects raise catchable `TypeError`s, and NUL bytes raise catchable
+  `ValueError`s. String-valued dynamic calls, `function_exists()`,
   `is_callable()`, and `ReflectionFunction` metadata recognize these builtins.
 - HTML entity builtins `htmlspecialchars`, `htmlentities`,
   `htmlspecialchars_decode`, `html_entity_decode`, and
@@ -12195,8 +12201,10 @@
   slices listed above: reading host `/etc/protocols` or `/etc/services`,
   service aliases beyond `http`/`www`, UDP service lookups, platform-specific
   resolver/database differences, exact service database case rules outside the
-  documented bounded table, exact warnings/diagnostics for all invalid argument
-  shapes, and native lowering beyond function-table introspection
+  documented bounded table, exact invalid `__toString()` return diagnostics,
+  broader binary/encoding edge cases, exact warnings/diagnostics outside the
+  covered string and NUL-byte argument shapes, and native lowering beyond
+  function-table introspection
 - `get_current_user()` behavior beyond the current local source-owner string
   slice: NSS/LDAP/remote directory lookups, web-server user identity,
   effective UID versus script-owner policy variants, account database changes

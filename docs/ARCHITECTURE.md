@@ -3066,6 +3066,16 @@ string, or `false` when the host cannot provide one. It does not model exact
 controlling-terminal policy across sessions or SAPIs, non-Unix fallback
 behavior, non-UTF-8 terminal path output, POSIX errno mutation, broader POSIX
 terminal functions, or native runtime lookup.
+`getprotobyname()`, `getprotobynumber()`, `getservbyname()`, and
+`getservbyport()` are interpreter-only network database compatibility
+boundaries backed by deterministic protocol and TCP service tables rather than
+host resolver files. String protocol/service operands use a PHP-shaped
+internal string boundary with scalar conversion, null deprecation, supported
+visible `__toString()` objects, catchable invalid-operand `TypeError`s, and
+catchable NUL-byte `ValueError`s. The path deliberately leaves host
+`/etc/protocols` or `/etc/services` discovery, UDP services, broader service
+aliases, exact invalid `__toString()` diagnostics, binary/encoding parity,
+references/COW, and native lowering outside this slice.
 Direct native reads, indexed reads, `isset(...)`, and `empty(...)` over the
 current request superglobals `$_SERVER`, `$_COOKIE`, `$_GET`, `$_POST`,
 `$_REQUEST`, and `$_FILES` reject through a request-state codegen boundary

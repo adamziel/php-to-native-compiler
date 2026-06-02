@@ -134,6 +134,81 @@ ValueError: getservbyport(): Argument #2 ($protocol) must not contain any null b
 }
 
 #[test]
+fn network_database_string_arguments_coerce_and_report_type_errors() {
+    let execution = run_source(
+        r#"<?php
+set_error_handler(function($_, $message) {
+    echo "deprecated:", $message, "\n";
+    return true;
+});
+
+class TcpProtocol {
+    public function __toString() {
+        return "tcp";
+    }
+}
+
+class HttpService {
+    public function __toString() {
+        return "http";
+    }
+}
+
+echo getprotobyname(new TcpProtocol()), "\n";
+echo getservbyname(new HttpService(), new TcpProtocol()), "\n";
+echo getservbyport("80", new TcpProtocol()), "\n";
+
+foreach ([null, false, true, 42, 3.5] as $protocol) {
+    var_dump(getprotobyname($protocol));
+}
+
+$resource = fopen("php://memory", "r");
+foreach ([[], function () {}, $resource, new stdClass()] as $protocol) {
+    try {
+        getprotobyname($protocol);
+    } catch (Throwable $e) {
+        echo $e::class, ": ", $e->getMessage(), "\n";
+    }
+}
+
+try {
+    getservbyname("http", []);
+} catch (Throwable $e) {
+    echo $e::class, ": ", $e->getMessage(), "\n";
+}
+
+try {
+    getservbyport(80, new stdClass());
+} catch (Throwable $e) {
+    echo $e::class, ": ", $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "6\n\
+80\n\
+http\n\
+deprecated:getprotobyname(): Passing null to parameter #1 ($protocol) of type string is deprecated\n\
+bool(false)\n\
+bool(false)\n\
+bool(false)\n\
+bool(false)\n\
+bool(false)\n\
+TypeError: getprotobyname(): Argument #1 ($protocol) must be of type string, array given\n\
+TypeError: getprotobyname(): Argument #1 ($protocol) must be of type string, Closure given\n\
+TypeError: getprotobyname(): Argument #1 ($protocol) must be of type string, resource given\n\
+TypeError: getprotobyname(): Argument #1 ($protocol) must be of type string, stdClass given\n\
+TypeError: getservbyname(): Argument #2 ($protocol) must be of type string, array given\n\
+TypeError: getservbyport(): Argument #2 ($protocol) must be of type string, stdClass given\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn emit_ir_folds_service_protocol_metadata_but_rejects_direct_calls() {
     let ir = emit_ir_source(
         r#"<?php

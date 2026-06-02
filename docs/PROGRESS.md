@@ -4,6 +4,26 @@
 
 Implemented:
 
+- Added a bounded network database string-argument diagnostics lane.
+  `getprotobyname()`, `getservbyname()`, and `getservbyport()` now route
+  protocol/service name operands through a PHP-internal string boundary:
+  scalar values are converted to strings, `null` emits the PHP-shaped
+  deprecation before converting to `""`, supported visible `__toString()`
+  objects are accepted, and arrays, resources, closures, or non-stringable
+  objects raise catchable PHP-shaped `TypeError`s. The existing deterministic
+  protocol/service lookup tables, NUL-byte `ValueError`s,
+  `getprotobynumber()` integer boundary, string-valued dynamic calls, metadata
+  visibility, and native-lowering rejection remain unchanged. Focused proof
+  covers the Rust
+  `network_database_string_arguments_coerce_and_report_type_errors`
+  regression, the full network service/protocol builtin test file, direct CLI
+  runtime/native-boundary probes, and selected public PHPT network rows.
+  Unsupported edges remain exact invalid `__toString()` return diagnostics,
+  host `/etc/protocols` or `/etc/services` discovery, service aliases beyond
+  the documented deterministic table, UDP service lookups,
+  platform-specific resolver/database differences, broader binary/encoding
+  edge cases, references/COW, and native lowering.
+
 - Added a bounded `array_find()` family by-reference callback-parameter
   warning lane. `phpc run` now routes `array_find()`, `array_find_key()`,
   `array_any()`, and `array_all()` callbacks whose reached value/key
