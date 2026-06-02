@@ -4,6 +4,22 @@
 
 Implemented:
 
+- Added a bounded `hash_pbkdf2()` validation lane for the selected ext/hash
+  error row. The interpreter now exposes `hash_pbkdf2()` through
+  builtin/callability/reflection metadata, validates cryptographic algorithm
+  names against the existing HMAC-capable inventory, and raises catchable
+  PHP-shaped `ValueError` diagnostics for invalid/non-cryptographic
+  algorithms, non-positive iteration counts, and negative lengths before
+  explicitly rejecting successful PBKDF2 derivation. Focused Rust passed `13 /
+  13` in `hash_builtin`; `cargo build -p phpc --bin phpc` passed; a direct
+  `phpc run` probe proved function/callability metadata plus the selected
+  catchable validation errors; selected PHPT proof passed `1 / 1` for
+  `hash_pbkdf2_error.phpt`; `cargo fmt --check` and `git diff --check`
+  passed. Unsupported edges remain PBKDF2 derivation output, exact
+  algorithm/provider behavior beyond validation, exact coercions and
+  diagnostics outside the selected row, streaming contexts, and native
+  lowering.
+
 - Added a bounded `get_defined_functions()` metadata lane for the selected
   Zend row. The interpreter now returns the PHP-shaped `internal`/`user` array
   structure, with core metadata names plus the shared standard-extension

@@ -294,6 +294,54 @@ ValueError:hash_init(): Argument #3 ($key) must not be empty when HMAC is reques
 }
 
 #[test]
+fn hash_pbkdf2_validates_algorithm_iterations_and_length_before_derivation_boundary() {
+    let execution = run_source(
+        r#"<?php
+echo function_exists("hash_pbkdf2") ? "fn" : "missing";
+echo "|", is_callable("hash_pbkdf2") ? "callable" : "missing";
+$fn = new ReflectionFunction("hash_pbkdf2");
+echo "|", $fn->getNumberOfRequiredParameters(), "/", $fn->getNumberOfParameters(), "\n";
+
+foreach ([
+    fn() => hash_pbkdf2("foo", "password", "salt", 1),
+    fn() => hash_pbkdf2("crc32", "password", "salt", 1),
+    fn() => hash_pbkdf2("md5", "password", "salt", 0),
+    fn() => hash_pbkdf2("md5", "password", "salt", -1),
+    fn() => hash_pbkdf2("md5", "password", "salt", 1, -1),
+] as $test) {
+    try {
+        var_dump($test());
+    } catch (\Error $e) {
+        echo get_class($e), ":", $e->getMessage(), "\n";
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "fn|callable|4/6\n\
+ValueError:hash_pbkdf2(): Argument #1 ($algo) must be a valid cryptographic hashing algorithm\n\
+ValueError:hash_pbkdf2(): Argument #1 ($algo) must be a valid cryptographic hashing algorithm\n\
+ValueError:hash_pbkdf2(): Argument #4 ($iterations) must be greater than 0\n\
+ValueError:hash_pbkdf2(): Argument #4 ($iterations) must be greater than 0\n\
+ValueError:hash_pbkdf2(): Argument #5 ($length) must be greater than or equal to 0\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+
+    let boundary = run_source("<?php\nhash_pbkdf2('md5', 'password', 'salt', 1);\n").unwrap_err();
+    assert_eq!(boundary.phase, Phase::Runtime);
+    assert_eq!(boundary.line, 2);
+    assert_eq!(boundary.column, 1);
+    assert_eq!(
+        boundary.message,
+        "unsupported call hash_pbkdf2(): PBKDF2 derivation is not implemented in the current subset"
+    );
+}
+
+#[test]
 fn hash_equals_and_hmac_algorithm_metadata_cover_phpt_rows() {
     let execution = run_source(
         r#"<?php
@@ -343,6 +391,8 @@ echo function_exists("hash_init") ? "1" : "0";
 echo is_callable("hash_init") ? "1" : "0";
 echo function_exists("hash_hmac") ? "1" : "0";
 echo is_callable("hash_hmac") ? "1" : "0";
+echo function_exists("hash_pbkdf2") ? "1" : "0";
+echo is_callable("hash_pbkdf2") ? "1" : "0";
 echo function_exists("hash_hmac_algos") ? "1" : "0";
 echo is_callable("hash_hmac_algos") ? "1" : "0";
 echo function_exists("hash_equals") ? "1" : "0";
@@ -353,7 +403,7 @@ echo is_callable("uniqid") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 12, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 14, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
 
@@ -370,6 +420,12 @@ echo is_callable("uniqid") ? "1" : "0";
     assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
 
     let error = emit_ir_source("<?php\nhash_hmac('sha256', 'data', 'key');\n").unwrap_err();
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source("<?php\nhash_pbkdf2('sha1', 'password', 'salt', 1);\n").unwrap_err();
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.line, 2);
     assert_eq!(error.column, 1);

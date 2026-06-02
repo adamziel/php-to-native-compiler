@@ -3331,7 +3331,7 @@
   `get_include_path`, `set_include_path`, `min`, `rand`, `mt_rand`,
   `getrandmax`, `mt_getrandmax`, `srand`, `mt_srand`, `random_int`,
   `random_bytes`, `lcg_value`, `array_rand`, `uniqid`,
-  `crypt`, `hash`, `hash_algos`, `hash_hmac_algos`, `hash_hmac`, `hash_equals`, `md5`, `md5_file`, `get_current_user`, `umask`, `getmypid`, `isset`, `empty`, `count`, `sizeof`, `compact`, `define`, `constant`, `defined`,
+  `crypt`, `hash`, `hash_algos`, `hash_hmac_algos`, `hash_hmac`, `hash_pbkdf2`, `hash_equals`, `md5`, `md5_file`, `get_current_user`, `umask`, `getmypid`, `isset`, `empty`, `count`, `sizeof`, `compact`, `define`, `constant`, `defined`,
   `array_key_exists`, `key_exists`, `array_key_first`, `array_key_last`, `current`,
   `array_is_list`, `array_values`, `array_keys`, `array_rand`, `array_reverse`, `array_slice`, `array_chunk`,
   `array_pad`, `array_merge`, `array_replace`, `array_combine`,
@@ -4011,6 +4011,12 @@
   validation failures raise PHP-shaped catchable `ValueError` diagnostics.
   Successful `HashContext` allocation remains rejected until streaming state is
   implemented.
+  `hash_pbkdf2($algo, $password, $salt, $iterations, $length = 0,
+  $binary = false)` is exposed as a validation-only interpreter boundary for
+  the selected error surface: invalid or non-cryptographic algorithms,
+  non-positive iteration counts, and negative lengths raise PHP-shaped
+  catchable `ValueError` diagnostics before successful PBKDF2 derivation is
+  explicitly rejected.
   `hash_equals($known_string, $user_string)` supports strict string and binary
   string operands, constant-work same-length byte comparison, and PHP-shaped
   type diagnostics for non-string operands.
@@ -4018,7 +4024,8 @@
   non-empty `hash()` options arrays, `HashContext` allocation and streaming
   hash updates/finalization, `hash_hmac()` execution for algorithms beyond
   SHA-256, `hash_hmac()` raw binary output, `hash_init()` HMAC context
-  execution and non-empty options arrays, exact time/entropy behavior,
+  execution and non-empty options arrays, `hash_pbkdf2()` derivation output,
+  exact time/entropy behavior,
   cryptographic guarantees for generated IDs, array/object/resource coercions
   outside the documented strict
   `hash_equals()` type errors, broader exact diagnostics, and native lowering

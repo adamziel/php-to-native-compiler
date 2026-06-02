@@ -66673,6 +66673,7 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "hash_algos",
     "hash_hmac_algos",
     "hash_hmac",
+    "hash_pbkdf2",
     "hash_equals",
     "count",
     "sizeof",

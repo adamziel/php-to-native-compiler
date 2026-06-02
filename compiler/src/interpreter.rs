@@ -85631,6 +85631,7 @@ impl Interpreter {
             "hash_algos" => call_hash_algos(&args, span),
             "hash_hmac_algos" => call_hash_hmac_algos(&args, span),
             "hash_hmac" => call_hash_hmac(&args, span),
+            "hash_pbkdf2" => call_hash_pbkdf2(&args, span),
             "hash_equals" => call_hash_equals(&args, span),
             "filter_list" => call_filter_list(&args, span),
             "filter_id" => call_filter_id(&args, span),
@@ -100985,6 +100986,17 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_optional_bool_param("binary", false),
             ],
         ),
+        "hash_pbkdf2" => (
+            "string",
+            vec![
+                reflection_internal_param("algo", "string"),
+                reflection_internal_param("password", "string"),
+                reflection_internal_param("salt", "string"),
+                reflection_internal_param("iterations", "int"),
+                reflection_internal_optional_int_param("length", 0),
+                reflection_internal_optional_bool_param("binary", false),
+            ],
+        ),
         "hash_equals" => (
             "bool",
             vec![
@@ -105369,6 +105381,18 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
             "hash_hmac()",
             "Argument #1 ($algo) must be a valid cryptographic hashing algorithm",
         )
+        | (
+            "hash_pbkdf2()",
+            "Argument #1 ($algo) must be a valid cryptographic hashing algorithm",
+        )
+        | (
+            "hash_pbkdf2()",
+            "Argument #4 ($iterations) must be greater than 0",
+        )
+        | (
+            "hash_pbkdf2()",
+            "Argument #5 ($length) must be greater than or equal to 0",
+        )
         | ("ftruncate()", "Argument #2 ($size) must be greater than or equal to 0")
         | ("sleep()", "Argument #1 ($seconds) must be greater than or equal to 0")
         | ("fgets()", "Argument #2 ($length) must be greater than 0")
@@ -106337,6 +106361,7 @@ fn is_builtin(name: &str) -> bool {
             | "hash_algos"
             | "hash_hmac_algos"
             | "hash_hmac"
+            | "hash_pbkdf2"
             | "hash_equals"
             | "filter_list"
             | "filter_id"
@@ -132882,6 +132907,75 @@ fn call_hash_hmac(args: &[Value], span: Span) -> CompileResult<Value> {
     })?;
     mac.update(data.as_bytes());
     Ok(Value::String(hex_bytes(&mac.finalize().into_bytes())))
+}
+
+fn call_hash_pbkdf2(args: &[Value], span: Span) -> CompileResult<Value> {
+    if !(4..=6).contains(&args.len()) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "hash_pbkdf2()",
+                ArityExpectation::Between { min: 4, max: 6 },
+                args.len(),
+            ),
+        ));
+    }
+
+    let algorithm = string_builtin_argument("hash_pbkdf2()", "algo", &args[0], span)?;
+    if !is_php_hash_hmac_cryptographic_algorithm_name(&algorithm) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "hash_pbkdf2()",
+                "Argument #1 ($algo) must be a valid cryptographic hashing algorithm",
+            ),
+        ));
+    }
+
+    let _password = string_compare_argument_bytes("hash_pbkdf2()", "password", &args[1], span)?;
+    let _salt = string_compare_argument_bytes("hash_pbkdf2()", "salt", &args[2], span)?;
+    let iterations = php_internal_int_argument("hash_pbkdf2()", 4, "iterations", &args[3], span)?;
+    if iterations <= 0 {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "hash_pbkdf2()",
+                "Argument #4 ($iterations) must be greater than 0",
+            ),
+        ));
+    }
+
+    let length = match args.get(4) {
+        Some(value) => php_internal_int_argument("hash_pbkdf2()", 5, "length", value, span)?,
+        None => 0,
+    };
+    if length < 0 {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "hash_pbkdf2()",
+                "Argument #5 ($length) must be greater than or equal to 0",
+            ),
+        ));
+    }
+
+    if let Some(Value::Array(_)) = args.get(5) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "hash_pbkdf2()",
+                "Argument #6 ($binary) must be of type bool, array given",
+            ),
+        ));
+    }
+
+    Err(runtime_error(
+        span,
+        RuntimeError::unsupported_call(
+            "hash_pbkdf2()",
+            "PBKDF2 derivation is not implemented in the current subset",
+        ),
+    ))
 }
 
 fn call_hash_equals(args: &[Value], span: Span) -> CompileResult<Value> {
