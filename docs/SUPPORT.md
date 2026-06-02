@@ -3378,7 +3378,7 @@
   `array_uintersect_uassoc`, `array_flip`, `array_change_key_case`,
   `array_column`, `array_fill_keys`, `array_count_values`, `array_sum`,
   `array_product`, `array_reduce`, `array_filter`, `array_map`,
-  `array_push`, `array_unshift`, `array_shift`, `array_pop`, `next`, `ksort`,
+  `array_push`, `array_unshift`, `array_shift`, `array_pop`, `array_splice`, `next`, `ksort`,
   `in_array`, `array_search`, `gettype`, `settype`, `is_null`, `is_bool`, `is_int`, `is_integer`,
   `is_long`, `is_float`, `is_double`, `is_string`, `is_array`, `is_scalar`,
   `is_numeric`, `is_countable`, `is_iterable`, `is_callable`,
@@ -3674,6 +3674,18 @@
   referenced caller array. Non-variable direct array targets, non-array first
   arguments, string-keyed argument unpacking, broad by-reference argument
   handling beyond the selected callback forms, exact warnings, and native
+  lowering remain unsupported.
+  `array_splice($array, $offset, $length = null, $replacement = [])` supports
+  direct calls and string-valued dynamic calls when the first argument is a
+  direct variable array path, including selected nested paths such as
+  `$array[$key]`. The offset follows the shared PHP-internal int coercion path
+  for null, booleans, finite floats, and numeric strings; the nullable length
+  argument accepts `null` or the same int-coercible scalar subset. It mutates
+  the selected array path, reindexes integer keys, preserves string keys,
+  returns removed value slots, and preserves reference-backed replacement slots
+  from array replacements. Non-variable targets, object-property array roots,
+  deprecation warnings for null or lossy scalar coercions, broad
+  reference/copy-on-write graph parity, exact native diagnostics, and native
   lowering remain unsupported.
   `strcasecmp($left, $right)` supports exactly two scalar/null
   string-convertible arguments, compares byte strings with ASCII case folding,
@@ -6137,6 +6149,8 @@
   non-int/non-positive `array_chunk` lengths, non-bool `array_chunk`
   preserve-key flag values, non-array `array_pad` operands, non-int
   `array_pad` lengths, oversized `array_pad` padding requests, non-array
+  `array_splice` operands, invalid `array_splice` int/nullable-int operands,
+  non-variable `array_splice` targets,
   `array_merge` operands, non-array `array_replace` operands including
   variadic replacement operands, non-array `array_combine` operands,
   `array_combine` length mismatches, unsupported lossy or non-finite float
@@ -8485,7 +8499,7 @@
   `array_diff_ukey`, `array_intersect_ukey`, `array_udiff_uassoc`,
   `array_uintersect_uassoc`, `array_unique`, `array_flip`, `array_fill_keys`, `array_count_values`,
   `array_sum`, `array_product`, `array_reduce`, `array_filter`, `array_map`,
-  `array_push`, `array_unshift`, `array_shift`, `array_pop`, `ksort`, `in_array`, `array_search`, `rand`, `uniqid`, `getmypid`, `hash`, `hash_algos`, `hash_hmac`, `md5`, `md5_file`, `gettype`, `is_null`, `is_bool`, `is_int`,
+  `array_push`, `array_unshift`, `array_shift`, `array_pop`, `array_splice`, `ksort`, `in_array`, `array_search`, `rand`, `uniqid`, `getmypid`, `hash`, `hash_algos`, `hash_hmac`, `md5`, `md5_file`, `gettype`, `is_null`, `is_bool`, `is_int`,
   `is_integer`, `is_long`, `is_float`, `is_double`, `is_string`, `is_array`,
   `is_scalar`, `is_numeric`, `is_countable`, `is_iterable`, `is_callable`,
   `function_exists`, `basename`, `dirname`, `extension_loaded`, `ob_start`,
@@ -8735,7 +8749,7 @@
   `array_diff_ukey`, `array_intersect_ukey`, `array_udiff_uassoc`,
   `array_uintersect_uassoc`, `array_unique`, `array_flip`, `array_fill_keys`,
   `array_count_values`, `array_sum`, `array_product`, `array_reduce`,
-  `array_filter`, `array_map`, `array_push`, `array_unshift`, `array_shift`, `array_pop`, `next`, `ksort`, `in_array`,
+  `array_filter`, `array_map`, `array_push`, `array_unshift`, `array_shift`, `array_pop`, `array_splice`, `next`, `ksort`, `in_array`,
   `array_search`, `gettype`,
   `is_null`, `is_bool`, `is_int`, `is_integer`, `is_long`, `is_float`,
   `is_double`, `is_string`, `is_array`, `is_scalar`, `is_numeric`,
@@ -9208,6 +9222,10 @@
   as the builtin section above; direct native `array_pop(...)` calls still
   reject under the function-call boundary, while native function-table
   introspection recognizes the name.
+  `array_splice` accepts the same direct-variable ordered-array mutation subset
+  and offset/nullable-length coercion boundary as the builtin section above;
+  direct native `array_splice(...)` calls still reject under the function-call
+  boundary, while native function-table introspection recognizes the name.
   `next` accepts the same direct array-pointer mutation subset as the builtin
   section above; direct native `next(...)` calls still reject under the
   function-call boundary, while native function-table introspection recognizes
@@ -10342,7 +10360,7 @@
   general expression operands, ArrayAccess, magic property behavior beyond
   direct missing-property `__isset`/`__get`, and unsupported
   array-key coercions remain unsupported.
-  `array_key_first`, `array_key_last`, `current`, `next`, `array_push`, `array_unshift`, `array_shift`, `array_pop`, `array_is_list`, `array_values`,
+  `array_key_first`, `array_key_last`, `current`, `next`, `array_push`, `array_unshift`, `array_shift`, `array_pop`, `array_splice`, `array_is_list`, `array_values`,
   `array_keys`, `array_rand`, `array_reverse`, `array_slice`, `array_chunk`, `array_pad`,
   `array_merge`, `array_replace`, `array_combine`, `array_intersect_key`,
   `array_diff_key`, `array_diff`, `array_intersect`, `array_udiff`,
@@ -11761,6 +11779,11 @@
   references/copy-on-write beyond selected array-offset alias detachment,
   exact warnings/errors, and native lowering beyond function-table
   introspection
+- `array_splice()` outside the current direct-variable array path ordered-array
+  mutation subset: non-variable targets, object-property array roots,
+  deprecation warnings for null or lossy scalar offset/length coercions, broad
+  reference/copy-on-write graph parity, exact warnings/errors, and native
+  lowering beyond function-table introspection
 - `current()` outside the current ordered-array cursor subset: full PHP mutable
   internal array-pointer semantics, object operands, references/copy-on-write,
   exact warnings/errors, and native lowering beyond function-table

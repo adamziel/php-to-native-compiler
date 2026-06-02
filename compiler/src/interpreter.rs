@@ -68426,36 +68426,11 @@ impl Interpreter {
     }
 
     fn array_splice_offset_from_value(value: &Value, span: Span) -> CompileResult<i64> {
-        match value {
-            Value::Int(offset) => Ok(*offset),
-            other => Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "array_splice()",
-                    format!(
-                        "offset argument must be int in the current subset, got {}",
-                        other.type_name()
-                    ),
-                ),
-            )),
-        }
+        php_internal_int_argument("array_splice()", 2, "offset", value, span)
     }
 
     fn array_splice_length_from_value(value: &Value, span: Span) -> CompileResult<Option<i64>> {
-        match value {
-            Value::Int(length) => Ok(Some(*length)),
-            Value::Null => Ok(None),
-            other => Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "array_splice()",
-                    format!(
-                        "length argument must be int or null in the current subset, got {}",
-                        other.type_name()
-                    ),
-                ),
-            )),
-        }
+        php_internal_nullable_int_argument("array_splice()", 3, "length", value, span)
     }
 
     fn array_splice_replacement_slots(value: Value) -> Vec<ArraySlot> {

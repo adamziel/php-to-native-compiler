@@ -4,6 +4,22 @@
 
 Implemented:
 
+- Added a bounded `array_splice()` weak offset/nullable-length coercion lane.
+  Direct and string-valued dynamic `array_splice()` calls now route `$offset`
+  through the shared PHP-internal int boundary and `$length` through the shared
+  nullable-int boundary, accepting null, booleans, finite floats, and numeric
+  strings while retaining PHP-shaped `int` / `?int` `TypeError` diagnostics for
+  array/object operands. The existing direct variable array-path mutation,
+  nested direct array offsets, returned removed slots, and replacement
+  reference-slot preservation remain unchanged. Focused proof covers the Rust
+  `array_splice_coerces_offset_and_nullable_length_like_internal_arguments`
+  regression, the direct `phpc run` fixture
+  `tests/fixtures/milestone2322/array_splice_weak_coercions.php`, and selected
+  public PHPT splice rows. Unsupported edges remain deprecation warnings for
+  null/lossy scalar coercions, broad lvalue targets outside the direct array
+  path subset, object-property array roots, full reference/COW graph parity,
+  exact native diagnostics, and native lowering.
+
 - Added a bounded `mb_strcut()` byte-window lane for the selected mbstring
   surfaces. The interpreter now exposes `mb_strcut()` through direct calls,
   string-valued dynamic calls, function/callability introspection, and

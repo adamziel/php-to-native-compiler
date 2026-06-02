@@ -46,6 +46,49 @@ echo implode(",", array_keys($assoc)), "|", implode(",", $assoc);
 }
 
 #[test]
+fn array_splice_coerces_offset_and_nullable_length_like_internal_arguments() {
+    let execution = run_source(
+        r#"<?php
+$items = [0, 1, 2, 3];
+$removed = array_splice($items, "2.7", "1.1", "x");
+echo implode(",", $removed), "|", implode(",", $items), "\n";
+
+$items = [0, 1, 2, 3];
+$removed = array_splice($items, false, true, "x");
+echo implode(",", $removed), "|", implode(",", $items), "\n";
+
+$items = [0, 1, 2, 3];
+$removed = array_splice($items, null, null, "x");
+echo implode(",", $removed), "|", implode(",", $items), "\n";
+
+$call = "array_splice";
+$items = [0, 1, 2, 3];
+$removed = $call($items, true, false, [9]);
+echo count($removed), "|", implode(",", $items), "\n";
+
+try {
+    array_splice($items, [], 1);
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+
+try {
+    array_splice($items, 1, []);
+} catch (TypeError $e) {
+    echo $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "2|0,1,x,3\n0|x,1,2,3\n0,1,2,3|x\n0|0,9,1,2,3\narray_splice(): Argument #2 ($offset) must be of type int, array given\narray_splice(): Argument #3 ($length) must be of type ?int, array given"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn array_splice_is_available_through_string_valued_direct_calls() {
     let execution = run_source(
         r#"<?php
@@ -173,26 +216,6 @@ fn array_splice_rejects_forms_outside_current_subset() {
     assert_eq!(
         non_array.message,
         "unsupported call array_splice(): argument must be array, got int"
-    );
-
-    let non_int_offset =
-        run_source("<?php\n$items = array('a');\narray_splice($items, '0');\n").unwrap_err();
-    assert_eq!(non_int_offset.phase, Phase::Runtime);
-    assert_eq!(non_int_offset.line, 3);
-    assert_eq!(non_int_offset.column, 1);
-    assert_eq!(
-        non_int_offset.message,
-        "unsupported call array_splice(): offset argument must be int in the current subset, got string"
-    );
-
-    let non_int_length =
-        run_source("<?php\n$items = array('a');\narray_splice($items, 0, false);\n").unwrap_err();
-    assert_eq!(non_int_length.phase, Phase::Runtime);
-    assert_eq!(non_int_length.line, 3);
-    assert_eq!(non_int_length.column, 1);
-    assert_eq!(
-        non_int_length.message,
-        "unsupported call array_splice(): length argument must be int or null in the current subset, got bool"
     );
 }
 

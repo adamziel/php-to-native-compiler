@@ -3446,7 +3446,7 @@ while direct native `is_link(...)` calls still reject under the generic
 function-call boundary.
 The table includes interpreter-only array builtins such as
 `array_change_key_case`, `array_column`, `array_is_list`, `array_rand`,
-`array_product`, `array_reduce`, and `array_filter`; direct calls to those
+`array_product`, `array_reduce`, `array_filter`, and `array_splice`; direct calls to those
 builtins still reject under the array-lowering boundary. `array_rand()` is
 modeled in the interpreter as a deterministic first-key or first-N-key
 selection so PHPTs that accept any valid key can run without introducing a
