@@ -1,6 +1,6 @@
 # PHP Native Compiler PHPT Progress
 
-Updated: 2026-06-02 00:36 CEST
+Updated: 2026-06-02 10:08 CEST
 
 Primary/public branch: `origin/master`
 Latest accepted public-score source:
@@ -19,18 +19,26 @@ denominators that exclude BORKED rows are not public progress.
 Current public score: **5513 / 20294 pinned runnable PHPTs = 27.17%**.
 
 Latest pushed source checkpoint:
-`bdb82f710623b14711b0c11cab6d1dc716e38916 checkpoint: add standard math numeric string rows`
+`3015d9ec99f16111e05bf03eaa5acf3a0cdc8f2c fix: coerce date formatter strings`
 
 This source checkpoint chain has been pushed to `origin/master`, but it does
 not change the public score above until the next full pinned PHPT gate accepts
-it with zero published PASS regressions. Since the last accepted public gate,
-the pushed checkpoints add focused source/docs/test slices for directory open
-diagnostics, DateTime/hash/reflection/umask rows, array intersect repair,
-DateTime format constants, file metadata permission rows, `pow()`,
-`metaphone()`, `http_build_query()`, JSON decode errors, filesystem stat-cache
-invalidation plus `tempnam()` fallback diagnostics, and `parse_url()`
-query-only/fragment-only relative references, plus standard math numeric-string
-coercion rows.
+it with zero published PASS regressions. No newer full pinned PHPT gate is
+recorded as of this update. Since the last accepted public gate, `origin/master`
+now carries 87 additional source/docs/test commits. The previously recorded
+post-gate chain reached `bdb82f71` for standard math numeric-string rows; the
+current pushed head adds 73 more commits after that, covering script/stat
+metadata helpers, `mb_substr_count()`, tokenizer numeric literal and
+heredoc/nowdoc classification, DateTime timezone/mutable/set-state/format
+boundaries, bounded hash algorithms and hash diagnostics, filesystem predicate
+false cases/stringable paths/stat-cache alias clearing, disk-space stringable
+directory inputs, output-buffer callbacks, reflection/class metadata
+diagnostics, JSON invalid-UTF-8/nonfinite/input string boundaries,
+array-column/query reference-backed reads, array chunk/unshift reference-slot
+preservation, ArrayObject/SplObjectStorage/SplDoublyLinkedList residuals,
+POSIX/idate/extension metadata, string/search/trim/replace/case/url/dirname and
+base64 argument coercions, reverse-position offset coercion, `array_slice()`
+non-array diagnostics, and array callback reference-parameter warnings.
 
 Accepted public gate: checkpoint `4f1c81d5` completed the full pinned PHPT
 gate with `5513 / 20294 = 27.17%` and zero latest-published PASS regressions
@@ -48,6 +56,17 @@ blocker.
 Previous accepted public gate: checkpoint `2755fc15` completed the full pinned
 PHPT gate with `5498 / 20294 = 27.09%` and zero latest-published PASS
 regressions against the `1fe2b233` baseline.
+
+Current source-head note: the two latest pushed lanes are source-only progress,
+not a public score update. `205f813a` routes `strrpos()` / `strripos()` offsets
+through the shared PHP-internal int boundary; focused proof passed targeted
+Rust `1 / 1`, full `strrpos_builtin` Rust `8 / 8`, build, direct probes,
+selected PHPT `2 / 2`, formatting, and diff checks. `3015d9ec` routes
+`DateTime::format()`, `date_format()`, `date()`, `gmdate()`, `strftime()`,
+`gmstrftime()`, and `idate()` format operands through the shared PHP-shaped
+string boundary; focused proof passed targeted Rust `1 / 1`, full
+`date_time_builtin` Rust `21 / 21`, build, direct probes, selected PHPT
+`3 / 3`, formatting, and diff checks.
 
 Local source checkpoint note: checkpoint `1efcacf6` passed
 `tools/checkpoint.sh` for the next post-public focused source batch. It covers
