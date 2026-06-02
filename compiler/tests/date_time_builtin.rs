@@ -190,6 +190,37 @@ echo date_format($datetime, "D, d M Y"), "\n";
 }
 
 #[test]
+fn date_modify_helpers_use_php_string_modifier_boundary() {
+    let execution = run_source(
+        r#"<?php
+date_default_timezone_set("UTC");
+class NextDay { public function __toString() { return "+1 day"; } }
+$datetime = new DateTime("2001-02-03 04:05:06");
+$returned = $datetime->modify(new NextDay());
+echo $datetime->format("Y-m-d"), "|", ($returned === $datetime ? "same" : "different"), "\n";
+$call = "date_modify";
+$returned = $call($datetime, new NextDay());
+echo $datetime->format("Y-m-d"), "|", ($returned === $datetime ? "same" : "different"), "\n";
+try { $datetime->modify(array()); } catch (Throwable $e) { echo get_class($e), ": ", $e->getMessage(), "\n"; }
+try { date_modify($datetime, array()); } catch (Throwable $e) { echo get_class($e), ": ", $e->getMessage(), "\n"; }
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "2001-02-04|same\n",
+            "2001-02-05|same\n",
+            "TypeError: DateTime::modify(): Argument #1 ($modifier) must be of type string, array given\n",
+            "TypeError: date_modify(): Argument #2 ($modifier) must be of type string, array given\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn datetime_modify_at_timestamp_uses_unix_timestamp_timezone_identity() {
     let execution = run_source(
         r#"<?php

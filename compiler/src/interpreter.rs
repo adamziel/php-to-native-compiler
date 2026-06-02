@@ -18006,18 +18006,8 @@ impl Interpreter {
             "modify" => {
                 expect_expr_arity("DateTime::modify", args.len(), 1, span)?;
                 let value = self.evaluate(&args[0], caller_scope)?;
-                let Value::String(modifier) = value else {
-                    return Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            "DateTime::modify()",
-                            format!(
-                                "modifier argument must be string in the current subset, got {}",
-                                value.type_name()
-                            ),
-                        ),
-                    ));
-                };
+                let modifier =
+                    self.date_modifier_string_argument("DateTime::modify()", 1, &value, span)?;
                 self.modify_datetime_object(&object, &modifier, "DateTime::modify()", span)?;
                 Ok(Value::Object(object))
             }
@@ -18047,22 +18037,8 @@ impl Interpreter {
     fn call_date_modify(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("date_modify", args, 2, span)?;
         let object = self.datetime_object_argument("date_modify()", args, 0, span)?;
-        let modifier = match &args[1] {
-            Value::String(value) => value,
-            other => {
-                return Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "date_modify()",
-                        format!(
-                            "modifier argument must be string in the current subset, got {}",
-                            other.type_name()
-                        ),
-                    ),
-                ));
-            }
-        };
-        self.modify_datetime_object(&object, modifier, "date_modify()", span)?;
+        let modifier = self.date_modifier_string_argument("date_modify()", 2, &args[1], span)?;
+        self.modify_datetime_object(&object, &modifier, "date_modify()", span)?;
         Ok(Value::Object(object))
     }
 
@@ -18285,6 +18261,16 @@ impl Interpreter {
         span: Span,
     ) -> CompileResult<String> {
         self.php_string_argument_with_magic(function, position, "format", value, span)
+    }
+
+    fn date_modifier_string_argument(
+        &mut self,
+        function: &'static str,
+        position: usize,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<String> {
+        self.php_string_argument_with_magic(function, position, "modifier", value, span)
     }
 
     fn call_date_format(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {

@@ -4,6 +4,26 @@
 
 Implemented:
 
+- Added a bounded `DateTime::modify()` modifier string-boundary lane. Mutable
+  `DateTime::modify()` and procedural `date_modify()` now route their
+  `$modifier` operands through the shared PHP-shaped string boundary: scalar
+  values reach the existing bounded modifier parser after conversion, `null`
+  emits the PHP-shaped deprecation before converting to `""`, supported
+  visible `__toString()` objects are accepted, and arrays, resources,
+  closures, or non-stringable objects raise catchable PHP-shaped `TypeError`s.
+  Existing bounded weekday/unit/timestamp modifier behavior, mutable
+  same-object returns, timestamp-zone identity for `@...` modifiers, metadata
+  visibility, and native-lowering rejection remain unchanged. Focused proof
+  covers the `date_modify_helpers_use_php_string_modifier_boundary` Rust
+  regression, the full DateTime Rust file, direct CLI probes, selected public
+  PHPT rows `DateTime_modify_basic1.phpt` and `date_modify_basic1.phpt`,
+  build, fmt, and diff checks. Unsupported edges remain exact invalid
+  modifier parse warning/exception parity beyond already covered slices, exact
+  invalid `__toString()` return diagnostics, broad relative/absolute
+  `modify()` grammar beyond the current bounded forms, DateTimeImmutable
+  mutation behavior, DateInterval arithmetic, references/COW, and native
+  lowering.
+
 - Added a bounded array literal unpacking lane. `phpc run` now parses and
   executes `...$array` entries in both short and long array literals, unpacking
   array operands left-to-right with PHP-shaped merge behavior: integer keys

@@ -5973,11 +5973,15 @@
   and `setTime()` preserve the receiver timezone, return the same mutable
   object, and normalize overflowing date/time parts through the bounded local
   timestamp model; non-zero microseconds are not represented by the current
-  DateTime object state. `modify()` covers the current bounded relative weekday/unit
-  forms plus Unix timestamp modifiers such as `@1234567890`; timestamp
+  DateTime object state. `modify()` covers the current bounded relative
+  weekday/unit forms plus Unix timestamp modifiers such as `@1234567890`; timestamp
   modifiers update the timestamp and switch the object timezone identity to
   the bounded `+00:00` timestamp zone, while `setTimestamp()` preserves the
-  existing object timezone. Construction through `new DateTime($time = null,
+  existing object timezone. Its `$modifier` operand uses the shared
+  PHP-shaped string boundary for scalar conversion, `null` deprecation,
+  supported visible `__toString()` objects, and catchable PHP-shaped
+  `TypeError`s for arrays, resources, closures, or non-stringable objects.
+  Construction through `new DateTime($time = null,
   ?DateTimeZone $timezone = null)` and `date_create($time = null,
   ?DateTimeZone $timezone = null)` accepts the optional bounded timezone
   object for strings without an explicit timezone, while timestamp strings
@@ -6015,8 +6019,8 @@
   constructor/timezone/state coercions outside the covered slices, weak scalar
   timestamp/date-part coercions for `idate()` / date formatting and setter
   helpers beyond bounded integers and `int|null` timestamp slots, exact invalid
-  `__toString()` return diagnostics for formatter formats, binary format
-  strings beyond represented runtime text, non-zero DateTime microsecond
+  `__toString()` return diagnostics for modifier and formatter strings,
+  binary format strings beyond represented runtime text, non-zero DateTime microsecond
   mutation/formatting, and native lowering remain unsupported.
   `header($header, $replace = true, $response_code = 0)` accepts a string
   header line plus optional bool replacement flag and optional integer response
