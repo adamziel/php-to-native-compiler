@@ -87,6 +87,42 @@ var_dump(base64_decode("aGVsbG8gd29ybGQh*", true));
 }
 
 #[test]
+fn base64_decode_strict_flag_uses_php_bool_boundary() {
+    let execution = run_source(
+        r#"<?php
+$call = "base64_decode";
+var_dump(base64_decode("aGVsbG8*", "0"));
+var_dump(base64_decode("aGVsbG8*", "1"));
+var_dump($call("aGVsbG8*", 0));
+var_dump($call("aGVsbG8*", 1));
+foreach ([[], new stdClass, fopen("php://memory", "r")] as $value) {
+    try {
+        var_dump(base64_decode("aGVsbG8*", $value));
+    } catch (TypeError $e) {
+        echo $e->getMessage(), "\n";
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "string(5) \"hello\"\n",
+            "bool(false)\n",
+            "string(5) \"hello\"\n",
+            "bool(false)\n",
+            "base64_decode(): Argument #2 ($strict) must be of type bool, array given\n",
+            "base64_decode(): Argument #2 ($strict) must be of type bool, stdClass given\n",
+            "base64_decode(): Argument #2 ($strict) must be of type bool, resource given\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn base64_encode_round_trips_binary_strings_and_exposes_metadata() {
     let execution = run_source(
         r#"<?php

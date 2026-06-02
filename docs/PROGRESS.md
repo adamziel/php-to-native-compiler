@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added a bounded `base64_decode()` strict-flag bool-boundary lane. Direct and
+  string-valued dynamic interpreter calls now route optional `$strict` through
+  the shared PHP-internal bool boundary, so scalar values keep selecting the
+  existing strict or non-strict byte decoder by PHP truthiness while arrays,
+  objects, closures, and resources raise catchable PHP-shaped `TypeError`s.
+  Existing base64 byte encode/decode behavior, whitespace handling, strict
+  invalid-character rejection, metadata visibility, and native-lowering
+  rejection remain unchanged. Focused proof covers the Rust
+  `base64_decode_strict_flag_uses_php_bool_boundary` regression, the full
+  `ctype_builtins` test file, direct runtime/native-boundary probes, and
+  selected public PHPT base64 rows. Unsupported edges remain exact
+  null-to-bool deprecation diagnostics for `$strict`, object/resource string
+  operands, exact binary fidelity beyond represented runtime bytes,
+  references/COW, and native lowering.
+
 - Added a bounded `array_chunk()` preserve-key bool-coercion lane. Direct and
   string-valued dynamic `array_chunk()` calls now route optional
   `$preserve_keys` through the shared PHP-internal bool boundary, so scalar

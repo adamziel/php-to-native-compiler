@@ -3401,7 +3401,8 @@
   stable runtime diagnostics instead of materializing objects or dynamic
   properties
 - builtins for the documented subset: `strlen`, `chr`, `bin2hex`, `hex2bin`,
-  `pack`, `unpack`, `strtolower`, `strtoupper`, `trim`, `ltrim`,
+  `base64_encode`, `base64_decode`, `pack`, `unpack`, `strtolower`,
+  `strtoupper`, `trim`, `ltrim`,
   `rtrim`, `strcmp`, `strcasecmp`, `strncmp`, `strncasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`, `strspn`, `strcspn`, `strpbrk`, `strpos`, `stripos`, `strrpos`, `strripos`, `strstr`, `strchr`, `stristr`, `strtok`, `substr`,
   `str_shuffle`, `wordwrap`, `str_word_count`, `strnatcmp`, `strnatcasecmp`,
   `mb_strlen`, `mb_substr`, `mb_strcut`, `mb_substr_count`, `mb_strpos`, `mb_stripos`, `mb_strrpos`, `mb_strripos`,
@@ -3678,6 +3679,16 @@
   non-hexadecimal digits. Broader object/resource coercions, exact binary
   string fidelity outside represented runtime bytes, and native lowering remain
   unsupported.
+  `base64_encode($string)` and
+  `base64_decode($string, $strict = false)` cover scalar/null
+  string-convertible byte strings in the current runtime representation,
+  including strict-mode invalid-character rejection and whitespace handling.
+  `base64_decode()` routes `$strict` through the PHP-internal bool boundary, so
+  scalar values choose strict or non-strict decoding by PHP truthiness while
+  arrays, objects, closures, and resources raise catchable PHP-shaped
+  `TypeError`s. Broader object/resource string operands, exact null-to-bool
+  deprecation diagnostics for `$strict`, exact binary fidelity outside
+  represented runtime bytes, and native lowering remain unsupported.
   `strlen($value)` accepts current scalar/null string-convertible values,
   emits the PHP null-to-string deprecation through the current error-handler
   path, formats float operands with the active `precision` setting, and
@@ -8607,6 +8618,7 @@
   Dynamic function calls are supported only when the callee expression evaluates
   to a string that case-insensitively resolves exactly to a user-defined function or to
   one of the documented callable builtins: `strlen`, `bin2hex`, `hex2bin`,
+  `base64_encode`, `base64_decode`,
   `pack`, `unpack`, `strtolower`, `strtoupper`, `str_increment`,
   `str_decrement`, `trim`, `ltrim`, `rtrim`, `strcmp`, `strcasecmp`, `strncmp`, `strncasecmp`,
   `str_contains`, `str_starts_with`, `str_ends_with`, `strspn`, `strcspn`, `strpbrk`, `strpos`, `stripos`, `strrpos`, `strripos`, `strstr`, `strchr`, `stristr`, `strtok`, `substr`, `str_shuffle`, `wordwrap`, `str_word_count`, `strnatcmp`, `strnatcasecmp`, `mb_strlen`, `mb_strcut`, `mb_substr_count`, `mb_strpos`, `mb_stripos`, `mb_strrpos`, `mb_strripos`, `mb_strtolower`, `mb_strtoupper`, `similar_text`, `metaphone`, `convert_uuencode`, `convert_uudecode`, `substr_replace`, `substr_compare`, `substr_count`, `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `str_getcsv`, `error_reporting`,
@@ -8858,7 +8870,7 @@
   full first-class callable `Closure` object parity, namespace-qualified callable
   resolution, autoload interaction, and native lowering for type declarations
   are unsupported.
-- Builtins: `strlen`, `bin2hex`, `hex2bin`, `pack`, `unpack`, `strtolower`, `strtoupper`, `str_increment`,
+- Builtins: `strlen`, `bin2hex`, `hex2bin`, `base64_encode`, `base64_decode`, `pack`, `unpack`, `strtolower`, `strtoupper`, `str_increment`,
   `str_decrement`, `trim`, `ltrim`, `rtrim`, `strcmp`, `strcasecmp`, `strncmp`, `strncasecmp`, `str_contains`,
   `str_starts_with`, `str_ends_with`, `strspn`, `strcspn`, `strpbrk`, `strpos`, `stripos`, `strrpos`, `strripos`, `strstr`, `strchr`, `stristr`, `strtok`, `substr`, `substr_replace`, `substr_compare`, `substr_count`, `similar_text`, `metaphone`, `str_replace`, `str_getcsv`, `parse_str`, `printf`, `fprintf`, `sprintf`, `vsprintf`, `vprintf`, `vfprintf`,
   `call_user_func`, `call_user_func_array`, `implode`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`,
@@ -11851,6 +11863,12 @@
   `__toString()` object subset: arrays, resources, closures, objects without
   supported `__toString()`, exact string-conversion diagnostics, and native
   lowering beyond the direct known-string folding slice
+- `base64_encode()`/`base64_decode()` outside the current scalar/null
+  string-convertible byte-string subset and `base64_decode()` bool-compatible
+  `$strict` subset: object/resource string operands, exact null-to-bool
+  deprecation diagnostics for `$strict`, exact binary fidelity beyond
+  represented runtime bytes, references/COW, and native lowering beyond
+  function-table introspection
 - `strcmp()` outside the current exact-two-argument scalar/null
   string-convertible subset with active-`precision` float formatting: array
   operands, object/resource coercions, broader binary string edge cases beyond

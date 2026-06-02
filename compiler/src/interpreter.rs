@@ -116913,7 +116913,10 @@ fn call_base64_decode(args: &[Value], span: Span) -> CompileResult<Value> {
     }
 
     let value = string_compare_argument_bytes("base64_decode()", "string", &args[0], span)?;
-    let strict = args.get(1).is_some_and(Value::is_truthy);
+    let strict = match args.get(1) {
+        Some(value) => php_internal_bool_argument("base64_decode()", 2, "strict", value, span)?,
+        None => false,
+    };
     match base64_decode_bytes(&value, strict) {
         Some(decoded) => Ok(interpreter_value_from_php_string_bytes(decoded)),
         None => Ok(Value::Bool(false)),
