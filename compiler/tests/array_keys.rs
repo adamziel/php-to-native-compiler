@@ -278,15 +278,46 @@ closedir($dir);
 }
 
 #[test]
-fn array_keys_rejects_non_bool_strict_mode_argument() {
-    let error = runtime_error("<?php\n$items = [1];\necho array_keys($items, 1, \"yes\");\n");
+fn array_keys_coerces_scalar_strict_mode_argument() {
+    let source = r#"<?php
+$items = [0, "0", false, true, "x"];
 
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 6);
+foreach ([true, 1, 2, "yes"] as $strict) {
+    var_dump(array_keys($items, "0", $strict));
+}
+foreach ([false, 0, "", "0"] as $loose) {
+    var_dump(array_keys($items, "0", $loose));
+}
+
+$call = "array_keys";
+var_dump($call($items, false, "1"));
+"#;
+
+    let execution = run_source(source).unwrap();
     assert_eq!(
-        error.message,
-        "unsupported call array_keys(): strict mode argument must be bool in the current subset, got string"
+        execution.stdout,
+        "array(1) {\n  [0]=>\n  int(1)\n}\narray(1) {\n  [0]=>\n  int(1)\n}\narray(1) {\n  [0]=>\n  int(1)\n}\narray(1) {\n  [0]=>\n  int(1)\n}\narray(3) {\n  [0]=>\n  int(0)\n  [1]=>\n  int(1)\n  [2]=>\n  int(2)\n}\narray(3) {\n  [0]=>\n  int(0)\n  [1]=>\n  int(1)\n  [2]=>\n  int(2)\n}\narray(3) {\n  [0]=>\n  int(0)\n  [1]=>\n  int(1)\n  [2]=>\n  int(2)\n}\narray(3) {\n  [0]=>\n  int(0)\n  [1]=>\n  int(1)\n  [2]=>\n  int(2)\n}\narray(1) {\n  [0]=>\n  int(2)\n}\n"
     );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn array_keys_rejects_non_coercible_strict_mode_argument() {
+    let source = r#"<?php
+$items = [1];
+try {
+    var_dump(array_keys($items, 1, []));
+} catch (TypeError $e) {
+    echo $e->getMessage();
+}
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "array_keys(): Argument #3 ($strict) must be of type bool, array given"
+    );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

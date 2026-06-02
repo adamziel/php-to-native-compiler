@@ -4,6 +4,22 @@
 
 Implemented:
 
+- Added a bounded membership-helper strict-flag coercion lane. `array_keys()`,
+  `in_array()`, and `array_search()` now route their optional `$strict`
+  arguments through the shared PHP-internal bool boundary, so scalar values
+  select the existing strict or loose comparison paths by PHP truthiness while
+  arrays, objects, closures, and resources raise catchable PHP-shaped `bool`
+  `TypeError` diagnostics. Existing key emission, first-match search order,
+  loose/strict scalar and bounded identity comparison behavior, string-valued
+  dynamic calls, and native-lowering rejection remain unchanged. Focused proof
+  covers Rust regressions for all three helpers, a direct CLI fixture, updated
+  runtime-error snapshots for non-coercible strict flags, and selected public
+  PHPT membership/search rows. Unsupported edges remain PHP deprecation
+  warnings for null strict flags, resource strict-flag coercion, broader
+  reference/COW graph parity beyond dereferenced value-slot reads, unsupported
+  loose object/resource/recursive-array comparisons, exact native diagnostic
+  internals, and native lowering.
+
 - Added a bounded `array_map()` / `array_filter()` by-reference
   callback-parameter warning lane. String user-function callbacks, closure
   callbacks, and supported public array-callable user methods whose reached

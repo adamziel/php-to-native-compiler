@@ -1,9 +1,5 @@
-exit: 255
-stdout:
 Fatal error: Uncaught TypeError: array_keys(): Argument #3 ($strict) must be of type bool, array given, called in tests/fixtures/runtime_errors/array_keys_strict_flag_non_bool.php:3
 Stack trace:
 #0 tests/fixtures/runtime_errors/array_keys_strict_flag_non_bool.php(3): array_keys()
 #1 {main}
-  thrown in tests/fixtures/runtime_errors/array_keys_strict_flag_non_bool.php on line 3--- stdout end ---
-stderr:
---- stderr end ---
+  thrown in tests/fixtures/runtime_errors/array_keys_strict_flag_non_bool.php on line 3

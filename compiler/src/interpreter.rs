@@ -86456,23 +86456,16 @@ impl Interpreter {
                 [Value::Array(array), search_value] => {
                     array_keys_matching_loose(array, search_value, span).map(Value::Array)
                 }
-                [Value::Array(array), search_value, Value::Bool(true)] => array
-                    .keys_matching_strict_scalar(search_value)
-                    .map(Value::Array)
-                    .map_err(|error| runtime_error(span, error)),
-                [Value::Array(array), search_value, Value::Bool(false)] => {
-                    array_keys_matching_loose(array, search_value, span).map(Value::Array)
+                [Value::Array(array), search_value, strict] => {
+                    if php_internal_bool_argument("array_keys()", 3, "strict", strict, span)? {
+                        array
+                            .keys_matching_strict_scalar(search_value)
+                            .map(Value::Array)
+                            .map_err(|error| runtime_error(span, error))
+                    } else {
+                        array_keys_matching_loose(array, search_value, span).map(Value::Array)
+                    }
                 }
-                [Value::Array(_), _, other] => Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "array_keys()",
-                        format!(
-                            "strict mode argument must be bool in the current subset, got {}",
-                            other.type_name()
-                        ),
-                    ),
-                )),
                 [other] | [other, _] | [other, _, _] => Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
@@ -87368,14 +87361,19 @@ impl Interpreter {
                     .contains_value_loose_scalar(needle)
                     .map(Value::Bool)
                     .map_err(|error| runtime_error(span, error)),
-                [needle, Value::Array(array), Value::Bool(true)] => array
-                    .contains_value_strict_scalar(needle)
-                    .map(Value::Bool)
-                    .map_err(|error| runtime_error(span, error)),
-                [needle, Value::Array(array), Value::Bool(false)] => array
-                    .contains_value_loose_scalar(needle)
-                    .map(Value::Bool)
-                    .map_err(|error| runtime_error(span, error)),
+                [needle, Value::Array(array), strict] => {
+                    if php_internal_bool_argument("in_array()", 3, "strict", strict, span)? {
+                        array
+                            .contains_value_strict_scalar(needle)
+                            .map(Value::Bool)
+                            .map_err(|error| runtime_error(span, error))
+                    } else {
+                        array
+                            .contains_value_loose_scalar(needle)
+                            .map(Value::Bool)
+                            .map_err(|error| runtime_error(span, error))
+                    }
+                }
                 [_, other] => Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
@@ -87383,16 +87381,6 @@ impl Interpreter {
                         format!(
                             "Argument #2 ($haystack) must be of type array, {} given",
                             php_type_error_given(other)
-                        ),
-                    ),
-                )),
-                [_, Value::Array(_), other] => Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "in_array()",
-                        format!(
-                            "strict mode argument must be bool in the current subset, got {}",
-                            other.type_name()
                         ),
                     ),
                 )),
@@ -87424,22 +87412,19 @@ impl Interpreter {
                         None => Value::Bool(false),
                     })
                     .map_err(|error| runtime_error(span, error)),
-                [needle, Value::Array(array), Value::Bool(true)] => array
-                    .search_value_strict_scalar(needle)
+                [needle, Value::Array(array), strict] => {
+                    if php_internal_bool_argument("array_search()", 3, "strict", strict, span)? {
+                        array.search_value_strict_scalar(needle)
+                    } else {
+                        array.search_value_loose_scalar(needle)
+                    }
                     .map(|key| match key {
                         Some(ArrayKey::Int(value)) => Value::Int(value),
                         Some(ArrayKey::String(value)) => Value::String(value),
                         None => Value::Bool(false),
                     })
-                    .map_err(|error| runtime_error(span, error)),
-                [needle, Value::Array(array), Value::Bool(false)] => array
-                    .search_value_loose_scalar(needle)
-                    .map(|key| match key {
-                        Some(ArrayKey::Int(value)) => Value::Int(value),
-                        Some(ArrayKey::String(value)) => Value::String(value),
-                        None => Value::Bool(false),
-                    })
-                    .map_err(|error| runtime_error(span, error)),
+                    .map_err(|error| runtime_error(span, error))
+                }
                 [_, other] => Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
@@ -87447,16 +87432,6 @@ impl Interpreter {
                         format!(
                             "Argument #2 ($haystack) must be of type array, {} given",
                             php_type_error_given(other)
-                        ),
-                    ),
-                )),
-                [_, Value::Array(_), other] => Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "array_search()",
-                        format!(
-                            "strict mode argument must be bool in the current subset, got {}",
-                            other.type_name()
                         ),
                     ),
                 )),

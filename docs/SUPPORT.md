@@ -6243,9 +6243,9 @@
   `array_map` callbacks,
   non-array variadic `array_map` operands,
   non-array `in_array`/`array_search` haystacks,
-  non-bool `in_array`/`array_search` strict-mode flag values, unsupported
+  non-coercible `in_array`/`array_search` strict-mode flag values, unsupported
   object/resource/reference and recursive-array `array_keys` loose
-  comparisons, non-bool `array_keys` strict-mode flag values, unsupported
+  comparisons, non-coercible `array_keys` strict-mode flag values, unsupported
   non-scalar `in_array`/`array_search` comparisons, bitwise non-numeric mixed
   string operands, bitwise
   non-UTF-8 string results, unsupported unary bitwise-not operands, negative
@@ -7245,7 +7245,9 @@
   bounded array/object/resource strict identity rules, including dereferencing
   reference-backed value slots created by supported reference assignment or
   by-reference iteration, and `array_keys($array, $search_value, false)` uses
-  the loose path. These forms are available through string-valued dynamic function calls.
+  the loose path. Scalar third-argument values are accepted through the current
+  PHP-internal bool coercion boundary and select one of those two paths by
+  truthiness. These forms are available through string-valued dynamic function calls.
   `array_rand($array)` returns the first inserted key as the deterministic
   current subset for PHP's randomized selection, and
   `array_rand($array, $num)` returns the first `$num` inserted keys in a
@@ -7451,13 +7453,16 @@
   current loose scalar comparison rules; `in_array($needle, $array, true)` uses
   the current scalar strict identity rules, and both paths dereference
   reference-backed value slots before comparing. `in_array($needle, $array,
-  false)` uses the loose path. `in_array` is also available through
+  false)` uses the loose path. Scalar third-argument values are accepted
+  through the current PHP-internal bool coercion boundary and select one of
+  those two paths by truthiness. `in_array` is also available through
   string-valued dynamic function calls. `array_search($needle, $array)` uses
   the same loose scalar scan, returning the first matching integer/string key or
   `false` when no value matches; `array_search($needle, $array, true)` uses the
   current scalar strict identity rules, both paths dereference reference-backed
   value slots before comparing, and `array_search($needle, $array, false)` uses
-  the loose path. It is also available through string-valued
+  the loose path. Scalar third-argument values are accepted through the same
+  bool coercion boundary. It is also available through string-valued
   dynamic function calls. `ksort($array, SORT_NUMERIC)` sorts direct variable
   arrays in place by numeric key and returns `true`; direct object-property
   array targets such as `ksort($object->callbacks, SORT_NUMERIC)` use the
@@ -7623,7 +7628,7 @@
   `array_key_last` operands, non-array `array_is_list` operands,
   non-array `array_values` operands, non-array
   `array_keys` operands, unsupported `array_keys` search-value comparisons,
-  non-bool `array_keys` strict-mode flag values,
+  non-coercible `array_keys` strict-mode flag values,
   non-array `array_reverse` operands, non-bool
   `array_reverse` preserve-key flag values, non-array `array_slice`
   operands, non-int `array_slice` offsets, invalid `array_slice`
@@ -7659,7 +7664,7 @@
   `array_filter` callbacks, invalid `array_filter` mode flags,
   non-array `array_map` operands, non-string and unresolved `array_map`
   callbacks, non-array variadic `array_map` operands, non-array `in_array` operands,
-  non-array `array_search` operands, non-array `foreach` iterables, non-bool
+  non-array `array_search` operands, non-array `foreach` iterables, non-coercible
   `in_array`/`array_search` strict-mode flag values, and array-value
   comparisons for `in_array`/`array_search`,
   unsupported complex `empty` operands, non-array `unset($array[$key])`
@@ -9954,8 +9959,11 @@
   scalar and bounded array/object/resource strict identity semantics, including
   resource identity for reached stream and directory resource rows and
   dereferenced reference-backed value slots. `array_keys($array, $search_value,
-  false)` uses the loose path. The third argument must evaluate to a boolean in
-  the current subset. These forms are also available through string-valued
+  false)` uses the loose path. Scalar third-argument values are accepted
+  through the current PHP-internal bool coercion boundary and select one of
+  those two paths by truthiness. Arrays, objects, closures, and resources used
+  as the third argument raise PHP-shaped `bool` `TypeError` diagnostics in the
+  current subset. These forms are also available through string-valued
   dynamic function calls. Object search values or object values encountered
   during loose filtering fail with stable unsupported-call diagnostics;
   recursive array comparison remains unsupported.
@@ -10392,8 +10400,10 @@
   current PHP 8-style loose scalar comparison rules for `null`, booleans,
   integers, floats, and strings. `in_array($needle, $array, true)` uses the
   current scalar strict identity rules with no numeric/string coercion;
-  `in_array($needle, $array, false)` uses the loose path. The third argument
-  must evaluate to a boolean in the current subset. `in_array` rejects non-array
+  `in_array($needle, $array, false)` uses the loose path. Scalar third-argument
+  values are accepted through the current PHP-internal bool coercion boundary,
+  while arrays, objects, closures, and resources raise PHP-shaped `bool`
+  `TypeError` diagnostics in the current subset. `in_array` rejects non-array
   haystacks and rejects array or object needles/values when encountered instead
   of modeling PHP's full non-scalar comparison behavior. `in_array` is also
   available through string-valued dynamic function calls.
@@ -10402,8 +10412,10 @@
   `string`, and returns `false` when no value matches. The two-argument form
   uses the current loose scalar comparison rules, `array_search($needle,
   $array, true)` uses current scalar strict identity with no numeric/string
-  coercion, and `array_search($needle, $array, false)` uses the loose path. The
-  third argument must evaluate to a boolean in the current subset. It rejects
+  coercion, and `array_search($needle, $array, false)` uses the loose path.
+  Scalar third-argument values are accepted through the same bool coercion
+  boundary, while arrays, objects, closures, and resources raise PHP-shaped
+  `bool` `TypeError` diagnostics in the current subset. It rejects
   non-array haystacks and rejects array or object needles/values when
   encountered. `array_search` is also available through string-valued dynamic
   function calls. `ksort($array, SORT_NUMERIC)` sorts direct variable arrays
@@ -10464,7 +10476,8 @@
   identity preservation outside strict
   membership/search rows, resource values outside documented identity rows,
   object/resource and recursive-array loose comparisons for `array_keys`,
-  non-bool `array_keys` strict-flag coercion, non-array or empty
+  non-coercible `array_keys` strict-flag values, PHP null strict-flag
+  deprecations, non-array or empty
   `array_rand` inputs, invalid `array_rand` counts, PHP RNG parity for
   `array_rand`, non-bool
   `array_reverse` preserve-key flag coercion, non-bool `array_slice`
@@ -11407,11 +11420,12 @@
   lowering
 - `array_keys` loose filtering over object/resource values or recursive array
   values, broader reference/COW graph behavior beyond dereferenced value-slot
-  reads, plus non-bool strict-flag coercion
+  reads, PHP null strict-flag deprecations, plus non-coercible strict-flag
+  values
 - `in_array` and `array_search` strict-mode searches involving
   broader reference/COW graph behavior beyond dereferenced value-slot reads,
-  non-bool strict-flag coercion, and unsupported loose array/object needle or
-  haystack-value comparisons for the current
+  PHP null strict-flag deprecations, non-coercible strict-flag values, and
+  unsupported loose array/object needle or haystack-value comparisons for the current
   array-search builtins
 - `array_reverse` non-bool `preserve_keys` coercion, reference/copy-on-write
   behavior, object handle identity preservation, resource values, and native
