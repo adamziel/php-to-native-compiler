@@ -2799,6 +2799,11 @@ interpreter-only bounded string replacement-by-offset builtin for scalar
 subjects plus current array subject/replacement/offset/length forms. It
 preserves array keys, applies per-position array arguments by insertion order,
 and keeps broader coercion/reference/COW behavior outside native lowering.
+`str_repeat()` is an interpreter-only byte repetition builtin for scalar/null
+string-convertible values and supported visible `__toString()` objects. The
+repeat count uses the shared PHP-internal int boundary, so scalar count
+coercions, catchable type diagnostics, and negative-count `ValueError`s are
+handled before the existing deterministic memory guard.
 The current string residual slice also keeps `wordwrap()`,
 `str_word_count()`, `strnatcmp()`, `strnatcasecmp()`,
 `convert_uuencode()`, `convert_uudecode()`, and the current

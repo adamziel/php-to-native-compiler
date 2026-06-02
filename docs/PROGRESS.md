@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Added a bounded `str_repeat()` string/count argument boundary lane. Direct
+  and string-valued dynamic `str_repeat()` calls now route `$string` through
+  the shared PHP-shaped string argument boundary, accepting supported visible
+  `__toString()` objects, emitting the existing null-to-string deprecation,
+  and reporting catchable PHP-shaped `TypeError`s for arrays, closures,
+  resources, and non-stringable objects. `$times` now uses the shared
+  PHP-internal int boundary, so non-int-compatible operands raise catchable
+  `TypeError`s while the existing negative-count `ValueError`, byte
+  repetition, deterministic memory guard, metadata visibility, and native
+  lowering rejection remain unchanged. Focused proof covers the Rust
+  `str_repeat_builtin` regression suite, a direct `phpc run` probe, and
+  selected public PHPT rows `ext/standard/tests/strings/str_repeat.phpt` and
+  `ext/standard/tests/strings/str_repeat_variation1.phpt`. Unsupported edges
+  remain deprecation warnings for null or lossy count coercions, exact invalid
+  `__toString()` return diagnostics, exact memory-limit accounting,
+  references/COW, and native lowering for dynamic object operands.
+
 - Added a bounded network database string-argument diagnostics lane.
   `getprotobyname()`, `getservbyname()`, and `getservbyport()` now route
   protocol/service name operands through a PHP-internal string boundary:

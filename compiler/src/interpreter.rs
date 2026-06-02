@@ -85705,7 +85705,10 @@ impl Interpreter {
             "get_html_translation_table" => call_get_html_translation_table(self, &args, span),
             "strip_tags" => call_strip_tags(&args, span),
             "nl2br" => call_nl2br(&args, span),
-            "str_repeat" => call_str_repeat(&args, span, self.standard_string_memory_limit_bytes()),
+            "str_repeat" => {
+                let memory_limit_bytes = self.standard_string_memory_limit_bytes();
+                call_str_repeat(self, &args, span, memory_limit_bytes)
+            }
             "str_pad" => call_str_pad(&args, span),
             "wordwrap" => call_wordwrap(&args, span),
             "chunk_split" => call_chunk_split(&args, span),
@@ -119791,23 +119794,22 @@ fn call_nl2br(args: &[Value], span: Span) -> CompileResult<Value> {
     Ok(interpreter_value_from_php_string_bytes(output))
 }
 
-fn call_str_repeat(args: &[Value], span: Span, memory_limit_bytes: usize) -> CompileResult<Value> {
+fn call_str_repeat(
+    interpreter: &mut Interpreter,
+    args: &[Value],
+    span: Span,
+    memory_limit_bytes: usize,
+) -> CompileResult<Value> {
     expect_arity("str_repeat", args, 2, span)?;
 
-    if matches!(args[0], Value::Array(_)) {
-        return Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                "str_repeat()",
-                "string argument arrays are not supported",
-            ),
-        ));
-    }
-
-    let value = args[0]
-        .try_echo_bytes()
-        .map_err(|error| runtime_error(span, error))?;
-    let times = integer_argument_current_subset("str_repeat()", "times", &args[1], span)?;
+    let value = interpreter.php_string_argument_bytes_with_magic(
+        "str_repeat()",
+        1,
+        "string",
+        &args[0],
+        span,
+    )?;
+    let times = php_internal_int_argument("str_repeat()", 2, "times", &args[1], span)?;
 
     if times < 0 {
         return Err(runtime_error(

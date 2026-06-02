@@ -22,6 +22,42 @@ echo strlen(str_repeat("é", 2));
 }
 
 #[test]
+fn str_repeat_accepts_stringable_objects_and_reports_type_errors() {
+    let execution = run_source(
+        r#"<?php
+class Label {
+    public function __toString(): string {
+        return "xy";
+    }
+}
+
+$call = "str_repeat";
+echo str_repeat(new Label(), 2), "|";
+echo $call(new Label(), "3"), "|";
+
+try {
+    str_repeat([], 2);
+} catch (TypeError $e) {
+    echo $e->getMessage(), "|";
+}
+
+try {
+    str_repeat("x", "abc");
+} catch (TypeError $e) {
+    echo $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "xyxy|xyxyxy|str_repeat(): Argument #1 ($string) must be of type string, array given|str_repeat(): Argument #2 ($times) must be of type int, string given"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn str_repeat_is_available_through_builtin_callability() {
     let execution = run_source(
         r#"<?php
@@ -156,22 +192,34 @@ try {
     );
     assert_eq!(negative.exit_code, 0);
 
-    let non_int_times = run_source("<?php\nstr_repeat('x', 'abc');\n").unwrap_err();
-    assert_eq!(non_int_times.phase, Phase::Runtime);
-    assert_eq!(non_int_times.line, 2);
-    assert_eq!(non_int_times.column, 1);
+    let non_int_times = run_source(
+        r#"<?php
+try {
+    str_repeat('x', 'abc');
+} catch (TypeError $e) {
+    echo $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
     assert_eq!(
-        non_int_times.message,
-        "unsupported call str_repeat(): times argument must be int-compatible in the current subset, got string"
+        non_int_times.stdout,
+        "str_repeat(): Argument #2 ($times) must be of type int, string given"
     );
 
-    let array_string = run_source("<?php\nstr_repeat([], 2);\n").unwrap_err();
-    assert_eq!(array_string.phase, Phase::Runtime);
-    assert_eq!(array_string.line, 2);
-    assert_eq!(array_string.column, 1);
+    let array_string = run_source(
+        r#"<?php
+try {
+    str_repeat([], 2);
+} catch (TypeError $e) {
+    echo $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
     assert_eq!(
-        array_string.message,
-        "unsupported call str_repeat(): string argument arrays are not supported"
+        array_string.stdout,
+        "str_repeat(): Argument #1 ($string) must be of type string, array given"
     );
 }
 

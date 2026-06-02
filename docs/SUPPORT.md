@@ -4014,6 +4014,15 @@
   string-convertible input and supported visible `__toString()` objects over
   current runtime bytes. `ucwords()` also applies the same string boundary to
   the optional separator bytes. These helpers perform ASCII-only byte casing.
+  `str_repeat($string, $times)` supports scalar/null string-convertible input
+  and supported visible `__toString()` objects over current runtime bytes,
+  plus PHP-internal-int-compatible non-negative repeat counts. Negative counts
+  raise the PHP-shaped `ValueError`, and arrays, closures, resources, or
+  non-stringable objects at the string boundary plus non-int-compatible count
+  operands raise catchable PHP-shaped `TypeError`s. Deprecation warnings for
+  null or lossy count coercions, exact invalid `__toString()` return
+  diagnostics, exact memory accounting, references/COW, and native lowering
+  remain unsupported.
   `wordwrap()` supports scalar/null
   string-convertible input, integer width, non-empty string break values, and
   the `cut_long_words` flag over current byte strings. `str_word_count()`
