@@ -10199,8 +10199,9 @@
   converts integral finite float key values into integer result keys, and
   stores cloned values from the second array. Duplicate result keys are
   overwritten by later pairs without moving the first result-key position.
-  Empty key/value arrays return an empty array. Non-array operands, length
-  mismatches, and unsupported key values fail with stable project diagnostics.
+  Empty key/value arrays return an empty array. Non-array operands raise
+  catchable PHP-shaped `TypeError`s. Length mismatches and unsupported key
+  values fail with stable project diagnostics.
   Lossy finite floats, non-finite floats, array, object, future resource, and
   reference key-value coercions, exact native `ValueError`/`TypeError`
   objects, references, copy-on-write containers, object handle identity
@@ -11601,9 +11602,9 @@
   objects, and native lowering
 - `array_combine` lossy or non-finite float, array, object, resource, and
   reference key-value coercions, length mismatch native `ValueError` objects,
-  non-array native `TypeError` objects, reference/copy-on-write behavior, object handle
-  identity preservation for object values, resource values, and native
-  lowering
+  exact native `TypeError` object internals, reference/copy-on-write behavior,
+  object handle identity preservation for object values, resource values, and
+  native lowering
 - `array_intersect_key` exact native `TypeError` objects,
   reference/copy-on-write behavior, object handle identity preservation for
   object values, resource values, and native lowering

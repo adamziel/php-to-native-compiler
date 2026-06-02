@@ -107,26 +107,54 @@ echo $again["-0"], "|", $again[0], "|", $again["1.25"];
 
 #[test]
 fn array_combine_requires_array_first_argument() {
-    let error = runtime_error("<?php\n$values = [];\necho array_combine(42, $values);\n");
+    let source = r#"<?php
+$values = [];
+try {
+    var_dump(array_combine(42, $values));
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
 
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 6);
+$call = "array_combine";
+try {
+    var_dump($call(false, $values));
+} catch (TypeError $e) {
+    echo $e->getMessage();
+}
+"#;
+
+    let execution = run_source(source).unwrap();
     assert_eq!(
-        error.message,
-        "unsupported call array_combine(): first argument must be array, got int"
+        execution.stdout,
+        "array_combine(): Argument #1 ($keys) must be of type array, int given\narray_combine(): Argument #1 ($keys) must be of type array, false given"
     );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
 fn array_combine_requires_array_second_argument() {
-    let error = runtime_error("<?php\n$keys = [];\necho array_combine($keys, 42);\n");
+    let source = r#"<?php
+$keys = [];
+try {
+    var_dump(array_combine($keys, 42));
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
 
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 6);
+$call = "array_combine";
+try {
+    var_dump($call($keys, null));
+} catch (TypeError $e) {
+    echo $e->getMessage();
+}
+"#;
+
+    let execution = run_source(source).unwrap();
     assert_eq!(
-        error.message,
-        "unsupported call array_combine(): second argument must be array, got int"
+        execution.stdout,
+        "array_combine(): Argument #2 ($values) must be of type array, int given\narray_combine(): Argument #2 ($values) must be of type array, null given"
     );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

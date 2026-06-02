@@ -87110,14 +87110,20 @@ impl Interpreter {
                         span,
                         RuntimeError::unsupported_call(
                             "array_combine()",
-                            format!("second argument must be array, got {}", other.type_name()),
+                            format!(
+                                "Argument #2 ($values) must be of type array, {} given",
+                                php_type_error_given(other)
+                            ),
                         ),
                     )),
                     [other, _] => Err(runtime_error(
                         span,
                         RuntimeError::unsupported_call(
                             "array_combine()",
-                            format!("first argument must be array, got {}", other.type_name()),
+                            format!(
+                                "Argument #1 ($keys) must be of type array, {} given",
+                                php_type_error_given(other)
+                            ),
                         ),
                     )),
                     _ => unreachable!("array_combine arity is checked above"),

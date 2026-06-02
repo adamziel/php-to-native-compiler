@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added a bounded `array_combine()` non-array operand diagnostics lane. Direct
+  and string-valued dynamic interpreter calls now raise catchable PHP-shaped
+  `TypeError`s when argument #1 `$keys` or argument #2 `$values` is not an
+  array. Existing equal-length pairing, key-value coercions, duplicate-key
+  overwrite behavior, empty-array handling, catchable length-mismatch
+  `ValueError`s, metadata visibility, and native-lowering rejection remain
+  unchanged. Focused proof covers the Rust `array_combine` regression suite,
+  the direct CLI fixture
+  `tests/fixtures/milestone2344/array_combine_non_array_type_errors.php`, and
+  the updated uncaught runtime-error snapshots. Unsupported edges remain lossy
+  or non-finite float, array, object, resource, and reference key-value
+  coercions, exact invalid `__toString()` return diagnostics, exact native
+  object internals, broader references/COW and object/resource identity parity,
+  and native lowering.
+
 - Added a bounded `substr()` subject string-boundary lane. Direct and
   string-valued dynamic `substr()` calls now route `$string` through the shared
   PHP-shaped string byte boundary: scalar operands keep the existing byte-slice

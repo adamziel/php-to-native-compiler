@@ -1,0 +1,4 @@
+array_combine(): Argument #1 ($keys) must be of type array, int given
+array_combine(): Argument #1 ($keys) must be of type array, false given
+array_combine(): Argument #2 ($values) must be of type array, int given
+array_combine(): Argument #2 ($values) must be of type array, null given
