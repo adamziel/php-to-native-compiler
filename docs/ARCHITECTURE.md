@@ -2738,6 +2738,16 @@ lowerable operands through the shared native string-predicate ABI. Binary
 string edge cases beyond represented runtime bytes, object/resource coercions,
 broader PHP string conversion, unsupported arity/array operands, exact
 diagnostics, and broader native lowering remain out of scope.
+`strspn()` and `strcspn()` are interpreter-only bounded byte-mask span/count
+builtins. They route `$string` and `$characters` through the shared PHP-shaped
+string argument boundary, so supported visible `__toString()` objects are
+accepted, null string operands emit the bounded deprecation, and arrays,
+resources, closures, or non-stringable objects become catchable type
+diagnostics. Offset and length operands continue to use the shared
+PHP-internal int boundary before the existing byte-window clamp. Exact invalid
+`__toString()` return diagnostics, every PHP warning/ValueError edge for
+offset windows, encoding-sensitive parity beyond represented runtime bytes,
+references/COW, and native lowering remain out of scope.
 `basename()` is an interpreter-only bounded lexical path builtin for Unix-style
 local path strings and an optional string suffix. It does not consult the
 filesystem and leaves Windows drive/UNC paths, stream wrappers, null-byte

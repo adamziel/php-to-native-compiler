@@ -3827,6 +3827,19 @@
   `true`. Array operands, object/resource coercions, binary string edge cases
   beyond valid UTF-8 runtime strings, exact PHP diagnostics, and native
   lowering outside the shared direct string-predicate ABI remain unsupported.
+  `strspn($string, $characters, $offset = 0, $length = null)` and
+  `strcspn($string, $characters, $offset = 0, $length = null)` support
+  scalar/null and supported visible `__toString()` string and character-mask
+  operands through the shared PHP-shaped string argument boundary. Null string
+  operands emit the bounded PHP deprecation before becoming empty byte
+  strings, arrays/resources/closures and non-stringable objects raise
+  catchable PHP-shaped `TypeError`s, optional offset and length operands use
+  the current PHP-internal-int-compatible boundary, and counting proceeds over
+  the current runtime bytes until the first matching or non-matching mask byte.
+  Exact invalid `__toString()` return diagnostics, exact null/lossy
+  offset/length deprecations, broader PHP warning/ValueError recovery for
+  every window edge, encoding-sensitive edge cases beyond represented runtime
+  strings, and native lowering remain unsupported.
   `strpos($haystack, $needle, $offset = 0)` supports scalar/null
   string-convertible haystack and needle arguments, null haystack/needle
   deprecations, an optional PHP-internal-int-compatible offset, byte-position
@@ -9427,6 +9440,11 @@
   `str_ends_with(...)` calls with lowerable operands route through the shared
   native string-predicate ABI, while unsupported forms still reject before
   misleading code is emitted.
+  `strspn` and `strcspn` accept the same current scalar/null and supported
+  visible `__toString()` string/mask subset plus int-compatible offset and
+  length windows as the builtin section above; direct native calls still
+  reject under the function-call boundary, while native function-table
+  introspection recognizes the names.
   `strpos`, `stripos`, `strrpos`, and `strripos` accept the same current
   scalar/null string-convertible haystack and needle subset plus an optional
   int-compatible offset as the builtin section above; direct native calls to

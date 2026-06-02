@@ -85934,8 +85934,8 @@ impl Interpreter {
             "str_contains" => call_str_contains(&args, span),
             "str_starts_with" => call_str_starts_with(&args, span),
             "str_ends_with" => call_str_ends_with(&args, span),
-            "strspn" => call_strspn(&args, span),
-            "strcspn" => call_strcspn(&args, span),
+            "strspn" => call_strspn(self, &args, span),
+            "strcspn" => call_strcspn(self, &args, span),
             "strpbrk" => call_strpbrk(self, &args, span),
             "strpos" => call_strpos(self, &args, span),
             "stripos" => call_strpos_like(self, &args, "stripos()", true, span),
@@ -121953,15 +121953,16 @@ fn call_str_ends_with(args: &[Value], span: Span) -> CompileResult<Value> {
     Ok(Value::Bool(haystack.ends_with(&needle)))
 }
 
-fn call_strspn(args: &[Value], span: Span) -> CompileResult<Value> {
-    call_string_byte_span(args, "strspn()", true, span)
+fn call_strspn(interpreter: &mut Interpreter, args: &[Value], span: Span) -> CompileResult<Value> {
+    call_string_byte_span(interpreter, args, "strspn()", true, span)
 }
 
-fn call_strcspn(args: &[Value], span: Span) -> CompileResult<Value> {
-    call_string_byte_span(args, "strcspn()", false, span)
+fn call_strcspn(interpreter: &mut Interpreter, args: &[Value], span: Span) -> CompileResult<Value> {
+    call_string_byte_span(interpreter, args, "strcspn()", false, span)
 }
 
 fn call_string_byte_span(
+    interpreter: &mut Interpreter,
     args: &[Value],
     function: &'static str,
     count_masked_bytes: bool,
@@ -121978,8 +121979,15 @@ fn call_string_byte_span(
         ));
     }
 
-    let subject = string_compare_argument_bytes(function, "string", &args[0], span)?;
-    let characters = string_compare_argument_bytes(function, "characters", &args[1], span)?;
+    let subject =
+        interpreter.php_string_argument_bytes_with_magic(function, 1, "string", &args[0], span)?;
+    let characters = interpreter.php_string_argument_bytes_with_magic(
+        function,
+        2,
+        "characters",
+        &args[1],
+        span,
+    )?;
     let offset = match args.get(2) {
         Some(value) => php_internal_int_argument(function, 3, "offset", value, span)?,
         None => 0,

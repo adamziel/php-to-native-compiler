@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Added a bounded `strspn()` / `strcspn()` string-boundary lane. Direct and
+  string-valued dynamic interpreter calls now route `$string` and
+  `$characters` operands through the shared PHP-shaped string argument
+  boundary: scalar values keep the existing byte-mask span/count behavior,
+  `null` emits PHP-shaped deprecations before converting to `""`, supported
+  visible `__toString()` objects are accepted, and arrays, resources,
+  closures, or non-stringable objects raise catchable PHP-shaped `TypeError`s.
+  Existing optional offset/length int coercion, byte-window clamping, metadata
+  visibility, and native-lowering rejection remain unchanged. Focused proof
+  covers the Rust `strspn_and_strcspn_use_php_string_argument_boundary`
+  regression, the full `strspn_strcspn_builtin` test file, direct CLI probes,
+  and selected public PHPT rows. Unsupported edges remain exact invalid
+  `__toString()` return diagnostics, exact null/lossy offset and length
+  deprecations, broader PHP warning/ValueError recovery for every window edge,
+  encoding-sensitive parity beyond represented runtime bytes, references/COW,
+  and native lowering.
+
 - Added a bounded array counting/numeric aggregation non-array diagnostics
   lane. Direct and string-valued dynamic `array_count_values()`,
   `array_sum()`, and `array_product()` interpreter calls now raise catchable
