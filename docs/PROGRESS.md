@@ -4,6 +4,24 @@
 
 Implemented:
 
+- Added a bounded `hash_init()` validation lane for the selected ext/hash HMAC
+  error row. The interpreter now exposes `HASH_HMAC`, publishes
+  `hash_init()` through builtin/callability/reflection metadata, validates
+  algorithm names against the advertised `hash_algos()` inventory, preserves
+  the separate non-cryptographic-HMAC error for known checksum algorithms,
+  emits the covered null-key deprecation, and raises catchable PHP-shaped
+  `ValueError` diagnostics for unknown algorithms, non-cryptographic HMAC
+  algorithms, and empty HMAC keys. Successful `HashContext` allocation and
+  streaming updates remain explicitly rejected. Focused Rust passed `12 / 12`
+  in `hash_builtin`; `cargo build -p phpc --bin phpc` passed; a direct
+  `phpc run` probe proved `HASH_HMAC`, callability, the validation
+  `ValueError`s, and the null-key deprecation; selected PHPT proof passed
+  `1 / 1` for `hash_init_error.phpt`; `cargo fmt --check` and `git diff
+  --check` passed. Unsupported edges remain `HashContext` object allocation,
+  `hash_update()`, `hash_final()`, `hash_copy()`, clone/serialize/debugInfo,
+  finalized-context semantics, streaming file/resource updates, broad exact
+  diagnostics, and native lowering.
+
 - Added a bounded output-buffer callback lane for the selected
   `ob_start()` / `ob_get_flush()` PHPT rows. Interpreter output buffers now
   retain raw contents plus optional supported handler callbacks; raw peeks via

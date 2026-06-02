@@ -237,6 +237,63 @@ hash_hmac(): Argument #1 ($algo) must be a valid cryptographic hashing algorithm
 }
 
 #[test]
+fn hash_init_validates_algorithm_hmac_mode_and_key_before_streaming_boundary() {
+    let execution = run_source(
+        r#"<?php
+echo defined("HASH_HMAC") ? HASH_HMAC : "missing";
+echo "|", function_exists("hash_init") ? "fn" : "missing";
+echo "|", is_callable("hash_init") ? "callable" : "missing", "\n";
+
+foreach ([
+    fn() => hash_init("dummy"),
+    fn() => hash_init("crc32", HASH_HMAC),
+    fn() => hash_init("md5", HASH_HMAC),
+    fn() => hash_init("md5", HASH_HMAC, null),
+] as $test) {
+    try {
+        var_dump($test());
+    } catch (\Error $e) {
+        echo get_class($e), ":", $e->getMessage(), "\n";
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    assert!(execution.stdout.starts_with(
+        "1|fn|callable\n\
+ValueError:hash_init(): Argument #1 ($algo) must be a valid hashing algorithm\n\
+ValueError:hash_init(): Argument #1 ($algo) must be a cryptographic hashing algorithm if HMAC is requested\n\
+ValueError:hash_init(): Argument #3 ($key) must not be empty when HMAC is requested\n"
+    ));
+    assert!(
+        execution.stdout.contains(
+            "Deprecated: hash_init(): Passing null to parameter #3 ($key) of type string is deprecated"
+        ),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution.stdout.ends_with(
+            "ValueError:hash_init(): Argument #3 ($key) must not be empty when HMAC is requested\n"
+        ),
+        "{}",
+        execution.stdout
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+
+    let boundary = run_source("<?php\nhash_init('md5');\n").unwrap_err();
+    assert_eq!(boundary.phase, Phase::Runtime);
+    assert_eq!(boundary.line, 2);
+    assert_eq!(boundary.column, 1);
+    assert_eq!(
+        boundary.message,
+        "unsupported call hash_init(): HashContext allocation and streaming updates are not implemented in the current subset"
+    );
+}
+
+#[test]
 fn hash_equals_and_hmac_algorithm_metadata_cover_phpt_rows() {
     let execution = run_source(
         r#"<?php
@@ -282,6 +339,8 @@ fn emit_ir_folds_hash_metadata_but_rejects_direct_calls() {
         r#"<?php
 echo function_exists("hash") ? "1" : "0";
 echo is_callable("hash_algos") ? "1" : "0";
+echo function_exists("hash_init") ? "1" : "0";
+echo is_callable("hash_init") ? "1" : "0";
 echo function_exists("hash_hmac") ? "1" : "0";
 echo is_callable("hash_hmac") ? "1" : "0";
 echo function_exists("hash_hmac_algos") ? "1" : "0";
@@ -294,11 +353,17 @@ echo is_callable("uniqid") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 10, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 12, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
 
     let error = emit_ir_source("<?php\nhash('sha256', 'data');\n").unwrap_err();
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source("<?php\nhash_init('sha256');\n").unwrap_err();
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.line, 2);
     assert_eq!(error.column, 1);

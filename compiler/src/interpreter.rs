@@ -85575,6 +85575,7 @@ impl Interpreter {
             }
             "uniqid" => call_uniqid(&args, span),
             "crypt" => call_crypt(&args, span),
+            "hash_init" => call_hash_init(self, &args, span),
             "hash" => call_hash(&args, span),
             "hash_algos" => call_hash_algos(&args, span),
             "hash_hmac_algos" => call_hash_hmac_algos(&args, span),
@@ -100899,6 +100900,19 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
             ],
         ),
         "crc32" => ("int", vec![reflection_internal_param("string", "string")]),
+        "hash_init" => (
+            "HashContext",
+            vec![
+                reflection_internal_param("algo", "string"),
+                reflection_internal_optional_int_param("flags", 0),
+                reflection_internal_optional_param(
+                    "key",
+                    "string",
+                    Expr::String(String::new(), Span::new(0, 0)),
+                ),
+                reflection_internal_optional_empty_array_param("options", "array"),
+            ],
+        ),
         "hash" => (
             "string",
             vec![
@@ -105283,6 +105297,15 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
             "json_validate()",
             "Argument #3 ($flags) must be a valid flag (allowed flags: JSON_INVALID_UTF8_IGNORE)",
         )
+        | ("hash_init()", "Argument #1 ($algo) must be a valid hashing algorithm")
+        | (
+            "hash_init()",
+            "Argument #1 ($algo) must be a cryptographic hashing algorithm if HMAC is requested",
+        )
+        | (
+            "hash_init()",
+            "Argument #3 ($key) must not be empty when HMAC is requested",
+        )
         | (
             "hash_hmac()",
             "Argument #1 ($algo) must be a valid cryptographic hashing algorithm",
@@ -106221,6 +106244,7 @@ fn is_builtin(name: &str) -> bool {
             | "lcg_value"
             | "uniqid"
             | "crypt"
+            | "hash_init"
             | "hash"
             | "hash_algos"
             | "hash_hmac_algos"
@@ -107497,6 +107521,7 @@ const PHP_URL_QUERY: i64 = 6;
 const PHP_URL_FRAGMENT: i64 = 7;
 const PHP_QUERY_RFC1738: i64 = 1;
 const PHP_QUERY_RFC3986: i64 = 2;
+const PHP_HASH_HMAC: i64 = 1;
 const PHP_TOKEN_PARSE: i64 = 1;
 const PHP_SCANDIR_SORT_ASCENDING: i64 = 0;
 const PHP_SCANDIR_SORT_DESCENDING: i64 = 1;
@@ -108082,6 +108107,7 @@ const BUILTIN_GLOBAL_CONSTANT_NAMES: &[&str] = &[
     "JSON_ERROR_UNSUPPORTED_TYPE",
     "JSON_ERROR_INVALID_PROPERTY_NAME",
     "JSON_ERROR_UTF16",
+    "HASH_HMAC",
     "FILTER_VALIDATE_INT",
     "FILTER_VALIDATE_BOOLEAN",
     "FILTER_VALIDATE_BOOL",
@@ -108524,6 +108550,7 @@ fn builtin_global_constant_value(name: &str) -> Option<Value> {
             Some(Value::Int(PHP_JSON_ERROR_INVALID_PROPERTY_NAME))
         }
         "JSON_ERROR_UTF16" => Some(Value::Int(PHP_JSON_ERROR_UTF16)),
+        "HASH_HMAC" => Some(Value::Int(PHP_HASH_HMAC)),
         "FILTER_VALIDATE_INT" => Some(Value::Int(PHP_FILTER_VALIDATE_INT)),
         "FILTER_VALIDATE_BOOLEAN" => Some(Value::Int(PHP_FILTER_VALIDATE_BOOL)),
         "FILTER_VALIDATE_BOOL" => Some(Value::Int(PHP_FILTER_VALIDATE_BOOL)),
@@ -132506,6 +132533,110 @@ fn call_hash_hmac_algos(args: &[Value], span: Span) -> CompileResult<Value> {
     Ok(Value::Array(algorithms))
 }
 
+fn call_hash_init(
+    interpreter: &mut Interpreter,
+    args: &[Value],
+    span: Span,
+) -> CompileResult<Value> {
+    if !(1..=4).contains(&args.len()) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "hash_init()",
+                ArityExpectation::Between { min: 1, max: 4 },
+                args.len(),
+            ),
+        ));
+    }
+
+    let algorithm = string_builtin_argument("hash_init()", "algo", &args[0], span)?;
+    if !is_php_hash_algorithm_name(&algorithm) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "hash_init()",
+                "Argument #1 ($algo) must be a valid hashing algorithm",
+            ),
+        ));
+    }
+
+    let flags = match args.get(1) {
+        Some(value) => php_internal_int_argument("hash_init()", 2, "flags", value, span)?,
+        None => 0,
+    };
+    let hmac_requested = flags & PHP_HASH_HMAC != 0;
+
+    let key = match args.get(2) {
+        Some(Value::Null) => {
+            interpreter.emit_display_diagnostic(
+                "Deprecated",
+                PHP_E_DEPRECATED,
+                "hash_init(): Passing null to parameter #3 ($key) of type string is deprecated",
+                span,
+            )?;
+            String::new()
+        }
+        Some(value) => string_builtin_argument("hash_init()", "key", value, span)?,
+        None => String::new(),
+    };
+
+    if hmac_requested {
+        if !is_php_hash_hmac_cryptographic_algorithm_name(&algorithm) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "hash_init()",
+                    "Argument #1 ($algo) must be a cryptographic hashing algorithm if HMAC is requested",
+                ),
+            ));
+        }
+        if key.is_empty() {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "hash_init()",
+                    "Argument #3 ($key) must not be empty when HMAC is requested",
+                ),
+            ));
+        }
+    }
+
+    if let Some(options) = args.get(3) {
+        match options {
+            Value::Array(array) if array.is_empty() => {}
+            Value::Array(_) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "hash_init()",
+                        "non-empty options arrays are not implemented in the current hash context subset",
+                    ),
+                ));
+            }
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "hash_init()",
+                        format!(
+                            "Argument #4 ($options) must be of type array, {} given",
+                            php_type_error_given(other)
+                        ),
+                    ),
+                ));
+            }
+        }
+    }
+
+    Err(runtime_error(
+        span,
+        RuntimeError::unsupported_call(
+            "hash_init()",
+            "HashContext allocation and streaming updates are not implemented in the current subset",
+        ),
+    ))
+}
+
 fn call_crypt(args: &[Value], span: Span) -> CompileResult<Value> {
     expect_arity("crypt", args, 2, span)?;
 
@@ -132559,6 +132690,14 @@ fn php_hash_algorithm(name: &str) -> Option<PhpHashAlgorithm> {
         "joaat" => Some(PhpHashAlgorithm::Joaat),
         _ => None,
     }
+}
+
+fn is_php_hash_algorithm_name(name: &str) -> bool {
+    let normalized = name.to_ascii_lowercase();
+    PHP_HASH_ALGORITHM_NAMES
+        .iter()
+        .any(|algorithm| *algorithm == normalized)
+        || matches!(normalized.as_str(), "sha512-224" | "sha512-256")
 }
 
 fn php_hash_digest_bytes(algorithm: PhpHashAlgorithm, bytes: &[u8]) -> Vec<u8> {

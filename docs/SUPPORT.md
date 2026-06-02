@@ -3986,14 +3986,23 @@
   string-convertible data and key values and returns lowercase hex output.
   Invalid or non-cryptographic `hash_hmac()` algorithm names on the reached
   direct-call path raise the PHP-shaped catchable `ValueError` diagnostic.
+  `HASH_HMAC` is exposed as the PHP HMAC-mode flag. `hash_init($algo, $flags,
+  $key = "", $options = [])` currently supports the bounded validation surface
+  for unknown algorithm names, HMAC mode over known non-cryptographic
+  algorithms, missing/empty HMAC keys, and the null-key deprecation; those
+  validation failures raise PHP-shaped catchable `ValueError` diagnostics.
+  Successful `HashContext` allocation remains rejected until streaming state is
+  implemented.
   `hash_equals($known_string, $user_string)` supports strict string and binary
   string operands, constant-work same-length byte comparison, and PHP-shaped
   type diagnostics for non-string operands.
   Hash algorithms outside that bounded SHA/MD5/checksum execution set,
-  non-empty `hash()` options arrays, streaming hash contexts, `hash_hmac()`
-  execution for algorithms beyond SHA-256, `hash_hmac()` raw binary output,
-  exact time/entropy behavior, cryptographic guarantees for generated IDs,
-  array/object/resource coercions outside the documented strict
+  non-empty `hash()` options arrays, `HashContext` allocation and streaming
+  hash updates/finalization, `hash_hmac()` execution for algorithms beyond
+  SHA-256, `hash_hmac()` raw binary output, `hash_init()` HMAC context
+  execution and non-empty options arrays, exact time/entropy behavior,
+  cryptographic guarantees for generated IDs, array/object/resource coercions
+  outside the documented strict
   `hash_equals()` type errors, broader exact diagnostics, and native lowering
   remain unsupported.
   `md5($string, $binary = false)` supports scalar/null string-convertible

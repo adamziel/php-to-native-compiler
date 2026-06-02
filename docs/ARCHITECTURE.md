@@ -2703,8 +2703,12 @@ and `sha2` crates, `hash()` covers a bounded SHA-1/SHA-2 digest set with
 lowercase hex or raw binary output, `md5()` supports scalar/null
 string-convertible input with lowercase hex or raw binary output through the
 `md-5` crate, and `md5_file()` uses the bounded local-file path policy shared
-with `sha1_file()`. Streaming hash contexts, exact entropy/time behavior,
-FIPS/provider policy, and native lowering remain out of scope.
+with `sha1_file()`. `HASH_HMAC` and `hash_init()` cover the current
+validation-only HMAC-mode boundary for unknown algorithms, known
+non-cryptographic algorithms, and missing HMAC keys before explicitly
+rejecting successful `HashContext` allocation. Streaming hash contexts, exact
+entropy/time behavior, FIPS/provider policy, and native lowering remain out of
+scope.
 `strcasecmp()` is an interpreter-only bounded string comparison builtin for
 current scalar/null string-convertible values. It compares valid UTF-8 runtime
 strings and binary-string values by bytes with ASCII case folding and returns
