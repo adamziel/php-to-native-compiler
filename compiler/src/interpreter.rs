@@ -85815,12 +85815,12 @@ impl Interpreter {
                     "direct result variable binding is required in the current subset",
                 ),
             )),
-            "parse_url" => call_parse_url(&args, span),
+            "parse_url" => self.call_parse_url(&args, span),
             "request_parse_body" => self.call_request_parse_body(&args, span),
-            "http_build_query" => call_http_build_query(&args, span),
-            "urlencode" => call_urlencode(&args, span),
-            "rawurlencode" => call_rawurlencode(&args, span),
-            "rawurldecode" => call_rawurldecode(&args, span),
+            "http_build_query" => self.call_http_build_query(&args, span),
+            "urlencode" => self.call_urlencode(&args, span),
+            "rawurlencode" => self.call_rawurlencode(&args, span),
+            "rawurldecode" => self.call_rawurldecode(&args, span),
             "serialize" => self.call_serialize_builtin(&args, span),
             "unserialize" => self.call_unserialize_builtin(&args, span),
             "preg_quote" => call_preg_quote(&args, span),
@@ -122426,6 +122426,67 @@ fn call_strstr(
 }
 
 impl Interpreter {
+    fn php_string_argument_with_magic(
+        &mut self,
+        function: &'static str,
+        position: usize,
+        name: &str,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<String> {
+        self.php_string_argument_with_magic_type(
+            function, position, name, "string", true, value, span,
+        )
+    }
+
+    fn php_string_argument_with_magic_type(
+        &mut self,
+        function: &'static str,
+        position: usize,
+        name: &str,
+        parameter_type: &str,
+        deprecate_null: bool,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<String> {
+        if matches!(value, Value::Null) && deprecate_null {
+            self.emit_display_diagnostic(
+                "Deprecated",
+                PHP_E_DEPRECATED,
+                format!(
+                    "{function}: Passing null to parameter #{position} (${name}) of type {parameter_type} is deprecated"
+                ),
+                span,
+            )?;
+        }
+
+        if let Value::Object(object) = value {
+            if let Some(value) = self.object_to_string_with_magic(object.clone(), function, span)? {
+                return Ok(value);
+            }
+        }
+
+        if matches!(
+            value,
+            Value::Array(_) | Value::Object(_) | Value::Closure(_) | Value::Resource(_)
+        ) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function,
+                    format!(
+                        "Argument #{position} (${name}) must be of type {parameter_type}, {} given",
+                        php_type_error_given(value)
+                    ),
+                ),
+            ));
+        }
+
+        value
+            .try_echo_string()
+            .map_err(|error| runtime_error(span, error))
+    }
+
     fn php_string_argument_bytes_with_magic(
         &mut self,
         function: &'static str,
@@ -126875,51 +126936,53 @@ struct ParsedUrlParts {
     fragment: Option<String>,
 }
 
-fn call_parse_url(args: &[Value], span: Span) -> CompileResult<Value> {
-    if !(1..=2).contains(&args.len()) {
-        return Err(runtime_error(
-            span,
-            RuntimeError::arity_mismatch(
-                "parse_url()",
-                ArityExpectation::Between { min: 1, max: 2 },
-                args.len(),
-            ),
-        ));
-    }
-
-    let url = string_contains_argument("parse_url()", "url", &args[0], span)?;
-    let component = match args.get(1) {
-        Some(value) => Some(php_internal_int_argument(
-            "parse_url()",
-            2,
-            "component",
-            value,
-            span,
-        )?),
-        None => None,
-    };
-
-    if let Some(component) = component {
-        if component > PHP_URL_FRAGMENT {
+impl Interpreter {
+    fn call_parse_url(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(1..=2).contains(&args.len()) {
             return Err(runtime_error(
                 span,
-                RuntimeError::unsupported_call(
+                RuntimeError::arity_mismatch(
                     "parse_url()",
-                    format!(
-                        "Argument #2 ($component) must be a valid URL component identifier, {component} given"
-                    ),
+                    ArityExpectation::Between { min: 1, max: 2 },
+                    args.len(),
                 ),
             ));
         }
-    }
 
-    let Some(parts) = parse_php_url_parts(&url) else {
-        return Ok(Value::Bool(false));
-    };
+        let url = self.php_string_argument_with_magic("parse_url()", 1, "url", &args[0], span)?;
+        let component = match args.get(1) {
+            Some(value) => Some(php_internal_int_argument(
+                "parse_url()",
+                2,
+                "component",
+                value,
+                span,
+            )?),
+            None => None,
+        };
 
-    match component {
-        Some(component) if component >= 0 => Ok(parse_url_component_value(&parts, component)),
-        _ => Ok(Value::Array(parse_url_parts_array(parts))),
+        if let Some(component) = component {
+            if component > PHP_URL_FRAGMENT {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "parse_url()",
+                        format!(
+                            "Argument #2 ($component) must be a valid URL component identifier, {component} given"
+                        ),
+                    ),
+                ));
+            }
+        }
+
+        let Some(parts) = parse_php_url_parts(&url) else {
+            return Ok(Value::Bool(false));
+        };
+
+        match component {
+            Some(component) if component >= 0 => Ok(parse_url_component_value(&parts, component)),
+            _ => Ok(Value::Array(parse_url_parts_array(parts))),
+        }
     }
 }
 
@@ -127260,10 +127323,13 @@ fn parse_url_port(value: &str) -> Option<i64> {
     (0..=65_535).contains(&port).then_some(port)
 }
 
-fn call_urlencode(args: &[Value], span: Span) -> CompileResult<Value> {
-    expect_arity("urlencode", args, 1, span)?;
-    let value = string_compare_argument_bytes("urlencode()", "string", &args[0], span)?;
-    Ok(Value::String(form_urlencode_bytes(&value)))
+impl Interpreter {
+    fn call_urlencode(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("urlencode", args, 1, span)?;
+        let value =
+            self.php_string_argument_bytes_with_magic("urlencode()", 1, "string", &args[0], span)?;
+        Ok(Value::String(form_urlencode_bytes(&value)))
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -127272,88 +127338,105 @@ enum HttpQueryEncoding {
     Rfc3986,
 }
 
-fn call_http_build_query(args: &[Value], span: Span) -> CompileResult<Value> {
-    if !(1..=4).contains(&args.len()) {
-        return Err(runtime_error(
-            span,
-            RuntimeError::arity_mismatch(
-                "http_build_query()",
-                ArityExpectation::Between { min: 1, max: 4 },
-                args.len(),
-            ),
-        ));
-    }
-
-    let mut active_objects = HashSet::new();
-    let root = match &args[0] {
-        Value::Array(array) => array.clone(),
-        Value::Object(object) => {
-            active_objects.insert(object.id());
-            public_object_properties_for_http_query(object)
-        }
-        other => {
+impl Interpreter {
+    fn call_http_build_query(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(1..=4).contains(&args.len()) {
             return Err(runtime_error(
                 span,
-                RuntimeError::unsupported_call(
+                RuntimeError::arity_mismatch(
                     "http_build_query()",
-                    format!(
-                        "data argument must be array or object in the current subset, got {}",
-                        other.type_name()
-                    ),
+                    ArityExpectation::Between { min: 1, max: 4 },
+                    args.len(),
                 ),
             ));
         }
-    };
 
-    let numeric_prefix = match args.get(1) {
-        Some(value) => {
-            string_contains_argument("http_build_query()", "numeric_prefix", value, span)?
-        }
-        None => String::new(),
-    };
-    let separator = match args.get(2) {
-        Some(Value::Null) | None => "&".to_string(),
-        Some(value) => {
-            string_contains_argument("http_build_query()", "arg_separator", value, span)?
-        }
-    };
-    let encoding = match args.get(3) {
-        None => HttpQueryEncoding::Rfc1738,
-        Some(value) => {
-            let encoding_type =
-                php_internal_int_argument("http_build_query()", 4, "encoding_type", value, span)?;
-            match encoding_type {
-                PHP_QUERY_RFC1738 => HttpQueryEncoding::Rfc1738,
-                PHP_QUERY_RFC3986 => HttpQueryEncoding::Rfc3986,
-                other => {
-                    return Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            "http_build_query()",
-                            format!(
-                                "encoding_type must be PHP_QUERY_RFC1738 or PHP_QUERY_RFC3986 in the current subset, got {other}"
-                            ),
+        let mut active_objects = HashSet::new();
+        let root = match &args[0] {
+            Value::Array(array) => array.clone(),
+            Value::Object(object) => {
+                active_objects.insert(object.id());
+                public_object_properties_for_http_query(object)
+            }
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "http_build_query()",
+                        format!(
+                            "data argument must be array or object in the current subset, got {}",
+                            other.type_name()
                         ),
-                    ));
+                    ),
+                ));
+            }
+        };
+
+        let numeric_prefix = match args.get(1) {
+            Some(value) => self.php_string_argument_with_magic(
+                "http_build_query()",
+                2,
+                "numeric_prefix",
+                value,
+                span,
+            )?,
+            None => String::new(),
+        };
+        let separator = match args.get(2) {
+            Some(Value::Null) | None => "&".to_string(),
+            Some(value) => self.php_string_argument_with_magic_type(
+                "http_build_query()",
+                3,
+                "arg_separator",
+                "?string",
+                false,
+                value,
+                span,
+            )?,
+        };
+        let encoding = match args.get(3) {
+            None => HttpQueryEncoding::Rfc1738,
+            Some(value) => {
+                let encoding_type = php_internal_int_argument(
+                    "http_build_query()",
+                    4,
+                    "encoding_type",
+                    value,
+                    span,
+                )?;
+                match encoding_type {
+                    PHP_QUERY_RFC1738 => HttpQueryEncoding::Rfc1738,
+                    PHP_QUERY_RFC3986 => HttpQueryEncoding::Rfc3986,
+                    other => {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "http_build_query()",
+                                format!(
+                                    "encoding_type must be PHP_QUERY_RFC1738 or PHP_QUERY_RFC3986 in the current subset, got {other}"
+                                ),
+                            ),
+                        ));
+                    }
                 }
             }
+        };
+
+        let mut pairs = Vec::new();
+        for entry in root.entries() {
+            let key = http_query_top_level_key(&entry.key, &numeric_prefix);
+            collect_http_query_pairs(
+                key,
+                &entry.value_cloned(),
+                &mut pairs,
+                encoding,
+                span,
+                &mut active_objects,
+            )?;
         }
-    };
 
-    let mut pairs = Vec::new();
-    for entry in root.entries() {
-        let key = http_query_top_level_key(&entry.key, &numeric_prefix);
-        collect_http_query_pairs(
-            key,
-            &entry.value_cloned(),
-            &mut pairs,
-            encoding,
-            span,
-            &mut active_objects,
-        )?;
+        Ok(Value::String(pairs.join(&separator)))
     }
-
-    Ok(Value::String(pairs.join(&separator)))
 }
 
 fn public_object_properties_for_http_query(object: &PhpObject) -> PhpArray {
@@ -127456,18 +127539,32 @@ fn http_query_encode_component(value: &str, encoding: HttpQueryEncoding) -> Stri
     }
 }
 
-fn call_rawurlencode(args: &[Value], span: Span) -> CompileResult<Value> {
-    expect_arity("rawurlencode", args, 1, span)?;
-    let value = string_compare_argument_bytes("rawurlencode()", "string", &args[0], span)?;
-    Ok(Value::String(raw_urlencode_bytes(&value)))
-}
+impl Interpreter {
+    fn call_rawurlencode(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("rawurlencode", args, 1, span)?;
+        let value = self.php_string_argument_bytes_with_magic(
+            "rawurlencode()",
+            1,
+            "string",
+            &args[0],
+            span,
+        )?;
+        Ok(Value::String(raw_urlencode_bytes(&value)))
+    }
 
-fn call_rawurldecode(args: &[Value], span: Span) -> CompileResult<Value> {
-    expect_arity("rawurldecode", args, 1, span)?;
-    let value = string_compare_argument_bytes("rawurldecode()", "string", &args[0], span)?;
-    Ok(interpreter_value_from_php_string_bytes(
-        raw_urldecode_bytes(&value),
-    ))
+    fn call_rawurldecode(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("rawurldecode", args, 1, span)?;
+        let value = self.php_string_argument_bytes_with_magic(
+            "rawurldecode()",
+            1,
+            "string",
+            &args[0],
+            span,
+        )?;
+        Ok(interpreter_value_from_php_string_bytes(
+            raw_urldecode_bytes(&value),
+        ))
+    }
 }
 
 fn form_urlencode_component(value: &str) -> String {

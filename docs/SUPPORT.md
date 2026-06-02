@@ -2798,7 +2798,13 @@
   `urlencode()` supports RFC1738 form percent-encoding over PHP string bytes,
   with spaces encoded as `+`; `rawurlencode()` and `rawurldecode()` support
   RFC3986 byte-oriented percent encoding and decoding for the current string
-  subset. Exact RFC/WHATWG
+  subset. These URL string operands now use the shared PHP-shaped string
+  argument boundary for the covered helpers, so scalar operands are converted,
+  `null` emits the current bounded deprecation on non-nullable string
+  parameters, supported visible `__toString()` objects are accepted, and
+  arrays, closures, resources, or non-stringable objects raise catchable
+  PHP-shaped `TypeError`s. Exact invalid `__toString()` return diagnostics,
+  binary-string invalid-UTF-8 parse component parity, exact RFC/WHATWG
   validation, broader IPv6 and platform-specific file URL edge cases, binary
   byte fidelity outside these byte-oriented encoders, URL normalization, IDNA,
   percent-decoding of parsed URL components, and native lowering remain
@@ -2824,7 +2830,11 @@
   prefixes, explicit argument separators, null/resource elision,
   reference-backed array values, direct named arguments for the documented
   parameters, self-recursive public object branches skipped as empty output,
-  and `PHP_QUERY_RFC1738` or `PHP_QUERY_RFC3986` component encoding. Closure
+  and `PHP_QUERY_RFC1738` or `PHP_QUERY_RFC3986` component encoding. The
+  `$numeric_prefix` and non-null `$arg_separator` operands use the same
+  PHP-shaped string boundary as the URL helpers, including supported visible
+  `__toString()` objects and catchable type errors for non-stringable values;
+  `null` `$arg_separator` still selects the bounded `&` fallback. Closure
   values, exact PHP diagnostics, binary string/key byte fidelity outside UTF-8
   strings, INI-derived argument separators beyond the current `&` fallback,
   cyclic array/reference structures, object custom serialization hooks, and

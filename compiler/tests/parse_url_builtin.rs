@@ -96,6 +96,61 @@ echo "|", is_callable("rawurldecode") ? "callable" : "missing";
 }
 
 #[test]
+fn url_helpers_accept_stringable_objects_and_report_type_errors() {
+    let execution = run_source(
+        r#"<?php
+class UrlText {
+    public function __toString() { return "http://example.test/a b?x=1+2"; }
+}
+class EncodedText {
+    public function __toString() { return "%41+%2B"; }
+}
+class PrefixText {
+    public function __toString() { return "pre_"; }
+}
+class SeparatorText {
+    public function __toString() { return "|"; }
+}
+
+var_dump(parse_url(new UrlText(), PHP_URL_HOST));
+echo urlencode(new UrlText()), "\n";
+echo rawurlencode(new UrlText()), "\n";
+echo rawurldecode(new EncodedText()), "\n";
+echo http_build_query([1], new PrefixText()), "\n";
+echo http_build_query(["a" => 1, "b" => 2], "", new SeparatorText()), "\n";
+var_dump(parse_url(null, PHP_URL_PATH));
+try { parse_url(new stdClass()); } catch (Throwable $e) { echo "parse-object-caught\n"; }
+try { urlencode([]); } catch (Throwable $e) { echo "urlencode-array-caught\n"; }
+try { http_build_query([1], []); } catch (Throwable $e) { echo "prefix-array-caught\n"; }
+try { http_build_query(["a" => 1], "", []); } catch (Throwable $e) { echo "separator-array-caught\n"; }
+"#,
+    )
+    .unwrap();
+
+    assert!(
+        execution
+            .stdout
+            .contains("Deprecated: parse_url(): Passing null to parameter #1 ($url) of type string is deprecated"),
+        "{}",
+        execution.stdout
+    );
+    assert!(execution.stdout.contains("string(12) \"example.test\""));
+    assert!(execution
+        .stdout
+        .contains("http%3A%2F%2Fexample.test%2Fa+b%3Fx%3D1%2B2\n"));
+    assert!(execution
+        .stdout
+        .contains("http%3A%2F%2Fexample.test%2Fa%20b%3Fx%3D1%2B2\n"));
+    assert!(execution.stdout.contains("A++\npre_0=1\na=1|b=2\n"));
+    assert!(execution.stdout.contains("string(0) \"\""));
+    assert!(execution.stdout.contains("parse-object-caught\n"));
+    assert!(execution.stdout.contains("urlencode-array-caught\n"));
+    assert!(execution.stdout.contains("prefix-array-caught\n"));
+    assert!(execution.stdout.contains("separator-array-caught\n"));
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn parse_url_matches_bounded_edge_cases_from_url_phpts() {
     let execution = run_source(
         r#"<?php

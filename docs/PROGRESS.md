@@ -4,6 +4,26 @@
 
 Implemented:
 
+- Added a bounded URL helper string-argument boundary lane. `parse_url()`,
+  `urlencode()`, `rawurlencode()`, `rawurldecode()`, and the
+  `http_build_query()` `$numeric_prefix` / non-null `$arg_separator` operands
+  now route through the shared PHP-shaped string boundary: scalar values keep
+  the existing conversion behavior, `null` emits the PHP-shaped deprecation
+  for non-nullable string parameters, supported visible `__toString()` objects
+  are accepted, and arrays, closures, resources, or non-stringable objects
+  raise catchable PHP-shaped `TypeError`s. Existing URL parsing, byte-oriented
+  percent encoding/decoding, query traversal, object-property query
+  serialization, component constants, and native-lowering rejection remain
+  unchanged. Focused proof covers the Rust
+  `url_helpers_accept_stringable_objects_and_report_type_errors` regression
+  plus the direct CLI fixture
+  `tests/fixtures/milestone2331/url_stringable_argument_boundaries.php`.
+  Unsupported edges remain `urldecode()` in this baseline, percent-decoding of
+  parsed `parse_url()` components, exact invalid `__toString()` return
+  diagnostics, binary-string invalid-UTF-8 parse component parity,
+  INI-derived argument separators beyond the current `&` fallback, broader
+  RFC/WHATWG URL validation, IDNA, references/COW, and native lowering.
+
 - Added a bounded `dirname()` weak-levels path metadata lane. `phpc run` now
   routes the optional `$levels` argument through the shared PHP-internal int
   boundary before the existing positive-level check, so booleans, finite

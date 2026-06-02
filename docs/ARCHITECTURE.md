@@ -566,6 +566,11 @@ requested.
 `urlencode()` and the RFC1738 `http_build_query()` path percent-encode PHP
 string bytes directly, while `rawurlencode()` uses the corresponding RFC3986
 byte boundary.
+The URL helper argument boundary now reuses the same PHP-shaped internal
+string coercion path used by adjacent string builtins for covered operands:
+scalar conversion stays local to the call, supported visible `__toString()`
+objects can supply the URL/prefix/separator text, and non-stringable dynamic
+values remain catchable type errors rather than parser-specific fallbacks.
 `request_parse_body()` currently covers only the CLI validation edge of that
 request-body surface: it validates scalar option arrays, emits quantity
 warnings through the INI quantity parser, and throws the PHP-shaped
