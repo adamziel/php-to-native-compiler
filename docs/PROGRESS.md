@@ -4,6 +4,22 @@
 
 Implemented:
 
+- Added a bounded `array_chunk()` preserve-key bool-coercion lane. Direct and
+  string-valued dynamic `array_chunk()` calls now route optional
+  `$preserve_keys` through the shared PHP-internal bool boundary, so scalar
+  values choose the existing reindexed or key-preserving chunk paths by PHP
+  truthiness while arrays, objects, closures, and resources raise catchable
+  PHP-shaped `TypeError`s. Existing positive-length chunking, non-positive
+  length `ValueError`s, integer-key reindexing, string/integer key
+  preservation, direct reference-backed value-slot preservation, source-array
+  immutability, metadata visibility, and native-lowering rejection remain
+  unchanged. Focused proof covers the Rust `array_chunk` regression suite, a
+  direct CLI fixture, the updated runtime-error snapshot, and selected public
+  PHPT rows. Unsupported edges remain PHP deprecation warnings for null or
+  lossy scalar preserve-key coercions, non-int length coercion, broader
+  reference/COW graph parity, object handle identity/resource parity, exact
+  native object internals, and native lowering.
+
 - Added a bounded filesystem access-predicate stringable path lane.
   `file_exists()`, `is_dir()`, `is_file()`, `is_readable()`,
   `is_writable()` / `is_writeable()`, `is_executable()`, and `is_link()` now

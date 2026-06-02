@@ -86767,9 +86767,23 @@ impl Interpreter {
                     })?;
                     Ok(Value::Array(array.chunked_reindexed(length)))
                 }
-                [Value::Array(array), Value::Int(length), Value::Bool(preserve_keys)]
-                    if *length > 0 =>
-                {
+                [Value::Array(array), Value::Int(length), preserve_keys] => {
+                    let preserve_keys = php_internal_bool_argument(
+                        "array_chunk()",
+                        3,
+                        "preserve_keys",
+                        preserve_keys,
+                        span,
+                    )?;
+                    if *length <= 0 {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "array_chunk()",
+                                "Argument #2 ($length) must be greater than 0",
+                            ),
+                        ));
+                    }
                     let length = usize::try_from(*length).map_err(|_| {
                         runtime_error(
                             span,
@@ -86781,7 +86795,7 @@ impl Interpreter {
                             ),
                         )
                     })?;
-                    if *preserve_keys {
+                    if preserve_keys {
                         Ok(Value::Array(array.chunked_preserving_keys(length)))
                     } else {
                         Ok(Value::Array(array.chunked_reindexed(length)))
@@ -86792,23 +86806,6 @@ impl Interpreter {
                     RuntimeError::unsupported_call(
                         "array_chunk()",
                         "Argument #2 ($length) must be greater than 0",
-                    ),
-                )),
-                [Value::Array(_), Value::Int(length), _] if *length <= 0 => Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "array_chunk()",
-                        "Argument #2 ($length) must be greater than 0",
-                    ),
-                )),
-                [Value::Array(_), Value::Int(_), other] => Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "array_chunk()",
-                        format!(
-                            "preserve_keys argument must be bool in the current subset, got {}",
-                            other.type_name()
-                        ),
                     ),
                 )),
                 [Value::Array(_), other] | [Value::Array(_), other, _] => Err(runtime_error(

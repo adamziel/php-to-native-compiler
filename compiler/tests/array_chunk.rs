@@ -194,15 +194,58 @@ ValueError:array_chunk(): Argument #2 ($length) must be greater than 0\n"
 }
 
 #[test]
-fn array_chunk_requires_bool_preserve_key_argument() {
-    let error = runtime_error("<?php\n$items = [1];\necho array_chunk($items, 1, 1);\n");
+fn array_chunk_coerces_scalar_preserve_keys_and_reports_bool_type_errors() {
+    let source = r#"<?php
+$items = [];
+$items["name"] = "Ada";
+$items[5] = "five";
+$items["2"] = "two";
+$items["02"] = "zero two";
+$items[-1] = "negative";
+$items[] = "next";
 
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 6);
+$truthy_int = array_chunk($items, 2, 1);
+echo $truthy_int[0]["name"], "|", $truthy_int[0][5], "\n";
+
+$falsey_int = array_chunk($items, 2, 0);
+echo $falsey_int[0][0], "|", $falsey_int[0][1], "\n";
+
+$truthy_string = array_chunk($items, 2, "yes");
+echo $truthy_string[2][-1], "|", $truthy_string[2][6], "\n";
+
+$falsey_string = array_chunk($items, 2, "0");
+echo $falsey_string[2][0], "|", $falsey_string[2][1], "\n";
+
+$falsey_null = array_chunk($items, 2, null);
+echo $falsey_null[0][0], "|", $falsey_null[0][1], "\n";
+
+$truthy_float = array_chunk($items, 2, 0.25);
+echo $truthy_float[1][2], "|", $truthy_float[1]["02"], "\n";
+
+$call = "array_chunk";
+$dynamic = $call($items, 2, "1");
+echo $dynamic[0]["name"], "|", $dynamic[0][5], "\n";
+
+try {
+    array_chunk($items, 0, []);
+} catch (TypeError $e) {
+    echo $e->getMessage();
+}
+"#;
+
+    let execution = run_source(source).unwrap();
     assert_eq!(
-        error.message,
-        "unsupported call array_chunk(): preserve_keys argument must be bool in the current subset, got int"
+        execution.stdout,
+        "Ada|five\n\
+Ada|five\n\
+negative|next\n\
+negative|next\n\
+Ada|five\n\
+two|zero two\n\
+Ada|five\n\
+array_chunk(): Argument #3 ($preserve_keys) must be of type bool, array given"
     );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

@@ -6254,7 +6254,7 @@
   preserve-key flag values, non-array `array_slice` operands, non-int `array_slice`
   offsets, invalid `array_slice` nullable-int lengths, invalid
   `array_slice` bool preserve-key flag values, non-array `array_chunk` operands,
-  non-int/non-positive `array_chunk` lengths, non-bool `array_chunk`
+  non-int/non-positive `array_chunk` lengths, non-coercible `array_chunk`
   preserve-key flag values, non-array `array_pad` operands, non-int
   `array_pad` lengths, oversized `array_pad` padding requests, non-array
   `array_splice` operands, invalid `array_splice` int/nullable-int operands,
@@ -7329,9 +7329,11 @@
   every inner chunk from integer key zero, returns an empty array for empty
   input arrays, and is available through string-valued dynamic function calls.
   `array_chunk($array, $length, true)` preserves original integer and string
-  keys inside each chunk; boolean `false` uses the default chunk-key
-  reindexing path. Both key modes preserve direct reference-backed source
-  value slots inside the produced chunks. `array_pad($array, $length, $value)`
+  keys inside each chunk; boolean `false` and scalar values that coerce to
+  false use the default chunk-key reindexing path, while scalar truthy values
+  use the preserving path. Both key modes preserve direct reference-backed
+  source value slots inside the produced chunks.
+  `array_pad($array, $length, $value)`
   accepts arrays and integer lengths, returns an unchanged copy when
   `abs($length)` is not larger
   than the input size, right-pads for positive lengths, left-pads for negative
@@ -7681,7 +7683,7 @@
   operands, non-int `array_slice` offsets, invalid `array_slice`
   nullable-int lengths, invalid `array_slice` bool preserve-key flag values, non-array
   `array_chunk` operands, non-int/non-positive `array_chunk` lengths,
-  non-bool `array_chunk` preserve-key flag values, non-array `array_pad`
+  non-coercible `array_chunk` preserve-key flag values, non-array `array_pad`
   operands, non-int `array_pad` lengths, oversized `array_pad` padding
   requests, non-array `array_merge` operands, non-array `array_replace`
   operands including variadic replacement operands, non-array
@@ -10070,14 +10072,17 @@
   key zero regardless of original integer or string keys, returns an empty
   array for empty input arrays, and is available through string-valued dynamic
   function calls. `array_chunk($array, $length, true)` preserves original
-  integer and string keys inside each chunk, and boolean `false` uses the
-  default chunk-key reindexing path. Non-positive lengths raise a PHP-shaped
-  catchable `ValueError`. Source entries that are backed by direct reference
-  slots remain reference-backed inside produced chunks. Non-bool preserve-key
-  coercion, non-int length coercion, broader reference/copy-on-write behavior
-  beyond preserved direct value slots, object handle identity preservation,
-  resource values, exact native `TypeError` object internals, and native
-  lowering are not implemented.
+  integer and string keys inside each chunk; boolean `false`, `null`, zero
+  numbers, and `"0"` use the default chunk-key reindexing path, while scalar
+  truthy values use the preserving path. Non-coercible arrays, objects,
+  closures, and resources for `$preserve_keys` raise catchable PHP-shaped
+  `TypeError`s. Non-positive lengths raise a PHP-shaped catchable
+  `ValueError`. Source entries that are backed by direct reference slots remain
+  reference-backed inside produced chunks. PHP deprecation warnings for null
+  or lossy scalar preserve-key coercions, non-int length coercion, broader
+  reference/copy-on-write behavior beyond preserved direct value slots, object
+  handle identity preservation, resource values, exact native `TypeError`
+  object internals, and native lowering are not implemented.
   `array_pad($array, $length, $value)` accepts arrays and integer lengths. When
   `abs($length)` is not larger than the input size it returns a cloned array
   with the original key shape and append index. Positive lengths right-pad and
@@ -10549,7 +10554,8 @@
   deprecation warnings, non-coercible `array_reverse` preserve-key flag values,
   non-bool `array_slice`
   preserve-key flag coercion, non-int offset coercion, non-int/non-null length
-  coercion, non-bool `array_chunk` preserve-key flag coercion,
+  coercion, PHP null or lossy scalar `array_chunk` preserve-key deprecation
+  warnings, non-coercible `array_chunk` preserve-key flag values,
   non-int/non-positive length coercion, broader `array_chunk`
   reference/copy-on-write behavior beyond preserved direct value slots,
   non-int `array_pad` length coercion, oversized `array_pad` native
@@ -11503,7 +11509,8 @@
   nullable-int length or bool `preserve_keys` coercions,
   reference/copy-on-write behavior, object handle identity preservation,
   resource values, exact native `TypeError` objects, and native lowering
-- `array_chunk` non-bool `preserve_keys` coercion, non-int/non-positive length
+- `array_chunk` PHP null or lossy scalar `preserve_keys` deprecation warnings,
+  non-coercible `preserve_keys` flag values, non-int/non-positive length
   coercion, exact native `ValueError`/`TypeError` objects,
   broader reference/copy-on-write behavior beyond preserved direct value
   slots, object handle identity preservation, resource values, and native
