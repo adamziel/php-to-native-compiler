@@ -1,13 +1,13 @@
 # PHP Native Compiler PHPT Progress
 
-Updated: 2026-06-02 10:08 CEST
+Updated: 2026-06-02 12:58 CEST
 
 Primary/public branch: `origin/master`
 Latest accepted public-score source:
-`4f1c81d5a4cee2530a74eb8206c24b518a735ef3 checkpoint: add stream ini array metadata rows`
+`12c1be0ab4eb7244ea7d185b5853f4fc52487a05 fix: coerce chunk split string operands`
 
 Semantic source for current published score:
-`4f1c81d5a4cee2530a74eb8206c24b518a735ef3 checkpoint: add stream ini array metadata rows`
+`12c1be0ab4eb7244ea7d185b5853f4fc52487a05 fix: coerce chunk split string operands`
 
 Public PHPT metric:
 
@@ -16,57 +16,41 @@ Public PHPT metric:
 Pinned denominator: `20294` total pinned runnable php-src PHPTs. Raw runner
 denominators that exclude BORKED rows are not public progress.
 
-Current public score: **5513 / 20294 pinned runnable PHPTs = 27.17%**.
+Current public score: **5690 / 20294 pinned runnable PHPTs = 28.04%**.
 
 Latest pushed source checkpoint:
-`3015d9ec99f16111e05bf03eaa5acf3a0cdc8f2c fix: coerce date formatter strings`
+`12c1be0ab4eb7244ea7d185b5853f4fc52487a05 fix: coerce chunk split string operands`
 
-This source checkpoint chain has been pushed to `origin/master`, but it does
-not change the public score above until the next full pinned PHPT gate accepts
-it with zero published PASS regressions. No newer full pinned PHPT gate is
-recorded as of this update. Since the last accepted public gate, `origin/master`
-now carries 87 additional source/docs/test commits. The previously recorded
-post-gate chain reached `bdb82f71` for standard math numeric-string rows; the
-current pushed head adds 73 more commits after that, covering script/stat
-metadata helpers, `mb_substr_count()`, tokenizer numeric literal and
-heredoc/nowdoc classification, DateTime timezone/mutable/set-state/format
-boundaries, bounded hash algorithms and hash diagnostics, filesystem predicate
-false cases/stringable paths/stat-cache alias clearing, disk-space stringable
-directory inputs, output-buffer callbacks, reflection/class metadata
-diagnostics, JSON invalid-UTF-8/nonfinite/input string boundaries,
-array-column/query reference-backed reads, array chunk/unshift reference-slot
-preservation, ArrayObject/SplObjectStorage/SplDoublyLinkedList residuals,
-POSIX/idate/extension metadata, string/search/trim/replace/case/url/dirname and
-base64 argument coercions, reverse-position offset coercion, `array_slice()`
-non-array diagnostics, and array callback reference-parameter warnings.
+This source checkpoint chain has been pushed to `origin/master` and is now
+reflected in the public score above. The current score gate converted 108
+post-`4f1c81d5` source/docs/test commits into a public PHPT movement of
+`5513 -> 5690` passed pinned rows, a net gain of `177` public PHPT passes, with
+zero latest-published PASS regressions.
 
-Accepted public gate: checkpoint `4f1c81d5` completed the full pinned PHPT
-gate with `5513 / 20294 = 27.17%` and zero latest-published PASS regressions
-against the `2755fc15` baseline. The gate accepted the 6-row stream/INI/array
-focused batch covering `bug71884.phpt`,
+Accepted public gate: checkpoint `12c1be0a` completed the pinned full PHPT gate
+with `5690 / 20294 = 28.04%` and zero latest-published PASS regressions against
+the `4f1c81d5` baseline. Full gate evidence is in
+`state/logs/phpt-full-current-score-20260602T104841Z-php-src-f97ff59-public-12c1be0a-source-12c1be0a`;
+the aggregate had `5690` passed rows, `5686` normalized current passes, and
+`0` PASS regressions. The lone invalid-marker grep hit remains the known
+expected socket `Permission denied` warning in `run-tests.log`, not a
+publication blocker.
+
+Previous accepted public gate: checkpoint `4f1c81d5` completed the full pinned
+PHPT gate with `5513 / 20294 = 27.17%` and zero latest-published PASS
+regressions against the `2755fc15` baseline. The gate accepted the 6-row
+stream/INI/array focused batch covering `bug71884.phpt`,
 `stream_context_create_error.phpt`, `get_extension_funcs_basic.phpt`,
 `ini_set_types.phpt`, `array_fill_keys_variation1.phpt`, and
 `array_fill_keys_variation2.phpt`. Full gate evidence is in
 `state/logs/phpt-full-batch024-next14-20260601T192923Z-php-src-f97ff59-public-2755fc15-source-4f1c81d5`;
 the aggregate had `5513` passed rows, `5509` normalized current passes, and
-`0` PASS regressions. The lone invalid-marker grep hit is the known expected
-socket `Permission denied` warning in `run-tests.log`, not a publication
-blocker.
+`0` PASS regressions.
 
-Previous accepted public gate: checkpoint `2755fc15` completed the full pinned
-PHPT gate with `5498 / 20294 = 27.09%` and zero latest-published PASS
-regressions against the `1fe2b233` baseline.
-
-Current source-head note: the two latest pushed lanes are source-only progress,
-not a public score update. `205f813a` routes `strrpos()` / `strripos()` offsets
-through the shared PHP-internal int boundary; focused proof passed targeted
-Rust `1 / 1`, full `strrpos_builtin` Rust `8 / 8`, build, direct probes,
-selected PHPT `2 / 2`, formatting, and diff checks. `3015d9ec` routes
-`DateTime::format()`, `date_format()`, `date()`, `gmdate()`, `strftime()`,
-`gmstrftime()`, and `idate()` format operands through the shared PHP-shaped
-string boundary; focused proof passed targeted Rust `1 / 1`, full
-`date_time_builtin` Rust `21 / 21`, build, direct probes, selected PHPT
-`3 / 3`, formatting, and diff checks.
+Current source-head note: no pushed source checkpoint is ahead of the accepted
+public-score source as of this update. The local supervisor notes below are
+historical pre-gate proof and are superseded for score accounting by the
+`12c1be0a` public gate.
 
 Local source checkpoint note: checkpoint `1efcacf6` passed
 `tools/checkpoint.sh` for the next post-public focused source batch. It covers
@@ -596,7 +580,9 @@ Current rejected, reverted, stale, or still-pending Batch024 candidates:
 | Batch023 repair01 | 5173 / 20294 | 25.49% | 0 PASS regressions |
 | Batch024 regression repair | 5363 / 20294 | 26.43% | 0 PASS regressions |
 | Batch024 repair hash/session | 5481 / 20294 | 27.01% | 0 PASS regressions; sockets marker adjudicated |
-| Batch024 next13 | 5498 / 20294 | 27.09% | 0 PASS regressions; current public score |
+| Batch024 next13 | 5498 / 20294 | 27.09% | 0 PASS regressions |
+| Batch024 next14 | 5513 / 20294 | 27.17% | 0 PASS regressions; stream/INI/array rows |
+| Current score gate `12c1be0a` | 5690 / 20294 | 28.04% | 0 PASS regressions; +177 public PHPT passes |
 
 ## Operating Rules / Gates
 
@@ -621,8 +607,10 @@ Current rejected, reverted, stale, or still-pending Batch024 candidates:
   `f97ff597429a2fe633665a7e02d97c8077f9f90f`
 - PHPT wrapper:
   `/home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper`
-- Current Batch024 gate evidence:
-  `/home/claude/supervised-php-compiler/state/logs/phpt-full-batch024-next13-20260601T183739Z-php-src-f97ff59-source-2755fc15`
+- Current accepted gate evidence:
+  `/home/claude/supervised-php-compiler/state/logs/phpt-full-current-score-20260602T104841Z-php-src-f97ff59-public-12c1be0a-source-12c1be0a`
+- Previous Batch024 next14 gate evidence:
+  `/home/claude/supervised-php-compiler/state/logs/phpt-full-batch024-next14-20260601T192923Z-php-src-f97ff59-public-2755fc15-source-4f1c81d5`
 - Previous Batch024 repair hash/session evidence:
   `/home/claude/supervised-php-compiler/state/logs/phpt-full-batch024-repair-hash-session-20260601T180507Z-php-src-f97ff59-source-1fe2b233`
 - Previous Batch024 regression repair evidence:
