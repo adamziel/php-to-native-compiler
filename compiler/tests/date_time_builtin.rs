@@ -774,6 +774,81 @@ try {
 }
 
 #[test]
+fn datetime_immutable_serialization_state_and_uninitialized_copy_errors() {
+    let execution = run_source(
+        r#"<?php
+date_default_timezone_set("Europe/London");
+class SerialDateTimeImmutable extends DateTimeImmutable {
+    public function __construct(public ?bool $myProperty = null) {
+        parent::__construct("2022-04-14 11:27:42");
+    }
+}
+class MyDateTime extends DateTime {
+    public function __construct() {}
+}
+class MyDateTimeImmutable extends DateTimeImmutable {
+    public function __construct() {}
+}
+
+$date = new DateTimeImmutable("2022-04-14 11:27:42");
+$serialized = serialize($date);
+echo $serialized, "\n";
+$copy = unserialize($serialized);
+echo get_class($copy), "|", $copy->format("F j, Y, g:i a"), "\n";
+$state = $date->__serialize();
+echo $state["date"], "|", $state["timezone_type"], "|", $state["timezone"], "\n";
+$date->__unserialize(array(
+    "date" => "2006-01-02 03:04:05.541106",
+    "timezone_type" => 1,
+    "timezone" => "+0130",
+));
+echo $date->date, "|", $date->timezone_type, "|", $date->timezone, "\n";
+
+$child = new SerialDateTimeImmutable(true);
+$roundTrip = unserialize(serialize($child));
+var_dump($roundTrip->myProperty);
+
+try {
+    DateTimeImmutable::__set_state(array(
+        "date" => 2023.113,
+        "timezone_type" => 3,
+        "timezone" => "Europe/Kyiv",
+    ));
+} catch (Throwable $e) {
+    echo get_class($e), ": ", $e->getMessage(), "\n";
+}
+try {
+    DateTimeImmutable::createFromMutable(new MyDateTime());
+} catch (DateObjectError $e) {
+    echo get_class($e), ": ", $e->getMessage(), "\n";
+}
+try {
+    DateTimeImmutable::createFromInterface(new MyDateTimeImmutable());
+} catch (DateObjectError $e) {
+    echo get_class($e), ": ", $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "O:17:\"DateTimeImmutable\":3:{s:4:\"date\";s:26:\"2022-04-14 11:27:42.000000\";s:13:\"timezone_type\";i:3;s:8:\"timezone\";s:13:\"Europe/London\";}\n",
+            "DateTimeImmutable|April 14, 2022, 11:27 am\n",
+            "2022-04-14 11:27:42.000000|3|Europe/London\n",
+            "2006-01-02 03:04:05.541106|1|+01:30\n",
+            "bool(true)\n",
+            "Error: Invalid serialization data for DateTimeImmutable object\n",
+            "DateObjectError: Object of type MyDateTime (inheriting DateTime) has not been correctly initialized by calling parent::__construct() in its constructor\n",
+            "DateObjectError: Object of type MyDateTimeImmutable (inheriting DateTimeImmutable) has not been correctly initialized by calling parent::__construct() in its constructor\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn datetime_mutable_timezone_metadata_matches_basic_rows() {
     let execution = run_source(
         r#"<?php

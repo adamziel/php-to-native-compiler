@@ -6122,13 +6122,20 @@
   and `DateTimeImmutable::__set_state()` reconstruct fresh bounded objects from
   the exported `date`, `timezone_type`, and `timezone` state fields produced by
   the current `var_export()` path for supported date strings and bounded
-  timezone identifiers, with invalid mutable DateTime state raising a catchable
-  PHP-shaped `Error`. Exact core mutable `DateTime` objects also round-trip
-  through the generic `serialize()` / `unserialize()` subset for that bounded
-  state shape. `DateTime::createFromImmutable()`,
+  timezone identifiers, with invalid mutable DateTime or immutable
+  DateTimeImmutable state raising catchable PHP-shaped `Error`s. Exact core
+  mutable `DateTime` objects and exact core immutable `DateTimeImmutable`
+  objects also round-trip through the generic `serialize()` / `unserialize()`
+  subset for that bounded state shape. `DateTimeImmutable::__serialize()` and
+  `DateTimeImmutable::__unserialize()` expose the same bounded state array, and
+  initialized public properties on `DateTimeImmutable` subclasses round-trip
+  through generic serialization alongside the three core state fields.
+  `DateTime::createFromImmutable()`,
   `DateTime::createFromInterface()`, `DateTimeImmutable::createFromMutable()`,
   and `DateTimeImmutable::createFromInterface()` copy bounded timestamp/timezone
-  state into the called mutable or immutable target class. `DateTime::format()`,
+  state into the called mutable or immutable target class, with uninitialized
+  source objects reporting catchable `DateObjectError`s for the covered
+  DateTime and DateTimeImmutable inheritance cases. `DateTime::format()`,
   `DateTimeImmutable::format()`, `date_format()`, `date()`, `gmdate()`,
   `strftime()`, `gmstrftime()`, and `idate()` route `$format` through the
   shared PHP-shaped string boundary for scalar conversion, `null` deprecation,
@@ -6157,7 +6164,8 @@
   fixed-offset state identity beyond the covered named-zone rows, DateTime
   state arrays outside the bounded exported `date`/`timezone_type`/`timezone`
   and `timezone_type`/`timezone` shapes, DateTime manual `__serialize()` /
-  `__unserialize()` methods, exact invalid-modifier
+  `__unserialize()` methods, private/protected serialized properties on
+  DateTimeImmutable subclasses, exact invalid-modifier
   `DateMalformedStringException` behavior, exact
   diagnostics for constructor/timezone/state coercions outside the covered
   slices, weak scalar timestamp/date-part coercions for `idate()` / date

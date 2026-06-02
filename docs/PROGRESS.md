@@ -206,6 +206,30 @@ Implemented:
   references/COW, and direct native lowering beyond the runtime ABI helper
   path.
 
+- Extended the bounded DateTimeImmutable serialization/state lane for `phpc
+  run`. Exact core `DateTimeImmutable` objects now round-trip through generic
+  `serialize()` / `unserialize()` for the supported `date`, `timezone_type`,
+  and `timezone` state shape, and `DateTimeImmutable::__serialize()`,
+  `DateTimeImmutable::__unserialize()`, and `DateTimeImmutable::__set_state()`
+  share immutable-specific invalid-state `Error` diagnostics. Initialized
+  public properties on `DateTimeImmutable` subclasses round-trip after the core
+  state fields, while uninitialized DateTime/DateTimeImmutable sources passed
+  to the covered `createFrom*()` factories now report catchable
+  `DateObjectError`s. Focused proof covers the Rust
+  `datetime_immutable_serialization_state_and_uninitialized_copy_errors`
+  regression, the full DateTime Rust test file, selected public PHPT rows
+  `DateTimeImmutable_inherited_serialization.phpt`,
+  `DateTimeImmutable_serialization.phpt`,
+  `DateTimeImmutable_set_state_exception.phpt`,
+  `DateTimeImmutable_createFromInterface_exceptions.phpt`, and
+  `DateTimeImmutable_createFromMutable_exceptions.phpt`, build, fmt, and diff
+  checks. Unsupported edges remain mutable DateTime manual `__serialize()` /
+  `__unserialize()` methods, private/protected serialized properties on
+  DateTimeImmutable subclasses, custom serialization hooks, full malformed
+  payload offset parity, full timezone database/history, non-zero DateTime
+  microsecond mutation/formatting beyond preserved public state,
+  references/COW, and native lowering.
+
 - Added a bounded exact-core date object serialization-state lane. Generic
   `serialize()` / `unserialize()` now round-trip exact core `DateTime` objects
   whose public `date`, `timezone_type`, and `timezone` state matches the
@@ -228,8 +252,7 @@ Implemented:
   `DateTimeZone_set_state.phpt`, and
   `DateTimeZone_set_state_exception.phpt`, build, fmt, and diff checks.
   Unsupported edges remain DateTime manual `__serialize()` / `__unserialize()`
-  methods, DateTimeImmutable serialization/state methods, DateTime and
-  DateTimeZone subclasses with custom serialized properties, custom
+  methods, DateTime and DateTimeZone subclasses with custom serialized properties, custom
   serialization hooks, full malformed-payload offset parity, full timezone
   database/history, non-zero DateTime microsecond method formatting beyond the
   current public state, references/COW, and native lowering.

@@ -18754,6 +18754,61 @@ impl Interpreter {
         Ok(())
     }
 
+    fn datetime_serialization_state_array(
+        object: &PhpObject,
+        span: Span,
+    ) -> CompileResult<PhpArray> {
+        let date = match object.read_public_property("date") {
+            Ok(Value::String(value)) => value,
+            _ => return Err(datetime_invalid_serialization_error(span)),
+        };
+        let timezone_type = match object.read_public_property("timezone_type") {
+            Ok(Value::Int(value)) => value,
+            _ => return Err(datetime_invalid_serialization_error(span)),
+        };
+        let timezone_name = match object.read_public_property("timezone") {
+            Ok(Value::String(value)) => value,
+            _ => return Err(datetime_invalid_serialization_error(span)),
+        };
+        let Some(canonical_name) =
+            normalized_datetimezone_serialization_state(timezone_type, &timezone_name)
+        else {
+            return Err(datetime_invalid_serialization_error(span));
+        };
+        let timezone = bounded_timezone_from_state_name(&canonical_name)
+            .ok_or_else(|| datetime_invalid_serialization_error(span))?;
+        parse_bounded_datetime_state_date(&date, &timezone)
+            .ok_or_else(|| datetime_invalid_serialization_error(span))?;
+
+        let mut state = PhpArray::new();
+        state.insert("date", Value::String(date));
+        state.insert("timezone_type", Value::Int(timezone_type));
+        state.insert("timezone", Value::String(canonical_name));
+        Ok(state)
+    }
+
+    fn datetimeimmutable_serialization_state_array(
+        object: &PhpObject,
+        span: Span,
+    ) -> CompileResult<PhpArray> {
+        map_datetime_invalid_serialization_to_datetimeimmutable(
+            Self::datetime_serialization_state_array(object, span),
+            span,
+        )
+    }
+
+    fn assign_datetimeimmutable_object_serialization_state(
+        &mut self,
+        object: &PhpObject,
+        state: &PhpArray,
+        span: Span,
+    ) -> CompileResult<()> {
+        map_datetime_invalid_serialization_to_datetimeimmutable(
+            self.assign_datetime_object_serialization_state(object, state, span),
+            span,
+        )
+    }
+
     fn call_datetime_set_state_static(
         &mut self,
         class_id: ClassId,
@@ -18772,6 +18827,31 @@ impl Interpreter {
             bounded_timezone_from_state_array(&state, span)?,
             span,
         )?;
+        self.track_allocated_object(&object);
+        Ok(Value::Object(object))
+    }
+
+    fn call_datetimeimmutable_set_state_static(
+        &mut self,
+        class_id: ClassId,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        expect_expr_arity("DateTimeImmutable::__set_state", args.len(), 1, span)?;
+        let state = self.evaluate(&args[0], caller_scope)?;
+        let Value::Array(state) = state else {
+            return Err(datetimeimmutable_invalid_serialization_error(span));
+        };
+        let timestamp = map_datetime_invalid_serialization_to_datetimeimmutable(
+            bounded_datetime_timestamp_from_state_array(&state, span),
+            span,
+        )?;
+        let timezone = map_datetime_invalid_serialization_to_datetimeimmutable(
+            bounded_timezone_from_state_array(&state, span),
+            span,
+        )?;
+        let object = self.create_datetime_object_from_state(class_id, timestamp, timezone, span)?;
         self.track_allocated_object(&object);
         Ok(Value::Object(object))
     }
@@ -18928,7 +19008,7 @@ impl Interpreter {
         function: &'static str,
         span: Span,
     ) -> CompileResult<Value> {
-        let state = self.datetime_object_state(source, function, span)?;
+        let state = self.datetime_copy_source_state(source, function, span)?;
         let object = self.create_datetime_object_from_state(
             class_id,
             state.timestamp,
@@ -19252,6 +19332,19 @@ impl Interpreter {
         match method_name.to_ascii_lowercase().as_str() {
             "__construct" => {
                 self.initialize_datetimeimmutable_object(&object, args, span, caller_scope)?;
+                Ok(Value::Null)
+            }
+            "__serialize" => {
+                expect_expr_arity("DateTimeImmutable::__serialize", args.len(), 0, span)?;
+                Self::datetimeimmutable_serialization_state_array(&object, span).map(Value::Array)
+            }
+            "__unserialize" => {
+                expect_expr_arity("DateTimeImmutable::__unserialize", args.len(), 1, span)?;
+                let state = self.evaluate(&args[0], caller_scope)?;
+                let Value::Array(state) = state else {
+                    return Err(datetimeimmutable_invalid_serialization_error(span));
+                };
+                self.assign_datetimeimmutable_object_serialization_state(&object, &state, span)?;
                 Ok(Value::Null)
             }
             "format" => {
@@ -19615,6 +19708,42 @@ impl Interpreter {
                     ),
                 )
             })
+    }
+
+    fn datetime_copy_source_state(
+        &self,
+        object: &PhpObject,
+        function: &'static str,
+        span: Span,
+    ) -> CompileResult<BoundedDateTimeObjectState> {
+        self.date_time_objects
+            .get(&object.id())
+            .cloned()
+            .ok_or_else(|| self.date_object_uninitialized_error(object, function, span))
+    }
+
+    fn date_object_uninitialized_error(
+        &self,
+        object: &PhpObject,
+        function: &'static str,
+        span: Span,
+    ) -> Diagnostic {
+        let inherited = if object.is_instance_of_class_name("DateTimeImmutable") {
+            "DateTimeImmutable"
+        } else {
+            "DateTime"
+        };
+        let message = format!(
+            "Object of type {} (inheriting {inherited}) has not been correctly initialized by calling parent::__construct() in its constructor",
+            object.class_name()
+        );
+        runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                format!("{DATE_OBJECT_ERROR_DIAGNOSTIC_PREFIX}{message}"),
+            ),
+        )
     }
 
     fn set_datetime_date_parts(
@@ -55343,6 +55472,63 @@ impl Interpreter {
             .classes
             .get(parent_class_id)
             .expect("parent class id should resolve to class metadata");
+        if self.resolved_method_is_core_datetimezone(parent_class_id) {
+            let this_object = match caller_scope.read_named("this") {
+                Some(Value::Object(object)) => object.clone(),
+                _ => {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{}::{method_name}()", parent_class.name()),
+                            "non-static method dispatch through parent:: requires current $this object context",
+                        ),
+                    ));
+                }
+            };
+            return self.call_datetimezone_method(
+                this_object,
+                method_name,
+                args,
+                span,
+                caller_scope,
+            );
+        }
+        if self.resolved_method_is_core_datetime(parent_class_id) {
+            let this_object = match caller_scope.read_named("this") {
+                Some(Value::Object(object)) => object.clone(),
+                _ => {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{}::{method_name}()", parent_class.name()),
+                            "non-static method dispatch through parent:: requires current $this object context",
+                        ),
+                    ));
+                }
+            };
+            return self.call_datetime_method(this_object, method_name, args, span, caller_scope);
+        }
+        if self.resolved_method_is_core_datetimeimmutable(parent_class_id) {
+            let this_object = match caller_scope.read_named("this") {
+                Some(Value::Object(object)) => object.clone(),
+                _ => {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{}::{method_name}()", parent_class.name()),
+                            "non-static method dispatch through parent:: requires current $this object context",
+                        ),
+                    ));
+                }
+            };
+            return self.call_datetimeimmutable_method(
+                this_object,
+                method_name,
+                args,
+                span,
+                caller_scope,
+            );
+        }
         let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
             self.resolve_instance_method(parent_class_id, method_name)
         else {
@@ -55658,7 +55844,12 @@ impl Interpreter {
         if self.is_datetimeimmutable_class_id(class_id)
             && method_name.eq_ignore_ascii_case("__set_state")
         {
-            return self.call_datetime_set_state_static(class_id, args, span, caller_scope);
+            return self.call_datetimeimmutable_set_state_static(
+                class_id,
+                args,
+                span,
+                caller_scope,
+            );
         }
         if self.is_datetimeimmutable_class_id(class_id)
             && method_name.eq_ignore_ascii_case("createFromMutable")
@@ -91946,6 +92137,8 @@ impl Interpreter {
             self.initialize_unserialized_datetimezone_object(&object, properties, span)?;
         } else if self.resolved_method_is_core_datetime(class_id) {
             self.initialize_unserialized_datetime_object(&object, properties, span)?;
+        } else if self.is_datetimeimmutable_class_id(class_id) {
+            self.initialize_unserialized_datetimeimmutable_object(&object, properties, span)?;
         } else {
             for (name, value) in properties {
                 object
@@ -91977,6 +92170,26 @@ impl Interpreter {
         let state =
             datetime_serialization_state_array_from_properties(properties.into_iter(), span)?;
         self.assign_datetime_object_serialization_state(object, &state, span)
+    }
+
+    fn initialize_unserialized_datetimeimmutable_object(
+        &mut self,
+        object: &PhpObject,
+        properties: Vec<(String, Value)>,
+        span: Span,
+    ) -> CompileResult<()> {
+        let (state, public_properties) =
+            datetimeimmutable_serialization_state_array_from_properties(
+                properties.into_iter(),
+                span,
+            )?;
+        self.assign_datetimeimmutable_object_serialization_state(object, &state, span)?;
+        for (name, value) in public_properties {
+            object
+                .write_dynamic_public_property(&name, value)
+                .map_err(|error| runtime_error(span, error))?;
+        }
+        Ok(())
     }
 
     fn call_user_func_builtin(&mut self, args: Vec<Value>, span: Span) -> CompileResult<Value> {
@@ -108320,6 +108533,9 @@ const DATETIMEZONE_INVALID_SERIALIZATION_MESSAGE: &str =
     "Invalid serialization data for DateTimeZone object";
 const DATETIME_INVALID_SERIALIZATION_MESSAGE: &str =
     "Invalid serialization data for DateTime object";
+const DATETIMEIMMUTABLE_INVALID_SERIALIZATION_MESSAGE: &str =
+    "Invalid serialization data for DateTimeImmutable object";
+const DATE_OBJECT_ERROR_DIAGNOSTIC_PREFIX: &str = "DateObjectError: ";
 
 fn datetimezone_invalid_serialization_error(span: Span) -> Diagnostic {
     runtime_error(
@@ -108332,6 +108548,16 @@ fn datetime_invalid_serialization_error(span: Span) -> Diagnostic {
     runtime_error(
         span,
         RuntimeError::unsupported_call("unserialize()", DATETIME_INVALID_SERIALIZATION_MESSAGE),
+    )
+}
+
+fn datetimeimmutable_invalid_serialization_error(span: Span) -> Diagnostic {
+    runtime_error(
+        span,
+        RuntimeError::unsupported_call(
+            "unserialize()",
+            DATETIMEIMMUTABLE_INVALID_SERIALIZATION_MESSAGE,
+        ),
     )
 }
 
@@ -108349,9 +108575,31 @@ fn is_datetime_invalid_serialization_error(error: &Diagnostic) -> bool {
             == format!("unsupported call unserialize(): {DATETIME_INVALID_SERIALIZATION_MESSAGE}")
 }
 
+fn is_datetimeimmutable_invalid_serialization_error(error: &Diagnostic) -> bool {
+    error.phase == Phase::Runtime
+        && error.message
+            == format!(
+                "unsupported call unserialize(): {DATETIMEIMMUTABLE_INVALID_SERIALIZATION_MESSAGE}"
+            )
+}
+
 fn is_date_object_invalid_serialization_error(error: &Diagnostic) -> bool {
     is_datetimezone_invalid_serialization_error(error)
         || is_datetime_invalid_serialization_error(error)
+        || is_datetimeimmutable_invalid_serialization_error(error)
+}
+
+fn map_datetime_invalid_serialization_to_datetimeimmutable<T>(
+    result: CompileResult<T>,
+    span: Span,
+) -> CompileResult<T> {
+    result.map_err(|error| {
+        if is_datetime_invalid_serialization_error(&error) {
+            datetimeimmutable_invalid_serialization_error(span)
+        } else {
+            error
+        }
+    })
 }
 
 fn catchable_php_error_message(error: &Diagnostic) -> Option<String> {
@@ -108384,6 +108632,22 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
 
     if is_datetime_invalid_serialization_error(error) {
         return Some(("Error", DATETIME_INVALID_SERIALIZATION_MESSAGE.to_string()));
+    }
+
+    if is_datetimeimmutable_invalid_serialization_error(error) {
+        return Some((
+            "Error",
+            DATETIMEIMMUTABLE_INVALID_SERIALIZATION_MESSAGE.to_string(),
+        ));
+    }
+
+    if error.phase == Phase::Runtime {
+        if let Some((_, message)) = error
+            .message
+            .split_once(DATE_OBJECT_ERROR_DIAGNOSTIC_PREFIX)
+        {
+            return Some(("DateObjectError", message.to_string()));
+        }
     }
 
     if error.phase == Phase::Runtime
@@ -134552,7 +134816,9 @@ fn format_php_serialized_datetimezone_object(
 }
 
 fn format_php_serialized_datetime_object(object: &PhpObject, output: &mut String) -> Option<()> {
-    if !object.class_name().eq_ignore_ascii_case("DateTime") {
+    let is_exact_datetime = object.class_name().eq_ignore_ascii_case("DateTime");
+    let is_datetimeimmutable = object.is_instance_of_class_name("DateTimeImmutable");
+    if !is_exact_datetime && !is_datetimeimmutable {
         return None;
     }
 
@@ -134573,13 +134839,37 @@ fn format_php_serialized_datetime_object(object: &PhpObject, output: &mut String
     let timezone = bounded_timezone_from_state_name(&canonical_name)?;
     parse_bounded_datetime_state_date(&date, &timezone)?;
 
-    output.push_str("O:8:\"DateTime\":3:{");
+    let mut public_properties = Vec::new();
+    if is_datetimeimmutable {
+        for property in object.properties() {
+            if property.visibility() == Visibility::Public
+                && property.is_initialized()
+                && !property.is_unset()
+                && !matches!(property.name(), "date" | "timezone_type" | "timezone")
+            {
+                public_properties.push((property.name().to_string(), property.value_cloned()));
+            }
+        }
+    }
+
+    let class_name = object.class_name();
+    output.push_str("O:");
+    output.push_str(&class_name.len().to_string());
+    output.push_str(":\"");
+    output.push_str(class_name);
+    output.push_str("\":");
+    output.push_str(&(3 + public_properties.len()).to_string());
+    output.push_str(":{");
     format_php_serialized_array_key(&ArrayKey::String("date".to_string()), output);
     format_php_serialized_value(&Value::String(date), output)?;
     format_php_serialized_array_key(&ArrayKey::String("timezone_type".to_string()), output);
     format_php_serialized_value(&Value::Int(timezone_type), output)?;
     format_php_serialized_array_key(&ArrayKey::String("timezone".to_string()), output);
     format_php_serialized_value(&Value::String(canonical_name), output)?;
+    for (name, value) in public_properties {
+        format_php_serialized_array_key(&ArrayKey::String(name), output);
+        format_php_serialized_value(&value, output)?;
+    }
     output.push('}');
     Some(())
 }
@@ -143771,6 +144061,30 @@ where
     }
     let _ = bounded_datetime_timestamp_from_state_array(&state, span)?;
     Ok(state)
+}
+
+fn datetimeimmutable_serialization_state_array_from_properties<I>(
+    properties: I,
+    span: Span,
+) -> CompileResult<(PhpArray, Vec<(String, Value)>)>
+where
+    I: IntoIterator<Item = (String, Value)>,
+{
+    let mut state = PhpArray::new();
+    let mut public_properties = Vec::new();
+    for (name, value) in properties {
+        match name.as_str() {
+            "date" | "timezone_type" | "timezone" => {
+                state.insert(name, value);
+            }
+            _ => public_properties.push((name, value)),
+        }
+    }
+    map_datetime_invalid_serialization_to_datetimeimmutable(
+        bounded_datetime_timestamp_from_state_array(&state, span),
+        span,
+    )?;
+    Ok((state, public_properties))
 }
 
 fn bounded_datetime_state_string(state: &PhpArray, key: &str, span: Span) -> CompileResult<String> {
