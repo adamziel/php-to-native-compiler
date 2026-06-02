@@ -61,16 +61,88 @@ var_dump(posix_getgrgid(-999));
 }
 
 #[test]
+fn posix_identity_and_name_lookup_builtins_cover_basic_rows() {
+    let source = r#"<?php
+$uid = posix_getuid();
+$euid = posix_geteuid();
+$gid = posix_getgid();
+$egid = posix_getegid();
+$pid = posix_getpid();
+$ppid = posix_getppid();
+$pgrp = posix_getpgrp();
+$groups = posix_getgroups();
+$pw = posix_getpwuid($uid);
+$pw_by_name = is_array($pw) ? posix_getpwnam($pw["name"]) : false;
+$gr = posix_getgrgid($gid);
+$gr_by_name = is_array($gr) ? posix_getgrnam($gr["name"]) : false;
+echo function_exists("posix_getuid") && is_callable("posix_getgroups") ? "known" : "missing";
+echo "|";
+echo is_int($uid) && $uid >= 0
+    && is_int($euid) && $euid >= 0
+    && is_int($gid) && $gid >= 0
+    && is_int($egid) && $egid >= 0
+    ? "ids"
+    : "bad-ids";
+echo "|";
+echo is_int($pid) && $pid > 0
+    && is_int($ppid) && $ppid >= 0
+    && is_int($pgrp) && $pgrp >= 0
+    ? "process"
+    : "bad-process";
+echo "|";
+echo is_array($groups) ? "groups" : "bad-groups";
+echo "|";
+echo is_array($pw)
+    && $pw["uid"] === $uid
+    && is_array($pw_by_name)
+    && $pw_by_name["uid"] === $uid
+    ? "passwd"
+    : "bad-passwd";
+echo "|";
+echo is_array($gr)
+    && $gr["gid"] === $gid
+    && is_array($gr_by_name)
+    && $gr_by_name["gid"] === $gid
+    ? "group"
+    : "bad-group";
+echo "|";
+$rf = new ReflectionFunction("posix_getpwnam");
+echo $rf->getNumberOfRequiredParameters(), "/", $rf->getNumberOfParameters(), "/";
+echo $rf->getParameters()[0]->getName(), "/", $rf->getExtensionName(), "/";
+echo $rf->hasReturnType() ? "return" : "no-return";
+echo "|";
+var_dump(posix_getpwnam(""));
+var_dump(posix_getgrnam(""));
+"#;
+    let path = temp_source_path("posix-identity-lookup");
+    fs::write(&path, source).expect("temporary POSIX identity source is written");
+
+    let execution = run_source_with_source_file(source, path.display().to_string()).unwrap();
+    let _ = fs::remove_file(path);
+
+    assert_eq!(
+        execution.stdout,
+        "known|ids|process|groups|passwd|group|1/1/username/posix/return|bool(false)\nbool(false)\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn emit_ir_folds_posix_lookup_names_but_rejects_direct_calls() {
     let ir = emit_ir_source(
         r#"<?php
 echo function_exists("posix_getpwuid") ? "1" : "0";
 echo is_callable("posix_getgrgid") ? "1" : "0";
+echo function_exists("posix_getuid") ? "1" : "0";
+echo is_callable("posix_getgroups") ? "1" : "0";
+echo function_exists("posix_getpwnam") ? "1" : "0";
+echo is_callable("posix_getgrnam") ? "1" : "0";
 "#,
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 2, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 6, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
 

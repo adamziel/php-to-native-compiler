@@ -92750,8 +92750,18 @@ impl Interpreter {
                 span,
             ),
             "posix_ctermid" => call_posix_ctermid(&args, span),
+            "posix_getuid" => call_posix_getuid(&args, span),
+            "posix_geteuid" => call_posix_geteuid(&args, span),
+            "posix_getgid" => call_posix_getgid(&args, span),
+            "posix_getegid" => call_posix_getegid(&args, span),
+            "posix_getpid" => call_posix_getpid(&args, span),
+            "posix_getppid" => call_posix_getppid(&args, span),
+            "posix_getpgrp" => call_posix_getpgrp(&args, span),
+            "posix_getgroups" => call_posix_getgroups(&args, span),
             "posix_getpwuid" => call_posix_getpwuid(&args, span),
+            "posix_getpwnam" => call_posix_getpwnam(&args, span),
             "posix_getgrgid" => call_posix_getgrgid(&args, span),
+            "posix_getgrnam" => call_posix_getgrnam(&args, span),
             "umask" => self.call_umask(&args, span),
             "getmypid" => call_getmypid(&args, span),
             "php_uname" => call_php_uname(&args, span),
@@ -111639,13 +111649,24 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
         "get_current_user" => ("string", vec![]),
         "getlastmod" | "getmyinode" | "getmyuid" | "getmygid" => ("int|false", vec![]),
         "posix_ctermid" => ("string|false", vec![]),
+        "posix_getuid" | "posix_geteuid" | "posix_getgid" | "posix_getegid" | "posix_getpid"
+        | "posix_getppid" | "posix_getpgrp" => ("int", vec![]),
+        "posix_getgroups" => ("array|false", vec![]),
         "posix_getpwuid" => (
             "array|false",
             vec![reflection_internal_param("user_id", "int")],
         ),
+        "posix_getpwnam" => (
+            "array|false",
+            vec![reflection_internal_param("username", "string")],
+        ),
         "posix_getgrgid" => (
             "array|false",
             vec![reflection_internal_param("group_id", "int")],
+        ),
+        "posix_getgrnam" => (
+            "array|false",
+            vec![reflection_internal_param("group_name", "string")],
         ),
         "umask" => (
             "int",
@@ -116535,8 +116556,18 @@ fn is_builtin(name: &str) -> bool {
             | "getmyuid"
             | "getmygid"
             | "posix_ctermid"
+            | "posix_getuid"
+            | "posix_geteuid"
+            | "posix_getgid"
+            | "posix_getegid"
+            | "posix_getpid"
+            | "posix_getppid"
+            | "posix_getpgrp"
+            | "posix_getgroups"
             | "posix_getpwuid"
+            | "posix_getpwnam"
             | "posix_getgrgid"
+            | "posix_getgrnam"
             | "umask"
             | "getmypid"
             | "php_uname"
@@ -142586,6 +142617,68 @@ fn call_posix_ctermid(args: &[Value], span: Span) -> CompileResult<Value> {
         .unwrap_or(Value::Bool(false)))
 }
 
+fn call_posix_getuid(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("posix_getuid", args, 0, span)?;
+    Ok(posix_getuid_value()
+        .map(Value::Int)
+        .unwrap_or(Value::Bool(false)))
+}
+
+fn call_posix_geteuid(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("posix_geteuid", args, 0, span)?;
+    Ok(posix_geteuid_value()
+        .map(Value::Int)
+        .unwrap_or(Value::Bool(false)))
+}
+
+fn call_posix_getgid(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("posix_getgid", args, 0, span)?;
+    Ok(posix_getgid_value()
+        .map(Value::Int)
+        .unwrap_or(Value::Bool(false)))
+}
+
+fn call_posix_getegid(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("posix_getegid", args, 0, span)?;
+    Ok(posix_getegid_value()
+        .map(Value::Int)
+        .unwrap_or(Value::Bool(false)))
+}
+
+fn call_posix_getpid(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("posix_getpid", args, 0, span)?;
+    Ok(posix_getpid_value()
+        .map(Value::Int)
+        .unwrap_or(Value::Bool(false)))
+}
+
+fn call_posix_getppid(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("posix_getppid", args, 0, span)?;
+    Ok(posix_getppid_value()
+        .map(Value::Int)
+        .unwrap_or(Value::Bool(false)))
+}
+
+fn call_posix_getpgrp(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("posix_getpgrp", args, 0, span)?;
+    Ok(posix_getpgrp_value()
+        .map(Value::Int)
+        .unwrap_or(Value::Bool(false)))
+}
+
+fn call_posix_getgroups(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("posix_getgroups", args, 0, span)?;
+    let Some(groups) = posix_group_ids() else {
+        return Ok(Value::Bool(false));
+    };
+
+    let mut array = PhpArray::new();
+    for group in groups {
+        let _ = array.append(Value::Int(group));
+    }
+    Ok(Value::Array(array))
+}
+
 #[cfg(unix)]
 fn posix_ctermid_value() -> Option<String> {
     use std::ffi::CStr;
@@ -142612,6 +142705,147 @@ fn posix_ctermid_value() -> Option<String> {
     None
 }
 
+#[cfg(unix)]
+fn posix_getuid_value() -> Option<i64> {
+    use std::os::raw::c_uint;
+
+    unsafe extern "C" {
+        fn getuid() -> c_uint;
+    }
+
+    Some(i64::from(unsafe { getuid() }))
+}
+
+#[cfg(not(unix))]
+fn posix_getuid_value() -> Option<i64> {
+    None
+}
+
+#[cfg(unix)]
+fn posix_geteuid_value() -> Option<i64> {
+    use std::os::raw::c_uint;
+
+    unsafe extern "C" {
+        fn geteuid() -> c_uint;
+    }
+
+    Some(i64::from(unsafe { geteuid() }))
+}
+
+#[cfg(not(unix))]
+fn posix_geteuid_value() -> Option<i64> {
+    None
+}
+
+#[cfg(unix)]
+fn posix_getgid_value() -> Option<i64> {
+    use std::os::raw::c_uint;
+
+    unsafe extern "C" {
+        fn getgid() -> c_uint;
+    }
+
+    Some(i64::from(unsafe { getgid() }))
+}
+
+#[cfg(not(unix))]
+fn posix_getgid_value() -> Option<i64> {
+    None
+}
+
+#[cfg(unix)]
+fn posix_getegid_value() -> Option<i64> {
+    use std::os::raw::c_uint;
+
+    unsafe extern "C" {
+        fn getegid() -> c_uint;
+    }
+
+    Some(i64::from(unsafe { getegid() }))
+}
+
+#[cfg(not(unix))]
+fn posix_getegid_value() -> Option<i64> {
+    None
+}
+
+#[cfg(unix)]
+fn posix_getpid_value() -> Option<i64> {
+    Some(i64::from(std::process::id()))
+}
+
+#[cfg(not(unix))]
+fn posix_getpid_value() -> Option<i64> {
+    None
+}
+
+#[cfg(unix)]
+fn posix_getppid_value() -> Option<i64> {
+    use std::os::raw::c_int;
+
+    unsafe extern "C" {
+        fn getppid() -> c_int;
+    }
+
+    nonnegative_posix_int(unsafe { getppid() })
+}
+
+#[cfg(not(unix))]
+fn posix_getppid_value() -> Option<i64> {
+    None
+}
+
+#[cfg(unix)]
+fn posix_getpgrp_value() -> Option<i64> {
+    use std::os::raw::c_int;
+
+    unsafe extern "C" {
+        fn getpgrp() -> c_int;
+    }
+
+    nonnegative_posix_int(unsafe { getpgrp() })
+}
+
+#[cfg(not(unix))]
+fn posix_getpgrp_value() -> Option<i64> {
+    None
+}
+
+#[cfg(unix)]
+fn posix_group_ids() -> Option<Vec<i64>> {
+    use std::os::raw::{c_int, c_uint};
+
+    unsafe extern "C" {
+        fn getgroups(size: c_int, list: *mut c_uint) -> c_int;
+    }
+
+    let count = unsafe { getgroups(0, std::ptr::null_mut()) };
+    if count < 0 {
+        return None;
+    }
+    if count == 0 {
+        return Some(Vec::new());
+    }
+
+    let mut groups = vec![0 as c_uint; count as usize];
+    let filled = unsafe { getgroups(count, groups.as_mut_ptr()) };
+    if filled < 0 {
+        return None;
+    }
+    groups.truncate(filled as usize);
+    Some(groups.into_iter().map(i64::from).collect())
+}
+
+#[cfg(not(unix))]
+fn posix_group_ids() -> Option<Vec<i64>> {
+    None
+}
+
+#[cfg(unix)]
+fn nonnegative_posix_int(value: std::os::raw::c_int) -> Option<i64> {
+    (value >= 0).then(|| i64::from(value))
+}
+
 fn call_posix_getpwuid(args: &[Value], span: Span) -> CompileResult<Value> {
     expect_arity("posix_getpwuid", args, 1, span)?;
     let uid = php_internal_int_argument("posix_getpwuid()", 1, "user_id", &args[0], span)?;
@@ -142624,6 +142858,18 @@ fn call_posix_getpwuid(args: &[Value], span: Span) -> CompileResult<Value> {
         .unwrap_or(Value::Bool(false)))
 }
 
+fn call_posix_getpwnam(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("posix_getpwnam", args, 1, span)?;
+    let name = string_builtin_argument("posix_getpwnam()", "username", &args[0], span)?;
+    if name.is_empty() {
+        return Ok(Value::Bool(false));
+    }
+
+    Ok(posix_passwd_entry_for_name(&name)
+        .map(posix_passwd_entry_value)
+        .unwrap_or(Value::Bool(false)))
+}
+
 fn call_posix_getgrgid(args: &[Value], span: Span) -> CompileResult<Value> {
     expect_arity("posix_getgrgid", args, 1, span)?;
     let gid = php_internal_int_argument("posix_getgrgid()", 1, "group_id", &args[0], span)?;
@@ -142632,6 +142878,18 @@ fn call_posix_getgrgid(args: &[Value], span: Span) -> CompileResult<Value> {
     };
 
     Ok(posix_group_entry_for_gid(gid)
+        .map(posix_group_entry_value)
+        .unwrap_or(Value::Bool(false)))
+}
+
+fn call_posix_getgrnam(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("posix_getgrnam", args, 1, span)?;
+    let name = string_builtin_argument("posix_getgrnam()", "group_name", &args[0], span)?;
+    if name.is_empty() {
+        return Ok(Value::Bool(false));
+    }
+
+    Ok(posix_group_entry_for_name(&name)
         .map(posix_group_entry_value)
         .unwrap_or(Value::Bool(false)))
 }
@@ -142662,6 +142920,32 @@ fn posix_passwd_entry_for_uid(uid: u32) -> Option<PosixPasswdEntry> {
     })
 }
 
+fn posix_passwd_entry_for_name(target: &str) -> Option<PosixPasswdEntry> {
+    let passwd = fs::read_to_string("/etc/passwd").ok()?;
+    passwd.lines().find_map(|line| {
+        let mut parts = line.splitn(7, ':');
+        let name = parts.next()?;
+        if name.is_empty() || name != target {
+            return None;
+        }
+        let passwd = parts.next()?;
+        let uid = parts.next()?.parse::<u32>().ok()?;
+        let gid = parts.next()?.parse::<u32>().ok()?;
+        let gecos = parts.next()?;
+        let dir = parts.next()?;
+        let shell = parts.next()?;
+        Some(PosixPasswdEntry {
+            name: name.to_string(),
+            passwd: passwd.to_string(),
+            uid,
+            gid,
+            gecos: gecos.to_string(),
+            dir: dir.to_string(),
+            shell: shell.to_string(),
+        })
+    })
+}
+
 fn posix_group_entry_for_gid(gid: u32) -> Option<PosixGroupEntry> {
     let group = fs::read_to_string("/etc/group").ok()?;
     group.lines().find_map(|line| {
@@ -142684,6 +142968,32 @@ fn posix_group_entry_for_gid(gid: u32) -> Option<PosixGroupEntry> {
             passwd: passwd.to_string(),
             members,
             gid: entry_gid,
+        })
+    })
+}
+
+fn posix_group_entry_for_name(target: &str) -> Option<PosixGroupEntry> {
+    let group = fs::read_to_string("/etc/group").ok()?;
+    group.lines().find_map(|line| {
+        let mut parts = line.splitn(4, ':');
+        let name = parts.next()?;
+        if name.is_empty() || name != target {
+            return None;
+        }
+        let passwd = parts.next()?;
+        let gid = parts.next()?.parse::<u32>().ok()?;
+        let members = parts
+            .next()
+            .unwrap_or_default()
+            .split(',')
+            .filter(|member| !member.is_empty())
+            .map(str::to_string)
+            .collect::<Vec<_>>();
+        Some(PosixGroupEntry {
+            name: name.to_string(),
+            passwd: passwd.to_string(),
+            members,
+            gid,
         })
     })
 }
