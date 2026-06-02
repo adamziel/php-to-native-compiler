@@ -2817,22 +2817,23 @@ string allocation, and conversion diagnostics have a lowered runtime model.
 `ob_list_handlers()`, `ob_get_status()`, `ob_get_clean()`, `ob_get_flush()`,
 `ob_clean()`, `ob_flush()`, `ob_end_clean()`, and `ob_end_flush()` are
 interpreter-only output-buffer boundaries for the current WordPress
-request/rendering path. The interpreter keeps a stack of string buffers;
-PHP-visible output appends to the innermost active buffer, `ob_get_contents()`
-peeks at that buffer without closing it, `ob_get_length()` reports its current
-byte length, `ob_list_handlers()` reports one default handler name per active
-buffer, `ob_get_status()` reports bounded default-handler status arrays for
-the innermost buffer or for the full active stack, `ob_get_clean()` pops and
-returns that buffer, `ob_get_flush()` closes the innermost buffer while
-returning and flushing its contents outward, `ob_clean()` clears the innermost
-buffer, `ob_flush()` moves its contents outward while keeping it active,
-`ob_end_clean()` closes and discards it, `ob_end_flush()` closes it and
-flushes its contents outward, and remaining
-buffers flush outward to stdout when execution completes or the bounded
-`exit()` path returns. Native function-table introspection recognizes the
-names, while direct native calls reject until generated code has stdout capture
-buffers, shutdown flushing, output-started/header interaction, SAPI
-integration, and exact diagnostics.
+request/rendering path. The interpreter keeps a stack of buffers with optional
+supported `ob_start()` handler callbacks; PHP-visible output appends to the
+innermost active buffer, `ob_get_contents()` peeks at that raw buffer without
+closing it or running its handler, `ob_get_length()` reports its current byte
+length, `ob_list_handlers()` reports the default handler or bounded callback
+name per active buffer, `ob_get_status()` reports bounded handler status arrays
+for the innermost buffer or for the full active stack, `ob_get_clean()` pops
+and returns the raw buffer, `ob_get_flush()` closes the innermost buffer while
+returning its raw contents and flushing handled contents outward, `ob_clean()`
+clears the innermost buffer, `ob_flush()` handles and moves its contents
+outward while keeping it active, `ob_end_clean()` closes and discards it,
+`ob_end_flush()` closes it and flushes handled contents outward, and remaining
+buffers flush outward through supported handlers to stdout when execution
+completes or the bounded `exit()` path returns. Native function-table
+introspection recognizes the names, while direct native calls reject until
+generated code has stdout capture buffers, shutdown flushing,
+output-started/header interaction, SAPI integration, and exact diagnostics.
 `register_shutdown_function()` is modeled as an interpreter-only request/SAPI
 shutdown queue. Registration evaluates and stores the callback plus extra
 arguments in request-local interpreter state. Normal completion and the

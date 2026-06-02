@@ -5643,47 +5643,53 @@
   stack mutation edge cases during active handler dispatch, by-reference
   callback behavior, output buffering, shutdown/fatal interaction, exact
   handler `errstr` diagnostics, and native lowering remain unsupported.
-  `ob_start()` accepts no arguments, starts a new interpreter-owned output
-  buffer, and returns `true`. While a buffer is active, PHP-visible output from
-  `echo`, `print`, `exit("...")`, `var_dump()`, and `print_r()` is appended to
-  the innermost buffer instead of final stdout. `ob_get_level()` accepts no
-  arguments and returns the active buffer depth. `ob_get_contents()` accepts no
-  arguments and returns the innermost active buffer contents without closing
-  that buffer, or `false` when no buffer is active. `ob_get_length()` accepts
-  no arguments and returns the innermost active buffer byte length, or `false`
-  when no buffer is active. `ob_list_handlers()` accepts no arguments and
-  returns an ordered array containing `"default output handler"` once for each
-  active buffer, from outermost to innermost, or an empty array when no buffer
-  is active. `ob_get_clean()` accepts no
+  `ob_start()` accepts no arguments or one supported output handler callback
+  (`null`, closure, string function/static-method callable, or public array
+  callable), starts a new interpreter-owned output buffer, and returns `true`.
+  While a buffer is active, PHP-visible output from `echo`, `print`,
+  `exit("...")`, `var_dump()`, and `print_r()` is appended to the innermost
+  buffer instead of final stdout. `ob_get_level()` accepts no arguments and
+  returns the active buffer depth. `ob_get_contents()` accepts no arguments and
+  returns the innermost active buffer contents without closing that buffer or
+  running its handler, or `false` when no buffer is active. `ob_get_length()`
+  accepts no arguments and returns the innermost active buffer byte length, or
+  `false` when no buffer is active. `ob_list_handlers()` accepts no arguments
+  and returns an ordered array containing `"default output handler"` or the
+  bounded callback name for each active buffer, from outermost to innermost, or
+  an empty array when no buffer is active. `ob_get_clean()` accepts no
   arguments, pops the innermost buffer, and returns its captured string, or
   `false` when no buffer is active. `ob_clean()` accepts no arguments, clears
   the innermost active buffer, and returns `true`; when no buffer is active it
   emits the bounded PHP-style no-buffer notice and returns `false`.
   `ob_get_flush()` accepts no arguments, closes the innermost active buffer,
-  appends its contents to the next outer buffer or stdout, and returns the
-  captured string; when no buffer is active it emits the bounded
+  runs its supported handler when present, appends the handled contents to the
+  next outer buffer or stdout, and returns the raw captured string; when no
+  buffer is active it emits the bounded
   delete-and-flush no-buffer notice and returns `false`. `ob_flush()` accepts
-  no arguments, appends the innermost active buffer contents to the next outer
-  buffer or stdout, clears that active buffer, and returns `true`; when no
-  buffer is active it emits the bounded no-buffer-to-flush notice and returns
-  `false`. `ob_end_clean()` accepts no arguments, discards and closes the
-  innermost buffer, and returns `true`; when no buffer is active it emits the
-  bounded no-buffer-to-delete notice and returns `false`. `ob_end_flush()`
-  accepts no arguments, closes the innermost buffer, appends its contents to
-  the next outer buffer or stdout, and returns `true`; when no buffer is active
-  it emits the bounded delete-and-flush no-buffer notice and returns `false`.
+  no arguments, runs the supported handler when present, appends the handled
+  innermost active buffer contents to the next outer buffer or stdout, clears
+  that active buffer, and returns `true`; when no buffer is active it emits the
+  bounded no-buffer-to-flush notice and returns `false`. `ob_end_clean()`
+  accepts no arguments, discards and closes the innermost buffer without
+  running its handler, and returns `true`; when no buffer is active it emits
+  the bounded no-buffer-to-delete notice and returns `false`. `ob_end_flush()`
+  accepts no arguments, closes the innermost buffer, runs its supported handler
+  when present, appends the handled contents to the next outer buffer or
+  stdout, and returns `true`; when no buffer is active it emits the bounded
+  delete-and-flush no-buffer notice and returns `false`.
   `ob_get_status($full_status = false)`
   accepts no arguments or one bool argument. Without an active buffer it
   returns an empty array. With the default false flag it returns the innermost
-  default-handler status array with `name`, `type`, `flags`, `level`,
+  bounded handler status array with `name`, `type`, `flags`, `level`,
   `chunk_size`, `buffer_size`, and `buffer_used`; with `true` it returns those
   status arrays for all active buffers from outermost to innermost. Any buffers
   still active at normal program completion or bounded `exit()` are flushed
-  outward to stdout. Custom output callbacks, chunk sizes, non-default flags,
-  exact handler status metadata beyond the bounded default-handler fields,
-  `ob_list_handlers()` custom-handler names, output handler
-  nesting semantics, output-started interaction with headers, fatal-error
-  cleanup, exact warning behavior, and native lowering remain unsupported.
+  outward through supported handlers to stdout. Chunk sizes, non-default flags,
+  automatic threshold flushing, invalid-callback warning/false recovery,
+  by-reference output handlers, exact handler status metadata beyond the
+  bounded fields, handler reentrancy/nesting edge cases, output-started
+  interaction with headers, fatal-error cleanup, exact warning behavior, and
+  native lowering remain unsupported.
   `date_default_timezone_set($timezoneId)` accepts one string argument, returns
   `true` for the bounded timezone identifiers used by the current date PHPT
   subset, updates `date_default_timezone_get()` and date/time formatting state,
@@ -11832,12 +11838,14 @@
   function-table introspection
 - `ob_start()`/`ob_get_level()`/`ob_get_contents()`/`ob_get_length()`/
   `ob_list_handlers()`/`ob_get_status()`/`ob_get_clean()`/`ob_get_flush()`/
-  `ob_clean()`/`ob_flush()`/`ob_end_clean()`/`ob_end_flush()` behavior beyond the current no-argument
-  interpreter-owned buffer stack: callbacks, chunk sizes, flags, exact handler
-  status metadata, custom handler names, output handler nesting semantics,
-  output-started/header interaction, fatal-error cleanup, exact warnings
-  beyond the documented no-active-buffer notices, and native lowering beyond
-  function-table introspection
+  `ob_clean()`/`ob_flush()`/`ob_end_clean()`/`ob_end_flush()` behavior beyond
+  the current interpreter-owned buffer stack and supported one-argument
+  `ob_start()` callback lane: chunk sizes, flags, automatic threshold
+  flushing, invalid-callback warning/false recovery, by-reference output
+  handlers, exact handler status metadata, handler reentrancy/nesting edge
+  cases, output-started/header interaction, fatal-error cleanup, exact
+  warnings beyond the documented no-active-buffer notices, and native lowering
+  beyond function-table introspection
 - `php_sapi_name()` behavior beyond the current no-argument deterministic
   `cli` result: host PHP SAPI discovery, web-server/CGI/FPM SAPI states,
   request-specific SAPI switching, exact diagnostics, and native lowering

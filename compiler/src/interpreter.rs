@@ -64,6 +64,11 @@ const PHP_EXTR_REFS: i64 = 256;
 const PHP_FIRST_USER_RESOURCE_ID: i64 = 4;
 const PHP_DEFAULT_REQUEST_UMASK: i64 = 0o022;
 const ARRAY_PAD_MAX_PADDING: u64 = 1_048_576;
+const PHP_OUTPUT_HANDLER_START: i64 = 1;
+const PHP_OUTPUT_HANDLER_USER: i64 = 1;
+const PHP_OUTPUT_HANDLER_FLUSH: i64 = 4;
+const PHP_OUTPUT_HANDLER_FINAL: i64 = 8;
+const PHP_OUTPUT_HANDLER_STDFLAGS: i64 = 0x70;
 
 fn is_standard_stream_resource_id(id: i64) -> bool {
     (1..PHP_FIRST_USER_RESOURCE_ID).contains(&id)
@@ -352,7 +357,7 @@ struct Interpreter {
     trait_called_class_context: Vec<String>,
     response_headers: Vec<String>,
     response_status_code: Option<i64>,
-    output_buffers: Vec<String>,
+    output_buffers: Vec<OutputBuffer>,
     output_start: Option<OutputStart>,
     strict_types_stack: Vec<bool>,
     session_status: i64,
@@ -945,6 +950,14 @@ enum MysqliResultBindingTarget {
 struct OutputStart {
     file: String,
     line: usize,
+}
+
+#[derive(Debug, Clone)]
+struct OutputBuffer {
+    contents: String,
+    handler: Option<Value>,
+    handler_started: bool,
+    span: Span,
 }
 
 #[derive(Debug, Clone)]
@@ -18722,7 +18735,7 @@ impl Interpreter {
             Flow::Normal | Flow::Return(_) => {
                 self.run_shutdown_callbacks()?;
                 self.run_shutdown_destructors()?;
-                self.flush_output_buffers();
+                self.flush_output_buffers()?;
                 Ok(Execution {
                     stdout: self.stdout.clone(),
                     stdout_bytes: self.execution_stdout_bytes(),
@@ -18733,7 +18746,7 @@ impl Interpreter {
             Flow::Exit(code) => {
                 self.run_shutdown_callbacks()?;
                 self.run_shutdown_destructors()?;
-                self.flush_output_buffers();
+                self.flush_output_buffers()?;
                 Ok(Execution {
                     stdout: self.stdout.clone(),
                     stdout_bytes: self.execution_stdout_bytes(),
@@ -18801,7 +18814,7 @@ impl Interpreter {
 
     fn append_output_bytes_at(&mut self, output: &[u8], span: Span) {
         if let Some(buffer) = self.output_buffers.last_mut() {
-            buffer.push_str(&String::from_utf8_lossy(output));
+            buffer.contents.push_str(&String::from_utf8_lossy(output));
         } else {
             self.mark_output_bytes_started(output, Some(span));
             self.stdout.push_str(&String::from_utf8_lossy(output));
@@ -18977,8 +18990,11 @@ impl Interpreter {
             return Ok(());
         }
 
-        let current_output_is_empty =
-            self.stdout.is_empty() && self.output_buffers.iter().all(|buffer| buffer.is_empty());
+        let current_output_is_empty = self.stdout.is_empty()
+            && self
+                .output_buffers
+                .iter()
+                .all(|buffer| buffer.contents.is_empty());
         let mut output = String::new();
         if !current_output_is_empty {
             output.push('\n');
@@ -19524,7 +19540,7 @@ impl Interpreter {
 
     fn append_output_from(&mut self, output: &str, span: Option<Span>) {
         if let Some(buffer) = self.output_buffers.last_mut() {
-            buffer.push_str(output);
+            buffer.contents.push_str(output);
         } else {
             self.mark_output_started(output, span);
             self.stdout.push_str(output);
@@ -19532,16 +19548,23 @@ impl Interpreter {
         }
     }
 
-    fn flush_output_buffers(&mut self) {
-        while let Some(output) = self.output_buffers.pop() {
+    fn flush_output_buffers(&mut self) -> CompileResult<()> {
+        while let Some(buffer) = self.output_buffers.pop() {
+            let output = self.apply_output_buffer_handler(
+                buffer.handler.as_ref(),
+                buffer.contents,
+                Self::output_buffer_handler_phase(buffer.handler_started, PHP_OUTPUT_HANDLER_FINAL),
+                buffer.span,
+            )?;
             self.append_output(&output);
         }
+        Ok(())
     }
 
     fn append_output_below_active_buffer_at(&mut self, output: &str, span: Span) {
         if self.output_buffers.len() >= 2 {
             let parent_index = self.output_buffers.len() - 2;
-            self.output_buffers[parent_index].push_str(output);
+            self.output_buffers[parent_index].contents.push_str(output);
         } else {
             self.mark_output_started(output, Some(span));
             self.stdout.push_str(output);
@@ -20372,7 +20395,7 @@ impl Interpreter {
         self.exit_signal = Some(255);
         self.run_shutdown_callbacks()?;
         self.run_shutdown_destructors()?;
-        self.flush_output_buffers();
+        self.flush_output_buffers()?;
         Ok(Execution {
             stdout: self.stdout.clone(),
             stdout_bytes: self.execution_stdout_bytes(),
@@ -20483,7 +20506,7 @@ impl Interpreter {
         self.exit_signal = Some(255);
         self.run_shutdown_callbacks()?;
         self.run_shutdown_destructors()?;
-        self.flush_output_buffers();
+        self.flush_output_buffers()?;
         Ok(Execution {
             stdout: self.stdout.clone(),
             stdout_bytes: self.execution_stdout_bytes(),
@@ -20502,7 +20525,7 @@ impl Interpreter {
         self.exit_signal = Some(255);
         self.run_shutdown_callbacks()?;
         self.run_shutdown_destructors()?;
-        self.flush_output_buffers();
+        self.flush_output_buffers()?;
         Ok(Execution {
             stdout: self.stdout.clone(),
             stdout_bytes: self.execution_stdout_bytes(),
@@ -20520,7 +20543,7 @@ impl Interpreter {
         self.exit_signal = Some(255);
         self.run_shutdown_callbacks()?;
         self.run_shutdown_destructors()?;
-        self.flush_output_buffers();
+        self.flush_output_buffers()?;
         Ok(Execution {
             stdout: self.stdout.clone(),
             stdout_bytes: self.execution_stdout_bytes(),
@@ -83125,8 +83148,38 @@ impl Interpreter {
     }
 
     fn call_ob_start(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
-        expect_arity("ob_start", args, 0, span)?;
-        self.output_buffers.push(String::new());
+        if args.len() > 1 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "ob_start()",
+                    ArityExpectation::Between { min: 0, max: 1 },
+                    args.len(),
+                ),
+            ));
+        }
+        let handler = match args.first() {
+            None | Some(Value::Null) => None,
+            Some(Value::String(_) | Value::Array(_) | Value::Closure(_)) => Some(args[0].clone()),
+            Some(other) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "ob_start()",
+                        format!(
+                            "callback must be null, string, closure, or array callable in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+        };
+        self.output_buffers.push(OutputBuffer {
+            contents: String::new(),
+            handler,
+            handler_started: false,
+            span,
+        });
         Ok(Value::Bool(true))
     }
 
@@ -83140,7 +83193,7 @@ impl Interpreter {
         Ok(self
             .output_buffers
             .last()
-            .cloned()
+            .map(|buffer| buffer.contents.clone())
             .map(Value::String)
             .unwrap_or(Value::Bool(false)))
     }
@@ -83150,30 +83203,57 @@ impl Interpreter {
         Ok(self
             .output_buffers
             .last()
-            .map(|buffer| Value::Int(buffer.len() as i64))
+            .map(|buffer| Value::Int(buffer.contents.len() as i64))
             .unwrap_or(Value::Bool(false)))
     }
 
     fn call_ob_list_handlers(&self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("ob_list_handlers", args, 0, span)?;
         let mut handlers = PhpArray::new();
-        for _ in &self.output_buffers {
+        for buffer in &self.output_buffers {
             handlers
-                .append(Value::String("default output handler".to_string()))
+                .append(Value::String(self.output_buffer_handler_name(buffer)))
                 .map_err(|error| runtime_error(span, error))?;
         }
         Ok(Value::Array(handlers))
     }
 
-    fn output_buffer_status(&self, index: usize, buffer: &str) -> Value {
+    fn output_buffer_handler_name(&self, buffer: &OutputBuffer) -> String {
+        match buffer.handler.as_ref() {
+            Some(Value::Closure(_)) => "Closure::__invoke".to_string(),
+            Some(Value::String(name)) => name.clone(),
+            Some(Value::Array(callback)) => array_callable_parts(callback)
+                .map(|(target, method_name)| match target {
+                    Value::Object(object) => format!("{}::{method_name}", object.class_name()),
+                    Value::String(class_name) => format!("{class_name}::{method_name}"),
+                    _ => "Array".to_string(),
+                })
+                .unwrap_or_else(|| "Array".to_string()),
+            Some(other) => other.try_echo_string().unwrap_or_default(),
+            None => "default output handler".to_string(),
+        }
+    }
+
+    fn output_buffer_status(&self, index: usize, buffer: &OutputBuffer) -> Value {
         let mut status = PhpArray::new();
-        status.insert("name", Value::String("default output handler".to_string()));
-        status.insert("type", Value::Int(0));
-        status.insert("flags", Value::Int(112));
+        let handler_type = if buffer.handler.is_some() {
+            PHP_OUTPUT_HANDLER_USER
+        } else {
+            0
+        };
+        status.insert(
+            "name",
+            Value::String(self.output_buffer_handler_name(buffer)),
+        );
+        status.insert("type", Value::Int(handler_type));
+        status.insert(
+            "flags",
+            Value::Int(PHP_OUTPUT_HANDLER_STDFLAGS | handler_type),
+        );
         status.insert("level", Value::Int(index as i64));
         status.insert("chunk_size", Value::Int(0));
         status.insert("buffer_size", Value::Int(16384));
-        status.insert("buffer_used", Value::Int(buffer.len() as i64));
+        status.insert("buffer_used", Value::Int(buffer.contents.len() as i64));
         Value::Array(status)
     }
 
@@ -83228,13 +83308,13 @@ impl Interpreter {
         Ok(self
             .output_buffers
             .pop()
-            .map(Value::String)
+            .map(|buffer| Value::String(buffer.contents))
             .unwrap_or(Value::Bool(false)))
     }
 
     fn call_ob_get_flush(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("ob_get_flush", args, 0, span)?;
-        let Some(output) = self.output_buffers.pop() else {
+        let Some(buffer) = self.output_buffers.pop() else {
             self.emit_output_buffer_no_active_notice(
                 "ob_get_flush()",
                 "Failed to delete and flush buffer. No buffer to delete or flush",
@@ -83242,8 +83322,15 @@ impl Interpreter {
             )?;
             return Ok(Value::Bool(false));
         };
-        self.append_output_at(&output, span);
-        Ok(Value::String(output))
+        let raw_output = buffer.contents;
+        let handled_output = self.apply_output_buffer_handler(
+            buffer.handler.as_ref(),
+            raw_output.clone(),
+            Self::output_buffer_handler_phase(buffer.handler_started, PHP_OUTPUT_HANDLER_FINAL),
+            span,
+        )?;
+        self.append_output_at(&handled_output, span);
+        Ok(Value::String(raw_output))
     }
 
     fn call_ob_clean(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -83256,13 +83343,20 @@ impl Interpreter {
             )?;
             return Ok(Value::Bool(false));
         };
-        buffer.clear();
+        buffer.contents.clear();
         Ok(Value::Bool(true))
     }
 
     fn call_ob_flush(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("ob_flush", args, 0, span)?;
-        let Some(buffer) = self.output_buffers.last_mut() else {
+        let Some((output, handler, phase)) = self.output_buffers.last_mut().map(|buffer| {
+            let output = std::mem::take(&mut buffer.contents);
+            let handler = buffer.handler.clone();
+            let phase =
+                Self::output_buffer_handler_phase(buffer.handler_started, PHP_OUTPUT_HANDLER_FLUSH);
+            buffer.handler_started = true;
+            (output, handler, phase)
+        }) else {
             self.emit_output_buffer_no_active_notice(
                 "ob_flush()",
                 "Failed to flush buffer. No buffer to flush",
@@ -83270,8 +83364,9 @@ impl Interpreter {
             )?;
             return Ok(Value::Bool(false));
         };
-        let output = std::mem::take(buffer);
-        self.append_output_below_active_buffer_at(&output, span);
+        let handled_output =
+            self.apply_output_buffer_handler(handler.as_ref(), output, phase, span)?;
+        self.append_output_below_active_buffer_at(&handled_output, span);
         Ok(Value::Bool(true))
     }
 
@@ -83290,7 +83385,7 @@ impl Interpreter {
 
     fn call_ob_end_flush(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("ob_end_flush", args, 0, span)?;
-        let Some(output) = self.output_buffers.pop() else {
+        let Some(buffer) = self.output_buffers.pop() else {
             self.emit_output_buffer_no_active_notice(
                 "ob_end_flush()",
                 "Failed to delete and flush buffer. No buffer to delete or flush",
@@ -83298,8 +83393,129 @@ impl Interpreter {
             )?;
             return Ok(Value::Bool(false));
         };
-        self.append_output_at(&output, span);
+        let handled_output = self.apply_output_buffer_handler(
+            buffer.handler.as_ref(),
+            buffer.contents,
+            Self::output_buffer_handler_phase(buffer.handler_started, PHP_OUTPUT_HANDLER_FINAL),
+            span,
+        )?;
+        self.append_output_at(&handled_output, span);
         Ok(Value::Bool(true))
+    }
+
+    fn output_buffer_handler_phase(started: bool, terminal_flag: i64) -> i64 {
+        if started {
+            terminal_flag
+        } else {
+            PHP_OUTPUT_HANDLER_START | terminal_flag
+        }
+    }
+
+    fn apply_output_buffer_handler(
+        &mut self,
+        handler: Option<&Value>,
+        output: String,
+        phase: i64,
+        span: Span,
+    ) -> CompileResult<String> {
+        let Some(handler) = handler else {
+            return Ok(output);
+        };
+        let value = self.call_output_buffer_handler_value(
+            handler,
+            vec![Value::String(output.clone()), Value::Int(phase)],
+            span,
+        )?;
+        if matches!(value, Value::Bool(false)) {
+            return Ok(output);
+        }
+        value
+            .try_echo_string()
+            .map_err(|error| runtime_error(span, error))
+    }
+
+    fn call_output_buffer_handler_value(
+        &mut self,
+        handler: &Value,
+        args: Vec<Value>,
+        span: Span,
+    ) -> CompileResult<Value> {
+        match handler {
+            Value::String(callback_name) => {
+                if let Some((class_name, method_name)) =
+                    static_method_callable_string(callback_name)
+                {
+                    let callback =
+                        static_method_array_callable_value(class_name, method_name, span)?;
+                    return self.call_array_callable_with_values_with_context(
+                        &callback,
+                        args,
+                        span,
+                        true,
+                        "ob_start() output handler",
+                    );
+                }
+                if let Some(error) = forbidden_dynamic_builtin_call_error(callback_name, span) {
+                    return Err(error);
+                }
+                let callable = self.lookup_function(callback_name).ok_or_else(|| {
+                    runtime_error(
+                        span,
+                        RuntimeError::undefined_function(callable_name(callback_name)),
+                    )
+                })?;
+                match callable {
+                    Callable::Builtin(key) => self.call_builtin(&key, args, span),
+                    Callable::User(function) => {
+                        let function = function.as_ref();
+                        ensure_user_function_arity_with_extra_policy(
+                            function,
+                            args.len(),
+                            span,
+                            true,
+                        )
+                        .map_err(|error| {
+                            callback_context_diagnostic("ob_start() output handler", error)
+                        })?;
+                        ensure_supported_function_signature(function, args.len(), span)?;
+                        self.ensure_user_function_call_depth(function, span)?;
+                        self.call_user_function_with_checked_values(
+                            function,
+                            args,
+                            None,
+                            None,
+                            None,
+                            Vec::new(),
+                            None,
+                        )
+                    }
+                }
+            }
+            Value::Array(callback) => self.call_array_callable_with_values_with_context(
+                callback,
+                args,
+                span,
+                true,
+                "ob_start() output handler",
+            ),
+            Value::Closure(closure) => self.invoke_closure_value_with_extra_policy(
+                closure.clone(),
+                args,
+                span,
+                "ob_start() output handler",
+                true,
+            ),
+            other => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "ob_start()",
+                    format!(
+                        "callback must be null, string, closure, or array callable in the current subset, got {}",
+                        other.type_name()
+                    ),
+                ),
+            )),
+        }
     }
 
     fn emit_output_buffer_no_active_notice(
@@ -101734,6 +101950,13 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
             vec![reflection_internal_optional_string_param("mode", "a")],
         ),
         "php_sapi_name" => ("string", vec![]),
+        "ob_start" => (
+            "bool",
+            vec![reflection_internal_optional_null_param(
+                "callback",
+                "?callable",
+            )],
+        ),
         "phpversion" => (
             "string|false",
             vec![reflection_internal_optional_null_param(

@@ -1007,9 +1007,10 @@ direct `realpath_cache_get()`/`realpath_cache_size()` realpath-cache
 introspection calls,
 direct `getcwd()` current-directory calls,
 direct `php_sapi_name()` SAPI identity calls,
-direct `ob_start()`/`ob_get_level()`/`ob_get_contents()`/`ob_get_length()`/
-`ob_list_handlers()`/`ob_get_status()`/`ob_get_clean()`/`ob_get_flush()`/
-`ob_clean()`/`ob_flush()`/`ob_end_clean()`/`ob_end_flush()` output-buffer calls,
+direct `ob_start()` with no argument or one supported callback plus
+`ob_get_level()`/`ob_get_contents()`/`ob_get_length()`/`ob_list_handlers()`/
+`ob_get_status()`/`ob_get_clean()`/`ob_get_flush()`/`ob_clean()`/`ob_flush()`/
+`ob_end_clean()`/`ob_end_flush()` output-buffer calls,
 direct `header()`/`header_remove()`/`headers_list()`/`headers_sent()`/
 `http_response_code()`/`setcookie()`/`setrawcookie()` response header-state calls, including
 interpreter-only `headers_sent()` output-started tracking, direct variable,

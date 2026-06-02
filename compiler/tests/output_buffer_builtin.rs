@@ -375,17 +375,51 @@ echo "|ended=" . ($ended ? "true" : "false");
 }
 
 #[test]
+fn ob_start_closure_handlers_process_flushed_output_without_changing_raw_peeks() {
+    let execution = run_source(
+        r#"<?php
+ob_start(function ($output) {
+    return "outer(" . $output . ")";
+});
+ob_start(function ($output) {
+    return "inner[" . $output . "]";
+});
+echo "body";
+$rawInner = ob_get_contents();
+$handlers = ob_list_handlers();
+$status = ob_get_status();
+ob_end_flush();
+$rawOuter = ob_get_contents();
+ob_end_flush();
+$reflection = new ReflectionFunction("ob_start");
+echo "|rawInner=" . $rawInner;
+echo "|rawOuter=" . $rawOuter;
+echo "|handlers=" . $handlers[0] . "," . $handlers[1];
+echo "|status=" . $status["name"] . ":" . $status["type"] . ":" . $status["flags"];
+echo "|reflection=" . $reflection->getNumberOfRequiredParameters() . "/" . $reflection->getNumberOfParameters();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "outer(inner[body])|rawInner=body|rawOuter=inner[body]|handlers=Closure::__invoke,Closure::__invoke|status=Closure::__invoke:1:113|reflection=0/1"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn output_buffer_builtins_reject_forms_outside_current_subset() {
     let start_arg = runtime_error(
         r#"<?php
-ob_start("handler");
+ob_start(null, 0);
 "#,
     );
     assert_eq!(start_arg.line, 2);
     assert_eq!(start_arg.column, 1);
     assert_eq!(
         start_arg.message,
-        "arity mismatch for ob_start(): expected 0 argument(s), got 1"
+        "arity mismatch for ob_start(): expected 0 to 1 argument(s), got 2"
     );
 
     let level_arg = runtime_error(

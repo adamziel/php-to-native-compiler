@@ -4,6 +4,25 @@
 
 Implemented:
 
+- Added a bounded output-buffer callback lane for the selected
+  `ob_start()` / `ob_get_flush()` PHPT rows. Interpreter output buffers now
+  retain raw contents plus optional supported handler callbacks; raw peeks via
+  `ob_get_contents()` / `ob_get_clean()` remain unhandled, while
+  `ob_flush()`, `ob_get_flush()`, `ob_end_flush()`, normal completion, and
+  bounded `exit()` route handled output outward through nested buffers.
+  `ob_list_handlers()` and `ob_get_status()` expose bounded handler names,
+  types, and flags, and `ReflectionFunction("ob_start")` reports the optional
+  callback parameter. Focused Rust passed `19 / 19` in
+  `output_buffer_builtin`; `cargo build -p phpc --bin phpc` passed; a direct
+  `phpc run` probe proved nested handled flushes, raw peeks, and reflection
+  counts; selected PHPT proof passed `4 / 4` for `ob_get_flush_basic.phpt`,
+  `ob_get_flush_error.phpt`, `ob_get_length_basic.phpt`, and
+  `ob_start_closures.phpt`; `cargo fmt --check` and `git diff --check`
+  passed. Unsupported edges remain chunk-size threshold flushing, non-default
+  flags, invalid-callback warning/false recovery parity, by-reference
+  handlers, exact handler status metadata, handler reentrancy, fatal-error
+  cleanup, and native lowering.
+
 - Added a bounded `ReflectionClass` extension-ownership lane for the selected
   ext/reflection rows. `ReflectionClass::getExtensionName()` and
   `ReflectionClass::getExtension()` now resolve only through the existing
