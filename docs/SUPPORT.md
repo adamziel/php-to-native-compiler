@@ -2591,6 +2591,19 @@
   scalar/null/float/numeric-string coercions for `ArrayIterator::seek()`
   offsets, by-reference iteration over SPL iterator objects, serialization
   parity, full COW/reference identity, and native lowering remain unsupported.
+- SPL `SplObjectStorage` has a bounded identity-map runtime model for
+  object-keyed `attach()`/`detach()`, ArrayAccess reads/writes/unsets,
+  `contains()`/`offsetExists()`, `count()`, current/key/next/rewind/valid
+  iteration, `getInfo()`/`setInfo()`, `getHash()`, cloning, equality,
+  `addAll()`, `removeAll()`, `removeAllExcept()`, and `seek()` on the
+  interpreter path. Core `unset($storage[$object])` preserves the active
+  iterator's logical key when an earlier removed entry shifts the current
+  object; explicit `detach()` / `offsetUnset()` and bulk removals remain on
+  the existing compacting cursor path. Exact explicit
+  `detach()` / `offsetUnset()` cursor quirks for deleting the current entry,
+  subclass ArrayAccess override cursor side effects, destructor side effects
+  during detach/unset, serialization parity, reference/COW mutation of stored
+  info values, and native lowering remain unsupported.
 - `break;` for the innermost currently executing `while`, `for`,
   `do ... while`, `foreach`, or `switch`; `continue;` for the innermost
   currently executing loop

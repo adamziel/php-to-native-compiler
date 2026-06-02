@@ -594,6 +594,7 @@ struct MysqliResultState {
 struct SplObjectStorageState {
     entries: Vec<SplObjectStorageEntry>,
     cursor: usize,
+    cursor_key: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -16382,7 +16383,11 @@ impl Interpreter {
         }
     }
 
-    fn spl_object_storage_remove(state: &mut SplObjectStorageState, hash: &str) {
+    fn spl_object_storage_remove_with_cursor_key_mode(
+        state: &mut SplObjectStorageState,
+        hash: &str,
+        preserve_cursor_key: bool,
+    ) {
         if let Some(index) = state.entries.iter().position(|entry| entry.hash == hash) {
             state.entries.remove(index);
             if state.cursor > index {
@@ -16391,7 +16396,37 @@ impl Interpreter {
             if state.cursor > state.entries.len() {
                 state.cursor = state.entries.len();
             }
+            if !preserve_cursor_key {
+                state.cursor_key = state.cursor;
+            }
         }
+    }
+
+    fn spl_object_storage_remove(state: &mut SplObjectStorageState, hash: &str) {
+        Self::spl_object_storage_remove_with_cursor_key_mode(state, hash, false);
+    }
+
+    fn spl_object_storage_remove_preserving_cursor_key(
+        state: &mut SplObjectStorageState,
+        hash: &str,
+    ) {
+        Self::spl_object_storage_remove_with_cursor_key_mode(state, hash, true);
+    }
+
+    fn call_spl_object_storage_offset_unset_array_syntax_with_values(
+        &mut self,
+        object: PhpObject,
+        args: Vec<Value>,
+        span: Span,
+    ) -> CompileResult<Value> {
+        expect_arity("SplObjectStorage::offsetUnset", &args, 1, span)?;
+        let stored_object =
+            Self::spl_object_storage_object_argument("offsetUnset", &args, 0, span)?;
+        self.ensure_spl_object_storage_not_hashing("offsetUnset", span)?;
+        let hash = self.spl_object_storage_hash_for_object(object.clone(), stored_object, span)?;
+        let state = self.spl_object_storage_state_mut(&object, "offsetUnset", span)?;
+        Self::spl_object_storage_remove_preserving_cursor_key(state, &hash);
+        Ok(Value::Null)
     }
 
     fn ensure_spl_object_storage_not_hashing(
@@ -16598,6 +16633,7 @@ impl Interpreter {
                 expect_arity("SplObjectStorage::rewind", &args, 0, span)?;
                 let state = self.spl_object_storage_state_mut(&object, method_name, span)?;
                 state.cursor = 0;
+                state.cursor_key = 0;
                 Ok(Value::Null)
             }
             "valid" => {
@@ -16608,7 +16644,7 @@ impl Interpreter {
             "key" => {
                 expect_arity("SplObjectStorage::key", &args, 0, span)?;
                 let state = self.spl_object_storage_state(&object, method_name, span)?;
-                Ok(Value::Int(state.cursor as i64))
+                Ok(Value::Int(state.cursor_key as i64))
             }
             "current" => {
                 expect_arity("SplObjectStorage::current", &args, 0, span)?;
@@ -16631,6 +16667,7 @@ impl Interpreter {
                 expect_arity("SplObjectStorage::next", &args, 0, span)?;
                 let state = self.spl_object_storage_state_mut(&object, method_name, span)?;
                 state.cursor = state.cursor.saturating_add(1);
+                state.cursor_key = state.cursor_key.saturating_add(1);
                 Ok(Value::Null)
             }
             "getinfo" => {
@@ -16697,6 +16734,7 @@ impl Interpreter {
                 if state.cursor > state.entries.len() {
                     state.cursor = state.entries.len();
                 }
+                state.cursor_key = state.cursor;
                 Ok(Value::Null)
             }
             "removeallexcept" => {
@@ -16743,6 +16781,7 @@ impl Interpreter {
                 if state.cursor > state.entries.len() {
                     state.cursor = state.entries.len();
                 }
+                state.cursor_key = state.cursor;
                 Ok(Value::Null)
             }
             "seek" => {
@@ -16771,6 +16810,7 @@ impl Interpreter {
                     ));
                 }
                 state.cursor = position as usize;
+                state.cursor_key = position as usize;
                 Ok(Value::Null)
             }
             _ => Err(runtime_error(
@@ -21684,13 +21724,26 @@ impl Interpreter {
         if let Some(Value::Object(object)) = scope.read_named(name) {
             if self.is_spl_object_storage_object(&object) {
                 let offset_arg = self.evaluate(index, scope)?;
-                self.call_array_access_method_with_caller_scope(
-                    object,
-                    "offsetUnset",
-                    vec![offset_arg],
-                    span,
-                    scope,
-                )?;
+                if self
+                    .resolve_instance_method(object.class_id(), "offsetUnset")
+                    .is_some_and(|(class_id, _, _, _, _)| {
+                        self.resolved_method_is_core_spl_object_storage(class_id)
+                    })
+                {
+                    self.call_spl_object_storage_offset_unset_array_syntax_with_values(
+                        object,
+                        vec![offset_arg],
+                        span,
+                    )?;
+                } else {
+                    self.call_array_access_method_with_caller_scope(
+                        object,
+                        "offsetUnset",
+                        vec![offset_arg],
+                        span,
+                        scope,
+                    )?;
+                }
                 return Ok(());
             }
         }

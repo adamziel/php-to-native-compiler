@@ -113,6 +113,22 @@ Implemented:
   broad class-like alias/import resolution, exact autoload warning/throw
   behavior, and native lowering.
 
+- Added a bounded `SplObjectStorage` array-syntax unset cursor-key lane.
+  Core `unset($storage[$object])` now preserves the active iterator's logical
+  key when a removed earlier entry shifts the physical current object, while
+  explicit `detach()` / `offsetUnset()` stay on the existing compacting method
+  path. Focused proof covers the Rust
+  `spl_object_storage_unset_array_syntax_preserves_iterator_key` regression,
+  the direct `phpc run` fixture
+  `tests/fixtures/milestone2321/spl_object_storage_unset_preserves_iterator_key.php`,
+  and selected adjacent SplObjectStorage PHPT rows for current/offsetGet/getHash
+  and seek behavior. Unsupported edges remain exact explicit
+  `detach()` / `offsetUnset()` cursor quirks for deleting the current entry,
+  bulk-removal cursor parity beyond the existing compacting path, subclass
+  ArrayAccess override cursor side effects, destructor side effects during
+  detach/unset, serialization parity, references/COW for stored info values,
+  and native lowering.
+
 - Added a bounded `ArrayIterator::seek()` invalid-position exception lane for
   the selected `array_014.phpt` surface. Core ArrayIterator out-of-range
   `seek()` calls now remain on the existing cursor implementation but convert

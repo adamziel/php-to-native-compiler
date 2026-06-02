@@ -15093,6 +15093,53 @@ try {
 }
 
 #[test]
+fn spl_object_storage_unset_array_syntax_preserves_iterator_key() {
+    let source = r#"<?php
+function named_object($name) {
+    $object = new stdClass();
+    $object->name = $name;
+    return $object;
+}
+
+$syntax = new SplObjectStorage();
+$a = named_object("a");
+$b = named_object("b");
+$c = named_object("c");
+$syntax[$a] = "a";
+$syntax[$b] = "b";
+$syntax[$c] = "c";
+$syntax->next();
+unset($syntax[$a]);
+echo "syntax:", $syntax->key(), ":", $syntax->current()->name, "\n";
+$syntax->next();
+echo "syntax:", $syntax->key(), ":", $syntax->current()->name, "\n";
+$syntax->next();
+echo "syntax:", $syntax->key(), ":", $syntax->valid() ? "valid" : "invalid", "\n";
+
+$method = new SplObjectStorage();
+$ma = named_object("a");
+$mb = named_object("b");
+$mc = named_object("c");
+$method[$ma] = "a";
+$method[$mb] = "b";
+$method[$mc] = "c";
+$method->next();
+$method->detach($ma);
+echo "method:", $method->key(), ":", $method->current()->name, "\n";
+$method->next();
+echo "method:", $method->key(), ":", $method->current()->name, "\n";
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "syntax:1:b\nsyntax:2:c\nsyntax:3:invalid\nmethod:0:b\nmethod:1:c\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn spl_fixed_array_offsets_iteration_resize_static_constructor_and_errors() {
     let source = r#"<?php
 class ChildFixedArray extends SplFixedArray {
