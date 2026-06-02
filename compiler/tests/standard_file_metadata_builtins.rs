@@ -152,6 +152,62 @@ var_dump(touch(""));
 }
 
 #[test]
+fn file_metadata_builtins_report_type_errors_for_non_string_paths() {
+    let fixture = TempFsFixture::new("metadata-type-errors");
+    let file = php_string(&fixture.root.join("resource.txt"));
+    let source = format!(
+        r#"<?php
+file_put_contents({file}, "payload");
+foreach (["stat", "lstat", "filesize", "fileatime", "filemtime", "filectime", "fileinode", "fileowner", "filegroup", "fileperms", "filetype"] as $function) {{
+    try {{
+        $function([]);
+        echo $function, ":miss\n";
+    }} catch (TypeError $e) {{
+        echo $function, ":", $e->getMessage(), "\n";
+    }}
+}}
+$closure = function () {{}};
+try {{
+    filemtime($closure);
+}} catch (TypeError $e) {{
+    echo "closure:", $e->getMessage(), "\n";
+}}
+$handle = fopen({file}, "r");
+try {{
+    filectime($handle);
+}} catch (TypeError $e) {{
+    echo "resource:", $e->getMessage(), "\n";
+}}
+fclose($handle);
+"#,
+        file = file
+    );
+
+    let execution = run_source(&source).unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "stat:stat(): Argument #1 ($filename) must be of type string, array given\n",
+            "lstat:lstat(): Argument #1 ($filename) must be of type string, array given\n",
+            "filesize:filesize(): Argument #1 ($filename) must be of type string, array given\n",
+            "fileatime:fileatime(): Argument #1 ($filename) must be of type string, array given\n",
+            "filemtime:filemtime(): Argument #1 ($filename) must be of type string, array given\n",
+            "filectime:filectime(): Argument #1 ($filename) must be of type string, array given\n",
+            "fileinode:fileinode(): Argument #1 ($filename) must be of type string, array given\n",
+            "fileowner:fileowner(): Argument #1 ($filename) must be of type string, array given\n",
+            "filegroup:filegroup(): Argument #1 ($filename) must be of type string, array given\n",
+            "fileperms:fileperms(): Argument #1 ($filename) must be of type string, array given\n",
+            "filetype:filetype(): Argument #1 ($filename) must be of type string, array given\n",
+            "closure:filemtime(): Argument #1 ($filename) must be of type string, Closure given\n",
+            "resource:filectime(): Argument #1 ($filename) must be of type string, resource given\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn file_metadata_builtins_reject_trailing_slash_regular_file_paths() {
     let fixture = TempFsFixture::new("metadata-trailing-slash");
     let file = fixture.root.join("file.txt");

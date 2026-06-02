@@ -3459,7 +3459,13 @@ The adjacent interpreter-only metadata and predicate helpers `fileinode()`,
 `is_link()`, and `is_executable()` share the same local-path and
 request-local `open_basedir` check. Denied metadata paths emit PHP-shaped
 display warnings and return `false`; successful metadata reads stay host-local
-and bounded. The access predicates `file_exists()`, `is_dir()`, `is_file()`,
+and bounded. The stat-style metadata readers `stat()`, `lstat()`,
+`filesize()`, `fileatime()`, `filemtime()`, `filectime()`, `fileinode()`,
+`fileowner()`, `filegroup()`, `fileperms()`, and `filetype()` share a bounded
+argument gate that raises catchable PHP-shaped string `TypeError`s for array,
+closure, and resource filename operands before local path resolution while
+leaving scalar and UTF-8 binary-string path conversion on the existing path.
+The access predicates `file_exists()`, `is_dir()`, `is_file()`,
 `is_readable()`, `is_writable()` / `is_writeable()`, `is_link()`, and
 `is_executable()` also run supported visible `__toString()` path objects
 through that local-path policy and reject non-stringable objects with

@@ -78561,6 +78561,21 @@ impl Interpreter {
         value: &Value,
         span: Span,
     ) -> CompileResult<Option<String>> {
+        if matches!(
+            value,
+            Value::Array(_) | Value::Closure(_) | Value::Resource(_)
+        ) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{function}()"),
+                    format!(
+                        "Argument #1 (${label}) must be of type string, {} given",
+                        php_type_error_given(value)
+                    ),
+                ),
+            ));
+        }
         let Some(path) = self.filesystem_scalar_path_argument(function, label, value, span)? else {
             return Ok(None);
         };
@@ -78831,7 +78846,7 @@ impl Interpreter {
     ) -> CompileResult<Value> {
         expect_arity(function, args, 1, span)?;
         let Some(path) =
-            self.filesystem_scalar_metadata_path_argument(function, "path", &args[0], span)?
+            self.filesystem_scalar_metadata_path_argument(function, "filename", &args[0], span)?
         else {
             return Ok(Value::Bool(false));
         };
@@ -78856,7 +78871,7 @@ impl Interpreter {
     fn call_fileperms(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("fileperms", args, 1, span)?;
         let Some(path) =
-            self.filesystem_scalar_metadata_path_argument("fileperms", "path", &args[0], span)?
+            self.filesystem_scalar_metadata_path_argument("fileperms", "filename", &args[0], span)?
         else {
             return Ok(Value::Bool(false));
         };

@@ -5567,7 +5567,12 @@
   predicates `file_exists()`, `is_dir()`, `is_file()`, `is_readable()`,
   `is_writable()` / `is_writeable()`, `is_executable()`, and `is_link()` accept
   supported visible `__toString()` path objects and raise PHP-shaped
-  `TypeError`s for non-stringable objects. This slice also
+  `TypeError`s for non-stringable objects. The stat-style metadata reads
+  `stat()`, `lstat()`, `filesize()`, `fileatime()`, `filemtime()`,
+  `filectime()`, `fileinode()`, `fileowner()`, `filegroup()`, `fileperms()`,
+  and `filetype()` raise catchable PHP-shaped string `TypeError`s for array,
+  closure, and resource filename operands while preserving existing scalar and
+  UTF-8 binary-string path conversion. This slice also
   supports request-local `umask($mask = null)` metadata for the reached PHPT
   rows: it returns the previous mask, accepts integer masks or `null`, exposes
   dynamic-call and `ReflectionFunction` metadata, and applies the current mask
@@ -5622,8 +5627,8 @@
   `open_basedir` policy beyond the shared local allow-list check, symlink and
   TOCTOU fidelity beyond existing-path canonicalization plus unresolved-path
   lexical normalization, warning text parity outside the bounded missing-path
-  and `open_basedir` denial slices,
-  non-string coercions, non-UTF-8 paths,
+  and `open_basedir` denial slices, exact null/lossy scalar deprecations,
+  object/stringable metadata paths, non-UTF-8 paths,
   oversized file handling beyond the current signed 64-bit integer subset,
   partial-output behavior, and native lowering remain unsupported.
   `filemtime($path)` accepts one string local path, rejects stream-wrapper
@@ -5639,10 +5644,11 @@
   slice, not full PHP filesystem support: include-path lookup, stream
   wrappers, full PHP stat-cache breadth, `open_basedir` policy beyond the
   shared local allow-list check, warning behavior outside the bounded
-  missing-path and `open_basedir` denial slices,
-  non-string coercions, non-UTF-8 paths, pre-Unix-epoch timestamps, oversized
-  timestamps beyond the current signed 64-bit integer subset, partial-output
-  behavior, and native lowering remain unsupported.
+  missing-path and `open_basedir` denial slices, exact null/lossy scalar
+  deprecations, object/stringable metadata paths, non-UTF-8 paths,
+  pre-Unix-epoch timestamps, oversized timestamps beyond the current signed
+  64-bit integer subset, partial-output behavior, and native lowering remain
+  unsupported.
   `clearstatcache($clear_realpath_cache = false, $filename = "")` accepts no
   arguments, one bool argument, or a bool plus string path. It returns `null`.
   The current request-local stat cache stores successful host metadata reads

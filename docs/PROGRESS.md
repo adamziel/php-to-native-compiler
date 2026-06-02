@@ -4,6 +4,22 @@
 
 Implemented:
 
+- Added a bounded stat-style metadata non-string filename diagnostics lane.
+  `stat()`, `lstat()`, `filesize()`, `fileatime()`, `filemtime()`,
+  `filectime()`, `fileinode()`, `fileowner()`, `filegroup()`, `fileperms()`,
+  and `filetype()` now raise catchable PHP-shaped string `TypeError`s for
+  array, closure, and resource filename operands before local path resolution.
+  Existing scalar/null and UTF-8 binary-string path conversion, empty/NUL
+  warning/`false` recovery, missing-path and `open_basedir` warnings,
+  stat-cache behavior, metadata visibility, and native-lowering rejection
+  remain unchanged. Focused proof covers the Rust
+  `file_metadata_builtins_report_type_errors_for_non_string_paths`
+  regression and the full `standard_file_metadata_builtins` test file.
+  Unsupported edges remain exact null/lossy scalar deprecations,
+  object/stringable metadata paths, invalid `__toString()` diagnostics, full
+  binary/non-UTF-8 path fidelity, broader stat-cache/ACL/TOCTOU parity,
+  references/COW, and native lowering.
+
 - Added a bounded date/time formatter string-argument boundary lane.
   `DateTime::format()`, `date_format()`, `date()`, `gmdate()`,
   `strftime()`, `gmstrftime()`, and `idate()` now route their `$format`
