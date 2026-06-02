@@ -66,22 +66,28 @@ echo strlen(uniqid(false, true)), ":", uniqid(false, true), "\n";
 
 #[test]
 fn hash_hmac_and_uniqid_reject_forms_outside_current_boundary() {
-    let algorithm = run_source("<?php\nhash_hmac('md5', 'data', 'key');\n").unwrap_err();
+    let algorithm = run_source("<?php\nhash_hmac('ripemd160', 'data', 'key');\n").unwrap_err();
     assert_eq!(algorithm.phase, Phase::Runtime);
     assert_eq!(algorithm.line, 2);
     assert_eq!(algorithm.column, 1);
     assert_eq!(
         algorithm.message,
-        "unsupported call hash_hmac(): only sha256 is implemented in the current subset"
+        "unsupported call hash_hmac(): algorithm ripemd160 is not implemented in the current HMAC subset"
     );
 
-    let raw = run_source("<?php\nhash_hmac('sha256', 'data', 'key', true);\n").unwrap_err();
-    assert_eq!(raw.phase, Phase::Runtime);
-    assert_eq!(raw.line, 2);
-    assert_eq!(raw.column, 1);
+    let raw = run_source(
+        r#"<?php
+try {
+    hash_hmac('sha256', 'data', 'key', []);
+} catch (Error $e) {
+    echo get_class($e), ":", $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
     assert_eq!(
-        raw.message,
-        "unsupported call hash_hmac(): raw binary output is not implemented; omit raw_output or pass false in the current subset"
+        raw.stdout,
+        "TypeError:hash_hmac(): Argument #4 ($binary) must be of type bool, array given"
     );
 
     let entropy = run_source("<?php\nuniqid('salt', 1);\n").unwrap_err();
@@ -509,6 +515,125 @@ Error:Call to private HashContext::__construct() from global scope\n"
 }
 
 #[test]
+fn hash_hmac_file_context_pbkdf2_and_hkdf_cover_bounded_rows() {
+    let path = temp_hash_path("hmac");
+    fs::write(
+        &path,
+        b"This is a sample string used to test the hash_hmac_file function with various hashing algorithms",
+    )
+    .unwrap();
+
+    let source = format!(
+        r#"<?php
+echo function_exists("hash_hmac_file") && is_callable("hash_hmac_file") ? "file-fn" : "missing";
+echo "|", function_exists("hash_hkdf") && is_callable("hash_hkdf") ? "hkdf-fn" : "missing", "\n";
+
+$ctx = hash_init("md5", HASH_HMAC, str_repeat(chr(0x0b), 16));
+hash_update($ctx, "Hi There");
+echo hash_final($ctx), "\n";
+
+$ctx = hash_init("md5", HASH_HMAC, "Jefe");
+hash_update($ctx, "what do ya want for nothing?");
+echo hash_final($ctx), "\n";
+
+echo hash_hmac("md5", str_repeat(chr(0xDD), 50), str_repeat(chr(0xAA), 16)), "\n";
+$content = "This is a sample string used to test the hash_hmac function with various hashing algorithms";
+$key = "secret";
+echo hash_hmac("md5", $content, $key), "\n";
+echo bin2hex(hash_hmac("sha256", $content, $key, true)), "\n";
+
+$file = {path:?};
+echo hash_hmac_file("md5", $file, $key), "\n";
+echo bin2hex(hash_hmac_file("sha256", $file, $key, true)), "\n";
+
+foreach ([
+    fn() => hash_hmac_file("foo", $file, $key, true),
+    fn() => hash_hmac_file("crc32", $file, $key, true),
+    fn() => hash_hmac_file("md5", $file . chr(0) . $file, $key, true),
+] as $test) {{
+    try {{
+        var_dump($test());
+    }} catch (\Error $e) {{
+        echo get_class($e), ":", $e->getMessage(), "\n";
+    }}
+}}
+
+echo hash_pbkdf2("sha1", "password", "salt", 1, 20), "\n";
+echo hash_pbkdf2("sha1", "password", "salt", 1), "\n";
+echo bin2hex(hash_pbkdf2("sha1", "password", "salt", 1, 20, true)), "\n";
+echo hash_pbkdf2("sha256", "password", "salt", 1, 20), "\n";
+echo bin2hex(hash_pbkdf2("sha256", "password", "salt", 1, 20, true)), "\n";
+echo hash_pbkdf2("sha256", "passwordPASSWORDpassword", "saltSALTsaltSALTsaltSALTsaltSALTsalt", 4096, 40), "\n";
+
+$ikm = "input key material";
+echo bin2hex(hash_hkdf("md5", $ikm)), "\n";
+echo bin2hex(hash_hkdf("Md5", $ikm, 7)), "\n";
+echo bin2hex(hash_hkdf(
+    "sha256",
+    "\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b",
+    42,
+    "\xf0\xf1\xf2\xf3\xf4\xf5\xf6\xf7\xf8\xf9",
+    "\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c"
+)), "\n";
+echo bin2hex(hash_hkdf(
+    "sha1",
+    "\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b",
+    42,
+    "\xf0\xf1\xf2\xf3\xf4\xf5\xf6\xf7\xf8\xf9",
+    "\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c"
+)), "\n";
+
+foreach ([
+    fn() => hash_hkdf("joaat", $ikm),
+    fn() => hash_hkdf("sha1", ""),
+    fn() => hash_hkdf("sha1", $ikm, -1),
+    fn() => hash_hkdf("sha1", $ikm, 20 * 255 + 1),
+] as $test) {{
+    try {{
+        var_dump($test());
+    }} catch (\Error $e) {{
+        echo get_class($e), ":", $e->getMessage(), "\n";
+    }}
+}}
+"#
+    );
+
+    let execution = run_source(&source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "file-fn|hkdf-fn\n\
+9294727a3638bb1c13f48ef8158bfc9d\n\
+750c783e6ab0b503eaa86e310a5db738\n\
+56be34521d144c88dbb8c733f0e8b3f6\n\
+2a632783e2812cf23de100d7d6a463ae\n\
+49bde3496b9510a17d0edd8a4b0ac70148e32a1d51e881ec76faa96534125838\n\
+8bddf39dd1c566c27acc7fa85ec36acf\n\
+9135286ca4c84dec711e4b831f6cd39e672e5ff93d011321274eb76733cc1e40\n\
+ValueError:hash_hmac_file(): Argument #1 ($algo) must be a valid cryptographic hashing algorithm\n\
+ValueError:hash_hmac_file(): Argument #1 ($algo) must be a valid cryptographic hashing algorithm\n\
+ValueError:hash_hmac_file(): Argument #2 ($filename) must not contain any null bytes\n\
+0c60c80f961f0e71f3a9\n\
+0c60c80f961f0e71f3a9b524af6012062fe037a6\n\
+0c60c80f961f0e71f3a9b524af6012062fe037a6\n\
+120fb6cffcf8b32c43e7\n\
+120fb6cffcf8b32c43e7225256c4f837a86548c9\n\
+348c89dbcbd32b2f32d814b8116e84cf2b17347e\n\
+98b16391063ecee006a3ca8ee5776b1e\n\
+98b16391063ece\n\
+3cb25f25faacd57a90434f64d0362f2a2d2d0a90cf1a5a4c5db02d56ecc4c5bf34007208d5b887185865\n\
+085a01ea1b10f36933068b56efa5ad81a4f14b822f5b091568a9cdd4f155fda2c22e422478d305f3f896\n\
+ValueError:hash_hkdf(): Argument #1 ($algo) must be a valid cryptographic hashing algorithm\n\
+ValueError:hash_hkdf(): Argument #2 ($key) must not be empty\n\
+ValueError:hash_hkdf(): Argument #3 ($length) must be greater than or equal to 0\n\
+ValueError:hash_hkdf(): Argument #3 ($length) must be less than or equal to 5100\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn hash_pbkdf2_validates_algorithm_iterations_and_length_before_derivation_boundary() {
     let execution = run_source(
         r#"<?php
@@ -546,13 +671,14 @@ ValueError:hash_pbkdf2(): Argument #5 ($length) must be greater than or equal to
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);
 
-    let boundary = run_source("<?php\nhash_pbkdf2('md5', 'password', 'salt', 1);\n").unwrap_err();
+    let boundary =
+        run_source("<?php\nhash_pbkdf2('ripemd160', 'password', 'salt', 1);\n").unwrap_err();
     assert_eq!(boundary.phase, Phase::Runtime);
     assert_eq!(boundary.line, 2);
     assert_eq!(boundary.column, 1);
     assert_eq!(
         boundary.message,
-        "unsupported call hash_pbkdf2(): PBKDF2 derivation is not implemented in the current subset"
+        "unsupported call hash_pbkdf2(): algorithm ripemd160 is not implemented in the current HMAC subset"
     );
 }
 
@@ -612,12 +738,16 @@ echo function_exists("hash_copy") ? "1" : "0";
 echo is_callable("hash_copy") ? "1" : "0";
 echo function_exists("hash_file") ? "1" : "0";
 echo is_callable("hash_file") ? "1" : "0";
+echo function_exists("hash_hmac_file") ? "1" : "0";
+echo is_callable("hash_hmac_file") ? "1" : "0";
 echo function_exists("hash_update_file") ? "1" : "0";
 echo is_callable("hash_update_file") ? "1" : "0";
 echo function_exists("hash_update_stream") ? "1" : "0";
 echo is_callable("hash_update_stream") ? "1" : "0";
 echo function_exists("hash_hmac") ? "1" : "0";
 echo is_callable("hash_hmac") ? "1" : "0";
+echo function_exists("hash_hkdf") ? "1" : "0";
+echo is_callable("hash_hkdf") ? "1" : "0";
 echo function_exists("hash_pbkdf2") ? "1" : "0";
 echo is_callable("hash_pbkdf2") ? "1" : "0";
 echo function_exists("hash_hmac_algos") ? "1" : "0";
@@ -630,7 +760,7 @@ echo is_callable("uniqid") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 26, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 30, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
 
@@ -647,6 +777,19 @@ echo is_callable("uniqid") ? "1" : "0";
     assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
 
     let error = emit_ir_source("<?php\nhash_hmac('sha256', 'data', 'key');\n").unwrap_err();
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error =
+        emit_ir_source("<?php\nhash_hmac_file('sha256', 'file.txt', 'key');\n").unwrap_err();
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source("<?php\nhash_hkdf('sha256', 'key');\n").unwrap_err();
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.line, 2);
     assert_eq!(error.column, 1);

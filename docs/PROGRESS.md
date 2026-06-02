@@ -4,6 +4,29 @@
 
 Implemented:
 
+- Added a bounded generalized hash HMAC / PBKDF2 / HKDF lane on the
+  interpreter path. `hash_hmac()` now supports lowercase hex and raw binary
+  output for the bounded MD2/MD4/MD5/SHA-1/SHA-2/SHA-3/Whirlpool digest set,
+  `hash_hmac_file()` is registered, reflected, and implemented for bounded
+  local paths/local `file://` URLs, `hash_init(..., HASH_HMAC, $key)` now
+  allocates HMAC `HashContext` objects for supported algorithms,
+  `hash_pbkdf2()` derives bounded PBKDF2 output with PHP's hex-output length
+  truncation and raw binary output, and `hash_hkdf()` is registered,
+  reflected, and implemented for bounded binary HKDF output. Focused proof
+  covers the Rust
+  `hash_hmac_file_context_pbkdf2_and_hkdf_cover_bounded_rows` regression, full
+  `hash_builtin`, build/fmt/diff checks, and selected public PHPT rows
+  `ext/hash/tests/hmac-md5.phpt`,
+  `ext/hash/tests/hash_hmac_file_error.phpt`,
+  `ext/hash/tests/hash_pbkdf2_basic.phpt`,
+  `ext/hash/tests/hash_hkdf_edges.phpt`,
+  `ext/hash/tests/hash_hkdf_error.phpt`, and
+  `ext/hash/tests/hash_hkdf_rfc5869.phpt`. Unsupported edges remain
+  HMAC/PBKDF2/HKDF execution for advertised cryptographic algorithms outside
+  the bounded digest execution set, including RIPEMD, GOST, Tiger, HAVAL, and
+  Snefru, non-empty hash options arrays, remote stream wrappers, broader exact
+  diagnostics, references/COW, and native lowering.
+
 - Added a bounded `DateTime` / `DateTimeImmutable` / `DateTimeZone` clone and
   non-strict comparison lane on the interpreter path. Cloning exact and
   subclassed date/timezone objects preserves the represented bounded internal

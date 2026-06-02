@@ -9,7 +9,6 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use hmac::{Hmac, Mac};
 use md2::{Digest as Md2Digest, Md2};
 use md4::Md4;
 use md5::{Digest as Md5Digest, Md5};
@@ -743,6 +742,7 @@ struct BoundedDateIntervalState {
 #[derive(Debug, Clone)]
 struct BoundedHashContextState {
     algorithm: PhpHashAlgorithm,
+    hmac_key: Option<Vec<u8>>,
     data: Vec<u8>,
     finalized: bool,
 }
@@ -91926,12 +91926,14 @@ impl Interpreter {
             "hash_final" => self.call_hash_final(&args, span),
             "hash_copy" => self.call_hash_copy(&args, span),
             "hash_file" => self.call_hash_file(&args, span),
+            "hash_hmac_file" => self.call_hash_hmac_file(&args, span),
             "hash_update_file" => self.call_hash_update_file(&args, span),
             "hash_update_stream" => self.call_hash_update_stream(&args, span),
             "hash" => call_hash(&args, span),
             "hash_algos" => call_hash_algos(&args, span),
             "hash_hmac_algos" => call_hash_hmac_algos(&args, span),
             "hash_hmac" => call_hash_hmac(&args, span),
+            "hash_hkdf" => call_hash_hkdf(&args, span),
             "hash_pbkdf2" => call_hash_pbkdf2(&args, span),
             "hash_equals" => call_hash_equals(&args, span),
             "filter_list" => call_filter_list(&args, span),
@@ -108629,6 +108631,15 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_optional_empty_array_param("options", "array"),
             ],
         ),
+        "hash_hmac_file" => (
+            "string|false",
+            vec![
+                reflection_internal_param("algo", "string"),
+                reflection_internal_param("filename", "string"),
+                reflection_internal_param("key", "string"),
+                reflection_internal_optional_bool_param("binary", false),
+            ],
+        ),
         "hash_update_file" => (
             "bool",
             vec![
@@ -108663,6 +108674,24 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_param("data", "string"),
                 reflection_internal_param("key", "string"),
                 reflection_internal_optional_bool_param("binary", false),
+            ],
+        ),
+        "hash_hkdf" => (
+            "string",
+            vec![
+                reflection_internal_param("algo", "string"),
+                reflection_internal_param("key", "string"),
+                reflection_internal_optional_int_param("length", 0),
+                reflection_internal_optional_param(
+                    "info",
+                    "string",
+                    Expr::String(String::new(), Span::new(0, 0)),
+                ),
+                reflection_internal_optional_param(
+                    "salt",
+                    "string",
+                    Expr::String(String::new(), Span::new(0, 0)),
+                ),
             ],
         ),
         "hash_pbkdf2" => (
@@ -113544,6 +113573,19 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
             "Argument #1 ($algo) must be a valid cryptographic hashing algorithm",
         )
         | (
+            "hash_hmac_file()",
+            "Argument #1 ($algo) must be a valid cryptographic hashing algorithm",
+        )
+        | (
+            "hash_hkdf()",
+            "Argument #1 ($algo) must be a valid cryptographic hashing algorithm",
+        )
+        | ("hash_hkdf()", "Argument #2 ($key) must not be empty")
+        | (
+            "hash_hkdf()",
+            "Argument #3 ($length) must be greater than or equal to 0",
+        )
+        | (
             "hash_pbkdf2()",
             "Argument #1 ($algo) must be a valid cryptographic hashing algorithm",
         )
@@ -113572,6 +113614,11 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
         ) => {
             Some(format!("{function}: {message}"))
         },
+        ("hash_hkdf()", message)
+            if message.starts_with("Argument #3 ($length) must be less than or equal to ") =>
+        {
+            Some(format!("{function}: {message}"))
+        }
         (
             "stream_context_create()"
             | "stream_context_get_default()"
@@ -113735,20 +113782,20 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
         }
         (
             "file_get_contents()" | "file_put_contents()" | "readfile()" | "md5_file()"
-            | "sha1_file()" | "hash_file()" | "hash_update_file()",
+            | "sha1_file()" | "hash_file()" | "hash_hmac_file()" | "hash_update_file()",
             "Argument #1 ($filename) must not contain any null bytes",
         ) => {
             Some(format!("{function}: {message}"))
         }
         (
-            "hash_file()" | "hash_update_file()",
+            "hash_file()" | "hash_hmac_file()" | "hash_update_file()",
             "Argument #2 ($filename) must not contain any null bytes",
         ) => {
             Some(format!("{function}: {message}"))
         }
         (
             "file_get_contents()" | "file_put_contents()" | "readfile()" | "md5_file()"
-            | "sha1_file()" | "hash_file()" | "hash_update_file()",
+            | "sha1_file()" | "hash_file()" | "hash_hmac_file()" | "hash_update_file()",
             "Path must not be empty",
         ) => Some("Path must not be empty".to_string()),
         (
@@ -114632,12 +114679,14 @@ fn is_builtin(name: &str) -> bool {
             | "hash_final"
             | "hash_copy"
             | "hash_file"
+            | "hash_hmac_file"
             | "hash_update_file"
             | "hash_update_stream"
             | "hash"
             | "hash_algos"
             | "hash_hmac_algos"
             | "hash_hmac"
+            | "hash_hkdf"
             | "hash_pbkdf2"
             | "hash_equals"
             | "filter_list"
@@ -142068,10 +142117,10 @@ fn call_hash_init(
                 "hash_init(): Passing null to parameter #3 ($key) of type string is deprecated",
                 span,
             )?;
-            String::new()
+            Vec::new()
         }
-        Some(value) => string_builtin_argument("hash_init()", "key", value, span)?,
-        None => String::new(),
+        Some(value) => string_compare_argument_bytes("hash_init()", "key", value, span)?,
+        None => Vec::new(),
     };
 
     if hmac_requested {
@@ -142122,16 +142171,6 @@ fn call_hash_init(
         }
     }
 
-    if hmac_requested {
-        return Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                "hash_init()",
-                "HMAC HashContext allocation is not implemented in the current hash context subset",
-            ),
-        ));
-    }
-
     let Some(algorithm_kind) = php_hash_algorithm(&algorithm) else {
         return Err(runtime_error(
             span,
@@ -142144,9 +142183,22 @@ fn call_hash_init(
             ),
         ));
     };
+    if hmac_requested && php_hash_hmac_block_size(algorithm_kind).is_none() {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "hash_init()",
+                format!(
+                    "algorithm {} is not implemented in the current HMAC HashContext subset",
+                    algorithm.to_ascii_lowercase()
+                ),
+            ),
+        ));
+    }
 
     let state = BoundedHashContextState {
         algorithm: algorithm_kind,
+        hmac_key: hmac_requested.then_some(key),
         data: Vec::new(),
         finalized: false,
     };
@@ -142244,7 +142296,11 @@ impl Interpreter {
             None => false,
         };
         let state = self.hash_context_state_mut("hash_final()", &args[0], span)?;
-        let digest = php_hash_digest_bytes(state.algorithm, &state.data);
+        let digest = if let Some(key) = state.hmac_key.as_deref() {
+            php_hash_hmac_digest_bytes("hash_final()", state.algorithm, &state.data, key, span)?
+        } else {
+            php_hash_digest_bytes(state.algorithm, &state.data)
+        };
         state.finalized = true;
         if raw_output {
             Ok(Value::BinaryString(digest))
@@ -142313,6 +142369,46 @@ impl Interpreter {
             return Ok(Value::Bool(false));
         };
         let digest = php_hash_digest_bytes(algorithm_kind, &contents);
+        if raw_output {
+            Ok(Value::BinaryString(digest))
+        } else {
+            Ok(Value::String(hex_bytes(&digest)))
+        }
+    }
+
+    fn call_hash_hmac_file(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(3..=4).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "hash_hmac_file()",
+                    ArityExpectation::Between { min: 3, max: 4 },
+                    args.len(),
+                ),
+            ));
+        }
+        let algorithm = string_builtin_argument("hash_hmac_file()", "algo", &args[0], span)?;
+        let algorithm_kind =
+            php_hash_hmac_supported_algorithm("hash_hmac_file()", &algorithm, span)?;
+        let path = self.filesystem_filename_argument_for_parameter(
+            "hash_hmac_file",
+            2,
+            "filename",
+            &args[1],
+            span,
+        )?;
+        let key = string_compare_argument_bytes("hash_hmac_file()", "key", &args[2], span)?;
+        let raw_output = match args.get(3) {
+            Some(value) => {
+                php_internal_bool_argument("hash_hmac_file()", 4, "binary", value, span)?
+            }
+            None => false,
+        };
+        let Some(contents) = self.hash_file_contents("hash_hmac_file", &path, span)? else {
+            return Ok(Value::Bool(false));
+        };
+        let digest =
+            php_hash_hmac_digest_bytes("hash_hmac_file()", algorithm_kind, &contents, &key, span)?;
         if raw_output {
             Ok(Value::BinaryString(digest))
         } else {
@@ -142583,6 +142679,113 @@ fn php_hash_digest_bytes(algorithm: PhpHashAlgorithm, bytes: &[u8]) -> Vec<u8> {
     }
 }
 
+fn php_hash_hmac_block_size(algorithm: PhpHashAlgorithm) -> Option<usize> {
+    match algorithm {
+        PhpHashAlgorithm::Md2 => Some(16),
+        PhpHashAlgorithm::Md4
+        | PhpHashAlgorithm::Md5
+        | PhpHashAlgorithm::Sha1
+        | PhpHashAlgorithm::Sha224
+        | PhpHashAlgorithm::Sha256
+        | PhpHashAlgorithm::Whirlpool => Some(64),
+        PhpHashAlgorithm::Sha384
+        | PhpHashAlgorithm::Sha512_224
+        | PhpHashAlgorithm::Sha512_256
+        | PhpHashAlgorithm::Sha512 => Some(128),
+        PhpHashAlgorithm::Sha3_224 => Some(144),
+        PhpHashAlgorithm::Sha3_256 => Some(136),
+        PhpHashAlgorithm::Sha3_384 => Some(104),
+        PhpHashAlgorithm::Sha3_512 => Some(72),
+        PhpHashAlgorithm::Adler32
+        | PhpHashAlgorithm::Crc32
+        | PhpHashAlgorithm::Crc32b
+        | PhpHashAlgorithm::Crc32c
+        | PhpHashAlgorithm::Fnv132
+        | PhpHashAlgorithm::Fnv1a32
+        | PhpHashAlgorithm::Fnv164
+        | PhpHashAlgorithm::Fnv1a64
+        | PhpHashAlgorithm::Joaat => None,
+    }
+}
+
+fn php_hash_hmac_supported_algorithm(
+    function: &'static str,
+    algorithm: &str,
+    span: Span,
+) -> CompileResult<PhpHashAlgorithm> {
+    if !is_php_hash_hmac_cryptographic_algorithm_name(algorithm) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                "Argument #1 ($algo) must be a valid cryptographic hashing algorithm",
+            ),
+        ));
+    }
+
+    let Some(algorithm_kind) = php_hash_algorithm(algorithm) else {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                format!(
+                    "algorithm {} is not implemented in the current HMAC subset",
+                    algorithm.to_ascii_lowercase()
+                ),
+            ),
+        ));
+    };
+    if php_hash_hmac_block_size(algorithm_kind).is_none() {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                format!(
+                    "algorithm {} is not implemented in the current HMAC subset",
+                    algorithm.to_ascii_lowercase()
+                ),
+            ),
+        ));
+    }
+    Ok(algorithm_kind)
+}
+
+fn php_hash_hmac_digest_bytes(
+    function: &'static str,
+    algorithm: PhpHashAlgorithm,
+    data: &[u8],
+    key: &[u8],
+    span: Span,
+) -> CompileResult<Vec<u8>> {
+    let Some(block_size) = php_hash_hmac_block_size(algorithm) else {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                "algorithm is not implemented in the current HMAC subset",
+            ),
+        ));
+    };
+
+    let mut normalized_key = if key.len() > block_size {
+        php_hash_digest_bytes(algorithm, key)
+    } else {
+        key.to_vec()
+    };
+    normalized_key.resize(block_size, 0);
+
+    let mut inner = Vec::with_capacity(block_size + data.len());
+    let mut outer = Vec::with_capacity(block_size);
+    for byte in normalized_key {
+        inner.push(byte ^ 0x36);
+        outer.push(byte ^ 0x5c);
+    }
+    inner.extend_from_slice(data);
+    let inner_digest = php_hash_digest_bytes(algorithm, &inner);
+    outer.extend_from_slice(&inner_digest);
+    Ok(php_hash_digest_bytes(algorithm, &outer))
+}
+
 fn call_hash_hmac(args: &[Value], span: Span) -> CompileResult<Value> {
     if !(3..=4).contains(&args.len()) {
         return Err(runtime_error(
@@ -142596,64 +142799,19 @@ fn call_hash_hmac(args: &[Value], span: Span) -> CompileResult<Value> {
     }
 
     let algorithm = string_builtin_argument("hash_hmac()", "algorithm", &args[0], span)?;
-    if !algorithm.eq_ignore_ascii_case("sha256") {
-        if !is_php_hash_hmac_cryptographic_algorithm_name(&algorithm) {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "hash_hmac()",
-                    "Argument #1 ($algo) must be a valid cryptographic hashing algorithm",
-                ),
-            ));
-        }
-        return Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                "hash_hmac()",
-                "only sha256 is implemented in the current subset",
-            ),
-        ));
+    let algorithm_kind = php_hash_hmac_supported_algorithm("hash_hmac()", &algorithm, span)?;
+    let data = string_compare_argument_bytes("hash_hmac()", "data", &args[1], span)?;
+    let key = string_compare_argument_bytes("hash_hmac()", "key", &args[2], span)?;
+    let raw_output = match args.get(3) {
+        Some(value) => php_internal_bool_argument("hash_hmac()", 4, "binary", value, span)?,
+        None => false,
+    };
+    let digest = php_hash_hmac_digest_bytes("hash_hmac()", algorithm_kind, &data, &key, span)?;
+    if raw_output {
+        Ok(Value::BinaryString(digest))
+    } else {
+        Ok(Value::String(hex_bytes(&digest)))
     }
-
-    let data = string_builtin_argument("hash_hmac()", "data", &args[1], span)?;
-    let key = string_builtin_argument("hash_hmac()", "key", &args[2], span)?;
-
-    match args.get(3) {
-        Some(Value::Bool(false)) | None => {}
-        Some(Value::Bool(true)) => {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "hash_hmac()",
-                    "raw binary output is not implemented; omit raw_output or pass false in the current subset",
-                ),
-            ));
-        }
-        Some(other) => {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "hash_hmac()",
-                    format!(
-                        "raw_output argument must be bool in the current subset, got {}",
-                        other.type_name()
-                    ),
-                ),
-            ));
-        }
-    }
-
-    let mut mac = Hmac::<Sha256>::new_from_slice(key.as_bytes()).map_err(|_| {
-        runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                "hash_hmac()",
-                "key values outside the current HMAC-SHA256 subset are not implemented",
-            ),
-        )
-    })?;
-    mac.update(data.as_bytes());
-    Ok(Value::String(hex_bytes(&mac.finalize().into_bytes())))
 }
 
 fn call_hash_pbkdf2(args: &[Value], span: Span) -> CompileResult<Value> {
@@ -142669,18 +142827,9 @@ fn call_hash_pbkdf2(args: &[Value], span: Span) -> CompileResult<Value> {
     }
 
     let algorithm = string_builtin_argument("hash_pbkdf2()", "algo", &args[0], span)?;
-    if !is_php_hash_hmac_cryptographic_algorithm_name(&algorithm) {
-        return Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                "hash_pbkdf2()",
-                "Argument #1 ($algo) must be a valid cryptographic hashing algorithm",
-            ),
-        ));
-    }
-
-    let _password = string_compare_argument_bytes("hash_pbkdf2()", "password", &args[1], span)?;
-    let _salt = string_compare_argument_bytes("hash_pbkdf2()", "salt", &args[2], span)?;
+    let algorithm_kind = php_hash_hmac_supported_algorithm("hash_pbkdf2()", &algorithm, span)?;
+    let password = string_compare_argument_bytes("hash_pbkdf2()", "password", &args[1], span)?;
+    let salt = string_compare_argument_bytes("hash_pbkdf2()", "salt", &args[2], span)?;
     let iterations = php_internal_int_argument("hash_pbkdf2()", 4, "iterations", &args[3], span)?;
     if iterations <= 0 {
         return Err(runtime_error(
@@ -142706,23 +142855,175 @@ fn call_hash_pbkdf2(args: &[Value], span: Span) -> CompileResult<Value> {
         ));
     }
 
-    if let Some(Value::Array(_)) = args.get(5) {
+    let raw_output = match args.get(5) {
+        Some(value) => php_internal_bool_argument("hash_pbkdf2()", 6, "binary", value, span)?,
+        None => false,
+    };
+    let digest_len = php_hash_digest_bytes(algorithm_kind, &[]).len();
+    let requested_length = length as usize;
+    let byte_length = if raw_output {
+        if requested_length == 0 {
+            digest_len
+        } else {
+            requested_length
+        }
+    } else if requested_length == 0 {
+        digest_len
+    } else {
+        requested_length.div_ceil(2)
+    };
+    let derived = php_hash_pbkdf2_bytes(
+        algorithm_kind,
+        &password,
+        &salt,
+        iterations as usize,
+        byte_length,
+        span,
+    )?;
+    if raw_output {
+        Ok(Value::BinaryString(derived))
+    } else {
+        let mut hex = hex_bytes(&derived);
+        if requested_length > 0 {
+            hex.truncate(requested_length);
+        }
+        Ok(Value::String(hex))
+    }
+}
+
+fn php_hash_pbkdf2_bytes(
+    algorithm: PhpHashAlgorithm,
+    password: &[u8],
+    salt: &[u8],
+    iterations: usize,
+    length: usize,
+    span: Span,
+) -> CompileResult<Vec<u8>> {
+    if length == 0 {
+        return Ok(Vec::new());
+    }
+
+    let digest_len = php_hash_digest_bytes(algorithm, &[]).len();
+    let block_count = length.div_ceil(digest_len);
+    let mut output = Vec::with_capacity(block_count * digest_len);
+    for block_index in 1..=block_count {
+        let mut block_input = Vec::with_capacity(salt.len() + 4);
+        block_input.extend_from_slice(salt);
+        block_input.extend_from_slice(&(block_index as u32).to_be_bytes());
+        let mut u =
+            php_hash_hmac_digest_bytes("hash_pbkdf2()", algorithm, &block_input, password, span)?;
+        let mut block = u.clone();
+        for _ in 1..iterations {
+            u = php_hash_hmac_digest_bytes("hash_pbkdf2()", algorithm, &u, password, span)?;
+            for (left, right) in block.iter_mut().zip(&u) {
+                *left ^= *right;
+            }
+        }
+        output.extend_from_slice(&block);
+    }
+    output.truncate(length);
+    Ok(output)
+}
+
+fn call_hash_hkdf(args: &[Value], span: Span) -> CompileResult<Value> {
+    if !(2..=5).contains(&args.len()) {
         return Err(runtime_error(
             span,
-            RuntimeError::unsupported_call(
-                "hash_pbkdf2()",
-                "Argument #6 ($binary) must be of type bool, array given",
+            RuntimeError::arity_mismatch(
+                "hash_hkdf()",
+                ArityExpectation::Between { min: 2, max: 5 },
+                args.len(),
             ),
         ));
     }
 
-    Err(runtime_error(
+    let algorithm = string_builtin_argument("hash_hkdf()", "algo", &args[0], span)?;
+    let algorithm_kind = php_hash_hmac_supported_algorithm("hash_hkdf()", &algorithm, span)?;
+    let key = string_compare_argument_bytes("hash_hkdf()", "key", &args[1], span)?;
+    if key.is_empty() {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call("hash_hkdf()", "Argument #2 ($key) must not be empty"),
+        ));
+    }
+    let length = match args.get(2) {
+        Some(value) => php_internal_int_argument("hash_hkdf()", 3, "length", value, span)?,
+        None => 0,
+    };
+    if length < 0 {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "hash_hkdf()",
+                "Argument #3 ($length) must be greater than or equal to 0",
+            ),
+        ));
+    }
+    let info = match args.get(3) {
+        Some(value) => string_compare_argument_bytes("hash_hkdf()", "info", value, span)?,
+        None => Vec::new(),
+    };
+    let salt = match args.get(4) {
+        Some(value) => string_compare_argument_bytes("hash_hkdf()", "salt", value, span)?,
+        None => Vec::new(),
+    };
+
+    let digest_len = php_hash_digest_bytes(algorithm_kind, &[]).len();
+    let output_len = if length == 0 {
+        digest_len
+    } else {
+        length as usize
+    };
+    let max_len = digest_len * 255;
+    if output_len > max_len {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "hash_hkdf()",
+                format!("Argument #3 ($length) must be less than or equal to {max_len}"),
+            ),
+        ));
+    }
+
+    Ok(Value::BinaryString(php_hash_hkdf_bytes(
+        algorithm_kind,
+        &key,
+        output_len,
+        &info,
+        &salt,
         span,
-        RuntimeError::unsupported_call(
-            "hash_pbkdf2()",
-            "PBKDF2 derivation is not implemented in the current subset",
-        ),
-    ))
+    )?))
+}
+
+fn php_hash_hkdf_bytes(
+    algorithm: PhpHashAlgorithm,
+    key: &[u8],
+    length: usize,
+    info: &[u8],
+    salt: &[u8],
+    span: Span,
+) -> CompileResult<Vec<u8>> {
+    let digest_len = php_hash_digest_bytes(algorithm, &[]).len();
+    let salt_key = if salt.is_empty() {
+        vec![0; digest_len]
+    } else {
+        salt.to_vec()
+    };
+    let prk = php_hash_hmac_digest_bytes("hash_hkdf()", algorithm, key, &salt_key, span)?;
+    let mut output = Vec::with_capacity(length);
+    let mut previous = Vec::new();
+    let mut counter = 1u8;
+    while output.len() < length {
+        let mut input = Vec::with_capacity(previous.len() + info.len() + 1);
+        input.extend_from_slice(&previous);
+        input.extend_from_slice(info);
+        input.push(counter);
+        previous = php_hash_hmac_digest_bytes("hash_hkdf()", algorithm, &input, &prk, span)?;
+        output.extend_from_slice(&previous);
+        counter = counter.wrapping_add(1);
+    }
+    output.truncate(length);
+    Ok(output)
 }
 
 fn call_hash_equals(args: &[Value], span: Span) -> CompileResult<Value> {

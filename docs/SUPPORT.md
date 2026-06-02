@@ -4376,19 +4376,25 @@
   returning lowercase hex, raw binary output, or `false` with a PHP-shaped
   warning when the file cannot be opened.
   `hash_hmac_algos()` returns the bounded PHP cryptographic HMAC algorithm
-  metadata list used by the public hash PHPT row; only `hash_hmac('sha256',
-  ...)` execution is currently implemented from that list.
-  `hash_hmac('sha256', $data, $key, false)` supports scalar/null
-  string-convertible data and key values and returns lowercase hex output.
-  Invalid or non-cryptographic `hash_hmac()` algorithm names on the reached
-  direct-call path raise the PHP-shaped catchable `ValueError` diagnostic.
+  metadata list used by the public hash PHPT row. `hash_hmac($algo, $data,
+  $key, $binary = false)` supports scalar/null string-convertible data and key
+  values for the bounded cryptographic MD2/MD4/MD5/SHA-1/SHA-2/SHA-3/
+  Whirlpool execution set, returning lowercase hex output or raw binary output
+  when the binary flag is truthy. `hash_hmac_file($algo, $filename, $key,
+  $binary = false)` applies the same HMAC subset to bounded local paths and
+  local `file://` URLs, returning lowercase hex, raw binary output, or `false`
+  with a PHP-shaped warning when the file cannot be opened. Invalid or
+  non-cryptographic HMAC algorithm names on the reached direct-call paths raise
+  PHP-shaped catchable `ValueError` diagnostics.
   `HASH_HMAC` is exposed as the PHP HMAC-mode flag. `hash_init($algo, $flags,
   $key = "", $options = [])` supports non-HMAC `HashContext` allocation for
   the same bounded MD2/MD4/MD5/SHA-1/SHA-2/SHA-3/Whirlpool/checksum execution
-  set and keeps the bounded validation surface for unknown algorithm names,
-  HMAC mode over known non-cryptographic algorithms, missing/empty HMAC keys,
-  and the null-key deprecation; those validation failures raise PHP-shaped
-  catchable `ValueError` diagnostics.
+  set and HMAC `HashContext` allocation for the bounded cryptographic
+  MD2/MD4/MD5/SHA-1/SHA-2/SHA-3/Whirlpool execution set. It keeps the bounded
+  validation surface for unknown algorithm names, HMAC mode over known
+  non-cryptographic algorithms, missing/empty HMAC keys, and the null-key
+  deprecation; those validation failures raise PHP-shaped catchable
+  `ValueError` diagnostics.
   `hash_update($context, $data)` appends string-convertible bytes to a
   non-finalized context, `hash_final($context, $binary = false)` finalizes the
   context and returns lowercase hex or raw binary digest output, and
@@ -4401,21 +4407,26 @@
   `hash_update_stream($context, $stream, $length = -1)` appends bytes from the
   current readable stream subset and returns the number of bytes consumed.
   `hash_pbkdf2($algo, $password, $salt, $iterations, $length = 0,
-  $binary = false)` is exposed as a validation-only interpreter boundary for
-  the selected error surface: invalid or non-cryptographic algorithms,
-  non-positive iteration counts, and negative lengths raise PHP-shaped
-  catchable `ValueError` diagnostics before successful PBKDF2 derivation is
-  explicitly rejected.
+  $binary = false)` derives bounded PBKDF2 output for the same HMAC execution
+  subset, including PHP's hex-output length truncation and raw binary output.
+  Invalid or non-cryptographic algorithms, non-positive iteration counts, and
+  negative lengths raise PHP-shaped catchable `ValueError` diagnostics.
+  `hash_hkdf($algo, $key, $length = 0, $info = "", $salt = "")` derives
+  bounded binary HKDF output for the same HMAC execution subset, including
+  default digest-length output, empty-salt zero-key extract behavior, and
+  PHP-shaped `ValueError` diagnostics for invalid/non-cryptographic algorithms,
+  empty input key material, negative lengths, and lengths beyond 255 digest
+  blocks.
   `hash_equals($known_string, $user_string)` supports strict string and binary
   string operands, constant-work same-length byte comparison, and PHP-shaped
   type diagnostics for non-string operands.
   Hash algorithms outside that bounded MD2/MD4/MD5/SHA-1/SHA-2/SHA-3/
-  Whirlpool/checksum execution set, non-empty `hash()`/`hash_file()`/
-  `hash_init()`/`hash_update_file()` options arrays, `hash_init()` HMAC context
-  execution, `hash_hmac()` execution for algorithms beyond SHA-256,
-  `hash_hmac()` raw binary output, `hash_pbkdf2()` derivation output, remote
-  stream wrappers, binary stream reads outside the UTF-8 stream subset, exact
-  time/entropy behavior, cryptographic guarantees for generated IDs,
+  Whirlpool/checksum execution set, HMAC/PBKDF2/HKDF execution for advertised
+  cryptographic algorithms outside the bounded MD2/MD4/MD5/SHA-1/SHA-2/SHA-3/
+  Whirlpool set such as RIPEMD, GOST, Tiger, HAVAL, and Snefru, non-empty
+  `hash()`/`hash_file()`/`hash_init()`/`hash_update_file()` options arrays,
+  remote stream wrappers, binary stream reads outside the UTF-8 stream subset,
+  exact time/entropy behavior, cryptographic guarantees for generated IDs,
   array/object/resource coercions outside the documented strict
   `hash_equals()` type errors, broader exact diagnostics, and native lowering
   remain unsupported.
