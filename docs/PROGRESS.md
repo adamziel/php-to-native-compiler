@@ -4,6 +4,29 @@
 
 Implemented:
 
+- Added bounded `DateTime` / `DateTimeImmutable` interval arithmetic on the
+  interpreter path. Mutable `DateTime::add()` / `sub()` and procedural
+  `date_add()` / `date_sub()` now mutate the receiver and return it, while
+  immutable `DateTimeImmutable::add()` / `sub()` return a fresh object and
+  preserve the original. The lane applies integer `DateInterval` component
+  metadata plus `invert` through the bounded local timestamp model, accepts
+  numeric `YYYY-MM-DD HH:MM` construction by defaulting seconds to zero, and
+  gives `Asia/Tokyo` concrete `+09:00` / `JST` timezone metadata for
+  instant-preserving `setTimezone()` rows. Focused proof covers the Rust
+  `datetime_interval_add_sub_mutate_or_copy_bounded_state` regression, the
+  full `date_time_builtin` Rust file, runtime class-table metadata, and
+  selected public PHPT rows `ext/date/tests/date_add_basic.phpt`,
+  `ext/date/tests/date_sub_basic.phpt`,
+  `ext/date/tests/date_time_immutable.phpt`,
+  `ext/date/tests/DateTime_add-dates.phpt`,
+  `ext/date/tests/DateTime_sub-dates.phpt`,
+  `ext/date/tests/DateTime_add-february.phpt`, and
+  `ext/date/tests/DateTime_sub-february.phpt`. Unsupported edges remain full
+  timelib interval arithmetic, nonzero fractional interval mutation,
+  arithmetic overflow outside the bounded timestamp range, broad historical DST
+  transition parity, DatePeriod, DateInterval serialization/state restoration,
+  references/COW, and native lowering.
+
 - Added a bounded local writable `SplFileObject` lane on the interpreter path.
   Local `SplFileObject` construction now accepts supported local stream modes
   including write/create/append variants, stores a bounded stream handle beside

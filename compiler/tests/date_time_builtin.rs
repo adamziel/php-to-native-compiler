@@ -1027,6 +1027,54 @@ try {
 }
 
 #[test]
+fn datetime_interval_add_sub_mutate_or_copy_bounded_state() {
+    let execution = run_source(
+        r#"<?php
+date_default_timezone_set("UTC");
+$datetime = new DateTime("2008-01-01 12:25");
+$returned = $datetime->add(new DateInterval("P3Y6M4DT12H30M5S"));
+echo $datetime->format("Y-m-d H:i:s"), "|", ($returned === $datetime ? "same" : "different"), "\n";
+$inverted = new DateInterval("P2DT1M");
+$inverted->invert = true;
+$datetime->add($inverted);
+echo $datetime->format("Y-m-d H:i:s"), "\n";
+date_sub($datetime, $inverted);
+echo $datetime->format("Y-m-d H:i:s"), "\n";
+date_add($datetime, new DateInterval("P1Y2MT23H43M150S"));
+echo $datetime->format("Y-m-d H:i:s"), "\n";
+date_default_timezone_set("Europe/London");
+$immutable = new DateTimeImmutable("2012-12-27 16:24:08");
+$added = $immutable->add(new DateInterval("P2DT2S"));
+$subtracted = $immutable->sub(new DateInterval("P2DT2S"));
+echo $immutable->format("Y-m-d H:i:s e"), "|", $added->format("Y-m-d H:i:s e"), "|", $subtracted->format("Y-m-d H:i:s e"), "\n";
+$tokyo = $immutable->setTimezone(new DateTimeZone("Asia/Tokyo"));
+echo $tokyo->format("Y-m-d H:i:s e T P"), "\n";
+echo is_callable([$datetime, "add"]) ? "add-method" : "missing";
+echo "|", is_callable([$immutable, "sub"]) ? "sub-method" : "missing";
+echo "|", function_exists("date_add") ? "date-add-fn" : "missing";
+echo "|", function_exists("date_sub") ? "date-sub-fn" : "missing";
+echo "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "2011-07-06 00:55:05|same\n",
+            "2011-07-04 00:54:05\n",
+            "2011-07-06 00:55:05\n",
+            "2012-09-07 00:40:35\n",
+            "2012-12-27 16:24:08 Europe/London|2012-12-29 16:24:10 Europe/London|2012-12-25 16:24:06 Europe/London\n",
+            "2012-12-28 01:24:08 Asia/Tokyo JST +09:00\n",
+            "add-method|sub-method|date-add-fn|date-sub-fn\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn datetime_mutable_date_time_setters_normalize_bounded_parts() {
     let execution = run_source(
         r#"<?php

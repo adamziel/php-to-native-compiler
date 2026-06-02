@@ -33284,6 +33284,8 @@ impl PhpClassTable {
             "setDate",
             "setISODate",
             "setTime",
+            "add",
+            "sub",
             "diff",
         ] {
             datetime
@@ -33341,6 +33343,8 @@ impl PhpClassTable {
             "setDate",
             "setISODate",
             "setTime",
+            "add",
+            "sub",
             "diff",
         ] {
             datetime_immutable
@@ -81580,6 +81584,8 @@ mod tests {
         );
         assert!(datetime.method("__construct").is_some());
         assert!(datetime.method("format").is_some());
+        assert!(datetime.method("add").is_some());
+        assert!(datetime.method("sub").is_some());
 
         let datetime_immutable = classes.lookup_class("datetimeimmutable").unwrap();
         assert_eq!(datetime_immutable.name(), "DateTimeImmutable");
@@ -81595,6 +81601,8 @@ mod tests {
         assert!(datetime_immutable.constant("ATOM").is_some());
         assert!(datetime_immutable.method("__construct").is_some());
         assert!(datetime_immutable.method("format").is_some());
+        assert!(datetime_immutable.method("add").is_some());
+        assert!(datetime_immutable.method("sub").is_some());
         assert!(datetime_immutable
             .method("createFromMutable")
             .expect("DateTimeImmutable::createFromMutable should be registered")

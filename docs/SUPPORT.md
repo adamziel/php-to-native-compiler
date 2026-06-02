@@ -6164,14 +6164,19 @@
   and returns `false` with a PHP-shaped notice for unknown identifiers.
   Mutable `DateTime` and immutable `DateTimeImmutable` objects support bounded
   `format()`, `getTimestamp()`, `setTimestamp()`, `setDate()`, `setISODate()`,
-  `setTime()`, `modify()`, `getOffset()`, `getTimezone()`, and
+  `setTime()`, `modify()`, `add(DateInterval $interval)`,
+  `sub(DateInterval $interval)`, `getOffset()`, `getTimezone()`, and
   `setTimezone(DateTimeZone $timezone)` behavior over the same bounded timezone
-  table. Mutable setters preserve the receiver timezone, return the same
+  table. Mutable mutators preserve the receiver timezone, return the same
   object, and normalize overflowing date/time parts through the bounded local
-  timestamp model; immutable setters return a fresh object and preserve the
+  timestamp model; immutable mutators return a fresh object and preserve the
   original receiver. Non-zero microseconds are not represented by the current
-  DateTime object state. `modify()` covers the current bounded relative
-  weekday/unit forms plus Unix timestamp modifiers such as `@1234567890`;
+  DateTime object state. `add()` / `sub()` apply bounded integer
+  `DateInterval` component metadata plus `invert` through the local timestamp
+  model and reject nonzero fractional interval mutation or arithmetic overflow
+  outside the bounded timestamp subset. `modify()` covers the current bounded
+  relative weekday/unit forms plus Unix timestamp modifiers such as
+  `@1234567890`;
   timestamp modifiers update the timestamp and switch the object timezone
   identity to the bounded `+00:00` timestamp zone, while `setTimestamp()`
   preserves the existing object timezone. Its `$modifier` operand uses the
@@ -6183,6 +6188,7 @@
   DateTimeImmutable($time = null, ?DateTimeZone $timezone = null)`, and
   `date_create_immutable($time = null, ?DateTimeZone $timezone = null)` accepts
   the optional bounded timezone object for strings without an explicit timezone,
+  including numeric `YYYY-MM-DD HH:MM` strings whose seconds default to zero,
   while timestamp strings such as `@0` and explicit timezone tokens retain
   their own timezone identity. `DateTime::__construct()` and
   `DateTimeImmutable::__construct()` report catchable PHP-shaped
@@ -6194,7 +6200,8 @@
   week-numbering year `o`. Procedural `date_format()`, `date_timestamp_get()`,
   `date_offset_get()`, and `date_timezone_get()` accept mutable or immutable
   date objects. `date_timestamp_set()`, `date_date_set()`,
-  `date_isodate_set()`, `date_time_set()`, and `date_timezone_set()` are
+  `date_isodate_set()`, `date_time_set()`, `date_timezone_set()`,
+  `date_add()`, and `date_sub()` are
   mutable-`DateTime` helpers in the current subset. `DateTime::__set_state()`
   and `DateTimeImmutable::__set_state()` reconstruct fresh bounded objects from
   the exported `date`, `timezone_type`, and `timezone` state fields produced by
@@ -6240,7 +6247,8 @@
   `DateTime::RFC7231`, `DateTimeImmutable::RFC7231`, and
   `DateTimeInterface::RFC7231`.
   `date.timezone` PHPT INI overrides seed the same bounded timezone state,
-  including PHPT-style trailing semicolon syntax. `timezone_open()` accepts
+  including PHPT-style trailing semicolon syntax and reached `Asia/Tokyo`
+  `+09:00` / `JST` metadata. `timezone_open()` accepts
   string and scalar-string-compatible timezone identifiers, returns bounded
   `DateTimeZone` objects for supported named or fixed-offset identifiers, and
   emits a PHP-shaped warning plus `false` for unsupported or malformed
@@ -6270,10 +6278,11 @@
   state arrays outside the bounded exported `date`/`timezone_type`/`timezone`
   and `timezone_type`/`timezone` shapes, DateTime manual `__serialize()` /
   `__unserialize()` methods, private/protected serialized properties on
-  DateTimeImmutable subclasses, DateInterval arithmetic through
-  `DateTimeInterface::add()` / `sub()`, DatePeriod, DateInterval
-  serialization/unserialization and `__set_state()`, full timelib relative
-  string grammar, fractional or negative ISO interval components, exact
+  DateTimeImmutable subclasses, DateInterval arithmetic beyond the bounded
+  `DateTime` / `DateTimeImmutable` `add()` / `sub()` integer-component subset,
+  DatePeriod, DateInterval serialization/unserialization and `__set_state()`,
+  full timelib relative string grammar, fractional or negative ISO interval
+  components, exact
   DateInterval object-dump handler parity for `from_string` intervals, exact
   invalid-modifier
   `DateMalformedStringException` behavior, exact

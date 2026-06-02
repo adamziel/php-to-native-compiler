@@ -20142,6 +20142,7 @@ impl Interpreter {
     fn dateinterval_int_property(object: &PhpObject, name: &str) -> Option<i64> {
         match object.read_public_property(name).ok()? {
             Value::Int(value) => Some(value),
+            Value::Bool(value) => Some(i64::from(value)),
             _ => None,
         }
     }
@@ -20838,6 +20839,42 @@ impl Interpreter {
                 self.modify_datetime_object(&object, &modifier, "DateTime::modify()", span)?;
                 Ok(Value::Object(object))
             }
+            "add" => {
+                expect_expr_arity("DateTime::add", args.len(), 1, span)?;
+                let value = self.evaluate(&args[0], caller_scope)?;
+                let interval = Self::dateinterval_object_argument(
+                    "DateTime::add()",
+                    std::slice::from_ref(&value),
+                    0,
+                    span,
+                )?;
+                self.apply_datetime_interval_mutation(
+                    &object,
+                    &interval,
+                    false,
+                    "DateTime::add()",
+                    span,
+                )?;
+                Ok(Value::Object(object))
+            }
+            "sub" => {
+                expect_expr_arity("DateTime::sub", args.len(), 1, span)?;
+                let value = self.evaluate(&args[0], caller_scope)?;
+                let interval = Self::dateinterval_object_argument(
+                    "DateTime::sub()",
+                    std::slice::from_ref(&value),
+                    0,
+                    span,
+                )?;
+                self.apply_datetime_interval_mutation(
+                    &object,
+                    &interval,
+                    true,
+                    "DateTime::sub()",
+                    span,
+                )?;
+                Ok(Value::Object(object))
+            }
             "diff" => {
                 if !(1..=2).contains(&args.len()) {
                     return Err(runtime_error(
@@ -21139,6 +21176,54 @@ impl Interpreter {
                 self.track_allocated_object(&copy);
                 Ok(Value::Object(copy))
             }
+            "add" => {
+                expect_expr_arity("DateTimeImmutable::add", args.len(), 1, span)?;
+                let value = self.evaluate(&args[0], caller_scope)?;
+                let interval = Self::dateinterval_object_argument(
+                    "DateTimeImmutable::add()",
+                    std::slice::from_ref(&value),
+                    0,
+                    span,
+                )?;
+                let copy = self.datetimeimmutable_copy_for_mutation(
+                    &object,
+                    "DateTimeImmutable::add()",
+                    span,
+                )?;
+                self.apply_datetime_interval_mutation(
+                    &copy,
+                    &interval,
+                    false,
+                    "DateTimeImmutable::add()",
+                    span,
+                )?;
+                self.track_allocated_object(&copy);
+                Ok(Value::Object(copy))
+            }
+            "sub" => {
+                expect_expr_arity("DateTimeImmutable::sub", args.len(), 1, span)?;
+                let value = self.evaluate(&args[0], caller_scope)?;
+                let interval = Self::dateinterval_object_argument(
+                    "DateTimeImmutable::sub()",
+                    std::slice::from_ref(&value),
+                    0,
+                    span,
+                )?;
+                let copy = self.datetimeimmutable_copy_for_mutation(
+                    &object,
+                    "DateTimeImmutable::sub()",
+                    span,
+                )?;
+                self.apply_datetime_interval_mutation(
+                    &copy,
+                    &interval,
+                    true,
+                    "DateTimeImmutable::sub()",
+                    span,
+                )?;
+                self.track_allocated_object(&copy);
+                Ok(Value::Object(copy))
+            }
             "diff" => {
                 if !(1..=2).contains(&args.len()) {
                     return Err(runtime_error(
@@ -21205,6 +21290,29 @@ impl Interpreter {
         let object = self.create_core_dateinterval_object_from_state(interval, span)?;
         self.track_allocated_object(&object);
         Ok(Value::Object(object))
+    }
+
+    fn apply_datetime_interval_mutation(
+        &mut self,
+        object: &PhpObject,
+        interval: &PhpObject,
+        subtract: bool,
+        function: &'static str,
+        span: Span,
+    ) -> CompileResult<()> {
+        let state = self.datetime_object_state(object, function, span)?;
+        let interval = self.dateinterval_object_state(interval, function, span)?;
+        let timestamp = apply_bounded_dateinterval_to_datetime(&state, &interval, subtract)
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        function,
+                        "DateInterval arithmetic overflowed the current bounded DateTime subset",
+                    ),
+                )
+            })?;
+        self.assign_datetime_object_state(object, timestamp, state.timezone, span)
     }
 
     fn call_date_create(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -21295,6 +21403,22 @@ impl Interpreter {
         let object = self.datetime_object_argument("date_modify()", args, 0, span)?;
         let modifier = self.date_modifier_string_argument("date_modify()", 2, &args[1], span)?;
         self.modify_datetime_object(&object, &modifier, "date_modify()", span)?;
+        Ok(Value::Object(object))
+    }
+
+    fn call_date_add(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("date_add", args, 2, span)?;
+        let object = self.datetime_object_argument("date_add()", args, 0, span)?;
+        let interval = Self::dateinterval_object_argument("date_add()", args, 1, span)?;
+        self.apply_datetime_interval_mutation(&object, &interval, false, "date_add()", span)?;
+        Ok(Value::Object(object))
+    }
+
+    fn call_date_sub(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("date_sub", args, 2, span)?;
+        let object = self.datetime_object_argument("date_sub()", args, 0, span)?;
+        let interval = Self::dateinterval_object_argument("date_sub()", args, 1, span)?;
+        self.apply_datetime_interval_mutation(&object, &interval, true, "date_sub()", span)?;
         Ok(Value::Object(object))
     }
 
@@ -91374,6 +91498,8 @@ impl Interpreter {
             "date_create_immutable" => self.call_date_create_immutable(&args, span),
             "date_diff" => self.call_date_diff(&args, span),
             "date_modify" => self.call_date_modify(&args, span),
+            "date_add" => self.call_date_add(&args, span),
+            "date_sub" => self.call_date_sub(&args, span),
             "date_format" => self.call_date_format(&args, span),
             "date_interval_format" => self.call_date_interval_format(&args, span),
             "date_interval_create_from_date_string" => {
@@ -113902,6 +114028,8 @@ fn is_builtin(name: &str) -> bool {
             | "date_create_immutable"
             | "date_diff"
             | "date_modify"
+            | "date_add"
+            | "date_sub"
             | "date_format"
             | "date_interval_format"
             | "date_interval_create_from_date_string"
@@ -146905,6 +147033,7 @@ impl BoundedTimezone {
                 }
             }
             "Asia/Hong_Kong" => 28_800,
+            "Asia/Tokyo" => 32_400,
             "Australia/Brisbane" => 36_000,
             "Pacific/Samoa" => -39_600,
             "Pacific/Wallis" => 43_200,
@@ -146938,6 +147067,7 @@ impl BoundedTimezone {
             "Asia/Jerusalem" => 7_200,
             "Asia/Calcutta" | "Asia/Kolkata" => 19_800,
             "Asia/Hong_Kong" => 28_800,
+            "Asia/Tokyo" => 32_400,
             "Australia/Brisbane" => 36_000,
             "Pacific/Samoa" => -39_600,
             "Pacific/Wallis" => 43_200,
@@ -147053,6 +147183,7 @@ impl BoundedTimezone {
                 }
             }
             "Asia/Hong_Kong" => "HKT",
+            "Asia/Tokyo" => "JST",
             "Australia/Brisbane" => "AEST",
             "Pacific/Samoa" => "SST",
             "Pacific/Wallis" => "+12",
@@ -148417,10 +148548,15 @@ fn parse_bounded_numeric_datetime(input: &str, default_timezone: &BoundedTimezon
     let separator_index = body.find(' ').or_else(|| body.find('T'))?;
     let date = &body[..separator_index];
     let time = &body[separator_index + 1..];
-    if date.len() != 10 || time.len() != 8 {
+    let has_seconds = time.len() == 8;
+    if date.len() != 10 || !(time.len() == 5 || has_seconds) {
         return None;
     }
-    if &date[4..5] != "-" || &date[7..8] != "-" || &time[2..3] != ":" || &time[5..6] != ":" {
+    if &date[4..5] != "-"
+        || &date[7..8] != "-"
+        || &time[2..3] != ":"
+        || (has_seconds && &time[5..6] != ":")
+    {
         return None;
     }
     let year = parse_ascii_i64(&date[0..4])?;
@@ -148428,7 +148564,11 @@ fn parse_bounded_numeric_datetime(input: &str, default_timezone: &BoundedTimezon
     let day = parse_ascii_i64(&date[8..10])?;
     let hour = parse_ascii_i64(&time[0..2])?;
     let minute = parse_ascii_i64(&time[3..5])?;
-    let second = parse_ascii_i64(&time[6..8])?;
+    let second = if has_seconds {
+        parse_ascii_i64(&time[6..8])?
+    } else {
+        0
+    };
     timestamp_for_bounded_parts(
         year,
         month,
@@ -149264,6 +149404,39 @@ fn format_bounded_dateinterval_token(token: char, interval: &BoundedDateInterval
             .unwrap_or_else(|| "(unknown)".to_string()),
         other => format!("%{other}"),
     }
+}
+
+fn apply_bounded_dateinterval_to_datetime(
+    state: &BoundedDateTimeObjectState,
+    interval: &BoundedDateIntervalState,
+    subtract: bool,
+) -> Option<i64> {
+    if interval.fraction != 0.0 {
+        return None;
+    }
+
+    let sign = if (interval.invert != 0) ^ subtract {
+        -1
+    } else {
+        1
+    };
+    let offset = state.timezone.offset_at_timestamp(state.timestamp);
+    let parts = bounded_datetime_parts(state.timestamp, offset);
+
+    let year = parts.year.checked_add(interval.years.checked_mul(sign)?)?;
+    let month = parts
+        .month
+        .checked_add(interval.months.checked_mul(sign)?)?;
+    let day = parts.day.checked_add(interval.days.checked_mul(sign)?)?;
+    let hour = parts.hour.checked_add(interval.hours.checked_mul(sign)?)?;
+    let minute = parts
+        .minute
+        .checked_add(interval.minutes.checked_mul(sign)?)?;
+    let second = parts
+        .second
+        .checked_add(interval.seconds.checked_mul(sign)?)?;
+
+    timestamp_from_overflowing_local_parts(year, month, day, hour, minute, second, &state.timezone)
 }
 
 fn bounded_datetime_diff_interval(
