@@ -17179,6 +17179,19 @@ impl Interpreter {
                 };
                 Ok(Value::Null)
             }
+            "prev" => {
+                expect_arity("SplDoublyLinkedList::prev", &args, 0, span)?;
+                let state = self.spl_doubly_linked_list_state_mut(&object, method_name, span)?;
+                state.cursor = match (state.cursor, state.active_lifo) {
+                    (Some(cursor), true) => cursor
+                        .checked_add(1)
+                        .filter(|next| *next < state.values.len()),
+                    (Some(0), false) => None,
+                    (Some(cursor), false) => Some(cursor - 1),
+                    (None, _) => None,
+                };
+                Ok(Value::Null)
+            }
             "offsetexists" => {
                 expect_arity("SplDoublyLinkedList::offsetExists", &args, 1, span)?;
                 let index =

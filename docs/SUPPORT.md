@@ -2597,6 +2597,18 @@
   temporaries, full destructor/unwinding lifetime parity, by-reference
   iteration over SPL iterator objects, serialization parity, full
   COW/reference identity, and native lowering remain unsupported.
+- SPL `SplDoublyLinkedList`, `SplQueue`, and `SplStack` have a bounded runtime
+  list model for push/pop/shift/unshift, indexed add and ArrayAccess
+  operations, top/bottom, `count()`, `isEmpty()`, iterator mode flags, debug
+  output, and ordinary by-value iteration through the current method cursor.
+  `next()` moves in the active direction latched by `rewind()`, and `prev()`
+  moves opposite that active direction for the covered FIFO/LIFO method
+  cursor path. Exact invalid cursor key values before the first or after the
+  last entry, recovery from those invalid boundary states by later
+  `next()` / `prev()` calls, DELETE-mode side-effect parity, nested
+  independent iterator cursors, by-reference SPL iterator execution,
+  serialization/unserialization, full COW/reference identity, and native
+  lowering remain unsupported.
 - SPL `SplObjectStorage` has a bounded identity-map runtime model for
   object-keyed `attach()`/`detach()`, ArrayAccess reads/writes/unsets,
   `contains()`/`offsetExists()`, `count()`, current/key/next/rewind/valid

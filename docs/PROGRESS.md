@@ -4,6 +4,24 @@
 
 Implemented:
 
+- Added a bounded `SplDoublyLinkedList::prev()` cursor lane for the selected
+  `dllist_010.phpt` / `dllist_011.phpt` surface. Core
+  `SplDoublyLinkedList`, `SplQueue`, and `SplStack` method dispatch now
+  accepts zero-argument `prev()` and moves the current cursor opposite the
+  active direction latched by the most recent `rewind()`: FIFO decrements and
+  LIFO increments. The method returns `null`, preserves the existing
+  `current()` / `valid()` behavior for invalid cursors, and leaves existing
+  `next()`, `foreach`, offset, and mutation methods unchanged. Focused proof
+  covers the Rust `spl_doubly_linked_list_prev_moves_against_active_direction`
+  regression, the direct `phpc run` fixture
+  `tests/fixtures/milestone2322/spl_doubly_linked_list_prev.php`, and selected
+  public PHPT rows. Unsupported edges remain exact invalid cursor key values
+  before the first or after the last entry, recovery from those invalid
+  boundary states by later `next()` / `prev()` calls, DELETE-mode side-effect
+  parity, nested independent iterator cursors, destructor/reentrant mutation
+  parity, by-reference SPL iterator execution, serialization/unserialization,
+  references/COW, and native lowering.
+
 - Added a bounded `substr()` weak offset/nullable-length coercion lane.
   Direct and string-valued dynamic `substr()` calls now route `$offset`
   through the shared PHP-internal int boundary and `$length` through the

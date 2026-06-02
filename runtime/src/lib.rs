@@ -32938,6 +32938,7 @@ impl PhpClassTable {
             "offsetSet",
             "offsetUnset",
             "pop",
+            "prev",
             "push",
             "rewind",
             "setIteratorMode",
