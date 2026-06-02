@@ -7546,6 +7546,82 @@ echo "core|", count($core), "|", $core[0]->getName(), "|", $core[0]->getTarget()
 }
 
 #[test]
+fn builtin_attribute_target_startup_diagnostics_match_php_subset() {
+    assert_php_startup_fatal(
+        r#"<?php
+#[Attribute]
+function a1() {}
+"#,
+        "Command line code",
+        3,
+        "Attribute \"Attribute\" cannot target function (allowed targets: class)",
+    );
+    assert_php_startup_fatal(
+        r#"<?php
+#[Attribute]
+abstract class Demo {}
+"#,
+        "Command line code",
+        3,
+        "Cannot apply #[\\Attribute] to abstract class Demo",
+    );
+    assert_php_startup_fatal(
+        r#"<?php
+#[Attribute]
+interface Demo {}
+"#,
+        "Command line code",
+        3,
+        "Cannot apply #[\\Attribute] to interface Demo",
+    );
+    assert_php_startup_fatal(
+        r#"<?php
+#[Attribute]
+trait Demo {}
+"#,
+        "Command line code",
+        3,
+        "Cannot apply #[\\Attribute] to trait Demo",
+    );
+    assert_php_startup_fatal(
+        r#"<?php
+#[Attribute]
+enum Demo {}
+"#,
+        "Command line code",
+        3,
+        "Cannot apply #[\\Attribute] to enum Demo",
+    );
+    assert_php_startup_fatal(
+        r#"<?php
+#[AllowDynamicProperties]
+interface Test {}
+"#,
+        "Command line code",
+        3,
+        "Cannot apply #[\\AllowDynamicProperties] to interface Test",
+    );
+    assert_php_startup_fatal(
+        r#"<?php
+#[AllowDynamicProperties]
+trait Test {}
+"#,
+        "Command line code",
+        3,
+        "Cannot apply #[\\AllowDynamicProperties] to trait Test",
+    );
+    assert_php_startup_fatal(
+        r#"<?php
+#[AllowDynamicProperties]
+enum Test {}
+"#,
+        "Command line code",
+        3,
+        "Cannot apply #[\\AllowDynamicProperties] to enum Test",
+    );
+}
+
+#[test]
 fn reflection_function_and_method_invoke_by_value_callbacks() {
     let execution = run_source(
         r#"<?php

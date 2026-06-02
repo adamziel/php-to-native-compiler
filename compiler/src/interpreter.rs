@@ -101789,6 +101789,14 @@ fn magic_method_startup_diagnostics(
     }
 
     if !diagnostics.has_fatal() {
+        collect_builtin_attribute_target_startup_diagnostics(
+            &mut diagnostics,
+            program,
+            source_file,
+        );
+    }
+
+    if !diagnostics.has_fatal() {
         collect_class_property_inheritance_startup_diagnostics(
             &mut diagnostics,
             program,
@@ -101895,6 +101903,103 @@ fn collect_attribute_unpack_startup_diagnostics(
         );
         return;
     }
+}
+
+fn collect_builtin_attribute_target_startup_diagnostics(
+    diagnostics: &mut MagicMethodStartupDiagnostics,
+    program: &Program,
+    source_file: Option<&str>,
+) {
+    for stmt in &program.statements {
+        let Some((message, line)) = stmt_builtin_attribute_target_error(stmt) else {
+            continue;
+        };
+        diagnostics.set_fatal(message, source_file, line);
+        return;
+    }
+}
+
+fn stmt_builtin_attribute_target_error(stmt: &Stmt) -> Option<(String, usize)> {
+    match stmt {
+        Stmt::Class(class) => {
+            if !class.is_abstract {
+                return None;
+            }
+            declaration_attribute_target_error(
+                &class.attributes,
+                "abstract class",
+                &class.name,
+                class.span.line,
+                false,
+            )
+        }
+        Stmt::Interface(interface) => declaration_attribute_target_error(
+            &interface.attributes,
+            "interface",
+            &interface.name,
+            interface.span.line,
+            true,
+        ),
+        Stmt::Trait(trait_decl) => declaration_attribute_target_error(
+            &trait_decl.attributes,
+            "trait",
+            &trait_decl.name,
+            trait_decl.span.line,
+            true,
+        ),
+        Stmt::Enum(enum_decl) => declaration_attribute_target_error(
+            &enum_decl.attributes,
+            "enum",
+            &enum_decl.name,
+            enum_decl.span.line,
+            true,
+        ),
+        Stmt::Function(function) => function_attribute_target_error(function),
+        _ => None,
+    }
+}
+
+fn declaration_attribute_target_error(
+    attributes: &[AttributeDecl],
+    kind: &str,
+    name: &str,
+    line: usize,
+    include_allow_dynamic_properties: bool,
+) -> Option<(String, usize)> {
+    attributes.iter().find_map(|attribute| {
+        if attribute_name_is_attribute(attribute) {
+            return Some((
+                format!("Cannot apply #[\\Attribute] to {kind} {name}"),
+                line,
+            ));
+        }
+        if include_allow_dynamic_properties && attribute_name_is_allow_dynamic_properties(attribute)
+        {
+            return Some((
+                format!("Cannot apply #[\\AllowDynamicProperties] to {kind} {name}"),
+                line,
+            ));
+        }
+        None
+    })
+}
+
+fn function_attribute_target_error(function: &FunctionDecl) -> Option<(String, usize)> {
+    function.attributes.iter().find_map(|attribute| {
+        attribute_name_is_attribute(attribute).then(|| {
+            (
+                format!(
+                    "Attribute \"{}\" cannot target function (allowed targets: class)",
+                    attribute_display_name(&attribute.name)
+                ),
+                function.span.line,
+            )
+        })
+    })
+}
+
+fn attribute_display_name(name: &str) -> &str {
+    name.trim_start_matches('\\')
 }
 
 fn stmt_attribute_unpack_line(stmt: &Stmt) -> Option<usize> {
@@ -106362,15 +106467,18 @@ fn attribute_name_is_deprecated(attribute: &AttributeDecl) -> bool {
         || attribute.name.eq_ignore_ascii_case("\\Deprecated")
 }
 
+fn attribute_name_is_attribute(attribute: &AttributeDecl) -> bool {
+    normalized_attribute_name(&attribute.name) == "attribute"
+}
+
 fn attributes_include_allow_dynamic_properties(attributes: &[AttributeDecl]) -> bool {
-    attributes.iter().any(|attribute| {
-        attribute
-            .name
-            .eq_ignore_ascii_case("AllowDynamicProperties")
-            || attribute
-                .name
-                .eq_ignore_ascii_case("\\AllowDynamicProperties")
-    })
+    attributes
+        .iter()
+        .any(attribute_name_is_allow_dynamic_properties)
+}
+
+fn attribute_name_is_allow_dynamic_properties(attribute: &AttributeDecl) -> bool {
+    normalized_attribute_name(&attribute.name) == "allowdynamicproperties"
 }
 
 fn direct_class_trait_names(

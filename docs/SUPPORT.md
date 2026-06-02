@@ -6819,14 +6819,20 @@
   positional and named `message` / `since` arguments; empty messages;
   NUL-containing strings; runtime constants; protected parent class constants
   in method attributes; and weak scalar-to-string coercion for covered message
-  arguments. Broader attribute target validation, namespace/import alias
-  resolution for the built-in attribute name, repeated-attribute rules,
-  deprecations on classes/interfaces/traits/enums/constants/class
-  constants/properties, exact exception-handler diagnostic call-site rendering,
-  exact `Deprecated::__construct()` `TypeError` fatal stack traces for strict
-  or non-scalar message arguments, references/copy-on-write, and native
-  lowering remain unsupported; ordinary `#` comments, including `# [` with
-  whitespace before the bracket, remain comments
+  arguments. Direct built-in target validation covers `#[Attribute]` /
+  `#[\Attribute]` on top-level functions, abstract classes, interfaces,
+  traits, and enums plus `#[AllowDynamicProperties]` /
+  `#[\AllowDynamicProperties]` on interfaces, traits, and enums.
+  Namespace/import alias resolution for the built-in attribute names,
+  repeated-attribute rules, broader target validation on nested
+  functions/members/parameters/closures, readonly-class
+  `AllowDynamicProperties` diagnostics, deprecations on
+  classes/interfaces/traits/enums/constants/class constants/properties, exact
+  exception-handler diagnostic call-site rendering, exact
+  `Deprecated::__construct()` `TypeError` fatal stack traces for strict or
+  non-scalar message arguments, references/copy-on-write, and native lowering
+  remain unsupported; ordinary `#` comments, including `# [` with whitespace
+  before the bracket, remain comments
 
 ## Partially Supported
 

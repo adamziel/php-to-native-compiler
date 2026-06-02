@@ -4,6 +4,29 @@
 
 Implemented:
 
+- Added bounded startup target diagnostics for direct built-in attribute names
+  `#[Attribute]` / `#[\Attribute]` and `#[AllowDynamicProperties]` /
+  `#[\AllowDynamicProperties]`. The interpreter now rejects `#[Attribute]` on
+  top-level functions, abstract classes, interfaces, traits, and enums with
+  PHP-shaped fatal text, and rejects `#[AllowDynamicProperties]` on
+  interfaces, traits, and enums while preserving the existing class opt-in
+  path. Focused proof covers the Rust
+  `builtin_attribute_target_startup_diagnostics_match_php_subset` regression
+  and selected public PHPT rows `Zend/tests/attributes/008_wrong_attribution.phpt`,
+  `Zend/tests/attributes/024_internal_target_validation.phpt`,
+  `Zend/tests/attributes/Attribute/Attribute_on_abstract.phpt`,
+  `Zend/tests/attributes/Attribute/Attribute_on_interface.phpt`,
+  `Zend/tests/attributes/Attribute/Attribute_on_trait.phpt`,
+  `Zend/tests/attributes/Attribute/Attribute_on_enum.phpt`,
+  `Zend/tests/attributes/allow_dynamic_properties_on_interface.phpt`,
+  `Zend/tests/attributes/allow_dynamic_properties_on_trait.phpt`, and
+  `Zend/tests/attributes/allow_dynamic_properties_on_enum.phpt`. Unsupported
+  edges remain namespace/import alias resolution for built-in attribute names,
+  delayed reflection-time target validation, repeated-attribute and flag
+  validation, nested function/member/parameter/closure target diagnostics,
+  readonly-class `AllowDynamicProperties` diagnostics while readonly classes
+  remain outside the parser subset, references/COW, and native lowering.
+
 - Added a bounded tokenizer-backed PHP source highlighter lane on the
   interpreter path. `highlight_string()` now returns or echoes escaped
   `<pre><code>` HTML using request-local `highlight.*` INI colors,
