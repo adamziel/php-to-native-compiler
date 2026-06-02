@@ -3401,10 +3401,12 @@ declared class constants use the interpreter class metadata instead:
 `ClassName::CONST` and `\ClassName::CONST` are split at runtime,
 `defined(...)` reports true only for public declared or inherited constants,
 and `constant(...)` resolves through the same class-constant visibility checks
-as direct `ClassName::CONST`. This does not model bare namespace constant
-fallback reads, autoload-triggered class discovery, broader `self`/`parent`/
-`static` string names, host extension loading, full extension constant
-inventories, or native lowering.
+as direct `ClassName::CONST`. Built-in error-level constants follow the
+current PHP 8.4+ mask surface where `E_ALL` excludes removed `E_STRICT`; bare
+`E_STRICT` reads route through the normal display-deprecation path. This does
+not model bare namespace constant fallback reads, autoload-triggered class
+discovery, broader `self`/`parent`/`static` string names, host extension
+loading, full extension constant inventories, or native lowering.
 Direct `defined($name)` calls include the deterministic `PHP_VERSION_ID`,
 `PHP_VERSION`, and 64-bit `PHP_INT_MAX` compatibility-target constants in the
 built-in answer table. Bare global constant reads and `constant($name)` still

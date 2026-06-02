@@ -3377,8 +3377,9 @@
   `E_NOTICE`, `E_CORE_ERROR`, `E_CORE_WARNING`, `E_COMPILE_ERROR`,
   `E_COMPILE_WARNING`, `E_USER_ERROR`, `E_USER_WARNING`, `E_USER_NOTICE`,
   `E_STRICT`, `E_RECOVERABLE_ERROR`, `E_DEPRECATED`, `E_USER_DEPRECATED`, and
-  `E_ALL` with the current PHP 8.3-compatible integer values used by
-  `error_reporting()`
+  `E_ALL` with the current PHP 8.4+ integer values used by
+  `error_reporting()`; bare reads of `E_STRICT` emit PHP's deprecation that
+  the error level was removed
 - exact uppercase PHP session status constants `PHP_SESSION_DISABLED`,
   `PHP_SESSION_NONE`, and `PHP_SESSION_ACTIVE` with their current integer
   values for the bounded in-memory session-state slice
@@ -4068,15 +4069,17 @@
   `PREG_SPLIT_OFFSET_CAPTURE`, flag combinations, invalid-pattern warnings,
   full capture semantics, SQL semantics, and native lowering remain
   unsupported.
-  `error_reporting($mask = null)` supports no arguments to read the current
-  integer mask and one integer argument to store a new current mask while
-  returning the previous mask. The interpreter initializes the mask to `E_ALL`;
-  the current mask filters only the bounded stderr fallback for
-  `file_get_contents()` recoverable `E_WARNING` events after any matching
-  custom handler has run or declined handling. Broader PHP
-  warning/notice/deprecation filtering, ini integration, disabled-function
-  policy, non-integer coercions, exact diagnostics, and native lowering remain
-  unsupported.
+  `error_reporting($error_level = null)` supports no arguments to read the
+  current integer mask and one nullable PHP-internal integer argument to store
+  a new current mask while returning the previous mask; `null` is a read-only
+  no-op. The interpreter initializes the mask to the current PHP 8.4+
+  `E_ALL` value that excludes removed `E_STRICT`, including normalizing the
+  legacy all-bits `32767` ini default used by older PHPT wrapper hosts to that
+  current `E_ALL` value. The current mask filters bounded display/runtime
+  diagnostics after any matching custom handler has run or declined handling.
+  Broader PHP warning/notice/deprecation filtering,
+  disabled-function policy, exact `@` unwinding restoration for every nested
+  expression/throw edge, and native lowering remain unsupported.
   `strpbrk($string, $characters)` accepts scalar/null string-convertible
   operands and supported visible `__toString()` objects, searches by byte, and
   returns the suffix beginning at the first byte from `$characters`, or
@@ -12384,10 +12387,11 @@
   arrays/closures/method callables, broad callback invocation,
   limit/count/flags arguments, invalid-pattern warnings, exact diagnostics,
   and native lowering beyond function-table introspection
-- `error_reporting()` outside the current no-argument read and one-integer
-  mask-set subset: warning/notice/deprecation filtering, ini integration,
-  disabled-function policy, non-integer coercions, exact diagnostics, and
-  native lowering beyond function-table introspection
+- `error_reporting()` outside the current no-argument read and nullable
+  PHP-internal integer mask-set subset: complete PHP diagnostic filtering,
+  disabled-function policy, exact `@` unwinding restoration for every nested
+  expression/throw edge, and native lowering beyond function-table
+  introspection
 - `min()` outside the current two-or-more integer argument subset: array-form
   calls, mixed-type comparison rules, float/string/bool/null/object/resource
   operands, exact PHP diagnostics, and native lowering beyond function-table

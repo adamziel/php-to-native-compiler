@@ -11146,6 +11146,7 @@ impl Interpreter {
         let error_reporting_mask = ini_values
             .get("error_reporting")
             .and_then(|value| parse_ini_error_reporting_mask(value))
+            .map(normalize_initial_error_reporting_mask)
             .unwrap_or(PHP_E_ALL);
         let session_cache_limiter = session_cache_limiter_from_ini_values(&ini_values);
         let session_cache_expire = session_cache_expire_from_ini_values(&ini_values);
@@ -39945,6 +39946,14 @@ impl Interpreter {
                 "Deprecated",
                 PHP_E_DEPRECATED,
                 format!("Constant {name} is deprecated since 8.1, use htmlspecialchars() instead"),
+                span,
+            )?;
+        }
+        if name == "E_STRICT" {
+            self.emit_display_diagnostic(
+                "Deprecated",
+                PHP_E_DEPRECATED,
+                "Constant E_STRICT is deprecated since 8.4, the error level was removed",
                 span,
             )?;
         }
@@ -92633,19 +92642,15 @@ impl Interpreter {
 
         let previous = self.error_reporting_mask;
         if let Some(mask) = args.first() {
-            let Value::Int(mask) = mask else {
-                return Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "error_reporting()",
-                        format!(
-                            "mask must be int in the current subset, got {}",
-                            mask.type_name()
-                        ),
-                    ),
-                ));
-            };
-            self.error_reporting_mask = *mask;
+            if let Some(mask) = php_internal_nullable_int_argument(
+                "error_reporting()",
+                1,
+                "error_level",
+                mask,
+                span,
+            )? {
+                self.error_reporting_mask = mask;
+            }
         }
 
         Ok(Value::Int(previous))
@@ -111429,7 +111434,7 @@ const PHP_E_STRICT: i64 = 2048;
 const PHP_E_RECOVERABLE_ERROR: i64 = 4096;
 const PHP_E_DEPRECATED: i64 = 8192;
 const PHP_E_USER_DEPRECATED: i64 = 16384;
-const PHP_E_ALL: i64 = 32767;
+const PHP_E_ALL: i64 = 30719;
 const PHP_ATTRIBUTE_TARGET_CLASS: i64 = 1;
 const PHP_ATTRIBUTE_TARGET_FUNCTION: i64 = 2;
 const PHP_ATTRIBUTE_TARGET_METHOD: i64 = 4;
@@ -118317,7 +118322,7 @@ fn php_internal_int_type_error(
             function,
             format!(
                 "Argument #{position} (${name}) must be of type int, {} given",
-                value.type_name()
+                php_type_error_given(value)
             ),
         ),
     )
@@ -118361,7 +118366,7 @@ fn php_internal_nullable_int_type_error(
             function,
             format!(
                 "Argument #{position} (${name}) must be of type ?int, {} given",
-                value.type_name()
+                php_type_error_given(value)
             ),
         ),
     )
@@ -145839,6 +145844,14 @@ fn parse_ini_error_reporting_mask(value: &str) -> Option<i64> {
         _ => return None,
     };
     Some(mask)
+}
+
+fn normalize_initial_error_reporting_mask(mask: i64) -> i64 {
+    if mask == (PHP_E_ALL | PHP_E_STRICT) {
+        PHP_E_ALL
+    } else {
+        mask
+    }
 }
 
 fn parse_error_reporting_mask_term(value: &str) -> Option<i64> {

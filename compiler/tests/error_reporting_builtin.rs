@@ -27,22 +27,29 @@ echo error_reporting();
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "32767|32767|0|0|7");
+    assert_eq!(execution.stdout, "30719|30719|0|0|7");
     assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
-fn error_reporting_exposes_current_php_error_constants() {
+fn error_reporting_exposes_current_php_error_constants_and_strict_deprecation() {
     let execution = run_source(
         r#"<?php
 echo E_ERROR, "|", E_WARNING, "|", E_PARSE, "|", E_CORE_ERROR, "|";
 echo E_CORE_WARNING, "|", E_COMPILE_ERROR, "|", E_USER_ERROR, "|";
-echo E_USER_WARNING, "|", E_RECOVERABLE_ERROR, "|", E_ALL;
+echo E_USER_WARNING, "|", E_RECOVERABLE_ERROR, "|", E_ALL, "\n";
+var_dump(E_STRICT);
 "#,
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "1|2|4|16|32|64|256|512|4096|32767");
+    assert_eq!(
+        execution.stdout,
+        "1|2|4|16|32|64|256|512|4096|30719\n\
+\n\
+Deprecated: Constant E_STRICT is deprecated since 8.4, the error level was removed in Command line code on line 5\n\
+int(2048)\n"
+    );
     assert_eq!(execution.exit_code, 0);
 }
 
@@ -60,24 +67,42 @@ echo $call(0);
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "yes|callable|32767");
+    assert_eq!(execution.stdout, "yes|callable|30719");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn error_reporting_coerces_nullable_int_masks_and_reports_php_type_errors() {
+    let execution = run_source(
+        r#"<?php
+echo error_reporting(null), "|";
+echo error_reporting("7"), "|";
+echo error_reporting(), "|";
+echo error_reporting(false), "|";
+echo error_reporting();
+
+foreach ([[], new stdClass()] as $mask) {
+    try {
+        error_reporting($mask);
+    } catch (Throwable $e) {
+        echo "\n", $e::class, ": ", $e->getMessage();
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "30719|30719|7|7|0\n\
+TypeError: error_reporting(): Argument #1 ($error_level) must be of type ?int, array given\n\
+TypeError: error_reporting(): Argument #1 ($error_level) must be of type ?int, stdClass given"
+    );
     assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
 fn error_reporting_rejects_forms_outside_current_subset() {
-    let non_int = runtime_error(
-        r#"<?php
-error_reporting("0");
-"#,
-    );
-    assert_eq!(non_int.line, 2);
-    assert_eq!(non_int.column, 1);
-    assert_eq!(
-        non_int.message,
-        "unsupported call error_reporting(): mask must be int in the current subset, got string"
-    );
-
     let too_many = runtime_error(
         r#"<?php
 error_reporting(0, 1);

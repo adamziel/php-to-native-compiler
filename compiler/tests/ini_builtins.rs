@@ -319,6 +319,22 @@ fn ini_parse_quantity_honors_phpt_error_reporting_masks() {
 }
 
 #[test]
+fn ini_error_reporting_normalizes_legacy_e_all_superset() {
+    let _guard = env_lock();
+    let previous = env::var_os("PHPC_PHPT_INI_FLAGS");
+
+    set_env_var("PHPC_PHPT_INI_FLAGS", "-d error_reporting=32767");
+    let execution = run_source("<?php\necho error_reporting(), \"\\n\";\n").unwrap();
+    let stdout = execution.stdout.clone();
+    let exit_code = execution.exit_code;
+
+    restore_env_var("PHPC_PHPT_INI_FLAGS", previous);
+
+    assert_eq!(stdout, "30719\n");
+    assert_eq!(exit_code, 0);
+}
+
+#[test]
 fn ini_builtins_are_available_through_string_valued_calls() {
     let _guard = env_lock();
     let previous = env::var_os("PHPC_PHPT_INI_FLAGS");

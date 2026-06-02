@@ -4,6 +4,24 @@
 
 Implemented:
 
+- Added a bounded PHP 8.4+ error-mask diagnostics lane. `E_ALL` now uses the
+  current PHP value that excludes removed `E_STRICT`, bare `E_STRICT` reads
+  emit the PHP-shaped deprecation, and `error_reporting($error_level = null)`
+  now uses the shared nullable PHP-internal integer boundary so scalar masks
+  coerce, `null` reads without changing the current mask, and arrays/objects
+  raise catchable PHP-shaped `TypeError`s with class-name `given` wording.
+  Focused proof covers the Rust `error_reporting_builtin` regression, the
+  `ini_builtins` legacy-mask normalization regression, direct runtime probes,
+  and selected public PHPT rows `e_strict-deprecated.phpt`,
+  `error_reporting01.phpt`, `error_reporting02.phpt`,
+  `error_reporting04.phpt`, `error_reporting06.phpt`,
+  `error_reporting07.phpt`, `bug33771.phpt`, `bug72162.phpt`, and
+  `bug81652.phpt`. Unsupported edges remain exact `@` unwinding restoration
+  for every nested expression/throw edge, rows that depend on warning emission
+  from code still executing under a restored non-silenced mask, full PHP
+  diagnostic filtering breadth, disabled-function policy, and native lowering
+  beyond function-table metadata.
+
 - Added a bounded `var_dump()` / `__debugInfo()` diagnostics lane for
   `phpc run`. Top-level object dumps now invoke visible zero-argument userland
   `__debugInfo()`, render array returns as debug properties including PHP's
