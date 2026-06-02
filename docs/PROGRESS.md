@@ -4,6 +4,24 @@
 
 Implemented:
 
+- Added a bounded filesystem access-predicate stringable path lane.
+  `file_exists()`, `is_dir()`, `is_file()`, `is_readable()`,
+  `is_writable()` / `is_writeable()`, `is_executable()`, and `is_link()` now
+  accept supported visible `__toString()` path objects through `phpc run`,
+  including string-valued dynamic calls for the already-supported predicate
+  names. Non-stringable objects raise catchable PHP-shaped string `TypeError`s
+  with the predicate-specific function name. Existing local path resolution,
+  scalar false-case behavior, empty/NUL path false returns, open_basedir
+  checks, stream-wrapper rejection, permission-bit predicates, symlink metadata
+  checks, function/callability metadata, and native-lowering rejection remain
+  unchanged. Focused proof covers the Rust
+  `access_predicates_accept_stringable_path_objects_and_report_type_errors`
+  regression. Unsupported edges remain exact invalid `__toString()` return
+  diagnostics, exact null/lossy scalar deprecations, array/closure/resource
+  TypeError parity for predicate helpers that still use warning/false fallback
+  paths, full binary/non-UTF-8 path fidelity, broader stat-cache and
+  symlink/permission policy parity, references/COW, and native lowering.
+
 - Added a bounded ASCII whole-string case helper argument-boundary lane.
   `strtolower()` and `strtoupper()` now route direct and string-valued dynamic
   interpreter operands through the shared PHP-shaped string argument boundary:

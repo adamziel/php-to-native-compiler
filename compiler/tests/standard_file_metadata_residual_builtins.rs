@@ -48,6 +48,90 @@ var_dump(is_executable(false));
 }
 
 #[test]
+fn access_predicates_accept_stringable_path_objects_and_report_type_errors() {
+    let fixture = TempFsFixture::new("stringable-access");
+    let file = fixture.path("probe.txt");
+    let dir = fixture.path("subdir");
+    let link = fixture.path("probe-link.txt");
+    fs::write(&file, "payload").expect("fixture file is written");
+    fs::create_dir(&dir).expect("fixture directory is created");
+
+    let source = format!(
+        r#"<?php
+class PathBox {{
+    public $path;
+    public function __construct($path) {{ $this->path = $path; }}
+    public function __toString() {{ return $this->path; }}
+}}
+class PlainPath {{}}
+
+$file = {file};
+$dir = {dir};
+$link = {link};
+symlink($file, $link);
+chmod($file, 0700);
+
+echo file_exists(new PathBox($file)) ? "exists" : "missing";
+echo "|";
+echo is_file(new PathBox($file)) ? "file" : "not-file";
+echo "|";
+echo is_dir(new PathBox($dir)) ? "dir" : "not-dir";
+echo "|";
+echo is_readable(new PathBox($file)) ? "readable" : "not-readable";
+echo "|";
+echo is_writable(new PathBox($file)) ? "writable" : "not-writable";
+echo "|";
+echo is_writeable(new PathBox($file)) ? "writeable" : "not-writeable";
+echo "|";
+echo is_executable(new PathBox($file)) ? "exec" : "not-exec";
+echo "|";
+$call = "is_link";
+echo $call(new PathBox($link)) ? "link" : "not-link";
+echo "\n";
+
+foreach (["file_exists", "is_file", "is_dir", "is_readable", "is_writable", "is_writeable", "is_executable", "is_link"] as $function) {{
+    try {{
+        $function(new PlainPath);
+        echo $function, ":miss\n";
+    }} catch (TypeError $e) {{
+        echo $function, ":", $e->getMessage(), "\n";
+    }}
+}}
+"#,
+        file = php_string(&file),
+        dir = php_string(&dir),
+        link = php_string(&link),
+    );
+
+    let execution = run_source(&source).unwrap();
+
+    let mut lines = execution.stdout.lines();
+    assert_eq!(
+        lines.next(),
+        Some("exists|file|dir|readable|writable|writeable|exec|link")
+    );
+    for function in [
+        "file_exists",
+        "is_file",
+        "is_dir",
+        "is_readable",
+        "is_writable",
+        "is_writeable",
+        "is_executable",
+        "is_link",
+    ] {
+        let line = lines.next().expect("type error line is present");
+        assert!(
+            line.starts_with(&format!("{function}:{function}(): Argument #1 ($filename) must be of type string, PlainPath given")),
+            "{line}"
+        );
+    }
+    assert_eq!(lines.next(), None);
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn disk_space_builtins_return_floats_for_existing_paths_and_validate_nuls() {
     let fixture = TempFsFixture::new("disk-space");
     let file = fixture.path("data.txt");

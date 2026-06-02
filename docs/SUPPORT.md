@@ -5349,10 +5349,11 @@
   source highlighters or full PHP whitespace preservation.
   `set_time_limit($seconds)` accepts one int-compatible argument and returns
   `true` without changing host execution limits.
-  `file_exists($path)` accepts one string local path, plus the bounded PHPT
-  false/empty path forms `false` and `""` which return `false`, rejects
-  stream-wrapper paths, and returns `true` or `false` from the host filesystem
-  metadata lookup for files and directories in the current interpreter run.
+  `file_exists($path)` accepts one string or supported visible `__toString()`
+  local path, plus the bounded PHPT false/empty path forms `false` and `""`
+  which return `false`, rejects stream-wrapper paths, and returns `true` or
+  `false` from the host filesystem metadata lookup for files and directories
+  in the current interpreter run.
   Relative paths are checked against the process path first and then against
   the repository root for committed source-map fixture paths. When
   `ini_set("open_basedir", $path)` stores a non-empty request-local allow-list,
@@ -5541,7 +5542,11 @@
   `lstat()`, `fileperms()`, `chmod()`, `chown()`, `chgrp()`, `is_executable()`,
   `file_exists()`, `filesize()`, `is_dir()`, `is_file()`, `is_readable()`,
   `is_writable()`, `is_link()`, `disk_free_space()`/`diskfreespace()`, and
-  `disk_total_space()` over host-local filesystem metadata. This slice also
+  `disk_total_space()` over host-local filesystem metadata. The covered access
+  predicates `file_exists()`, `is_dir()`, `is_file()`, `is_readable()`,
+  `is_writable()` / `is_writeable()`, `is_executable()`, and `is_link()` accept
+  supported visible `__toString()` path objects and raise PHP-shaped
+  `TypeError`s for non-stringable objects. This slice also
   supports request-local `umask($mask = null)` metadata for the reached PHPT
   rows: it returns the previous mask, accepts integer masks or `null`, exposes
   dynamic-call and `ReflectionFunction` metadata, and applies the current mask
@@ -5688,45 +5693,47 @@
   dedicated current-directory codegen boundary before argument lowering or
   backend output, while native function-table introspection can still see the
   known builtin name.
-  `is_dir($path)` accepts string and binary-string local paths plus the
-  bounded scalar false-case forms reached by PHPT (`null`, booleans,
-  integers, floats, empty strings, and NUL-containing paths), rejects
-  stream-wrapper paths, returns `true` for host directories, and returns
-  `false` for missing paths or non-directory paths. It shares the same current
-  relative path policy as `file_exists`, including bounded request-local
-  `open_basedir` denials that
+  `is_dir($path)` accepts string, binary-string, and supported visible
+  `__toString()` local paths plus the bounded scalar false-case forms reached
+  by PHPT (`null`, booleans, integers, floats, empty strings, and
+  NUL-containing paths), rejects stream-wrapper paths, returns `true` for host
+  directories, and returns `false` for missing paths or non-directory paths.
+  It shares the same current relative path policy as `file_exists`, including
+  bounded request-local `open_basedir` denials that
   emit a PHP-style warning and return `false`. Include-path lookup, stream wrappers,
   canonicalization/symlink policy, portable permissions, warning behavior
   beyond the documented denial slice,
-  array/object/resource path coercions, stat-cache behavior, partial-output
+  array/resource path coercions, stat-cache behavior, partial-output
   behavior, and native lowering remain unsupported.
-  `is_file($path)` accepts one string local path, rejects stream-wrapper paths,
-  returns `true` for host regular files, and returns `false` for missing paths,
-  regular-file paths with trailing slashes, or non-file paths such as
-  directories. It shares the same current relative path and bounded
+  `is_file($path)` accepts one string or supported visible `__toString()`
+  local path, rejects stream-wrapper paths, returns `true` for host regular
+  files, and returns `false` for missing paths, regular-file paths with
+  trailing slashes, or non-file paths such as directories. It shares the same
+  current relative path and bounded
   request-local `open_basedir` policy as `file_exists`.
   Include-path lookup, stream wrappers,
   canonicalization/symlink policy, portable file-type details, permission
   warnings beyond the documented denial slice, non-string coercions,
   stat-cache behavior,
   partial-output behavior, and native lowering remain unsupported.
-  `is_readable($path)` accepts one local path plus the bounded scalar
-  false-case forms reached by PHPT (`null`, booleans, integers, floats, empty
-  strings, and NUL-containing paths), rejects stream-wrapper paths, returns
-  `false` for missing paths, and checks host readability for files with
-  `File::open` and directories with `read_dir`. It shares the same current
-  relative path and bounded request-local `open_basedir` policy as
-  `file_exists`. Include-path lookup, stream wrappers,
+  `is_readable($path)` accepts one string, binary-string, or supported visible
+  `__toString()` local path plus the bounded scalar false-case forms reached
+  by PHPT (`null`, booleans, integers, floats, empty strings, and
+  NUL-containing paths), rejects stream-wrapper paths, returns `false` for
+  missing paths, and checks host readability for files with `File::open` and
+  directories with `read_dir`. It shares the same current relative path and
+  bounded request-local `open_basedir` policy as `file_exists`. Include-path lookup, stream wrappers,
   canonicalization/symlink policy, portable permissions, warning behavior
-  beyond the documented denial slice, object/array path coercions,
+  beyond the documented denial slice, array/resource/closure path coercions,
   stat-cache behavior, partial-output behavior, and native lowering remain
   unsupported.
-  `is_writable($path)` and its `is_writeable($path)` alias accept one string
-  local path, plus the bounded scalar false-case forms reached by PHPT
-  (`null`, booleans, integers, floats, empty strings, and NUL-containing
-  paths), reject stream-wrapper paths, return `false` for missing paths, and
-  check the existing host metadata permission bits by requiring the owner write
-  bit on Unix and treating readonly paths as not writable on non-Unix hosts.
+  `is_writable($path)` and its `is_writeable($path)` alias accept one string,
+  binary-string, or supported visible `__toString()` local path, plus the
+  bounded scalar false-case forms reached by PHPT (`null`, booleans, integers,
+  floats, empty strings, and NUL-containing paths), reject stream-wrapper
+  paths, return `false` for missing paths, and check the existing host
+  metadata permission bits by requiring the owner write bit on Unix and
+  treating readonly paths as not writable on non-Unix hosts.
   They share the same current relative path and bounded request-local
   `open_basedir` policy as `file_exists`. This is a
   small local metadata slice, not full PHP filesystem writability: permission
@@ -5739,10 +5746,11 @@
   `is_writable(...)` calls stop at a dedicated filesystem-writability codegen
   boundary before argument lowering or backend selection; the native alias
   spelling remains outside that dedicated native boundary.
-  `is_link($path)` accepts one string local path, rejects stream-wrapper
-  paths, returns `true` for host symbolic links detected through local
-  symlink metadata, and returns `false` for ordinary files and missing paths.
-  It shares the same current relative path and bounded request-local
+  `is_link($path)` accepts one string or supported visible `__toString()`
+  local path, rejects stream-wrapper paths, returns `true` for host symbolic
+  links detected through local symlink metadata, and returns `false` for
+  ordinary files and missing paths. It shares the same current relative path
+  and bounded request-local
   `open_basedir` policy as `file_exists`. This is a small local metadata
   slice, not full PHP filesystem link semantics: include-path lookup, stream
   wrappers, exact warning behavior beyond the documented denial slice,
@@ -12396,11 +12404,13 @@ Unsupported code should fail with an explicit parse, runtime, or codegen error.
   and `is_link()` share that same bounded denial path, including
   relative-parent escape checks after `open_basedir=.`. `is_dir()`,
   `is_readable()`, and `is_writable()` also return silent `false` for the
-  documented bounded scalar/null false-case path operands. `is_executable()` uses
-  the bounded Unix owner-execute mode bit for local filesystem paths, silently
-  returning `false` for missing, empty, null-byte, regular-file
-  trailing-separator, or open_basedir-denied paths after the documented warning
-  path. `chown()` and `chgrp()` are bounded to
+  documented bounded scalar/null false-case path operands. The access
+  predicates also accept supported visible `__toString()` path objects and
+  raise catchable PHP-shaped `TypeError`s for non-stringable objects.
+  `is_executable()` uses the bounded Unix owner-execute mode bit for local
+  filesystem paths, silently returning `false` for missing, empty, null-byte,
+  regular-file trailing-separator, or open_basedir-denied paths after the
+  documented warning path. `chown()` and `chgrp()` are bounded to
   local path validation, open_basedir denial, and missing-file warning plus
   `false` recovery; changing ownership or group on existing files remains
   unsupported. `disk_free_space()`, its `diskfreespace()` alias, and

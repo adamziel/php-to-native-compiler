@@ -3434,12 +3434,18 @@ The adjacent interpreter-only metadata and predicate helpers `fileinode()`,
 `is_link()`, and `is_executable()` share the same local-path and
 request-local `open_basedir` check. Denied metadata paths emit PHP-shaped
 display warnings and return `false`; successful metadata reads stay host-local
-and bounded. Local stream/directory open helpers in this slice also emit the
-operation-specific follow-on open warning after an `open_basedir` denial
-(`scandir()` emits its bounded errno warning too). `chown()` and `chgrp()`
-currently share only the local path/open_basedir/missing-file recovery part of
-that boundary and reject actual ownership changes on existing files until a
-native host ownership policy exists.
+and bounded. The access predicates `file_exists()`, `is_dir()`, `is_file()`,
+`is_readable()`, `is_writable()` / `is_writeable()`, `is_link()`, and
+`is_executable()` also run supported visible `__toString()` path objects
+through that local-path policy and reject non-stringable objects with
+PHP-shaped string `TypeError`s, while broader array/resource/closure argument
+parity remains outside the bounded path. Local stream/directory open helpers
+in this slice also emit the operation-specific follow-on open warning after an
+`open_basedir` denial (`scandir()` emits its bounded errno warning too).
+`chown()` and `chgrp()` currently share only the local
+path/open_basedir/missing-file recovery part of that boundary and reject actual
+ownership changes on existing files until a native host ownership policy
+exists.
 `realpath()` is interpreter-only for one string local path. It uses the same
 process-path-then-repo-root relative path policy as the metadata builtins,
 returns a UTF-8 resolved host path for existing local paths, and returns
