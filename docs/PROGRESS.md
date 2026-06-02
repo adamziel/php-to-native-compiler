@@ -4,6 +4,17 @@
 
 Implemented:
 
+- Accepted checkpoint `c307401c` as the current public PHPT score source after
+  the full pinned php-src gate completed with zero latest-published PASS
+  regressions. The public-comparable score is now `6090 / 20294 = 30.01%`,
+  up from `5941 / 20294 = 29.27%` at checkpoint `663e3142`. The accepted gate
+  evidence is
+  `state/logs/phpt-full-current-score-20260602T185136Z-php-src-f97ff59-public-c307401c-source-c307401c`;
+  aggregate counts were `6090` passed, `12916` failed, `2759` skipped, `16`
+  xfailed, `549` borked, and `1` warned. The normalized PASS regression
+  comparison was `6086` current passes vs. `5937` baseline passes with `0`
+  regressions, and the invalid-proof-marker summary reported `0` hits.
+
 - Added a bounded non-HMAC hash streaming and file hashing lane. `hash_init()`
   now materializes interpreter `HashContext` objects for the supported
   MD2/MD4/MD5/SHA-1/SHA-2/SHA-3/Whirlpool/checksum algorithm set;
