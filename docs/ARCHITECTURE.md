@@ -2863,17 +2863,21 @@ non-stringable operands stop at the catchable internal string `TypeError`
 boundary before counting.
 The current string residual slice also keeps `wordwrap()`,
 `str_word_count()`, `strnatcmp()`, `strnatcasecmp()`, `strrev()`,
-`str_rot13()`, `str_shuffle()`, `pack()`/`unpack()`, `convert_uuencode()`,
-`convert_uudecode()`, and the current `mb_strcut()` / `mb_substr_count()`
+`str_rot13()`, `str_shuffle()`, `base64_encode()` / `base64_decode()`,
+`pack()`/`unpack()`, `convert_uuencode()`, `convert_uudecode()`, and the
+current `mb_strcut()` / `mb_substr_count()`
 slices on the interpreter path. These helpers operate over the runtime's
 current byte-string representation and publish reflection metadata. The unary
 byte helpers route interpreter operands through the shared PHP-shaped string
 boundary before running their byte transform/permutation logic, while direct
 native lowering for `strrev()` and `str_rot13()` remains limited to lowerable
-scalar operands. `pack()`/`unpack()` route their declared string operands
-through the same PHP-shaped string boundary before entering the bounded
-byte-format parser; variadic pack field values remain a separate mixed-value
-conversion zone. The `str_word_count()` scanner follows the current bounded
+scalar operands. `base64_encode()` and `base64_decode()` route their primary
+string operands through the same boundary, and `base64_decode()` keeps the
+separate PHP-internal bool boundary for `$strict`. `pack()`/`unpack()` route
+their declared string operands through the same PHP-shaped string boundary
+before entering the bounded byte-format parser; variadic pack field values
+remain a separate mixed-value conversion zone. The `str_word_count()` scanner
+follows the current bounded
 PHP-shaped ASCII apostrophe/hyphen run boundary. `mb_strcut()` and
 `mb_substr_count()` share the existing mbstring UTF-8/single-byte encoding
 boundary; `mb_strcut()` applies byte offsets and lengths while rounding UTF-8

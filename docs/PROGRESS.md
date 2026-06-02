@@ -4,6 +4,25 @@
 
 Implemented:
 
+- Added a bounded `base64_encode()` / `base64_decode()` string-argument
+  boundary lane. Direct and string-valued dynamic interpreter calls now route
+  argument #1 `$string` through the shared PHP-shaped string byte boundary:
+  scalar operands keep the existing base64 encode/decode behavior after
+  conversion, `null` emits the bounded PHP-shaped deprecation before
+  converting to `""`, supported visible `__toString()` objects are accepted,
+  and arrays, resources, closures, or non-stringable objects raise catchable
+  PHP-shaped string `TypeError`s. Existing strict-mode decode behavior,
+  whitespace handling, optional `$strict` PHP-internal bool boundary, metadata
+  visibility, and native-lowering rejection remain unchanged. Focused proof
+  covers the Rust `base64_helpers_use_php_string_argument_boundary`
+  regression, the full `ctype_builtins` Rust file, direct CLI probes, selected
+  public PHPT rows `base64_encode_basic_001.phpt`,
+  `base64_decode_basic_001.phpt`, and `base64_decode_basic_002.phpt`, build,
+  fmt, and diff checks. Unsupported edges remain exact invalid `__toString()`
+  return diagnostics, exact null-to-bool deprecations for `$strict`, broader
+  binary fidelity beyond represented runtime bytes, references/COW, and native
+  lowering.
+
 - Added a bounded `array_rand()` non-array operand diagnostics lane. Direct and
   string-valued dynamic interpreter calls now raise catchable PHP-shaped
   `TypeError`s when argument #1 `$array` is not an array, including the

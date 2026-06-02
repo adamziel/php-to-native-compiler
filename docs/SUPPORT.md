@@ -3708,15 +3708,18 @@
   string fidelity outside represented runtime bytes, and native lowering remain
   unsupported.
   `base64_encode($string)` and
-  `base64_decode($string, $strict = false)` cover scalar/null
-  string-convertible byte strings in the current runtime representation,
-  including strict-mode invalid-character rejection and whitespace handling.
+  `base64_decode($string, $strict = false)` cover scalar/null and supported
+  visible `__toString()` object string-convertible byte strings in the current
+  runtime representation, including strict-mode invalid-character rejection
+  and whitespace handling. Arrays, resources, closures, and non-stringable
+  objects raise catchable PHP-shaped string `TypeError`s at argument #1.
   `base64_decode()` routes `$strict` through the PHP-internal bool boundary, so
   scalar values choose strict or non-strict decoding by PHP truthiness while
   arrays, objects, closures, and resources raise catchable PHP-shaped
-  `TypeError`s. Broader object/resource string operands, exact null-to-bool
-  deprecation diagnostics for `$strict`, exact binary fidelity outside
-  represented runtime bytes, and native lowering remain unsupported.
+  `TypeError`s. Exact invalid `__toString()` return diagnostics,
+  exact null-to-bool deprecation diagnostics for `$strict`, exact binary
+  fidelity outside represented runtime bytes, and native lowering remain
+  unsupported.
   `strlen($value)` accepts current scalar/null string-convertible values,
   emits the PHP null-to-string deprecation through the current error-handler
   path, formats float operands with the active `precision` setting, and
@@ -11972,11 +11975,12 @@
   `__toString()` object subset: arrays, resources, closures, objects without
   supported `__toString()`, exact string-conversion diagnostics, and native
   lowering beyond the direct known-string folding slice
-- `base64_encode()`/`base64_decode()` outside the current scalar/null
-  string-convertible byte-string subset and `base64_decode()` bool-compatible
-  `$strict` subset: object/resource string operands, exact null-to-bool
-  deprecation diagnostics for `$strict`, exact binary fidelity beyond
-  represented runtime bytes, references/COW, and native lowering beyond
+- `base64_encode()`/`base64_decode()` outside the current scalar/null plus
+  supported visible `__toString()` object string-convertible byte-string subset
+  and `base64_decode()` bool-compatible `$strict` subset: exact invalid
+  `__toString()` return diagnostics, exact null-to-bool deprecation
+  diagnostics for `$strict`, exact binary fidelity beyond represented runtime
+  bytes, references/COW, and native lowering beyond
   function-table introspection
 - `strcmp()` outside the current exact-two-argument scalar/null
   string-convertible subset with active-`precision` float formatting: array

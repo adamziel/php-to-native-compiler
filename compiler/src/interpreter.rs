@@ -85887,8 +85887,8 @@ impl Interpreter {
             "soundex" => call_soundex(&args, span),
             "metaphone" => call_metaphone(&args, span),
             "count_chars" => call_count_chars(&args, span),
-            "base64_encode" => call_base64_encode(&args, span),
-            "base64_decode" => call_base64_decode(&args, span),
+            "base64_encode" => self.call_base64_encode(&args, span),
+            "base64_decode" => self.call_base64_decode(&args, span),
             "quoted_printable_decode" => self.call_quoted_printable_decode(&args, span),
             "quoted_printable_encode" => self.call_quoted_printable_encode(&args, span),
             "convert_uuencode" => call_convert_uuencode(&args, span),
@@ -117274,35 +117274,49 @@ fn unpack_hex_nibbles(input: &[u8], nibble_count: usize, high_first: bool) -> St
     output
 }
 
-fn call_base64_decode(args: &[Value], span: Span) -> CompileResult<Value> {
-    if !(1..=2).contains(&args.len()) {
-        return Err(runtime_error(
+impl Interpreter {
+    fn call_base64_decode(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(1..=2).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "base64_decode()",
+                    ArityExpectation::Between { min: 1, max: 2 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let value = self.php_string_argument_bytes_with_magic(
+            "base64_decode()",
+            1,
+            "string",
+            &args[0],
             span,
-            RuntimeError::arity_mismatch(
-                "base64_decode()",
-                ArityExpectation::Between { min: 1, max: 2 },
-                args.len(),
-            ),
-        ));
+        )?;
+        let strict = match args.get(1) {
+            Some(value) => php_internal_bool_argument("base64_decode()", 2, "strict", value, span)?,
+            None => false,
+        };
+        match base64_decode_bytes(&value, strict) {
+            Some(decoded) => Ok(interpreter_value_from_php_string_bytes(decoded)),
+            None => Ok(Value::Bool(false)),
+        }
     }
 
-    let value = string_compare_argument_bytes("base64_decode()", "string", &args[0], span)?;
-    let strict = match args.get(1) {
-        Some(value) => php_internal_bool_argument("base64_decode()", 2, "strict", value, span)?,
-        None => false,
-    };
-    match base64_decode_bytes(&value, strict) {
-        Some(decoded) => Ok(interpreter_value_from_php_string_bytes(decoded)),
-        None => Ok(Value::Bool(false)),
+    fn call_base64_encode(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("base64_encode", args, 1, span)?;
+        let value = self.php_string_argument_bytes_with_magic(
+            "base64_encode()",
+            1,
+            "string",
+            &args[0],
+            span,
+        )?;
+        Ok(interpreter_value_from_php_string_bytes(
+            base64_encode_bytes(&value),
+        ))
     }
-}
-
-fn call_base64_encode(args: &[Value], span: Span) -> CompileResult<Value> {
-    expect_arity("base64_encode", args, 1, span)?;
-    let value = string_compare_argument_bytes("base64_encode()", "string", &args[0], span)?;
-    Ok(interpreter_value_from_php_string_bytes(
-        base64_encode_bytes(&value),
-    ))
 }
 
 fn base64_encode_bytes(input: &[u8]) -> Vec<u8> {

@@ -123,6 +123,54 @@ foreach ([[], new stdClass, fopen("php://memory", "r")] as $value) {
 }
 
 #[test]
+fn base64_helpers_use_php_string_argument_boundary() {
+    let execution = run_source(
+        r#"<?php
+class PlainText {
+    public function __toString() { return "Hi"; }
+}
+class EncodedText {
+    public function __toString() { return "SGk="; }
+}
+
+set_error_handler(function ($errno, $errstr) {
+    echo "deprecated:", $errstr, "\n";
+});
+
+$encode = "base64_encode";
+$decode = "base64_decode";
+
+echo base64_encode(new PlainText), "\n";
+echo $encode(null) === "" ? "empty\n" : "bad\n";
+echo $decode(new EncodedText), "\n";
+
+foreach ([fn() => base64_encode([]), fn() => $decode(new stdClass)] as $call) {
+    try {
+        var_dump($call());
+    } catch (TypeError $e) {
+        echo $e->getMessage(), "\n";
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "SGk=\n",
+            "deprecated:base64_encode(): Passing null to parameter #1 ($string) of type string is deprecated\n",
+            "empty\n",
+            "Hi\n",
+            "base64_encode(): Argument #1 ($string) must be of type string, array given\n",
+            "base64_decode(): Argument #1 ($string) must be of type string, stdClass given\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn base64_encode_round_trips_binary_strings_and_exposes_metadata() {
     let execution = run_source(
         r#"<?php
