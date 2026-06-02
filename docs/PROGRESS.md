@@ -4,6 +4,17 @@
 
 Implemented:
 
+- Accepted checkpoint `ac94984a` as the current public PHPT score source
+  after a full pinned php-src gate completed with zero latest-published PASS
+  regressions. The public-comparable score is now
+  `5892 / 20294 = 29.03%`, up from `5816 / 20294 = 28.66%` at checkpoint
+  `538c136c`. The accepted gate evidence is
+  `state/logs/phpt-full-current-score-20260602T143814Z-php-src-f97ff59-public-ac94984a-source-ac94984a`;
+  aggregate counts were `5892` passed, `13114` failed, `2759` skipped, `16`
+  xfailed, `549` borked, and `1` warned. The normalized PASS regression
+  comparison was `5888` current passes vs. `5812` baseline passes with `0`
+  regressions, and the invalid-proof-marker summary reported `0` hits.
+
 - Added a bounded `SplFileObject` flags and CSV-control lane on the
   interpreter path. Local UTF-8 `SplFileObject` instances now expose
   `DROP_NEW_LINE`, `READ_AHEAD`, `SKIP_EMPTY`, and `READ_CSV` constants,
