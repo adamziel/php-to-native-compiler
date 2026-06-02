@@ -4,6 +4,24 @@
 
 Implemented:
 
+- Added a bounded mutable `DateTime` constructor timezone-argument lane for the
+  selected `bug43003.phpt` surface. `new DateTime($time, ?DateTimeZone
+  $timezone)` and `date_create($time, ?DateTimeZone $timezone)` now accept a
+  second bounded `DateTimeZone` object or `null`, use it as the default
+  timezone for strings without an explicit timezone, and preserve explicit
+  timezone identities from strings such as `@0` and `... GMT`. Focused Rust
+  passed the targeted constructor-timezone guard and the full
+  `date_time_builtin` file (`14 / 14`); `cargo build -p phpc --bin phpc`
+  passed; a direct `phpc run` probe proved constructor, procedural,
+  explicit-token, and timestamp identities; a direct `phpc compile --emit-ir`
+  probe rejected DateTime object construction at the existing native boundary;
+  selected PHPT proof passed `1 / 1` for `ext/date/tests/bug43003.phpt`;
+  `cargo fmt --check` and `git diff --check` passed. Unsupported edges remain
+  DateTimeImmutable constructor/setter behavior, full timezone database and
+  historical DST parity, exact broad constructor diagnostics/coercions beyond
+  bounded `DateTimeZone|null`, DateInterval arithmetic/diff/add/sub
+  integration, DatePeriod, references/COW, and native lowering.
+
 - Added a bounded SHA3 execution lane for the selected ext/hash `sha3.phpt`
   row. `hash()` now executes `sha3-224`, `sha3-256`, `sha3-384`, and
   `sha3-512` through the shared raw/hex digest dispatcher, using the `sha3`

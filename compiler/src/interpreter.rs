@@ -17463,31 +17463,79 @@ impl Interpreter {
         span: Span,
         scope: &mut SymbolTable,
     ) -> CompileResult<()> {
-        if args.len() > 1 {
+        if args.len() > 2 {
             return Err(runtime_error(
                 span,
                 RuntimeError::arity_mismatch(
                     "DateTime::__construct()",
-                    ArityExpectation::Between { min: 0, max: 1 },
+                    ArityExpectation::Between { min: 0, max: 2 },
                     args.len(),
                 ),
             ));
         }
-        let value = args
-            .first()
+        let values = args
+            .iter()
             .map(|expr| self.evaluate(expr, scope))
-            .transpose()?;
-        self.initialize_datetime_object_from_value(object, value.as_ref(), span)
+            .collect::<CompileResult<Vec<_>>>()?;
+        self.initialize_datetime_object_from_values(
+            object,
+            values.first(),
+            values.get(1),
+            "DateTime::__construct()",
+            span,
+        )
     }
 
-    fn initialize_datetime_object_from_value(
+    fn datetime_constructor_timezone(
+        &self,
+        function: &'static str,
+        value: Option<&Value>,
+        span: Span,
+    ) -> CompileResult<BoundedTimezone> {
+        let default_timezone = bounded_timezone_from_name(&self.default_timezone)
+            .expect("stored default timezone should be bounded");
+        let Some(value) = value else {
+            return Ok(default_timezone);
+        };
+        match value {
+            Value::Null => Ok(default_timezone),
+            Value::Object(object) if object.is_instance_of_class_name("DateTimeZone") => {
+                let timezone_name = Self::datetimezone_name(object, function, span)?;
+                bounded_timezone_from_name(&timezone_name).ok_or_else(|| {
+                    runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            function,
+                            format!(
+                                "timezone {timezone_name} is not implemented in the current subset"
+                            ),
+                        ),
+                    )
+                })
+            }
+            other => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function,
+                    format!(
+                        "timezone argument must be DateTimeZone or null in the current subset, got {}",
+                        other.type_name()
+                    ),
+                ),
+            )),
+        }
+    }
+
+    fn initialize_datetime_object_from_values(
         &mut self,
         object: &PhpObject,
         value: Option<&Value>,
+        timezone_value: Option<&Value>,
+        function: &'static str,
         span: Span,
     ) -> CompileResult<()> {
-        let default_timezone = bounded_timezone_from_name(&self.default_timezone)
-            .expect("stored default timezone should be bounded");
+        let default_timezone =
+            self.datetime_constructor_timezone(function, timezone_value, span)?;
         let (timestamp, timezone) = match value {
             Some(Value::Null) | None => (self.request_time, default_timezone),
             Some(Value::String(value)) if value.eq_ignore_ascii_case("now") => {
@@ -17572,7 +17620,13 @@ impl Interpreter {
             Vec::new(),
             object_id,
         );
-        self.initialize_datetime_object_from_value(&object, args.first(), span)?;
+        self.initialize_datetime_object_from_values(
+            &object,
+            args.first(),
+            args.get(1),
+            "date_create()",
+            span,
+        )?;
         Ok(object)
     }
 
@@ -17796,12 +17850,12 @@ impl Interpreter {
     }
 
     fn call_date_create(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
-        if args.len() > 1 {
+        if args.len() > 2 {
             return Err(runtime_error(
                 span,
                 RuntimeError::arity_mismatch(
                     "date_create()",
-                    ArityExpectation::Between { min: 0, max: 1 },
+                    ArityExpectation::Between { min: 0, max: 2 },
                     args.len(),
                 ),
             ));

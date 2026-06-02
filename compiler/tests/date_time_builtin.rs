@@ -57,6 +57,42 @@ echo $local->format("Y-m-d H:i e"), "\n";
 }
 
 #[test]
+fn datetime_constructor_timezone_argument_matches_bounded_rows() {
+    let execution = run_source(
+        r#"<?php
+date_default_timezone_set("Europe/Oslo");
+$local = new DateTime("2009-01-01 00:00:00", new DateTimeZone("Europe/Oslo"));
+echo $local->format("Y-m-d H:i:s T e"), "\n";
+$procedural = date_create("2009-01-01 00:00:00", new DateTimeZone("America/New_York"));
+echo $procedural->format("Y-m-d H:i:s T e"), "\n";
+$null = date_create("2009-01-01", null);
+echo $null->format(DateTime::COOKIE), "\n";
+$explicit = new DateTime("2009-01-01 00:00:00 GMT", new DateTimeZone("Europe/Oslo"));
+echo $explicit->getTimezone()->getName(), "|", $explicit->format("Y-m-d H:i:s T"), "\n";
+$timestamp = new DateTime("@0", new DateTimeZone(date_default_timezone_get()));
+echo $timestamp->getTimezone()->getName(), "|", $timestamp->format("Y-m-d H:i:s"), "\n";
+$timestamp->setTimezone(new DateTimeZone(date_default_timezone_get()));
+echo $timestamp->getTimezone()->getName(), "|", $timestamp->format("Y-m-d H:i:s"), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "2009-01-01 00:00:00 CET Europe/Oslo\n",
+            "2009-01-01 00:00:00 EST America/New_York\n",
+            "Thursday, 01-Jan-2009 00:00:00 CET\n",
+            "GMT|2009-01-01 00:00:00 GMT\n",
+            "+00:00|1970-01-01 00:00:00\n",
+            "Europe/Oslo|1970-01-01 01:00:00\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn date_modify_mutates_bounded_datetime_relative_forms() {
     let execution = run_source(
         r#"<?php

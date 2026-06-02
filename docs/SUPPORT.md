@@ -5742,19 +5742,25 @@
   Mutable `DateTime` objects support bounded `format()`, `getTimestamp()`,
   `setTimestamp()`, `modify()`, `getOffset()`, `getTimezone()`, and
   `setTimezone(DateTimeZone $timezone)` behavior over the same bounded
-  timezone table. Procedural `date_create()`, `date_format()`,
-  `date_timestamp_get()`, `date_timestamp_set()`, `date_offset_get()`,
-  `date_timezone_get()`, and `date_timezone_set()` share that object state.
+  timezone table. Construction through `new DateTime($time = null,
+  ?DateTimeZone $timezone = null)` and `date_create($time = null,
+  ?DateTimeZone $timezone = null)` accepts the optional bounded timezone
+  object for strings without an explicit timezone, while timestamp strings
+  such as `@0` and explicit timezone tokens retain their own timezone
+  identity. Procedural `date_format()`, `date_timestamp_get()`,
+  `date_timestamp_set()`, `date_offset_get()`, `date_timezone_get()`, and
+  `date_timezone_set()` share that object state.
   `DateTime` exposes the
   bounded date-format class constants matching the existing global `DATE_*`
   format constants, including PHP-shaped deprecation diagnostics for
   `DATE_RFC7231` / `DateTime::RFC7231`.
   `date.timezone` PHPT INI overrides seed the same bounded timezone state,
   including PHPT-style trailing semicolon syntax. Full timezone database
-  validation, constructor timezone arguments beyond the current single time
-  argument, `DateTimeImmutable`, broad `DateTimeInterface` runtime/interface
-  parity beyond the reached constant diagnostic text, all historical
-  transition rules, exact diagnostics, and native lowering remain unsupported.
+  validation, `DateTimeImmutable`, broad `DateTimeInterface`
+  runtime/interface parity beyond the reached constant diagnostic text, all
+  historical transition rules, exact diagnostics for constructor timezone
+  coercions outside the bounded `DateTimeZone|null` slice, and native lowering
+  remain unsupported.
   `header($header, $replace = true, $response_code = 0)` accepts a string
   header line plus optional bool replacement flag and optional integer response
   code, records the raw header line in deterministic in-process CLI request
