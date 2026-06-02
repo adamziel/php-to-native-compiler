@@ -3998,14 +3998,15 @@
   cryptographic guarantees, exact diagnostics, and native lowering remain
   unsupported.
   `hash($algo, $data, $binary = false, $options = [])` supports scalar/null
-  string-convertible data for `sha1`, `sha224`, `sha256`, `sha384`,
-  `sha512/224`, `sha512/256`, `sha512`, `sha3-224`, `sha3-256`,
-  `sha3-384`, `sha3-512`, `md5`, `adler32`, `crc32`, `crc32b`, `crc32c`,
-  `fnv132`, `fnv1a32`, `fnv164`, `fnv1a64`, and `joaat`, returning lowercase
-  hex output or raw binary-string output when the binary flag is truthy.
+  string-convertible data for `md2`, `md4`, `md5`, `sha1`, `sha224`,
+  `sha256`, `sha384`, `sha512/224`, `sha512/256`, `sha512`, `sha3-224`,
+  `sha3-256`, `sha3-384`, `sha3-512`, `adler32`, `crc32`, `crc32b`,
+  `crc32c`, `fnv132`, `fnv1a32`, `fnv164`, `fnv1a64`, and `joaat`, returning
+  lowercase hex output or raw binary-string output when the binary flag is
+  truthy.
   `hash_algos()` returns the PHP 8.2 algorithm metadata list used by the
   public hash PHPT rows, though execution remains bounded to the named
-  SHA-1/SHA-2/SHA-3/MD5/checksum algorithms.
+  MD2/MD4/MD5/SHA-1/SHA-2/SHA-3/checksum algorithms.
   `hash_hmac_algos()` returns the bounded PHP cryptographic HMAC algorithm
   metadata list used by the public hash PHPT row; only `hash_hmac('sha256',
   ...)` execution is currently implemented from that list.
@@ -4029,8 +4030,8 @@
   `hash_equals($known_string, $user_string)` supports strict string and binary
   string operands, constant-work same-length byte comparison, and PHP-shaped
   type diagnostics for non-string operands.
-  Hash algorithms outside that bounded SHA-1/SHA-2/SHA-3/MD5/checksum execution set,
-  non-empty `hash()` options arrays, `HashContext` allocation and streaming
+  Hash algorithms outside that bounded MD2/MD4/MD5/SHA-1/SHA-2/SHA-3/checksum
+  execution set, non-empty `hash()` options arrays, `HashContext` allocation and streaming
   hash updates/finalization, `hash_hmac()` execution for algorithms beyond
   SHA-256, `hash_hmac()` raw binary output, `hash_init()` HMAC context
   execution and non-empty options arrays, `hash_pbkdf2()` derivation output,

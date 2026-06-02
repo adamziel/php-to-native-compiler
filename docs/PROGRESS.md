@@ -4,6 +4,22 @@
 
 Implemented:
 
+- Added a bounded MD2/MD4 execution lane for the selected ext/hash vector rows.
+  `hash()` now executes the advertised `md2` and `md4` algorithms through the
+  shared raw/hex digest dispatcher, using the RustCrypto `md2` and `md4`
+  crates without adding file hashing, HMAC expansion, native lowering, or
+  streaming contexts. Focused Rust passed the targeted MD2/MD4 regression and
+  the full `hash_builtin` file (`15 / 15`); `cargo build -p phpc --bin phpc`
+  passed; a direct `phpc run` probe proved MD2/MD4 hex output, raw MD2 output,
+  case-insensitive algorithm lookup, and `hash_algos()` membership; selected
+  PHPT proof passed `2 / 2` for `ext/hash/tests/md2.phpt` and
+  `ext/hash/tests/md4.phpt`; `cargo fmt --check` and `git diff --check`
+  passed. Unsupported edges remain hash execution outside the bounded
+  MD2/MD4/MD5/SHA-1/SHA-2/SHA-3/checksum subset, non-empty `hash()` options
+  arrays, `hash_file()`, broader HMAC execution/raw output/file APIs,
+  successful `HashContext` allocation and streaming updates/finalization,
+  HKDF/PBKDF2 output, broad exact diagnostics/coercions, and native lowering.
+
 - Added a bounded non-int `settype()` NAN warning/recovery lane for the
   selected Zend type-coercion handler rows. Direct-variable
   `settype($var, $type)` now emits the PHP-shaped `unexpected NAN value was

@@ -10,6 +10,8 @@ use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use hmac::{Hmac, Mac};
+use md2::{Digest as Md2Digest, Md2};
+use md4::Md4;
 use md5::{Digest as Md5Digest, Md5};
 use php_runtime::{
     classify_php_numeric_string, coerce_property_value_with_object_type_resolver, ArithmeticOp,
@@ -132738,6 +132740,8 @@ fn call_uniqid(args: &[Value], span: Span) -> CompileResult<Value> {
 
 #[derive(Clone, Copy)]
 enum PhpHashAlgorithm {
+    Md2,
+    Md4,
     Md5,
     Sha1,
     Sha224,
@@ -133090,6 +133094,8 @@ fn hash_raw_output_argument(value: Option<&Value>, span: Span) -> CompileResult<
 
 fn php_hash_algorithm(name: &str) -> Option<PhpHashAlgorithm> {
     match name.to_ascii_lowercase().as_str() {
+        "md2" => Some(PhpHashAlgorithm::Md2),
+        "md4" => Some(PhpHashAlgorithm::Md4),
         "md5" => Some(PhpHashAlgorithm::Md5),
         "sha1" => Some(PhpHashAlgorithm::Sha1),
         "sha224" => Some(PhpHashAlgorithm::Sha224),
@@ -133125,6 +133131,8 @@ fn is_php_hash_algorithm_name(name: &str) -> bool {
 
 fn php_hash_digest_bytes(algorithm: PhpHashAlgorithm, bytes: &[u8]) -> Vec<u8> {
     match algorithm {
+        PhpHashAlgorithm::Md2 => Md2::digest(bytes).to_vec(),
+        PhpHashAlgorithm::Md4 => Md4::digest(bytes).to_vec(),
         PhpHashAlgorithm::Md5 => Md5::digest(bytes).to_vec(),
         PhpHashAlgorithm::Sha1 => sha1_digest_bytes(bytes).to_vec(),
         PhpHashAlgorithm::Sha224 => Sha224::digest(bytes).to_vec(),

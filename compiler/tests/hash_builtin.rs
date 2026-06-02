@@ -159,6 +159,54 @@ af63b44c8601a894\n\
 }
 
 #[test]
+fn hash_md2_and_md4_legacy_algorithms_are_available() {
+    let execution = run_source(
+        r#"<?php
+$subjects = [
+    "",
+    "a",
+    "abc",
+    "message digest",
+    "abcdefghijklmnopqrstuvwxyz",
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+    "12345678901234567890123456789012345678901234567890123456789012345678901234567890",
+];
+foreach ($subjects as $subject) {
+    echo hash("md2", $subject), "\n";
+}
+echo bin2hex(hash("md2", "abc", true)), "\n";
+foreach ($subjects as $subject) {
+    echo hash("md4", $subject), "\n";
+}
+echo bin2hex(hash("md4", "abc", true)), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "8350e5a3e24c153df2275c9f80692773\n\
+32ec01ec4a6dac72c0ab96fb34c0b5d1\n\
+da853b0d3f88d99b30283a69e6ded6bb\n\
+ab4f496bfb2a530b219ff33031fe06b0\n\
+4e8ddff3650292ab5a4108c3aa47940b\n\
+da33def2a42df13975352846c30338cd\n\
+d5976f79d83d3a0dc9806c3c66f3efd8\n\
+da853b0d3f88d99b30283a69e6ded6bb\n\
+31d6cfe0d16ae931b73c59d7e0c089c0\n\
+bde52cb31de33e46245e05fbdbd6fb24\n\
+a448017aaf21d8525fc10ae87aa6729d\n\
+d9130a8164549fe818874806e1c7014b\n\
+d79e1c308aa5bbcdeea8ed63df412da9\n\
+043f8582f241db351ce627e153e7f0e4\n\
+e33b4ddc9c38f2199c3e7b164fcc0536\n\
+a448017aaf21d8525fc10ae87aa6729d\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn hash_crc_algorithms_and_php82_algorithm_listing_are_available() {
     let execution = run_source(
         r#"<?php

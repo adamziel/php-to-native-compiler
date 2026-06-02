@@ -2717,17 +2717,18 @@ and `md5_file()` are interpreter-only deterministic hash boundaries for the
 same placeholder-escape path and focused file-content checks. `uniqid()`
 returns a fixed prefix-based ID with a PHP-shaped more-entropy suffix length,
 `hash_hmac()` currently supports lowercase hex HMAC-SHA256 through the `hmac`
-and `sha2` crates, `hash()` covers a bounded SHA-1/SHA-2/SHA-3 digest set with
-lowercase hex or raw binary output, `hash_pbkdf2()` covers only the current
-algorithm/iteration/length validation surface before rejecting successful
-PBKDF2 derivation, `md5()` supports scalar/null string-convertible input with
-lowercase hex or raw binary output through the `md-5` crate, and `md5_file()`
-uses the bounded local-file path policy shared with `sha1_file()`. `HASH_HMAC`
-and `hash_init()` cover the current validation-only HMAC-mode boundary for
-unknown algorithms, known non-cryptographic algorithms, and missing HMAC keys
-before explicitly rejecting successful `HashContext` allocation. Streaming
-hash contexts, PBKDF2 output derivation, exact entropy/time behavior,
-FIPS/provider policy, and native lowering remain out of scope.
+and `sha2` crates, `hash()` covers a bounded MD2/MD4/MD5/SHA-1/SHA-2/SHA-3
+digest set with lowercase hex or raw binary output, `hash_pbkdf2()` covers
+only the current algorithm/iteration/length validation surface before rejecting
+successful PBKDF2 derivation, `md5()` supports scalar/null string-convertible
+input with lowercase hex or raw binary output through the `md-5` crate, and
+`md5_file()` uses the bounded local-file path policy shared with
+`sha1_file()`. `HASH_HMAC` and `hash_init()` cover the current validation-only
+HMAC-mode boundary for unknown algorithms, known non-cryptographic algorithms,
+and missing HMAC keys before explicitly rejecting successful `HashContext`
+allocation. Streaming hash contexts, PBKDF2 output derivation, exact
+entropy/time behavior, FIPS/provider policy, and native lowering remain out of
+scope.
 `strcasecmp()` is an interpreter-only bounded string comparison builtin for
 current scalar/null string-convertible values. It compares valid UTF-8 runtime
 strings and binary-string values by bytes with ASCII case folding and returns
