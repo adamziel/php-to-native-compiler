@@ -356,16 +356,18 @@ echo extension_loaded("json") ? "1" : "0";
 echo extension_loaded("HASH") ? "1" : "0";
 echo extension_loaded("pdo") ? "1" : "0";
 echo extension_loaded("pdo_mysql") ? "1" : "0";
+echo extension_loaded("posix") ? "1" : "0";
 echo "\n";
 $call = "extension_loaded";
 echo $call("simplexml") ? "1" : "0";
 echo $call("hash") ? "1" : "0";
 echo $call("pdo_mysql") ? "1" : "0";
+echo $call("posix") ? "1" : "0";
 "#,
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "001111\n011");
+    assert_eq!(execution.stdout, "0011111\n0111");
     assert_eq!(execution.exit_code, 0);
 }
 
@@ -517,6 +519,7 @@ echo extension_loaded("json") ? "1" : "0";
 echo extension_loaded("HASH") ? "1" : "0";
 echo extension_loaded("pdo") ? "1" : "0";
 echo extension_loaded("pdo_mysql") ? "1" : "0";
+echo extension_loaded("posix") ? "1" : "0";
 echo extension_loaded($name) ? "1" : "0";
 echo "\n";
 "#,
@@ -532,6 +535,7 @@ echo "\n";
         "c\"hash\\00\"",
         "c\"pdo\\00\"",
         "c\"pdo_mysql\\00\"",
+        "c\"posix\\00\"",
     ] {
         assert!(ir.contains(expected), "{ir}");
     }

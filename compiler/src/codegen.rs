@@ -66577,6 +66577,7 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "getmyinode",
     "getmyuid",
     "getmygid",
+    "posix_ctermid",
     "posix_getpwuid",
     "posix_getgrgid",
     "getmypid",
@@ -67042,7 +67043,7 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "var_export",
 ];
 
-const COMPAT_LOADED_EXTENSION_NAMES: &[&str] = &["json", "hash", "pdo", "pdo_mysql"];
+const COMPAT_LOADED_EXTENSION_NAMES: &[&str] = &["json", "hash", "pdo", "pdo_mysql", "posix"];
 
 fn native_text_membership_candidates(candidates: &[&str]) -> Vec<String> {
     candidates

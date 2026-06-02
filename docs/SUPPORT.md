@@ -3207,6 +3207,11 @@
   String-valued dynamic calls, `function_exists()`, `is_callable()`, and
   `ReflectionFunction` metadata recognize the builtins as POSIX-extension
   functions.
+- `posix_ctermid()` with no arguments, returning the host Unix `ctermid(3)`
+  terminal path as a non-empty UTF-8 string or `false` when unavailable.
+  String-valued dynamic calls, `function_exists()`, `is_callable()`,
+  `extension_loaded("posix")`, and `ReflectionFunction` metadata recognize the
+  builtin as a POSIX-extension function.
 - `getmypid()` with no arguments, returning the current `phpc run` process id
   as an integer. String-valued dynamic calls, `function_exists()`,
   `is_callable()`, and `ReflectionFunction` metadata recognize the builtin.
@@ -3397,7 +3402,7 @@
   `get_include_path`, `set_include_path`, `min`, `rand`, `mt_rand`,
   `getrandmax`, `mt_getrandmax`, `srand`, `mt_srand`, `random_int`,
   `random_bytes`, `lcg_value`, `array_rand`, `uniqid`,
-  `crypt`, `hash`, `hash_algos`, `hash_hmac_algos`, `hash_hmac`, `hash_pbkdf2`, `hash_equals`, `md5`, `md5_file`, `get_current_user`, `posix_getpwuid`, `posix_getgrgid`, `umask`, `getmypid`, `isset`, `empty`, `count`, `sizeof`, `compact`, `define`, `constant`, `defined`,
+  `crypt`, `hash`, `hash_algos`, `hash_hmac_algos`, `hash_hmac`, `hash_pbkdf2`, `hash_equals`, `md5`, `md5_file`, `get_current_user`, `posix_ctermid`, `posix_getpwuid`, `posix_getgrgid`, `umask`, `getmypid`, `isset`, `empty`, `count`, `sizeof`, `compact`, `define`, `constant`, `defined`,
   `array_key_exists`, `key_exists`, `array_key_first`, `array_key_last`, `current`,
   `array_is_list`, `array_values`, `array_keys`, `array_rand`, `array_reverse`, `array_slice`, `array_chunk`,
   `array_pad`, `array_merge`, `array_replace`, `array_combine`,
@@ -6108,11 +6113,12 @@
   unsupported.
   `extension_loaded($name)` accepts string extension names and currently
   answers from a deterministic bounded compiler/runtime compatibility registry.
-  It returns `true` for `json`, `hash`, `pdo`, and `pdo_mysql`, and `false`
-  for other names, including WordPress probe names such as `mbstring` and
-  `sodium`, without querying host PHP modules, `php.ini`, SAPI state, or
-  dynamically loading extensions; non-string names are rejected in the current
-  subset.
+  At runtime it returns `true` for the deterministic `get_loaded_extensions()`
+  entries including `bcmath`, `filter`, `json`, `hash`, `pdo`, `pdo_mysql`,
+  and `posix`, and `false` for other names, including WordPress probe names
+  such as `mbstring` and `sodium`, without querying host PHP modules,
+  `php.ini`, SAPI state, or dynamically loading extensions; non-string names
+  are rejected in the current subset.
   `get_class` returns the declared class name for current minimal object
   values, `is_object` reports whether a value is one of those current object
   values, `get_debug_type` returns scalar/array type names or the current
@@ -8164,10 +8170,10 @@
   `array_filter`, and `array_multisort`, fold to `true`, and missing names
   fold to `false`.
   Direct `extension_loaded($name)` calls with already-lowerable string names
-  fold against the same bounded compatibility registry: `json` and `hash`
-  fold to `true`, while other names fold to `false`. Native code does not
-  model host extension discovery, ini state, dynamic module loading, or
-  extension side effects.
+  fold against the same bounded compatibility registry: `json`, `hash`, `pdo`,
+  `pdo_mysql`, and `posix` fold to `true`, while other names fold to `false`.
+  Native code does not model host extension discovery, ini state, dynamic
+  module loading, or extension side effects.
   Direct calls to array builtins such as `array_change_key_case(...)`,
   `array_column(...)`, `array_sum(...)`, `array_product(...)`,
   `array_multisort(...)`, and callback-driven forms such as
@@ -8907,10 +8913,11 @@
   `Throwable` descriptions, exact warning/fatal behavior, PHP 8.3
   deprecations, partial-output behavior, and native lowering are not
   implemented. `extension_loaded`
-  accepts string extension names, returns true for `json` and `hash` from the
-  current bounded compatibility registry, returns false for other names, and
-  rejects non-string names. Its native folding uses the same direct string-name
-  registry for already-lowerable string names.
+  accepts string extension names, returns true for current deterministic
+  runtime entries including `json`, `hash`, `pdo`, `pdo_mysql`, and `posix`,
+  returns false for other names, and rejects non-string names. Its native
+  folding uses the same direct string-name registry for already-lowerable
+  string names.
   `mysqli_connect`, `mysqli_real_connect`, `mysqli_get_server_info`,
   `mysqli_get_server_version`, `mysqli_get_host_info`, `mysqli_get_client_info`,
   `mysqli_get_client_version`, `mysqli_get_proto_info`, `mysqli_thread_id`,
@@ -9426,10 +9433,10 @@
   until native source-file stat metadata, SAPI source identity, platform UID/GID
   policy, references/copy-on-write, and exact native diagnostics exist, while
   native function-table introspection recognizes the names.
-  `posix_getpwuid` and `posix_getgrgid` accept the same current local text
-  passwd/group database lookup subset as the builtin section above; direct
-  native calls still reject under the function-call boundary until native
-  account/group database lookup policy, platform identity APIs,
+  `posix_ctermid`, `posix_getpwuid`, and `posix_getgrgid` accept the same
+  current POSIX metadata subsets as the builtin section above; direct native
+  calls still reject under the function-call boundary until native
+  terminal/account/group database lookup policy, platform identity APIs,
   references/copy-on-write, and exact native diagnostics exist, while native
   function-table introspection recognizes the names.
   `umask` accepts the same request-local metadata subset as the builtin
@@ -9672,7 +9679,7 @@
   `strpos`, `stripos`, `strrpos`, `strripos`, `substr`, `str_shuffle`, `printf`, `fprintf`, `sprintf`, `vprintf`, `vfprintf`, `implode`, `basename`, `dirname`, `number_format`, `defined`,
   `function_exists`, `is_array`, `is_object`, `is_string`, `is_scalar`,
   `count`, `sizeof`, `array_key_exists`, `is_callable`, `get_current_user`,
-  `posix_getpwuid`, `posix_getgrgid`, `getmypid`, and `php_sapi_name`, exposes
+  `posix_ctermid`, `posix_getpwuid`, `posix_getgrgid`, `getmypid`, and `php_sapi_name`, exposes
   their name, false file/start/end/doc-comment metadata, current
   parameter/default metadata, return type, and by-reference-return predicate,
   and executes them through `invoke()`/`invokeArgs()`.
@@ -9778,9 +9785,12 @@
   current parsed program's top-level trait names in declaration order,
   including traits with supported public constants, supported properties, and
   public instance/static methods.
-  `get_loaded_extensions()` and `ReflectionExtension` expose a deterministic
-  compatibility registry for the current `Reflection`, `standard`, `ctype`,
-  and `dom` slices. `ReflectionExtension` supports constructor lookup,
+  `get_loaded_extensions()` exposes a deterministic compatibility extension
+  list, including the current `posix` function metadata surface.
+  `ReflectionExtension` exposes a deterministic compatibility registry for the
+  current `Reflection`, `standard`, `ctype`, and `dom` slices, with other
+  extension inventories still outside the bounded object metadata surface.
+  `ReflectionExtension` supports constructor lookup,
   `getName()`, `getVersion()`, `getFunctions()`, `getConstants()`,
   `getINIEntries()`, `getClassNames()`, `getClasses()`, `getDependencies()`,
   `info()`, `isPersistent()`, and `isTemporary()` over that bounded registry.
@@ -11551,8 +11561,8 @@
   `str_increment`, `str_decrement`, `trim`, `ltrim`, `rtrim`,
   `strcmp`, `strcasecmp`, `strncmp`, `strncasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`, `strpos`, `stripos`, `strrpos`, `strripos`,
   `substr`, `str_shuffle`, `printf`, `fprintf`, `sprintf`, `vprintf`, `vfprintf`, `implode`, `basename`, `dirname`, `number_format`, `defined`,
-  `function_exists`, `get_current_user`, `posix_getpwuid`, `posix_getgrgid`,
-  `umask`, `getmypid`, and `php_sapi_name`. Closure metadata is supported for
+  `function_exists`, `get_current_user`, `posix_ctermid`, `posix_getpwuid`,
+  `posix_getgrgid`, `umask`, `getmypid`, and `php_sapi_name`. Closure metadata is supported for
   current closure values. The supported
   metadata methods are the name, file/start/end/doc-comment, parameter-list,
   return-type, by-reference-return, and stringification methods documented
@@ -12106,11 +12116,13 @@
   effective UID versus script-owner policy variants, account database changes
   during a request, exact diagnostics, and native lowering beyond
   function-table introspection
-- `posix_getpwuid()` and `posix_getgrgid()` behavior beyond the current local
-  `/etc/passwd` and `/etc/group` text-file slice: NSS, LDAP, shadow/group
-  database backends outside those files, non-UTF-8 account/group database
-  entries, exact platform-specific diagnostics, the rest of the POSIX
-  extension, and native lowering beyond function-table introspection
+- `posix_ctermid()`, `posix_getpwuid()`, and `posix_getgrgid()` behavior
+  beyond the current local terminal-path and `/etc/passwd`/`/etc/group`
+  text-file slices: exact controlling-terminal policy across sessions/SAPIs,
+  non-Unix fallback behavior, non-UTF-8 terminal/account/group data, NSS, LDAP,
+  shadow/group database backends outside those files, exact platform-specific
+  diagnostics, the rest of the POSIX extension, and native lowering beyond
+  function-table introspection
 - `umask()` behavior beyond the current request-local metadata slice:
   process-wide host umask mutation, non-Unix permission parity, exact default
   process mask discovery beyond the bounded initial `0022` value, creation
@@ -12279,6 +12291,11 @@ Unsupported code should fail with an explicit parse, runtime, or codegen error.
   unreadable entries return `false`. NSS/LDAP, shadow/group database backends
   outside those local text files, non-UTF-8 entries, exact diagnostics, broader
   POSIX-extension functions, and native lowering remain unsupported.
+- POSIX terminal-path metadata in `phpc run`: `posix_ctermid()` calls the host
+  Unix `ctermid(3)` boundary and returns a non-empty UTF-8 string or `false`.
+  Exact controlling-terminal policy across sessions/SAPIs, non-Unix fallback
+  behavior, non-UTF-8 terminal path output, errno mutation, broader POSIX
+  terminal functions, and native lowering remain unsupported.
 - Additional local filesystem link helpers in `phpc run`: `readlink()` returns
   UTF-8 local symlink targets and reports invalid local paths as inline PHP
   warnings plus `false`; `symlink()` creates bounded local symbolic links,

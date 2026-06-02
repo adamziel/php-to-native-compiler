@@ -85583,6 +85583,7 @@ impl Interpreter {
                 filesystem_group_value,
                 span,
             ),
+            "posix_ctermid" => call_posix_ctermid(&args, span),
             "posix_getpwuid" => call_posix_getpwuid(&args, span),
             "posix_getgrgid" => call_posix_getgrgid(&args, span),
             "umask" => self.call_umask(&args, span),
@@ -102432,6 +102433,7 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
         "connection_aborted" | "connection_status" => ("int", vec![]),
         "get_current_user" => ("string", vec![]),
         "getlastmod" | "getmyinode" | "getmyuid" | "getmygid" => ("int|false", vec![]),
+        "posix_ctermid" => ("string|false", vec![]),
         "posix_getpwuid" => (
             "array|false",
             vec![reflection_internal_param("user_id", "int")],
@@ -106680,6 +106682,7 @@ fn is_builtin(name: &str) -> bool {
             | "getmyinode"
             | "getmyuid"
             | "getmygid"
+            | "posix_ctermid"
             | "posix_getpwuid"
             | "posix_getgrgid"
             | "umask"
@@ -109558,10 +109561,9 @@ fn unsupported_runtime_constant_value_type(value: &Value) -> Option<&'static str
 }
 
 fn is_compat_loaded_extension_name(name: &str) -> bool {
-    matches!(
-        name.to_ascii_lowercase().as_str(),
-        "bcmath" | "filter" | "json" | "hash" | "pdo" | "pdo_mysql"
-    )
+    COMPAT_LOADED_EXTENSIONS
+        .iter()
+        .any(|extension| extension.eq_ignore_ascii_case(name))
 }
 
 fn mysql_escape_string(value: &str) -> String {
@@ -131925,6 +131927,39 @@ struct PosixGroupEntry {
     gid: u32,
 }
 
+fn call_posix_ctermid(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("posix_ctermid", args, 0, span)?;
+    Ok(posix_ctermid_value()
+        .map(Value::String)
+        .unwrap_or(Value::Bool(false)))
+}
+
+#[cfg(unix)]
+fn posix_ctermid_value() -> Option<String> {
+    use std::ffi::CStr;
+    use std::os::raw::c_char;
+
+    unsafe extern "C" {
+        fn ctermid(s: *mut c_char) -> *mut c_char;
+    }
+
+    let pointer = unsafe { ctermid(std::ptr::null_mut()) };
+    if pointer.is_null() {
+        return None;
+    }
+    let value = unsafe { CStr::from_ptr(pointer) };
+    value
+        .to_str()
+        .ok()
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+#[cfg(not(unix))]
+fn posix_ctermid_value() -> Option<String> {
+    None
+}
+
 fn call_posix_getpwuid(args: &[Value], span: Span) -> CompileResult<Value> {
     expect_arity("posix_getpwuid", args, 1, span)?;
     let uid = php_internal_int_argument("posix_getpwuid()", 1, "user_id", &args[0], span)?;
@@ -140784,7 +140819,15 @@ const OPCACHE_DIRECTIVES: &[&str] = &[
     "opcache.jit_blacklist_side_trace",
 ];
 
-const COMPAT_LOADED_EXTENSIONS: &[&str] = &["bcmath", "filter", "json", "hash", "pdo", "pdo_mysql"];
+const COMPAT_LOADED_EXTENSIONS: &[&str] = &[
+    "bcmath",
+    "filter",
+    "json",
+    "hash",
+    "pdo",
+    "pdo_mysql",
+    "posix",
+];
 
 const COMPAT_STANDARD_EXTENSION_FUNCTIONS: &[&str] = &[
     "strlen",

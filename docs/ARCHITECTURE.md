@@ -3051,6 +3051,12 @@ and return `false` for negative, out-of-range, missing, or unreadable entries.
 They do not model NSS, LDAP, shadow databases, non-UTF-8 account data,
 platform-specific diagnostics, other POSIX-extension functions, or native
 runtime account lookup.
+`posix_ctermid()` is an interpreter-only POSIX terminal-path metadata boundary
+that calls the host Unix `ctermid(3)` surface and returns a non-empty UTF-8
+string, or `false` when the host cannot provide one. It does not model exact
+controlling-terminal policy across sessions or SAPIs, non-Unix fallback
+behavior, non-UTF-8 terminal path output, POSIX errno mutation, broader POSIX
+terminal functions, or native runtime lookup.
 Direct native reads, indexed reads, `isset(...)`, and `empty(...)` over the
 current request superglobals `$_SERVER`, `$_COOKIE`, `$_GET`, `$_POST`,
 `$_REQUEST`, and `$_FILES` reject through a request-state codegen boundary
@@ -3287,9 +3293,10 @@ built-in answer table. Bare global constant reads and `constant($name)` still
 stay behind the native global-constant boundary until generated code has a real
 constant table and version-policy model.
 Direct `extension_loaded($name)` calls with already-lowerable string names fold
-against the current deterministic bounded compatibility registry: `json` and
-`hash` fold to true, while other names fold to false. Native code does not
-query host PHP modules, `php.ini`, SAPI state, or dynamic extension loading.
+against the current deterministic bounded compatibility registry: `json`,
+`hash`, `pdo`, `pdo_mysql`, and `posix` fold to true, while other names fold
+to false. Native code does not query host PHP modules, `php.ini`, SAPI state,
+or dynamic extension loading.
 `file_exists()` is currently an interpreter-only local filesystem metadata
 builtin for the WordPress bootstrap drop-in check. It accepts one string local
 path, rejects stream-wrapper paths, and returns a boolean for host filesystem
@@ -4081,8 +4088,8 @@ argument semantics for string keys. A named internal-function slice re-enters
 the existing builtin dispatcher for `strlen`, `strtolower`, `trim`, `ltrim`,
 `rtrim`, `strcasecmp`, `strncmp`, `strncasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`,
 `strpos`, `substr`, `sprintf`, `implode`, `basename`, `dirname`, `defined`,
-`function_exists`, `count`, `sizeof`, `get_current_user`, `posix_getpwuid`,
-`posix_getgrgid`, `getmypid`, and `php_sapi_name`. Closure expressions also register a
+`function_exists`, `count`, `sizeof`, `get_current_user`, `posix_ctermid`,
+`posix_getpwuid`, `posix_getgrgid`, `getmypid`, and `php_sapi_name`. Closure expressions also register a
 request-local `ReflectionFunction` metadata snapshot, parsed body, and captured
 by-value snapshot keyed by closure id, so direct closure invocation,
 closure-valued `call_user_func()`/`call_user_func_array()` callbacks, and
@@ -4196,12 +4203,14 @@ parsed program;
 program; `get_declared_traits()` lists top-level traits declared in the current
 parsed program, including traits that contain currently supported public
 instance methods.
-`get_loaded_extensions()` and `ReflectionExtension` are backed by a
-deterministic compatibility registry, not host PHP module discovery.
-Reflection extension objects carry request-local metadata for the current
-`Reflection`, `standard`, `ctype`, and `dom` slices and can build bounded
-arrays of functions, constants, INI entries, class names/classes, and
-dependencies. `ReflectionClass::getExtensionName()` and
+`get_loaded_extensions()` is backed by a deterministic compatibility extension
+list, not host PHP module discovery. Reflection extension objects carry
+request-local metadata for the current `Reflection`, `standard`, `ctype`, and
+`dom` slices, while other loaded compatibility names such as `posix` stay
+outside the bounded `ReflectionExtension` object inventory. For the registered
+metadata slices, `ReflectionExtension` can build bounded arrays of functions,
+constants, INI entries, class names/classes, and dependencies.
+`ReflectionClass::getExtensionName()` and
 `ReflectionClass::getExtension()` use that same registry's class-name lists to
 report ownership for registered core classes such as `DOMDocument`, and return
 the PHP-shaped false/null fallback for user classes or unregistered internal
@@ -4466,8 +4475,9 @@ Zend extension loading is not an early target. Selected extensions will be
 implemented as runtime modules with documented dependencies and semantic gaps.
 Until that exists, `extension_loaded()` uses a bounded compiler/runtime
 compatibility registry. It is intentionally just enough for current WordPress
-bootstrap requirement checks and does not claim host extension support,
-extension functions/constants, extension versions, or dynamic loading.
+bootstrap requirement checks and selected POSIX metadata probes, and does not
+claim host extension support, extension functions/constants, extension
+versions, or dynamic loading.
 The current `mysqli_connect()` path is a placeholder-handle boundary used to
 get past WordPress-shaped procedural connection code; it does not mark the
 `mysqli` extension loaded and does not provide executable host database

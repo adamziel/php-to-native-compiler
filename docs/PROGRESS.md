@@ -4,6 +4,20 @@
 
 Implemented:
 
+- Added a bounded `posix_ctermid()` terminal-path metadata lane for POSIX
+  diagnostics. `phpc run` now calls the host Unix `ctermid(3)` boundary,
+  returning a non-empty UTF-8 terminal path string or `false` if the host call
+  cannot provide one, and exposes the helper through string-valued dynamic
+  calls, `function_exists()`, `is_callable()`, `extension_loaded("posix")`,
+  and `ReflectionFunction` metadata. Native direct calls remain behind the
+  existing function-call lowering boundary. Focused proof covers the Rust
+  `posix_ctermid_builtin` tests and selected public PHPT rows
+  `ext/posix/tests/posix_ctermid_basic.phpt` and
+  `ext/posix/tests/posix_ctermid.phpt`. Unsupported edges remain exact
+  controlling-terminal policy across sessions/SAPIs, non-Unix fallback
+  behavior, non-UTF-8 `ctermid(3)` output, POSIX errno mutation, broader POSIX
+  terminal functions, references/COW, and native lowering.
+
 - Added a bounded `idate()` ISO integer-format token lane. The interpreter now
   supports `idate("N", $timestamp)` for ISO weekday numbers and
   `idate("o", $timestamp)` for ISO week-numbering years, reusing the existing
