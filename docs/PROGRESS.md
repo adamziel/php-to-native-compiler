@@ -4,6 +4,20 @@
 
 Implemented:
 
+- Added a bounded `array_reverse()` preserve-key bool-coercion lane. Direct and
+  string-valued dynamic `array_reverse()` calls now route optional
+  `$preserve_keys` through the shared PHP-internal bool boundary, so scalar
+  values choose the existing reindexed or key-preserving reverse paths by PHP
+  truthiness while arrays, objects, closures, and resources raise catchable
+  PHP-shaped `TypeError`s. Existing reverse insertion order, integer-key
+  reindexing, string-key preservation, key-preserving mode, source-array
+  immutability, metadata visibility, and native-lowering rejection remain
+  unchanged. Focused proof covers the Rust `array_reverse` regression suite, a
+  direct CLI fixture, the updated runtime-error snapshot, and selected public
+  PHPT rows. Unsupported edges remain PHP deprecation warnings for null or
+  lossy scalar preserve-key coercions, broad reference/COW graph parity, object
+  handle identity/resource parity, and native lowering.
+
 - Added a bounded `str_replace()` / `str_ireplace()` top-level
   `array|string` argument-boundary lane. Direct calls and string-valued
   dynamic calls now accept supported visible `__toString()` objects for
@@ -32257,7 +32271,7 @@ Implemented:
   ordered integer/string key model. The supported slice reverses insertion
   order while preserving integer and string keys, is available through
   string-valued dynamic function calls, and has stable diagnostics for
-  non-array arguments and non-bool `preserve_keys` flag values.
+  non-array arguments and non-coercible `preserve_keys` flag values.
 - Added `array_merge($left, $right)` support for two arrays over the current
   ordered integer/string key model. The supported slice processes the left
   array then the right array in insertion order, appends integer-keyed entries
@@ -33354,7 +33368,8 @@ Tested:
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_reverse_non_array.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_reverse_non_array.php:2:6: unsupported call array_reverse(): argument must be array, got int`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_reverse_preserve_keys_non_bool.php`
-  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_reverse_preserve_keys_non_bool.php:3:6: unsupported call array_reverse(): preserve_keys argument must be bool in the current subset, got int`.
+  exits 255 and reports an uncaught PHP-shaped `TypeError` for non-coercible
+  `array_reverse()` `preserve_keys` values.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_slice_non_array.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_slice_non_array.php:2:6: unsupported call array_slice(): first argument must be array, got int`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_slice_offset_non_int.php`

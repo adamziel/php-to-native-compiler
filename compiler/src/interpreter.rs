@@ -86607,27 +86607,24 @@ impl Interpreter {
             "array_column" => self.call_array_column_builtin(&args, span),
             "array_reverse" => match args.as_slice() {
                 [Value::Array(array)] => Ok(Value::Array(array.reversed_reindexed())),
-                [Value::Array(array), Value::Bool(false)] => {
-                    Ok(Value::Array(array.reversed_reindexed()))
-                }
-                [Value::Array(array), Value::Bool(true)] => {
-                    Ok(Value::Array(array.reversed_preserving_keys()))
+                [Value::Array(array), preserve_keys] => {
+                    if php_internal_bool_argument(
+                        "array_reverse()",
+                        2,
+                        "preserve_keys",
+                        preserve_keys,
+                        span,
+                    )? {
+                        Ok(Value::Array(array.reversed_preserving_keys()))
+                    } else {
+                        Ok(Value::Array(array.reversed_reindexed()))
+                    }
                 }
                 [other] => Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
                         "array_reverse()",
                         format!("argument must be array, got {}", other.type_name()),
-                    ),
-                )),
-                [Value::Array(_), other] => Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "array_reverse()",
-                        format!(
-                            "preserve_keys argument must be bool in the current subset, got {}",
-                            other.type_name()
-                        ),
                     ),
                 )),
                 [other, _] => Err(runtime_error(

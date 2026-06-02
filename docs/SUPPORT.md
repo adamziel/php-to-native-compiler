@@ -6236,9 +6236,8 @@
   `unset($array[$key])` targets, unsupported complex
   `empty` operands, non-array `array_key_first`/`array_key_last` operands,
   non-array `current` operands, non-array `array_is_list` operands,
-  non-array `array_reverse` operands,
-  non-bool `array_reverse` preserve-key
-  flag values, non-array `array_slice` operands, non-int `array_slice`
+  non-array `array_reverse` operands, non-coercible `array_reverse`
+  preserve-key flag values, non-array `array_slice` operands, non-int `array_slice`
   offsets, invalid `array_slice` nullable-int lengths, invalid
   `array_slice` bool preserve-key flag values, non-array `array_chunk` operands,
   non-int/non-positive `array_chunk` lengths, non-bool `array_chunk`
@@ -7663,7 +7662,7 @@
   non-array `array_values` operands, non-array
   `array_keys` operands, unsupported `array_keys` search-value comparisons,
   non-coercible `array_keys` strict-mode flag values,
-  non-array `array_reverse` operands, non-bool
+  non-array `array_reverse` operands, non-coercible
   `array_reverse` preserve-key flag values, non-array `array_slice`
   operands, non-int `array_slice` offsets, invalid `array_slice`
   nullable-int lengths, invalid `array_slice` bool preserve-key flag values, non-array
@@ -10026,8 +10025,10 @@
   reverse insertion order, reindex integer-keyed entries from zero, preserve
   string keys, and are also available through string-valued dynamic function
   calls. `array_reverse($array, true)` preserves both integer and string keys
-  while reversing insertion order. The optional `preserve_keys` argument must
-  evaluate to a boolean in the current subset; non-bool flag coercion,
+  while reversing insertion order. The optional `preserve_keys` argument uses
+  the PHP-internal bool boundary: scalar values are accepted by truthiness,
+  while arrays, objects, closures, and resources raise a catchable PHP-shaped
+  `TypeError`. PHP null or lossy scalar coercion deprecation warnings,
   reference/copy-on-write behavior, object handle identity preservation,
   resource values, and native lowering are not implemented.
   `array_slice($array, $offset)` accepts arrays and integer offsets, returns
@@ -10530,8 +10531,9 @@
   non-coercible `array_keys` strict-flag values, PHP null strict-flag
   deprecations, non-array or empty
   `array_rand` inputs, invalid `array_rand` counts, PHP RNG parity for
-  `array_rand`, non-bool
-  `array_reverse` preserve-key flag coercion, non-bool `array_slice`
+  `array_rand`, PHP null or lossy scalar `array_reverse` preserve-key
+  deprecation warnings, non-coercible `array_reverse` preserve-key flag values,
+  non-bool `array_slice`
   preserve-key flag coercion, non-int offset coercion, non-int/non-null length
   coercion, non-bool `array_chunk` preserve-key flag coercion,
   non-int/non-positive length coercion, broader `array_chunk`
@@ -11479,7 +11481,8 @@
   PHP null strict-flag deprecations, non-coercible strict-flag values, and
   unsupported loose array/object needle or haystack-value comparisons for the current
   array-search builtins
-- `array_reverse` non-bool `preserve_keys` coercion, reference/copy-on-write
+- `array_reverse` PHP null or lossy scalar `preserve_keys` deprecation
+  warnings, non-coercible `preserve_keys` flag values, reference/copy-on-write
   behavior, object handle identity preservation, resource values, and native
   lowering
 - `array_slice` non-int offset coercion, PHP deprecation warnings for weak
