@@ -273,6 +273,10 @@ fn class_registration_startup_fatal_message(error: &Diagnostic) -> Option<String
         .strip_prefix("unsupported class inheritance for ")
         .and_then(|message| message.split_once(": "))?;
 
+    if let Some(declaration) = reason.strip_prefix("declaration of ") {
+        return Some(format!("Declaration of {declaration}"));
+    }
+
     if let Some((class, interface)) = reason
         .strip_prefix("class ")
         .and_then(|reason| reason.split_once(" cannot extend interface "))
@@ -109252,6 +109256,13 @@ fn validate_interface_method_implementation(
                 ));
             }
 
+            let class_signature = public_method_signature(
+                method_signatures,
+                class,
+                class_id,
+                declaring_class_id,
+                &lookup_name,
+            );
             let interface_required = required_param_count(&method.function);
             let class_required = public_method_required_param_count(
                 method_signatures,
@@ -109260,26 +109271,23 @@ fn validate_interface_method_implementation(
                 declaring_class_id,
                 &lookup_name,
             );
-            if class_required > interface_required {
-                return Err(RuntimeError::unsupported_class_inheritance(
+            let class_param_count = class_signature
+                .as_ref()
+                .map_or(0, |signature| signature.params.len());
+            if class_required > interface_required
+                || class_param_count < method.function.params.len()
+            {
+                return Err(incompatible_declaration_error(
                     &class.name,
-                    format!(
-                        "method {}::{}() cannot require more parameters than interface method {}::{}()",
+                    method_signature_compatibility_signature(
                         declaring_class_name,
                         class_method.name(),
-                        method_interface_name,
-                        method.function.name
+                        class_signature.as_ref(),
                     ),
+                    function_decl_compatibility_signature(&method_interface_name, &method.function),
                 ));
             }
 
-            let class_signature = public_method_signature(
-                method_signatures,
-                class,
-                class_id,
-                declaring_class_id,
-                &lookup_name,
-            );
             validate_interface_parameter_type_compatibility(
                 classes,
                 interface_lookup,
@@ -109532,16 +109540,17 @@ fn validate_interface_parameter_type_compatibility(
             class_param.type_decl.as_deref(),
         ) {
             (None, Some(class_type)) => {
-                return Err(RuntimeError::unsupported_class_inheritance(
+                let _ = class_type;
+                return Err(incompatible_declaration_error(
                     class_name,
-                    format!(
-                        "method {}::{}() cannot add parameter type {} for parameter ${} when interface method {}::{}() has no parameter type",
+                    method_signature_compatibility_signature(
                         declaring_class_name,
                         class_method_name,
-                        class_type,
-                        class_param.name,
+                        Some(class_signature),
+                    ),
+                    function_decl_compatibility_signature(
                         interface_name,
-                        interface_method.function.name
+                        &interface_method.function,
                     ),
                 ));
             }
@@ -109553,17 +109562,16 @@ fn validate_interface_parameter_type_compatibility(
                     class_type,
                 ) =>
             {
-                return Err(RuntimeError::unsupported_class_inheritance(
+                return Err(incompatible_declaration_error(
                     class_name,
-                    format!(
-                        "method {}::{}() parameter ${} type {} is incompatible with interface method {}::{}() parameter type {}",
+                    method_signature_compatibility_signature(
                         declaring_class_name,
                         class_method_name,
-                        class_param.name,
-                        class_type,
+                        Some(class_signature),
+                    ),
+                    function_decl_compatibility_signature(
                         interface_name,
-                        interface_method.function.name,
-                        interface_type
+                        &interface_method.function,
                     ),
                 ));
             }
@@ -109596,16 +109604,14 @@ fn validate_interface_return_type_compatibility(
             .map(|decl| decl.text.as_str()),
         class_signature.return_type.as_deref(),
     ) {
-        (Some(interface_type), None) => Err(RuntimeError::unsupported_class_inheritance(
+        (Some(_), None) => Err(incompatible_declaration_error(
             class_name,
-            format!(
-                "method {}::{}() must declare return type {} to match interface method {}::{}()",
+            method_signature_compatibility_signature(
                 declaring_class_name,
                 class_method_name,
-                interface_type,
-                interface_name,
-                interface_method.function.name
+                Some(class_signature),
             ),
+            function_decl_compatibility_signature(interface_name, &interface_method.function),
         )),
         (Some(interface_type), Some(class_type))
             if !is_compatible_return_type_override(
@@ -109615,17 +109621,14 @@ fn validate_interface_return_type_compatibility(
                 class_type,
             ) =>
         {
-            Err(RuntimeError::unsupported_class_inheritance(
+            Err(incompatible_declaration_error(
                 class_name,
-                format!(
-                    "method {}::{}() return type {} is incompatible with interface method {}::{}() return type {}",
+                method_signature_compatibility_signature(
                     declaring_class_name,
                     class_method_name,
-                    class_type,
-                    interface_name,
-                    interface_method.function.name,
-                    interface_type
+                    Some(class_signature),
                 ),
+                function_decl_compatibility_signature(interface_name, &interface_method.function),
             ))
         }
         _ => Ok(()),
@@ -109726,6 +109729,128 @@ fn method_signature(
                 attributes: param.attributes.clone(),
             })
             .collect(),
+    }
+}
+
+fn incompatible_declaration_error(
+    class_name: &str,
+    child_signature: String,
+    inherited_signature: String,
+) -> RuntimeError {
+    RuntimeError::unsupported_class_inheritance(
+        class_name,
+        format!("declaration of {child_signature} must be compatible with {inherited_signature}"),
+    )
+}
+
+fn function_decl_compatibility_signature(class_name: &str, function: &FunctionDecl) -> String {
+    let params = function
+        .params
+        .iter()
+        .map(function_param_compatibility_signature)
+        .collect::<Vec<_>>()
+        .join(", ");
+    let return_type = function
+        .return_type
+        .as_ref()
+        .map(|decl| format!(": {}", decl.text))
+        .unwrap_or_default();
+    format!("{class_name}::{}({params}){return_type}", function.name)
+}
+
+fn method_signature_compatibility_signature(
+    class_name: &str,
+    method_name: &str,
+    signature: Option<&MethodSignature>,
+) -> String {
+    let Some(signature) = signature else {
+        return format!("{class_name}::{method_name}()");
+    };
+    let params = signature
+        .params
+        .iter()
+        .map(parameter_signature_compatibility_signature)
+        .collect::<Vec<_>>()
+        .join(", ");
+    let return_type = signature
+        .return_type
+        .as_ref()
+        .map(|decl| format!(": {decl}"))
+        .unwrap_or_default();
+    format!("{class_name}::{method_name}({params}){return_type}")
+}
+
+fn function_param_compatibility_signature(param: &FunctionParam) -> String {
+    let mut rendered = String::new();
+    if let Some(type_decl) = &param.type_decl {
+        rendered.push_str(&type_decl.text);
+        rendered.push(' ');
+    }
+    if param.by_reference {
+        rendered.push('&');
+    }
+    if param.is_variadic {
+        rendered.push_str("...");
+    }
+    rendered.push('$');
+    rendered.push_str(&param.name);
+    if let Some(default) = &param.default {
+        rendered.push_str(" = ");
+        rendered.push_str(&compatibility_default_expr(default));
+    }
+    rendered
+}
+
+fn parameter_signature_compatibility_signature(param: &ParameterSignature) -> String {
+    let mut rendered = String::new();
+    if let Some(type_decl) = &param.type_decl {
+        rendered.push_str(type_decl);
+        rendered.push(' ');
+    }
+    if param.by_reference {
+        rendered.push('&');
+    }
+    if param.is_variadic {
+        rendered.push_str("...");
+    }
+    rendered.push('$');
+    rendered.push_str(&param.name);
+    if let Some(default) = &param.default {
+        rendered.push_str(" = ");
+        rendered.push_str(&compatibility_default_expr(default));
+    }
+    rendered
+}
+
+fn compatibility_default_expr(expr: &Expr) -> String {
+    match expr {
+        Expr::Null(_) => "NULL".to_string(),
+        Expr::Bool(value, _) => {
+            if *value {
+                "true".to_string()
+            } else {
+                "false".to_string()
+            }
+        }
+        Expr::Int(value, _) => value.to_string(),
+        Expr::Float(value, _) => value.to_string(),
+        Expr::String(value, _) => format!("'{}'", value.replace('\\', "\\\\").replace('\'', "\\'")),
+        Expr::Array { items, .. } if items.is_empty() => "array()".to_string(),
+        Expr::Array { items, .. } => {
+            let values = items
+                .iter()
+                .map(|item| compatibility_default_expr(&item.value))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("array({values})")
+        }
+        Expr::Unary { op, expr, .. } => match op {
+            UnaryOp::Negate => format!("-{}", compatibility_default_expr(expr)),
+            UnaryOp::Plus => compatibility_default_expr(expr),
+            _ => "<expr>".to_string(),
+        },
+        Expr::GlobalConstant { name, .. } => name.clone(),
+        _ => "<expr>".to_string(),
     }
 }
 
@@ -112234,15 +112359,16 @@ fn validate_inherited_method_signature_compatibility(
                 return Ok(());
             };
 
-            if child_required > parent_signature.required_params {
-                return Err(RuntimeError::unsupported_class_inheritance(
+            if child_required > parent_signature.required_params
+                || method.function.params.len() < parent_signature.params.len()
+            {
+                return Err(incompatible_declaration_error(
                     class_name,
-                    format!(
-                        "method {}::{}() cannot require more parameters than inherited method {}::{}()",
-                        class_name,
-                        method.function.name,
+                    function_decl_compatibility_signature(class_name, &method.function),
+                    method_signature_compatibility_signature(
                         parent.name(),
-                        parent_method.name()
+                        parent_method.name(),
+                        Some(parent_signature),
                     ),
                 ));
             }
@@ -112260,16 +112386,14 @@ fn validate_inherited_method_signature_compatibility(
                         .map(|decl| decl.text.as_str()),
                 ) {
                     (None, Some(child_type)) => {
-                        return Err(RuntimeError::unsupported_class_inheritance(
+                        let _ = child_type;
+                        return Err(incompatible_declaration_error(
                             class_name,
-                            format!(
-                                "method {}::{}() cannot add parameter type {} for parameter ${} when inherited method {}::{}() has no parameter type",
-                                class_name,
-                                method.function.name,
-                                child_type,
-                                child_param.name,
+                            function_decl_compatibility_signature(class_name, &method.function),
+                            method_signature_compatibility_signature(
                                 parent.name(),
-                                parent_method.name()
+                                parent_method.name(),
+                                Some(parent_signature),
                             ),
                         ));
                     }
@@ -112281,17 +112405,13 @@ fn validate_inherited_method_signature_compatibility(
                             child_type,
                         ) =>
                     {
-                        return Err(RuntimeError::unsupported_class_inheritance(
+                        return Err(incompatible_declaration_error(
                             class_name,
-                            format!(
-                                "method {}::{}() parameter ${} type {} is incompatible with inherited method {}::{}() parameter type {}",
-                                class_name,
-                                method.function.name,
-                                child_param.name,
-                                child_type,
+                            function_decl_compatibility_signature(class_name, &method.function),
+                            method_signature_compatibility_signature(
                                 parent.name(),
                                 parent_method.name(),
-                                parent_type
+                                Some(parent_signature),
                             ),
                         ));
                     }
@@ -112308,15 +112428,14 @@ fn validate_inherited_method_signature_compatibility(
                     .map(|decl| decl.text.as_str()),
             ) {
                 (Some(parent_type), None) => {
-                    return Err(RuntimeError::unsupported_class_inheritance(
+                    let _ = parent_type;
+                    return Err(incompatible_declaration_error(
                         class_name,
-                        format!(
-                            "method {}::{}() must declare return type {} to match inherited method {}::{}()",
-                            class_name,
-                            method.function.name,
-                            parent_type,
+                        function_decl_compatibility_signature(class_name, &method.function),
+                        method_signature_compatibility_signature(
                             parent.name(),
-                            parent_method.name()
+                            parent_method.name(),
+                            Some(parent_signature),
                         ),
                     ));
                 }
@@ -112328,16 +112447,13 @@ fn validate_inherited_method_signature_compatibility(
                         child_type,
                     ) =>
                 {
-                    return Err(RuntimeError::unsupported_class_inheritance(
+                    return Err(incompatible_declaration_error(
                         class_name,
-                        format!(
-                            "method {}::{}() return type {} is incompatible with inherited method {}::{}() return type {}",
-                            class_name,
-                            method.function.name,
-                            child_type,
+                        function_decl_compatibility_signature(class_name, &method.function),
+                        method_signature_compatibility_signature(
                             parent.name(),
                             parent_method.name(),
-                            parent_type
+                            Some(parent_signature),
                         ),
                     ));
                 }

@@ -3469,7 +3469,7 @@ class Service implements Logger {
     assert_eq!(extra_required_error.column, 1);
     assert_eq!(
         extra_required_error.message,
-        "unsupported class inheritance for Service: method Service::log() cannot require more parameters than interface method Logger::log()"
+        "Declaration of Service::log($message, $context) must be compatible with Logger::log($message)"
     );
 
     let optional_interface_error = runtime_error(
@@ -3487,7 +3487,7 @@ class Service implements Logger {
     assert_eq!(optional_interface_error.column, 1);
     assert_eq!(
         optional_interface_error.message,
-        "unsupported class inheritance for Service: method Service::log() cannot require more parameters than interface method Logger::log()"
+        "Declaration of Service::log($message) must be compatible with Logger::log($message = 'default')"
     );
 
     let inherited_error = runtime_error(
@@ -3507,7 +3507,40 @@ class Child extends Base {}
     assert_eq!(inherited_error.column, 1);
     assert_eq!(
         inherited_error.message,
-        "unsupported class inheritance for Child: method Base::log() cannot require more parameters than interface method Logger::log()"
+        "Declaration of Base::log($message, $context) must be compatible with Logger::log($message)"
+    );
+}
+
+#[test]
+fn method_signature_compatibility_reports_php_startup_fatals() {
+    assert_php_startup_fatal(
+        r#"<?php
+interface Factory {
+    public function __construct($name);
+}
+
+class Service implements Factory {
+    public function __construct() {}
+}
+"#,
+        "tests/classes/interface_constructor_compatibility.php",
+        6,
+        "Declaration of Service::__construct() must be compatible with Factory::__construct($name)",
+    );
+
+    assert_php_startup_fatal(
+        r#"<?php
+class Base {
+    public function foo($arg = 1) {}
+}
+
+class Child extends Base {
+    public function foo() {}
+}
+"#,
+        "tests/classes/inherited_optional_parameter_compatibility.php",
+        7,
+        "Declaration of Child::foo() must be compatible with Base::foo($arg = 1)",
     );
 }
 
@@ -3550,7 +3583,7 @@ class Service implements Logger {
     assert_eq!(added_type_error.column, 1);
     assert_eq!(
         added_type_error.message,
-        "unsupported class inheritance for Service: method Service::log() cannot add parameter type string for parameter $message when interface method Logger::log() has no parameter type"
+        "Declaration of Service::log(string $message) must be compatible with Logger::log($message)"
     );
 
     let changed_type_error = runtime_error(
@@ -3568,7 +3601,7 @@ class Service implements Logger {
     assert_eq!(changed_type_error.column, 1);
     assert_eq!(
         changed_type_error.message,
-        "unsupported class inheritance for Service: method Service::log() parameter $message type int is incompatible with interface method Logger::log() parameter type string"
+        "Declaration of Service::log(int $message) must be compatible with Logger::log(string $message)"
     );
 
     let inherited_changed_type_error = runtime_error(
@@ -3588,7 +3621,7 @@ class Child extends Base {}
     assert_eq!(inherited_changed_type_error.column, 1);
     assert_eq!(
         inherited_changed_type_error.message,
-        "unsupported class inheritance for Child: method Base::log() parameter $message type int is incompatible with interface method Logger::log() parameter type string"
+        "Declaration of Base::log(int $message) must be compatible with Logger::log(string $message)"
     );
 }
 
@@ -3639,7 +3672,7 @@ class Service implements Provider {
     assert_eq!(omitted_return_type_error.column, 1);
     assert_eq!(
         omitted_return_type_error.message,
-        "unsupported class inheritance for Service: method Service::label() must declare return type string to match interface method Provider::label()"
+        "Declaration of Service::label() must be compatible with Provider::label(): string"
     );
 
     let changed_return_type_error = runtime_error(
@@ -3657,7 +3690,7 @@ class Service implements Provider {
     assert_eq!(changed_return_type_error.column, 1);
     assert_eq!(
         changed_return_type_error.message,
-        "unsupported class inheritance for Service: method Service::label() return type int is incompatible with interface method Provider::label() return type string"
+        "Declaration of Service::label(): int must be compatible with Provider::label(): string"
     );
 
     let inherited_changed_return_type_error = runtime_error(
@@ -3677,7 +3710,7 @@ class Child extends Base {}
     assert_eq!(inherited_changed_return_type_error.column, 1);
     assert_eq!(
         inherited_changed_return_type_error.message,
-        "unsupported class inheritance for Child: method Base::label() return type int is incompatible with interface method Provider::label() return type string"
+        "Declaration of Base::label(): int must be compatible with Provider::label(): string"
     );
 }
 
@@ -14425,10 +14458,10 @@ class Child extends Base {
 "#,
     );
     assert_eq!(error.line, 9);
-    assert_eq!(error.column, 12);
+    assert_eq!(error.column, 1);
     assert_eq!(
         error.message,
-        "unsupported class inheritance for Child: method Child::label() cannot require more parameters than inherited method Base::label()"
+        "Declaration of Child::label($prefix, $value) must be compatible with Base::label($value)"
     );
 
     let optional_parent_error = runtime_error(
@@ -14447,10 +14480,32 @@ class Child extends Base {
 "#,
     );
     assert_eq!(optional_parent_error.line, 9);
-    assert_eq!(optional_parent_error.column, 12);
+    assert_eq!(optional_parent_error.column, 1);
     assert_eq!(
         optional_parent_error.message,
-        "unsupported class inheritance for Child: method Child::compute() cannot require more parameters than inherited method Base::compute()"
+        "Declaration of Child::compute($value) must be compatible with Base::compute($value = 'base')"
+    );
+
+    let dropped_optional_parent_error = runtime_error(
+        r#"<?php
+class Base {
+    public function compute($value = 1) {
+        return $value;
+    }
+}
+
+class Child extends Base {
+    public function compute() {
+        return "child";
+    }
+}
+"#,
+    );
+    assert_eq!(dropped_optional_parent_error.line, 9);
+    assert_eq!(dropped_optional_parent_error.column, 1);
+    assert_eq!(
+        dropped_optional_parent_error.message,
+        "Declaration of Child::compute() must be compatible with Base::compute($value = 1)"
     );
 }
 
@@ -14521,10 +14576,10 @@ class Child extends Base {
 "#,
     );
     assert_eq!(added_type_error.line, 9);
-    assert_eq!(added_type_error.column, 12);
+    assert_eq!(added_type_error.column, 1);
     assert_eq!(
         added_type_error.message,
-        "unsupported class inheritance for Child: method Child::label() cannot add parameter type string for parameter $value when inherited method Base::label() has no parameter type"
+        "Declaration of Child::label(string $value) must be compatible with Base::label($value)"
     );
 
     let changed_type_error = runtime_error(
@@ -14543,10 +14598,10 @@ class Child extends Base {
 "#,
     );
     assert_eq!(changed_type_error.line, 9);
-    assert_eq!(changed_type_error.column, 12);
+    assert_eq!(changed_type_error.column, 1);
     assert_eq!(
         changed_type_error.message,
-        "unsupported class inheritance for Child: method Child::label() parameter $value type int is incompatible with inherited method Base::label() parameter type string"
+        "Declaration of Child::label(int $value) must be compatible with Base::label(string $value)"
     );
 }
 
@@ -14591,10 +14646,10 @@ class Child extends Base {
 "#,
     );
     assert_eq!(omitted_return_type_error.line, 9);
-    assert_eq!(omitted_return_type_error.column, 12);
+    assert_eq!(omitted_return_type_error.column, 1);
     assert_eq!(
         omitted_return_type_error.message,
-        "unsupported class inheritance for Child: method Child::id() must declare return type string to match inherited method Base::id()"
+        "Declaration of Child::id() must be compatible with Base::id(): string"
     );
 
     let changed_return_type_error = runtime_error(
@@ -14613,10 +14668,10 @@ class Child extends Base {
 "#,
     );
     assert_eq!(changed_return_type_error.line, 9);
-    assert_eq!(changed_return_type_error.column, 12);
+    assert_eq!(changed_return_type_error.column, 1);
     assert_eq!(
         changed_return_type_error.message,
-        "unsupported class inheritance for Child: method Child::id() return type int is incompatible with inherited method Base::id() return type string"
+        "Declaration of Child::id(): int must be compatible with Base::id(): string"
     );
 }
 
@@ -14701,10 +14756,10 @@ class PluginResolver extends BaseResolver {
 "#,
     );
     assert_eq!(invalid_parameter_error.line, 11);
-    assert_eq!(invalid_parameter_error.column, 12);
+    assert_eq!(invalid_parameter_error.column, 1);
     assert_eq!(
         invalid_parameter_error.message,
-        "unsupported class inheritance for PluginResolver: method PluginResolver::resolve() parameter $target type OtherTarget is incompatible with inherited method BaseResolver::resolve() parameter type ChildTarget"
+        "Declaration of PluginResolver::resolve(OtherTarget $target) must be compatible with BaseResolver::resolve(ChildTarget $target)"
     );
 
     let invalid_return_error = runtime_error(
@@ -14726,7 +14781,7 @@ class PluginResolver implements Resolver {
     assert_eq!(invalid_return_error.column, 1);
     assert_eq!(
         invalid_return_error.message,
-        "unsupported class inheritance for PluginResolver: method PluginResolver::resolve() return type OtherTarget is incompatible with interface method Resolver::resolve() return type BaseTarget"
+        "Declaration of PluginResolver::resolve(): OtherTarget must be compatible with Resolver::resolve(): BaseTarget"
     );
 }
 
