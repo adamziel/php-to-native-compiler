@@ -25,6 +25,7 @@ use php_runtime::{
 use regex::bytes::{Captures as RegexCaptures, Regex, RegexBuilder};
 use sha2::{Sha224, Sha256, Sha384, Sha512, Sha512_224, Sha512_256};
 use sha3::{Sha3_224, Sha3_256, Sha3_384, Sha3_512};
+use whirlpool::Whirlpool;
 
 use crate::ast::{
     ArrayItem, AssignTarget, AttributeDecl, BinaryOp, CastKind, CatchClause, ClassConstantDecl,
@@ -132754,6 +132755,7 @@ enum PhpHashAlgorithm {
     Sha3_256,
     Sha3_384,
     Sha3_512,
+    Whirlpool,
     Adler32,
     Crc32,
     Crc32b,
@@ -133108,6 +133110,7 @@ fn php_hash_algorithm(name: &str) -> Option<PhpHashAlgorithm> {
         "sha3-256" => Some(PhpHashAlgorithm::Sha3_256),
         "sha3-384" => Some(PhpHashAlgorithm::Sha3_384),
         "sha3-512" => Some(PhpHashAlgorithm::Sha3_512),
+        "whirlpool" => Some(PhpHashAlgorithm::Whirlpool),
         "adler32" => Some(PhpHashAlgorithm::Adler32),
         "crc32" => Some(PhpHashAlgorithm::Crc32),
         "crc32b" => Some(PhpHashAlgorithm::Crc32b),
@@ -133145,6 +133148,7 @@ fn php_hash_digest_bytes(algorithm: PhpHashAlgorithm, bytes: &[u8]) -> Vec<u8> {
         PhpHashAlgorithm::Sha3_256 => Sha3_256::digest(bytes).to_vec(),
         PhpHashAlgorithm::Sha3_384 => Sha3_384::digest(bytes).to_vec(),
         PhpHashAlgorithm::Sha3_512 => Sha3_512::digest(bytes).to_vec(),
+        PhpHashAlgorithm::Whirlpool => Whirlpool::digest(bytes).to_vec(),
         PhpHashAlgorithm::Adler32 => php_hash_adler32_digest_bytes(bytes).to_vec(),
         PhpHashAlgorithm::Crc32 => php_hash_crc32_digest_bytes(bytes).to_vec(),
         PhpHashAlgorithm::Crc32b => php_hash_crc32b_digest_bytes(bytes).to_vec(),

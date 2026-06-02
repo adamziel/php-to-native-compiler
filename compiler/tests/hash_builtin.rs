@@ -263,6 +263,32 @@ d15dadceaa4d5d7bb3b48f446421d542e08ad8887305e28d58335795\n\
 }
 
 #[test]
+fn hash_whirlpool_algorithm_is_available() {
+    let execution = run_source(
+        r#"<?php
+$subject = "---qwertzuiopasdfghjklyxcvbnm------qwertzuiopasdfghjklyxcvbnm---";
+echo hash("whirlpool", ""), "\n";
+echo hash("whirlpool", $subject), "\n";
+echo substr(hash("whirlpool", str_repeat($subject . "0", 1000)), 0, 32), "\n";
+echo bin2hex(hash("whirlpool", "abc", true)), "\n";
+echo in_array("whirlpool", hash_algos(), true) ? "listed" : "missing";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "19fa61d75522a4669b44e39c1d2e1726c530232130d407f89afee0964997f7a73e83be698b288febcf88e3e03c4f0757ea8964e59b63d93708b138cc42a66eb3\n\
+916ce6431d2f384be68d96bcaba800c21b82e9cc2f07076554c9557f85476b5d8f2b263951121fa955e34b31a4cdc857bdf076b123c2252543dcef34f84a7ef3\n\
+b51984710d11893ac08e10529519f980\n\
+4e2448a4c6f486bb16b6562c73b4020bf3043e3a731bce721ae1b303d97e6d4c7181eebdb6c57e277d0e34957114cbd6c797fc9d95d8b582d225292076d4eef5\n\
+listed"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn hash_rejects_unknown_algorithms() {
     let execution = run_source("<?php\nhash('foo', '');\n").unwrap();
     assert_eq!(execution.stderr, "");

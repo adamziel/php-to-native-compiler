@@ -4,6 +4,20 @@
 
 Implemented:
 
+- Added a bounded Whirlpool execution lane for the selected ext/hash
+  `whirlpool.phpt` row. `hash()` now executes the advertised `whirlpool`
+  algorithm through the shared scalar/null data conversion, empty-options,
+  raw/hex output, and algorithm dispatcher path using the RustCrypto
+  `whirlpool` crate. Focused Rust passed the targeted Whirlpool regression and
+  the full `hash_builtin` file after currentization; `cargo build -p phpc
+  --bin phpc` passed; a direct `phpc run` probe proved Whirlpool hex prefix,
+  raw output, and `hash_algos()` membership; selected PHPT proof passed for
+  `ext/hash/tests/whirlpool.phpt`; `cargo fmt --check` and `git diff --check`
+  passed. Unsupported edges remain hash execution outside the bounded
+  MD2/MD4/MD5/SHA-1/SHA-2/SHA-3/Whirlpool/checksum subset, non-empty `hash()`
+  options arrays, file/HMAC APIs, streaming contexts, HKDF/PBKDF2 output,
+  broad exact diagnostics/coercions, provider policy, and native lowering.
+
 - Added a bounded MD2/MD4 execution lane for the selected ext/hash vector rows.
   `hash()` now executes the advertised `md2` and `md4` algorithms through the
   shared raw/hex digest dispatcher, using the RustCrypto `md2` and `md4`
