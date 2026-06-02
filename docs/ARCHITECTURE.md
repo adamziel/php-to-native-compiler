@@ -2685,6 +2685,15 @@ scalar/null string-convertible values. It applies ASCII lowercase mapping over
 runtime UTF-8 strings so WordPress bootstrap can normalize simple option
 suffixes, while locale-sensitive casing, full Unicode case folding, binary
 string behavior beyond valid UTF-8, and native lowering remain out of scope.
+`ucfirst()`, `lcfirst()`, and `ucwords()` are interpreter-only bounded
+ASCII byte-casing builtins for current scalar/null string-convertible values
+and supported visible `__toString()` objects. They use the shared PHP-shaped
+string argument boundary before casing, so direct calls and string-valued
+dynamic calls reject arrays, resources, closures, and non-stringable objects
+through catchable type diagnostics. `ucwords()` applies that same boundary to
+the optional separator byte list. Unicode titlecasing, locale behavior, exact
+invalid `__toString()` return diagnostics, references/COW, and native lowering
+remain out of scope.
 `trim()` is an interpreter-only bounded string-normalization builtin for
 current scalar/null string-convertible values and supported `__toString()`
 objects. The current slice implements PHP's default whitespace byte mask,

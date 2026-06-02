@@ -4002,7 +4002,12 @@
   `random_int()`/`random_bytes()`/`lcg_value()` return PHP-shaped but
   deterministic placeholder values. These APIs are not cryptographic entropy
   sources and do not model PHP's RNG state, distribution, seeding, or native
-  lowering. `wordwrap()` supports scalar/null
+  lowering. `ucfirst()`, `lcfirst()`, and
+  `ucwords($string, $separators = " \t\r\n\v\f")` support scalar/null
+  string-convertible input and supported visible `__toString()` objects over
+  current runtime bytes. `ucwords()` also applies the same string boundary to
+  the optional separator bytes. These helpers perform ASCII-only byte casing.
+  `wordwrap()` supports scalar/null
   string-convertible input, integer width, non-empty string break values, and
   the `cut_long_words` flag over current byte strings. `str_word_count()`
   supports formats `0`, `1`, and `2` with the current ASCII letter rules,
@@ -11808,6 +11813,12 @@
   string-convertible subset: locale-sensitive case mapping, full Unicode case
   folding, array/object/resource coercions, exact PHP diagnostics, and native
   lowering outside direct scalar calls and function-table introspection
+- `ucfirst()`/`lcfirst()`/`ucwords()` outside the current scalar/null
+  string-convertible plus supported visible `__toString()` object subset:
+  locale-sensitive casing, Unicode titlecasing, arrays, resources, closures,
+  non-stringable objects, exact invalid `__toString()` return diagnostics,
+  binary edge parity beyond represented runtime bytes, references/COW, and
+  native lowering beyond function-table introspection
 - `trim()` outside the current scalar/null and supported `__toString()` object
   subset with default mask, empty masks, literal masks, and simple increasing
   custom character-mask ranges: broader binary/null-byte string edge cases

@@ -24,6 +24,43 @@ echo ucwords("test(braced)words", "()");
 }
 
 #[test]
+fn ascii_word_case_helpers_accept_stringable_objects_and_report_type_errors() {
+    let execution = run_source(
+        r#"<?php
+class LowerWord { public function __toString() { return "hello"; } }
+class UpperWord { public function __toString() { return "Hello"; } }
+class Phrase { public function __toString() { return "alpha beta"; } }
+class Kebab { public function __toString() { return "alpha-beta"; } }
+class Separator { public function __toString() { return "-"; } }
+
+echo ucfirst(new LowerWord), "|";
+echo lcfirst(new UpperWord), "|";
+echo ucwords(new Phrase), "|";
+echo ucwords(new Kebab, new Separator), "|";
+$call = "ucfirst";
+echo $call(new Phrase), "|";
+try {
+    ucfirst([]);
+} catch (TypeError $e) {
+    echo $e->getMessage(), "|";
+}
+try {
+    ucwords("x", new stdClass);
+} catch (TypeError $e) {
+    echo $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "Hello|hello|Alpha Beta|Alpha-Beta|Alpha beta|ucfirst(): Argument #1 ($string) must be of type string, array given|ucwords(): Argument #2 ($separators) must be of type string, stdClass given"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn compound_concat_preserves_binary_string_bytes_for_string_helpers() {
     let execution = run_source(
         r#"<?php

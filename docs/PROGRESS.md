@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added a bounded ASCII word-case stringable-object conversion lane.
+  `phpc run` now routes `ucfirst($string)`, `lcfirst($string)`, and
+  `ucwords($string, $separators = ...)` through the shared PHP-shaped string
+  argument boundary for their string operands. Direct and string-valued dynamic
+  calls accept supported visible `__toString()` objects, preserve the existing
+  ASCII byte-casing behavior, and report catchable PHP-shaped `TypeError`s for
+  arrays, resources, closures, and non-stringable objects. Focused proof
+  covers the Rust
+  `ascii_word_case_helpers_accept_stringable_objects_and_report_type_errors`
+  regression, direct CLI probes, and selected public PHPT rows for
+  `ucfirst()`, `lcfirst()`, and `ucwords()`. Unsupported edges remain exact
+  invalid `__toString()` return diagnostics, Unicode or locale-sensitive
+  titlecasing, exact binary-string edge parity beyond represented runtime
+  bytes, references/COW, and native lowering for dynamic object operands.
+
 - Added a bounded `array_reduce()` by-reference callback-parameter warning
   lane. String user-function callbacks, closure callbacks, and supported
   public array-callable user methods whose reached parameters are declared by

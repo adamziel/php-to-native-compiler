@@ -85391,9 +85391,9 @@ impl Interpreter {
             "str_shuffle" => call_str_shuffle(&args, span),
             "str_rot13" => call_str_rot13(&args, span),
             "escapeshellarg" => call_escapeshellarg(&args, span),
-            "ucfirst" => call_ucfirst(&args, span),
-            "lcfirst" => call_lcfirst(&args, span),
-            "ucwords" => call_ucwords(&args, span),
+            "ucfirst" => call_ucfirst(self, &args, span),
+            "lcfirst" => call_lcfirst(self, &args, span),
+            "ucwords" => call_ucwords(self, &args, span),
             "quotemeta" => call_quotemeta(&args, span),
             "htmlspecialchars" => call_htmlspecialchars(self, &args, span),
             "htmlentities" => call_htmlentities(self, &args, span),
@@ -118209,20 +118209,32 @@ fn call_count_chars(args: &[Value], span: Span) -> CompileResult<Value> {
     }
 }
 
-fn call_ucfirst(args: &[Value], span: Span) -> CompileResult<Value> {
+fn call_ucfirst(interpreter: &mut Interpreter, args: &[Value], span: Span) -> CompileResult<Value> {
     expect_arity("ucfirst", args, 1, span)?;
 
-    let mut value = string_compare_argument_bytes("ucfirst()", "string", &args[0], span)?;
+    let mut value = interpreter.php_string_argument_bytes_with_magic(
+        "ucfirst()",
+        1,
+        "string",
+        &args[0],
+        span,
+    )?;
     if let Some(first) = value.first_mut() {
         *first = (*first).to_ascii_uppercase();
     }
     Ok(interpreter_value_from_php_string_bytes(value))
 }
 
-fn call_lcfirst(args: &[Value], span: Span) -> CompileResult<Value> {
+fn call_lcfirst(interpreter: &mut Interpreter, args: &[Value], span: Span) -> CompileResult<Value> {
     expect_arity("lcfirst", args, 1, span)?;
 
-    let mut value = string_compare_argument_bytes("lcfirst()", "string", &args[0], span)?;
+    let mut value = interpreter.php_string_argument_bytes_with_magic(
+        "lcfirst()",
+        1,
+        "string",
+        &args[0],
+        span,
+    )?;
     if let Some(first) = value.first_mut() {
         *first = (*first).to_ascii_lowercase();
     }
@@ -119024,7 +119036,7 @@ fn html_extra_entity_at(value: &[u8], index: usize) -> Option<(usize, &'static s
     None
 }
 
-fn call_ucwords(args: &[Value], span: Span) -> CompileResult<Value> {
+fn call_ucwords(interpreter: &mut Interpreter, args: &[Value], span: Span) -> CompileResult<Value> {
     if !(1..=2).contains(&args.len()) {
         return Err(runtime_error(
             span,
@@ -119036,11 +119048,21 @@ fn call_ucwords(args: &[Value], span: Span) -> CompileResult<Value> {
         ));
     }
 
-    let mut value = string_compare_argument_bytes("ucwords()", "string", &args[0], span)?;
+    let mut value = interpreter.php_string_argument_bytes_with_magic(
+        "ucwords()",
+        1,
+        "string",
+        &args[0],
+        span,
+    )?;
     let delimiters = match args.get(1) {
-        Some(delimiters) => {
-            string_compare_argument_bytes("ucwords()", "separators", delimiters, span)?
-        }
+        Some(delimiters) => interpreter.php_string_argument_bytes_with_magic(
+            "ucwords()",
+            2,
+            "separators",
+            delimiters,
+            span,
+        )?,
         None => PHP_UCWORDS_DEFAULT_DELIMITERS.to_vec(),
     };
 
