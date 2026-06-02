@@ -4000,10 +4000,12 @@
   replacement result without writing count output. This is a bounded
   output-parameter path, not true PHP references. `str_ireplace()` supports the
   same direct `$count` output parameter and uses ASCII case-insensitive byte
-  matching. Resource search operands raise a catchable PHP-shaped `TypeError`
-  before count writeback. Recursive arrays, non-variable count targets,
-  indirect writable count output, full locale/Unicode case folding,
-  object/resource coercions outside the current string
+  matching. Top-level search, replacement, and subject operands accept
+  supported visible `__toString()` objects; resources, closures, and
+  non-stringable objects raise catchable PHP-shaped `array|string`
+  `TypeError`s before count writeback. Recursive arrays, non-variable count
+  targets, indirect writable count output, full locale/Unicode case folding,
+  nested object/resource array-element coercion parity beyond the current
   conversion hooks, exact warning behavior beyond the documented array
   conversion path, and native lowering remain unsupported.
   `strtok($string, $token)` and continuation calls `strtok($token)` support
@@ -12075,9 +12077,11 @@
   one-level array replacement/search/subject subset: recursive arrays,
   count writeback targets beyond direct variables, indirect writable count
   output, full locale/Unicode case folding, object/resource coercions outside
-  the current string conversion hooks, exact warning behavior beyond covered
-  null-argument deprecations, array conversion, resource-search TypeError, and
-  the callback by-value count warning, and native lowering beyond
+  the current top-level visible `__toString()` and `array|string` TypeError
+  boundary, nested array-element object/resource conversion parity, exact
+  warning behavior beyond covered null-argument deprecations, array
+  conversion, top-level `array|string` TypeErrors, and the callback by-value
+  count warning, and native lowering beyond
   function-table introspection
 - `implode()`/`join()` outside the current scalar/null array-value subset:
   legacy reversed argument order, nested arrays, object/resource values, exact

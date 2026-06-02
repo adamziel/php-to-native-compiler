@@ -4,6 +4,24 @@
 
 Implemented:
 
+- Added a bounded `str_replace()` / `str_ireplace()` top-level
+  `array|string` argument-boundary lane. Direct calls and string-valued
+  dynamic calls now accept supported visible `__toString()` objects for
+  top-level search, replacement, and subject operands, while resources,
+  closures, and non-stringable objects raise catchable PHP-shaped `TypeError`s
+  before aggregate count writeback. Existing scalar/null conversion, null
+  deprecations, one-level array search/replacement/subject behavior, nested
+  array `Array to string conversion` warnings, byte-preserving replacement,
+  ASCII-insensitive `str_ireplace()` matching, callback by-value count
+  warnings, metadata visibility, and native-lowering rejection remain
+  unchanged. Focused proof covers the Rust
+  `str_replace_array_string_boundary_accepts_stringables_and_reports_type_errors`
+  regression and a direct `phpc run` probe. Unsupported edges remain nested
+  array-element object/resource conversion parity, exact invalid
+  `__toString()` return diagnostics, recursive arrays, non-variable and
+  indirect count outputs, full locale/Unicode case folding, references/COW,
+  and native lowering.
+
 - Added a bounded URL helper string-argument boundary lane. `parse_url()`,
   `urlencode()`, `rawurlencode()`, `rawurldecode()`, and the
   `http_build_query()` `$numeric_prefix` / non-null `$arg_separator` operands

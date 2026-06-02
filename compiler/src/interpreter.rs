@@ -66494,7 +66494,8 @@ impl Interpreter {
             }
             value => {
                 self.emit_str_replace_null_deprecation(function, 3, "subject", value, span)?;
-                let subject = self.str_replace_scalar_bytes(function, value, span)?;
+                let subject =
+                    self.str_replace_top_level_scalar_bytes(function, 3, "subject", value, span)?;
                 let (replaced, count) = apply_string_replacements(
                     subject,
                     &search_values,
@@ -66550,7 +66551,7 @@ impl Interpreter {
                 Ok(values)
             }
             value => self
-                .str_replace_scalar_bytes(function, value, span)
+                .str_replace_top_level_scalar_bytes(function, position, label, value, span)
                 .map(|value| vec![value]),
         }
     }
@@ -66574,6 +66575,41 @@ impl Interpreter {
             )?;
         }
         Ok(())
+    }
+
+    fn str_replace_top_level_scalar_bytes(
+        &mut self,
+        function: &'static str,
+        position: usize,
+        label: &'static str,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<Vec<u8>> {
+        if let Value::Object(object) = value {
+            if let Some(output) =
+                self.object_to_string_with_magic(object.clone(), function, span)?
+            {
+                return Ok(output.into_bytes());
+            }
+        }
+
+        if matches!(
+            value,
+            Value::Object(_) | Value::Closure(_) | Value::Resource(_)
+        ) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function,
+                    format!(
+                        "Argument #{position} (${label}) must be of type array|string, {} given",
+                        php_type_error_given(value)
+                    ),
+                ),
+            ));
+        }
+
+        self.str_replace_scalar_bytes(function, value, span)
     }
 
     fn str_replace_scalar_bytes(

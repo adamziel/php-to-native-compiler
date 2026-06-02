@@ -2790,8 +2790,11 @@ scalar/null and one-level array search, replacement, and subject values.
 Direct `str_replace()` and `str_ireplace()` calls plus string-valued dynamic
 calls write aggregate count output only for direct-variable fourth arguments.
 Callback-by-value fourth arguments use the PHP-shaped by-reference
-warning/result path without count writeback. Resource search operands now
-enter the catchable PHP-shaped TypeError path before count writeback.
+warning/result path without count writeback. Top-level search, replacement,
+and subject operands use the bounded `array|string` argument boundary:
+supported visible `__toString()` objects are accepted, while resources,
+closures, and non-stringable objects enter the catchable PHP-shaped
+`TypeError` path before count writeback.
 Native function-table introspection recognizes the name, while direct native
 calls still reject until string allocation, array forms, count-output
 references, and diagnostics have a lowered runtime model.

@@ -156,6 +156,54 @@ fclose($fp);
 }
 
 #[test]
+fn str_replace_array_string_boundary_accepts_stringables_and_reports_type_errors() {
+    let execution = run_source(
+        r#"<?php
+class SearchNeedle { public function __toString() { return "a"; } }
+class Replacement { public function __toString() { return "x"; } }
+class Subject { public function __toString() { return "abc"; } }
+
+$fp = fopen("php://memory", "w+");
+echo str_replace(new SearchNeedle, "z", "abc"), "|";
+echo str_replace("b", new Replacement, "abc"), "|";
+echo str_replace("b", "z", new Subject), "|";
+$call = "str_ireplace";
+echo $call(new SearchNeedle, "q", "ABC"), "|";
+
+try {
+    str_replace("a", $fp, "abc");
+} catch (TypeError $e) {
+    echo $e->getMessage(), "|";
+}
+try {
+    str_replace("a", "x", $fp);
+} catch (TypeError $e) {
+    echo $e->getMessage(), "|";
+}
+try {
+    str_replace(new stdClass, "x", "abc");
+} catch (TypeError $e) {
+    echo $e->getMessage(), "|";
+}
+try {
+    $call("a", new stdClass, "abc");
+} catch (TypeError $e) {
+    echo $e->getMessage();
+}
+fclose($fp);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "zbc|axc|azc|qBC|str_replace(): Argument #2 ($replace) must be of type array|string, resource given|str_replace(): Argument #3 ($subject) must be of type array|string, resource given|str_replace(): Argument #1 ($search) must be of type array|string, stdClass given|str_ireplace(): Argument #2 ($replace) must be of type array|string, stdClass given"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn str_replace_warns_for_top_level_null_search_only() {
     let execution = run_source(
         r#"<?php
