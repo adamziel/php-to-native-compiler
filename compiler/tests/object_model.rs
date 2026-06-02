@@ -1685,6 +1685,97 @@ echo "reached";
 }
 
 #[test]
+fn var_dump_uses_debug_info_array_properties() {
+    let execution = run_source(
+        r#"<?php
+class Foo {
+    public function __debugInfo() {
+        return array("a" => 1, "\0*\0b" => 2, "\0Foo\0c" => 3);
+    }
+}
+
+var_dump(new Foo());
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "object(Foo)#1 (3) {\n",
+            "  [\"a\"]=>\n",
+            "  int(1)\n",
+            "  [\"b\":protected]=>\n",
+            "  int(2)\n",
+            "  [\"c\":\"Foo\":private]=>\n",
+            "  int(3)\n",
+            "}\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn var_dump_debug_info_null_return_deprecates_and_dumps_empty_object() {
+    let execution = run_source(
+        r#"<?php
+set_error_handler(function($errno, $message) {
+    echo "deprecated:", $message, "\n";
+    return true;
+}, E_DEPRECATED);
+
+class Bar {
+    public function __debugInfo() {
+        return null;
+    }
+}
+
+var_dump(new Bar());
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "deprecated:Returning null from Bar::__debugInfo() is deprecated, return an empty array instead\n",
+            "object(Bar)#2 (0) {\n",
+            "}\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn var_dump_debug_info_non_array_return_emits_php_fatal() {
+    let execution = run_source_with_source_file(
+        r#"<?php
+class C {
+    public $val;
+    public function __debugInfo() {
+        return $this->val;
+    }
+    public function __construct($val) {
+        $this->val = $val;
+    }
+}
+
+$c = new C("foo");
+var_dump($c);
+echo "unreached";
+"#,
+        "Zend/tests/debug_info/debug_info-error-str.php",
+    )
+    .unwrap();
+
+    assert!(execution
+        .stdout
+        .starts_with("Fatal error: __debuginfo() must return an array in Zend/tests/debug_info/debug_info-error-str.php on line "));
+    assert!(!execution.stdout.contains("unreached"));
+    assert_eq!(execution.exit_code, 255);
+}
+
+#[test]
 fn magic_to_string_runs_for_echo_print_cast_and_concat() {
     let source = r#"<?php
 class Label {

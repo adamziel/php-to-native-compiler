@@ -7798,7 +7798,17 @@
   and `var_dump` are implemented for this ordered value model. Array walkers
   used by `print_r` and `var_dump` read cloned slot values, so reference-backed
   leaves produced by supported by-reference foreach and array-reference flows
-  render without flattening or requiring direct value borrows.
+  render without flattening or requiring direct value borrows. Top-level
+  `var_dump($object)` also invokes a visible zero-argument userland
+  `__debugInfo()` method in `phpc run`: array returns render as the object's
+  debug properties, encoded `"\0*\0name"` and `"\0Class\0name"` keys render as
+  protected/private labels, `null` returns emit the bounded PHP deprecation and
+  dump an empty object, and other returns stop with PHP's
+  `__debuginfo() must return an array` fatal. Recursive object dumps,
+  `print_r()` / `var_export()` `__debugInfo()` participation, exact nullable
+  `__debugInfo(): ?array` declaration deprecations, arbitrary non-public magic
+  visibility diagnostics, references/COW, and native lowering remain
+  unsupported.
 - Type coercion: scalar arithmetic supports `null`, booleans, integers, floats,
   and well-formed numeric strings with optional sign, decimal point, exponent,
   and surrounding ASCII whitespace. Interpreter arithmetic, unary minus,

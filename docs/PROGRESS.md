@@ -4,6 +4,24 @@
 
 Implemented:
 
+- Added a bounded `var_dump()` / `__debugInfo()` diagnostics lane for
+  `phpc run`. Top-level object dumps now invoke visible zero-argument userland
+  `__debugInfo()`, render array returns as debug properties including PHP's
+  protected/private encoded key labels, emit the bounded null-return
+  deprecation while dumping an empty object, and stop non-array/non-null returns
+  with PHP's `Fatal error: __debuginfo() must return an array` shape. Focused
+  proof covers the Rust `object_model` `debug_info` filter,
+  `cargo fmt --check`, `cargo build -q -p phpc --bin phpc`, and selected
+  public PHPT rows `debug_info-error-0.0.phpt`, `debug_info-error-0.phpt`,
+  `debug_info-error-1.0.phpt`, `debug_info-error-1.phpt`,
+  `debug_info-error-empty_str.phpt`, `debug_info-error-false.phpt`,
+  `debug_info-error-object.phpt`, `debug_info-error-resource.phpt`,
+  `debug_info-error-str.phpt`, and `debug_info-error-true.phpt`.
+  Unsupported edges remain recursive/nested object `__debugInfo()` dumps,
+  `print_r()` / `var_export()` participation, exact nullable declaration
+  deprecation startup ordering, arbitrary non-public magic visibility
+  diagnostics, references/COW, and native lowering.
+
 - Added a bounded `ArrayObject` / `ArrayIterator` user-comparator sorting
   lane. Core metadata now exposes `uasort()` and `uksort()` on both classes,
   and the interpreter dispatches those methods over the existing

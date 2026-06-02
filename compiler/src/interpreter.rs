@@ -20596,6 +20596,19 @@ impl Interpreter {
         self.exit_signal = Some(255);
     }
 
+    fn emit_debug_info_return_fatal(&mut self, span: Span) {
+        let file = self
+            .source_file
+            .clone()
+            .unwrap_or_else(|| "Command line code".to_string());
+        self.push_uncaught_fatal_separator();
+        self.push_unbuffered_stdout_text(&format!(
+            "Fatal error: __debuginfo() must return an array in {file} on line {}",
+            span.line
+        ));
+        self.exit_signal = Some(255);
+    }
+
     fn emit_display_warning(&mut self, message: impl AsRef<str>, span: Span) -> CompileResult<()> {
         self.emit_display_diagnostic("Warning", PHP_E_WARNING, message, span)
     }
@@ -49052,6 +49065,52 @@ impl Interpreter {
             )?;
         self.reference_return_binding_cell(function, binding, span, caller_scope)
             .map(Some)
+    }
+
+    fn call_debug_info_method(
+        &mut self,
+        object: PhpObject,
+        span: Span,
+    ) -> CompileResult<Option<Value>> {
+        let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
+            self.resolve_instance_method(object.class_id(), "__debugInfo")
+        else {
+            return Ok(None);
+        };
+
+        if is_static {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{class_name}::__debugInfo()"),
+                    "static magic instance methods are not implemented in the current subset",
+                ),
+            ));
+        }
+
+        self.ensure_instance_method_visible(
+            class_id,
+            &class_name,
+            "__debugInfo",
+            visibility,
+            span,
+        )?;
+
+        let function = self.method_function(class_id, &class_name, &resolved_method_name, span)?;
+        let function = function.as_ref();
+        ensure_user_function_arity(function, 0, span)?;
+        ensure_supported_function_metadata(function, span)?;
+        self.ensure_user_function_call_depth(function, span)?;
+
+        let called_class_id = object.class_id();
+        self.call_user_function_with_this(
+            function,
+            object,
+            Vec::new(),
+            Some(class_id),
+            Some(called_class_id),
+        )
+        .map(Some)
     }
 
     fn call_magic_instance_method_with_values(
@@ -85358,6 +85417,90 @@ impl Interpreter {
         }
     }
 
+    fn format_var_dump_argument_bytes(
+        &mut self,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<Option<Vec<u8>>> {
+        if let Value::Object(object) = value {
+            if let Some(debug_value) = self.call_debug_info_method(object.clone(), span)? {
+                return self.format_debug_info_var_dump_bytes(object, debug_value, 0, span);
+            }
+        }
+
+        self.format_var_dump_bytes(value, span).map(Some)
+    }
+
+    fn format_debug_info_var_dump_bytes(
+        &mut self,
+        object: &PhpObject,
+        debug_value: Value,
+        indent: usize,
+        span: Span,
+    ) -> CompileResult<Option<Vec<u8>>> {
+        let Value::Array(properties) = debug_value else {
+            if matches!(debug_value, Value::Null) {
+                self.emit_display_diagnostic(
+                    "Deprecated",
+                    PHP_E_DEPRECATED,
+                    format!(
+                        "Returning null from {}::__debugInfo() is deprecated, return an empty array instead",
+                        object.class_name()
+                    ),
+                    span,
+                )?;
+                return self
+                    .format_debug_info_array_var_dump_bytes(object, &PhpArray::new(), indent, span)
+                    .map(Some);
+            }
+
+            self.emit_debug_info_return_fatal(span);
+            return Ok(None);
+        };
+
+        self.format_debug_info_array_var_dump_bytes(object, &properties, indent, span)
+            .map(Some)
+    }
+
+    fn format_debug_info_array_var_dump_bytes(
+        &self,
+        object: &PhpObject,
+        properties: &PhpArray,
+        indent: usize,
+        span: Span,
+    ) -> CompileResult<Vec<u8>> {
+        let padding = "  ".repeat(indent);
+        let child_padding = "  ".repeat(indent + 1);
+        let serialize_precision = self.php_serialize_precision();
+        let mut output = format!(
+            "{padding}object({})#{} ({}) {{\n",
+            object.class_name(),
+            object.id(),
+            properties.len()
+        )
+        .into_bytes();
+
+        for entry in properties.entries() {
+            output.extend_from_slice(
+                format!(
+                    "{child_padding}[{}]=>\n",
+                    format_var_dump_debug_info_key(&entry.key)
+                )
+                .as_bytes(),
+            );
+            output.extend_from_slice(&format_var_dump_array_entry_bytes(
+                entry,
+                indent + 1,
+                span,
+                serialize_precision,
+                &|id| self.resource_type_label(id),
+            )?);
+        }
+
+        output.extend_from_slice(format!("{padding}}}\n").as_bytes());
+        Ok(output)
+    }
+
     fn format_var_dump_bytes(&self, value: &Value, span: Span) -> CompileResult<Vec<u8>> {
         if let Value::Object(object) = value {
             if self.is_spl_object_storage_object(object) {
@@ -91322,8 +91465,13 @@ impl Interpreter {
             },
             "var_dump" => {
                 for value in &args {
-                    let output = self.format_var_dump_bytes(value, span)?;
+                    let Some(output) = self.format_var_dump_argument_bytes(value, span)? else {
+                        break;
+                    };
                     self.append_output_bytes_at(&output, span);
+                    if self.exit_signal.is_some() {
+                        break;
+                    }
                 }
                 Ok(Value::Null)
             }
@@ -148976,6 +149124,24 @@ fn format_var_dump_key(key: &ArrayKey) -> String {
         ArrayKey::Int(value) => value.to_string(),
         ArrayKey::String(value) => format!("\"{value}\""),
     }
+}
+
+fn format_var_dump_debug_info_key(key: &ArrayKey) -> String {
+    let ArrayKey::String(value) = key else {
+        return format_var_dump_key(key);
+    };
+
+    if let Some(name) = value.strip_prefix("\0*\0") {
+        return format!("\"{name}\":protected");
+    }
+
+    if let Some(rest) = value.strip_prefix('\0') {
+        if let Some((class_name, name)) = rest.split_once('\0') {
+            return format!("\"{name}\":\"{class_name}\":private");
+        }
+    }
+
+    format_var_dump_key(key)
 }
 
 fn format_var_dump_float(value: f64) -> String {
