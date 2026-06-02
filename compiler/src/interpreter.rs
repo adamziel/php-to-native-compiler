@@ -92878,6 +92878,7 @@ impl Interpreter {
             "filter_var" => self.call_filter_var(&args, span),
             "filter_var_array" => self.call_filter_var_array(&args, span),
             "filter_input" => self.call_filter_input(&args, span),
+            "filter_input_array" => self.call_filter_input_array(&args, span),
             "gc_enable" => {
                 expect_arity(name, &args, 0, span)?;
                 Ok(Value::Bool(true))
@@ -110921,6 +110922,18 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 ),
             ],
         ),
+        "filter_input_array" => (
+            "array|false|null",
+            vec![
+                reflection_internal_param("type", "int"),
+                reflection_internal_optional_param(
+                    "options",
+                    "array|int",
+                    Expr::Int(PHP_FILTER_DEFAULT, Span::new(0, 0)),
+                ),
+                reflection_internal_optional_bool_param("add_empty", true),
+            ],
+        ),
         "get_resource_type" => (
             "string",
             vec![reflection_internal_param("resource", "resource")],
@@ -116268,6 +116281,7 @@ fn is_builtin(name: &str) -> bool {
             | "filter_var"
             | "filter_var_array"
             | "filter_input"
+            | "filter_input_array"
             | "gc_enable"
             | "gc_collect_cycles"
             | "count"
@@ -117869,6 +117883,7 @@ const PHP_FILTER_FLAG_PATH_REQUIRED: i64 = 262_144;
 const PHP_FILTER_FLAG_QUERY_REQUIRED: i64 = 524_288;
 const PHP_FILTER_FLAG_IPV4: i64 = 1_048_576;
 const PHP_FILTER_FLAG_HOSTNAME: i64 = PHP_FILTER_FLAG_IPV4;
+const PHP_FILTER_FLAG_EMAIL_UNICODE: i64 = PHP_FILTER_FLAG_IPV4;
 const PHP_FILTER_FLAG_IPV6: i64 = 2_097_152;
 const PHP_FILTER_FLAG_NO_RES_RANGE: i64 = 4_194_304;
 const PHP_FILTER_FLAG_NO_PRIV_RANGE: i64 = 8_388_608;
@@ -118432,6 +118447,7 @@ const BUILTIN_GLOBAL_CONSTANT_NAMES: &[&str] = &[
     "FILTER_FLAG_PATH_REQUIRED",
     "FILTER_FLAG_QUERY_REQUIRED",
     "FILTER_FLAG_HOSTNAME",
+    "FILTER_FLAG_EMAIL_UNICODE",
     "FILTER_FLAG_IPV4",
     "FILTER_FLAG_IPV6",
     "FILTER_FLAG_NO_RES_RANGE",
@@ -118896,6 +118912,7 @@ fn builtin_global_constant_value(name: &str) -> Option<Value> {
         "FILTER_FLAG_PATH_REQUIRED" => Some(Value::Int(PHP_FILTER_FLAG_PATH_REQUIRED)),
         "FILTER_FLAG_QUERY_REQUIRED" => Some(Value::Int(PHP_FILTER_FLAG_QUERY_REQUIRED)),
         "FILTER_FLAG_HOSTNAME" => Some(Value::Int(PHP_FILTER_FLAG_HOSTNAME)),
+        "FILTER_FLAG_EMAIL_UNICODE" => Some(Value::Int(PHP_FILTER_FLAG_EMAIL_UNICODE)),
         "FILTER_FLAG_IPV4" => Some(Value::Int(PHP_FILTER_FLAG_IPV4)),
         "FILTER_FLAG_IPV6" => Some(Value::Int(PHP_FILTER_FLAG_IPV6)),
         "FILTER_FLAG_NO_RES_RANGE" => Some(Value::Int(PHP_FILTER_FLAG_NO_RES_RANGE)),
@@ -145186,47 +145203,7 @@ impl Interpreter {
                 self.apply_filter_array(input.clone(), *filter, &options, span)
             }
             Some(Value::Array(specs)) => {
-                let mut filtered = PhpArray::new();
-                for spec in specs.entries() {
-                    if matches!(&spec.key, ArrayKey::String(key) if key.is_empty()) {
-                        return Err(runtime_error(
-                            span,
-                            RuntimeError::unsupported_call(
-                                "filter_var_array()",
-                                "Argument #2 ($options) cannot contain empty keys",
-                            ),
-                        ));
-                    }
-                    match input.get_slot(spec.key.clone()) {
-                        Some(slot) => {
-                            let filter_spec = self.filter_descriptor_from_value_for_array(
-                                &spec.value_cloned(),
-                                "filter_var_array()",
-                                span,
-                            )?;
-                            let value = self.apply_filter_slot(
-                                slot,
-                                filter_spec.filter,
-                                &filter_spec.options,
-                                span,
-                            )?;
-                            match (slot.reference_cell(), value) {
-                                (Some(reference), Value::Array(array)) => {
-                                    reference.set_value(Value::Array(array.clone()));
-                                    filtered.insert_reference(spec.key.clone(), reference);
-                                }
-                                (_, value) => {
-                                    filtered.insert(spec.key.clone(), value);
-                                }
-                            }
-                        }
-                        None if add_empty => {
-                            filtered.insert(spec.key.clone(), Value::Null);
-                        }
-                        None => {}
-                    }
-                }
-                Ok(Value::Array(filtered))
+                self.apply_filter_specs_array(input, specs, add_empty, "filter_var_array()", span)
             }
             Some(other) => Err(runtime_error(
                 span,
@@ -145302,6 +145279,147 @@ impl Interpreter {
         }
     }
 
+    fn call_filter_input_array(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(1..=3).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "filter_input_array()",
+                    ArityExpectation::Between { min: 1, max: 3 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let input_type = match &args[0] {
+            Value::Int(value) => *value,
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "filter_input_array()",
+                        format!(
+                            "Argument #1 ($type) must be of type int, {} given",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+        };
+        let Some(global_name) = filter_input_global_name(input_type) else {
+            return Ok(Value::Null);
+        };
+
+        let input = {
+            let globals = self.global_symbols.borrow();
+            globals
+                .get(global_name)
+                .and_then(|cell| match cell.value_cloned() {
+                    Value::Array(values) => Some(values),
+                    _ => None,
+                })
+        };
+        let Some(input) = input else {
+            return Ok(Value::Null);
+        };
+        if input.entries().is_empty() {
+            return Ok(Value::Null);
+        }
+
+        let add_empty = match args.get(2) {
+            Some(value) => value.is_truthy(),
+            None => true,
+        };
+
+        match args.get(1) {
+            None => {
+                let options = FilterOptions::default();
+                self.apply_filter_array(input, PHP_FILTER_DEFAULT, &options, span)
+            }
+            Some(Value::Int(filter)) => {
+                if !filter_id_is_known(*filter) {
+                    self.emit_display_diagnostic(
+                        "Warning",
+                        PHP_E_WARNING,
+                        format!("filter_input_array(): Unknown filter with ID {filter}"),
+                        span,
+                    )?;
+                    return Ok(Value::Bool(false));
+                }
+                let options = FilterOptions::default();
+                self.apply_filter_array(input, *filter, &options, span)
+            }
+            Some(Value::Array(specs)) => self.apply_filter_specs_array(
+                &input,
+                specs,
+                add_empty,
+                "filter_input_array()",
+                span,
+            ),
+            Some(other) => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "filter_input_array()",
+                    format!(
+                        "Argument #2 ($options) must be of type array|int, {} given",
+                        php_type_error_given(other)
+                    ),
+                ),
+            )),
+        }
+    }
+
+    fn apply_filter_specs_array(
+        &mut self,
+        input: &PhpArray,
+        specs: &PhpArray,
+        add_empty: bool,
+        function: &str,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let mut filtered = PhpArray::new();
+        for spec in specs.entries() {
+            if matches!(&spec.key, ArrayKey::String(key) if key.is_empty()) {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        function,
+                        "Argument #2 ($options) cannot contain empty keys",
+                    ),
+                ));
+            }
+            match input.get_slot(spec.key.clone()) {
+                Some(slot) => {
+                    let filter_spec = self.filter_descriptor_from_value_for_array(
+                        &spec.value_cloned(),
+                        function,
+                        span,
+                    )?;
+                    let value = self.apply_filter_slot(
+                        slot,
+                        filter_spec.filter,
+                        &filter_spec.options,
+                        span,
+                    )?;
+                    match (slot.reference_cell(), value) {
+                        (Some(reference), Value::Array(array)) => {
+                            reference.set_value(Value::Array(array.clone()));
+                            filtered.insert_reference(spec.key.clone(), reference);
+                        }
+                        (_, value) => {
+                            filtered.insert(spec.key.clone(), value);
+                        }
+                    }
+                }
+                None if add_empty => {
+                    filtered.insert(spec.key.clone(), Value::Null);
+                }
+                None => {}
+            }
+        }
+        Ok(Value::Array(filtered))
+    }
+
     fn filter_descriptor_from_value_for_array(
         &mut self,
         value: &Value,
@@ -145309,10 +145427,10 @@ impl Interpreter {
         span: Span,
     ) -> CompileResult<FilterDescriptor> {
         match value {
-            Value::Int(filter) => self.filter_descriptor_from_id_for_array(*filter, span),
+            Value::Int(filter) => self.filter_descriptor_from_id_for_array(*filter, function, span),
             Value::String(filter) => {
                 let filter = filter_id_for_descriptor_string(filter);
-                self.filter_descriptor_from_id_for_array(filter, span)
+                self.filter_descriptor_from_id_for_array(filter, function, span)
             }
             Value::Array(options) => {
                 let filter = match options.get_cloned("filter") {
@@ -145331,7 +145449,7 @@ impl Interpreter {
                 };
                 let options = filter_options_from_array(options, function, span)?;
                 if !filter_id_is_known(filter) {
-                    self.emit_unknown_filter_warning("filter_var_array()", filter, span)?;
+                    self.emit_unknown_filter_warning(function, filter, span)?;
                     return Ok(FilterDescriptor {
                         filter: PHP_FILTER_DEFAULT,
                         options: FilterOptions::default(),
@@ -145355,10 +145473,11 @@ impl Interpreter {
     fn filter_descriptor_from_id_for_array(
         &mut self,
         filter: i64,
+        function: &str,
         span: Span,
     ) -> CompileResult<FilterDescriptor> {
         if !filter_id_is_known(filter) {
-            self.emit_unknown_filter_warning("filter_var_array()", filter, span)?;
+            self.emit_unknown_filter_warning(function, filter, span)?;
             return Ok(FilterDescriptor {
                 filter: PHP_FILTER_DEFAULT,
                 options: FilterOptions::default(),
@@ -145556,13 +145675,13 @@ impl Interpreter {
             PHP_FILTER_VALIDATE_REGEXP => Ok(self
                 .filter_validate_regexp(&value, options, span)?
                 .unwrap_or_else(|| filter_failure_value(flags))),
-            PHP_FILTER_VALIDATE_DOMAIN => Ok(filter_validate_domain(&value)
+            PHP_FILTER_VALIDATE_DOMAIN => Ok(filter_validate_domain(&value, flags)
                 .map(Value::String)
                 .unwrap_or_else(|| filter_default_or_failure(options, flags))),
             PHP_FILTER_VALIDATE_URL => Ok(filter_validate_url(&value, flags)
                 .map(Value::String)
                 .unwrap_or_else(|| filter_default_or_failure(options, flags))),
-            PHP_FILTER_VALIDATE_EMAIL => Ok(filter_validate_email(&value)
+            PHP_FILTER_VALIDATE_EMAIL => Ok(filter_validate_email(&value, flags)
                 .map(Value::String)
                 .unwrap_or_else(|| filter_default_or_failure(options, flags))),
             PHP_FILTER_VALIDATE_IP => Ok(filter_validate_ip(&value, flags)
@@ -146365,73 +146484,174 @@ fn filter_validate_bool(value: &Value) -> Option<bool> {
     }
 }
 
-fn filter_validate_email(value: &Value) -> Option<String> {
-    let value = value.try_echo_string().ok()?;
-    let (local, domain) = value.split_once('@')?;
-    if local.is_empty() || domain.is_empty() || domain.contains('@') {
+fn filter_validate_email(value: &Value, flags: i64) -> Option<String> {
+    let value = filter_scalar_string(value)?;
+    if value.len() > 254 {
         return None;
     }
-    if local.starts_with('.') || local.ends_with('.') || local.contains("..") {
+    let (local, domain) = split_filter_email_address(&value)?;
+    if local.is_empty() || domain.is_empty() || local.len() > 64 {
         return None;
     }
-    if domain.starts_with('.') || domain.ends_with('.') || domain.contains("..") {
+    let allow_unicode = flags & PHP_FILTER_FLAG_EMAIL_UNICODE != 0;
+    if !filter_email_local_is_valid(local, allow_unicode) {
         return None;
     }
-    for label in domain.split('.') {
-        if label.is_empty()
-            || label.starts_with('-')
-            || label.ends_with('-')
-            || !label
-                .chars()
-                .all(|ch| ch.is_ascii_alphanumeric() || ch == '-')
-        {
-            return None;
-        }
-    }
-    if !domain.contains('.') {
-        return None;
-    }
-    if domain
-        .rsplit('.')
-        .next()?
-        .chars()
-        .all(|ch| ch.is_ascii_digit())
-    {
-        return None;
-    }
-    if !local.chars().all(|ch| {
-        ch.is_ascii_alphanumeric()
-            || matches!(
-                ch,
-                '!' | '#'
-                    | '$'
-                    | '%'
-                    | '&'
-                    | '\''
-                    | '*'
-                    | '+'
-                    | '-'
-                    | '/'
-                    | '='
-                    | '?'
-                    | '^'
-                    | '_'
-                    | '`'
-                    | '{'
-                    | '|'
-                    | '}'
-                    | '~'
-                    | '.'
-            )
-    }) {
+    if !filter_email_domain_is_valid(domain) {
         return None;
     }
     Some(value)
 }
 
-fn filter_validate_domain(value: &Value) -> Option<String> {
-    let value = value.try_echo_string().ok()?;
-    filter_url_host_is_valid(&value).then_some(value)
+fn split_filter_email_address(value: &str) -> Option<(&str, &str)> {
+    let mut in_quote = false;
+    let mut escaped = false;
+    let mut at_index = None;
+    for (index, ch) in value.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if in_quote && ch == '\\' {
+            escaped = true;
+            continue;
+        }
+        if ch == '"' {
+            in_quote = !in_quote;
+            continue;
+        }
+        if ch == '@' && !in_quote {
+            if at_index.replace(index).is_some() {
+                return None;
+            }
+        }
+    }
+    if in_quote || escaped {
+        return None;
+    }
+    let index = at_index?;
+    Some((&value[..index], &value[index + 1..]))
+}
+
+fn filter_email_local_is_valid(local: &str, allow_unicode: bool) -> bool {
+    if let Some(quoted) = local.strip_prefix('"') {
+        let Some(quoted) = quoted.strip_suffix('"') else {
+            return false;
+        };
+        return filter_email_quoted_local_is_valid(quoted, allow_unicode);
+    }
+    if local.contains('"') || local.starts_with('.') || local.ends_with('.') || local.contains("..")
+    {
+        return false;
+    }
+    local
+        .chars()
+        .all(|ch| filter_email_local_atom_char_is_valid(ch, allow_unicode))
+}
+
+fn filter_email_quoted_local_is_valid(local: &str, allow_unicode: bool) -> bool {
+    let mut escaped = false;
+    for ch in local.chars() {
+        if escaped {
+            if filter_email_char_is_forbidden(ch, allow_unicode) {
+                return false;
+            }
+            escaped = false;
+            continue;
+        }
+        if ch == '\\' {
+            escaped = true;
+            continue;
+        }
+        if ch == '"' || filter_email_char_is_forbidden(ch, allow_unicode) {
+            return false;
+        }
+    }
+    !escaped
+}
+
+fn filter_email_char_is_forbidden(ch: char, allow_unicode: bool) -> bool {
+    ch == '\0' || ch == '\r' || ch == '\n' || (!allow_unicode && !ch.is_ascii())
+}
+
+fn filter_email_local_atom_char_is_valid(ch: char, allow_unicode: bool) -> bool {
+    if ch.is_ascii_alphanumeric() {
+        return true;
+    }
+    if matches!(
+        ch,
+        '!' | '#'
+            | '$'
+            | '%'
+            | '&'
+            | '\''
+            | '*'
+            | '+'
+            | '-'
+            | '/'
+            | '='
+            | '?'
+            | '^'
+            | '_'
+            | '`'
+            | '{'
+            | '|'
+            | '}'
+            | '~'
+            | '.'
+    ) {
+        return true;
+    }
+    allow_unicode && !ch.is_ascii() && !ch.is_control() && !ch.is_whitespace()
+}
+
+fn filter_email_domain_is_valid(domain: &str) -> bool {
+    if let Some(literal) = domain
+        .strip_prefix('[')
+        .and_then(|value| value.strip_suffix(']'))
+    {
+        return filter_email_domain_literal_is_valid(literal);
+    }
+    if domain.contains(['[', ']'])
+        || domain.starts_with('.')
+        || domain.ends_with('.')
+        || domain.contains("..")
+        || !domain.contains('.')
+    {
+        return false;
+    }
+    if domain
+        .rsplit('.')
+        .next()
+        .is_some_and(|label| label.chars().all(|ch| ch.is_ascii_digit()))
+    {
+        return false;
+    }
+    filter_url_host_is_valid(domain)
+}
+
+fn filter_email_domain_literal_is_valid(literal: &str) -> bool {
+    if let Some(ipv6) = literal.strip_prefix("IPv6:") {
+        return ipv6.parse::<Ipv6Addr>().is_ok();
+    }
+    literal.parse::<Ipv4Addr>().is_ok()
+}
+
+fn filter_validate_domain(value: &Value, flags: i64) -> Option<String> {
+    let value = filter_scalar_string(value)?;
+    if flags & PHP_FILTER_FLAG_HOSTNAME != 0 {
+        filter_url_host_is_valid(&value).then_some(value)
+    } else if value.starts_with('.') || value.contains("..") {
+        None
+    } else {
+        Some(value)
+    }
+}
+
+fn filter_scalar_string(value: &Value) -> Option<String> {
+    value
+        .php_scalar_string_bytes()
+        .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
 }
 
 fn filter_validate_url(value: &Value, flags: i64) -> Option<String> {

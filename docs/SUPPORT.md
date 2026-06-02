@@ -2991,8 +2991,11 @@
   cyclic array/reference structures, object custom serialization hooks, and
   native lowering beyond function-table introspection remain unsupported.
 - `filter_list()`, `filter_id()`, `filter_var()`, `filter_var_array()`, and
-  `filter_input()` cover a bounded ext/filter scalar helper slice. The current
-  filters include unsafe-raw and selected byte-preserving sanitizers,
+  `filter_input()` cover a bounded ext/filter scalar helper slice, with a
+  bounded `filter_input_array()` path for empty/missing input-source `NULL`
+  results and populated superglobal array filtering through the existing
+  descriptor machinery. The current filters include unsafe-raw and selected
+  byte-preserving sanitizers,
   low/high/amp decimal-entity encoding, low/high/backtick byte stripping,
   empty-string-null handling for the unsafe-raw/default path, int/float/bool/
   domain/URL/email/IP/MAC/regexp validators, array filtering through
@@ -3021,16 +3024,22 @@
   IPv6 `fc00::/7` private-range rejection, bounded IPv6 reserved-range
   rejection for unspecified, loopback, IPv4-mapped, and link-local addresses,
   and `FILTER_FLAG_GLOBAL_RANGE` over the reached IPv4/IPv6 non-global range
-  table. `FILTER_FLAG_HOSTNAME` is visible for `FILTER_VALIDATE_DOMAIN`, using
-  the current bounded hostname label rules, and `FILTER_VALIDATE_URL` rejects
+  table. `FILTER_VALIDATE_DOMAIN` accepts PHP-shaped permissive scalar results
+  by default and strict bounded hostname label rules under the visible
+  `FILTER_FLAG_HOSTNAME`, while arrays/objects/resources remain failures.
+  `FILTER_VALIDATE_EMAIL` enforces the reached 254-byte total and 64-byte
+  local limits, accepts quoted locals and bracketed IPv4/IPv6 domain literals,
+  and exposes `FILTER_FLAG_EMAIL_UNICODE` for bounded Unicode local-part
+  validation over ASCII host/punycode domains. `FILTER_VALIDATE_URL` rejects
   raw bracket characters in URL userinfo before host parsing.
   Remaining ext/filter option coercion and diagnostics beyond the named
-  one-character separator paths, `filter_input_array()`,
-  `FILTER_THROW_ON_FAILURE`, exact full RFC 6890/RFC 8190 IPv4/IPv6
-  range-table parity beyond the covered prefixes, Unicode email/IDNA policy,
-  broad URL/domain/IP validation parity, sanitizer deprecation diagnostics and
-  INI `filter.default` behavior, object/resource coercions, references/COW
-  beyond the current array-slot path, and native lowering remain unsupported.
+  one-character separator paths, broad `filter_input_array()` diagnostics and
+  input-source parity, `FILTER_THROW_ON_FAILURE`, exact full RFC 6890/RFC 8190
+  IPv4/IPv6 range-table parity beyond the covered prefixes, full RFC/IDNA
+  email/domain policy, broad URL/domain/IP validation parity, sanitizer
+  deprecation diagnostics and INI `filter.default` behavior, object/resource
+  coercions, references/COW beyond the current array-slot path, and native
+  lowering remain unsupported.
 - `request_parse_body()` supports the bounded CLI option-validation path used
   by the standard request-body PHPT rows. It accepts omitted, `null`, or array
   `$options`; validates the known scalar quantity keys

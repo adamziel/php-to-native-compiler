@@ -227,6 +227,62 @@ foreach (["a-.bc.com", "a.bc-.com", "a.bc.com-"] as $domain) {
 }
 
 #[test]
+fn filter_domain_email_unicode_and_input_array_match_bounded_php_rows() {
+    let execution = run_source(
+        r#"<?php
+var_dump(defined("FILTER_FLAG_EMAIL_UNICODE"));
+var_dump(FILTER_FLAG_EMAIL_UNICODE);
+foreach (["foo@bar.com", "_example.com", "O'Henry", "하퍼", false, array()] as $domain) {
+    var_dump(filter_var($domain, FILTER_VALIDATE_DOMAIN));
+}
+foreach (["example.com", "_example.com", array(), true] as $domain) {
+    var_dump(filter_var($domain, FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME));
+}
+foreach ([
+    "valid@email.address",
+    "niceändsimple@example.com",
+    '"verî.uñusual.@.uñusual.com"@example.com',
+    "tést@[IPv6:2001::7344]",
+    "üser@[IPv6:2001:db8:1ff::a0b:dbd0]",
+] as $email) {
+    var_dump(filter_var($email, FILTER_VALIDATE_EMAIL, FILTER_FLAG_EMAIL_UNICODE));
+}
+var_dump(filter_var("niceändsimple@example.com", FILTER_VALIDATE_EMAIL));
+var_dump(filter_var(str_repeat("x", 65) . "@example.com", FILTER_VALIDATE_EMAIL));
+var_dump(filter_input_array(INPUT_GET, array("c" => array("flags" => FILTER_NULL_ON_FAILURE)), true));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "bool(true)\n",
+            "int(1048576)\n",
+            "string(11) \"foo@bar.com\"\n",
+            "string(12) \"_example.com\"\n",
+            "string(7) \"O'Henry\"\n",
+            "string(6) \"하퍼\"\n",
+            "string(0) \"\"\n",
+            "bool(false)\n",
+            "string(11) \"example.com\"\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "string(1) \"1\"\n",
+            "string(19) \"valid@email.address\"\n",
+            "string(26) \"niceändsimple@example.com\"\n",
+            "string(43) \"\"verî.uñusual.@.uñusual.com\"@example.com\"\n",
+            "string(23) \"tést@[IPv6:2001::7344]\"\n",
+            "string(35) \"üser@[IPv6:2001:db8:1ff::a0b:dbd0]\"\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "NULL\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn filter_var_sanitizes_scalars_and_warns_for_unknown_filters() {
     let execution = run_source(
         r#"<?php

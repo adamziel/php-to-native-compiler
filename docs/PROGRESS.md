@@ -4,6 +4,27 @@
 
 Implemented:
 
+- Added a bounded ext/filter scalar-helper lane on the interpreter path.
+  `FILTER_FLAG_EMAIL_UNICODE` is now visible, `FILTER_VALIDATE_DOMAIN` uses
+  PHP-shaped permissive scalar behavior by default and strict bounded hostname
+  label checks under `FILTER_FLAG_HOSTNAME`, arrays/objects/resources fail
+  instead of stringifying, and `FILTER_VALIDATE_EMAIL` covers reached total and
+  local-part length limits, quoted locals, bracketed IPv4/IPv6 domain
+  literals, and Unicode local parts under `FILTER_FLAG_EMAIL_UNICODE`.
+  `filter_input_array()` now covers empty or missing input-source `NULL`
+  results plus populated superglobal array filtering through the existing
+  descriptor path. Focused proof covers the Rust
+  `filter_domain_email_unicode_and_input_array_match_bounded_php_rows`
+  regression, the full `filter_builtin` Rust target, build/fmt/diff checks,
+  and selected public PHPT rows `ext/filter/tests/033.phpt`,
+  `ext/filter/tests/056.phpt`, `ext/filter/tests/058.phpt`,
+  `ext/filter/tests/bug52929.phpt`, and
+  `ext/filter/tests/filter_input_array_001.phpt`. Unsupported edges remain
+  full RFC/IDNA email/domain parity, broad `filter_input_array()` diagnostics
+  and input-source parity, `FILTER_THROW_ON_FAILURE`, sanitizer deprecation
+  diagnostics and INI `filter.default` behavior, object/resource coercions,
+  references/COW, and native lowering.
+
 - Added a bounded interface implementation startup-diagnostics lane on the
   interpreter path. Class declarations that extend a declared interface or
   implement a declared class/trait now report PHP-shaped startup fatals, and
