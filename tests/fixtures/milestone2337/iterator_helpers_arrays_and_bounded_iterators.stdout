@@ -1,0 +1,32 @@
+Array
+(
+    [a] => 1
+    [b] => 2
+    [5] => 3
+)
+Array
+(
+    [0] => 1
+    [1] => 2
+    [2] => 3
+)
+count-array=3
+Array
+(
+    [x] => ex
+    [y] => why
+)
+after-arrayiterator=invalid
+Array
+(
+    [0] => ex
+    [1] => why
+)
+Array
+(
+    [0] => 7
+    [1] => 8
+)
+count-iterator=2|invalid
+TypeError:iterator_count(): Argument #1 ($iterator) must be of type Traversable|array, string given
+TypeError:iterator_to_array(): Argument #2 ($preserve_keys) must be of type bool, array given

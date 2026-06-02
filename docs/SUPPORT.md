@@ -2628,6 +2628,20 @@
   subclass ArrayAccess override cursor side effects, destructor side effects
   during detach/unset, serialization parity, reference/COW mutation of stored
   info values, and native lowering remain unsupported.
+- SPL iterator helper functions `iterator_count()` and `iterator_to_array()`
+  accept arrays and the bounded `Iterator` / `IteratorAggregate` object
+  surface. Array inputs are counted or copied directly. `Iterator` inputs are
+  driven through `rewind()`, `valid()`, `current()`, `key()`, and `next()` in
+  PHP order; `IteratorAggregate` inputs first call `getIterator()` and require
+  the current bounded result to be an `Iterator` object. `iterator_to_array()`
+  preserves keys by default and routes optional `$preserve_keys` through the
+  shared PHP-internal bool boundary before either keyed insertion or
+  reindexed append. Non-array, non-traversable operands raise PHP-shaped
+  `Traversable|array` `TypeError`s. Direct `Traversable` implementations
+  outside the bounded `Iterator` / `IteratorAggregate` method surface, exact
+  nonscalar iterator-key diagnostics, temporary iterator handle reclamation
+  outside foreach, by-reference SPL iterator execution, full reference/COW
+  identity for materialized values, and native lowering remain unsupported.
 - `break;` for the innermost currently executing `while`, `for`,
   `do ... while`, `foreach`, or `switch`; `continue;` for the innermost
   currently executing loop

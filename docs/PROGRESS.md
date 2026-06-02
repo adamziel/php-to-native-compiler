@@ -4,6 +4,28 @@
 
 Implemented:
 
+- Added a bounded SPL iterator helper lane for `iterator_count()` and
+  `iterator_to_array()`. Both helpers now accept arrays and the runtime's
+  bounded `Iterator` / `IteratorAggregate` object surface: arrays are counted
+  or materialized directly, `Iterator` objects are driven through
+  `rewind()`, `valid()`, `current()`, `key()`, and `next()` in PHP order, and
+  `IteratorAggregate` objects are unwrapped through `getIterator()` when it
+  returns one of those bounded `Iterator` objects. `iterator_to_array()` uses
+  the shared PHP-internal bool boundary for optional `$preserve_keys`, keeps
+  keys by default, and reindexes when false. Non-array, non-traversable
+  operands and non-coercible preserve-key values raise catchable PHP-shaped
+  `TypeError`s; native lowering still rejects these helper calls. Focused
+  proof covers the Rust
+  `iterator_helpers_materialize_arrays_and_bounded_iterators` regression, the
+  direct CLI fixture
+  `tests/fixtures/milestone2337/iterator_helpers_arrays_and_bounded_iterators.php`,
+  and selected public PHPT rows for array input and invalid argument
+  diagnostics. Unsupported edges remain direct `Traversable` implementations
+  outside the bounded `Iterator` / `IteratorAggregate` method surface, exact
+  nonscalar iterator-key diagnostics, iterator temporary handle reclamation
+  outside foreach, by-reference SPL iterator execution, full reference/COW
+  identity for materialized values, and native lowering.
+
 - Added a bounded stat-style metadata non-string filename diagnostics lane.
   `stat()`, `lstat()`, `filesize()`, `fileatime()`, `filemtime()`,
   `filectime()`, `fileinode()`, `fileowner()`, `filegroup()`, `fileperms()`,

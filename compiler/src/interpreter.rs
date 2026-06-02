@@ -86387,6 +86387,30 @@ impl Interpreter {
                 Ok(Value::Int(0))
             }
             "count" | "sizeof" => self.call_count_or_sizeof(name, &args, span),
+            "iterator_count" => {
+                let result = self.call_iterator_count(&args, span);
+                if let Err(error) = &result {
+                    self.record_pending_uncaught_internal_call_frame(
+                        "iterator_count",
+                        span,
+                        &args,
+                        error,
+                    );
+                }
+                result
+            }
+            "iterator_to_array" => {
+                let result = self.call_iterator_to_array(&args, span);
+                if let Err(error) = &result {
+                    self.record_pending_uncaught_internal_call_frame(
+                        "iterator_to_array",
+                        span,
+                        &args,
+                        error,
+                    );
+                }
+                result
+            }
             "range" => call_range(&args, span),
             "constant" => {
                 expect_arity(name, &args, 1, span)?;
@@ -94685,6 +94709,182 @@ impl Interpreter {
                         .implements_interface(class_id, "IteratorAggregate")
             }
             _ => false,
+        }
+    }
+
+    fn iterator_helper_object_argument(
+        &mut self,
+        function: &str,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<PhpObject> {
+        match value {
+            Value::Object(object)
+                if self
+                    .classes
+                    .implements_interface(object.class_id(), "Iterator") =>
+            {
+                Ok(object.clone())
+            }
+            Value::Object(object)
+                if self
+                    .classes
+                    .implements_interface(object.class_id(), "IteratorAggregate") =>
+            {
+                match self.call_required_iterator_method(object.clone(), "getIterator", span)? {
+                    Value::Object(iterator)
+                        if self
+                            .classes
+                            .implements_interface(iterator.class_id(), "Iterator") =>
+                    {
+                        Ok(iterator)
+                    }
+                    other => Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            function,
+                            format!(
+                                "IteratorAggregate::getIterator() must return an Iterator object in the current subset, got {}",
+                                other.type_name()
+                            ),
+                        ),
+                    )),
+                }
+            }
+            other => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function,
+                    format!(
+                        "Argument #1 ($iterator) must be of type Traversable|array, {} given",
+                        php_type_error_given(other)
+                    ),
+                ),
+            )),
+        }
+    }
+
+    fn iterator_to_array_key(key: &Value, span: Span) -> CompileResult<ArrayKey> {
+        ArrayKey::from_value(key).map_err(|error| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "iterator_to_array()",
+                    format!("iterator key conversion failed: {}", error.message()),
+                ),
+            )
+        })
+    }
+
+    fn iterator_to_array_from_php_array(
+        array: &PhpArray,
+        preserve_keys: bool,
+    ) -> CompileResult<PhpArray> {
+        let mut result = PhpArray::new();
+        for entry in array.entries() {
+            if preserve_keys {
+                result.insert(entry.key.clone(), entry.value_cloned());
+            } else {
+                result
+                    .append(entry.value_cloned())
+                    .expect("reindexing an array copy should not fail");
+            }
+        }
+        Ok(result)
+    }
+
+    fn iterator_object_to_array(
+        &mut self,
+        object: PhpObject,
+        preserve_keys: bool,
+        span: Span,
+    ) -> CompileResult<PhpArray> {
+        let mut result = PhpArray::new();
+        self.call_required_iterator_method(object.clone(), "rewind", span)?;
+
+        while self
+            .call_required_iterator_method(object.clone(), "valid", span)?
+            .is_truthy()
+        {
+            let value = self.call_required_iterator_method(object.clone(), "current", span)?;
+            if preserve_keys {
+                let key = self.call_required_iterator_method(object.clone(), "key", span)?;
+                result.insert(Self::iterator_to_array_key(&key, span)?, value);
+            } else {
+                result
+                    .append(value)
+                    .expect("reindexing iterator values should not fail");
+            }
+            self.call_required_iterator_method(object.clone(), "next", span)?;
+        }
+
+        Ok(result)
+    }
+
+    fn call_iterator_to_array(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(1..=2).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "iterator_to_array()",
+                    ArityExpectation::Between { min: 1, max: 2 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let array = match &args[0] {
+            Value::Array(array) => Some(array.clone()),
+            _ => None,
+        };
+        let iterator = if array.is_none() {
+            Some(self.iterator_helper_object_argument("iterator_to_array()", &args[0], span)?)
+        } else {
+            None
+        };
+        let preserve_keys = match args.get(1) {
+            Some(value) => {
+                php_internal_bool_argument("iterator_to_array()", 2, "preserve_keys", value, span)?
+            }
+            None => true,
+        };
+
+        if let Some(array) = array {
+            Self::iterator_to_array_from_php_array(&array, preserve_keys).map(Value::Array)
+        } else if let Some(iterator) = iterator {
+            self.iterator_object_to_array(iterator, preserve_keys, span)
+                .map(Value::Array)
+        } else {
+            unreachable!("iterator source is validated before preserve_keys")
+        }
+    }
+
+    fn call_iterator_count(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("iterator_count()", args, 1, span)?;
+        match &args[0] {
+            Value::Array(array) => Ok(Value::Int(array.len() as i64)),
+            value => {
+                let iterator =
+                    self.iterator_helper_object_argument("iterator_count()", value, span)?;
+                self.call_required_iterator_method(iterator.clone(), "rewind", span)?;
+                let mut count = 0_i64;
+                while self
+                    .call_required_iterator_method(iterator.clone(), "valid", span)?
+                    .is_truthy()
+                {
+                    count = count.checked_add(1).ok_or_else(|| {
+                        runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "iterator_count()",
+                                "iterator count exceeded the current integer range",
+                            ),
+                        )
+                    })?;
+                    self.call_required_iterator_method(iterator.clone(), "next", span)?;
+                }
+                Ok(Value::Int(count))
+            }
         }
     }
 
@@ -103146,6 +103346,17 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_optional_int_param("mode", 0),
             ],
         ),
+        "iterator_count" => (
+            "int",
+            vec![reflection_internal_param("iterator", "Traversable|array")],
+        ),
+        "iterator_to_array" => (
+            "array",
+            vec![
+                reflection_internal_param("iterator", "Traversable|array"),
+                reflection_internal_optional_bool_param("preserve_keys", true),
+            ],
+        ),
         "get_defined_vars" => ("array", vec![]),
         "extract" => (
             "int",
@@ -107750,6 +107961,8 @@ fn is_builtin(name: &str) -> bool {
             | "gc_collect_cycles"
             | "count"
             | "sizeof"
+            | "iterator_count"
+            | "iterator_to_array"
             | "constant"
             | "defined"
             | "get_defined_constants"

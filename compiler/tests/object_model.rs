@@ -15140,6 +15140,49 @@ echo "method:", $method->key(), ":", $method->current()->name, "\n";
 }
 
 #[test]
+fn iterator_helpers_materialize_arrays_and_bounded_iterators() {
+    let source = r#"<?php
+$array = array("a" => 1, "b" => 2, 5 => 3);
+print_r(iterator_to_array($array));
+print_r(iterator_to_array($array, false));
+echo "count-array=", iterator_count($array), "\n";
+
+$it = new ArrayIterator(array("x" => "ex", "y" => "why"));
+print_r(iterator_to_array($it));
+echo "after-arrayiterator=", $it->valid() ? "valid" : "invalid", "\n";
+
+$again = new ArrayIterator(array("x" => "ex", "y" => "why"));
+print_r(iterator_to_array($again, false));
+
+$ao = new ArrayObject(array("p" => 7, "q" => 8));
+print_r(iterator_to_array($ao, false));
+
+$counted = new ArrayIterator(array(10, 20));
+echo "count-iterator=", iterator_count($counted), "|", ($counted->valid() ? "valid" : "invalid"), "\n";
+
+try {
+    iterator_count("bad");
+} catch (Throwable $e) {
+    echo $e::class, ":", $e->getMessage(), "\n";
+}
+
+try {
+    iterator_to_array(array(1), array());
+} catch (Throwable $e) {
+    echo $e::class, ":", $e->getMessage();
+}
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "Array\n(\n    [a] => 1\n    [b] => 2\n    [5] => 3\n)\nArray\n(\n    [0] => 1\n    [1] => 2\n    [2] => 3\n)\ncount-array=3\nArray\n(\n    [x] => ex\n    [y] => why\n)\nafter-arrayiterator=invalid\nArray\n(\n    [0] => ex\n    [1] => why\n)\nArray\n(\n    [0] => 7\n    [1] => 8\n)\ncount-iterator=2|invalid\nTypeError:iterator_count(): Argument #1 ($iterator) must be of type Traversable|array, string given\nTypeError:iterator_to_array(): Argument #2 ($preserve_keys) must be of type bool, array given"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn spl_fixed_array_offsets_iteration_resize_static_constructor_and_errors() {
     let source = r#"<?php
 class ChildFixedArray extends SplFixedArray {
