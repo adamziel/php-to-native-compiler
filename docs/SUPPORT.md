@@ -2659,6 +2659,18 @@
   subclass ArrayAccess override cursor side effects, destructor side effects
   during detach/unset, serialization parity, reference/COW mutation of stored
   info values, and native lowering remain unsupported.
+- SPL `SplFileObject` has a bounded local UTF-8 line-cursor runtime model for
+  construction from local paths and local `file://` URLs in read-only `r`,
+  `rb`, or `rt` modes, plus `current()`, `getCurrentLine()`, `fgets()`,
+  `key()`, `next()`, `rewind()`, `seek()`, `valid()`, `eof()`, and ordinary
+  by-value `foreach` through the `Iterator` surface. Lines retain their
+  trailing newline when present, out-of-range non-negative `seek()` positions
+  move to the invalid end cursor, and negative `seek()` raises the bounded
+  PHP-shaped `ValueError`. Non-local/user stream wrappers, write/append modes,
+  `SplTempFileObject`, `SplFileInfo` inheritance metadata, `setFlags()` /
+  `READ_AHEAD` / `DROP_NEW_LINE` / CSV behavior, binary or non-UTF-8 line
+  storage, independent nested iterator cursors, serialization parity,
+  references/COW, and native lowering remain unsupported.
 - SPL iterator helper functions `iterator_count()` and `iterator_to_array()`
   accept arrays and the bounded `Iterator` / `IteratorAggregate` object
   surface. Array inputs are counted or copied directly. `Iterator` inputs are

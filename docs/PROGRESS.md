@@ -4,6 +4,24 @@
 
 Implemented:
 
+- Added a bounded `SplFileObject` local line-cursor lane for the selected SPL
+  iterator rows. `SplFileObject` is now a core `Iterator` metadata class on
+  the interpreter path, constructs from local UTF-8 files in read-only modes,
+  and supports `current()` / `getCurrentLine()`, `fgets()`, `key()`,
+  `next()`, `rewind()`, `seek()`, `valid()`, `eof()`, and ordinary by-value
+  `foreach` over the shared file cursor. Non-negative out-of-range `seek()`
+  positions move to the invalid end cursor, while negative `seek()` raises the
+  bounded PHP-shaped `ValueError`. Focused proof covers the Rust
+  `spl_file_object_local_file_line_cursor_methods` regression, current
+  core-class metadata snapshots, the direct CLI fixture
+  `tests/fixtures/milestone2360/spl_file_object_line_cursor.php`, selected
+  public PHPT rows for `SplFileObject` current/key/next/rewind/seek basics,
+  build, fmt, and diff checks. Unsupported edges remain non-local/user stream
+  wrappers, write/append modes, `SplTempFileObject`, `SplFileInfo`
+  inheritance metadata, flags/CSV/drop-newline/read-ahead behavior,
+  binary/non-UTF-8 line storage, independent nested iterator cursors,
+  serialization parity, references/COW, and native lowering.
+
 - Accepted checkpoint `538c136c` as the current public PHPT score source after
   a full pinned php-src gate completed with zero latest-published PASS
   regressions. The public-comparable score is now `5816 / 20294 = 28.66%`,

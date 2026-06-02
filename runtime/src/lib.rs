@@ -33027,9 +33027,34 @@ impl PhpClassTable {
                 .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
                 .expect("SplObjectStorage core metadata should not duplicate methods");
         }
+        let spl_file_object_id = classes
+            .declare_class("SplFileObject")
+            .expect("core class table should contain SplObjectStorage before SplFileObject");
+        classes
+            .set_interfaces(spl_file_object_id, vec!["Iterator".to_string()])
+            .expect("SplFileObject should implement Iterator");
+        let spl_file_object = classes
+            .get_mut(spl_file_object_id)
+            .expect("declared SplFileObject class id should resolve");
+        for method in [
+            "__construct",
+            "current",
+            "eof",
+            "fgets",
+            "getCurrentLine",
+            "key",
+            "next",
+            "rewind",
+            "seek",
+            "valid",
+        ] {
+            spl_file_object
+                .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("SplFileObject core metadata should not duplicate methods");
+        }
         let reflection_extension_id = classes
             .declare_class("ReflectionExtension")
-            .expect("core class table should contain SplObjectStorage before ReflectionExtension");
+            .expect("core class table should contain SplFileObject before ReflectionExtension");
         let reflection_extension = classes
             .get_mut(reflection_extension_id)
             .expect("declared ReflectionExtension class id should resolve");
@@ -81081,6 +81106,7 @@ mod tests {
                 "SplQueue",
                 "SplStack",
                 "SplObjectStorage",
+                "SplFileObject",
                 "ReflectionExtension",
                 "ReflectionZendExtension",
                 "DateTime",

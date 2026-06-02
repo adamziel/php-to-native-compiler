@@ -55,20 +55,21 @@ Array
     [50] => SplQueue
     [51] => SplStack
     [52] => SplObjectStorage
-    [53] => ReflectionExtension
-    [54] => ReflectionZendExtension
-    [55] => DateTime
-    [56] => DateTimeImmutable
-    [57] => DOMException
-    [58] => DOMNode
-    [59] => DOMAttr
-    [60] => DOMElement
-    [61] => DOMDocument
-    [62] => Generator
-    [63] => Box
-    [64] => Profile
+    [53] => SplFileObject
+    [54] => ReflectionExtension
+    [55] => ReflectionZendExtension
+    [56] => DateTime
+    [57] => DateTimeImmutable
+    [58] => DOMException
+    [59] => DOMNode
+    [60] => DOMAttr
+    [61] => DOMElement
+    [62] => DOMDocument
+    [63] => Generator
+    [64] => Box
+    [65] => Profile
 )
-65|Exception|Error|Uri\InvalidUriException
+66|Exception|Error|Uri\InvalidUriException
 Exception|Error|Uri\InvalidUriException--- stdout end ---
 stderr:
 --- stderr end ---

@@ -59,6 +59,7 @@ const CORE_CLASS_NAMES: &[&str] = &[
     "SplQueue",
     "SplStack",
     "SplObjectStorage",
+    "SplFileObject",
     "ReflectionExtension",
     "ReflectionZendExtension",
     "DateTime",
@@ -15733,6 +15734,50 @@ var_dump($empty->current());
     assert_eq!(
         execution.stdout,
         "NULL\nint(1)\nint(2)\nint(4)\nint(3)\nint(4)\nint(3)\nint(4)\nNULL\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn spl_file_object_local_file_line_cursor_methods() {
+    use std::fs;
+
+    let fixture_dir =
+        std::env::temp_dir().join(format!("phpc-spl-file-object-{}", std::process::id()));
+    fs::create_dir_all(&fixture_dir).unwrap();
+    let fixture = fixture_dir.join("cursor.php");
+    fs::write(&fixture, "<?php\n//line 2\n//line 3\n//line 4\n?>\n").unwrap();
+
+    let source = r#"<?php
+$file = new SplFileObject(__FILE__);
+echo $file->current();
+$file->seek(2);
+echo $file->key(), ":", $file->current();
+echo $file->current();
+$file->next();
+echo $file->key(), ":", $file->current();
+$file->seek(20);
+var_dump($file->valid());
+$file->rewind();
+var_dump($file->valid());
+foreach ($file as $key => $line) {
+    if ($key > 1) {
+        break;
+    }
+    echo $key, "=", $line;
+}
+try {
+    $file->seek(-1);
+} catch (ValueError $e) {
+    echo "caught:", $e->getMessage(), "\n";
+}
+"#;
+
+    let execution = run_source_with_source_file(source, fixture.display().to_string()).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "<?php\n2://line 3\n//line 3\n3://line 4\nbool(false)\nbool(true)\n0=<?php\n1=//line 2\ncaught:SplFileObject::seek(): Argument #1 ($line) must be greater than or equal to 0\n"
     );
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);
