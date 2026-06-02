@@ -10133,13 +10133,15 @@
   `array_rand($array)` accepts arrays only and returns the first inserted key
   as an `int` or `string` in the current deterministic runtime subset.
   `array_rand($array, $num)` accepts an integer count and returns the first
-  `$num` inserted keys as a zero-indexed array. Empty arrays and invalid counts
-  report PHP `ValueError` messages through the current diagnostic bridge. The
-  implementation intentionally does not model PHP's random key selection,
-  engine RNG state, MT_RAND_PHP compatibility, exact distribution, seeded
-  reproducibility, reference/copy-on-write side effects, non-int count
-  coercions outside the current argument helper, object/resource values, or
-  native lowering.
+  `$num` inserted keys as a zero-indexed array. Non-array first operands raise
+  catchable PHP-shaped `TypeError`s before `$num` coercion. Empty arrays and
+  invalid counts report PHP `ValueError` messages through the current
+  diagnostic bridge. The implementation intentionally does not model PHP's
+  random key selection, engine RNG state, MT_RAND_PHP compatibility, exact
+  distribution, seeded reproducibility, reference/copy-on-write side effects,
+  non-int count coercions outside the current argument helper,
+  exact boolean diagnostic wording beyond the current fatal renderer,
+  object/resource values, or native lowering.
   `array_fill($start_index, $count, $value)` accepts current PHP-internal
   integer-compatible scalar coercions for the first two arguments, builds
   ordered integer-keyed arrays for bounded counts, and returns catchable
@@ -12233,7 +12235,8 @@
 - `array_rand()` outside the current deterministic first-key/first-N-key
   interpreter subset: real random selection, RNG seeding/state, MT_RAND_PHP
   compatibility, exact distribution, non-int count coercions beyond the
-  current argument helper, reference/copy-on-write side effects, object or
+  current argument helper, exact boolean diagnostic wording beyond the current
+  fatal renderer, reference/copy-on-write side effects, object or
   resource values, and native lowering beyond function-table introspection
 - `str_replace()` / `str_ireplace()` outside the current scalar/null and
   one-level array replacement/search/subject subset: recursive arrays,

@@ -178,6 +178,37 @@ try {
 }
 
 #[test]
+fn array_rand_reports_php_type_errors_for_non_array_operands() {
+    let execution = run_source(
+        r#"<?php
+try {
+    array_rand(42);
+} catch (TypeError $e) {
+    echo "TypeError:" . $e->getMessage() . "\n";
+}
+try {
+    array_rand(42, []);
+} catch (TypeError $e) {
+    echo "TypeError:" . $e->getMessage() . "\n";
+}
+$call = "array_rand";
+try {
+    $call(new stdClass);
+} catch (TypeError $e) {
+    echo "TypeError:" . $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "TypeError:array_rand(): Argument #1 ($array) must be of type array, int given\nTypeError:array_rand(): Argument #1 ($array) must be of type array, int given\nTypeError:array_rand(): Argument #1 ($array) must be of type array, stdClass given"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn emit_ir_folds_rand_metadata_but_rejects_direct_calls() {
     let ir = emit_ir_source(
         r#"<?php

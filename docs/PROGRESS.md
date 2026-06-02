@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added a bounded `array_rand()` non-array operand diagnostics lane. Direct and
+  string-valued dynamic interpreter calls now raise catchable PHP-shaped
+  `TypeError`s when argument #1 `$array` is not an array, including the
+  two-argument form before `$num` coercion. Existing deterministic first-key
+  and first-N-key selection, empty-array and invalid-count `ValueError`s,
+  metadata visibility, and native-lowering rejection remain unchanged. Focused
+  proof covers the `array_rand_reports_php_type_errors_for_non_array_operands`
+  Rust regression, the updated runtime-error CLI snapshot, a direct CLI probe,
+  selected public PHPT row `array_rand_basic1.phpt`, build, fmt, and diff
+  checks. Unsupported edges remain true random selection, RNG seeding/state,
+  exact distribution, non-int count coercions outside the current argument
+  helper, exact boolean diagnostic wording beyond the current fatal renderer,
+  references/COW, object/resource value identity, exact native diagnostic
+  object internals, and native lowering.
+
 - Added a bounded array value-transform non-array diagnostics lane.
   `array_flip()` and `array_unique()` now raise catchable PHP-shaped
   `TypeError`s when argument #1 `$array` is not an array, including
