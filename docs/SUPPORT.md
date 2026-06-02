@@ -13,7 +13,8 @@
   PHP's fatal block-mode diagnostic. Actual strict scalar call enforcement,
   tick handlers, source transcoding, and broader declare block semantics
   remain unsupported.
-- `echo` statements with one or more comma-separated expressions
+- `echo` statements with one or more comma-separated expressions, including
+  array operands that emit `Array to string conversion` and output `Array`
 - `print` statements
 - decimal, legacy-octal, and hexadecimal integer literals in the current
   signed 64-bit subset; valid overflowing hexadecimal and legacy-octal integer
@@ -6392,8 +6393,12 @@
   and pass the normalized name to bounded SPL autoload callbacks.
   `property_exists` checks
   case-sensitive declared and inherited property metadata for current object values or
-  string class names, `method_exists` checks case-insensitive declared and
-  inherited method metadata for current object values or string class names,
+  string class names and raises catchable PHP-shaped `TypeError`s for
+  unsupported argument types, `method_exists` checks case-insensitive declared
+  and inherited method metadata for current object values or string class names,
+  with class-string probes hiding inherited private methods while object probes
+  still report inherited private methods and with catchable PHP-shaped
+  `TypeError`s for unsupported argument types,
   `get_class_methods` returns public declared and inherited method names in
   child-to-parent declaration order for current object values or declared
   string class names, `get_class_vars` returns public declared and inherited
@@ -6407,7 +6412,9 @@
   exact class identity and single-parent ancestor relationships over current
   object values or string class names when `allow_string` is true,
   `is_subclass_of` walks the current single-parent metadata chain after
-  validating the supported object/string and class-name argument boundary,
+  validating the supported class-name boundary, returns false for
+  non-object/non-string first operands, and invokes bounded class autoload for
+  non-empty string first operands when strings are allowed,
   `get_parent_class` returns the immediate parent class name for supported
   object/declared-string inputs with parent metadata and false otherwise,
   `get_declared_classes` returns a zero-indexed array containing metadata-only
@@ -6666,8 +6673,9 @@
   string literals, integer literals, bare string keys, or variable keys that
   coerce through the current array-key rules. Undefined simple interpolation
   variables emit the current PHP-shaped warning and interpolate as an empty
-  string. Dynamic property names, static properties, variable variables,
-  arbitrary expression
+  string. Interpolated array values emit the current PHP-shaped
+  `Array to string conversion` warning and contribute `Array`. Dynamic
+  property names, static properties, variable variables, arbitrary expression
   interpolation, exact diagnostics, and native lowering remain unsupported.
 - simple no-argument PHP attributes such as `#[ReturnTypeWillChange]` are
   accepted and ignored as syntax-only metadata before functions, classes,
@@ -7144,17 +7152,23 @@
   keeps inherited private properties invisible, returns false for missing
   properties or missing string class names, invokes the current bounded class
   autoload callback path for non-empty unresolved string class names, and is
-  available through string-valued dynamic function calls. Empty string class
-  names return false without autoload.
+  available through string-valued dynamic function calls. Unsupported
+  object/class and property-name argument types raise catchable PHP-shaped
+  `TypeError`s with the PHP argument names. Empty string class names return
+  false without autoload.
   `method_exists($object_or_class, $method)` accepts a current object value or
   string class name and a string method name. It checks the current declared
-  method metadata with case-insensitive method names, reports
-  public/protected/private and static methods as existing, returns false for
-  missing methods or missing string class names, invokes the same bounded class
-  autoload callback path for non-empty unresolved string class names, and is
-  available through string-valued dynamic function calls. Empty string class
-  names return false without autoload, and magic `__call` does not make a
-  missing method name report as existing.
+  method metadata with case-insensitive method names, reports current-class
+  public/protected/private/static methods and inherited public/protected/static
+  methods for class-string probes, hides inherited private methods for
+  class-string probes, reports inherited private methods for object probes,
+  returns false for missing methods or missing string class names, invokes the
+  same bounded class autoload callback path for non-empty unresolved string
+  class names, and is available through string-valued dynamic function calls.
+  Unsupported object/class and method-name argument types raise catchable
+  PHP-shaped `TypeError`s with the PHP argument names. Empty string class names
+  return false without autoload, and magic `__call` does not make a missing
+  method name report as existing.
   `get_class_methods($object_or_class)` accepts a current object value or a
   declared string class name and returns a zero-indexed array of public method
   names in declaration order, including public static methods. It is available
@@ -7243,11 +7257,13 @@
   names are represented in the current slice. String-valued dynamic calls to
   `is_a` use the same path.
   `is_subclass_of($object_or_class, $class_name[, $allow_string])` accepts the
-  current object/string first-argument subset and string class names, considers
-  two-argument string first arguments and three-argument string first arguments
-  only when `allow_string` is true, checks parent and recorded `implements`
-  metadata relationships, returns false for exact-class and no-relationship
-  cases, and is available through string-valued dynamic calls.
+  current object/string first-argument subset and string class names, returns
+  false for non-object/non-string first operands, considers two-argument string
+  first arguments and three-argument string first arguments only when
+  `allow_string` is true, invokes bounded class autoload for non-empty string
+  first operands when strings are allowed, checks parent and recorded
+  `implements` metadata relationships, returns false for exact-class and
+  no-relationship cases, and is available through string-valued dynamic calls.
   `get_parent_class($object_or_class)` accepts current object values or
   declared string class names, returns the immediate parent class name when
   one is recorded and false otherwise, and is available through string-valued
@@ -7930,8 +7946,8 @@
   non-bool `is_callable` syntax-only flags,
   non-string `function_exists` names,
   non-string `is_a` class names, non-bool `is_a` allow_string flags,
-  non-object/non-string `is_subclass_of` first arguments, non-string
-  `is_subclass_of` class names, non-bool `is_subclass_of` allow_string flags,
+  non-string `is_subclass_of` class names, non-bool `is_subclass_of`
+  allow_string flags,
   non-object/non-string `get_parent_class` arguments and missing
   `get_parent_class` string classes, non-object/non-string
   `get_class_methods` arguments and missing `get_class_methods` string
@@ -9848,8 +9864,10 @@
   identity and single-parent ancestor relationships over current object
   values, and over string class names only when `allow_string` is true.
   `is_subclass_of($object_or_class, $class_name[, $allow_string])` validates
-  current object/string relationship-check arguments and walks the current
-  single-parent metadata chain.
+  the current class-name relationship-check boundary, returns false for
+  non-object/non-string first operands, autoloads non-empty string first
+  operands when strings are allowed, and walks the current single-parent
+  metadata chain.
   `get_parent_class($object_or_class)` accepts current object values or
   declared string class names and returns the immediate parent class name when
   one is recorded, otherwise false.

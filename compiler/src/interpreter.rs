@@ -57042,6 +57042,24 @@ impl Interpreter {
         None
     }
 
+    fn class_string_method_exists(&self, class_id: ClassId, method_name: &str) -> bool {
+        let mut current = Some(class_id);
+        let mut include_private = true;
+        while let Some(current_id) = current {
+            let class = self
+                .classes
+                .get(current_id)
+                .expect("class id should resolve to class metadata");
+            if let Some(method) = class.method(method_name) {
+                return include_private || method.visibility() != Visibility::Private;
+            }
+            include_private = false;
+            current = class.parent_id();
+        }
+
+        false
+    }
+
     fn resolve_instance_method_for_current_object_scope(
         &self,
         receiver_class_id: ClassId,
@@ -79110,6 +79128,25 @@ impl Interpreter {
         self.classes.is_subclass_of(candidate_id, target_class.id())
     }
 
+    fn value_is_subclass_of_with_autoload(
+        &mut self,
+        object_or_class: &Value,
+        class_name: &str,
+        allow_string: bool,
+        span: Span,
+    ) -> CompileResult<bool> {
+        if let Value::String(candidate) = object_or_class {
+            if !allow_string {
+                return Ok(false);
+            }
+            if !candidate.is_empty() && self.classes.lookup_class_id(candidate).is_none() {
+                self.run_autoload_callbacks(candidate, AutoloadKind::Class, span)?;
+            }
+        }
+
+        Ok(self.value_is_subclass_of(object_or_class, class_name, allow_string))
+    }
+
     fn class_implements_or_matches_core_interface(
         &self,
         class_id: ClassId,
@@ -90376,8 +90413,8 @@ impl Interpreter {
                                 RuntimeError::unsupported_call(
                                     "property_exists()",
                                     format!(
-                                        "object_or_class argument must be object or string, got {}",
-                                        other.type_name()
+                                        "Argument #1 ($object_or_class) must be of type object|string, {} given",
+                                        php_type_error_given(other)
                                     ),
                                 ),
                             ));
@@ -90390,8 +90427,8 @@ impl Interpreter {
                     RuntimeError::unsupported_call(
                         "property_exists()",
                         format!(
-                            "property argument must be string in the current subset, got {}",
-                            other.type_name()
+                            "Argument #2 ($property) must be of type string, {} given",
+                            php_type_error_given(other)
                         ),
                     ),
                 )),
@@ -90414,7 +90451,7 @@ impl Interpreter {
                             let class_id = self
                                 .class_id_for_member_metadata_string(class_name, span)?;
                             class_id.is_some_and(|class_id| {
-                                self.resolve_instance_method(class_id, method_name).is_some()
+                                self.class_string_method_exists(class_id, method_name)
                             })
                         }
                         other => {
@@ -90423,8 +90460,8 @@ impl Interpreter {
                                 RuntimeError::unsupported_call(
                                     "method_exists()",
                                     format!(
-                                        "object_or_class argument must be object or string, got {}",
-                                        other.type_name()
+                                        "Argument #1 ($object_or_class) must be of type object|string, {} given",
+                                        php_type_error_given(other)
                                     ),
                                 ),
                             ));
@@ -90437,8 +90474,8 @@ impl Interpreter {
                     RuntimeError::unsupported_call(
                         "method_exists()",
                         format!(
-                            "method argument must be string in the current subset, got {}",
-                            other.type_name()
+                            "Argument #2 ($method) must be of type string, {} given",
+                            php_type_error_given(other)
                         ),
                     ),
                 )),
@@ -90635,27 +90672,18 @@ impl Interpreter {
             },
             "is_subclass_of" => match args.as_slice() {
                 [object_or_class @ Value::Object(_), Value::String(class_name)] => Ok(Value::Bool(
-                    self.value_is_subclass_of(object_or_class, class_name, false),
+                    self.value_is_subclass_of_with_autoload(object_or_class, class_name, false, span)?,
                 )),
                 [object_or_class @ Value::String(_), Value::String(class_name)] => Ok(Value::Bool(
-                    self.value_is_subclass_of(object_or_class, class_name, true),
+                    self.value_is_subclass_of_with_autoload(object_or_class, class_name, true, span)?,
                 )),
                 [object_or_class @ Value::Object(_), Value::String(class_name), Value::Bool(allow_string)] => Ok(Value::Bool(
-                    self.value_is_subclass_of(object_or_class, class_name, *allow_string),
+                    self.value_is_subclass_of_with_autoload(object_or_class, class_name, *allow_string, span)?,
                 )),
                 [object_or_class @ Value::String(_), Value::String(class_name), Value::Bool(allow_string)] => Ok(Value::Bool(
-                    self.value_is_subclass_of(object_or_class, class_name, *allow_string),
+                    self.value_is_subclass_of_with_autoload(object_or_class, class_name, *allow_string, span)?,
                 )),
-                [other, Value::String(_), Value::Bool(_)] => Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "is_subclass_of()",
-                        format!(
-                            "object_or_class argument must be object or string, got {}",
-                            other.type_name()
-                        ),
-                    ),
-                )),
+                [_, Value::String(_), Value::Bool(_)] => Ok(Value::Bool(false)),
                 [_, other, Value::Bool(_)] => Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
@@ -90666,16 +90694,7 @@ impl Interpreter {
                         ),
                     ),
                 )),
-                [other, Value::String(_)] => Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "is_subclass_of()",
-                        format!(
-                            "object_or_class argument must be object or string, got {}",
-                            other.type_name()
-                        ),
-                    ),
-                )),
+                [_, Value::String(_)] => Ok(Value::Bool(false)),
                 [_, other] => Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
@@ -96577,6 +96596,11 @@ impl Interpreter {
     }
 
     fn value_to_echo_string(&mut self, value: Value, span: Span) -> CompileResult<String> {
+        if matches!(value, Value::Array(_)) {
+            self.emit_display_warning("Array to string conversion", span)?;
+            return Ok("Array".to_string());
+        }
+
         if let Value::Object(object) = value.clone() {
             if object.class_name().eq_ignore_ascii_case("BcMath\\Number") {
                 return self.bcmath_number_object_string(&object, span);
@@ -96601,6 +96625,11 @@ impl Interpreter {
     }
 
     fn value_to_echo_bytes(&mut self, value: Value, span: Span) -> CompileResult<Vec<u8>> {
+        if matches!(value, Value::Array(_)) {
+            self.emit_display_warning("Array to string conversion", span)?;
+            return Ok(b"Array".to_vec());
+        }
+
         if let Value::Object(object) = value.clone() {
             if object.class_name().eq_ignore_ascii_case("BcMath\\Number") {
                 return self

@@ -4,6 +4,31 @@
 
 Implemented:
 
+- Added a bounded object-metadata diagnostics and array-to-string warning lane.
+  `property_exists()` and `method_exists()` now raise catchable PHP-shaped
+  `TypeError`s for non-object/non-string first operands and non-string
+  property/method names. Class-string `method_exists()` now hides private
+  methods inherited only by ancestor classes while object probes keep the
+  current inherited-private reporting behavior. `is_subclass_of()` now returns
+  false for non-object/non-string first operands and runs bounded class
+  autoload for non-empty string first operands when strings are allowed. Echo
+  and double-quoted interpolation now emit PHP-shaped
+  `Array to string conversion` warnings while producing `Array`. Focused proof
+  covers the Rust
+  `metadata_predicates_use_php_type_errors_and_class_string_method_visibility`
+  regression, selected public PHPT rows `method_exists_002.phpt`,
+  `property_exists_basic.phpt`, `method_exists_basic_001.phpt`,
+  `method_exists_variation_001.phpt`, `property_exists_error.phpt`,
+  `is_subclass_of_variation_001.phpt`, `is_subclass_of_variation_004.phpt`,
+  and the adjacent already-passing probe `method_exists_variation_003.phpt`,
+  object-model currentization, native-link class-string metadata proof, build,
+  fmt, and diff checks. Unsupported edges remain dynamic property discovery,
+  broader `is_a()` string-autoload parity, interface/trait/enum relationship
+  autoload breadth, magic `__call` participation in `method_exists()`,
+  anonymous classes, exact warning ordering in every string conversion
+  context, references/COW, and native lowering beyond the existing metadata
+  runtime-ABI/false-folding slice.
+
 - Added a bounded `sscanf()` / shared scanf parser lane for the reached public
   string rows. The shared scanner now accepts positional assignment selectors
   such as `%2$s`, the `%n` bytes-consumed conversion, and PHP-shaped

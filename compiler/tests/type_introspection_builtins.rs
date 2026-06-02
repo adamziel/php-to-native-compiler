@@ -258,6 +258,86 @@ $callable();
 }
 
 #[test]
+fn metadata_predicates_use_php_type_errors_and_class_string_method_visibility() {
+    let execution = run_source(
+        r#"<?php
+class BaseMetadata {
+    public function pub() {}
+    protected function prot() {}
+    private function hidden() {}
+    private static function staticHidden() {}
+}
+class ChildMetadata extends BaseMetadata {
+    private function ownHidden() {}
+}
+
+set_error_handler(function($errno, $message) {
+    echo "warning:", $errno, ":", $message, "\n";
+});
+$array = [];
+echo "interpolated:$array\n";
+
+foreach ([[], 1, 3.5, true, null] as $value) {
+    try {
+        property_exists($value, "pub");
+    } catch (Throwable $e) {
+        echo $e::class, ": ", $e->getMessage(), "\n";
+    }
+}
+
+try {
+    method_exists(false, "pub");
+} catch (Throwable $e) {
+    echo $e::class, ": ", $e->getMessage(), "\n";
+}
+
+try {
+    method_exists(new ChildMetadata(), []);
+} catch (Throwable $e) {
+    echo $e::class, ": ", $e->getMessage(), "\n";
+}
+
+echo method_exists("ChildMetadata", "pub") ? "1" : "0";
+echo method_exists("ChildMetadata", "prot") ? "1" : "0";
+echo method_exists("ChildMetadata", "hidden") ? "1" : "0";
+echo method_exists("ChildMetadata", "staticHidden") ? "1" : "0";
+echo method_exists("ChildMetadata", "ownHidden") ? "1" : "0";
+echo method_exists(new ChildMetadata(), "hidden") ? "1" : "0";
+echo "\n";
+
+foreach ([0, 1.5, [], null, false, "", "ChildMetadata"] as $value) {
+    echo is_subclass_of($value, "BaseMetadata") ? "1" : "0";
+}
+echo "\n";
+spl_autoload_register(function($name) {
+    echo "autoload:", $name, "\n";
+});
+echo is_subclass_of("MissingMetadata", "BaseMetadata") ? "1" : "0";
+echo is_subclass_of("MissingMetadataNoAutoload", "BaseMetadata", false) ? "1" : "0";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "warning:2:Array to string conversion\n\
+interpolated:Array\n\
+TypeError: property_exists(): Argument #1 ($object_or_class) must be of type object|string, array given\n\
+TypeError: property_exists(): Argument #1 ($object_or_class) must be of type object|string, int given\n\
+TypeError: property_exists(): Argument #1 ($object_or_class) must be of type object|string, float given\n\
+TypeError: property_exists(): Argument #1 ($object_or_class) must be of type object|string, true given\n\
+TypeError: property_exists(): Argument #1 ($object_or_class) must be of type object|string, null given\n\
+TypeError: method_exists(): Argument #1 ($object_or_class) must be of type object|string, false given\n\
+TypeError: method_exists(): Argument #2 ($method) must be of type string, array given\n\
+110011\n0000001\n\
+autoload:MissingMetadata\n\
+00"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn function_exists_checks_current_runtime_function_table() {
     let execution = run_source(
         r#"<?php

@@ -42027,6 +42027,7 @@ fn native_user_class_has_member_bytes(
     class_name: &[u8],
     member: &[u8],
     operation: NativeClassMetadataOperation,
+    include_private_ancestor_methods: bool,
 ) -> bool {
     let classes = PhpClassTable::with_core_classes();
     let mut current = native_class_canonical_name_bytes(&classes, class_name);
@@ -42063,10 +42064,12 @@ fn native_user_class_has_member_bytes(
             return false;
         };
         let found = match operation {
-            NativeClassMetadataOperation::MethodExists => class
-                .methods
-                .iter()
-                .any(|method| method.lookup_key == member_key),
+            NativeClassMetadataOperation::MethodExists => class.methods.iter().any(|method| {
+                method.lookup_key == member_key
+                    && (include_private_ancestor_methods
+                        || is_root_class
+                        || method.visibility != Visibility::Private)
+            }),
             NativeClassMetadataOperation::PropertyExists => {
                 class.properties.iter().any(|property| {
                     property.name.as_slice() == member
@@ -42126,11 +42129,8 @@ unsafe fn native_value_class_metadata_exists(
             Ok(native_user_interface_canonical_name_bytes(&interface_name).is_some())
         }
         tag if tag == NativeClassMetadataOperation::MethodExists as u8 => {
-            let class_name = unsafe {
-                native_value_metadata_object_or_class_name_bytes_argument(
-                    subject,
-                    "method_exists()",
-                )
+            let subject = unsafe {
+                native_value_metadata_object_or_class_name_subject(subject, "method_exists()")
             }?;
             let method_name = unsafe {
                 native_value_metadata_php_string_bytes_argument(
@@ -42140,13 +42140,14 @@ unsafe fn native_value_class_metadata_exists(
                 )
             }?;
             Ok(classes
-                .lookup_class_bytes(&class_name)
+                .lookup_class_bytes(&subject.class_name)
                 .and_then(|class| class.method_bytes(&method_name))
                 .is_some()
                 || native_user_class_has_member_bytes(
-                    &class_name,
+                    &subject.class_name,
                     &method_name,
                     NativeClassMetadataOperation::MethodExists,
+                    subject.from_object,
                 ))
         }
         tag if tag == NativeClassMetadataOperation::PropertyExists as u8 => {
@@ -42171,12 +42172,18 @@ unsafe fn native_value_class_metadata_exists(
                     &class_name,
                     &property_name,
                     NativeClassMetadataOperation::PropertyExists,
+                    false,
                 ))
         }
         _ => Err(RuntimeError::invalid_string_conversion(
             "native class metadata exists failed: unsupported operation tag",
         )),
     }
+}
+
+struct NativeObjectOrClassNameSubject {
+    class_name: Vec<u8>,
+    from_object: bool,
 }
 
 unsafe fn native_value_metadata_php_string_bytes_argument(
@@ -42205,6 +42212,13 @@ unsafe fn native_value_metadata_object_or_class_name_bytes_argument(
     handle: NativeValueHandle,
     callable: &'static str,
 ) -> RuntimeResult<Vec<u8>> {
+    Ok(unsafe { native_value_metadata_object_or_class_name_subject(handle, callable) }?.class_name)
+}
+
+unsafe fn native_value_metadata_object_or_class_name_subject(
+    handle: NativeValueHandle,
+    callable: &'static str,
+) -> RuntimeResult<NativeObjectOrClassNameSubject> {
     let Some(value) = (unsafe { handle.as_ref() }) else {
         return Err(RuntimeError::unsupported_call(
             callable,
@@ -42213,9 +42227,18 @@ unsafe fn native_value_metadata_object_or_class_name_bytes_argument(
     };
 
     match value {
-        Value::Object(object) => Ok(object.class_name().as_bytes().to_vec()),
-        Value::String(value) => Ok(value.as_bytes().to_vec()),
-        Value::BinaryString(value) => Ok(value.clone()),
+        Value::Object(object) => Ok(NativeObjectOrClassNameSubject {
+            class_name: object.class_name().as_bytes().to_vec(),
+            from_object: true,
+        }),
+        Value::String(value) => Ok(NativeObjectOrClassNameSubject {
+            class_name: value.as_bytes().to_vec(),
+            from_object: false,
+        }),
+        Value::BinaryString(value) => Ok(NativeObjectOrClassNameSubject {
+            class_name: value.clone(),
+            from_object: false,
+        }),
         value => Err(RuntimeError::unsupported_call(
             callable,
             format!(

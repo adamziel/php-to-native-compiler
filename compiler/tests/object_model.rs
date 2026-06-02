@@ -5045,19 +5045,19 @@ fn property_exists_requires_object_or_string_and_string_property_arguments() {
     let target_error = runtime_error("<?php\nvar_dump(property_exists(42, \"name\"));\n");
 
     assert_eq!(target_error.line, 2);
-    assert_eq!(target_error.column, 10);
+    assert_eq!(target_error.column, 1);
     assert_eq!(
         target_error.message,
-        "unsupported call property_exists(): object_or_class argument must be object or string, got int"
+        "property_exists(): Argument #1 ($object_or_class) must be of type object|string, int given, called"
     );
 
     let property_error = runtime_error("<?php\nvar_dump(property_exists(\"Box\", 42));\n");
 
     assert_eq!(property_error.line, 2);
-    assert_eq!(property_error.column, 10);
+    assert_eq!(property_error.column, 1);
     assert_eq!(
         property_error.message,
-        "unsupported call property_exists(): property argument must be string in the current subset, got int"
+        "property_exists(): Argument #2 ($property) must be of type string, int given, called"
     );
 }
 
@@ -5108,19 +5108,19 @@ fn method_exists_requires_object_or_string_and_string_method_arguments() {
     let target_error = runtime_error("<?php\nvar_dump(method_exists(42, \"open\"));\n");
 
     assert_eq!(target_error.line, 2);
-    assert_eq!(target_error.column, 10);
+    assert_eq!(target_error.column, 1);
     assert_eq!(
         target_error.message,
-        "unsupported call method_exists(): object_or_class argument must be object or string, got int"
+        "method_exists(): Argument #1 ($object_or_class) must be of type object|string, int given, called"
     );
 
     let method_error = runtime_error("<?php\nvar_dump(method_exists(\"Box\", 42));\n");
 
     assert_eq!(method_error.line, 2);
-    assert_eq!(method_error.column, 10);
+    assert_eq!(method_error.column, 1);
     assert_eq!(
         method_error.message,
-        "unsupported call method_exists(): method argument must be string in the current subset, got int"
+        "method_exists(): Argument #2 ($method) must be of type string, int given, called"
     );
 }
 
@@ -5515,14 +5515,10 @@ if ($call($child, "BOX")) {
 
 #[test]
 fn is_subclass_of_requires_supported_argument_types() {
-    let source_error = runtime_error("<?php\nvar_dump(is_subclass_of(42, \"Box\"));\n");
-
-    assert_eq!(source_error.line, 2);
-    assert_eq!(source_error.column, 10);
-    assert_eq!(
-        source_error.message,
-        "unsupported call is_subclass_of(): object_or_class argument must be object or string, got int"
-    );
+    let source_execution = run_source("<?php\nvar_dump(is_subclass_of(42, \"Box\"));\n").unwrap();
+    assert_eq!(source_execution.stdout, "bool(false)\n");
+    assert_eq!(source_execution.stderr, "");
+    assert_eq!(source_execution.exit_code, 0);
 
     let class_error = runtime_error(
         "<?php\nclass Box {}\n$box = new Box();\nvar_dump(is_subclass_of($box, 42));\n",

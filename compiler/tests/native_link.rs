@@ -6742,7 +6742,7 @@ fn emit_exe_links_and_runs_user_class_metadata_registry_program() {
 }
 
 #[test]
-fn emit_exe_filters_private_ancestor_property_metadata_without_method_regression() {
+fn emit_exe_filters_private_ancestor_member_metadata_for_class_strings() {
     if !has_cc() {
         return;
     }
@@ -6766,7 +6766,7 @@ fn emit_exe_filters_private_ancestor_property_metadata_without_method_regression
         "echo \"|\";\n",
         "echo property_exists(\"NativeVisibilityChild\", \"childPrivate\") ? \"child-private:true\" : \"bad-child-private\";\n",
         "echo \"|\";\n",
-        "echo method_exists(\"NativeVisibilityChild\", \"basePrivateMethod\") ? \"method-private:true\" : \"bad-method-private\";\n",
+        "echo method_exists(\"NativeVisibilityChild\", \"basePrivateMethod\") ? \"bad-method-private\" : \"method-private:false\";\n",
         "echo \"\\n\";\n",
     );
     let (source_path, output_path) =
@@ -6783,7 +6783,7 @@ fn emit_exe_filters_private_ancestor_property_metadata_without_method_regression
     );
     assert_eq!(
         String::from_utf8_lossy(&run.stdout),
-        "public|protected|private-parent:false|base-private:true|child-private:true|method-private:true\n"
+        "public|protected|private-parent:false|base-private:true|child-private:true|method-private:false\n"
     );
 
     let _ = fs::remove_file(source_path);

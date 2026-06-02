@@ -1037,7 +1037,8 @@ ordinary string concatenation. The interpreter emits PHP's compile-time
 deprecation diagnostic for `${name}` and then evaluates those parts left to
 right through the active symbol table and PHP-shaped echo-string conversion;
 undefined simple interpolation variables warn and contribute an empty string.
-Native lowering
+Array interpolation values emit the same PHP-shaped `Array to string
+conversion` warning used by `echo` and contribute `Array`. Native lowering
 rejects ordinary interpolated strings with a dedicated codegen diagnostic until
 native interpolation part evaluation, PHP-shaped string conversion,
 array/object lookup, `__toString` dispatch, runtime string allocation,
@@ -4067,9 +4068,14 @@ class-like metadata slice.
 inherited property metadata for current object values or string class names,
 with case-sensitive property names. Non-empty unresolved string class names
 invoke the existing bounded class autoload callback path before the metadata
-lookup; empty strings stay false without autoload. `method_exists()` uses the
-same class-string autoload boundary before checking declared and inherited
-method metadata with case-insensitive method names.
+lookup; empty strings stay false without autoload. Unsupported object/class and
+property-name operands raise catchable PHP-shaped `TypeError`s.
+`method_exists()` uses the same class-string autoload boundary before checking
+declared and inherited method metadata with case-insensitive method names.
+Class-string probes report inherited public/protected/static methods but hide
+private methods declared only by ancestor classes, while object probes retain
+the current inherited-private reporting behavior. Unsupported object/class and
+method-name operands raise catchable PHP-shaped `TypeError`s.
 `get_class_vars($class_name)` accepts declared string class names and returns
 public declared and inherited property names with instance properties before
 static properties, walking the current class toward parents within each group,
@@ -4091,7 +4097,9 @@ outside the current object model.
 `is_a($object_or_class, $class_name[, $allow_string])` checks exact-class,
 single-parent ancestor, and recorded `implements` metadata relationships
 against the current metadata table.
-`is_subclass_of(...)` shares the same argument boundary and walks the current
+`is_subclass_of(...)` shares the same class-name boundary, returns false for
+non-object/non-string first operands, invokes bounded class autoload for
+non-empty string first operands when strings are allowed, and walks the current
 single-parent chain plus inherited `implements` metadata while keeping
 exact-class and missing-class cases false.
 `$value instanceof Name` uses the same current object class metadata,
