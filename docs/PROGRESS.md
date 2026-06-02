@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Added a bounded `sscanf()` / shared scanf parser lane for the reached public
+  string rows. The shared scanner now accepts positional assignment selectors
+  such as `%2$s`, the `%n` bytes-consumed conversion, and PHP-shaped
+  out-of-range positional diagnostics. `sscanf()` direct assignment targets
+  may be simple direct array offsets, failed conversions initialize only
+  missing targets to `null`, existing targets are preserved when later
+  conversions fail, and signed/unsigned integer scans use the 64-bit PHP
+  integer boundary instead of the old 32-bit clamp. Focused proof covers the
+  `scanf_builtins` Rust regression, direct runtime and native-boundary probes,
+  selected public PHPT rows `bug21730.phpt`, `bug38322.phpt`,
+  `bug42107.phpt`, `bug47322.phpt`, `bug47842.phpt`, and `gh15552.phpt`,
+  build, fmt, and diff checks. Unsupported edges remain locale-specific scanf
+  behavior, broad binary/non-UTF-8 byte accounting, every host scanf length
+  modifier, non-direct by-reference scan targets beyond direct variables and
+  simple direct array offsets, full `fscanf()` parity for every `sscanf()`
+  edge, and native lowering.
+
 - Added a bounded non-representable float-to-int coercion lane for `phpc run`
   and the runtime ABI operator helper. Non-finite and 64-bit out-of-range
   floats now emit PHP-shaped `Warning: The float ... is not representable as

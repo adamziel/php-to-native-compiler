@@ -12721,13 +12721,18 @@ Unsupported code should fail with an explicit parse, runtime, or codegen error.
   delimiter/enclosure/escape handling and direct named `escape:` support, and
   `fscanf()` reads one bounded line from local file or memory streams into an
   array or direct variable assignments for bounded string, integer, float,
-  character, scanset, width, ignored-assignment, and literal-percent format
-  conversions. Return-array `fscanf()` covers the current blank,
-  whitespace-only, NUL-leading, scanset-miss, `%c`, and width/float file rows;
-  signed integer scan results clamp to the bounded 32-bit C-int range. These
+  character, scanset, width, ignored-assignment, `%n` bytes-consumed,
+  positional assignment selectors, and literal-percent format conversions.
+  `sscanf()` shares that parser/scanner and additionally supports direct
+  variable and simple direct array-offset assignment targets for the reached
+  rows. Return-array `fscanf()` covers the current blank, whitespace-only,
+  NUL-leading, scanset-miss, `%c`, and width/float file rows; signed and
+  unsigned integer scans use the current 64-bit PHP integer boundary. These
   helpers preserve stream position and return `false` at EOF. Binary/non-UTF-8
   byte streams, filter chains, network/user streams, locale-specific CSV or
-  scanf edge cases, full host-width scanf integer parity, and exact PHP
+  scanf edge cases, every host scanf length modifier, non-direct scan
+  assignment targets beyond the current direct variables and simple array
+  offsets, full `fscanf()` parity for every `sscanf()` edge, and exact PHP
   byte-vs-character behavior remain unsupported.
 - Bounded prerequisites for standard filesystem PHPTs: `touch()` creates or
   opens local files and clears the stat cache, while `sleep()` accepts
