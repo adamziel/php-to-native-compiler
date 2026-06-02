@@ -4,6 +4,18 @@
 
 Implemented:
 
+- Repaired the bounded float-to-int diagnostics lane so weak `int|float`
+  unions accept real float values without emitting int-coercion diagnostics.
+  The guard now suppresses float-to-int deprecations and `NAN` string-coercion
+  warnings when a type declaration explicitly accepts `float`, while preserving
+  the previous `int|string` and integer-only coercion diagnostics. Focused
+  proof covers the Rust `float_string_to_int_deprecations` regression file and
+  the two public baseline-PASS full-gate regressions
+  `ext/opcache/tests/jit/inc_021.phpt` and
+  `ext/standard/tests/math/pow_basic_64bit.phpt`. Unsupported edges remain the
+  broader full-suite pass-regression audit until the next current-score gate
+  republishes from the repaired source head.
+
 - Added a bounded userland iterator `Traversable` return and property-cursor
   lane on the interpreter path. Core `Iterator` and `IteratorAggregate`
   interfaces now expand through their `Traversable` parent for runtime object

@@ -100680,11 +100680,13 @@ impl Interpreter {
             return Ok(());
         }
 
+        let accepts_float = type_decl_contains_name(type_decl, "float");
         let accepts_string = type_decl_contains_name(type_decl, "string");
         if type_decl_contains_name(type_decl, "int") {
             match value {
                 Value::Float(float)
-                    if !(accepts_string && php_float_to_int_is_not_representable(*float)) =>
+                    if !accepts_float
+                        && !(accepts_string && php_float_to_int_is_not_representable(*float)) =>
                 {
                     self.emit_float_string_to_int_deprecation_for_value(value, span)?
                 }
@@ -100697,7 +100699,10 @@ impl Interpreter {
             }
         }
 
-        if accepts_string && matches!(value, Value::Float(value) if value.is_nan()) {
+        if !accepts_float
+            && accepts_string
+            && matches!(value, Value::Float(value) if value.is_nan())
+        {
             self.emit_display_warning("unexpected NAN value was coerced to string", span)?;
         }
         Ok(())
