@@ -4,6 +4,33 @@
 
 Implemented:
 
+- Added a bounded `#[Deprecated]` runtime diagnostics lane on the interpreter
+  path. Executable user functions, closures, instance/static methods,
+  constructors, and destructors now retain parsed method attributes in runtime
+  call metadata and emit `E_USER_DEPRECATED` through the shared diagnostic
+  path when a supported call reaches a `#[Deprecated]` / `#[\Deprecated]`
+  body. The diagnostic supports PHP-shaped function, method, and closure
+  callable names; positional and named `message` / `since` arguments; empty
+  messages; NUL-containing strings; runtime constants; protected parent class
+  constants in method attributes; and weak scalar-to-string coercion for the
+  covered int message row. Focused proof covers the Rust
+  `deprecated_attribute_calls_emit_user_deprecated_diagnostics` regression and
+  selected public PHPT rows
+  `Zend/tests/attributes/deprecated/functions/001.phpt`,
+  `Zend/tests/attributes/deprecated/functions/error_code_001.phpt`,
+  `Zend/tests/attributes/deprecated/functions/message_004.phpt`,
+  `Zend/tests/attributes/deprecated/functions/message_005.phpt`,
+  `Zend/tests/attributes/deprecated/message_001.phpt`,
+  `Zend/tests/attributes/deprecated/message_002.phpt`,
+  `Zend/tests/attributes/deprecated/message_003.phpt`,
+  `Zend/tests/attributes/deprecated/message_004.phpt`, and
+  `Zend/tests/attributes/deprecated/type_validation_001.phpt`. Unsupported
+  edges remain deprecations on classes/interfaces/traits/enums/constants/class
+  constants/properties, exact exception-handler diagnostic call-site
+  rendering, exact `Deprecated::__construct()` `TypeError` fatal stack traces
+  for strict or non-scalar message arguments, references/COW, and native
+  lowering.
+
 - Added a bounded exception-handler diagnostics/runtime lane on the
   interpreter path. `set_exception_handler()` now validates supported callback
   forms with PHP-shaped catchable `TypeError` diagnostics, and

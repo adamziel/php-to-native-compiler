@@ -55748,6 +55748,199 @@ impl Interpreter {
         ))
     }
 
+    fn emit_deprecated_attribute_call_diagnostic(
+        &mut self,
+        function: &FunctionDecl,
+        this_object: Option<&PhpObject>,
+        class_context: Option<ClassId>,
+    ) -> CompileResult<()> {
+        let Some(attribute) = function
+            .attributes
+            .iter()
+            .find(|attribute| attribute_name_is_deprecated(attribute))
+        else {
+            return Ok(());
+        };
+
+        let (message, since) = self.deprecated_attribute_message_parts(
+            attribute,
+            function.strict_types,
+            function.span,
+        )?;
+        let callable =
+            self.deprecated_attribute_callable_name(function, this_object, class_context);
+        let mut diagnostic = format!("{callable} is deprecated");
+        if let Some(since) = since.filter(|value| !value.is_empty()) {
+            diagnostic.push_str(" since ");
+            diagnostic.push_str(&since);
+        }
+        if let Some(message) = message.filter(|value| !value.is_empty()) {
+            diagnostic.push_str(", ");
+            diagnostic.push_str(&message);
+        }
+
+        self.emit_display_diagnostic(
+            "Deprecated",
+            PHP_E_USER_DEPRECATED,
+            diagnostic,
+            function.span,
+        )
+    }
+
+    fn deprecated_attribute_callable_name(
+        &self,
+        function: &FunctionDecl,
+        this_object: Option<&PhpObject>,
+        class_context: Option<ClassId>,
+    ) -> String {
+        if function.name == "{closure}" {
+            let file = self
+                .source_file
+                .clone()
+                .unwrap_or_else(|| "Command line code".to_string());
+            return format!("Function {{closure:{file}:{}}}()", function.span.line);
+        }
+
+        if let Some(class_id) = class_context {
+            if let Some(class) = self.classes.get(class_id) {
+                return format!("Method {}::{}()", class.name(), function.name);
+            }
+        }
+        if let Some(object) = this_object {
+            return format!("Method {}::{}()", object.class_name(), function.name);
+        }
+
+        format!("Function {}()", function.name)
+    }
+
+    fn deprecated_attribute_message_parts(
+        &mut self,
+        attribute: &AttributeDecl,
+        strict_types: bool,
+        span: Span,
+    ) -> CompileResult<(Option<String>, Option<String>)> {
+        let argument_exprs = Self::reflection_attribute_argument_exprs(
+            attribute.arguments.as_deref(),
+            span,
+            "Deprecated::__construct",
+        )?;
+        let mut scope = SymbolTable::new_child(self.global_symbols.clone());
+        let mut message = None;
+        let mut since = None;
+        let mut positional_index = 0usize;
+
+        for argument in argument_exprs {
+            match argument {
+                Expr::NamedArgument { name, expr, span } => {
+                    let value = self.evaluate(&expr, &mut scope)?;
+                    match name.to_ascii_lowercase().as_str() {
+                        "message" => {
+                            message = self.deprecated_attribute_nullable_string_argument(
+                                value,
+                                strict_types,
+                                1,
+                                "message",
+                                span,
+                            )?;
+                        }
+                        "since" => {
+                            since = self.deprecated_attribute_nullable_string_argument(
+                                value,
+                                strict_types,
+                                2,
+                                "since",
+                                span,
+                            )?;
+                        }
+                        _ => {
+                            return Err(runtime_error(
+                                span,
+                                RuntimeError::unsupported_call(
+                                    "Deprecated::__construct()",
+                                    format!("unknown named argument ${name}"),
+                                ),
+                            ));
+                        }
+                    }
+                }
+                Expr::SpreadArgument { span, .. } => {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "Deprecated::__construct()",
+                            "argument unpacking is not implemented for Deprecated attributes",
+                        ),
+                    ));
+                }
+                expr => {
+                    let value = self.evaluate(&expr, &mut scope)?;
+                    match positional_index {
+                        0 => {
+                            message = self.deprecated_attribute_nullable_string_argument(
+                                value,
+                                strict_types,
+                                1,
+                                "message",
+                                expr.span(),
+                            )?;
+                        }
+                        1 => {
+                            since = self.deprecated_attribute_nullable_string_argument(
+                                value,
+                                strict_types,
+                                2,
+                                "since",
+                                expr.span(),
+                            )?;
+                        }
+                        _ => {
+                            return Err(runtime_error(
+                                expr.span(),
+                                RuntimeError::unsupported_call(
+                                    "Deprecated::__construct()",
+                                    "expects at most 2 arguments",
+                                ),
+                            ));
+                        }
+                    }
+                    positional_index += 1;
+                }
+            }
+        }
+
+        Ok((message, since))
+    }
+
+    fn deprecated_attribute_nullable_string_argument(
+        &mut self,
+        value: Value,
+        strict_types: bool,
+        position: usize,
+        name: &str,
+        span: Span,
+    ) -> CompileResult<Option<String>> {
+        match value {
+            Value::Null => Ok(None),
+            Value::String(value) => Ok(Some(value)),
+            Value::BinaryString(bytes) => Ok(Some(String::from_utf8_lossy(&bytes).into_owned())),
+            Value::Bool(value) if !strict_types => {
+                Ok(Some(if value { "1" } else { "" }.to_string()))
+            }
+            Value::Int(value) if !strict_types => Ok(Some(value.to_string())),
+            Value::Float(value) if !strict_types => Ok(Some(self.php_scalar_float_string(value))),
+            other => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "Deprecated::__construct()",
+                    format!(
+                        "Argument #{position} (${name}) must be of type ?string, {} given",
+                        php_type_error_given(&other)
+                    ),
+                ),
+            )),
+        }
+    }
+
     fn call_reflection_get_attributes(
         &mut self,
         attributes: &[AttributeDecl],
@@ -79924,6 +80117,11 @@ impl Interpreter {
         if let Some(called_class_context) = called_class_context {
             self.called_class_context.push(called_class_context);
         }
+        self.emit_deprecated_attribute_call_diagnostic(
+            function,
+            this_object.as_ref(),
+            class_context,
+        )?;
         let mut local_scope = SymbolTable::new_child(self.global_symbols.clone());
         let this_object_for_alias_transfer = this_object.clone();
         if let Some(this_object) = this_object.as_ref() {
@@ -104942,7 +105140,9 @@ fn register_class_member_runtime_tables(
         if method.is_abstract {
             abstract_methods.insert(key);
         } else {
-            methods.insert(key, Rc::new(method.function));
+            let mut function = method.function;
+            function.attributes = method.attributes;
+            methods.insert(key, Rc::new(function));
         }
     }
 
@@ -104979,7 +105179,9 @@ fn register_class_member_runtime_tables(
                 if method.is_abstract {
                     abstract_methods.insert(key);
                 } else {
-                    methods.insert(key, Rc::new(method.function.clone()));
+                    let mut function = method.function.clone();
+                    function.attributes = method.attributes.clone();
+                    methods.insert(key, Rc::new(function));
                 }
             }
             ClassMember::Property(property) => {
@@ -105861,10 +106063,14 @@ fn attribute_name_is_override(attribute: &AttributeDecl) -> bool {
 }
 
 fn attributes_include_deprecated(attributes: &[AttributeDecl]) -> bool {
-    attributes.iter().any(|attribute| {
-        attribute.name.eq_ignore_ascii_case("Deprecated")
-            || attribute.name.eq_ignore_ascii_case("\\Deprecated")
-    })
+    attributes
+        .iter()
+        .any(|attribute| attribute_name_is_deprecated(attribute))
+}
+
+fn attribute_name_is_deprecated(attribute: &AttributeDecl) -> bool {
+    attribute.name.eq_ignore_ascii_case("Deprecated")
+        || attribute.name.eq_ignore_ascii_case("\\Deprecated")
 }
 
 fn attributes_include_allow_dynamic_properties(attributes: &[AttributeDecl]) -> bool {

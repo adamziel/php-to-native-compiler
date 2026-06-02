@@ -71,6 +71,49 @@ echo $call(["dynamic"]) ? "1" : "0";
 }
 
 #[test]
+fn deprecated_attribute_calls_emit_user_deprecated_diagnostics() {
+    let execution = run_source(
+        r#"<?php
+set_error_handler(function ($errno, $message) {
+    echo "handler:", $errno, ":", $message, "\n";
+});
+
+#[Deprecated(message: "use current_fn", since: "1.0")]
+function old_fn() {}
+
+old_fn();
+restore_error_handler();
+
+class Box {
+    #[Deprecated("use current_method")]
+    public function old_method() {}
+}
+
+$box = new Box();
+$box->old_method();
+
+$closure = #[Deprecated(1234)] function () {};
+$closure();
+"#,
+    )
+    .unwrap();
+
+    assert!(execution
+        .stdout
+        .contains("handler:16384:Function old_fn() is deprecated since 1.0, use current_fn\n"));
+    assert!(execution.stdout.contains(
+        "Deprecated: Method Box::old_method() is deprecated, use current_method in Command line code on line "
+    ));
+    assert!(execution
+        .stdout
+        .contains("Deprecated: Function {closure:Command line code:"));
+    assert!(execution
+        .stdout
+        .contains("}() is deprecated, 1234 in Command line code on line "));
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn is_callable_checks_current_string_function_name_subset() {
     let execution = run_source(
         r#"<?php

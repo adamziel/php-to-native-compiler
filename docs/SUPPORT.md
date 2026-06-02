@@ -6794,14 +6794,24 @@
   `Array to string conversion` warning and contribute `Array`. Dynamic
   property names, static properties, variable variables, arbitrary expression
   interpolation, exact diagnostics, and native lowering remain unsupported.
-- simple no-argument PHP attributes such as `#[ReturnTypeWillChange]` are
-  accepted and ignored as syntax-only metadata before functions, classes,
-  class members, and parameters. Attribute blocks with constructor-style
-  arguments stop at a dedicated lex diagnostic. Attribute metadata, reflection
-  visibility, target validation, namespace-aware attribute names, constructor
-  argument evaluation, repeated-attribute rules, references/copy-on-write, and
-  native lowering remain unsupported; ordinary `#` comments, including `# [`
-  with whitespace before the bracket, remain comments
+- PHP attributes are accepted as runtime metadata before functions, closures,
+  classes, class members, and parameters, including constructor-style argument
+  lists in the current expression subset. For `phpc run`, `#[Deprecated]` and
+  `#[\Deprecated]` on executable user functions, closures, instance/static
+  methods, constructors, and destructors emit `E_USER_DEPRECATED` through the
+  shared diagnostic path when a supported call reaches the body. The
+  diagnostic supports PHP-shaped function, method, and closure callable names;
+  positional and named `message` / `since` arguments; empty messages;
+  NUL-containing strings; runtime constants; protected parent class constants
+  in method attributes; and weak scalar-to-string coercion for covered message
+  arguments. Broader attribute target validation, namespace/import alias
+  resolution for the built-in attribute name, repeated-attribute rules,
+  deprecations on classes/interfaces/traits/enums/constants/class
+  constants/properties, exact exception-handler diagnostic call-site rendering,
+  exact `Deprecated::__construct()` `TypeError` fatal stack traces for strict
+  or non-scalar message arguments, references/copy-on-write, and native
+  lowering remain unsupported; ordinary `#` comments, including `# [` with
+  whitespace before the bracket, remain comments
 
 ## Partially Supported
 
