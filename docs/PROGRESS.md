@@ -4,6 +4,20 @@
 
 Implemented:
 
+- Added a bounded `get_class_vars()` valid-class diagnostics and ordering lane
+  for the selected `Zend/tests/get_class_vars/get_class_vars_001.phpt`
+  surface. The interpreter now raises PHP-shaped catchable `TypeError`s for
+  invalid scalar class-name values and unresolved class strings, preserving the
+  offending value in the diagnostic text, and the public class-variable listing
+  now groups instance properties before static properties while walking each
+  group from the current class toward parents. Focused proof covers the Rust
+  `get_class_vars` object-model tests, runtime-error CLI snapshots, a direct
+  `phpc run` probe, a native-boundary rejection probe, and the selected PHPT
+  row. Unsupported edges remain non-public/context-sensitive visibility,
+  broad class-name conversion warning parity for arrays/objects/resources,
+  traits/interfaces and namespace/import alias expansion, complete
+  property-default expression parity, autoloading, and native lowering.
+
 - Added a bounded tokenizer `__halt_compiler()` payload lane for the selected
   `ext/tokenizer/tests/bug54089.phpt` surface. `token_get_all()` and
   `PhpToken::tokenize()` now keep `T_HALT_COMPILER` lexical classification and

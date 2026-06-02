@@ -80,8 +80,11 @@ metadata chain plus recorded interface metadata. `get_parent_class($object_or_cl
 validates current object/declared-string inputs and returns the immediate
 parent class name when one is recorded, otherwise false.
 `get_class_vars($class_name)` accepts declared string class names and returns
-public declared and inherited properties with supported constant-expression
-default values or `null` for properties without defaults.
+public declared and inherited properties with instance properties before static
+properties, walking the current class toward parents within each group, with
+supported constant-expression default values or `null` for properties without
+defaults. Invalid or unresolved class names raise a catchable PHP-shaped
+`TypeError`.
 `class_exists()` and `interface_exists()` check current class/interface
 metadata and, when their autoload flag is truthy, invoke currently registered
 string user-function autoload callbacks on misses before rechecking metadata.
@@ -283,8 +286,10 @@ The model follows the PHP lookup rules needed by the first object slice:
   method names in child-to-parent declaration order for current object values
   or declared string class names;
 - `get_class_vars($class_name)` returns public declared and inherited property
-  names in child-to-parent declaration order with `null` values for declared
-  string class names;
+  names with instance properties before static properties, walking the current
+  class toward parents within each group, with `null` values for declared
+  string class names and catchable PHP-shaped `TypeError`s for invalid or
+  unresolved class names;
 - `get_object_vars($object)` returns public exact and inherited instance
   property names in parent-to-child slot order with their current slot values
   for current object values;
@@ -557,7 +562,8 @@ destruction, clone semantics, destructors,
 context-sensitive method listing, `get_class_vars` property defaults beyond
 the current constant-expression subset,
 inheritance/trait/interface properties, context-sensitive visibility, object
-inputs, `get_object_vars` dynamic properties, non-public visibility context,
+inputs, exact invalid class-name conversion warnings for arrays/objects/
+resources, `get_object_vars` dynamic properties, non-public visibility context,
 references/copy-on-write, exact native ordering,
 `get_mangled_object_vars` protected/private property-name mangling, dynamic
 properties, non-public visibility context, references/copy-on-write, exact

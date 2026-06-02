@@ -56155,12 +56155,23 @@ impl Interpreter {
     }
 
     fn append_public_class_vars(&self, class_id: ClassId, properties: &mut PhpArray) {
+        self.append_public_class_vars_by_staticness(class_id, properties, false);
+        self.append_public_class_vars_by_staticness(class_id, properties, true);
+    }
+
+    fn append_public_class_vars_by_staticness(
+        &self,
+        class_id: ClassId,
+        properties: &mut PhpArray,
+        include_static: bool,
+    ) {
         let class = self
             .classes
             .get(class_id)
             .expect("class id should resolve to class metadata");
         for property in class.properties() {
-            if property.visibility() == Visibility::Public {
+            if property.visibility() == Visibility::Public && property.is_static() == include_static
+            {
                 let value = if property.is_static() {
                     self.static_properties
                         .get(&(class.id(), property.name().to_string()))
@@ -56176,8 +56187,23 @@ impl Interpreter {
             }
         }
         if let Some(parent_id) = class.parent_id() {
-            self.append_public_class_vars(parent_id, properties);
+            self.append_public_class_vars_by_staticness(parent_id, properties, include_static);
         }
+    }
+
+    fn invalid_get_class_vars_class_argument_error(
+        &mut self,
+        value: Value,
+        span: Span,
+    ) -> CompileResult<Diagnostic> {
+        let given = self.value_to_echo_string(value, span)?;
+        Ok(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "get_class_vars()",
+                format!("Argument #1 ($class) must be a valid class name, {given} given"),
+            ),
+        ))
     }
 
     fn call_class_implements(
@@ -88568,26 +88594,20 @@ impl Interpreter {
             "get_class_vars" => match args.as_slice() {
                 [Value::String(class_name)] => {
                     let Some(class) = self.classes.lookup_class(class_name) else {
-                        return Err(runtime_error(
+                        return Err(self.invalid_get_class_vars_class_argument_error(
+                            Value::String(class_name.clone()),
                             span,
-                            RuntimeError::unsupported_call(
-                                "get_class_vars()",
-                                "string argument must name a declared class in the current subset",
-                            ),
-                        ));
+                        )?);
                     };
 
                     let mut properties = PhpArray::new();
                     self.append_public_class_vars(class.id(), &mut properties);
                     Ok(Value::Array(properties))
                 }
-                [other] => Err(runtime_error(
+                [other] => Err(self.invalid_get_class_vars_class_argument_error(
+                    other.clone(),
                     span,
-                    RuntimeError::unsupported_call(
-                        "get_class_vars()",
-                        format!("class name argument must be string, got {}", other.type_name()),
-                    ),
-                )),
+                )?),
                 _ => Err(runtime_error(
                     span,
                     RuntimeError::arity_mismatch(
@@ -106125,6 +106145,7 @@ fn is_call_argument_type_error_message(message: &str) -> bool {
     }
     message.contains(" must be of type ")
         && (message.contains("(): Argument #") || message.contains("(): If argument #"))
+        || (message.contains(" must be a valid class name, ") && message.contains("(): Argument #"))
 }
 
 fn is_internal_method_argument_type_error_message(message: &str) -> bool {

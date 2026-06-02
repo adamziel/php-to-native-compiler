@@ -3902,9 +3902,11 @@ lookup; empty strings stay false without autoload. `method_exists()` uses the
 same class-string autoload boundary before checking declared and inherited
 method metadata with case-insensitive method names.
 `get_class_vars($class_name)` accepts declared string class names and returns
-public declared and inherited property names in child-to-parent declaration
-order with supported constant-expression default values or `null` for
-properties without defaults.
+public declared and inherited property names with instance properties before
+static properties, walking the current class toward parents within each group,
+with supported constant-expression default values or `null` for properties
+without defaults. Invalid or unresolved class names raise the current
+PHP-shaped catchable `TypeError` surface.
 `get_object_vars($object)` accepts current object values and returns public
 exact and inherited instance property names with their current slot values in
 parent-to-child slot order.

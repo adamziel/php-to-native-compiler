@@ -6050,8 +6050,8 @@
   `get_class_methods` returns public declared and inherited method names in
   child-to-parent declaration order for current object values or declared
   string class names, `get_class_vars` returns public declared and inherited
-  property names in child-to-parent declaration order with `null` values for
-  declared string class names, `get_object_vars` returns public exact and
+  property names with instance properties before static properties and `null`
+  values for declared string class names, `get_object_vars` returns public exact and
   inherited instance property names with their current values in
   parent-to-child slot order for current object values, `get_mangled_object_vars`
   returns inherited and exact-class public/protected/private instance slots
@@ -6800,10 +6800,12 @@
   names in declaration order, including public static methods. It is available
   through string-valued dynamic function calls.
   `get_class_vars($class_name)` accepts declared string class names and returns
-  an array of public declared and inherited properties in child-to-parent
-  declaration order, including public static properties, with current supported
-  default values or `null` for properties without defaults. It is available
-  through string-valued dynamic function calls.
+  an array of public declared and inherited properties with instance properties
+  before static properties, walking the current class toward parents within
+  each group, including public static properties, with current supported
+  default values or `null` for properties without defaults. Invalid or
+  unresolved class-name values raise a catchable PHP-shaped `TypeError`. It is
+  available through string-valued dynamic function calls.
   `get_object_vars($object)` accepts current object values and returns an array
   of public exact and inherited instance property names in parent-to-child slot
   order with their current slot values. Compatible public redeclarations expose
@@ -9413,8 +9415,9 @@
   bounded class autoload behavior. `get_class_methods($object_or_class)` returns
   a zero-indexed array of public declared method names for current object
   values or declared string class names. `get_class_vars($class_name)` returns
-  public declared and inherited property names with `null` values for declared
-  string class names. `get_object_vars($object)` returns public exact and
+  public declared and inherited property names with instance properties before
+  static properties and `null` values for declared string class names.
+  `get_object_vars($object)` returns public exact and
   inherited instance property names with their current values for current
   object values.
   `get_mangled_object_vars($object)` returns public, protected, and private
@@ -11338,8 +11341,8 @@
 - `get_class_vars` property defaults beyond the current constant-expression
   subset, inheritance beyond the current single-parent chain, traits, interfaces,
   aliases/imports, namespace-aware names, autoloading,
-  non-public/context-sensitive visibility listing, exact native ordering and
-  `TypeError` behavior, and native lowering
+  non-public/context-sensitive visibility listing, exact invalid class-name
+  conversion warnings for arrays/objects/resources, and native lowering
 - `get_object_vars` dynamic properties, visibility context for non-public
   properties, traits, interfaces, aliases/imports,
   namespace-aware names, references/copy-on-write, exact native ordering and

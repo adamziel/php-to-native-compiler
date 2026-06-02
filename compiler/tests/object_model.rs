@@ -5270,30 +5270,29 @@ echo count($dynamic), "|", array_key_exists("secret", $dynamic);
     let execution = run_source(source).unwrap();
     assert_eq!(
         execution.stdout,
-        "Array\n(\n    [name] => \n    [shared] => \n    [baseName] => \n    [baseShared] => \n)\n4|1|1\n4|"
+        "Array\n(\n    [name] => \n    [baseName] => \n    [shared] => \n    [baseShared] => \n)\n4|1|1\n4|"
     );
     assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
 fn get_class_vars_requires_declared_class_string_argument() {
-    let target_error = runtime_error("<?php\nvar_dump(get_class_vars(42));\n");
+    let source = r#"<?php
+foreach ([42, "Missing"] as $class) {
+    try {
+        var_dump(get_class_vars($class));
+    } catch (TypeError $e) {
+        echo get_class($e), ":", $e->getMessage(), "\n";
+    }
+}
+"#;
 
-    assert_eq!(target_error.line, 2);
-    assert_eq!(target_error.column, 10);
+    let execution = run_source(source).unwrap();
     assert_eq!(
-        target_error.message,
-        "unsupported call get_class_vars(): class name argument must be string, got int"
+        execution.stdout,
+        "TypeError:get_class_vars(): Argument #1 ($class) must be a valid class name, 42 given\nTypeError:get_class_vars(): Argument #1 ($class) must be a valid class name, Missing given\n"
     );
-
-    let missing_class_error = runtime_error("<?php\nvar_dump(get_class_vars(\"Missing\"));\n");
-
-    assert_eq!(missing_class_error.line, 2);
-    assert_eq!(missing_class_error.column, 10);
-    assert_eq!(
-        missing_class_error.message,
-        "unsupported call get_class_vars(): string argument must name a declared class in the current subset"
-    );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
