@@ -4668,10 +4668,15 @@ native cast lowering remain explicit boundaries.
 
 Exception syntax is reserved by the lexer/parser today, but the boundary is no
 longer a single parse-only category. The runtime seeds a metadata-only
-`Exception` class so class lookup, no-argument instantiation, and user classes
-extending `Exception` use the same object metadata table as declared classes.
-It does not model `Throwable`, constructor state, exception methods, stack
-traces, or unwinding.
+`Exception` class so class lookup, no-argument instantiation, bounded
+constructor state, core accessors, and user classes extending `Exception` use
+the same object metadata table as declared classes. `ErrorException` extends
+that slice with bounded severity, filename, line, and previous constructor
+state. Caught core `Error`/`TypeError`-style objects expose the same bounded
+file/line/previous/trace-string accessor surface. The model still does not
+provide full `Throwable` interface parity, structured `getTrace()` arrays,
+exact internal stack frames, callable methods on core Throwable subclasses, or
+full unwinding parity.
 
 Statement-form `throw expr;` and `try`/`catch`/`finally` blocks build AST nodes
 so guarded WordPress compatibility code can parse and be skipped by normal

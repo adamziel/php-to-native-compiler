@@ -538,8 +538,9 @@ incorrect native code.
   lookup, instantiation, interface lookup, and relationship checks,
   while parenthesized dynamic class-name expressions such as `new ($class)()`
   remain a dedicated parse boundary,
-  metadata-only built-in `Exception` and `stdClass` class seeds, including
-  no-argument instantiation and user subclasses for `Exception`,
+  bounded built-in `Exception`, `ErrorException`, and `stdClass` class seeds,
+  including no-argument instantiation, bounded Throwable constructor/accessor
+  state, and user subclasses for `Exception`,
   public and same-class private instance method calls, inherited public method
   calls, protected same-class/child method calls, explicit `parent::method()`
   and `parent::__construct()` calls in instance context, narrow
@@ -707,9 +708,9 @@ constructor behavior beyond public/inherited public instance `__construct`
 and explicit parent calls, broader `self::`/`static::` execution beyond the
 current method, dynamic static method, class-name, class-constant, and
 static-property slices,
-exact PHP nested class declaration timing and fatal behavior, real
-`Exception` constructor state/methods, `Throwable`, stack traces, exception
-throw/catch execution,
+exact PHP nested class declaration timing and fatal behavior, full
+`Throwable` interface parity, structured stack traces, exact internal
+exception frames, callable methods on core Throwable subclasses,
 bare namespace constant fallback reads, namespace-qualified constant reads,
 class-constant lookup through
 `defined()`/`constant()` beyond the current declared-class/public-visibility

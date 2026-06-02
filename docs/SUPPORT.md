@@ -11648,19 +11648,27 @@
   path, skip catch bodies without a thrown exception, and run finally bodies
   after normal try completion. Throw expressions, malformed try syntax, and
   standalone `catch`/`finally` still fail with stable parse diagnostics.
-  `Exception` is seeded as a metadata-only built-in class: `class_exists`,
-  `get_declared_classes`, no-argument `new Exception()`, and user classes
-  extending `Exception` work through the current object metadata model.
+  `Exception` is seeded as a bounded built-in class: `class_exists`,
+  `get_declared_classes`, no-argument `new Exception()`, constructor
+  arguments for message/code/previous, and user classes extending
+  `Exception` work through the current object metadata model. Constructed
+  `Exception` objects initialize bounded `message`, `code`, `file`, `line`,
+  and `previous` state, and expose `getMessage()`, `getCode()`, `getFile()`,
+  `getLine()`, `getPrevious()`, and a bounded `getTraceAsString()`.
+  `ErrorException` additionally supports bounded message/code/severity/
+  filename/line/previous construction and `getSeverity()`. Caught core
+  `Error`/`TypeError`-style objects expose the same bounded file/line/
+  previous/trace-string accessors.
   `ReflectionException` is also seeded as metadata-only and records
   `Exception` as its parent for `class_exists()`, `get_declared_classes()`,
   `get_parent_class()`, `is_a()`, `is_subclass_of()`, and `ReflectionClass`
   metadata checks.
-  `Throwable` interface metadata, `Exception` constructor state (`message`,
-  `code`, previous exception), `Exception` methods such as `getMessage()`,
-  stack unwinding, catch matching, catch variable binding, multi-catch
-  semantics beyond parsed type lists, finally execution during exception/error
-  unwinding, stack traces, exact native error objects, and native lowering do
-  not exist yet.
+  `Throwable` interface parity, structured `getTrace()` arrays, exact internal
+  stack frames, exact `__toString()` frames, callable user methods on core
+  Throwable subclasses, full stack unwinding parity, multi-catch semantics
+  beyond parsed type lists, finally execution during exception/error
+  unwinding, exact native error objects, references/copy-on-write, and native
+  lowering do not exist yet.
 - PHP 8 `match` expressions currently fail with a stable parse diagnostic
   before expression-form branching exists. Strict arm matching, default arms,
   exhaustiveness errors, thrown expressions inside arms, value evaluation
@@ -13052,10 +13060,11 @@
   diagnostic-suppression slice, including exact recoverable diagnostic
   severity, expression recovery values, and `error_reporting()` mask
   interactions
-- full PHP `Throwable`/`Error` objects, stack traces, warning/notice object
-  parity, and complete user-error-handler behavior; current caught core
-  Throwable objects support bounded PHP stringification for echo/string casts,
-  and only documented bounded handler slices are implemented
+- full PHP `Throwable`/`Error` object parity, structured stack traces,
+  warning/notice object parity, and complete user-error-handler behavior;
+  current caught core Throwable objects support bounded file/line/previous/
+  trace-string accessors plus PHP stringification for echo/string casts, and
+  only documented bounded handler slices are implemented
 - exact PHP output buffering and fatal-emission fidelity for every runtime
   failure; current PHP-shaped fatal paths preserve their modeled stdout/stderr
   shape, while remaining project-diagnostic runtime boundaries abort without

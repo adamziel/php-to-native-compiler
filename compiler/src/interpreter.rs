@@ -24896,6 +24896,20 @@ impl Interpreter {
             .unwrap_or_else(|| "Command line code".to_string())
     }
 
+    fn throwable_display_file_for_object(&self, object: &PhpObject) -> String {
+        let class_id = object.class_id();
+        let protected_class_ids = self.protected_class_ids_for_context(class_id);
+        match object.read_property_from_context("file", Some(class_id), &protected_class_ids) {
+            Ok(Value::String(file)) => file,
+            Ok(Value::BinaryString(bytes)) => String::from_utf8_lossy(&bytes).into_owned(),
+            Ok(Value::Int(file)) => file.to_string(),
+            Ok(Value::Float(file)) => file.to_string(),
+            Ok(Value::Bool(true)) => "1".to_string(),
+            Ok(Value::Bool(false) | Value::Null) | Err(_) => self.throwable_display_file(),
+            Ok(other) => other.type_name().to_string(),
+        }
+    }
+
     fn throwable_display_line(&self, object: &PhpObject, fallback: usize) -> usize {
         let class_id = object.class_id();
         let protected_class_ids = self.protected_class_ids_for_context(class_id);
@@ -24903,6 +24917,13 @@ impl Interpreter {
             Ok(Value::Int(line)) if line >= 0 => line as usize,
             _ => fallback,
         }
+    }
+
+    fn throwable_trace_as_string(&self, object: &PhpObject) -> String {
+        self.throwable_string_traces
+            .get(&object.id())
+            .cloned()
+            .unwrap_or_else(|| "#0 {main}".to_string())
     }
 
     fn throwable_to_php_string(&self, object: &PhpObject, span: Span) -> Option<String> {
@@ -24917,13 +24938,9 @@ impl Interpreter {
         } else {
             format!(": {message}")
         };
-        let file = self.throwable_display_file();
+        let file = self.throwable_display_file_for_object(object);
         let line = self.throwable_display_line(object, span.line);
-        let stack_trace = self
-            .throwable_string_traces
-            .get(&object.id())
-            .cloned()
-            .unwrap_or_else(|| "#0 {main}".to_string());
+        let stack_trace = self.throwable_trace_as_string(object);
         Some(format!(
             "{class_name}{message_suffix} in {file}:{line}\nStack trace:\n{stack_trace}"
         ))
@@ -25213,6 +25230,15 @@ impl Interpreter {
                 &protected_class_ids,
             )
             .map_err(|error| runtime_error(Span { line: 0, column: 0 }, error))?;
+        let file = self.throwable_display_file();
+        object
+            .write_property_from_context(
+                "file",
+                Value::String(file.clone()),
+                Some(class_id),
+                &protected_class_ids,
+            )
+            .map_err(|error| runtime_error(Span { line: 0, column: 0 }, error))?;
         object
             .write_property_from_context(
                 "line",
@@ -25221,7 +25247,14 @@ impl Interpreter {
                 &protected_class_ids,
             )
             .map_err(|error| runtime_error(Span { line: 0, column: 0 }, error))?;
-        let file = self.throwable_display_file();
+        object
+            .write_property_from_context(
+                "previous",
+                Value::Null,
+                Some(class_id),
+                &protected_class_ids,
+            )
+            .map_err(|error| runtime_error(Span { line: 0, column: 0 }, error))?;
         let stack_trace = self.formatted_pending_uncaught_call_trace(&file);
         self.throwable_string_traces
             .insert(object.id(), stack_trace);
@@ -28464,6 +28497,7 @@ impl Interpreter {
             Some(expr) => self.evaluate_exception_previous_argument(expr, scope)?,
             None => Value::Null,
         };
+        let file = self.throwable_display_file();
         let protected_class_ids = self.protected_class_ids_for_context(class_id);
         object
             .write_property_from_context(
@@ -28477,6 +28511,14 @@ impl Interpreter {
             .write_property_from_context(
                 "code",
                 Value::Int(code),
+                Some(class_id),
+                &protected_class_ids,
+            )
+            .map_err(|error| runtime_error(span, error))?;
+        object
+            .write_property_from_context(
+                "file",
+                Value::String(file),
                 Some(class_id),
                 &protected_class_ids,
             )
@@ -28521,15 +28563,28 @@ impl Interpreter {
             Some(expr) => self.evaluate_exception_code_argument(expr, scope)?,
             None => 0,
         };
-        if let Some(expr) = args.get(2) {
-            let _ = self.evaluate_exception_code_argument(expr, scope)?;
-        }
-        if let Some(expr) = args.get(3) {
-            let _ = self.evaluate_exception_message_argument(expr, scope)?;
-        }
-        let line = match args.get(4) {
+        let severity = match args.get(2) {
             Some(expr) => self.evaluate_exception_code_argument(expr, scope)?,
-            None => span.line as i64,
+            None => PHP_E_ERROR,
+        };
+        let (file, has_custom_file) = match args.get(3) {
+            Some(expr) => match self.evaluate_exception_file_argument(expr, scope)? {
+                Some(file) => (file, true),
+                None => (self.throwable_display_file(), false),
+            },
+            None => (self.throwable_display_file(), false),
+        };
+        let line = match args.get(4) {
+            Some(expr) => self
+                .evaluate_exception_optional_line_argument(expr, scope)?
+                .unwrap_or(if has_custom_file { 0 } else { span.line as i64 }),
+            None => {
+                if has_custom_file {
+                    0
+                } else {
+                    span.line as i64
+                }
+            }
         };
         let previous = match args.get(5) {
             Some(expr) => self.evaluate_exception_previous_argument(expr, scope)?,
@@ -28548,6 +28603,22 @@ impl Interpreter {
             .write_property_from_context(
                 "code",
                 Value::Int(code),
+                Some(class_id),
+                &protected_class_ids,
+            )
+            .map_err(|error| runtime_error(span, error))?;
+        object
+            .write_property_from_context(
+                "severity",
+                Value::Int(severity),
+                Some(class_id),
+                &protected_class_ids,
+            )
+            .map_err(|error| runtime_error(span, error))?;
+        object
+            .write_property_from_context(
+                "file",
+                Value::String(file),
                 Some(class_id),
                 &protected_class_ids,
             )
@@ -28592,6 +28663,32 @@ impl Interpreter {
         }
     }
 
+    fn evaluate_exception_file_argument(
+        &mut self,
+        expr: &Expr,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Option<String>> {
+        match self.evaluate(expr, scope)? {
+            Value::Null => Ok(None),
+            Value::Bool(false) => Ok(Some(String::new())),
+            Value::Bool(true) => Ok(Some("1".to_string())),
+            Value::Int(value) => Ok(Some(value.to_string())),
+            Value::Float(value) => Ok(Some(value.to_string())),
+            Value::String(value) => Ok(Some(value)),
+            Value::BinaryString(bytes) => Ok(Some(String::from_utf8_lossy(&bytes).into_owned())),
+            other => Err(runtime_error(
+                expr.span(),
+                RuntimeError::unsupported_object_instantiation(
+                    "ErrorException",
+                    format!(
+                        "filename argument must be string or null in the current subset, got {}",
+                        other.type_name()
+                    ),
+                ),
+            )),
+        }
+    }
+
     fn evaluate_exception_code_argument(
         &mut self,
         expr: &Expr,
@@ -28607,6 +28704,29 @@ impl Interpreter {
                     "Exception",
                     format!(
                         "code argument must be int in the current subset, got {}",
+                        other.type_name()
+                    ),
+                ),
+            )),
+        }
+    }
+
+    fn evaluate_exception_optional_line_argument(
+        &mut self,
+        expr: &Expr,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Option<i64>> {
+        match self.evaluate(expr, scope)? {
+            Value::Null => Ok(None),
+            Value::Bool(false) => Ok(Some(0)),
+            Value::Bool(true) => Ok(Some(1)),
+            Value::Int(value) => Ok(Some(value)),
+            other => Err(runtime_error(
+                expr.span(),
+                RuntimeError::unsupported_object_instantiation(
+                    "ErrorException",
+                    format!(
+                        "line argument must be int or null in the current subset, got {}",
                         other.type_name()
                     ),
                 ),
@@ -53105,6 +53225,12 @@ impl Interpreter {
                     )
                     .map_err(|error| runtime_error(span, error))
             }
+            "getfile" => {
+                expect_expr_arity("Error::getFile", arg_count, 0, span)?;
+                Ok(Value::String(
+                    self.throwable_display_file_for_object(object),
+                ))
+            }
             "getline" => {
                 expect_expr_arity("Error::getLine", arg_count, 0, span)?;
                 let protected_class_ids = self.protected_class_ids_for_context(object.class_id());
@@ -53115,6 +53241,47 @@ impl Interpreter {
                         &protected_class_ids,
                     )
                     .map_err(|error| runtime_error(span, error))
+            }
+            "getprevious" => {
+                expect_expr_arity("Error::getPrevious", arg_count, 0, span)?;
+                let protected_class_ids = self.protected_class_ids_for_context(object.class_id());
+                Ok(object
+                    .read_property_from_context(
+                        "previous",
+                        Some(object.class_id()),
+                        &protected_class_ids,
+                    )
+                    .unwrap_or(Value::Null))
+            }
+            "gettraceasstring" => {
+                expect_expr_arity("Error::getTraceAsString", arg_count, 0, span)?;
+                Ok(Value::String(self.throwable_trace_as_string(object)))
+            }
+            "getseverity" if object.is_instance_of_class_name("ErrorException") => {
+                expect_expr_arity("ErrorException::getSeverity", arg_count, 0, span)?;
+                let protected_class_ids = self.protected_class_ids_for_context(object.class_id());
+                match object.read_property_from_context(
+                    "severity",
+                    Some(object.class_id()),
+                    &protected_class_ids,
+                ) {
+                    Ok(Value::Int(severity)) => Ok(Value::Int(severity)),
+                    Ok(Value::Bool(true)) => Ok(Value::Int(1)),
+                    Ok(Value::Bool(false) | Value::Null) | Err(_) => Ok(Value::Int(PHP_E_ERROR)),
+                    Ok(Value::Float(severity)) => Ok(Value::Int(severity as i64)),
+                    Ok(Value::String(severity)) => {
+                        severity.parse::<i64>().map(Value::Int).map_err(|_| {
+                            runtime_error(
+                                span,
+                                RuntimeError::unsupported_call(
+                                    "ErrorException::getSeverity()",
+                                    "severity property must be int-like in the current subset",
+                                ),
+                            )
+                        })
+                    }
+                    Ok(_) => Ok(Value::Int(PHP_E_ERROR)),
+                }
             }
             _ => Err(runtime_error(
                 span,

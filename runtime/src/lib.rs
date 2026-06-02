@@ -31900,7 +31900,7 @@ impl PhpClassTable {
             let exception = classes
                 .get_mut(exception_id)
                 .expect("core Exception class id should resolve");
-            for property in ["message", "code", "previous", "line"] {
+            for property in ["message", "code", "file", "previous", "line"] {
                 exception
                     .add_property(PhpPropertyMetadata::instance(
                         property,
@@ -31908,7 +31908,14 @@ impl PhpClassTable {
                     ))
                     .expect("Exception core metadata should not duplicate constructor state");
             }
-            for method in ["getMessage", "getCode"] {
+            for method in [
+                "getMessage",
+                "getCode",
+                "getFile",
+                "getLine",
+                "getPrevious",
+                "getTraceAsString",
+            ] {
                 exception
                     .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
                     .expect("Exception core metadata should not duplicate methods");
@@ -31920,12 +31927,19 @@ impl PhpClassTable {
         let error = classes
             .get_mut(error_id)
             .expect("core Error class id should resolve");
-        for property in ["message", "code", "line"] {
+        for property in ["message", "code", "file", "line", "previous"] {
             error
                 .add_property(PhpPropertyMetadata::instance(property, Visibility::Public))
                 .expect("Error core metadata should not duplicate properties");
         }
-        for method in ["getMessage", "getCode"] {
+        for method in [
+            "getMessage",
+            "getCode",
+            "getFile",
+            "getLine",
+            "getPrevious",
+            "getTraceAsString",
+        ] {
             error
                 .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
                 .expect("Error core metadata should not duplicate methods");
@@ -33555,6 +33569,23 @@ impl PhpClassTable {
         classes
             .set_parent(error_exception_id, exception_id)
             .expect("ErrorException should extend Exception");
+        {
+            let error_exception = classes
+                .get_mut(error_exception_id)
+                .expect("core ErrorException class id should resolve");
+            error_exception
+                .add_property(PhpPropertyMetadata::instance(
+                    "severity",
+                    Visibility::Protected,
+                ))
+                .expect("ErrorException core metadata should not duplicate severity");
+            error_exception
+                .add_method(PhpMethodMetadata::instance(
+                    "getSeverity",
+                    Visibility::Public,
+                ))
+                .expect("ErrorException core metadata should not duplicate methods");
+        }
         let reflection_id = classes
             .declare_class("Reflection")
             .expect("core class table should contain ErrorException before Reflection");
@@ -81424,9 +81455,23 @@ mod tests {
                 .iter()
                 .map(PhpPropertyMetadata::name)
                 .collect::<Vec<_>>(),
-            vec!["message", "code", "previous", "line"]
+            vec!["message", "code", "file", "previous", "line"]
         );
-        assert!(exception.method("getMessage").is_some());
+        assert_eq!(
+            exception
+                .methods()
+                .iter()
+                .map(PhpMethodMetadata::name)
+                .collect::<Vec<_>>(),
+            vec![
+                "getMessage",
+                "getCode",
+                "getFile",
+                "getLine",
+                "getPrevious",
+                "getTraceAsString"
+            ]
+        );
 
         let error = classes.lookup_class("error").unwrap();
         assert_eq!(error.name(), "Error");
@@ -81438,7 +81483,7 @@ mod tests {
                 .iter()
                 .map(PhpPropertyMetadata::name)
                 .collect::<Vec<_>>(),
-            vec!["message", "code", "line"]
+            vec!["message", "code", "file", "line", "previous"]
         );
         assert_eq!(
             error
@@ -81446,7 +81491,14 @@ mod tests {
                 .iter()
                 .map(PhpMethodMetadata::name)
                 .collect::<Vec<_>>(),
-            vec!["getMessage", "getCode"]
+            vec![
+                "getMessage",
+                "getCode",
+                "getFile",
+                "getLine",
+                "getPrevious",
+                "getTraceAsString"
+            ]
         );
 
         let request_parse_body_exception =
@@ -81765,7 +81817,14 @@ mod tests {
         assert_eq!(reflection_method.name(), "ReflectionMethod");
         assert_eq!(reflection_method.id().index(), 30);
         assert!(reflection_method.parent_id().is_none());
-        assert!(reflection_method.properties().is_empty());
+        assert_eq!(
+            reflection_method
+                .properties()
+                .iter()
+                .map(PhpPropertyMetadata::name)
+                .collect::<Vec<_>>(),
+            vec!["name", "class"]
+        );
         assert!(reflection_method.constant("IS_PUBLIC").is_some());
         assert!(reflection_method.method("getModifiers").is_some());
         assert!(reflection_method.method("getAttributes").is_some());

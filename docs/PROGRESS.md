@@ -4,6 +4,25 @@
 
 Implemented:
 
+- Added a bounded PHP Throwable accessor/state lane on the interpreter path.
+  Core `Exception`, `ErrorException`, and caught `Error`/`TypeError`-style
+  objects now preserve and expose the covered `message`, `code`, `file`,
+  `line`, `previous`, and `severity` metadata through the existing Throwable
+  method dispatch, including bounded `getFile()`, `getPrevious()`,
+  `getTraceAsString()`, and `ErrorException::getSeverity()` behavior. Focused
+  proof covers the Rust `builtin_exception_class` accessors, an
+  output-buffer `ErrorException` conversion guard, build/fmt/diff checks, and
+  selected public PHPT rows `Zend/tests/ErrorException_construct.phpt`,
+  `Zend/tests/ErrorException_getSeverity.phpt`,
+  `Zend/tests/constexpr/constant_expressions_exceptions_002.phpt`,
+  `Zend/tests/exceptions/exception_014.phpt`,
+  `Zend/tests/exceptions/exception_016.phpt`,
+  `Zend/tests/exceptions/exception_getters_with_ref_props.phpt`, and
+  `Zend/tests/return_types/028.phpt`. Unsupported edges remain structured
+  `getTrace()` arrays, exact internal stack frames, full Throwable interface
+  parity, callable subclass methods on core Throwable objects, references/COW
+  outside the covered property cells, and native lowering.
+
 - Added a bounded abstract/interface diagnostics lane on the interpreter path.
   Direct instantiation of declared abstract classes and interfaces now raises
   PHP-shaped uncaught `Error` fatals through `phpc run`, including preserved
