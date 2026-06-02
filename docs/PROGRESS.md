@@ -15,6 +15,30 @@ Implemented:
   comparison was `6137` current passes vs. `6086` baseline passes with `0`
   regressions, and the invalid-proof-marker summary reported `0` hits.
 
+- Added a bounded ext/filter byte-sanitizer/default/input-source lane on the
+  interpreter path. Unsafe-raw and encoded sanitizers now handle the covered
+  low/high/amp decimal-entity and backtick/high-byte stripping flags,
+  `FILTER_FLAG_EMPTY_STRING_NULL` returns `null` for empty default/unsafe-raw
+  inputs, `filter_input()` reads bounded `INPUT_ENV` and `INPUT_SERVER`
+  superglobal seeds and returns configured defaults for missing inputs,
+  `FILTER_VALIDATE_FLOAT` accepts a one-character custom thousand separator,
+  `FILTER_VALIDATE_MAC` accepts dash/dotted forms plus a configured separator,
+  and `filter_var_array()` emits PHP-shaped unknown-filter warnings with
+  unsafe-raw fallback for reached spec-array descriptors. Focused proof covers
+  the Rust
+  `filter_byte_flags_options_and_input_defaults_cover_bounded_rows`
+  regression, the full `filter_builtin` Rust file, build/fmt/diff checks, and
+  selected public PHPT rows `ext/filter/tests/043.phpt`,
+  `ext/filter/tests/055.phpt`, `ext/filter/tests/bug44779.phpt`,
+  `ext/filter/tests/bug50632.phpt`, `ext/filter/tests/bug51368.phpt`,
+  `ext/filter/tests/bug53037.phpt`, `ext/filter/tests/bug69202.phpt`,
+  `ext/filter/tests/bug69203.phpt`, and `ext/filter/tests/gh16993.phpt`.
+  Unsupported edges remain `filter_input_array()`, `FILTER_THROW_ON_FAILURE`,
+  sanitizer deprecation diagnostics and INI `filter.default` behavior, broad
+  URL/domain/IP/email validation parity, option coercions beyond the named
+  one-character separator paths, object/resource coercions, references/COW,
+  and native lowering.
+
 - Added a bounded generalized hash HMAC / PBKDF2 / HKDF lane on the
   interpreter path. `hash_hmac()` now supports lowercase hex and raw binary
   output for the bounded MD2/MD4/MD5/SHA-1/SHA-2/SHA-3/Whirlpool digest set,

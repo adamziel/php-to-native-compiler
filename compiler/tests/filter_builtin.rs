@@ -333,3 +333,58 @@ var_dump(filter_var_array(array("test" => "0xff"), array("test" => array("filter
     );
     assert_eq!(execution.exit_code, 0);
 }
+
+#[test]
+fn filter_byte_flags_options_and_input_defaults_cover_bounded_rows() {
+    let execution = run_source(
+        r#"<?php
+$flags = FILTER_FLAG_ENCODE_LOW | FILTER_FLAG_ENCODE_HIGH | FILTER_FLAG_ENCODE_AMP;
+var_dump(filter_var(chr(0) . "&" . chr(127) . chr(255), FILTER_UNSAFE_RAW, array("flags" => $flags)));
+var_dump(filter_var("``a`" . chr(127), FILTER_UNSAFE_RAW, FILTER_FLAG_STRIP_BACKTICK | FILTER_FLAG_STRIP_HIGH));
+var_dump(filter_var(chr(127), FILTER_SANITIZE_ENCODED, FILTER_FLAG_STRIP_HIGH));
+var_dump(filter_var("", FILTER_DEFAULT, FILTER_FLAG_EMPTY_STRING_NULL));
+var_dump(filter_var("1 234.5", FILTER_VALIDATE_FLOAT, array("flags" => FILTER_FLAG_ALLOW_THOUSAND, "options" => array("thousand" => " "))));
+try {
+    filter_var("123", FILTER_VALIDATE_FLOAT, array("flags" => FILTER_FLAG_ALLOW_THOUSAND, "options" => array("thousand" => "")));
+} catch (ValueError $e) {
+    echo $e->getMessage(), "\n";
+}
+var_dump(filter_var("01-23-45-67-89-ab", FILTER_VALIDATE_MAC));
+var_dump(filter_var("0123.4567.89ab", FILTER_VALIDATE_MAC));
+var_dump(filter_var("01-23-45-67-89-ab", FILTER_VALIDATE_MAC, array("options" => array("separator" => ":"))));
+try {
+    filter_var("01-23-45-67-89-ab", FILTER_VALIDATE_MAC, array("options" => array("separator" => "--")));
+} catch (ValueError $e) {
+    echo $e->getMessage(), "\n";
+}
+var_dump(filter_input(INPUT_SERVER, "PHP_SELF"));
+var_dump(filter_input(INPUT_GET, "missing", FILTER_VALIDATE_INT, array("flags" => FILTER_REQUIRE_SCALAR, "options" => array("default" => 23))));
+var_dump(filter_var_array(array("test" => "42"), array("test" => FILTER_VALIDATE_INT | FILTER_NULL_ON_FAILURE)));
+"#,
+    )
+    .unwrap();
+
+    assert!(execution
+        .stdout
+        .contains("string(21) \"&#0;&#38;&#127;&#255;\""));
+    assert!(execution.stdout.contains("string(1) \"a\""));
+    assert!(execution.stdout.contains("string(0) \"\"\nNULL\n"));
+    assert!(execution.stdout.contains("float(1234.5)"));
+    assert!(execution
+        .stdout
+        .contains("filter_var(): \"thousand\" option must not be empty"));
+    assert!(execution
+        .stdout
+        .contains("string(17) \"01-23-45-67-89-ab\""));
+    assert!(execution.stdout.contains("string(14) \"0123.4567.89ab\""));
+    assert!(execution
+        .stdout
+        .contains("filter_var(): \"separator\" option must be one character long"));
+    assert!(execution.stdout.contains("string(10) \"/index.php\""));
+    assert!(execution.stdout.contains("int(23)"));
+    assert!(execution
+        .stdout
+        .contains("Warning: filter_var_array(): Unknown filter with ID 134217985"));
+    assert!(execution.stdout.contains("string(2) \"42\""));
+    assert_eq!(execution.exit_code, 0);
+}

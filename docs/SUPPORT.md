@@ -2980,21 +2980,30 @@
   native lowering beyond function-table introspection remain unsupported.
 - `filter_list()`, `filter_id()`, `filter_var()`, `filter_var_array()`, and
   `filter_input()` cover a bounded ext/filter scalar helper slice. The current
-  filters include unsafe-raw and selected sanitizers, int/float/bool/domain/
-  URL/email/IP/MAC/regexp validators, array filtering through
+  filters include unsafe-raw and selected byte-preserving sanitizers,
+  low/high/amp decimal-entity encoding, low/high/backtick byte stripping,
+  empty-string-null handling for the unsafe-raw/default path, int/float/bool/
+  domain/URL/email/IP/MAC/regexp validators, array filtering through
   `FILTER_REQUIRE_ARRAY`/`FILTER_FORCE_ARRAY`, `FILTER_NULL_ON_FAILURE`,
   configured defaults including nested `options["default"]` for covered
-  validators, `FILTER_CALLBACK` for supported callbacks including recursive
-  array callback filtering, and `INPUT_GET`/`INPUT_POST`/`INPUT_COOKIE` reads
-  from the bounded superglobal seeds. `FILTER_VALIDATE_FLOAT` covers bounded
-  grouped-thousands validation with `FILTER_FLAG_ALLOW_THOUSAND`, finite
-  underflow rejection, and `min_range` / `max_range` option checks.
+  validators and missing `filter_input()` variables, `FILTER_CALLBACK` for
+  supported callbacks including recursive array callback filtering, and
+  `INPUT_GET`/`INPUT_POST`/`INPUT_COOKIE`/`INPUT_ENV`/`INPUT_SERVER` reads from
+  the bounded superglobal seeds. `FILTER_VALIDATE_FLOAT` covers bounded
+  grouped-thousands validation with `FILTER_FLAG_ALLOW_THOUSAND`, the default
+  comma separator plus a one-character custom `options["thousand"]` separator,
+  finite underflow rejection, and `min_range` / `max_range` option checks.
   `FILTER_VALIDATE_INT` accepts the covered unsigned hexadecimal and
   legacy-octal boundary forms up to the 64-bit unsigned limit and returns
   wrapped signed integer values for inputs above `PHP_INT_MAX`.
+  `FILTER_VALIDATE_MAC` accepts default colon, dash, and dotted separators plus
+  a one-character configured `options["separator"]` path.
   `filter_var()` accepts weak scalar `$options` flags, and descriptor-array
   `filter` / `flags` entries accept string-valued integer IDs without mutating
-  caller option arrays. `FILTER_VALIDATE_IP` honors the current IPv4/IPv6
+  caller option arrays. `filter_var_array()` emits PHP-shaped warnings and
+  unsafe-raw fallback values for reached unknown spec-array filter IDs, while
+  empty string descriptor keys raise the PHP-shaped `ValueError`.
+  `FILTER_VALIDATE_IP` honors the current IPv4/IPv6
   selector flags, current IPv4 private ranges, bounded IPv4 reserved ranges
   for `0.0.0.0/8`, `127.0.0.0/8`, `169.254.0.0/16`, and `240.0.0.0/4`,
   IPv6 `fc00::/7` private-range rejection, bounded IPv6 reserved-range
@@ -3003,12 +3012,13 @@
   table. `FILTER_FLAG_HOSTNAME` is visible for `FILTER_VALIDATE_DOMAIN`, using
   the current bounded hostname label rules, and `FILTER_VALIDATE_URL` rejects
   raw bracket characters in URL userinfo before host parsing.
-  Remaining ext/filter option coercion and diagnostics,
-  `filter_input_array()`, `FILTER_THROW_ON_FAILURE`, exact full RFC 6890/RFC
-  8190 IPv4/IPv6 range-table parity beyond the covered prefixes, Unicode
-  email/IDNA policy, broad URL/domain/IP validation parity, sanitizer
-  deprecation diagnostics, object/resource coercions, references/COW beyond
-  the current array-slot path, and native lowering remain unsupported.
+  Remaining ext/filter option coercion and diagnostics beyond the named
+  one-character separator paths, `filter_input_array()`,
+  `FILTER_THROW_ON_FAILURE`, exact full RFC 6890/RFC 8190 IPv4/IPv6
+  range-table parity beyond the covered prefixes, Unicode email/IDNA policy,
+  broad URL/domain/IP validation parity, sanitizer deprecation diagnostics and
+  INI `filter.default` behavior, object/resource coercions, references/COW
+  beyond the current array-slot path, and native lowering remain unsupported.
 - `request_parse_body()` supports the bounded CLI option-validation path used
   by the standard request-body PHPT rows. It accepts omitted, `null`, or array
   `$options`; validates the known scalar quantity keys

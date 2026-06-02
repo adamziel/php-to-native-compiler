@@ -1233,14 +1233,14 @@ impl DirectArrayPathMutation {
 fn is_auto_global_name(name: &str) -> bool {
     matches!(
         name,
-        "_SERVER" | "_COOKIE" | "_GET" | "_POST" | "_REQUEST" | "_FILES" | "_SESSION"
+        "_SERVER" | "_ENV" | "_COOKIE" | "_GET" | "_POST" | "_REQUEST" | "_FILES" | "_SESSION"
     )
 }
 
 fn is_initialized_request_auto_global_name(name: &str) -> bool {
     matches!(
         name,
-        "_SERVER" | "_COOKIE" | "_GET" | "_POST" | "_REQUEST" | "_FILES"
+        "_SERVER" | "_ENV" | "_COOKIE" | "_GET" | "_POST" | "_REQUEST" | "_FILES"
     )
 }
 
@@ -22437,10 +22437,17 @@ impl Interpreter {
         let mut request = get.clone();
         merge_request_array(&mut request, &post);
         let files = parse_upload_file_metadata_pairs(upload_files);
+        let mut env = PhpArray::new();
+        for (name, value) in std::env::vars() {
+            env.insert(name, Value::String(value));
+        }
 
         self.global_symbols
             .borrow_mut()
             .insert("_SERVER".to_string(), value_cell(Value::Array(server)));
+        self.global_symbols
+            .borrow_mut()
+            .insert("_ENV".to_string(), value_cell(Value::Array(env)));
         self.global_symbols
             .borrow_mut()
             .insert("_COOKIE".to_string(), value_cell(Value::Array(cookie)));
@@ -112675,6 +112682,13 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
         {
             return Some(("TypeError", message.to_string()));
         }
+        if let Some(message) = error
+            .message
+            .strip_prefix("unsupported call filter_var_array(): ")
+            .filter(|message| *message == "Argument #2 ($options) cannot contain empty keys")
+        {
+            return Some(("ValueError", message.to_string()));
+        }
 
         if let Some(message) = error
             .message
@@ -113942,7 +113956,10 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
         (
             "filter_var()",
             "filter_var(): \"regexp\" option is missing"
-                | "filter_var(): \"decimal\" option must be one character long",
+                | "filter_var(): \"decimal\" option must be one character long"
+                | "filter_var(): \"separator\" option must be one character long"
+                | "filter_var(): \"thousand\" option must not be empty"
+                | "filter_var(): \"thousand\" option must be one character long",
         ) => Some(message.to_string()),
         ("tempnam()", message)
             if message.starts_with("Argument #")
@@ -116422,6 +116439,8 @@ const PHP_STANDARD_STRING_MEMORY_LIMIT_BYTES: usize = 128 * 1024 * 1024;
 const PHP_INPUT_POST: i64 = 0;
 const PHP_INPUT_GET: i64 = 1;
 const PHP_INPUT_COOKIE: i64 = 2;
+const PHP_INPUT_ENV: i64 = 4;
+const PHP_INPUT_SERVER: i64 = 5;
 const PHP_INI_SCANNER_NORMAL: i64 = 0;
 const PHP_INI_SCANNER_RAW: i64 = 1;
 const PHP_INI_SCANNER_TYPED: i64 = 2;
@@ -116455,6 +116474,7 @@ const PHP_FILTER_FLAG_ENCODE_HIGH: i64 = 32;
 const PHP_FILTER_FLAG_ENCODE_AMP: i64 = 64;
 const PHP_FILTER_FLAG_NO_ENCODE_QUOTES: i64 = 128;
 const PHP_FILTER_FLAG_EMPTY_STRING_NULL: i64 = 256;
+const PHP_FILTER_FLAG_STRIP_BACKTICK: i64 = 512;
 const PHP_FILTER_FLAG_ALLOW_FRACTION: i64 = 4096;
 const PHP_FILTER_FLAG_ALLOW_THOUSAND: i64 = 8192;
 const PHP_FILTER_FLAG_ALLOW_SCIENTIFIC: i64 = 16384;
@@ -116952,6 +116972,8 @@ const BUILTIN_GLOBAL_CONSTANT_NAMES: &[&str] = &[
     "INPUT_POST",
     "INPUT_GET",
     "INPUT_COOKIE",
+    "INPUT_ENV",
+    "INPUT_SERVER",
     "INI_SCANNER_NORMAL",
     "INI_SCANNER_RAW",
     "INI_SCANNER_TYPED",
@@ -117016,6 +117038,7 @@ const BUILTIN_GLOBAL_CONSTANT_NAMES: &[&str] = &[
     "FILTER_FLAG_ENCODE_AMP",
     "FILTER_FLAG_NO_ENCODE_QUOTES",
     "FILTER_FLAG_EMPTY_STRING_NULL",
+    "FILTER_FLAG_STRIP_BACKTICK",
     "FILTER_FLAG_ALLOW_FRACTION",
     "FILTER_FLAG_ALLOW_THOUSAND",
     "FILTER_FLAG_ALLOW_SCIENTIFIC",
@@ -117409,6 +117432,8 @@ fn builtin_global_constant_value(name: &str) -> Option<Value> {
         "INPUT_POST" => Some(Value::Int(PHP_INPUT_POST)),
         "INPUT_GET" => Some(Value::Int(PHP_INPUT_GET)),
         "INPUT_COOKIE" => Some(Value::Int(PHP_INPUT_COOKIE)),
+        "INPUT_ENV" => Some(Value::Int(PHP_INPUT_ENV)),
+        "INPUT_SERVER" => Some(Value::Int(PHP_INPUT_SERVER)),
         "INI_SCANNER_NORMAL" => Some(Value::Int(PHP_INI_SCANNER_NORMAL)),
         "INI_SCANNER_RAW" => Some(Value::Int(PHP_INI_SCANNER_RAW)),
         "INI_SCANNER_TYPED" => Some(Value::Int(PHP_INI_SCANNER_TYPED)),
@@ -117477,6 +117502,7 @@ fn builtin_global_constant_value(name: &str) -> Option<Value> {
         "FILTER_FLAG_ENCODE_AMP" => Some(Value::Int(PHP_FILTER_FLAG_ENCODE_AMP)),
         "FILTER_FLAG_NO_ENCODE_QUOTES" => Some(Value::Int(PHP_FILTER_FLAG_NO_ENCODE_QUOTES)),
         "FILTER_FLAG_EMPTY_STRING_NULL" => Some(Value::Int(PHP_FILTER_FLAG_EMPTY_STRING_NULL)),
+        "FILTER_FLAG_STRIP_BACKTICK" => Some(Value::Int(PHP_FILTER_FLAG_STRIP_BACKTICK)),
         "FILTER_FLAG_ALLOW_FRACTION" => Some(Value::Int(PHP_FILTER_FLAG_ALLOW_FRACTION)),
         "FILTER_FLAG_ALLOW_THOUSAND" => Some(Value::Int(PHP_FILTER_FLAG_ALLOW_THOUSAND)),
         "FILTER_FLAG_ALLOW_SCIENTIFIC" => Some(Value::Int(PHP_FILTER_FLAG_ALLOW_SCIENTIFIC)),
@@ -143389,13 +143415,22 @@ impl Interpreter {
             Some(Value::Array(specs)) => {
                 let mut filtered = PhpArray::new();
                 for spec in specs.entries() {
-                    let filter_spec = filter_descriptor_from_value(
-                        &spec.value_cloned(),
-                        "filter_var_array()",
-                        span,
-                    )?;
+                    if matches!(&spec.key, ArrayKey::String(key) if key.is_empty()) {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "filter_var_array()",
+                                "Argument #2 ($options) cannot contain empty keys",
+                            ),
+                        ));
+                    }
                     match input.get_slot(spec.key.clone()) {
                         Some(slot) => {
+                            let filter_spec = self.filter_descriptor_from_value_for_array(
+                                &spec.value_cloned(),
+                                "filter_var_array()",
+                                span,
+                            )?;
                             let value = self.apply_filter_slot(
                                 slot,
                                 filter_spec.filter,
@@ -143488,9 +143523,92 @@ impl Interpreter {
 
         match value {
             Some(value) => self.apply_filter_value(value, filter, &options, span),
+            None if options.default.is_some() => Ok(options.default.clone().unwrap_or(Value::Null)),
             None if options.flags & PHP_FILTER_NULL_ON_FAILURE != 0 => Ok(Value::Bool(false)),
             None => Ok(Value::Null),
         }
+    }
+
+    fn filter_descriptor_from_value_for_array(
+        &mut self,
+        value: &Value,
+        function: &str,
+        span: Span,
+    ) -> CompileResult<FilterDescriptor> {
+        match value {
+            Value::Int(filter) => self.filter_descriptor_from_id_for_array(*filter, span),
+            Value::String(filter) => {
+                let filter = filter_id_for_descriptor_string(filter);
+                self.filter_descriptor_from_id_for_array(filter, span)
+            }
+            Value::Array(options) => {
+                let filter = match options.get_cloned("filter") {
+                    Some(Value::Int(filter)) => filter,
+                    Some(Value::String(name)) => filter_id_for_descriptor_string(&name),
+                    Some(other) => {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                function,
+                                format!("filter must be int or string, got {}", other.type_name()),
+                            ),
+                        ))
+                    }
+                    None => PHP_FILTER_DEFAULT,
+                };
+                let options = filter_options_from_array(options, function, span)?;
+                if !filter_id_is_known(filter) {
+                    self.emit_unknown_filter_warning("filter_var_array()", filter, span)?;
+                    return Ok(FilterDescriptor {
+                        filter: PHP_FILTER_DEFAULT,
+                        options: FilterOptions::default(),
+                    });
+                }
+                Ok(FilterDescriptor { filter, options })
+            }
+            other => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function,
+                    format!(
+                        "filter descriptor must be int or array in the current subset, got {}",
+                        other.type_name()
+                    ),
+                ),
+            )),
+        }
+    }
+
+    fn filter_descriptor_from_id_for_array(
+        &mut self,
+        filter: i64,
+        span: Span,
+    ) -> CompileResult<FilterDescriptor> {
+        if !filter_id_is_known(filter) {
+            self.emit_unknown_filter_warning("filter_var_array()", filter, span)?;
+            return Ok(FilterDescriptor {
+                filter: PHP_FILTER_DEFAULT,
+                options: FilterOptions::default(),
+            });
+        }
+        Ok(FilterDescriptor {
+            filter,
+            options: FilterOptions::default(),
+        })
+    }
+
+    fn emit_unknown_filter_warning(
+        &mut self,
+        function: &str,
+        filter: i64,
+        span: Span,
+    ) -> CompileResult<()> {
+        self.emit_display_diagnostic(
+            "Warning",
+            PHP_E_WARNING,
+            format!("{function}: Unknown filter with ID {filter}"),
+            span,
+        )
     }
 
     fn apply_filter_value(
@@ -143589,25 +143707,44 @@ impl Interpreter {
         let flags = options.flags;
         match filter {
             PHP_FILTER_UNSAFE_RAW => value
-                .try_echo_string()
-                .map(|value| filter_sanitize_unsafe_raw(&value, flags))
-                .map(Value::String)
+                .try_echo_bytes()
+                .map(|value| {
+                    if value.is_empty() && flags & PHP_FILTER_FLAG_EMPTY_STRING_NULL != 0 {
+                        Value::Null
+                    } else {
+                        interpreter_value_from_php_string_bytes(filter_sanitize_unsafe_raw_bytes(
+                            &value, flags,
+                        ))
+                    }
+                })
                 .map_err(|error| runtime_error(span, error)),
             PHP_FILTER_SANITIZE_SPECIAL_CHARS => value
-                .try_echo_string()
-                .map(|value| Value::String(filter_sanitize_special_chars(&value, flags)))
+                .try_echo_bytes()
+                .map(|value| {
+                    interpreter_value_from_php_string_bytes(filter_sanitize_special_chars_bytes(
+                        &value, flags,
+                    ))
+                })
                 .map_err(|error| runtime_error(span, error)),
             PHP_FILTER_SANITIZE_FULL_SPECIAL_CHARS => value
                 .try_echo_string()
                 .map(|value| Value::String(filter_sanitize_full_special_chars(&value)))
                 .map_err(|error| runtime_error(span, error)),
             PHP_FILTER_SANITIZE_STRING => value
-                .try_echo_string()
-                .map(|value| Value::String(filter_sanitize_string(&value, flags)))
+                .try_echo_bytes()
+                .map(|value| {
+                    interpreter_value_from_php_string_bytes(filter_sanitize_string_bytes(
+                        &value, flags,
+                    ))
+                })
                 .map_err(|error| runtime_error(span, error)),
             PHP_FILTER_SANITIZE_ENCODED => value
-                .try_echo_string()
-                .map(|value| Value::String(filter_sanitize_encoded(&value)))
+                .try_echo_bytes()
+                .map(|value| {
+                    interpreter_value_from_php_string_bytes(filter_sanitize_encoded_bytes(
+                        &value, flags,
+                    ))
+                })
                 .map_err(|error| runtime_error(span, error)),
             PHP_FILTER_SANITIZE_EMAIL => value
                 .try_echo_string()
@@ -143658,7 +143795,7 @@ impl Interpreter {
             PHP_FILTER_VALIDATE_IP => Ok(filter_validate_ip(&value, flags)
                 .map(Value::String)
                 .unwrap_or_else(|| filter_default_or_failure(options, flags))),
-            PHP_FILTER_VALIDATE_MAC => Ok(filter_validate_mac(&value)
+            PHP_FILTER_VALIDATE_MAC => Ok(filter_validate_mac(&value, options, span)?
                 .map(Value::String)
                 .unwrap_or_else(|| filter_default_or_failure(options, flags))),
             PHP_FILTER_CALLBACK => self.filter_callback(value, options, span),
@@ -143783,34 +143920,47 @@ impl Interpreter {
     }
 }
 
-fn filter_sanitize_unsafe_raw(value: &str, flags: i64) -> String {
-    if flags & PHP_FILTER_FLAG_ENCODE_AMP == 0 {
-        return value.to_string();
-    }
-    value.replace('&', "&#38;")
-}
-
-fn filter_sanitize_special_chars(value: &str, flags: i64) -> String {
-    let mut sanitized = String::with_capacity(value.len());
-    for ch in value.chars() {
-        match ch {
-            '&' => sanitized.push_str("&#38;"),
-            '"' => sanitized.push_str("&#34;"),
-            '\'' => sanitized.push_str("&#39;"),
-            '<' => sanitized.push_str("&#60;"),
-            '>' => sanitized.push_str("&#62;"),
-            ch if (ch as u32) <= 31 && flags & PHP_FILTER_FLAG_ENCODE_LOW != 0 => {
-                sanitized.push_str(&format!("&#{};", ch as u32))
-            }
-            ch if !ch.is_ascii() && flags & PHP_FILTER_FLAG_ENCODE_HIGH != 0 => {
-                for byte in ch.to_string().as_bytes() {
-                    sanitized.push_str(&format!("&#{byte};"));
-                }
-            }
-            ch => sanitized.push(ch),
+fn filter_sanitize_unsafe_raw_bytes(value: &[u8], flags: i64) -> Vec<u8> {
+    let mut output = Vec::with_capacity(value.len());
+    for &byte in value {
+        if filter_should_strip_byte(byte, flags) {
+            continue;
+        }
+        if byte <= 31 && flags & PHP_FILTER_FLAG_ENCODE_LOW != 0 {
+            push_decimal_entity(&mut output, byte);
+        } else if byte >= 127 && flags & PHP_FILTER_FLAG_ENCODE_HIGH != 0 {
+            push_decimal_entity(&mut output, byte);
+        } else if byte == b'&' && flags & PHP_FILTER_FLAG_ENCODE_AMP != 0 {
+            output.extend_from_slice(b"&#38;");
+        } else {
+            output.push(byte);
         }
     }
-    sanitized
+    output
+}
+
+fn filter_sanitize_special_chars_bytes(value: &[u8], flags: i64) -> Vec<u8> {
+    let mut output = Vec::with_capacity(value.len());
+    for &byte in value {
+        if filter_should_strip_byte(byte, flags) {
+            continue;
+        }
+        match byte {
+            b'&' => output.extend_from_slice(b"&#38;"),
+            b'"' => output.extend_from_slice(b"&#34;"),
+            b'\'' => output.extend_from_slice(b"&#39;"),
+            b'<' => output.extend_from_slice(b"&#60;"),
+            b'>' => output.extend_from_slice(b"&#62;"),
+            byte if byte <= 31 && flags & PHP_FILTER_FLAG_ENCODE_LOW != 0 => {
+                push_decimal_entity(&mut output, byte)
+            }
+            byte if byte >= 127 && flags & PHP_FILTER_FLAG_ENCODE_HIGH != 0 => {
+                push_decimal_entity(&mut output, byte)
+            }
+            byte => output.push(byte),
+        }
+    }
+    output
 }
 
 fn filter_sanitize_full_special_chars(value: &str) -> String {
@@ -143828,41 +143978,57 @@ fn filter_sanitize_full_special_chars(value: &str) -> String {
     sanitized
 }
 
-fn filter_sanitize_string(value: &str, flags: i64) -> String {
-    let mut output = String::new();
+fn filter_sanitize_string_bytes(value: &[u8], flags: i64) -> Vec<u8> {
+    let mut output = Vec::with_capacity(value.len());
     let mut in_tag = false;
     let mut nested_tag = false;
-    for ch in value.chars() {
-        match ch {
-            '<' if in_tag => nested_tag = true,
-            '<' => {
+    for &byte in value {
+        match byte {
+            b'<' if in_tag => nested_tag = true,
+            b'<' => {
                 in_tag = true;
                 nested_tag = false;
             }
-            '>' if in_tag && nested_tag => nested_tag = false,
-            '>' if in_tag => in_tag = false,
-            ch if in_tag => {
-                let _ = ch;
+            b'>' if in_tag && nested_tag => nested_tag = false,
+            b'>' if in_tag => in_tag = false,
+            _ if in_tag => {}
+            byte if filter_should_strip_byte(byte, flags) => {}
+            b'&' if flags & PHP_FILTER_FLAG_ENCODE_AMP != 0 => output.extend_from_slice(b"&#38;"),
+            b'\'' if flags & PHP_FILTER_FLAG_NO_ENCODE_QUOTES == 0 => {
+                output.extend_from_slice(b"&#39;")
             }
-            '&' if flags & PHP_FILTER_FLAG_ENCODE_AMP != 0 => output.push_str("&#38;"),
-            '\'' if flags & PHP_FILTER_FLAG_NO_ENCODE_QUOTES == 0 => output.push_str("&#39;"),
-            '"' if flags & PHP_FILTER_FLAG_NO_ENCODE_QUOTES == 0 => output.push_str("&#34;"),
-            ch => output.push(ch),
+            b'"' if flags & PHP_FILTER_FLAG_NO_ENCODE_QUOTES == 0 => {
+                output.extend_from_slice(b"&#34;")
+            }
+            byte => output.push(byte),
         }
     }
     output
 }
 
-fn filter_sanitize_encoded(value: &str) -> String {
-    let mut output = String::new();
-    for byte in value.as_bytes() {
-        if byte.is_ascii_alphanumeric() || matches!(*byte, b'-' | b'_' | b'.') {
-            output.push(*byte as char);
+fn filter_sanitize_encoded_bytes(value: &[u8], flags: i64) -> Vec<u8> {
+    let mut output = Vec::with_capacity(value.len());
+    for &byte in value {
+        if filter_should_strip_byte(byte, flags) {
+            continue;
+        }
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.') {
+            output.push(byte);
         } else {
-            output.push_str(&format!("%{byte:02X}"));
+            output.extend_from_slice(format!("%{byte:02X}").as_bytes());
         }
     }
     output
+}
+
+fn filter_should_strip_byte(byte: u8, flags: i64) -> bool {
+    (byte <= 31 && flags & PHP_FILTER_FLAG_STRIP_LOW != 0)
+        || (byte >= 127 && flags & PHP_FILTER_FLAG_STRIP_HIGH != 0)
+        || (byte == b'`' && flags & PHP_FILTER_FLAG_STRIP_BACKTICK != 0)
+}
+
+fn push_decimal_entity(output: &mut Vec<u8>, byte: u8) {
+    output.extend_from_slice(format!("&#{byte};").as_bytes());
 }
 
 fn filter_sanitize_email(value: &str) -> String {
@@ -143992,93 +144158,16 @@ fn filter_id_from_value(value: Option<&Value>, default: i64) -> i64 {
     }
 }
 
+fn filter_id_for_descriptor_string(value: &str) -> i64 {
+    filter_id_for_name(value)
+        .or_else(|| parse_php_internal_integer_string(value))
+        .unwrap_or(0)
+}
+
 fn filter_id_is_known(filter: i64) -> bool {
     PHP_FILTER_NAME_IDS.iter().any(|(_, id)| *id == filter)
         || filter == PHP_FILTER_DEFAULT
         || filter == PHP_FILTER_VALIDATE_BOOL
-}
-
-fn filter_descriptor_from_value(
-    value: &Value,
-    function: &str,
-    span: Span,
-) -> CompileResult<FilterDescriptor> {
-    match value {
-        Value::Int(filter) => {
-            if !filter_id_is_known(*filter) {
-                return Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        function,
-                        format!("Unknown filter with ID {filter}"),
-                    ),
-                ));
-            }
-            Ok(FilterDescriptor {
-                filter: *filter,
-                options: FilterOptions::default(),
-            })
-        }
-        Value::String(filter) => {
-            let filter = filter_id_for_name(filter)
-                .or_else(|| parse_php_internal_integer_string(filter))
-                .unwrap_or(PHP_FILTER_DEFAULT);
-            if !filter_id_is_known(filter) {
-                return Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        function,
-                        format!("Unknown filter with ID {filter}"),
-                    ),
-                ));
-            }
-            Ok(FilterDescriptor {
-                filter,
-                options: FilterOptions::default(),
-            })
-        }
-        Value::Array(options) => {
-            let filter = match options.get_cloned("filter") {
-                Some(Value::Int(filter)) => filter,
-                Some(Value::String(name)) => filter_id_for_name(&name)
-                    .or_else(|| parse_php_internal_integer_string(&name))
-                    .unwrap_or(PHP_FILTER_DEFAULT),
-                Some(other) => {
-                    return Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            function,
-                            format!("filter must be int or string, got {}", other.type_name()),
-                        ),
-                    ))
-                }
-                None => PHP_FILTER_DEFAULT,
-            };
-            if !filter_id_is_known(filter) {
-                return Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        function,
-                        format!("Unknown filter with ID {filter}"),
-                    ),
-                ));
-            }
-            Ok(FilterDescriptor {
-                filter,
-                options: filter_options_from_array(options, function, span)?,
-            })
-        }
-        other => Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                function,
-                format!(
-                    "filter descriptor must be int or array in the current subset, got {}",
-                    other.type_name()
-                ),
-            ),
-        )),
-    }
 }
 
 fn filter_options_from_value(
@@ -144159,6 +144248,8 @@ fn filter_input_global_name(input_type: i64) -> Option<&'static str> {
         PHP_INPUT_GET => Some("_GET"),
         PHP_INPUT_POST => Some("_POST"),
         PHP_INPUT_COOKIE => Some("_COOKIE"),
+        PHP_INPUT_ENV => Some("_ENV"),
+        PHP_INPUT_SERVER => Some("_SERVER"),
         _ => None,
     }
 }
@@ -144301,6 +144392,25 @@ fn filter_option_float(value: Value) -> Option<f64> {
     }
 }
 
+fn filter_single_char_option(
+    value: Value,
+    empty_message: &'static str,
+    multi_message: &'static str,
+    span: Span,
+) -> CompileResult<char> {
+    let text = value
+        .try_echo_string()
+        .map_err(|error| runtime_error(span, error))?;
+    let mut chars = text.chars();
+    let Some(ch) = chars.next() else {
+        return Err(filter_value_error(span, empty_message));
+    };
+    if chars.next().is_some() {
+        return Err(filter_value_error(span, multi_message));
+    }
+    Ok(ch)
+}
+
 fn filter_validate_float(value: &Value) -> Option<f64> {
     match value {
         Value::Float(value) if value.is_finite() => Some(*value),
@@ -144323,29 +144433,34 @@ fn filter_validate_float_with_options(
     };
     let decimal = match options.options.as_ref() {
         Some(Value::Array(options)) => match options.get_cloned("decimal") {
-            Some(Value::String(decimal)) => {
-                let mut chars = decimal.chars();
-                let Some(ch) = chars.next() else {
-                    return Err(filter_decimal_value_error(span));
-                };
-                if chars.next().is_some() {
-                    return Err(filter_decimal_value_error(span));
-                }
-                ch
-            }
-            Some(Value::Int(value)) if (0..=9).contains(&value) => {
-                char::from_digit(value as u32, 10).unwrap_or('.')
-            }
-            Some(_) => return Err(filter_decimal_value_error(span)),
+            Some(value) => filter_single_char_option(
+                value,
+                "filter_var(): \"decimal\" option must be one character long",
+                "filter_var(): \"decimal\" option must be one character long",
+                span,
+            )?,
             None => '.',
         },
         _ => '.',
+    };
+    let thousand = match options.options.as_ref() {
+        Some(Value::Array(options)) => match options.get_cloned("thousand") {
+            Some(value) => Some(filter_single_char_option(
+                value,
+                "filter_var(): \"thousand\" option must not be empty",
+                "filter_var(): \"thousand\" option must be one character long",
+                span,
+            )?),
+            None => Some(','),
+        },
+        _ => Some(','),
     };
     let trimmed = input.trim();
     if trimmed.is_empty() {
         return Ok(None);
     }
-    let Some(normalized) = filter_normalize_float_input(trimmed, decimal, options.flags) else {
+    let Some(normalized) = filter_normalize_float_input(trimmed, decimal, thousand, options.flags)
+    else {
         return Ok(None);
     };
     let Some(parsed) = normalized
@@ -144361,7 +144476,12 @@ fn filter_validate_float_with_options(
     Ok(Some(parsed))
 }
 
-fn filter_normalize_float_input(input: &str, decimal: char, flags: i64) -> Option<String> {
+fn filter_normalize_float_input(
+    input: &str,
+    decimal: char,
+    thousand: Option<char>,
+    flags: i64,
+) -> Option<String> {
     let exponent_index = input.find(['e', 'E']);
     let (mantissa, exponent) = match exponent_index {
         Some(index) => (&input[..index], Some(&input[index..])),
@@ -144394,15 +144514,21 @@ fn filter_normalize_float_input(input: &str, decimal: char, flags: i64) -> Optio
     if pieces.next().is_some() {
         return None;
     }
-    if fraction.is_some_and(|fraction| fraction.contains(',')) {
-        return None;
-    }
-
-    let normalized_whole = if whole.contains(',') {
-        if decimal == ',' || flags & PHP_FILTER_FLAG_ALLOW_THOUSAND == 0 {
+    if let Some(thousand) = thousand {
+        if fraction.is_some_and(|fraction| fraction.contains(thousand)) {
             return None;
         }
-        filter_normalize_thousand_groups(whole)?
+    }
+
+    let whole_has_thousand = thousand.is_some_and(|thousand| whole.contains(thousand));
+    let normalized_whole = if whole_has_thousand {
+        let thousand = thousand?;
+        if decimal == thousand || flags & PHP_FILTER_FLAG_ALLOW_THOUSAND == 0 {
+            return None;
+        }
+        filter_normalize_thousand_groups(whole, thousand)?
+    } else if whole.contains(',') && thousand != Some(',') {
+        return None;
     } else {
         whole.to_string()
     };
@@ -144426,8 +144552,8 @@ fn filter_normalize_float_input(input: &str, decimal: char, flags: i64) -> Optio
     Some(normalized)
 }
 
-fn filter_normalize_thousand_groups(whole: &str) -> Option<String> {
-    let mut groups = whole.split(',');
+fn filter_normalize_thousand_groups(whole: &str, thousand: char) -> Option<String> {
+    let mut groups = whole.split(thousand);
     let first = groups.next()?;
     if first.is_empty() || first.len() > 3 || !first.chars().all(|ch| ch.is_ascii_digit()) {
         return None;
@@ -144740,25 +144866,51 @@ fn ipv6_in_prefix(addr: Ipv6Addr, network: [u16; 8], prefix_bits: u32) -> bool {
     u128::from(addr) & mask == u128::from(Ipv6Addr::from(network)) & mask
 }
 
-fn filter_validate_mac(value: &Value) -> Option<String> {
-    let value = value.try_echo_string().ok()?;
-    let parts = value.split(':').collect::<Vec<_>>();
-    if parts.len() != 6 {
-        return None;
-    }
-    parts
-        .iter()
-        .all(|part| part.len() == 2 && part.chars().all(|ch| ch.is_ascii_hexdigit()))
-        .then_some(value)
+fn filter_validate_mac(
+    value: &Value,
+    options: &FilterOptions,
+    span: Span,
+) -> CompileResult<Option<String>> {
+    let value = match value.try_echo_string() {
+        Ok(value) => value,
+        Err(_) => return Ok(None),
+    };
+    let configured_separator = match options.options.as_ref() {
+        Some(Value::Array(options)) => match options.get_cloned("separator") {
+            Some(value) => Some(filter_single_char_option(
+                value,
+                "filter_var(): \"separator\" option must be one character long",
+                "filter_var(): \"separator\" option must be one character long",
+                span,
+            )?),
+            None => None,
+        },
+        _ => None,
+    };
+    let valid = match configured_separator {
+        Some(separator) => filter_mac_matches_separator(&value, separator),
+        None => {
+            filter_mac_matches_separator(&value, ':')
+                || filter_mac_matches_separator(&value, '-')
+                || filter_mac_matches_separator(&value, '.')
+        }
+    };
+    Ok(valid.then_some(value))
 }
 
-fn filter_decimal_value_error(span: Span) -> Diagnostic {
+fn filter_mac_matches_separator(value: &str, separator: char) -> bool {
+    let parts = value.split(separator).collect::<Vec<_>>();
+    let expected = if separator == '.' { (3, 4) } else { (6, 2) };
+    parts.len() == expected.0
+        && parts
+            .iter()
+            .all(|part| part.len() == expected.1 && part.chars().all(|ch| ch.is_ascii_hexdigit()))
+}
+
+fn filter_value_error(span: Span, message: &'static str) -> Diagnostic {
     runtime_error(
         span,
-        RuntimeError::unsupported_call(
-            "filter_var()",
-            "filter_var(): \"decimal\" option must be one character long",
-        ),
+        RuntimeError::unsupported_call("filter_var()", message),
     )
 }
 
