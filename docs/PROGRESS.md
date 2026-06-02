@@ -4,6 +4,17 @@
 
 Implemented:
 
+- Accepted checkpoint `538c136c` as the current public PHPT score source after
+  a full pinned php-src gate completed with zero latest-published PASS
+  regressions. The public-comparable score is now `5816 / 20294 = 28.66%`,
+  up from `5744 / 20294 = 28.30%` at checkpoint `0793abd4`. The accepted gate
+  evidence is
+  `state/logs/phpt-full-current-score-20260602T132934Z-php-src-f97ff59-public-538c136c-source-538c136c`;
+  aggregate counts were `5816` passed, `13189` failed, `2760` skipped, `16`
+  xfailed, `549` borked, and `1` warned. The normalized PASS regression
+  comparison was `5812` current passes vs. `5740` baseline passes with `0`
+  regressions, and the invalid-proof-marker summary reported `0` hits.
+
 - Added a bounded ordinary-object by-value `foreach` and
   `get_object_vars()` visibility lane. Ordinary object by-value iteration now
   enumerates initialized properties visible from the current method context,
