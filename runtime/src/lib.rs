@@ -29794,10 +29794,10 @@ impl PhpArray {
             let mut chunk = Self::new();
             for entry in entries {
                 if preserve_keys {
-                    chunk.insert(entry.key.clone(), entry.value_cloned());
+                    chunk.insert_slot(entry.key.clone(), entry.slot().clone());
                 } else {
                     chunk
-                        .append(entry.value_cloned())
+                        .append_slot(entry.slot().clone())
                         .expect("array length fits in i64");
                 }
             }
@@ -77902,6 +77902,78 @@ mod tests {
             .chunked_preserving_keys(2)
             .entries()
             .is_empty());
+    }
+
+    #[test]
+    fn array_chunk_preserves_reference_backed_value_slots() {
+        let first = PhpReferenceCell::new(Value::String("one".to_string()));
+        let second = PhpReferenceCell::new(Value::String("two".to_string()));
+        let third = PhpReferenceCell::new(Value::String("three".to_string()));
+
+        let mut array = PhpArray::new();
+        array.insert_reference(3, first.clone());
+        array.insert("name", Value::String("plain".to_string()));
+        array.insert_reference(2, second.clone());
+        array.insert_reference(1, third.clone());
+
+        let chunks = array.chunked_reindexed(2);
+        let Value::Array(first_chunk) = chunks.get(0).expect("first chunk exists") else {
+            panic!("first chunk should be an array");
+        };
+        assert_eq!(
+            first_chunk.entries()[0].slot().reference_cell_id(),
+            Some(first.id())
+        );
+        assert_eq!(first_chunk.entries()[1].slot().reference_cell_id(), None);
+
+        let Value::Array(second_chunk) = chunks.get(1).expect("second chunk exists") else {
+            panic!("second chunk should be an array");
+        };
+        assert_eq!(second_chunk.entries()[0].key, ArrayKey::Int(0));
+        assert_eq!(
+            second_chunk.entries()[0].slot().reference_cell_id(),
+            Some(second.id())
+        );
+        assert_eq!(second_chunk.entries()[1].key, ArrayKey::Int(1));
+        assert_eq!(
+            second_chunk.entries()[1].slot().reference_cell_id(),
+            Some(third.id())
+        );
+
+        second.set_value(Value::String("changed".to_string()));
+        let Value::Array(second_chunk) = chunks.get(1).expect("second chunk still exists") else {
+            panic!("second chunk should be an array");
+        };
+        assert_eq!(
+            second_chunk.entries()[0].value_cloned(),
+            Value::String("changed".to_string())
+        );
+
+        let preserved = array.chunked_preserving_keys(2);
+        let Value::Array(preserved_second) = preserved.get(1).expect("preserved chunk exists")
+        else {
+            panic!("preserved chunk should be an array");
+        };
+        assert_eq!(preserved_second.entries()[0].key, ArrayKey::Int(2));
+        assert_eq!(
+            preserved_second.entries()[0].slot().reference_cell_id(),
+            Some(second.id())
+        );
+        assert_eq!(preserved_second.entries()[1].key, ArrayKey::Int(1));
+        assert_eq!(
+            preserved_second.entries()[1].slot().reference_cell_id(),
+            Some(third.id())
+        );
+
+        third.set_value(Value::String("later".to_string()));
+        let Value::Array(preserved_second) = preserved.get(1).expect("preserved chunk remains")
+        else {
+            panic!("preserved chunk should be an array");
+        };
+        assert_eq!(
+            preserved_second.entries()[1].value_cloned(),
+            Value::String("later".to_string())
+        );
     }
 
     #[test]

@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Added a bounded `array_chunk()` reference-backed value-slot preservation lane
+  for the selected `array_chunk_variation7.phpt` surface. `PhpArray` chunk
+  construction now inserts source `ArraySlot`s into both reindexed and
+  preserve-key inner chunks instead of flattening through cloned values, so
+  chunks retain direct reference-backed entries and observe later source
+  reference mutations while preserving existing chunk key behavior. Focused
+  proof covers the Rust `php_runtime` and `phpc`
+  `array_chunk_preserves_reference_backed_value_slots` tests, a direct
+  `phpc run` fixture
+  `tests/fixtures/milestone2315/array_chunk_reference_backed_slots.php`, and
+  the selected PHPT row `ext/standard/tests/array/array_chunk_variation7.phpt`.
+  Unsupported edges remain broader `array_chunk()` reference/COW graph parity
+  beyond direct value-slot preservation, non-bool preserve-key coercions,
+  non-int or non-positive length coercions outside the current diagnostics,
+  exact native `TypeError`/`ValueError` objects, object/resource identity
+  behavior, and native lowering.
+
 - Added a bounded `DateTime::modify("@timestamp")` timestamp mutation lane for
   the selected `gh9891.phpt` surface. Mutable `DateTime::modify()` and
   procedural `date_modify()` now recognize Unix timestamp modifiers through

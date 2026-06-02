@@ -104,6 +104,34 @@ echo $items["name"], "|", $items[5], "|", $items[2], "|", $items["02"], "|", $it
 }
 
 #[test]
+fn array_chunk_preserves_reference_backed_value_slots() {
+    let source = r#"<?php
+$first = "one";
+$second = "two";
+$third = "three";
+$items = [3 => &$first, "name" => "plain", 2 => &$second, 1 => &$third];
+
+$chunks = array_chunk($items, 2);
+var_dump($chunks);
+$second = "changed";
+var_dump($chunks);
+
+$preserved = array_chunk($items, 2, true);
+var_dump($preserved);
+$third = "later";
+var_dump($preserved);
+"#;
+
+    let execution = run_source(source).unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "array(2) {\n  [0]=>\n  array(2) {\n    [0]=>\n    &string(3) \"one\"\n    [1]=>\n    string(5) \"plain\"\n  }\n  [1]=>\n  array(2) {\n    [0]=>\n    &string(3) \"two\"\n    [1]=>\n    &string(5) \"three\"\n  }\n}\narray(2) {\n  [0]=>\n  array(2) {\n    [0]=>\n    &string(3) \"one\"\n    [1]=>\n    string(5) \"plain\"\n  }\n  [1]=>\n  array(2) {\n    [0]=>\n    &string(7) \"changed\"\n    [1]=>\n    &string(5) \"three\"\n  }\n}\narray(2) {\n  [0]=>\n  array(2) {\n    [3]=>\n    &string(3) \"one\"\n    [\"name\"]=>\n    string(5) \"plain\"\n  }\n  [1]=>\n  array(2) {\n    [2]=>\n    &string(7) \"changed\"\n    [1]=>\n    &string(5) \"three\"\n  }\n}\narray(2) {\n  [0]=>\n  array(2) {\n    [3]=>\n    &string(3) \"one\"\n    [\"name\"]=>\n    string(5) \"plain\"\n  }\n  [1]=>\n  array(2) {\n    [2]=>\n    &string(7) \"changed\"\n    [1]=>\n    &string(5) \"later\"\n  }\n}\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn array_chunk_requires_array_first_argument() {
     let error = runtime_error("<?php\necho array_chunk(42, 2);\n");
 

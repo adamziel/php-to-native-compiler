@@ -7146,8 +7146,10 @@
   input arrays, and is available through string-valued dynamic function calls.
   `array_chunk($array, $length, true)` preserves original integer and string
   keys inside each chunk; boolean `false` uses the default chunk-key
-  reindexing path. `array_pad($array, $length, $value)` accepts arrays and
-  integer lengths, returns an unchanged copy when `abs($length)` is not larger
+  reindexing path. Both key modes preserve direct reference-backed source
+  value slots inside the produced chunks. `array_pad($array, $length, $value)`
+  accepts arrays and integer lengths, returns an unchanged copy when
+  `abs($length)` is not larger
   than the input size, right-pads for positive lengths, left-pads for negative
   lengths, preserves string keys, and reindexes integer-keyed input entries
   from zero when padding is needed. It is also available through string-valued
@@ -9839,10 +9841,12 @@
   function calls. `array_chunk($array, $length, true)` preserves original
   integer and string keys inside each chunk, and boolean `false` uses the
   default chunk-key reindexing path. Non-positive lengths raise a PHP-shaped
-  catchable `ValueError`. Non-bool preserve-key coercion, non-int length
-  coercion, reference/copy-on-write behavior, object handle identity
-  preservation, resource values, exact native `TypeError` object internals,
-  and native lowering are not implemented.
+  catchable `ValueError`. Source entries that are backed by direct reference
+  slots remain reference-backed inside produced chunks. Non-bool preserve-key
+  coercion, non-int length coercion, broader reference/copy-on-write behavior
+  beyond preserved direct value slots, object handle identity preservation,
+  resource values, exact native `TypeError` object internals, and native
+  lowering are not implemented.
   `array_pad($array, $length, $value)` accepts arrays and integer lengths. When
   `abs($length)` is not larger than the input size it returns a cloned array
   with the original key shape and append index. Positive lengths right-pad and
@@ -10270,7 +10274,8 @@
   `array_reduce`, `array_filter`, `array_map`, `in_array`, `array_search`, and
   both current `foreach` array forms follow the current by-value model; PHP
   references and copy-on-write containers beyond the covered dereferenced
-  query-helper reads, object handle identity preservation outside strict
+  query-helper reads and direct `array_chunk()` value slots, object handle
+  identity preservation outside strict
   membership/search rows, resource values outside documented identity rows,
   object/resource and recursive-array loose comparisons for `array_keys`,
   non-bool `array_keys` strict-flag coercion, non-array or empty
@@ -10279,8 +10284,10 @@
   `array_reverse` preserve-key flag coercion, non-bool `array_slice`
   preserve-key flag coercion, non-int offset coercion, non-int/non-null length
   coercion, non-bool `array_chunk` preserve-key flag coercion,
-  non-int/non-positive length coercion, non-int `array_pad` length coercion,
-  oversized `array_pad` native `ValueError` objects, exact native
+  non-int/non-positive length coercion, broader `array_chunk`
+  reference/copy-on-write behavior beyond preserved direct value slots,
+  non-int `array_pad` length coercion, oversized `array_pad` native
+  `ValueError` objects, exact native
   `ValueError`/`TypeError` objects, `array_merge` reference/copy-on-write
   behavior, `array_replace` reference/copy-on-write behavior,
   `array_combine` lossy or non-finite float key-value coercions,
@@ -11227,8 +11234,9 @@
   resource values, exact native `TypeError` objects, and native lowering
 - `array_chunk` non-bool `preserve_keys` coercion, non-int/non-positive length
   coercion, exact native `ValueError`/`TypeError` objects,
-  reference/copy-on-write behavior, object handle identity preservation,
-  resource values, and native lowering
+  broader reference/copy-on-write behavior beyond preserved direct value
+  slots, object handle identity preservation, resource values, and native
+  lowering
 - `array_pad` non-int length coercion, exact native `ValueError`/`TypeError`
   objects, reference/copy-on-write behavior, object handle identity
   preservation, resource values, and native lowering
