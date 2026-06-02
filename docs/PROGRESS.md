@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added a bounded mutable `DateTime::__set_state()` reconstruction lane for the
+  selected `DateTime_set_state.phpt` surface. The interpreter now accepts the
+  exported `date`, `timezone_type`, and `timezone` state array produced by the
+  current `var_export()` DateTime path, reconstructs a fresh mutable
+  `DateTime` object over the existing bounded timestamp/timezone model, and
+  exposes the static method through core DateTime metadata for callability and
+  reflection. Focused proof covers the Rust
+  `datetime_set_state_recreates_exported_bounded_state` test, direct `phpc run`
+  and `phpc compile --emit-ir` probes, and the selected PHPT row
+  `ext/date/tests/DateTime_set_state.phpt`. Unsupported edges remain
+  `DateTimeImmutable::__set_state()`, DateTime state arrays outside the bounded
+  exported `date`/`timezone_type`/`timezone` shape, exact invalid-state
+  exception text, microsecond preservation beyond the current displayed state,
+  full timezone database and DST history, references/COW, and native lowering.
+
 - Added a bounded Whirlpool execution lane for the selected ext/hash
   `whirlpool.phpt` row. `hash()` now executes the advertised `whirlpool`
   algorithm through the shared scalar/null data conversion, empty-options,

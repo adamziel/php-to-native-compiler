@@ -5755,7 +5755,11 @@
   such as `@0` and explicit timezone tokens retain their own timezone
   identity. Procedural `date_format()`, `date_timestamp_get()`,
   `date_timestamp_set()`, `date_offset_get()`, `date_timezone_get()`, and
-  `date_timezone_set()` share that object state.
+  `date_timezone_set()` share that object state. `DateTime::__set_state()`
+  reconstructs a fresh bounded mutable `DateTime` object from the exported
+  `date`, `timezone_type`, and `timezone` state fields produced by the current
+  `var_export()` path for supported date strings and bounded timezone
+  identifiers.
   `DateTime` exposes the
   bounded date-format class constants matching the existing global `DATE_*`
   format constants, including PHP-shaped deprecation diagnostics for
@@ -5769,9 +5773,10 @@
   exact internal `DateTimeZone` constructor diagnostics and scalar
   coercion/deprecation parity, `DateTimeImmutable`, broad `DateTimeInterface`
   runtime/interface parity beyond the reached constant diagnostic text, all
-  historical transition rules, exact diagnostics for constructor timezone
-  coercions outside the bounded `DateTimeZone|null` slice, and native lowering
-  remain unsupported.
+  historical transition rules, DateTime state arrays outside the bounded
+  exported `date`/`timezone_type`/`timezone` shape, exact diagnostics for
+  constructor/timezone/state coercions outside the covered slices, and native
+  lowering remain unsupported.
   `header($header, $replace = true, $response_code = 0)` accepts a string
   header line plus optional bool replacement flag and optional integer response
   code, records the raw header line in deterministic in-process CLI request

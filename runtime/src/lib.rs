@@ -33106,6 +33106,12 @@ impl PhpClassTable {
                 .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
                 .expect("DateTime core metadata should not duplicate methods");
         }
+        datetime
+            .add_method(PhpMethodMetadata::static_method(
+                "__set_state",
+                Visibility::Public,
+            ))
+            .expect("DateTime core metadata should not duplicate static methods");
         let dom_exception_id = classes
             .declare_class("DOMException")
             .expect("core class table should contain DateTime before DOMException");

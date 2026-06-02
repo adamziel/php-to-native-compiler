@@ -17633,6 +17633,57 @@ impl Interpreter {
         Ok(object)
     }
 
+    fn create_datetime_object_from_state(
+        &mut self,
+        class_id: ClassId,
+        timestamp: i64,
+        timezone: BoundedTimezone,
+        span: Span,
+    ) -> CompileResult<PhpObject> {
+        let object_id = self.allocate_object_id();
+        let class = self
+            .classes
+            .get(class_id)
+            .expect("DateTime class id should resolve");
+        let object = PhpObject::from_class_with_relationship_metadata_with_id(
+            class,
+            &[],
+            Vec::new(),
+            Vec::new(),
+            object_id,
+        );
+        self.assign_datetime_object_state(&object, timestamp, timezone, span)?;
+        Ok(object)
+    }
+
+    fn call_datetime_set_state_static(
+        &mut self,
+        class_id: ClassId,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        expect_expr_arity("DateTime::__set_state", args.len(), 1, span)?;
+        let state = self.evaluate(&args[0], caller_scope)?;
+        let Value::Array(state) = state else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "DateTime::__set_state()",
+                    format!(
+                        "state argument must be array in the current subset, got {}",
+                        state.type_name()
+                    ),
+                ),
+            ));
+        };
+        let timestamp = bounded_datetime_timestamp_from_state_array(&state, span)?;
+        let timezone = bounded_timezone_from_state_array(&state, span)?;
+        let object = self.create_datetime_object_from_state(class_id, timestamp, timezone, span)?;
+        self.track_allocated_object(&object);
+        Ok(Value::Object(object))
+    }
+
     fn datetime_object_argument(
         &self,
         function: &'static str,
@@ -53286,6 +53337,11 @@ impl Interpreter {
         {
             expect_expr_arity("DateTimeZone::listAbbreviations", args.len(), 0, span)?;
             return Ok(Value::Array(bounded_timezone_abbreviations_array()));
+        }
+        if self.resolved_method_is_core_datetime(class_id)
+            && method_name.eq_ignore_ascii_case("__set_state")
+        {
+            return self.call_datetime_set_state_static(class_id, args, span, caller_scope);
         }
         if self.is_php_token_class_id(class_id) && method_name.eq_ignore_ascii_case("tokenize") {
             return self.call_php_token_static_tokenize(class_id, args, span, caller_scope);
@@ -138591,6 +138647,120 @@ fn bounded_timezone_object_parts(name: &str) -> Option<(i64, String)> {
         return Some((1, trimmed.to_string()));
     }
     bounded_timezone_from_name(trimmed).map(|timezone| (3, timezone.name))
+}
+
+fn bounded_datetime_state_string(state: &PhpArray, key: &str, span: Span) -> CompileResult<String> {
+    match state.get_cloned(key) {
+        Some(Value::String(value)) => Ok(value),
+        Some(other) => Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "DateTime::__set_state()",
+                format!(
+                    "state field {key:?} must be string in the current subset, got {}",
+                    other.type_name()
+                ),
+            ),
+        )),
+        None => Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "DateTime::__set_state()",
+                format!("state field {key:?} is missing in the current subset"),
+            ),
+        )),
+    }
+}
+
+fn bounded_datetime_state_int(state: &PhpArray, key: &str, span: Span) -> CompileResult<i64> {
+    match state.get_cloned(key) {
+        Some(Value::Int(value)) => Ok(value),
+        Some(other) => Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "DateTime::__set_state()",
+                format!(
+                    "state field {key:?} must be int in the current subset, got {}",
+                    other.type_name()
+                ),
+            ),
+        )),
+        None => Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "DateTime::__set_state()",
+                format!("state field {key:?} is missing in the current subset"),
+            ),
+        )),
+    }
+}
+
+fn bounded_timezone_from_state_name(name: &str) -> Option<BoundedTimezone> {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if let Some(offset) = parse_timezone_offset_token(trimmed) {
+        return Some(BoundedTimezone {
+            name: trimmed.to_string(),
+            fixed_offset: Some(offset),
+        });
+    }
+    bounded_timezone_from_name(trimmed)
+}
+
+fn bounded_timezone_from_state_array(
+    state: &PhpArray,
+    span: Span,
+) -> CompileResult<BoundedTimezone> {
+    let timezone_type = bounded_datetime_state_int(state, "timezone_type", span)?;
+    if !matches!(timezone_type, 1..=3) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "DateTime::__set_state()",
+                format!(
+                    "state field \"timezone_type\" value {timezone_type} is not implemented in the current subset"
+                ),
+            ),
+        ));
+    }
+    let timezone_name = bounded_datetime_state_string(state, "timezone", span)?;
+    bounded_timezone_from_state_name(&timezone_name).ok_or_else(|| {
+        runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "DateTime::__set_state()",
+                format!("timezone {timezone_name} is not implemented in the current subset"),
+            ),
+        )
+    })
+}
+
+fn bounded_datetime_timestamp_from_state_array(state: &PhpArray, span: Span) -> CompileResult<i64> {
+    let timezone = bounded_timezone_from_state_array(state, span)?;
+    let date = bounded_datetime_state_string(state, "date", span)?;
+    parse_bounded_datetime_state_date(&date, &timezone).ok_or_else(|| {
+        runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "DateTime::__set_state()",
+                format!("date state {date:?} is not implemented in the current subset"),
+            ),
+        )
+    })
+}
+
+fn parse_bounded_datetime_state_date(date: &str, timezone: &BoundedTimezone) -> Option<i64> {
+    let body = if let Some((body, fraction)) = date.rsplit_once('.') {
+        if fraction.len() != 6 || !fraction.chars().all(|ch| ch.is_ascii_digit()) {
+            return None;
+        }
+        body
+    } else {
+        date
+    };
+    parse_bounded_strtotime(body, timezone)
 }
 
 fn bounded_datetime_timezone_hint(

@@ -93,6 +93,41 @@ echo $timestamp->getTimezone()->getName(), "|", $timestamp->format("Y-m-d H:i:s"
 }
 
 #[test]
+fn datetime_set_state_recreates_exported_bounded_state() {
+    let execution = run_source(
+        r#"<?php
+date_default_timezone_set("Europe/London");
+$manual = DateTime::__set_state(array(
+    "date" => "2017-10-06 23:30:00.000000",
+    "timezone_type" => 3,
+    "timezone" => "UTC",
+));
+echo $manual->format("Y-m-d H:i:s T e"), "\n";
+$original = new DateTime("2017-10-06 23:30:00", new DateTimeZone("UTC"));
+$state = var_export($original, true);
+eval("\$copy = {$state};");
+echo $copy->format("Y-m-d H:i:s T e"), "\n";
+echo ($copy === $original ? "same" : "different"), "\n";
+echo is_callable(array("DateTime", "__set_state")) ? "callable" : "missing";
+echo "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "2017-10-06 23:30:00 UTC UTC\n",
+            "2017-10-06 23:30:00 UTC UTC\n",
+            "different\n",
+            "callable\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn date_modify_mutates_bounded_datetime_relative_forms() {
     let execution = run_source(
         r#"<?php
