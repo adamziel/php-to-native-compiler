@@ -2631,16 +2631,24 @@
   identity, and native lowering remain unsupported.
 - SPL `SplFixedArray` has a bounded fixed-size storage model for construction,
   `fromArray()`, `toArray()`, `count()`/`getSize()`, `setSize()`, offset
-  reads/writes/unsets/existence checks, and ordinary by-value iteration. Unset
-  slots that release object values run covered finalization before later
-  reads/dumps, while live fixed-array objects continue rooting their backing
-  storage. A top-level `var_dump($fixedArray)` renders the runtime storage
-  slots, including explicit `NULL` holes and initialized subclass/dynamic
-  object properties after the indexed slots. Nested/non-top-level
-  `SplFixedArray` dumps through the generic object formatter, `print_r()` /
-  `(array)` / `get_mangled_object_vars()` storage parity,
-  serialization/unserialization, exact reference/COW identity, broader
-  destructor/reentrant mutation parity, and native lowering remain unsupported.
+  reads/writes/unsets/existence checks, and ordinary by-value iteration.
+  `NULL` size arguments emit the bounded PHP deprecation and coerce to zero,
+  object size arguments use the concrete class name in the catchable
+  `TypeError`, `offsetExists()` treats `NULL` slots as unset, nested by-value
+  `foreach` uses independent fixed-array cursors while still observing covered
+  `setSize()` shrinkage, and direct nested append writes such as
+  `$fixed[0][] = ...` emit PHP's indirect-modification notice without mutating
+  storage. Unset slots that release object values run covered finalization
+  before later reads/dumps, while live fixed-array objects continue rooting
+  their backing storage. Top-level `var_dump($fixedArray)` and
+  `print_r($fixedArray)` render the runtime storage slots, including explicit
+  `NULL` holes for `var_dump()` and initialized subclass/dynamic object
+  properties after the indexed slots. Nested/non-top-level `SplFixedArray`
+  dumps through the generic object formatter, `(array)` /
+  `get_mangled_object_vars()` storage parity, serialization/unserialization,
+  exact reference/COW identity, overriding `getIterator()` / generator-backed
+  fixed-array iteration, broader destructor/reentrant mutation parity, and
+  native lowering remain unsupported.
 - SPL `SplDoublyLinkedList`, `SplQueue`, and `SplStack` have a bounded runtime
   list model for push/pop/shift/unshift, indexed add and ArrayAccess
   operations, top/bottom, `count()`, `isEmpty()`, iterator mode flags, debug

@@ -15497,6 +15497,95 @@ var_dump($arr);
 }
 
 #[test]
+fn spl_fixed_array_print_r_null_size_exists_and_nested_iteration_edges() {
+    let source = r#"<?php
+$nullConstruct = new SplFixedArray(null);
+print_r($nullConstruct);
+
+$sizeNull = new SplFixedArray(2);
+$sizeNull->setSize(null);
+var_dump($sizeNull);
+
+$items = new SplFixedArray(2);
+$items[0] = "Value 1";
+$items[1] = "Value 2";
+$items->setSize(4);
+$items[2] = "Value 3";
+$items[3] = "Value 4";
+print_r($items);
+$items->setSize(3);
+print_r($items);
+
+class MyFixed extends SplFixedArray {
+    public function offsetGet($key): mixed {
+        return "prefix_" . parent::offsetGet($key);
+    }
+}
+$overridden = new MyFixed(1);
+var_dump(isset($overridden[0]));
+$overridden[0] = "abc";
+var_dump(isset($overridden[0]));
+var_dump($overridden[0]);
+
+try {
+    new SplFixedArray(new SplFixedArray(3));
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+
+echo "nested\n";
+$nested = SplFixedArray::fromArray([0, 1]);
+foreach ($nested as $value1) {
+    foreach ($nested as $value2) {
+        echo "$value1 $value2\n";
+    }
+}
+
+echo "shrink\n";
+$shrink = SplFixedArray::fromArray(["a", "b", "c"]);
+foreach ($shrink as $key => $value) {
+    echo "$key => $value\n";
+    if ($key == 0) {
+        $shrink->setSize(2);
+    }
+}
+
+$indirect = new SplFixedArray(1);
+$indirect[0][] = 3;
+var_dump($indirect);
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert!(execution.stdout.contains(
+        "Deprecated: SplFixedArray::__construct(): Passing null to parameter #1 ($size) of type int is deprecated"
+    ));
+    assert!(execution.stdout.contains(
+        "Deprecated: SplFixedArray::setSize(): Passing null to parameter #1 ($size) of type int is deprecated"
+    ));
+    assert!(execution.stdout.contains("SplFixedArray Object\n(\n)\n"));
+    assert!(execution
+        .stdout
+        .contains("object(SplFixedArray)#2 (0) {\n}\n"));
+    assert!(execution.stdout.contains(
+        "SplFixedArray Object\n(\n    [0] => Value 1\n    [1] => Value 2\n    [2] => Value 3\n    [3] => Value 4\n)\nSplFixedArray Object\n(\n    [0] => Value 1\n    [1] => Value 2\n    [2] => Value 3\n)\n"
+    ));
+    assert!(execution
+        .stdout
+        .contains("bool(false)\nbool(true)\nstring(10) \"prefix_abc\"\n"));
+    assert!(execution.stdout.contains(
+        "SplFixedArray::__construct(): Argument #1 ($size) must be of type int, SplFixedArray given\n"
+    ));
+    assert!(execution.stdout.contains("nested\n0 0\n0 1\n1 0\n1 1\n"));
+    assert!(execution.stdout.contains("shrink\n0 => a\n1 => b\n"));
+    assert!(execution.stdout.contains(
+        "Notice: Indirect modification of overloaded element of SplFixedArray has no effect"
+    ));
+    assert!(execution.stdout.contains("(1) {\n  [0]=>\n  NULL\n}\n"));
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn array_object_array_iterator_offsets_iteration_clone_and_sort() {
     let source = r#"<?php
 $ao = new ArrayObject(array('b' => 2, 'a' => 1));

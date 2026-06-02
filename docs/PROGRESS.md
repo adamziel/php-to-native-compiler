@@ -4,6 +4,33 @@
 
 Implemented:
 
+- Added a bounded `SplFixedArray` storage-presentation and independent
+  by-value iteration lane on the interpreter path. `SplFixedArray` now emits
+  the PHP-shaped nullable-size deprecation for `__construct(null)` and
+  `setSize(null)` while coercing to zero, reports concrete class names for
+  non-int object size arguments, treats in-range `NULL` slots as unset for
+  `offsetExists()` / `isset()`, renders top-level `print_r($fixedArray)` from
+  the runtime storage record, uses independent cursors for nested by-value
+  `foreach` while observing covered `setSize()` shrinkage, and reports the
+  PHP-shaped indirect-modification notice for direct nested append writes such
+  as `$fixed[0][] = ...` without mutating storage. Focused proof covers the
+  Rust `spl_fixed_array_print_r_null_size_exists_and_nested_iteration_edges`
+  regression, adjacent `spl_fixed_array_` Rust coverage, direct `phpc run`
+  exercise, build, fmt, diff checks, and selected public PHPT rows
+  `SplFixedArray__construct_param_null.phpt`,
+  `SplFixedArray_construct_param_SplFixedArray.phpt`,
+  `SplFixedArray_setSize_param_null.phpt`,
+  `SplFixedArray_setsize_grow.phpt`,
+  `SplFixedArray_setSize_reduce.phpt`,
+  `SplFixedArray_nested_foreach.phpt`,
+  `SplFixedArray_override_offsetGet_only.phpt`, and
+  `SplFixedArray_indirect_modification.phpt`. Unsupported edges remain
+  nested/non-top-level fixed-array dumps, `(array)` /
+  `get_mangled_object_vars()` storage parity, serialization/unserialization,
+  exact reference/COW identity, overriding `getIterator()` /
+  generator-backed fixed-array iteration, broader destructor/reentrant
+  mutation parity, and native lowering.
+
 - Accepted checkpoint `ac94984a` as the current public PHPT score source
   after a full pinned php-src gate completed with zero latest-published PASS
   regressions. The public-comparable score is now

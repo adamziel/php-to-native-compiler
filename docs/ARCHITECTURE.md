@@ -95,6 +95,11 @@ bucket such as `$this->callbacks[$priority]`, the interpreter can mirror
 covered nested public object-property reference slots into the loop variable's
 copied array. By-reference foreach over userland `Iterator` objects is
 rejected with PHP-parity diagnostics because PHP itself forbids that shape.
+`SplFixedArray` by-value `foreach` is special-cased before the generic
+`Iterator` path: each loop uses its own cursor over the runtime storage record,
+so nested loops do not share iterator position while covered `setSize()`
+shrinkage remains visible; direct nested append into a fixed-array slot is a
+PHP-shaped indirect-modification no-op.
 Core `ArrayObject` and `ArrayIterator` objects share a bounded runtime storage
 record. Array-backed storage, plain object-backed public-property storage, and
 selected nested ArrayObject-backed reads/writes are routed through that record;

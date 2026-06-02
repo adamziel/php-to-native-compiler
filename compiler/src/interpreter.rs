@@ -11631,11 +11631,23 @@ impl Interpreter {
     }
 
     fn spl_fixed_array_size_argument(
+        &mut self,
         method_name: &str,
         args: &[Value],
         span: Span,
     ) -> CompileResult<usize> {
         match args.first() {
+            Some(Value::Null) => {
+                self.emit_display_diagnostic(
+                    "Deprecated",
+                    PHP_E_DEPRECATED,
+                    format!(
+                        "SplFixedArray::{method_name}(): Passing null to parameter #1 ($size) of type int is deprecated"
+                    ),
+                    span,
+                )?;
+                Ok(0)
+            }
             Some(Value::Int(value)) if *value >= 0 => Ok(*value as usize),
             Some(Value::Int(_)) => Err(runtime_error(
                 span,
@@ -11652,7 +11664,7 @@ impl Interpreter {
                     format!("SplFixedArray::{method_name}()"),
                     format!(
                         "SplFixedArray::{method_name}(): Argument #1 ($size) must be of type int, {} given",
-                        other.type_name()
+                        php_type_error_given(other)
                     ),
                 ),
             )),
@@ -11864,7 +11876,7 @@ impl Interpreter {
                         ),
                     ));
                 }
-                let size = Self::spl_fixed_array_size_argument("__construct", &args, span)?;
+                let size = self.spl_fixed_array_size_argument("__construct", &args, span)?;
                 let state = self.spl_fixed_array_state_mut(&object, method_name, span)?;
                 state.values = vec![Value::Null; size];
                 state.cursor = 0;
@@ -11877,7 +11889,7 @@ impl Interpreter {
             }
             "setsize" => {
                 expect_arity("SplFixedArray::setSize", &args, 1, span)?;
-                let size = Self::spl_fixed_array_size_argument("setSize", &args, span)?;
+                let size = self.spl_fixed_array_size_argument("setSize", &args, span)?;
                 let state = self.spl_fixed_array_state_mut(&object, method_name, span)?;
                 state.values.resize(size, Value::Null);
                 if state.cursor > state.values.len() {
@@ -11894,7 +11906,11 @@ impl Interpreter {
                     span,
                 )?;
                 Ok(Value::Bool(
-                    index >= 0 && (index as usize) < state.values.len(),
+                    index >= 0
+                        && state
+                            .values
+                            .get(index as usize)
+                            .is_some_and(|value| !matches!(value, Value::Null)),
                 ))
             }
             "offsetget" => {
@@ -14012,6 +14028,11 @@ impl Interpreter {
             Value::Array(array) => self.execute_foreach_array_by_value(
                 array, key, value, body, span, scope,
             ),
+            Value::Object(object) if self.is_spl_fixed_array_object(&object) => {
+                self.execute_foreach_spl_fixed_array_by_value(
+                    object, key, value, body, span, scope,
+                )
+            }
             Value::Object(object)
                 if self
                     .classes
@@ -14087,6 +14108,63 @@ impl Interpreter {
             match self.execute_statements(body, scope)? {
                 Flow::Normal => {}
                 Flow::Continue { depth, .. } if depth <= 1 => {}
+                Flow::Continue { depth, span } => {
+                    return Ok(Flow::Continue {
+                        depth: depth - 1,
+                        span,
+                    });
+                }
+                Flow::Break { depth, .. } if depth <= 1 => break,
+                Flow::Break { depth, span } => {
+                    return Ok(Flow::Break {
+                        depth: depth - 1,
+                        span,
+                    });
+                }
+                flow @ (Flow::Return(_)
+                | Flow::Goto { .. }
+                | Flow::Throw { .. }
+                | Flow::Exit(_)) => {
+                    return Ok(flow);
+                }
+            }
+        }
+
+        Ok(Flow::Normal)
+    }
+
+    fn execute_foreach_spl_fixed_array_by_value(
+        &mut self,
+        object: PhpObject,
+        key: &Option<String>,
+        value: &ForeachValueTarget,
+        body: &[Stmt],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Flow> {
+        let mut cursor = 0_usize;
+        loop {
+            let current = {
+                let state = self.spl_fixed_array_state(&object, "foreach", span)?;
+                let Some(current) = state.values.get(cursor) else {
+                    break;
+                };
+                current.clone()
+            };
+
+            self.tick(span)?;
+            if let Some(key) = key {
+                scope.write_static(key, Value::Int(cursor as i64));
+            }
+            self.write_foreach_value_target(value, current, span, scope)?;
+
+            match self.execute_statements(body, scope)? {
+                Flow::Normal => {
+                    cursor = cursor.saturating_add(1);
+                }
+                Flow::Continue { depth, .. } if depth <= 1 => {
+                    cursor = cursor.saturating_add(1);
+                }
                 Flow::Continue { depth, span } => {
                     return Ok(Flow::Continue {
                         depth: depth - 1,
@@ -14937,6 +15015,10 @@ impl Interpreter {
             Value::Array(array) => self.execute_foreach_array_by_value_with_array_copy_return_source(
                 array, key, value, body, span, scope,
             ),
+            Value::Object(object) if self.is_spl_fixed_array_object(&object) => self
+                .execute_foreach_spl_fixed_array_by_value_with_array_copy_return_source(
+                    object, key, value, body, span, scope,
+                ),
             Value::Object(object)
                 if self
                     .classes
@@ -15080,6 +15162,62 @@ impl Interpreter {
             match flow {
                 ArrayCopyReturnBodyFlow::Normal => {}
                 ArrayCopyReturnBodyFlow::Continue { depth, .. } if depth <= 1 => {}
+                ArrayCopyReturnBodyFlow::Continue { depth, span } => {
+                    return Ok(ArrayCopyReturnBodyFlow::Continue {
+                        depth: depth - 1,
+                        span,
+                    });
+                }
+                ArrayCopyReturnBodyFlow::Break { depth, .. } if depth <= 1 => break,
+                ArrayCopyReturnBodyFlow::Break { depth, span } => {
+                    return Ok(ArrayCopyReturnBodyFlow::Break {
+                        depth: depth - 1,
+                        span,
+                    });
+                }
+                flow @ (ArrayCopyReturnBodyFlow::Return { .. }
+                | ArrayCopyReturnBodyFlow::Goto { .. }
+                | ArrayCopyReturnBodyFlow::Exit(_)
+                | ArrayCopyReturnBodyFlow::Throw { .. }) => return Ok(flow),
+            }
+        }
+
+        Ok(ArrayCopyReturnBodyFlow::Normal)
+    }
+
+    fn execute_foreach_spl_fixed_array_by_value_with_array_copy_return_source(
+        &mut self,
+        object: PhpObject,
+        key: &Option<String>,
+        value: &ForeachValueTarget,
+        body: &[Stmt],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<ArrayCopyReturnBodyFlow> {
+        let mut cursor = 0_usize;
+        loop {
+            let current = {
+                let state = self.spl_fixed_array_state(&object, "foreach", span)?;
+                let Some(current) = state.values.get(cursor) else {
+                    break;
+                };
+                current.clone()
+            };
+
+            self.tick(span)?;
+            if let Some(key) = key {
+                scope.write_static(key, Value::Int(cursor as i64));
+            }
+            self.write_foreach_value_target(value, current, span, scope)?;
+
+            let flow = self.execute_array_copy_return_statement_list(body, scope)?;
+            match flow {
+                ArrayCopyReturnBodyFlow::Normal => {
+                    cursor = cursor.saturating_add(1);
+                }
+                ArrayCopyReturnBodyFlow::Continue { depth, .. } if depth <= 1 => {
+                    cursor = cursor.saturating_add(1);
+                }
                 ArrayCopyReturnBodyFlow::Continue { depth, span } => {
                     return Ok(ArrayCopyReturnBodyFlow::Continue {
                         depth: depth - 1,
@@ -34689,6 +34827,12 @@ impl Interpreter {
                     .collect::<CompileResult<Vec<_>>>()?;
                 let (value, array_literal_references, array_literal_copy_sources) =
                     self.evaluate_assignment_value_with_reference_metadata(expr, scope)?;
+                if scope.read_named_object(name).is_some_and(|object| {
+                    self.is_spl_fixed_array_object(&object) && !keys.is_empty()
+                }) {
+                    self.emit_array_access_indirect_modification_notice("SplFixedArray", *span)?;
+                    return Ok(value);
+                }
                 if name == "GLOBALS" {
                     if self
                         .write_global_array_value_path_array_access_append_with_reference_propagation(
@@ -86082,6 +86226,72 @@ impl Interpreter {
         )
     }
 
+    fn format_print_r_bytes(&self, value: &Value, span: Span) -> CompileResult<Vec<u8>> {
+        if let Value::Object(object) = value {
+            if self.is_spl_fixed_array_object(object) {
+                return self.format_spl_fixed_array_print_r(object, 0, span);
+            }
+        }
+        Ok(format_print_r_bytes(value))
+    }
+
+    fn format_spl_fixed_array_print_r(
+        &self,
+        object: &PhpObject,
+        indent: usize,
+        span: Span,
+    ) -> CompileResult<Vec<u8>> {
+        let padding = "    ".repeat(indent);
+        let child_padding = "    ".repeat(indent + 1);
+        let state = self.spl_fixed_array_state(object, "print_r", span)?;
+        let mut output = format!("{} Object\n{padding}(\n", object.class_name()).into_bytes();
+
+        for (index, value) in state.values.iter().enumerate() {
+            output.extend_from_slice(format!("{child_padding}[{index}] => ").as_bytes());
+            match value {
+                Value::Array(value) => {
+                    append_print_r_array_bytes(&mut output, value, indent + 2);
+                    output.push(b'\n');
+                }
+                Value::Object(value) => {
+                    append_print_r_object_bytes(&mut output, value, indent + 2);
+                    output.push(b'\n');
+                }
+                value => {
+                    append_print_r_scalar_bytes(&mut output, value);
+                    output.push(b'\n');
+                }
+            }
+        }
+
+        for property in display_object_properties(object) {
+            output.extend_from_slice(
+                format!(
+                    "{child_padding}[{}] => ",
+                    format_print_r_object_property(&property)
+                )
+                .as_bytes(),
+            );
+            match property.value_cloned() {
+                Value::Array(value) => {
+                    append_print_r_array_bytes(&mut output, &value, indent + 2);
+                    output.push(b'\n');
+                }
+                Value::Object(value) => {
+                    append_print_r_object_bytes(&mut output, &value, indent + 2);
+                    output.push(b'\n');
+                }
+                value => {
+                    append_print_r_scalar_bytes(&mut output, &value);
+                    output.push(b'\n');
+                }
+            }
+        }
+
+        output.extend_from_slice(format!("{padding})\n").as_bytes());
+        Ok(output)
+    }
+
     fn format_spl_fixed_array_var_dump(
         &self,
         object: &PhpObject,
@@ -92039,15 +92249,15 @@ impl Interpreter {
             }
             "print_r" => match args.as_slice() {
                 [value] => {
-                    let output = format_print_r_bytes(value);
+                    let output = self.format_print_r_bytes(value, span)?;
                     self.append_output_bytes_at(&output, span);
                     Ok(Value::Bool(true))
                 }
                 [value, return_output] if return_output.is_truthy() => Ok(
-                    interpreter_value_from_php_string_bytes(format_print_r_bytes(value)),
+                    interpreter_value_from_php_string_bytes(self.format_print_r_bytes(value, span)?),
                 ),
                 [value, _] => {
-                    let output = format_print_r_bytes(value);
+                    let output = self.format_print_r_bytes(value, span)?;
                     self.append_output_bytes_at(&output, span);
                     Ok(Value::Bool(true))
                 }
