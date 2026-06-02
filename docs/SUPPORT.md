@@ -4125,11 +4125,23 @@
   remain unsupported.
   `wordwrap()` supports scalar/null
   string-convertible input, integer width, non-empty string break values, and
-  the `cut_long_words` flag over current byte strings. `str_word_count()`
-  supports formats `0`, `1`, and `2` with the current ASCII letter rules,
-  literal extra character bytes, and PHP-shaped apostrophe/hyphen word-run
-  handling, including whole-string leading apostrophe/hyphen and trailing
-  hyphen boundaries unless those bytes are in the extra character list.
+  the `cut_long_words` flag over current byte strings.
+  `chunk_split($string, $length = 76, $separator = "\r\n")` routes `$string`
+  and `$separator` through the shared PHP-shaped string byte boundary: scalar
+  and `null` operands convert to current runtime bytes, `null` emits the
+  bounded PHP deprecation, supported visible `__toString()` objects are
+  accepted, and arrays, closures, resources, or non-stringable objects raise
+  catchable PHP-shaped string `TypeError`s. `$length` uses the shared
+  PHP-internal int boundary, non-positive lengths raise the PHP-shaped
+  `ValueError`, and empty separators remain accepted. Exact invalid
+  `__toString()` return diagnostics, exact null/lossy length deprecations,
+  broader binary fidelity beyond represented runtime bytes, references/COW,
+  and native lowering remain unsupported.
+  `str_word_count()` supports formats `0`, `1`, and `2` with the current ASCII
+  letter rules, literal extra character bytes, and PHP-shaped
+  apostrophe/hyphen word-run handling, including whole-string leading
+  apostrophe/hyphen and trailing hyphen boundaries unless those bytes are in
+  the extra character list.
   `strnatcmp()` and `strnatcasecmp()` support scalar/null string-convertible
   operands using the current byte-oriented natural comparison, with ASCII case
   folding for the case-insensitive form. `similar_text($string1, $string2,

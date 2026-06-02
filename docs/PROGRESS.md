@@ -4,6 +4,24 @@
 
 Implemented:
 
+- Added a bounded `chunk_split()` declared string-operand boundary lane.
+  Direct and string-valued dynamic interpreter calls now route argument #1
+  `$string` and optional argument #3 `$separator` through the shared
+  PHP-shaped string byte boundary: scalar operands keep the existing byte
+  chunking behavior after conversion, `null` emits the bounded PHP-shaped
+  deprecation before converting to `""`, supported visible `__toString()`
+  objects are accepted, and arrays, resources, closures, or non-stringable
+  objects raise catchable PHP-shaped string `TypeError`s. Existing
+  PHP-internal int coercion for `$length`, non-positive length `ValueError`,
+  empty-separator behavior, bounded memory diagnostics, metadata visibility,
+  and native-lowering rejection remain unchanged. Focused proof covers the
+  Rust `chunk_split_uses_php_string_argument_boundary` regression, the full
+  `chunk_split_builtin` Rust file, direct CLI probes, selected public
+  `chunk_split()` PHPT rows, build, fmt, and diff checks. Unsupported edges
+  remain exact invalid `__toString()` return diagnostics, exact null/lossy
+  scalar int deprecations for `$length`, broader binary fidelity beyond
+  represented runtime bytes, references/COW, and native lowering.
+
 - Added a bounded `array_map()` non-array operand diagnostics lane. Direct and
   string-valued dynamic interpreter calls now raise catchable PHP-shaped
   `TypeError`s for non-array input arrays while preserving the existing

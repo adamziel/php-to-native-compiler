@@ -85930,7 +85930,7 @@ impl Interpreter {
             }
             "str_pad" => call_str_pad(&args, span),
             "wordwrap" => call_wordwrap(&args, span),
-            "chunk_split" => call_chunk_split(&args, span),
+            "chunk_split" => call_chunk_split(self, &args, span),
             "mb_strlen" => call_mb_strlen(self, &args, span),
             "mb_substr" => call_mb_substr(self, &args, span),
             "mb_strcut" => call_mb_strcut(self, &args, span),
@@ -120918,7 +120918,11 @@ fn compare_usize(left: usize, right: usize) -> i32 {
     }
 }
 
-fn call_chunk_split(args: &[Value], span: Span) -> CompileResult<Value> {
+fn call_chunk_split(
+    interpreter: &mut Interpreter,
+    args: &[Value],
+    span: Span,
+) -> CompileResult<Value> {
     if !(1..=3).contains(&args.len()) {
         return Err(runtime_error(
             span,
@@ -120930,19 +120934,13 @@ fn call_chunk_split(args: &[Value], span: Span) -> CompileResult<Value> {
         ));
     }
 
-    if matches!(args[0], Value::Array(_)) {
-        return Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                "chunk_split()",
-                "string argument arrays are not supported",
-            ),
-        ));
-    }
-
-    let value = args[0]
-        .try_echo_bytes()
-        .map_err(|error| runtime_error(span, error))?;
+    let value = interpreter.php_string_argument_bytes_with_magic(
+        "chunk_split()",
+        1,
+        "string",
+        &args[0],
+        span,
+    )?;
     let chunk_len = match args.get(1) {
         Some(length) => php_internal_int_argument("chunk_split()", 2, "length", length, span)?,
         None => 76,
@@ -120958,18 +120956,13 @@ fn call_chunk_split(args: &[Value], span: Span) -> CompileResult<Value> {
     }
 
     let separator = if let Some(separator) = args.get(2) {
-        if matches!(separator, Value::Array(_)) {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "chunk_split()",
-                    "separator argument arrays are not supported",
-                ),
-            ));
-        }
-        separator
-            .try_echo_bytes()
-            .map_err(|error| runtime_error(span, error))?
+        interpreter.php_string_argument_bytes_with_magic(
+            "chunk_split()",
+            3,
+            "separator",
+            separator,
+            span,
+        )?
     } else {
         b"\r\n".to_vec()
     };
