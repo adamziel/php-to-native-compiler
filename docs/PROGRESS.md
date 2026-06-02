@@ -4,6 +4,25 @@
 
 Implemented:
 
+- Added a bounded tokenizer-backed PHP source highlighter lane on the
+  interpreter path. `highlight_string()` now returns or echoes escaped
+  `<pre><code>` HTML using request-local `highlight.*` INI colors,
+  `highlight_file()` highlights bounded local files and `data:` payloads, and
+  `show_source()` is registered as the `highlight_file()` alias through
+  interpreter dispatch, reflection metadata, builtin detection, and native
+  function-table introspection. Focused proof covers the Rust
+  `source_highlighters_emit_bounded_php_token_spans` regression and selected
+  public PHPT rows `tests/strings/004.phpt`,
+  `tests/strings/bug26703.phpt`,
+  `ext/standard/tests/strings/show_source_basic.phpt`,
+  `ext/standard/tests/strings/show_source_variation1.phpt`, and
+  `ext/standard/tests/strings/show_source_variation2.phpt`. Unsupported edges
+  remain exact PHP highlighter parity for every tokenizer recovery edge,
+  encodings and binary path/content fidelity beyond represented runtime
+  bytes, stream wrappers beyond local files and bounded `data:` highlighter
+  payloads, unrelated INI startup diagnostics such as `allow_url_include=1`,
+  references/COW, and native lowering.
+
 - Repaired the bounded float-to-int diagnostics lane so weak `int|float`
   unions accept real float values without emitting int-coercion diagnostics.
   The guard now suppresses float-to-int deprecations and `NAN` string-coercion

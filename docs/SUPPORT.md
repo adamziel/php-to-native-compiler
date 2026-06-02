@@ -3550,7 +3550,7 @@
   `mb_strtolower`, `mb_strtoupper`, `similar_text`,
   `convert_uuencode`, `convert_uudecode`,
   `preg_match`, `preg_last_error`, `preg_quote`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `str_ireplace`, `substr_replace`, `substr_compare`, `substr_count`, `str_getcsv`, `parse_str`, `http_build_query`,
-  `escapeshellarg`, `highlight_string`, `highlight_file`, `php_strip_whitespace`, `error_reporting`, `set_time_limit`, `usleep`, `ignore_user_abort`, `printf`, `fprintf`, `sprintf`, `vsprintf`, `vprintf`, `vfprintf`, `call_user_func`, `call_user_func_array`,
+  `escapeshellarg`, `highlight_string`, `highlight_file`, `show_source`, `php_strip_whitespace`, `error_reporting`, `set_time_limit`, `usleep`, `ignore_user_abort`, `printf`, `fprintf`, `sprintf`, `vsprintf`, `vprintf`, `vfprintf`, `call_user_func`, `call_user_func_array`,
   `implode`, `basename`, `dirname`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`,
   `file_put_contents`, `readfile`, `unlink`, `mkdir`, `rmdir`, `copy`, `rename`, `chdir`, `scandir`, `stat`, `lstat`, `fileperms`, `chmod`, `chown`, `chgrp`,
   `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_params`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `stream_context_set_params`, `fwrite`, `fscanf`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fflush`, `ftruncate`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`,
@@ -5556,16 +5556,20 @@
   it does not resolve the filesystem, symlinks, include paths, stream wrappers,
   Windows drive/UNC paths, locale/codepage details, or PHP's exact coercion and
   `ValueError` behavior.
-  `highlight_string($string, $return = false)` echoes the current byte string
-  unchanged and returns `true`, or returns the byte string when `$return` is
-  truthy. `highlight_file($path, $return = false)` reads a bounded local file
-  through the same local filesystem and open_basedir checks as other covered
-  file reads, echoes the bytes and returns `true`, or returns the bytes when
-  `$return` is truthy; open failures emit bounded warnings and return `false`.
+  `highlight_string($string, $return = false)` routes the converted byte string
+  through the same tokenizer-backed source highlighter used by the tokenizer
+  extension slice, emits PHP-style `<pre><code>` HTML with `highlight.*` INI
+  colors, and returns either the highlighted string or `true` after echoing it.
+  `highlight_file($path, $return = false)` reads a bounded local file through
+  the same local filesystem and open_basedir checks as other covered file
+  reads, or a bounded `data:` URL payload, then applies the same highlighter.
+  `show_source($path, $return = false)` is the same interpreter alias as
+  `highlight_file()`. Open failures emit bounded warnings and return `false`.
   `php_strip_whitespace($path)` reads a bounded local file through the same
   checks and strips PHP comments plus redundant blank lines for the focused
-  heredoc/numeric rows. These are compatibility slices, not tokenizer-grade
-  source highlighters or full PHP whitespace preservation.
+  heredoc/numeric rows. These are compatibility slices, not full PHP
+  highlighter parity for every tokenizer recovery edge or exact whitespace
+  preservation path.
   `set_time_limit($seconds)` accepts one int-compatible argument and returns
   `true` without changing host execution limits.
   `file_exists($path)` accepts one string or supported visible `__toString()`
@@ -9812,9 +9816,9 @@
   as the builtin section above; direct native calls still reject under the
   function-call boundary, while native function-table introspection recognizes
   the names.
-  `highlight_string`, `highlight_file`, `php_strip_whitespace`, and
-  `set_time_limit` are recognized by native function-table introspection but
-  still reject as direct native calls under the function-call boundary.
+  `highlight_string`, `highlight_file`, `show_source`, `php_strip_whitespace`,
+  and `set_time_limit` are recognized by native function-table introspection
+  but still reject as direct native calls under the function-call boundary.
   `strtok` and `substr_replace` accept the same current interpreter-only
   tokenization and replacement-by-offset subsets as the builtin section above;
   direct native calls still reject under the function-call boundary, while
@@ -12574,11 +12578,14 @@
   canonicalization, symlink resolution, null-byte behavior, locale/codepage
   details, broad scalar coercions, exact warning/`TypeError` diagnostics, and
   native lowering beyond function-table introspection
-- `highlight_string()`, `highlight_file()`, and `php_strip_whitespace()`
-  outside the current byte-preserving local-file compatibility slices:
-  tokenizer-grade HTML highlighting, full PHP source whitespace/comment
-  fidelity, stream wrappers beyond covered local files, exact diagnostics, and
-  native lowering beyond function-table introspection
+- `highlight_string()`, `highlight_file()`, `show_source()`, and
+  `php_strip_whitespace()` outside the current source-highlighting and
+  local-file compatibility slices: exact PHP highlighter parity for every
+  tokenizer recovery edge, encodings and binary path/content fidelity beyond
+  represented runtime bytes, full PHP source whitespace/comment preservation,
+  stream wrappers beyond covered local files and `data:` highlighter payloads,
+  exact diagnostics including unrelated INI startup deprecations, and native
+  lowering beyond function-table introspection
 - `pathinfo()` path behavior outside the current lexical Unix-style local path
   subset and supported `PATHINFO_*` constants: Windows drive and UNC semantics
   beyond treating backslashes as ordinary Unix-path characters, stream wrappers,

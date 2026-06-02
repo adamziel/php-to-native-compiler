@@ -83857,11 +83857,12 @@ impl Interpreter {
         }
 
         let value = self.value_to_echo_bytes(args[0].clone(), span)?;
+        let highlighted = php_highlight_source_bytes(&value, &self.php_highlight_colors());
         if args.get(1).is_some_and(Value::is_truthy) {
-            return Ok(interpreter_value_from_php_string_bytes(value));
+            return Ok(Value::String(highlighted));
         }
 
-        self.append_output_bytes_at(&value, span);
+        self.append_output_bytes_at(highlighted.as_bytes(), span);
         Ok(Value::Bool(true))
     }
 
@@ -83879,6 +83880,29 @@ impl Interpreter {
 
         let path = self.filesystem_filename_argument("highlight_file", &args[0], span)?;
         let return_output = args.get(1).is_some_and(Value::is_truthy);
+        if path.starts_with("data:") {
+            let contents = match parse_data_url_stream(&path) {
+                Ok(stream) => stream.contents.into_bytes(),
+                Err(message) => {
+                    self.emit_display_warning(
+                        format!("highlight_file({path}): Failed to open stream: {message}"),
+                        span,
+                    )?;
+                    self.emit_display_warning(
+                        format!("highlight_file(): Failed opening '{path}' for highlighting"),
+                        span,
+                    )?;
+                    return Ok(Value::Bool(false));
+                }
+            };
+            let highlighted = php_highlight_source_bytes(&contents, &self.php_highlight_colors());
+            if return_output {
+                return Ok(Value::String(highlighted));
+            }
+            self.append_output_bytes_at(highlighted.as_bytes(), span);
+            return Ok(Value::Bool(true));
+        }
+
         let filesystem_path =
             self.resolve_local_filesystem_operation_path("highlight_file", &path, false, span)?;
         if !self.enforce_bounded_open_basedir("highlight_file()", &path, &filesystem_path, span)? {
@@ -83904,11 +83928,32 @@ impl Interpreter {
         };
         self.cache_bounded_realpath_entry_for_local_path(&filesystem_path);
 
+        let highlighted = php_highlight_source_bytes(&contents, &self.php_highlight_colors());
         if return_output {
-            Ok(interpreter_value_from_php_string_bytes(contents))
+            Ok(Value::String(highlighted))
         } else {
-            self.append_output_bytes_at(&contents, span);
+            self.append_output_bytes_at(highlighted.as_bytes(), span);
             Ok(Value::Bool(true))
+        }
+    }
+
+    fn php_highlight_colors(&self) -> PhpHighlightColors {
+        PhpHighlightColors {
+            html: self
+                .ini_value("highlight.html")
+                .unwrap_or_else(|| PHP_HIGHLIGHT_HTML.to_string()),
+            default: self
+                .ini_value("highlight.default")
+                .unwrap_or_else(|| PHP_HIGHLIGHT_DEFAULT.to_string()),
+            keyword: self
+                .ini_value("highlight.keyword")
+                .unwrap_or_else(|| PHP_HIGHLIGHT_KEYWORD.to_string()),
+            string: self
+                .ini_value("highlight.string")
+                .unwrap_or_else(|| PHP_HIGHLIGHT_STRING.to_string()),
+            comment: self
+                .ini_value("highlight.comment")
+                .unwrap_or_else(|| PHP_HIGHLIGHT_COMMENT.to_string()),
         }
     }
 
@@ -90177,7 +90222,7 @@ impl Interpreter {
             "htmlspecialchars_decode" => call_htmlspecialchars_decode(&args, span),
             "html_entity_decode" => call_html_entity_decode(self, &args, span),
             "highlight_string" => self.call_highlight_string(&args, span),
-            "highlight_file" => self.call_highlight_file(&args, span),
+            "highlight_file" | "show_source" => self.call_highlight_file(&args, span),
             "php_strip_whitespace" => self.call_php_strip_whitespace(&args, span),
             "get_html_translation_table" => call_get_html_translation_table(self, &args, span),
             "strip_tags" => call_strip_tags(&args, span),
@@ -107424,7 +107469,7 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_optional_bool_param("return", false),
             ],
         ),
-        "highlight_file" => (
+        "highlight_file" | "show_source" => (
             "string|bool",
             vec![
                 reflection_internal_param("filename", "string"),
@@ -112792,6 +112837,7 @@ fn is_builtin(name: &str) -> bool {
             | "html_entity_decode"
             | "highlight_string"
             | "highlight_file"
+            | "show_source"
             | "php_strip_whitespace"
             | "get_html_translation_table"
             | "strip_tags"
@@ -113855,6 +113901,265 @@ fn basename_path_bytes(path: &[u8], suffix: Option<&[u8]>) -> Vec<u8> {
     }
 
     name
+}
+
+const PHP_HIGHLIGHT_HTML: &str = "#000000";
+const PHP_HIGHLIGHT_DEFAULT: &str = "#0000BB";
+const PHP_HIGHLIGHT_KEYWORD: &str = "#007700";
+const PHP_HIGHLIGHT_STRING: &str = "#DD0000";
+const PHP_HIGHLIGHT_COMMENT: &str = "#FF8000";
+
+struct PhpHighlightColors {
+    html: String,
+    default: String,
+    keyword: String,
+    string: String,
+    comment: String,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PhpHighlightClass {
+    Html,
+    Default,
+    Keyword,
+    String,
+    Comment,
+}
+
+fn php_highlight_source_bytes(source: &[u8], colors: &PhpHighlightColors) -> String {
+    let mut output = format!("<pre><code style=\"color: {}\">", colors.html);
+    let mut active = PhpHighlightClass::Html;
+    let mut in_double_quoted_string = false;
+
+    for token in php_tokenizer::tokenize(source) {
+        let class = php_highlight_token_class(&token, active, &mut in_double_quoted_string);
+        php_highlight_emit_token(&mut output, token.text(), class, &mut active, colors);
+    }
+
+    if active != PhpHighlightClass::Html {
+        output.push_str("</span>");
+    }
+    output.push_str("</code></pre>");
+    output
+}
+
+fn php_highlight_emit_token(
+    output: &mut String,
+    text: &[u8],
+    class: PhpHighlightClass,
+    active: &mut PhpHighlightClass,
+    colors: &PhpHighlightColors,
+) {
+    if class == PhpHighlightClass::Html {
+        if *active != PhpHighlightClass::Html {
+            output.push_str("</span>");
+            *active = PhpHighlightClass::Html;
+        }
+        php_highlight_escape_bytes(output, text);
+        return;
+    }
+
+    if *active != class {
+        if *active != PhpHighlightClass::Html {
+            output.push_str("</span>");
+        }
+        output.push_str("<span style=\"color: ");
+        output.push_str(php_highlight_class_color(class, colors));
+        output.push_str("\">");
+        *active = class;
+    }
+    php_highlight_escape_bytes(output, text);
+}
+
+fn php_highlight_escape_bytes(output: &mut String, text: &[u8]) {
+    let mut chunk_start = 0;
+    for (index, byte) in text.iter().copied().enumerate() {
+        let replacement = match byte {
+            b'&' => Some("&amp;"),
+            b'<' => Some("&lt;"),
+            b'>' => Some("&gt;"),
+            _ => None,
+        };
+        let Some(replacement) = replacement else {
+            continue;
+        };
+        if chunk_start < index {
+            output.push_str(&String::from_utf8_lossy(&text[chunk_start..index]));
+        }
+        output.push_str(replacement);
+        chunk_start = index + 1;
+    }
+    if chunk_start < text.len() {
+        output.push_str(&String::from_utf8_lossy(&text[chunk_start..]));
+    }
+}
+
+fn php_highlight_class_color<'a>(
+    class: PhpHighlightClass,
+    colors: &'a PhpHighlightColors,
+) -> &'a str {
+    match class {
+        PhpHighlightClass::Html => &colors.html,
+        PhpHighlightClass::Default => &colors.default,
+        PhpHighlightClass::Keyword => &colors.keyword,
+        PhpHighlightClass::String => &colors.string,
+        PhpHighlightClass::Comment => &colors.comment,
+    }
+}
+
+fn php_highlight_token_class(
+    token: &PhpTokenizerToken,
+    active: PhpHighlightClass,
+    in_double_quoted_string: &mut bool,
+) -> PhpHighlightClass {
+    if token.id() == php_tokenizer::T_WHITESPACE {
+        return active;
+    }
+
+    if !token.is_token_array() {
+        if token.text() == b"\"" {
+            *in_double_quoted_string = !*in_double_quoted_string;
+            return PhpHighlightClass::String;
+        }
+        return if *in_double_quoted_string {
+            PhpHighlightClass::String
+        } else {
+            PhpHighlightClass::Keyword
+        };
+    }
+
+    match token.id() {
+        php_tokenizer::T_INLINE_HTML => PhpHighlightClass::Html,
+        php_tokenizer::T_OPEN_TAG
+        | php_tokenizer::T_OPEN_TAG_WITH_ECHO
+        | php_tokenizer::T_CLOSE_TAG => PhpHighlightClass::Default,
+        php_tokenizer::T_COMMENT | php_tokenizer::T_DOC_COMMENT => PhpHighlightClass::Comment,
+        php_tokenizer::T_CONSTANT_ENCAPSED_STRING
+        | php_tokenizer::T_ENCAPSED_AND_WHITESPACE
+        | php_tokenizer::T_START_HEREDOC => PhpHighlightClass::String,
+        id if php_highlight_token_id_is_keyword(id) => PhpHighlightClass::Keyword,
+        _ => PhpHighlightClass::Default,
+    }
+}
+
+fn php_highlight_token_id_is_keyword(id: i64) -> bool {
+    matches!(
+        id,
+        php_tokenizer::T_INCLUDE
+            | php_tokenizer::T_INCLUDE_ONCE
+            | php_tokenizer::T_EVAL
+            | php_tokenizer::T_REQUIRE
+            | php_tokenizer::T_REQUIRE_ONCE
+            | php_tokenizer::T_LOGICAL_OR
+            | php_tokenizer::T_LOGICAL_XOR
+            | php_tokenizer::T_LOGICAL_AND
+            | php_tokenizer::T_PRINT
+            | php_tokenizer::T_YIELD
+            | php_tokenizer::T_YIELD_FROM
+            | php_tokenizer::T_INSTANCEOF
+            | php_tokenizer::T_NEW
+            | php_tokenizer::T_CLONE
+            | php_tokenizer::T_EXIT
+            | php_tokenizer::T_IF
+            | php_tokenizer::T_ELSEIF
+            | php_tokenizer::T_ELSE
+            | php_tokenizer::T_ENDIF
+            | php_tokenizer::T_ECHO
+            | php_tokenizer::T_DO
+            | php_tokenizer::T_WHILE
+            | php_tokenizer::T_ENDWHILE
+            | php_tokenizer::T_FOR
+            | php_tokenizer::T_ENDFOR
+            | php_tokenizer::T_FOREACH
+            | php_tokenizer::T_ENDFOREACH
+            | php_tokenizer::T_DECLARE
+            | php_tokenizer::T_ENDDECLARE
+            | php_tokenizer::T_AS
+            | php_tokenizer::T_SWITCH
+            | php_tokenizer::T_ENDSWITCH
+            | php_tokenizer::T_CASE
+            | php_tokenizer::T_DEFAULT
+            | php_tokenizer::T_MATCH
+            | php_tokenizer::T_BREAK
+            | php_tokenizer::T_CONTINUE
+            | php_tokenizer::T_GOTO
+            | php_tokenizer::T_FUNCTION
+            | php_tokenizer::T_FN
+            | php_tokenizer::T_CONST
+            | php_tokenizer::T_RETURN
+            | php_tokenizer::T_TRY
+            | php_tokenizer::T_CATCH
+            | php_tokenizer::T_FINALLY
+            | php_tokenizer::T_THROW
+            | php_tokenizer::T_USE
+            | php_tokenizer::T_INSTEADOF
+            | php_tokenizer::T_GLOBAL
+            | php_tokenizer::T_STATIC
+            | php_tokenizer::T_ABSTRACT
+            | php_tokenizer::T_FINAL
+            | php_tokenizer::T_PRIVATE
+            | php_tokenizer::T_PROTECTED
+            | php_tokenizer::T_PUBLIC
+            | php_tokenizer::T_READONLY
+            | php_tokenizer::T_VAR
+            | php_tokenizer::T_UNSET
+            | php_tokenizer::T_ISSET
+            | php_tokenizer::T_EMPTY
+            | php_tokenizer::T_HALT_COMPILER
+            | php_tokenizer::T_CLASS
+            | php_tokenizer::T_TRAIT
+            | php_tokenizer::T_INTERFACE
+            | php_tokenizer::T_ENUM
+            | php_tokenizer::T_EXTENDS
+            | php_tokenizer::T_IMPLEMENTS
+            | php_tokenizer::T_NAMESPACE
+            | php_tokenizer::T_LIST
+            | php_tokenizer::T_ARRAY
+            | php_tokenizer::T_CALLABLE
+            | php_tokenizer::T_PLUS_EQUAL
+            | php_tokenizer::T_MINUS_EQUAL
+            | php_tokenizer::T_MUL_EQUAL
+            | php_tokenizer::T_DIV_EQUAL
+            | php_tokenizer::T_CONCAT_EQUAL
+            | php_tokenizer::T_MOD_EQUAL
+            | php_tokenizer::T_AND_EQUAL
+            | php_tokenizer::T_OR_EQUAL
+            | php_tokenizer::T_XOR_EQUAL
+            | php_tokenizer::T_SL_EQUAL
+            | php_tokenizer::T_SR_EQUAL
+            | php_tokenizer::T_COALESCE_EQUAL
+            | php_tokenizer::T_BOOLEAN_OR
+            | php_tokenizer::T_BOOLEAN_AND
+            | php_tokenizer::T_IS_EQUAL
+            | php_tokenizer::T_IS_NOT_EQUAL
+            | php_tokenizer::T_IS_IDENTICAL
+            | php_tokenizer::T_IS_NOT_IDENTICAL
+            | php_tokenizer::T_IS_SMALLER_OR_EQUAL
+            | php_tokenizer::T_IS_GREATER_OR_EQUAL
+            | php_tokenizer::T_SPACESHIP
+            | php_tokenizer::T_SL
+            | php_tokenizer::T_SR
+            | php_tokenizer::T_INC
+            | php_tokenizer::T_DEC
+            | php_tokenizer::T_INT_CAST
+            | php_tokenizer::T_DOUBLE_CAST
+            | php_tokenizer::T_STRING_CAST
+            | php_tokenizer::T_ARRAY_CAST
+            | php_tokenizer::T_OBJECT_CAST
+            | php_tokenizer::T_BOOL_CAST
+            | php_tokenizer::T_UNSET_CAST
+            | php_tokenizer::T_OBJECT_OPERATOR
+            | php_tokenizer::T_NULLSAFE_OBJECT_OPERATOR
+            | php_tokenizer::T_DOUBLE_ARROW
+            | php_tokenizer::T_PAAMAYIM_NEKUDOTAYIM
+            | php_tokenizer::T_NS_SEPARATOR
+            | php_tokenizer::T_ELLIPSIS
+            | php_tokenizer::T_COALESCE
+            | php_tokenizer::T_POW
+            | php_tokenizer::T_POW_EQUAL
+            | php_tokenizer::T_AMPERSAND_NOT_FOLLOWED_BY_VAR_OR_VARARG
+            | php_tokenizer::T_AMPERSAND_FOLLOWED_BY_VAR_OR_VARARG
+    )
 }
 
 fn php_strip_whitespace_bytes(source: &[u8]) -> Vec<u8> {
@@ -149148,6 +149453,11 @@ fn compat_ini_value(normalized_name: &str) -> Option<&'static str> {
         "error_log" => Some(""),
         "error_prepend_string" => Some(""),
         "html_errors" => Some("0"),
+        "highlight.comment" => Some(PHP_HIGHLIGHT_COMMENT),
+        "highlight.default" => Some(PHP_HIGHLIGHT_DEFAULT),
+        "highlight.html" => Some(PHP_HIGHLIGHT_HTML),
+        "highlight.keyword" => Some(PHP_HIGHLIGHT_KEYWORD),
+        "highlight.string" => Some(PHP_HIGHLIGHT_STRING),
         "internal_encoding" => Some(""),
         "mail.add_x_header" => Some("0"),
         "max_execution_time" => Some("30"),

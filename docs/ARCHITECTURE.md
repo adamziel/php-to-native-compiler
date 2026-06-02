@@ -2904,6 +2904,17 @@ non-overlapping count and offset/length window logic. Supported visible
 `__toString()` objects are accepted for the searched text and needle, while
 non-stringable operands stop at the catchable internal string `TypeError`
 boundary before counting.
+`highlight_string()`, `highlight_file()`, and the `show_source()` alias are
+interpreter-only bounded PHP source highlighters. They reuse the tokenizer
+extension scanner to classify PHP open/close tags, keywords/operators,
+identifiers/scalars, comments, string literals, inline HTML, and the reached
+double-quoted interpolation spans, escaping HTML bytes and applying the
+request-local `highlight.*` INI colors. `highlight_file()` and `show_source()`
+share the local-file/open_basedir path policy used by adjacent filesystem
+builtins and accept the bounded `data:` payload path. Native function-table
+introspection recognizes these names, but direct native calls stay rejected
+until source-highlighter allocation, exact tokenizer recovery, wrapper policy,
+diagnostics, references/COW, and native string output are modeled.
 The current string residual slice also keeps `wordwrap()`,
 `str_word_count()`, `strnatcmp()`, `strnatcasecmp()`, `strrev()`,
 `str_rot13()`, `str_shuffle()`, `base64_encode()` / `base64_decode()`,

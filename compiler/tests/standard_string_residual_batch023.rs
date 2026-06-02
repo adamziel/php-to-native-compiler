@@ -87,3 +87,58 @@ echo php_strip_whitespace("{}");
     );
     assert_eq!(execution.exit_code, 0);
 }
+
+#[test]
+fn source_highlighters_emit_bounded_php_token_spans() {
+    let root = std::env::temp_dir().join(format!("phpc-source-highlight-{}", std::process::id()));
+    fs::create_dir_all(&root).unwrap();
+    let source_path = root.join("show-source.php");
+    fs::write(
+        &source_path,
+        "<?php\nclass test {\n    public $var = 1;\n}\nshow_source(__FILE__);\n",
+    )
+    .unwrap();
+
+    let source = format!(
+        r##"<?php
+ini_set("highlight.comment", "#FF9900");
+ini_set("highlight.string", "#DD0000");
+ini_set("highlight.keyword", "#007700");
+ini_set("highlight.default", "#0000BB");
+ini_set("highlight.html", "#000000");
+
+$inline = highlight_string("<br /><?php echo \"foo\"; ?><br />", true);
+echo $inline, "\n--inline--\n";
+
+$interpolated = highlight_string('<?php echo "foo[] $a \n"; ?>', true);
+echo str_contains($interpolated, '<span style="color: #DD0000">"foo[] </span><span style="color: #0000BB">$a</span><span style="color: #DD0000"> \n"</span>') ? "interp" : "bad-interp";
+echo "\n--interp--\n";
+
+echo highlight_file("data:,<?php echo \"test\"; ?>", true), "\n--data--\n";
+
+$file = show_source("{}", true);
+echo str_contains($file, '<span style="color: #007700">class </span><span style="color: #0000BB">test </span>') ? "class" : "bad-class";
+echo ":";
+echo str_contains($file, '<span style="color: #0000BB">show_source</span><span style="color: #007700">(</span><span style="color: #0000BB">__FILE__</span>') ? "alias" : "bad-alias";
+"##,
+        source_path.display()
+    );
+    let execution = run_source(&source).unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "<pre><code style=\"color: #000000\">&lt;br /&gt;<span style=\"color: #0000BB\">&lt;?php </span><span style=\"color: #007700\">echo </span><span style=\"color: #DD0000\">\"foo\"</span><span style=\"color: #007700\">; </span><span style=\"color: #0000BB\">?&gt;</span>&lt;br /&gt;</code></pre>\n",
+            "--inline--\n",
+            "interp\n",
+            "--interp--\n",
+            "<pre><code style=\"color: #000000\"><span style=\"color: #0000BB\">&lt;?php </span><span style=\"color: #007700\">echo </span><span style=\"color: #DD0000\">\"test\"</span><span style=\"color: #007700\">; </span><span style=\"color: #0000BB\">?&gt;</span></code></pre>\n",
+            "--data--\n",
+            "class:alias"
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_dir(root);
+}
