@@ -106,6 +106,39 @@ foreach ($function->getParameters() as $parameter) {
 }
 
 #[test]
+fn substr_compare_case_insensitive_flag_uses_php_bool_boundary() {
+    let execution = run_source(
+        r#"<?php
+$call = "substr_compare";
+echo substr_compare("abc", "ABC", 0, null, "1") === 0 ? "string-true" : "bad";
+echo "|";
+echo substr_compare("abc", "ABC", 0, null, 0) > 0 ? "int-false" : "bad";
+echo "|";
+echo $call("abc", "ABC", 0, null, true) === 0 ? "dynamic" : "bad";
+echo "|";
+try {
+    substr_compare("abc", "ABC", 0, null, []);
+} catch (TypeError $e) {
+    echo $e->getMessage(), "|";
+}
+try {
+    substr_compare("abc", "ABC", 0, null, new stdClass);
+} catch (TypeError $e) {
+    echo $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "string-true|int-false|dynamic|substr_compare(): Argument #5 ($case_insensitive) must be of type bool, array given|substr_compare(): Argument #5 ($case_insensitive) must be of type bool, stdClass given"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn emit_ir_folds_substr_compare_metadata_but_rejects_direct_calls() {
     let ir = emit_ir_source(
         r#"<?php

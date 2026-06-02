@@ -123117,7 +123117,12 @@ fn call_substr_compare(args: &[Value], span: Span) -> CompileResult<Value> {
             Some(length as usize)
         }
     };
-    let case_insensitive = args.get(4).is_some_and(Value::is_truthy);
+    let case_insensitive = match args.get(4) {
+        Some(value) => {
+            php_internal_bool_argument("substr_compare()", 5, "case_insensitive", value, span)?
+        }
+        None => false,
+    };
 
     let haystack_len = haystack.len() as i64;
     let start = if offset >= 0 {

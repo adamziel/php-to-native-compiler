@@ -3901,11 +3901,14 @@
   $case_insensitive = false)` supports scalar/null string-convertible haystack
   and needle arguments, int-compatible offsets, nullable non-negative lengths,
   negative offsets clamped to the start when they precede the haystack, offsets
-  at the end of the haystack, optional ASCII-only case-insensitive comparison,
-  and PHP-shaped catchable `ValueError` messages for positive offsets outside
-  the haystack and negative lengths. Array/object/resource operands, locale or
-  Unicode case folding, exact diagnostics beyond the documented offset/length
-  messages, and native lowering remain unsupported.
+  at the end of the haystack, optional bool-compatible ASCII-only
+  case-insensitive comparison, and PHP-shaped catchable `ValueError` messages
+  for positive offsets outside the haystack and negative lengths. Arrays,
+  objects, closures, and resources passed to `$case_insensitive` raise
+  catchable PHP-shaped `TypeError`s. Array/object/resource haystack or needle
+  operands, exact null/lossy scalar deprecation diagnostics for the bool flag,
+  locale or Unicode case folding, exact diagnostics beyond the documented
+  offset/length/bool messages, and native lowering remain unsupported.
   `substr_count($haystack, $needle, $offset = 0, $length = null)` supports
   scalar/null and supported visible `__toString()` haystack and needle
   arguments, PHP-shaped null-to-string deprecations, optional int-compatible
@@ -12110,9 +12113,11 @@
   PHP diagnostics, and native lowering beyond function-table introspection
 - `substr_compare()` outside the current scalar/null string-convertible
   haystack and needle plus int-compatible offset, nullable non-negative length,
-  and optional boolean case-insensitive flag subset: array/object/resource
-  operands, locale/Unicode case folding, exact diagnostics beyond the covered
-  offset/length `ValueError` messages, and native lowering beyond
+  and optional bool-compatible case-insensitive flag subset:
+  array/object/resource haystack or needle operands, arrays/objects/closures/
+  resources as the bool flag, exact null/lossy scalar bool deprecation
+  diagnostics, locale/Unicode case folding, exact diagnostics beyond the
+  covered offset/length/bool messages, and native lowering beyond
   function-table introspection
 - `substr_count()` outside the current scalar/null or supported visible
   `__toString()` haystack and needle plus optional int-compatible offset and

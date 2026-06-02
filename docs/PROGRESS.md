@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Added a bounded `substr_compare()` case-insensitive flag bool-boundary lane.
+  Direct and string-valued dynamic interpreter calls now route optional
+  `$case_insensitive` operands through the shared PHP-internal bool boundary,
+  so scalar values keep selecting the existing byte comparison mode by PHP
+  truthiness while arrays, objects, closures, and resources raise catchable
+  PHP-shaped `TypeError`s. Existing scalar haystack/needle conversion, offset
+  and nullable non-negative length coercion, positive offset bounds,
+  negative-offset clamping, ASCII-only case folding, metadata visibility, and
+  native-lowering rejection remain unchanged. Focused proof covers the Rust
+  `substr_compare_case_insensitive_flag_uses_php_bool_boundary` regression,
+  the full `substr_compare_builtin` test file, direct CLI probes, and selected
+  public `substr_compare()` PHPT rows. Unsupported edges remain exact
+  null/lossy scalar bool deprecation diagnostics, haystack/needle
+  object-resource-array boundary parity, locale or Unicode case folding, exact
+  diagnostics beyond the documented offset/length/bool boundaries,
+  references/COW, and native lowering.
+
 - Added a bounded `array_combine()` non-array operand diagnostics lane. Direct
   and string-valued dynamic interpreter calls now raise catchable PHP-shaped
   `TypeError`s when argument #1 `$keys` or argument #2 `$values` is not an
