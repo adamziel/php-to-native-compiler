@@ -4,6 +4,22 @@
 
 Implemented:
 
+- Added a bounded `timezone_open()` warning/recovery lane for the selected
+  `timezone_open_warning.phpt` surface. The interpreter now accepts string and
+  scalar-string-compatible timezone identifiers for `timezone_open()`, returns
+  bounded `DateTimeZone` objects for supported named/fixed-offset identifiers,
+  and emits the covered PHP-shaped warning plus `false` for unsupported or
+  malformed identifiers instead of surfacing an unsupported runtime error.
+  Focused Rust coverage exercises valid fixed-offset/named identifiers plus
+  invalid float/string identifiers, and the full `date_time_builtin` file
+  passed `15 / 15`; `cargo build -p phpc --bin phpc` and a direct `phpc run`
+  probe passed; selected PHPT proof passed `1 / 1` for
+  `ext/date/tests/timezone_open_warning.phpt`; `cargo fmt --check` and
+  `git diff --check` passed. Unsupported edges remain exact internal
+  `DateTimeZone` constructor diagnostics, broad scalar coercion/deprecation
+  parity, arrays/objects/resources as timezone operands, full timezone
+  database inventory, and native lowering.
+
 - Added a bounded mutable `DateTime` constructor timezone-argument lane for the
   selected `bug43003.phpt` surface. `new DateTime($time, ?DateTimeZone
   $timezone)` and `date_create($time, ?DateTimeZone $timezone)` now accept a

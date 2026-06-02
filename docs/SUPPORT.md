@@ -5755,8 +5755,13 @@
   format constants, including PHP-shaped deprecation diagnostics for
   `DATE_RFC7231` / `DateTime::RFC7231`.
   `date.timezone` PHPT INI overrides seed the same bounded timezone state,
-  including PHPT-style trailing semicolon syntax. Full timezone database
-  validation, `DateTimeImmutable`, broad `DateTimeInterface`
+  including PHPT-style trailing semicolon syntax. `timezone_open()` accepts
+  string and scalar-string-compatible timezone identifiers, returns bounded
+  `DateTimeZone` objects for supported named or fixed-offset identifiers, and
+  emits a PHP-shaped warning plus `false` for unsupported or malformed
+  identifiers in the covered local CLI row. Full timezone database validation,
+  exact internal `DateTimeZone` constructor diagnostics and scalar
+  coercion/deprecation parity, `DateTimeImmutable`, broad `DateTimeInterface`
   runtime/interface parity beyond the reached constant diagnostic text, all
   historical transition rules, exact diagnostics for constructor timezone
   coercions outside the bounded `DateTimeZone|null` slice, and native lowering

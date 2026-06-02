@@ -18047,24 +18047,36 @@ impl Interpreter {
 
     fn call_timezone_open(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("timezone_open", args, 1, span)?;
-        let Value::String(name) = &args[0] else {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "timezone_open()",
-                    format!(
-                        "timezone argument must be string in the current subset, got {}",
-                        args[0].type_name()
+        let name = match &args[0] {
+            Value::String(value) => value.clone(),
+            Value::Null | Value::Bool(_) | Value::Int(_) | Value::Float(_) => args[0]
+                .try_echo_string()
+                .map_err(|error| runtime_error(span, error))?,
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "timezone_open()",
+                        format!(
+                            "timezone argument must be string-compatible scalar in the current subset, got {}",
+                            other.type_name()
+                        ),
                     ),
-                ),
-            ));
+                ));
+            }
         };
-        match self.create_datetimezone_object_from_name(name, span) {
+        match self.create_datetimezone_object_from_name(&name, span) {
             Ok(object) => {
                 self.track_allocated_object(&object);
                 Ok(Value::Object(object))
             }
-            Err(_) => Ok(Value::Bool(false)),
+            Err(_) => {
+                self.emit_display_warning(
+                    format!("timezone_open(): Unknown or bad timezone ({name})"),
+                    span,
+                )?;
+                Ok(Value::Bool(false))
+            }
         }
     }
 

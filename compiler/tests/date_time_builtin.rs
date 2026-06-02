@@ -281,6 +281,36 @@ var_dump(timezone_name_from_abbr("", -14400, 0));
 }
 
 #[test]
+fn timezone_open_warns_and_returns_false_for_invalid_scalar_ids() {
+    let execution = run_source(
+        r#"<?php
+$timezones = [ "+02:30", "Europe/Kyiv", 2.5, "99:60", "Europe/Lviv" ];
+
+foreach ($timezones as $timezone) {
+    $d = timezone_open($timezone);
+    if ($d) {
+        echo "In: {$timezone}; Out: ", $d->getName(), "\n";
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "In: +02:30; Out: +02:30\n",
+            "In: Europe/Kyiv; Out: Europe/Kyiv\n",
+            "\nWarning: timezone_open(): Unknown or bad timezone (2.5) in Command line code on line 5\n",
+            "\nWarning: timezone_open(): Unknown or bad timezone (99:60) in Command line code on line 5\n",
+            "\nWarning: timezone_open(): Unknown or bad timezone (Europe/Lviv) in Command line code on line 5\n"
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn gettimeofday_uses_default_timezone_offset() {
     let execution = run_source(
         r#"<?php
