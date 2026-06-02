@@ -84,7 +84,10 @@ By-value `foreach` over bounded userland
 `Iterator` objects dispatches public `rewind()`, `valid()`, `current()`,
 `key()`, and `next()` in PHP order through the existing method-call path;
 `IteratorAggregate::getIterator()` is bounded to returning one of those
-`Iterator` objects. A by-value `foreach` temporary returned by
+`Iterator` objects, including through a declared `Traversable` return type
+because the runtime expands the core `Iterator` and `IteratorAggregate`
+interfaces through their `Traversable` parent for object type checks. A
+by-value `foreach` temporary returned by
 `IteratorAggregate::getIterator()` is retired after the loop when no live root
 keeps that iterator object reachable, allowing the next allocation to reuse the
 same observable object handle in the current LIFO subset; if iterator method
@@ -198,9 +201,11 @@ cursor. `array_shift()` additionally has a bounded by-value expression fallback
 that emits PHP's reference notice and shifts a temporary copy. `next()` and
 `prev()` have the same bounded notice-and-temporary path for supported
 function-returned arrays, while direct array literals use the bounded
-pass-by-reference fatal path. Object-property array roots for
-push/pop/shift/unshift, broad lvalues, string-keyed unpacking, and native
-lowering remain outside this interpreter path.
+pass-by-reference fatal path. `next()`, `prev()`, `reset()`, and `end()` also
+accept direct visible object-property array roots and write the updated cursor
+back through the existing property storage boundary. Object-property array
+roots for push/pop/shift/unshift, broad lvalues, string-keyed unpacking, and
+native lowering remain outside this interpreter path.
 
 Nested append assignment reuses the same assignment-value metadata path before
 storing the appended value. When the RHS is a proven copied-source array from a

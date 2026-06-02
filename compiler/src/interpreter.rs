@@ -3833,10 +3833,21 @@ const CORE_INTERFACE_NAMES: &[&str] = &[
     "DateTimeInterface",
 ];
 
+const NO_CORE_INTERFACE_PARENTS: &[&str] = &[];
+const CORE_ITERATOR_PARENT_INTERFACES: &[&str] = &["Traversable"];
+
 fn is_core_interface_name(name: &str) -> bool {
     CORE_INTERFACE_NAMES
         .iter()
         .any(|interface| interface.eq_ignore_ascii_case(name))
+}
+
+fn core_interface_parent_names(name: &str) -> &'static [&'static str] {
+    if name.eq_ignore_ascii_case("Iterator") || name.eq_ignore_ascii_case("IteratorAggregate") {
+        CORE_ITERATOR_PARENT_INTERFACES
+    } else {
+        NO_CORE_INTERFACE_PARENTS
+    }
 }
 
 impl SymbolTable {
@@ -60517,8 +60528,18 @@ impl Interpreter {
         }
 
         let key = interface_name.to_ascii_lowercase();
+        if parents_first {
+            for parent_name in core_interface_parent_names(interface_name) {
+                self.push_class_implements_interface_name(parent_name, true, names, seen);
+            }
+        }
         if seen.insert(key) {
             names.push(interface_name.to_string());
+        }
+        if !parents_first {
+            for parent_name in core_interface_parent_names(interface_name) {
+                self.push_class_implements_interface_name(parent_name, false, names, seen);
+            }
         }
     }
 
@@ -72269,6 +72290,29 @@ impl Interpreter {
             );
         }
 
+        if let Expr::Property {
+            target,
+            property,
+            span: property_span,
+        } = &args[0]
+        {
+            let operation = match key {
+                "next" => DirectArrayPathMutation::Next,
+                "prev" => DirectArrayPathMutation::Prev,
+                "reset" => DirectArrayPathMutation::Reset,
+                "end" => DirectArrayPathMutation::End,
+                _ => unreachable!("array pointer mutation dispatch validates key"),
+            };
+            return self.call_object_property_array_pointer_mutation(
+                operation,
+                target,
+                property,
+                *property_span,
+                span,
+                caller_scope,
+            );
+        }
+
         if key == "prev" {
             if Self::is_reference_call_argument_expr(&args[0]) {
                 return self.call_array_pointer_value_fallback(key, &args[0], span, caller_scope);
@@ -72320,6 +72364,74 @@ impl Interpreter {
             "end" => array.end_value(),
             _ => unreachable!("array pointer fallback dispatch validates key"),
         })
+    }
+
+    fn call_object_property_array_pointer_mutation(
+        &mut self,
+        operation: DirectArrayPathMutation,
+        target: &Expr,
+        property: &str,
+        property_span: Span,
+        call_span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        let Expr::Variable(object_name, _) = target else {
+            return Err(runtime_error(
+                target.span(),
+                RuntimeError::unsupported_call(
+                    operation.callable(),
+                    "only direct object-property array arguments are implemented in the current subset",
+                ),
+            ));
+        };
+
+        let object = match caller_scope.read_static(object_name, property_span)? {
+            Value::Object(object) => object,
+            other => {
+                return Err(runtime_error(
+                    property_span,
+                    RuntimeError::invalid_property_access(format!(
+                        "cannot read property ${property} from {}",
+                        other.type_name()
+                    )),
+                ));
+            }
+        };
+        let (current_class_id, protected_class_ids) = self.current_property_access_context();
+        let mut property_value = object
+            .read_property_from_context(property, current_class_id, &protected_class_ids)
+            .map_err(|error| runtime_error(property_span, error))?;
+        let property_type = property_value.type_name();
+        let Value::Array(array) = &mut property_value else {
+            return Err(runtime_error(
+                call_span,
+                RuntimeError::unsupported_call(
+                    operation.callable(),
+                    format!("argument must be array, got {property_type}"),
+                ),
+            ));
+        };
+
+        let result = self.apply_array_mutation_to_array(array, operation, &[], call_span)?;
+        let boundary = caller_scope.object_property_holder_storage_boundary(
+            object_name,
+            &object,
+            property,
+            &[],
+            current_class_id,
+            &protected_class_ids,
+        );
+        caller_scope.pre_replace_holder_storage(&boundary);
+        object
+            .write_property_from_context(
+                property,
+                property_value,
+                current_class_id,
+                &protected_class_ids,
+            )
+            .map_err(|error| runtime_error(property_span, error))?;
+        caller_scope.post_replace_holder_storage(&boundary);
+        Ok(result)
     }
 
     fn call_ksort(
@@ -72723,6 +72835,22 @@ impl Interpreter {
                 &keys,
                 DirectArrayPathMutation::Next,
                 &[],
+                span,
+                caller_scope,
+            );
+        }
+
+        if let Expr::Property {
+            target,
+            property,
+            span: property_span,
+        } = &args[0]
+        {
+            return self.call_object_property_array_pointer_mutation(
+                DirectArrayPathMutation::Next,
+                target,
+                property,
+                *property_span,
                 span,
                 caller_scope,
             );
@@ -81853,9 +81981,10 @@ impl Interpreter {
             .get(&interface_name.to_ascii_lowercase())
             .map(|interface| interface.name.as_str())
             .unwrap_or(interface_name);
-        self.classes
-            .implements_interface(class_id, canonical_interface_name)
-            || (interface_name.eq_ignore_ascii_case("Stringable")
+        self.class_implements_interface_names(class_id)
+            .iter()
+            .any(|interface| interface.eq_ignore_ascii_case(canonical_interface_name))
+            || (canonical_interface_name.eq_ignore_ascii_case("Stringable")
                 && self.class_has_public_instance_to_string(class_id))
     }
 

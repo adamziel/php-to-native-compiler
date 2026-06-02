@@ -2479,7 +2479,10 @@
   PHP order, writes the key variable from `key()`, writes the value variable
   from `current()`, and observes iterator object mutations made by the loop
   body before later iterations. `IteratorAggregate` is recognized only when
-  `getIterator()` returns one of those bounded `Iterator` objects. If
+  `getIterator()` returns one of those bounded `Iterator` objects; the runtime
+  now expands the core `Iterator` and `IteratorAggregate` interfaces through
+  their `Traversable` parent for object type checks, so bounded
+  `getIterator(): Traversable` methods may return a userland `Iterator`. If
   `current()` returns an array copied from a direct public `$this->property`
   array or selected bucket such as `$this->callbacks[$priority]`, covered
   nested reference slots below that public object-property array are mirrored
@@ -7594,8 +7597,11 @@
   dynamic function calls.
   `next($array)` advances the current array cursor and returns the next value
   or `false` past the last element for direct variable array paths, including
-  selected nested paths such as `$array[$key]`, and the reached direct
-  object-property array-offset shape. Direct function-returned array
+  selected nested paths such as `$array[$key]`, direct visible object-property
+  array roots such as `$this->items` from a valid method context, and the
+  reached direct object-property array-offset shape. Direct object-property
+  roots are also covered for `prev()`, `reset()`, and `end()` with the updated
+  cursor written back to the property. Direct function-returned array
   temporaries passed to `next()` or `prev()` emit PHP's bounded by-reference
   notice and operate on a temporary copy; direct array literals passed to
   `next()` or `prev()` produce the bounded pass-by-reference fatal. Through
@@ -7604,9 +7610,9 @@
   reference-parameter warning, and leaves the caller cursor unchanged; through
   `call_user_func_array()` a literal or stored reference element mutates the
   referenced array cursor. Full PHP internal pointer semantics,
-  broader `reset()`/`end()` interaction, object operands, broad lvalue
-  targets, references/copy-on-write, exact warnings, and native lowering
-  remain unsupported.
+  broader object-property paths, object operands, broad lvalue targets,
+  references/copy-on-write, exact warnings, and native lowering remain
+  unsupported.
   `array_shift($array)` removes and returns the first inserted value for direct
   variable array paths, reindexes integer keys, preserves string keys, returns
   `null` for empty arrays, and falls back to PHP's bounded "Only variables
@@ -12410,12 +12416,13 @@
   internal array-pointer semantics, object operands, references/copy-on-write,
   exact warnings/errors, and native lowering beyond function-table
   introspection
-- `next()` outside the current direct variable and direct object-property
+- `next()`/`prev()`/`reset()`/`end()` outside the current direct variable,
+  direct visible object-property array root, and direct object-property
   array-offset pointer-mutation subset, selected by-value temporary fallback,
   direct array-literal fatal, and selected callback slice: broad lvalue
   targets, full internal array-pointer semantics, object operands,
-  `reset()`/`end()`/`prev()` interaction, references/copy-on-write, exact
-  warnings/errors, and native lowering beyond function-table introspection
+  references/copy-on-write, exact warnings/errors, and native lowering beyond
+  function-table introspection
 - `str_increment()` and `str_decrement()` outside the current one-argument
   scalar/null byte-string subset: Unicode or locale-aware alphanumeric
   classes, non-ASCII bytes, empty strings, non-alphanumeric bytes,

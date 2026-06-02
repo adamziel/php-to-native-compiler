@@ -4,6 +4,27 @@
 
 Implemented:
 
+- Added a bounded userland iterator `Traversable` return and property-cursor
+  lane on the interpreter path. Core `Iterator` and `IteratorAggregate`
+  interfaces now expand through their `Traversable` parent for runtime object
+  type checks, so supported `IteratorAggregate::getIterator(): Traversable`
+  methods may return bounded userland `Iterator` objects. Direct visible
+  object-property array roots now participate in the existing ordered-array
+  pointer mutation helpers for `next()`, `prev()`, `reset()`, and `end()`,
+  writing the updated cursor back through the property storage boundary.
+  Focused proof covers the Rust
+  `foreach_accepts_traversable_returned_iterators_with_property_array_cursors`
+  regression, the full `foreach` Rust file, `iterable_type_builtin`, and
+  selected public PHPT rows `tests/classes/iterators_001.phpt`,
+  `tests/classes/iterators_002.phpt`, `tests/classes/iterators_003.phpt`,
+  `tests/classes/iterators_006.phpt`, and
+  `tests/classes/iterators_007.phpt`. Unsupported edges remain exact
+  PHP fatal presentation for concrete classes that directly implement
+  `Traversable`, broader SPL/native `Traversable` execution beyond the
+  current bounded iterator paths, non-direct object-property pointer mutation
+  roots, full internal array-pointer/reference/COW parity, and native
+  lowering.
+
 - Added a bounded `DOMDocumentType` invalid-state metadata lane on the
   interpreter path. `DOMDocumentType` is now a registered DOM core class and
   `DOMNode` subclass, direct construction materializes PHP's uninitialized

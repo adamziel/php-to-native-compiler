@@ -1433,6 +1433,72 @@ echo "|", $iterator->pos;
 }
 
 #[test]
+fn foreach_accepts_traversable_returned_iterators_with_property_array_cursors() {
+    let execution = run_source(
+        r#"<?php
+class CursorIterator implements Iterator {
+    private $array;
+    private $key;
+    private $current;
+
+    public function __construct() {
+        $this->array = array("foo", "bar", "baz");
+    }
+
+    public function rewind(): void {
+        reset($this->array);
+        $this->next();
+    }
+
+    public function valid(): bool {
+        return $this->key !== null;
+    }
+
+    public function key(): mixed {
+        return $this->key;
+    }
+
+    public function current(): mixed {
+        return $this->current;
+    }
+
+    public function next(): void {
+        $this->key = key($this->array);
+        $this->current = current($this->array);
+        next($this->array);
+    }
+}
+
+class CursorAggregate implements IteratorAggregate {
+    public function getIterator(): Traversable {
+        return new CursorIterator();
+    }
+}
+
+foreach (new CursorAggregate() as $key => $value) {
+    echo $key, ":", $value, "\n";
+}
+echo "===direct===\n";
+$iterator = new CursorIterator();
+foreach ($iterator as $key => $value) {
+    echo $key, ":", $value, "\n";
+}
+echo "===again===\n";
+foreach ($iterator as $key => $value) {
+    echo $key, ":", $value, "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "0:foo\n1:bar\n2:baz\n===direct===\n0:foo\n1:bar\n2:baz\n===again===\n0:foo\n1:bar\n2:baz\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn foreach_value_only_user_iterator_does_not_probe_key() {
     let execution = run_source(
         r#"<?php
