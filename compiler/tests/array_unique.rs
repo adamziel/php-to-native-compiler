@@ -144,14 +144,28 @@ echo $again["first"], "|", defined("SORT_NUMERIC"), "|", SORT_NUMERIC;
 
 #[test]
 fn array_unique_requires_array_argument() {
-    let error = runtime_error("<?php\necho array_unique(42);\n");
+    let execution = run_source(
+        r#"<?php
+try {
+    array_unique(42);
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+$call = "array_unique";
+try {
+    $call(false, SORT_STRING);
+} catch (TypeError $e) {
+    echo $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
 
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 6);
     assert_eq!(
-        error.message,
-        "unsupported call array_unique(): argument must be array, got int"
+        execution.stdout,
+        "array_unique(): Argument #1 ($array) must be of type array, int given\narray_unique(): Argument #1 ($array) must be of type array, false given"
     );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

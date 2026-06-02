@@ -1,12 +1,6 @@
 use php_compiler::error::Phase;
 use php_compiler::{emit_ir_source, run_source};
 
-fn runtime_error(source: &str) -> php_compiler::error::Diagnostic {
-    let error = run_source(source).unwrap_err();
-    assert_eq!(error.phase, Phase::Runtime);
-    error
-}
-
 #[test]
 fn array_flip_uses_int_string_values_as_keys_and_overwrites_duplicates() {
     let source = r#"<?php
@@ -41,14 +35,28 @@ echo $again["name"], "|", $again[2], "|", $again["02"], "|", $again[-1];
 
 #[test]
 fn array_flip_requires_array_argument() {
-    let error = runtime_error("<?php\necho array_flip(42);\n");
+    let execution = run_source(
+        r#"<?php
+try {
+    array_flip(42);
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+$call = "array_flip";
+try {
+    $call(new stdClass());
+} catch (TypeError $e) {
+    echo $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
 
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 6);
     assert_eq!(
-        error.message,
-        "unsupported call array_flip(): argument must be array, got int"
+        execution.stdout,
+        "array_flip(): Argument #1 ($array) must be of type array, int given\narray_flip(): Argument #1 ($array) must be of type array, stdClass given"
     );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

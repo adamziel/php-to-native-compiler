@@ -4,6 +4,22 @@
 
 Implemented:
 
+- Added a bounded array value-transform non-array diagnostics lane.
+  `array_flip()` and `array_unique()` now raise catchable PHP-shaped
+  `TypeError`s when argument #1 `$array` is not an array, including
+  string-valued dynamic interpreter calls. Existing `array_flip()` int/string
+  value-to-key conversion and warning-and-skip recovery, existing
+  `array_unique()` `SORT_STRING`/`SORT_REGULAR`/`SORT_NUMERIC` behavior,
+  metadata visibility, and native-lowering rejection remain unchanged.
+  Focused proof covers the `array_flip` and `array_unique` Rust regression
+  files, runtime-error CLI snapshots for the uncaught TypeError path, direct
+  CLI probes, selected public `array_flip()` / `array_unique()` PHPT smoke
+  rows, build, fmt, and diff checks. Unsupported edges remain exact native
+  object internals, `array_flip()` reference/COW behavior and exact skipped
+  value warning internals, `array_unique()` broader non-scalar value
+  comparisons, unsupported sort modes, PHP warning-and-string-conversion
+  recovery for arrays/objects, references/COW, and native lowering.
+
 - Added a bounded `array_keys()` first-argument diagnostics lane. Direct and
   string-valued dynamic interpreter calls now raise catchable PHP-shaped
   `TypeError`s when argument #1 `$array` is not an array, using PHP-style
@@ -33866,13 +33882,15 @@ Tested:
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_intersect_third_non_array.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_intersect_third_non_array.php:4:6: unsupported call array_intersect(): third argument must be array, got int`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_unique_non_array.php`
-  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_unique_non_array.php:2:6: unsupported call array_unique(): argument must be array, got int`.
+  exits 255 and reports an uncaught `TypeError` for
+  `array_unique(): Argument #1 ($array) must be of type array, int given`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_unique_array_value.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_unique_array_value.php:3:6: unsupported call array_unique(): values must be scalar in the current subset, got array`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_unique_sort_flag.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_unique_sort_flag.php:3:6: unsupported call array_unique(): sort flags are not supported in the current subset`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_flip_non_array.php`
-  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_flip_non_array.php:2:6: unsupported call array_flip(): argument must be array, got int`.
+  exits 255 and reports an uncaught `TypeError` for
+  `array_flip(): Argument #1 ($array) must be of type array, int given`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_flip_unsupported_value.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_flip_unsupported_value.php:3:6: unsupported call array_flip(): values must be int or string in the current subset, got bool`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_fill_keys_non_array.php`

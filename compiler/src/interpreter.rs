@@ -87127,12 +87127,12 @@ impl Interpreter {
                 expect_arity(name, &args, 1, span)?;
                 match &args[0] {
                     Value::Array(array) => self.call_array_flip(array, span),
-                    other => Err(runtime_error(
+                    other => Err(php_internal_array_type_error(
+                        "array_flip()",
+                        1,
+                        "array",
+                        other,
                         span,
-                        RuntimeError::unsupported_call(
-                            "array_flip()",
-                            format!("argument must be array, got {}", other.type_name()),
-                        ),
                     )),
                 }
             }
@@ -87477,12 +87477,12 @@ impl Interpreter {
                         "sort flags other than SORT_REGULAR, SORT_NUMERIC, or SORT_STRING are not supported in the current subset",
                     ),
                 )),
-                [other] | [other, _] => Err(runtime_error(
+                [other] | [other, _] => Err(php_internal_array_type_error(
+                    "array_unique()",
+                    1,
+                    "array",
+                    other,
                     span,
-                    RuntimeError::unsupported_call(
-                        "array_unique()",
-                        format!("argument must be array, got {}", other.type_name()),
-                    ),
                 )),
                 _ => Err(runtime_error(
                     span,
@@ -116052,6 +116052,25 @@ fn php_internal_bool_argument(
         ),
         _ => Ok(value.is_truthy()),
     }
+}
+
+fn php_internal_array_type_error(
+    function: &str,
+    position: usize,
+    name: &str,
+    value: &Value,
+    span: Span,
+) -> Diagnostic {
+    runtime_error(
+        span,
+        RuntimeError::unsupported_call(
+            function,
+            format!(
+                "Argument #{position} (${name}) must be of type array, {} given",
+                php_type_error_given(value)
+            ),
+        ),
+    )
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

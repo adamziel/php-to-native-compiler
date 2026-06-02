@@ -6365,10 +6365,9 @@
   non-array `array_intersect` operands, non-array variadic
   `array_intersect` operands, non-stringable object `array_intersect` value
   comparisons,
-  non-array `array_unique` operands, unsupported non-scalar
-  `array_unique` value comparisons, unsupported `array_unique` sort flags,
-  non-array `array_flip` operands, unsupported non-int/string
-  `array_flip` values, non-array `array_fill_keys` operands, unsupported
+  unsupported non-scalar `array_unique` value comparisons, unsupported
+  `array_unique` sort flags, unsupported non-int/string `array_flip` values,
+  non-array `array_fill_keys` operands, unsupported
   non-null/bool/int/string/float `array_fill_keys` key values, non-array
   unsupported non-int/string
   `array_count_values` values, unsupported
@@ -7500,14 +7499,16 @@
   scalar numeric-coercion subset. All supported modes keep the first matching
   entry, preserve kept integer/string keys and insertion order, use kept
   integer keys for later append behavior, and are also available through
-  string-valued dynamic function calls.
+  string-valued dynamic function calls. Non-array operands raise catchable
+  PHP-shaped `TypeError`s for argument #1.
   `array_flip($array)` accepts arrays, converts
   integer and string array values into result keys using the current array-key
   normalization rules, writes each original integer/string key as the result
   value, overwrites duplicate flipped keys with later values without moving the
   first flipped-key slot, skips unsupported non-int/string values with one
   warning per skipped entry, returns the partial flipped array, and is
-  available through string-valued dynamic function calls.
+  available through string-valued dynamic function calls. Non-array operands
+  raise catchable PHP-shaped `TypeError`s for argument #1.
   `array_fill_keys($keys, $value)` accepts an array of
   null/boolean/integer/float/string key values, stringifies those scalar key
   values through the PHP scalar key path, preserves the `-0.0` float key as
@@ -7796,10 +7797,9 @@
   non-array `array_intersect` operands, non-array variadic
   `array_intersect` operands, non-stringable object `array_intersect` value
   comparisons,
-  non-array `array_unique` operands, unsupported non-scalar
-  `array_unique` value comparisons, unsupported `array_unique` sort flags,
-  non-array `array_flip` operands, unsupported non-int/string
-  `array_flip` values, non-array `array_fill_keys` operands, unsupported
+  unsupported non-scalar `array_unique` value comparisons, unsupported
+  `array_unique` sort flags, unsupported non-int/string `array_flip` values,
+  non-array `array_fill_keys` operands, unsupported
   non-null/bool/int/string/float `array_fill_keys` key values, non-array
   `array_count_values` operands,
   unsupported non-int/string
@@ -10316,16 +10316,17 @@
   array containing the first entry for each distinct comparison value. Kept
   entries preserve their original integer/string keys and insertion order,
   dropped duplicate entries do not affect later append behavior, and the
-  source array is not mutated. Non-array operands, non-scalar/non-numeric
-  values such as arrays, objects, or non-numeric strings in numeric mode, and
-  sort flags outside the supported set fail with stable project diagnostics.
-  References, copy-on-write containers, object/resource values, exact native
-  `TypeError` objects, PHP warning-and-string-conversion behavior for arrays
-  and objects, sort modes other than `SORT_REGULAR`/`SORT_NUMERIC`/
-  `SORT_STRING`, exact native array/object `SORT_REGULAR` comparisons, PHP
-  warning recovery for non-numeric values in numeric mode, and native lowering
-  are not implemented. `array_unique` is also available through string-valued
-  dynamic function calls.
+  source array is not mutated. Non-array operands raise catchable PHP-shaped
+  `TypeError`s for argument #1, while non-scalar/non-numeric values such as
+  arrays, objects, or non-numeric strings in numeric mode and sort flags
+  outside the supported set fail with stable project diagnostics. References,
+  copy-on-write containers, object/resource values, exact native `TypeError`
+  object internals, PHP warning-and-string-conversion behavior for arrays and
+  objects, sort modes other than `SORT_REGULAR`/`SORT_NUMERIC`/`SORT_STRING`,
+  exact native array/object `SORT_REGULAR` comparisons, PHP warning recovery
+  for non-numeric values in numeric mode, and native lowering are not
+  implemented. `array_unique` is also available through string-valued dynamic
+  function calls.
   `array_flip($array)` accepts arrays only, uses integer values directly as
   result keys, normalizes string values through the current PHP-style decimal
   string key rules, and writes each original integer/string key as the result
@@ -10333,10 +10334,11 @@
   moving the first flipped-key position. Unsupported source values such as
   `null`, booleans, floats, arrays, objects, and resources are skipped with a
   warning per skipped entry, and supported entries before and after skipped
-  values remain in the partial result. References, copy-on-write containers,
-  exact native warning/`TypeError` objects, and native lowering are not
-  implemented. `array_flip` is also available through string-valued dynamic
-  function calls.
+  values remain in the partial result. Non-array operands raise catchable
+  PHP-shaped `TypeError`s for argument #1. References, copy-on-write
+  containers, exact native warning/`TypeError` object internals, and native
+  lowering are not implemented. `array_flip` is also available through
+  string-valued dynamic function calls.
   `array_change_key_case($array)` and
   `array_change_key_case($array, CASE_LOWER)` return a new ordered array with
   ASCII string keys lowercased and integer keys preserved.
@@ -10686,8 +10688,8 @@
   `SORT_REGULAR`/`SORT_NUMERIC`/`SORT_STRING`, `array_unique` non-scalar
   value comparison
   behavior, exact native
-  `TypeError` objects, and native lowering, `array_flip` exact native
-  warning/`TypeError` objects, and `array_fill_keys` warning/stringification
+  `TypeError` object internals, and native lowering, `array_flip` exact native
+  warning/`TypeError` object internals, and `array_fill_keys` warning/stringification
   behavior for unsupported key values, `array_count_values` warning-and-skip
   behavior for unsupported values, `array_sum` PHP warning recovery for
   unsupported values, `array_product` PHP warning recovery for unsupported
@@ -11658,12 +11660,12 @@
   `TypeError` objects, full copy-on-write behavior, and native lowering
 - `array_unique` sort flags outside `SORT_REGULAR`/`SORT_NUMERIC`/
   `SORT_STRING`, non-scalar value comparisons, numeric-mode PHP warning
-  recovery for non-numeric values, exact native `TypeError` objects, PHP
+  recovery for non-numeric values, exact native `TypeError` object internals, PHP
   warning-and-string-conversion behavior for arrays and objects,
   reference/copy-on-write behavior, object/resource values, and native
   lowering
 - `array_flip` reference/copy-on-write behavior, exact native
-  warning/`TypeError` objects, and native lowering
+  warning/`TypeError` object internals, and native lowering
 - `array_change_key_case` Unicode/locale-aware casing, non-int case coercions,
   exact native `ValueError`/`TypeError` object internals,
   reference/copy-on-write behavior, resource keys, and native lowering
