@@ -12693,14 +12693,15 @@ Unsupported code should fail with an explicit parse, runtime, or codegen error.
   `TypeError`s for arrays, resources, closures, or non-stringable objects,
   catchable exact-arity diagnostics for `json_last_error()` /
   `json_last_error_msg()`, and request-local last-error state, bounded
-  single-line decode error locations for
-  depth/state/control/truncated-input failures, and catchable `ValueError`
-  diagnostics for invalid decode depth. Full
+  character-based line/column decode and validation error locations for
+  depth, state-mismatch, control-character, truncated-string, invalid-escape,
+  invalid-literal, and malformed UTF-16 parse failures, and catchable
+  `ValueError` diagnostics for invalid decode depth. Full
   `JsonSerializable` parity, exact invalid `__toString()` return diagnostics,
   exact exception propagation for every serializer shape, broad partial-output
   interaction parity beyond current
   non-finite/unsupported/recursion/depth placeholders, exact escaped-string
   invalid-byte parity, complete UTF-16/UTF-8 diagnostics and invalid-byte
-  grouping beyond the covered bounded encode/decode lanes, multi-line and
-  non-ASCII diagnostic-location parity, every JSON option interaction,
+  grouping beyond the covered bounded encode/decode lanes, every JSON option
+  interaction,
   remaining json extension functions, and native lowering remain unsupported.

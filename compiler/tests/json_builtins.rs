@@ -402,6 +402,51 @@ var_dump(json_last_error(), json_last_error_msg());\n",
 }
 
 #[test]
+fn json_validate_reports_multiline_and_token_start_error_locations() {
+    let execution = run_source(
+        r#"<?php
+json_validate("{
+    \"name\": \"value
+}");
+echo json_last_error(), "|", json_last_error_msg(), "\n";
+json_validate('{"val": tru}');
+echo json_last_error(), "|", json_last_error_msg(), "\n";
+json_validate('{"key": "\q"}');
+echo json_last_error(), "|", json_last_error_msg(), "\n";
+json_validate('["val"}');
+echo json_last_error(), "|", json_last_error_msg(), "\n";
+json_validate('[[[[[[10]]]]]]', 5);
+echo json_last_error(), "|", json_last_error_msg(), "\n";
+json_validate('{"\u30D7\u30EC\u30B9": "value}');
+echo json_last_error(), "|", json_last_error_msg(), "\n";
+json_validate("  \t  \n  ");
+echo json_last_error(), "|", json_last_error_msg(), "\n";
+json_validate('{"num": 1e}');
+echo json_last_error(), "|", json_last_error_msg(), "\n";
+json_validate('{"num": --1}');
+echo json_last_error(), "|", json_last_error_msg(), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "3|Control character error, possibly incorrectly encoded near location 2:13\n",
+            "4|Syntax error near location 1:9\n",
+            "4|Syntax error near location 1:9\n",
+            "2|State mismatch (invalid or malformed JSON) near location 1:7\n",
+            "1|Maximum stack depth exceeded near location 1:5\n",
+            "3|Control character error, possibly incorrectly encoded near location 1:9\n",
+            "4|Syntax error near location 2:3\n",
+            "4|Syntax error near location 1:10\n",
+            "4|Syntax error near location 1:9\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn json_error_diagnostics_are_catchable_for_phpt_rows() {
     let execution = run_source(
         r#"<?php

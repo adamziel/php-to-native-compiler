@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Added a bounded JSON validation/decode error-location lane. The interpreter
+  now renders `json_validate()` / `json_decode()` syntax, state-mismatch,
+  control-character, UTF-16, and depth parse diagnostics with character-based
+  line/column locations instead of the previous single-line-only formatter.
+  Unterminated JSON strings, invalid escapes, invalid Unicode escapes, and
+  malformed literal tokens now report the token-start location used by the PHP
+  JSON extension while preserving the existing parser subset, last-error
+  state, invalid-UTF-8 repair behavior, metadata visibility, and
+  native-lowering rejection. Focused proof covers the Rust
+  `json_validate_reports_multiline_and_token_start_error_locations`
+  regression, the full JSON Rust test file, a CLI comparison fixture,
+  selected public JSON error-location PHPT rows, build, fmt, and diff checks.
+  Unsupported edges remain full JSON grammar/error-code parity, exact byte
+  location parity for every malformed UTF-8/UTF-16 edge, exact
+  `JSON_THROW_ON_ERROR` interaction parity beyond the current subset,
+  `JsonSerializable` breadth, references/COW, and native lowering.
+
 - Added a bounded string-algorithm helper argument-boundary lane. Direct and
   string-valued dynamic interpreter calls to `crc32()`, `soundex()`,
   `metaphone()`, `count_chars()`, `levenshtein()`, and `similar_text()` now

@@ -128919,10 +128919,14 @@ impl<'a> JsonParser<'a> {
     fn parse(mut self) -> Result<JsonParsedValue, JsonDecodeError> {
         self.skip_whitespace();
         if self.is_eof() {
-            return Err(JsonDecodeError {
-                code: PHP_JSON_ERROR_SYNTAX,
-                message: json_error_base_message(PHP_JSON_ERROR_SYNTAX).to_string(),
-            });
+            return if self.chars.is_empty() {
+                Err(JsonDecodeError {
+                    code: PHP_JSON_ERROR_SYNTAX,
+                    message: json_error_base_message(PHP_JSON_ERROR_SYNTAX).to_string(),
+                })
+            } else {
+                Err(self.error(PHP_JSON_ERROR_SYNTAX, "Syntax error"))
+            };
         }
         let value = self.parse_value(1)?;
         self.skip_whitespace();
@@ -128961,9 +128965,10 @@ impl<'a> JsonParser<'a> {
         literal: &str,
         value: JsonParsedValue,
     ) -> Result<JsonParsedValue, JsonDecodeError> {
+        let start = self.position;
         for expected in literal.chars() {
             if self.next() != Some(expected) {
-                return Err(self.error(PHP_JSON_ERROR_SYNTAX, "Syntax error"));
+                return Err(self.error_at(PHP_JSON_ERROR_SYNTAX, "Syntax error", start));
             }
         }
         Ok(value)
@@ -129038,7 +129043,7 @@ impl<'a> JsonParser<'a> {
                     self.position += 1;
                 }
             }
-            _ => return Err(self.error(PHP_JSON_ERROR_SYNTAX, "Syntax error")),
+            _ => return Err(self.error_at(PHP_JSON_ERROR_SYNTAX, "Syntax error", start)),
         }
         let mut float_syntax = false;
         if self.consume_if('.') {
@@ -129053,6 +129058,7 @@ impl<'a> JsonParser<'a> {
         }
         if matches!(self.peek(), Some('e' | 'E')) {
             float_syntax = true;
+            let exponent_start = self.position;
             self.position += 1;
             if matches!(self.peek(), Some('+' | '-')) {
                 self.position += 1;
@@ -129062,7 +129068,7 @@ impl<'a> JsonParser<'a> {
                 self.position += 1;
             }
             if self.position == digits_start {
-                return Err(self.error(PHP_JSON_ERROR_SYNTAX, "Syntax error"));
+                return Err(self.error_at(PHP_JSON_ERROR_SYNTAX, "Syntax error", exponent_start));
             }
         }
         let token: String = self.chars[start..self.position].iter().collect();
@@ -129083,19 +129089,34 @@ impl<'a> JsonParser<'a> {
     }
 
     fn parse_string(&mut self) -> Result<String, JsonDecodeError> {
+        let start = self.position;
         self.expect_char('"')?;
         let mut output = String::new();
         loop {
             let Some(ch) = self.next() else {
-                return Err(self.error(PHP_JSON_ERROR_SYNTAX, "Syntax error"));
+                return Err(self.error_at(
+                    PHP_JSON_ERROR_CTRL_CHAR,
+                    "Control character error, possibly incorrectly encoded",
+                    start,
+                ));
             };
             match ch {
                 '"' => return Ok(output),
-                '\\' => output.push(self.parse_escape()?),
+                '\\' => match self.parse_escape() {
+                    Ok(ch) => output.push(ch),
+                    Err(error) => {
+                        return Err(self.error_at(
+                            error.code,
+                            json_error_base_message(error.code),
+                            start,
+                        ))
+                    }
+                },
                 ch if ch.is_control() => {
-                    return Err(self.error(
+                    return Err(self.error_at(
                         PHP_JSON_ERROR_CTRL_CHAR,
                         "Control character error, possibly incorrectly encoded",
+                        start,
                     ));
                 }
                 ch => output.push(ch),
@@ -129179,7 +129200,7 @@ impl<'a> JsonParser<'a> {
             self.position += 1;
             Ok(())
         } else {
-            let code = if expected == ',' || expected == ':' {
+            let code = if expected == ',' && matches!(self.peek(), Some(']' | '}')) {
                 PHP_JSON_ERROR_STATE_MISMATCH
             } else {
                 PHP_JSON_ERROR_SYNTAX
@@ -129218,7 +129239,7 @@ impl<'a> JsonParser<'a> {
     fn error_at(&self, code: i64, message: &str, position: usize) -> JsonDecodeError {
         JsonDecodeError {
             code,
-            message: json_error_message_at(code, message, position),
+            message: json_error_message_at_chars(&self.chars, code, message, position),
         }
     }
 }
@@ -129255,16 +129276,94 @@ fn json_partial_output_placeholder(code: i64) -> &'static str {
     }
 }
 
-fn json_error_message_at(code: i64, base: &str, position: usize) -> String {
+fn json_error_message_at_chars(chars: &[char], code: i64, base: &str, position: usize) -> String {
     match code {
         PHP_JSON_ERROR_DEPTH
         | PHP_JSON_ERROR_STATE_MISMATCH
         | PHP_JSON_ERROR_CTRL_CHAR
         | PHP_JSON_ERROR_SYNTAX
         | PHP_JSON_ERROR_INVALID_PROPERTY_NAME
-        | PHP_JSON_ERROR_UTF16 => format!("{base} near location 1:{}", position + 1),
+        | PHP_JSON_ERROR_UTF16 => {
+            let (line, column) = json_line_column_for_position(chars, position);
+            format!("{base} near location {line}:{column}")
+        }
         _ => base.to_string(),
     }
+}
+
+fn json_error_message_at_input(input: &str, code: i64, base: &str, position: usize) -> String {
+    let chars = input.chars().collect::<Vec<_>>();
+    json_error_message_at_chars(&chars, code, base, position)
+}
+
+fn json_line_column_for_position(chars: &[char], position: usize) -> (usize, usize) {
+    let mut line = 1;
+    let mut column = 1;
+    let mut index = 0;
+    let limit = position.min(chars.len());
+
+    while index < limit {
+        match chars[index] {
+            '\r' => {
+                line += 1;
+                column = 1;
+                if index + 1 < limit && chars[index + 1] == '\n' {
+                    index += 2;
+                    continue;
+                }
+            }
+            '\n' => {
+                line += 1;
+                column = 1;
+            }
+            '\\' if index + 1 < limit => {
+                if let Some(escape_len) = json_decoded_escape_len(chars, index, limit) {
+                    column += 1;
+                    index += escape_len;
+                    continue;
+                }
+                column += 1;
+            }
+            _ => column += 1,
+        }
+        index += 1;
+    }
+
+    (line, column)
+}
+
+fn json_decoded_escape_len(chars: &[char], index: usize, limit: usize) -> Option<usize> {
+    match chars.get(index + 1).copied()? {
+        '"' | '\\' | '/' | 'b' | 'f' | 'n' | 'r' | 't' => Some(2),
+        'u' => {
+            let high = json_escape_hex_quad_at(chars, index + 2, limit)?;
+            if (0xd800..=0xdbff).contains(&high)
+                && index + 12 <= limit
+                && chars.get(index + 6) == Some(&'\\')
+                && chars.get(index + 7) == Some(&'u')
+                && json_escape_hex_quad_at(chars, index + 8, limit)
+                    .is_some_and(|low| (0xdc00..=0xdfff).contains(&low))
+            {
+                Some(12)
+            } else {
+                Some(6)
+            }
+        }
+        _ => None,
+    }
+}
+
+fn json_escape_hex_quad_at(chars: &[char], start: usize, limit: usize) -> Option<u32> {
+    if start + 4 > limit {
+        return None;
+    }
+
+    let mut value = 0_u32;
+    for offset in 0..4 {
+        let digit = chars.get(start + offset)?.to_digit(16)?;
+        value = (value << 4) | digit;
+    }
+    Some(value)
 }
 
 fn json_invalid_utf8_string_token_position(bytes: &[u8], invalid_at: usize) -> usize {
@@ -129867,7 +129966,8 @@ impl Interpreter {
             let token_position = json_control_character_token_position(&input, position);
             self.set_json_last_error(
                 PHP_JSON_ERROR_CTRL_CHAR,
-                json_error_message_at(
+                json_error_message_at_input(
+                    &input,
                     PHP_JSON_ERROR_CTRL_CHAR,
                     json_error_base_message(PHP_JSON_ERROR_CTRL_CHAR),
                     token_position,
@@ -130074,14 +130174,7 @@ impl Interpreter {
                 );
                 Ok(Value::Bool(true))
             }
-            Err(mut error) => {
-                if error.code == PHP_JSON_ERROR_DEPTH {
-                    error.message = json_error_message_at(
-                        PHP_JSON_ERROR_DEPTH,
-                        json_error_base_message(PHP_JSON_ERROR_DEPTH),
-                        0,
-                    );
-                }
+            Err(error) => {
                 self.set_json_last_error(error.code, error.message);
                 Ok(Value::Bool(false))
             }
