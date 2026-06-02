@@ -286,7 +286,10 @@ enforceable parameter and return metadata through the shared call-frame
 coercion boundary before local parameters are bound and after return values are
 produced. That boundary covers the current weak scalar coercions, arrays,
 objects, nullable/union/intersection declarations, and class/interface object
-names visible on runtime object metadata. Dispatch through covered
+names visible on runtime object metadata. It also owns the interpreter's
+PHP-shaped lossy and non-representable float-to-int diagnostics for exact weak
+`int` declarations, while weak `int|string` unions defer non-representable real
+floats to string semantics. Dispatch through covered
 magic/`ArrayAccess` helpers additionally accepts the standard PHP signatures
 for `__get`, `__set`, `__isset`, `__unset`, `__call`, `__callStatic`,
 `offsetGet`, `offsetSet`, `offsetExists`, and `offsetUnset` as syntax-only

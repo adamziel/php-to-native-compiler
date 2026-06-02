@@ -38388,6 +38388,7 @@ fn coerce_property_value_with_object_type_resolver_dyn(
     object_type_resolver: &dyn Fn(&PhpObject, &str) -> bool,
 ) -> RuntimeResult<Value> {
     if type_decl.contains('|') {
+        let union_accepts_string = type_decl_contains_name(type_decl, "string");
         for part in type_decl.split('|') {
             if let Ok(value) = coerce_property_value_with_object_type_resolver_dyn(
                 part.trim(),
@@ -38402,6 +38403,9 @@ fn coerce_property_value_with_object_type_resolver_dyn(
         }
 
         for part in type_decl.split('|') {
+            if union_accepts_string && weak_union_part_should_defer_to_string(part, &value) {
+                continue;
+            }
             if let Ok(value) = coerce_property_value_with_object_type_resolver_dyn(
                 part.trim(),
                 value.clone(),
@@ -38532,6 +38536,30 @@ fn coerce_property_value_with_object_type_resolver_dyn(
     }
 
     Ok(value)
+}
+
+fn weak_union_part_should_defer_to_string(part: &str, value: &Value) -> bool {
+    type_decl_part_matches(part, "int")
+        && matches!(value, Value::Float(value) if php_float_to_int_is_not_representable(*value))
+}
+
+fn type_decl_contains_name(type_decl: &str, needle: &str) -> bool {
+    type_decl
+        .split(['|', '&'])
+        .any(|part| type_decl_part_matches(part, needle))
+}
+
+fn type_decl_part_matches(part: &str, needle: &str) -> bool {
+    let name = part.trim();
+    let name = name.strip_prefix('?').unwrap_or(name);
+    let name = name.strip_prefix('\\').unwrap_or(name);
+    name.eq_ignore_ascii_case(needle)
+}
+
+fn php_float_to_int_is_not_representable(value: f64) -> bool {
+    !value.is_finite()
+        || value.trunc() < i64::MIN as f64
+        || value.trunc() >= 9_223_372_036_854_775_808.0
 }
 
 fn typed_property_type_error(

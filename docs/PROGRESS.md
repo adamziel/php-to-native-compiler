@@ -4,6 +4,29 @@
 
 Implemented:
 
+- Added a bounded float-to-int diagnostics lane for `phpc run`. Real float
+  operands now emit PHP-shaped precision-loss deprecations or
+  non-representable-float warnings when coerced through unary and binary
+  bitwise operators, shifts, modulo, matching compound assignments, `chr()`,
+  weak exact `int` user parameters and returns, and visible declared `int`
+  typed-property writes; compatible integral floats remain quiet. Float
+  strings outside the signed integer range now share the existing
+  float-string-to-int deprecation surface, and weak `int|string` unions defer
+  non-representable real floats to string semantics while preserving PHP's
+  `NAN` string-coercion warning. Focused proof covers the extended Rust
+  `float_string_to_int_deprecations` regression and selected public PHPT rows
+  `Zend/tests/type_coercion/float_to_int/no_warning_compatible_float_literals.phpt`,
+  `Zend/tests/type_coercion/float_to_int/no_warnings_compatible_float_vars.phpt`,
+  `Zend/tests/type_coercion/float_to_int/non-rep-float-as-int-extra1.phpt`,
+  `Zend/tests/type_coercion/float_to_int/union_int_string_type_arg.phpt`,
+  `Zend/tests/type_coercion/float_to_int/union_int_string_type_arg_promote_exception.phpt`,
+  `Zend/tests/type_coercion/float_to_int/warnings_float_literals.phpt`,
+  `Zend/tests/type_coercion/float_to_int/warnings_float_literals_assignment_ops.phpt`,
+  and `Zend/tests/type_coercion/float_to_int/warnings_float_vars.phpt`.
+  Unsupported edges remain reentrant replacement of the `array_key_exists()`
+  array argument while its float-key warning handler runs, broader
+  reference/COW behavior, exact native error objects, and native lowering.
+
 - Added a bounded `#[Deprecated]` runtime diagnostics lane on the interpreter
   path. Executable user functions, closures, instance/static methods,
   constructors, and destructors now retain parsed method attributes in runtime

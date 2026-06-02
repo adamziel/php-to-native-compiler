@@ -100451,10 +100451,37 @@ impl Interpreter {
         value: &Value,
         span: Span,
     ) -> CompileResult<()> {
-        if let Some(message) = float_string_to_int_deprecation_message(value) {
-            self.emit_display_diagnostic("Deprecated", PHP_E_DEPRECATED, message, span)?;
+        match value {
+            Value::Float(value) => self.emit_float_to_int_diagnostic_for_float(*value, span)?,
+            _ => {
+                if let Some(message) = float_string_to_int_deprecation_message(value) {
+                    self.emit_display_diagnostic("Deprecated", PHP_E_DEPRECATED, message, span)?;
+                }
+            }
         }
         Ok(())
+    }
+
+    fn emit_float_to_int_diagnostic_for_float(
+        &mut self,
+        value: f64,
+        span: Span,
+    ) -> CompileResult<()> {
+        if php_float_to_int_is_not_representable(value) {
+            self.emit_float_not_representable_warning(value, span)
+        } else if value.trunc() != value {
+            self.emit_display_diagnostic(
+                "Deprecated",
+                PHP_E_DEPRECATED,
+                format!(
+                    "Implicit conversion from float {} to int loses precision",
+                    format_php_float_to_int_deprecation_value(value)
+                ),
+                span,
+            )
+        } else {
+            Ok(())
+        }
     }
 
     fn emit_float_string_to_int_deprecation_for_type_decl(
@@ -100464,8 +100491,29 @@ impl Interpreter {
         strict_scalars: bool,
         span: Span,
     ) -> CompileResult<()> {
-        if !strict_scalars && type_decl.eq_ignore_ascii_case("int") {
-            self.emit_float_string_to_int_deprecation_for_value(value, span)?;
+        if strict_scalars {
+            return Ok(());
+        }
+
+        let accepts_string = type_decl_contains_name(type_decl, "string");
+        if type_decl_contains_name(type_decl, "int") {
+            match value {
+                Value::Float(float)
+                    if !(accepts_string && php_float_to_int_is_not_representable(*float)) =>
+                {
+                    self.emit_float_string_to_int_deprecation_for_value(value, span)?
+                }
+                Value::String(_) | Value::BinaryString(_)
+                    if type_decl.eq_ignore_ascii_case("int") =>
+                {
+                    self.emit_float_string_to_int_deprecation_for_value(value, span)?
+                }
+                _ => {}
+            }
+        }
+
+        if accepts_string && matches!(value, Value::Float(value) if value.is_nan()) {
+            self.emit_display_warning("unexpected NAN value was coerced to string", span)?;
         }
         Ok(())
     }
@@ -100583,6 +100631,11 @@ impl Interpreter {
                     )));
                 }
             }
+        }
+
+        if let (UnaryOp::BitwiseNot, Value::Float(value)) = (op, &value) {
+            self.emit_float_to_int_diagnostic_for_float(*value, span)?;
+            return Ok(Value::Int(!php_float_to_wrapping_i64(*value)));
         }
 
         let result: RuntimeResult<Value> = match op {
@@ -100776,7 +100829,8 @@ fn float_string_to_int_deprecation_message(value: &Value) -> Option<String> {
 
     match classify_php_numeric_string(text) {
         PhpNumericStringClassification::Float(parsed)
-            if parsed.is_finite() && parsed.trunc() != parsed =>
+            if parsed.is_finite()
+                && (parsed.trunc() != parsed || php_float_to_int_is_not_representable(parsed)) =>
         {
             Some(format!(
                 "Implicit conversion from float-string \"{text}\" to int loses precision"
@@ -121352,19 +121406,6 @@ impl Interpreter {
     fn call_chr(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("chr", args, 1, span)?;
 
-        if let Value::Float(value) = &args[0] {
-            if value.is_finite() && value.trunc() != *value {
-                self.emit_display_diagnostic(
-                    "Deprecated",
-                    PHP_E_DEPRECATED,
-                    format!(
-                        "Implicit conversion from float {} to int loses precision",
-                        format_php_float_to_int_deprecation_value(*value)
-                    ),
-                    span,
-                )?;
-            }
-        }
         self.emit_float_string_to_int_deprecation_for_value(&args[0], span)?;
 
         let codepoint = integer_argument_current_subset("chr()", "codepoint", &args[0], span)?;

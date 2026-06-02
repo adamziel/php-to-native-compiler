@@ -42,3 +42,55 @@ var_dump("1.0" | 3);
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);
 }
+
+#[test]
+fn lossy_floats_emit_deprecations_when_weakly_coerced_to_int() {
+    let execution = run_source(
+        r#"<?php
+function accepts_int(int $value) { return $value; }
+function accepts_int_or_string(int|string $value) { var_dump($value); }
+function returns_int(): int { return 3.5; }
+class Box { public int $value; }
+
+$box = new Box();
+var_dump(~1.5);
+var_dump(1.5 | 3);
+var_dump(6.5 % 2);
+$compound = 3;
+$compound <<= 1.5;
+var_dump($compound);
+var_dump(chr(60.5));
+var_dump(accepts_int(1.5));
+var_dump(returns_int());
+$box->value = 1.5;
+var_dump($box->value);
+accepts_int_or_string(1.5);
+accepts_int_or_string(fdiv(0, 0));
+accepts_int_or_string(10e120);
+var_dump(~1.0);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution
+            .stdout
+            .matches("Implicit conversion from float 1.5 to int loses precision")
+            .count(),
+        6
+    );
+    assert!(execution
+        .stdout
+        .contains("Implicit conversion from float 6.5 to int loses precision"));
+    assert!(execution
+        .stdout
+        .contains("Implicit conversion from float 60.5 to int loses precision"));
+    assert!(execution
+        .stdout
+        .contains("unexpected NAN value was coerced to string"));
+    assert!(execution.stdout.contains("string(3) \"NAN\""));
+    assert!(execution.stdout.contains("string(8) \"1.0E+121\""));
+    assert!(execution.stdout.ends_with("int(-2)\n"));
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}

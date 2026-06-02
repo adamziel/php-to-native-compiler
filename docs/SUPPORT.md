@@ -2373,9 +2373,10 @@
   modulo `%` over the current integer-coercion subset for `null`, booleans,
   integers, floats, well-formed numeric strings, and bounded leading-numeric
   prefixes, returning integer remainders and reporting catchable modulo-by-zero
-  diagnostics. Lossy finite float-shaped strings emit PHP's float-string-to-int
-  deprecation diagnostic when `%` coerces them to integer operands; compatible
-  float strings such as `"1.0"` remain quiet.
+  diagnostics. Lossy finite real floats and float-shaped strings emit PHP's
+  float-to-int / float-string-to-int deprecation diagnostics when `%` coerces
+  them to integer operands; compatible integral floats and float strings such
+  as `1.0` and `"1.0"` remain quiet.
 - unary `-` and `!`; unary minus accepts the same bounded numeric string and
   leading-numeric string subset as arithmetic, while non-numeric strings
   produce a catchable `TypeError`
@@ -2405,7 +2406,11 @@
   bytewise PHP behavior for `&`, `|`, `^`, and `~` when the resulting runtime
   string remains valid UTF-8, and bitwise precedence is additive before
   shifts, then concatenation, comparisons/equality before `&`, then `^`, then
-  `|`, then `&&` and `||`. Direct static-variable, direct array-offset, and
+  `|`, then `&&` and `||`. Lossy finite real floats and float-shaped strings
+  emit PHP's float-to-int / float-string-to-int deprecation diagnostics in the
+  integer-coercion path; non-representable real float operands emit PHP's
+  bounded warning/recovery diagnostic. Direct static-variable, direct
+  array-offset, and
   supported direct object-property compound assignments support `&=`, `|=`,
   `^=`, `<<=`, and `>>=` through the same runtime helper semantics. Mixed
   string/non-string bitwise operands and shift operands emit PHP's lossy
@@ -2771,9 +2776,12 @@
   `float`, `string`, `array`, `object`, nullable forms, unions,
   intersections, and class/interface object names visible on runtime object
   metadata. Scalar parameters and returns use the current weak coercion model,
-  including PHP's float-string-to-int deprecation diagnostic for lossy finite
-  numeric strings coerced through exact weak `int` parameters and returns, and
-  return-type mismatches in this subset report PHP-shaped `TypeError`
+  including PHP's float-to-int / float-string-to-int deprecation diagnostics
+  for lossy finite real floats and numeric strings coerced through exact weak
+  `int` parameters and returns. Weak `int|string` unions defer
+  non-representable real floats to string semantics and emit PHP's `NAN`
+  string-coercion warning when applicable. Return-type mismatches in this
+  subset report PHP-shaped `TypeError`
   messages. `void` return types reject value returns at declaration startup;
   `never` return types are accepted for bodies that throw before returning and
   reject explicit value returns at declaration startup. Typed by-reference
@@ -7167,10 +7175,11 @@
   instantiated are accepted in the covered simple class/interface type subset;
   weak scalar coercions are covered for writes to `int`, `float`, `bool`, and
   `string`, including numeric strings and bool/int/float/string conversions in
-  the current scalar value model. Lossy finite float-shaped strings assigned to
-  visible declared exact `int` properties emit PHP's float-string-to-int
-  deprecation diagnostic; compatible float strings such as `"1.0"` remain
-  quiet. Integer writes to `float` are stored as floats. Direct
+  the current scalar value model. Lossy finite real floats and float-shaped
+  strings assigned to visible declared exact `int` properties emit PHP's
+  float-to-int / float-string-to-int deprecation diagnostics; compatible
+  integral floats and float strings such as `1.0` and `"1.0"` remain quiet.
+  Integer writes to `float` are stored as floats. Direct
   `unset($object->typedProperty)` over a visible declared instance typed
   property restores the slot to the same uninitialized state: later direct
   reads fail, `isset(...)` reports false, `empty(...)` reports true,
@@ -11816,20 +11825,22 @@
   linking/execution, and broader native lowering.
 - Bitwise operators are limited to `&`, `|`, `^`, unary `~`, and shift
   operators `<<`/`>>` over the current integer/string subset. Mixed binary
-  operands and shift operands use the current
-  scalar-to-int coercion path; string operands use bytewise operations but
+  operands, unary float operands, and shift operands use the current
+  scalar-to-int coercion path with PHP-shaped float-to-int diagnostics for
+  lossy or non-representable floats; string operands use bytewise operations but
   still store results in the runtime's UTF-8 `String` value, so arbitrary
   binary outputs that are not valid UTF-8 fail with a stable runtime
-  diagnostic. Unary `~` currently accepts integers and string operands whose
-  bytewise-not result remains valid UTF-8; boolean, null, float, array, and
-  object operands are rejected with stable runtime diagnostics instead of exact
-  native `TypeError` objects. Shift operators return zero for left shifts with
+  diagnostic. Unary `~` currently accepts integers, floats coerced through the
+  bounded integer path, and string operands whose bytewise-not result remains
+  valid UTF-8; boolean, null, array, and object operands are rejected with
+  stable runtime diagnostics instead of exact native `TypeError` objects. Shift
+  operators return zero for left shifts with
   counts at least the native integer width and sign-fill right shifts for
   large counts; negative shift counts fail with a stable project diagnostic.
   Non-numeric mixed strings fail instead of modeling PHP's exact native
   `TypeError` object, arrays/objects are rejected for binary bitwise and shift
-  operators, append-offset/nested bitwise compound-assignment targets, PHP
-  warning/deprecation recovery for float-to-int precision loss,
+  operators, append-offset/nested bitwise compound-assignment targets,
+  reentrant argument/property mutation during warning handlers,
   references/copy-on-write side effects, exact native error objects, and broad
   native lowering are not implemented. LLVM IR/assembly emission lowers only
   the already-lowerable integer subset for binary `&`, `|`, `^`, unary `~`,
