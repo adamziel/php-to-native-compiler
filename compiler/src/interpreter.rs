@@ -324,6 +324,7 @@ struct Interpreter {
     reflection_compound_types: HashMap<i64, ReflectionCompoundTypeState>,
     spl_fixed_arrays: HashMap<i64, SplFixedArrayState>,
     array_objects: HashMap<i64, BoundedArrayObjectState>,
+    sorting_array_objects: HashSet<i64>,
     spl_object_storages: HashMap<i64, SplObjectStorageState>,
     spl_object_storage_get_hash_depth: usize,
     spl_doubly_linked_lists: HashMap<i64, SplDoublyLinkedListState>,
@@ -11229,6 +11230,7 @@ impl Interpreter {
             reflection_compound_types: HashMap::new(),
             spl_fixed_arrays: HashMap::new(),
             array_objects: HashMap::new(),
+            sorting_array_objects: HashSet::new(),
             spl_object_storages: HashMap::new(),
             spl_object_storage_get_hash_depth: 0,
             spl_doubly_linked_lists: HashMap::new(),
@@ -12351,6 +12353,7 @@ impl Interpreter {
         value: Value,
         span: Span,
     ) -> CompileResult<()> {
+        self.ensure_array_object_not_sorting(object, "ARRAY_AS_PROPS", span)?;
         let mut state = self
             .array_object_state(object, "ARRAY_AS_PROPS", span)?
             .clone();
@@ -12373,6 +12376,7 @@ impl Interpreter {
         property: &str,
         span: Span,
     ) -> CompileResult<()> {
+        self.ensure_array_object_not_sorting(object, "ARRAY_AS_PROPS", span)?;
         let mut state = self
             .array_object_state(object, "ARRAY_AS_PROPS", span)?
             .clone();
@@ -12659,6 +12663,104 @@ impl Interpreter {
         ))
     }
 
+    fn array_object_expect_exact_args(
+        class_name: &str,
+        method_name: &str,
+        args: &[Value],
+        expected: usize,
+        span: Span,
+    ) -> CompileResult<()> {
+        if args.len() == expected {
+            return Ok(());
+        }
+        Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                format!("{class_name}::{method_name}()"),
+                format!(
+                    "{class_name}::{method_name}() expects exactly {expected} argument{}, {} given",
+                    if expected == 1 { "" } else { "s" },
+                    args.len()
+                ),
+            ),
+        ))
+    }
+
+    fn disabled_functions_contains(&self, function_name: &str) -> bool {
+        self.ini_value("disable_functions").is_some_and(|value| {
+            value
+                .split(|ch: char| ch == ',' || ch.is_ascii_whitespace())
+                .filter(|part| !part.is_empty())
+                .any(|part| part.eq_ignore_ascii_case(function_name))
+        })
+    }
+
+    fn ensure_array_object_user_sort_enabled(
+        &self,
+        class_name: &str,
+        method_name: &str,
+        span: Span,
+    ) -> CompileResult<()> {
+        if !self.disabled_functions_contains(method_name) {
+            return Ok(());
+        }
+        Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                format!("{class_name}::{method_name}()"),
+                format!("Cannot call method {method_name} when function {method_name} is disabled"),
+            ),
+        ))
+    }
+
+    fn ensure_array_object_not_sorting(
+        &self,
+        object: &PhpObject,
+        method_name: &str,
+        span: Span,
+    ) -> CompileResult<()> {
+        if !self.sorting_array_objects.contains(&object.id()) {
+            return Ok(());
+        }
+        Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                format!("{}::{method_name}()", object.class_name()),
+                "Modification of ArrayObject during sorting is prohibited",
+            ),
+        ))
+    }
+
+    fn sort_array_object_storage_with_user_comparator(
+        &mut self,
+        storage: &mut Value,
+        operation: UserArraySortOperation,
+        callback: &Value,
+        class_name: &str,
+        method_name: &str,
+        span: Span,
+    ) -> CompileResult<()> {
+        match storage {
+            Value::Array(array) => {
+                self.sort_array_with_user_comparator(array, operation, callback, span)
+            }
+            Value::Object(storage_object) if !self.is_array_object_storage_object(storage_object) => {
+                let mut array = Self::public_object_properties_array(storage_object);
+                self.sort_array_with_user_comparator(&mut array, operation, callback, span)?;
+                storage_object
+                    .replace_public_properties_from_array(&array)
+                    .map_err(|error| runtime_error(span, error))
+            }
+            _ => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{class_name}::{method_name}()"),
+                    "sorting nested ArrayObject-backed storage is not implemented in the current subset",
+                ),
+            )),
+        }
+    }
+
     fn call_array_object_method_with_values(
         &mut self,
         object: PhpObject,
@@ -12720,6 +12822,7 @@ impl Interpreter {
                         ));
                     }
                 };
+                self.ensure_array_object_not_sorting(&object, method_name, span)?;
                 let mut state = self.array_object_state(&object, method_name, span)?.clone();
                 let old = self.array_object_storage_to_array(&state.storage, method_name, span)?;
                 state.storage = replacement;
@@ -12751,6 +12854,7 @@ impl Interpreter {
                     }
                     None => 0,
                 };
+                self.ensure_array_object_not_sorting(&object, method_name, span)?;
                 let mut state = self.array_object_state(&object, method_name, span)?.clone();
                 state.flags = flags;
                 self.array_objects.insert(object.id(), state);
@@ -12781,6 +12885,7 @@ impl Interpreter {
                     }
                     None => "ArrayIterator".to_string(),
                 };
+                self.ensure_array_object_not_sorting(&object, method_name, span)?;
                 let mut state = self.array_object_state(&object, method_name, span)?.clone();
                 state.iterator_class = iterator_class;
                 self.array_objects.insert(object.id(), state);
@@ -12849,6 +12954,7 @@ impl Interpreter {
                     )?)
                 };
                 let value = args.get(1).cloned().unwrap_or(Value::Null);
+                self.ensure_array_object_not_sorting(&object, method_name, span)?;
                 let mut state = self.array_object_state(&object, method_name, span)?.clone();
                 self.array_object_write_storage_key(
                     &mut state.storage,
@@ -12865,6 +12971,7 @@ impl Interpreter {
             "append" => {
                 expect_arity(&format!("{class_name}::append"), &args, 1, span)?;
                 let value = args.first().cloned().unwrap_or(Value::Null);
+                self.ensure_array_object_not_sorting(&object, method_name, span)?;
                 let mut state = self.array_object_state(&object, method_name, span)?.clone();
                 self.array_object_write_storage_key(
                     &mut state.storage,
@@ -12885,6 +12992,7 @@ impl Interpreter {
                     args.first().expect("arity checked"),
                     span,
                 )?;
+                self.ensure_array_object_not_sorting(&object, method_name, span)?;
                 let mut state = self.array_object_state(&object, method_name, span)?.clone();
                 self.array_object_unset_storage_key(
                     &mut state.storage,
@@ -13028,6 +13136,32 @@ impl Interpreter {
                         ));
                     }
                 }
+                state.cursor = 0;
+                self.sync_array_object_properties(&object, &state, span)?;
+                self.array_objects.insert(object.id(), state);
+                Ok(Value::Bool(true))
+            }
+            "uasort" | "uksort" => {
+                Self::array_object_expect_exact_args(class_name, method_name, &args, 1, span)?;
+                self.ensure_array_object_user_sort_enabled(class_name, method_name, span)?;
+                let operation = match method_name.to_ascii_lowercase().as_str() {
+                    "uasort" => UserArraySortOperation::Uasort,
+                    "uksort" => UserArraySortOperation::Uksort,
+                    _ => unreachable!("user sort method matched"),
+                };
+                let callback = args.first().cloned().unwrap_or(Value::Null);
+                let mut state = self.array_object_state(&object, method_name, span)?.clone();
+                self.sorting_array_objects.insert(object.id());
+                let result = self.sort_array_object_storage_with_user_comparator(
+                    &mut state.storage,
+                    operation,
+                    &callback,
+                    class_name,
+                    method_name,
+                    span,
+                );
+                self.sorting_array_objects.remove(&object.id());
+                result?;
                 state.cursor = 0;
                 self.sync_array_object_properties(&object, &state, span)?;
                 self.array_objects.insert(object.id(), state);
@@ -108248,6 +108382,13 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
                 }
                 if reason.starts_with("Cannot append properties to objects, use ")
                     && reason.ends_with("::offsetSet() instead")
+                {
+                    return Some(("Error", reason.to_string()));
+                }
+                if reason == "Modification of ArrayObject during sorting is prohibited"
+                    || (reason.starts_with("Cannot call method ")
+                        && reason.contains(" when function ")
+                        && reason.ends_with(" is disabled"))
                 {
                     return Some(("Error", reason.to_string()));
                 }

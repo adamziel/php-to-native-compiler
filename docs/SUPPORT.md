@@ -2602,8 +2602,12 @@
 - SPL `ArrayObject` and `ArrayIterator` have a bounded runtime storage model
   for array-backed construction, offset reads/writes/unsets/appends,
   `getArrayCopy()`, `exchangeArray()`, flags, iterator class metadata,
-  sorting over array storage, and ordinary by-value iteration through their
-  iterator methods. By-value `foreach` over `IteratorAggregate` objects,
+  built-in sorting over array storage, `uasort()` / `uksort()` user-comparator
+  sorting over array-backed and plain object-backed public-property storage,
+  and ordinary by-value iteration through their iterator methods.
+  Comparator-time mutation of the sorted object through covered ArrayObject
+  mutators raises the PHP-shaped `Error` message. By-value `foreach` over
+  `IteratorAggregate` objects,
   including `ArrayObject`, retires a `getIterator()` result's object handle
   when that returned iterator remains unrooted after the loop; iterator method
   bodies that store `$this` in a live root keep the temporary iterator alive.
@@ -2618,10 +2622,13 @@
   directing callers to `offsetSet()`. General SPL wrapper iterators such as
   `LimitIterator`, `IteratorIterator`, and `NoRewindIterator`, weak
   scalar/null/float/numeric-string coercions for `ArrayIterator::seek()`
-  offsets, object-handle reuse outside these unrooted foreach iterator
+  offsets, nested ArrayObject-backed `uasort()` / `uksort()` storage sorting,
+  exact disabled-function uncaught internal-method stack traces for
+  `uasort()` / `uksort()`, comparator side effects outside the covered storage
+  mutation guard, object-handle reuse outside these unrooted foreach iterator
   temporaries, full destructor/unwinding lifetime parity, by-reference
-  iteration over SPL iterator objects, serialization parity, full
-  COW/reference identity, and native lowering remain unsupported.
+  iteration over SPL iterator objects, serialization parity, full COW/reference
+  identity, and native lowering remain unsupported.
 - SPL `SplFixedArray` has a bounded fixed-size storage model for construction,
   `fromArray()`, `toArray()`, `count()`/`getSize()`, `setSize()`, offset
   reads/writes/unsets/existence checks, and ordinary by-value iteration. Unset

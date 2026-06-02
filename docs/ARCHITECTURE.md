@@ -95,6 +95,13 @@ bucket such as `$this->callbacks[$priority]`, the interpreter can mirror
 covered nested public object-property reference slots into the loop variable's
 copied array. By-reference foreach over userland `Iterator` objects is
 rejected with PHP-parity diagnostics because PHP itself forbids that shape.
+Core `ArrayObject` and `ArrayIterator` objects share a bounded runtime storage
+record. Array-backed storage, plain object-backed public-property storage, and
+selected nested ArrayObject-backed reads/writes are routed through that record;
+ordinary built-in sorts and `uasort()` / `uksort()` operate on materialized
+storage entries and write the sorted storage back. While a user comparator is
+running for one of those ArrayObject sorts, covered mutating methods on the
+same object reject the write with PHP's storage-modification `Error` message.
 Bounded non-direct named and dynamic property holder expressions in
 by-reference `foreach`, such as `$holders["bag"]->items["child"]`,
 `$holders["bag"]->{$name}["child"]`, method-context

@@ -15438,6 +15438,78 @@ foreach ($it as $key => $value) {
 }
 
 #[test]
+fn array_object_user_sort_methods_use_comparators_and_guard_reentrant_mutation() {
+    let source = r#"<?php
+function desc_cmp($left, $right) {
+    if ($left == $right) {
+        return 0;
+    }
+    return $left < $right ? 1 : -1;
+}
+
+$values = new ArrayObject(array(2, 3, 1));
+var_dump($values->uasort("desc_cmp"));
+foreach ($values as $key => $value) {
+    echo "v:$key=$value;";
+}
+echo "\n";
+
+$keys = new ArrayObject(array(3 => 0, 2 => 1, 5 => 2, 6 => 3, 1 => 4));
+var_dump($keys->uksort("desc_cmp"));
+foreach ($keys as $key => $value) {
+    echo "k:$key=$value;";
+}
+echo "\n";
+
+try {
+    $values->uasort();
+} catch (ArgumentCountError $e) {
+    echo $e->getMessage(), "\n";
+}
+
+try {
+    $keys->uksort("desc_cmp", "extra");
+} catch (ArgumentCountError $e) {
+    echo $e->getMessage(), "\n";
+}
+
+$guarded = new ArrayObject(array(1, 2, 3));
+$i = 0;
+$guarded->uasort(function ($left, $right) use ($guarded, &$i) {
+    if ($i++ == 0) {
+        try {
+            $guarded->exchangeArray(array(4, 5, 6));
+        } catch (Error $e) {
+            echo $e->getMessage(), "\n";
+        }
+        echo "guard:", count($guarded), ":", $guarded[0], "\n";
+    }
+    return $left <=> $right;
+});
+
+ini_set("disable_functions", "uasort, uksort");
+try {
+    $values->uasort("desc_cmp");
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    $keys->uksort("desc_cmp");
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "bool(true)\nv:1=3;v:0=2;v:2=1;\nbool(true)\nk:6=3;k:5=2;k:3=0;k:2=1;k:1=4;\nArrayObject::uasort() expects exactly 1 argument, 0 given\nArrayObject::uksort() expects exactly 1 argument, 2 given\nModification of ArrayObject during sorting is prohibited\nguard:3:1\nCannot call method uasort when function uasort is disabled\nCannot call method uksort when function uksort is disabled\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn array_iterator_seek_out_of_range_errors_are_catchable() {
     let source = r#"<?php
 $it = new ArrayIterator(array(0, 1, 2));

@@ -4,6 +4,31 @@
 
 Implemented:
 
+- Added a bounded `ArrayObject` / `ArrayIterator` user-comparator sorting
+  lane. Core metadata now exposes `uasort()` and `uksort()` on both classes,
+  and the interpreter dispatches those methods over the existing
+  `BoundedArrayObjectState` storage using the shared PHP user-array comparator
+  path. Array-backed storage is sorted in place, plain object-backed storage
+  sorts initialized public properties and writes the reordered property table
+  back, keys are preserved for both value and key comparator sorts, and
+  comparator-time mutation of the sorted ArrayObject through covered mutating
+  methods raises the PHP-shaped catchable `Error` message. The methods also
+  surface PHP-shaped one-argument `ArgumentCountError`s, and startup/runtime
+  `disable_functions` entries for `uasort` / `uksort` produce the bounded
+  catchable `Error` message, while exact uncaught internal-method stack frames
+  remain unsupported. Focused proof covers the Rust
+  `array_object_user_sort_methods_use_comparators_and_guard_reentrant_mutation`
+  regression, selected public PHPT rows
+  `arrayObject_uasort_basic1.phpt`, `arrayObject_uksort_basic1.phpt`,
+  `arrayObject_uasort_error1.phpt`, `arrayObject_uksort_error1.phpt`,
+  `ArrayObject_dump_during_sort.phpt`, and
+  `ArrayObject_exchange_array_during_sorting.phpt`, plus build and diff
+  checks. Unsupported edges remain nested ArrayObject-backed user sorting,
+  exact disabled-function uncaught stack traces, comparator side effects beyond
+  the covered storage mutation guard, callback forms outside the shared
+  user-array sort callback surface, serialization/unserialization, full
+  reference/COW identity, and native lowering.
+
 - Added a bounded `SplFileObject` local line-cursor lane for the selected SPL
   iterator rows. `SplFileObject` is now a core `Iterator` metadata class on
   the interpreter path, constructs from local UTF-8 files in read-only modes,
