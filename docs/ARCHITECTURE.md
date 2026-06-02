@@ -1190,12 +1190,14 @@ Implemented now:
   child instance method dispatch, and public/inherited public instance
   `__construct` plus explicit parent/self method dispatch with scoped `$this`,
   parsed abstract/final class modifiers plus abstract/final method modifiers
-  as metadata, with abstract class instantiation, final-parent inheritance,
-  final method overrides, method visibility reductions, concrete classes with
-  unimplemented abstract methods rejected at runtime, and inherited method
-  static/non-static plus bounded non-constructor signature compatibility
-  enforced at runtime, including required-parameter counts, parameter type
-  metadata, and return type metadata,
+  as metadata, with declared abstract class/interface instantiation surfaced as
+  PHP-shaped uncaught `Error` fatals, concrete classes that directly declare
+  abstract methods surfaced as bounded PHP-shaped startup fatals, final-parent
+  inheritance, final method overrides, method visibility reductions, inherited
+  abstract method implementation gaps, and missing required interface methods
+  rejected at runtime, and inherited method static/non-static plus bounded
+  non-constructor signature compatibility enforced at runtime, including
+  required-parameter counts, parameter type metadata, and return type metadata,
   bounded `new self`/`new parent`/`new static` class-name resolution in active
   class contexts, and bounded direct-variable dynamic class-name instantiation
   for `new $class(...)`; missing named or direct-variable string class names

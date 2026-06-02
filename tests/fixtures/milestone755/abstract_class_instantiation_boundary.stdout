@@ -1,8 +1,4 @@
-exit: 255
-stdout:
 Fatal error: Uncaught Error: Cannot instantiate abstract class Base in tests/fixtures/milestone755/abstract_class_instantiation_boundary.php:3
 Stack trace:
 #0 {main}
-  thrown in tests/fixtures/milestone755/abstract_class_instantiation_boundary.php on line 3--- stdout end ---
-stderr:
---- stderr end ---
+  thrown in tests/fixtures/milestone755/abstract_class_instantiation_boundary.php on line 3

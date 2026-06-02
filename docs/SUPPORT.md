@@ -3151,8 +3151,10 @@
   runtime boundary before registering the child class. Declaring a child method
   with the same case-insensitive name as an inherited final method reports a
   stable runtime boundary before registering the child class. A concrete class
-  that declares or inherits abstract methods without a concrete implementation
-  reports a stable runtime boundary before registering the class.
+  that directly declares an abstract method reports a bounded PHP-shaped
+  startup fatal. Concrete classes that inherit abstract methods without a
+  concrete implementation still report a stable runtime boundary before
+  registering the class.
   Child methods that redeclare inherited non-private methods may keep or widen
   visibility, while reductions such as public-to-protected and
   protected-to-private report a stable runtime boundary before registering the
@@ -3190,8 +3192,9 @@
   stable runtime boundaries before object allocation. Dynamic class
   variables with non-string values report a stable runtime boundary, and
   dynamic strings still missing after the current bounded autoload callback path
-  use the current undefined-class diagnostic. Instantiating an abstract class
-  reports a stable runtime boundary;
+  use the current undefined-class diagnostic. Instantiating a declared
+  abstract class or interface raises a PHP-shaped uncaught `Error` fatal in the
+  current CLI/interpreter path;
 - class declarations loaded by executed `include`/`require` paths trigger the
   current bounded `spl_autoload_register()` callbacks for missing `extends`
   parent classes, direct `implements` interface names, and direct class-body
@@ -3201,9 +3204,12 @@
   interface inheritance validation.
   extending a declared final parent reports a stable runtime boundary.
   Overriding an inherited final method reports a stable runtime boundary.
-  Concrete classes with unimplemented abstract methods report a stable runtime
-  boundary. Method visibility reduction and static/non-static compatibility
-  violations report stable runtime boundaries. Bounded inherited method
+  Concrete classes with inherited unimplemented abstract methods or missing
+  required interface methods report stable runtime boundaries, while concrete
+  classes that directly declare an abstract method report the bounded
+  PHP-shaped startup fatal above. Method visibility reduction and
+  static/non-static compatibility violations report stable runtime boundaries.
+  Bounded inherited method
   signature metadata compatibility violations report stable runtime
   boundaries for required-parameter counts, parameter type text, and return
   type text. Concrete classes

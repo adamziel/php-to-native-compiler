@@ -14007,7 +14007,7 @@ class Box {
     assert_eq!(own_abstract_error.column, 1);
     assert_eq!(
         own_abstract_error.message,
-        "unsupported class inheritance for Box: concrete class Box must implement abstract method Box::id()"
+        "Class Box declares abstract method id() and must therefore be declared abstract"
     );
 }
 
@@ -14835,19 +14835,57 @@ if (true) {
 }
 
 #[test]
-fn abstract_class_instantiation_reports_stable_runtime_boundary() {
-    let error = runtime_error(
+fn abstract_and_interface_instantiation_report_php_error_fatals() {
+    let abstract_execution = run_source_with_source_file(
         r#"<?php
 abstract class Base {}
 new Base();
 "#,
+        "abstract-instantiation.php",
+    )
+    .unwrap();
+
+    assert_eq!(abstract_execution.stderr, "");
+    assert_eq!(abstract_execution.exit_code, 255);
+    assert_eq!(
+        abstract_execution.stdout,
+        "Fatal error: Uncaught Error: Cannot instantiate abstract class Base in abstract-instantiation.php:3\nStack trace:\n#0 {main}\n  thrown in abstract-instantiation.php on line 3"
     );
 
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 1);
+    let interface_execution = run_source_with_source_file(
+        r#"<?php
+interface Contract {}
+new Contract();
+"#,
+        "interface-instantiation.php",
+    )
+    .unwrap();
+
+    assert_eq!(interface_execution.stderr, "");
+    assert_eq!(interface_execution.exit_code, 255);
     assert_eq!(
-        error.message,
-        "unsupported object instantiation for Base: abstract classes are not instantiable in the current subset"
+        interface_execution.stdout,
+        "Fatal error: Uncaught Error: Cannot instantiate interface Contract in interface-instantiation.php:3\nStack trace:\n#0 {main}\n  thrown in interface-instantiation.php on line 3"
+    );
+}
+
+#[test]
+fn concrete_class_declaring_abstract_method_reports_php_startup_fatal() {
+    let execution = run_source_with_source_file(
+        r#"<?php
+class Fail {
+    abstract function show();
+}
+"#,
+        "abstract-method-own.php",
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "");
+    assert_eq!(execution.exit_code, 255);
+    assert_eq!(
+        execution.stderr,
+        "Fatal error: Class Fail declares abstract method show() and must therefore be declared abstract in abstract-method-own.php on line 2"
     );
 }
 

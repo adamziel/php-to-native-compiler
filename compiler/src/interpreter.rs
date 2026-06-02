@@ -207,6 +207,11 @@ fn run_program_with_optional_source_file(
             {
                 return Ok(execution);
             }
+            if let Some(execution) =
+                class_registration_startup_fatal_execution(&error, source_file.as_deref())
+            {
+                return Ok(execution);
+            }
             return Err(error);
         }
     };
@@ -239,6 +244,46 @@ fn php_token_final_constructor_override_execution(
         ),
         exit_code: 255,
     })
+}
+
+fn class_registration_startup_fatal_execution(
+    error: &Diagnostic,
+    source_file: Option<&str>,
+) -> Option<Execution> {
+    let message = class_registration_startup_fatal_message(error)?;
+    let file = source_file
+        .map(str::to_string)
+        .or_else(|| error.file.as_ref().map(|file| file.display().to_string()))
+        .unwrap_or_else(|| "Command line code".to_string());
+    Some(Execution {
+        stdout: String::new(),
+        stdout_bytes: Vec::new(),
+        stderr: format!("Fatal error: {message} in {file} on line {}", error.line),
+        exit_code: 255,
+    })
+}
+
+fn class_registration_startup_fatal_message(error: &Diagnostic) -> Option<String> {
+    if error.phase != Phase::Runtime {
+        return None;
+    }
+
+    let (class_name, reason) = error
+        .message
+        .strip_prefix("unsupported class inheritance for ")
+        .and_then(|message| message.split_once(": "))?;
+    let missing = reason.strip_prefix(&format!(
+        "concrete class {class_name} must implement abstract method "
+    ))?;
+    let method = missing.strip_suffix("()")?;
+    let (declaring_class, method_name) = method.split_once("::")?;
+    if !declaring_class.eq_ignore_ascii_case(class_name) {
+        return None;
+    }
+
+    Some(format!(
+        "Class {class_name} declares abstract method {method_name}() and must therefore be declared abstract"
+    ))
 }
 
 pub fn class_metadata(program: &Program) -> CompileResult<PhpClassTable> {
@@ -27209,6 +27254,16 @@ impl Interpreter {
         if self.classes.lookup_class(&class_name).is_none() {
             self.run_autoload_callbacks(&class_name, AutoloadKind::Class, span)?;
         }
+        if self.classes.lookup_class(&class_name).is_none() {
+            if let Some(interface) = self.interface_lookup.get(&class_name.to_ascii_lowercase()) {
+                return Err(Diagnostic::new(
+                    Phase::Runtime,
+                    span.line,
+                    span.column,
+                    format!("Cannot instantiate interface {}", interface.name),
+                ));
+            }
+        }
         let (class_id, declared_class_name) = {
             let class = self
                 .classes
@@ -27241,12 +27296,11 @@ impl Interpreter {
             ));
         }
         if self.abstract_classes.contains(&class_id) {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_object_instantiation(
-                    declared_class_name,
-                    "abstract classes are not instantiable in the current subset",
-                ),
+            return Err(Diagnostic::new(
+                Phase::Runtime,
+                span.line,
+                span.column,
+                format!("Cannot instantiate abstract class {declared_class_name}"),
             ));
         }
         if declared_class_name.eq_ignore_ascii_case("mysqli") {
@@ -113119,6 +113173,10 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
             .message
             .starts_with("Cannot instantiate abstract class ")
         {
+            return Some(("Error", error.message.clone()));
+        }
+
+        if error.message.starts_with("Cannot instantiate interface ") {
             return Some(("Error", error.message.clone()));
         }
 

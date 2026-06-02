@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Added a bounded abstract/interface diagnostics lane on the interpreter path.
+  Direct instantiation of declared abstract classes and interfaces now raises
+  PHP-shaped uncaught `Error` fatals through `phpc run`, including preserved
+  prior output and stack-trace shell formatting, and concrete classes that
+  directly declare an abstract method now report PHP-shaped startup fatals
+  instead of the generic unsupported-inheritance boundary. Focused proof covers
+  the Rust `object_model` abstract/interface diagnostic regressions, build/fmt
+  and diff checks, and selected public PHPT rows
+  `tests/classes/abstract_class.phpt`, `class_abstract.phpt`,
+  `abstract_inherit.phpt`, `abstract_derived.phpt`,
+  `abstract_not_declared.phpt`, `abstract_redeclare.phpt`, and
+  `interface_instantiate.phpt`. Unsupported edges remain inherited abstract
+  method implementation fatal wording, interface required-method fatal wording,
+  abstract static method diagnostics inside `eval()`, abstract method call
+  execution diagnostics, exact trace frames beyond the current uncaught shell,
+  references/COW, and native lowering.
+
 - Added a bounded DateTime diff calendar-borrow lane on the interpreter path.
   `DateTime::diff()`, `DateTimeImmutable::diff()`, and `date_diff()` now use
   directional local-calendar month/day borrowing for forward and reverse
