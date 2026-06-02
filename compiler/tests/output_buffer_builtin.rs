@@ -403,7 +403,95 @@ echo "|reflection=" . $reflection->getNumberOfRequiredParameters() . "/" . $refl
 
     assert_eq!(
         execution.stdout,
-        "outer(inner[body])|rawInner=body|rawOuter=inner[body]|handlers=Closure::__invoke,Closure::__invoke|status=Closure::__invoke:1:113|reflection=0/1"
+        "outer(inner[body])|rawInner=body|rawOuter=inner[body]|handlers=Closure::__invoke,Closure::__invoke|status=Closure::__invoke:1:113|reflection=0/3"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn ob_start_chunk_size_runs_handlers_on_threshold_clean_and_final_clean() {
+    let execution = run_source(
+        r#"<?php
+$statuses = array();
+function output_buffer_phase_probe($str, $flags) {
+    global $statuses;
+    $statuses[] = "$flags: $str";
+    return $str;
+}
+ob_start("output_buffer_phase_probe", 3);
+echo "yes";
+echo "!\n";
+ob_flush();
+echo "no";
+ob_clean();
+echo "yes!\n";
+echo "no";
+ob_end_clean();
+print_r($statuses);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "yes!\nyes!\nArray\n(\n    [0] => 1: yes\n    [1] => 4: !\n\n    [2] => 2: no\n    [3] => 0: yes!\n\n    [4] => 10: no\n)\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn ob_start_chunk_size_cascades_into_parent_threshold() {
+    let execution = run_source(
+        r#"<?php
+function output_buffer_wrap($str, $flags) {
+    return "[$str]";
+}
+ob_start("output_buffer_wrap", 3);
+ob_start("output_buffer_wrap", 3);
+echo "abc";
+echo "d";
+while (ob_get_level()) {
+    ob_end_flush();
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "[[abc]][[d]][]");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn ob_start_flags_control_status_bits_and_unerasable_buffers() {
+    let execution = run_source(
+        r#"<?php
+ob_start(
+    function ($value) { return "handled[" . $value . "]"; },
+    0,
+    PHP_OUTPUT_HANDLER_STDFLAGS |
+    PHP_OUTPUT_HANDLER_STARTED |
+    PHP_OUTPUT_HANDLER_DISABLED |
+    PHP_OUTPUT_HANDLER_PROCESSED
+);
+$status = ob_get_status();
+echo ($status["flags"] & PHP_OUTPUT_HANDLER_STDFLAGS) . "|";
+echo ($status["flags"] & 1) . "|";
+echo ($status["flags"] & PHP_OUTPUT_HANDLER_STARTED) . "|";
+echo ($status["flags"] & PHP_OUTPUT_HANDLER_DISABLED) . "|";
+echo ($status["flags"] & PHP_OUTPUT_HANDLER_PROCESSED);
+ob_end_flush();
+echo "\n";
+ob_start(function ($value) { return "locked[" . $value . "]"; }, 0, false);
+echo "payload";
+$peek = ob_get_contents();
+var_dump($peek);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "handled[112|1|0|0|0]\nlocked[payloadstring(7) \"payload\"\n]"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -412,14 +500,14 @@ echo "|reflection=" . $reflection->getNumberOfRequiredParameters() . "/" . $refl
 fn output_buffer_builtins_reject_forms_outside_current_subset() {
     let start_arg = runtime_error(
         r#"<?php
-ob_start(null, 0);
+ob_start(null, 0, PHP_OUTPUT_HANDLER_STDFLAGS, 1);
 "#,
     );
     assert_eq!(start_arg.line, 2);
     assert_eq!(start_arg.column, 1);
     assert_eq!(
         start_arg.message,
-        "arity mismatch for ob_start(): expected 0 to 1 argument(s), got 2"
+        "arity mismatch for ob_start(): expected 0 to 3 argument(s), got 4"
     );
 
     let level_arg = runtime_error(

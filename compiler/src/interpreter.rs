@@ -70,9 +70,17 @@ const PHP_DEFAULT_REQUEST_UMASK: i64 = 0o022;
 const ARRAY_PAD_MAX_PADDING: u64 = 1_048_576;
 const PHP_OUTPUT_HANDLER_START: i64 = 1;
 const PHP_OUTPUT_HANDLER_USER: i64 = 1;
+const PHP_OUTPUT_HANDLER_CLEAN: i64 = 2;
 const PHP_OUTPUT_HANDLER_FLUSH: i64 = 4;
 const PHP_OUTPUT_HANDLER_FINAL: i64 = 8;
-const PHP_OUTPUT_HANDLER_STDFLAGS: i64 = 0x70;
+const PHP_OUTPUT_HANDLER_CLEANABLE: i64 = 0x10;
+const PHP_OUTPUT_HANDLER_FLUSHABLE: i64 = 0x20;
+const PHP_OUTPUT_HANDLER_REMOVABLE: i64 = 0x40;
+const PHP_OUTPUT_HANDLER_STDFLAGS: i64 =
+    PHP_OUTPUT_HANDLER_CLEANABLE | PHP_OUTPUT_HANDLER_FLUSHABLE | PHP_OUTPUT_HANDLER_REMOVABLE;
+const PHP_OUTPUT_HANDLER_STARTED: i64 = 0x1000;
+const PHP_OUTPUT_HANDLER_DISABLED: i64 = 0x2000;
+const PHP_OUTPUT_HANDLER_PROCESSED: i64 = 0x4000;
 
 fn is_standard_stream_resource_id(id: i64) -> bool {
     (1..PHP_FIRST_USER_RESOURCE_ID).contains(&id)
@@ -962,6 +970,8 @@ struct OutputBuffer {
     contents: String,
     handler: Option<Value>,
     handler_started: bool,
+    chunk_size: usize,
+    flags: i64,
     span: Span,
 }
 
@@ -20038,19 +20048,43 @@ impl Interpreter {
                 buffer.span,
             )?;
             self.append_output(&output);
+            self.maybe_flush_active_output_buffer_for_chunk(buffer.span)?;
         }
         Ok(())
     }
 
-    fn append_output_below_active_buffer_at(&mut self, output: &str, span: Span) {
-        if self.output_buffers.len() >= 2 {
-            let parent_index = self.output_buffers.len() - 2;
-            self.output_buffers[parent_index].contents.push_str(output);
+    fn append_output_below_active_buffer_at(
+        &mut self,
+        output: &str,
+        span: Span,
+    ) -> CompileResult<()> {
+        let Some(active_index) = self.output_buffers.len().checked_sub(1) else {
+            self.mark_output_started(output, Some(span));
+            self.stdout.push_str(output);
+            self.stdout_bytes.extend_from_slice(output.as_bytes());
+            return Ok(());
+        };
+        self.append_output_below_buffer_at_index(active_index, output, span)
+    }
+
+    fn append_output_below_buffer_at_index(
+        &mut self,
+        buffer_index: usize,
+        output: &str,
+        span: Span,
+    ) -> CompileResult<()> {
+        if buffer_index > 0 {
+            let parent_index = buffer_index - 1;
+            if let Some(parent) = self.output_buffers.get_mut(parent_index) {
+                parent.contents.push_str(output);
+                self.maybe_flush_output_buffer_at_index_for_chunk(parent_index, span)?;
+            }
         } else {
             self.mark_output_started(output, Some(span));
             self.stdout.push_str(output);
             self.stdout_bytes.extend_from_slice(output.as_bytes());
         }
+        Ok(())
     }
 
     fn push_unbuffered_stdout_text(&mut self, output: &str) {
@@ -20117,6 +20151,7 @@ impl Interpreter {
                     let value = self.evaluate(expr, scope)?;
                     let output = self.value_to_echo_bytes(value, expr.span())?;
                     self.append_output_bytes_at(&output, expr.span());
+                    self.maybe_flush_active_output_buffer_for_chunk(expr.span())?;
                 }
                 Ok(Flow::Normal)
             }
@@ -20124,6 +20159,7 @@ impl Interpreter {
                 let value = self.evaluate(expr, scope)?;
                 let output = self.value_to_echo_bytes(value, expr.span())?;
                 self.append_output_bytes_at(&output, expr.span());
+                self.maybe_flush_active_output_buffer_for_chunk(expr.span())?;
                 Ok(Flow::Normal)
             }
             Stmt::Assign { target, expr, .. } => {
@@ -84009,12 +84045,12 @@ impl Interpreter {
     }
 
     fn call_ob_start(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
-        if args.len() > 1 {
+        if args.len() > 3 {
             return Err(runtime_error(
                 span,
                 RuntimeError::arity_mismatch(
                     "ob_start()",
-                    ArityExpectation::Between { min: 0, max: 1 },
+                    ArityExpectation::Between { min: 0, max: 3 },
                     args.len(),
                 ),
             ));
@@ -84035,10 +84071,21 @@ impl Interpreter {
                 ));
             }
         };
+        let chunk_size = match args.get(1) {
+            Some(value) => php_internal_int_argument("ob_start()", 2, "chunk_size", value, span)?,
+            None => 0,
+        };
+        let chunk_size = usize::try_from(chunk_size.max(0)).unwrap_or(usize::MAX);
+        let flags = match args.get(2) {
+            Some(value) => php_internal_int_argument("ob_start()", 3, "flags", value, span)?,
+            None => PHP_OUTPUT_HANDLER_STDFLAGS,
+        } & PHP_OUTPUT_HANDLER_STDFLAGS;
         self.output_buffers.push(OutputBuffer {
             contents: String::new(),
             handler,
             handler_started: false,
+            chunk_size,
+            flags,
             span,
         });
         Ok(Value::Bool(true))
@@ -84102,17 +84149,18 @@ impl Interpreter {
         } else {
             0
         };
+        let mut flags = buffer.flags | handler_type;
+        if buffer.handler_started {
+            flags |= PHP_OUTPUT_HANDLER_STARTED | PHP_OUTPUT_HANDLER_PROCESSED;
+        }
         status.insert(
             "name",
             Value::String(self.output_buffer_handler_name(buffer)),
         );
         status.insert("type", Value::Int(handler_type));
-        status.insert(
-            "flags",
-            Value::Int(PHP_OUTPUT_HANDLER_STDFLAGS | handler_type),
-        );
+        status.insert("flags", Value::Int(flags));
         status.insert("level", Value::Int(index as i64));
-        status.insert("chunk_size", Value::Int(0));
+        status.insert("chunk_size", Value::Int(buffer.chunk_size as i64));
         status.insert("buffer_size", Value::Int(16384));
         status.insert("buffer_used", Value::Int(buffer.contents.len() as i64));
         Value::Array(status)
@@ -84164,18 +84212,116 @@ impl Interpreter {
             .unwrap_or_else(|| Value::Array(PhpArray::new())))
     }
 
+    fn output_buffer_can_clean(buffer: &OutputBuffer) -> bool {
+        buffer.flags & PHP_OUTPUT_HANDLER_CLEANABLE != 0
+    }
+
+    fn output_buffer_can_flush(buffer: &OutputBuffer) -> bool {
+        buffer.flags & PHP_OUTPUT_HANDLER_FLUSHABLE != 0
+    }
+
+    fn output_buffer_can_remove(buffer: &OutputBuffer) -> bool {
+        buffer.flags & PHP_OUTPUT_HANDLER_REMOVABLE != 0
+    }
+
+    fn active_output_buffer_name_and_level(&self) -> Option<(String, usize)> {
+        self.output_buffers.last().map(|buffer| {
+            (
+                self.output_buffer_handler_name(buffer),
+                self.output_buffers.len() - 1,
+            )
+        })
+    }
+
+    fn emit_output_buffer_active_notice(
+        &mut self,
+        function: &str,
+        message: &str,
+        span: Span,
+    ) -> CompileResult<()> {
+        let Some((name, level)) = self.active_output_buffer_name_and_level() else {
+            return Ok(());
+        };
+        self.emit_output_buffer_no_active_notice(
+            function,
+            &format!("{message} buffer of {name} ({level})"),
+            span,
+        )
+    }
+
+    fn maybe_flush_active_output_buffer_for_chunk(&mut self, span: Span) -> CompileResult<()> {
+        let Some(active_index) = self.output_buffers.len().checked_sub(1) else {
+            return Ok(());
+        };
+        self.maybe_flush_output_buffer_at_index_for_chunk(active_index, span)
+    }
+
+    fn maybe_flush_output_buffer_at_index_for_chunk(
+        &mut self,
+        buffer_index: usize,
+        span: Span,
+    ) -> CompileResult<()> {
+        let should_flush = self.output_buffers.get(buffer_index).is_some_and(|buffer| {
+            buffer.chunk_size > 0 && buffer.contents.len() >= buffer.chunk_size
+        });
+        if should_flush {
+            self.flush_output_buffer_at_index_for_chunk(buffer_index, span)?;
+        }
+        Ok(())
+    }
+
+    fn flush_output_buffer_at_index_for_chunk(
+        &mut self,
+        buffer_index: usize,
+        span: Span,
+    ) -> CompileResult<()> {
+        let Some((output, handler, phase)) =
+            self.output_buffers.get_mut(buffer_index).map(|buffer| {
+                let output = std::mem::take(&mut buffer.contents);
+                let handler = buffer.handler.clone();
+                let phase = if buffer.handler_started {
+                    0
+                } else {
+                    PHP_OUTPUT_HANDLER_START
+                };
+                buffer.handler_started = true;
+                (output, handler, phase)
+            })
+        else {
+            return Ok(());
+        };
+        let handled_output =
+            self.apply_output_buffer_handler(handler.as_ref(), output, phase, span)?;
+        self.append_output_below_buffer_at_index(buffer_index, &handled_output, span)
+    }
+
     fn call_ob_get_clean(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("ob_get_clean", args, 0, span)?;
-        Ok(self
+        let Some(buffer) = self.output_buffers.last() else {
+            return Ok(Value::Bool(false));
+        };
+        let raw_output = buffer.contents.clone();
+        let can_clean = Self::output_buffer_can_clean(buffer);
+        let can_remove = Self::output_buffer_can_remove(buffer);
+        if !can_clean || !can_remove {
+            if !can_clean {
+                self.emit_output_buffer_active_notice("ob_get_clean()", "Failed to discard", span)?;
+            }
+            if !can_remove {
+                self.emit_output_buffer_active_notice("ob_get_clean()", "Failed to delete", span)?;
+            }
+            return Ok(Value::String(raw_output));
+        }
+        let buffer = self
             .output_buffers
             .pop()
-            .map(|buffer| Value::String(buffer.contents))
-            .unwrap_or(Value::Bool(false)))
+            .expect("active output buffer was checked before pop");
+        Ok(Value::String(buffer.contents))
     }
 
     fn call_ob_get_flush(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("ob_get_flush", args, 0, span)?;
-        let Some(buffer) = self.output_buffers.pop() else {
+        let Some(buffer) = self.output_buffers.last() else {
             self.emit_output_buffer_no_active_notice(
                 "ob_get_flush()",
                 "Failed to delete and flush buffer. No buffer to delete or flush",
@@ -84183,6 +84329,22 @@ impl Interpreter {
             )?;
             return Ok(Value::Bool(false));
         };
+        let raw_output = buffer.contents.clone();
+        let can_flush = Self::output_buffer_can_flush(buffer);
+        let can_remove = Self::output_buffer_can_remove(buffer);
+        if !can_flush || !can_remove {
+            if !can_flush {
+                self.emit_output_buffer_active_notice("ob_get_flush()", "Failed to send", span)?;
+            }
+            if !can_remove {
+                self.emit_output_buffer_active_notice("ob_get_flush()", "Failed to delete", span)?;
+            }
+            return Ok(Value::String(raw_output));
+        }
+        let buffer = self
+            .output_buffers
+            .pop()
+            .expect("active output buffer was checked before pop");
         let raw_output = buffer.contents;
         let handled_output = self.apply_output_buffer_handler(
             buffer.handler.as_ref(),
@@ -84191,12 +84353,13 @@ impl Interpreter {
             span,
         )?;
         self.append_output_at(&handled_output, span);
+        self.maybe_flush_active_output_buffer_for_chunk(span)?;
         Ok(Value::String(raw_output))
     }
 
     fn call_ob_clean(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("ob_clean", args, 0, span)?;
-        let Some(buffer) = self.output_buffers.last_mut() else {
+        let Some(buffer) = self.output_buffers.last() else {
             self.emit_output_buffer_no_active_notice(
                 "ob_clean()",
                 "Failed to delete buffer. No buffer to delete",
@@ -84204,12 +84367,42 @@ impl Interpreter {
             )?;
             return Ok(Value::Bool(false));
         };
-        buffer.contents.clear();
+        if !Self::output_buffer_can_clean(buffer) {
+            self.emit_output_buffer_active_notice("ob_clean()", "Failed to delete", span)?;
+            return Ok(Value::Bool(false));
+        }
+        let (output, handler, phase) = self
+            .output_buffers
+            .last_mut()
+            .map(|buffer| {
+                let output = std::mem::take(&mut buffer.contents);
+                let handler = buffer.handler.clone();
+                let phase = Self::output_buffer_handler_phase(
+                    buffer.handler_started,
+                    PHP_OUTPUT_HANDLER_CLEAN,
+                );
+                buffer.handler_started = true;
+                (output, handler, phase)
+            })
+            .expect("active output buffer was checked before clean");
+        let _ = self.apply_output_buffer_handler(handler.as_ref(), output, phase, span)?;
         Ok(Value::Bool(true))
     }
 
     fn call_ob_flush(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("ob_flush", args, 0, span)?;
+        let Some(buffer) = self.output_buffers.last() else {
+            self.emit_output_buffer_no_active_notice(
+                "ob_flush()",
+                "Failed to flush buffer. No buffer to flush",
+                span,
+            )?;
+            return Ok(Value::Bool(false));
+        };
+        if !Self::output_buffer_can_flush(buffer) {
+            self.emit_output_buffer_active_notice("ob_flush()", "Failed to flush", span)?;
+            return Ok(Value::Bool(false));
+        }
         let Some((output, handler, phase)) = self.output_buffers.last_mut().map(|buffer| {
             let output = std::mem::take(&mut buffer.contents);
             let handler = buffer.handler.clone();
@@ -84218,35 +84411,52 @@ impl Interpreter {
             buffer.handler_started = true;
             (output, handler, phase)
         }) else {
-            self.emit_output_buffer_no_active_notice(
-                "ob_flush()",
-                "Failed to flush buffer. No buffer to flush",
-                span,
-            )?;
             return Ok(Value::Bool(false));
         };
         let handled_output =
             self.apply_output_buffer_handler(handler.as_ref(), output, phase, span)?;
-        self.append_output_below_active_buffer_at(&handled_output, span);
+        self.append_output_below_active_buffer_at(&handled_output, span)?;
         Ok(Value::Bool(true))
     }
 
     fn call_ob_end_clean(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("ob_end_clean", args, 0, span)?;
-        if self.output_buffers.pop().is_some() {
-            return Ok(Value::Bool(true));
+        let Some(buffer) = self.output_buffers.last() else {
+            self.emit_output_buffer_no_active_notice(
+                "ob_end_clean()",
+                "Failed to delete buffer. No buffer to delete",
+                span,
+            )?;
+            return Ok(Value::Bool(false));
+        };
+        if !Self::output_buffer_can_clean(buffer) {
+            self.emit_output_buffer_active_notice("ob_end_clean()", "Failed to discard", span)?;
+            return Ok(Value::Bool(false));
         }
-        self.emit_output_buffer_no_active_notice(
-            "ob_end_clean()",
-            "Failed to delete buffer. No buffer to delete",
+        if !Self::output_buffer_can_remove(buffer) {
+            self.emit_output_buffer_active_notice("ob_end_clean()", "Failed to delete", span)?;
+            return Ok(Value::Bool(false));
+        }
+        let buffer = self
+            .output_buffers
+            .pop()
+            .expect("active output buffer was checked before pop");
+        let phase = Self::output_buffer_handler_phase(
+            buffer.handler_started,
+            PHP_OUTPUT_HANDLER_CLEAN | PHP_OUTPUT_HANDLER_FINAL,
+        );
+        let _ = self.apply_output_buffer_handler(
+            buffer.handler.as_ref(),
+            buffer.contents,
+            phase,
             span,
         )?;
-        Ok(Value::Bool(false))
+        Ok(Value::Bool(true))
     }
 
     fn call_ob_end_flush(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("ob_end_flush", args, 0, span)?;
-        let Some(buffer) = self.output_buffers.pop() else {
+        let Some(buffer) = self.output_buffers.last() else {
             self.emit_output_buffer_no_active_notice(
                 "ob_end_flush()",
                 "Failed to delete and flush buffer. No buffer to delete or flush",
@@ -84254,6 +84464,18 @@ impl Interpreter {
             )?;
             return Ok(Value::Bool(false));
         };
+        if !Self::output_buffer_can_flush(buffer) {
+            self.emit_output_buffer_active_notice("ob_end_flush()", "Failed to send", span)?;
+            return Ok(Value::Bool(false));
+        }
+        if !Self::output_buffer_can_remove(buffer) {
+            self.emit_output_buffer_active_notice("ob_end_flush()", "Failed to delete", span)?;
+            return Ok(Value::Bool(false));
+        }
+        let buffer = self
+            .output_buffers
+            .pop()
+            .expect("active output buffer was checked before pop");
         let handled_output = self.apply_output_buffer_handler(
             buffer.handler.as_ref(),
             buffer.contents,
@@ -84261,6 +84483,7 @@ impl Interpreter {
             span,
         )?;
         self.append_output_at(&handled_output, span);
+        self.maybe_flush_active_output_buffer_for_chunk(span)?;
         Ok(Value::Bool(true))
     }
 
@@ -103697,10 +103920,11 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
         "php_sapi_name" => ("string", vec![]),
         "ob_start" => (
             "bool",
-            vec![reflection_internal_optional_null_param(
-                "callback",
-                "?callable",
-            )],
+            vec![
+                reflection_internal_optional_null_param("callback", "?callable"),
+                reflection_internal_optional_int_param("chunk_size", 0),
+                reflection_internal_optional_int_param("flags", PHP_OUTPUT_HANDLER_STDFLAGS),
+            ],
         ),
         "phpversion" => (
             "string|false",
@@ -110160,6 +110384,20 @@ const BUILTIN_GLOBAL_CONSTANT_NAMES: &[&str] = &[
     "PHP_SESSION_DISABLED",
     "PHP_SESSION_NONE",
     "PHP_SESSION_ACTIVE",
+    "PHP_OUTPUT_HANDLER_START",
+    "PHP_OUTPUT_HANDLER_WRITE",
+    "PHP_OUTPUT_HANDLER_FLUSH",
+    "PHP_OUTPUT_HANDLER_CLEAN",
+    "PHP_OUTPUT_HANDLER_FINAL",
+    "PHP_OUTPUT_HANDLER_CONT",
+    "PHP_OUTPUT_HANDLER_END",
+    "PHP_OUTPUT_HANDLER_CLEANABLE",
+    "PHP_OUTPUT_HANDLER_FLUSHABLE",
+    "PHP_OUTPUT_HANDLER_REMOVABLE",
+    "PHP_OUTPUT_HANDLER_STDFLAGS",
+    "PHP_OUTPUT_HANDLER_STARTED",
+    "PHP_OUTPUT_HANDLER_DISABLED",
+    "PHP_OUTPUT_HANDLER_PROCESSED",
     "E_ERROR",
     "E_WARNING",
     "E_PARSE",
@@ -110605,6 +110843,20 @@ fn builtin_global_constant_value(name: &str) -> Option<Value> {
         "PHP_SESSION_DISABLED" => Some(Value::Int(PHP_SESSION_DISABLED)),
         "PHP_SESSION_NONE" => Some(Value::Int(PHP_SESSION_NONE)),
         "PHP_SESSION_ACTIVE" => Some(Value::Int(PHP_SESSION_ACTIVE)),
+        "PHP_OUTPUT_HANDLER_START" => Some(Value::Int(PHP_OUTPUT_HANDLER_START)),
+        "PHP_OUTPUT_HANDLER_WRITE" => Some(Value::Int(0)),
+        "PHP_OUTPUT_HANDLER_FLUSH" => Some(Value::Int(PHP_OUTPUT_HANDLER_FLUSH)),
+        "PHP_OUTPUT_HANDLER_CLEAN" => Some(Value::Int(PHP_OUTPUT_HANDLER_CLEAN)),
+        "PHP_OUTPUT_HANDLER_FINAL" => Some(Value::Int(PHP_OUTPUT_HANDLER_FINAL)),
+        "PHP_OUTPUT_HANDLER_CONT" => Some(Value::Int(0)),
+        "PHP_OUTPUT_HANDLER_END" => Some(Value::Int(PHP_OUTPUT_HANDLER_FINAL)),
+        "PHP_OUTPUT_HANDLER_CLEANABLE" => Some(Value::Int(PHP_OUTPUT_HANDLER_CLEANABLE)),
+        "PHP_OUTPUT_HANDLER_FLUSHABLE" => Some(Value::Int(PHP_OUTPUT_HANDLER_FLUSHABLE)),
+        "PHP_OUTPUT_HANDLER_REMOVABLE" => Some(Value::Int(PHP_OUTPUT_HANDLER_REMOVABLE)),
+        "PHP_OUTPUT_HANDLER_STDFLAGS" => Some(Value::Int(PHP_OUTPUT_HANDLER_STDFLAGS)),
+        "PHP_OUTPUT_HANDLER_STARTED" => Some(Value::Int(PHP_OUTPUT_HANDLER_STARTED)),
+        "PHP_OUTPUT_HANDLER_DISABLED" => Some(Value::Int(PHP_OUTPUT_HANDLER_DISABLED)),
+        "PHP_OUTPUT_HANDLER_PROCESSED" => Some(Value::Int(PHP_OUTPUT_HANDLER_PROCESSED)),
         "E_ERROR" => Some(Value::Int(PHP_E_ERROR)),
         "E_WARNING" => Some(Value::Int(PHP_E_WARNING)),
         "E_PARSE" => Some(Value::Int(PHP_E_PARSE)),

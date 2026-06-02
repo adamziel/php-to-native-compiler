@@ -4,6 +4,31 @@
 
 Implemented:
 
+- Added a bounded output-buffer chunk/flag lane. `ob_start()` now accepts the
+  supported `callback`, `chunk_size`, and `flags` arguments through the
+  interpreter path, exposes output-handler constants, stores sanitized
+  cleanable/flushable/removable capabilities, and reports the expanded optional
+  parameter list through `ReflectionFunction("ob_start")`. Positive chunk
+  sizes automatically process echo/print output at the threshold, handled
+  output can cascade threshold checks into parent buffers, `ob_get_status()`
+  reports bounded chunk/flag metadata, and clean/flush/remove operations honor
+  buffer capabilities with bounded PHP-style notices while preserving active
+  unerasable buffers. `ob_clean()` / `ob_end_clean()` now run supported
+  handlers with clean/final-clean phases while discarding handler output, and
+  generated code continues to route direct output-buffer calls through the
+  runtime ABI instead of inline-lowering the stack. Focused proof covers the
+  full `output_buffer_builtin` Rust file including a nested chunk-cascade
+  regression, direct CLI and native-IR probes, selected public PHPT rows
+  `ob_017.phpt`, `ob_start_basic_002.phpt`, `ob_start_basic_004.phpt`,
+  `ob_start_basic_unerasable_001.phpt` through
+  `ob_start_basic_unerasable_005.phpt`, and `ob_start_flags.phpt`, build,
+  fmt, and diff checks. Unsupported edges remain invalid-callback warning/false
+  recovery, by-reference output handlers, exact handler-status metadata beyond
+  the bounded fields, automatic threshold checks for output-producing builtins
+  outside the covered echo/print and handled-flush paths, handler reentrancy
+  breadth, exact fatal/header/output-started ordering, and inline native
+  lowering beyond the runtime ABI.
+
 - Added a bounded `DateTimeZone` generic serialization metadata lane.
   `serialize()` now emits PHP wire text for exact core `DateTimeZone` objects
   whose current bounded `timezone_type` / `timezone` public state is valid,
