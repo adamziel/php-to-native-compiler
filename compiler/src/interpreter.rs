@@ -17912,6 +17912,73 @@ impl Interpreter {
                 self.assign_datetime_object_state(&object, timestamp, timezone, span)?;
                 Ok(Value::Object(object))
             }
+            "setdate" => {
+                expect_expr_arity("DateTime::setDate", args.len(), 3, span)?;
+                let values = args
+                    .iter()
+                    .map(|arg| self.evaluate(arg, caller_scope))
+                    .collect::<CompileResult<Vec<_>>>()?;
+                self.set_datetime_date_parts(
+                    &object,
+                    "DateTime::setDate()",
+                    &values[0],
+                    &values[1],
+                    &values[2],
+                    span,
+                )?;
+                Ok(Value::Object(object))
+            }
+            "setisodate" => {
+                if !(2..=3).contains(&args.len()) {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::arity_mismatch(
+                            "DateTime::setISODate",
+                            ArityExpectation::Between { min: 2, max: 3 },
+                            args.len(),
+                        ),
+                    ));
+                }
+                let values = args
+                    .iter()
+                    .map(|arg| self.evaluate(arg, caller_scope))
+                    .collect::<CompileResult<Vec<_>>>()?;
+                self.set_datetime_iso_date_parts(
+                    &object,
+                    "DateTime::setISODate()",
+                    &values[0],
+                    &values[1],
+                    values.get(2),
+                    span,
+                )?;
+                Ok(Value::Object(object))
+            }
+            "settime" => {
+                if !(2..=4).contains(&args.len()) {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::arity_mismatch(
+                            "DateTime::setTime",
+                            ArityExpectation::Between { min: 2, max: 4 },
+                            args.len(),
+                        ),
+                    ));
+                }
+                let values = args
+                    .iter()
+                    .map(|arg| self.evaluate(arg, caller_scope))
+                    .collect::<CompileResult<Vec<_>>>()?;
+                self.set_datetime_time_parts(
+                    &object,
+                    "DateTime::setTime()",
+                    &values[0],
+                    &values[1],
+                    values.get(2),
+                    values.get(3),
+                    span,
+                )?;
+                Ok(Value::Object(object))
+            }
             "gettimestamp" => {
                 expect_expr_arity("DateTime::getTimestamp", args.len(), 0, span)?;
                 let state = self.date_time_objects.get(&object.id()).ok_or_else(|| {
@@ -18048,6 +18115,178 @@ impl Interpreter {
         self.assign_datetime_object_state(object, timestamp, timezone, span)
     }
 
+    fn datetime_object_state(
+        &self,
+        object: &PhpObject,
+        function: &'static str,
+        span: Span,
+    ) -> CompileResult<BoundedDateTimeObjectState> {
+        self.date_time_objects
+            .get(&object.id())
+            .cloned()
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        function,
+                        "DateTime object is not initialized in the current subset",
+                    ),
+                )
+            })
+    }
+
+    fn set_datetime_date_parts(
+        &mut self,
+        object: &PhpObject,
+        function: &'static str,
+        year_value: &Value,
+        month_value: &Value,
+        day_value: &Value,
+        span: Span,
+    ) -> CompileResult<()> {
+        let year = required_date_int_arg(function, year_value, "year", span)?;
+        let month = required_date_int_arg(function, month_value, "month", span)?;
+        let day = required_date_int_arg(function, day_value, "day", span)?;
+        let state = self.datetime_object_state(object, function, span)?;
+        let current = bounded_datetime_parts(
+            state.timestamp,
+            state.timezone.offset_at_timestamp(state.timestamp),
+        );
+        self.assign_datetime_local_parts(
+            object,
+            function,
+            year,
+            month,
+            day,
+            current.hour,
+            current.minute,
+            current.second,
+            state.timezone,
+            span,
+        )
+    }
+
+    fn set_datetime_iso_date_parts(
+        &mut self,
+        object: &PhpObject,
+        function: &'static str,
+        year_value: &Value,
+        week_value: &Value,
+        day_value: Option<&Value>,
+        span: Span,
+    ) -> CompileResult<()> {
+        let year = required_date_int_arg(function, year_value, "year", span)?;
+        let week = required_date_int_arg(function, week_value, "week", span)?;
+        let day_of_week = match day_value {
+            Some(value) => required_date_int_arg(function, value, "dayOfWeek", span)?,
+            None => 1,
+        };
+        let (year, month, day) =
+            iso_week_date_to_civil(year, week, day_of_week).ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        function,
+                        "ISO week date is outside the current bounded timestamp subset",
+                    ),
+                )
+            })?;
+        let state = self.datetime_object_state(object, function, span)?;
+        let current = bounded_datetime_parts(
+            state.timestamp,
+            state.timezone.offset_at_timestamp(state.timestamp),
+        );
+        self.assign_datetime_local_parts(
+            object,
+            function,
+            year,
+            month,
+            day,
+            current.hour,
+            current.minute,
+            current.second,
+            state.timezone,
+            span,
+        )
+    }
+
+    fn set_datetime_time_parts(
+        &mut self,
+        object: &PhpObject,
+        function: &'static str,
+        hour_value: &Value,
+        minute_value: &Value,
+        second_value: Option<&Value>,
+        microsecond_value: Option<&Value>,
+        span: Span,
+    ) -> CompileResult<()> {
+        let hour = required_date_int_arg(function, hour_value, "hour", span)?;
+        let minute = required_date_int_arg(function, minute_value, "minute", span)?;
+        let second = match second_value {
+            Some(value) => required_date_int_arg(function, value, "second", span)?,
+            None => 0,
+        };
+        let microsecond = match microsecond_value {
+            Some(value) => required_date_int_arg(function, value, "microsecond", span)?,
+            None => 0,
+        };
+        if microsecond != 0 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function,
+                    "non-zero microseconds are not represented by the current DateTime state",
+                ),
+            ));
+        }
+        let state = self.datetime_object_state(object, function, span)?;
+        let current = bounded_datetime_parts(
+            state.timestamp,
+            state.timezone.offset_at_timestamp(state.timestamp),
+        );
+        self.assign_datetime_local_parts(
+            object,
+            function,
+            current.year,
+            current.month,
+            current.day,
+            hour,
+            minute,
+            second,
+            state.timezone,
+            span,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn assign_datetime_local_parts(
+        &mut self,
+        object: &PhpObject,
+        function: &'static str,
+        year: i64,
+        month: i64,
+        day: i64,
+        hour: i64,
+        minute: i64,
+        second: i64,
+        timezone: BoundedTimezone,
+        span: Span,
+    ) -> CompileResult<()> {
+        let timestamp = timestamp_from_overflowing_local_parts(
+            year, month, day, hour, minute, second, &timezone,
+        )
+        .ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function,
+                    "date/time parts overflow the current bounded timestamp subset",
+                ),
+            )
+        })?;
+        self.assign_datetime_object_state(object, timestamp, timezone, span)
+    }
+
     fn call_date_format(&self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("date_format", args, 2, span)?;
         let object = self.datetime_object_argument("date_format()", args, 0, span)?;
@@ -18101,6 +18340,67 @@ impl Interpreter {
                 )
             })?;
         self.assign_datetime_object_state(&object, timestamp, timezone, span)?;
+        Ok(Value::Object(object))
+    }
+
+    fn call_date_date_set(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("date_date_set", args, 4, span)?;
+        let object = self.datetime_object_argument("date_date_set()", args, 0, span)?;
+        self.set_datetime_date_parts(
+            &object,
+            "date_date_set()",
+            &args[1],
+            &args[2],
+            &args[3],
+            span,
+        )?;
+        Ok(Value::Object(object))
+    }
+
+    fn call_date_isodate_set(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(3..=4).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "date_isodate_set()",
+                    ArityExpectation::Between { min: 3, max: 4 },
+                    args.len(),
+                ),
+            ));
+        }
+        let object = self.datetime_object_argument("date_isodate_set()", args, 0, span)?;
+        self.set_datetime_iso_date_parts(
+            &object,
+            "date_isodate_set()",
+            &args[1],
+            &args[2],
+            args.get(3),
+            span,
+        )?;
+        Ok(Value::Object(object))
+    }
+
+    fn call_date_time_set(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(3..=5).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "date_time_set()",
+                    ArityExpectation::Between { min: 3, max: 5 },
+                    args.len(),
+                ),
+            ));
+        }
+        let object = self.datetime_object_argument("date_time_set()", args, 0, span)?;
+        self.set_datetime_time_parts(
+            &object,
+            "date_time_set()",
+            &args[1],
+            &args[2],
+            args.get(3),
+            args.get(4),
+            span,
+        )?;
         Ok(Value::Object(object))
     }
 
@@ -85826,6 +86126,9 @@ impl Interpreter {
             "date_format" => self.call_date_format(&args, span),
             "date_timestamp_get" => self.call_date_timestamp_get(&args, span),
             "date_timestamp_set" => self.call_date_timestamp_set(&args, span),
+            "date_date_set" => self.call_date_date_set(&args, span),
+            "date_isodate_set" => self.call_date_isodate_set(&args, span),
+            "date_time_set" => self.call_date_time_set(&args, span),
             "date_offset_get" => self.call_date_offset_get(&args, span),
             "date_timezone_get" => self.call_date_timezone_get(&args, span),
             "date_timezone_set" => self.call_date_timezone_set(&args, span),
@@ -106924,6 +107227,9 @@ fn is_builtin(name: &str) -> bool {
             | "date_format"
             | "date_timestamp_get"
             | "date_timestamp_set"
+            | "date_date_set"
+            | "date_isodate_set"
+            | "date_time_set"
             | "date_offset_get"
             | "date_timezone_get"
             | "date_timezone_set"
@@ -140308,11 +140614,61 @@ fn timestamp_from_local_parts(
     days * 86_400 + hour * 3_600 + minute * 60 + second - offset
 }
 
+fn timestamp_from_overflowing_local_parts(
+    year: i64,
+    month: i64,
+    day: i64,
+    hour: i64,
+    minute: i64,
+    second: i64,
+    timezone: &BoundedTimezone,
+) -> Option<i64> {
+    let (normalized_year, normalized_month) = normalize_year_month_checked(year, month)?;
+    let base_days = checked_days_from_civil(normalized_year, normalized_month, 1)?
+        .checked_add(day.checked_sub(1)?)?;
+    let total_seconds = hour
+        .checked_mul(3_600)?
+        .checked_add(minute.checked_mul(60)?)?
+        .checked_add(second)?;
+    let day_delta = div_floor(total_seconds, 86_400);
+    let seconds_of_day = total_seconds.checked_sub(day_delta.checked_mul(86_400)?)?;
+    let local_days = base_days.checked_add(day_delta)?;
+    let local_day_seconds = local_days.checked_mul(86_400)?;
+    let (offset_year, offset_month, offset_day) = civil_from_days(local_days);
+    let offset = timezone.offset_for_local_date(offset_year, offset_month, offset_day);
+    local_day_seconds
+        .checked_add(seconds_of_day)?
+        .checked_sub(offset)
+}
+
+fn iso_week_date_to_civil(year: i64, week: i64, day_of_week: i64) -> Option<(i64, i64, i64)> {
+    let jan4_days = checked_days_from_civil(year, 1, 4)?;
+    let jan4_weekday = positive_mod(jan4_days.checked_add(4)?, 7);
+    let jan4_iso_weekday = if jan4_weekday == 0 { 7 } else { jan4_weekday };
+    let week_delta_days = week.checked_sub(1)?.checked_mul(7)?;
+    let day_delta = day_of_week.checked_sub(1)?;
+    let target_days = jan4_days
+        .checked_sub(jan4_iso_weekday - 1)?
+        .checked_add(week_delta_days)?
+        .checked_add(day_delta)?;
+    target_days.checked_mul(86_400)?;
+    Some(civil_from_days(target_days))
+}
+
 fn normalize_year_month(year: i64, month: i64) -> (i64, i64) {
     let zero_based = month - 1;
     let year_delta = div_floor(zero_based, 12);
     let normalized_month = zero_based - year_delta * 12 + 1;
     (year + year_delta, normalized_month)
+}
+
+fn normalize_year_month_checked(year: i64, month: i64) -> Option<(i64, i64)> {
+    let zero_based = month.checked_sub(1)?;
+    let year_delta = div_floor(zero_based, 12);
+    let normalized_month = zero_based
+        .checked_sub(year_delta.checked_mul(12)?)?
+        .checked_add(1)?;
+    Some((year.checked_add(year_delta)?, normalized_month))
 }
 
 fn div_floor(value: i64, divisor: i64) -> i64 {
@@ -140337,6 +140693,27 @@ fn days_from_civil(mut year: i64, month: i64, day: i64) -> i64 {
     let doy = (153 * month_prime + 2) / 5 + day - 1;
     let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
     era * 146_097 + doe - 719_468
+}
+
+fn checked_days_from_civil(year: i64, month: i64, day: i64) -> Option<i64> {
+    let year = year.checked_sub(i64::from(month <= 2))?;
+    let era = div_floor(year, 400);
+    let yoe = year.checked_sub(era.checked_mul(400)?)?;
+    let month_prime = month.checked_add(if month > 2 { -3 } else { 9 })?;
+    let doy = month_prime
+        .checked_mul(153)?
+        .checked_add(2)?
+        .checked_div(5)?
+        .checked_add(day)?
+        .checked_sub(1)?;
+    let doe = yoe
+        .checked_mul(365)?
+        .checked_add(yoe / 4)?
+        .checked_sub(yoe / 100)?
+        .checked_add(doy)?;
+    era.checked_mul(146_097)?
+        .checked_add(doe)?
+        .checked_sub(719_468)
 }
 
 fn bounded_datetime_parts(timestamp: i64, offset: i64) -> BoundedDateTimeParts {

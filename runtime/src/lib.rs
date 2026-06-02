@@ -33102,6 +33102,9 @@ impl PhpClassTable {
             "getOffset",
             "getTimezone",
             "setTimezone",
+            "setDate",
+            "setISODate",
+            "setTime",
         ] {
             datetime
                 .add_method(PhpMethodMetadata::instance(method, Visibility::Public))

@@ -4,6 +4,22 @@
 
 Implemented:
 
+- Added a bounded mutable `DateTime` setter lane. `phpc run` now supports
+  `DateTime::setDate()`, `DateTime::setISODate()`, and `DateTime::setTime()`
+  plus procedural aliases `date_date_set()`, `date_isodate_set()`, and
+  `date_time_set()` over the existing bounded mutable `DateTime` object state.
+  The setters preserve the receiver timezone, return the same object, expose
+  method/function metadata, normalize overflowing date/time and ISO week parts
+  through a checked bounded local timestamp path, and leave native direct calls
+  behind the existing function-call lowering boundary. Focused proof covers
+  the Rust `datetime_mutable_date_time_setters_normalize_bounded_parts`
+  regression and selected public PHPT rows for the basic object/procedural
+  setter surfaces. Unsupported edges remain `DateTimeImmutable` setters,
+  non-zero microsecond storage/formatting, broad weak scalar date-part
+  coercion/deprecation parity, exact PHP exception text outside the covered
+  bounded integer operands, full timezone/DST history, DateInterval arithmetic,
+  references/COW, and native lowering.
+
 - Added a bounded ASCII word-case stringable-object conversion lane.
   `phpc run` now routes `ucfirst($string)`, `lcfirst($string)`, and
   `ucwords($string, $separators = ...)` through the shared PHP-shaped string

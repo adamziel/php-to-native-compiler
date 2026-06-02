@@ -529,3 +529,64 @@ echo ($returned === $object ? "same" : "different"), "\n";
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);
 }
+
+#[test]
+fn datetime_mutable_date_time_setters_normalize_bounded_parts() {
+    let execution = run_source(
+        r#"<?php
+date_default_timezone_set("Europe/London");
+$datetime = new DateTime("2009-01-30 19:34:10");
+$returned = $datetime->setDate(2008, 2, 1);
+echo $datetime->format(DATE_RFC2822), "|", ($returned === $datetime ? "same" : "different"), "\n";
+$returned = $datetime->setTime(24, 10);
+echo $datetime->format(DATE_RFC2822), "|", ($returned === $datetime ? "same" : "different"), "\n";
+$returned = $datetime->setISODate(2009, 30, 3);
+echo $datetime->format("Y-m-d D H:i:s T"), "|", ($returned === $datetime ? "same" : "different"), "\n";
+$call = "date_time_set";
+$returned = $call($datetime, 47, 35, 47);
+echo $datetime->format(DATE_RFC2822), "|", ($returned === $datetime ? "same" : "different"), "\n";
+$returned = date_date_set($datetime, 2010, 13, 32);
+echo $datetime->format("Y-m-d H:i:s T"), "|", ($returned === $datetime ? "same" : "different"), "\n";
+$returned = date_isodate_set($datetime, 2008, 40);
+echo $datetime->format("Y-m-d D H:i:s T"), "|", ($returned === $datetime ? "same" : "different"), "\n";
+echo function_exists("date_date_set") ? "datefn" : "missing";
+echo "|", function_exists("date_time_set") ? "timefn" : "missing";
+echo "|", function_exists("date_isodate_set") ? "isofn" : "missing";
+echo "|", is_callable([$datetime, "setDate"]) ? "setdate" : "missing";
+echo "|", is_callable([$datetime, "setTime"]) ? "settime" : "missing";
+echo "|", is_callable([$datetime, "setISODate"]) ? "setiso" : "missing";
+echo "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "Fri, 01 Feb 2008 19:34:10 +0000|same\n",
+            "Sat, 02 Feb 2008 00:10:00 +0000|same\n",
+            "2009-07-22 Wed 00:10:00 BST|same\n",
+            "Thu, 23 Jul 2009 23:35:47 +0100|same\n",
+            "2011-02-01 23:35:47 GMT|same\n",
+            "2008-09-29 Mon 23:35:47 BST|same\n",
+            "datefn|timefn|isofn|setdate|settime|setiso\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn datetime_mutable_setters_reject_parts_outside_bounded_timestamp_range() {
+    let error = run_source(
+        r#"<?php
+$datetime = new DateTime("2009-01-30 19:34:10");
+$datetime->setDate(PHP_INT_MAX, PHP_INT_MAX, 1);
+"#,
+    )
+    .unwrap_err();
+
+    assert!(error.to_string().contains(
+        "unsupported call DateTime::setDate(): date/time parts overflow the current bounded timestamp subset"
+    ));
+}

@@ -5850,9 +5850,13 @@
   subset, updates `date_default_timezone_get()` and date/time formatting state,
   and returns `false` with a PHP-shaped notice for unknown identifiers.
   Mutable `DateTime` objects support bounded `format()`, `getTimestamp()`,
-  `setTimestamp()`, `modify()`, `getOffset()`, `getTimezone()`, and
-  `setTimezone(DateTimeZone $timezone)` behavior over the same bounded
-  timezone table. `modify()` covers the current bounded relative weekday/unit
+  `setTimestamp()`, `setDate()`, `setISODate()`, `setTime()`, `modify()`,
+  `getOffset()`, `getTimezone()`, and `setTimezone(DateTimeZone $timezone)`
+  behavior over the same bounded timezone table. `setDate()`, `setISODate()`,
+  and `setTime()` preserve the receiver timezone, return the same mutable
+  object, and normalize overflowing date/time parts through the bounded local
+  timestamp model; non-zero microseconds are not represented by the current
+  DateTime object state. `modify()` covers the current bounded relative weekday/unit
   forms plus Unix timestamp modifiers such as `@1234567890`; timestamp
   modifiers update the timestamp and switch the object timezone identity to
   the bounded `+00:00` timestamp zone, while `setTimestamp()` preserves the
@@ -5864,7 +5868,8 @@
   identity. `idate()` covers the current integer-returning date/time token
   subset, including ISO weekday `N`, week number `W`, and week-numbering year
   `o`. Procedural `date_format()`, `date_timestamp_get()`,
-  `date_timestamp_set()`, `date_offset_get()`, `date_timezone_get()`, and
+  `date_timestamp_set()`, `date_date_set()`, `date_isodate_set()`,
+  `date_time_set()`, `date_offset_get()`, `date_timezone_get()`, and
   `date_timezone_set()` share that object state. `DateTime::__set_state()`
   reconstructs a fresh bounded mutable `DateTime` object from the exported
   `date`, `timezone_type`, and `timezone` state fields produced by the current
@@ -5887,8 +5892,10 @@
   exported `date`/`timezone_type`/`timezone` shape, exact invalid-modifier
   `DateMalformedStringException` behavior, exact diagnostics for
   constructor/timezone/state coercions outside the covered slices, weak scalar
-  timestamp coercions for `idate()` / date formatting helpers beyond
-  `int|null`, and native lowering remain unsupported.
+  timestamp/date-part coercions for `idate()` / date formatting and setter
+  helpers beyond bounded integers and `int|null` timestamp slots, non-zero
+  DateTime microsecond mutation/formatting, and native lowering remain
+  unsupported.
   `header($header, $replace = true, $response_code = 0)` accepts a string
   header line plus optional bool replacement flag and optional integer response
   code, records the raw header line in deterministic in-process CLI request
