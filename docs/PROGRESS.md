@@ -4,6 +4,28 @@
 
 Implemented:
 
+- Added a bounded interface implementation startup-diagnostics lane on the
+  interpreter path. Class declarations that extend a declared interface or
+  implement a declared class/trait now report PHP-shaped startup fatals, and
+  interface declarations that extend a declared class/trait also report
+  PHP-shaped `cannot implement ... not an interface` startup fatals. Concrete
+  classes that are missing required declared-interface methods now report
+  PHP's abstract-method startup fatal instead of the generic
+  unsupported-inheritance boundary. Non-public implementations of public
+  interface methods now report PHP-shaped access-level startup fatals.
+  Focused proof covers the Rust `object_model` interface diagnostics
+  regressions, build/fmt/diff checks, and selected public PHPT rows
+  `tests/classes/interface_must_be_implemented.phpt`,
+  `tests/classes/interfaces_002.phpt`,
+  `tests/classes/interface_and_extends.phpt`,
+  `tests/classes/interface_class.phpt`, `Zend/tests/inter_05.phpt`,
+  `Zend/tests/objects/objects_012.phpt`, and
+  `Zend/tests/traits/error_008.phpt`. Unsupported edges remain preserving
+  prior user output before later class-declaration startup fatals, parser-level
+  interface method body/private/final diagnostics, inherited abstract method
+  implementation fatal wording, full signature compatibility fatal text,
+  property hooks, references/COW, and native lowering.
+
 - Added a bounded `ob_start()` invalid-handler recovery lane on the
   interpreter path. `ob_start()` now validates scalar callback operands,
   string function/static-method handlers, and array handlers at buffer

@@ -272,6 +272,53 @@ fn class_registration_startup_fatal_message(error: &Diagnostic) -> Option<String
         .message
         .strip_prefix("unsupported class inheritance for ")
         .and_then(|message| message.split_once(": "))?;
+
+    if let Some((class, interface)) = reason
+        .strip_prefix("class ")
+        .and_then(|reason| reason.split_once(" cannot extend interface "))
+    {
+        return Some(format!("Class {class} cannot extend interface {interface}"));
+    }
+
+    for prefix in ["class ", "interface "] {
+        if let Some((class_like, interface)) = reason
+            .strip_prefix(prefix)
+            .and_then(|reason| reason.split_once(" cannot implement non-interface "))
+        {
+            return Some(format!(
+                "{class_like} cannot implement {interface} - it is not an interface"
+            ));
+        }
+    }
+
+    if let Some((method, interface)) = reason
+        .strip_prefix("method ")
+        .and_then(|reason| reason.split_once(" must be public to satisfy interface method "))
+    {
+        let (interface_name, _) = interface.split_once("::")?;
+        return Some(format!(
+            "Access level to {method} must be public (as in class {interface_name})"
+        ));
+    }
+
+    if let Some((missing_count, missing_methods)) =
+        class_missing_interface_methods_from_startup_reason(class_name, reason)
+    {
+        let method_word = if missing_count == 1 {
+            "method"
+        } else {
+            "methods"
+        };
+        let remaining_word = if missing_count == 1 {
+            "method"
+        } else {
+            "methods"
+        };
+        return Some(format!(
+            "Class {class_name} contains {missing_count} abstract {method_word} and must therefore be declared abstract or implement the remaining {remaining_word} ({missing_methods})"
+        ));
+    }
+
     let missing = reason.strip_prefix(&format!(
         "concrete class {class_name} must implement abstract method "
     ))?;
@@ -284,6 +331,40 @@ fn class_registration_startup_fatal_message(error: &Diagnostic) -> Option<String
     Some(format!(
         "Class {class_name} declares abstract method {method_name}() and must therefore be declared abstract"
     ))
+}
+
+fn class_missing_interface_methods_from_startup_reason<'a>(
+    class_name: &str,
+    reason: &'a str,
+) -> Option<(usize, String)> {
+    let missing = reason
+        .strip_prefix(&format!(
+            "concrete class {class_name} must implement interface method "
+        ))
+        .or_else(|| {
+            reason.strip_prefix(&format!(
+                "concrete class {class_name} must implement interface methods "
+            ))
+        })?;
+    let mut method_list = Vec::new();
+    for method in missing.split(", ") {
+        let method = method.strip_suffix("()")?;
+        let (interface_name, method_name) = method.split_once("::")?;
+        if interface_name.contains("::")
+            || method_name.contains("::")
+            || method_name
+                .chars()
+                .any(|ch| ch.is_whitespace() || matches!(ch, '(' | ')' | ';'))
+        {
+            return None;
+        }
+        method_list.push(method);
+    }
+    if method_list.is_empty() {
+        return None;
+    }
+    let count = method_list.len();
+    Some((count, method_list.join(", ")))
 }
 
 pub fn class_metadata(program: &Program) -> CompileResult<PhpClassTable> {
@@ -11299,7 +11380,12 @@ impl Interpreter {
                 _ => {}
             }
         }
-        validate_interface_parent_relationships(&classes, &interface_lookup, &interfaces)?;
+        validate_interface_parent_relationships(
+            &classes,
+            &trait_lookup,
+            &interface_lookup,
+            &interfaces,
+        )?;
 
         for stmt in &program.statements {
             if let Stmt::Class(class) = stmt {
@@ -22691,6 +22777,7 @@ impl Interpreter {
         self.autoload_missing_interface_parent_dependencies(program)?;
         validate_interface_parent_relationships(
             &self.classes,
+            &self.trait_lookup,
             &self.interface_lookup,
             &self.interfaces,
         )?;
@@ -107299,12 +107386,19 @@ fn register_interface_name(
 
 fn validate_interface_parent_relationships(
     classes: &PhpClassTable,
+    trait_lookup: &HashMap<String, Rc<TraitDecl>>,
     interface_lookup: &HashMap<String, Rc<InterfaceDecl>>,
     interfaces: &[Rc<InterfaceDecl>],
 ) -> CompileResult<()> {
     for interface in interfaces {
         let mut path = HashSet::new();
-        validate_interface_parent_relationship(interface_lookup, interface, &mut path)?;
+        validate_interface_parent_relationship(
+            classes,
+            trait_lookup,
+            interface_lookup,
+            interface,
+            &mut path,
+        )?;
         validate_interface_property_override_attributes(interface_lookup, interface)?;
         validate_interface_method_inheritance(classes, interface_lookup, interface)?;
     }
@@ -107312,6 +107406,8 @@ fn validate_interface_parent_relationships(
 }
 
 fn validate_interface_parent_relationship(
+    classes: &PhpClassTable,
+    trait_lookup: &HashMap<String, Rc<TraitDecl>>,
     interface_lookup: &HashMap<String, Rc<InterfaceDecl>>,
     interface: &InterfaceDecl,
     path: &mut HashSet<String>,
@@ -107336,6 +107432,34 @@ fn validate_interface_parent_relationship(
             if is_core_interface_name(parent_name) {
                 continue;
             }
+            if let Some(class_id) = classes.lookup_class_id(parent_name) {
+                let implemented = classes
+                    .get(class_id)
+                    .map(|metadata| metadata.name().to_string())
+                    .unwrap_or_else(|| parent_name.clone());
+                return Err(runtime_error(
+                    interface.span,
+                    RuntimeError::unsupported_class_inheritance(
+                        &interface.name,
+                        format!(
+                            "interface {} cannot implement non-interface {implemented}",
+                            interface.name
+                        ),
+                    ),
+                ));
+            }
+            if let Some(trait_decl) = trait_lookup.get(&parent_key) {
+                return Err(runtime_error(
+                    interface.span,
+                    RuntimeError::unsupported_class_inheritance(
+                        &interface.name,
+                        format!(
+                            "interface {} cannot implement non-interface {}",
+                            interface.name, trait_decl.name
+                        ),
+                    ),
+                ));
+            }
             return Err(runtime_error(
                 interface.span,
                 RuntimeError::unsupported_class_inheritance(
@@ -107347,7 +107471,13 @@ fn validate_interface_parent_relationship(
                 ),
             ));
         };
-        validate_interface_parent_relationship(interface_lookup, parent, path)?;
+        validate_interface_parent_relationship(
+            classes,
+            trait_lookup,
+            interface_lookup,
+            parent,
+            path,
+        )?;
     }
 
     path.remove(&key);
@@ -108298,6 +108428,8 @@ fn register_class_members(
         .lookup_class_id(&class.name)
         .expect("class name pass should declare class id");
 
+    validate_class_relationship_targets(classes, interface_lookup, trait_lookup, class)?;
+
     if let Some(parent_name) = &class.parent {
         let parent_id = classes
             .lookup_class_id(parent_name)
@@ -108562,6 +108694,75 @@ fn register_class_members(
         .map_err(|error| runtime_error(class.span, error))?;
 
     Ok(id)
+}
+
+fn validate_class_relationship_targets(
+    classes: &PhpClassTable,
+    interface_lookup: &HashMap<String, Rc<InterfaceDecl>>,
+    trait_lookup: &HashMap<String, Rc<TraitDecl>>,
+    class: &ClassDecl,
+) -> CompileResult<()> {
+    if let Some(parent_name) = &class.parent {
+        if let Some(interface) = interface_lookup.get(&parent_name.to_ascii_lowercase()) {
+            return Err(runtime_error(
+                class.span,
+                RuntimeError::unsupported_class_inheritance(
+                    &class.name,
+                    format!(
+                        "class {} cannot extend interface {}",
+                        class.name, interface.name
+                    ),
+                ),
+            ));
+        }
+        if is_core_interface_name(parent_name) {
+            return Err(runtime_error(
+                class.span,
+                RuntimeError::unsupported_class_inheritance(
+                    &class.name,
+                    format!("class {} cannot extend interface {parent_name}", class.name),
+                ),
+            ));
+        }
+    }
+
+    for interface_name in &class.interfaces {
+        let key = interface_name.to_ascii_lowercase();
+        if interface_lookup.contains_key(&key) || is_core_interface_name(interface_name) {
+            continue;
+        }
+        if let Some(trait_decl) = trait_lookup.get(&key) {
+            return Err(runtime_error(
+                class.span,
+                RuntimeError::unsupported_class_inheritance(
+                    &class.name,
+                    format!(
+                        "class {} cannot implement non-interface {}",
+                        class.name, trait_decl.name
+                    ),
+                ),
+            ));
+        }
+        let Some(class_id) = classes.lookup_class_id(interface_name) else {
+            continue;
+        };
+        let implemented = classes
+            .get(class_id)
+            .map(|metadata| metadata.name().to_string())
+            .unwrap_or_else(|| interface_name.clone());
+        return Err(runtime_error(
+            class.span,
+            RuntimeError::unsupported_class_inheritance(
+                &class.name,
+                format!(
+                    "class {} cannot implement non-interface {implemented}",
+                    class.name
+                ),
+            ),
+        ));
+    }
+
+    Ok(())
 }
 
 fn composed_trait_constants(
@@ -109012,7 +109213,7 @@ fn validate_interface_method_implementation(
                 continue;
             }
             let Some((declaring_class_id, declaring_class_name, class_method)) =
-                find_public_method(classes, class_id, &lookup_name)
+                find_method(classes, class_id, &lookup_name)
             else {
                 missing.push(format!(
                     "{method_interface_name}::{}()",
@@ -109020,6 +109221,19 @@ fn validate_interface_method_implementation(
                 ));
                 continue;
             };
+
+            if class_method.visibility() != Visibility::Public {
+                return Err(RuntimeError::unsupported_class_inheritance(
+                    &class.name,
+                    format!(
+                        "method {}::{}() must be public to satisfy interface method {}::{}()",
+                        declaring_class_name,
+                        class_method.name(),
+                        method_interface_name,
+                        method.function.name
+                    ),
+                ));
+            }
 
             if class_method.is_static() != method.is_static {
                 return Err(RuntimeError::unsupported_class_inheritance(

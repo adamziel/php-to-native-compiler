@@ -3152,9 +3152,16 @@
   with the same case-insensitive name as an inherited final method reports a
   stable runtime boundary before registering the child class. A concrete class
   that directly declares an abstract method reports a bounded PHP-shaped
-  startup fatal. Concrete classes that inherit abstract methods without a
-  concrete implementation still report a stable runtime boundary before
-  registering the class.
+  startup fatal. Class declarations that extend a declared interface or
+  implement a declared class/trait report bounded PHP-shaped startup fatals
+  before registering the class; interface declarations that extend a declared
+  class/trait report the same bounded not-an-interface fatal surface during
+  interface relationship validation. Concrete classes missing required methods
+  from declared user interfaces report bounded PHP-shaped abstract-method
+  startup fatals, and non-public implementations of public interface methods
+  report bounded PHP-shaped access-level startup fatals. Concrete classes that
+  inherit abstract methods without a concrete implementation still report a
+  stable runtime boundary before registering the class.
   Child methods that redeclare inherited non-private methods may keep or widen
   visibility, while reductions such as public-to-protected and
   protected-to-private report a stable runtime boundary before registering the
@@ -3204,10 +3211,11 @@
   interface inheritance validation.
   extending a declared final parent reports a stable runtime boundary.
   Overriding an inherited final method reports a stable runtime boundary.
-  Concrete classes with inherited unimplemented abstract methods or missing
-  required interface methods report stable runtime boundaries, while concrete
-  classes that directly declare an abstract method report the bounded
-  PHP-shaped startup fatal above. Method visibility reduction and
+  Concrete classes with inherited unimplemented abstract methods report stable
+  runtime boundaries, while concrete classes missing required declared-interface
+  methods, directly declaring an abstract method, extending an interface, or
+  implementing a class report the bounded PHP-shaped startup fatals above.
+  Method visibility reduction and
   static/non-static compatibility violations report stable runtime boundaries.
   Bounded inherited method
   signature metadata compatibility violations report stable runtime
@@ -11233,8 +11241,8 @@
   broader `parent::`/`self::`/`static::`, broader inheritance rules,
   typed/static/non-public/abstract/final or multi-constant interface
   declarations, interface implementation enforcement beyond the current
-  bounded method checks, cyclic parent-interface inheritance execution beyond
-  the stable rejection,
+  bounded method and not-an-interface target checks, cyclic parent-interface
+  inheritance execution beyond the stable rejection,
   built-in/internal interface catalogs,
   trait properties, non-public/typed/abstract/final/static trait constants,
   multi-constant trait declarations, trait constant adaptations, conflicting

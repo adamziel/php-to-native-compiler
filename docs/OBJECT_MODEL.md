@@ -108,7 +108,11 @@ used traits through `hasMethod()`, `getMethod()`, and `getMethods()`. A declared
 extend one or more user interfaces declared before or after the child
 interface; concrete implementors of the child interface must expose the child
 and all parent public method names with matching static/non-static shape, and
-relationship checks also recognize the parent interfaces. Public interface
+missing required declared-interface methods, non-public implementations,
+class-extends-interface declarations, class-implements-class/trait
+declarations, and interface-extends-class/trait declarations surface bounded
+PHP-shaped startup fatals. Relationship checks also recognize the parent
+interfaces. Public interface
 constants declared as `const NAME = ...` or `public const NAME = ...` resolve
 through `InterfaceName::CONST`, inherited parent interfaces, implementing
 classes, `self::CONST`/`static::CONST` in implementing class methods, and
@@ -497,7 +501,8 @@ The implemented class-declaration parser intentionally excludes nested and
 conditional class declarations, typed/non-public/abstract/final or
 multi-constant interface declarations, cyclic parent-interface inheritance
 beyond stable rejection,
-full interface signature enforcement,
+full interface signature fatal text beyond the bounded metadata and
+not-an-interface target checks,
 trait properties, non-public/typed/abstract/final/static trait constants,
 multi-constant trait declarations, trait constant adaptations, conflicting
 trait/class constants, abstract/final or non-public trait methods,

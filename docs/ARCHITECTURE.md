@@ -1063,7 +1063,12 @@ as `interface Child extends Parent, OtherParent`, and flattens those parent
 names into concrete class `implements` relationship metadata. Class registration
 enforces public method presence for child and parent interface methods,
 including methods supplied by the current public trait composition and alias
-subset. Interface registration also checks child-interface redeclarations of
+subset, and reports bounded PHP-shaped startup fatals for missing declared
+interface methods or non-public implementations. Class registration also
+rejects extending a declared interface or implementing a declared class/trait
+with bounded PHP-shaped startup fatals. Interface registration rejects declared
+class/trait parents with the same bounded not-an-interface fatal surface, then
+checks child-interface redeclarations of
 inherited methods and simple multi-parent method conflicts with the current
 bounded metadata rules: a redeclaration may not require more parameters than
 the inherited method, may not add a parameter type where the parent method is
@@ -1192,9 +1197,12 @@ Implemented now:
   parsed abstract/final class modifiers plus abstract/final method modifiers
   as metadata, with declared abstract class/interface instantiation surfaced as
   PHP-shaped uncaught `Error` fatals, concrete classes that directly declare
-  abstract methods surfaced as bounded PHP-shaped startup fatals, final-parent
-  inheritance, final method overrides, method visibility reductions, inherited
-  abstract method implementation gaps, and missing required interface methods
+  abstract methods, concrete classes missing declared-interface methods,
+  non-public implementations of public interface methods, class-extends-interface
+  declarations, class-implements-class/trait declarations, and
+  interface-extends-class/trait declarations surfaced as bounded PHP-shaped
+  startup fatals, final-parent inheritance, final method overrides, method
+  visibility reductions, and inherited abstract method implementation gaps
   rejected at runtime, and inherited method static/non-static plus bounded
   non-constructor signature compatibility enforced at runtime, including
   required-parameter counts, parameter type metadata, and return type metadata,

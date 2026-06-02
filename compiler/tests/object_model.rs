@@ -2875,7 +2875,7 @@ class Service implements Logger {}
     assert_eq!(missing_method_error.column, 1);
     assert_eq!(
         missing_method_error.message,
-        "unsupported class inheritance for Service: concrete class Service must implement interface method Logger::log()"
+        "Class Service contains 1 abstract method and must therefore be declared abstract or implement the remaining method (Logger::log)"
     );
 
     let non_public_method_error = runtime_error(
@@ -2893,7 +2893,58 @@ class Service implements Logger {
     assert_eq!(non_public_method_error.column, 1);
     assert_eq!(
         non_public_method_error.message,
-        "unsupported class inheritance for Service: concrete class Service must implement interface method Logger::log()"
+        "Access level to Service::log() must be public (as in class Logger)"
+    );
+}
+
+#[test]
+fn invalid_class_interface_relationships_report_php_startup_fatals() {
+    assert_php_startup_fatal(
+        r#"<?php
+interface Contract {
+    public function run();
+}
+
+class Service extends Contract {
+    public function run() {}
+}
+"#,
+        "extends-interface.php",
+        6,
+        "Class Service cannot extend interface Contract",
+    );
+
+    assert_php_startup_fatal(
+        r#"<?php
+class Base {}
+
+class Service implements Base {}
+"#,
+        "implements-class.php",
+        4,
+        "Service cannot implement Base - it is not an interface",
+    );
+
+    assert_php_startup_fatal(
+        r#"<?php
+class Base {}
+
+interface Contract extends Base {}
+"#,
+        "interface-extends-class.php",
+        4,
+        "Contract cannot implement Base - it is not an interface",
+    );
+
+    assert_php_startup_fatal(
+        r#"<?php
+trait Role {}
+
+class Service implements Role {}
+"#,
+        "implements-trait.php",
+        4,
+        "Service cannot implement Role - it is not an interface",
     );
 }
 
@@ -3669,7 +3720,7 @@ class Child extends Base {}
     assert_eq!(error.column, 1);
     assert_eq!(
         error.message,
-        "unsupported class inheritance for Child: concrete class Child must implement interface method Logger::log()"
+        "Class Child contains 1 abstract method and must therefore be declared abstract or implement the remaining method (Logger::log)"
     );
 }
 
@@ -3738,7 +3789,7 @@ class Plugin implements PluginContract {
     assert_eq!(missing_parent_method.column, 1);
     assert_eq!(
         missing_parent_method.message,
-        "unsupported class inheritance for Plugin: concrete class Plugin must implement interface method Hookable::register_hooks()"
+        "Class Plugin contains 1 abstract method and must therefore be declared abstract or implement the remaining method (Hookable::register_hooks)"
     );
 
     let missing_parent_interface = runtime_error(
@@ -3898,7 +3949,7 @@ class Plugin implements PluginContract {
     assert_eq!(missing_parent_method.column, 1);
     assert_eq!(
         missing_parent_method.message,
-        "unsupported class inheritance for Plugin: concrete class Plugin must implement interface method Labelable::label()"
+        "Class Plugin contains 1 abstract method and must therefore be declared abstract or implement the remaining method (Labelable::label)"
     );
 }
 
@@ -6221,7 +6272,7 @@ echo class_implements("Missing", false) ? "missing-true" : "missing-false";
     let execution = run_source(source).unwrap();
     assert_eq!(
         execution.stdout,
-        "Array\n(\n    [ParentHook] => ParentHook\n    [ChildHook] => ChildHook\n    [RootHook] => RootHook\n)\nArray\n(\n    [ParentHook] => ParentHook\n    [ChildHook] => ChildHook\n    [RootHook] => RootHook\n)\n3\nroot\nmissing-false"
+        "Array\n(\n    [ParentHook] => ParentHook\n    [ChildHook] => ChildHook\n    [RootHook] => RootHook\n)\nArray\n(\n    [ParentHook] => ParentHook\n    [ChildHook] => ChildHook\n    [RootHook] => RootHook\n)\n3\nroot\n\nWarning: class_implements(): Class Missing does not exist in Command line code on line 17\nmissing-false"
     );
     assert_eq!(execution.exit_code, 0);
 }
