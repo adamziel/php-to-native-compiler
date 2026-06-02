@@ -4,6 +4,18 @@
 
 Implemented:
 
+- Added a bounded PHP numeric-literal classification lane for the selected
+  `is_numeric.phpt` surface. The lexer now treats leading-zero literals with a
+  decimal point or exponent, such as `0200001.7` and `09e1`, as decimal float
+  tokens instead of legacy-octal integer prefixes, and valid overflowing
+  legacy-octal/hexadecimal integer literals now fall back to float tokens
+  rather than lex errors. Focused proof covers the `numeric_type_builtin`
+  Rust test, a direct `phpc run` literal fixture, and the selected
+  `ext/standard/tests/general_functions/is_numeric.phpt` row. Unsupported
+  edges remain numeric separators, binary integer literals, exact non-finite
+  overflow policy for arbitrarily huge source literals, invalid legacy-octal
+  integer recovery, and native lowering beyond existing scalar literal folds.
+
 - Added a bounded `hash_init()` validation lane for the selected ext/hash HMAC
   error row. The interpreter now exposes `HASH_HMAC`, publishes
   `hash_init()` through builtin/callability/reflection metadata, validates

@@ -15,8 +15,11 @@
   remain unsupported.
 - `echo` statements with one or more comma-separated expressions
 - `print` statements
-- decimal, legacy-octal, and hexadecimal integer literals in the current signed 64-bit subset
-- float literals
+- decimal, legacy-octal, and hexadecimal integer literals in the current
+  signed 64-bit subset; valid overflowing hexadecimal and legacy-octal integer
+  literals are parsed as floats on the interpreter path
+- float literals, including leading-zero decimal float/exponent forms such as
+  `0200001.7` and `09e1`
 - single-quoted and double-quoted string literals with basic escapes; double
   quoted strings additionally support simple `$name`, `{$name}`, and
   deprecated `${name}` interpolation over the current variable table
@@ -10526,6 +10529,9 @@
 - expression-position `eval(...)`, `return` from evaluated source, non-string
   eval arguments, nested eval, eval declarations, include/require inside eval,
   references/copy-on-write through eval, and exact eval diagnostics
+- numeric literal separators, binary integer literals, exact non-finite
+  overflow policy for arbitrarily huge numeric source literals, and invalid
+  legacy-octal integer recovery remain unsupported
 - namespace forms outside the current unbracketed-namespace/imported
   class-name plus function/constant slice: bracketed/global namespaces,
   grouped imports, namespace-qualified constant reads, leading-backslash

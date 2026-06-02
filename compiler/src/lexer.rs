@@ -1182,28 +1182,8 @@ impl<'a> Lexer<'a> {
             }
             return match i64::from_str_radix(&digits, 16) {
                 Ok(value) => Ok(TokenKind::Int(value)),
-                Err(_) => {
-                    let value = u64::from_str_radix(&digits, 16).map_err(|_| {
-                        self.error_at(span, format!("invalid integer literal '{text}'"))
-                    })?;
-                    Ok(TokenKind::Float(value as f64))
-                }
+                Err(_) => Ok(TokenKind::Float(radix_digits_to_f64(&digits, 16))),
             };
-        }
-
-        if first == '0' && matches!(self.peek(), Some('0'..='9')) {
-            let mut digits = String::from("0");
-            while matches!(self.peek(), Some('0'..='9')) {
-                let ch = self.advance();
-                text.push(ch);
-                digits.push(ch);
-            }
-            if digits.bytes().any(|byte| !matches!(byte, b'0'..=b'7')) {
-                return Err(self.error_at(span, format!("invalid integer literal '{text}'")));
-            }
-            let value = i64::from_str_radix(&digits, 8)
-                .map_err(|_| self.error_at(span, format!("invalid integer literal '{text}'")))?;
-            return Ok(TokenKind::Int(value));
         }
 
         while matches!(self.peek(), Some('0'..='9')) {
@@ -1248,6 +1228,16 @@ impl<'a> Lexer<'a> {
                 .parse::<f64>()
                 .map_err(|_| self.error_at(span, format!("invalid float literal '{text}'")))?;
             return Ok(TokenKind::Float(value));
+        }
+
+        if first == '0' && text.len() > 1 {
+            if text.bytes().any(|byte| !matches!(byte, b'0'..=b'7')) {
+                return Err(self.error_at(span, format!("invalid integer literal '{text}'")));
+            }
+            return match i64::from_str_radix(&text, 8) {
+                Ok(value) => Ok(TokenKind::Int(value)),
+                Err(_) => Ok(TokenKind::Float(radix_digits_to_f64(&text, 8))),
+            };
         }
 
         match text.parse::<i64>() {
@@ -1458,6 +1448,15 @@ fn should_insert_close_tag_statement_terminator(tokens: &[Token]) -> bool {
         ),
         _ => false,
     }
+}
+
+fn radix_digits_to_f64(digits: &str, radix: u32) -> f64 {
+    digits.chars().fold(0.0, |value, ch| {
+        let digit = ch
+            .to_digit(radix)
+            .expect("lexer must validate radix digits before float fallback");
+        value.mul_add(radix as f64, digit as f64)
+    })
 }
 
 fn is_identifier_start(ch: char) -> bool {
