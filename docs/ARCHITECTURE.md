@@ -3490,6 +3490,18 @@ native `file_get_contents(...)` calls stop at a
 dedicated filesystem-read codegen boundary before argument lowering or backend
 selection, while native function-table introspection can still see the known
 builtin name.
+The interpreter also has a bounded exception-handler stack for
+`set_exception_handler()`, `restore_exception_handler()`, and
+`get_exception_handler()`. Supported registrations are `null`, string
+user-function callbacks, static-method string callbacks, closures, public
+object array callables, and public static array callables. A top-level
+uncaught `Throwable` invokes the current non-null handler before the existing
+shutdown/destructor/final-output-buffer sequence. Registration validates the
+covered callable forms and raises PHP-shaped catchable `TypeError`
+diagnostics. Handler-thrown exceptions, invokable-object handlers,
+first-class callable method closures, by-reference handler parameters, exact
+internal-function stack-frame rendering, active-handler stack mutation edge
+cases, and native lowering are still outside the current runtime subset.
 `filesize()` is interpreter-only for one string local path in the current
 runtime. It uses the same process-path-then-repo-root relative path policy as
 the other local metadata builtins, returns the host metadata byte length as an

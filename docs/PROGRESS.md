@@ -4,6 +4,28 @@
 
 Implemented:
 
+- Added a bounded exception-handler diagnostics/runtime lane on the
+  interpreter path. `set_exception_handler()` now validates supported callback
+  forms with PHP-shaped catchable `TypeError` diagnostics, and
+  `set_exception_handler()` / `restore_exception_handler()` /
+  `get_exception_handler()` maintain a request-local handler stack. Top-level
+  uncaught `Throwable` objects invoke the current non-null handler before the
+  existing shutdown callback, destructor, and final output-buffer sequence.
+  Focused proof covers the Rust exception-handler regressions, the direct CLI
+  fixture `tests/fixtures/milestone2366/exception_handler_stack.php`, and
+  selected public PHPT rows
+  `Zend/tests/exceptions/exception_handler/exception_handler_001.phpt`,
+  `Zend/tests/exceptions/exception_handler/exception_handler_003.phpt`,
+  `Zend/tests/exceptions/exception_handler/exception_handler_004.phpt`,
+  `Zend/tests/exceptions/exception_handler/exception_handler_005.phpt`,
+  `Zend/tests/exceptions/exception_handler/exception_handler_006.phpt`,
+  `Zend/tests/exceptions/exception_handler/exception_handler_007.phpt`, and
+  `Zend/tests/exceptions/exception_handler/exit_exception_handler.phpt`.
+  Unsupported edges remain handler-thrown exceptions, invokable-object
+  handlers, first-class callable method closures, by-reference handler
+  parameters, exact internal-function stack-frame rendering, active-handler
+  stack mutation edge cases, references/COW, and native lowering.
+
 - Added a bounded DateTime/timezone metadata lane on the interpreter path.
   `DateTimeInterface` is now a visible core interface implemented by
   `DateTime` and `DateTimeImmutable`, exposes the bounded `DATE_*` format

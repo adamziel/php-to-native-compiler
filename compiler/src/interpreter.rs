@@ -290,6 +290,8 @@ struct Interpreter {
     opcache_file_cache_paths: HashSet<String>,
     error_handlers: Vec<ErrorHandlerRegistration>,
     error_handler_active: bool,
+    exception_handlers: Vec<Value>,
+    exception_handler_active: bool,
     shutdown_callbacks: Vec<ShutdownCallback>,
     shutdown_callback_index: usize,
     autoload_callbacks: Vec<AutoloadCallback>,
@@ -11251,6 +11253,8 @@ impl Interpreter {
             opcache_file_cache_paths: HashSet::new(),
             error_handlers: Vec::new(),
             error_handler_active: false,
+            exception_handlers: Vec::new(),
+            exception_handler_active: false,
             shutdown_callbacks: Vec::new(),
             shutdown_callback_index: 0,
             autoload_callbacks: Vec::new(),
@@ -23547,6 +23551,18 @@ impl Interpreter {
         object: &PhpObject,
         span: Span,
     ) -> CompileResult<Execution> {
+        if self.call_exception_handler_for_throw(object, span)? {
+            self.run_shutdown_callbacks()?;
+            self.run_shutdown_destructors()?;
+            self.flush_output_buffers()?;
+            return Ok(Execution {
+                stdout: self.stdout.clone(),
+                stdout_bytes: self.execution_stdout_bytes(),
+                stderr: self.stderr.clone(),
+                exit_code: self.exit_signal.unwrap_or(0),
+            });
+        }
+
         self.emit_uncaught_throw_fatal(object, span);
         self.exit_signal = Some(255);
         self.run_shutdown_callbacks()?;
@@ -23558,6 +23574,76 @@ impl Interpreter {
             stderr: self.stderr.clone(),
             exit_code: self.exit_signal.unwrap_or(255),
         })
+    }
+
+    fn call_exception_handler_for_throw(
+        &mut self,
+        object: &PhpObject,
+        span: Span,
+    ) -> CompileResult<bool> {
+        if self.exception_handler_active {
+            return Ok(false);
+        }
+        let Some(handler) = self.exception_handlers.last().cloned() else {
+            return Ok(false);
+        };
+        if matches!(handler, Value::Null) {
+            return Ok(false);
+        }
+
+        self.exception_handler_active = true;
+        let result = self.call_exception_handler_callback(handler, object.clone(), span);
+        self.exception_handler_active = false;
+        result.map(|_| true)
+    }
+
+    fn call_exception_handler_callback(
+        &mut self,
+        handler: Value,
+        object: PhpObject,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let args = vec![Value::Object(object)];
+        match handler {
+            Value::String(name) => {
+                if let Some(callable) = self.lookup_function(&name) {
+                    return match callable {
+                        Callable::User(function) => {
+                            self.call_user_function_with_values(function, args, span)
+                        }
+                        Callable::Builtin(key) => self.call_builtin(&key, args, span),
+                    };
+                }
+
+                if static_method_callable_string(&name).is_some() {
+                    let callback = static_method_callable_value_from_string(&name, span)?;
+                    return self.call_array_callable_with_values(
+                        &callback,
+                        args,
+                        span,
+                    );
+                }
+
+                Err(runtime_error(
+                    span,
+                    RuntimeError::undefined_function(callable_name(&name)),
+                ))
+            }
+            Value::Array(array) => self.call_array_callable_with_values(&array, args, span),
+            Value::Closure(closure) => {
+                self.invoke_closure_value(closure, args, span, "set_exception_handler()")
+            }
+            other => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "set_exception_handler()",
+                    format!(
+                        "stored handler must be string, array callable, or closure in the current subset, got {}",
+                        other.type_name()
+                    ),
+                ),
+            )),
+        }
     }
 
     fn emit_uncaught_throw_fatal(&mut self, object: &PhpObject, span: Span) {
@@ -26787,6 +26873,10 @@ impl Interpreter {
                 .error_handlers
                 .iter()
                 .any(|handler| value_contains_object_id(&handler.callback, object_id, &mut visited))
+            || self
+                .exception_handlers
+                .iter()
+                .any(|handler| value_contains_object_id(handler, object_id, &mut visited))
             || self.autoload_callbacks.iter().any(|callback| {
                 autoload_callback_contains_object_id(callback, object_id, &mut visited)
             })
@@ -92468,6 +92558,9 @@ impl Interpreter {
             }
             "set_error_handler" => self.call_set_error_handler(args, span),
             "restore_error_handler" => self.call_restore_error_handler(args, span),
+            "set_exception_handler" => self.call_set_exception_handler(args, span),
+            "restore_exception_handler" => self.call_restore_exception_handler(args, span),
+            "get_exception_handler" => self.call_get_exception_handler(args, span),
             "ob_start" => self.call_ob_start(&args, span),
             "ob_get_level" => self.call_ob_get_level(&args, span),
             "ob_get_contents" => self.call_ob_get_contents(&args, span),
@@ -94397,6 +94490,140 @@ impl Interpreter {
         expect_arity("restore_error_handler", &args, 0, span)?;
         self.error_handlers.pop();
         Ok(Value::Bool(true))
+    }
+
+    fn call_set_exception_handler(&mut self, args: Vec<Value>, span: Span) -> CompileResult<Value> {
+        expect_arity("set_exception_handler", &args, 1, span)?;
+        self.validate_exception_handler_callback(&args[0], span)?;
+
+        let previous = self
+            .exception_handlers
+            .last()
+            .cloned()
+            .unwrap_or(Value::Null);
+        self.exception_handlers.push(args[0].clone());
+        Ok(previous)
+    }
+
+    fn call_restore_exception_handler(
+        &mut self,
+        args: Vec<Value>,
+        span: Span,
+    ) -> CompileResult<Value> {
+        expect_arity("restore_exception_handler", &args, 0, span)?;
+        self.exception_handlers.pop();
+        Ok(Value::Bool(true))
+    }
+
+    fn call_get_exception_handler(&self, args: Vec<Value>, span: Span) -> CompileResult<Value> {
+        expect_arity("get_exception_handler", &args, 0, span)?;
+        Ok(self
+            .exception_handlers
+            .last()
+            .cloned()
+            .unwrap_or(Value::Null))
+    }
+
+    fn validate_exception_handler_callback(
+        &self,
+        callback: &Value,
+        span: Span,
+    ) -> CompileResult<()> {
+        match callback {
+            Value::Null | Value::Closure(_) => Ok(()),
+            Value::String(name) if self.lookup_function(name).is_some() => Ok(()),
+            Value::String(name) => {
+                if let Some((class_name, method_name)) = static_method_callable_string(name) {
+                    let Some(class) = self.classes.lookup_class(class_name) else {
+                        return Err(exception_handler_invalid_callback_error(
+                            format!("class \"{class_name}\" not found"),
+                            span,
+                        ));
+                    };
+                    if self
+                        .resolve_instance_method(class.id(), method_name)
+                        .is_some_and(|(_, _, _, visibility, is_static)| {
+                            visibility == Visibility::Public && is_static
+                        })
+                    {
+                        return Ok(());
+                    }
+                }
+                Err(exception_handler_invalid_callback_error(
+                    format!("function \"{name}\" not found or invalid function name"),
+                    span,
+                ))
+            }
+            Value::Array(array) => {
+                let Some((target, method_name)) = array_callable_parts(array) else {
+                    return Err(exception_handler_invalid_callback_error(
+                        "array callback must have exactly two members",
+                        span,
+                    ));
+                };
+                match target {
+                    Value::Object(object) => {
+                        let Some(receiver_class) = self.classes.get(object.class_id()) else {
+                            return Err(exception_handler_invalid_callback_error(
+                                format!("class \"{}\" not found", object.class_name()),
+                                span,
+                            ));
+                        };
+                        if self
+                            .resolve_instance_method(object.class_id(), method_name)
+                            .is_some_and(|(_, _, _, visibility, is_static)| {
+                                visibility == Visibility::Public && !is_static
+                            })
+                        {
+                            Ok(())
+                        } else {
+                            Err(exception_handler_invalid_callback_error(
+                                format!(
+                                    "method {}::{method_name}() not found or invalid method name",
+                                    receiver_class.name()
+                                ),
+                                span,
+                            ))
+                        }
+                    }
+                    Value::String(class_name) => {
+                        let Some(class) = self.classes.lookup_class(class_name) else {
+                            return Err(exception_handler_invalid_callback_error(
+                                format!("class \"{class_name}\" not found"),
+                                span,
+                            ));
+                        };
+                        if self
+                            .resolve_instance_method(class.id(), method_name)
+                            .is_some_and(|(_, _, _, visibility, is_static)| {
+                                visibility == Visibility::Public && is_static
+                            })
+                        {
+                            Ok(())
+                        } else {
+                            Err(exception_handler_invalid_callback_error(
+                                format!(
+                                    "method {class_name}::{method_name}() not found or invalid method name"
+                                ),
+                                span,
+                            ))
+                        }
+                    }
+                    _ => Err(exception_handler_invalid_callback_error(
+                        "first array member is not a valid class name or object",
+                        span,
+                    )),
+                }
+            }
+            Value::Object(object) => Err(exception_handler_invalid_callback_error(
+                format!("object of class {} is not callable", object.class_name()),
+                span,
+            )),
+            other => Err(exception_handler_invalid_callback_error(
+                format!("{} is not a valid callback", php_type_error_given(other)),
+                span,
+            )),
+        }
     }
 
     fn call_error_reporting(&mut self, args: Vec<Value>, span: Span) -> CompileResult<Value> {
@@ -111960,6 +112187,31 @@ fn static_method_callable_string(name: &str) -> Option<(&str, &str)> {
     Some((class_name, method_name))
 }
 
+fn static_method_callable_value_from_string(name: &str, span: Span) -> CompileResult<PhpArray> {
+    let (class_name, method_name) = static_method_callable_string(name).ok_or_else(|| {
+        runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "callable",
+                "static method callable strings must use Class::method",
+            ),
+        )
+    })?;
+    static_method_array_callable_value(class_name, method_name, span)
+}
+
+fn exception_handler_invalid_callback_error(detail: impl AsRef<str>, span: Span) -> Diagnostic {
+    Diagnostic::new(
+        Phase::Runtime,
+        span.line,
+        span.column,
+        format!(
+            "set_exception_handler(): Argument #1 ($callback) must be a valid callback or null, {}",
+            detail.as_ref()
+        ),
+    )
+}
+
 const DEFINED_INTERNAL_CORE_FUNCTION_NAMES: &[&str] = &[
     "define",
     "defined",
@@ -111972,6 +112224,9 @@ const DEFINED_INTERNAL_CORE_FUNCTION_NAMES: &[&str] = &[
     "func_get_args",
     "call_user_func",
     "call_user_func_array",
+    "set_exception_handler",
+    "restore_exception_handler",
+    "get_exception_handler",
 ];
 
 fn defined_internal_function_names() -> impl Iterator<Item = &'static str> {
@@ -112677,6 +112932,9 @@ fn is_builtin(name: &str) -> bool {
             | "register_shutdown_function"
             | "set_error_handler"
             | "restore_error_handler"
+            | "set_exception_handler"
+            | "restore_exception_handler"
+            | "get_exception_handler"
             | "ob_start"
             | "ob_get_level"
             | "ob_get_contents"

@@ -239,6 +239,93 @@ try {
 }
 
 #[test]
+fn exception_handlers_invoke_restore_reset_and_report_current_handler() {
+    let execution = run_source(
+        r#"<?php
+function first($e) { echo "first:", get_class($e), "\n"; }
+function second($e) { echo "second:", get_class($e), "\n"; }
+
+echo get_exception_handler() === null ? "none\n" : "other\n";
+$previous = set_exception_handler("first");
+echo $previous === null ? "prev-null\n" : "prev-other\n";
+$previous = set_exception_handler("second");
+echo $previous === "first" ? "prev-first\n" : "prev-other\n";
+restore_exception_handler();
+echo get_exception_handler() === "first" ? "restored\n" : "missing\n";
+throw new Exception();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "none\nprev-null\nprev-first\nrestored\nfirst:Exception\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let reset = run_source(
+        r#"<?php
+function first($e) { echo "first"; }
+set_exception_handler("first");
+$previous = set_exception_handler(null);
+echo $previous === "first" ? "cleared\n" : "bad\n";
+throw new Exception();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(reset.exit_code, 255);
+    assert!(reset
+        .stdout
+        .starts_with("cleared\n\nFatal error: Uncaught Exception"));
+}
+
+#[test]
+fn exception_handler_object_array_callback_receives_throwable() {
+    let execution = run_source(
+        r#"<?php
+class Handler {
+    public function handle($e) {
+        echo "object:", get_class($e), "\n";
+    }
+}
+$handler = new Handler();
+set_exception_handler([$handler, "handle"]);
+throw new Exception();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "object:Exception\n");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn set_exception_handler_rejects_invalid_callbacks_with_type_errors() {
+    let execution = run_source(
+        r#"<?php
+try {
+    set_exception_handler("fo");
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    set_exception_handler(["", ""]);
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "set_exception_handler(): Argument #1 ($callback) must be a valid callback or null, function \"fo\" not found or invalid function name\nset_exception_handler(): Argument #1 ($callback) must be a valid callback or null, class \"\" not found\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn emit_ir_rejects_throw_statements_until_native_exceptions_exist() {
     let error = emit_ir_source("<?php\n$exception = null;\nthrow $exception;\n").unwrap_err();
 
