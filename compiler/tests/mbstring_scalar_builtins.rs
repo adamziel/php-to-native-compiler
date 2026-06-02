@@ -69,6 +69,63 @@ try {
 }
 
 #[test]
+fn mb_strcut_uses_byte_windows_without_splitting_utf8_characters() {
+    let execution = run_source(
+        r#"<?php
+$sample = "A日本B";
+foreach ([[0, 1], [1, 2], [1, 3], [2, 2], [2, 3], [4, 2], [4, 3], [-4, 3], [0, null], [99, 1], [-99, 1]] as $case) {
+    $cut = mb_strcut($sample, $case[0], $case[1], "UTF-8");
+    echo base64_encode($cut), ":", strlen($cut), "\n";
+}
+foreach ([-3, -4, -5, -6, -999] as $length) {
+    $cut = mb_strcut("Déjà vu", 1, $length, "UTF-8");
+    echo base64_encode($cut), ":", strlen($cut), "\n";
+}
+echo bin2hex(mb_strcut("ABC", 1, 1, "8bit")), "\n";
+try {
+    mb_strcut("abc", 0, 1, "unknown-encoding");
+} catch (ValueError $e) {
+    echo $e->getMessage(), "\n";
+}
+$call = "mb_strcut";
+echo function_exists($call) ? "fn" : "missing";
+echo is_callable($call) ? ":callable:" : ":missing:";
+echo $call("foobarbaz", 6, null, "UTF-8"), "\n";
+$reflection = new ReflectionFunction("mb_strcut");
+echo $reflection->getName(), ":", $reflection->getNumberOfRequiredParameters(), "/", $reflection->getNumberOfParameters(), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "QQ==:1\n",
+            ":0\n",
+            "5pel:3\n",
+            ":0\n",
+            "5pel:3\n",
+            ":0\n",
+            "5pys:3\n",
+            "5pys:3\n",
+            "QeaXpeacrEI=:8\n",
+            ":0\n",
+            "QQ==:1\n",
+            "w6lqw6A=:5\n",
+            "w6lq:3\n",
+            "w6lq:3\n",
+            "w6k=:2\n",
+            ":0\n",
+            "42\n",
+            "mb_strcut(): Argument #4 ($encoding) must be a valid encoding, \"unknown-encoding\" given\n",
+            "fn:callable:baz\n",
+            "mb_strcut:2/4\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mb_substr_count_counts_non_overlapping_ascii_and_utf8_matches() {
     let execution = run_source(
         r#"<?php
@@ -210,13 +267,14 @@ fn emit_ir_folds_mbstring_function_membership() {
         r#"<?php
 echo function_exists("mb_strlen") ? "1" : "0";
 echo function_exists("mb_substr") ? "1" : "0";
+echo function_exists("mb_strcut") ? "1" : "0";
 echo function_exists("mb_substr_count") ? "1" : "0";
 echo is_callable("mb_stripos") ? "1" : "0";
 "#,
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 4, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 5, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
 }

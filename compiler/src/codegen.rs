@@ -66503,6 +66503,7 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "chunk_split",
     "mb_strlen",
     "mb_substr",
+    "mb_strcut",
     "mb_substr_count",
     "mb_strpos",
     "mb_stripos",

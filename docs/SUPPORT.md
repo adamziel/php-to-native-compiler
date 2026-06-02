@@ -3352,7 +3352,7 @@
   `pack`, `unpack`, `strtolower`, `strtoupper`, `trim`, `ltrim`,
   `rtrim`, `strcmp`, `strcasecmp`, `strncmp`, `strncasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`, `strspn`, `strcspn`, `strpbrk`, `strpos`, `stripos`, `strrpos`, `strripos`, `strstr`, `strchr`, `stristr`, `strtok`, `substr`,
   `str_shuffle`, `wordwrap`, `str_word_count`, `strnatcmp`, `strnatcasecmp`,
-  `mb_strlen`, `mb_substr`, `mb_substr_count`, `mb_strpos`, `mb_stripos`, `mb_strrpos`, `mb_strripos`,
+  `mb_strlen`, `mb_substr`, `mb_strcut`, `mb_substr_count`, `mb_strpos`, `mb_stripos`, `mb_strrpos`, `mb_strripos`,
   `mb_strtolower`, `mb_strtoupper`, `similar_text`,
   `convert_uuencode`, `convert_uudecode`,
   `preg_match`, `preg_last_error`, `preg_quote`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `str_ireplace`, `substr_replace`, `substr_compare`, `substr_count`, `str_getcsv`, `parse_str`, `http_build_query`,
@@ -3969,12 +3969,14 @@
   diagnostics. `convert_uuencode()` and
   `convert_uudecode()` support the bounded uuencode/uudecode byte format used
   by the focused standard-library rows. `mb_strlen()`, `mb_substr()`,
-  `mb_substr_count()`, `mb_strpos()`,
+  `mb_strcut()`, `mb_substr_count()`, `mb_strpos()`,
   `mb_stripos()`, `mb_strrpos()`, `mb_strripos()`, `mb_strtolower()`, and
   `mb_strtoupper()` support the bounded UTF-8 and single-byte scalar cases
   used by the current mbstring focused rows, including UTF-8 character
-  offsets/windows, negative start/length handling in the current substring
-  helper, non-overlapping substring counts, empty-needle `ValueError`s,
+  offsets/windows, byte-window `mb_strcut()` calls that round UTF-8 cut
+  boundaries without splitting scalars, negative start/length handling in the
+  current substring/cut helpers, non-overlapping substring counts,
+  empty-needle `ValueError`s,
   Unicode case mapping, contextual Greek final sigma lowercasing, current
   `ini_set("internal_encoding", ...)` default encoding lookup, and PHP-shaped
   unknown-encoding and out-of-range offset `ValueError`s. Full
@@ -8468,7 +8470,7 @@
   one of the documented callable builtins: `strlen`, `bin2hex`, `hex2bin`,
   `pack`, `unpack`, `strtolower`, `strtoupper`, `str_increment`,
   `str_decrement`, `trim`, `ltrim`, `rtrim`, `strcmp`, `strcasecmp`, `strncmp`, `strncasecmp`,
-  `str_contains`, `str_starts_with`, `str_ends_with`, `strspn`, `strcspn`, `strpbrk`, `strpos`, `stripos`, `strrpos`, `strripos`, `strstr`, `strchr`, `stristr`, `strtok`, `substr`, `str_shuffle`, `wordwrap`, `str_word_count`, `strnatcmp`, `strnatcasecmp`, `mb_strlen`, `mb_substr_count`, `mb_strpos`, `mb_stripos`, `mb_strrpos`, `mb_strripos`, `mb_strtolower`, `mb_strtoupper`, `similar_text`, `metaphone`, `convert_uuencode`, `convert_uudecode`, `substr_replace`, `substr_compare`, `substr_count`, `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `str_getcsv`, `error_reporting`,
+  `str_contains`, `str_starts_with`, `str_ends_with`, `strspn`, `strcspn`, `strpbrk`, `strpos`, `stripos`, `strrpos`, `strripos`, `strstr`, `strchr`, `stristr`, `strtok`, `substr`, `str_shuffle`, `wordwrap`, `str_word_count`, `strnatcmp`, `strnatcasecmp`, `mb_strlen`, `mb_strcut`, `mb_substr_count`, `mb_strpos`, `mb_stripos`, `mb_strrpos`, `mb_strripos`, `mb_strtolower`, `mb_strtoupper`, `similar_text`, `metaphone`, `convert_uuencode`, `convert_uudecode`, `substr_replace`, `substr_compare`, `substr_count`, `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `str_getcsv`, `error_reporting`,
   `printf`, `fprintf`, `sprintf`, `vsprintf`, `vprintf`, `vfprintf`, `call_user_func`, `call_user_func_array`, `implode`, `basename`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`,
   `file_put_contents`, `readfile`, `unlink`, `mkdir`, `rmdir`, `copy`, `rename`, `chdir`, `scandir`, `stat`, `lstat`, `fileperms`, `chmod`, `chown`, `chgrp`,
   `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_params`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `stream_context_set_params`, `fwrite`, `fscanf`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fflush`, `ftruncate`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`, `disk_free_space`, `diskfreespace`, `disk_total_space`, `clearstatcache`, `realpath`, `realpath_cache_get`, `realpath_cache_size`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_executable`, `is_link`, `abs`,
@@ -9156,7 +9158,7 @@
   deterministic registry and quantity-parsing subsets as the builtin section
   above; direct native calls still reject under the function-call boundary,
   while native function-table introspection recognizes the names.
-  `mb_substr`, `mt_rand`, `srand`, `mt_srand`, `getrandmax`,
+  `mb_substr`, `mb_strcut`, `mt_rand`, `srand`, `mt_srand`, `getrandmax`,
   `mt_getrandmax`, `random_int`, `random_bytes`, and `lcg_value` are also
   native function-table names for metadata/introspection. Direct native calls
   remain rejected unless a narrower direct lowering is documented separately.
@@ -11694,6 +11696,12 @@
   tables, invalid sequence policy, array/object/resource operands, exact
   diagnostics beyond empty needles and unknown encodings, references/COW, and
   native lowering beyond function-table introspection
+- `mb_strcut()` outside the current scalar/null string-convertible UTF-8 and
+  single-byte byte-window subset: full encoding conversion tables,
+  UTF-16/UCS/EUC-JP/JIS/stateful cut rules, invalid sequence and substitute
+  character policy, array/object/resource operands, exact diagnostics beyond
+  unknown encodings, references/COW, and native lowering beyond function-table
+  introspection
 - `metaphone()` outside the current scalar/null string-convertible traditional
   byte-oriented subset with optional non-negative integer-compatible
   `max_phonemes`: locale or Unicode alphabetic rules, object/resource

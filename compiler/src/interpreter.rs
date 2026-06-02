@@ -85297,6 +85297,7 @@ impl Interpreter {
             "chunk_split" => call_chunk_split(&args, span),
             "mb_strlen" => call_mb_strlen(&args, self.mb_default_encoding(), span),
             "mb_substr" => call_mb_substr(&args, self.mb_default_encoding(), span),
+            "mb_strcut" => call_mb_strcut(&args, self.mb_default_encoding(), span),
             "mb_substr_count" => {
                 call_mb_substr_count(&args, self.mb_default_encoding(), span)
             }
@@ -101508,6 +101509,15 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_optional_null_param("encoding", "?string"),
             ],
         ),
+        "mb_strcut" => (
+            "string",
+            vec![
+                reflection_internal_param("string", "string"),
+                reflection_internal_param("start", "int"),
+                reflection_internal_optional_null_param("length", "?int"),
+                reflection_internal_optional_null_param("encoding", "?string"),
+            ],
+        ),
         "mb_substr_count" => (
             "int",
             vec![
@@ -105837,6 +105847,11 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
         {
             Some(format!("{function}: {message}"))
         }
+        ("mb_strcut()", message)
+            if message.starts_with("Argument #4 ($encoding) must be a valid encoding, ") =>
+        {
+            Some(format!("{function}: {message}"))
+        }
         (
             "mb_substr_count()",
             "Argument #2 ($needle) must not be empty",
@@ -106463,6 +106478,7 @@ fn is_builtin(name: &str) -> bool {
             | "chunk_split"
             | "mb_strlen"
             | "mb_substr"
+            | "mb_strcut"
             | "mb_substr_count"
             | "mb_strpos"
             | "mb_stripos"
@@ -121080,6 +121096,47 @@ fn call_mb_substr(
     }
 }
 
+fn call_mb_strcut(
+    args: &[Value],
+    default_encoding: MbScalarEncoding,
+    span: Span,
+) -> CompileResult<Value> {
+    if !(2..=4).contains(&args.len()) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "mb_strcut()",
+                ArityExpectation::Between { min: 2, max: 4 },
+                args.len(),
+            ),
+        ));
+    }
+
+    let value = string_compare_argument_bytes("mb_strcut()", "string", &args[0], span)?;
+    let start = php_internal_int_argument("mb_strcut()", 2, "start", &args[1], span)?;
+    let length = match args.get(2) {
+        Some(Value::Null) | None => None,
+        Some(value) => Some(php_internal_int_argument(
+            "mb_strcut()",
+            3,
+            "length",
+            value,
+            span,
+        )?),
+    };
+    let encoding = mb_scalar_encoding("mb_strcut()", 4, args.get(3), default_encoding, span)?;
+
+    match encoding {
+        MbScalarEncoding::Utf8 => {
+            let input = mb_utf8_lossy(value);
+            Ok(Value::String(mb_utf8_strcut(&input, start, length)))
+        }
+        MbScalarEncoding::SingleByte => Ok(interpreter_value_from_php_string_bytes(
+            mb_byte_substr(&value, start, length),
+        )),
+    }
+}
+
 fn call_mb_substr_count(
     args: &[Value],
     default_encoding: MbScalarEncoding,
@@ -121237,6 +121294,40 @@ fn mb_utf8_substr(value: &str, start: i64, length: Option<i64>) -> String {
     let chars = value.chars().collect::<Vec<_>>();
     let (start, end) = mb_window_bounds(chars.len(), start, length);
     chars[start..end].iter().collect()
+}
+
+fn mb_utf8_floor_boundary(value: &str, mut index: usize) -> usize {
+    index = index.min(value.len());
+    while index > 0 && !value.is_char_boundary(index) {
+        index -= 1;
+    }
+    index
+}
+
+fn mb_utf8_strcut(value: &str, start: i64, slice_length: Option<i64>) -> String {
+    let byte_length = value.len() as i64;
+    let requested_start = if start >= 0 {
+        start.min(byte_length)
+    } else {
+        (byte_length + start).max(0)
+    };
+    let start = mb_utf8_floor_boundary(value, requested_start as usize);
+    let end = match slice_length {
+        Some(slice_length) if slice_length >= 0 => {
+            (start as i64).saturating_add(slice_length).min(byte_length)
+        }
+        Some(slice_length) => (byte_length + slice_length).max(0).min(byte_length),
+        None => byte_length,
+    };
+    if end <= start as i64 {
+        return String::new();
+    }
+    let end = mb_utf8_floor_boundary(value, end as usize);
+    if end <= start {
+        String::new()
+    } else {
+        value[start..end].to_string()
+    }
 }
 
 fn mb_single_byte_strpos(

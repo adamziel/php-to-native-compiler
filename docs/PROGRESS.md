@@ -4,6 +4,25 @@
 
 Implemented:
 
+- Added a bounded `mb_strcut()` byte-window lane for the selected mbstring
+  surfaces. The interpreter now exposes `mb_strcut()` through direct calls,
+  string-valued dynamic calls, function/callability introspection, and
+  `ReflectionFunction` metadata, while native direct execution remains behind
+  the existing function-call lowering boundary. UTF-8 cuts use byte offsets
+  and byte lengths but round the selected window to scalar boundaries so output
+  does not split a character; the scalar single-byte encoding path preserves
+  byte slicing and binary output. Focused proof covers the Rust
+  `mb_strcut_uses_byte_windows_without_splitting_utf8_characters` regression,
+  the full `mbstring_scalar_builtins` test file, direct UTF-8/binary,
+  unknown-encoding, metadata, and native-boundary probes, and selected PHPT
+  rows `ext/mbstring/tests/bug49354.phpt` and
+  `ext/mbstring/tests/mb_strcut_negative_length.phpt`. Unsupported edges
+  remain full encoding conversion tables, UTF-16/UCS/EUC-JP/JIS/stateful cut
+  rules, invalid-sequence and substitute-character policy beyond the current
+  lossy UTF-8 boundary, broad array/object/resource operand coercions, exact
+  diagnostics beyond the covered unknown-encoding path, references/COW, and
+  native lowering.
+
 - Added a bounded literal `call_user_func*()` scope-frame builtin lane for
   `func_num_args()`, `func_get_args()`, and `func_get_arg()`. Direct source
   calls such as `call_user_func("func_get_args")` and integer-keyed
