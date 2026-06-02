@@ -89717,6 +89717,24 @@ impl Interpreter {
                 let function =
                     self.method_function(class_id, &class_name, &resolved_method_name, span)?;
                 let function = function.as_ref();
+                if context == "array_reduce()" {
+                    let this_object = if is_static {
+                        None
+                    } else {
+                        Some(object.clone())
+                    };
+                    let warning_function = format!("{class_name}::{resolved_method_name}");
+                    return self.call_array_reduce_user_function_with_values(
+                        function,
+                        args,
+                        this_object,
+                        Some(class_id),
+                        Some(object.class_id()),
+                        Vec::new(),
+                        Some(&warning_function),
+                        span,
+                    );
+                }
                 ensure_user_function_arity_with_extra_policy(
                     function,
                     args.len(),
@@ -89820,6 +89838,20 @@ impl Interpreter {
                     span,
                 )?;
                 let function = function.as_ref();
+                if context == "array_reduce()" {
+                    let warning_function =
+                        format!("{declaring_class_name}::{resolved_method_name}");
+                    return self.call_array_reduce_user_function_with_values(
+                        function,
+                        args,
+                        None,
+                        Some(declaring_class_id),
+                        Some(class_id),
+                        Vec::new(),
+                        Some(&warning_function),
+                        span,
+                    );
+                }
                 ensure_user_function_arity_with_extra_policy(
                     function,
                     args.len(),
@@ -90891,7 +90923,7 @@ impl Interpreter {
                         &callback,
                         args,
                         span,
-                        false,
+                        true,
                         "array_reduce()",
                     );
                 }
@@ -90905,17 +90937,17 @@ impl Interpreter {
                         RuntimeError::undefined_function(callable_name(callback_name)),
                     )
                 })?;
-                self.call_callable_with_values(callable, args, span)
+                self.call_array_reduce_resolved_callable_with_values(callable, args, span)
             }
             Value::Array(callback) => self.call_array_callable_with_values_with_context(
                 callback,
                 args,
                 span,
-                false,
+                true,
                 "array_reduce()",
             ),
             Value::Closure(closure) => {
-                self.invoke_closure_value(closure.clone(), args, span, "array_reduce()")
+                self.call_array_reduce_closure_with_values(closure.clone(), args, span)
             }
             other => Err(runtime_error(
                 span,
@@ -90928,6 +90960,124 @@ impl Interpreter {
                 ),
             )),
         }
+    }
+
+    fn call_array_reduce_resolved_callable_with_values(
+        &mut self,
+        callable: Callable,
+        args: Vec<Value>,
+        span: Span,
+    ) -> CompileResult<Value> {
+        match callable {
+            Callable::Builtin(key) => self.call_builtin(&key, args, span),
+            Callable::User(function) => self.call_array_reduce_user_function_with_values(
+                function.as_ref(),
+                args,
+                None,
+                None,
+                None,
+                Vec::new(),
+                None,
+                span,
+            ),
+        }
+    }
+
+    fn call_array_reduce_closure_with_values(
+        &mut self,
+        closure: PhpClosure,
+        args: Vec<Value>,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let function = self
+            .closure_functions
+            .get(&closure.id())
+            .cloned()
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "array_reduce()",
+                        "closure body metadata is missing in the current subset",
+                    ),
+                )
+            })?;
+        let prebound_locals = self.closure_prebound_locals(&closure);
+        let (this_object, class_context, called_class_context) =
+            self.closure_call_context(&closure);
+        self.call_array_reduce_user_function_with_values(
+            function.as_ref(),
+            args,
+            this_object,
+            class_context,
+            called_class_context,
+            prebound_locals,
+            Some("{closure}"),
+            span,
+        )
+    }
+
+    fn call_array_reduce_user_function_with_values(
+        &mut self,
+        function: &FunctionDecl,
+        args: Vec<Value>,
+        this_object: Option<PhpObject>,
+        class_context: Option<ClassId>,
+        called_class_context: Option<ClassId>,
+        prebound_locals: Vec<PreboundLocal>,
+        warning_function: Option<&str>,
+        span: Span,
+    ) -> CompileResult<Value> {
+        ensure_user_function_arity_with_extra_policy(function, args.len(), span, true)
+            .map_err(array_reduce_callback_diagnostic)?;
+        ensure_supported_function_metadata(function, span)?;
+        self.emit_value_callback_reference_parameter_warnings(
+            function,
+            args.len(),
+            warning_function,
+            span,
+        )?;
+        self.ensure_user_function_call_depth(function, span)?;
+        let frame = CallFrameArgumentBindings {
+            values: args,
+            argument_keys: Vec::new(),
+            reference_bindings: Vec::new(),
+            array_copy_source_bindings: Vec::new(),
+            by_value_array_copy_bindings: Vec::new(),
+        };
+        self.call_user_function_with_call_frame(
+            function,
+            frame,
+            this_object,
+            class_context,
+            called_class_context,
+            None,
+            prebound_locals,
+        )
+    }
+
+    fn emit_value_callback_reference_parameter_warnings(
+        &mut self,
+        function: &FunctionDecl,
+        actual: usize,
+        warning_function: Option<&str>,
+        span: Span,
+    ) -> CompileResult<()> {
+        let function_name =
+            warning_function.unwrap_or_else(|| function.name.trim_start_matches('\\'));
+        for (index, param) in function.params.iter().take(actual).enumerate() {
+            if !param.by_reference {
+                continue;
+            }
+            self.emit_builtin_callback_reference_value_warning(
+                function_name,
+                index,
+                &param.name,
+                span,
+            )?;
+        }
+
+        Ok(())
     }
 
     fn call_array_filter(&mut self, args: Vec<Value>, span: Span) -> CompileResult<Value> {

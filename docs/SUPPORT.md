@@ -7371,11 +7371,14 @@
   calls.
   `array_reduce($array, $callback)` and `array_reduce($array, $callback,
   $initial)` accept arrays and callbacks that evaluate to string function names
-  resolving to current user functions or callable builtins, invoke the callback
-  once per value in insertion order with the accumulator and current value,
-  start the accumulator at `null` when no initial value is supplied, return the
+  resolving to current user functions or callable builtins, closures, or
+  supported public array-callable user methods. They invoke the callback once
+  per value in insertion order with the accumulator and current value, start
+  the accumulator at `null` when no initial value is supplied, return the
   supplied initial value for empty arrays when present, and are available
-  through string-valued dynamic calls to `array_reduce`.
+  through string-valued dynamic calls to `array_reduce`. User callbacks whose
+  reached accumulator or value parameters are declared by reference emit
+  PHP-shaped value-given warnings and then receive the helper-supplied values.
   `array_filter($array)` without a callback, `array_filter($array, null)`,
   and `array_filter($array, null, $mode)` with integer mode flags `0`, `1`,
   or `2`, finite integral float mode flags, integral numeric string mode flags
@@ -10237,15 +10240,19 @@
   `array_reduce($array, $callback)` and `array_reduce($array, $callback,
   $initial)` accept arrays only and callback expressions that evaluate to
   string function names resolving to current user functions or callable
-  builtins. They invoke the callback with `($carry, $value)` for each source
-  value in insertion order, return the final callback result, start with a
-  `null` accumulator when no initial value is supplied, return `null` for empty
-  arrays without an initial value, and return the supplied initial value for
-  empty arrays when present. `array_reduce` is available when called through a
-  string-valued dynamic function name. Non-array operands, non-string callback
-  values, and unresolved callback names fail with stable diagnostics.
-  Array/object callables, closures, first-class callables, method calls,
-  references, copy-on-write containers, exact native `TypeError` objects,
+  builtins, closures, or supported public array-callable user methods. They
+  invoke the callback with `($carry, $value)` for each source value in
+  insertion order, return the final callback result, start with a `null`
+  accumulator when no initial value is supplied, return `null` for empty arrays
+  without an initial value, and return the supplied initial value for empty
+  arrays when present. User callbacks whose reached accumulator or value
+  parameters are declared by reference emit PHP-shaped value-given warnings and
+  then receive the helper-supplied values. `array_reduce` is available when
+  called through a string-valued dynamic function name. Non-array operands,
+  unsupported callback values, and unresolved callback names fail with stable
+  diagnostics. First-class callables, unsupported dynamic callable shapes, true
+  callback-parameter aliasing back into helper-supplied values, broader
+  references/copy-on-write containers, exact native `TypeError` objects,
   object handle identity preservation, resource values, and native lowering
   are not implemented.
   `array_filter($array)` without a callback, `array_filter($array, null)`,
@@ -11448,10 +11455,10 @@
 - `array_product` PHP warning recovery for non-numeric strings and unsupported
   value types, object/resource values, reference/copy-on-write behavior, exact
   native `TypeError` objects, and native lowering
-- `array_reduce` array/object callables, closures, first-class callables,
-  method calls, reference/copy-on-write behavior, object handle
-  identity preservation, resource values, exact native `TypeError` objects, and
-  native lowering
+- `array_reduce` first-class callables, unsupported dynamic callable shapes,
+  true callback-parameter aliasing back into helper-supplied values,
+  reference/copy-on-write behavior, object handle identity preservation,
+  resource values, exact native `TypeError` objects, and native lowering
 - `array_filter` callbacks outside `null` and string-valued
   user-function/callable-builtin names, integer mode flags outside `0`, `1`,
   and `2`, non-finite or non-integral float mode values, string mode coercions

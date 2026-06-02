@@ -4,6 +4,24 @@
 
 Implemented:
 
+- Added a bounded `array_reduce()` by-reference callback-parameter warning
+  lane. String user-function callbacks, closure callbacks, and supported
+  public array-callable user methods whose reached parameters are declared by
+  reference now emit PHP-shaped `must be passed by reference, value given`
+  warnings for the helper-supplied accumulator/value arguments, then execute
+  with those value arguments and preserve the existing extra-callback-argument
+  behavior. Focused proof covers the Rust
+  `array_reduce_user_callbacks_with_reference_params_warn_and_receive_values`
+  regression plus the direct `phpc run` fixture
+  `tests/fixtures/milestone2323/array_reduce_reference_params.php`, and
+  selected public PHPT rows
+  `ext/standard/tests/array/array_reduce_variation1.phpt` and
+  `ext/standard/tests/array/array_reduce_variation3.phpt`.
+  Unsupported edges remain true aliasing of callback parameters back into
+  helper-supplied accumulator/value temporaries, first-class callable forms,
+  unsupported dynamic callable shapes, broad reference/COW graph parity, exact
+  diagnostics for every callback failure, and native lowering.
+
 - Added a bounded extension metadata string-argument diagnostics lane.
   `phpc run` now routes `extension_loaded($extension)` and
   `get_extension_funcs($extension)` through a shared PHP-internal string
