@@ -6188,7 +6188,12 @@
   DateTime object state. `add()` / `sub()` apply bounded integer
   `DateInterval` component metadata plus `invert` through the local timestamp
   model and reject nonzero fractional interval mutation or arithmetic overflow
-  outside the bounded timestamp subset. `modify()` covers the current bounded
+  outside the bounded timestamp subset. For named `America/New_York` and
+  `US/Eastern` zones from 2007 onward, the bounded model uses time-of-day aware
+  spring/fall DST transition boundaries for construction, formatting, and
+  DateInterval mutation; date components are applied in local calendar time
+  before hour/minute/second components are applied as elapsed seconds.
+  `modify()` covers the current bounded
   relative weekday/unit forms plus Unix timestamp modifiers such as
   `@1234567890`;
   timestamp modifiers update the timestamp and switch the object timezone
@@ -6285,7 +6290,8 @@
   constructor diagnostics beyond the covered arity slice and scalar
   coercion/deprecation parity, broad `DateTimeInterface` reflection/runtime
   parity beyond existence/constants/core implementation metadata, all
-  historical transition rules, full all-row timezone abbreviation inventory
+  historical transition rules outside the bounded post-2007 US/Eastern slice,
+  full all-row timezone abbreviation inventory
   beyond `acst` and first-row metadata, location metadata beyond the bounded
   represented rows, timezone abbreviation and fixed-offset state identity
   beyond the covered named-zone rows, DateTime

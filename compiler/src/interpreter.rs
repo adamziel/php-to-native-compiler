@@ -147502,12 +147502,32 @@ impl BoundedTimezone {
         if let Some(offset) = self.fixed_offset {
             return offset;
         }
+        if let Some(offset) = self.us_eastern_offset_at_timestamp(timestamp) {
+            return offset;
+        }
         let utc = bounded_datetime_parts(timestamp, 0);
         self.offset_for_local_date(utc.year, utc.month, utc.day)
     }
 
     fn offset_for_local_date(&self, year: i64, month: i64, day: i64) -> i64 {
+        self.offset_for_local_parts(year, month, day, 0, 0, 0)
+    }
+
+    fn offset_for_local_parts(
+        &self,
+        year: i64,
+        month: i64,
+        day: i64,
+        hour: i64,
+        minute: i64,
+        second: i64,
+    ) -> i64 {
         if let Some(offset) = self.fixed_offset {
+            return offset;
+        }
+        if let Some(offset) =
+            self.us_eastern_offset_for_local_parts(year, month, day, hour, minute, second)
+        {
             return offset;
         }
         match self.name.as_str() {
@@ -147606,6 +147626,54 @@ impl BoundedTimezone {
                 0
             }
         }
+    }
+
+    fn us_eastern_offset_at_timestamp(&self, timestamp: i64) -> Option<i64> {
+        if !self.is_us_eastern_named_zone() {
+            return None;
+        }
+        let utc = bounded_datetime_parts(timestamp, 0);
+        if utc.year < 2007 {
+            return None;
+        }
+        let (spring_utc, fall_utc) = us_eastern_transition_utc_timestamps(utc.year);
+        Some(if timestamp >= spring_utc && timestamp < fall_utc {
+            -14_400
+        } else {
+            -18_000
+        })
+    }
+
+    fn us_eastern_offset_for_local_parts(
+        &self,
+        year: i64,
+        month: i64,
+        day: i64,
+        hour: i64,
+        minute: i64,
+        second: i64,
+    ) -> Option<i64> {
+        if !self.is_us_eastern_named_zone() || year < 2007 {
+            return None;
+        }
+        let (spring_day, fall_day) = us_eastern_transition_days(year);
+        let local_seconds = hour * 3_600 + minute * 60 + second;
+        Some(match month {
+            1 | 2 => -18_000,
+            3 if day < spring_day => -18_000,
+            3 if day == spring_day && local_seconds < 3_600 * 3 => {
+                // Nonexistent 02:xx local times normalize through the standard-time offset.
+                -18_000
+            }
+            3..=10 => -14_400,
+            11 if day < fall_day => -14_400,
+            11 if day == fall_day && local_seconds < 3_600 * 2 => -14_400,
+            _ => -18_000,
+        })
+    }
+
+    fn is_us_eastern_named_zone(&self) -> bool {
+        matches!(self.name.as_str(), "US/Eastern" | "America/New_York")
     }
 
     fn standard_offset(&self) -> i64 {
@@ -149266,8 +149334,9 @@ fn timestamp_for_bounded_parts(
     {
         return None;
     }
-    let offset =
-        explicit_offset.unwrap_or_else(|| default_timezone.offset_for_local_date(year, month, day));
+    let offset = explicit_offset.unwrap_or_else(|| {
+        default_timezone.offset_for_local_parts(year, month, day, hour, minute, second)
+    });
     Some(timestamp_from_local_parts(
         year, month, day, hour, minute, second, offset,
     ))
@@ -149332,6 +149401,26 @@ fn bounded_month_is_in_dst_window(
 ) -> bool {
     (month > start_month || (month == start_month && day >= start_day))
         && (month < end_month || (month == end_month && day < end_day))
+}
+
+fn us_eastern_transition_days(year: i64) -> (i64, i64) {
+    (
+        nth_weekday_day_of_month(year, 3, 0, 2),
+        nth_weekday_day_of_month(year, 11, 0, 1),
+    )
+}
+
+fn us_eastern_transition_utc_timestamps(year: i64) -> (i64, i64) {
+    let (spring_day, fall_day) = us_eastern_transition_days(year);
+    (
+        timestamp_from_local_parts(year, 3, spring_day, 2, 0, 0, -18_000),
+        timestamp_from_local_parts(year, 11, fall_day, 2, 0, 0, -14_400),
+    )
+}
+
+fn nth_weekday_day_of_month(year: i64, month: i64, weekday: i64, nth: i64) -> i64 {
+    let first_weekday = positive_mod(days_from_civil(year, month, 1) + 4, 7);
+    1 + positive_mod(weekday - first_weekday, 7) + (nth - 1) * 7
 }
 
 fn optional_date_int_arg(
@@ -149423,7 +149512,17 @@ fn timestamp_from_overflowing_local_parts(
     let local_days = base_days.checked_add(day_delta)?;
     let local_day_seconds = local_days.checked_mul(86_400)?;
     let (offset_year, offset_month, offset_day) = civil_from_days(local_days);
-    let offset = timezone.offset_for_local_date(offset_year, offset_month, offset_day);
+    let offset_hour = seconds_of_day / 3_600;
+    let offset_minute = (seconds_of_day % 3_600) / 60;
+    let offset_second = seconds_of_day % 60;
+    let offset = timezone.offset_for_local_parts(
+        offset_year,
+        offset_month,
+        offset_day,
+        offset_hour,
+        offset_minute,
+        offset_second,
+    );
     local_day_seconds
         .checked_add(seconds_of_day)?
         .checked_sub(offset)
@@ -149987,20 +150086,34 @@ fn apply_bounded_dateinterval_to_datetime(
     let offset = state.timezone.offset_at_timestamp(state.timestamp);
     let parts = bounded_datetime_parts(state.timestamp, offset);
 
-    let year = parts.year.checked_add(interval.years.checked_mul(sign)?)?;
-    let month = parts
-        .month
-        .checked_add(interval.months.checked_mul(sign)?)?;
-    let day = parts.day.checked_add(interval.days.checked_mul(sign)?)?;
-    let hour = parts.hour.checked_add(interval.hours.checked_mul(sign)?)?;
-    let minute = parts
-        .minute
-        .checked_add(interval.minutes.checked_mul(sign)?)?;
-    let second = parts
-        .second
-        .checked_add(interval.seconds.checked_mul(sign)?)?;
+    let has_calendar_delta = interval.years != 0 || interval.months != 0 || interval.days != 0;
+    let mut timestamp = if has_calendar_delta {
+        let year = parts.year.checked_add(interval.years.checked_mul(sign)?)?;
+        let month = parts
+            .month
+            .checked_add(interval.months.checked_mul(sign)?)?;
+        let day = parts.day.checked_add(interval.days.checked_mul(sign)?)?;
+        timestamp_from_overflowing_local_parts(
+            year,
+            month,
+            day,
+            parts.hour,
+            parts.minute,
+            parts.second,
+            &state.timezone,
+        )?
+    } else {
+        state.timestamp
+    };
 
-    timestamp_from_overflowing_local_parts(year, month, day, hour, minute, second, &state.timezone)
+    let time_delta = interval
+        .hours
+        .checked_mul(3_600)?
+        .checked_add(interval.minutes.checked_mul(60)?)?
+        .checked_add(interval.seconds)?
+        .checked_mul(sign)?;
+    timestamp = timestamp.checked_add(time_delta)?;
+    Some(timestamp)
 }
 
 fn bounded_datetime_diff_interval(

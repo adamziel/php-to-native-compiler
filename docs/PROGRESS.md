@@ -15,6 +15,31 @@ Implemented:
   comparison was `6086` current passes vs. `5937` baseline passes with `0`
   regressions, and the invalid-proof-marker summary reported `0` hits.
 
+- Added a bounded named US/Eastern DST transition mutation lane on the
+  interpreter path. `DateTime` / `DateTimeImmutable` construction and
+  formatting now use time-of-day aware post-2007 spring/fall transition
+  boundaries for named `America/New_York` / `US/Eastern` zones, while explicit
+  `EST` / `EDT` abbreviation strings remain fixed-offset zones. `add()` /
+  `sub()` and procedural `date_add()` / `date_sub()` apply `DateInterval`
+  year/month/day components through local calendar normalization first, then
+  hour/minute/second components as elapsed seconds, matching the selected DST
+  crossing rows. Focused proof covers the Rust
+  `datetime_interval_add_sub_use_named_us_dst_transition_boundaries`
+  regression and selected public PHPT rows
+  `ext/date/tests/DateTime_add-spring-type3-type2.phpt`,
+  `ext/date/tests/DateTime_add-spring-type3-type3.phpt`,
+  `ext/date/tests/DateTime_add-fall-type3-type2.phpt`,
+  `ext/date/tests/DateTime_add-fall-type3-type3.phpt`,
+  `ext/date/tests/DateTime_sub-spring-type2-type3.phpt`,
+  `ext/date/tests/DateTime_sub-spring-type3-type3.phpt`,
+  `ext/date/tests/DateTime_sub-fall-type2-type3.phpt`,
+  `ext/date/tests/DateTime_sub-fall-type3-type2.phpt`, and
+  `ext/date/tests/DateTime_sub-fall-type3-type3.phpt`. Unsupported edges
+  remain full timezone database/history outside the bounded post-2007
+  US/Eastern slice, exact ambiguous/nonexistent parsing beyond the represented
+  rows, full timelib interval arithmetic, DatePeriod, references/COW, and
+  native lowering.
+
 - Added a bounded non-HMAC hash streaming and file hashing lane. `hash_init()`
   now materializes interpreter `HashContext` objects for the supported
   MD2/MD4/MD5/SHA-1/SHA-2/SHA-3/Whirlpool/checksum algorithm set;

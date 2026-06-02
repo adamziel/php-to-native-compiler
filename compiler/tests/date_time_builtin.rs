@@ -1075,6 +1075,54 @@ echo "\n";
 }
 
 #[test]
+fn datetime_interval_add_sub_use_named_us_dst_transition_boundaries() {
+    let execution = run_source(
+        r#"<?php
+date_default_timezone_set("America/New_York");
+
+$spring = new DateTime("2010-03-13 18:38:28");
+$spring->add(new DateInterval("PT7H38M27S"));
+echo $spring->format("Y-m-d H:i:s T e"), "\n";
+
+$springBack = new DateTime("2010-03-15 19:59:59");
+$springBack->sub(new DateInterval("P1DT18H49M39S"));
+echo $springBack->format("Y-m-d H:i:s T e"), "\n";
+
+$fall = new DateTime("2010-11-06 18:38:28");
+$fall->add(new DateInterval("PT7H36M16S"));
+echo $fall->format("Y-m-d H:i:s T e"), "\n";
+
+$fallBack = new DateTime("2010-11-07 03:16:55");
+$fallBack->sub(new DateInterval("PT4H6M35S"));
+echo $fallBack->format("Y-m-d H:i:s T e"), "\n";
+
+$calendar = new DateTime("2010-11-06 18:38:28");
+$calendar->add(new DateInterval("P2DT1H21M31S"));
+echo $calendar->format("Y-m-d H:i:s T e"), "\n";
+
+$fixed = new DateTime("2010-03-14 01:59:59 EST");
+$fixed->add(new DateInterval("PT1S"));
+echo $fixed->format("Y-m-d H:i:s T e"), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "2010-03-14 03:16:55 EDT America/New_York\n",
+            "2010-03-14 00:10:20 EST America/New_York\n",
+            "2010-11-07 01:14:44 EST America/New_York\n",
+            "2010-11-07 00:10:20 EDT America/New_York\n",
+            "2010-11-08 19:59:59 EST America/New_York\n",
+            "2010-03-14 02:00:00 EST EST\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn datetime_mutable_date_time_setters_normalize_bounded_parts() {
     let execution = run_source(
         r#"<?php
