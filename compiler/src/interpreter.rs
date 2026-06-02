@@ -56186,34 +56186,9 @@ impl Interpreter {
         autoload: bool,
         span: Span,
     ) -> CompileResult<Value> {
-        let class_id = match object_or_class {
-            Value::Object(object) => Some(object.class_id()),
-            Value::String(class_name) => {
-                if autoload {
-                    self.class_like_exists_with_autoload(
-                        class_name,
-                        AutoloadKind::Class,
-                        true,
-                        span,
-                    )?;
-                }
-                self.classes.lookup_class_id(class_name)
-            }
-            other => {
-                return Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "class_implements()",
-                        format!(
-                            "object_or_class argument must be object or string, got {}",
-                            other.type_name()
-                        ),
-                    ),
-                ));
-            }
-        };
-
-        let Some(class_id) = class_id else {
+        let Some(class_id) =
+            self.class_list_helper_class_id("class_implements()", object_or_class, autoload, span)?
+        else {
             return Ok(Value::Bool(false));
         };
 
@@ -56233,34 +56208,9 @@ impl Interpreter {
         autoload: bool,
         span: Span,
     ) -> CompileResult<Value> {
-        let class_id = match object_or_class {
-            Value::Object(object) => Some(object.class_id()),
-            Value::String(class_name) => {
-                if autoload {
-                    self.class_like_exists_with_autoload(
-                        class_name,
-                        AutoloadKind::Class,
-                        true,
-                        span,
-                    )?;
-                }
-                self.classes.lookup_class_id(class_name)
-            }
-            other => {
-                return Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "class_uses()",
-                        format!(
-                            "object_or_class argument must be object or string, got {}",
-                            other.type_name()
-                        ),
-                    ),
-                ));
-            }
-        };
-
-        let Some(class_id) = class_id else {
+        let Some(class_id) =
+            self.class_list_helper_class_id("class_uses()", object_or_class, autoload, span)?
+        else {
             return Ok(Value::Bool(false));
         };
 
@@ -56284,34 +56234,9 @@ impl Interpreter {
         autoload: bool,
         span: Span,
     ) -> CompileResult<Value> {
-        let class_id = match object_or_class {
-            Value::Object(object) => Some(object.class_id()),
-            Value::String(class_name) => {
-                if autoload {
-                    self.class_like_exists_with_autoload(
-                        class_name,
-                        AutoloadKind::Class,
-                        true,
-                        span,
-                    )?;
-                }
-                self.classes.lookup_class_id(class_name)
-            }
-            other => {
-                return Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "class_parents()",
-                        format!(
-                            "object_or_class argument must be object or string, got {}",
-                            other.type_name()
-                        ),
-                    ),
-                ));
-            }
-        };
-
-        let Some(class_id) = class_id else {
+        let Some(class_id) =
+            self.class_list_helper_class_id("class_parents()", object_or_class, autoload, span)?
+        else {
             return Ok(Value::Bool(false));
         };
 
@@ -56323,6 +56248,49 @@ impl Interpreter {
             );
         }
         Ok(Value::Array(parents))
+    }
+
+    fn class_list_helper_class_id(
+        &mut self,
+        function_name: &'static str,
+        object_or_class: &Value,
+        autoload: bool,
+        span: Span,
+    ) -> CompileResult<Option<ClassId>> {
+        match object_or_class {
+            Value::Object(object) => Ok(Some(object.class_id())),
+            Value::String(class_name) => {
+                if self.classes.lookup_class_id(class_name).is_none()
+                    && autoload
+                    && !class_name.is_empty()
+                {
+                    self.run_autoload_callbacks(class_name, AutoloadKind::Class, span)?;
+                }
+                let class_id = self.classes.lookup_class_id(class_name);
+                if class_id.is_none() {
+                    let status = if autoload {
+                        "does not exist and could not be loaded"
+                    } else {
+                        "does not exist"
+                    };
+                    self.emit_display_warning(
+                        format!("{function_name}: Class {class_name} {status}"),
+                        span,
+                    )?;
+                }
+                Ok(class_id)
+            }
+            other => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function_name,
+                    format!(
+                        "Argument #1 ($object_or_class) must be of type object|string, {} given",
+                        php_type_error_given(other)
+                    ),
+                ),
+            )),
+        }
     }
 
     fn class_parent_names(&self, class_id: ClassId) -> Vec<String> {
@@ -56371,6 +56339,9 @@ impl Interpreter {
                     &mut seen,
                 );
             }
+        }
+        if self.class_has_public_instance_to_string(class_id) {
+            self.push_class_implements_interface_name("Stringable", false, &mut names, &mut seen);
         }
         names
     }

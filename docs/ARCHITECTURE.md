@@ -3963,20 +3963,28 @@ recorded, otherwise false.
 `class_implements($object_or_class[, $autoload])` is a bounded
 reflection-style metadata builtin over the current class/interface table. It
 accepts object values or string class names, optionally invokes the existing
-class autoload path for string misses, and returns an associative
-interface-name array. The collection follows system PHP for the covered
-single-parent/user-interface cases, including parent-class interfaces before
-child-class interfaces.
+class autoload path for non-empty string misses, emits PHP-shaped warnings and
+returns `false` for unresolved string class names, and returns an associative
+interface-name array for resolved classes. The collection follows system PHP
+for the covered single-parent/user-interface cases, including parent-class
+interfaces before child-class interfaces, and it appends the implicit
+`Stringable` interface for classes with a resolved public non-static
+`__toString()`. Non-object, non-string first operands use the same catchable
+PHP-shaped `TypeError` boundary as the matching SPL helper family.
 `class_uses($object_or_class[, $autoload])` is the matching bounded
 class/trait metadata builtin. It accepts object values or string class names,
-optionally invokes the existing class autoload path for string misses, and
-returns an associative array of the resolved class's direct trait names. It
-does not recurse into parent classes or synthesize broader Reflection metadata.
+optionally invokes the existing class autoload path for non-empty string
+misses, emits PHP-shaped warnings and returns `false` for unresolved string
+class names, and returns an associative array of the resolved class's direct
+trait names. It does not recurse into parent classes or synthesize broader
+Reflection metadata.
 `class_parents($object_or_class[, $autoload])` walks the same class metadata
 chain from immediate parent to root and returns a PHP-shaped associative array
-of parent class names. This keeps `class_uses()` non-recursive while enabling
-covered userland recursive trait helpers that explicitly combine parent names
-with direct trait metadata.
+of parent class names. It shares the same unresolved string warning/`false`
+recovery and first-operand `TypeError` boundary as `class_implements()` and
+`class_uses()`. This keeps `class_uses()` non-recursive while enabling covered
+userland recursive trait helpers that explicitly combine parent names with
+direct trait metadata.
 `ReflectionClass` is a bounded runtime metadata object for declared
 class-like values. `new ReflectionClass($object_or_class)` accepts object
 values and string names for the current declared class, interface, and trait

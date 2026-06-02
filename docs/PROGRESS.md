@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Added a bounded SPL class-list diagnostics lane for selected
+  `class_implements()` / `class_uses()` rows. The shared class-list helper now
+  accepts objects or string class names, emits PHP-shaped warnings and returns
+  `false` for unresolved string classes, raises catchable object|string
+  `TypeError`s for unsupported first operands, and reports the implicit
+  `Stringable` interface for classes with a public instance `__toString()`.
+  Focused proof covers Rust object-model regressions for missing string
+  classes, object|string operand diagnostics, and implicit `Stringable`,
+  direct `phpc run` probes, native-boundary rejection, and selected PHPT rows
+  `ext/spl/tests/class_implements_variation.phpt`,
+  `ext/spl/tests/class_implements_variation1.phpt`,
+  `ext/spl/tests/class_uses_variation.phpt`, and
+  `ext/spl/tests/class_uses_variation1.phpt`. Unsupported edges remain
+  interface-name string operands, broad built-in/internal class/interface/trait
+  catalogs, reflection-object integration for class-list helpers, exact engine
+  metadata ordering, namespace/import alias expansion, and native lowering.
+
 - Added a bounded class-member metadata autoload lane for the selected
   `property_exists_variation1.phpt` surface. `property_exists()` and
   `method_exists()` now run the existing bounded class autoload callback path

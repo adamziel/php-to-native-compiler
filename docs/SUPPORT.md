@@ -6859,10 +6859,10 @@
   and `Stringable` for `interface_exists()` and `get_declared_interfaces()`.
   `Stringable` has one extra bounded relationship rule: classes with a
   resolved public non-static `__toString()` are treated as `Stringable` for
-  `instanceof`, `is_a()`, and `is_subclass_of()` checks. Other core interface
-  names still require explicit `implements` metadata; outside the bounded
-  `Countable`, `Iterator`, and `IteratorAggregate` method-shape checks they do
-  not enforce methods or protocol behavior.
+  `instanceof`, `is_a()`, `is_subclass_of()`, and `class_implements()` checks.
+  Other core interface names still require explicit `implements` metadata;
+  outside the bounded `Countable`, `Iterator`, and `IteratorAggregate`
+  method-shape checks they do not enforce methods or protocol behavior.
   `is_a($object_or_class, $class_name)` accepts current object values and
   checks exact class identity, a single-parent ancestor relationship, or a
   recorded `implements` relationship against the current declared class
@@ -9428,20 +9428,25 @@
   one is recorded, otherwise false.
   `class_implements($object_or_class[, $autoload])` accepts current object
   values or string class names, uses the current bool-like scalar autoload flag
-  for string class misses, and returns an associative array whose keys and
-  values are the recorded interface names. The current ordering follows
-  system PHP for covered single-parent/user-interface metadata, including
-  inherited parent-class interfaces before child-class interfaces.
+  for string class misses, emits PHP-shaped warnings and returns `false` for
+  unresolved string class names, and returns an associative array whose keys
+  and values are the recorded interface names for resolved classes. The current
+  ordering follows system PHP for covered single-parent/user-interface
+  metadata, including inherited parent-class interfaces before child-class
+  interfaces, and the implicit `Stringable` interface is included for classes
+  with a resolved public non-static `__toString()`.
   `class_uses($object_or_class[, $autoload])` accepts current object values or
   string class names, uses the current bool-like scalar autoload flag for
-  string class misses, and returns an associative array whose keys and values
-  are the direct trait names recorded on the resolved class. The current slice
-  matches PHP's non-recursive direct-class behavior for covered user traits;
-  parent-class traits are not included in the returned array.
+  string class misses, emits PHP-shaped warnings and returns `false` for
+  unresolved string class names, and returns an associative array whose keys
+  and values are the direct trait names recorded on the resolved class. The
+  current slice matches PHP's non-recursive direct-class behavior for covered
+  user traits; parent-class traits are not included in the returned array.
   `class_parents($object_or_class[, $autoload])` accepts current object
   values or string class names, uses the current bool-like scalar autoload
-  flag for string class misses, and returns an associative array whose keys
-  and values are the resolved class's declared parent class names from
+  flag for string class misses, emits PHP-shaped warnings and returns `false`
+  for unresolved string class names, and returns an associative array whose
+  keys and values are the resolved class's declared parent class names from
   immediate parent to root. This is enough for covered userland recursive
   trait-helper patterns that combine `class_parents()` with `class_uses()`.
   `new ReflectionClass($object_or_class)` creates a bounded metadata object
@@ -11388,21 +11393,20 @@
   namespaces/import aliases beyond parsed declarations, exact native
   `TypeError` behavior, and native lowering beyond direct string-name false
   folding
-- `class_implements` broad built-in/internal interface catalogs, exact warning
-  behavior for missing string classes, namespace/import alias expansion,
-  reflection-object integration, exact PHP ordering for all engine metadata,
-  and native lowering
+- `class_implements` interface-name string operands, broad built-in/internal
+  interface catalogs, namespace/import alias expansion, reflection-object
+  integration, exact PHP ordering for all engine metadata, non-bool autoload
+  diagnostics, and native lowering
 - `class_uses` remains PHP-shaped and non-recursive; recursive parent-trait
   helper behavior is covered only when userland code combines it with the
-  current `class_parents` slice. Built-in/internal trait catalogs, exact
-  warning behavior for missing string classes,
+  current `class_parents` slice. Built-in/internal trait catalogs,
   namespace/import alias expansion beyond parsed class-like names,
   reflection-object integration, exact PHP ordering for all engine metadata,
+  non-bool autoload diagnostics, and native lowering
+- `class_parents` built-in/internal parent metadata, namespace/import alias
+  expansion beyond parsed class-like names, reflection-object integration,
+  exact PHP ordering for all engine metadata, non-bool autoload diagnostics,
   and native lowering
-- `class_parents` built-in/internal parent metadata, exact warning behavior for
-  missing string classes, namespace/import alias expansion beyond parsed
-  class-like names, reflection-object integration, exact PHP ordering for all
-  engine metadata, and native lowering
 - `ReflectionClass` currently supports only bounded metadata objects over
   declared user classes, interfaces, and traits. The executable method subset
   is `getName()`, `getShortName()`, `isInterface()`, `isTrait()`,

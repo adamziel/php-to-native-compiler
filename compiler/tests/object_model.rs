@@ -2525,13 +2525,15 @@ echo is_a($child, "Stringable") ? "child:is-a\n" : "child:no\n";
 echo is_subclass_of("ChildLabel", "Stringable") ? "child:subclass\n" : "child:no-subclass\n";
 echo is_a($explicit, "Stringable") ? "explicit:is-a\n" : "explicit:no\n";
 echo is_a($plain, "Stringable") ? "plain:is-a\n" : "plain:no\n";
+$implements = class_implements($child);
+echo isset($implements["Stringable"]) ? "implements:stringable\n" : "implements:missing\n";
 echo in_array("Stringable", get_declared_interfaces(), true) ? "declared\n" : "not-declared\n";
 "#;
 
     let execution = run_source(source).unwrap();
     assert_eq!(
         execution.stdout,
-        "interface\ninstanceof\nchild:is-a\nchild:subclass\nexplicit:is-a\nplain:no\ndeclared\n"
+        "interface\ninstanceof\nchild:is-a\nchild:subclass\nexplicit:is-a\nplain:no\nimplements:stringable\ndeclared\n"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -5781,14 +5783,22 @@ echo class_implements("Missing", false) ? "missing-true" : "missing-false";
 
 #[test]
 fn class_implements_requires_object_or_string_and_bool_autoload_arguments() {
-    let name_error = runtime_error("<?php\nvar_dump(class_implements(42));\n");
+    let execution = run_source(
+        r#"<?php
+try {
+    class_implements(42);
+} catch (TypeError $e) {
+    echo get_class($e), ":", $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
 
-    assert_eq!(name_error.line, 2);
-    assert_eq!(name_error.column, 10);
     assert_eq!(
-        name_error.message,
-        "unsupported call class_implements(): object_or_class argument must be object or string, got int"
+        execution.stdout,
+        "TypeError:class_implements(): Argument #1 ($object_or_class) must be of type object|string, int given\n"
     );
+    assert_eq!(execution.exit_code, 0);
 
     let autoload_error = runtime_error("<?php\nvar_dump(class_implements(\"Box\", []));\n");
 
@@ -5880,14 +5890,22 @@ echo "trait-empty|", count($trait->getTraitNames()), "|", count($trait->getTrait
 
 #[test]
 fn class_uses_requires_object_or_string_and_bool_autoload_arguments() {
-    let name_error = runtime_error("<?php\nvar_dump(class_uses(42));\n");
+    let execution = run_source(
+        r#"<?php
+try {
+    class_uses(42);
+} catch (TypeError $e) {
+    echo get_class($e), ":", $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
 
-    assert_eq!(name_error.line, 2);
-    assert_eq!(name_error.column, 10);
     assert_eq!(
-        name_error.message,
-        "unsupported call class_uses(): object_or_class argument must be object or string, got int"
+        execution.stdout,
+        "TypeError:class_uses(): Argument #1 ($object_or_class) must be of type object|string, int given\n"
     );
+    assert_eq!(execution.exit_code, 0);
 
     let autoload_error = runtime_error("<?php\nvar_dump(class_uses(\"Box\", []));\n");
 
@@ -5955,14 +5973,22 @@ echo class_parents("App\\Missing", false) ? "missing-true" : "missing-false";
 
 #[test]
 fn class_parents_requires_object_or_string_and_bool_autoload_arguments() {
-    let name_error = runtime_error("<?php\nvar_dump(class_parents(42));\n");
+    let execution = run_source(
+        r#"<?php
+try {
+    class_parents(42);
+} catch (TypeError $e) {
+    echo get_class($e), ":", $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
 
-    assert_eq!(name_error.line, 2);
-    assert_eq!(name_error.column, 10);
     assert_eq!(
-        name_error.message,
-        "unsupported call class_parents(): object_or_class argument must be object or string, got int"
+        execution.stdout,
+        "TypeError:class_parents(): Argument #1 ($object_or_class) must be of type object|string, int given\n"
     );
+    assert_eq!(execution.exit_code, 0);
 
     let autoload_error = runtime_error("<?php\nvar_dump(class_parents(\"Box\", []));\n");
 
@@ -5972,6 +5998,58 @@ fn class_parents_requires_object_or_string_and_bool_autoload_arguments() {
         autoload_error.message,
         "unsupported call class_parents(): autoload argument must be bool-like scalar in the current subset, got array"
     );
+}
+
+#[test]
+fn class_list_helpers_warn_and_return_false_for_missing_string_classes() {
+    let source = r#"<?php
+function capture_warning($errno, $message) {
+    echo "warning:", $message, "\n";
+}
+
+spl_autoload_register(function ($class) {
+    echo "autoload:", $class, "\n";
+});
+
+foreach (array("class_implements", "class_uses", "class_parents") as $function) {
+    echo "--", $function, "--\n";
+    set_error_handler("capture_warning");
+    var_dump($function("Missing" . $function));
+    var_dump($function("", true));
+    var_dump($function("StillMissing" . $function, false));
+    restore_error_handler();
+}
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "--class_implements--\n\
+autoload:Missingclass_implements\n\
+warning:class_implements(): Class Missingclass_implements does not exist and could not be loaded\n\
+bool(false)\n\
+warning:class_implements(): Class  does not exist and could not be loaded\n\
+bool(false)\n\
+warning:class_implements(): Class StillMissingclass_implements does not exist\n\
+bool(false)\n\
+--class_uses--\n\
+autoload:Missingclass_uses\n\
+warning:class_uses(): Class Missingclass_uses does not exist and could not be loaded\n\
+bool(false)\n\
+warning:class_uses(): Class  does not exist and could not be loaded\n\
+bool(false)\n\
+warning:class_uses(): Class StillMissingclass_uses does not exist\n\
+bool(false)\n\
+--class_parents--\n\
+autoload:Missingclass_parents\n\
+warning:class_parents(): Class Missingclass_parents does not exist and could not be loaded\n\
+bool(false)\n\
+warning:class_parents(): Class  does not exist and could not be loaded\n\
+bool(false)\n\
+warning:class_parents(): Class StillMissingclass_parents does not exist\n\
+bool(false)\n"
+    );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
