@@ -32450,6 +32450,7 @@ impl PhpClassTable {
             "isAnonymous",
             "isDeprecated",
             "getExtensionName",
+            "getExtension",
             "getFileName",
             "getStartLine",
             "getEndLine",
@@ -32477,6 +32478,12 @@ impl PhpClassTable {
         let reflection_method = classes
             .get_mut(reflection_method_id)
             .expect("declared ReflectionMethod class id should resolve");
+        reflection_method
+            .add_property(PhpPropertyMetadata::instance("name", Visibility::Public))
+            .expect("ReflectionMethod core metadata should not duplicate properties");
+        reflection_method
+            .add_property(PhpPropertyMetadata::instance("class", Visibility::Public))
+            .expect("ReflectionMethod core metadata should not duplicate properties");
         for constant in [
             "IS_PUBLIC",
             "IS_PROTECTED",
@@ -32520,6 +32527,8 @@ impl PhpClassTable {
             "returnsReference",
             "setAccessible",
             "getClosure",
+            "getPrototype",
+            "hasPrototype",
             "invoke",
             "invokeArgs",
         ] {

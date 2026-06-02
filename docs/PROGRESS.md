@@ -63,6 +63,34 @@ Implemented:
   handlers, broader reentrancy/stack-mutation edge cases, references/COW, and
   native lowering.
 
+- Added a bounded reflection method/prototype/extension metadata lane on the
+  interpreter path. `ReflectionMethod` now exposes PHP-visible `$name` and
+  `$class` properties for reflected user class, interface, and trait methods;
+  `ReflectionMethod::hasPrototype()` / `getPrototype()` cover non-private
+  parent class methods and implemented or parent interface declarations;
+  `ReflectionFunction::getExtension()` returns `null` for user functions and a
+  bounded `ReflectionExtension` object for supported internal functions; and
+  covered missing `ReflectionClass::getMethod()` lookups raise a catchable
+  `ReflectionException` while accepting scalar string-convertible method
+  names. Plain double-quoted `$object->property()` interpolation keeps the
+  following `()` literal, while braced `{$object->method()}` remains the
+  zero-argument method-call form. Focused proof covers the Rust
+  `reflection_metadata` regressions, the `milestone2369` direct/compare-php
+  fixture, build/fmt/diff checks, and selected public PHPT rows
+  `ext/reflection/tests/ReflectionClass_getMethod_001.phpt`,
+  `ext/reflection/tests/ReflectionClass_getMethods_001.phpt`,
+  `ext/reflection/tests/ReflectionClass_getMethods_003.phpt`,
+  `ext/reflection/tests/ReflectionFunction_getExtension.phpt`,
+  `ext/reflection/tests/ReflectionMethod_getModifiers_basic.phpt`,
+  `ext/reflection/tests/ReflectionMethod_getPrototype_basic.phpt`, and
+  `ext/reflection/tests/ReflectionMethod_hasPrototype_basic.phpt`.
+  Unsupported edges remain trait adaptation prototype resolution, internal
+  method prototypes, tentative return type prototype details, exact
+  tie-breaking for multiple prototype candidates, broad `ReflectionExtension`
+  inventories beyond the bounded registry, exact reflection exception stack
+  traces/codes, catchable TypeError/arity parity beyond the covered
+  `ReflectionException` paths, references/COW, and native lowering.
+
 - Added a bounded generalized hash HMAC / PBKDF2 / HKDF lane on the
   interpreter path. `hash_hmac()` now supports lowercase hex and raw binary
   output for the bounded MD2/MD4/MD5/SHA-1/SHA-2/SHA-3/Whirlpool digest set,

@@ -44924,7 +44924,7 @@ impl Interpreter {
         &mut self,
         state: ReflectionMethodState,
         class_id: ClassId,
-        _span: Span,
+        span: Span,
     ) -> CompileResult<Value> {
         let object_id = self.allocate_object_id();
         let inherited_properties = self.inherited_instance_properties(class_id);
@@ -44935,16 +44935,23 @@ impl Interpreter {
             .classes
             .get(class_id)
             .expect("core ReflectionMethod class id should resolve");
+        let method_name = state.name.clone();
+        let declaring_class_name = state.declaring_class_name.clone();
         self.reflection_methods.insert(object_id, state);
-        Ok(Value::Object(
-            PhpObject::from_class_with_relationship_metadata_with_id(
-                class,
-                &inherited_properties,
-                ancestor_class_names,
-                interface_names,
-                object_id,
-            ),
-        ))
+        let object = PhpObject::from_class_with_relationship_metadata_with_id(
+            class,
+            &inherited_properties,
+            ancestor_class_names,
+            interface_names,
+            object_id,
+        );
+        object
+            .write_public_property("name", Value::String(method_name))
+            .map_err(|error| runtime_error(span, error))?;
+        object
+            .write_public_property("class", Value::String(declaring_class_name))
+            .map_err(|error| runtime_error(span, error))?;
+        Ok(Value::Object(object))
     }
 
     fn resolve_reflection_method_target(
@@ -44972,12 +44979,9 @@ impl Interpreter {
                     is_static,
                 )) = self.resolve_instance_method(class_id, method_name)
                 else {
-                    return Err(runtime_error(
+                    return Err(reflection_exception_error(
                         span,
-                        RuntimeError::unsupported_object_instantiation(
-                            "ReflectionMethod",
-                            format!("method {method_name} is not declared on {}", class.name),
-                        ),
+                        format!("Method {}::{}() does not exist", class.name, method_name),
                     ));
                 };
                 let metadata = self
@@ -45073,12 +45077,9 @@ impl Interpreter {
                         });
                     }
                 }
-                Err(runtime_error(
+                Err(reflection_exception_error(
                     span,
-                    RuntimeError::unsupported_object_instantiation(
-                        "ReflectionMethod",
-                        format!("method {method_name} is not declared on {}", class.name),
-                    ),
+                    format!("Method {}::{}() does not exist", class.name, method_name),
                 ))
             }
             ReflectionClassKind::Trait => {
@@ -45129,12 +45130,9 @@ impl Interpreter {
                         });
                     }
                 }
-                Err(runtime_error(
+                Err(reflection_exception_error(
                     span,
-                    RuntimeError::unsupported_object_instantiation(
-                        "ReflectionMethod",
-                        format!("method {method_name} is not declared on {}", class.name),
-                    ),
+                    format!("Method {}::{}() does not exist", class.name, method_name),
                 ))
             }
         }
@@ -53446,18 +53444,12 @@ impl Interpreter {
             "getmethod" => {
                 expect_expr_arity("ReflectionClass::getMethod", args.len(), 1, span)?;
                 let value = self.evaluate(&args[0], caller_scope)?;
-                let Value::String(method) = value else {
-                    return Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            "ReflectionClass::getMethod",
-                            format!(
-                                "method argument must be string in the current subset, got {}",
-                                value.type_name()
-                            ),
-                        ),
-                    ));
-                };
+                let method = reflection_scalar_string_argument(
+                    "ReflectionClass::getMethod",
+                    "name",
+                    value,
+                    span,
+                )?;
                 let method = self.resolve_reflection_method_target(&state, &method, span)?;
                 self.create_reflection_method_object(method, span)
             }
@@ -54175,6 +54167,75 @@ impl Interpreter {
         Ok(methods)
     }
 
+    fn reflection_method_prototype(
+        &self,
+        state: &ReflectionMethodState,
+    ) -> Option<ReflectionMethodState> {
+        if state.visibility == Visibility::Private {
+            return None;
+        }
+
+        match state.declaring_kind {
+            ReflectionClassKind::Class => {
+                let declaring_class_id = state.declaring_class_id?;
+                let declaring_class = self.classes.get(declaring_class_id)?;
+                let mut current = declaring_class.parent_id();
+                while let Some(current_id) = current {
+                    let class = self.classes.get(current_id)?;
+                    if let Some(method) = class.method(&state.name) {
+                        if method.visibility() != Visibility::Private {
+                            return Some(
+                                self.reflection_class_method_state(current_id, current_id, method),
+                            );
+                        }
+                    }
+                    current = class.parent_id();
+                }
+
+                for interface_name in self.class_implements_interface_names(declaring_class_id) {
+                    let Some(interface) = self
+                        .interface_lookup
+                        .get(&interface_name.to_ascii_lowercase())
+                    else {
+                        continue;
+                    };
+                    for (declaring_interface, method) in
+                        expanded_interface_methods(&self.interface_lookup, interface)
+                    {
+                        if method.function.name.eq_ignore_ascii_case(&state.name) {
+                            return Some(
+                                self.reflection_interface_method_state(declaring_interface, method),
+                            );
+                        }
+                    }
+                }
+                None
+            }
+            ReflectionClassKind::Interface => {
+                let interface = self
+                    .interface_lookup
+                    .get(&state.declaring_class_name.to_ascii_lowercase())?;
+                for parent_name in &interface.parents {
+                    let Some(parent) = self.interface_lookup.get(&parent_name.to_ascii_lowercase())
+                    else {
+                        continue;
+                    };
+                    for (declaring_interface, method) in
+                        expanded_interface_methods(&self.interface_lookup, parent)
+                    {
+                        if method.function.name.eq_ignore_ascii_case(&state.name) {
+                            return Some(
+                                self.reflection_interface_method_state(declaring_interface, method),
+                            );
+                        }
+                    }
+                }
+                None
+            }
+            ReflectionClassKind::Trait => None,
+        }
+    }
+
     fn reflection_class_trait_names(&self, state: &ReflectionClassState) -> Vec<String> {
         match state.kind {
             ReflectionClassKind::Class => state
@@ -54798,6 +54859,18 @@ impl Interpreter {
                     Ok(Value::Bool(false))
                 }
             }
+            "getextension" => {
+                expect_expr_arity("ReflectionFunction::getExtension", args.len(), 0, span)?;
+                if !state.is_internal {
+                    return Ok(Value::Null);
+                }
+                self.create_reflection_extension_object(
+                    ReflectionExtensionState {
+                        name: reflection_internal_extension_name(&state.name),
+                    },
+                    span,
+                )
+            }
             "getfilename" => {
                 expect_expr_arity("ReflectionFunction::getFileName", args.len(), 0, span)?;
                 Ok(state
@@ -55323,6 +55396,25 @@ impl Interpreter {
                 callable.insert(ArrayKey::Int(0), Value::Object(object));
                 callable.insert(ArrayKey::Int(1), Value::String(state.name.clone()));
                 Ok(Value::Array(callable))
+            }
+            "getprototype" => {
+                expect_expr_arity("ReflectionMethod::getPrototype", args.len(), 0, span)?;
+                let Some(prototype) = self.reflection_method_prototype(&state) else {
+                    return Err(reflection_exception_error(
+                        span,
+                        format!(
+                            "Method {}::{} does not have a prototype",
+                            state.declaring_class_name, state.name
+                        ),
+                    ));
+                };
+                self.create_reflection_method_object(prototype, span)
+            }
+            "hasprototype" => {
+                expect_expr_arity("ReflectionMethod::hasPrototype", args.len(), 0, span)?;
+                Ok(Value::Bool(
+                    self.reflection_method_prototype(&state).is_some(),
+                ))
             }
             "invoke" => {
                 if args.is_empty() {

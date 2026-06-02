@@ -6919,8 +6919,11 @@
   chained property/offset reads such as
   `{$block->context['displayLayout']['columns']}`. Array keys may currently be
   string literals, integer literals, bare string keys, or variable keys that
-  coerce through the current array-key rules. Undefined simple interpolation
-  variables emit the current PHP-shaped warning and interpolate as an empty
+  coerce through the current array-key rules. Plain `$object->property()`
+  interpolation reads the property and leaves `()` as literal text, while
+  braced `{$object->method()}` remains the supported zero-argument method-call
+  interpolation form. Undefined simple interpolation variables emit the
+  current PHP-shaped warning and interpolate as an empty
   string. Interpolated array values emit the current PHP-shaped
   `Array to string conversion` warning and contribute `Array`. Dynamic
   property names, static properties, variable variables, arbitrary expression
@@ -10214,7 +10217,10 @@
   object as `new ReflectionMethod($class, $name)` for methods declared on
   current user classes, inherited class methods, composed trait methods,
   interface methods, direct trait methods, and simple methods imported by
-  trait-body `use` declarations when the method-name argument is a string.
+  trait-body `use` declarations when the method-name argument is a
+  string-convertible scalar. Missing methods on that covered metadata path
+  raise the existing catchable `ReflectionException` diagnostic with the
+  PHP-shaped `Method Class::name() does not exist` message.
   `getMethods()` returns bounded `ReflectionMethod` metadata arrays for
   current user classes, inherited non-private class methods, composed trait
   methods, interface methods, direct trait methods, and those same simple
@@ -10229,11 +10235,15 @@
   `new ReflectionMethod($object_or_class, $method)` creates a bounded
   metadata object for methods declared in the current user class, interface,
   and trait tables, including inherited class methods and existing autoload
-  probing for string class-like misses. It supports `getName()`,
+  probing for string class-like misses. It materializes the PHP-visible public
+  `name` and `class` properties. It supports `getName()`,
   `getFileName()`, `getStartLine()`, `getEndLine()`, `getDocComment()`,
   `getDeclaringClass()`, `getModifiers()`, `isPublic()`, `isProtected()`,
   `isPrivate()`, `isStatic()`, `isFinal()`, `isAbstract()`, and
-  `isConstructor()`, plus bounded parameter inspection through
+  `isConstructor()`, plus `getPrototype()` and `hasPrototype()` for
+  non-private methods whose prototype is a parent class method or implemented
+  interface method in the current metadata tables, plus bounded parameter
+  inspection through
   `getParameters()`, `getNumberOfParameters()`, and
   `getNumberOfRequiredParameters()`, and bounded return type inspection through
   `hasReturnType()` and `getReturnType()`. Simple named return types
@@ -10245,7 +10255,9 @@
   declaration and closing brace, and `getDocComment()` returns the directly
   preceding `/** ... */` docblock or `false`. Interface and trait method
   reflection keeps parsed line/doc-comment metadata in the current request but
-  does not yet persist declaration source-file paths.
+  does not yet persist declaration source-file paths. Trait adaptations,
+  internal method prototypes, tentative return type metadata, and exact engine
+  tie-breaking for multiple prototype candidates remain unsupported.
   `ReflectionMethod::invoke($object, ...$args)` and
   `ReflectionMethod::invokeArgs($object, $args)` execute declared user-class
   methods over the current by-value argument subset, including public,
@@ -10275,8 +10287,9 @@
   `getName()`, `getFileName()`, `getStartLine()`, `getEndLine()`,
   `getDocComment()`, `getParameters()`, `getNumberOfParameters()`,
   `getNumberOfRequiredParameters()`, `isVariadic()`, `hasReturnType()`,
-  `getReturnType()`, `returnsReference()`, and `__toString()` over parsed
-  user-function metadata.
+  `getReturnType()`, `returnsReference()`, `getExtension()`, and
+  `__toString()` over parsed user-function metadata. `getExtension()` returns
+  `null` for user functions.
   `getFileName()`
   returns the current CLI/fixture source path for declarations loaded from a
   known file and `false` for source strings without one; line numbers come from
@@ -10293,8 +10306,9 @@
   `count`, `sizeof`, `array_key_exists`, `is_callable`, `get_current_user`,
   `posix_ctermid`, `posix_getpwuid`, `posix_getgrgid`, `getmypid`, and `php_sapi_name`, exposes
   their name, false file/start/end/doc-comment metadata, current
-  parameter/default metadata, return type, and by-reference-return predicate,
-  and executes them through `invoke()`/`invokeArgs()`.
+  parameter/default metadata, return type, by-reference-return predicate, and
+  a request-local `ReflectionExtension` object through `getExtension()`, and
+  executes them through `invoke()`/`invokeArgs()`.
   `ReflectionFunction::invoke(...$args)` and
   `ReflectionFunction::invokeArgs($args)` execute declared user functions,
   ordinary closure values, and those internal builtins over the current
@@ -12267,10 +12281,11 @@
   `getConstant($name)` accept string and scalar names in this bounded metadata
   path. `ReflectionMethod` currently supports only bounded
   method metadata over declared user classes, interfaces, and traits with the
-  source metadata, modifier, predicate, parameter-list, and return-type
-  methods documented above, plus public non-static user-class by-value
-  invocation through `invoke()` and `invokeArgs()`. Interface and trait method source-file paths
-  remain unsupported. `ReflectionFunction` currently supports declared
+  source metadata, modifier, predicate, prototype, parameter-list, and
+  return-type methods documented above, public `name`/`class` properties, plus
+  public non-static user-class by-value invocation through `invoke()` and
+  `invokeArgs()`. Interface and trait method source-file paths remain
+  unsupported. `ReflectionFunction` currently supports declared
   user-function metadata named by string, plus bounded internal metadata and
   by-value invocation for `strlen`, `strtolower`, `strtoupper`,
   `str_increment`, `str_decrement`, `trim`, `ltrim`, `rtrim`,
@@ -12280,8 +12295,8 @@
   `posix_getgrgid`, `umask`, `getmypid`, and `php_sapi_name`. Closure metadata is supported for
   current closure values. The supported
   metadata methods are the name, file/start/end/doc-comment, parameter-list,
-  return-type, by-reference-return, and stringification methods documented
-  above.
+  return-type, by-reference-return, extension, and stringification methods
+  documented above.
   `ReflectionParameter` currently supports only method parameters from that
   same metadata slice, declared user-function parameters named by string,
   supported internal-function parameters, and current closure parameters.
@@ -12321,13 +12336,13 @@
   enforcement during reflection invocation, `invokeArgs()` named-argument
   semantics, non-public or dynamic `ReflectionProperty` value mutation,
   `ReflectionClass::getProperties()` filter masks, exact
-  `ReflectionClass::getMethod()`/`getMethods()` exception objects/text for
-  missing methods, non-string names, non-int filter arguments, and exact
-  `getMethods()` ordering for adapted trait method compositions,
-  recursive trait conflict/adaptation edge cases, exact `ReflectionException`
-  object construction, throwing, catching, messages/codes/stack traces, and
-  missing-reflection-member exception text, namespace/import alias expansion
-  beyond parsed class-like names, and native lowering remain unsupported.
+  `ReflectionClass::getMethods()` exception objects/text for non-int filter
+  arguments, exact `getMethods()` ordering for adapted trait method
+  compositions, recursive trait conflict/adaptation edge cases, broad
+  prototype discovery across internal methods and trait adaptations, exact
+  `ReflectionException` object construction, messages/codes/stack traces
+  beyond the covered catchable paths, namespace/import alias expansion beyond
+  parsed class-like names, and native lowering remain unsupported.
 - `get_declared_interfaces` built-in/internal interface entries, autoloading,
   exact native ordering, and native lowering
 - `get_declared_traits` built-in/internal trait entries, autoloading,

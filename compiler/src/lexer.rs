@@ -636,7 +636,7 @@ impl<'a> Lexer<'a> {
                     }
 
                     let name = self.lex_identifier_name();
-                    let part = self.lex_interpolated_suffix(name, span)?;
+                    let part = self.lex_interpolated_suffix(name, span, false)?;
                     parts.push(part);
                     continue;
                 }
@@ -696,7 +696,7 @@ impl<'a> Lexer<'a> {
                 }
 
                 let name = self.lex_identifier_name();
-                let part = self.lex_interpolated_suffix(name, span)?;
+                let part = self.lex_interpolated_suffix(name, span, true)?;
                 if self.peek() != Some('}') {
                     return Err(self.error_at(span, unsupported_string_interpolation_message()));
                 }
@@ -792,7 +792,7 @@ impl<'a> Lexer<'a> {
                     }
 
                     let name = self.lex_identifier_name();
-                    let part = self.lex_interpolated_suffix(name, span)?;
+                    let part = self.lex_interpolated_suffix(name, span, false)?;
                     parts.push(part);
                     continue;
                 }
@@ -852,7 +852,7 @@ impl<'a> Lexer<'a> {
                 }
 
                 let name = self.lex_identifier_name();
-                let part = self.lex_interpolated_suffix(name, span)?;
+                let part = self.lex_interpolated_suffix(name, span, true)?;
                 if self.peek() != Some('}') {
                     return Err(self.error_at(span, unsupported_string_interpolation_message()));
                 }
@@ -901,6 +901,7 @@ impl<'a> Lexer<'a> {
         &mut self,
         name: String,
         span: Span,
+        allow_method_call: bool,
     ) -> CompileResult<InterpolatedStringPart> {
         let mut segments = Vec::new();
 
@@ -921,7 +922,7 @@ impl<'a> Lexer<'a> {
                     return Err(self.error_at(span, unsupported_string_interpolation_message()));
                 }
                 let property = self.lex_identifier_name();
-                if self.starts_with("()") {
+                if allow_method_call && self.starts_with("()") {
                     self.advance();
                     self.advance();
                     segments.push(InterpolatedAccessSegment::MethodCall(property));

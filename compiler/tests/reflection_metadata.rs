@@ -209,3 +209,85 @@ try {
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);
 }
+
+#[test]
+fn reflection_method_properties_prototypes_and_function_extensions() {
+    let execution = run_source(
+        r#"<?php
+function yn($value) {
+    return $value ? "1" : "0";
+}
+
+class BaseProto {
+    public function label() {}
+    private function hidden() {}
+}
+
+interface ProtoContract {
+    public function run();
+}
+
+class ChildProto extends BaseProto implements ProtoContract {
+    public function label() {}
+    public function run() {}
+    private function hidden() {}
+}
+
+$class = new ReflectionClass(ChildProto::class);
+
+function show_method($label, $method) {
+    echo $label, "|", $method->class, "::", $method->name, "|", $method->getName(), "|", $method->getDeclaringClass()->getName(), "\n";
+}
+
+$label = $class->getMethod("label");
+show_method("label", $label);
+echo "interpolated|$label->class::$label->name()\n";
+$labelPrototype = $label->getPrototype();
+show_method("label-prototype", $labelPrototype);
+
+$run = $class->getMethod("run");
+show_method("run", $run);
+echo "run-has-prototype|", yn($run->hasPrototype()), "\n";
+$runPrototype = $run->getPrototype();
+show_method("run-prototype", $runPrototype);
+
+$hidden = $class->getMethod("hidden");
+echo "hidden-has-prototype|", yn($hidden->hasPrototype()), "\n";
+try {
+    $hidden->getPrototype();
+} catch (ReflectionException $exception) {
+    echo "hidden-prototype|", $exception->getMessage(), "\n";
+}
+try {
+    $class->getMethod("missing");
+} catch (ReflectionException $exception) {
+    echo "missing|", $exception->getMessage(), "\n";
+}
+
+$sort = new ReflectionFunction("sort");
+echo "extension|", get_class($sort->getExtension()), "|", $sort->getExtension()->getName(), "\n";
+function local_proto_fn() {}
+var_dump((new ReflectionFunction("local_proto_fn"))->getExtension());
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "label|ChildProto::label|label|ChildProto\n",
+            "interpolated|ChildProto::label()\n",
+            "label-prototype|BaseProto::label|label|BaseProto\n",
+            "run|ChildProto::run|run|ChildProto\n",
+            "run-has-prototype|1\n",
+            "run-prototype|ProtoContract::run|run|ProtoContract\n",
+            "hidden-has-prototype|0\n",
+            "hidden-prototype|Method ChildProto::hidden does not have a prototype\n",
+            "missing|Method ChildProto::missing() does not exist\n",
+            "extension|ReflectionExtension|standard\n",
+            "NULL\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}

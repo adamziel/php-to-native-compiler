@@ -1083,6 +1083,9 @@ ordinary string concatenation. The interpreter emits PHP's compile-time
 deprecation diagnostic for `${name}` and then evaluates those parts left to
 right through the active symbol table and PHP-shaped echo-string conversion;
 undefined simple interpolation variables warn and contribute an empty string.
+Plain `$object->property()` interpolation treats `()` as literal text after the
+property read; zero-argument method calls remain limited to the braced
+`{$object->method()}` access-chain form.
 Array interpolation values emit the same PHP-shaped `Array to string
 conversion` warning used by `echo` and contribute `Array`. Native lowering
 rejects ordinary interpolated strings with a dedicated codegen diagnostic until
@@ -4255,8 +4258,9 @@ object stores request-local reflection state and dispatches the current
 `getName()`, `getShortName()`, `isInterface()`, `isTrait()`,
 `isInstantiable()`, `isAbstract()`, `isFinal()`, `isReadOnly()`,
 `isCloneable()`, `getModifiers()`, `getParentClass()`, `getInterfaceNames()`,
-`getInterfaces()`, `hasMethod($name)`, `getFileName()`, `getStartLine()`,
-`getEndLine()`, and `getDocComment()` methods directly through the
+`getInterfaces()`, `hasMethod($name)`, `getConstructor()`,
+`getMethod($name)`, `getMethods([$filter])`, `getFileName()`,
+`getStartLine()`, `getEndLine()`, and `getDocComment()` methods directly through the
 interpreter. ReflectionClass objects also materialize the bounded public
 `name` property so debug output and simple metadata reads observe the reflected
 class-like name. Class-like source
@@ -4275,11 +4279,14 @@ false because readonly class declarations are outside the parser subset. This
 is metadata only.
 `ReflectionMethod` uses the same core placeholder class plus request-local
 state pattern for declared user class, interface, and trait methods. The
-constructor accepts an object or class-like string plus a string method name,
-resolves inherited class methods through the existing method metadata chain,
+constructor accepts an object or class-like string plus a string-convertible
+method name, resolves inherited class methods through the existing method
+metadata chain, writes the PHP-visible public `name` and `class` properties,
 and exposes the bounded source metadata methods, modifier predicates,
-`getDeclaringClass()`, parameter counts, `getParameters()`,
-`hasReturnType()`, and `getReturnType()` through interpreter dispatch.
+`getDeclaringClass()`, `getPrototype()`, `hasPrototype()`, parameter counts,
+`getParameters()`, `hasReturnType()`, and `getReturnType()` through interpreter
+dispatch. Missing method lookup on the covered class/interface/trait metadata
+path now raises the existing catchable `ReflectionException` diagnostic.
 Class-method source paths are tracked in the same method-signature table as
 parameter and return metadata when declarations are loaded from a known
 CLI/fixture or include path; start/end lines and directly preceding
@@ -4288,13 +4295,19 @@ and trait methods currently retain parsed line/doc-comment metadata but do not
 persist declaration source-file paths. Return type objects reuse the same request-local
 `ReflectionNamedType`, `ReflectionUnionType`, and `ReflectionIntersectionType`
 state as the property type metadata slice.
+Prototype lookup is bounded to non-private parent class methods and implemented
+or parent interface declarations discovered through the current metadata
+tables; trait adaptations, internal methods, and exact engine ordering for
+multiple prototype candidates remain outside the slice.
 `ReflectionFunction` follows that same core placeholder plus request-local
 state pattern for declared user functions named by string. It stores parsed
 user-function metadata for `getName()`, source file, start/end lines, direct
 docblock text, parameter counts, `getParameters()`, `hasReturnType()`,
-`getReturnType()`, `returnsReference()`, and `__toString()`. Source paths are
-tracked beside registered function declarations because the AST remains
-source-text scoped;
+`getReturnType()`, `returnsReference()`, `getExtension()`, and `__toString()`.
+`getExtension()` returns `null` for user functions and creates a
+request-local `ReflectionExtension` object for supported internal functions
+using the compatibility extension-name mapper. Source paths are tracked beside
+registered function declarations because the AST remains source-text scoped;
 included files record the include source path at declaration-registration time.
 The lexer preserves bounded `/** ... */` doc-comment tokens so the parser can
 attach a directly preceding docblock to a function declaration.
