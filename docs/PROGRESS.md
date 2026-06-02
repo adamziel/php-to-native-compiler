@@ -4,6 +4,31 @@
 
 Implemented:
 
+- Added a bounded local writable `SplFileObject` lane on the interpreter path.
+  Local `SplFileObject` construction now accepts supported local stream modes
+  including write/create/append variants, stores a bounded stream handle beside
+  the existing line cursor state, and dispatches `fwrite()` / `fputs()`,
+  `fputcsv()`, `fflush()`, and `ftell()` through the existing local stream
+  helpers. `SplFileObject::fputcsv()` uses the object's current CSV controls
+  when separator, enclosure, or escape arguments are omitted, and covered
+  writes refresh the bounded line cursor while preserving PHP's false `eof()`
+  state after successful writes. Focused proof covers the Rust
+  `spl_file_object_writable_modes_fwrite_and_fputcsv_use_local_stream_state`
+  regression, direct CLI fixture
+  `tests/fixtures/milestone2368/spl_file_object_writable_stream.php`, and
+  selected public PHPT rows
+  `SplFileObject/SplFileObject_fwrite_variation_001.phpt`,
+  `SplFileObject/SplFileObject_fwrite_variation_002.phpt`,
+  `SplFileObject/SplFileObject_fputcsv.phpt`,
+  `SplFileObject/SplFileObject_fputcsv_002.phpt`, and
+  `SplFileObject/SplFileObject_fputcsv_variation1.phpt`. Unsupported edges
+  remain non-local/user stream wrappers, `SplTempFileObject`,
+  `SplFileInfo` inheritance metadata, `fseek()` / `ftruncate()` / `fstat()` /
+  `flock()` as `SplFileObject` methods, exact line-cursor parity for every
+  mixed read/write/seek path, broad CSV multiline/deprecation/default-escape
+  parity, binary or non-UTF-8 line storage, independent nested iterator
+  cursors, serialization parity, references/COW, and native lowering.
+
 - Added bounded startup target diagnostics for direct built-in attribute names
   `#[Attribute]` / `#[\Attribute]` and `#[AllowDynamicProperties]` /
   `#[\AllowDynamicProperties]`. The interpreter now rejects `#[Attribute]` on

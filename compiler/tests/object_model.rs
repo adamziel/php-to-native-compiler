@@ -16494,6 +16494,38 @@ try {{
 }
 
 #[test]
+fn spl_file_object_writable_modes_fwrite_and_fputcsv_use_local_stream_state() {
+    use std::fs;
+
+    let fixture_dir =
+        std::env::temp_dir().join(format!("phpc-spl-file-object-write-{}", std::process::id()));
+    fs::create_dir_all(&fixture_dir).unwrap();
+    let fixture = fixture_dir.join("write.csv");
+    let fixture_path = fixture.display().to_string().replace('\\', "\\\\");
+
+    let source = format!(
+        r#"<?php
+$file = "{fixture_path}";
+$object = new SplFileObject($file, "w+");
+$object->setCsvControl("|", "'", "");
+var_dump($object->fputcsv(array("a|b", "c")));
+var_dump($object->ftell(), $object->eof());
+var_dump($object->fwrite("tail", 2));
+var_dump($object->fflush());
+var_dump(file_get_contents($file));
+"#
+    );
+
+    let execution = run_source(&source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "int(8)\nint(8)\nbool(false)\nint(2)\nbool(true)\nstring(10) \"'a|b'|c\nta\"\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn spl_doubly_linked_list_debug_info_and_uncaught_type_error_shape() {
     let source = r#"<?php
 $list = new SplDoublyLinkedList();

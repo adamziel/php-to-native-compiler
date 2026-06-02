@@ -673,6 +673,7 @@ struct SplFileObjectState {
     cursor: usize,
     byte_position: usize,
     eof: bool,
+    stream_id: Option<i64>,
     max_line_len: usize,
     flags: i64,
     csv_separator: char,
@@ -688,6 +689,7 @@ impl Default for SplFileObjectState {
             cursor: 0,
             byte_position: 0,
             eof: true,
+            stream_id: None,
             max_line_len: 0,
             flags: 0,
             csv_separator: ',',
@@ -17497,6 +17499,102 @@ impl Interpreter {
         state.byte_position = Self::spl_file_object_byte_position_for_cursor(state);
     }
 
+    fn spl_file_object_stream_id(
+        &self,
+        object: &PhpObject,
+        method_name: &str,
+        span: Span,
+    ) -> CompileResult<i64> {
+        self.spl_file_object_state(object, method_name, span)?
+            .stream_id
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        format!("SplFileObject::{method_name}()"),
+                        "missing SplFileObject stream state",
+                    ),
+                )
+            })
+    }
+
+    fn spl_file_object_refresh_from_stream(
+        &mut self,
+        object_id: i64,
+        stream_id: i64,
+        method_name: &str,
+        span: Span,
+    ) -> CompileResult<()> {
+        let (filesystem_path, position) = {
+            let stream = self.streams.get_mut(&stream_id).ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        format!("SplFileObject::{method_name}()"),
+                        "SplFileObject stream is closed",
+                    ),
+                )
+            })?;
+            match stream {
+                StreamResource::File(stream) => {
+                    if stream.writable {
+                        stream.file.flush().map_err(|error| {
+                            runtime_error(
+                                span,
+                                RuntimeError::unsupported_call(
+                                    format!("SplFileObject::{method_name}()"),
+                                    format!("local file stream flush failed: {error}"),
+                                ),
+                            )
+                        })?;
+                    }
+                    let position = stream.file.stream_position().map_err(|error| {
+                        runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                format!("SplFileObject::{method_name}()"),
+                                format!("local file stream position failed: {error}"),
+                            ),
+                        )
+                    })?;
+                    (stream.filesystem_path.clone(), position)
+                }
+                StreamResource::Memory(_) => {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("SplFileObject::{method_name}()"),
+                            "SplFileObject memory streams are not implemented in this subset",
+                        ),
+                    ));
+                }
+            }
+        };
+        let contents = fs::read_to_string(&filesystem_path).map_err(|error| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("SplFileObject::{method_name}()"),
+                    format!("local file stream read failed: {error}"),
+                ),
+            )
+        })?;
+        let state = self.spl_file_objects.get_mut(&object_id).ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("SplFileObject::{method_name}()"),
+                    "missing SplFileObject runtime state",
+                ),
+            )
+        })?;
+        state.contents = contents;
+        state.lines = Self::spl_file_object_split_lines(&state.contents);
+        state.byte_position = (position as usize).min(state.contents.len());
+        Self::spl_file_object_sync_cursor_from_byte_position(state);
+        Ok(())
+    }
+
     fn spl_file_object_apply_max_line_len(state: &SplFileObjectState, line: &str) -> String {
         if state.max_line_len == 0 {
             return line.to_string();
@@ -17639,17 +17737,15 @@ impl Interpreter {
         let path =
             self.filesystem_filename_argument("SplFileObject::__construct", &args[0], span)?;
         let mode = Self::spl_file_object_constructor_mode(args.get(1), span)?;
-        if !(mode == "r" || mode == "rb" || mode == "rt") {
+        let Some(stream_mode) = parse_stream_mode(&mode) else {
             return Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
                     "SplFileObject::__construct()",
-                    format!(
-                        "read-only local file modes r, rb, and rt are supported in the current SplFileObject subset, got {mode}"
-                    ),
+                    format!("mode {mode:?} is not supported in the current SplFileObject subset"),
                 ),
             ));
-        }
+        };
         let use_include_path = Self::spl_file_object_bool_argument(
             "SplFileObject::__construct()",
             3,
@@ -17708,18 +17804,84 @@ impl Interpreter {
             ));
         }
 
-        let contents = fs::read_to_string(&filesystem_path).map_err(|error| {
-            runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "SplFileObject::__construct()",
-                    format!(
-                        "Cannot open file {path}: {}",
-                        php_filesystem_open_error_message(&error)
+        let realpath_entry = self.bounded_realpath_entry_for_local_path(&filesystem_path);
+        let existed_before_open = filesystem_path.exists();
+        let file = fs::OpenOptions::new()
+            .read(stream_mode.readable)
+            .write(stream_mode.writable)
+            .create(stream_mode.create)
+            .create_new(stream_mode.create_new)
+            .truncate(stream_mode.truncate)
+            .open(&filesystem_path)
+            .map_err(|error| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "SplFileObject::__construct()",
+                        format!(
+                            "Cannot open file {path}: {}",
+                            php_filesystem_open_error_message(&error)
+                        ),
                     ),
-                ),
-            )
-        })?;
+                )
+            })?;
+        if let Some((resolved, metadata)) = realpath_entry {
+            self.cache_realpath_entry(resolved, &metadata);
+        }
+        if stream_mode.create && !existed_before_open {
+            self.set_bounded_unix_permissions(
+                &filesystem_path,
+                self.effective_umask_mode(0o666),
+                "SplFileObject::__construct",
+                span,
+            )?;
+        }
+        if stream_mode.truncate || stream_mode.create || stream_mode.create_new {
+            self.clear_stat_cache_filesystem_path_aliases(&filesystem_path);
+        }
+        let stream_id = self.next_resource_id;
+        self.next_resource_id += 1;
+        let mut stream = FileStream {
+            file,
+            readable: stream_mode.readable,
+            writable: stream_mode.writable,
+            append: stream_mode.append,
+            eof: false,
+            metadata_unread_bytes: 0,
+            uri: path.to_string(),
+            filesystem_path: filesystem_path.clone(),
+            read_filter_rot13: false,
+            metadata_mode: mode,
+        };
+        if stream.append {
+            stream.file.seek(SeekFrom::Start(0)).map_err(|error| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "SplFileObject::__construct()",
+                        format!("local file stream seek failed: {error}"),
+                    ),
+                )
+            })?;
+        }
+        self.streams.insert(stream_id, StreamResource::File(stream));
+
+        let contents = if stream_mode.readable {
+            fs::read_to_string(&filesystem_path).map_err(|error| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "SplFileObject::__construct()",
+                        format!(
+                            "Cannot open file {path}: {}",
+                            php_filesystem_open_error_message(&error)
+                        ),
+                    ),
+                )
+            })?
+        } else {
+            String::new()
+        };
         self.cache_bounded_realpath_entry_for_local_path(&filesystem_path);
         let lines = Self::spl_file_object_split_lines(&contents);
         let eof = lines.is_empty();
@@ -17731,6 +17893,7 @@ impl Interpreter {
                 cursor: 0,
                 byte_position: 0,
                 eof,
+                stream_id: Some(stream_id),
                 ..SplFileObjectState::default()
             },
         );
@@ -17841,6 +18004,105 @@ impl Interpreter {
                 let length = contents.len() as i64;
                 self.append_output_at(&contents, span);
                 Ok(Value::Int(length))
+            }
+            "fwrite" | "fputs" => {
+                if args.is_empty() || args.len() > 2 {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::arity_mismatch(
+                            "SplFileObject::fwrite()",
+                            ArityExpectation::Between { min: 1, max: 2 },
+                            args.len(),
+                        ),
+                    ));
+                }
+                let stream_id = self.spl_file_object_stream_id(&object, method_name, span)?;
+                let mut fwrite_args = vec![Value::Resource(stream_id), args[0].clone()];
+                if let Some(length) = args.get(1) {
+                    fwrite_args.push(length.clone());
+                }
+                let result = self.call_fwrite(&fwrite_args, span)?;
+                if matches!(result, Value::Int(_)) {
+                    self.spl_file_object_refresh_from_stream(
+                        object.id(),
+                        stream_id,
+                        method_name,
+                        span,
+                    )?;
+                    let state = self.spl_file_object_state_mut(&object, method_name, span)?;
+                    state.eof = false;
+                }
+                Ok(result)
+            }
+            "fputcsv" => {
+                if args.is_empty() || args.len() > 5 {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::arity_mismatch(
+                            "SplFileObject::fputcsv()",
+                            ArityExpectation::Between { min: 1, max: 5 },
+                            args.len(),
+                        ),
+                    ));
+                }
+                let state = self.spl_file_object_state(&object, method_name, span)?;
+                let stream_id = state.stream_id.ok_or_else(|| {
+                    runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "SplFileObject::fputcsv()",
+                            "missing SplFileObject stream state",
+                        ),
+                    )
+                })?;
+                let mut fputcsv_args = Vec::with_capacity(6);
+                fputcsv_args.push(Value::Resource(stream_id));
+                fputcsv_args.push(args[0].clone());
+                fputcsv_args.push(
+                    args.get(1)
+                        .cloned()
+                        .unwrap_or_else(|| Value::String(state.csv_separator.to_string())),
+                );
+                fputcsv_args.push(
+                    args.get(2)
+                        .cloned()
+                        .unwrap_or_else(|| Value::String(state.csv_enclosure.to_string())),
+                );
+                fputcsv_args.push(args.get(3).cloned().unwrap_or_else(|| {
+                    Value::String(
+                        state
+                            .csv_escape
+                            .map(|escape| escape.to_string())
+                            .unwrap_or_default(),
+                    )
+                }));
+                fputcsv_args.push(
+                    args.get(4)
+                        .cloned()
+                        .unwrap_or_else(|| Value::String("\n".to_string())),
+                );
+                let result = self.call_fputcsv(&fputcsv_args, span)?;
+                if matches!(result, Value::Int(_)) {
+                    self.spl_file_object_refresh_from_stream(
+                        object.id(),
+                        stream_id,
+                        method_name,
+                        span,
+                    )?;
+                    let state = self.spl_file_object_state_mut(&object, method_name, span)?;
+                    state.eof = false;
+                }
+                Ok(result)
+            }
+            "fflush" => {
+                expect_arity("SplFileObject::fflush", &args, 0, span)?;
+                let stream_id = self.spl_file_object_stream_id(&object, method_name, span)?;
+                self.call_fflush(&[Value::Resource(stream_id)], span)
+            }
+            "ftell" => {
+                expect_arity("SplFileObject::ftell", &args, 0, span)?;
+                let stream_id = self.spl_file_object_stream_id(&object, method_name, span)?;
+                self.call_ftell(&[Value::Resource(stream_id)], span)
             }
             "fgetcsv" => {
                 if args.len() > 3 {
