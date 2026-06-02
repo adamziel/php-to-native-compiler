@@ -4397,10 +4397,15 @@ metadata slices, `ReflectionExtension` can build bounded arrays of functions,
 constants, INI entries, class names/classes, and dependencies.
 `ReflectionClass::getExtensionName()` and
 `ReflectionClass::getExtension()` use that same registry's class-name lists to
-report ownership for registered core classes such as `DOMDocument`, and return
-the PHP-shaped false/null fallback for user classes or unregistered internal
-classes. Exact extension inventories, broad host class ownership, dynamic
-modules, extension version policy, and native lowering remain out of scope.
+report ownership for registered core classes such as `DOMDocument` and
+`DOMDocumentType`, and return the PHP-shaped false/null fallback for user
+classes or unregistered internal classes. The current `DOMDocumentType` object
+is a constructed invalid-state placeholder: selected doctype metadata property
+reads are intercepted in the interpreter and mapped to catchable
+`DOMException` code `11`; parser-backed DTD population and live
+entity/notation maps remain outside this path. Exact extension inventories,
+broad host class ownership, dynamic modules, extension version policy, and
+native lowering remain out of scope.
 `get_called_class()` is a zero-argument runtime builtin that reads the
 interpreter's called-class context in current instance and static method calls;
 outside method or static class context it fails with a stable unsupported-call

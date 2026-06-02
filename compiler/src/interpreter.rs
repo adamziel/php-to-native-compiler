@@ -23973,10 +23973,8 @@ impl Interpreter {
             .get(class_id)
             .expect("core Error class id should resolve");
         let class_name = class.name().to_string();
-        let code = if class_name.eq_ignore_ascii_case("DOMException")
-            && message == "Invalid Character Error"
-        {
-            5
+        let code = if class_name.eq_ignore_ascii_case("DOMException") {
+            dom_exception_code_for_message(&message)
         } else {
             0
         };
@@ -26157,6 +26155,9 @@ impl Interpreter {
         }
         if declared_class_name.eq_ignore_ascii_case("DOMDocument") {
             return self.instantiate_dom_document(args, span, scope);
+        }
+        if declared_class_name.eq_ignore_ascii_case("DOMDocumentType") {
+            return self.instantiate_dom_document_type(args, span, scope);
         }
 
         let constructor = self.resolve_instance_method(class_id, "__construct");
@@ -42268,6 +42269,19 @@ impl Interpreter {
         Ok(Value::Object(object))
     }
 
+    fn instantiate_dom_document_type(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        for arg in args {
+            self.evaluate(arg, scope)?;
+        }
+        self.create_dom_object("DOMDocumentType", span)
+            .map(Value::Object)
+    }
+
     fn create_dom_attr_object(
         &mut self,
         name: &str,
@@ -42339,9 +42353,36 @@ impl Interpreter {
         if object.class_name().eq_ignore_ascii_case("DOMDocument") {
             return self.call_dom_document_method(object, method_name, &values, span);
         }
+        if object.class_name().eq_ignore_ascii_case("DOMDocumentType") {
+            return Err(runtime_error(
+                span,
+                RuntimeError::undefined_function(format!("DOMDocumentType::{method_name}()")),
+            ));
+        }
         Err(runtime_error(
             span,
             RuntimeError::undefined_function(format!("DOMNode::{method_name}()")),
+        ))
+    }
+
+    fn read_dom_document_type_property(
+        &self,
+        object: &PhpObject,
+        property: &str,
+        span: Span,
+    ) -> CompileResult<Option<Value>> {
+        if !object.class_name().eq_ignore_ascii_case("DOMDocumentType")
+            || !dom_document_type_invalid_state_property(property)
+        {
+            return Ok(None);
+        }
+
+        Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                format!("DOMDocumentType::${property}"),
+                "Invalid State Error",
+            ),
         ))
     }
 
@@ -50190,6 +50231,11 @@ impl Interpreter {
 
         match target_value {
             Value::Object(object) => {
+                if let Some(value) =
+                    self.read_dom_document_type_property(&object, property, span)?
+                {
+                    return Ok(value);
+                }
                 let (current_class_id, protected_class_ids) =
                     self.current_property_access_context();
                 match object.read_property_from_context(
@@ -50302,6 +50348,11 @@ impl Interpreter {
 
         match target_value {
             Value::Object(object) => {
+                if let Some(value) =
+                    self.read_dom_document_type_property(&object, property, span)?
+                {
+                    return Ok((value, None));
+                }
                 let (current_class_id, protected_class_ids) =
                     self.current_property_access_context();
                 match object.read_property_from_context(
@@ -51084,6 +51135,11 @@ impl Interpreter {
 
         match target_value {
             Value::Object(object) => {
+                if let Some(value) =
+                    self.read_dom_document_type_property(&object, &property, span)?
+                {
+                    return Ok(value);
+                }
                 let (current_class_id, protected_class_ids) =
                     self.current_property_access_context();
                 match object.read_property_from_context(
@@ -109578,6 +109634,7 @@ const REFLECTION_EXTENSION_DOM_CLASSES: &[&str] = &[
     "DOMAttr",
     "DOMElement",
     "DOMDocument",
+    "DOMDocumentType",
 ];
 const REFLECTION_EXTENSION_DOM_DEPENDENCIES: &[(&str, &str)] = &[
     ("libxml", "Required"),
@@ -110566,6 +110623,16 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
                 if message.contains(" expects at least ") || message.contains(" expects exactly ") {
                     return Some(("TypeError", message.to_string()));
                 }
+            }
+        }
+
+        if let Some((_, message)) = error
+            .message
+            .strip_prefix("unsupported call DOMDocumentType::$")
+            .and_then(|rest| rest.split_once(": "))
+        {
+            if message == "Invalid State Error" {
+                return Some(("DOMException", message.to_string()));
             }
         }
 
@@ -120725,6 +120792,21 @@ fn dom_is_valid_xml_name(name: &str) -> bool {
         return false;
     }
     chars.all(|ch| ch == '_' || ch == ':' || ch == '-' || ch == '.' || ch.is_ascii_alphanumeric())
+}
+
+fn dom_document_type_invalid_state_property(property: &str) -> bool {
+    matches!(
+        property,
+        "name" | "entities" | "notations" | "publicId" | "systemId" | "internalSubset"
+    )
+}
+
+fn dom_exception_code_for_message(message: &str) -> i64 {
+    match message {
+        "Invalid Character Error" => 5,
+        "Invalid State Error" => 11,
+        _ => 0,
+    }
 }
 
 fn xml_escape_attribute(value: &str) -> String {

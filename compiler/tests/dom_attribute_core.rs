@@ -112,3 +112,53 @@ echo $dom->saveXML($element), "\n";
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);
 }
+
+#[test]
+fn dom_document_type_invalid_state_properties_raise_dom_exception() {
+    let execution = run_source(
+        r#"<?php
+function marker($name) {
+    echo "arg:$name\n";
+    return $name;
+}
+
+$direct = new DOMDocumentType(marker("direct"));
+try {
+    $direct->name;
+} catch (DOMException $e) {
+    echo "name|", $e->getCode(), "|", $e->getMessage(), "\n";
+}
+
+foreach (array("entities", "notations", "publicId", "systemId", "internalSubset") as $property) {
+    $doctype = new DOMDocumentType();
+    try {
+        $doctype->$property;
+    } catch (DOMException $e) {
+        echo $property, "|", $e->getCode(), "|", $e->getMessage(), "\n";
+    }
+}
+
+echo class_exists("DOMDocumentType") ? "class\n" : "missing\n";
+$extension = new ReflectionExtension("dom");
+echo in_array("DOMDocumentType", $extension->getClassNames(), true) ? "listed\n" : "not-listed\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "arg:direct\n",
+            "name|11|Invalid State Error\n",
+            "entities|11|Invalid State Error\n",
+            "notations|11|Invalid State Error\n",
+            "publicId|11|Invalid State Error\n",
+            "systemId|11|Invalid State Error\n",
+            "internalSubset|11|Invalid State Error\n",
+            "class\n",
+            "listed\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}

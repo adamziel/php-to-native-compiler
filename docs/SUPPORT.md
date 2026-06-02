@@ -10275,6 +10275,14 @@
   extension discovery, broad internal-class ownership outside the current
   registry, exact extension inventories, version coupling, native module
   loading, and native lowering remain unsupported.
+  The DOM core class slice includes a bounded `DOMDocumentType` placeholder:
+  direct construction creates PHP's uninitialized doctype object, reads of
+  `name`, `entities`, `notations`, `publicId`, `systemId`, and
+  `internalSubset` raise catchable `DOMException` code `11` /
+  `Invalid State Error`, and `ReflectionExtension("dom")` reports the class.
+  Parser-backed doctype population, `DOMNamedNodeMap` entity/notation objects,
+  readonly DOM property-hook write diagnostics, and native DOM/libxml
+  execution remain unsupported.
   Simple class-body `use TraitName;`, repeated simple trait-use declarations,
   and `use TraitA, TraitB;` compose already-declared public trait constants and
   supported trait properties plus public instance/static trait methods onto the

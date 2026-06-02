@@ -73,6 +73,7 @@ const CORE_CLASS_NAMES: &[&str] = &[
     "DOMAttr",
     "DOMElement",
     "DOMDocument",
+    "DOMDocumentType",
     "Generator",
 ];
 const CORE_INTERFACE_NAMES: &[&str] = &[

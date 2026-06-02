@@ -4,6 +4,24 @@
 
 Implemented:
 
+- Added a bounded `DOMDocumentType` invalid-state metadata lane on the
+  interpreter path. `DOMDocumentType` is now a registered DOM core class and
+  `DOMNode` subclass, direct construction materializes PHP's uninitialized
+  doctype placeholder while still evaluating ignored constructor arguments,
+  and reads of `name`, `entities`, `notations`, `publicId`, `systemId`, and
+  `internalSubset` raise catchable `DOMException` objects with code `11` and
+  message `Invalid State Error`. `ReflectionExtension("dom")` includes the
+  class in the bounded DOM class inventory. Focused proof covers the Rust
+  `dom_document_type_invalid_state_properties_raise_dom_exception`
+  regression and direct CLI fixture
+  `tests/fixtures/milestone2364/dom_document_type_invalid_state.php`; the
+  matching public `DOMDocumentType_*_error_001.phpt` invalid-state rows pass
+  through the PHPT wrapper.
+  Unsupported edges remain parser-backed `DOMDocument::loadXML()` doctype
+  population, `DOMNamedNodeMap` entity/notation objects, readonly DOM
+  property-hook write diagnostics, broader DOM node metadata, references/COW,
+  and native DOM/libxml execution.
+
 - Added a bounded float-to-int diagnostics lane for `phpc run`. Real float
   operands now emit PHP-shaped precision-loss deprecations or
   non-representable-float warnings when coerced through unary and binary

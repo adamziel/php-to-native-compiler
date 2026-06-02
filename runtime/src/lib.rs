@@ -33413,6 +33413,27 @@ impl PhpClassTable {
                 .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
                 .expect("DOMDocument core metadata should not duplicate methods");
         }
+        let dom_document_type_id = classes
+            .declare_class("DOMDocumentType")
+            .expect("core class table should contain DOMDocument before DOMDocumentType");
+        classes
+            .set_parent(dom_document_type_id, dom_node_id)
+            .expect("DOMDocumentType should extend DOMNode");
+        let dom_document_type = classes
+            .get_mut(dom_document_type_id)
+            .expect("declared DOMDocumentType class id should resolve");
+        for property in [
+            "name",
+            "entities",
+            "notations",
+            "publicId",
+            "systemId",
+            "internalSubset",
+        ] {
+            dom_document_type
+                .add_property(PhpPropertyMetadata::instance(property, Visibility::Public))
+                .expect("DOMDocumentType core metadata should not duplicate properties");
+        }
         classes
     }
 
@@ -81241,6 +81262,7 @@ mod tests {
                 "DOMAttr",
                 "DOMElement",
                 "DOMDocument",
+                "DOMDocumentType",
             ]
         );
         let mut normalized_class_names = class_names
