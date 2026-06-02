@@ -17961,17 +17961,23 @@ impl Interpreter {
                     ),
                 )
             })?;
-        let timestamp = apply_bounded_datetime_modifier(state.timestamp, &state.timezone, modifier)
-            .ok_or_else(|| {
-                runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        function,
-                        format!("modifier {modifier:?} is not implemented in the current subset"),
-                    ),
-                )
-            })?;
-        self.assign_datetime_object_state(object, timestamp, state.timezone, span)
+        let (timestamp, timezone) = match parse_bounded_at_timestamp(modifier.trim()) {
+            Some(timestamp) => (timestamp, BoundedTimezone::numeric_fixed_offset(0)),
+            None => {
+                let unsupported_message =
+                    format!("modifier {modifier:?} is not implemented in the current subset");
+                let timestamp =
+                    apply_bounded_datetime_modifier(state.timestamp, &state.timezone, modifier)
+                        .ok_or_else(|| {
+                            runtime_error(
+                                span,
+                                RuntimeError::unsupported_call(function, unsupported_message),
+                            )
+                        })?;
+                (timestamp, state.timezone)
+            }
+        };
+        self.assign_datetime_object_state(object, timestamp, timezone, span)
     }
 
     fn call_date_format(&self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -138241,13 +138247,14 @@ impl BoundedTimezone {
                     10_800
                 }
             }
-            "Europe/Amsterdam" | "Europe/Rome" => {
+            "Europe/Amsterdam" | "Europe/Paris" | "Europe/Rome" => {
                 if bounded_month_is_in_dst_window(month, day, 3, 27, 10, 31) {
                     7_200
                 } else {
                     3_600
                 }
             }
+            "America/Lima" => -18_000,
             "Europe/Kyiv" => {
                 if bounded_month_is_in_dst_window(month, day, 3, 27, 10, 31) {
                     10_800
@@ -138283,7 +138290,8 @@ impl BoundedTimezone {
             "America/Sao_Paulo" => -10_800,
             "Africa/Casablanca" => 0,
             "Europe/Moscow" => 10_800,
-            "Europe/Amsterdam" | "Europe/Rome" => 3_600,
+            "Europe/Amsterdam" | "Europe/Paris" | "Europe/Rome" => 3_600,
+            "America/Lima" => -18_000,
             "Europe/Kyiv" => 7_200,
             "Asia/Jerusalem" => 7_200,
             "Asia/Calcutta" | "Asia/Kolkata" => 19_800,
@@ -138387,13 +138395,14 @@ impl BoundedTimezone {
                     "MSK"
                 }
             }
-            "Europe/Amsterdam" | "Europe/Rome" => {
+            "Europe/Amsterdam" | "Europe/Paris" | "Europe/Rome" => {
                 if self.is_dst(parts) {
                     "CEST"
                 } else {
                     "CET"
                 }
             }
+            "America/Lima" => "-05",
             "Europe/Kyiv" => {
                 if self.is_dst(parts) {
                     "EEST"
@@ -138444,6 +138453,7 @@ fn bounded_timezone_from_name(name: &str) -> Option<BoundedTimezone> {
         "America/Halifax" => "America/Halifax",
         "America/Los_Angeles" => "America/Los_Angeles",
         "America/Indiana/Knox" => "America/Indiana/Knox",
+        "America/Lima" => "America/Lima",
         "America/Montevideo" => "America/Montevideo",
         "America/Sao_Paulo" => "America/Sao_Paulo",
         "Europe/Amsterdam" => "Europe/Amsterdam",
@@ -138452,6 +138462,7 @@ fn bounded_timezone_from_name(name: &str) -> Option<BoundedTimezone> {
         "Europe/London" => "Europe/London",
         "Europe/Moscow" => "Europe/Moscow",
         "Europe/Oslo" => "Europe/Oslo",
+        "Europe/Paris" => "Europe/Paris",
         "Europe/Rome" => "Europe/Rome",
         "CET" => "Europe/Berlin",
         "CEST" => "Europe/Berlin",
@@ -138598,6 +138609,7 @@ const BOUNDED_TIMEZONE_IDENTIFIERS: &[(&str, i64, bool)] = &[
     ("America/Chicago", PHP_DATETIMEZONE_AMERICA, false),
     ("America/Halifax", PHP_DATETIMEZONE_AMERICA, false),
     ("America/Indiana/Knox", PHP_DATETIMEZONE_AMERICA, false),
+    ("America/Lima", PHP_DATETIMEZONE_AMERICA, false),
     ("America/Los_Angeles", PHP_DATETIMEZONE_AMERICA, false),
     ("America/Montevideo", PHP_DATETIMEZONE_AMERICA, false),
     ("America/New_York", PHP_DATETIMEZONE_AMERICA, false),
@@ -138617,6 +138629,7 @@ const BOUNDED_TIMEZONE_IDENTIFIERS: &[(&str, i64, bool)] = &[
     ("Europe/London", PHP_DATETIMEZONE_EUROPE, false),
     ("Europe/Moscow", PHP_DATETIMEZONE_EUROPE, false),
     ("Europe/Oslo", PHP_DATETIMEZONE_EUROPE, false),
+    ("Europe/Paris", PHP_DATETIMEZONE_EUROPE, false),
     ("Europe/Rome", PHP_DATETIMEZONE_EUROPE, false),
     ("GMT", PHP_DATETIMEZONE_UTC, false),
     ("GMT0", PHP_DATETIMEZONE_UTC, false),

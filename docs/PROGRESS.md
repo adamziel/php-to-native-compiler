@@ -4,6 +4,24 @@
 
 Implemented:
 
+- Added a bounded `DateTime::modify("@timestamp")` timestamp mutation lane for
+  the selected `gh9891.phpt` surface. Mutable `DateTime::modify()` and
+  procedural `date_modify()` now recognize Unix timestamp modifiers through
+  the same bounded `@...` timestamp parser used by construction, update the
+  stored timestamp, and switch the object timezone identity to the PHP-shaped
+  fixed `+00:00` timestamp zone instead of preserving the previous local
+  timezone. The bounded timezone table now includes `Europe/Paris` and
+  `America/Lima` for the covered constructor inputs, while `setTimestamp()`
+  still preserves the receiver timezone. Focused proof covers the Rust
+  `datetime_modify_at_timestamp_uses_unix_timestamp_timezone_identity`
+  regression, a direct `phpc run` probe, the existing native rejection probe,
+  and selected PHPT row `ext/date/tests/gh9891.phpt`. Unsupported edges remain
+  broad relative/absolute `modify()` grammar beyond the current bounded
+  weekday/unit/timestamp forms, `DateMalformedStringException` invalid-modifier
+  parity, exact timezone database and DST transition history beyond bounded
+  entries, DateTimeImmutable mutation behavior, DateInterval arithmetic, and
+  native lowering.
+
 - Added a bounded mutable `DateTime::__set_state()` reconstruction lane for the
   selected `DateTime_set_state.phpt` surface. The interpreter now accepts the
   exported `date`, `timezone_type`, and `timezone` state array produced by the

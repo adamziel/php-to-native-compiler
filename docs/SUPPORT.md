@@ -5748,7 +5748,11 @@
   Mutable `DateTime` objects support bounded `format()`, `getTimestamp()`,
   `setTimestamp()`, `modify()`, `getOffset()`, `getTimezone()`, and
   `setTimezone(DateTimeZone $timezone)` behavior over the same bounded
-  timezone table. Construction through `new DateTime($time = null,
+  timezone table. `modify()` covers the current bounded relative weekday/unit
+  forms plus Unix timestamp modifiers such as `@1234567890`; timestamp
+  modifiers update the timestamp and switch the object timezone identity to
+  the bounded `+00:00` timestamp zone, while `setTimestamp()` preserves the
+  existing object timezone. Construction through `new DateTime($time = null,
   ?DateTimeZone $timezone = null)` and `date_create($time = null,
   ?DateTimeZone $timezone = null)` accepts the optional bounded timezone
   object for strings without an explicit timezone, while timestamp strings
@@ -5774,7 +5778,8 @@
   coercion/deprecation parity, `DateTimeImmutable`, broad `DateTimeInterface`
   runtime/interface parity beyond the reached constant diagnostic text, all
   historical transition rules, DateTime state arrays outside the bounded
-  exported `date`/`timezone_type`/`timezone` shape, exact diagnostics for
+  exported `date`/`timezone_type`/`timezone` shape, exact invalid-modifier
+  `DateMalformedStringException` behavior, exact diagnostics for
   constructor/timezone/state coercions outside the covered slices, and native
   lowering remain unsupported.
   `header($header, $replace = true, $response_code = 0)` accepts a string

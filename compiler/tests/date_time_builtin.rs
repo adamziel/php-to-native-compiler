@@ -159,6 +159,41 @@ echo date_format($datetime, "D, d M Y"), "\n";
 }
 
 #[test]
+fn datetime_modify_at_timestamp_uses_unix_timestamp_timezone_identity() {
+    let execution = run_source(
+        r#"<?php
+$m = new DateTime("2022-12-20 14:30:25", new DateTimeZone("Europe/Paris"));
+$returned = $m->modify("@1234567890");
+var_dump($m->getTimeStamp());
+echo $m->getTimezone()->getName(), "|", $m->format(DateTime::ATOM), "|";
+echo ($returned === $m ? "same" : "different"), "\n";
+
+$a = new DateTime("2022-11-01 13:30:00", new DateTimezone("America/Lima"));
+$b = clone $a;
+echo $a->format(DateTime::ATOM), "|", $a->getTimestamp(), "|", $a->format("T e Z"), "\n";
+$a->modify("@" . $a->getTimestamp());
+$b->setTimestamp($b->getTimestamp());
+echo $a->format(DateTime::ATOM), "|", $a->getTimezone()->getName(), "\n";
+echo $b->format(DateTime::ATOM), "|", $b->getTimezone()->getName(), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "int(1234567890)\n",
+            "+00:00|2009-02-13T23:31:30+00:00|same\n",
+            "2022-11-01T13:30:00-05:00|1667327400|-05 America/Lima -18000\n",
+            "2022-11-01T18:30:00+00:00|+00:00\n",
+            "2022-11-01T13:30:00-05:00|America/Lima\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn date_default_timezone_state_applies_bounded_offsets() {
     let execution = run_source(
         r#"<?php
