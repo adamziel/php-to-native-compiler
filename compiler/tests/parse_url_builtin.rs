@@ -77,8 +77,10 @@ foreach (["?", "#", "?q", "#f", "?#", "?#f", "?q#f"] as $url) {
 fn raw_url_encoding_matches_rfc3986_percent_boundaries() {
     let execution = run_source(
         r#"<?php
+echo urlencode("A1_-.~ +/%"), "\n";
 echo rawurlencode("A1_-.~ +/%"), "\n";
 echo rawurldecode("%41%31%5F%2D%2E%7E%20%2B%2F%25"), "\n";
+echo urlencode("\xA3"), "\n";
 echo bin2hex(rawurldecode("%00%FF%7E")), "\n";
 echo function_exists("rawurlencode") ? "fn" : "missing";
 echo "|", is_callable("rawurldecode") ? "callable" : "missing";
@@ -88,7 +90,7 @@ echo "|", is_callable("rawurldecode") ? "callable" : "missing";
 
     assert_eq!(
         execution.stdout,
-        "A1_-.~%20%2B%2F%25\nA1_-.~ +/%\n00ff7e\nfn|callable"
+        "A1_-.%7E+%2B%2F%25\nA1_-.~%20%2B%2F%25\nA1_-.~ +/%\n%A3\n00ff7e\nfn|callable"
     );
     assert_eq!(execution.exit_code, 0);
 }

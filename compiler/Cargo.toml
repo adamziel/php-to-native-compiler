@@ -18,3 +18,4 @@ md-5 = "0.10"
 php_runtime = { path = "../runtime" }
 regex = "1"
 sha2 = "0.10"
+sha3 = "0.10"

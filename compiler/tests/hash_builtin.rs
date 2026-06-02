@@ -180,6 +180,41 @@ echo count($algos), "|", $algos[30], "|", $algos[31], "|", $algos[32];
 }
 
 #[test]
+fn hash_sha3_family_is_available() {
+    let execution = run_source(
+        r#"<?php
+foreach (["", "a", "The quick brown fox jumps over the lazy dog"] as $subject) {
+    echo hash("sha3-224", $subject), "\n";
+    echo hash("sha3-256", $subject), "\n";
+    echo substr(hash("sha3-384", $subject), 0, 24), "\n";
+    echo substr(hash("sha3-512", $subject), 0, 24), "\n";
+}
+echo bin2hex(hash("sha3-256", "abc", true)), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "6b4e03423667dbb73b6e15454f0eb1abd4597f9a1b078e3f5b5a6bc7\n\
+a7ffc6f8bf1ed76651c14756a061d662f580ff4de43b49fa82d80a4b80f8434a\n\
+0c63a75b845e4f7d01107d85\n\
+a69f73cca23a9ac5c8b567dc\n\
+9e86ff69557ca95f405f081269685b38e3a819b309ee942f482b6a8b\n\
+80084bf2fba02475726feb2cab2d8215eab14bc6bdd8bfb2c8151257032ecd8b\n\
+1815f774f320491b48569efe\n\
+697f2d856172cb8309d6b8b9\n\
+d15dadceaa4d5d7bb3b48f446421d542e08ad8887305e28d58335795\n\
+69070dda01975c8c120c3aada1b282394e7f032fa9cf32f4cb2259a0897dfc04\n\
+7063465e08a93bce31cd89d2\n\
+01dedd5de4ef14642445ba5f\n\
+3a985da74fe225b2045c172d6bd390bd855f086e3e9d525b46bfe24511431532\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn hash_rejects_unknown_algorithms() {
     let execution = run_source("<?php\nhash('foo', '');\n").unwrap();
     assert_eq!(execution.stderr, "");

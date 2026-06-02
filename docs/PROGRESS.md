@@ -4,6 +4,24 @@
 
 Implemented:
 
+- Added a bounded SHA3 execution lane for the selected ext/hash `sha3.phpt`
+  row. `hash()` now executes `sha3-224`, `sha3-256`, `sha3-384`, and
+  `sha3-512` through the shared raw/hex digest dispatcher, using the `sha3`
+  crate and the existing `hash_algos()` metadata inventory instead of adding
+  native lowering or streaming contexts. The adjacent `urlencode()` helper now
+  percent-encodes PHP string bytes directly, preserving binary-string bytes
+  such as `\xA3` that the SHA3 PHPT row prints in its subject labels. Focused
+  Rust passed `14 / 14` in `hash_builtin` after the SHA3 regression and the
+  focused `parse_url_builtin` URL-encoding byte regression; `cargo build -p
+  phpc --bin phpc` passed; a direct `phpc run` probe proved SHA3 hex/raw output,
+  binary-byte `urlencode()`, and `hash_algos()` membership; selected PHPT proof
+  passed `1 / 1` for `ext/hash/tests/sha3.phpt`; `cargo fmt --check` and
+  `git diff --check` passed. Unsupported edges remain hash execution outside
+  the bounded SHA-1/SHA-2/SHA-3/MD5/checksum subset, non-empty `hash()` options
+  arrays, `hash_file()`, HMAC execution beyond the existing SHA-256 branch,
+  HMAC raw output, streaming `HashContext`, HKDF/PBKDF2 output, broad exact
+  diagnostics/coercions, and native lowering.
+
 - Added a bounded stat-cache alias invalidation lane for local stream/file
   writes through linked filesystem paths. Successful local `fopen()`
   create/truncate paths, `fwrite()`, `ftruncate()`, `file_put_contents()`,

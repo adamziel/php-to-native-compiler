@@ -22,6 +22,7 @@ use php_runtime::{
 };
 use regex::bytes::{Captures as RegexCaptures, Regex, RegexBuilder};
 use sha2::{Sha224, Sha256, Sha384, Sha512, Sha512_224, Sha512_256};
+use sha3::{Sha3_224, Sha3_256, Sha3_384, Sha3_512};
 
 use crate::ast::{
     ArrayItem, AssignTarget, AttributeDecl, BinaryOp, CastKind, CatchClause, ClassConstantDecl,
@@ -126025,8 +126026,8 @@ fn parse_url_port(value: &str) -> Option<i64> {
 
 fn call_urlencode(args: &[Value], span: Span) -> CompileResult<Value> {
     expect_arity("urlencode", args, 1, span)?;
-    let value = string_contains_argument("urlencode()", "string", &args[0], span)?;
-    Ok(Value::String(form_urlencode_component(&value)))
+    let value = string_compare_argument_bytes("urlencode()", "string", &args[0], span)?;
+    Ok(Value::String(form_urlencode_bytes(&value)))
 }
 
 #[derive(Clone, Copy)]
@@ -126234,8 +126235,12 @@ fn call_rawurldecode(args: &[Value], span: Span) -> CompileResult<Value> {
 }
 
 fn form_urlencode_component(value: &str) -> String {
+    form_urlencode_bytes(value.as_bytes())
+}
+
+fn form_urlencode_bytes(value: &[u8]) -> String {
     let mut encoded = String::with_capacity(value.len());
-    for byte in value.bytes() {
+    for &byte in value {
         if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.') {
             encoded.push(byte as char);
         } else if byte == b' ' {
@@ -132480,6 +132485,10 @@ enum PhpHashAlgorithm {
     Sha512_224,
     Sha512_256,
     Sha512,
+    Sha3_224,
+    Sha3_256,
+    Sha3_384,
+    Sha3_512,
     Adler32,
     Crc32,
     Crc32b,
@@ -132828,6 +132837,10 @@ fn php_hash_algorithm(name: &str) -> Option<PhpHashAlgorithm> {
         "sha512/224" | "sha512-224" => Some(PhpHashAlgorithm::Sha512_224),
         "sha512/256" | "sha512-256" => Some(PhpHashAlgorithm::Sha512_256),
         "sha512" => Some(PhpHashAlgorithm::Sha512),
+        "sha3-224" => Some(PhpHashAlgorithm::Sha3_224),
+        "sha3-256" => Some(PhpHashAlgorithm::Sha3_256),
+        "sha3-384" => Some(PhpHashAlgorithm::Sha3_384),
+        "sha3-512" => Some(PhpHashAlgorithm::Sha3_512),
         "adler32" => Some(PhpHashAlgorithm::Adler32),
         "crc32" => Some(PhpHashAlgorithm::Crc32),
         "crc32b" => Some(PhpHashAlgorithm::Crc32b),
@@ -132859,6 +132872,10 @@ fn php_hash_digest_bytes(algorithm: PhpHashAlgorithm, bytes: &[u8]) -> Vec<u8> {
         PhpHashAlgorithm::Sha512_224 => Sha512_224::digest(bytes).to_vec(),
         PhpHashAlgorithm::Sha512_256 => Sha512_256::digest(bytes).to_vec(),
         PhpHashAlgorithm::Sha512 => Sha512::digest(bytes).to_vec(),
+        PhpHashAlgorithm::Sha3_224 => Sha3_224::digest(bytes).to_vec(),
+        PhpHashAlgorithm::Sha3_256 => Sha3_256::digest(bytes).to_vec(),
+        PhpHashAlgorithm::Sha3_384 => Sha3_384::digest(bytes).to_vec(),
+        PhpHashAlgorithm::Sha3_512 => Sha3_512::digest(bytes).to_vec(),
         PhpHashAlgorithm::Adler32 => php_hash_adler32_digest_bytes(bytes).to_vec(),
         PhpHashAlgorithm::Crc32 => php_hash_crc32_digest_bytes(bytes).to_vec(),
         PhpHashAlgorithm::Crc32b => php_hash_crc32b_digest_bytes(bytes).to_vec(),

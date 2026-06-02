@@ -557,6 +557,9 @@ leaves, applies top-level numeric prefixes, honors the documented direct named
 arguments, guards self-recursive public object branches by eliding that branch,
 and encodes components as RFC1738 form data by default or RFC3986 when
 requested.
+`urlencode()` and the RFC1738 `http_build_query()` path percent-encode PHP
+string bytes directly, while `rawurlencode()` uses the corresponding RFC3986
+byte boundary.
 `request_parse_body()` currently covers only the CLI validation edge of that
 request-body surface: it validates scalar option arrays, emits quantity
 warnings through the INI quantity parser, and throws the PHP-shaped
@@ -2707,7 +2710,7 @@ and `md5_file()` are interpreter-only deterministic hash boundaries for the
 same placeholder-escape path and focused file-content checks. `uniqid()`
 returns a fixed prefix-based ID with a PHP-shaped more-entropy suffix length,
 `hash_hmac()` currently supports lowercase hex HMAC-SHA256 through the `hmac`
-and `sha2` crates, `hash()` covers a bounded SHA-1/SHA-2 digest set with
+and `sha2` crates, `hash()` covers a bounded SHA-1/SHA-2/SHA-3 digest set with
 lowercase hex or raw binary output, `hash_pbkdf2()` covers only the current
 algorithm/iteration/length validation surface before rejecting successful
 PBKDF2 derivation, `md5()` supports scalar/null string-convertible input with

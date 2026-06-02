@@ -2755,11 +2755,14 @@
   `false` for the covered malformed host/port cases. `PHP_URL_*` constants are
   visible through bare reads, `defined()`, `constant()`, and
   `get_defined_constants()` alongside the existing supported builtin constants.
-  `rawurlencode()` and `rawurldecode()` support RFC3986 byte-oriented percent
-  encoding and decoding for the current string subset. Exact RFC/WHATWG
+  `urlencode()` supports RFC1738 form percent-encoding over PHP string bytes,
+  with spaces encoded as `+`; `rawurlencode()` and `rawurldecode()` support
+  RFC3986 byte-oriented percent encoding and decoding for the current string
+  subset. Exact RFC/WHATWG
   validation, broader IPv6 and platform-specific file URL edge cases, binary
-  byte fidelity outside UTF-8 strings, URL normalization, IDNA, percent-decoding
-  of parsed URL components, and native lowering remain unsupported.
+  byte fidelity outside these byte-oriented encoders, URL normalization, IDNA,
+  percent-decoding of parsed URL components, and native lowering remain
+  unsupported.
   `escapeshellarg()` supports the bounded Unix argument-quoting shape used by
   the focused standard PHPT row: the interpreter wraps the current string
   argument bytes in single quotes and escapes embedded single quotes as
@@ -3991,12 +3994,13 @@
   unsupported.
   `hash($algo, $data, $binary = false, $options = [])` supports scalar/null
   string-convertible data for `sha1`, `sha224`, `sha256`, `sha384`,
-  `sha512/224`, `sha512/256`, `sha512`, `md5`, `adler32`, `crc32`, `crc32b`,
-  `crc32c`, `fnv132`, `fnv1a32`, `fnv164`, `fnv1a64`, and `joaat`, returning
-  lowercase hex output or raw binary-string output when the binary flag is
-  truthy. `hash_algos()` returns the PHP 8.2 algorithm metadata list used by
-  the public hash PHPT rows, though execution remains bounded to the named
-  SHA/MD5/checksum algorithms.
+  `sha512/224`, `sha512/256`, `sha512`, `sha3-224`, `sha3-256`,
+  `sha3-384`, `sha3-512`, `md5`, `adler32`, `crc32`, `crc32b`, `crc32c`,
+  `fnv132`, `fnv1a32`, `fnv164`, `fnv1a64`, and `joaat`, returning lowercase
+  hex output or raw binary-string output when the binary flag is truthy.
+  `hash_algos()` returns the PHP 8.2 algorithm metadata list used by the
+  public hash PHPT rows, though execution remains bounded to the named
+  SHA-1/SHA-2/SHA-3/MD5/checksum algorithms.
   `hash_hmac_algos()` returns the bounded PHP cryptographic HMAC algorithm
   metadata list used by the public hash PHPT row; only `hash_hmac('sha256',
   ...)` execution is currently implemented from that list.
@@ -4020,7 +4024,7 @@
   `hash_equals($known_string, $user_string)` supports strict string and binary
   string operands, constant-work same-length byte comparison, and PHP-shaped
   type diagnostics for non-string operands.
-  Hash algorithms outside that bounded SHA/MD5/checksum execution set,
+  Hash algorithms outside that bounded SHA-1/SHA-2/SHA-3/MD5/checksum execution set,
   non-empty `hash()` options arrays, `HashContext` allocation and streaming
   hash updates/finalization, `hash_hmac()` execution for algorithms beyond
   SHA-256, `hash_hmac()` raw binary output, `hash_init()` HMAC context
