@@ -4094,7 +4094,10 @@
   `TypeError`. Arbitrary array callables, `__invoke`, references, variadic
   unpacking, exact PHP warning behavior, and native lowering remain
   unsupported. The callable builtin subset includes runtime string-search
-  `strpos(...)`;
+  `strpos(...)`; direct literal unqualified `func_num_args`, `func_get_args`,
+  and `func_get_arg` callbacks read the active user-function call frame.
+  Variable or stored callback values and fully-qualified callback strings for
+  that `func_*` family remain PHP-shaped forbidden dynamic calls.
   `substr_count(...)` remains direct-call interpreter support only.
   `call_user_func_array($callback, $args)` supports string callbacks resolving
   to current user functions or documented callable builtins, public
@@ -9281,14 +9284,16 @@
   public array-callable callback subset as the builtin section above,
   including PHP-matching by-value invocation plus bounded `E_WARNING` recovery
   for reached non-variadic by-reference parameters and bounded SPL autoload for
-  missing class-string array callback targets; direct native
+  missing class-string array callback targets, plus literal unqualified
+  `func_*` active-frame callbacks documented above; direct native
   `call_user_func(...)` calls still reject under the function-call boundary,
   while native function-table introspection recognizes the name.
   `call_user_func_array` accepts the same current string/array callable,
   integer-keyed positional argument-array, literal direct-variable or direct
-  visible named object-property array-offset by-reference argument, and direct stored
-  reference-array string/function, public object-method, or public class-string
-  static-method callback argument subset as the builtin section above;
+  visible named object-property array-offset by-reference argument, and direct
+  stored reference-array string/function, public object-method, public
+  class-string static-method, or literal unqualified `func_*` active-frame
+  callback argument subset as the builtin section above;
   direct native `call_user_func_array(...)` calls still reject under the
   function-call boundary, while native function-table introspection recognizes
   the name.

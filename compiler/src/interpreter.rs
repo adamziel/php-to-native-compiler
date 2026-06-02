@@ -58879,7 +58879,9 @@ impl Interpreter {
             }
         };
 
-        if let Some(error) = forbidden_dynamic_builtin_call_error(callback_name, span) {
+        if let Some(error) =
+            forbidden_dynamic_builtin_call_user_func_error(&args[0], callback_name, span)
+        {
             return Err(error);
         }
 
@@ -58974,7 +58976,9 @@ impl Interpreter {
                 ));
             }
         };
-        if let Some(error) = forbidden_dynamic_builtin_call_error(callback_name, span) {
+        if let Some(error) =
+            forbidden_dynamic_builtin_call_user_func_error(&args[0], callback_name, span)
+        {
             return Err(error);
         }
 
@@ -61269,7 +61273,9 @@ impl Interpreter {
                     );
                 }
 
-                if let Some(error) = forbidden_dynamic_builtin_call_error(callback_name, span) {
+                if let Some(error) =
+                    forbidden_dynamic_builtin_call_user_func_error(&args[0], callback_name, span)
+                {
                     return Err(error);
                 }
                 let callable = self.lookup_function(callback_name).ok_or_else(|| {
@@ -61368,7 +61374,9 @@ impl Interpreter {
                     );
                 }
 
-                if let Some(error) = forbidden_dynamic_builtin_call_error(callback_name, span) {
+                if let Some(error) =
+                    forbidden_dynamic_builtin_call_user_func_error(&args[0], callback_name, span)
+                {
                     return Err(error);
                 }
                 let callable = self.lookup_function(callback_name).ok_or_else(|| {
@@ -104411,6 +104419,34 @@ fn forbidden_dynamic_builtin_call_error(name: &str, span: Span) -> Option<Diagno
     })
 }
 
+fn forbidden_dynamic_builtin_call_user_func_error(
+    callback_expr: &Expr,
+    name: &str,
+    span: Span,
+) -> Option<Diagnostic> {
+    if call_user_func_literal_scope_frame_builtin(callback_expr, name) {
+        return None;
+    }
+    forbidden_dynamic_builtin_call_error(name, span)
+}
+
+fn call_user_func_literal_scope_frame_builtin(callback_expr: &Expr, name: &str) -> bool {
+    let Expr::String(literal, _) = callback_expr else {
+        return false;
+    };
+    if literal.contains('\\') || name.contains('\\') {
+        return false;
+    }
+    let literal = literal.to_ascii_lowercase();
+    if literal.as_str() != name.to_ascii_lowercase() {
+        return false;
+    }
+    matches!(
+        literal.as_str(),
+        "func_get_args" | "func_get_arg" | "func_num_args"
+    )
+}
+
 fn is_forbidden_dynamic_builtin_call_diagnostic(error: &Diagnostic) -> bool {
     error.phase == Phase::Runtime
         && forbidden_dynamic_builtin_name(
@@ -105040,6 +105076,31 @@ fn catchable_uncaught_throw_class_and_message(
 fn func_get_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static str, String)> {
     if error.phase != Phase::Runtime {
         return None;
+    }
+
+    for (callable, expected) in [
+        ("func_get_args", 0usize),
+        ("func_get_arg", 1usize),
+        ("func_num_args", 0usize),
+    ] {
+        let prefix =
+            format!("arity mismatch for {callable}(): expected {expected} argument(s), got ");
+        let Some(actual) = error
+            .message
+            .strip_prefix(&prefix)
+            .and_then(|actual| actual.parse::<usize>().ok())
+        else {
+            continue;
+        };
+        let noun = if expected == 1 {
+            "argument"
+        } else {
+            "arguments"
+        };
+        return Some((
+            "ArgumentCountError",
+            format!("{callable}() expects exactly {expected} {noun}, {actual} given"),
+        ));
     }
 
     match error.message.as_str() {

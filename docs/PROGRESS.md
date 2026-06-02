@@ -4,6 +4,29 @@
 
 Implemented:
 
+- Added a bounded literal `call_user_func*()` scope-frame builtin lane for
+  `func_num_args()`, `func_get_args()`, and `func_get_arg()`. Direct source
+  calls such as `call_user_func("func_get_args")` and integer-keyed
+  `call_user_func_array("func_get_arg", [0])` now dispatch through the active
+  user-function call frame, preserving mutated parameter cells and extra
+  arguments while keeping direct `$callback()` calls, variable callback names,
+  and fully-qualified callback strings on PHP's forbidden dynamic-call path
+  for this function family. The catchable error conversion for `func_*` arity
+  mismatches now also reports PHP-shaped `ArgumentCountError` messages, so
+  `set_error_handler("func_get_args")` reaches the handler and reports the
+  selected `bug72107.phpt` shape instead of leaking the compiler's generic
+  arity diagnostic. Focused proof covers new Rust dynamic-feature tests for
+  literal callback frame reads and variable/FQ callback rejection, a new
+  error-handler regression for `func_get_args`, the existing direct
+  `func_get_*` frame and forbidden callback dispatcher guards, a direct
+  `phpc run` probe, and selected PHPT rows
+  `Zend/tests/dynamic_call/dynamic_call_006.phpt` and
+  `Zend/tests/bug72107.phpt`. Unsupported edges remain callback exposure for
+  `extract()`, `compact()`, and
+  `get_defined_vars()` through `call_user_func*()`, string-keyed/named
+  `call_user_func_array()` arguments for `func_get_arg()`, broader
+  callback-family parity, and native lowering.
+
 - Added a bounded `strpbrk()` stringable-object conversion lane for the
   selected standard string residual surface. `strpbrk()` now accepts supported
   visible `__toString()` objects for both `$string` and `$characters` operands

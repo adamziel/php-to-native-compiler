@@ -2806,8 +2806,12 @@ fallback for each reached by-reference parameter, and callee writes stay local
 to that callback frame. It does not implement array callables, `__invoke`,
 variadic reference parameters, variadic unpacking, exact warning text/object
 behavior, or native lowering. The documented callable builtin subset includes
-runtime string-search `strpos(...)`; `substr_count(...)` remains direct-call
-interpreter support only.
+runtime string-search `strpos(...)`; direct literal unqualified
+`func_num_args`, `func_get_args`, and `func_get_arg` callbacks read the active
+user-function call frame through the source-known callback path. Variable or
+stored callback values and fully-qualified callback strings for that `func_*`
+family continue to use PHP's forbidden dynamic-call diagnostic, and
+`substr_count(...)` remains direct-call interpreter support only.
 `call_user_func_array()` is a separate interpreter-only callable dispatcher for
 string callbacks, current public array-callable shapes, integer-keyed
 positional argument arrays, and the bounded string-keyed named argument slice

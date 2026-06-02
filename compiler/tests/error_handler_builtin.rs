@@ -99,6 +99,30 @@ echo $previous === null ? "null" : "other";
 }
 
 #[test]
+fn func_get_args_error_handler_reports_php_shaped_arity_error() {
+    let execution = run_source(
+        r#"<?php
+set_error_handler('func_get_args');
+function trigger_handler($value) {
+    echo $missing;
+}
+try {
+    trigger_handler(1);
+} catch (\Error $e) {
+    echo $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "func_get_args() expects exactly 0 arguments, 4 given"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn set_error_handler_rejects_forms_outside_current_subset() {
     let arity = runtime_error(
         r#"<?php

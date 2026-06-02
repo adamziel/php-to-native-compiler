@@ -263,6 +263,86 @@ try {
 }
 
 #[test]
+fn literal_call_user_func_scope_frame_builtins_read_active_user_call_frame() {
+    let execution = run_source(
+        r#"<?php
+function relay_frame($first, $second = "B") {
+    $first = "changed";
+    echo call_user_func("func_num_args"), "|";
+    echo implode(",", call_user_func("FUNC_GET_ARGS")), "|";
+    echo call_user_func("func_get_arg", 1), "|";
+    echo call_user_func_array("func_num_args", []), "|";
+    echo implode(",", call_user_func_array("func_get_args", [])), "|";
+    echo call_user_func_array("FUNC_GET_ARG", [0]), "\n";
+}
+
+relay_frame("A", "B", "C");
+
+try {
+    call_user_func("func_get_args");
+} catch (\Error $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "3|changed,B,C|B|3|changed,B,C|changed\n",
+            "func_get_args() cannot be called from the global scope\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn variable_call_user_func_scope_frame_builtins_remain_forbidden_dynamic_calls() {
+    let execution = run_source(
+        r#"<?php
+function rejected_callbacks($value) {
+    $callback = "func_get_args";
+    try {
+        call_user_func($callback);
+    } catch (\Error $e) {
+        echo $e->getMessage(), "\n";
+    }
+    try {
+        call_user_func_array($callback, []);
+    } catch (\Error $e) {
+        echo $e->getMessage(), "\n";
+    }
+    try {
+        call_user_func('\\func_get_args');
+    } catch (\Error $e) {
+        echo $e->getMessage(), "\n";
+    }
+    try {
+        call_user_func_array('\\func_get_args', []);
+    } catch (\Error $e) {
+        echo $e->getMessage(), "\n";
+    }
+}
+
+rejected_callbacks("A");
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "Cannot call func_get_args() dynamically\n",
+            "Cannot call func_get_args() dynamically\n",
+            "Cannot call func_get_args() dynamically\n",
+            "Cannot call func_get_args() dynamically\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn generator_rewind_foreach_and_func_get_use_materialized_yields() {
     let execution = run_source(
         r#"<?php
