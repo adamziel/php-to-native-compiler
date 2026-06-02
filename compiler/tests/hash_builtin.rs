@@ -451,6 +451,153 @@ ValueError:hash_init(): Argument #3 ($key) must not be empty when HMAC is reques
 }
 
 #[test]
+fn hash_murmur3_and_xxhash_options_cover_seeded_context_rows() {
+    let execution = run_source(
+        r#"<?php
+echo hash("murmur3a", "foo"), "\n";
+echo hash("murmur3c", "Two hashes meet in a bar"), "\n";
+echo hash("murmur3c", "hash me!"), "\n";
+echo hash("murmur3f", "Two hashes meet in a bar"), "\n";
+echo hash("murmur3f", "hash me!"), "\n";
+
+foreach (["murmur3a", "murmur3c", "murmur3f"] as $algo) {
+    $ctx = hash_init($algo);
+    hash_update($ctx, "hello");
+    hash_update($ctx, " there");
+    echo hash_final($ctx), " ", hash($algo, "hello there"), "\n";
+}
+
+$ctx = hash_init("murmur3f", options: ["seed" => 42]);
+foreach (["Two", " hashes", " meet", " in", " a", " bar."] as $chunk) {
+    hash_update($ctx, $chunk);
+}
+echo hash_final($ctx), "\n";
+echo hash("murmur3f", "Two hashes meet in a bar.", options: ["seed" => 42]), "\n";
+echo hash("murmur3c", "Two hashes meet in a bar.", options: ["seed" => 106]), "\n";
+echo hash("murmur3a", "Two hashes meet in a bar.", options: ["seed" => 2345]), "\n";
+
+$data = "Lorem ipsum dolor sit amet, consectetur adipiscing elit.";
+foreach (["xxh32", "xxh64", "xxh3", "xxh128"] as $algo) {
+    $ctx = hash_init($algo, options: ["seed" => 42]);
+    foreach (["Lorem", " ipsum dolor", " sit amet,", " consectetur adipiscing elit."] as $chunk) {
+        hash_update($ctx, $chunk);
+    }
+    echo hash_final($ctx), "\n";
+    echo hash($algo, $data, options: ["seed" => 42]), "\n";
+}
+
+$secret = str_repeat("a", 256);
+foreach (["xxh3", "xxh128"] as $algo) {
+    $ctx = hash_init($algo, options: ["secret" => $secret]);
+    foreach (["Lorem", " ipsum dolor", " sit amet,", " consectetur adipiscing elit."] as $chunk) {
+        hash_update($ctx, $chunk);
+    }
+    echo hash_final($ctx), " ", hash($algo, $data, options: ["secret" => $secret]), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "f6a5c420\n\
+8036c2707453c6f37348142be7eaf75c\n\
+c7009299985a5627a9280372a9280372\n\
+40256ed26fa6ece7785092ed33c8b659\n\
+c43668294e89db0ba5772846e5804467\n\
+6440964d 6440964d\n\
+2bcadca212d62deb69712a721e593089 2bcadca212d62deb69712a721e593089\n\
+81514cc240f57a165c95eb63f9c0eedf 81514cc240f57a165c95eb63f9c0eedf\n\
+95855f9be0db784a5c37e878c4a4dcee\n\
+95855f9be0db784a5c37e878c4a4dcee\n\
+f64c9eb40287fa686575163893e283b2\n\
+7f7ec59b\n\
+3d0cc7e5\n\
+3d0cc7e5\n\
+9c9aa071b5d22a15\n\
+9c9aa071b5d22a15\n\
+366409913c16b70d\n\
+366409913c16b70d\n\
+f87856a7589354e92aeca886c71ed7fb\n\
+f87856a7589354e92aeca886c71ed7fb\n\
+8028aa834c03557a 8028aa834c03557a\n\
+54279097795e7218093a05d4d781cbb9 54279097795e7218093a05d4d781cbb9\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn hash_xxhash_option_deprecations_and_secret_errors_are_php_shaped() {
+    let execution = run_source(
+        r#"<?php
+set_error_handler(function($_, $message) {
+    echo "deprecated:", $message, "\n";
+    return true;
+});
+
+foreach (["murmur3a", "murmur3c", "murmur3f", "xxh32", "xxh64", "xxh3", "xxh128"] as $algo) {
+    hash_init($algo, options: ["seed" => "42"]);
+}
+
+class StringableThrowingClass {
+    public function __toString(): string {
+        throw new Exception("exception in __toString");
+        return "";
+    }
+}
+
+foreach (["xxh3", "xxh128"] as $algo) {
+    try {
+        hash_init($algo, options: ["seed" => 24, "secret" => str_repeat("a", 256)]);
+    } catch (Throwable $e) {
+        echo get_class($e), ":", $e->getMessage(), "\n";
+    }
+    try {
+        hash_init($algo, options: ["secret" => new StringableThrowingClass()]);
+    } catch (Throwable $e) {
+        echo get_class($e), ":", $e->getMessage(), "\n";
+    }
+    try {
+        hash_init($algo, options: ["secret" => str_repeat("a", 17)]);
+    } catch (Throwable $e) {
+        echo get_class($e), ":", $e->getMessage(), "\n";
+    }
+    try {
+        hash_init($algo, options: ["secret" => 42]);
+    } catch (Throwable $e) {
+        echo get_class($e), ":", $e->getMessage(), "\n";
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "deprecated:hash_init(): Passing a seed of a type other than int is deprecated because it is the same as setting the seed to 0\n\
+deprecated:hash_init(): Passing a seed of a type other than int is deprecated because it is the same as setting the seed to 0\n\
+deprecated:hash_init(): Passing a seed of a type other than int is deprecated because it is the same as setting the seed to 0\n\
+deprecated:hash_init(): Passing a seed of a type other than int is deprecated because it is the same as setting the seed to 0\n\
+deprecated:hash_init(): Passing a seed of a type other than int is deprecated because it is the same as setting the seed to 0\n\
+deprecated:hash_init(): Passing a seed of a type other than int is deprecated because it is ignored\n\
+deprecated:hash_init(): Passing a seed of a type other than int is deprecated because it is ignored\n\
+Error:xxh3: Only one of seed or secret is to be passed for initialization\n\
+deprecated:hash_init(): Passing a secret of a type other than string is deprecated because it implicitly converts to a string, potentially hiding bugs\n\
+Exception:exception in __toString\n\
+Error:xxh3: Secret length must be >= 136 bytes, 17 bytes passed\n\
+deprecated:hash_init(): Passing a secret of a type other than string is deprecated because it implicitly converts to a string, potentially hiding bugs\n\
+Error:xxh3: Secret length must be >= 136 bytes, 2 bytes passed\n\
+Error:xxh128: Only one of seed or secret is to be passed for initialization\n\
+deprecated:hash_init(): Passing a secret of a type other than string is deprecated because it implicitly converts to a string, potentially hiding bugs\n\
+Exception:exception in __toString\n\
+Error:xxh128: Secret length must be >= 136 bytes, 17 bytes passed\n\
+deprecated:hash_init(): Passing a secret of a type other than string is deprecated because it implicitly converts to a string, potentially hiding bugs\n\
+Error:xxh128: Secret length must be >= 136 bytes, 2 bytes passed\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn hash_context_streaming_and_file_paths_cover_bounded_rows() {
     let path = temp_hash_path("streaming");
     fs::write(&path, b"abc").unwrap();

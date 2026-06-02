@@ -34,9 +34,29 @@ Implemented:
   `ext/hash/tests/ripemd160.phpt`, `ext/hash/tests/ripemd256.phpt`,
   `ext/hash/tests/ripemd320.phpt`, and `ext/hash/tests/tiger.phpt`.
   Unsupported edges remain Tiger 4-pass variants, GOST, Snefru, HAVAL,
-  MurmurHash3, and XXHash execution, seeded/non-empty hash options arrays,
-  broader hash object serialization/debug-info parity, exact diagnostics,
-  cryptographic/provider policy, and native lowering.
+  seeded/non-empty hash options arrays outside the separately documented
+  MurmurHash3/xxHash lane, broader hash object serialization/debug-info
+  parity, exact diagnostics, cryptographic/provider policy, and native
+  lowering.
+
+- Added a bounded MurmurHash3/xxHash hash-options lane on the interpreter path.
+  `hash()`, `hash_file()`, and buffered `HashContext` finalization now compute
+  `murmur3a`, `murmur3c`, `murmur3f`, `xxh32`, `xxh64`, `xxh3`, and `xxh128`
+  with PHP-shaped seed handling. `xxh3` and `xxh128` also support the bounded
+  `secret` option, including non-string secret deprecations, object
+  `__toString()` conversion, short-secret errors, and seed/secret conflict
+  errors. Focused proof covers Rust `hash_builtin` Murmur/xxHash digest and
+  option-diagnostic regressions, plus 7/7 selected public PHPT rows:
+  `ext/hash/tests/murmurhash3.phpt`,
+  `ext/hash/tests/murmurhash3_seed.phpt`,
+  `ext/hash/tests/murmur_seed_deprecation.phpt`,
+  `ext/hash/tests/xxhash_seed.phpt`, `ext/hash/tests/xxhash_secret.phpt`,
+  `ext/hash/tests/xxhash_seed_deprecation.phpt`, and
+  `ext/hash/tests/xxh3_convert_secret_to_string.phpt`. Unsupported edges
+  remain cryptographic algorithms still advertised but not executable in this
+  clone, `HashContext` serialization/debug-info parity, broader option
+  combinations outside the documented seed/secret lane, remote stream wrappers,
+  references/COW, and native lowering.
 
 - Accepted checkpoint `6ca895a9` as the current public PHPT score source after
   the replacement full pinned php-src gate completed with zero

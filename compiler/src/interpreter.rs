@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs::{self, FileTimes};
-use std::io::{ErrorKind, Read, Seek, SeekFrom, Write};
+use std::io::{Cursor, ErrorKind, Read, Seek, SeekFrom, Write};
 use std::net::{Ipv4Addr, Ipv6Addr};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -12,6 +12,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use md2::{Digest as Md2Digest, Md2};
 use md4::Md4;
 use md5::{Digest as Md5Digest, Md5};
+use murmur3::{murmur3_32, murmur3_x64_128, murmur3_x86_128};
 use php_runtime::{
     classify_php_numeric_string, coerce_property_value_with_object_type_resolver, ArithmeticOp,
     ArityExpectation, ArrayColumnKey, ArrayEntry, ArrayKey, ArrayKeyCase, ArraySlot, ClassId,
@@ -27,6 +28,14 @@ use sha2::{Sha224, Sha256, Sha384, Sha512, Sha512_224, Sha512_256};
 use sha3::{Sha3_224, Sha3_256, Sha3_384, Sha3_512};
 use tiger::Tiger;
 use whirlpool::Whirlpool;
+use xxhash_rust::{
+    xxh3::{
+        xxh3_128, xxh3_128_with_secret, xxh3_128_with_seed, xxh3_64, xxh3_64_with_secret,
+        xxh3_64_with_seed,
+    },
+    xxh32::xxh32,
+    xxh64::xxh64,
+};
 
 use crate::ast::{
     ArrayItem, AssignTarget, AttributeDecl, BinaryOp, CastKind, CatchClause, ClassConstantDecl,
@@ -759,8 +768,16 @@ struct BoundedDateIntervalState {
 struct BoundedHashContextState {
     algorithm: PhpHashAlgorithm,
     hmac_key: Option<Vec<u8>>,
+    options: HashComputationOptions,
     data: Vec<u8>,
     finalized: bool,
+}
+
+#[derive(Debug, Clone, Default)]
+struct HashComputationOptions {
+    seed: u64,
+    seed_supplied: bool,
+    secret: Option<Vec<u8>>,
 }
 
 #[derive(Debug, Clone)]
@@ -92429,7 +92446,7 @@ impl Interpreter {
             "hash_hmac_file" => self.call_hash_hmac_file(&args, span),
             "hash_update_file" => self.call_hash_update_file(&args, span),
             "hash_update_stream" => self.call_hash_update_stream(&args, span),
-            "hash" => call_hash(&args, span),
+            "hash" => self.call_hash(&args, span),
             "hash_algos" => call_hash_algos(&args, span),
             "hash_hmac_algos" => call_hash_hmac_algos(&args, span),
             "hash_hmac" => call_hash_hmac(&args, span),
@@ -113260,6 +113277,10 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
             return Some((class_name, message));
         }
 
+        if let Some((class_name, message)) = hash_options_php_error_class_and_message(error) {
+            return Some((class_name, message));
+        }
+
         if let Some(message) = hash_context_php_type_error_message(error) {
             return Some(("TypeError", message));
         }
@@ -114831,6 +114852,25 @@ fn hash_context_php_type_error_message(error: &Diagnostic) -> Option<String> {
     ) && reason == "Argument #1 ($context) must be a valid, non-finalized HashContext"
     {
         return Some(format!("{function}: {reason}"));
+    }
+    None
+}
+
+fn hash_options_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static str, String)> {
+    if error.phase != Phase::Runtime {
+        return None;
+    }
+    let message = error.message.strip_prefix("unsupported call ")?;
+    let (function, reason) = message.split_once(": ")?;
+    if !matches!(function, "hash()" | "hash_file()" | "hash_init()") {
+        return None;
+    }
+    if reason.starts_with("xxh3: Only one of seed or secret")
+        || reason.starts_with("xxh128: Only one of seed or secret")
+        || reason.starts_with("xxh3: Secret length must be >= ")
+        || reason.starts_with("xxh128: Secret length must be >= ")
+    {
+        return Some(("Error", reason.to_string()));
     }
     None
 }
@@ -142648,7 +142688,16 @@ enum PhpHashAlgorithm {
     Fnv164,
     Fnv1a64,
     Joaat,
+    Murmur3a,
+    Murmur3c,
+    Murmur3f,
+    Xxh32,
+    Xxh64,
+    Xxh3,
+    Xxh128,
 }
+
+const PHP_XXH3_MIN_SECRET_LENGTH: usize = 136;
 
 const PHP_HASH_ALGORITHM_NAMES: &[&str] = &[
     "md2",
@@ -142760,62 +142809,39 @@ const PHP_HASH_HMAC_ALGORITHM_NAMES: &[&str] = &[
     "haval256,5",
 ];
 
-fn call_hash(args: &[Value], span: Span) -> CompileResult<Value> {
-    if !(2..=4).contains(&args.len()) {
-        return Err(runtime_error(
-            span,
-            RuntimeError::arity_mismatch(
-                "hash()",
-                ArityExpectation::Between { min: 2, max: 4 },
-                args.len(),
-            ),
-        ));
-    }
-
-    let algorithm = string_builtin_argument("hash()", "algo", &args[0], span)?;
-    let Some(algorithm) = php_hash_algorithm(&algorithm) else {
-        return Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                "hash()",
-                "Argument #1 ($algo) must be a valid hashing algorithm",
-            ),
-        ));
-    };
-    let data = string_compare_argument_bytes("hash()", "data", &args[1], span)?;
-    let raw_output = hash_raw_output_argument(args.get(2), span)?;
-    if let Some(options) = args.get(3) {
-        match options {
-            Value::Array(array) if array.is_empty() => {}
-            Value::Array(_) => {
-                return Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "hash()",
-                        "non-empty options arrays are not implemented in the current hash subset",
-                    ),
-                ));
-            }
-            other => {
-                return Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "hash()",
-                        format!(
-                            "Argument #4 ($options) must be of type array, {} given",
-                            php_type_error_given(other)
-                        ),
-                    ),
-                ));
-            }
+impl Interpreter {
+    fn call_hash(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(2..=4).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "hash()",
+                    ArityExpectation::Between { min: 2, max: 4 },
+                    args.len(),
+                ),
+            ));
         }
-    }
 
-    let digest = php_hash_digest_bytes(algorithm, &data);
-    if raw_output {
-        Ok(Value::BinaryString(digest))
-    } else {
-        Ok(Value::String(hex_bytes(&digest)))
+        let algorithm = string_builtin_argument("hash()", "algo", &args[0], span)?;
+        let Some(algorithm) = php_hash_algorithm(&algorithm) else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "hash()",
+                    "Argument #1 ($algo) must be a valid hashing algorithm",
+                ),
+            ));
+        };
+        let data = string_compare_argument_bytes("hash()", "data", &args[1], span)?;
+        let raw_output = hash_raw_output_argument(args.get(2), span)?;
+        let options = self.hash_options_argument("hash()", 4, algorithm, args.get(3), span)?;
+
+        let digest = php_hash_digest_bytes_with_options(algorithm, &data, &options);
+        if raw_output {
+            Ok(Value::BinaryString(digest))
+        } else {
+            Ok(Value::String(hex_bytes(&digest)))
+        }
     }
 }
 
@@ -142909,33 +142935,6 @@ fn call_hash_init(
         }
     }
 
-    if let Some(options) = args.get(3) {
-        match options {
-            Value::Array(array) if array.is_empty() => {}
-            Value::Array(_) => {
-                return Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "hash_init()",
-                        "non-empty options arrays are not implemented in the current hash context subset",
-                    ),
-                ));
-            }
-            other => {
-                return Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "hash_init()",
-                        format!(
-                            "Argument #4 ($options) must be of type array, {} given",
-                            php_type_error_given(other)
-                        ),
-                    ),
-                ));
-            }
-        }
-    }
-
     let Some(algorithm_kind) = php_hash_algorithm(&algorithm) else {
         return Err(runtime_error(
             span,
@@ -142960,10 +142959,17 @@ fn call_hash_init(
             ),
         ));
     }
+    let options = if hmac_requested {
+        validate_hash_options_argument("hash_init()", 4, args.get(3), span)?;
+        HashComputationOptions::default()
+    } else {
+        interpreter.hash_options_argument("hash_init()", 4, algorithm_kind, args.get(3), span)?
+    };
 
     let state = BoundedHashContextState {
         algorithm: algorithm_kind,
         hmac_key: hmac_requested.then_some(key),
+        options,
         data: Vec::new(),
         finalized: false,
     };
@@ -143064,7 +143070,7 @@ impl Interpreter {
         let digest = if let Some(key) = state.hmac_key.as_deref() {
             php_hash_hmac_digest_bytes("hash_final()", state.algorithm, &state.data, key, span)?
         } else {
-            php_hash_digest_bytes(state.algorithm, &state.data)
+            php_hash_digest_bytes_with_options(state.algorithm, &state.data, &state.options)
         };
         state.finalized = true;
         if raw_output {
@@ -143129,11 +143135,12 @@ impl Interpreter {
             Some(value) => php_internal_bool_argument("hash_file()", 3, "binary", value, span)?,
             None => false,
         };
-        validate_hash_options_argument("hash_file()", 4, args.get(3), span)?;
+        let options =
+            self.hash_options_argument("hash_file()", 4, algorithm_kind, args.get(3), span)?;
         let Some(contents) = self.hash_file_contents("hash_file", &path, span)? else {
             return Ok(Value::Bool(false));
         };
-        let digest = php_hash_digest_bytes(algorithm_kind, &contents);
+        let digest = php_hash_digest_bytes_with_options(algorithm_kind, &contents, &options);
         if raw_output {
             Ok(Value::BinaryString(digest))
         } else {
@@ -143249,6 +143256,149 @@ impl Interpreter {
             .ok_or_else(|| hash_context_invalid_error("hash_update_stream()", span))?;
         state.data.extend(contents.into_bytes());
         Ok(Value::Int(byte_count as i64))
+    }
+
+    fn hash_options_argument(
+        &mut self,
+        function: &'static str,
+        position: usize,
+        algorithm: PhpHashAlgorithm,
+        value: Option<&Value>,
+        span: Span,
+    ) -> CompileResult<HashComputationOptions> {
+        let Some(value) = value else {
+            return Ok(HashComputationOptions::default());
+        };
+        let Value::Array(array) = value else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function,
+                    format!(
+                        "Argument #{position} ($options) must be of type array, {} given",
+                        php_type_error_given(value)
+                    ),
+                ),
+            ));
+        };
+        if array.is_empty() {
+            return Ok(HashComputationOptions::default());
+        }
+        if !php_hash_algorithm_supports_options(algorithm) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function,
+                    "non-empty options arrays are not implemented in the current hash subset",
+                ),
+            ));
+        }
+
+        let mut options = HashComputationOptions::default();
+        if let Some(seed) = array.get("seed") {
+            match seed {
+                Value::Int(seed) => {
+                    options.seed = *seed as u64;
+                    options.seed_supplied = true;
+                }
+                _ => {
+                    self.emit_display_diagnostic(
+                        "Deprecated",
+                        PHP_E_DEPRECATED,
+                        format!(
+                            "{function}: Passing a seed of a type other than int is deprecated because it {}",
+                            php_hash_seed_deprecation_suffix(algorithm)
+                        ),
+                        span,
+                    )?;
+                    if php_hash_non_int_seed_maps_to_zero(algorithm) {
+                        options.seed = 0;
+                        options.seed_supplied = true;
+                    }
+                }
+            }
+        }
+
+        if php_hash_algorithm_supports_secret(algorithm) {
+            if let Some(secret) = array.get("secret") {
+                if options.seed_supplied {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            function,
+                            format!(
+                                "{}: Only one of seed or secret is to be passed for initialization",
+                                php_hash_algorithm_name(algorithm)
+                            ),
+                        ),
+                    ));
+                }
+                let secret = self.hash_secret_option_bytes(function, secret, span)?;
+                if secret.len() < PHP_XXH3_MIN_SECRET_LENGTH {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            function,
+                            format!(
+                                "{}: Secret length must be >= {PHP_XXH3_MIN_SECRET_LENGTH} bytes, {} bytes passed",
+                                php_hash_algorithm_name(algorithm),
+                                secret.len()
+                            ),
+                        ),
+                    ));
+                }
+                options.secret = Some(secret);
+            }
+        }
+
+        Ok(options)
+    }
+
+    fn hash_secret_option_bytes(
+        &mut self,
+        function: &'static str,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<Vec<u8>> {
+        match value {
+            Value::String(value) => Ok(value.as_bytes().to_vec()),
+            Value::BinaryString(value) => Ok(value.clone()),
+            Value::Object(object) => {
+                self.emit_hash_secret_type_deprecated(function, span)?;
+                if let Some(value) =
+                    self.object_to_string_with_magic(object.clone(), function, span)?
+                {
+                    Ok(value.into_bytes())
+                } else {
+                    Err(runtime_error(
+                        span,
+                        RuntimeError::invalid_string_conversion(format!(
+                            "object of class {} cannot be converted to string",
+                            object.class_name()
+                        )),
+                    ))
+                }
+            }
+            other => {
+                self.emit_hash_secret_type_deprecated(function, span)?;
+                other
+                    .try_echo_bytes()
+                    .map_err(|error| runtime_error(span, error))
+            }
+        }
+    }
+
+    fn emit_hash_secret_type_deprecated(
+        &mut self,
+        function: &'static str,
+        span: Span,
+    ) -> CompileResult<()> {
+        self.emit_display_diagnostic(
+            "Deprecated",
+            PHP_E_DEPRECATED,
+            format!("{function}: Passing a secret of a type other than string is deprecated because it implicitly converts to a string, potentially hiding bugs"),
+            span,
+        )
     }
 
     fn hash_file_contents(
@@ -143410,6 +143560,13 @@ fn php_hash_algorithm(name: &str) -> Option<PhpHashAlgorithm> {
         "fnv164" => Some(PhpHashAlgorithm::Fnv164),
         "fnv1a64" => Some(PhpHashAlgorithm::Fnv1a64),
         "joaat" => Some(PhpHashAlgorithm::Joaat),
+        "murmur3a" => Some(PhpHashAlgorithm::Murmur3a),
+        "murmur3c" => Some(PhpHashAlgorithm::Murmur3c),
+        "murmur3f" => Some(PhpHashAlgorithm::Murmur3f),
+        "xxh32" => Some(PhpHashAlgorithm::Xxh32),
+        "xxh64" => Some(PhpHashAlgorithm::Xxh64),
+        "xxh3" => Some(PhpHashAlgorithm::Xxh3),
+        "xxh128" => Some(PhpHashAlgorithm::Xxh128),
         _ => None,
     }
 }
@@ -143422,7 +143579,95 @@ fn is_php_hash_algorithm_name(name: &str) -> bool {
         || matches!(normalized.as_str(), "sha512-224" | "sha512-256")
 }
 
+fn php_hash_algorithm_name(algorithm: PhpHashAlgorithm) -> &'static str {
+    match algorithm {
+        PhpHashAlgorithm::Md2 => "md2",
+        PhpHashAlgorithm::Md4 => "md4",
+        PhpHashAlgorithm::Md5 => "md5",
+        PhpHashAlgorithm::Sha1 => "sha1",
+        PhpHashAlgorithm::Sha224 => "sha224",
+        PhpHashAlgorithm::Sha256 => "sha256",
+        PhpHashAlgorithm::Sha384 => "sha384",
+        PhpHashAlgorithm::Sha512_224 => "sha512/224",
+        PhpHashAlgorithm::Sha512_256 => "sha512/256",
+        PhpHashAlgorithm::Sha512 => "sha512",
+        PhpHashAlgorithm::Sha3_224 => "sha3-224",
+        PhpHashAlgorithm::Sha3_256 => "sha3-256",
+        PhpHashAlgorithm::Sha3_384 => "sha3-384",
+        PhpHashAlgorithm::Sha3_512 => "sha3-512",
+        PhpHashAlgorithm::Ripemd128 => "ripemd128",
+        PhpHashAlgorithm::Ripemd160 => "ripemd160",
+        PhpHashAlgorithm::Ripemd256 => "ripemd256",
+        PhpHashAlgorithm::Ripemd320 => "ripemd320",
+        PhpHashAlgorithm::Whirlpool => "whirlpool",
+        PhpHashAlgorithm::Tiger128_3 => "tiger128,3",
+        PhpHashAlgorithm::Tiger160_3 => "tiger160,3",
+        PhpHashAlgorithm::Tiger192_3 => "tiger192,3",
+        PhpHashAlgorithm::Adler32 => "adler32",
+        PhpHashAlgorithm::Crc32 => "crc32",
+        PhpHashAlgorithm::Crc32b => "crc32b",
+        PhpHashAlgorithm::Crc32c => "crc32c",
+        PhpHashAlgorithm::Fnv132 => "fnv132",
+        PhpHashAlgorithm::Fnv1a32 => "fnv1a32",
+        PhpHashAlgorithm::Fnv164 => "fnv164",
+        PhpHashAlgorithm::Fnv1a64 => "fnv1a64",
+        PhpHashAlgorithm::Joaat => "joaat",
+        PhpHashAlgorithm::Murmur3a => "murmur3a",
+        PhpHashAlgorithm::Murmur3c => "murmur3c",
+        PhpHashAlgorithm::Murmur3f => "murmur3f",
+        PhpHashAlgorithm::Xxh32 => "xxh32",
+        PhpHashAlgorithm::Xxh64 => "xxh64",
+        PhpHashAlgorithm::Xxh3 => "xxh3",
+        PhpHashAlgorithm::Xxh128 => "xxh128",
+    }
+}
+
+fn php_hash_algorithm_supports_options(algorithm: PhpHashAlgorithm) -> bool {
+    matches!(
+        algorithm,
+        PhpHashAlgorithm::Murmur3a
+            | PhpHashAlgorithm::Murmur3c
+            | PhpHashAlgorithm::Murmur3f
+            | PhpHashAlgorithm::Xxh32
+            | PhpHashAlgorithm::Xxh64
+            | PhpHashAlgorithm::Xxh3
+            | PhpHashAlgorithm::Xxh128
+    )
+}
+
+fn php_hash_algorithm_supports_secret(algorithm: PhpHashAlgorithm) -> bool {
+    matches!(algorithm, PhpHashAlgorithm::Xxh3 | PhpHashAlgorithm::Xxh128)
+}
+
+fn php_hash_non_int_seed_maps_to_zero(algorithm: PhpHashAlgorithm) -> bool {
+    matches!(
+        algorithm,
+        PhpHashAlgorithm::Murmur3a
+            | PhpHashAlgorithm::Murmur3c
+            | PhpHashAlgorithm::Murmur3f
+            | PhpHashAlgorithm::Xxh32
+            | PhpHashAlgorithm::Xxh64
+    )
+}
+
+fn php_hash_seed_deprecation_suffix(algorithm: PhpHashAlgorithm) -> &'static str {
+    if php_hash_non_int_seed_maps_to_zero(algorithm) {
+        "is the same as setting the seed to 0"
+    } else {
+        "is ignored"
+    }
+}
+
 fn php_hash_digest_bytes(algorithm: PhpHashAlgorithm, bytes: &[u8]) -> Vec<u8> {
+    let options = HashComputationOptions::default();
+    php_hash_digest_bytes_with_options(algorithm, bytes, &options)
+}
+
+fn php_hash_digest_bytes_with_options(
+    algorithm: PhpHashAlgorithm,
+    bytes: &[u8],
+    options: &HashComputationOptions,
+) -> Vec<u8> {
     match algorithm {
         PhpHashAlgorithm::Md2 => Md2::digest(bytes).to_vec(),
         PhpHashAlgorithm::Md4 => Md4::digest(bytes).to_vec(),
@@ -143455,6 +143700,59 @@ fn php_hash_digest_bytes(algorithm: PhpHashAlgorithm, bytes: &[u8]) -> Vec<u8> {
         PhpHashAlgorithm::Fnv164 => php_hash_fnv164_digest_bytes(bytes).to_vec(),
         PhpHashAlgorithm::Fnv1a64 => php_hash_fnv1a64_digest_bytes(bytes).to_vec(),
         PhpHashAlgorithm::Joaat => php_hash_joaat_digest_bytes(bytes).to_vec(),
+        PhpHashAlgorithm::Murmur3a => {
+            let mut cursor = Cursor::new(bytes);
+            murmur3_32(&mut cursor, options.seed as u32)
+                .expect("Cursor-backed murmur3 hashing should not fail")
+                .to_be_bytes()
+                .to_vec()
+        }
+        PhpHashAlgorithm::Murmur3c => {
+            let mut cursor = Cursor::new(bytes);
+            let digest = murmur3_x86_128(&mut cursor, options.seed as u32)
+                .expect("Cursor-backed murmur3 hashing should not fail")
+                .to_be_bytes();
+            [
+                digest[12], digest[13], digest[14], digest[15], digest[8], digest[9], digest[10],
+                digest[11], digest[4], digest[5], digest[6], digest[7], digest[0], digest[1],
+                digest[2], digest[3],
+            ]
+            .to_vec()
+        }
+        PhpHashAlgorithm::Murmur3f => {
+            let mut cursor = Cursor::new(bytes);
+            let digest = murmur3_x64_128(&mut cursor, options.seed as u32)
+                .expect("Cursor-backed murmur3 hashing should not fail")
+                .to_be_bytes();
+            [
+                digest[8], digest[9], digest[10], digest[11], digest[12], digest[13], digest[14],
+                digest[15], digest[0], digest[1], digest[2], digest[3], digest[4], digest[5],
+                digest[6], digest[7],
+            ]
+            .to_vec()
+        }
+        PhpHashAlgorithm::Xxh32 => xxh32(bytes, options.seed as u32).to_be_bytes().to_vec(),
+        PhpHashAlgorithm::Xxh64 => xxh64(bytes, options.seed).to_be_bytes().to_vec(),
+        PhpHashAlgorithm::Xxh3 => {
+            let digest = if let Some(secret) = options.secret.as_deref() {
+                xxh3_64_with_secret(bytes, secret)
+            } else if options.seed_supplied {
+                xxh3_64_with_seed(bytes, options.seed)
+            } else {
+                xxh3_64(bytes)
+            };
+            digest.to_be_bytes().to_vec()
+        }
+        PhpHashAlgorithm::Xxh128 => {
+            let digest = if let Some(secret) = options.secret.as_deref() {
+                xxh3_128_with_secret(bytes, secret)
+            } else if options.seed_supplied {
+                xxh3_128_with_seed(bytes, options.seed)
+            } else {
+                xxh3_128(bytes)
+            };
+            digest.to_be_bytes().to_vec()
+        }
     }
 }
 
@@ -143490,7 +143788,14 @@ fn php_hash_hmac_block_size(algorithm: PhpHashAlgorithm) -> Option<usize> {
         | PhpHashAlgorithm::Fnv1a32
         | PhpHashAlgorithm::Fnv164
         | PhpHashAlgorithm::Fnv1a64
-        | PhpHashAlgorithm::Joaat => None,
+        | PhpHashAlgorithm::Joaat
+        | PhpHashAlgorithm::Murmur3a
+        | PhpHashAlgorithm::Murmur3c
+        | PhpHashAlgorithm::Murmur3f
+        | PhpHashAlgorithm::Xxh32
+        | PhpHashAlgorithm::Xxh64
+        | PhpHashAlgorithm::Xxh3
+        | PhpHashAlgorithm::Xxh128 => None,
     }
 }
 

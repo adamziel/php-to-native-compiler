@@ -159,6 +159,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6b947ae49db0d222b1dbc6b113ce7248a3fc3a6ca21b696717bfc000ba4484d8"
 
 [[package]]
+name = "murmur3"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9252111cf132ba0929b6f8e030cac2a24b507f3a4d6db6fb2896f27b354c714b"
+
+[[package]]
 name = "php_runtime"
 version = "0.1.0"
 
@@ -169,6 +175,7 @@ dependencies = [
  "md-5",
  "md2",
  "md4",
+ "murmur3",
  "php_runtime",
  "regex",
  "ripemd",
@@ -176,6 +183,7 @@ dependencies = [
  "sha3",
  "tiger",
  "whirlpool",
+ "xxhash-rust",
 ]
 
 [[package]]
@@ -266,3 +274,9 @@ checksum = "f1ae50671d985c15b3214c7d969b8b520759fb3c8682444bec15ef775335a05c"
 dependencies = [
  "digest 0.10.7",
 ]
+
+[[package]]
+name = "xxhash-rust"
+version = "0.8.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fdd20c5420375476fbd4394763288da7eb0cc0b8c11deed431a91562af7335d3"

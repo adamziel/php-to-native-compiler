@@ -2837,10 +2837,14 @@ hash boundaries for the same placeholder-escape path and focused file-content
 checks. `uniqid()` returns a fixed prefix-based ID with a PHP-shaped
 more-entropy suffix length, while `hash()`/`hash_file()`/`HashContext`
 streaming cover the bounded MD2/MD4/MD5/SHA-1/SHA-2/SHA-3/RIPEMD/Whirlpool/
-Tiger-3/checksum digest set with lowercase hex or raw binary output. HMAC
-one-shot, local-file, streaming-context, PBKDF2, and HKDF paths reuse the same
-bounded HMAC helper for the cryptographic MD2/MD4/MD5/SHA-1/SHA-2/SHA-3/
-RIPEMD/Whirlpool/Tiger-3 digest subset.
+Tiger-3/checksum/MurmurHash3/xxHash digest set with lowercase hex or raw
+binary output.
+MurmurHash3 and xxHash contexts carry parsed hash options beside the buffered
+bytes, covering PHP-shaped `seed` handling and the `xxh3`/`xxh128` `secret`
+option, including the covered deprecations and short-secret/seed-conflict
+`Error` boundaries. HMAC one-shot, local-file, streaming-context, PBKDF2, and
+HKDF paths reuse the same bounded HMAC helper for the cryptographic
+MD2/MD4/MD5/SHA-1/SHA-2/SHA-3/RIPEMD/Whirlpool/Tiger-3 digest subset.
 `hash_update_file()` reads bounded local paths through the same policy as
 `md5_file()`/`sha1_file()`, and `hash_update_stream()` consumes the current
 readable stream subset into the buffered interpreter context state. `md5()`
@@ -2848,10 +2852,11 @@ supports scalar/null string-convertible input with lowercase hex or raw binary
 output through the `md-5` crate, and `md5_file()` uses the bounded local-file
 path policy shared with `sha1_file()`. Advertised cryptographic algorithms
 outside the bounded HMAC execution set such as Tiger 4-pass, GOST, Snefru, and
-HAVAL, non-empty hash options arrays, exact null/lossy bool deprecations, exact
-time/entropy behavior, FIPS/provider policy, remote stream wrappers, binary
-stream reads outside the UTF-8 stream subset, and native lowering remain out of
-scope.
+HAVAL, non-empty hash options arrays outside the documented MurmurHash3/xxHash
+`seed` and `secret` lane, `HashContext` serialization/debug-info parity, exact
+null/lossy bool deprecations, exact time/entropy behavior, FIPS/provider
+policy, remote stream wrappers, binary stream reads outside the UTF-8 stream
+subset, and native lowering remain out of scope.
 `strcasecmp()` is an interpreter-only bounded string comparison builtin for
 current scalar/null string-convertible values. It compares valid UTF-8 runtime
 strings and binary-string values by bytes with ASCII case folding and returns
