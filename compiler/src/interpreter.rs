@@ -86705,7 +86705,10 @@ impl Interpreter {
                     span,
                     RuntimeError::unsupported_call(
                         "array_keys()",
-                        format!("argument must be array, got {}", other.type_name()),
+                        format!(
+                            "Argument #1 ($array) must be of type array, {} given",
+                            php_type_error_given(other)
+                        ),
                     ),
                 )),
                 _ => Err(runtime_error(

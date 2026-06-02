@@ -4,6 +4,20 @@
 
 Implemented:
 
+- Added a bounded `array_keys()` first-argument diagnostics lane. Direct and
+  string-valued dynamic interpreter calls now raise catchable PHP-shaped
+  `TypeError`s when argument #1 `$array` is not an array, using PHP-style
+  given-type names for scalar, null, and object operands. Existing key
+  emission, loose and strict filtering, strict-flag bool coercion, metadata
+  visibility, and native-lowering rejection remain unchanged. Focused proof
+  covers the `array_keys_requires_array_argument` Rust regression, the full
+  `array_keys` Rust file, the updated runtime-error CLI snapshot, direct CLI
+  probes, selected public PHPT row `array_keys_basic.phpt`, build, fmt, and
+  diff checks. Unsupported edges remain object/resource and recursive-array
+  loose comparisons, strict-flag null deprecation parity, exact engine stack
+  metadata beyond the current fatal renderer, references/COW, and native
+  lowering.
+
 - Added a bounded `pack()` / `unpack()` declared-operand string-boundary lane.
   `pack()` now routes `$format` through the shared PHP-shaped string byte
   boundary, and `unpack()` routes `$format` and `$string` through the same
@@ -33758,7 +33772,7 @@ Tested:
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_values_non_array.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_values_non_array.php:2:6: unsupported call array_values(): argument must be array, got int`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_keys_non_array.php`
-  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_keys_non_array.php:2:6: unsupported call array_keys(): argument must be array, got int`.
+  exits 255 with an uncaught `TypeError` for `array_keys(): Argument #1 ($array) must be of type array, int given`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_keys_array_search_value.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_keys_array_search_value.php:3:6: unsupported call array_keys(): array search values and array values are not implemented`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_keys_strict_flag_non_bool.php`

@@ -39,14 +39,33 @@ echo $again[0], "|", $again[5];
 
 #[test]
 fn array_keys_requires_array_argument() {
-    let error = runtime_error("<?php\necho array_keys(42);\n");
+    let source = r#"<?php
+foreach ([42, "items", true, null] as $value) {
+    try {
+        array_keys($value);
+    } catch (TypeError $e) {
+        echo $e->getMessage(), "\n";
+    }
+}
 
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 6);
+$call = "array_keys";
+try {
+    $call(new stdClass, "needle", true);
+} catch (TypeError $e) {
+    echo $e->getMessage();
+}
+"#;
+
+    let execution = run_source(source).unwrap();
     assert_eq!(
-        error.message,
-        "unsupported call array_keys(): argument must be array, got int"
+        execution.stdout,
+        "array_keys(): Argument #1 ($array) must be of type array, int given\n\
+array_keys(): Argument #1 ($array) must be of type array, string given\n\
+array_keys(): Argument #1 ($array) must be of type array, true given\n\
+array_keys(): Argument #1 ($array) must be of type array, null given\n\
+array_keys(): Argument #1 ($array) must be of type array, stdClass given"
     );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

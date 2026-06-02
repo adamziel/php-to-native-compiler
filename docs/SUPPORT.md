@@ -7389,7 +7389,8 @@
   by-reference iteration, and `array_keys($array, $search_value, false)` uses
   the loose path. Scalar third-argument values are accepted through the current
   PHP-internal bool coercion boundary and select one of those two paths by
-  truthiness. These forms are available through string-valued dynamic function calls.
+  truthiness. Non-array first operands raise a PHP-shaped catchable `TypeError`.
+  These forms are available through string-valued dynamic function calls.
   `array_rand($array)` returns the first inserted key as the deterministic
   current subset for PHP's randomized selection, and
   `array_rand($array, $num)` returns the first `$num` inserted keys in a
@@ -7773,8 +7774,7 @@
   undefined array keys, invalid `array_key_exists` keys, non-array
   `array_key_exists` operands, non-array `array_key_first` or
   `array_key_last` operands, non-array `array_is_list` operands,
-  non-array `array_values` operands, non-array
-  `array_keys` operands, unsupported `array_keys` search-value comparisons,
+  non-array `array_values` operands, unsupported `array_keys` search-value comparisons,
   non-coercible `array_keys` strict-mode flag values,
   non-array `array_reverse` operands, non-coercible
   `array_reverse` preserve-key flag values, non-int `array_slice` offsets,
@@ -10126,7 +10126,8 @@
   those two paths by truthiness. Arrays, objects, closures, and resources used
   as the third argument raise PHP-shaped `bool` `TypeError` diagnostics in the
   current subset. These forms are also available through string-valued
-  dynamic function calls. Object search values or object values encountered
+  dynamic function calls. Non-array first operands raise PHP-shaped catchable
+  `TypeError`s. Object search values or object values encountered
   during loose filtering fail with stable unsupported-call diagnostics;
   recursive array comparison remains unsupported.
   `array_rand($array)` accepts arrays only and returns the first inserted key
