@@ -521,6 +521,90 @@ var_dump(
 }
 
 #[test]
+fn timezone_metadata_inventory_interface_constants_and_offset_diagnostics() {
+    let execution = run_source(
+        r#"<?php
+var_dump(interface_exists("DateTimeInterface"));
+var_dump(defined("DateTimeInterface::ATOM"));
+var_dump(
+    DATE_ATOM === DateTimeInterface::ATOM,
+    DATE_COOKIE === DateTimeInterface::COOKIE,
+    DATE_ISO8601 === DateTimeInterface::ISO8601,
+    DATE_ISO8601_EXPANDED === DateTimeInterface::ISO8601_EXPANDED,
+    DATE_RFC822 === DateTimeInterface::RFC822,
+    DATE_RFC850 === DateTimeInterface::RFC850,
+    DATE_RFC1036 === DateTimeInterface::RFC1036,
+    DATE_RFC1123 === DateTimeInterface::RFC1123,
+    DATE_RFC7231 === DateTimeInterface::RFC7231,
+    DATE_RFC2822 === DateTimeInterface::RFC2822,
+    DATE_RFC3339 === DateTimeInterface::RFC3339,
+    DATE_RFC3339_EXTENDED === DateTimeInterface::RFC3339_EXTENDED,
+    DATE_RSS === DateTimeInterface::RSS,
+    DATE_W3C === DateTimeInterface::W3C
+);
+
+$abbreviations = timezone_abbreviations_list();
+echo count($abbreviations), "|", count(DateTimeZone::listAbbreviations()), "\n";
+foreach ($abbreviations["acst"] as $row) {
+    echo ($row["dst"] ? "1" : "0"), "|", $row["offset"], "|", $row["timezone_id"], "\n";
+}
+
+$oslo = timezone_location_get(new DateTimeZone("Europe/Oslo"));
+echo $oslo["country_code"], "|", $oslo["latitude"], "|", $oslo["longitude"], "|", $oslo["comments"], "\n";
+$printed = array();
+foreach (DateTimeZone::listAbbreviations() as $value) {
+    if (NULL != $value[0]["timezone_id"]) {
+        $location = (new DateTimeZone($value[0]["timezone_id"]))->getLocation();
+        if (false === $location) {
+            continue;
+        }
+        if (!isset($printed[$location["country_code"]]) && in_array($location["country_code"], array("AU", "CA", "ET", "AF", "US", "KZ", "AM"))) {
+            $printed[$location["country_code"]] = true;
+            echo $location["country_code"], "|";
+        }
+    }
+}
+echo "\n";
+
+$tz = new DateTimeZone("Europe/London");
+$dt = new DateTimeImmutable("2014-09-20", $tz);
+echo $tz->getOffset($dt), "|", timezone_offset_get($tz, $dt), "\n";
+try { $tz->getOffset(1); } catch (TypeError $e) { echo $e::class, ": ", $e->getMessage(), "\n"; }
+try { timezone_offset_get(new stdClass(), $dt); } catch (Error $e) { echo $e::class, ": ", $e->getMessage(), "\n"; }
+try { timezone_offset_get($tz, null); } catch (Error $e) { echo $e::class, ": ", $e->getMessage(), "\n"; }
+"#,
+    )
+    .unwrap();
+
+    assert!(execution.stdout.contains(
+        "Deprecated: Constant DATE_RFC7231 is deprecated since 8.5, as this format ignores the associated timezone and always uses GMT"
+    ));
+    assert!(execution.stdout.contains(
+        "Deprecated: Constant DateTimeInterface::RFC7231 is deprecated since 8.5, as this format ignores the associated timezone and always uses GMT"
+    ));
+    assert_eq!(execution.stdout.matches("bool(true)").count(), 16);
+    assert!(execution.stdout.contains("144|144\n"));
+    assert!(execution
+        .stdout
+        .contains("0|34200|Australia/Adelaide\n0|34200|Australia/Broken_Hill\n"));
+    assert!(execution
+        .stdout
+        .contains("0|34200|Australia/Yancowinna\nNO|59.91666|10.75|\nAU|CA|US|ET|\n"));
+    assert!(execution.stdout.contains("3600|3600\n"));
+    assert!(execution.stdout.contains(
+        "TypeError: DateTimeZone::getOffset(): Argument #1 ($datetime) must be of type DateTimeInterface, int given\n"
+    ));
+    assert!(execution.stdout.contains(
+        "TypeError: timezone_offset_get(): Argument #1 ($object) must be of type DateTimeZone, stdClass given\n"
+    ));
+    assert!(execution.stdout.contains(
+        "TypeError: timezone_offset_get(): Argument #2 ($datetime) must be of type DateTimeInterface, null given\n"
+    ));
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn datetime_fixed_offset_abbreviations_match_bounded_timelib_rows() {
     let execution = run_source(
         r#"<?php

@@ -32274,6 +32274,7 @@ impl PhpClassTable {
             "__serialize",
             "__unserialize",
             "getName",
+            "getLocation",
             "getOffset",
             "getTransitions",
         ] {
@@ -33186,6 +33187,9 @@ impl PhpClassTable {
         let datetime_id = classes
             .declare_class("DateTime")
             .expect("core class table should contain ReflectionZendExtension before DateTime");
+        classes
+            .set_interfaces(datetime_id, vec!["DateTimeInterface".to_string()])
+            .expect("DateTime should implement DateTimeInterface");
         let datetime = classes
             .get_mut(datetime_id)
             .expect("declared DateTime class id should resolve");
@@ -33241,6 +33245,9 @@ impl PhpClassTable {
         let datetime_immutable_id = classes
             .declare_class("DateTimeImmutable")
             .expect("core class table should contain DateTime before DateTimeImmutable");
+        classes
+            .set_interfaces(datetime_immutable_id, vec!["DateTimeInterface".to_string()])
+            .expect("DateTimeImmutable should implement DateTimeInterface");
         let datetime_immutable = classes
             .get_mut(datetime_immutable_id)
             .expect("declared DateTimeImmutable class id should resolve");
@@ -41080,6 +41087,7 @@ fn native_core_interface_canonical_name_bytes(name: &[u8]) -> Option<Vec<u8>> {
         b"Stringable",
         b"SplObserver",
         b"SplSubject",
+        b"DateTimeInterface",
     ];
 
     let lookup_key = native_class_metadata_lookup_key(name);

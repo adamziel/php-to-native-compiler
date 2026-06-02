@@ -4,6 +4,34 @@
 
 Implemented:
 
+- Added a bounded DateTime/timezone metadata lane on the interpreter path.
+  `DateTimeInterface` is now a visible core interface implemented by
+  `DateTime` and `DateTimeImmutable`, exposes the bounded `DATE_*` format
+  constants with the existing `RFC7231` deprecation diagnostics, and
+  participates in `defined()` / interface catalog queries. `DateTimeZone`
+  now exposes bounded `getLocation()` metadata, `timezone_location_get()`,
+  and a 144-key abbreviation inventory through
+  `DateTimeZone::listAbbreviations()` / `timezone_abbreviations_list()`, with
+  full `acst` rows and first-row metadata for the remaining buckets.
+  `DateTimeZone::getOffset()` and `timezone_offset_get()` now accept
+  immutable `DateTimeImmutable` operands and report PHP-shaped
+  `DateTimeInterface` type diagnostics. Focused proof covers the Rust
+  `timezone_metadata_inventory_interface_constants_and_offset_diagnostics`
+  regression, adjacent object-model interface catalog coverage, the direct CLI
+  fixture `tests/fixtures/milestone2364/timezone_metadata_interface.php`, and
+  selected public PHPT rows `ext/date/tests/68062.phpt`,
+  `ext/date/tests/DateTimeInterface_constants.phpt`,
+  `ext/date/tests/DateTimeZone_getLocation.phpt`,
+  `ext/date/tests/DateTimeZone_listAbbreviations_basic1.phpt`,
+  `ext/date/tests/timezone_abbreviations_list_basic1.phpt`,
+  `ext/date/tests/timezone_location_get.phpt`, and
+  `ext/date/tests/timezone_offset_get_error.phpt`. Unsupported edges remain
+  full timezone database validation, all-row abbreviation metadata beyond the
+  reached first-row/`acst` inventory, location metadata beyond represented
+  named zones, historical transition parity, broad `DateTimeInterface`
+  reflection parity beyond existence/constants/core implementation metadata,
+  references/COW, and native lowering.
+
 - Accepted checkpoint `663e3142` as the current public PHPT score source
   after the repaired full pinned php-src gate completed with zero
   latest-published PASS regressions. The public-comparable score is now

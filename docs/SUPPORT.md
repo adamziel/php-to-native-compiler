@@ -6184,9 +6184,11 @@
   supported visible `__toString()` objects, and catchable PHP-shaped
   `TypeError`s for arrays, resources, closures, or non-stringable objects.
   `DateTime` and `DateTimeImmutable` expose the bounded date-format class
-  constants matching the existing global `DATE_*` format constants, including
-  PHP-shaped deprecation diagnostics for `DATE_RFC7231`, `DateTime::RFC7231`,
-  and `DateTimeImmutable::RFC7231`.
+  constants matching the existing global `DATE_*` format constants, and
+  `DateTimeInterface` is visible as a core interface with the same constants
+  and PHP-shaped deprecation diagnostics for `DATE_RFC7231`,
+  `DateTime::RFC7231`, `DateTimeImmutable::RFC7231`, and
+  `DateTimeInterface::RFC7231`.
   `date.timezone` PHPT INI overrides seed the same bounded timezone state,
   including PHPT-style trailing semicolon syntax. `timezone_open()` accepts
   string and scalar-string-compatible timezone identifiers, returns bounded
@@ -6197,13 +6199,24 @@
   for supported fixed-offset, abbreviation, and named timezone metadata, with
   `DateTimeZone::__serialize()`, `DateTimeZone::__unserialize()`, and
   `DateTimeZone::__set_state()` sharing the same bounded state validation and
-  invalid state raising a catchable PHP-shaped `Error`. Full timezone database
+  invalid state raising a catchable PHP-shaped `Error`. `DateTimeZone::getOffset()`
+  and `timezone_offset_get()` accept mutable `DateTime` and immutable
+  `DateTimeImmutable` operands. `DateTimeZone::getLocation()` and
+  `timezone_location_get()` expose bounded location arrays for reached named
+  zones, including `Europe/Oslo` and the first named timezone row represented
+  in each abbreviation bucket. `DateTimeZone::listAbbreviations()` and
+  `timezone_abbreviations_list()` expose the bounded 144-key abbreviation
+  inventory used by the reached date PHPT rows, with full `acst` rows and the
+  first row for the other abbreviation buckets. Full timezone database
   validation,
   exact internal `DateTime`, `DateTimeImmutable`, and `DateTimeZone`
   constructor diagnostics beyond the covered arity slice and scalar
   coercion/deprecation parity, broad `DateTimeInterface` reflection/runtime
-  parity, all historical transition rules, timezone abbreviation and
-  fixed-offset state identity beyond the covered named-zone rows, DateTime
+  parity beyond existence/constants/core implementation metadata, all
+  historical transition rules, full all-row timezone abbreviation inventory
+  beyond `acst` and first-row metadata, location metadata beyond the bounded
+  represented rows, timezone abbreviation and fixed-offset state identity
+  beyond the covered named-zone rows, DateTime
   state arrays outside the bounded exported `date`/`timezone_type`/`timezone`
   and `timezone_type`/`timezone` shapes, DateTime manual `__serialize()` /
   `__unserialize()` methods, private/protected serialized properties on

@@ -3828,6 +3828,7 @@ const CORE_INTERFACE_NAMES: &[&str] = &[
     "Stringable",
     "SplObserver",
     "SplSubject",
+    "DateTimeInterface",
 ];
 
 fn is_core_interface_name(name: &str) -> bool {
@@ -19218,6 +19219,23 @@ impl Interpreter {
         }
     }
 
+    fn datetimezone_type(
+        object: &PhpObject,
+        function: impl Into<String>,
+        span: Span,
+    ) -> CompileResult<i64> {
+        match object.read_public_property("timezone_type") {
+            Ok(Value::Int(timezone_type)) => Ok(timezone_type),
+            _ => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function,
+                    "DateTimeZone object is not initialized in the current subset",
+                ),
+            )),
+        }
+    }
+
     fn datetimezone_argument(
         &self,
         function: &'static str,
@@ -19281,19 +19299,31 @@ impl Interpreter {
                 expect_expr_arity("DateTimeZone::getName", args.len(), 0, span)?;
                 Self::datetimezone_name(&object, "DateTimeZone::getName()", span).map(Value::String)
             }
+            "getlocation" => {
+                expect_expr_arity("DateTimeZone::getLocation", args.len(), 0, span)?;
+                let name = Self::datetimezone_name(&object, "DateTimeZone::getLocation()", span)?;
+                let timezone_type =
+                    Self::datetimezone_type(&object, "DateTimeZone::getLocation()", span)?;
+                Ok(bounded_timezone_location_value(&name, timezone_type))
+            }
             "getoffset" => {
                 expect_expr_arity("DateTimeZone::getOffset", args.len(), 1, span)?;
                 let value = self.evaluate(&args[0], caller_scope)?;
                 let datetime = match value {
-                    Value::Object(object) if object.is_instance_of_class_name("DateTime") => object,
+                    Value::Object(object)
+                        if object.is_instance_of_class_name("DateTime")
+                            || object.is_instance_of_class_name("DateTimeImmutable") =>
+                    {
+                        object
+                    }
                     other => {
                         return Err(runtime_error(
                             span,
                             RuntimeError::unsupported_call(
                                 "DateTimeZone::getOffset()",
                                 format!(
-                                    "Argument #1 ($datetime) must be DateTime in the current subset, got {}",
-                                    other.type_name()
+                                    "Argument #1 ($datetime) must be of type DateTimeInterface, {} given",
+                                    php_type_error_given(&other)
                                 ),
                             ),
                         ));
@@ -21040,19 +21070,58 @@ impl Interpreter {
         Self::datetimezone_name(&object, "timezone_name_get()", span).map(Value::String)
     }
 
+    fn call_timezone_location_get(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("timezone_location_get", args, 1, span)?;
+        let object = self.datetimezone_argument("timezone_location_get()", args, 0, span)?;
+        let name = Self::datetimezone_name(&object, "timezone_location_get()", span)?;
+        let timezone_type = Self::datetimezone_type(&object, "timezone_location_get()", span)?;
+        Ok(bounded_timezone_location_value(&name, timezone_type))
+    }
+
     fn call_timezone_offset_get(&self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("timezone_offset_get", args, 2, span)?;
-        let timezone_object = self.datetimezone_argument("timezone_offset_get()", args, 0, span)?;
+        let timezone_object = match args.first() {
+            Some(Value::Object(object)) if object.is_instance_of_class_name("DateTimeZone") => {
+                object.clone()
+            }
+            Some(other) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "timezone_offset_get()",
+                        format!(
+                            "Argument #1 ($object) must be of type DateTimeZone, {} given",
+                            php_type_error_given(other)
+                        ),
+                    ),
+                ));
+            }
+            None => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::arity_mismatch(
+                        "timezone_offset_get()",
+                        ArityExpectation::AtLeast(1),
+                        args.len(),
+                    ),
+                ));
+            }
+        };
         let datetime_object = match &args[1] {
-            Value::Object(object) if object.is_instance_of_class_name("DateTime") => object,
+            Value::Object(object)
+                if object.is_instance_of_class_name("DateTime")
+                    || object.is_instance_of_class_name("DateTimeImmutable") =>
+            {
+                object
+            }
             other => {
                 return Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
                         "timezone_offset_get()",
                         format!(
-                            "Argument #2 ($datetime) must be DateTime in the current subset, got {}",
-                            other.type_name()
+                            "Argument #2 ($datetime) must be of type DateTimeInterface, {} given",
+                            php_type_error_given(other)
                         ),
                     ),
                 ));
@@ -58357,6 +58426,20 @@ impl Interpreter {
             return self.evaluate_enum_case_object(&enum_decl, constant, span);
         }
 
+        if class_name.eq_ignore_ascii_case("DateTimeInterface") {
+            let Some((_, value)) = PHP_DATETIME_FORMAT_CLASS_CONSTANTS
+                .iter()
+                .find(|(name, _)| *name == constant)
+            else {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::undefined_constant(format!("{class_name}::{constant}")),
+                ));
+            };
+            self.emit_builtin_class_constant_deprecation("DateTimeInterface", constant, span)?;
+            return Ok(Value::String((*value).to_string()));
+        }
+
         if let Some(class_id) = self.classes.lookup_class_id(class_name) {
             return self.evaluate_resolved_class_constant(class_id, class_name, constant, span);
         }
@@ -58467,6 +58550,12 @@ impl Interpreter {
         constant: &str,
         span: Span,
     ) -> CompileResult<bool> {
+        if class_name.eq_ignore_ascii_case("DateTimeInterface") {
+            return Ok(PHP_DATETIME_FORMAT_CLASS_CONSTANTS
+                .iter()
+                .any(|(name, _)| *name == constant));
+        }
+
         if let Some(class_id) = self.classes.lookup_class_id(class_name) {
             return match self.resolve_class_constant(class_id, constant) {
                 ConstantResolution::Found(resolved) => {
@@ -58645,7 +58734,8 @@ impl Interpreter {
         span: Span,
     ) -> CompileResult<()> {
         if (declaring_name.eq_ignore_ascii_case("DateTime")
-            || declaring_name.eq_ignore_ascii_case("DateTimeImmutable"))
+            || declaring_name.eq_ignore_ascii_case("DateTimeImmutable")
+            || declaring_name.eq_ignore_ascii_case("DateTimeInterface"))
             && constant == "RFC7231"
         {
             self.emit_display_diagnostic(
@@ -90061,6 +90151,7 @@ impl Interpreter {
             "timezone_name_from_abbr" => call_timezone_name_from_abbr(&args, span),
             "timezone_open" => self.call_timezone_open(&args, span),
             "timezone_name_get" => self.call_timezone_name_get(&args, span),
+            "timezone_location_get" => self.call_timezone_location_get(&args, span),
             "timezone_offset_get" => self.call_timezone_offset_get(&args, span),
             "timezone_transitions_get" => self.call_timezone_transitions_get(&args, span),
             "timezone_abbreviations_list" => {
@@ -112211,6 +112302,7 @@ fn is_builtin(name: &str) -> bool {
             | "timezone_name_from_abbr"
             | "timezone_open"
             | "timezone_name_get"
+            | "timezone_location_get"
             | "timezone_offset_get"
             | "timezone_transitions_get"
             | "timezone_abbreviations_list"
@@ -145127,7 +145219,15 @@ fn bounded_timezone_from_name(name: &str) -> Option<BoundedTimezone> {
         "US/Alaska" => "US/Alaska",
         "US/Eastern" => "US/Eastern",
         "America/New_York" => "America/New_York",
-        _ => return None,
+        _ => {
+            if let Some(metadata_name) = bounded_timezone_metadata_name(name) {
+                return Some(BoundedTimezone {
+                    name: metadata_name.to_string(),
+                    fixed_offset: None,
+                });
+            }
+            return None;
+        }
     };
     Some(BoundedTimezone {
         name: canonical.to_string(),
@@ -145597,29 +145697,463 @@ fn bounded_timezone_transitions_array(name: &str, start: i64, end: i64) -> PhpAr
     array
 }
 
+const BOUNDED_TIMEZONE_ABBREVIATION_FIRST_ROWS: &[(&str, bool, i64, Option<&str>)] = &[
+    ("acdt", true, 37_800, Some("Australia/Adelaide")),
+    ("acst", false, 34_200, Some("Australia/Adelaide")),
+    ("addt", true, -7_200, Some("America/Goose_Bay")),
+    ("adt", true, -10_800, Some("America/Halifax")),
+    ("aedt", true, 39_600, Some("Australia/Melbourne")),
+    ("aest", false, 36_000, Some("Australia/Melbourne")),
+    ("ahdt", true, -32_400, Some("America/Anchorage")),
+    ("ahst", false, -36_000, Some("America/Anchorage")),
+    ("akdt", true, -28_800, Some("America/Anchorage")),
+    ("akst", false, -32_400, Some("America/Anchorage")),
+    ("amt", false, -13_840, Some("America/Asuncion")),
+    ("apt", true, -10_800, Some("America/Halifax")),
+    ("ast", false, -14_400, Some("America/Anguilla")),
+    ("awdt", true, 32_400, Some("Australia/Perth")),
+    ("awst", false, 28_800, Some("Australia/Perth")),
+    ("awt", true, -10_800, Some("America/Halifax")),
+    ("bdst", true, 7_200, Some("Europe/London")),
+    ("bdt", true, -36_000, Some("America/Adak")),
+    ("bmt", false, -14_309, Some("America/Barbados")),
+    ("bst", true, 3_600, Some("Europe/London")),
+    ("cast", false, 34_200, Some("Australia/Adelaide")),
+    ("cat", false, 7_200, Some("Africa/Khartoum")),
+    ("cddt", true, -14_400, Some("America/Rankin_Inlet")),
+    ("cdt", true, -18_000, Some("America/Chicago")),
+    ("cemt", true, 10_800, Some("Europe/Berlin")),
+    ("cest", true, 7_200, Some("Europe/Berlin")),
+    ("cet", false, 3_600, Some("Europe/Berlin")),
+    (
+        "cmt",
+        false,
+        -15_408,
+        Some("America/Argentina/Buenos_Aires"),
+    ),
+    ("cpt", true, -18_000, Some("America/Chicago")),
+    ("cst", false, -21_600, Some("America/Chicago")),
+    ("cwt", true, -18_000, Some("America/Chicago")),
+    ("chst", false, 36_000, Some("Pacific/Guam")),
+    ("dmt", false, -1_521, Some("Europe/Dublin")),
+    ("eat", false, 10_800, Some("Africa/Addis_Ababa")),
+    ("eddt", true, -10_800, Some("America/Iqaluit")),
+    ("edt", true, -14_400, Some("America/New_York")),
+    ("eest", true, 10_800, Some("Europe/Helsinki")),
+    ("eet", false, 7_200, Some("Europe/Helsinki")),
+    ("emt", false, -26_248, Some("Chile/EasterIsland")),
+    ("ept", true, -14_400, Some("America/New_York")),
+    ("est", false, -18_000, Some("America/New_York")),
+    ("ewt", true, -14_400, Some("America/New_York")),
+    ("ffmt", false, -14_660, Some("America/Martinique")),
+    ("fmt", false, -4_056, Some("Atlantic/Madeira")),
+    ("gdt", true, 39_600, Some("Pacific/Guam")),
+    ("gmt", false, 0, Some("Africa/Abidjan")),
+    ("gst", false, 36_000, Some("Pacific/Guam")),
+    ("hdt", true, -34_200, Some("Pacific/Honolulu")),
+    ("hkst", true, 32_400, Some("Asia/Hong_Kong")),
+    ("hkt", false, 28_800, Some("Asia/Hong_Kong")),
+    ("hmt", false, -19_776, Some("America/Havana")),
+    ("hpt", true, -34_200, Some("Pacific/Honolulu")),
+    ("hst", false, -36_000, Some("Pacific/Honolulu")),
+    ("hwt", true, -34_200, Some("Pacific/Honolulu")),
+    ("iddt", true, 14_400, Some("Asia/Jerusalem")),
+    ("idt", true, 10_800, Some("Asia/Jerusalem")),
+    ("imt", false, 25_025, Some("Asia/Irkutsk")),
+    ("ist", false, 7_200, Some("Asia/Jerusalem")),
+    ("jdt", true, 36_000, Some("Asia/Tokyo")),
+    ("jmt", false, 8_440, Some("Asia/Jerusalem")),
+    ("jst", false, 32_400, Some("Asia/Tokyo")),
+    ("kdt", true, 36_000, Some("Asia/Seoul")),
+    ("kmt", false, 5_736, Some("Europe/Vilnius")),
+    ("kst", false, 30_600, Some("Asia/Seoul")),
+    ("lst", true, 9_394, Some("Europe/Riga")),
+    ("mddt", true, -18_000, Some("America/Cambridge_Bay")),
+    ("mdst", true, 16_279, Some("Europe/Moscow")),
+    ("mdt", true, -21_600, Some("America/Denver")),
+    ("mest", true, 7_200, Some("MET")),
+    ("met", false, 3_600, Some("MET")),
+    ("mmt", false, 9_017, Some("Europe/Moscow")),
+    ("mpt", true, -21_600, Some("America/Denver")),
+    ("msd", true, 14_400, Some("Europe/Moscow")),
+    ("msk", false, 10_800, Some("Europe/Moscow")),
+    ("mst", false, -25_200, Some("America/Denver")),
+    ("mwt", true, -21_600, Some("America/Denver")),
+    ("nddt", true, -5_400, Some("America/St_Johns")),
+    ("ndt", true, -9_052, Some("America/St_Johns")),
+    ("npt", true, -9_000, Some("America/St_Johns")),
+    ("nst", false, -12_600, Some("America/St_Johns")),
+    ("nwt", true, -9_000, Some("America/St_Johns")),
+    ("nzdt", true, 46_800, Some("Pacific/Auckland")),
+    ("nzmt", false, 41_400, Some("Pacific/Auckland")),
+    ("nzst", false, 43_200, Some("Pacific/Auckland")),
+    ("pddt", true, -21_600, Some("America/Inuvik")),
+    ("pdt", true, -25_200, Some("America/Los_Angeles")),
+    ("pkst", true, 21_600, Some("Asia/Karachi")),
+    ("pkt", false, 18_000, Some("Asia/Karachi")),
+    ("plmt", false, 25_590, Some("Asia/Ho_Chi_Minh")),
+    ("pmt", false, -13_236, Some("America/Paramaribo")),
+    ("ppmt", false, -17_340, Some("America/Port-au-Prince")),
+    ("ppt", true, -25_200, Some("America/Los_Angeles")),
+    ("pst", false, -28_800, Some("America/Los_Angeles")),
+    ("pwt", true, -25_200, Some("America/Los_Angeles")),
+    ("qmt", false, -18_840, Some("America/Guayaquil")),
+    ("rmt", false, 5_794, Some("Europe/Riga")),
+    ("sast", false, 7_200, Some("Africa/Johannesburg")),
+    ("sdmt", false, -16_800, Some("America/Santo_Domingo")),
+    ("sjmt", false, -20_173, Some("America/Costa_Rica")),
+    ("smt", false, -13_884, Some("Atlantic/Stanley")),
+    ("sst", false, -39_600, Some("Pacific/Samoa")),
+    ("tbmt", false, 10_751, Some("Asia/Tbilisi")),
+    ("tmt", false, 12_344, Some("Asia/Tehran")),
+    ("uct", false, 0, Some("Etc/UCT")),
+    ("utc", false, 0, Some("Etc/Universal")),
+    ("wast", true, 7_200, Some("Africa/Windhoek")),
+    ("wat", false, 3_600, Some("Africa/Brazzaville")),
+    ("wemt", true, 7_200, Some("Europe/Lisbon")),
+    ("west", true, 3_600, Some("Europe/Paris")),
+    ("wet", false, 0, Some("Europe/Paris")),
+    ("wib", false, 25_200, Some("Asia/Jakarta")),
+    ("wita", false, 28_800, Some("Asia/Makassar")),
+    ("wit", false, 32_400, Some("Asia/Jayapura")),
+    ("wmt", false, 5_040, Some("Europe/Vilnius")),
+    ("yddt", true, -25_200, Some("America/Dawson")),
+    ("ydt", true, -28_800, Some("America/Dawson")),
+    ("ypt", true, -28_800, Some("America/Dawson")),
+    ("yst", false, -32_400, Some("America/Anchorage")),
+    ("ywt", true, -28_800, Some("America/Dawson")),
+    ("a", false, 3_600, None),
+    ("b", false, 7_200, None),
+    ("c", false, 10_800, None),
+    ("d", false, 14_400, None),
+    ("e", false, 18_000, None),
+    ("f", false, 21_600, None),
+    ("g", false, 25_200, None),
+    ("h", false, 28_800, None),
+    ("i", false, 32_400, None),
+    ("k", false, 36_000, None),
+    ("l", false, 39_600, None),
+    ("m", false, 43_200, None),
+    ("n", false, -3_600, None),
+    ("o", false, -7_200, None),
+    ("p", false, -10_800, None),
+    ("q", false, -14_400, None),
+    ("r", false, -18_000, None),
+    ("s", false, -21_600, None),
+    ("t", false, -25_200, None),
+    ("u", false, -28_800, None),
+    ("v", false, -32_400, None),
+    ("w", false, -36_000, None),
+    ("x", false, -39_600, None),
+    ("y", false, -43_200, None),
+    ("z", false, 0, None),
+];
+
+const BOUNDED_ACST_TIMEZONE_IDS: &[&str] = &[
+    "Australia/Adelaide",
+    "Australia/Broken_Hill",
+    "Australia/Darwin",
+    "Australia/North",
+    "Australia/South",
+    "Australia/Yancowinna",
+];
+
+const BOUNDED_TIMEZONE_LOCATIONS: &[(&str, &str, f64, f64, &str)] = &[
+    ("Africa/Abidjan", "CI", 5.31666, -4.03334, ""),
+    ("Africa/Addis_Ababa", "ET", 9.03333, 38.7, ""),
+    ("Africa/Brazzaville", "CG", -4.26667, 15.28333, ""),
+    ("Africa/Johannesburg", "ZA", -26.25, 28.0, ""),
+    ("Africa/Khartoum", "SD", 15.6, 32.53333, ""),
+    ("Africa/Windhoek", "NA", -22.56667, 17.1, ""),
+    (
+        "America/Adak",
+        "US",
+        51.88,
+        -176.65806,
+        "Alaska - western Aleutians",
+    ),
+    (
+        "America/Anchorage",
+        "US",
+        61.21805,
+        -149.90028,
+        "Alaska (most areas)",
+    ),
+    ("America/Anguilla", "AI", 18.2, -63.06667, ""),
+    (
+        "America/Argentina/Buenos_Aires",
+        "AR",
+        -34.6,
+        -58.45,
+        "Buenos Aires (BA, CF)",
+    ),
+    ("America/Asuncion", "PY", -25.26667, -57.66667, ""),
+    ("America/Barbados", "BB", 13.1, -59.61667, ""),
+    (
+        "America/Cambridge_Bay",
+        "CA",
+        69.11388,
+        -105.05278,
+        "Mountain - NU (west)",
+    ),
+    (
+        "America/Chicago",
+        "US",
+        41.85,
+        -87.65,
+        "Central (most areas)",
+    ),
+    ("America/Costa_Rica", "CR", 9.93333, -84.08334, ""),
+    (
+        "America/Dawson",
+        "CA",
+        64.06666,
+        -139.41667,
+        "MST - Yukon (west)",
+    ),
+    (
+        "America/Denver",
+        "US",
+        39.73916,
+        -104.98417,
+        "Mountain (most areas)",
+    ),
+    (
+        "America/Goose_Bay",
+        "CA",
+        53.33333,
+        -60.41667,
+        "Atlantic - Labrador (most areas)",
+    ),
+    (
+        "America/Guayaquil",
+        "EC",
+        -2.16667,
+        -79.83334,
+        "Ecuador (mainland)",
+    ),
+    (
+        "America/Halifax",
+        "CA",
+        44.65,
+        -63.6,
+        "Atlantic - NS (most areas), PE",
+    ),
+    ("America/Havana", "CU", 23.13333, -82.36667, ""),
+    (
+        "America/Inuvik",
+        "CA",
+        68.34972,
+        -133.71667,
+        "Mountain - NT (west)",
+    ),
+    (
+        "America/Iqaluit",
+        "CA",
+        63.73333,
+        -68.46667,
+        "Eastern - NU (most areas)",
+    ),
+    ("America/Los_Angeles", "US", 34.05222, -118.24278, "Pacific"),
+    ("America/Martinique", "MQ", 14.6, -61.08334, ""),
+    (
+        "America/New_York",
+        "US",
+        40.71416,
+        -74.00639,
+        "Eastern (most areas)",
+    ),
+    ("America/Paramaribo", "SR", 5.83333, -55.16667, ""),
+    ("America/Port-au-Prince", "HT", 18.53333, -72.33334, ""),
+    (
+        "America/Rankin_Inlet",
+        "CA",
+        62.81666,
+        -92.08306,
+        "Central - NU (central)",
+    ),
+    ("America/Santo_Domingo", "DO", 18.46666, -69.9, ""),
+    (
+        "America/St_Johns",
+        "CA",
+        47.56666,
+        -52.71667,
+        "Newfoundland, Labrador (SE)",
+    ),
+    ("Asia/Ho_Chi_Minh", "VN", 10.75, 106.66666, ""),
+    ("Asia/Hong_Kong", "HK", 22.28333, 114.14999, ""),
+    (
+        "Asia/Irkutsk",
+        "RU",
+        52.26666,
+        104.33333,
+        "MSK+05 - Irkutsk, Buryatia",
+    ),
+    ("Asia/Jakarta", "ID", -6.16667, 106.8, "Java, Sumatra"),
+    (
+        "Asia/Jayapura",
+        "ID",
+        -2.53334,
+        140.7,
+        "New Guinea (West Papua / Irian Jaya), Malukus/Moluccas",
+    ),
+    ("Asia/Jerusalem", "IL", 31.78055, 35.22388, ""),
+    ("Asia/Karachi", "PK", 24.86666, 67.05, ""),
+    (
+        "Asia/Makassar",
+        "ID",
+        -5.11667,
+        119.39999,
+        "Borneo (east, south), Sulawesi/Celebes, Bali, Nusa Tengarra, Timor (west)",
+    ),
+    ("Asia/Seoul", "KR", 37.55, 126.96666, ""),
+    ("Asia/Tbilisi", "GE", 41.71666, 44.81666, ""),
+    ("Asia/Tehran", "IR", 35.66666, 51.43333, ""),
+    ("Asia/Tokyo", "JP", 35.65444, 139.74472, ""),
+    ("Atlantic/Madeira", "PT", 32.63333, -16.9, "Madeira Islands"),
+    ("Atlantic/Stanley", "FK", -51.70001, -57.85, ""),
+    (
+        "Australia/Adelaide",
+        "AU",
+        -34.91667,
+        138.58333,
+        "South Australia",
+    ),
+    (
+        "Australia/Melbourne",
+        "AU",
+        -37.81667,
+        144.96666,
+        "Victoria",
+    ),
+    (
+        "Australia/Perth",
+        "AU",
+        -31.95,
+        115.85,
+        "Western Australia (most areas)",
+    ),
+    ("Chile/EasterIsland", "??", -90.0, -180.0, ""),
+    ("Etc/UCT", "??", -90.0, -180.0, ""),
+    ("Etc/Universal", "??", -90.0, -180.0, ""),
+    ("Europe/Berlin", "DE", 52.5, 13.36666, "most of Germany"),
+    ("Europe/Dublin", "IE", 53.33333, -6.25, ""),
+    ("Europe/Helsinki", "FI", 60.16666, 24.96666, ""),
+    (
+        "Europe/Lisbon",
+        "PT",
+        38.71666,
+        -9.13334,
+        "Portugal (mainland)",
+    ),
+    ("Europe/London", "GB", 51.50833, -0.12528, ""),
+    (
+        "Europe/Moscow",
+        "RU",
+        55.75583,
+        37.61777,
+        "MSK+00 - Moscow area",
+    ),
+    ("Europe/Oslo", "NO", 59.91666, 10.75, ""),
+    ("Europe/Paris", "FR", 48.86666, 2.33333, ""),
+    ("Europe/Riga", "LV", 56.94999, 24.1, ""),
+    ("Europe/Vilnius", "LT", 54.68333, 25.31666, ""),
+    (
+        "Pacific/Auckland",
+        "NZ",
+        -36.86667,
+        174.76666,
+        "most of New Zealand",
+    ),
+    ("Pacific/Guam", "GU", 13.46666, 144.75, ""),
+    ("Pacific/Honolulu", "US", 21.30694, -157.85834, "Hawaii"),
+    ("Pacific/Samoa", "??", -90.0, -180.0, ""),
+];
+
+fn bounded_timezone_metadata_name(name: &str) -> Option<&'static str> {
+    for (_, _, _, zone_id) in BOUNDED_TIMEZONE_ABBREVIATION_FIRST_ROWS {
+        if let Some(zone_id) = zone_id {
+            if *zone_id == name {
+                return Some(*zone_id);
+            }
+        }
+    }
+    for zone_id in BOUNDED_ACST_TIMEZONE_IDS {
+        if *zone_id == name {
+            return Some(*zone_id);
+        }
+    }
+    for (zone_id, _, _, _, _) in BOUNDED_TIMEZONE_LOCATIONS {
+        if *zone_id == name {
+            return Some(*zone_id);
+        }
+    }
+    None
+}
+
 fn bounded_timezone_abbreviations_array() -> PhpArray {
     let mut array = PhpArray::new();
-    for (abbr, offset, dst, zone_id) in [
-        ("gmt", 0, false, "GMT"),
-        ("utc", 0, false, "UTC"),
-        ("bst", 3_600, true, "Europe/London"),
-        ("cet", 3_600, false, "Europe/Berlin"),
-        ("cest", 7_200, true, "Europe/Berlin"),
-        ("est", -18_000, false, "America/New_York"),
-        ("edt", -14_400, true, "America/New_York"),
-        ("pst", -28_800, false, "America/Los_Angeles"),
-        ("pdt", -25_200, true, "America/Los_Angeles"),
-    ] {
+    for (abbr, dst, offset, zone_id) in BOUNDED_TIMEZONE_ABBREVIATION_FIRST_ROWS {
         let mut rows = PhpArray::new();
-        let mut row = PhpArray::new();
-        row.insert("dst", Value::Bool(dst));
-        row.insert("offset", Value::Int(offset));
-        row.insert("timezone_id", Value::String(zone_id.to_string()));
-        rows.append(Value::Array(row))
-            .expect("bounded timezone abbreviation row append should not exhaust integer keys");
-        array.insert(abbr, Value::Array(rows));
+        if *abbr == "acst" {
+            for zone_id in BOUNDED_ACST_TIMEZONE_IDS {
+                append_bounded_timezone_abbreviation_row(&mut rows, false, 34_200, Some(zone_id));
+            }
+        } else {
+            append_bounded_timezone_abbreviation_row(&mut rows, *dst, *offset, *zone_id);
+        }
+        array.insert(*abbr, Value::Array(rows));
     }
     array
+}
+
+fn append_bounded_timezone_abbreviation_row(
+    rows: &mut PhpArray,
+    dst: bool,
+    offset: i64,
+    zone_id: Option<&str>,
+) {
+    let mut row = PhpArray::new();
+    row.insert("dst", Value::Bool(dst));
+    row.insert("offset", Value::Int(offset));
+    match zone_id {
+        Some(zone_id) => row.insert("timezone_id", Value::String(zone_id.to_string())),
+        None => row.insert("timezone_id", Value::Null),
+    };
+    rows.append(Value::Array(row))
+        .expect("bounded timezone abbreviation row append should not exhaust integer keys");
+}
+
+fn bounded_timezone_location_array(
+    country_code: &str,
+    latitude: f64,
+    longitude: f64,
+    comments: &str,
+) -> PhpArray {
+    let mut array = PhpArray::new();
+    array.insert("country_code", Value::String(country_code.to_string()));
+    array.insert("latitude", Value::Float(latitude));
+    array.insert("longitude", Value::Float(longitude));
+    array.insert("comments", Value::String(comments.to_string()));
+    array
+}
+
+fn bounded_timezone_location_value(name: &str, timezone_type: i64) -> Value {
+    if timezone_type != 3 {
+        return Value::Bool(false);
+    }
+    BOUNDED_TIMEZONE_LOCATIONS
+        .iter()
+        .find(|(zone_id, _, _, _, _)| *zone_id == name)
+        .map(|(_, country_code, latitude, longitude, comments)| {
+            Value::Array(bounded_timezone_location_array(
+                country_code,
+                *latitude,
+                *longitude,
+                comments,
+            ))
+        })
+        .unwrap_or(Value::Bool(false))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

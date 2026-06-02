@@ -66662,6 +66662,7 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "timezone_name_from_abbr",
     "timezone_open",
     "timezone_name_get",
+    "timezone_location_get",
     "timezone_offset_get",
     "timezone_transitions_get",
     "timezone_abbreviations_list",

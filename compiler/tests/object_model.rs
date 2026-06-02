@@ -85,6 +85,7 @@ const CORE_INTERFACE_NAMES: &[&str] = &[
     "Stringable",
     "SplObserver",
     "SplSubject",
+    "DateTimeInterface",
 ];
 
 fn expected_print_r_array(values: &[&str]) -> String {
@@ -4011,7 +4012,7 @@ var_dump(defined("Plugin::NAME"));
 fn core_interface_catalog_reports_bounded_internal_interfaces() {
     let execution = run_source(
         r#"<?php
-foreach (array("Traversable", "IteratorAggregate", "Iterator", "Serializable", "ArrayAccess", "Countable", "Stringable") as $name) {
+foreach (array("Traversable", "IteratorAggregate", "Iterator", "Serializable", "ArrayAccess", "Countable", "Stringable", "DateTimeInterface") as $name) {
     echo interface_exists($name) ? $name . ":yes\n" : $name . ":no\n";
 }
 
@@ -4022,7 +4023,7 @@ echo interface_exists("DefinitelyMissingInterface") ? "missing:yes" : "missing:n
 
     assert_eq!(
         execution.stdout,
-        "Traversable:yes\nIteratorAggregate:yes\nIterator:yes\nSerializable:yes\nArrayAccess:yes\nCountable:yes\nStringable:yes\nmissing:no"
+        "Traversable:yes\nIteratorAggregate:yes\nIterator:yes\nSerializable:yes\nArrayAccess:yes\nCountable:yes\nStringable:yes\nDateTimeInterface:yes\nmissing:no"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -6041,7 +6042,7 @@ echo count($dynamic);
     let mut declared = CORE_INTERFACE_NAMES.to_vec();
     declared.extend(["App\\Logger", "App\\Hookable"]);
     let mut expected = expected_print_r_array(&declared);
-    expected.push_str("11\n11");
+    expected.push_str(&format!("{0}\n{0}", declared.len()));
     assert_eq!(execution.stdout, expected);
     assert_eq!(execution.exit_code, 0);
 }
