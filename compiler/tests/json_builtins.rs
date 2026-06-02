@@ -258,6 +258,52 @@ echo json_last_error(), "|", json_last_error_msg();
 }
 
 #[test]
+fn json_decode_and_validate_use_php_string_argument_boundary() {
+    let execution = run_source(
+        r#"<?php
+class JsonText {
+    public function __toString() { return '{"ok":true}'; }
+}
+class JsonListText {
+    public function __toString() { return '[1,2]'; }
+}
+
+var_dump(json_decode(new JsonText(), true));
+var_dump(json_validate(new JsonText()));
+$call = "json_decode";
+var_dump($call(new JsonListText(), true));
+var_dump(json_decode(null));
+var_dump(json_validate(null));
+try { json_decode([]); } catch (Throwable $e) { echo $e->getMessage(), "\n"; }
+try { json_validate(new stdClass()); } catch (Throwable $e) { echo $e->getMessage(), "\n"; }
+$bad = "\"a\xb0b\"";
+echo bin2hex(json_decode($bad, true, 512, JSON_INVALID_UTF8_SUBSTITUTE)), "\n";
+var_dump(json_validate($bad, 512, JSON_INVALID_UTF8_IGNORE));
+"#,
+    )
+    .unwrap();
+
+    assert!(execution.stdout.contains(
+        "array(1) {\n  [\"ok\"]=>\n  bool(true)\n}\nbool(true)\narray(2) {\n  [0]=>\n  int(1)\n  [1]=>\n  int(2)\n}\n"
+    ));
+    assert!(execution.stdout.contains(
+        "Deprecated: json_decode(): Passing null to parameter #1 ($json) of type string is deprecated"
+    ));
+    assert!(execution.stdout.contains(
+        "Deprecated: json_validate(): Passing null to parameter #1 ($json) of type string is deprecated"
+    ));
+    assert!(execution
+        .stdout
+        .contains("json_decode(): Argument #1 ($json) must be of type string, array given\n"));
+    assert!(execution
+        .stdout
+        .contains("json_validate(): Argument #1 ($json) must be of type string, stdClass given\n"));
+    assert!(execution.stdout.contains("61efbfbd62\nbool(true)\n"));
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn json_encode_invalid_utf8_flags_repair_binary_strings() {
     let execution = run_source(
         r#"<?php

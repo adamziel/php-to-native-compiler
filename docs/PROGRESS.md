@@ -4,6 +4,25 @@
 
 Implemented:
 
+- Added a bounded JSON input string-argument boundary lane. `json_decode()`
+  and `json_validate()` now route their `$json` operands through the shared
+  PHP-shaped string byte boundary, so scalar values keep the existing parser
+  and invalid-UTF-8 behavior, `null` emits the bounded deprecation before
+  decoding/validating `""`, supported visible `__toString()` objects are
+  accepted, and arrays, resources, closures, or non-stringable objects raise
+  catchable PHP-shaped `TypeError`s. Existing decode/validate flags,
+  request-local last-error state, binary invalid-UTF-8 repair lanes, metadata
+  visibility, and native-lowering rejection remain unchanged. Focused proof
+  covers the Rust
+  `json_decode_and_validate_use_php_string_argument_boundary` regression and
+  direct CLI fixture
+  `tests/fixtures/milestone2338/json_input_string_argument_boundaries.php`.
+  Unsupported edges remain exact invalid `__toString()` return diagnostics,
+  exact null deprecation breadth for related scalar arguments, full
+  `JsonSerializable` behavior, every JSON option interaction, complete
+  UTF-8/UTF-16 diagnostic parity, remaining json extension functions,
+  references/COW, and native lowering.
+
 - Added a bounded `substr_count()` string-boundary lane. Direct and
   string-valued dynamic interpreter calls now route haystack and needle
   operands through the shared PHP-shaped string argument boundary: scalar

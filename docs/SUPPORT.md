@@ -12538,13 +12538,18 @@ Unsupported code should fail with an explicit parse, runtime, or codegen error.
   for malformed byte units inside quoted JSON string tokens through
   `JSON_INVALID_UTF8_IGNORE` and `JSON_INVALID_UTF8_SUBSTITUTE`, catchable
   direct-call depth diagnostics for `json_decode()` / `json_validate()`,
+  PHP-shaped string-byte argument boundaries for the `json_decode()` and
+  `json_validate()` `$json` operands, including scalar conversion, bounded
+  null deprecations, supported visible `__toString()` objects, and catchable
+  `TypeError`s for arrays, resources, closures, or non-stringable objects,
   catchable exact-arity diagnostics for `json_last_error()` /
   `json_last_error_msg()`, and request-local last-error state, bounded
   single-line decode error locations for
   depth/state/control/truncated-input failures, and catchable `ValueError`
   diagnostics for invalid decode depth. Full
-  `JsonSerializable` parity, exact exception propagation for every serializer
-  shape, broad partial-output interaction parity beyond current
+  `JsonSerializable` parity, exact invalid `__toString()` return diagnostics,
+  exact exception propagation for every serializer shape, broad partial-output
+  interaction parity beyond current
   non-finite/unsupported/recursion/depth placeholders, exact escaped-string
   invalid-byte parity, complete UTF-16/UTF-8 diagnostics and invalid-byte
   grouping beyond the covered bounded encode/decode lanes, multi-line and

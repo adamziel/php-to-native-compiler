@@ -129409,55 +129409,29 @@ impl Interpreter {
             None
         };
 
-        let mut input = match &args[0] {
-            Value::Null => {
-                self.emit_display_diagnostic(
-                    "Deprecated",
-                    PHP_E_DEPRECATED,
-                    "json_decode(): Passing null to parameter #1 ($json) of type string is deprecated",
-                    span,
-                )?;
-                String::new()
-            }
-            Value::Bool(false) => String::new(),
-            Value::Bool(true) => "1".to_string(),
-            Value::Int(value) => value.to_string(),
-            Value::Float(value) => php_default_precision_float_string(*value),
-            Value::String(value) => value.clone(),
-            Value::BinaryString(value) => match std::str::from_utf8(value) {
-                Ok(value) => value.to_string(),
-                Err(_) => {
-                    if let Some(repair) = utf8_repair {
-                        match json_repair_invalid_utf8_in_strings(value, repair) {
-                            Some(value) => value,
-                            None => {
-                                self.set_json_last_error(
-                                    PHP_JSON_ERROR_UTF8,
-                                    json_error_base_message(PHP_JSON_ERROR_UTF8).to_string(),
-                                );
-                                return Ok(Value::Null);
-                            }
+        let input_bytes =
+            self.php_string_argument_bytes_with_magic("json_decode()", 1, "json", &args[0], span)?;
+        let mut input = match std::str::from_utf8(&input_bytes) {
+            Ok(value) => value.to_string(),
+            Err(_) => {
+                if let Some(repair) = utf8_repair {
+                    match json_repair_invalid_utf8_in_strings(&input_bytes, repair) {
+                        Some(value) => value,
+                        None => {
+                            self.set_json_last_error(
+                                PHP_JSON_ERROR_UTF8,
+                                json_error_base_message(PHP_JSON_ERROR_UTF8).to_string(),
+                            );
+                            return Ok(Value::Null);
                         }
-                    } else {
-                        self.set_json_last_error(
-                            PHP_JSON_ERROR_UTF8,
-                            json_error_base_message(PHP_JSON_ERROR_UTF8).to_string(),
-                        );
-                        return Ok(Value::Null);
                     }
+                } else {
+                    self.set_json_last_error(
+                        PHP_JSON_ERROR_UTF8,
+                        json_error_base_message(PHP_JSON_ERROR_UTF8).to_string(),
+                    );
+                    return Ok(Value::Null);
                 }
-            },
-            other => {
-                return Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "json_decode()",
-                        format!(
-                            "json argument must be scalar in the current subset, got {}",
-                            other.type_name()
-                        ),
-                    ),
-                ));
             }
         };
 
@@ -129645,37 +129619,24 @@ impl Interpreter {
         }
 
         let ignore_invalid_utf8 = flags & PHP_JSON_INVALID_UTF8_IGNORE != 0;
-        let input = match &args[0] {
-            Value::Null => String::new(),
-            Value::Bool(false) => String::new(),
-            Value::Bool(true) => "1".to_string(),
-            Value::Int(value) => value.to_string(),
-            Value::Float(value) => php_default_precision_float_string(*value),
-            Value::String(value) => value.clone(),
-            Value::BinaryString(value) => match std::str::from_utf8(value) {
-                Ok(value) => value.to_string(),
-                Err(_) if ignore_invalid_utf8 => String::from_utf8_lossy(value).into_owned(),
-                Err(error) => {
-                    let token_position =
-                        json_invalid_utf8_string_token_position(value, error.valid_up_to());
-                    self.set_json_last_error(
-                        PHP_JSON_ERROR_UTF8,
-                        json_utf8_error_message_at(token_position),
-                    );
-                    return Ok(Value::Bool(false));
-                }
-            },
-            other => {
-                return Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "json_validate()",
-                        format!(
-                            "Argument #1 ($json) must be of type string, {} given",
-                            other.type_name()
-                        ),
-                    ),
-                ));
+        let input_bytes = self.php_string_argument_bytes_with_magic(
+            "json_validate()",
+            1,
+            "json",
+            &args[0],
+            span,
+        )?;
+        let input = match std::str::from_utf8(&input_bytes) {
+            Ok(value) => value.to_string(),
+            Err(_) if ignore_invalid_utf8 => String::from_utf8_lossy(&input_bytes).into_owned(),
+            Err(error) => {
+                let token_position =
+                    json_invalid_utf8_string_token_position(&input_bytes, error.valid_up_to());
+                self.set_json_last_error(
+                    PHP_JSON_ERROR_UTF8,
+                    json_utf8_error_message_at(token_position),
+                );
+                return Ok(Value::Bool(false));
             }
         };
 
