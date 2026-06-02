@@ -133,6 +133,63 @@ echo json_encode([12.0, 0.0], JSON_PRESERVE_ZERO_FRACTION), "\n";
 }
 
 #[test]
+fn json_serializable_self_return_uses_public_properties_and_reentrant_guard() {
+    let execution = run_source(
+        r#"<?php
+class SelfReturning implements JsonSerializable {
+    public $a = 1;
+    private $hidden = "no";
+
+    public function jsonSerialize(): mixed {
+        var_dump(json_encode($this));
+        return $this;
+    }
+}
+
+class PlainSelfReturning implements JsonSerializable {
+    public $prop = "value";
+
+    public function jsonSerialize(): mixed {
+        return $this;
+    }
+}
+
+class SelfArrayReturning implements JsonSerializable {
+    public function jsonSerialize(): mixed {
+        return [$this];
+    }
+}
+
+var_dump(json_encode(new SelfReturning()));
+var_dump(json_encode(new PlainSelfReturning()));
+var_dump(json_encode(new SelfArrayReturning(), JSON_PARTIAL_OUTPUT_ON_ERROR));
+var_dump(json_last_error(), json_last_error_msg());
+var_dump(new PlainSelfReturning());
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "bool(false)\n",
+            r#"string(7) "{"a":1}""#,
+            "\n",
+            r#"string(16) "{"prop":"value"}""#,
+            "\n",
+            "string(6) \"[null]\"\n",
+            "int(6)\n",
+            "string(18) \"Recursion detected\"\n",
+            "object(PlainSelfReturning)#1 (1) {\n",
+            "  [\"prop\"]=>\n",
+            "  string(5) \"value\"\n",
+            "}\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn json_decode_bigint_and_object_as_array_flags() {
     let execution = run_source(
         r#"<?php

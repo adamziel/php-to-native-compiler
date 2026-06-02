@@ -480,6 +480,7 @@ struct Interpreter {
     active_autoloads: HashSet<String>,
     json_last_error: i64,
     json_last_error_message: String,
+    json_active_serializable_objects: HashSet<i64>,
     mysqli_report_mode: i64,
     mysqli_results: HashMap<i64, MysqliResultState>,
     mysqli_pending_results: HashMap<i64, MysqliPendingResultState>,
@@ -11529,6 +11530,7 @@ impl Interpreter {
             active_autoloads: HashSet::new(),
             json_last_error: PHP_JSON_ERROR_NONE,
             json_last_error_message: json_error_base_message(PHP_JSON_ERROR_NONE).to_string(),
+            json_active_serializable_objects: HashSet::new(),
             mysqli_report_mode: PHP_MYSQLI_REPORT_ERROR | PHP_MYSQLI_REPORT_STRICT,
             mysqli_results: HashMap::new(),
             mysqli_pending_results: HashMap::new(),
@@ -24181,7 +24183,10 @@ impl Interpreter {
                 Ok(Flow::Normal)
             }
             Stmt::Expr { expr, .. } => {
-                self.evaluate(expr, scope)?;
+                let value = self.evaluate(expr, scope)?;
+                if let Value::Object(object) = &value {
+                    self.retire_unrooted_temporary_object_handle(object, scope)?;
+                }
                 Ok(Flow::Normal)
             }
             Stmt::Goto { label, span } => Ok(Flow::Goto {
@@ -28217,6 +28222,69 @@ impl Interpreter {
             self.finalized_objects.remove(&object_id);
         }
 
+        Ok(())
+    }
+
+    fn retire_json_encode_temporary_object_arguments(
+        &mut self,
+        values: &[Value],
+        scope: &SymbolTable,
+    ) -> CompileResult<()> {
+        let mut visited = HashSet::new();
+        for value in values {
+            self.retire_json_encode_temporary_objects_in_value(value, scope, &mut visited)?;
+        }
+        Ok(())
+    }
+
+    fn retire_json_encode_temporary_objects_in_value(
+        &mut self,
+        value: &Value,
+        scope: &SymbolTable,
+        visited: &mut HashSet<i64>,
+    ) -> CompileResult<()> {
+        match value {
+            Value::Object(object) => {
+                if !visited.insert(object.id()) {
+                    return Ok(());
+                }
+                for property in object.properties() {
+                    if property.is_initialized() {
+                        self.retire_json_encode_temporary_objects_in_value(
+                            &property.value_cloned(),
+                            scope,
+                            visited,
+                        )?;
+                    }
+                }
+                self.retire_unrooted_temporary_object_handle(object, scope)?;
+            }
+            Value::Array(array) => {
+                for entry in array.entries() {
+                    self.retire_json_encode_temporary_objects_in_value(
+                        &entry.value_cloned(),
+                        scope,
+                        visited,
+                    )?;
+                }
+            }
+            Value::Closure(closure) => {
+                for capture in closure.captures() {
+                    self.retire_json_encode_temporary_objects_in_value(
+                        &capture.value(),
+                        scope,
+                        visited,
+                    )?;
+                }
+            }
+            Value::Null
+            | Value::Bool(_)
+            | Value::Int(_)
+            | Value::Float(_)
+            | Value::String(_)
+            | Value::BinaryString(_)
+            | Value::Resource(_) => {}
+        }
         Ok(())
     }
 
@@ -63723,6 +63791,13 @@ impl Interpreter {
                 if self.exit_signal.is_some() {
                     return Ok(Value::Null);
                 }
+                if key == "json_encode" {
+                    return self.call_json_encode_with_temporary_argument_retirement(
+                        values,
+                        span,
+                        caller_scope,
+                    );
+                }
                 self.call_builtin(&key, values, span)
             }
             Callable::User(function) => {
@@ -63934,6 +64009,13 @@ impl Interpreter {
                 )?;
                 if self.exit_signal.is_some() {
                     return Ok(Value::Null);
+                }
+                if key == "json_encode" {
+                    return self.call_json_encode_with_temporary_argument_retirement(
+                        values,
+                        span,
+                        caller_scope,
+                    );
                 }
                 self.call_builtin(&key, values, span)
             }
@@ -138625,6 +138707,20 @@ impl Interpreter {
         }
     }
 
+    fn call_json_encode_with_temporary_argument_retirement(
+        &mut self,
+        args: Vec<Value>,
+        span: Span,
+        caller_scope: &SymbolTable,
+    ) -> CompileResult<Value> {
+        let temporary_arguments = args.clone();
+        let result = self.call_json_encode(&args, span);
+        if result.is_ok() {
+            self.retire_json_encode_temporary_object_arguments(&temporary_arguments, caller_scope)?;
+        }
+        result
+    }
+
     fn json_encode_value(
         &mut self,
         value: &Value,
@@ -138767,6 +138863,18 @@ impl Interpreter {
         depth: i64,
         span: Span,
     ) -> Result<String, i64> {
+        if self.json_active_serializable_objects.contains(&object.id()) {
+            state.record_error(
+                PHP_JSON_ERROR_RECURSION,
+                json_error_base_message(PHP_JSON_ERROR_RECURSION),
+            );
+            return if options.partial_output() {
+                Ok("null".to_string())
+            } else {
+                Err(PHP_JSON_ERROR_RECURSION)
+            };
+        }
+
         if !state.active_objects.insert(object.id()) {
             state.record_error(
                 PHP_JSON_ERROR_RECURSION,
@@ -138779,20 +138887,40 @@ impl Interpreter {
             };
         }
 
-        if let Some(serialized) = self
-            .call_magic_instance_method_with_values(
-                object.clone(),
-                "jsonSerialize",
-                Vec::new(),
-                span,
-            )
-            .map_err(|_| PHP_JSON_ERROR_UNSUPPORTED_TYPE)?
-        {
-            let result = self.json_encode_value(&serialized, options, state, depth + 1, span);
+        let object_id = object.id();
+        self.json_active_serializable_objects.insert(object_id);
+        let serialized = self.call_magic_instance_method_with_values(
+            object.clone(),
+            "jsonSerialize",
+            Vec::new(),
+            span,
+        );
+        self.json_active_serializable_objects.remove(&object_id);
+
+        if let Some(serialized) = serialized.map_err(|_| PHP_JSON_ERROR_UNSUPPORTED_TYPE)? {
+            let result = match &serialized {
+                Value::Object(serialized_object) if serialized_object.id() == object_id => {
+                    self.json_encode_public_object_properties(object, options, state, depth, span)
+                }
+                _ => self.json_encode_value(&serialized, options, state, depth + 1, span),
+            };
             state.active_objects.remove(&object.id());
             return result;
         }
 
+        let result = self.json_encode_public_object_properties(object, options, state, depth, span);
+        state.active_objects.remove(&object.id());
+        result
+    }
+
+    fn json_encode_public_object_properties(
+        &mut self,
+        object: &PhpObject,
+        options: JsonEncodeOptions,
+        state: &mut JsonEncodeState,
+        depth: i64,
+        span: Span,
+    ) -> Result<String, i64> {
         let mut pairs = Vec::new();
         for property in object.properties() {
             if property.visibility() != Visibility::Public
@@ -138805,7 +138933,6 @@ impl Interpreter {
                 self.json_encode_value(&property.value_cloned(), options, state, depth + 1, span)?;
             pairs.push((json_quote_string(property.name(), options), encoded));
         }
-        state.active_objects.remove(&object.id());
         Ok(json_join_object(pairs, options, depth))
     }
 
