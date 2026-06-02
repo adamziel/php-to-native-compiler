@@ -63,6 +63,27 @@ echo implode(",", array_keys($items));
 }
 
 #[test]
+fn user_array_sort_accepts_static_method_string_callbacks() {
+    let execution = run_source(
+        r#"<?php
+class SortCmp {
+    public static function descending($left, $right) {
+        return $right <=> $left;
+    }
+}
+
+$items = [1, 3, 2];
+var_dump(usort($items, "SortCmp::descending"));
+echo implode(",", $items), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "bool(true)\n3,2,1\n");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn array_sort_residuals_handle_nested_arrays_objects_shuffle_and_spaceship() {
     let execution = run_source(
         r#"<?php

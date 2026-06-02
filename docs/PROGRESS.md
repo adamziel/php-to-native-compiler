@@ -4,6 +4,25 @@
 
 Implemented:
 
+- Added a bounded `array_find()` family by-reference callback-parameter
+  warning lane. `phpc run` now routes `array_find()`, `array_find_key()`,
+  `array_any()`, and `array_all()` callbacks whose reached value/key
+  parameters are declared by reference through the helper value-callback path:
+  callable builtins, string user functions, closures, static-method strings,
+  and supported public array-callable user methods emit PHP-shaped `must be
+  passed by reference, value given` warnings and then execute with ordinary
+  value arguments. Callback writes remain local to the callback frame,
+  preserving the source array and key values while retaining existing
+  short-circuit behavior and native-lowering rejection. Focused proof covers
+  the Rust `array_find_family_reference_params_warn_and_receive_values`
+  regression, the adjacent static-sort callback guard, and the direct
+  `phpc run` fixture
+  `tests/fixtures/milestone2327/array_find_reference_params.php`.
+  Unsupported edges remain true aliasing of callback parameters back into
+  helper-supplied value/key temporaries, first-class callable forms,
+  unsupported dynamic callable shapes, broad reference/COW graph parity, exact
+  diagnostics for every callback failure, and native lowering.
+
 - Added a bounded membership-helper strict-flag coercion lane. `array_keys()`,
   `in_array()`, and `array_search()` now route their optional `$strict`
   arguments through the shared PHP-internal bool boundary, so scalar values

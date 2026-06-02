@@ -76,6 +76,107 @@ echo is_callable("array_find_key") ? "callable\n" : "not-callable\n";
 }
 
 #[test]
+fn array_find_family_reference_params_warn_and_receive_values() {
+    let source = r#"<?php
+function find_ref(&$value, &$key) {
+    echo "fn:$value:$key\n";
+    $value = 99;
+    $key = "changed";
+    return true;
+}
+
+class RefChecker {
+    public static function staticFind(&$value, &$key) {
+        echo "static-string:$value:$key\n";
+        $value = 66;
+        $key = "static-string";
+        return true;
+    }
+
+    public static function staticAny(&$value, &$key) {
+        echo "static:$value:$key\n";
+        $value = 77;
+        $key = "static";
+        return true;
+    }
+
+    public function instanceAll(&$value, &$key) {
+        echo "object:$value:$key\n";
+        $value = 55;
+        $key = "object";
+        return true;
+    }
+}
+
+$items = ["a" => 1, "b" => 2];
+$closure = function (&$value, &$key) {
+    echo "closure:$value:$key\n";
+    $value = 88;
+    $key = "closure";
+    return true;
+};
+
+var_dump(array_find($items, "find_ref"));
+var_dump(array_find_key($items, $closure));
+var_dump(array_find($items, "RefChecker::staticFind"));
+var_dump(array_any($items, ["RefChecker", "staticAny"]));
+$checker = new RefChecker();
+var_dump(array_all(["z" => 3], [$checker, "instanceAll"]));
+var_dump(array_any([[2, 1]], "sort"));
+echo implode(",", array_keys($items)), "|", implode(",", $items), "\n";
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution
+            .stdout
+            .matches("must be passed by reference, value given")
+            .count(),
+        11,
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution.stdout.contains("fn:1:a\nint(1)\n"),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution.stdout.contains("closure:1:a\nstring(1) \"a\"\n"),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution.stdout.contains("static:1:a\nbool(true)\n"),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution.stdout.contains("static-string:1:a\nint(1)\n"),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution.stdout.contains("object:3:z\nbool(true)\n"),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution
+            .stdout
+            .contains("sort(): Argument #1 ($array) must be passed by reference, value given"),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution.stdout.ends_with("a,b|1,2\n"),
+        "{}",
+        execution.stdout
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn array_find_family_reports_arity_and_native_lowering_boundary() {
     let execution = run_source("<?php\narray_any([1]);\n").unwrap();
     assert_eq!(execution.exit_code, 255);

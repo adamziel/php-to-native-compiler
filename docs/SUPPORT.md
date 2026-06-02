@@ -3414,6 +3414,7 @@
   `array_uintersect_uassoc`, `array_flip`, `array_change_key_case`,
   `array_column`, `array_fill_keys`, `array_count_values`, `array_sum`,
   `array_product`, `array_reduce`, `array_filter`, `array_map`,
+  `array_find`, `array_find_key`, `array_any`, `array_all`,
   `array_push`, `array_unshift`, `array_shift`, `array_pop`, `array_splice`, `next`, `ksort`,
   `in_array`, `array_search`, `gettype`, `settype`, `is_null`, `is_bool`, `is_int`, `is_integer`,
   `is_long`, `is_float`, `is_double`, `is_string`, `is_array`, `is_scalar`,
@@ -6242,6 +6243,8 @@
   `array_map` operands, non-string or unresolved
   `array_map` callbacks,
   non-array variadic `array_map` operands,
+  non-array `array_find`/`array_find_key`/`array_any`/`array_all` operands,
+  invalid or unsupported `array_find` family callbacks,
   non-array `in_array`/`array_search` haystacks,
   non-coercible `in_array`/`array_search` strict-mode flag values, unsupported
   object/resource/reference and recursive-array `array_keys` loose
@@ -10383,6 +10386,22 @@
   references, copy-on-write containers, exact native `TypeError` objects,
   object handle identity preservation, resource values, and native lowering
   are not implemented.
+  `array_find($array, $callback)`, `array_find_key($array, $callback)`,
+  `array_any($array, $callback)`, and `array_all($array, $callback)` accept an
+  array plus callbacks that evaluate to string function names resolving to
+  current user functions or callable builtins, closures, static-method
+  strings, or supported public array-callable user methods. They invoke the
+  callback with the current value and key in insertion order, short-circuit
+  according to the helper result, return the matching value/key, `true` or
+  `false`, or `null` for empty/no-match cases, and are available through
+  string-valued dynamic function calls. User callbacks whose reached value or
+  key parameters are declared by reference, including callable builtins with
+  by-reference parameters, emit PHP-shaped value-given warnings and then
+  receive the helper-supplied values; callback writes do not alias back into
+  the source array or key temporaries. First-class callable forms, unsupported
+  dynamic callable shapes, true callback-parameter aliasing, exact diagnostics
+  for every callback failure, broad reference/COW parity, and native lowering
+  remain unsupported.
   `array_multisort($array, ...)` accepts direct interpreter calls with one or
   more scalar-valued arrays plus `SORT_ASC`, `SORT_DESC`, `SORT_REGULAR`,
   `SORT_NUMERIC`, `SORT_STRING`, `SORT_NATURAL`, and
@@ -10469,7 +10488,8 @@
   `array_intersect_ukey`, `array_udiff_uassoc`, `array_uintersect_uassoc`,
   `array_unique`, `array_flip`,
   `array_fill_keys`, `array_count_values`, `array_sum`, `array_product`,
-  `array_reduce`, `array_filter`, `array_map`, `in_array`, `array_search`, and
+  `array_reduce`, `array_filter`, `array_map`, `array_find`, `array_find_key`,
+  `array_any`, `array_all`, `in_array`, `array_search`, and
   both current `foreach` array forms follow the current by-value model; PHP
   references and copy-on-write containers beyond the covered dereferenced
   query-helper reads and direct `array_chunk()` value slots, object handle
@@ -10509,7 +10529,8 @@
   mode coercions outside the current int/bool/finite-integral-float/integral
   numeric string subset, and `array_map`
   callback forms outside current null-callback and string-valued function-name
-  forms are not implemented.
+  forms, and `array_find` family callback forms outside the current
+  string/closure/public array-callable subset are not implemented.
   Because `isset` and `empty` are modeled as special static forms, they are not
   available through dynamic function lookup. PHP's complete warning behavior is
   not implemented.

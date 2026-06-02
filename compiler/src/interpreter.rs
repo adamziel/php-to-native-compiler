@@ -92141,8 +92141,8 @@ impl Interpreter {
                 {
                     let callback =
                         static_method_array_callable_value(class_name, method_name, span)?;
-                    return self.call_array_callable_with_values_with_context(
-                        &callback, args, span, true, context,
+                    return self.call_array_find_array_callable_with_values(
+                        &callback, args, span, context,
                     );
                 }
 
@@ -92156,17 +92156,14 @@ impl Interpreter {
                         span,
                     )
                 })?;
-                self.call_array_find_resolved_callable_with_values(callable, args, span)
+                self.call_array_find_resolved_callable_with_values(callable, args, span, context)
             }
-            Value::Array(callback) => self
-                .call_array_callable_with_values_with_context(callback, args, span, true, context),
-            Value::Closure(closure) => self.invoke_closure_value_with_extra_policy(
-                closure.clone(),
-                args,
-                span,
-                context,
-                true,
-            ),
+            Value::Array(callback) => {
+                self.call_array_find_array_callable_with_values(callback, args, span, context)
+            }
+            Value::Closure(closure) => {
+                self.call_array_find_closure_with_values(closure.clone(), args, span, context)
+            }
             _ => Err(Self::invalid_callback_error(
                 context,
                 "no array or string given",
@@ -92180,25 +92177,245 @@ impl Interpreter {
         callable: Callable,
         args: Vec<Value>,
         span: Span,
+        context: &str,
     ) -> CompileResult<Value> {
         match callable {
-            Callable::Builtin(key) => self.call_builtin(&key, args, span),
-            Callable::User(function) => {
-                let function = function.as_ref();
-                ensure_user_function_arity_with_extra_policy(function, args.len(), span, true)?;
-                ensure_supported_function_signature(function, args.len(), span)?;
-                self.ensure_user_function_call_depth(function, span)?;
-                self.call_user_function_with_checked_values(
-                    function,
+            Callable::Builtin(key) => {
+                self.call_builtin_callback_with_values(&key, args, span, true)
+            }
+            Callable::User(function) => self.call_array_find_user_function_with_values(
+                function.as_ref(),
+                args,
+                None,
+                None,
+                None,
+                Vec::new(),
+                None,
+                span,
+                context,
+            ),
+        }
+    }
+
+    fn call_array_find_array_callable_with_values(
+        &mut self,
+        callback: &PhpArray,
+        args: Vec<Value>,
+        span: Span,
+        context: &str,
+    ) -> CompileResult<Value> {
+        let Some((target, method_name)) = array_callable_parts(callback) else {
+            return Err(Self::invalid_array_callback_error(context, callback, span));
+        };
+
+        match target {
+            Value::Object(object) => {
+                let receiver_class = self
+                    .classes
+                    .get(object.class_id())
+                    .expect("object class id should resolve to class metadata");
+                let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
+                    self.resolve_instance_method(object.class_id(), method_name)
+                else {
+                    return Err(Self::invalid_callback_error(
+                        context,
+                        format!(
+                            "class {} does not have a method \"{method_name}\"",
+                            receiver_class.name()
+                        ),
+                        span,
+                    ));
+                };
+                self.ensure_instance_method_visible(
+                    class_id,
+                    &class_name,
+                    method_name,
+                    visibility,
+                    span,
+                )
+                .map_err(|_| {
+                    Self::invalid_callback_visibility_error(
+                        context,
+                        &class_name,
+                        method_name,
+                        visibility,
+                        span,
+                    )
+                })?;
+
+                let function =
+                    self.method_function(class_id, &class_name, &resolved_method_name, span)?;
+                let this_object = if is_static {
+                    None
+                } else {
+                    Some(object.clone())
+                };
+                let warning_function = format!("{class_name}::{resolved_method_name}");
+                self.call_array_find_user_function_with_values(
+                    function.as_ref(),
                     args,
-                    None,
-                    None,
-                    None,
+                    this_object,
+                    Some(class_id),
+                    Some(object.class_id()),
                     Vec::new(),
-                    None,
+                    Some(&warning_function),
+                    span,
+                    context,
                 )
             }
+            Value::String(class_name) => {
+                let class_id = self.classes.lookup_class_id(class_name).ok_or_else(|| {
+                    Self::invalid_callback_error(
+                        context,
+                        format!("class \"{class_name}\" not found"),
+                        span,
+                    )
+                })?;
+                let receiver_class_name = self
+                    .classes
+                    .get(class_id)
+                    .expect("class id should resolve to class metadata")
+                    .name()
+                    .to_string();
+                let Some((
+                    declaring_class_id,
+                    declaring_class_name,
+                    resolved_method_name,
+                    visibility,
+                    is_static,
+                )) = self.resolve_instance_method(class_id, method_name)
+                else {
+                    return match self.call_missing_static_method_with_values_via_magic(
+                        class_id,
+                        method_name,
+                        args,
+                        span,
+                    )? {
+                        Some(value) => Ok(value),
+                        None => Err(Self::invalid_callback_error(
+                            context,
+                            format!(
+                                "class {receiver_class_name} does not have a method \"{method_name}\""
+                            ),
+                            span,
+                        )),
+                    };
+                };
+                if !is_static {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{declaring_class_name}::{method_name}()"),
+                            "non-static method array callables require an object receiver in the current subset",
+                        ),
+                    ));
+                }
+                if visibility != Visibility::Public {
+                    return Err(Self::invalid_callback_visibility_error(
+                        context,
+                        &declaring_class_name,
+                        method_name,
+                        visibility,
+                        span,
+                    ));
+                }
+
+                let function = self.method_function(
+                    declaring_class_id,
+                    &declaring_class_name,
+                    &resolved_method_name,
+                    span,
+                )?;
+                let warning_function = format!("{declaring_class_name}::{resolved_method_name}");
+                self.call_array_find_user_function_with_values(
+                    function.as_ref(),
+                    args,
+                    None,
+                    Some(declaring_class_id),
+                    Some(class_id),
+                    Vec::new(),
+                    Some(&warning_function),
+                    span,
+                    context,
+                )
+            }
+            _ => unreachable!("array_callable_parts restricts callback targets"),
         }
+    }
+
+    fn call_array_find_closure_with_values(
+        &mut self,
+        closure: PhpClosure,
+        args: Vec<Value>,
+        span: Span,
+        context: &str,
+    ) -> CompileResult<Value> {
+        let function = self
+            .closure_functions
+            .get(&closure.id())
+            .cloned()
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        context,
+                        "closure body metadata is missing in the current subset",
+                    ),
+                )
+            })?;
+        let prebound_locals = self.closure_prebound_locals(&closure);
+        let (this_object, class_context, called_class_context) =
+            self.closure_call_context(&closure);
+        self.call_array_find_user_function_with_values(
+            function.as_ref(),
+            args,
+            this_object,
+            class_context,
+            called_class_context,
+            prebound_locals,
+            Some("{closure}"),
+            span,
+            context,
+        )
+    }
+
+    fn call_array_find_user_function_with_values(
+        &mut self,
+        function: &FunctionDecl,
+        args: Vec<Value>,
+        this_object: Option<PhpObject>,
+        class_context: Option<ClassId>,
+        called_class_context: Option<ClassId>,
+        prebound_locals: Vec<PreboundLocal>,
+        warning_function: Option<&str>,
+        span: Span,
+        _context: &str,
+    ) -> CompileResult<Value> {
+        ensure_user_function_arity_with_extra_policy(function, args.len(), span, true)?;
+        ensure_supported_function_metadata(function, span)?;
+        self.emit_value_callback_reference_parameter_warnings(
+            function,
+            args.len(),
+            warning_function,
+            span,
+        )?;
+        self.ensure_user_function_call_depth(function, span)?;
+        let frame = CallFrameArgumentBindings {
+            values: args,
+            argument_keys: Vec::new(),
+            reference_bindings: Vec::new(),
+            array_copy_source_bindings: Vec::new(),
+            by_value_array_copy_bindings: Vec::new(),
+        };
+        self.call_user_function_with_call_frame(
+            function,
+            frame,
+            this_object,
+            class_context,
+            called_class_context,
+            None,
+            prebound_locals,
+        )
     }
 
     fn call_array_walk(
