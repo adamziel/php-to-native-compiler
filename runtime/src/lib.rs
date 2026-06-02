@@ -29314,10 +29314,10 @@ impl PhpArray {
         for entry in &self.entries {
             match &entry.key {
                 ArrayKey::Int(_) => {
-                    array.append(entry.value_cloned())?;
+                    array.append_slot(entry.slot().clone())?;
                 }
                 ArrayKey::String(key) => {
-                    array.insert(key.clone(), entry.value_cloned());
+                    array.insert_slot(key.clone(), entry.slot().clone());
                 }
             }
         }
@@ -77013,6 +77013,34 @@ mod tests {
 
         array.append(Value::String("tail".to_string())).unwrap();
         assert_eq!(array.entries()[5].key, ArrayKey::Int(4));
+    }
+
+    #[test]
+    fn array_unshift_preserves_reference_backed_existing_slots() {
+        let reference = PhpReferenceCell::new(Value::String("ref".to_string()));
+        let mut array = PhpArray::new();
+        array.insert(2, Value::String("two".to_string()));
+        array.insert("name", Value::String("Ada".to_string()));
+        array.insert_reference("ref", reference.clone());
+
+        let len = array
+            .unshift_values(&[Value::String("head".to_string())])
+            .unwrap();
+
+        assert_eq!(len, 4);
+        assert_eq!(array.get_cloned(0), Some(Value::String("head".to_string())));
+        assert_eq!(array.get_cloned(1), Some(Value::String("two".to_string())));
+        let copied_reference = array
+            .get_slot("ref")
+            .and_then(ArraySlot::reference_cell)
+            .expect("array_unshift should preserve existing reference-backed slots");
+        assert!(copied_reference.shares_reference_with(&reference));
+
+        reference.set_value(Value::String("changed".to_string()));
+        assert_eq!(
+            array.get_cloned("ref"),
+            Some(Value::String("changed".to_string()))
+        );
     }
 
     #[test]

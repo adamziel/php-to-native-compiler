@@ -3631,8 +3631,10 @@
   values, writes the mutated array back to the root variable path, and returns
   the new count. `array_unshift($array, ...$values)` supports the same direct
   variable array path subset, reindexes integer keys, preserves string keys,
+  preserves existing reference-backed array slots while rebuilding the target,
   accepts integer-keyed argument unpacking for prepended values, and returns
-  the new count. Through `call_user_func()` the
+  the new count. Newly prepended value arguments are still evaluated by value
+  rather than installed as caller reference slots. Through `call_user_func()` the
   covered callback form evaluates the array argument by value, emits the
   bounded reference-parameter warning, returns the copied-array count, and
   leaves the caller array unchanged. Through `call_user_func_array()` a

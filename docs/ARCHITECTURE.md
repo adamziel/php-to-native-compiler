@@ -163,6 +163,7 @@ array-path mutation helper. The helper evaluates a variable-root path such as
 updated value back through the root symbol while preserving reference-backed
 slots via slot setters. `array_push()`, `array_unshift()`, `array_pop()`,
 `array_shift()`, `next()`, `prev()`, `reset()`, and `end()` use this path;
+`array_unshift()` carries existing slots through its reindexed rebuild,
 pop/shift detach aliases for the removed leaf before mutation, and array-entry
 removal adjusts the ordered-array cursor when the removed slot was before the
 cursor. `array_shift()` additionally has a bounded by-value expression fallback

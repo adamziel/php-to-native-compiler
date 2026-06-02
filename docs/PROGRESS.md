@@ -4,6 +4,22 @@
 
 Implemented:
 
+- Added a bounded `array_unshift()` existing-slot preservation lane for direct
+  array mutation. Rebuilding the target array after prepending values now
+  carries existing `ArraySlot`s through integer-key reindexing and string-key
+  preservation instead of flattening them to cloned values, so reference-backed
+  source slots remain live after `array_unshift($array, ...)` and covered
+  nested direct-path calls. Focused proof covers the runtime
+  `array_unshift_preserves_reference_backed_existing_slots` test, the compiler
+  `array_unshift` regression, the direct `phpc run` fixture
+  `tests/fixtures/milestone2316/array_unshift_reference_backed_slots.php`,
+  and the adjacent public PHPT row
+  `ext/standard/tests/array/array_unshift_basic1.phpt`. Unsupported edges
+  remain reference propagation for newly prepended value arguments, broader
+  reference/COW graph parity, object-property array roots for
+  push/pop/shift/unshift, broad by-reference callback/lvalue handling, exact
+  native diagnostics, and native lowering.
+
 - Added a bounded `array_chunk()` reference-backed value-slot preservation lane
   for the selected `array_chunk_variation7.phpt` surface. `PhpArray` chunk
   construction now inserts source `ArraySlot`s into both reindexed and

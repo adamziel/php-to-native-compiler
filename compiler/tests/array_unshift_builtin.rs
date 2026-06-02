@@ -23,6 +23,29 @@ echo $items[4];
 }
 
 #[test]
+fn array_unshift_preserves_reference_backed_existing_slots() {
+    let execution = run_source(
+        r#"<?php
+$value = "ref";
+$items = ["first" => "plain"];
+$items["ref"] =& $value;
+$items[] = "tail";
+
+$count = array_unshift($items, "head");
+$value = "changed";
+echo $count, "|", $items[0], "|", $items["first"], "|", $items["ref"], "|", $items[1], "\n";
+
+$items["ref"] = "through-item";
+echo $value;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "4|head|plain|changed|tail\nthrough-item");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn array_unshift_is_available_through_string_valued_direct_calls() {
     let execution = run_source(
         r#"<?php
