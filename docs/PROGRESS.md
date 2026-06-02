@@ -4,6 +4,27 @@
 
 Implemented:
 
+- Added a bounded DateTime diff calendar-borrow lane on the interpreter path.
+  `DateTime::diff()`, `DateTimeImmutable::diff()`, and `date_diff()` now use
+  directional local-calendar month/day borrowing for forward and reverse
+  intervals, and `%a` / `days` metadata is derived from absolute local
+  civil-day distance for the covered bounded rows. Ordinary diff/ISO
+  `DateInterval` object display now suppresses absent `date_string` metadata
+  while preserving present relative-string metadata. Focused proof covers the
+  Rust `datetime_diff_uses_directional_calendar_borrow_and_total_days` and
+  `dateinterval_diff_dump_hides_absent_date_string_metadata` regressions, the
+  full `date_time_builtin` Rust file, build/fmt/diff checks, and selected
+  public PHPT rows `ext/date/tests/DateTime_diff-dates.phpt`,
+  `ext/date/tests/DateTime_diff-february.phpt`,
+  `ext/date/tests/DateTime_days-february.phpt`,
+  `ext/date/tests/date_diff.phpt`, and `ext/date/tests/date_diff1.phpt`.
+  Unsupported edges remain massive-year DateTime diff/day/add/sub rows outside
+  the bounded civil-calendar/timestamp model, exact relative-string
+  `DateInterval` object-handler parity, DateInterval
+  serialization/unserialization and `__set_state()`, full timelib relative
+  grammar, broad historical timezone/DST transition parity, references/COW,
+  and native lowering.
+
 - Added a bounded `crypt()` invalid-salt fallback lane on the interpreter path.
   Malformed modular salts, invalid bcrypt algorithm/cost/salt-body forms,
   invalid DES/extended-DES salts, NUL-containing SHA modular salts, and the

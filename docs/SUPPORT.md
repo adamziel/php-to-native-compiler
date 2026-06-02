@@ -6322,9 +6322,14 @@
   comparison path. `DateTime::diff()`,
   `DateTimeImmutable::diff()`, and `date_diff()` produce bounded
   `DateInterval` objects for initialized mutable/immutable DateTime operands,
-  including `%Y/%M/%D/%H/%I/%S`, lowercase component tokens, `%R/%r`, `%a`,
-  `%%`, and unknown percent-token preservation through `DateInterval::format()`
-  and `date_interval_format()`. `DateInterval::__construct()` accepts integer
+  with directional local-calendar month/day borrowing for forward and reverse
+  intervals and `%a` / `days` metadata derived from absolute local civil-day
+  distance in the covered bounded rows. Supported formatting includes
+  `%Y/%M/%D/%H/%I/%S`, lowercase component tokens, `%R/%r`, `%a`, `%%`, and
+  unknown percent-token preservation through `DateInterval::format()` and
+  `date_interval_format()`. Ordinary diff/ISO `DateInterval` object display
+  suppresses absent `date_string` metadata while preserving present
+  relative-string metadata. `DateInterval::__construct()` accepts integer
   ISO-8601 duration components such as `P2Y4DT6H8M` and `P32D`, exposes the
   public component metadata `y`, `m`, `d`, `h`, `i`, `s`, `f`, `invert`,
   `days`, and `from_string`, supports bounded subclass construction through
@@ -6385,6 +6390,8 @@
   `__unserialize()` methods, private/protected serialized properties on
   DateTimeImmutable subclasses, DateInterval arithmetic beyond the bounded
   `DateTime` / `DateTimeImmutable` `add()` / `sub()` integer-component subset,
+  massive-year DateTime diff/day/add/sub rows outside the bounded
+  civil-calendar/timestamp model,
   DatePeriod, DateInterval serialization/unserialization and `__set_state()`,
   full timelib relative string grammar, fractional or negative ISO interval
   components, exact

@@ -152085,55 +152085,25 @@ fn bounded_datetime_diff_interval(
     absolute: bool,
 ) -> BoundedDateIntervalState {
     let source_before_target = source.timestamp <= target.timestamp;
-    let (start, end) = if source_before_target {
-        (source, target)
-    } else {
-        (target, source)
-    };
-    let start_parts = bounded_datetime_parts(
-        start.timestamp,
-        start.timezone.offset_at_timestamp(start.timestamp),
+    let source_parts = bounded_datetime_parts(
+        source.timestamp,
+        source.timezone.offset_at_timestamp(source.timestamp),
     );
-    let end_parts = bounded_datetime_parts(
-        end.timestamp,
-        end.timezone.offset_at_timestamp(end.timestamp),
+    let target_parts = bounded_datetime_parts(
+        target.timestamp,
+        target.timezone.offset_at_timestamp(target.timestamp),
     );
 
-    let mut years = end_parts.year - start_parts.year;
-    let mut months = end_parts.month - start_parts.month;
-    let mut days = end_parts.day - start_parts.day;
-    let mut hours = end_parts.hour - start_parts.hour;
-    let mut minutes = end_parts.minute - start_parts.minute;
-    let mut seconds = end_parts.second - start_parts.second;
-
-    if seconds < 0 {
-        seconds += 60;
-        minutes -= 1;
-    }
-    if minutes < 0 {
-        minutes += 60;
-        hours -= 1;
-    }
-    if hours < 0 {
-        hours += 24;
-        days -= 1;
-    }
-    if days < 0 {
-        months -= 1;
-        let (borrow_year, borrow_month) = normalize_year_month(end_parts.year, end_parts.month - 1);
-        days += days_in_month(borrow_year, borrow_month);
-    }
-    if months < 0 {
-        months += 12;
-        years -= 1;
-    }
-
-    let total_seconds = if source.timestamp >= target.timestamp {
-        source.timestamp as i128 - target.timestamp as i128
+    let (years, months, days, hours, minutes, seconds) = if source_before_target {
+        bounded_datetime_forward_diff_components(source_parts, target_parts)
     } else {
-        target.timestamp as i128 - source.timestamp as i128
+        bounded_datetime_backward_diff_components(source_parts, target_parts)
     };
-    let total_days = (total_seconds / 86_400).min(i64::MAX as i128) as i64;
+    let source_days = days_from_civil(source_parts.year, source_parts.month, source_parts.day);
+    let target_days = days_from_civil(target_parts.year, target_parts.month, target_parts.day);
+    let total_days = (source_days as i128 - target_days as i128)
+        .abs()
+        .min(i64::MAX as i128) as i64;
 
     BoundedDateIntervalState {
         years,
@@ -152152,6 +152122,88 @@ fn bounded_datetime_diff_interval(
         from_string: false,
         date_string: None,
     }
+}
+
+fn bounded_datetime_forward_diff_components(
+    start: BoundedDateTimeParts,
+    end: BoundedDateTimeParts,
+) -> (i64, i64, i64, i64, i64, i64) {
+    let mut years = end.year - start.year;
+    let mut months = end.month - start.month;
+    let mut days = end.day - start.day;
+    let mut hours = end.hour - start.hour;
+    let mut minutes = end.minute - start.minute;
+    let mut seconds = end.second - start.second;
+
+    if seconds < 0 {
+        seconds += 60;
+        minutes -= 1;
+    }
+    if minutes < 0 {
+        minutes += 60;
+        hours -= 1;
+    }
+    if hours < 0 {
+        hours += 24;
+        days -= 1;
+    }
+
+    let mut borrow_year = end.year;
+    let mut borrow_month = end.month;
+    while days < 0 {
+        months -= 1;
+        let (year, month) = normalize_year_month(borrow_year, borrow_month - 1);
+        days += days_in_month(year, month);
+        borrow_year = year;
+        borrow_month = month;
+    }
+    while months < 0 {
+        months += 12;
+        years -= 1;
+    }
+
+    (years, months, days, hours, minutes, seconds)
+}
+
+fn bounded_datetime_backward_diff_components(
+    start: BoundedDateTimeParts,
+    end: BoundedDateTimeParts,
+) -> (i64, i64, i64, i64, i64, i64) {
+    let mut years = start.year - end.year;
+    let mut months = start.month - end.month;
+    let mut days = start.day - end.day;
+    let mut hours = start.hour - end.hour;
+    let mut minutes = start.minute - end.minute;
+    let mut seconds = start.second - end.second;
+
+    if seconds < 0 {
+        seconds += 60;
+        minutes -= 1;
+    }
+    if minutes < 0 {
+        minutes += 60;
+        hours -= 1;
+    }
+    if hours < 0 {
+        hours += 24;
+        days -= 1;
+    }
+
+    let mut borrow_year = end.year;
+    let mut borrow_month = end.month;
+    while days < 0 {
+        months -= 1;
+        days += days_in_month(borrow_year, borrow_month);
+        let (year, month) = normalize_year_month(borrow_year, borrow_month + 1);
+        borrow_year = year;
+        borrow_month = month;
+    }
+    while months < 0 {
+        months += 12;
+        years -= 1;
+    }
+
+    (years, months, days, hours, minutes, seconds)
 }
 
 fn parse_signed_ascii_i64(value: &str) -> Option<i64> {
@@ -157006,6 +157058,14 @@ fn display_object_properties(object: &PhpObject) -> Vec<ObjectProperty> {
             let is_core_date_metadata = property.visibility() == Visibility::Public
                 && matches!(property.name(), "date" | "timezone_type" | "timezone");
             (is_core_date_metadata, *index)
+        });
+    }
+
+    if object.is_instance_of_class_name("DateInterval") {
+        indexed_properties.retain(|(_, property)| {
+            !(property.visibility() == Visibility::Public
+                && property.name() == "date_string"
+                && matches!(property.value_cloned(), Value::Null))
         });
     }
 

@@ -1098,6 +1098,80 @@ try {
 }
 
 #[test]
+fn datetime_diff_uses_directional_calendar_borrow_and_total_days() {
+    let execution = run_source(
+        r#"<?php
+date_default_timezone_set("America/New_York");
+
+$start = new DateTime("2010-01-31");
+$end = new DateTime("2010-03-01");
+echo $start->diff($end)->format("P%R%yY%mM%dDT%hH%iM%sS days=%a"), "\n";
+echo $end->diff($start)->format("P%R%yY%mM%dDT%hH%iM%sS days=%a"), "\n";
+
+$start = new DateTime("2010-01-31");
+$end = new DateTime("2010-03-31");
+echo $start->diff($end)->format("P%R%yY%mM%dDT%hH%iM%sS days=%a"), "\n";
+
+$start = new DateTime("2010-02-28");
+$end = new DateTime("2010-03-28");
+echo $start->diff($end)->format("P%R%yY%mM%dDT%hH%iM%sS days=%a"), "\n";
+
+$start = new DateTime("2000-02-07");
+$end = new DateTime("2007-02-06");
+echo $start->diff($end)->format("P%R%yY%mM%dDT%hH%iM%sS days=%a"), "\n";
+echo $end->diff($start)->format("P%R%yY%mM%dDT%hH%iM%sS days=%a"), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "P+0Y0M29DT0H0M0S days=29\n",
+            "P-0Y1M1DT0H0M0S days=29\n",
+            "P+0Y2M0DT0H0M0S days=59\n",
+            "P+0Y1M0DT0H0M0S days=28\n",
+            "P+6Y11M30DT0H0M0S days=2556\n",
+            "P-6Y11M28DT0H0M0S days=2556\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn dateinterval_diff_dump_hides_absent_date_string_metadata() {
+    let execution = run_source(
+        r#"<?php
+date_default_timezone_set("UTC");
+
+$interval = date_diff(
+    new DateTime("2010-10-04 02:18:48 EDT"),
+    new DateTime("2010-11-06 18:38:28 EDT")
+);
+echo "--diff--\n";
+var_dump($interval);
+
+$relative = DateInterval::createFromDateString("1 day");
+echo "--relative--\n";
+var_dump($relative);
+"#,
+    )
+    .unwrap();
+
+    let (diff_output, relative_output) = execution
+        .stdout
+        .split_once("--relative--\n")
+        .expect("relative DateInterval dump marker should be present");
+    assert!(diff_output.contains("[\"from_string\"]=>\n  bool(false)"));
+    assert!(!diff_output.contains("[\"date_string\"]=>"));
+    assert!(relative_output.contains("[\"from_string\"]=>\n  bool(true)"));
+    assert!(relative_output.contains("[\"date_string\"]=>\n  string(5) \"1 day\""));
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn datetime_interval_add_sub_mutate_or_copy_bounded_state() {
     let execution = run_source(
         r#"<?php
