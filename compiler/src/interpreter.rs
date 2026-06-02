@@ -134651,7 +134651,10 @@ fn filter_validate_ip(value: &Value, flags: i64) -> Option<String> {
     }
     if flags & PHP_FILTER_FLAG_IPV4 == 0 {
         if let Ok(addr) = value.parse::<Ipv6Addr>() {
-            if flags & PHP_FILTER_FLAG_NO_RES_RANGE != 0 && addr.is_loopback() {
+            if flags & PHP_FILTER_FLAG_NO_PRIV_RANGE != 0 && ipv6_is_private(addr) {
+                return None;
+            }
+            if flags & PHP_FILTER_FLAG_NO_RES_RANGE != 0 && ipv6_is_reserved(addr) {
                 return None;
             }
             return Some(value);
@@ -134670,6 +134673,19 @@ fn ipv4_is_private(addr: Ipv4Addr) -> bool {
 fn ipv4_is_reserved(addr: Ipv4Addr) -> bool {
     let octets = addr.octets();
     octets[0] == 127 || octets == [255, 255, 255, 255]
+}
+
+fn ipv6_is_private(addr: Ipv6Addr) -> bool {
+    let segments = addr.segments();
+    (0xfc00..=0xfdff).contains(&segments[0])
+}
+
+fn ipv6_is_reserved(addr: Ipv6Addr) -> bool {
+    let segments = addr.segments();
+    segments == [0, 0, 0, 0, 0, 0, 0, 0]
+        || segments == [0, 0, 0, 0, 0, 0, 0, 1]
+        || segments[0..6] == [0, 0, 0, 0, 0, 0xffff]
+        || (0xfe80..=0xfebf).contains(&segments[0])
 }
 
 fn filter_validate_mac(value: &Value) -> Option<String> {

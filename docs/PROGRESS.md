@@ -4,6 +4,25 @@
 
 Implemented:
 
+- Added a bounded `FILTER_VALIDATE_IP` IPv6 range-flag lane for the selected
+  ext/filter `bug47435.phpt` and `gh16944.phpt` surfaces. The interpreter now
+  applies `FILTER_FLAG_NO_PRIV_RANGE` to IPv6 unique-local `fc00::/7`
+  addresses and `FILTER_FLAG_NO_RES_RANGE` to bounded IPv6 reserved ranges:
+  unspecified, loopback, IPv4-mapped, and link-local addresses. This preserves
+  accepted global/special addresses covered by the same rows and leaves
+  IPv4-mapped private addresses accepted for `NO_PRIV_RANGE`, matching the
+  current PHP-src shape. Focused proof covers the Rust
+  `filter_var_validate_ip_rejects_bounded_ipv6_private_and_reserved_ranges`
+  regression, the direct `phpc run` fixture
+  `tests/fixtures/milestone2319/filter_validate_ip_ipv6_ranges.php`, and the
+  selected PHPT rows `ext/filter/tests/bug47435.phpt` and
+  `ext/filter/tests/gh16944.phpt`. Unsupported edges remain
+  `FILTER_FLAG_GLOBAL_RANGE`, full RFC 6890 IPv4/IPv6 range breadth beyond the
+  bounded private/reserved ranges, broad URL/IP/domain/email validation parity,
+  exact ext/filter diagnostics and option coercions, `filter_input_array()`,
+  sanitizer deprecation diagnostics, object/resource coercions,
+  references/COW beyond the current array-slot path, and native lowering.
+
 - Added a bounded `get_class_vars()` valid-class diagnostics and ordering lane
   for the selected `Zend/tests/get_class_vars/get_class_vars_001.phpt`
   surface. The interpreter now raises PHP-shaped catchable `TypeError`s for

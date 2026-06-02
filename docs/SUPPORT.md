@@ -2795,6 +2795,22 @@
   strings, INI-derived argument separators beyond the current `&` fallback,
   cyclic array/reference structures, object custom serialization hooks, and
   native lowering beyond function-table introspection remain unsupported.
+- `filter_list()`, `filter_id()`, `filter_var()`, `filter_var_array()`, and
+  `filter_input()` cover a bounded ext/filter scalar helper slice. The current
+  filters include unsafe-raw and selected sanitizers, int/float/bool/domain/
+  URL/email/IP/MAC/regexp validators, array filtering through
+  `FILTER_REQUIRE_ARRAY`/`FILTER_FORCE_ARRAY`, `FILTER_NULL_ON_FAILURE`,
+  configured defaults, `FILTER_CALLBACK` for supported callbacks, and
+  `INPUT_GET`/`INPUT_POST`/`INPUT_COOKIE` reads from the bounded superglobal
+  seeds. `FILTER_VALIDATE_IP` honors the current IPv4/IPv6 selector flags,
+  current IPv4 private and loopback/broadcast reserved ranges, IPv6
+  `fc00::/7` private-range rejection, and bounded IPv6 reserved-range
+  rejection for unspecified, loopback, IPv4-mapped, and link-local addresses.
+  Full ext/filter option coercion and diagnostics, `filter_input_array()`,
+  `FILTER_FLAG_GLOBAL_RANGE`, full RFC 6890 IPv4/IPv6 range breadth, Unicode
+  email/IDNA policy, broad URL/domain/IP validation parity, sanitizer
+  deprecation diagnostics, object/resource coercions, references/COW beyond
+  the current array-slot path, and native lowering remain unsupported.
 - `request_parse_body()` supports the bounded CLI option-validation path used
   by the standard request-body PHPT rows. It accepts omitted, `null`, or array
   `$options`; validates the known scalar quantity keys
