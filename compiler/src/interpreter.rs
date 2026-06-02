@@ -47,6 +47,7 @@ use crate::ast::{
     TraitDecl, TraitUseDecl, TypeDecl, UnaryOp, UnsetTarget,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
+use crate::legacy_hashes;
 use crate::parser::parse_source;
 use crate::php_tokenizer::{self, PhpTokenizerToken};
 use crate::trait_semantics;
@@ -143982,6 +143983,10 @@ enum PhpHashAlgorithm {
     Tiger128_3,
     Tiger160_3,
     Tiger192_3,
+    Snefru,
+    Snefru256,
+    Gost,
+    GostCrypto,
     Adler32,
     Crc32,
     Crc32b,
@@ -143998,6 +144003,21 @@ enum PhpHashAlgorithm {
     Xxh64,
     Xxh3,
     Xxh128,
+    Haval128_3,
+    Haval160_3,
+    Haval192_3,
+    Haval224_3,
+    Haval256_3,
+    Haval128_4,
+    Haval160_4,
+    Haval192_4,
+    Haval224_4,
+    Haval256_4,
+    Haval128_5,
+    Haval160_5,
+    Haval192_5,
+    Haval224_5,
+    Haval256_5,
 }
 
 const PHP_XXH3_MIN_SECRET_LENGTH: usize = 136;
@@ -144937,6 +144957,10 @@ fn php_hash_algorithm(name: &str) -> Option<PhpHashAlgorithm> {
         "tiger128,3" => Some(PhpHashAlgorithm::Tiger128_3),
         "tiger160,3" => Some(PhpHashAlgorithm::Tiger160_3),
         "tiger192,3" => Some(PhpHashAlgorithm::Tiger192_3),
+        "snefru" => Some(PhpHashAlgorithm::Snefru),
+        "snefru256" => Some(PhpHashAlgorithm::Snefru256),
+        "gost" => Some(PhpHashAlgorithm::Gost),
+        "gost-crypto" => Some(PhpHashAlgorithm::GostCrypto),
         "adler32" => Some(PhpHashAlgorithm::Adler32),
         "crc32" => Some(PhpHashAlgorithm::Crc32),
         "crc32b" => Some(PhpHashAlgorithm::Crc32b),
@@ -144953,6 +144977,21 @@ fn php_hash_algorithm(name: &str) -> Option<PhpHashAlgorithm> {
         "xxh64" => Some(PhpHashAlgorithm::Xxh64),
         "xxh3" => Some(PhpHashAlgorithm::Xxh3),
         "xxh128" => Some(PhpHashAlgorithm::Xxh128),
+        "haval128,3" => Some(PhpHashAlgorithm::Haval128_3),
+        "haval160,3" => Some(PhpHashAlgorithm::Haval160_3),
+        "haval192,3" => Some(PhpHashAlgorithm::Haval192_3),
+        "haval224,3" => Some(PhpHashAlgorithm::Haval224_3),
+        "haval256,3" => Some(PhpHashAlgorithm::Haval256_3),
+        "haval128,4" => Some(PhpHashAlgorithm::Haval128_4),
+        "haval160,4" => Some(PhpHashAlgorithm::Haval160_4),
+        "haval192,4" => Some(PhpHashAlgorithm::Haval192_4),
+        "haval224,4" => Some(PhpHashAlgorithm::Haval224_4),
+        "haval256,4" => Some(PhpHashAlgorithm::Haval256_4),
+        "haval128,5" => Some(PhpHashAlgorithm::Haval128_5),
+        "haval160,5" => Some(PhpHashAlgorithm::Haval160_5),
+        "haval192,5" => Some(PhpHashAlgorithm::Haval192_5),
+        "haval224,5" => Some(PhpHashAlgorithm::Haval224_5),
+        "haval256,5" => Some(PhpHashAlgorithm::Haval256_5),
         _ => None,
     }
 }
@@ -144989,6 +145028,10 @@ fn php_hash_algorithm_name(algorithm: PhpHashAlgorithm) -> &'static str {
         PhpHashAlgorithm::Tiger128_3 => "tiger128,3",
         PhpHashAlgorithm::Tiger160_3 => "tiger160,3",
         PhpHashAlgorithm::Tiger192_3 => "tiger192,3",
+        PhpHashAlgorithm::Snefru => "snefru",
+        PhpHashAlgorithm::Snefru256 => "snefru256",
+        PhpHashAlgorithm::Gost => "gost",
+        PhpHashAlgorithm::GostCrypto => "gost-crypto",
         PhpHashAlgorithm::Adler32 => "adler32",
         PhpHashAlgorithm::Crc32 => "crc32",
         PhpHashAlgorithm::Crc32b => "crc32b",
@@ -145005,6 +145048,21 @@ fn php_hash_algorithm_name(algorithm: PhpHashAlgorithm) -> &'static str {
         PhpHashAlgorithm::Xxh64 => "xxh64",
         PhpHashAlgorithm::Xxh3 => "xxh3",
         PhpHashAlgorithm::Xxh128 => "xxh128",
+        PhpHashAlgorithm::Haval128_3 => "haval128,3",
+        PhpHashAlgorithm::Haval160_3 => "haval160,3",
+        PhpHashAlgorithm::Haval192_3 => "haval192,3",
+        PhpHashAlgorithm::Haval224_3 => "haval224,3",
+        PhpHashAlgorithm::Haval256_3 => "haval256,3",
+        PhpHashAlgorithm::Haval128_4 => "haval128,4",
+        PhpHashAlgorithm::Haval160_4 => "haval160,4",
+        PhpHashAlgorithm::Haval192_4 => "haval192,4",
+        PhpHashAlgorithm::Haval224_4 => "haval224,4",
+        PhpHashAlgorithm::Haval256_4 => "haval256,4",
+        PhpHashAlgorithm::Haval128_5 => "haval128,5",
+        PhpHashAlgorithm::Haval160_5 => "haval160,5",
+        PhpHashAlgorithm::Haval192_5 => "haval192,5",
+        PhpHashAlgorithm::Haval224_5 => "haval224,5",
+        PhpHashAlgorithm::Haval256_5 => "haval256,5",
     }
 }
 
@@ -145077,6 +145135,11 @@ fn php_hash_digest_bytes_with_options(
         PhpHashAlgorithm::Tiger128_3 => Tiger::digest(bytes)[..16].to_vec(),
         PhpHashAlgorithm::Tiger160_3 => Tiger::digest(bytes)[..20].to_vec(),
         PhpHashAlgorithm::Tiger192_3 => Tiger::digest(bytes).to_vec(),
+        PhpHashAlgorithm::Snefru | PhpHashAlgorithm::Snefru256 => {
+            legacy_hashes::snefru256_digest(bytes)
+        }
+        PhpHashAlgorithm::Gost => legacy_hashes::gost_digest(bytes),
+        PhpHashAlgorithm::GostCrypto => legacy_hashes::gost_crypto_digest(bytes),
         PhpHashAlgorithm::Adler32 => php_hash_adler32_digest_bytes(bytes).to_vec(),
         PhpHashAlgorithm::Crc32 => php_hash_crc32_digest_bytes(bytes).to_vec(),
         PhpHashAlgorithm::Crc32b => php_hash_crc32b_digest_bytes(bytes).to_vec(),
@@ -145139,6 +145202,21 @@ fn php_hash_digest_bytes_with_options(
             };
             digest.to_be_bytes().to_vec()
         }
+        PhpHashAlgorithm::Haval128_3 => legacy_hashes::haval_digest(bytes, 3, 128),
+        PhpHashAlgorithm::Haval160_3 => legacy_hashes::haval_digest(bytes, 3, 160),
+        PhpHashAlgorithm::Haval192_3 => legacy_hashes::haval_digest(bytes, 3, 192),
+        PhpHashAlgorithm::Haval224_3 => legacy_hashes::haval_digest(bytes, 3, 224),
+        PhpHashAlgorithm::Haval256_3 => legacy_hashes::haval_digest(bytes, 3, 256),
+        PhpHashAlgorithm::Haval128_4 => legacy_hashes::haval_digest(bytes, 4, 128),
+        PhpHashAlgorithm::Haval160_4 => legacy_hashes::haval_digest(bytes, 4, 160),
+        PhpHashAlgorithm::Haval192_4 => legacy_hashes::haval_digest(bytes, 4, 192),
+        PhpHashAlgorithm::Haval224_4 => legacy_hashes::haval_digest(bytes, 4, 224),
+        PhpHashAlgorithm::Haval256_4 => legacy_hashes::haval_digest(bytes, 4, 256),
+        PhpHashAlgorithm::Haval128_5 => legacy_hashes::haval_digest(bytes, 5, 128),
+        PhpHashAlgorithm::Haval160_5 => legacy_hashes::haval_digest(bytes, 5, 160),
+        PhpHashAlgorithm::Haval192_5 => legacy_hashes::haval_digest(bytes, 5, 192),
+        PhpHashAlgorithm::Haval224_5 => legacy_hashes::haval_digest(bytes, 5, 224),
+        PhpHashAlgorithm::Haval256_5 => legacy_hashes::haval_digest(bytes, 5, 256),
     }
 }
 
@@ -145158,6 +145236,10 @@ fn php_hash_hmac_block_size(algorithm: PhpHashAlgorithm) -> Option<usize> {
         | PhpHashAlgorithm::Tiger160_3
         | PhpHashAlgorithm::Tiger192_3
         | PhpHashAlgorithm::Whirlpool => Some(64),
+        PhpHashAlgorithm::Snefru
+        | PhpHashAlgorithm::Snefru256
+        | PhpHashAlgorithm::Gost
+        | PhpHashAlgorithm::GostCrypto => Some(32),
         PhpHashAlgorithm::Sha384
         | PhpHashAlgorithm::Sha512_224
         | PhpHashAlgorithm::Sha512_256
@@ -145166,6 +145248,21 @@ fn php_hash_hmac_block_size(algorithm: PhpHashAlgorithm) -> Option<usize> {
         PhpHashAlgorithm::Sha3_256 => Some(136),
         PhpHashAlgorithm::Sha3_384 => Some(104),
         PhpHashAlgorithm::Sha3_512 => Some(72),
+        PhpHashAlgorithm::Haval128_3
+        | PhpHashAlgorithm::Haval160_3
+        | PhpHashAlgorithm::Haval192_3
+        | PhpHashAlgorithm::Haval224_3
+        | PhpHashAlgorithm::Haval256_3
+        | PhpHashAlgorithm::Haval128_4
+        | PhpHashAlgorithm::Haval160_4
+        | PhpHashAlgorithm::Haval192_4
+        | PhpHashAlgorithm::Haval224_4
+        | PhpHashAlgorithm::Haval256_4
+        | PhpHashAlgorithm::Haval128_5
+        | PhpHashAlgorithm::Haval160_5
+        | PhpHashAlgorithm::Haval192_5
+        | PhpHashAlgorithm::Haval224_5
+        | PhpHashAlgorithm::Haval256_5 => Some(128),
         PhpHashAlgorithm::Adler32
         | PhpHashAlgorithm::Crc32
         | PhpHashAlgorithm::Crc32b

@@ -101,6 +101,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "gost94"
+version = "0.10.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2f960e0ba8eb5e47a7d45097dc4159b5ef63d82e62dc85894bfcfd8e6b85526c"
+dependencies = [
+ "digest 0.10.7",
+]
+
+[[package]]
 name = "hybrid-array"
 version = "0.4.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -172,6 +181,7 @@ version = "0.1.0"
 name = "phpc"
 version = "0.1.0"
 dependencies = [
+ "gost94",
  "md-5",
  "md2",
  "md4",

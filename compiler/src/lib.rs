@@ -4,6 +4,8 @@ pub mod codegen;
 pub mod error;
 pub mod include_discovery;
 pub mod interpreter;
+mod legacy_hash_tables;
+mod legacy_hashes;
 pub mod lexer;
 pub mod parser;
 pub mod php_tokenizer;

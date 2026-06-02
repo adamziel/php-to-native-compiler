@@ -66,13 +66,13 @@ echo strlen(uniqid(false, true)), ":", uniqid(false, true), "\n";
 
 #[test]
 fn hash_hmac_and_uniqid_reject_forms_outside_current_boundary() {
-    let algorithm = run_source("<?php\nhash_hmac('haval128,3', 'data', 'key');\n").unwrap_err();
+    let algorithm = run_source("<?php\nhash_hmac('tiger128,4', 'data', 'key');\n").unwrap_err();
     assert_eq!(algorithm.phase, Phase::Runtime);
     assert_eq!(algorithm.line, 2);
     assert_eq!(algorithm.column, 1);
     assert_eq!(
         algorithm.message,
-        "unsupported call hash_hmac(): algorithm haval128,3 is not implemented in the current HMAC subset"
+        "unsupported call hash_hmac(): algorithm tiger128,4 is not implemented in the current HMAC subset"
     );
 
     let raw = run_source(
@@ -252,6 +252,71 @@ badd965340a9e83e4a16f48a5038c01b856a9158ef59fec1\n\
 8eb208f7e05d987a9b044a8e98c6b087f15a0bfc\n"
     );
     assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn hash_gost_haval_and_snefru_legacy_algorithms_are_available() {
+    let path = temp_hash_path("legacy");
+    fs::write(&path, b"abc").unwrap();
+
+    let source = format!(
+        r#"<?php
+echo hash("gost", ""), "\n";
+echo hash("gost-crypto", ""), "\n";
+echo hash("haval128,3", ""), "\n";
+echo hash("haval160,4", "abc"), "\n";
+echo hash("haval256,5", "abc"), "\n";
+echo hash("snefru", ""), "\n";
+echo hash("snefru256", ""), "\n";
+
+$ctx = hash_init("haval128,3");
+hash_update($ctx, "a");
+hash_update($ctx, "bc");
+echo hash_final($ctx), "\n";
+
+$ctx = hash_init("snefru", HASH_HMAC, "secret");
+hash_update($ctx, "abc");
+echo hash_final($ctx), "\n";
+
+$content = "This is a sample string used to test the hash_hmac function with various hashing algorithms";
+echo hash_hmac("gost", $content, "secret"), "\n";
+echo hash_hmac("haval128,3", $content, "secret"), "\n";
+echo hash_hmac("snefru", $content, "secret"), "\n";
+echo hash_pbkdf2("haval128,3", "password", "salt", 1, 32), "\n";
+echo bin2hex(hash_hkdf("gost", "input key material", 16)), "\n";
+
+$file = {path:?};
+echo hash_file("gost", $file), "\n";
+echo hash_file("haval128,3", $file), "\n";
+echo hash_file("snefru", $file), "\n";
+"#
+    );
+
+    let execution = run_source(&source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "ce85b99cc46752fffee35cab9a7b0278abb4c2d2055cff685af4912c49490f8d\n\
+981e5f3ca30c841487830f84fb433e13ac1101569b9c13584ac483234cd656c0\n\
+c68f39913f901f3ddf44c707357a7d70\n\
+77aca22f5b12cc09010afc9c0797308638b1cb9b\n\
+976cd6254c337969e5913b158392a2921af16fca51f5601d486e0a9de01156e7\n\
+8617f366566a011837f4fb4ba5bedea2b892f3ed8b894023d16ae344b2be5881\n\
+8617f366566a011837f4fb4ba5bedea2b892f3ed8b894023d16ae344b2be5881\n\
+9e40ed883fb63e985d299b40cda2b8f2\n\
+60261f1d20a9aed3d59d834eb096852f589ab11cc9f9f3577daae2ed71b48bf1\n\
+a4a3c80bdf3f8665bf07376a34dc9c1b11af7c813f4928f62e39f0c0dc564dad\n\
+4d1318607f0406bd1b7bd50907772672\n\
+67af483046f9cf16fe19f9087929ccfc6ad176ade3290b4d33f43e0ddb07e711\n\
+febde9e1d3af32109aa95d6751782de1\n\
+64edd584b87a2dfdd1f2b44ed2db8bd2\n\
+f3134348c44fb1b2a277729e2285ebb5cb5e0f29c975bc753b70497c06a4d51d\n\
+9e40ed883fb63e985d299b40cda2b8f2\n\
+7d033205647a2af3dc8339f6cb25643c33ebc622d32979c4b612b02c4903031b\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+
+    let _ = fs::remove_file(path);
 }
 
 #[test]
@@ -440,13 +505,13 @@ ValueError:hash_init(): Argument #3 ($key) must not be empty when HMAC is reques
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);
 
-    let boundary = run_source("<?php\nhash_init('haval128,3');\n").unwrap_err();
+    let boundary = run_source("<?php\nhash_init('tiger128,4');\n").unwrap_err();
     assert_eq!(boundary.phase, Phase::Runtime);
     assert_eq!(boundary.line, 2);
     assert_eq!(boundary.column, 1);
     assert_eq!(
         boundary.message,
-        "unsupported call hash_init(): algorithm haval128,3 is not implemented in the current hash context subset"
+        "unsupported call hash_init(): algorithm tiger128,4 is not implemented in the current hash context subset"
     );
 }
 
@@ -847,13 +912,13 @@ ValueError:hash_pbkdf2(): Argument #5 ($length) must be greater than or equal to
     assert_eq!(execution.exit_code, 0);
 
     let boundary =
-        run_source("<?php\nhash_pbkdf2('haval128,3', 'password', 'salt', 1);\n").unwrap_err();
+        run_source("<?php\nhash_pbkdf2('tiger128,4', 'password', 'salt', 1);\n").unwrap_err();
     assert_eq!(boundary.phase, Phase::Runtime);
     assert_eq!(boundary.line, 2);
     assert_eq!(boundary.column, 1);
     assert_eq!(
         boundary.message,
-        "unsupported call hash_pbkdf2(): algorithm haval128,3 is not implemented in the current HMAC subset"
+        "unsupported call hash_pbkdf2(): algorithm tiger128,4 is not implemented in the current HMAC subset"
     );
 }
 
