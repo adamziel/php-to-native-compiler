@@ -1433,6 +1433,53 @@ echo "|", $iterator->pos;
 }
 
 #[test]
+fn foreach_value_only_user_iterator_does_not_probe_key() {
+    let execution = run_source(
+        r#"<?php
+class C {}
+
+class D extends C implements Iterator {
+    private $counter = 2;
+
+    public function valid(): bool {
+        echo __METHOD__ . "($this->counter)\n";
+        return $this->counter;
+    }
+
+    public function next(): void {
+        $this->counter--;
+        echo __METHOD__ . "($this->counter)\n";
+    }
+
+    public function rewind(): void {
+        echo __METHOD__ . "($this->counter)\n";
+    }
+
+    public function current(): mixed {
+        echo __METHOD__ . "($this->counter)\n";
+        return null;
+    }
+
+    public function key(): mixed {
+        echo __METHOD__ . "($this->counter)\n";
+        return "";
+    }
+}
+
+foreach (new D as $x) {}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "D::rewind(2)\nD::valid(2)\nD::current(2)\nD::next(1)\nD::valid(1)\nD::current(1)\nD::next(0)\nD::valid(0)\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn foreach_by_value_uses_visible_object_properties_in_current_context() {
     let execution = run_source(
         r#"<?php

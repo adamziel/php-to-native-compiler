@@ -21141,8 +21141,13 @@ impl Interpreter {
                     span,
                     scope,
                 )?;
-            let iterator_key = self.call_required_iterator_method(object.clone(), "key", span)?;
-            if let Some(key) = key {
+            let iterator_key =
+                if key.is_some() || self.foreach_iterator_needs_value_only_key_probe(&object) {
+                    Some(self.call_required_iterator_method(object.clone(), "key", span)?)
+                } else {
+                    None
+                };
+            if let (Some(key), Some(iterator_key)) = (key, iterator_key) {
                 scope.write_static(key, iterator_key);
             }
             let target_is_alias = value
@@ -21189,6 +21194,12 @@ impl Interpreter {
         }
 
         Ok(Flow::Normal)
+    }
+
+    fn foreach_iterator_needs_value_only_key_probe(&self, object: &PhpObject) -> bool {
+        let class_id = object.class_id();
+        self.is_spl_infinite_iterator_class_id(class_id)
+            || self.is_spl_limit_iterator_class_id(class_id)
     }
 
     fn public_object_properties_as_foreach_array(object: &PhpObject) -> PhpArray {
@@ -76505,8 +76516,13 @@ impl Interpreter {
                     span,
                     scope,
                 )?;
-            let iterator_key = self.call_required_iterator_method(object.clone(), "key", span)?;
-            if let Some(key) = key {
+            let iterator_key =
+                if key.is_some() || self.foreach_iterator_needs_value_only_key_probe(&object) {
+                    Some(self.call_required_iterator_method(object.clone(), "key", span)?)
+                } else {
+                    None
+                };
+            if let (Some(key), Some(iterator_key)) = (key, iterator_key) {
                 scope.write_static(key, iterator_key);
             }
             let target_is_alias = value

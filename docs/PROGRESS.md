@@ -4,6 +4,26 @@
 
 Implemented:
 
+- Repaired the blocked full-gate PASS regression in
+  `tests/classes/iterators_008.phpt`. Plain userland `Iterator` foreach loops
+  without a key target no longer probe `key()` at the engine level, while the
+  bounded `InfiniteIterator` / `LimitIterator` wrapper path still performs the
+  PHP-observed value-only key probe needed by the existing SPL wrapper rows.
+  Focused proof covers the new Rust
+  `foreach_value_only_user_iterator_does_not_probe_key` regression, the
+  existing `spl_empty_infinite_and_limit_iterators_wrap_bounded_iterators`
+  Rust regression, the exact public PHPT regression row
+  `tests/classes/iterators_008.phpt`, the prior selected SPL wrapper PHPT
+  packet `ext/spl/tests/iterator_008.phpt`,
+  `ext/spl/tests/iterator_009.phpt`, `ext/spl/tests/iterator_010.phpt`,
+  `ext/spl/tests/iterator_011.phpt`,
+  `ext/spl/tests/spl_limit_iterator_check_limits.phpt`,
+  `ext/spl/tests/bug51119.phpt`, `ext/spl/tests/gh18421.phpt`, and
+  `ext/spl/tests/ArrayObject/array_011.phpt`, plus build, fmt, and diff
+  checks. Unsupported edges remain broader internal iterator engine parity for
+  wrappers not implemented in the current subset, by-reference iteration,
+  references/COW, and native lowering.
+
 - Added a bounded ext/filter validator edge lane on the interpreter path.
   `FILTER_FLAG_HOSTNAME` and `FILTER_FLAG_GLOBAL_RANGE` are now visible
   constants, `FILTER_VALIDATE_INT` accepts unsigned hexadecimal and
