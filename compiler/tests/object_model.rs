@@ -15260,6 +15260,45 @@ var_dump($child);
 }
 
 #[test]
+fn spl_fixed_array_offset_unset_finalizes_released_slot_before_var_dump() {
+    let source = r#"<?php
+class FixedArrayUnsetDrop {
+    function __destruct() {
+        global $arr;
+        $arr->setSize(0);
+    }
+}
+
+$arr = new SplFixedArray(2);
+$arr[0] = new FixedArrayUnsetDrop;
+unset($arr[0]);
+var_dump($arr);
+
+class FixedArraySharedDrop {
+    function __destruct() {
+        echo "shared destructed\n";
+    }
+}
+
+$shared = new FixedArraySharedDrop;
+$arr = new SplFixedArray(2);
+$arr[0] = $shared;
+$arr[1] = $shared;
+unset($arr[0]);
+echo "after shared unset\n";
+var_dump($arr);
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "object(SplFixedArray)#1 (0) {\n}\nafter shared unset\nobject(SplFixedArray)#4 (2) {\n  [0]=>\n  NULL\n  [1]=>\n  object(FixedArraySharedDrop)#3 (0) {\n  }\n}\nshared destructed\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn array_object_array_iterator_offsets_iteration_clone_and_sort() {
     let source = r#"<?php
 $ao = new ArrayObject(array('b' => 2, 'a' => 1));

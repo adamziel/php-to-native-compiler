@@ -10201,6 +10201,17 @@ fn value_contains_object_id(value: &Value, object_id: i64, visited: &mut LiveRoo
     }
 }
 
+fn spl_fixed_array_state_contains_object_id(
+    state: &SplFixedArrayState,
+    object_id: i64,
+    visited: &mut LiveRootVisit,
+) -> bool {
+    state
+        .values
+        .iter()
+        .any(|value| value_contains_object_id(value, object_id, visited))
+}
+
 fn symbol_table_contains_object_id(
     symbols: &SymbolTable,
     object_id: i64,
@@ -11940,6 +11951,32 @@ impl Interpreter {
                 RuntimeError::undefined_function(format!("SplFixedArray::{method_name}()")),
             )),
         }
+    }
+
+    fn call_spl_fixed_array_offset_unset_with_caller_scope(
+        &mut self,
+        object: PhpObject,
+        args: Vec<Value>,
+        span: Span,
+        caller_scope: &SymbolTable,
+    ) -> CompileResult<Value> {
+        expect_arity("SplFixedArray::offsetUnset", &args, 1, span)?;
+        let state_len = self
+            .spl_fixed_array_state(&object, "offsetUnset", span)?
+            .values
+            .len();
+        let index = Self::spl_fixed_array_index_value(
+            "offsetUnset",
+            args.first().expect("arity checked"),
+            span,
+        )?;
+        let index = Self::spl_fixed_array_index_in_range("offsetUnset", index, state_len, span)?;
+        let released = {
+            let state = self.spl_fixed_array_state_mut(&object, "offsetUnset", span)?;
+            std::mem::replace(&mut state.values[index], Value::Null)
+        };
+        self.finalize_released_value(Some(released), caller_scope)?;
+        Ok(Value::Null)
     }
 
     fn array_object_state(
@@ -24700,6 +24737,14 @@ impl Interpreter {
             || self.autoload_callbacks.iter().any(|callback| {
                 autoload_callback_contains_object_id(callback, object_id, &mut visited)
             })
+        {
+            return true;
+        }
+
+        if self
+            .spl_fixed_arrays
+            .values()
+            .any(|state| spl_fixed_array_state_contains_object_id(state, object_id, &mut visited))
         {
             return true;
         }
@@ -95433,6 +95478,14 @@ impl Interpreter {
                 );
             }
             if self.resolved_method_is_core_spl_fixed_array(class_id) {
+                if method_name.eq_ignore_ascii_case("offsetUnset") {
+                    return self.call_spl_fixed_array_offset_unset_with_caller_scope(
+                        object,
+                        args,
+                        span,
+                        caller_scope,
+                    );
+                }
                 return self.call_spl_fixed_array_method_with_values(
                     object,
                     method_name,
