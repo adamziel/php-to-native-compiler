@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added a bounded ASCII whole-string case helper argument-boundary lane.
+  `strtolower()` and `strtoupper()` now route direct and string-valued dynamic
+  interpreter operands through the shared PHP-shaped string argument boundary:
+  scalar values keep the existing ASCII byte casing behavior, `null` emits the
+  PHP-shaped deprecation before converting to `""`, supported visible
+  `__toString()` objects are accepted, and arrays, resources, closures, or
+  non-stringable objects raise catchable PHP-shaped `TypeError`s. Existing
+  metadata visibility and direct native ASCII byte lowering for lowerable
+  scalar operands remain unchanged. Focused proof covers the Rust
+  `ascii_case_helpers_use_php_string_argument_boundary` regression, the full
+  `string_case_builtin` test file, direct CLI probes, and selected public PHPT
+  rows for `strtolower()` and `strtoupper()`. Unsupported edges remain exact
+  invalid `__toString()` return diagnostics, locale-sensitive casing, Unicode
+  case folding, references/COW, and broader native PHP string conversion.
+
 - Added a bounded `array_reverse()` preserve-key bool-coercion lane. Direct and
   string-valued dynamic `array_reverse()` calls now route optional
   `$preserve_keys` through the shared PHP-internal bool boundary, so scalar

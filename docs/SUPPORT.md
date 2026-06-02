@@ -3686,15 +3686,21 @@
   diagnostics, and native lowering beyond the documented direct-folding slice
   remain unsupported.
   `strtolower($value)` supports exactly one scalar/null string-convertible
-  argument and applies ASCII lowercase mapping over the current runtime string
-  bytes, preserving non-ASCII bytes. Locale-sensitive case mapping, full
-  Unicode case folding, array/object/resource coercions, exact PHP diagnostics,
-  and unsupported dynamic value-model edges remain unsupported.
+  argument plus supported visible `__toString()` objects, emits the PHP-shaped
+  null-to-string deprecation, and applies ASCII lowercase mapping over the
+  current runtime string bytes, preserving non-ASCII bytes. Arrays, resources,
+  closures, and non-stringable objects raise catchable PHP-shaped `TypeError`s.
+  Locale-sensitive case mapping, full Unicode case folding, exact invalid
+  `__toString()` return diagnostics, broader exact PHP diagnostics, and
+  unsupported dynamic value-model edges remain unsupported.
   `strtoupper($value)` supports exactly one scalar/null string-convertible
-  argument and applies ASCII uppercase mapping over the current runtime string
-  bytes, preserving non-ASCII bytes. Locale-sensitive case mapping, full
-  Unicode case folding, array/object/resource coercions, exact PHP diagnostics,
-  and unsupported dynamic value-model edges remain unsupported.
+  argument plus supported visible `__toString()` objects, emits the PHP-shaped
+  null-to-string deprecation, and applies ASCII uppercase mapping over the
+  current runtime string bytes, preserving non-ASCII bytes. Arrays, resources,
+  closures, and non-stringable objects raise catchable PHP-shaped `TypeError`s.
+  Locale-sensitive case mapping, full Unicode case folding, exact invalid
+  `__toString()` return diagnostics, broader exact PHP diagnostics, and
+  unsupported dynamic value-model edges remain unsupported.
   `str_increment($string)` and `str_decrement($string)` support exactly one
   scalar/null string-convertible runtime byte string that is non-empty and
   composed only of ASCII alphanumeric bytes. They implement PHP's digit,
@@ -9296,14 +9302,14 @@
   under the function-call boundary, while native function-table introspection
   recognizes the names and native constant folding recognizes the connection
   state constants.
-  `strtolower` accepts the same current scalar/null string-convertible subset
-  as the builtin section above; direct native `strtolower(...)` calls lower
-  through the current ASCII byte operation, while native function-table
-  introspection recognizes the name.
-  `strtoupper` accepts the same current scalar/null string-convertible subset
-  as the builtin section above; direct native `strtoupper(...)` calls lower
-  through the current ASCII byte operation, while native function-table
-  introspection recognizes the name.
+  `strtolower` accepts the same current interpreter string-boundary subset as
+  the builtin section above; direct native `strtolower(...)` calls lower for
+  lowerable scalar operands through the current ASCII byte operation, while
+  native function-table introspection recognizes the name.
+  `strtoupper` accepts the same current interpreter string-boundary subset as
+  the builtin section above; direct native `strtoupper(...)` calls lower for
+  lowerable scalar operands through the current ASCII byte operation, while
+  native function-table introspection recognizes the name.
   `trim` accepts the same current default-mask scalar/null string-convertible
   subset as the builtin section above; direct native `trim(...)` calls still
   reject under the function-call boundary, while native function-table
@@ -11899,13 +11905,15 @@
   recovery, broad binary/multibyte edge parity, references/copy-on-write for
   output binding, and native lowering beyond function-table introspection
 - `strtolower()` outside the current one-argument scalar/null
-  string-convertible subset: locale-sensitive case mapping, full Unicode case
-  folding, array/object/resource coercions, exact PHP diagnostics, and native
-  lowering outside direct scalar calls and function-table introspection
+  string-convertible plus supported visible `__toString()` object subset:
+  locale-sensitive case mapping, full Unicode case folding, exact invalid
+  `__toString()` return diagnostics, references/COW, and native lowering
+  outside direct lowerable scalar calls and function-table introspection
 - `strtoupper()` outside the current one-argument scalar/null
-  string-convertible subset: locale-sensitive case mapping, full Unicode case
-  folding, array/object/resource coercions, exact PHP diagnostics, and native
-  lowering outside direct scalar calls and function-table introspection
+  string-convertible plus supported visible `__toString()` object subset:
+  locale-sensitive case mapping, full Unicode case folding, exact invalid
+  `__toString()` return diagnostics, references/COW, and native lowering
+  outside direct lowerable scalar calls and function-table introspection
 - `ucfirst()`/`lcfirst()`/`ucwords()` outside the current scalar/null
   string-convertible plus supported visible `__toString()` object subset:
   locale-sensitive casing, Unicode titlecasing, arrays, resources, closures,

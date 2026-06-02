@@ -85805,8 +85805,8 @@ impl Interpreter {
             "stripslashes" => self.call_stripslashes(&args, span),
             "addcslashes" => self.call_addcslashes(&args, span),
             "stripcslashes" => self.call_stripcslashes(&args, span),
-            "strtolower" => call_strtolower(&args, span),
-            "strtoupper" => call_strtoupper(&args, span),
+            "strtolower" => call_strtolower(self, &args, span),
+            "strtoupper" => call_strtoupper(self, &args, span),
             "str_increment" => call_str_increment(&args, span),
             "str_decrement" => call_str_decrement(&args, span),
             "trim" => self.call_trim_family(&args, span, "trim()", TrimMode::Both),
@@ -120857,41 +120857,49 @@ fn stripcslashes_bytes(value: &[u8]) -> Vec<u8> {
     output
 }
 
-fn call_strtolower(args: &[Value], span: Span) -> CompileResult<Value> {
+fn call_strtolower(
+    interpreter: &mut Interpreter,
+    args: &[Value],
+    span: Span,
+) -> CompileResult<Value> {
     expect_arity("strtolower", args, 1, span)?;
 
-    if matches!(args[0], Value::Array(_)) {
-        return Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call("strtolower()", "arrays are not supported"),
-        ));
-    }
-
-    let value = args[0]
-        .try_echo_bytes()
-        .map_err(|error| runtime_error(span, error))?;
+    let value = interpreter.php_string_argument_bytes_with_magic(
+        "strtolower()",
+        1,
+        "string",
+        &args[0],
+        span,
+    )?;
 
     Ok(interpreter_value_from_php_string_bytes(
-        value.iter().map(u8::to_ascii_lowercase).collect::<Vec<_>>(),
+        value
+            .into_iter()
+            .map(|byte| byte.to_ascii_lowercase())
+            .collect::<Vec<_>>(),
     ))
 }
 
-fn call_strtoupper(args: &[Value], span: Span) -> CompileResult<Value> {
+fn call_strtoupper(
+    interpreter: &mut Interpreter,
+    args: &[Value],
+    span: Span,
+) -> CompileResult<Value> {
     expect_arity("strtoupper", args, 1, span)?;
 
-    if matches!(args[0], Value::Array(_)) {
-        return Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call("strtoupper()", "arrays are not supported"),
-        ));
-    }
-
-    let value = args[0]
-        .try_echo_bytes()
-        .map_err(|error| runtime_error(span, error))?;
+    let value = interpreter.php_string_argument_bytes_with_magic(
+        "strtoupper()",
+        1,
+        "string",
+        &args[0],
+        span,
+    )?;
 
     Ok(interpreter_value_from_php_string_bytes(
-        value.iter().map(u8::to_ascii_uppercase).collect::<Vec<_>>(),
+        value
+            .into_iter()
+            .map(|byte| byte.to_ascii_uppercase())
+            .collect::<Vec<_>>(),
     ))
 }
 

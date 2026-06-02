@@ -2689,11 +2689,15 @@ and `%N$s` placeholders using runtime echo-string conversion for values. Native
 `function_exists("sprintf")` and `is_callable("sprintf")` can see the name
 through the known function table, but direct native calls still reject under
 the function-call boundary until varargs/string formatting helpers are lowered.
-`strtolower()` is an interpreter-only bounded case-mapping builtin for current
-scalar/null string-convertible values. It applies ASCII lowercase mapping over
-runtime UTF-8 strings so WordPress bootstrap can normalize simple option
-suffixes, while locale-sensitive casing, full Unicode case folding, binary
-string behavior beyond valid UTF-8, and native lowering remain out of scope.
+`strtolower()` and `strtoupper()` are bounded case-mapping builtins for current
+scalar/null string-convertible values and supported visible `__toString()`
+objects. The interpreter path routes operands through the shared PHP-shaped
+string argument boundary before applying ASCII byte casing, so null
+deprecations and catchable type diagnostics match adjacent string helpers.
+Direct native lowering for lowerable scalar operands still uses the current
+ASCII byte operation, while locale-sensitive casing, full Unicode case folding,
+exact invalid `__toString()` return diagnostics, references/COW, and broader
+native PHP string conversion remain out of scope.
 `ucfirst()`, `lcfirst()`, and `ucwords()` are interpreter-only bounded
 ASCII byte-casing builtins for current scalar/null string-convertible values
 and supported visible `__toString()` objects. They use the shared PHP-shaped

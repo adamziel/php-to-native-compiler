@@ -8,7 +8,7 @@ fn strtolower_executes_current_ascii_string_subset() {
         r#"<?php
 echo strtolower("Memory_Limit"), "|";
 echo strtolower("128M"), "|";
-echo strtolower(null), "|";
+echo strtolower(false), "|";
 echo strtolower(42);
 "#,
     )
@@ -40,7 +40,7 @@ fn strtoupper_executes_current_ascii_string_subset() {
         r#"<?php
 echo strtoupper("Memory_Limit"), "|";
 echo strtoupper("128m"), "|";
-echo strtoupper(null), "|";
+echo strtoupper(false), "|";
 echo strtoupper(42);
 "#,
     )
@@ -106,16 +106,48 @@ echo $reflection->getName(), "|", $reflection->invoke("mixed");
 }
 
 #[test]
-fn strtolower_rejects_forms_outside_current_subset() {
-    let array_arg = run_source("<?php\nstrtolower(['ABC']);\n").unwrap_err();
-    assert_eq!(array_arg.phase, Phase::Runtime);
-    assert_eq!(array_arg.line, 2);
-    assert_eq!(array_arg.column, 1);
-    assert_eq!(
-        array_arg.message,
-        "unsupported call strtolower(): arrays are not supported"
-    );
+fn ascii_case_helpers_use_php_string_argument_boundary() {
+    let execution = run_source(
+        r#"<?php
+class Word {
+    public function __toString() {
+        return "MiXeD";
+    }
+}
 
+set_error_handler(function($_, $message) {
+    echo $message, "|";
+    return true;
+});
+echo strtolower(null), "|";
+restore_error_handler();
+echo strtolower(new Word), "|";
+$call = "strtoupper";
+echo $call(new Word), "|";
+try {
+    strtolower([]);
+} catch (TypeError $e) {
+    echo $e->getMessage(), "|";
+}
+try {
+    strtoupper(new stdClass);
+} catch (TypeError $e) {
+    echo $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "strtolower(): Passing null to parameter #1 ($string) of type string is deprecated||mixed|MIXED|strtolower(): Argument #1 ($string) must be of type string, array given|strtoupper(): Argument #1 ($string) must be of type string, stdClass given"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn strtolower_rejects_arity_mismatches() {
     let too_many = run_source("<?php\nstrtolower('ABC', true);\n").unwrap_err();
     assert_eq!(too_many.phase, Phase::Runtime);
     assert_eq!(too_many.line, 2);
@@ -127,16 +159,7 @@ fn strtolower_rejects_forms_outside_current_subset() {
 }
 
 #[test]
-fn strtoupper_rejects_forms_outside_current_subset() {
-    let array_arg = run_source("<?php\nstrtoupper(['abc']);\n").unwrap_err();
-    assert_eq!(array_arg.phase, Phase::Runtime);
-    assert_eq!(array_arg.line, 2);
-    assert_eq!(array_arg.column, 1);
-    assert_eq!(
-        array_arg.message,
-        "unsupported call strtoupper(): arrays are not supported"
-    );
-
+fn strtoupper_rejects_arity_mismatches() {
     let too_many = run_source("<?php\nstrtoupper('abc', true);\n").unwrap_err();
     assert_eq!(too_many.phase, Phase::Runtime);
     assert_eq!(too_many.line, 2);
