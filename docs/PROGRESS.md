@@ -4,6 +4,22 @@
 
 Implemented:
 
+- Added a bounded RIPEMD and Tiger-3 hash execution lane on the interpreter
+  path. `hash()`, `hash_file()`, `HashContext` streaming, HMAC contexts,
+  `hash_hmac()`, `hash_hmac_file()`, `hash_pbkdf2()`, and `hash_hkdf()` now
+  execute the RIPEMD-128/160/256/320 family, and `hash()` plus the same
+  context/HMAC/derivation surfaces execute the Tiger 3-pass 128/160/192-bit
+  variants. Focused proof covers the Rust
+  `hash_ripemd_and_tiger3_algorithms_are_available` regression, the full
+  `hash_builtin` test file, a `phpc run` CLI probe, build/fmt/diff checks, and
+  selected public PHPT rows `ext/hash/tests/ripemd128.phpt`,
+  `ext/hash/tests/ripemd160.phpt`, `ext/hash/tests/ripemd256.phpt`,
+  `ext/hash/tests/ripemd320.phpt`, and `ext/hash/tests/tiger.phpt`.
+  Unsupported edges remain Tiger 4-pass variants, GOST, Snefru, HAVAL,
+  MurmurHash3, and XXHash execution, seeded/non-empty hash options arrays,
+  broader hash object serialization/debug-info parity, exact diagnostics,
+  cryptographic/provider policy, and native lowering.
+
 - Accepted checkpoint `6ca895a9` as the current public PHPT score source after
   the replacement full pinned php-src gate completed with zero
   latest-published PASS regressions. The public-comparable score is now

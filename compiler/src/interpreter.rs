@@ -22,8 +22,10 @@ use php_runtime::{
     Visibility,
 };
 use regex::bytes::{Captures as RegexCaptures, Regex, RegexBuilder};
+use ripemd::{Ripemd128, Ripemd160, Ripemd256, Ripemd320};
 use sha2::{Sha224, Sha256, Sha384, Sha512, Sha512_224, Sha512_256};
 use sha3::{Sha3_224, Sha3_256, Sha3_384, Sha3_512};
+use tiger::Tiger;
 use whirlpool::Whirlpool;
 
 use crate::ast::{
@@ -142516,7 +142518,14 @@ enum PhpHashAlgorithm {
     Sha3_256,
     Sha3_384,
     Sha3_512,
+    Ripemd128,
+    Ripemd160,
+    Ripemd256,
+    Ripemd320,
     Whirlpool,
+    Tiger128_3,
+    Tiger160_3,
+    Tiger192_3,
     Adler32,
     Crc32,
     Crc32b,
@@ -143271,7 +143280,14 @@ fn php_hash_algorithm(name: &str) -> Option<PhpHashAlgorithm> {
         "sha3-256" => Some(PhpHashAlgorithm::Sha3_256),
         "sha3-384" => Some(PhpHashAlgorithm::Sha3_384),
         "sha3-512" => Some(PhpHashAlgorithm::Sha3_512),
+        "ripemd128" => Some(PhpHashAlgorithm::Ripemd128),
+        "ripemd160" => Some(PhpHashAlgorithm::Ripemd160),
+        "ripemd256" => Some(PhpHashAlgorithm::Ripemd256),
+        "ripemd320" => Some(PhpHashAlgorithm::Ripemd320),
         "whirlpool" => Some(PhpHashAlgorithm::Whirlpool),
+        "tiger128,3" => Some(PhpHashAlgorithm::Tiger128_3),
+        "tiger160,3" => Some(PhpHashAlgorithm::Tiger160_3),
+        "tiger192,3" => Some(PhpHashAlgorithm::Tiger192_3),
         "adler32" => Some(PhpHashAlgorithm::Adler32),
         "crc32" => Some(PhpHashAlgorithm::Crc32),
         "crc32b" => Some(PhpHashAlgorithm::Crc32b),
@@ -143309,7 +143325,14 @@ fn php_hash_digest_bytes(algorithm: PhpHashAlgorithm, bytes: &[u8]) -> Vec<u8> {
         PhpHashAlgorithm::Sha3_256 => Sha3_256::digest(bytes).to_vec(),
         PhpHashAlgorithm::Sha3_384 => Sha3_384::digest(bytes).to_vec(),
         PhpHashAlgorithm::Sha3_512 => Sha3_512::digest(bytes).to_vec(),
+        PhpHashAlgorithm::Ripemd128 => Ripemd128::digest(bytes).to_vec(),
+        PhpHashAlgorithm::Ripemd160 => Ripemd160::digest(bytes).to_vec(),
+        PhpHashAlgorithm::Ripemd256 => Ripemd256::digest(bytes).to_vec(),
+        PhpHashAlgorithm::Ripemd320 => Ripemd320::digest(bytes).to_vec(),
         PhpHashAlgorithm::Whirlpool => Whirlpool::digest(bytes).to_vec(),
+        PhpHashAlgorithm::Tiger128_3 => Tiger::digest(bytes)[..16].to_vec(),
+        PhpHashAlgorithm::Tiger160_3 => Tiger::digest(bytes)[..20].to_vec(),
+        PhpHashAlgorithm::Tiger192_3 => Tiger::digest(bytes).to_vec(),
         PhpHashAlgorithm::Adler32 => php_hash_adler32_digest_bytes(bytes).to_vec(),
         PhpHashAlgorithm::Crc32 => php_hash_crc32_digest_bytes(bytes).to_vec(),
         PhpHashAlgorithm::Crc32b => php_hash_crc32b_digest_bytes(bytes).to_vec(),
@@ -143330,6 +143353,13 @@ fn php_hash_hmac_block_size(algorithm: PhpHashAlgorithm) -> Option<usize> {
         | PhpHashAlgorithm::Sha1
         | PhpHashAlgorithm::Sha224
         | PhpHashAlgorithm::Sha256
+        | PhpHashAlgorithm::Ripemd128
+        | PhpHashAlgorithm::Ripemd160
+        | PhpHashAlgorithm::Ripemd256
+        | PhpHashAlgorithm::Ripemd320
+        | PhpHashAlgorithm::Tiger128_3
+        | PhpHashAlgorithm::Tiger160_3
+        | PhpHashAlgorithm::Tiger192_3
         | PhpHashAlgorithm::Whirlpool => Some(64),
         PhpHashAlgorithm::Sha384
         | PhpHashAlgorithm::Sha512_224

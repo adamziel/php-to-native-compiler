@@ -66,13 +66,13 @@ echo strlen(uniqid(false, true)), ":", uniqid(false, true), "\n";
 
 #[test]
 fn hash_hmac_and_uniqid_reject_forms_outside_current_boundary() {
-    let algorithm = run_source("<?php\nhash_hmac('ripemd160', 'data', 'key');\n").unwrap_err();
+    let algorithm = run_source("<?php\nhash_hmac('haval128,3', 'data', 'key');\n").unwrap_err();
     assert_eq!(algorithm.phase, Phase::Runtime);
     assert_eq!(algorithm.line, 2);
     assert_eq!(algorithm.column, 1);
     assert_eq!(
         algorithm.message,
-        "unsupported call hash_hmac(): algorithm ripemd160 is not implemented in the current HMAC subset"
+        "unsupported call hash_hmac(): algorithm haval128,3 is not implemented in the current HMAC subset"
     );
 
     let raw = run_source(
@@ -223,6 +223,34 @@ e33b4ddc9c38f2199c3e7b164fcc0536\n\
 a448017aaf21d8525fc10ae87aa6729d\n"
     );
     assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn hash_ripemd_and_tiger3_algorithms_are_available() {
+    let execution = run_source(
+        r#"<?php
+echo hash("ripemd128", ""), "\n";
+echo hash("ripemd160", "abc"), "\n";
+echo hash("ripemd256", str_repeat("a", 1000000)), "\n";
+echo hash("ripemd320", "message digest"), "\n";
+echo hash("tiger192,3", ""), "\n";
+echo hash("tiger192,3", str_repeat("abc", 64)), "\n";
+echo bin2hex(hash("ripemd160", "abc", true)), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "cdf26213a150dc3ecb610f18f6b38b46\n\
+8eb208f7e05d987a9b044a8e98c6b087f15a0bfc\n\
+ac953744e10e31514c150d4d8d7b677342e33399788296e43ae4850ce4f97978\n\
+3a8e28502ed45d422f68844f9dd316e7b98533fa3f2a91d29f84d425c88d6b4eff727df66a7c0197\n\
+3293ac630c13f0245f92bbb1766e16167a4e58492dde73f3\n\
+badd965340a9e83e4a16f48a5038c01b856a9158ef59fec1\n\
+8eb208f7e05d987a9b044a8e98c6b087f15a0bfc\n"
+    );
     assert_eq!(execution.exit_code, 0);
 }
 
@@ -412,13 +440,13 @@ ValueError:hash_init(): Argument #3 ($key) must not be empty when HMAC is reques
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);
 
-    let boundary = run_source("<?php\nhash_init('ripemd160');\n").unwrap_err();
+    let boundary = run_source("<?php\nhash_init('haval128,3');\n").unwrap_err();
     assert_eq!(boundary.phase, Phase::Runtime);
     assert_eq!(boundary.line, 2);
     assert_eq!(boundary.column, 1);
     assert_eq!(
         boundary.message,
-        "unsupported call hash_init(): algorithm ripemd160 is not implemented in the current hash context subset"
+        "unsupported call hash_init(): algorithm haval128,3 is not implemented in the current hash context subset"
     );
 }
 
@@ -672,13 +700,13 @@ ValueError:hash_pbkdf2(): Argument #5 ($length) must be greater than or equal to
     assert_eq!(execution.exit_code, 0);
 
     let boundary =
-        run_source("<?php\nhash_pbkdf2('ripemd160', 'password', 'salt', 1);\n").unwrap_err();
+        run_source("<?php\nhash_pbkdf2('haval128,3', 'password', 'salt', 1);\n").unwrap_err();
     assert_eq!(boundary.phase, Phase::Runtime);
     assert_eq!(boundary.line, 2);
     assert_eq!(boundary.column, 1);
     assert_eq!(
         boundary.message,
-        "unsupported call hash_pbkdf2(): algorithm ripemd160 is not implemented in the current HMAC subset"
+        "unsupported call hash_pbkdf2(): algorithm haval128,3 is not implemented in the current HMAC subset"
     );
 }
 
