@@ -305,6 +305,10 @@ fn class_registration_startup_fatal_message(error: &Diagnostic) -> Option<String
         ));
     }
 
+    if let Some(message) = class_method_visibility_startup_fatal_message(reason) {
+        return Some(message);
+    }
+
     if let Some((missing_count, missing_methods)) =
         class_missing_interface_methods_from_startup_reason(class_name, reason)
     {
@@ -334,6 +338,22 @@ fn class_registration_startup_fatal_message(error: &Diagnostic) -> Option<String
 
     Some(format!(
         "Class {class_name} declares abstract method {method_name}() and must therefore be declared abstract"
+    ))
+}
+
+fn class_method_visibility_startup_fatal_message(reason: &str) -> Option<String> {
+    let (method, parent) = reason
+        .strip_prefix("method ")
+        .and_then(|reason| reason.split_once(" cannot reduce visibility of inherited "))?;
+    let (visibility, parent_method) = parent.split_once(" method ")?;
+    let (parent_class, _) = parent_method.split_once("::")?;
+    let suffix = if visibility == "protected" {
+        " or weaker"
+    } else {
+        ""
+    };
+    Some(format!(
+        "Access level to {method} must be {visibility} (as in class {parent_class}){suffix}"
     ))
 }
 

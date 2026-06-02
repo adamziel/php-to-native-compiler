@@ -14251,7 +14251,7 @@ echo $child->label();
     assert_eq!(execution.stdout, "child");
     assert_eq!(execution.exit_code, 0);
 
-    let public_error = runtime_error(
+    assert_php_startup_fatal(
         r#"<?php
 class Base {
     public function label() {
@@ -14265,15 +14265,12 @@ class Child extends Base {
     }
 }
 "#,
-    );
-    assert_eq!(public_error.line, 9);
-    assert_eq!(public_error.column, 15);
-    assert_eq!(
-        public_error.message,
-        "unsupported class inheritance for Child: method Child::label() cannot reduce visibility of inherited public method Base::label()"
+        "method-public-reduced.php",
+        9,
+        "Access level to Child::label() must be public (as in class Base)",
     );
 
-    let protected_error = runtime_error(
+    assert_php_startup_fatal(
         r#"<?php
 class Base {
     protected function compute() {
@@ -14287,12 +14284,9 @@ class Child extends Base {
     }
 }
 "#,
-    );
-    assert_eq!(protected_error.line, 9);
-    assert_eq!(protected_error.column, 13);
-    assert_eq!(
-        protected_error.message,
-        "unsupported class inheritance for Child: method Child::compute() cannot reduce visibility of inherited protected method Base::compute()"
+        "method-protected-reduced.php",
+        9,
+        "Access level to Child::compute() must be protected (as in class Base) or weaker",
     );
 }
 
