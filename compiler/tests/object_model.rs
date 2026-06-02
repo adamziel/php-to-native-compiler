@@ -6156,6 +6156,84 @@ echo $dynamic[0], "|", $dynamic[1], "|", $dynamic[2];
 }
 
 #[test]
+fn class_alias_records_declared_name_order_and_warnings() {
+    let execution = run_source_with_source_file(
+        r#"<?php
+class a {}
+class_alias("a", "b");
+$declared = get_declared_classes();
+echo end($declared), "|", prev($declared), "\n";
+class_alias("a", "b");
+class_alias("missing", "missingAlias");
+"#,
+        "Zend/tests/class_alias/class_alias_metadata.php".to_string(),
+    )
+    .unwrap();
+
+    assert!(execution.stdout.starts_with("b|a\n"));
+    assert!(execution.stdout.contains(
+        "Warning: Cannot redeclare class b (previously declared in Zend/tests/class_alias/class_alias_metadata.php:2)"
+    ));
+    assert!(execution
+        .stdout
+        .contains("Warning: Class \"missing\" not found"));
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn class_alias_predeclaration_supports_later_declarations_and_type_compatibility() {
+    let execution = run_source(
+        r#"<?php
+class foo {
+    static public function msg() {
+        echo "hello\n";
+    }
+}
+
+class_alias("foo", "baz");
+
+class bar extends baz {
+    public function __construct() {
+        foo::msg();
+    }
+}
+
+new bar;
+
+class A {
+    function check(A $param) {}
+}
+
+class_alias("A", "AliasA");
+
+eval('class B extends A { function check(AliasA $param) {} }');
+echo "DONE";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "hello\nDONE");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn interface_alias_duplicate_parent_reports_previous_interface() {
+    let error = runtime_error(
+        r#"<?php
+interface a {}
+class_alias("a", "b");
+interface c extends a, b {}
+"#,
+    );
+
+    assert_eq!(error.line, 4);
+    assert_eq!(
+        error.message,
+        "Interface c cannot implement previously implemented interface a"
+    );
+}
+
+#[test]
 fn get_declared_classes_reports_declared_enums_as_class_like_metadata() {
     let source = r#"<?php
 namespace App;

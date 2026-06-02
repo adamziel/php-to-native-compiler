@@ -31916,6 +31916,7 @@ impl ClassId {
 pub struct PhpClassTable {
     classes: Vec<PhpClassMetadata>,
     lookup: HashMap<String, ClassId>,
+    declared_names: Vec<String>,
 }
 
 impl PhpClassTable {
@@ -33641,6 +33642,7 @@ impl PhpClassTable {
 
         let id = ClassId(self.classes.len());
         self.lookup.insert(lookup_name, id);
+        self.declared_names.push(name.clone());
         self.classes.push(PhpClassMetadata::new(id, name));
         Ok(id)
     }
@@ -33684,10 +33686,30 @@ impl PhpClassTable {
         source_name: &str,
         alias_name: impl Into<String>,
     ) -> RuntimeResult<bool> {
+        let alias_name = alias_name.into();
+        if !self.insert_class_alias_lookup(source_name, &alias_name)? {
+            return Ok(false);
+        }
+        self.record_class_alias_declaration(alias_name);
+        Ok(true)
+    }
+
+    pub fn declare_class_alias_lookup_only(
+        &mut self,
+        source_name: &str,
+        alias_name: &str,
+    ) -> RuntimeResult<bool> {
+        self.insert_class_alias_lookup(source_name, alias_name)
+    }
+
+    fn insert_class_alias_lookup(
+        &mut self,
+        source_name: &str,
+        alias_name: &str,
+    ) -> RuntimeResult<bool> {
         let Some(source_id) = self.lookup_class_id(source_name) else {
             return Ok(false);
         };
-        let alias_name = alias_name.into();
         let lookup_name = normalize_class_lookup_name(&alias_name);
         if self.lookup.contains_key(&lookup_name) {
             return Ok(false);
@@ -33697,8 +33719,25 @@ impl PhpClassTable {
         Ok(true)
     }
 
+    pub fn record_class_alias_declaration(&mut self, alias_name: impl Into<String>) {
+        let alias_name = alias_name.into();
+        let lookup_name = normalize_class_lookup_name(&alias_name);
+        if self
+            .declared_names
+            .iter()
+            .any(|name| normalize_class_lookup_name(name) == lookup_name)
+        {
+            return;
+        }
+        self.declared_names.push(alias_name);
+    }
+
     pub fn classes(&self) -> &[PhpClassMetadata] {
         &self.classes
+    }
+
+    pub fn declared_class_names(&self) -> &[String] {
+        &self.declared_names
     }
 
     pub fn remove_last_declared_class(&mut self, id: ClassId) {
@@ -33706,9 +33745,17 @@ impl PhpClassTable {
             return;
         }
 
-        if let Some(class) = self.classes.pop() {
-            self.lookup
-                .remove(&normalize_class_lookup_name(class.name()));
+        if self.classes.pop().is_some() {
+            let removed_lookup_names = self
+                .lookup
+                .iter()
+                .filter_map(|(name, class_id)| (*class_id == id).then(|| name.clone()))
+                .collect::<HashSet<_>>();
+            for lookup_name in &removed_lookup_names {
+                self.lookup.remove(lookup_name);
+            }
+            self.declared_names
+                .retain(|name| !removed_lookup_names.contains(&normalize_class_lookup_name(name)));
         }
     }
 

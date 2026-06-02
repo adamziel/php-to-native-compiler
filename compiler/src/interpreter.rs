@@ -295,6 +295,15 @@ fn class_registration_startup_fatal_message(error: &Diagnostic) -> Option<String
         }
     }
 
+    if let Some((interface, implemented)) = reason
+        .strip_prefix("interface ")
+        .and_then(|reason| reason.split_once(" cannot implement previously implemented interface "))
+    {
+        return Some(format!(
+            "Interface {interface} cannot implement previously implemented interface {implemented}"
+        ));
+    }
+
     if let Some((method, interface)) = reason
         .strip_prefix("method ")
         .and_then(|reason| reason.split_once(" must be public to satisfy interface method "))
@@ -426,6 +435,7 @@ struct Interpreter {
     property_source_metadata: HashMap<(ClassId, String), PropertySourceMetadata>,
     interface_source_metadata: HashMap<String, ClassLikeSourceMetadata>,
     trait_source_metadata: HashMap<String, ClassLikeSourceMetadata>,
+    declared_interface_alias_names: Vec<String>,
     methods: HashMap<(ClassId, String), Rc<FunctionDecl>>,
     method_signatures: HashMap<(ClassId, String), MethodSignature>,
     abstract_classes: HashSet<ClassId>,
@@ -564,6 +574,8 @@ struct Interpreter {
     stdout_bytes: Vec<u8>,
     stderr: String,
     exit_signal: Option<i32>,
+    predeclared_class_aliases: HashSet<(String, String)>,
+    consumed_predeclared_class_aliases: HashSet<(String, String)>,
 }
 
 #[derive(Debug, Clone)]
@@ -11305,6 +11317,7 @@ impl Interpreter {
         let mut trait_source_metadata = HashMap::new();
         let mut interfaces = Vec::new();
         let mut interface_lookup = HashMap::new();
+        let declared_interface_alias_names = Vec::new();
         let mut traits = Vec::new();
         let mut trait_lookup = HashMap::new();
         let mut enums = Vec::new();
@@ -11404,6 +11417,14 @@ impl Interpreter {
                 _ => {}
             }
         }
+        let predeclared_class_aliases = predeclare_literal_class_aliases_for_declarations(
+            &mut classes,
+            &mut interface_lookup,
+            &mut interface_source_metadata,
+            &trait_lookup,
+            &enum_lookup,
+            program,
+        )?;
         validate_interface_parent_relationships(
             &classes,
             &trait_lookup,
@@ -11463,6 +11484,7 @@ impl Interpreter {
             property_source_metadata,
             interface_source_metadata,
             trait_source_metadata,
+            declared_interface_alias_names,
             methods,
             method_signatures,
             abstract_classes,
@@ -11603,6 +11625,8 @@ impl Interpreter {
             stdout_bytes: Vec::new(),
             stderr: String::new(),
             exit_signal: None,
+            predeclared_class_aliases,
+            consumed_predeclared_class_aliases: HashSet::new(),
         };
         if let Some(message) = timezone_startup_warning {
             interpreter.emit_startup_warning(message);
@@ -71247,49 +71271,151 @@ impl Interpreter {
             self.run_autoload_callbacks(source_name, AutoloadKind::Any, span)?;
         }
 
-        if self.classes.lookup_class(source_name).is_none() {
-            if let Some(interface) = self
-                .interface_lookup
-                .get(&source_name.to_ascii_lowercase())
+        if let Some(source_id) = self.classes.lookup_class_id(source_name) {
+            if self.class_like_exists(alias_name, AutoloadKind::Any)
+                || self
+                    .enum_lookup
+                    .contains_key(&alias_name.to_ascii_lowercase())
+            {
+                let alias_key = class_alias_pair_key(source_name, alias_name);
+                if self.predeclared_class_aliases.contains(&alias_key)
+                    && !self.consumed_predeclared_class_aliases.contains(&alias_key)
+                    && self.classes.lookup_class_id(alias_name) == Some(source_id)
+                {
+                    self.consumed_predeclared_class_aliases.insert(alias_key);
+                    self.classes
+                        .record_class_alias_declaration(alias_name.to_string());
+                    return Ok(Value::Bool(true));
+                }
+                self.emit_class_alias_redeclare_warning("class", alias_name, span)?;
+                return Ok(Value::Bool(false));
+            }
+
+            let aliased = self
+                .classes
+                .declare_class_alias(source_name, alias_name.to_string())
+                .map_err(|error| runtime_error(span, error))?;
+            return Ok(Value::Bool(aliased));
+        }
+
+        if let Some(interface) = self
+            .interface_lookup
+            .get(&source_name.to_ascii_lowercase())
+            .cloned()
+        {
+            if self.class_like_exists(alias_name, AutoloadKind::Any)
+                || self
+                    .enum_lookup
+                    .contains_key(&alias_name.to_ascii_lowercase())
+            {
+                let alias_key = class_alias_pair_key(&interface.name, alias_name);
+                if self.predeclared_class_aliases.contains(&alias_key)
+                    && !self.consumed_predeclared_class_aliases.contains(&alias_key)
+                    && self
+                        .interface_lookup
+                        .get(&alias_name.to_ascii_lowercase())
+                        .is_some_and(|existing| existing.name.eq_ignore_ascii_case(&interface.name))
+                {
+                    self.consumed_predeclared_class_aliases.insert(alias_key);
+                    self.record_declared_interface_alias_name(alias_name);
+                    return Ok(Value::Bool(true));
+                }
+                self.emit_class_alias_redeclare_warning("interface", alias_name, span)?;
+                return Ok(Value::Bool(false));
+            }
+
+            let alias_key = alias_name.to_ascii_lowercase();
+            self.interface_lookup
+                .insert(alias_key.clone(), interface.clone());
+            if let Some(metadata) = self
+                .interface_source_metadata
+                .get(&interface.name.to_ascii_lowercase())
                 .cloned()
             {
-                if self.class_like_exists(alias_name, AutoloadKind::Any)
-                    || self
-                        .enum_lookup
-                        .contains_key(&alias_name.to_ascii_lowercase())
-                {
-                    return Ok(Value::Bool(false));
-                }
-
-                self.interface_lookup
-                    .insert(alias_name.to_ascii_lowercase(), interface);
-                return Ok(Value::Bool(true));
+                self.interface_source_metadata.insert(alias_key, metadata);
             }
-            if self.class_like_exists(source_name, AutoloadKind::Trait) {
-                return Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "class_alias()",
-                        "trait aliasing is not implemented; only declared class and interface aliases are supported in the current subset",
-                    ),
-                ));
-            }
-            return Ok(Value::Bool(false));
+            self.record_declared_interface_alias_name(alias_name);
+            return Ok(Value::Bool(true));
         }
 
-        if self.class_like_exists(alias_name, AutoloadKind::Any)
-            || self
-                .enum_lookup
-                .contains_key(&alias_name.to_ascii_lowercase())
+        if self.class_like_exists(source_name, AutoloadKind::Trait) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "class_alias()",
+                    "trait aliasing is not implemented; only declared class and interface aliases are supported in the current subset",
+                ),
+            ));
+        }
+
+        self.emit_display_warning(format!("Class \"{source_name}\" not found"), span)?;
+        Ok(Value::Bool(false))
+    }
+
+    fn record_declared_interface_alias_name(&mut self, alias_name: &str) {
+        if self
+            .declared_interface_alias_names
+            .iter()
+            .any(|name| name.eq_ignore_ascii_case(alias_name))
         {
-            return Ok(Value::Bool(false));
+            return;
         }
+        self.declared_interface_alias_names
+            .push(alias_name.to_string());
+    }
 
-        let aliased = self
-            .classes
-            .declare_class_alias(source_name, alias_name.to_string())
-            .map_err(|error| runtime_error(span, error))?;
-        Ok(Value::Bool(aliased))
+    fn emit_class_alias_redeclare_warning(
+        &mut self,
+        source_kind: &str,
+        alias_name: &str,
+        span: Span,
+    ) -> CompileResult<()> {
+        let (previous_file, previous_line) = self
+            .class_like_source_metadata_for_name(alias_name)
+            .map(|metadata| {
+                (
+                    metadata
+                        .file_name
+                        .clone()
+                        .unwrap_or_else(|| "Unknown".to_string()),
+                    metadata.start_line,
+                )
+            })
+            .unwrap_or_else(|| ("Unknown".to_string(), 0));
+        self.emit_display_warning(
+            format!(
+                "Cannot redeclare {source_kind} {alias_name} (previously declared in {previous_file}:{previous_line})"
+            ),
+            span,
+        )
+    }
+
+    fn class_like_source_metadata_for_name(
+        &self,
+        class_like_name: &str,
+    ) -> Option<&ClassLikeSourceMetadata> {
+        if let Some(class_id) = self.classes.lookup_class_id(class_like_name) {
+            return self.class_source_metadata.get(&class_id);
+        }
+        let key = class_like_name.to_ascii_lowercase();
+        if let Some(interface) = self.interface_lookup.get(&key) {
+            return self
+                .interface_source_metadata
+                .get(&interface.name.to_ascii_lowercase())
+                .or_else(|| self.interface_source_metadata.get(&key));
+        }
+        if let Some(trait_decl) = self.trait_lookup.get(&key) {
+            return self
+                .trait_source_metadata
+                .get(&trait_decl.name.to_ascii_lowercase())
+                .or_else(|| self.trait_source_metadata.get(&key));
+        }
+        if let Some(enum_decl) = self.enum_lookup.get(&key) {
+            return self
+                .class_source_metadata
+                .get(&self.classes.lookup_class_id(&enum_decl.name)?);
+        }
+        None
     }
 
     fn class_like_exists(&self, name: &str, kind: AutoloadKind) -> bool {
@@ -95438,9 +95564,9 @@ impl Interpreter {
             "get_declared_classes" => {
                 expect_arity(name, &args, 0, span)?;
                 let mut classes = PhpArray::new();
-                for class in self.classes.classes() {
+                for class_name in self.classes.declared_class_names() {
                     classes
-                        .append(Value::String(class.name().to_string()))
+                        .append(Value::String(class_name.clone()))
                         .expect("declared class count fits in array keys");
                 }
                 for enum_decl in &self.enums {
@@ -95462,6 +95588,11 @@ impl Interpreter {
                     interfaces
                         .append(Value::String(interface.name.clone()))
                         .expect("declared interface count fits in array keys");
+                }
+                for interface_name in &self.declared_interface_alias_names {
+                    interfaces
+                        .append(Value::String(interface_name.clone()))
+                        .expect("declared interface alias count fits in array keys");
                 }
                 Ok(Value::Array(interfaces))
             }
@@ -106907,6 +107038,81 @@ fn class_alias_literal_reserved_alias(expr: &Expr) -> Option<&str> {
     }
 }
 
+fn predeclare_literal_class_aliases_for_declarations(
+    classes: &mut PhpClassTable,
+    interface_lookup: &mut HashMap<String, Rc<InterfaceDecl>>,
+    interface_source_metadata: &mut HashMap<String, ClassLikeSourceMetadata>,
+    trait_lookup: &HashMap<String, Rc<TraitDecl>>,
+    enum_lookup: &HashMap<String, Rc<EnumDecl>>,
+    program: &Program,
+) -> CompileResult<HashSet<(String, String)>> {
+    let mut predeclared = HashSet::new();
+    for stmt in &program.statements {
+        let Stmt::Expr { expr, .. } = stmt else {
+            continue;
+        };
+        let Some((source_name, alias_name)) = literal_class_alias_pair(expr) else {
+            continue;
+        };
+        let alias_lookup = startup_class_lookup_key(alias_name);
+        if classes.lookup_class_id(alias_name).is_some()
+            || is_core_interface_name(alias_name)
+            || interface_lookup.contains_key(&alias_lookup)
+            || trait_lookup.contains_key(&alias_lookup)
+            || enum_lookup.contains_key(&alias_lookup)
+        {
+            continue;
+        }
+
+        if classes
+            .declare_class_alias_lookup_only(source_name, alias_name)
+            .map_err(|error| runtime_error(expr.span(), error))?
+        {
+            predeclared.insert(class_alias_pair_key(source_name, alias_name));
+            continue;
+        }
+
+        let source_lookup = startup_class_lookup_key(source_name);
+        if let Some(interface) = interface_lookup.get(&source_lookup).cloned() {
+            interface_lookup.insert(alias_lookup.clone(), interface.clone());
+            if let Some(metadata) = interface_source_metadata
+                .get(&interface.name.to_ascii_lowercase())
+                .cloned()
+            {
+                interface_source_metadata.insert(alias_lookup, metadata);
+            }
+            predeclared.insert(class_alias_pair_key(&interface.name, alias_name));
+        }
+    }
+    Ok(predeclared)
+}
+
+fn literal_class_alias_pair(expr: &Expr) -> Option<(&str, &str)> {
+    let Expr::Call { name, args, .. } = expr else {
+        return None;
+    };
+    if !name.eq_ignore_ascii_case("class_alias") || !(2..=3).contains(&args.len()) {
+        return None;
+    }
+    if args.len() == 3 && !matches!(unwrap_named_argument(&args[2]), Expr::Bool(_, _)) {
+        return None;
+    }
+    let Expr::String(source_name, _) = unwrap_named_argument(&args[0]) else {
+        return None;
+    };
+    let Expr::String(alias_name, _) = unwrap_named_argument(&args[1]) else {
+        return None;
+    };
+    Some((source_name.as_str(), alias_name.as_str()))
+}
+
+fn class_alias_pair_key(source_name: &str, alias_name: &str) -> (String, String) {
+    (
+        startup_class_lookup_key(source_name),
+        startup_class_lookup_key(alias_name),
+    )
+}
+
 fn unwrap_named_argument(expr: &Expr) -> &Expr {
     match expr {
         Expr::NamedArgument { expr, .. } => expr,
@@ -107449,6 +107655,27 @@ fn validate_interface_parent_relationship(
                 ),
             ),
         ));
+    }
+
+    let mut direct_parent_keys = HashSet::new();
+    for parent_name in &interface.parents {
+        let parent_key = parent_name.to_ascii_lowercase();
+        let implemented = interface_lookup
+            .get(&parent_key)
+            .map(|parent| parent.name.as_str())
+            .unwrap_or(parent_name.as_str());
+        if !direct_parent_keys.insert(startup_class_lookup_key(implemented)) {
+            return Err(runtime_error(
+                interface.span,
+                RuntimeError::unsupported_class_inheritance(
+                    &interface.name,
+                    format!(
+                        "interface {} cannot implement previously implemented interface {implemented}",
+                        interface.name
+                    ),
+                ),
+            ));
+        }
     }
 
     for parent_name in &interface.parents {
@@ -112529,7 +112756,8 @@ fn type_name_is_subtype_of(
     if let (Some(subtype_class_id), Some(supertype_class_id)) =
         (subtype_class_id, supertype_class_id)
     {
-        return classes.is_subclass_of(subtype_class_id, supertype_class_id);
+        return subtype_class_id == supertype_class_id
+            || classes.is_subclass_of(subtype_class_id, supertype_class_id);
     }
 
     let supertype_interface_key = supertype.to_ascii_lowercase();
