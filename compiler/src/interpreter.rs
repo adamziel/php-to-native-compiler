@@ -94024,6 +94024,12 @@ impl Interpreter {
         Self::validate_settype_target_type(&target_type, span)?;
 
         let value = caller_scope.read_named(name).unwrap_or(Value::Null);
+        if let Some(converted) =
+            self.settype_nan_cast_value(name, value.clone(), &target_type, span, caller_scope)?
+        {
+            caller_scope.write_static(name, converted);
+            return Ok(Value::Bool(true));
+        }
         match self.settype_cast_value(value, &target_type, span) {
             Ok(converted) => {
                 caller_scope.write_static(name, converted);
@@ -94040,6 +94046,77 @@ impl Interpreter {
             }
             Err(error) => Err(error),
         }
+    }
+
+    fn settype_nan_cast_value(
+        &mut self,
+        name: &str,
+        value: Value,
+        target_type: &str,
+        span: Span,
+        caller_scope: &SymbolTable,
+    ) -> CompileResult<Option<Value>> {
+        if !matches!(value, Value::Float(float) if float.is_nan()) {
+            return Ok(None);
+        }
+
+        let Some(target) = SettypeNanTarget::from_type_name(target_type) else {
+            return Ok(None);
+        };
+
+        self.emit_display_warning(
+            format!(
+                "unexpected NAN value was coerced to {}",
+                target.warning_label()
+            ),
+            span,
+        )?;
+
+        let converted = match target {
+            SettypeNanTarget::Bool => Value::Bool(true),
+            SettypeNanTarget::String => Value::String("NAN".to_string()),
+            SettypeNanTarget::Array => {
+                let value = caller_scope.read_named(name).unwrap_or(value);
+                Value::Array(Self::settype_nan_single_value_array(value))
+            }
+            SettypeNanTarget::Object => {
+                let value = caller_scope.read_named(name).unwrap_or(value);
+                self.settype_nan_single_value_object(value, span)?
+            }
+            SettypeNanTarget::Null => Value::Null,
+        };
+
+        Ok(Some(converted))
+    }
+
+    fn settype_nan_single_value_array(value: Value) -> PhpArray {
+        let mut array = PhpArray::new();
+        array
+            .append(value)
+            .expect("append into a fresh array should not fail");
+        array
+    }
+
+    fn settype_nan_single_value_object(
+        &mut self,
+        value: Value,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let class_id = self
+            .classes
+            .lookup_class_id("stdClass")
+            .ok_or_else(|| runtime_error(span, RuntimeError::undefined_class("stdClass")))?;
+        let object_id = self.allocate_object_id();
+        let class = self
+            .classes
+            .get(class_id)
+            .expect("stdClass class id should resolve");
+        let object = PhpObject::from_class_with_id(class, object_id);
+        object
+            .write_dynamic_public_property("scalar", value)
+            .map_err(|error| runtime_error(span, error))?;
+        self.track_allocated_object(&object);
+        Ok(Value::Object(object))
     }
 
     fn gettype_name(&self, value: &Value) -> &'static str {
@@ -94905,6 +94982,38 @@ impl Interpreter {
                 self.track_allocated_object(&object);
                 Ok(Value::Object(object))
             }
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SettypeNanTarget {
+    Bool,
+    String,
+    Array,
+    Object,
+    Null,
+}
+
+impl SettypeNanTarget {
+    fn from_type_name(type_name: &str) -> Option<Self> {
+        match type_name.to_ascii_lowercase().as_str() {
+            "bool" | "boolean" => Some(Self::Bool),
+            "string" => Some(Self::String),
+            "array" => Some(Self::Array),
+            "object" => Some(Self::Object),
+            "null" => Some(Self::Null),
+            _ => None,
+        }
+    }
+
+    fn warning_label(self) -> &'static str {
+        match self {
+            Self::Bool => "bool",
+            Self::String => "string",
+            Self::Array => "array",
+            Self::Object => "object",
+            Self::Null => "null",
         }
     }
 }

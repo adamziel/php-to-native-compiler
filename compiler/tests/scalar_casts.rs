@@ -338,6 +338,94 @@ var_dump($object);
 }
 
 #[test]
+fn settype_nan_scalar_targets_warn_and_ignore_handler_mutations() {
+    let execution = run_source(
+        r#"<?php
+$mode = "";
+set_error_handler(function ($errno, $errstr) {
+    global $nan, $mode;
+    if ($mode === "null") {
+        $nan = null;
+    } elseif ($mode === "unset") {
+        unset($nan);
+    } else {
+        $nan = "changed";
+    }
+    echo $errstr, "\n";
+});
+
+$mode = "null";
+$nan = fdiv(0, 0);
+settype($nan, "bool");
+var_dump($nan);
+
+$mode = "unset";
+$nan = fdiv(0, 0);
+settype($nan, "string");
+var_dump($nan);
+
+$mode = "changed";
+$nan = fdiv(0, 0);
+settype($nan, "null");
+var_dump($nan);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "unexpected NAN value was coerced to bool\nbool(true)\n\
+unexpected NAN value was coerced to string\nstring(3) \"NAN\"\n\
+unexpected NAN value was coerced to null\nNULL\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn settype_nan_array_and_object_targets_wrap_handler_value_or_original() {
+    let execution = run_source(
+        r#"<?php
+$mode = "";
+set_error_handler(function ($errno, $errstr) {
+    global $nan, $mode;
+    if ($mode === "null") {
+        $nan = null;
+    } elseif ($mode === "unset") {
+        unset($nan);
+    } else {
+        $nan = "changed";
+    }
+    echo $errstr, "\n";
+});
+
+$mode = "null";
+$nan = fdiv(0, 0);
+settype($nan, "array");
+echo gettype($nan[0]), "\n";
+
+$mode = "unset";
+$nan = fdiv(0, 0);
+settype($nan, "array");
+echo is_nan($nan[0]) ? "array-nan\n" : "array-other\n";
+
+$mode = "changed";
+$nan = fdiv(0, 0);
+settype($nan, "object");
+echo get_class($nan), ":", $nan->scalar, "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "unexpected NAN value was coerced to array\nNULL\n\
+unexpected NAN value was coerced to array\narray-nan\n\
+unexpected NAN value was coerced to object\nstdClass:changed\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn remaining_casts_have_stable_parse_error() {
     let error = run_source("<?php\necho (unset) \"1\";\n").unwrap_err();
 

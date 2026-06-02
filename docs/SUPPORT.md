@@ -3435,10 +3435,15 @@
   were undefined are materialized as `null` before conversion, invalid type
   names raise PHP-shaped catchable `ValueError`s without materializing the
   variable, and the reached object-to-string failure path preserves PHP's
-  empty-string side effect before throwing. `resource`, non-direct lvalues,
-  aliases/reference edge cases, broader object/string magic failure parity,
-  exact PHP diagnostics beyond the covered rows, and native lowering remain
-  unsupported.
+  empty-string side effect before throwing. Original `NAN` values converted
+  through `settype()` to `bool`/`boolean`, `string`, `array`, `object`, or
+  `null` emit the covered PHP warning; scalar/null targets store the original
+  NAN conversion result, while array/object targets wrap the direct variable's
+  post-handler value or the original NAN when the handler unsets it.
+  `resource`, non-direct lvalues, int/integer NAN-to-int recovery in this
+  lane, aliases/reference edge cases, broader object/string magic failure
+  parity, exact PHP diagnostics beyond the covered rows, and native lowering
+  remain unsupported.
   `is_callable($value)` supports the current string function-name subset: it
   returns true for names that resolve to current user functions or documented
   callable builtins, and false for missing names or non-string values.

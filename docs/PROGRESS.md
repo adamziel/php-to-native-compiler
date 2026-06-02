@@ -4,6 +4,24 @@
 
 Implemented:
 
+- Added a bounded non-int `settype()` NAN warning/recovery lane for the
+  selected Zend type-coercion handler rows. Direct-variable
+  `settype($var, $type)` now emits the PHP-shaped `unexpected NAN value was
+  coerced to ...` warning for original `NAN` values converted to
+  `bool`/`boolean`, `string`, `array`, `object`, or `null`. Scalar/null
+  targets store the original NAN conversion result after the warning, while
+  array/object targets wrap the value left in the direct variable by the
+  handled warning, falling back to the original NAN when the handler unsets the
+  variable. Focused Rust passed `2 / 2` for the filtered `settype_nan`
+  scalar-cast tests; `cargo build -p phpc --bin phpc` passed; a direct
+  `phpc run` probe proved handler mutation, unset fallback, and scalar target
+  recovery; selected PHPT proof passed `15 / 15` for the non-int
+  `Zend/tests/type_coercion/settype/settype_{bool,string,array,object,null}_nan_with_error_handler*.phpt`
+  cluster; `cargo fmt --check` passed. Unsupported edges remain the separate
+  int/integer NAN-to-int lane, direct cast NAN warnings outside this
+  `settype()` path, broader error-handler/reference/COW interactions, exact
+  non-finite float parity outside the covered rows, and native lowering.
+
 - Added a bounded `json_decode()` invalid UTF-8 flag lane for the selected
   `json_decode_invalid_utf8.phpt` surface. Binary JSON input with malformed
   UTF-8 byte units inside quoted JSON string tokens now honors

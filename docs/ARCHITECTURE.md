@@ -1074,6 +1074,13 @@ object/resource-heavy cast behavior as runtime or parse boundaries. Native
 lowering rejects all cast expressions with a dedicated diagnostic until
 generated code has scalar conversion, array materialization, warning/recovery,
 object/resource handling, and exact diagnostic behavior.
+Direct-variable `settype()` has a separate bounded NAN warning/recovery hook:
+for original `NAN` values converted to non-int targets in the current
+`bool`/`string`/`array`/`object`/`null` slice, it emits the PHP warning through
+the active error handler before storing either the original scalar/null
+conversion result or, for array/object targets, a wrapper around the current
+direct-variable value left by that handler. This is a targeted interpreter
+path, not a general non-finite cast or reference/COW model.
 
 ## Runtime Crate
 
