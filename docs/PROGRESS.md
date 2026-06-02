@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Added a bounded `array_column()` reference-backed row-slot lane for the
+  selected `bug69723.phpt` surface. The interpreter and shared runtime
+  `array_column` helpers now dereference each outer source row slot with
+  `value_cloned()` before column and index-key lookup, so rows mutated through
+  supported by-reference `foreach` are visible to later column extraction
+  instead of panicking on reference-backed slots. Focused Rust passed the
+  `php_runtime` and `phpc` `array_column_reads_reference_backed_row_slots`
+  tests; the direct `phpc run` fixture
+  `tests/fixtures/milestone2308/array_column_reference_backed_rows.php`
+  passed through both the array-column CLI snapshot test and direct fixture
+  runner; `cargo build -p phpc --bin phpc` passed; selected PHPT proof passed
+  `1 / 1` for `ext/standard/tests/array/bug69723.phpt`; `cargo fmt --check`
+  and `git diff --check` passed. Unsupported edges remain broader
+  `array_column()` reference/COW behavior beyond dereferencing outer row
+  slots, `ArrayAccess` rows, exact non-public visibility parity, resource
+  values, exact native diagnostics, and native lowering.
+
 - Added a bounded `hash_pbkdf2()` validation lane for the selected ext/hash
   error row. The interpreter now exposes `hash_pbkdf2()` through
   builtin/callability/reflection metadata, validates cryptographic algorithm

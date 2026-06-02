@@ -94189,9 +94189,10 @@ impl Interpreter {
     ) -> CompileResult<PhpArray> {
         let mut result = PhpArray::new();
         for entry in source.entries() {
+            let row = entry.value_cloned();
             let value = match &column_key {
-                None => Some(entry.value_cloned()),
-                Some(column_key) => self.array_column_row_value(entry.value(), column_key, span)?,
+                None => Some(row.clone()),
+                Some(column_key) => self.array_column_row_value(&row, column_key, span)?,
             };
 
             let Some(value) = value else {
@@ -94200,9 +94201,7 @@ impl Interpreter {
 
             match &index_key {
                 Some(index_key) => {
-                    if let Some(index_value) =
-                        self.array_column_row_value(entry.value(), index_key, span)?
-                    {
+                    if let Some(index_value) = self.array_column_row_value(&row, index_key, span)? {
                         let key = self.array_column_index_key_from_value(&index_value, span)?;
                         result.insert(key, value);
                     } else {

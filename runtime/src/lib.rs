@@ -29679,14 +29679,15 @@ impl PhpArray {
     ) -> RuntimeResult<Self> {
         let mut array = Self::new();
         for entry in &self.entries {
+            let row = entry.value_cloned();
             let value = match &column_key {
-                None => Some(entry.value_cloned()),
-                Some(column_key) => array_column_row_value(entry.value(), column_key),
+                None => Some(row.clone()),
+                Some(column_key) => array_column_row_value(&row, column_key),
             };
 
             if let Some(value) = value {
                 match &index_key {
-                    Some(index_key) => match array_column_row_value(entry.value(), index_key) {
+                    Some(index_key) => match array_column_row_value(&row, index_key) {
                         Some(index_value) => {
                             let key = array_column_index_key_from_value(&index_value)?;
                             array.insert(key, value.clone());
@@ -78394,6 +78395,42 @@ mod tests {
         assert_eq!(entries[1].value(), &Value::String("NoId".to_string()));
         assert_eq!(entries[2].key, ArrayKey::String("code".to_string()));
         assert_eq!(entries[2].value(), &Value::Null);
+    }
+
+    #[test]
+    fn array_column_reads_reference_backed_row_slots() {
+        let mut first = PhpArray::new();
+        first.insert("id", Value::Int(10));
+        first.insert("name", Value::String("Ada".to_string()));
+
+        let mut second = PhpArray::new();
+        second.insert("id", Value::String("code".to_string()));
+        second.insert("name", Value::String("Grace".to_string()));
+
+        let mut rows = PhpArray::new();
+        rows.append_reference(PhpReferenceCell::new(Value::Array(first)))
+            .unwrap();
+        rows.append_reference(PhpReferenceCell::new(Value::Array(second)))
+            .unwrap();
+
+        let result = rows
+            .column_values(
+                Some(ArrayColumnKey::String("name".to_string())),
+                Some(ArrayColumnKey::String("id".to_string())),
+            )
+            .unwrap();
+        let entries = result.entries();
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].key, ArrayKey::Int(10));
+        assert_eq!(entries[0].value(), &Value::String("Ada".to_string()));
+        assert_eq!(entries[1].key, ArrayKey::String("code".to_string()));
+        assert_eq!(entries[1].value(), &Value::String("Grace".to_string()));
+
+        let whole = rows
+            .column_values(None, Some(ArrayColumnKey::String("id".to_string())))
+            .unwrap();
+        assert_eq!(whole.entries()[0].key, ArrayKey::Int(10));
+        assert_eq!(whole.entries()[1].key, ArrayKey::String("code".to_string()));
     }
 
     #[test]

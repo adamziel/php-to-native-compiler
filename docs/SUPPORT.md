@@ -9963,8 +9963,11 @@
   numeric property names for integer keys. Missing columns are skipped, null
   values are preserved, scalar rows are skipped, and extracted values are
   reindexed from integer key zero. A null column key returns each row value
-  reindexed in insertion order. Non-public or missing object properties can
-  fall back through userland `__isset` and `__get` when those methods are
+  reindexed in insertion order. Source row slots that have become
+  reference-backed through supported by-reference array iteration are
+  dereferenced before column and index lookup, matching the selected
+  by-reference row-mutation surface. Non-public or missing object properties
+  can fall back through userland `__isset` and `__get` when those methods are
   declared.
   `array_column($rows, $column_key, $index_key)` accepts the same key subset
   for `$index_key` and uses null, boolean, integer, string, or integral finite
@@ -9976,8 +9979,9 @@
   Non-array first arguments, array/closure/resource column or index key
   arguments in weak mode, lossy or non-finite float index values,
   array/object/resource index values, `ArrayAccess`, broader strict-types
-  enforcement beyond this internal key-argument slice, references and
-  copy-on-write, resource values, and native lowering are not implemented.
+  enforcement beyond this internal key-argument slice, reference/copy-on-write
+  behavior beyond dereferencing outer reference-backed row slots, resource
+  values, and native lowering are not implemented.
   `array_fill_keys($keys, $value)` accepts arrays only for the first argument,
   stringifies null, boolean, integer, float, and string key values through the
   PHP scalar key path, preserves `-0.0` as the string key `"-0"`, normalizes
@@ -11218,7 +11222,8 @@
   index keys outside the documented coercion subset, lossy or non-finite float
   index values, array/object/resource index values, `ArrayAccess`, exact
   visibility-context behavior for non-public properties,
-  reference/copy-on-write behavior, exact native `TypeError`/warning objects,
+  reference/copy-on-write behavior beyond dereferencing outer
+  reference-backed row slots, exact native `TypeError`/warning objects,
   resource values, and native lowering
 - `array_fill_keys` object key values without supported `__toString()`,
   closure key values, reference/copy-on-write behavior, object handle identity
