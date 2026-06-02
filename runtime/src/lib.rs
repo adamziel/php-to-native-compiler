@@ -29641,11 +29641,12 @@ impl PhpArray {
     pub fn keys_matching_loose_scalar(&self, search_value: &Value) -> RuntimeResult<Self> {
         let mut array = Self::new();
         for entry in &self.entries {
+            let value = entry.value_cloned();
             if array_comparison_matches(
                 "array_keys()",
                 search_value,
                 PhpComparisonOp::LooseEq,
-                entry.value(),
+                &value,
             )? {
                 let key = i64::try_from(array.entries.len()).expect("array length fits in i64");
                 array.insert(key, array_key_to_value(&entry.key));
@@ -29658,11 +29659,12 @@ impl PhpArray {
     pub fn keys_matching_strict_scalar(&self, search_value: &Value) -> RuntimeResult<Self> {
         let mut array = Self::new();
         for entry in &self.entries {
+            let value = entry.value_cloned();
             if array_comparison_matches(
                 "array_keys()",
                 search_value,
                 PhpComparisonOp::StrictEq,
-                entry.value(),
+                &value,
             )? {
                 let key = i64::try_from(array.entries.len()).expect("array length fits in i64");
                 array.insert(key, array_key_to_value(&entry.key));
@@ -30352,12 +30354,8 @@ impl PhpArray {
 
     pub fn contains_value_loose_scalar(&self, needle: &Value) -> RuntimeResult<bool> {
         for entry in &self.entries {
-            if array_comparison_matches(
-                "in_array()",
-                needle,
-                PhpComparisonOp::LooseEq,
-                entry.value(),
-            )? {
+            let value = entry.value_cloned();
+            if array_comparison_matches("in_array()", needle, PhpComparisonOp::LooseEq, &value)? {
                 return Ok(true);
             }
         }
@@ -30367,12 +30365,8 @@ impl PhpArray {
 
     pub fn contains_value_strict_scalar(&self, needle: &Value) -> RuntimeResult<bool> {
         for entry in &self.entries {
-            if array_comparison_matches(
-                "in_array()",
-                needle,
-                PhpComparisonOp::StrictEq,
-                entry.value(),
-            )? {
+            let value = entry.value_cloned();
+            if array_comparison_matches("in_array()", needle, PhpComparisonOp::StrictEq, &value)? {
                 return Ok(true);
             }
         }
@@ -30382,12 +30376,9 @@ impl PhpArray {
 
     pub fn search_value_loose_scalar(&self, needle: &Value) -> RuntimeResult<Option<ArrayKey>> {
         for entry in &self.entries {
-            if array_comparison_matches(
-                "array_search()",
-                needle,
-                PhpComparisonOp::LooseEq,
-                entry.value(),
-            )? {
+            let value = entry.value_cloned();
+            if array_comparison_matches("array_search()", needle, PhpComparisonOp::LooseEq, &value)?
+            {
                 return Ok(Some(entry.key.clone()));
             }
         }
@@ -30397,11 +30388,12 @@ impl PhpArray {
 
     pub fn search_value_strict_scalar(&self, needle: &Value) -> RuntimeResult<Option<ArrayKey>> {
         for entry in &self.entries {
+            let value = entry.value_cloned();
             if array_comparison_matches(
                 "array_search()",
                 needle,
                 PhpComparisonOp::StrictEq,
-                entry.value(),
+                &value,
             )? {
                 return Ok(Some(entry.key.clone()));
             }
@@ -30463,6 +30455,10 @@ fn array_comparison_matches(
     }
 
     let family = op.operation_family();
+    if let Some(expected_identical) = family.strict_identity_expectation() {
+        return Ok(left.php_identical_checked(right)? == expected_identical);
+    }
+
     if let Some(blocker) = comparison_blocker_for_family(left, right, family) {
         return Err(RuntimeError::unsupported_call(
             callable,
@@ -77446,6 +77442,44 @@ mod tests {
             .unwrap()
             .entries()
             .is_empty());
+    }
+
+    #[test]
+    fn array_query_helpers_read_reference_backed_value_slots() {
+        let int_reference = PhpReferenceCell::new(Value::Int(1));
+        let string_reference = PhpReferenceCell::new(Value::String("needle".to_string()));
+        let array_reference = PhpReferenceCell::new(Value::Array(PhpArray::new()));
+        let mut array = PhpArray::new();
+        array.insert_reference("int", int_reference.clone());
+        array.insert_reference("string", string_reference.clone());
+        array.insert_reference("array", array_reference.clone());
+
+        int_reference.set_value(Value::Int(7));
+        assert_eq!(
+            array_key_values(&array.keys_matching_strict_scalar(&Value::Int(7)).unwrap()),
+            vec![Value::String("int".to_string())]
+        );
+        assert!(array
+            .contains_value_strict_scalar(&Value::String("needle".to_string()))
+            .unwrap());
+        assert_eq!(
+            array
+                .search_value_strict_scalar(&Value::String("needle".to_string()))
+                .unwrap(),
+            Some(ArrayKey::String("string".to_string()))
+        );
+
+        let mut nested = PhpArray::new();
+        nested.insert("value", Value::Int(1));
+        array_reference.set_value(Value::Array(nested.clone()));
+        assert_eq!(
+            array_key_values(
+                &array
+                    .keys_matching_strict_scalar(&Value::Array(nested))
+                    .unwrap()
+            ),
+            vec![Value::String("array".to_string())]
+        );
     }
 
     #[test]

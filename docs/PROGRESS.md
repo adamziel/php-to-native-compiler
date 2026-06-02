@@ -4,6 +4,24 @@
 
 Implemented:
 
+- Added a bounded array query-helper lane for the selected `bug70668.phpt`
+  surface. `array_keys()` loose and strict filtering, plus the shared runtime
+  query helpers for `array_keys()`, `in_array()`, and `array_search()`, now
+  dereference reference-backed value slots with `value_cloned()` before
+  comparing. The shared strict-identity path now resolves bounded
+  array/object/resource identity before unsupported loose-comparison blockers,
+  preserving the existing native-lowering rejection. Focused Rust passed the
+  `php_runtime` `array_query_helpers_read_reference_backed_value_slots` test,
+  `array_keys` `11 / 11`, and `in_array`/`array_search` `16 / 16`; `cargo
+  build -p phpc --bin phpc` passed; the direct
+  `tests/fixtures/milestone2309/array_keys_reference_backed_values.php`
+  fixture passed; selected PHPT proof passed `1 / 1` for
+  `ext/standard/tests/array/bug70668.phpt`; `cargo fmt --check` and
+  `git diff --check` passed. Unsupported edges remain broad recursive
+  reference graphs and COW identity, unsupported loose object/resource or
+  recursive-array comparisons, non-bool strict-flag coercion, exact native
+  diagnostics, and native lowering.
+
 - Added a bounded `array_column()` reference-backed row-slot lane for the
   selected `bug69723.phpt` surface. The interpreter and shared runtime
   `array_column` helpers now dereference each outer source row slot with

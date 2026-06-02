@@ -143450,7 +143450,8 @@ fn array_keys_matching_loose(
 ) -> CompileResult<PhpArray> {
     let mut keys = PhpArray::new();
     for entry in array.entries() {
-        if array_keys_loose_values_equal(search_value, entry.value(), span)? {
+        let value = entry.value_cloned();
+        if array_keys_loose_values_equal(search_value, &value, span)? {
             let key = i64::try_from(keys.len()).expect("array length fits in i64");
             keys.insert(key, value_from_array_key(&entry.key));
         }
