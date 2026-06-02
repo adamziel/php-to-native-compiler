@@ -85937,7 +85937,7 @@ impl Interpreter {
             "substr" => call_substr(&args, span),
             "substr_replace" => call_substr_replace(&args, span),
             "substr_compare" => call_substr_compare(&args, span),
-            "substr_count" => call_substr_count(&args, span),
+            "substr_count" => call_substr_count(self, &args, span),
             "str_replace" => self.call_str_replace(&args, span),
             "str_ireplace" => self.call_str_ireplace(&args, span),
             "str_getcsv" => call_str_getcsv(&args, span),
@@ -123172,7 +123172,11 @@ fn call_str_getcsv(args: &[Value], span: Span) -> CompileResult<Value> {
     Ok(Value::Array(array))
 }
 
-fn call_substr_count(args: &[Value], span: Span) -> CompileResult<Value> {
+fn call_substr_count(
+    interpreter: &mut Interpreter,
+    args: &[Value],
+    span: Span,
+) -> CompileResult<Value> {
     if !(2..=4).contains(&args.len()) {
         return Err(runtime_error(
             span,
@@ -123184,8 +123188,20 @@ fn call_substr_count(args: &[Value], span: Span) -> CompileResult<Value> {
         ));
     }
 
-    let haystack = string_compare_argument_bytes("substr_count()", "haystack", &args[0], span)?;
-    let needle = string_compare_argument_bytes("substr_count()", "needle", &args[1], span)?;
+    let haystack = interpreter.php_string_argument_bytes_with_magic(
+        "substr_count()",
+        1,
+        "haystack",
+        &args[0],
+        span,
+    )?;
+    let needle = interpreter.php_string_argument_bytes_with_magic(
+        "substr_count()",
+        2,
+        "needle",
+        &args[1],
+        span,
+    )?;
     if needle.is_empty() {
         return Err(runtime_error(
             span,

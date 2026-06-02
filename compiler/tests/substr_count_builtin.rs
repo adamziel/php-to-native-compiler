@@ -58,6 +58,61 @@ echo $call("a:b:c", ":");
 }
 
 #[test]
+fn substr_count_uses_php_string_argument_boundary_for_haystack_and_needle() {
+    let execution = run_source(
+        r#"<?php
+class Haystack {
+    public function __toString() {
+        return "aaaa";
+    }
+}
+class Needle {
+    public function __toString() {
+        return "aa";
+    }
+}
+
+$call = "substr_count";
+echo substr_count(new Haystack(), new Needle()), "|";
+echo $call(new Haystack(), new Needle(), false, "4"), "\n";
+
+set_error_handler(function($_, $message) {
+    echo "deprecated:", $message, "\n";
+});
+echo substr_count(null, "x"), "\n";
+try {
+    substr_count("abc", null);
+} catch (ValueError $e) {
+    echo "null-needle:", $e->getMessage(), "\n";
+}
+
+foreach ([[[], "a"], ["abc", new stdClass()]] as $case) {
+    try {
+        substr_count($case[0], $case[1]);
+    } catch (TypeError $e) {
+        echo $e->getMessage(), "\n";
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "2|2\n",
+            "deprecated:substr_count(): Passing null to parameter #1 ($haystack) of type string is deprecated\n",
+            "0\n",
+            "deprecated:substr_count(): Passing null to parameter #2 ($needle) of type string is deprecated\n",
+            "null-needle:substr_count(): Argument #2 ($needle) must not be empty\n",
+            "substr_count(): Argument #1 ($haystack) must be of type string, array given\n",
+            "substr_count(): Argument #2 ($needle) must be of type string, stdClass given\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn substr_count_rejects_forms_outside_current_subset() {
     let empty_needle = run_source(
         r#"<?php
@@ -74,13 +129,34 @@ try {
         "substr_count(): Argument #2 ($needle) must not be empty"
     );
 
-    let array_haystack = run_source("<?php\nsubstr_count(['abc'], 'a');\n").unwrap_err();
-    assert_eq!(array_haystack.phase, Phase::Runtime);
-    assert_eq!(array_haystack.line, 2);
-    assert_eq!(array_haystack.column, 1);
+    let array_haystack = run_source(
+        r#"<?php
+try {
+    substr_count(['abc'], 'a');
+} catch (TypeError $e) {
+    echo $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
     assert_eq!(
-        array_haystack.message,
-        "unsupported call substr_count(): haystack argument arrays are not implemented in the current subset"
+        array_haystack.stdout,
+        "substr_count(): Argument #1 ($haystack) must be of type string, array given"
+    );
+
+    let array_needle = run_source(
+        r#"<?php
+try {
+    substr_count('abc', ['a']);
+} catch (TypeError $e) {
+    echo $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
+    assert_eq!(
+        array_needle.stdout,
+        "substr_count(): Argument #2 ($needle) must be of type string, array given"
     );
 
     let bad_offset = run_source(

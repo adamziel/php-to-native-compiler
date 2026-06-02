@@ -3875,14 +3875,16 @@
   Unicode case folding, exact diagnostics beyond the documented offset/length
   messages, and native lowering remain unsupported.
   `substr_count($haystack, $needle, $offset = 0, $length = null)` supports
-  scalar/null string-convertible haystack and needle arguments, optional
-  int-compatible offset and nullable length slicing, negative offsets and
-  lengths within PHP's current bounds rules, non-overlapping byte-position
-  counts, and zero when the searched slice is shorter than the needle. Empty
-  needles and out-of-bounds offset/length windows use the current PHP
-  catchable `ValueError` messages. Array/object/resource operands, broader
-  exact diagnostics, encoding-sensitive edge cases beyond represented runtime
-  bytes, runtime callable dispatch, and native lowering remain unsupported.
+  scalar/null and supported visible `__toString()` haystack and needle
+  arguments, PHP-shaped null-to-string deprecations, optional int-compatible
+  offset and nullable length slicing, negative offsets and lengths within
+  PHP's current bounds rules, non-overlapping byte-position counts, and zero
+  when the searched slice is shorter than the needle. Empty needles and
+  out-of-bounds offset/length windows use the current PHP catchable
+  `ValueError` messages. Arrays, closures, resources, and non-stringable
+  objects raise PHP-shaped string `TypeError`s. Broader exact diagnostics,
+  invalid `__toString()` return parity, encoding-sensitive edge cases beyond
+  represented runtime bytes, and native lowering remain unsupported.
   `preg_match($pattern, $subject, $matches = null)` supports two scalar/null
   string-convertible arguments and an optional third direct-variable matches
   output argument. The current regex slice supports
@@ -9409,9 +9411,9 @@
   above; direct native `substr_compare(...)` calls still reject under the
   function-call boundary, while native function-table introspection recognizes
   the name.
-  `substr_count` accepts the same current scalar/null string-convertible
-  haystack and needle subset plus optional int-compatible offset and nullable
-  length arguments as the builtin section above; direct native
+  `substr_count` accepts the same current scalar/null and supported visible
+  `__toString()` haystack/needle subset plus optional int-compatible offset
+  and nullable length arguments as the builtin section above; direct native
   `substr_count(...)` calls still reject under the function-call boundary,
   while native function-table introspection recognizes the name.
   `min` accepts the same current integer-only variadic subset as the builtin
@@ -12054,9 +12056,10 @@
   operands, locale/Unicode case folding, exact diagnostics beyond the covered
   offset/length `ValueError` messages, and native lowering beyond
   function-table introspection
-- `substr_count()` outside the current scalar/null string-convertible haystack
-  and needle plus optional int-compatible offset and nullable length subset:
-  array/object/resource operands, encoding-sensitive edge cases beyond
+- `substr_count()` outside the current scalar/null or supported visible
+  `__toString()` haystack and needle plus optional int-compatible offset and
+  nullable length subset: arrays, closures, resources, non-stringable objects,
+  invalid `__toString()` return parity, encoding-sensitive edge cases beyond
   represented runtime bytes, exact PHP diagnostics beyond empty-needle and
   offset/length bounds `ValueError`, and native lowering beyond function-table
   introspection

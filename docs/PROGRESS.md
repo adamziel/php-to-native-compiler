@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Added a bounded `substr_count()` string-boundary lane. Direct and
+  string-valued dynamic interpreter calls now route haystack and needle
+  operands through the shared PHP-shaped string argument boundary: scalar
+  values keep the existing byte-oriented non-overlapping count behavior, `null`
+  emits PHP-shaped deprecations before converting to `""`, supported visible
+  `__toString()` objects are accepted, and arrays, resources, closures, or
+  non-stringable objects raise catchable PHP-shaped `TypeError`s. Existing
+  empty-needle `ValueError`s, optional offset/length int coercion and bounds
+  checks, binary byte counting, metadata visibility, and native-lowering
+  behavior remain unchanged. Focused proof covers the Rust
+  `substr_count_uses_php_string_argument_boundary_for_haystack_and_needle`
+  regression, the full `substr_count_builtin` test file, a direct CLI probe,
+  and selected public PHPT rows. Unsupported edges remain exact empty-needle
+  text parity, exact invalid `__toString()` return diagnostics, broader
+  encoding-sensitive parity beyond represented runtime bytes, references/COW,
+  and native lowering.
+
 - Added a bounded tokenizer heredoc/nowdoc classification lane for
   `token_get_all()` and `PhpToken::tokenize()`. Valid `<<<LABEL`,
   `<<<"LABEL"`, and `<<<'LABEL'` starts now emit `T_START_HEREDOC`, content

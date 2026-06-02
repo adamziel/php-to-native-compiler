@@ -2834,6 +2834,12 @@ string-convertible values and supported visible `__toString()` objects. The
 repeat count uses the shared PHP-internal int boundary, so scalar count
 coercions, catchable type diagnostics, and negative-count `ValueError`s are
 handled before the existing deterministic memory guard.
+`substr_count()` uses the same PHP-shaped string argument boundary for its
+haystack and needle operands while keeping its existing byte-oriented
+non-overlapping count and offset/length window logic. Supported visible
+`__toString()` objects are accepted for the searched text and needle, while
+non-stringable operands stop at the catchable internal string `TypeError`
+boundary before counting.
 The current string residual slice also keeps `wordwrap()`,
 `str_word_count()`, `strnatcmp()`, `strnatcasecmp()`,
 `convert_uuencode()`, `convert_uudecode()`, and the current
