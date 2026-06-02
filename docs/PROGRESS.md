@@ -4,6 +4,27 @@
 
 Implemented:
 
+- Added a bounded `DateTimeImmutable` copy/construction/setter lane. `phpc run`
+  now exposes `DateTimeImmutable` metadata, `date_create_immutable()`,
+  `DateTimeImmutable::__set_state()`, `DateTimeImmutable::createFromMutable()`,
+  `DateTimeImmutable::createFromInterface()`,
+  `DateTime::createFromImmutable()`, and `DateTime::createFromInterface()` over
+  the existing boxed DateTime timestamp/timezone state. Immutable setters
+  `setTimestamp()`, `modify()`, `setTimezone()`, `setDate()`, `setISODate()`,
+  and `setTime()` reuse the bounded mutable DateTime normalization paths while
+  returning a fresh object and preserving the original receiver. The
+  DateTime-format class constants are available on `DateTimeImmutable` with the
+  same bounded PHP-shaped `RFC7231` deprecation path as `DateTime`. Focused
+  proof covers the Rust `datetime_immutable_copy_apis_and_setters_use_bounded_state`
+  regression, the DateTime immutable constant alias regression, the runtime
+  core-class registry regression, the `get_declared_classes()` object-model
+  filter, selected public DateTimeImmutable/createFrom* PHPT rows, build, fmt,
+  and diff checks. Unsupported edges remain broad `DateTimeInterface`
+  reflection/runtime parity, timezone abbreviation and fixed-offset identity
+  beyond the covered named-zone rows, invalid-state diagnostics, uninitialized
+  internal date-object exception classes, DateInterval/DatePeriod arithmetic,
+  serialization, full timezone history, references/COW, and native lowering.
+
 - Added a bounded ext/filter option and float-validation lane. `filter_var()`
   now accepts weak scalar `$options` flags without mutating caller arrays,
   `filter_var()` / `filter_var_array()` descriptor arrays coerce string-valued

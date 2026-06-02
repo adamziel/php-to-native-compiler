@@ -56,14 +56,15 @@ Array
     [53] => ReflectionExtension
     [54] => ReflectionZendExtension
     [55] => DateTime
-    [56] => DOMException
-    [57] => DOMNode
-    [58] => DOMAttr
-    [59] => DOMElement
-    [60] => DOMDocument
-    [61] => Generator
-    [62] => Box
-    [63] => Profile
+    [56] => DateTimeImmutable
+    [57] => DOMException
+    [58] => DOMNode
+    [59] => DOMAttr
+    [60] => DOMElement
+    [61] => DOMDocument
+    [62] => Generator
+    [63] => Box
+    [64] => Profile
 )
-64|Exception|Error|Uri\InvalidUriException
+65|Exception|Error|Uri\InvalidUriException
 Exception|Error|Uri\InvalidUriException

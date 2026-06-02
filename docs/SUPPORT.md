@@ -6031,48 +6031,56 @@
   `true` for the bounded timezone identifiers used by the current date PHPT
   subset, updates `date_default_timezone_get()` and date/time formatting state,
   and returns `false` with a PHP-shaped notice for unknown identifiers.
-  Mutable `DateTime` objects support bounded `format()`, `getTimestamp()`,
-  `setTimestamp()`, `setDate()`, `setISODate()`, `setTime()`, `modify()`,
-  `getOffset()`, `getTimezone()`, and `setTimezone(DateTimeZone $timezone)`
-  behavior over the same bounded timezone table. `setDate()`, `setISODate()`,
-  and `setTime()` preserve the receiver timezone, return the same mutable
+  Mutable `DateTime` and immutable `DateTimeImmutable` objects support bounded
+  `format()`, `getTimestamp()`, `setTimestamp()`, `setDate()`, `setISODate()`,
+  `setTime()`, `modify()`, `getOffset()`, `getTimezone()`, and
+  `setTimezone(DateTimeZone $timezone)` behavior over the same bounded timezone
+  table. Mutable setters preserve the receiver timezone, return the same
   object, and normalize overflowing date/time parts through the bounded local
-  timestamp model; non-zero microseconds are not represented by the current
+  timestamp model; immutable setters return a fresh object and preserve the
+  original receiver. Non-zero microseconds are not represented by the current
   DateTime object state. `modify()` covers the current bounded relative
-  weekday/unit forms plus Unix timestamp modifiers such as `@1234567890`; timestamp
-  modifiers update the timestamp and switch the object timezone identity to
-  the bounded `+00:00` timestamp zone, while `setTimestamp()` preserves the
-  existing object timezone. Its `$modifier` operand uses the shared
-  PHP-shaped string boundary for scalar conversion, `null` deprecation,
+  weekday/unit forms plus Unix timestamp modifiers such as `@1234567890`;
+  timestamp modifiers update the timestamp and switch the object timezone
+  identity to the bounded `+00:00` timestamp zone, while `setTimestamp()`
+  preserves the existing object timezone. Its `$modifier` operand uses the
+  shared PHP-shaped string boundary for scalar conversion, `null` deprecation,
   supported visible `__toString()` objects, and catchable PHP-shaped
   `TypeError`s for arrays, resources, closures, or non-stringable objects.
-  Construction through `new DateTime($time = null,
-  ?DateTimeZone $timezone = null)` and `date_create($time = null,
-  ?DateTimeZone $timezone = null)` accepts the optional bounded timezone
-  object for strings without an explicit timezone, while timestamp strings
-  such as `@0` and explicit timezone tokens retain their own timezone
-  identity. `DateTime::__construct()` reports a catchable PHP-shaped
-  `ArgumentCountError` for calls with more than two arguments, and
+  Construction through `new DateTime($time = null, ?DateTimeZone $timezone =
+  null)`, `date_create($time = null, ?DateTimeZone $timezone = null)`, `new
+  DateTimeImmutable($time = null, ?DateTimeZone $timezone = null)`, and
+  `date_create_immutable($time = null, ?DateTimeZone $timezone = null)` accepts
+  the optional bounded timezone object for strings without an explicit timezone,
+  while timestamp strings such as `@0` and explicit timezone tokens retain
+  their own timezone identity. `DateTime::__construct()` and
+  `DateTimeImmutable::__construct()` report catchable PHP-shaped
+  `ArgumentCountError`s for calls with more than two arguments, and
   `DateTimeZone::__construct()` reports catchable PHP-shaped
   `ArgumentCountError`s for calls with fewer or more than its one supported
   timezone argument. `idate()` covers the current integer-returning date/time
   token subset, including ISO weekday `N`, week number `W`, and
   week-numbering year `o`. Procedural `date_format()`, `date_timestamp_get()`,
-  `date_timestamp_set()`, `date_date_set()`, `date_isodate_set()`,
-  `date_time_set()`, `date_offset_get()`, `date_timezone_get()`, and
-  `date_timezone_set()` share that object state. `DateTime::__set_state()`
-  reconstructs a fresh bounded mutable `DateTime` object from the exported
-  `date`, `timezone_type`, and `timezone` state fields produced by the current
-  `var_export()` path for supported date strings and bounded timezone
-  identifiers. `DateTime::format()`, `date_format()`, `date()`, `gmdate()`,
+  `date_offset_get()`, and `date_timezone_get()` accept mutable or immutable
+  date objects. `date_timestamp_set()`, `date_date_set()`,
+  `date_isodate_set()`, `date_time_set()`, and `date_timezone_set()` are
+  mutable-`DateTime` helpers in the current subset. `DateTime::__set_state()`
+  and `DateTimeImmutable::__set_state()` reconstruct fresh bounded objects from
+  the exported `date`, `timezone_type`, and `timezone` state fields produced by
+  the current `var_export()` path for supported date strings and bounded
+  timezone identifiers. `DateTime::createFromImmutable()`,
+  `DateTime::createFromInterface()`, `DateTimeImmutable::createFromMutable()`,
+  and `DateTimeImmutable::createFromInterface()` copy bounded timestamp/timezone
+  state into the called mutable or immutable target class. `DateTime::format()`,
+  `DateTimeImmutable::format()`, `date_format()`, `date()`, `gmdate()`,
   `strftime()`, `gmstrftime()`, and `idate()` route `$format` through the
   shared PHP-shaped string boundary for scalar conversion, `null` deprecation,
   supported visible `__toString()` objects, and catchable PHP-shaped
   `TypeError`s for arrays, resources, closures, or non-stringable objects.
-  `DateTime` exposes the
-  bounded date-format class constants matching the existing global `DATE_*`
-  format constants, including PHP-shaped deprecation diagnostics for
-  `DATE_RFC7231` / `DateTime::RFC7231`.
+  `DateTime` and `DateTimeImmutable` expose the bounded date-format class
+  constants matching the existing global `DATE_*` format constants, including
+  PHP-shaped deprecation diagnostics for `DATE_RFC7231`, `DateTime::RFC7231`,
+  and `DateTimeImmutable::RFC7231`.
   `date.timezone` PHPT INI overrides seed the same bounded timezone state,
   including PHPT-style trailing semicolon syntax. `timezone_open()` accepts
   string and scalar-string-compatible timezone identifiers, returns bounded
@@ -6083,19 +6091,20 @@
   for supported fixed-offset, abbreviation, and named timezone metadata, with
   invalid serialized state raising a catchable PHP-shaped `Error`. Full
   timezone database validation,
-  exact internal `DateTime` / `DateTimeZone` constructor diagnostics beyond
-  the covered arity slice and scalar coercion/deprecation parity,
-  `DateTimeImmutable`, broad `DateTimeInterface`
-  runtime/interface parity beyond the reached constant diagnostic text, all
-  historical transition rules, DateTime state arrays outside the bounded
-  exported `date`/`timezone_type`/`timezone` shape, exact invalid-modifier
-  `DateMalformedStringException` behavior, exact diagnostics for
-  constructor/timezone/state coercions outside the covered slices, weak scalar
-  timestamp/date-part coercions for `idate()` / date formatting and setter
-  helpers beyond bounded integers and `int|null` timestamp slots, exact invalid
-  `__toString()` return diagnostics for modifier and formatter strings,
-  binary format strings beyond represented runtime text, non-zero DateTime microsecond
-  mutation/formatting, and native lowering remain unsupported.
+  exact internal `DateTime`, `DateTimeImmutable`, and `DateTimeZone`
+  constructor diagnostics beyond the covered arity slice and scalar
+  coercion/deprecation parity, broad `DateTimeInterface` reflection/runtime
+  parity, all historical transition rules, timezone abbreviation and
+  fixed-offset state identity beyond the covered named-zone rows, DateTime
+  state arrays outside the bounded exported `date`/`timezone_type`/`timezone`
+  shape, exact invalid-modifier `DateMalformedStringException` behavior, exact
+  diagnostics for constructor/timezone/state coercions outside the covered
+  slices, weak scalar timestamp/date-part coercions for `idate()` / date
+  formatting and setter helpers beyond bounded integers and `int|null`
+  timestamp slots, exact invalid `__toString()` return diagnostics for
+  modifier and formatter strings, binary format strings beyond represented
+  runtime text, non-zero DateTime microsecond mutation/formatting, and native
+  lowering remain unsupported.
   `header($header, $replace = true, $response_code = 0)` accepts a string
   header line plus optional bool replacement flag and optional integer response
   code, records the raw header line in deterministic in-process CLI request

@@ -62,6 +62,7 @@ const CORE_CLASS_NAMES: &[&str] = &[
     "ReflectionExtension",
     "ReflectionZendExtension",
     "DateTime",
+    "DateTimeImmutable",
     "DOMException",
     "DOMNode",
     "DOMAttr",
@@ -5619,7 +5620,10 @@ echo $dynamic[0], "|", $dynamic[1], "|", $dynamic[2];
     let mut declared = CORE_CLASS_NAMES.to_vec();
     declared.extend(["Box", "Profile"]);
     let mut expected = expected_print_r_array(&declared);
-    expected.push_str("64|Exception|Error|Uri\\InvalidUriException\n");
+    expected.push_str(&format!(
+        "{}|Exception|Error|Uri\\InvalidUriException\n",
+        declared.len()
+    ));
     expected.push_str("Exception|Error|Uri\\InvalidUriException");
     assert_eq!(execution.stdout, expected);
     assert_eq!(execution.exit_code, 0);
@@ -5642,7 +5646,7 @@ echo count($declared), "\n";
     let mut declared = CORE_CLASS_NAMES.to_vec();
     declared.extend(["App\\Mode", "App\\Status", "App\\Mode", "App\\Status"]);
     let mut expected = expected_print_r_array(&declared);
-    expected.push_str("66\n");
+    expected.push_str(&format!("{}\n", declared.len()));
     assert_eq!(execution.stdout, expected);
     assert_eq!(execution.exit_code, 0);
 }

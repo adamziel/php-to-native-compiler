@@ -61,15 +61,16 @@ Array
     [53] => ReflectionExtension
     [54] => ReflectionZendExtension
     [55] => DateTime
-    [56] => DOMException
-    [57] => DOMNode
-    [58] => DOMAttr
-    [59] => DOMElement
-    [60] => DOMDocument
-    [61] => Generator
-    [62] => App\State\Box
-    [63] => App\State\Mode
-    [64] => App\State\Status
-    [65] => App\State\Mode
-    [66] => App\State\Status
+    [56] => DateTimeImmutable
+    [57] => DOMException
+    [58] => DOMNode
+    [59] => DOMAttr
+    [60] => DOMElement
+    [61] => DOMDocument
+    [62] => Generator
+    [63] => App\State\Box
+    [64] => App\State\Mode
+    [65] => App\State\Status
+    [66] => App\State\Mode
+    [67] => App\State\Status
 )

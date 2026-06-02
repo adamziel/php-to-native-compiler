@@ -11506,6 +11506,27 @@ impl Interpreter {
             .is_some_and(|datetime_id| class_id == datetime_id)
     }
 
+    fn is_datetimeimmutable_class_id(&self, class_id: ClassId) -> bool {
+        self.classes
+            .lookup_class_id("DateTimeImmutable")
+            .is_some_and(|datetime_id| {
+                class_id == datetime_id || self.classes.is_subclass_of(class_id, datetime_id)
+            })
+    }
+
+    fn resolved_method_is_core_datetimeimmutable(&self, class_id: ClassId) -> bool {
+        self.classes
+            .lookup_class_id("DateTimeImmutable")
+            .is_some_and(|datetime_id| class_id == datetime_id)
+    }
+
+    fn datetime_argument_type_name(value: &Value) -> String {
+        match value {
+            Value::Object(object) => object.class_name().to_string(),
+            other => other.type_name().to_string(),
+        }
+    }
+
     fn spl_fixed_array_state(
         &self,
         object: &PhpObject,
@@ -17544,11 +17565,44 @@ impl Interpreter {
         span: Span,
         scope: &mut SymbolTable,
     ) -> CompileResult<()> {
+        self.initialize_datetime_object_for_function(
+            object,
+            args,
+            span,
+            scope,
+            "DateTime::__construct()",
+        )
+    }
+
+    fn initialize_datetimeimmutable_object(
+        &mut self,
+        object: &PhpObject,
+        args: &[Expr],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<()> {
+        self.initialize_datetime_object_for_function(
+            object,
+            args,
+            span,
+            scope,
+            "DateTimeImmutable::__construct()",
+        )
+    }
+
+    fn initialize_datetime_object_for_function(
+        &mut self,
+        object: &PhpObject,
+        args: &[Expr],
+        span: Span,
+        scope: &mut SymbolTable,
+        function: &'static str,
+    ) -> CompileResult<()> {
         if args.len() > 2 {
             return Err(runtime_error(
                 span,
                 RuntimeError::arity_mismatch(
-                    "DateTime::__construct()",
+                    function,
                     ArityExpectation::Between { min: 0, max: 2 },
                     args.len(),
                 ),
@@ -17562,7 +17616,7 @@ impl Interpreter {
             object,
             values.first(),
             values.get(1),
-            "DateTime::__construct()",
+            function,
             span,
         )
     }
@@ -17689,23 +17743,56 @@ impl Interpreter {
             .classes
             .lookup_class_id("DateTime")
             .ok_or_else(|| runtime_error(span, RuntimeError::undefined_class("DateTime")))?;
+        self.create_datetime_object_from_values_for_class(class_id, args, "date_create()", span)
+    }
+
+    fn create_datetimeimmutable_object_from_values(
+        &mut self,
+        args: &[Value],
+        span: Span,
+    ) -> CompileResult<PhpObject> {
+        let class_id = self
+            .classes
+            .lookup_class_id("DateTimeImmutable")
+            .ok_or_else(|| {
+                runtime_error(span, RuntimeError::undefined_class("DateTimeImmutable"))
+            })?;
+        self.create_datetime_object_from_values_for_class(
+            class_id,
+            args,
+            "date_create_immutable()",
+            span,
+        )
+    }
+
+    fn create_datetime_object_from_values_for_class(
+        &mut self,
+        class_id: ClassId,
+        args: &[Value],
+        function: &'static str,
+        span: Span,
+    ) -> CompileResult<PhpObject> {
         let object_id = self.allocate_object_id();
+        let inherited_properties = self.inherited_instance_properties(class_id);
+        let mut ancestor_class_names = self.inherited_class_names(class_id);
+        ancestor_class_names.extend(self.class_alias_names(class_id));
+        let interface_names = self.class_implements_interface_names(class_id);
         let class = self
             .classes
             .get(class_id)
-            .expect("DateTime class id should resolve");
+            .expect("DateTime-compatible class id should resolve");
         let object = PhpObject::from_class_with_relationship_metadata_with_id(
             class,
-            &[],
-            Vec::new(),
-            Vec::new(),
+            &inherited_properties,
+            ancestor_class_names,
+            interface_names,
             object_id,
         );
         self.initialize_datetime_object_from_values(
             &object,
             args.first(),
             args.get(1),
-            "date_create()",
+            function,
             span,
         )?;
         Ok(object)
@@ -17719,15 +17806,19 @@ impl Interpreter {
         span: Span,
     ) -> CompileResult<PhpObject> {
         let object_id = self.allocate_object_id();
+        let inherited_properties = self.inherited_instance_properties(class_id);
+        let mut ancestor_class_names = self.inherited_class_names(class_id);
+        ancestor_class_names.extend(self.class_alias_names(class_id));
+        let interface_names = self.class_implements_interface_names(class_id);
         let class = self
             .classes
             .get(class_id)
-            .expect("DateTime class id should resolve");
+            .expect("DateTime-compatible class id should resolve");
         let object = PhpObject::from_class_with_relationship_metadata_with_id(
             class,
-            &[],
-            Vec::new(),
-            Vec::new(),
+            &inherited_properties,
+            ancestor_class_names,
+            interface_names,
             object_id,
         );
         self.assign_datetime_object_state(&object, timestamp, timezone, span)?;
@@ -17762,6 +17853,169 @@ impl Interpreter {
         Ok(Value::Object(object))
     }
 
+    fn call_datetime_create_from_immutable_static(
+        &mut self,
+        class_id: ClassId,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        expect_expr_arity("DateTime::createFromImmutable", args.len(), 1, span)?;
+        let value = self.evaluate(&args[0], caller_scope)?;
+        let source = match value {
+            Value::Object(object) if object.is_instance_of_class_name("DateTimeImmutable") => {
+                object
+            }
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "DateTime::createFromImmutable()",
+                        format!(
+                            "Argument #1 ($object) must be of type DateTimeImmutable, {} given",
+                            Self::datetime_argument_type_name(&other)
+                        ),
+                    ),
+                ));
+            }
+        };
+        self.create_datetime_copy_from_source_state(
+            class_id,
+            &source,
+            "DateTime::createFromImmutable()",
+            span,
+        )
+    }
+
+    fn call_datetime_create_from_interface_static(
+        &mut self,
+        class_id: ClassId,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        expect_expr_arity("DateTime::createFromInterface", args.len(), 1, span)?;
+        let value = self.evaluate(&args[0], caller_scope)?;
+        let source = match value {
+            Value::Object(object)
+                if object.is_instance_of_class_name("DateTime")
+                    || object.is_instance_of_class_name("DateTimeImmutable") =>
+            {
+                object
+            }
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "DateTime::createFromInterface()",
+                        format!(
+                            "Argument #1 ($object) must be of type DateTimeInterface, {} given",
+                            Self::datetime_argument_type_name(&other)
+                        ),
+                    ),
+                ));
+            }
+        };
+        self.create_datetime_copy_from_source_state(
+            class_id,
+            &source,
+            "DateTime::createFromInterface()",
+            span,
+        )
+    }
+
+    fn call_datetimeimmutable_create_from_mutable_static(
+        &mut self,
+        class_id: ClassId,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        expect_expr_arity("DateTimeImmutable::createFromMutable", args.len(), 1, span)?;
+        let value = self.evaluate(&args[0], caller_scope)?;
+        let source = match value {
+            Value::Object(object) if object.is_instance_of_class_name("DateTime") => object,
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "DateTimeImmutable::createFromMutable()",
+                        format!(
+                            "Argument #1 ($object) must be of type DateTime, {} given",
+                            Self::datetime_argument_type_name(&other)
+                        ),
+                    ),
+                ));
+            }
+        };
+        self.create_datetime_copy_from_source_state(
+            class_id,
+            &source,
+            "DateTimeImmutable::createFromMutable()",
+            span,
+        )
+    }
+
+    fn call_datetimeimmutable_create_from_interface_static(
+        &mut self,
+        class_id: ClassId,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        expect_expr_arity(
+            "DateTimeImmutable::createFromInterface",
+            args.len(),
+            1,
+            span,
+        )?;
+        let value = self.evaluate(&args[0], caller_scope)?;
+        let source = match value {
+            Value::Object(object)
+                if object.is_instance_of_class_name("DateTime")
+                    || object.is_instance_of_class_name("DateTimeImmutable") =>
+            {
+                object
+            }
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "DateTimeImmutable::createFromInterface()",
+                        format!(
+                            "Argument #1 ($object) must be of type DateTimeInterface, {} given",
+                            Self::datetime_argument_type_name(&other)
+                        ),
+                    ),
+                ));
+            }
+        };
+        self.create_datetime_copy_from_source_state(
+            class_id,
+            &source,
+            "DateTimeImmutable::createFromInterface()",
+            span,
+        )
+    }
+
+    fn create_datetime_copy_from_source_state(
+        &mut self,
+        class_id: ClassId,
+        source: &PhpObject,
+        function: &'static str,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let state = self.datetime_object_state(source, function, span)?;
+        let object = self.create_datetime_object_from_state(
+            class_id,
+            state.timestamp,
+            state.timezone,
+            span,
+        )?;
+        self.track_allocated_object(&object);
+        Ok(Value::Object(object))
+    }
+
     fn datetime_object_argument(
         &self,
         function: &'static str,
@@ -17779,6 +18033,42 @@ impl Interpreter {
                     function,
                     format!(
                         "Argument #{} must be a DateTime object, {} given",
+                        index + 1,
+                        other.type_name()
+                    ),
+                ),
+            )),
+            None => Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    function,
+                    ArityExpectation::AtLeast(index + 1),
+                    args.len(),
+                ),
+            )),
+        }
+    }
+
+    fn datetime_interface_object_argument(
+        &self,
+        function: &'static str,
+        args: &[Value],
+        index: usize,
+        span: Span,
+    ) -> CompileResult<PhpObject> {
+        match args.get(index) {
+            Some(Value::Object(object))
+                if object.is_instance_of_class_name("DateTime")
+                    || object.is_instance_of_class_name("DateTimeImmutable") =>
+            {
+                Ok(object.clone())
+            }
+            Some(other) => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function,
+                    format!(
+                        "Argument #{} must be a DateTimeInterface object, {} given",
                         index + 1,
                         other.type_name()
                     ),
@@ -18028,6 +18318,283 @@ impl Interpreter {
         }
     }
 
+    fn call_datetimeimmutable_method(
+        &mut self,
+        object: PhpObject,
+        method_name: &str,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        match method_name.to_ascii_lowercase().as_str() {
+            "__construct" => {
+                self.initialize_datetimeimmutable_object(&object, args, span, caller_scope)?;
+                Ok(Value::Null)
+            }
+            "format" => {
+                expect_expr_arity("DateTimeImmutable::format", args.len(), 1, span)?;
+                let value = self.evaluate(&args[0], caller_scope)?;
+                let format = self.date_format_string_argument(
+                    "DateTimeImmutable::format()",
+                    1,
+                    &value,
+                    span,
+                )?;
+                let state = self.date_time_objects.get(&object.id()).ok_or_else(|| {
+                    runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "DateTimeImmutable::format()",
+                            "DateTimeImmutable object is not initialized in the current subset",
+                        ),
+                    )
+                })?;
+                Ok(Value::String(format_bounded_date(
+                    &format,
+                    state.timestamp,
+                    &state.timezone,
+                )))
+            }
+            "getoffset" => {
+                expect_expr_arity("DateTimeImmutable::getOffset", args.len(), 0, span)?;
+                let state = self.date_time_objects.get(&object.id()).ok_or_else(|| {
+                    runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "DateTimeImmutable::getOffset()",
+                            "DateTimeImmutable object is not initialized in the current subset",
+                        ),
+                    )
+                })?;
+                Ok(Value::Int(
+                    state.timezone.offset_at_timestamp(state.timestamp),
+                ))
+            }
+            "gettimezone" => {
+                expect_expr_arity("DateTimeImmutable::getTimezone", args.len(), 0, span)?;
+                let timezone_name = self
+                    .date_time_objects
+                    .get(&object.id())
+                    .map(|state| state.timezone.name.clone())
+                    .ok_or_else(|| {
+                        runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "DateTimeImmutable::getTimezone()",
+                                "DateTimeImmutable object is not initialized in the current subset",
+                            ),
+                        )
+                    })?;
+                let timezone_object =
+                    self.create_datetimezone_object_from_name(&timezone_name, span)?;
+                self.track_allocated_object(&timezone_object);
+                Ok(Value::Object(timezone_object))
+            }
+            "settimezone" => {
+                expect_expr_arity("DateTimeImmutable::setTimezone", args.len(), 1, span)?;
+                let value = self.evaluate(&args[0], caller_scope)?;
+                let timezone_object = match value {
+                    Value::Object(object) if object.is_instance_of_class_name("DateTimeZone") => {
+                        object
+                    }
+                    other => {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "DateTimeImmutable::setTimezone()",
+                                format!(
+                                    "Argument #1 ($timezone) must be DateTimeZone in the current subset, got {}",
+                                    other.type_name()
+                                ),
+                            ),
+                        ));
+                    }
+                };
+                let state =
+                    self.datetime_object_state(&object, "DateTimeImmutable::setTimezone()", span)?;
+                let timezone_name = Self::datetimezone_name(
+                    &timezone_object,
+                    "DateTimeImmutable::setTimezone()",
+                    span,
+                )?;
+                let timezone = bounded_timezone_from_name(&timezone_name).ok_or_else(|| {
+                    runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "DateTimeImmutable::setTimezone()",
+                            format!(
+                                "timezone {timezone_name} is not implemented in the current subset"
+                            ),
+                        ),
+                    )
+                })?;
+                let copy = self.create_datetime_object_from_state(
+                    object.class_id(),
+                    state.timestamp,
+                    timezone,
+                    span,
+                )?;
+                self.track_allocated_object(&copy);
+                Ok(Value::Object(copy))
+            }
+            "setdate" => {
+                expect_expr_arity("DateTimeImmutable::setDate", args.len(), 3, span)?;
+                let values = args
+                    .iter()
+                    .map(|arg| self.evaluate(arg, caller_scope))
+                    .collect::<CompileResult<Vec<_>>>()?;
+                let copy = self.datetimeimmutable_copy_for_mutation(
+                    &object,
+                    "DateTimeImmutable::setDate()",
+                    span,
+                )?;
+                self.set_datetime_date_parts(
+                    &copy,
+                    "DateTimeImmutable::setDate()",
+                    &values[0],
+                    &values[1],
+                    &values[2],
+                    span,
+                )?;
+                self.track_allocated_object(&copy);
+                Ok(Value::Object(copy))
+            }
+            "setisodate" => {
+                if !(2..=3).contains(&args.len()) {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::arity_mismatch(
+                            "DateTimeImmutable::setISODate",
+                            ArityExpectation::Between { min: 2, max: 3 },
+                            args.len(),
+                        ),
+                    ));
+                }
+                let values = args
+                    .iter()
+                    .map(|arg| self.evaluate(arg, caller_scope))
+                    .collect::<CompileResult<Vec<_>>>()?;
+                let copy = self.datetimeimmutable_copy_for_mutation(
+                    &object,
+                    "DateTimeImmutable::setISODate()",
+                    span,
+                )?;
+                self.set_datetime_iso_date_parts(
+                    &copy,
+                    "DateTimeImmutable::setISODate()",
+                    &values[0],
+                    &values[1],
+                    values.get(2),
+                    span,
+                )?;
+                self.track_allocated_object(&copy);
+                Ok(Value::Object(copy))
+            }
+            "settime" => {
+                if !(2..=4).contains(&args.len()) {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::arity_mismatch(
+                            "DateTimeImmutable::setTime",
+                            ArityExpectation::Between { min: 2, max: 4 },
+                            args.len(),
+                        ),
+                    ));
+                }
+                let values = args
+                    .iter()
+                    .map(|arg| self.evaluate(arg, caller_scope))
+                    .collect::<CompileResult<Vec<_>>>()?;
+                let copy = self.datetimeimmutable_copy_for_mutation(
+                    &object,
+                    "DateTimeImmutable::setTime()",
+                    span,
+                )?;
+                self.set_datetime_time_parts(
+                    &copy,
+                    "DateTimeImmutable::setTime()",
+                    &values[0],
+                    &values[1],
+                    values.get(2),
+                    values.get(3),
+                    span,
+                )?;
+                self.track_allocated_object(&copy);
+                Ok(Value::Object(copy))
+            }
+            "gettimestamp" => {
+                expect_expr_arity("DateTimeImmutable::getTimestamp", args.len(), 0, span)?;
+                let state = self.date_time_objects.get(&object.id()).ok_or_else(|| {
+                    runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "DateTimeImmutable::getTimestamp()",
+                            "DateTimeImmutable object is not initialized in the current subset",
+                        ),
+                    )
+                })?;
+                Ok(Value::Int(state.timestamp))
+            }
+            "settimestamp" => {
+                expect_expr_arity("DateTimeImmutable::setTimestamp", args.len(), 1, span)?;
+                let value = self.evaluate(&args[0], caller_scope)?;
+                let timestamp = required_date_int_arg(
+                    "DateTimeImmutable::setTimestamp()",
+                    &value,
+                    "timestamp",
+                    span,
+                )?;
+                let state =
+                    self.datetime_object_state(&object, "DateTimeImmutable::setTimestamp()", span)?;
+                let copy = self.create_datetime_object_from_state(
+                    object.class_id(),
+                    timestamp,
+                    state.timezone,
+                    span,
+                )?;
+                self.track_allocated_object(&copy);
+                Ok(Value::Object(copy))
+            }
+            "modify" => {
+                expect_expr_arity("DateTimeImmutable::modify", args.len(), 1, span)?;
+                let value = self.evaluate(&args[0], caller_scope)?;
+                let modifier = self.date_modifier_string_argument(
+                    "DateTimeImmutable::modify()",
+                    1,
+                    &value,
+                    span,
+                )?;
+                let copy = self.datetimeimmutable_copy_for_mutation(
+                    &object,
+                    "DateTimeImmutable::modify()",
+                    span,
+                )?;
+                self.modify_datetime_object(&copy, &modifier, "DateTimeImmutable::modify()", span)?;
+                self.track_allocated_object(&copy);
+                Ok(Value::Object(copy))
+            }
+            _ => Err(runtime_error(
+                span,
+                RuntimeError::undefined_function(format!("DateTimeImmutable::{method_name}()")),
+            )),
+        }
+    }
+
+    fn datetimeimmutable_copy_for_mutation(
+        &mut self,
+        object: &PhpObject,
+        function: &'static str,
+        span: Span,
+    ) -> CompileResult<PhpObject> {
+        let state = self.datetime_object_state(object, function, span)?;
+        self.create_datetime_object_from_state(
+            object.class_id(),
+            state.timestamp,
+            state.timezone,
+            span,
+        )
+    }
+
     fn call_date_create(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         if args.len() > 2 {
             return Err(runtime_error(
@@ -18040,6 +18607,22 @@ impl Interpreter {
             ));
         }
         let object = self.create_datetime_object_from_values(args, span)?;
+        self.track_allocated_object(&object);
+        Ok(Value::Object(object))
+    }
+
+    fn call_date_create_immutable(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if args.len() > 2 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "date_create_immutable()",
+                    ArityExpectation::Between { min: 0, max: 2 },
+                    args.len(),
+                ),
+            ));
+        }
+        let object = self.create_datetimeimmutable_object_from_values(args, span)?;
         self.track_allocated_object(&object);
         Ok(Value::Object(object))
     }
@@ -18285,7 +18868,7 @@ impl Interpreter {
 
     fn call_date_format(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("date_format", args, 2, span)?;
-        let object = self.datetime_object_argument("date_format()", args, 0, span)?;
+        let object = self.datetime_interface_object_argument("date_format()", args, 0, span)?;
         let format = self.date_format_string_argument("date_format()", 2, &args[1], span)?;
         let state = self.date_time_objects.get(&object.id()).ok_or_else(|| {
             runtime_error(
@@ -18305,7 +18888,8 @@ impl Interpreter {
 
     fn call_date_timestamp_get(&self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("date_timestamp_get", args, 1, span)?;
-        let object = self.datetime_object_argument("date_timestamp_get()", args, 0, span)?;
+        let object =
+            self.datetime_interface_object_argument("date_timestamp_get()", args, 0, span)?;
         let state = self.date_time_objects.get(&object.id()).ok_or_else(|| {
             runtime_error(
                 span,
@@ -18402,7 +18986,7 @@ impl Interpreter {
 
     fn call_date_offset_get(&self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("date_offset_get", args, 1, span)?;
-        let object = self.datetime_object_argument("date_offset_get()", args, 0, span)?;
+        let object = self.datetime_interface_object_argument("date_offset_get()", args, 0, span)?;
         let state = self.date_time_objects.get(&object.id()).ok_or_else(|| {
             runtime_error(
                 span,
@@ -18419,7 +19003,8 @@ impl Interpreter {
 
     fn call_date_timezone_get(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("date_timezone_get", args, 1, span)?;
-        let object = self.datetime_object_argument("date_timezone_get()", args, 0, span)?;
+        let object =
+            self.datetime_interface_object_argument("date_timezone_get()", args, 0, span)?;
         let timezone_name = self
             .date_time_objects
             .get(&object.id())
@@ -23490,6 +24075,11 @@ impl Interpreter {
                 self.track_allocated_object(&object);
                 return Ok(Value::Object(object));
             }
+            if self.is_datetimeimmutable_class_id(class_id) {
+                self.initialize_datetimeimmutable_object(&object, args, span, scope)?;
+                self.track_allocated_object(&object);
+                return Ok(Value::Object(object));
+            }
             if self.is_exception_class_or_subclass(class_id) {
                 self.initialize_core_exception_object(
                     &object,
@@ -23601,6 +24191,12 @@ impl Interpreter {
 
         if self.resolved_method_is_core_datetime(constructor_class_id) {
             self.initialize_datetime_object(&object, args, span, scope)?;
+            self.track_allocated_object(&object);
+            return Ok(Value::Object(object));
+        }
+
+        if self.resolved_method_is_core_datetimeimmutable(constructor_class_id) {
+            self.initialize_datetimeimmutable_object(&object, args, span, scope)?;
             self.track_allocated_object(&object);
             return Ok(Value::Object(object));
         }
@@ -48426,6 +49022,11 @@ impl Interpreter {
                 .call_datetime_method(object, method_name, args, span, caller_scope)
                 .map(|value| (value, None));
         }
+        if object.is_instance_of_class_name("DateTimeImmutable") {
+            return self
+                .call_datetimeimmutable_method(object, method_name, args, span, caller_scope)
+                .map(|value| (value, None));
+        }
         if object.is_instance_of_class_name("ReflectionClass") {
             return self
                 .call_reflection_class_method(object, method_name, args, span, caller_scope)
@@ -53886,6 +54487,51 @@ impl Interpreter {
         {
             return self.call_datetime_set_state_static(class_id, args, span, caller_scope);
         }
+        if self.is_datetime_class_id(class_id)
+            && method_name.eq_ignore_ascii_case("createFromImmutable")
+        {
+            return self.call_datetime_create_from_immutable_static(
+                class_id,
+                args,
+                span,
+                caller_scope,
+            );
+        }
+        if self.is_datetime_class_id(class_id)
+            && method_name.eq_ignore_ascii_case("createFromInterface")
+        {
+            return self.call_datetime_create_from_interface_static(
+                class_id,
+                args,
+                span,
+                caller_scope,
+            );
+        }
+        if self.is_datetimeimmutable_class_id(class_id)
+            && method_name.eq_ignore_ascii_case("__set_state")
+        {
+            return self.call_datetime_set_state_static(class_id, args, span, caller_scope);
+        }
+        if self.is_datetimeimmutable_class_id(class_id)
+            && method_name.eq_ignore_ascii_case("createFromMutable")
+        {
+            return self.call_datetimeimmutable_create_from_mutable_static(
+                class_id,
+                args,
+                span,
+                caller_scope,
+            );
+        }
+        if self.is_datetimeimmutable_class_id(class_id)
+            && method_name.eq_ignore_ascii_case("createFromInterface")
+        {
+            return self.call_datetimeimmutable_create_from_interface_static(
+                class_id,
+                args,
+                span,
+                caller_scope,
+            );
+        }
         if self.is_php_token_class_id(class_id) && method_name.eq_ignore_ascii_case("tokenize") {
             return self.call_php_token_static_tokenize(class_id, args, span, caller_scope);
         }
@@ -55637,7 +56283,10 @@ impl Interpreter {
         constant: &str,
         span: Span,
     ) -> CompileResult<()> {
-        if declaring_name.eq_ignore_ascii_case("DateTime") && constant == "RFC7231" {
+        if (declaring_name.eq_ignore_ascii_case("DateTime")
+            || declaring_name.eq_ignore_ascii_case("DateTimeImmutable"))
+            && constant == "RFC7231"
+        {
             self.emit_display_diagnostic(
                 "Deprecated",
                 PHP_E_DEPRECATED,
@@ -86556,6 +87205,7 @@ impl Interpreter {
             "date_sunset" => self.call_date_sunrise_sunset(&args, span, true),
             "date_sun_info" => self.call_date_sun_info(&args, span),
             "date_create" => self.call_date_create(&args, span),
+            "date_create_immutable" => self.call_date_create_immutable(&args, span),
             "date_modify" => self.call_date_modify(&args, span),
             "date_format" => self.call_date_format(&args, span),
             "date_timestamp_get" => self.call_date_timestamp_get(&args, span),
@@ -101130,19 +101780,21 @@ fn seed_core_class_constant_runtime_tables(
             );
         }
     }
-    if let Some(datetime_id) = classes.lookup_class_id("DateTime") {
-        for (name, value) in PHP_DATETIME_FORMAT_CLASS_CONSTANTS {
-            let span = Span::new(1, 1);
-            class_constants.insert(
-                (datetime_id, name.to_string()),
-                ClassConstantDecl {
-                    name: name.to_string(),
-                    visibility: ClassVisibility::Public,
-                    value: Expr::String(value.to_string(), span),
-                    attributes: Vec::new(),
-                    span,
-                },
-            );
+    for class_name in ["DateTime", "DateTimeImmutable"] {
+        if let Some(datetime_id) = classes.lookup_class_id(class_name) {
+            for (name, value) in PHP_DATETIME_FORMAT_CLASS_CONSTANTS {
+                let span = Span::new(1, 1);
+                class_constants.insert(
+                    (datetime_id, name.to_string()),
+                    ClassConstantDecl {
+                        name: name.to_string(),
+                        visibility: ClassVisibility::Public,
+                        value: Expr::String(value.to_string(), span),
+                        attributes: Vec::new(),
+                        span,
+                    },
+                );
+            }
         }
     }
     if let Some(spl_doubly_linked_list_id) = classes.lookup_class_id("SplDoublyLinkedList") {
@@ -108321,6 +108973,7 @@ fn is_builtin(name: &str) -> bool {
             | "date_sunset"
             | "date_sun_info"
             | "date_create"
+            | "date_create_immutable"
             | "date_modify"
             | "date_format"
             | "date_timestamp_get"

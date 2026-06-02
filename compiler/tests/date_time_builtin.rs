@@ -195,6 +195,76 @@ echo "\n";
 }
 
 #[test]
+fn datetime_immutable_copy_apis_and_setters_use_bounded_state() {
+    let execution = run_source(
+        r#"<?php
+date_default_timezone_set("Europe/London");
+class MyDateTime extends DateTime {}
+class MyDateTimeImmutable extends DateTimeImmutable {}
+
+$mutable = date_create("2014-03-02 16:24:08");
+$immutable = date_create_immutable("2014-03-02 16:24:08");
+echo get_class($immutable), "|", $immutable->format("Y-m-d H:i:s T e"), "\n";
+
+$fromMutable = DateTimeImmutable::createFromMutable($mutable);
+echo get_class($fromMutable), "|", $fromMutable->format("Y-m-d H:i:s T e"), "\n";
+$subImmutable = MyDateTimeImmutable::createFromMutable($mutable);
+echo get_class($subImmutable), "|", $subImmutable->format("Y-m-d H:i:s T e"), "\n";
+
+$mutableCopy = DateTime::createFromImmutable($immutable);
+$subMutable = MyDateTime::createFromImmutable($immutable);
+$mutableCopy->modify("+1 hour");
+echo get_class($mutableCopy), "|", $mutableCopy->format("Y-m-d H:i:s"), "|", $immutable->format("Y-m-d H:i:s"), "\n";
+echo get_class($subMutable), "|", $subMutable->format("Y-m-d H:i:s T e"), "\n";
+$interfaceMutable = DateTime::createFromInterface($immutable);
+$interfaceImmutable = DateTimeImmutable::createFromInterface($mutable);
+echo get_class($interfaceMutable), "|", $interfaceMutable->format("Y-m-d H:i:s T e"), "|", get_class($interfaceImmutable), "|", $interfaceImmutable->format("Y-m-d H:i:s T e"), "\n";
+
+$changed = $immutable->setTime(25, 2)->setDate(2015, 13, 32)->setTimezone(new DateTimeZone("UTC"));
+echo $immutable->format("Y-m-d H:i:s e"), "|", $changed->format("Y-m-d H:i:s e"), "|", ($changed === $immutable ? "same" : "new"), "\n";
+
+$state = var_export($immutable, true);
+eval("\$fromState = {$state};");
+echo get_class($fromState), "|", $fromState->format("Y-m-d H:i:s T e"), "\n";
+echo function_exists("date_create_immutable") ? "fn" : "missing";
+echo "|", is_callable(array("DateTimeImmutable", "createFromMutable")) ? "static" : "missing";
+echo "|", (DATE_ATOM === DateTimeImmutable::ATOM ? "const" : "bad"), "\n";
+
+try {
+    DateTimeImmutable::createFromMutable($immutable);
+} catch (Throwable $e) {
+    echo get_class($e), ": ", $e->getMessage(), "\n";
+}
+try {
+    DateTime::createFromImmutable($mutable);
+} catch (Throwable $e) {
+    echo get_class($e), ": ", $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "DateTimeImmutable|2014-03-02 16:24:08 GMT Europe/London\n",
+            "DateTimeImmutable|2014-03-02 16:24:08 GMT Europe/London\n",
+            "MyDateTimeImmutable|2014-03-02 16:24:08 GMT Europe/London\n",
+            "DateTime|2014-03-02 17:24:08|2014-03-02 16:24:08\n",
+            "MyDateTime|2014-03-02 16:24:08 GMT Europe/London\n",
+            "DateTime|2014-03-02 16:24:08 GMT Europe/London|DateTimeImmutable|2014-03-02 16:24:08 GMT Europe/London\n",
+            "2014-03-02 16:24:08 Europe/London|2016-02-01 01:02:00 UTC|new\n",
+            "DateTimeImmutable|2014-03-02 16:24:08 GMT Europe/London\n",
+            "fn|static|const\n",
+            "TypeError: DateTimeImmutable::createFromMutable(): Argument #1 ($object) must be of type DateTime, DateTimeImmutable given\n",
+            "TypeError: DateTime::createFromImmutable(): Argument #1 ($object) must be of type DateTimeImmutable, DateTime given\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn date_modify_mutates_bounded_datetime_relative_forms() {
     let execution = run_source(
         r#"<?php
@@ -419,7 +489,21 @@ var_dump(
     DATE_RFC3339 === DateTime::RFC3339,
     DATE_RFC3339_EXTENDED === DateTime::RFC3339_EXTENDED,
     DATE_RSS === DateTime::RSS,
-    DATE_W3C === DateTime::W3C
+    DATE_W3C === DateTime::W3C,
+    DATE_ATOM === DateTimeImmutable::ATOM,
+    DATE_COOKIE === DateTimeImmutable::COOKIE,
+    DATE_ISO8601 === DateTimeImmutable::ISO8601,
+    DATE_ISO8601_EXPANDED === DateTimeImmutable::ISO8601_EXPANDED,
+    DATE_RFC822 === DateTimeImmutable::RFC822,
+    DATE_RFC850 === DateTimeImmutable::RFC850,
+    DATE_RFC1036 === DateTimeImmutable::RFC1036,
+    DATE_RFC1123 === DateTimeImmutable::RFC1123,
+    DATE_RFC7231 === DateTimeImmutable::RFC7231,
+    DATE_RFC2822 === DateTimeImmutable::RFC2822,
+    DATE_RFC3339 === DateTimeImmutable::RFC3339,
+    DATE_RFC3339_EXTENDED === DateTimeImmutable::RFC3339_EXTENDED,
+    DATE_RSS === DateTimeImmutable::RSS,
+    DATE_W3C === DateTimeImmutable::W3C
 );
 "#,
     )
@@ -431,7 +515,7 @@ var_dump(
     assert!(execution.stdout.contains(
         "Deprecated: Constant DateTimeInterface::RFC7231 is deprecated since 8.5, as this format ignores the associated timezone and always uses GMT"
     ));
-    assert_eq!(execution.stdout.matches("bool(true)").count(), 14);
+    assert_eq!(execution.stdout.matches("bool(true)").count(), 28);
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);
 }

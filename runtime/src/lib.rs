@@ -33110,15 +33110,67 @@ impl PhpClassTable {
                 .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
                 .expect("DateTime core metadata should not duplicate methods");
         }
-        datetime
-            .add_method(PhpMethodMetadata::static_method(
-                "__set_state",
-                Visibility::Public,
-            ))
-            .expect("DateTime core metadata should not duplicate static methods");
+        for method in ["__set_state", "createFromImmutable", "createFromInterface"] {
+            datetime
+                .add_method(PhpMethodMetadata::static_method(method, Visibility::Public))
+                .expect("DateTime core metadata should not duplicate static methods");
+        }
+        let datetime_immutable_id = classes
+            .declare_class("DateTimeImmutable")
+            .expect("core class table should contain DateTime before DateTimeImmutable");
+        let datetime_immutable = classes
+            .get_mut(datetime_immutable_id)
+            .expect("declared DateTimeImmutable class id should resolve");
+        for property in ["date", "timezone_type", "timezone"] {
+            datetime_immutable
+                .add_property(PhpPropertyMetadata::instance(property, Visibility::Public))
+                .expect("DateTimeImmutable core metadata should not duplicate properties");
+        }
+        for constant in [
+            "ATOM",
+            "COOKIE",
+            "ISO8601",
+            "ISO8601_EXPANDED",
+            "RFC822",
+            "RFC850",
+            "RFC1036",
+            "RFC1123",
+            "RFC7231",
+            "RFC2822",
+            "RFC3339",
+            "RFC3339_EXTENDED",
+            "RSS",
+            "W3C",
+        ] {
+            datetime_immutable
+                .add_constant(PhpClassConstantMetadata::new(constant, Visibility::Public))
+                .expect("DateTimeImmutable core metadata should not duplicate constants");
+        }
+        for method in [
+            "__construct",
+            "format",
+            "getTimestamp",
+            "setTimestamp",
+            "modify",
+            "getOffset",
+            "getTimezone",
+            "setTimezone",
+            "setDate",
+            "setISODate",
+            "setTime",
+        ] {
+            datetime_immutable
+                .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("DateTimeImmutable core metadata should not duplicate methods");
+        }
+        for method in ["__set_state", "createFromMutable", "createFromInterface"] {
+            datetime_immutable
+                .add_method(PhpMethodMetadata::static_method(method, Visibility::Public))
+                .expect("DateTimeImmutable core metadata should not duplicate static methods");
+        }
         let dom_exception_id = classes
             .declare_class("DOMException")
-            .expect("core class table should contain DateTime before DOMException");
+            .expect("core class table should contain DateTimeImmutable before DOMException");
         let exception_id = classes
             .lookup_class_id("Exception")
             .expect("core Exception class id should resolve for DOMException");
@@ -80921,6 +80973,7 @@ mod tests {
                 "ReflectionExtension",
                 "ReflectionZendExtension",
                 "DateTime",
+                "DateTimeImmutable",
                 "DOMException",
                 "DOMNode",
                 "DOMAttr",
@@ -81140,6 +81193,29 @@ mod tests {
         );
         assert!(datetime.method("__construct").is_some());
         assert!(datetime.method("format").is_some());
+
+        let datetime_immutable = classes.lookup_class("datetimeimmutable").unwrap();
+        assert_eq!(datetime_immutable.name(), "DateTimeImmutable");
+        assert!(datetime_immutable.parent_id().is_none());
+        assert_eq!(
+            datetime_immutable
+                .properties()
+                .iter()
+                .map(PhpPropertyMetadata::name)
+                .collect::<Vec<_>>(),
+            vec!["date", "timezone_type", "timezone"]
+        );
+        assert!(datetime_immutable.constant("ATOM").is_some());
+        assert!(datetime_immutable.method("__construct").is_some());
+        assert!(datetime_immutable.method("format").is_some());
+        assert!(datetime_immutable
+            .method("createFromMutable")
+            .expect("DateTimeImmutable::createFromMutable should be registered")
+            .is_static());
+        assert!(datetime_immutable
+            .method("createFromInterface")
+            .expect("DateTimeImmutable::createFromInterface should be registered")
+            .is_static());
 
         let reflection_exception = classes.lookup_class("reflectionexception").unwrap();
         assert_eq!(reflection_exception.name(), "ReflectionException");
