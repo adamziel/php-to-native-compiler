@@ -53,6 +53,7 @@ var_dump(gettype($result));
 var_dump(in_array("cos", $result));
 var_dump(get_extension_funcs("foo"));
 var_dump(in_array("strlen", get_extension_funcs("STANDARD")));
+var_dump(in_array("get_defined_functions", get_extension_funcs("standard")));
 "#,
     )
     .unwrap();
@@ -63,7 +64,55 @@ var_dump(in_array("strlen", get_extension_funcs("STANDARD")));
 string(5) \"array\"\n\
 bool(true)\n\
 bool(false)\n\
+bool(true)\n\
 bool(true)\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn get_defined_functions_reports_bounded_internal_and_user_metadata() {
+    let execution = run_source(
+        r#"<?php
+function foo() {}
+function HelloWorld() {}
+
+class C {
+    function f1() {}
+    static function f2() {}
+}
+
+$func = get_defined_functions();
+echo gettype($func), "|", gettype($func["internal"]), "|", gettype($func["user"]), "\n";
+echo in_array("cos", $func["internal"]) ? "cos" : "missing-cos";
+echo "|", in_array("strlen", $func["internal"]) ? "strlen" : "missing-strlen";
+echo "|", in_array("get_defined_functions", $func["internal"]) ? "self" : "missing-self";
+echo "|", in_array("function_exists", $func["internal"]) ? "core" : "missing-core";
+echo "\n";
+$user = $func["user"];
+echo count($user), "|";
+echo in_array("foo", $user) ? "foo" : "missing-foo";
+echo "|", in_array("helloworld", $user) ? "helloworld" : "missing-helloworld";
+echo "|", in_array("f1", $user) ? "method" : "no-method";
+echo "\n";
+$withFlag = get_defined_functions(false);
+echo in_array("cos", $withFlag["internal"]) ? "flag-ok" : "flag-bad";
+echo "|", function_exists("get_defined_functions") ? "exists" : "missing";
+echo "|", is_callable("get_defined_functions") ? "callable" : "not-callable";
+$reflection = new ReflectionFunction("get_defined_functions");
+echo "|", $reflection->getNumberOfRequiredParameters(), "/", $reflection->getNumberOfParameters();
+echo "|", $reflection->getParameters()[0]->getName();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "array|array|array\n\
+cos|strlen|self|core\n\
+2|foo|helloworld|no-method\n\
+flag-ok|exists|callable|0/1|exclude_disabled"
     );
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);
@@ -114,11 +163,13 @@ fn emit_ir_folds_platform_metadata_but_rejects_direct_calls() {
 echo function_exists("php_uname") ? "1" : "0";
 echo is_callable("phpversion") ? "1" : "0";
 echo function_exists("getmypid") ? "1" : "0";
+echo function_exists("get_defined_functions") ? "1" : "0";
+echo is_callable("get_defined_functions") ? "1" : "0";
 "#,
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 3, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 5, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
 
@@ -135,6 +186,12 @@ echo function_exists("getmypid") ? "1" : "0";
     assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
 
     let error = emit_ir_source("<?php\necho getmypid();\n").unwrap_err();
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 6);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source("<?php\necho get_defined_functions();\n").unwrap_err();
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.line, 2);
     assert_eq!(error.column, 6);

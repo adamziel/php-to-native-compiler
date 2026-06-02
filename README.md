@@ -577,6 +577,8 @@ incorrect native code.
   `class_uses()` direct trait-name arrays for current object values or
   declared string class names, bounded `class_parents()` parent-chain arrays
   for current object values or declared string class names, bounded
+  `get_defined_functions()` metadata for the current core/standard
+  compatibility slice and registered user-function table, bounded
   `ReflectionClass` metadata objects with `getName()`, `getShortName()`,
   `isInterface()`, `isTrait()`, `isInstantiable()`, `getParentClass()`,
   `getInterfaceNames()`, `getTraitNames()`, `getTraits()`,

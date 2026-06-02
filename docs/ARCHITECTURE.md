@@ -4031,6 +4031,15 @@ parameter/return declarations during invocation,
 named closure callback arguments, and reference returns until those callable
 execution and aliasing sources exist, and doc-comment association does not yet
 model attributes or every PHP trivia edge case.
+`get_defined_functions()` is a request-local metadata view over the same
+registries rather than a host PHP probe: its bounded `internal` list combines
+core metadata names with the deterministic standard-extension compatibility
+function registry used by `get_extension_funcs("standard")`, while its `user`
+list is built from the interpreter's lowercased registered user-function table.
+It therefore tracks top-level and executed nested function declarations through
+the same registration path used by normal calls, but it does not claim host
+extension catalog completeness, disabled-function filtering, or PHP's exact
+declaration ordering.
 `ReflectionMethod::invoke()` and `invokeArgs()` use the same request-local
 method metadata and re-enter the existing method call path for declared
 user-class methods, including public, protected, and private reflected

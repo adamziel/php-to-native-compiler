@@ -66678,6 +66678,7 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "sizeof",
     "constant",
     "defined",
+    "get_defined_functions",
     "array_key_exists",
     "key_exists",
     "array_values",

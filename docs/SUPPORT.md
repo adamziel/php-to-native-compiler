@@ -3146,6 +3146,21 @@
   `is_callable()`, and `ReflectionFunction` metadata recognize the builtin.
   Native lowering currently exposes only metadata/folded membership for this
   process-local boundary.
+- `get_defined_functions($exclude_disabled = true)` returns a bounded
+  two-entry array with `internal` and `user` keys. The `internal` entry is a
+  deterministic compatibility subset of supported builtin names, combining
+  reached core metadata names with the standard-function registry used by
+  `get_extension_funcs("standard")`; the `user` entry is derived from the
+  interpreter's registered user-function table using PHP's case-insensitive
+  lowercased function keys. Class methods and closures are not included in the
+  user-function list.
+  The optional `exclude_disabled` boolean is accepted but currently has no
+  effect because disabled-function INI policy is not implemented.
+  Exact host internal-function catalogs, extension load-order parity,
+  declaration-order user-function ordering, disabled-function filtering,
+  dynamically loaded modules, and native execution remain unsupported.
+  `function_exists()`, `is_callable()`, and `ReflectionFunction` metadata
+  recognize the builtin, and native lowering only folds metadata membership.
 - `getenv()` supports no-argument environment snapshots, string name lookups,
   `null` as the snapshot form, and an optional boolean `local_only` flag in the
   current CLI process environment. Names containing `=` return `false`, and

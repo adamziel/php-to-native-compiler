@@ -4,6 +4,25 @@
 
 Implemented:
 
+- Added a bounded `get_defined_functions()` metadata lane for the selected
+  Zend row. The interpreter now returns the PHP-shaped `internal`/`user` array
+  structure, with core metadata names plus the shared standard-extension
+  compatibility function registry for `internal` and the live lowercased
+  user-function registry for `user` while excluding class methods and
+  closures. The optional `exclude_disabled` boolean is accepted as a no-op
+  because disabled-function policy is not implemented. `function_exists()`,
+  `is_callable()`, `ReflectionFunction`, `get_extension_funcs("standard")`,
+  and native metadata membership now recognize the builtin, while direct native
+  execution remains rejected.
+  Focused Rust passed `6 / 6` in `general_function_builtins`;
+  `cargo build -p phpc --bin phpc` passed; a direct `phpc run` probe proved
+  internal/user/reflection metadata; selected PHPT proof passed `1 / 1` for
+  `Zend/tests/get_defined_functions_basic.phpt`; `cargo fmt --check` and
+  `git diff --check` passed. Unsupported edges remain the full host
+  internal-function catalog, exact extension ordering, declaration-order
+  user-function ordering, disabled-function filtering, dynamic modules, exact
+  diagnostics outside the covered bool optional argument, and native execution.
+
 - Added a bounded PHP numeric-literal classification lane for the selected
   `is_numeric.phpt` surface. The lexer now treats leading-zero literals with a
   decimal point or exponent, such as `0200001.7` and `09e1`, as decimal float

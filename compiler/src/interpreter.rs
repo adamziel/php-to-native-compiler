@@ -68648,6 +68648,57 @@ impl Interpreter {
         }
     }
 
+    fn call_get_defined_functions(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if args.len() > 1 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "get_defined_functions()",
+                    ArityExpectation::Between { min: 0, max: 1 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        if let Some(other) = args
+            .first()
+            .filter(|value| !matches!(value, Value::Bool(_)))
+        {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "get_defined_functions()",
+                    format!(
+                        "exclude_disabled argument must be bool in the current subset, got {}",
+                        other.type_name()
+                    ),
+                ),
+            ));
+        }
+
+        let mut functions = PhpArray::new();
+        functions.insert(
+            "internal".to_string(),
+            Value::Array(defined_internal_functions_array()),
+        );
+        functions.insert(
+            "user".to_string(),
+            Value::Array(self.defined_user_functions_array()),
+        );
+        Ok(Value::Array(functions))
+    }
+
+    fn defined_user_functions_array(&self) -> PhpArray {
+        let mut names = self.functions.keys().cloned().collect::<Vec<_>>();
+        names.sort();
+
+        let mut functions = PhpArray::new();
+        for (index, name) in names.into_iter().enumerate() {
+            functions.insert(index as i64, Value::String(name));
+        }
+        functions
+    }
+
     fn defined_constants_array(&self) -> PhpArray {
         let mut constants = PhpArray::new();
         for name in builtin_global_constant_names() {
@@ -85682,6 +85733,7 @@ impl Interpreter {
                 }
             }
             "get_defined_constants" => self.call_get_defined_constants(&args, span),
+            "get_defined_functions" => self.call_get_defined_functions(&args, span),
             "array_key_exists" | "key_exists" => {
                 self.call_array_key_exists(name, &args, span)
             }
@@ -101674,6 +101726,13 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
             "bool",
             vec![reflection_internal_param("function", "string")],
         ),
+        "get_defined_functions" => (
+            "array",
+            vec![reflection_internal_optional_bool_param(
+                "exclude_disabled",
+                true,
+            )],
+        ),
         "filter_list" => ("array", vec![]),
         "filter_id" => (
             "int|false",
@@ -105900,6 +105959,35 @@ fn static_method_callable_string(name: &str) -> Option<(&str, &str)> {
     Some((class_name, method_name))
 }
 
+const DEFINED_INTERNAL_CORE_FUNCTION_NAMES: &[&str] = &[
+    "define",
+    "defined",
+    "constant",
+    "function_exists",
+    "is_callable",
+    "get_defined_constants",
+    "func_num_args",
+    "func_get_arg",
+    "func_get_args",
+    "call_user_func",
+    "call_user_func_array",
+];
+
+fn defined_internal_function_names() -> impl Iterator<Item = &'static str> {
+    DEFINED_INTERNAL_CORE_FUNCTION_NAMES
+        .iter()
+        .copied()
+        .chain(COMPAT_STANDARD_EXTENSION_FUNCTIONS.iter().copied())
+}
+
+fn defined_internal_functions_array() -> PhpArray {
+    let mut functions = PhpArray::new();
+    for (index, name) in defined_internal_function_names().enumerate() {
+        functions.insert(index as i64, Value::String(name.to_string()));
+    }
+    functions
+}
+
 fn call_arguments_have_spread(args: &[Expr]) -> bool {
     args.iter()
         .any(|arg| matches!(arg, Expr::SpreadArgument { .. }))
@@ -106262,6 +106350,7 @@ fn is_builtin(name: &str) -> bool {
             | "constant"
             | "defined"
             | "get_defined_constants"
+            | "get_defined_functions"
             | "array_key_exists"
             | "key_exists"
             | "array_values"
@@ -139629,6 +139718,7 @@ const COMPAT_STANDARD_EXTENSION_FUNCTIONS: &[&str] = &[
     "ini_set",
     "get_loaded_extensions",
     "get_extension_funcs",
+    "get_defined_functions",
     "abs",
     "min",
     "max",
