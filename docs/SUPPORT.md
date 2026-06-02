@@ -2578,9 +2578,13 @@
   for array-backed construction, offset reads/writes/unsets/appends,
   `getArrayCopy()`, `exchangeArray()`, flags, iterator class metadata,
   sorting over array storage, and ordinary by-value iteration through their
-  iterator methods. `ArrayIterator::seek()` accepts the current int-only
-  offset path and reports out-of-range positions as catchable
-  `OutOfBoundsException`s. When one `ArrayObject` or `ArrayIterator` is
+  iterator methods. By-value `foreach` over `IteratorAggregate` objects,
+  including `ArrayObject`, retires a `getIterator()` result's object handle
+  when that returned iterator remains unrooted after the loop; iterator method
+  bodies that store `$this` in a live root keep the temporary iterator alive.
+  `ArrayIterator::seek()` accepts the current int-only offset path and reports
+  out-of-range positions as catchable `OutOfBoundsException`s. When one
+  `ArrayObject` or `ArrayIterator` is
   constructed with another one as its backing storage, reads and writes
   recurse through the inner object's storage so copy-constructor-style offset
   mutation updates the shared backing object. Object-backed storage exposes
@@ -2589,8 +2593,10 @@
   directing callers to `offsetSet()`. General SPL wrapper iterators such as
   `LimitIterator`, `IteratorIterator`, and `NoRewindIterator`, weak
   scalar/null/float/numeric-string coercions for `ArrayIterator::seek()`
-  offsets, by-reference iteration over SPL iterator objects, serialization
-  parity, full COW/reference identity, and native lowering remain unsupported.
+  offsets, object-handle reuse outside these unrooted foreach iterator
+  temporaries, full destructor/unwinding lifetime parity, by-reference
+  iteration over SPL iterator objects, serialization parity, full
+  COW/reference identity, and native lowering remain unsupported.
 - SPL `SplObjectStorage` has a bounded identity-map runtime model for
   object-keyed `attach()`/`detach()`, ArrayAccess reads/writes/unsets,
   `contains()`/`offsetExists()`, `count()`, current/key/next/rewind/valid

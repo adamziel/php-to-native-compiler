@@ -4,6 +4,24 @@
 
 Implemented:
 
+- Added a bounded `ArrayObject::getIterator()` temporary foreach iterator
+  lifetime lane for the selected `arrayObject_getIteratorClass_basic1.phpt`
+  surface. By-value `foreach` over `IteratorAggregate` objects now retires the
+  returned iterator object's handle when the iterator remains unrooted after
+  the loop, so a later `getIterator()` call can reuse PHP's observable handle
+  number while iterator objects captured from method bodies stay live and keep
+  their handles. Focused proof covers the Rust
+  `array_object_foreach_retires_unrooted_iterator_class_temporaries`
+  regression, the direct `phpc run` fixture
+  `tests/fixtures/milestone2322/array_object_iterator_class_foreach_handle_reuse.php`,
+  and the selected PHPT row
+  `ext/spl/tests/ArrayObject/arrayObject_getIteratorClass_basic1.phpt`.
+  Unsupported edges remain broad PHP object lifetime and handle reuse outside
+  these unrooted foreach iterator temporaries, destructor and exception
+  unwinding parity for every temporary iterator shape, non-LIFO temporary
+  object reclamation, by-reference SPL iterator iteration, serialization
+  parity, full COW/reference identity, and native lowering.
+
 - Added a bounded `array_splice()` weak offset/nullable-length coercion lane.
   Direct and string-valued dynamic `array_splice()` calls now route `$offset`
   through the shared PHP-internal int boundary and `$length` through the shared

@@ -80,7 +80,12 @@ arrives at that property. By-value `foreach` over bounded userland
 `Iterator` objects dispatches public `rewind()`, `valid()`, `current()`,
 `key()`, and `next()` in PHP order through the existing method-call path;
 `IteratorAggregate::getIterator()` is bounded to returning one of those
-`Iterator` objects. When a by-value `Iterator::current()` result is an array
+`Iterator` objects. A by-value `foreach` temporary returned by
+`IteratorAggregate::getIterator()` is retired after the loop when no live root
+keeps that iterator object reachable, allowing the next allocation to reuse the
+same observable object handle in the current LIFO subset; if iterator method
+bodies store `$this` in a live root, the handle is kept. When a by-value
+`Iterator::current()` result is an array
 copied from a direct public `$this->property` array or selected literal-key
 bucket such as `$this->callbacks[$priority]`, the interpreter can mirror
 covered nested public object-property reference slots into the loop variable's

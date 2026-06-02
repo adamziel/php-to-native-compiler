@@ -13774,9 +13774,16 @@ impl Interpreter {
                             .classes
                             .implements_interface(iterator.class_id(), "Iterator") =>
                     {
-                        self.execute_foreach_iterator_by_value(
-                            iterator, key, value, body, span, scope,
-                        )
+                        let flow = self.execute_foreach_iterator_by_value(
+                            iterator.clone(),
+                            key,
+                            value,
+                            body,
+                            span,
+                            scope,
+                        )?;
+                        self.retire_unrooted_temporary_object_handle(&iterator, scope)?;
+                        Ok(flow)
                     }
                     other => Err(runtime_error(
                         span,
@@ -14680,9 +14687,17 @@ impl Interpreter {
                             .classes
                             .implements_interface(iterator.class_id(), "Iterator") =>
                     {
-                        self.execute_foreach_iterator_by_value_with_array_copy_return_source(
-                            iterator, key, value, body, span, scope,
-                        )
+                        let flow = self
+                            .execute_foreach_iterator_by_value_with_array_copy_return_source(
+                                iterator.clone(),
+                                key,
+                                value,
+                                body,
+                                span,
+                                scope,
+                            )?;
+                        self.retire_unrooted_temporary_object_handle(&iterator, scope)?;
+                        Ok(flow)
                     }
                     other => Err(runtime_error(
                         span,
@@ -23630,14 +23645,63 @@ impl Interpreter {
     }
 
     fn track_allocated_object(&mut self, object: &PhpObject) {
-        if self
-            .resolve_instance_method(object.class_id(), "__destruct")
+        if self.object_has_supported_public_destructor(object) {
+            self.allocated_objects.push(object.clone());
+        }
+    }
+
+    fn object_has_supported_public_destructor(&self, object: &PhpObject) -> bool {
+        self.resolve_instance_method(object.class_id(), "__destruct")
             .is_some_and(|(_, _, _, visibility, is_static)| {
                 visibility == Visibility::Public && !is_static
             })
-        {
-            self.allocated_objects.push(object.clone());
+    }
+
+    fn retire_unrooted_temporary_object_handle(
+        &mut self,
+        object: &PhpObject,
+        scope: &SymbolTable,
+    ) -> CompileResult<()> {
+        let object_id = object.id();
+        if self.live_roots_contain_object_id(object_id, scope) {
+            return Ok(());
         }
+
+        if self.object_has_supported_public_destructor(object) {
+            self.finalize_object_destructor(object.clone())?;
+            if self.live_roots_contain_object_id(object_id, scope) {
+                return Ok(());
+            }
+            self.allocated_objects
+                .retain(|candidate| candidate.id() != object_id);
+        }
+
+        self.generator_states.remove(&object_id);
+        self.reflection_classes.remove(&object_id);
+        self.reflection_functions.remove(&object_id);
+        self.closure_reflection_functions.remove(&object_id);
+        self.reflection_methods.remove(&object_id);
+        self.reflection_parameters.remove(&object_id);
+        self.reflection_properties.remove(&object_id);
+        self.reflection_class_constants.remove(&object_id);
+        self.reflection_attributes.remove(&object_id);
+        self.reflection_extensions.remove(&object_id);
+        self.reflection_zend_extensions.remove(&object_id);
+        self.reflection_named_types.remove(&object_id);
+        self.reflection_compound_types.remove(&object_id);
+        self.spl_fixed_arrays.remove(&object_id);
+        self.array_objects.remove(&object_id);
+        self.spl_object_storages.remove(&object_id);
+        self.spl_doubly_linked_lists.remove(&object_id);
+        self.date_time_objects.remove(&object_id);
+        self.uri_rfc3986_empty_port_objects.remove(&object_id);
+
+        if self.next_object_id == object_id.saturating_add(1) {
+            self.next_object_id = object_id;
+            self.finalized_objects.remove(&object_id);
+        }
+
+        Ok(())
     }
 
     fn finalize_released_value(
@@ -72511,9 +72575,18 @@ impl Interpreter {
                                     .classes
                                     .implements_interface(iterator.class_id(), "Iterator") =>
                             {
-                                self.execute_reference_return_assignment_foreach_iterator_by_value(
-                                    function, iterator, key, value, body, *span, scope,
-                                )
+                                let flow = self
+                                    .execute_reference_return_assignment_foreach_iterator_by_value(
+                                        function,
+                                        iterator.clone(),
+                                        key,
+                                        value,
+                                        body,
+                                        *span,
+                                        scope,
+                                    )?;
+                                self.retire_unrooted_temporary_object_handle(&iterator, scope)?;
+                                Ok(flow)
                             }
                             other => Err(runtime_error(
                                 *span,

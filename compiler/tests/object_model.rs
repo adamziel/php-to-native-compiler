@@ -15354,6 +15354,51 @@ foreach ($iterable as $key => $value) {
 }
 
 #[test]
+fn array_object_foreach_retires_unrooted_iterator_class_temporaries() {
+    let source = r#"<?php
+class ReusedHandleIterator extends ArrayIterator {
+    function rewind(): void {
+        parent::rewind();
+    }
+    function valid(): bool {
+        return parent::valid();
+    }
+    function current(): mixed {
+        return parent::current();
+    }
+    function key(): string|int|null {
+        return parent::key();
+    }
+    function next(): void {
+        parent::next();
+    }
+}
+
+class CapturingIterator extends ReusedHandleIterator {
+    function rewind(): void {
+        $GLOBALS["captured_iterator"] = $this;
+        parent::rewind();
+    }
+}
+
+$ao = new ArrayObject(array("a" => 1, "b" => 2), 0, "ReusedHandleIterator");
+$first = $ao->getIterator();
+echo spl_object_id($first), "\n";
+foreach ($ao as $key => $value) {}
+$second = $ao->getIterator();
+echo spl_object_id($second), "\n";
+
+$capturing = new ArrayObject(array("x" => 1), 0, "CapturingIterator");
+foreach ($capturing as $value) {}
+$after_capture = $capturing->getIterator();
+echo spl_object_id($captured_iterator), "|", spl_object_id($after_capture), "\n";
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(execution.stdout, "2\n3\n5|6\n");
+}
+
+#[test]
 fn spl_doubly_linked_list_iteration_offsets_and_exceptions() {
     let source = r#"<?php
 $list = new SplDoublyLinkedList();
