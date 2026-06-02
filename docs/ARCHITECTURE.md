@@ -2765,6 +2765,15 @@ enter the catchable PHP-shaped TypeError path before count writeback.
 Native function-table introspection recognizes the name, while direct native
 calls still reject until string allocation, array forms, count-output
 references, and diagnostics have a lowered runtime model.
+`strpbrk()` is an interpreter-only bounded byte-search builtin. It converts
+scalar/null values and supported visible `__toString()` objects through the
+shared PHP string-argument boundary, rejects arrays/resources/closures and
+unsupported objects through catchable PHP-shaped type diagnostics, searches by
+byte, and returns either the suffix beginning at the first matching byte or
+`false`. Empty `$characters` stays on the catchable `ValueError` path; locale
+or Unicode-aware matching, exact invalid `__toString()` return diagnostics,
+broader binary edge parity, references/COW, and native lowering remain outside
+the current model.
 `strtok()` is an interpreter-only stateful tokenizer with one saved byte cursor
 per interpreter execution. It accepts scalar/null string-convertible input and
 delimiter values, preserves embedded NUL delimiter behavior for current

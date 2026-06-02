@@ -173,3 +173,47 @@ try {
         )
     );
 }
+
+#[test]
+fn strpbrk_accepts_stringable_objects_and_reports_type_errors() {
+    let execution = run_source(
+        r#"<?php
+class HaystackValue {
+    public function __toString() {
+        return "abc123";
+    }
+}
+class CharacterValue {
+    public function __toString() {
+        return "23";
+    }
+}
+
+var_dump(strpbrk(new HaystackValue(), "23"));
+var_dump(strpbrk("abc123", new CharacterValue()));
+$call = "strpbrk";
+var_dump($call(new HaystackValue(), new CharacterValue()));
+foreach ([fn() => strpbrk([], "a"), fn() => strpbrk("abc", [])] as $case) {
+    try {
+        $case();
+    } catch (TypeError $e) {
+        echo $e->getMessage(), "\n";
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "string(2) \"23\"\n",
+            "string(2) \"23\"\n",
+            "string(2) \"23\"\n",
+            "strpbrk(): Argument #1 ($string) must be of type string, array given\n",
+            "strpbrk(): Argument #2 ($characters) must be of type string, array given\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}

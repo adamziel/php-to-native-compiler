@@ -85364,7 +85364,7 @@ impl Interpreter {
             "str_ends_with" => call_str_ends_with(&args, span),
             "strspn" => call_strspn(&args, span),
             "strcspn" => call_strcspn(&args, span),
-            "strpbrk" => call_strpbrk(&args, span),
+            "strpbrk" => call_strpbrk(self, &args, span),
             "strpos" => call_strpos(self, &args, span),
             "stripos" => call_strpos_like(self, &args, "stripos()", true, span),
             "strrpos" => call_strrpos(&args, "strrpos()", false, span),
@@ -121417,9 +121417,10 @@ fn call_strstr(
         ));
     }
 
-    let haystack =
-        interpreter.strstr_string_argument_bytes(function, 1, "haystack", &args[0], span)?;
-    let needle = interpreter.strstr_string_argument_bytes(function, 2, "needle", &args[1], span)?;
+    let haystack = interpreter
+        .php_string_argument_bytes_with_magic(function, 1, "haystack", &args[0], span)?;
+    let needle =
+        interpreter.php_string_argument_bytes_with_magic(function, 2, "needle", &args[1], span)?;
     let before_needle = match args.get(2) {
         Some(value) => php_internal_bool_argument(function, 3, "before_needle", value, span)?,
         None => false,
@@ -121449,7 +121450,7 @@ fn call_strstr(
 }
 
 impl Interpreter {
-    fn strstr_string_argument_bytes(
+    fn php_string_argument_bytes_with_magic(
         &mut self,
         function: &'static str,
         position: usize,
@@ -121932,10 +121933,22 @@ fn call_strtok_builtin(
     Ok(interpreter_value_from_php_string_bytes(token))
 }
 
-fn call_strpbrk(args: &[Value], span: Span) -> CompileResult<Value> {
+fn call_strpbrk(interpreter: &mut Interpreter, args: &[Value], span: Span) -> CompileResult<Value> {
     expect_arity("strpbrk", args, 2, span)?;
-    let haystack = string_compare_argument_bytes("strpbrk()", "string", &args[0], span)?;
-    let characters = string_compare_argument_bytes("strpbrk()", "characters", &args[1], span)?;
+    let haystack = interpreter.php_string_argument_bytes_with_magic(
+        "strpbrk()",
+        1,
+        "string",
+        &args[0],
+        span,
+    )?;
+    let characters = interpreter.php_string_argument_bytes_with_magic(
+        "strpbrk()",
+        2,
+        "characters",
+        &args[1],
+        span,
+    )?;
     if characters.is_empty() {
         return Err(runtime_error(
             span,

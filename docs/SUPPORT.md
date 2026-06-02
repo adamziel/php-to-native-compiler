@@ -3879,9 +3879,10 @@
   policy, non-integer coercions, exact diagnostics, and native lowering remain
   unsupported.
   `strpbrk($string, $characters)` accepts scalar/null string-convertible
-  operands, searches by byte, and returns the suffix beginning at the first
-  byte from `$characters`, or `false` when no byte matches. An empty
-  `$characters` string reports the current PHP `ValueError` message.
+  operands and supported visible `__toString()` objects, searches by byte, and
+  returns the suffix beginning at the first byte from `$characters`, or
+  `false` when no byte matches. An empty `$characters` string reports the
+  current PHP `ValueError` message.
   `str_getcsv($string, $separator = ",", $enclosure = "\"", $escape = "\\")`
   reuses the bounded CSV record parser for one string record, one-byte
   separator/enclosure arguments, and an empty or one-byte escape argument.
@@ -11673,9 +11674,11 @@
   invalid UTF-8 byte output surfaces beyond the current literal byte sentinel
   bridge, heredoc mask edge cases, and native lowering beyond function-table
   introspection
-- `strpbrk()` outside the current scalar/null string-convertible byte-search
-  subset: array/object/resource operands, locale or Unicode-aware matching,
-  exact binary string edge cases beyond represented runtime bytes, and native
+- `strpbrk()` outside the current scalar/null string-convertible and supported
+  visible `__toString()` byte-search subset: arrays, resources, closures,
+  objects without supported visible `__toString()`, exact invalid
+  `__toString()` return diagnostics, locale or Unicode-aware matching, exact
+  binary string edge cases beyond represented runtime bytes, and native
   lowering beyond function-table introspection
 - `similar_text()` outside the current scalar/null string-convertible byte
   similarity subset: array/object/resource operands, non-variable or indirect

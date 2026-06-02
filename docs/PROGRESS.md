@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added a bounded `strpbrk()` stringable-object conversion lane for the
+  selected standard string residual surface. `strpbrk()` now accepts supported
+  visible `__toString()` objects for both `$string` and `$characters` operands
+  through the same PHP-shaped string-argument boundary used by adjacent string
+  search helpers, while retaining the existing empty-character `ValueError`
+  and catchable array operand `TypeError`s. Focused proof covers the Rust
+  `strpbrk_accepts_stringable_objects_and_reports_type_errors` regression, a
+  direct `phpc run` probe, and the selected PHPT rows
+  `ext/standard/tests/strings/strpbrk_basic.phpt` and
+  `ext/standard/tests/strings/strpbrk_error.phpt`. Unsupported edges remain
+  resources, closures, objects without supported visible `__toString()`,
+  exact invalid `__toString()` return diagnostics, locale or Unicode-aware
+  matching, exact binary string edge cases beyond represented runtime bytes,
+  references/COW, and native lowering.
+
 - Added a bounded POSIX account/group lookup lane for filesystem metadata
   diagnostics. `phpc run` now supports `posix_getpwuid($user_id)` and
   `posix_getgrgid($group_id)` for integer-like IDs against the local
