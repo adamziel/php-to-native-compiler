@@ -118440,19 +118440,7 @@ fn call_md5(args: &[Value], span: Span) -> CompileResult<Value> {
     }
 
     let value = string_compare_argument_bytes("md5()", "string", &args[0], span)?;
-    let raw_output = match args.get(1) {
-        Some(Value::Array(_)) => {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "md5()",
-                    "Argument #2 ($binary) must be of type bool, array given",
-                ),
-            ));
-        }
-        Some(value) => value.is_truthy(),
-        None => false,
-    };
+    let raw_output = digest_binary_argument("md5()", args.get(1), span)?;
 
     Ok(md5_output_value(&value, raw_output))
 }
@@ -118489,14 +118477,7 @@ fn digest_binary_argument(
     span: Span,
 ) -> CompileResult<bool> {
     match value {
-        Some(Value::Array(_)) => Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                function,
-                "Argument #2 ($binary) must be of type bool, array given",
-            ),
-        )),
-        Some(value) => Ok(value.is_truthy()),
+        Some(value) => php_internal_bool_argument(function, 2, "binary", value, span),
         None => Ok(false),
     }
 }

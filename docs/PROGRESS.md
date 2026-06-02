@@ -4,6 +4,22 @@
 
 Implemented:
 
+- Added a bounded digest `$binary` bool-boundary lane. `md5()`, `sha1()`,
+  `md5_file()`, and `sha1_file()` now route optional `$binary` operands
+  through the shared PHP-internal bool boundary, so scalar values keep
+  selecting lowercase hex versus raw binary output by PHP truthiness while
+  arrays, objects, closures, and resources raise catchable PHP-shaped
+  `TypeError`s. Existing string/data conversion, local file path handling,
+  missing-file warning/`false` recovery, metadata visibility, and native
+  lowering rejection remain unchanged. Focused proof covers the Rust
+  `digest_binary_flags_use_php_bool_boundary` regression, the full SHA-1 Rust
+  file, direct CLI probes, selected public `md5()` / `sha1()` raw-output PHPT
+  rows, build, fmt, and diff checks. Unsupported edges remain exact
+  null-to-bool and lossy scalar bool deprecation diagnostics, exact
+  string-conversion diagnostics for digest input and file path operands,
+  FIPS/provider policy, streaming hash contexts, `hash()`/`hash_hmac()` flag
+  parity, broader file wrapper behavior, references/COW, and native lowering.
+
 - Added a bounded `base64_encode()` / `base64_decode()` string-argument
   boundary lane. Direct and string-valued dynamic interpreter calls now route
   argument #1 `$string` through the shared PHP-shaped string byte boundary:

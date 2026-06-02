@@ -40,6 +40,64 @@ a9993e364706816aba3e25717850c26c9cd0d89d\n"
 }
 
 #[test]
+fn digest_binary_flags_use_php_bool_boundary() {
+    let path = temp_sha1_path();
+    let source = format!(
+        r#"<?php
+$file = "{}";
+file_put_contents($file, "A");
+$sha = "sha1";
+echo bin2hex(md5("A", true)), "|";
+echo md5("A", "0") === md5("A", false) ? "md5-hex" : "bad";
+echo "|";
+echo bin2hex($sha("A", "1")), "|";
+echo bin2hex(md5_file($file, true)), "|";
+echo sha1_file($file, "0") === sha1("A") ? "file-hex" : "bad";
+echo "\n";
+try {{
+    md5("A", []);
+}} catch (TypeError $e) {{
+    echo $e->getMessage(), "\n";
+}}
+try {{
+    $sha("A", new stdClass);
+}} catch (TypeError $e) {{
+    echo $e->getMessage(), "\n";
+}}
+try {{
+    md5_file($file, fopen("php://memory", "r"));
+}} catch (TypeError $e) {{
+    echo $e->getMessage(), "\n";
+}}
+try {{
+    sha1_file($file, function() {{}});
+}} catch (TypeError $e) {{
+    echo $e->getMessage();
+}}
+"#,
+        path
+    );
+
+    let execution = run_source(&source).unwrap();
+    let _ = fs::remove_file(path);
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "7fc56270e7a70fa81a5935b72eacbe29|md5-hex|",
+            "6dcd4ce23d88e2ee9568ba546c007c63d9131c1b|",
+            "7fc56270e7a70fa81a5935b72eacbe29|file-hex\n",
+            "md5(): Argument #2 ($binary) must be of type bool, array given\n",
+            "sha1(): Argument #2 ($binary) must be of type bool, stdClass given\n",
+            "md5_file(): Argument #2 ($binary) must be of type bool, resource given\n",
+            "sha1_file(): Argument #2 ($binary) must be of type bool, Closure given",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn sha1_file_hashes_local_file_payloads() {
     let path = temp_sha1_path();
     let source = format!(

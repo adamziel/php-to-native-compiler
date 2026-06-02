@@ -2786,12 +2786,16 @@ and Whirlpool digest set with lowercase hex or raw binary output,
 surface before rejecting successful PBKDF2 derivation, `md5()` supports
 scalar/null string-convertible input with lowercase hex or raw binary output
 through the `md-5` crate, and `md5_file()` uses the bounded local-file path
-policy shared with `sha1_file()`. `HASH_HMAC` and `hash_init()` cover the
-current validation-only HMAC-mode boundary for unknown algorithms, known
-non-cryptographic algorithms, and missing HMAC keys before explicitly
-rejecting successful `HashContext` allocation. Streaming hash contexts, PBKDF2
-output derivation, exact entropy/time behavior, FIPS/provider policy, and
-native lowering remain out of scope.
+policy shared with `sha1_file()`. The `md5()`/`sha1()` direct helpers and the
+bounded local-file digest helpers share the PHP-internal bool boundary for
+their `$binary` flags, so scalar truthiness selects hex or raw output while
+arrays, objects, closures, and resources stop at catchable type diagnostics.
+`HASH_HMAC` and `hash_init()` cover the current validation-only HMAC-mode
+boundary for unknown algorithms, known non-cryptographic algorithms, and
+missing HMAC keys before explicitly rejecting successful `HashContext`
+allocation. Streaming hash contexts, PBKDF2 output derivation, exact
+null/lossy bool deprecations, exact entropy/time behavior, FIPS/provider
+policy, and native lowering remain out of scope.
 `strcasecmp()` is an interpreter-only bounded string comparison builtin for
 current scalar/null string-convertible values. It compares valid UTF-8 runtime
 strings and binary-string values by bytes with ASCII case folding and returns

@@ -4257,16 +4257,20 @@
   outside the documented strict
   `hash_equals()` type errors, broader exact diagnostics, and native lowering
   remain unsupported.
-  `md5($string, $binary = false)` supports scalar/null string-convertible
-  inputs, lowercase hex output, and the raw 16-byte binary-string result when
-  the second argument is truthy. `md5_file($filename, $binary = false)` hashes
-  bounded local paths and local `file://` URLs through the same filesystem
-  policy as `sha1_file()`, returning lowercase hex, raw binary output, or
-  `false` with a PHP-shaped warning when the file cannot be opened. Array
-  string operands and array binary flags use the current PHP-shaped type
-  diagnostics; object/resource coercions, non-bool exact flag diagnostics
-  beyond current truthiness, FIPS/provider policy, streaming hash contexts,
-  remote stream wrappers, and native lowering remain unsupported.
+  `md5($string, $binary = false)` and `sha1($string, $binary = false)`
+  support scalar/null string-convertible inputs, lowercase hex output, and raw
+  binary-string results when the second argument is truthy. `md5_file($filename,
+  $binary = false)` hashes bounded local paths and local `file://` URLs through
+  the same filesystem policy as `sha1_file()`, returning lowercase hex, raw
+  binary output, or `false` with a PHP-shaped warning when the file cannot be
+  opened. These digest helpers route `$binary` through the PHP-internal bool
+  boundary: scalar values choose hex or raw output by PHP truthiness, while
+  arrays, objects, closures, and resources raise catchable PHP-shaped
+  `TypeError`s. Array string operands use the current PHP-shaped type
+  diagnostics; object/resource input-string coercions, exact null-to-bool and
+  lossy scalar flag deprecation diagnostics, FIPS/provider policy, streaming
+  hash contexts, remote stream wrappers, and native lowering remain
+  unsupported.
   `call_user_func($callback, ...$args)` supports string callbacks resolving to
   current user functions or documented callable builtins, current ordinary
   closure values, and public `[object, method]` / `[class, method]` array
