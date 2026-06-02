@@ -1120,6 +1120,23 @@ $start = new DateTime("2000-02-07");
 $end = new DateTime("2007-02-06");
 echo $start->diff($end)->format("P%R%yY%mM%dDT%hH%iM%sS days=%a"), "\n";
 echo $end->diff($start)->format("P%R%yY%mM%dDT%hH%iM%sS days=%a"), "\n";
+
+$start = new DateTime("2010-03-13 18:38:28 EST");
+$end = new DateTime("2010-03-14 03:16:55 EDT");
+echo $start->diff($end)->format("days=%a"), "\n";
+
+$start = new DateTime("2010-11-06 18:38:28 EDT");
+$end = new DateTime("2010-11-07 03:16:55 EST");
+echo $start->diff($end)->format("days=%a"), "\n";
+
+$start = new DateTime("2010-11-07 00:10:20 EDT");
+$end = new DateTime("2010-11-08 19:59:59 EST");
+echo $start->diff($end)->format("days=%a"), "\n";
+
+$start = new DateTime("2010-11-07 01:59:59 EDT");
+$end = new DateTime("2010-11-07 01:00:00 EST");
+echo $start->diff($end)->format("P%R%yY%mM%dDT%hH%iM%sS days=%a"), "\n";
+echo $end->diff($start)->format("P%R%yY%mM%dDT%hH%iM%sS days=%a"), "\n";
 "#,
     )
     .unwrap();
@@ -1133,6 +1150,11 @@ echo $end->diff($start)->format("P%R%yY%mM%dDT%hH%iM%sS days=%a"), "\n";
             "P+0Y1M0DT0H0M0S days=28\n",
             "P+6Y11M30DT0H0M0S days=2556\n",
             "P-6Y11M28DT0H0M0S days=2556\n",
+            "days=0\n",
+            "days=0\n",
+            "days=1\n",
+            "P+0Y0M0DT0H0M1S days=0\n",
+            "P-0Y0M0DT0H0M1S days=0\n",
         )
     );
     assert_eq!(execution.stderr, "");

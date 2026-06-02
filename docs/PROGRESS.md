@@ -1,5 +1,30 @@
 # Progress Log
 
+## 2026-06-03
+
+Implemented:
+
+- Repaired the full-gate DateTime `%a` PASS regressions for spring/fall DST
+  transition `DateTime::diff()` day rows. `DateInterval::$days` now derives
+  from the computed interval date component instead of the raw endpoint
+  civil-date distance, preserving bounded month-span totals while keeping
+  sub-day transition windows at zero days. Same-civil-date repeated-hour
+  fall-back diffs now decompose the absolute timestamp delta when wall-clock
+  order crosses timestamp order. Focused proof covers the Rust
+  `datetime_diff_uses_directional_calendar_borrow_and_total_days` regression,
+  the full `date_time_builtin` Rust target, build/fmt/diff checks, and the
+  eight latest-published PASS-regression PHPT rows
+  `ext/date/tests/DateTime_days-fall-type2-type2.phpt`,
+  `ext/date/tests/DateTime_days-fall-type2-type3.phpt`,
+  `ext/date/tests/DateTime_days-fall-type3-type2.phpt`,
+  `ext/date/tests/DateTime_days-fall-type3-type3.phpt`,
+  `ext/date/tests/DateTime_days-spring-type2-type2.phpt`,
+  `ext/date/tests/DateTime_days-spring-type2-type3.phpt`,
+  `ext/date/tests/DateTime_days-spring-type3-type2.phpt`, and
+  `ext/date/tests/DateTime_days-spring-type3-type3.phpt`. Unsupported edges
+  remain full timelib transition parity, broad historical timezone rules,
+  exact native lowering, and references/COW.
+
 ## 2026-06-02
 
 Implemented:

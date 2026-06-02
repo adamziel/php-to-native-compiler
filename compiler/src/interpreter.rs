@@ -153069,16 +153069,28 @@ fn bounded_datetime_diff_interval(
         target.timezone.offset_at_timestamp(target.timestamp),
     );
 
-    let (years, months, days, hours, minutes, seconds) = if source_before_target {
+    let (years, months, days, hours, minutes, seconds) = if let Some(components) =
+        bounded_same_civil_day_transition_diff_components(
+            source,
+            target,
+            source_parts,
+            target_parts,
+            source_before_target,
+        ) {
+        components
+    } else if source_before_target {
         bounded_datetime_forward_diff_components(source_parts, target_parts)
     } else {
         bounded_datetime_backward_diff_components(source_parts, target_parts)
     };
-    let source_days = days_from_civil(source_parts.year, source_parts.month, source_parts.day);
-    let target_days = days_from_civil(target_parts.year, target_parts.month, target_parts.day);
-    let total_days = (source_days as i128 - target_days as i128)
-        .abs()
-        .min(i64::MAX as i128) as i64;
+    let total_days = bounded_datetime_diff_total_days(
+        source_parts,
+        target_parts,
+        years,
+        months,
+        days,
+        source_before_target,
+    );
 
     BoundedDateIntervalState {
         years,
@@ -153097,6 +153109,86 @@ fn bounded_datetime_diff_interval(
         from_string: false,
         date_string: None,
     }
+}
+
+fn bounded_same_civil_day_transition_diff_components(
+    source: &BoundedDateTimeObjectState,
+    target: &BoundedDateTimeObjectState,
+    source_parts: BoundedDateTimeParts,
+    target_parts: BoundedDateTimeParts,
+    source_before_target: bool,
+) -> Option<(i64, i64, i64, i64, i64, i64)> {
+    if source.timestamp == target.timestamp
+        || source_parts.year != target_parts.year
+        || source_parts.month != target_parts.month
+        || source_parts.day != target_parts.day
+    {
+        return None;
+    }
+
+    let source_second = local_second_of_day(source_parts);
+    let target_second = local_second_of_day(target_parts);
+    let wall_order_crosses_timestamp_order = if source_before_target {
+        target_second <= source_second
+    } else {
+        source_second <= target_second
+    };
+    if !wall_order_crosses_timestamp_order {
+        return None;
+    }
+
+    let delta = bounded_timestamp_delta_seconds(source.timestamp, target.timestamp);
+    let days = delta / 86_400;
+    let remainder = delta % 86_400;
+    let hours = remainder / 3_600;
+    let minutes = (remainder % 3_600) / 60;
+    let seconds = remainder % 60;
+    Some((0, 0, days, hours, minutes, seconds))
+}
+
+fn local_second_of_day(parts: BoundedDateTimeParts) -> i64 {
+    parts.hour * 3_600 + parts.minute * 60 + parts.second
+}
+
+fn bounded_timestamp_delta_seconds(left: i64, right: i64) -> i64 {
+    (left as i128 - right as i128).abs().min(i64::MAX as i128) as i64
+}
+
+fn bounded_datetime_diff_total_days(
+    source: BoundedDateTimeParts,
+    target: BoundedDateTimeParts,
+    years: i64,
+    months: i64,
+    days: i64,
+    source_before_target: bool,
+) -> i64 {
+    let source_days = days_from_civil(source.year, source.month, source.day);
+    let fallback_target_days = days_from_civil(target.year, target.month, target.day);
+    let sign = if source_before_target { 1 } else { -1 };
+    let component_target_days = years
+        .checked_mul(sign)
+        .and_then(|year_delta| source.year.checked_add(year_delta))
+        .zip(
+            months
+                .checked_mul(sign)
+                .and_then(|month_delta| source.month.checked_add(month_delta)),
+        )
+        .zip(
+            days.checked_mul(sign)
+                .and_then(|day_delta| source.day.checked_add(day_delta)),
+        )
+        .and_then(|((year, month), day)| overflowing_civil_day_ordinal(year, month, day))
+        .unwrap_or(fallback_target_days);
+    bounded_day_delta(source_days, component_target_days)
+}
+
+fn overflowing_civil_day_ordinal(year: i64, month: i64, day: i64) -> Option<i64> {
+    let (year, month) = normalize_year_month_checked(year, month)?;
+    checked_days_from_civil(year, month, 1)?.checked_add(day.checked_sub(1)?)
+}
+
+fn bounded_day_delta(left: i64, right: i64) -> i64 {
+    (left as i128 - right as i128).abs().min(i64::MAX as i128) as i64
 }
 
 fn bounded_datetime_forward_diff_components(
