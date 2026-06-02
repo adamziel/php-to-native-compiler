@@ -3298,7 +3298,10 @@ the other local metadata builtins, returns the host metadata byte length as an
 integer for existing local filesystem entries including directories, and
 returns `false` for missing paths. Successful host metadata reads are cached by
 resolved local path until `clearstatcache()` clears all entries or
-`clearstatcache(false, $path)` removes the matching entry. It rejects stream
+`clearstatcache(false, $path)` removes the matching entry. Successful local
+write/truncate helpers clear the exact cached path plus already-cached local
+aliases that resolve to the same file identity, covering bounded symlink and
+hard-link update flows without modeling the full PHP stat cache. It rejects stream
 wrappers instead of modeling wrapper metadata. A non-empty request-local
 `open_basedir` uses the same canonicalized/lexically-normalized local
 allow-list check as `file_exists()` before metadata lookup. Include-path
@@ -3312,7 +3315,8 @@ runtime. It uses the same process-path-then-repo-root relative path policy as
 the other local metadata builtins, returns the host filesystem modification
 time as a Unix-timestamp integer for existing local entries, and returns
 `false` for missing paths. Successful host metadata reads share the same
-bounded `clearstatcache()`-managed cache as `filesize()`. It rejects stream
+bounded `clearstatcache()`-managed cache and linked-alias write invalidation
+boundary as `filesize()`. It rejects stream
 wrappers instead of modeling wrapper metadata. Include-path lookup, full PHP
 stat-cache breadth, exact warnings outside the documented missing-path and
 `open_basedir` denial slices, non-UTF-8 paths, pre-Unix-epoch timestamps,
@@ -3466,7 +3470,10 @@ or inspect the resource cursor or bounded metadata; append-mode writes are
 routed to EOF while local file streams retain PHP's logical cursor advancement
 after the write. Successful local-file `fopen()` create/truncate,
 `fwrite()`, and `ftruncate()` operations clear the bounded request-local
-`filesize()`/`filemtime()` metadata cache for the affected local path. A
+`filesize()`/`filemtime()` metadata cache for the affected local path and any
+already-cached local symlink or hard-link aliases that resolve to the same
+file identity. `file_put_contents()` and `touch()` use the same alias-aware
+cache clearing after successful local mutations. A
 separate request-local directory resource table backs
 `opendir()`, `readdir()`, `rewinddir()`, and `closedir()` for local UTF-8
 directories, returning `.`, `..`, and sorted host entry names through the same

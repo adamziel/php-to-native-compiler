@@ -5417,8 +5417,10 @@
   stream lifetime, writable `php://input` edge behavior, large `php://temp`
   spill-to-disk behavior, permissions policy, locking, broader wrapper/status
   metadata APIs, stat-cache behavior beyond clearing the bounded
-  `filesize()`/`filemtime()` metadata cache after successful local
-  `fopen()` create/truncate, `fwrite()`, and `ftruncate()` mutations, exact
+  `filesize()`/`filemtime()` metadata cache for exact local paths and
+  already-cached linked local aliases after successful local `fopen()`
+  create/truncate, `fwrite()`, `ftruncate()`, `file_put_contents()`, and
+  `touch()` mutations, exact
   warning text, exact warning recovery beyond the documented local read/open
   slices, exact resource
   ids/types, directory-entry ordering fidelity, references/copy-on-write, and
@@ -5434,8 +5436,9 @@
   denial check as the covered metadata predicates. Successful metadata reads
   are cached by resolved local path until `clearstatcache()` clears all
   entries, `clearstatcache(false, $path)` removes the matching entry, or a
-  successful local file-stream create, truncate, write, or `ftruncate()`
-  mutation clears that local path. This is a
+  successful local file-stream create, truncate, write, `ftruncate()`,
+  `file_put_contents()`, or `touch()` mutation clears that local path plus
+  already-cached local aliases that resolve to the same file identity. This is a
   bounded WordPress request/filesystem metadata slice, not full PHP filesystem
   support: include-path lookup, stream wrappers, full PHP stat-cache breadth,
   `open_basedir` policy beyond the shared local allow-list check, symlink and
@@ -5450,8 +5453,10 @@
   existing local filesystem entries, and returns `false` for missing paths. It
   shares the same current relative path policy as `file_exists`. Successful
   metadata reads share the same bounded `clearstatcache()`-managed cache as
-  `filesize()`, including successful local file-stream create/truncate/write
-  invalidation for the mutated path. This is a bounded WordPress
+  `filesize()`, including successful local file-stream create/truncate/write,
+  `ftruncate()`, `file_put_contents()`, and `touch()` invalidation for the
+  mutated path plus already-cached local aliases that resolve to the same file
+  identity. This is a bounded WordPress
   request/filesystem stat metadata
   slice, not full PHP filesystem support: include-path lookup, stream
   wrappers, full PHP stat-cache breadth, `open_basedir` policy beyond the
@@ -5463,7 +5468,9 @@
   `clearstatcache($clear_realpath_cache = false, $filename = "")` accepts no
   arguments, one bool argument, or a bool plus string path. It returns `null`.
   The current request-local stat cache stores successful host metadata reads
-  for `filesize()` and `filemtime()` by resolved local path; no-argument
+  for `filesize()` and `filemtime()` by resolved local path; successful local
+  writes clear exact cached paths plus already-cached local symlink/hard-link
+  aliases that resolve to the same file identity. No-argument
   `clearstatcache()` clears that bounded cache, and the filename form removes
   the matching local-path entry. One-argument `clearstatcache(true)` clears the
   bounded request-local realpath cache, while

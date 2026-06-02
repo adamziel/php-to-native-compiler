@@ -56,7 +56,7 @@ echo filesize(__FILE__) > 0 ? "size-positive" : "size-empty";
 }
 
 #[test]
-fn clearstatcache_invalidates_bounded_filesize_stat_cache_by_path() {
+fn local_writes_invalidate_bounded_filesize_stat_cache_for_link_aliases() {
     let path = std::env::temp_dir().join(format!(
         "phpc-stat-cache-{}-{}.txt",
         std::process::id(),
@@ -111,7 +111,7 @@ echo $cleared_all;
     let _ = std::fs::remove_file(path);
     let _ = std::fs::remove_file(alias_path);
 
-    assert_eq!(execution.stdout, "3|3|6|6|9");
+    assert_eq!(execution.stdout, "3|6|6|9|9");
     assert_eq!(execution.exit_code, 0);
 }
 

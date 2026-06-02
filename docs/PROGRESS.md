@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Added a bounded stat-cache alias invalidation lane for local stream/file
+  writes through linked filesystem paths. Successful local `fopen()`
+  create/truncate paths, `fwrite()`, `ftruncate()`, `file_put_contents()`,
+  and `touch()` now clear cached `filesize()`/`filemtime()` metadata for the
+  exact path plus already-cached local aliases that resolve to the same file
+  identity, covering the selected soft-link and hard-link update rows without
+  adding native filesystem lowering. Focused proof covers the Rust
+  `standard_filesystem_link_builtins` alias-cache regression, the existing
+  `tests/fixtures/milestone1543` stat-cache fixture, a direct `phpc run`
+  probe, and selected PHPT rows
+  `symlink_link_linkinfo_is_link_variation3.phpt` and
+  `symlink_link_linkinfo_is_link_variation4.phpt`. Unsupported edges remain
+  full PHP stat-cache breadth, deleted-path alias discovery, stream wrappers,
+  non-UTF-8 paths, platform-specific identity/ACL behavior beyond the current
+  Unix inode/device slice plus canonical-path fallback, TOCTOU semantics, and
+  native lowering.
+
 - Added a bounded array query-helper lane for the selected `bug70668.phpt`
   surface. `array_keys()` loose and strict filtering, plus the shared runtime
   query helpers for `array_keys()`, `in_array()`, and `array_search()`, now

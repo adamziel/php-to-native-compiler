@@ -77692,7 +77692,7 @@ impl Interpreter {
                 )?;
             }
             if stream_mode.truncate || stream_mode.create || stream_mode.create_new {
-                self.clear_stat_cache_filesystem_path(&filesystem_path);
+                self.clear_stat_cache_filesystem_path_aliases(&filesystem_path);
             }
             let mut stream = FileStream {
                 file,
@@ -78124,6 +78124,30 @@ impl Interpreter {
 
     fn clear_stat_cache_filesystem_path(&mut self, path: &Path) {
         self.stat_cache.remove(path);
+    }
+
+    fn clear_stat_cache_filesystem_path_aliases(&mut self, path: &Path) {
+        self.stat_cache.remove(path);
+        let Some(target_metadata) = fs::metadata(path).ok() else {
+            return;
+        };
+        let target_canonical = fs::canonicalize(path).ok();
+        let aliases = self
+            .stat_cache
+            .iter()
+            .filter_map(|(cached_path, cached_metadata)| {
+                let same_identity = filesystem_metadata_matches(&target_metadata, cached_metadata);
+                let same_canonical = target_canonical.as_ref().is_some_and(|target| {
+                    fs::canonicalize(cached_path)
+                        .map(|cached| cached == *target)
+                        .unwrap_or(false)
+                });
+                (same_identity || same_canonical).then(|| cached_path.clone())
+            })
+            .collect::<Vec<_>>();
+        for alias in aliases {
+            self.stat_cache.remove(&alias);
+        }
     }
 
     fn cached_filesystem_metadata(
@@ -78805,7 +78829,7 @@ impl Interpreter {
                 span,
             )?;
         }
-        self.clear_stat_cache_filesystem_path(&filesystem_path);
+        self.clear_stat_cache_filesystem_path_aliases(&filesystem_path);
         self.cache_bounded_realpath_entry_for_local_path(&filesystem_path);
         Ok(Value::Bool(true))
     }
@@ -79172,7 +79196,7 @@ impl Interpreter {
                 span,
             )?;
         }
-        self.clear_stat_cache_filesystem_path(&filesystem_path);
+        self.clear_stat_cache_filesystem_path_aliases(&filesystem_path);
         self.cache_bounded_realpath_entry_for_local_path(&filesystem_path);
         Ok(Value::Int(data.len() as i64))
     }
@@ -80881,7 +80905,7 @@ impl Interpreter {
             }
         }
         if let Some(path) = stat_cache_path_to_clear {
-            self.clear_stat_cache_filesystem_path(&path);
+            self.clear_stat_cache_filesystem_path_aliases(&path);
         }
         Ok(Value::Int(data.len() as i64))
     }
@@ -82157,7 +82181,7 @@ impl Interpreter {
             }
         };
         if let Some(path) = stat_cache_path_to_clear {
-            self.clear_stat_cache_filesystem_path(&path);
+            self.clear_stat_cache_filesystem_path_aliases(&path);
         }
         Ok(result)
     }
@@ -130700,6 +130724,18 @@ fn filesystem_file_type_name(file_type: &fs::FileType) -> &'static str {
     } else {
         "unknown"
     }
+}
+
+#[cfg(unix)]
+fn filesystem_metadata_matches(left: &fs::Metadata, right: &fs::Metadata) -> bool {
+    use std::os::unix::fs::MetadataExt;
+
+    left.dev() == right.dev() && left.ino() == right.ino()
+}
+
+#[cfg(not(unix))]
+fn filesystem_metadata_matches(_left: &fs::Metadata, _right: &fs::Metadata) -> bool {
+    false
 }
 
 #[cfg(unix)]
