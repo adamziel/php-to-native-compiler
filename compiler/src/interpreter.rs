@@ -85947,7 +85947,7 @@ impl Interpreter {
             "stristr" => call_strstr(self, &args, "stristr()", true, span),
             "strtok" => call_strtok_builtin(self, &args, span),
             "str_word_count" => call_str_word_count(&args, span),
-            "substr" => call_substr(&args, span),
+            "substr" => call_substr(self, &args, span),
             "substr_replace" => call_substr_replace(&args, span),
             "substr_compare" => call_substr_compare(&args, span),
             "substr_count" => call_substr_count(self, &args, span),
@@ -122976,7 +122976,7 @@ fn call_strrchr(args: &[Value], span: Span) -> CompileResult<Value> {
     Ok(interpreter_value_from_php_string_bytes(result))
 }
 
-fn call_substr(args: &[Value], span: Span) -> CompileResult<Value> {
+fn call_substr(interpreter: &mut Interpreter, args: &[Value], span: Span) -> CompileResult<Value> {
     if !(2..=3).contains(&args.len()) {
         return Err(runtime_error(
             span,
@@ -122988,7 +122988,8 @@ fn call_substr(args: &[Value], span: Span) -> CompileResult<Value> {
         ));
     }
 
-    let value = string_contains_argument("substr()", "string", &args[0], span)?;
+    let value = interpreter
+        .php_string_argument_bytes_with_magic("substr()", 1, "string", &args[0], span)?;
     let offset = php_internal_int_argument("substr()", 2, "offset", &args[1], span)?;
     let value_len = value.len() as i64;
     let start = if offset >= 0 {
@@ -123007,18 +123008,9 @@ fn call_substr(args: &[Value], span: Span) -> CompileResult<Value> {
         Some(length) => value_len.saturating_add(length).max(0),
     };
     let end = end.max(start).min(value_len);
-    let bytes = value.as_bytes()[start as usize..end as usize].to_vec();
-    let result = String::from_utf8(bytes).map_err(|_| {
-        runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                "substr()",
-                "substring byte range must remain valid UTF-8 in the current subset",
-            ),
-        )
-    })?;
-
-    Ok(Value::String(result))
+    Ok(interpreter_value_from_php_string_bytes(
+        value[start as usize..end as usize].to_vec(),
+    ))
 }
 
 fn call_substr_replace(args: &[Value], span: Span) -> CompileResult<Value> {

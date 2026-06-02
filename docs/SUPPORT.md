@@ -3884,14 +3884,17 @@
   substring. Array/closure/resource operands, non-stringable objects,
   non-ASCII case-folding parity, exact diagnostics outside the covered null
   deprecation and type-error paths, and native lowering remain unsupported.
-  `substr($string, $offset, $length = null)` supports scalar/null
-  string-convertible input, PHP-internal-int-compatible offsets, and optional
-  nullable int-compatible lengths. Null lengths are treated like omitted
-  lengths. Positive and negative offsets, positive and negative lengths,
-  out-of-range empty results, and extreme `PHP_INT_MIN` windows are
-  implemented over byte positions when the resulting runtime string remains
-  valid UTF-8. Deprecation warnings for null or lossy scalar coercions,
-  object/resource string operands, invalid UTF-8 byte ranges, exact PHP
+  `substr($string, $offset, $length = null)` supports scalar/null and
+  supported visible `__toString()` string inputs, PHP-internal-int-compatible
+  offsets, and optional nullable int-compatible lengths. `null` string inputs
+  emit the bounded PHP-shaped deprecation before converting to `""`; null
+  lengths are treated like omitted lengths. Positive and negative offsets,
+  positive and negative lengths, out-of-range empty results, and extreme
+  `PHP_INT_MIN` windows are implemented over byte positions. Arrays, closures,
+  resources, and non-stringable objects raise catchable PHP-shaped string
+  `TypeError`s. Deprecation warnings for null or lossy offset/length
+  coercions, exact invalid `__toString()` return diagnostics, broader
+  binary/encoding parity beyond represented runtime bytes, exact PHP
   diagnostics beyond the covered type boundary, and native lowering remain
   unsupported.
   `substr_compare($haystack, $needle, $offset, $length = null,
@@ -9450,11 +9453,12 @@
   int-compatible offset as the builtin section above; direct native calls to
   `stripos()` and the reverse variants still reject under the function-call
   boundary, while native function-table introspection recognizes the names.
-  `substr` accepts the same current scalar/null string-convertible input,
-  int-compatible offset, nullable int-compatible length subset, and extreme
-  negative-window clamp behavior as the builtin section above; direct native
-  `substr(...)` calls still reject under the function-call boundary, while
-  native function-table introspection recognizes the name.
+  `substr` accepts the same current scalar/null and supported visible
+  `__toString()` string input, int-compatible offset, nullable int-compatible
+  length subset, and extreme negative-window clamp behavior as the builtin
+  section above; direct native `substr(...)` calls still reject under the
+  function-call boundary, while native function-table introspection recognizes
+  the name.
   `substr_compare` accepts the same current scalar/null string-convertible
   haystack and needle subset plus int-compatible offset, nullable non-negative
   length, and optional boolean case-insensitive flag as the builtin section

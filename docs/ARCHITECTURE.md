@@ -2757,13 +2757,14 @@ at a dedicated path-basename codegen boundary before argument lowering or
 backend selection, while native function-table introspection can still see the
 known builtin name.
 `substr()` is an interpreter-only bounded string-slicing builtin for current
-scalar/null string-convertible inputs, PHP-internal-int-compatible offsets, and
-optional nullable int-compatible lengths. It uses byte positions over
-represented runtime strings, clamps negative windows with saturating arithmetic
-for extreme offsets and lengths, and rejects slices that would produce invalid
-UTF-8. PHP-exact binary string behavior, deprecation warnings for null/lossy
-scalar coercions, object/resource operands, broader diagnostics, and native
-lowering remain out of scope.
+scalar/null string-convertible inputs and supported visible `__toString()`
+objects, PHP-internal-int-compatible offsets, and optional nullable
+int-compatible lengths. It routes the subject through the shared PHP-shaped
+string byte boundary, uses byte positions over represented runtime strings,
+and clamps negative windows with saturating arithmetic for extreme offsets and
+lengths. Exact invalid `__toString()` return diagnostics, deprecation warnings
+for null/lossy offset or length coercions, broader binary/encoding edge parity,
+references/COW, and native lowering remain out of scope.
 `min()` is an interpreter-only bounded integer helper for the current WordPress
 memory-limit clamp. It accepts two or more integer arguments and returns the
 smallest integer, while array-form calls, mixed-type comparison rules, and

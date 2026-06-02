@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Added a bounded `substr()` subject string-boundary lane. Direct and
+  string-valued dynamic `substr()` calls now route `$string` through the shared
+  PHP-shaped string byte boundary: scalar operands keep the existing byte-slice
+  behavior after conversion, `null` emits the bounded PHP-shaped deprecation
+  before converting to `""`, supported visible `__toString()` objects are
+  accepted, and arrays, resources, closures, or non-stringable objects raise
+  catchable PHP-shaped string `TypeError`s. Existing `$offset` and nullable
+  `$length` PHP-internal int coercion, positive/negative byte-window math,
+  `PHP_INT_MIN` clamping, metadata visibility, and native-lowering rejection
+  remain unchanged. Focused proof covers the Rust
+  `substr_uses_php_string_argument_boundary` regression, the full
+  `substr_builtin` test file, direct CLI probes, and selected public PHPT
+  rows. Unsupported edges remain exact invalid `__toString()` return
+  diagnostics, exact null/lossy offset and length deprecations, broader
+  binary/encoding parity beyond represented runtime bytes, references/COW, and
+  native lowering.
+
 - Added a bounded `strspn()` / `strcspn()` string-boundary lane. Direct and
   string-valued dynamic interpreter calls now route `$string` and
   `$characters` operands through the shared PHP-shaped string argument

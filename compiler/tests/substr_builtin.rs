@@ -67,14 +67,63 @@ echo $call("abcdef", -3, 2);
 }
 
 #[test]
+fn substr_uses_php_string_argument_boundary() {
+    let execution = run_source(
+        r#"<?php
+class Label {
+    public function __toString() {
+        return "abcdef";
+    }
+}
+
+$call = "substr";
+echo substr(new Label(), 1, 3), "|";
+echo $call(new Label(), -2), "|";
+try {
+    substr(null, 0, 1);
+} catch (Throwable $e) {
+    echo "unexpected";
+}
+echo "|";
+try {
+    substr([], 0);
+} catch (TypeError $e) {
+    echo $e->getMessage(), "|";
+}
+try {
+    substr(new stdClass(), 0);
+} catch (TypeError $e) {
+    echo $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
+
+    assert!(execution.stdout.contains(
+        "Deprecated: substr(): Passing null to parameter #1 ($string) of type string is deprecated"
+    ));
+    assert!(execution.stdout.starts_with("bcd|ef|"));
+    assert!(execution.stdout.ends_with(
+        "|substr(): Argument #1 ($string) must be of type string, array given|substr(): Argument #1 ($string) must be of type string, stdClass given"
+    ));
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn substr_rejects_forms_outside_current_subset() {
-    let array_string = run_source("<?php\nsubstr(['abc'], 1);\n").unwrap_err();
-    assert_eq!(array_string.phase, Phase::Runtime);
-    assert_eq!(array_string.line, 2);
-    assert_eq!(array_string.column, 1);
+    let array_string = run_source(
+        r#"<?php
+try {
+    substr(['abc'], 1);
+} catch (TypeError $e) {
+    echo $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
     assert_eq!(
-        array_string.message,
-        "unsupported call substr(): string argument arrays are not implemented in the current subset"
+        array_string.stdout,
+        "substr(): Argument #1 ($string) must be of type string, array given"
     );
 
     let bad_offset = run_source(
