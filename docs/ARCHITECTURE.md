@@ -3890,7 +3890,11 @@ autoload lowering remain unsupported. `class_exists()` also reports true for
 declared enums in the current class-like metadata slice.
 `property_exists($object_or_class, $property)` checks the same declared and
 inherited property metadata for current object values or string class names,
-with case-sensitive property names and no autoload side effects.
+with case-sensitive property names. Non-empty unresolved string class names
+invoke the existing bounded class autoload callback path before the metadata
+lookup; empty strings stay false without autoload. `method_exists()` uses the
+same class-string autoload boundary before checking declared and inherited
+method metadata with case-insensitive method names.
 `get_class_vars($class_name)` accepts declared string class names and returns
 public declared and inherited property names in child-to-parent declaration
 order with supported constant-expression default values or `null` for

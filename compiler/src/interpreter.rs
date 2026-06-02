@@ -77510,6 +77510,20 @@ impl Interpreter {
         Ok(())
     }
 
+    fn class_id_for_member_metadata_string(
+        &mut self,
+        class_name: &str,
+        span: Span,
+    ) -> CompileResult<Option<ClassId>> {
+        if class_name.is_empty() {
+            return Ok(None);
+        }
+        if self.classes.lookup_class_id(class_name).is_none() {
+            self.run_autoload_callbacks(class_name, AutoloadKind::Class, span)?;
+        }
+        Ok(self.classes.lookup_class_id(class_name))
+    }
+
     fn value_class_id(&self, object_or_class: &Value, allow_string: bool) -> Option<ClassId> {
         match object_or_class {
             Value::Object(object) => Some(object.class_id()),
@@ -88437,12 +88451,13 @@ impl Interpreter {
                     let exists = match object_or_class {
                         Value::Object(object) => self
                             .class_has_property_in_hierarchy(object.class_id(), property_name),
-                        Value::String(class_name) => self
-                            .classes
-                            .lookup_class_id(class_name)
-                            .is_some_and(|class_id| {
+                        Value::String(class_name) => {
+                            let class_id = self
+                                .class_id_for_member_metadata_string(class_name, span)?;
+                            class_id.is_some_and(|class_id| {
                                 self.class_has_property_in_hierarchy(class_id, property_name)
-                            }),
+                            })
+                        }
                         other => {
                             return Err(runtime_error(
                                 span,
@@ -88483,12 +88498,13 @@ impl Interpreter {
                         Value::Object(object) => self
                             .resolve_instance_method(object.class_id(), method_name)
                             .is_some(),
-                        Value::String(class_name) => self
-                            .classes
-                            .lookup_class_id(class_name)
-                            .is_some_and(|class_id| {
+                        Value::String(class_name) => {
+                            let class_id = self
+                                .class_id_for_member_metadata_string(class_name, span)?;
+                            class_id.is_some_and(|class_id| {
                                 self.resolve_instance_method(class_id, method_name).is_some()
-                            }),
+                            })
+                        }
                         other => {
                             return Err(runtime_error(
                                 span,

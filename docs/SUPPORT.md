@@ -6776,15 +6776,19 @@
   reports public/protected/private and static properties on the exact class as
   existing, reports inherited public/protected/static properties as existing,
   keeps inherited private properties invisible, returns false for missing
-  properties or missing string class names, and is available through
-  string-valued dynamic function calls.
+  properties or missing string class names, invokes the current bounded class
+  autoload callback path for non-empty unresolved string class names, and is
+  available through string-valued dynamic function calls. Empty string class
+  names return false without autoload.
   `method_exists($object_or_class, $method)` accepts a current object value or
   string class name and a string method name. It checks the current declared
   method metadata with case-insensitive method names, reports
   public/protected/private and static methods as existing, returns false for
-  missing methods or missing string class names, and is available through
-  string-valued dynamic function calls. Magic `__call` does not make a missing
-  method name report as existing.
+  missing methods or missing string class names, invokes the same bounded class
+  autoload callback path for non-empty unresolved string class names, and is
+  available through string-valued dynamic function calls. Empty string class
+  names return false without autoload, and magic `__call` does not make a
+  missing method name report as existing.
   `get_class_methods($object_or_class)` accepts a current object value or a
   declared string class name and returns a zero-indexed array of public method
   names in declaration order, including public static methods. It is available
@@ -9396,9 +9400,11 @@
   also reports true for declared enums.
   `property_exists($object_or_class, $property)` checks declared and inherited
   property metadata for current object values or string class names with
-  case-sensitive property names. `method_exists($object_or_class, $method)` checks declared and inherited
-  method metadata for current object values or string class names with
-  case-insensitive method names. `get_class_methods($object_or_class)` returns
+  case-sensitive property names and invokes bounded class autoload callbacks
+  for non-empty unresolved string class names. `method_exists($object_or_class,
+  $method)` checks declared and inherited method metadata for current object
+  values or string class names with case-insensitive method names and the same
+  bounded class autoload behavior. `get_class_methods($object_or_class)` returns
   a zero-indexed array of public declared method names for current object
   values or declared string class names. `get_class_vars($class_name)` returns
   public declared and inherited property names with `null` values for declared
@@ -10361,8 +10367,9 @@
   missing-property `__get`/`__isset`/`__set`/`__unset`,
   missing-method `__call`/`__callStatic`, and direct object-to-string
   `__toString` slices, namespaces,
-  autoloading, anonymous classes, attributes, reflection, dynamic properties
-  beyond `stdClass` public slot materialization, dynamic property-name forms
+  autoloading outside documented class metadata lookups, anonymous classes,
+  attributes, reflection, dynamic properties beyond `stdClass` public slot
+  materialization, dynamic property-name forms
   beyond existing public slots and `stdClass` including complex assignment
   roots, dynamic method names, protected method visibility outside
   same-class/child method contexts, non-public property access outside the
@@ -10371,7 +10378,8 @@
   execution through `::` except the current class-name, class-constant, and
   static-property slices, property assignment
   targets other than a direct variable, dynamic properties created outside
-  declarations, autoload side effects from property introspection,
+  declarations, broad autoload side effects outside the documented metadata
+  helper class-string lookups,
   object handle identity/aliasing,
   cloning, destructors, serialization hooks, visibility enforcement,
   broader `self`/`parent`/`static` behavior, object comparisons, full
@@ -11310,7 +11318,7 @@
   calls, reference/copy-on-write behavior, object handle identity preservation,
   resource values, exact native `TypeError` objects, and native lowering
 - `method_exists` method dispatch beyond current declared/inherited lookup,
-  traits, interfaces, aliases/imports, namespace-aware names, autoloading, visibility behavior
+  traits, interfaces, aliases/imports, namespace-aware names, visibility behavior
   beyond metadata reporting, exact native `TypeError` objects, object operands,
   and native lowering beyond direct string/string false folding
 - `get_class_methods` inheritance beyond current single-parent chain, traits,
@@ -11333,7 +11341,6 @@
   ordering and `TypeError` behavior, and native lowering
 - `property_exists` native true results, native declared property tables,
   object operands, built-in/internal/extension classes including `Exception`,
-  autoloading,
   namespaces/import aliases, exact native `TypeError` behavior, and native
   lowering beyond direct string/string false folding
 - `empty($object->name)` dynamic property names, non-public visibility

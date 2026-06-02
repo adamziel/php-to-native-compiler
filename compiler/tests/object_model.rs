@@ -5122,6 +5122,34 @@ fn method_exists_requires_object_or_string_and_string_method_arguments() {
 }
 
 #[test]
+fn property_and_method_exists_autoload_missing_class_strings() {
+    let source = r#"<?php
+spl_autoload_register(function ($name) {
+    echo "autoload:$name\n";
+    if ($name === "AutoMeta") {
+        class AutoMeta {
+            public static $bob;
+            public function run() {}
+        }
+    }
+});
+
+var_dump(property_exists("AutoMeta", "bob"));
+var_dump(method_exists("AutoMeta", "run"));
+var_dump(property_exists("", "bob"));
+var_dump(method_exists("", "run"));
+var_dump(method_exists("MissingMeta", "run"));
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "autoload:AutoMeta\nbool(true)\nbool(true)\nbool(false)\nbool(false)\nautoload:MissingMeta\nbool(false)\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn is_callable_reports_magic_object_and_static_array_callables() {
     let source = r#"<?php
 class HookProxy {

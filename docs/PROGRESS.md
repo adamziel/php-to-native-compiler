@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added a bounded class-member metadata autoload lane for the selected
+  `property_exists_variation1.phpt` surface. `property_exists()` and
+  `method_exists()` now run the existing bounded class autoload callback path
+  for non-empty unresolved string class names before checking declared
+  property or method metadata, while empty string class names stay false
+  without autoload. Focused proof covers the Rust
+  `property_and_method_exists_autoload_missing_class_strings` test, direct
+  `phpc run` probes for autoloaded and missing class strings, and selected
+  PHPT rows `ext/standard/tests/class_object/property_exists_variation1.phpt`
+  plus adjacent `method_exists_basic_003.phpt`. Unsupported edges remain
+  complete dynamic property inventory, traits/interfaces and namespace/import
+  class-name resolution, exact member-name coercion/diagnostic parity beyond
+  already-covered diagnostics lanes, full internal class metadata, references
+  and COW, and native lowering.
+
 - Added a bounded `array_unshift()` existing-slot preservation lane for direct
   array mutation. Rebuilding the target array after prepending values now
   carries existing `ArraySlot`s through integer-key reindexing and string-key
