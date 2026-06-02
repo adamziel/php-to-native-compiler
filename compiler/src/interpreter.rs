@@ -66732,7 +66732,7 @@ impl Interpreter {
 
         let first = self.evaluate(&args[0], caller_scope)?;
         let second = self.evaluate(&args[1], caller_scope)?;
-        let (similarity, percent) = similar_text_result(&first, &second, span)?;
+        let (similarity, percent) = self.similar_text_result(&first, &second, span)?;
 
         if args.len() == 3 {
             let Expr::Variable(percent_name, _) = &args[2] else {
@@ -85877,16 +85877,16 @@ impl Interpreter {
             ),
             "hexdec" => self.call_hexdec(&args, span),
             "base_convert" => self.call_base_convert(&args, span),
-            "crc32" => call_crc32(&args, span),
+            "crc32" => self.call_crc32(&args, span),
             "md5" => call_md5(&args, span),
             "md5_file" => self.call_md5_file(&args, span),
             "sha1" => call_sha1(&args, span),
             "sha1_file" => self.call_sha1_file(&args, span),
-            "levenshtein" => call_levenshtein(&args, span),
-            "similar_text" => call_similar_text(&args, span),
-            "soundex" => call_soundex(&args, span),
-            "metaphone" => call_metaphone(&args, span),
-            "count_chars" => call_count_chars(&args, span),
+            "levenshtein" => self.call_levenshtein(&args, span),
+            "similar_text" => self.call_similar_text(&args, span),
+            "soundex" => self.call_soundex(&args, span),
+            "metaphone" => self.call_metaphone(&args, span),
+            "count_chars" => self.call_count_chars(&args, span),
             "base64_encode" => self.call_base64_encode(&args, span),
             "base64_decode" => self.call_base64_decode(&args, span),
             "quoted_printable_decode" => self.call_quoted_printable_decode(&args, span),
@@ -118454,11 +118454,14 @@ fn call_escapeshellarg(args: &[Value], span: Span) -> CompileResult<Value> {
     Ok(interpreter_value_from_php_string_bytes(output))
 }
 
-fn call_crc32(args: &[Value], span: Span) -> CompileResult<Value> {
-    expect_arity("crc32", args, 1, span)?;
+impl Interpreter {
+    fn call_crc32(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("crc32", args, 1, span)?;
 
-    let value = string_compare_argument_bytes("crc32()", "string", &args[0], span)?;
-    Ok(Value::Int(php_crc32_bytes(&value)))
+        let value =
+            self.php_string_argument_bytes_with_magic("crc32()", 1, "string", &args[0], span)?;
+        Ok(Value::Int(php_crc32_bytes(&value)))
+    }
 }
 
 fn call_md5(args: &[Value], span: Span) -> CompileResult<Value> {
@@ -118721,46 +118724,62 @@ fn php_hash_joaat_digest_bytes(bytes: &[u8]) -> [u8; 4] {
     hash.to_be_bytes()
 }
 
-fn call_levenshtein(args: &[Value], span: Span) -> CompileResult<Value> {
-    if !(2..=5).contains(&args.len()) {
-        return Err(runtime_error(
+impl Interpreter {
+    fn call_levenshtein(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(2..=5).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "levenshtein()",
+                    ArityExpectation::Between { min: 2, max: 5 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let left = self.php_string_argument_bytes_with_magic(
+            "levenshtein()",
+            1,
+            "string1",
+            &args[0],
             span,
-            RuntimeError::arity_mismatch(
-                "levenshtein()",
-                ArityExpectation::Between { min: 2, max: 5 },
-                args.len(),
-            ),
-        ));
+        )?;
+        let right = self.php_string_argument_bytes_with_magic(
+            "levenshtein()",
+            2,
+            "string2",
+            &args[1],
+            span,
+        )?;
+        let insertion_cost = match args.get(2) {
+            Some(value) => {
+                php_internal_int_argument("levenshtein()", 3, "insertion_cost", value, span)?
+            }
+            None => 1,
+        };
+        let replacement_cost = match args.get(3) {
+            Some(value) => {
+                php_internal_int_argument("levenshtein()", 4, "replacement_cost", value, span)?
+            }
+            None => 1,
+        };
+        let deletion_cost = match args.get(4) {
+            Some(value) => {
+                php_internal_int_argument("levenshtein()", 5, "deletion_cost", value, span)?
+            }
+            None => 1,
+        };
+
+        let distance = php_levenshtein_bytes(
+            &left,
+            &right,
+            insertion_cost,
+            replacement_cost,
+            deletion_cost,
+            span,
+        )?;
+        Ok(Value::Int(distance))
     }
-
-    let left = string_compare_argument_bytes("levenshtein()", "string1", &args[0], span)?;
-    let right = string_compare_argument_bytes("levenshtein()", "string2", &args[1], span)?;
-    let insertion_cost = match args.get(2) {
-        Some(value) => {
-            php_internal_int_argument("levenshtein()", 3, "insertion_cost", value, span)?
-        }
-        None => 1,
-    };
-    let replacement_cost = match args.get(3) {
-        Some(value) => {
-            php_internal_int_argument("levenshtein()", 4, "replacement_cost", value, span)?
-        }
-        None => 1,
-    };
-    let deletion_cost = match args.get(4) {
-        Some(value) => php_internal_int_argument("levenshtein()", 5, "deletion_cost", value, span)?,
-        None => 1,
-    };
-
-    let distance = php_levenshtein_bytes(
-        &left,
-        &right,
-        insertion_cost,
-        replacement_cost,
-        deletion_cost,
-        span,
-    )?;
-    Ok(Value::Int(distance))
 }
 
 fn php_levenshtein_bytes(
@@ -118835,43 +118854,57 @@ fn levenshtein_overflow(span: Span) -> Diagnostic {
     )
 }
 
-fn call_similar_text(args: &[Value], span: Span) -> CompileResult<Value> {
-    if !(2..=3).contains(&args.len()) {
-        return Err(runtime_error(
-            span,
-            RuntimeError::arity_mismatch(
-                "similar_text()",
-                ArityExpectation::Between { min: 2, max: 3 },
-                args.len(),
-            ),
-        ));
+impl Interpreter {
+    fn call_similar_text(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(2..=3).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "similar_text()",
+                    ArityExpectation::Between { min: 2, max: 3 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        if args.len() == 3 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "similar_text()",
+                    "percent output requires a direct similar_text() call with a direct variable in the current subset",
+                ),
+            ));
+        }
+
+        let (similarity, _) = self.similar_text_result(&args[0], &args[1], span)?;
+        Ok(Value::Int(similarity as i64))
     }
 
-    if args.len() == 3 {
-        return Err(runtime_error(
+    fn similar_text_result(
+        &mut self,
+        first: &Value,
+        second: &Value,
+        span: Span,
+    ) -> CompileResult<(usize, f64)> {
+        let first =
+            self.php_string_argument_bytes_with_magic("similar_text()", 1, "string1", first, span)?;
+        let second = self.php_string_argument_bytes_with_magic(
+            "similar_text()",
+            2,
+            "string2",
+            second,
             span,
-            RuntimeError::unsupported_call(
-                "similar_text()",
-                "percent output requires a direct similar_text() call with a direct variable in the current subset",
-            ),
-        ));
+        )?;
+        let similarity = php_similar_text_bytes(&first, &second);
+        let combined_len = first.len() + second.len();
+        let percent = if combined_len == 0 {
+            0.0
+        } else {
+            (similarity as f64) * 200.0 / (combined_len as f64)
+        };
+        Ok((similarity, percent))
     }
-
-    let (similarity, _) = similar_text_result(&args[0], &args[1], span)?;
-    Ok(Value::Int(similarity as i64))
-}
-
-fn similar_text_result(first: &Value, second: &Value, span: Span) -> CompileResult<(usize, f64)> {
-    let first = string_compare_argument_bytes("similar_text()", "string1", first, span)?;
-    let second = string_compare_argument_bytes("similar_text()", "string2", second, span)?;
-    let similarity = php_similar_text_bytes(&first, &second);
-    let combined_len = first.len() + second.len();
-    let percent = if combined_len == 0 {
-        0.0
-    } else {
-        (similarity as f64) * 200.0 / (combined_len as f64)
-    };
-    Ok((similarity, percent))
 }
 
 fn php_similar_text_bytes(first: &[u8], second: &[u8]) -> usize {
@@ -118915,11 +118948,14 @@ fn php_similar_text_bytes(first: &[u8], second: &[u8]) -> usize {
     similarity
 }
 
-fn call_soundex(args: &[Value], span: Span) -> CompileResult<Value> {
-    expect_arity("soundex", args, 1, span)?;
+impl Interpreter {
+    fn call_soundex(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("soundex", args, 1, span)?;
 
-    let value = string_compare_argument_bytes("soundex()", "string", &args[0], span)?;
-    Ok(Value::String(php_soundex_bytes(&value)))
+        let value =
+            self.php_string_argument_bytes_with_magic("soundex()", 1, "string", &args[0], span)?;
+        Ok(Value::String(php_soundex_bytes(&value)))
+    }
 }
 
 fn php_soundex_bytes(bytes: &[u8]) -> String {
@@ -118968,37 +119004,42 @@ fn php_soundex_code(byte: u8) -> u8 {
     }
 }
 
-fn call_metaphone(args: &[Value], span: Span) -> CompileResult<Value> {
-    if !(1..=2).contains(&args.len()) {
-        return Err(runtime_error(
-            span,
-            RuntimeError::arity_mismatch(
-                "metaphone()",
-                ArityExpectation::Between { min: 1, max: 2 },
-                args.len(),
-            ),
-        ));
-    }
+impl Interpreter {
+    fn call_metaphone(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(1..=2).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "metaphone()",
+                    ArityExpectation::Between { min: 1, max: 2 },
+                    args.len(),
+                ),
+            ));
+        }
 
-    let value = string_compare_argument_bytes("metaphone()", "string", &args[0], span)?;
-    let max_phonemes = match args.get(1) {
-        Some(value) => php_internal_int_argument("metaphone()", 2, "max_phonemes", value, span)?,
-        None => 0,
-    };
-    if max_phonemes < 0 {
-        return Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                "metaphone()",
-                "Argument #2 ($max_phonemes) must be greater than or equal to 0",
-            ),
-        ));
-    }
+        let value =
+            self.php_string_argument_bytes_with_magic("metaphone()", 1, "string", &args[0], span)?;
+        let max_phonemes = match args.get(1) {
+            Some(value) => {
+                php_internal_int_argument("metaphone()", 2, "max_phonemes", value, span)?
+            }
+            None => 0,
+        };
+        if max_phonemes < 0 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "metaphone()",
+                    "Argument #2 ($max_phonemes) must be greater than or equal to 0",
+                ),
+            ));
+        }
 
-    Ok(Value::String(php_metaphone_bytes(
-        &value,
-        usize::try_from(max_phonemes).unwrap_or(usize::MAX),
-    )))
+        Ok(Value::String(php_metaphone_bytes(
+            &value,
+            usize::try_from(max_phonemes).unwrap_or(usize::MAX),
+        )))
+    }
 }
 
 fn php_metaphone_bytes(bytes: &[u8], max_phonemes: usize) -> String {
@@ -119267,62 +119308,70 @@ fn metaphone_is_break(byte: u8) -> bool {
     !metaphone_is_alpha(byte)
 }
 
-fn call_count_chars(args: &[Value], span: Span) -> CompileResult<Value> {
-    if !(1..=2).contains(&args.len()) {
-        return Err(runtime_error(
-            span,
-            RuntimeError::arity_mismatch(
-                "count_chars()",
-                ArityExpectation::Between { min: 1, max: 2 },
-                args.len(),
-            ),
-        ));
-    }
-
-    let value = string_compare_argument_bytes("count_chars()", "string", &args[0], span)?;
-    let mode = match args.get(1) {
-        Some(value) => php_internal_int_argument("count_chars()", 2, "mode", value, span)?,
-        None => 0,
-    };
-    if !(0..=4).contains(&mode) {
-        return Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                "count_chars()",
-                "Argument #2 ($mode) must be between 0 and 4 (inclusive)",
-            ),
-        ));
-    }
-
-    let mut counts = [0_i64; 256];
-    for byte in value {
-        counts[byte as usize] += 1;
-    }
-
-    match mode {
-        0 | 1 | 2 => {
-            let mut array = PhpArray::new();
-            for (index, count) in counts.iter().copied().enumerate() {
-                if mode == 1 && count == 0 {
-                    continue;
-                }
-                if mode == 2 && count != 0 {
-                    continue;
-                }
-                array.insert(ArrayKey::Int(index as i64), Value::Int(count));
-            }
-            Ok(Value::Array(array))
+impl Interpreter {
+    fn call_count_chars(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(1..=2).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "count_chars()",
+                    ArityExpectation::Between { min: 1, max: 2 },
+                    args.len(),
+                ),
+            ));
         }
-        3 | 4 => {
-            let mut output = Vec::new();
-            for (index, count) in counts.iter().copied().enumerate() {
-                if (mode == 3 && count != 0) || (mode == 4 && count == 0) {
-                    output.push(index as u8);
-                }
-            }
-            Ok(interpreter_value_from_php_string_bytes(output))
+
+        let value = self.php_string_argument_bytes_with_magic(
+            "count_chars()",
+            1,
+            "string",
+            &args[0],
+            span,
+        )?;
+        let mode = match args.get(1) {
+            Some(value) => php_internal_int_argument("count_chars()", 2, "mode", value, span)?,
+            None => 0,
+        };
+        if !(0..=4).contains(&mode) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "count_chars()",
+                    "Argument #2 ($mode) must be between 0 and 4 (inclusive)",
+                ),
+            ));
         }
-        _ => unreachable!("count_chars mode already validated"),
+
+        let mut counts = [0_i64; 256];
+        for byte in value {
+            counts[byte as usize] += 1;
+        }
+
+        match mode {
+            0 | 1 | 2 => {
+                let mut array = PhpArray::new();
+                for (index, count) in counts.iter().copied().enumerate() {
+                    if mode == 1 && count == 0 {
+                        continue;
+                    }
+                    if mode == 2 && count != 0 {
+                        continue;
+                    }
+                    array.insert(ArrayKey::Int(index as i64), Value::Int(count));
+                }
+                Ok(Value::Array(array))
+            }
+            3 | 4 => {
+                let mut output = Vec::new();
+                for (index, count) in counts.iter().copied().enumerate() {
+                    if (mode == 3 && count != 0) || (mode == 4 && count == 0) {
+                        output.push(index as u8);
+                    }
+                }
+                Ok(interpreter_value_from_php_string_bytes(output))
+            }
+            _ => unreachable!("count_chars mode already validated"),
+        }
     }
 }
 

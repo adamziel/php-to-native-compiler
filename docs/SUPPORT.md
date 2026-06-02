@@ -4123,6 +4123,13 @@
   null or lossy count coercions, exact invalid `__toString()` return
   diagnostics, exact memory accounting, references/COW, and native lowering
   remain unsupported.
+  `crc32()`, `soundex()`, `metaphone()`, `count_chars()`,
+  `levenshtein()`, and `similar_text()` route their declared string operands
+  through the shared PHP-shaped string byte boundary: scalar and `null`
+  operands convert to current runtime bytes, `null` emits the bounded PHP
+  deprecation, supported visible `__toString()` objects are accepted, and
+  arrays, closures, resources, or non-stringable objects raise catchable
+  PHP-shaped string `TypeError`s with the declared parameter names.
   `wordwrap()` supports scalar/null
   string-convertible input, integer width, non-empty string break values, and
   the `cut_long_words` flag over current byte strings.
@@ -4145,17 +4152,16 @@
   `strnatcmp()` and `strnatcasecmp()` support scalar/null string-convertible
   operands using the current byte-oriented natural comparison, with ASCII case
   folding for the case-insensitive form. `similar_text($string1, $string2,
-  &$percent = null)` supports scalar/null string-convertible operands and the
-  PHP byte-oriented recursive longest-common-substring similarity count. Direct
-  calls may pass a direct variable as the optional percent output; the
+  &$percent = null)` supports the PHP byte-oriented recursive
+  longest-common-substring similarity count. Direct calls may pass a direct
+  variable as the optional percent output; the
   interpreter writes the computed float percentage to that variable. This is a
   bounded output-parameter path, not true PHP references.
   `metaphone($string, $max_phonemes = 0)` supports the traditional PHP
-  byte-oriented metaphone rules for scalar/null string-convertible input and
-  non-negative integer-compatible maximum phoneme limits. It preserves PHP's
-  current focused behavior for non-letter prefixes, punctuation breaks,
-  traditional `CH`/`TH`/`X` encodings, and negative-limit `ValueError`
-  diagnostics. `convert_uuencode()` and
+  byte-oriented metaphone rules and non-negative integer-compatible maximum
+  phoneme limits. It preserves PHP's current focused behavior for non-letter
+  prefixes, punctuation breaks, traditional `CH`/`TH`/`X` encodings, and
+  negative-limit `ValueError` diagnostics. `convert_uuencode()` and
   `convert_uudecode()` support the bounded uuencode/uudecode byte format used
   by the focused standard-library rows. `mb_strlen()`, `mb_substr()`,
   `mb_strcut()`, `mb_substr_count()`, `mb_strpos()`,
@@ -12044,10 +12050,11 @@
   `__toString()` return diagnostics, locale or Unicode-aware matching, exact
   binary string edge cases beyond represented runtime bytes, and native
   lowering beyond function-table introspection
-- `similar_text()` outside the current scalar/null string-convertible byte
-  similarity subset: array/object/resource operands, non-variable or indirect
-  percent output targets, exact PHP reference binding semantics, and native
-  lowering beyond function-table introspection
+- `similar_text()` outside the current byte similarity subset: exact invalid
+  `__toString()` return diagnostics, binary fidelity beyond represented
+  runtime bytes, non-variable or indirect percent output targets, exact PHP
+  reference binding semantics, and native lowering beyond function-table
+  introspection
 - `mb_substr_count()` outside the current scalar/null string-convertible
   UTF-8 and single-byte non-overlapping count subset: full encoding conversion
   tables, invalid sequence policy, array/object/resource data operands, exact
@@ -12061,12 +12068,12 @@
   `__toString()` return diagnostics for encoding operands, exact diagnostics
   beyond unknown encodings, references/COW, and native lowering beyond
   function-table introspection
-- `metaphone()` outside the current scalar/null string-convertible traditional
-  byte-oriented subset with optional non-negative integer-compatible
-  `max_phonemes`: locale or Unicode alphabetic rules, object/resource
-  operands, exact embedded-NUL/binary parity beyond the PHP-compatible
-  C-string boundary, exact diagnostics beyond the covered negative-limit
-  `ValueError`, and native lowering beyond function-table introspection
+- `metaphone()` outside the current traditional byte-oriented subset with
+  optional non-negative integer-compatible `max_phonemes`: exact invalid
+  `__toString()` return diagnostics, locale or Unicode alphabetic rules,
+  exact embedded-NUL/binary parity beyond the PHP-compatible C-string
+  boundary, exact diagnostics beyond the covered negative-limit `ValueError`,
+  and native lowering beyond function-table introspection
 - `str_getcsv()` outside the current one-record string parser with one-byte
   separator/enclosure and empty or one-byte escape arguments: broader CSV
   dialect parity, named arguments beyond direct by-value calls with declared

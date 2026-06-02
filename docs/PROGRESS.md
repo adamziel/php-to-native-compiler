@@ -4,6 +4,29 @@
 
 Implemented:
 
+- Added a bounded string-algorithm helper argument-boundary lane. Direct and
+  string-valued dynamic interpreter calls to `crc32()`, `soundex()`,
+  `metaphone()`, `count_chars()`, `levenshtein()`, and `similar_text()` now
+  route their declared string operands through the shared PHP-shaped string
+  byte boundary. Scalar operands keep the existing byte-oriented algorithm
+  behavior, `null` emits the bounded PHP-shaped deprecation before converting
+  to `""`, supported visible `__toString()` objects are accepted, and arrays,
+  resources, closures, or non-stringable objects raise catchable PHP-shaped
+  string `TypeError`s with the declared parameter names. Existing
+  `metaphone()` max-phoneme validation, `count_chars()` modes,
+  `levenshtein()` cost handling, direct `similar_text()` percent output,
+  metadata visibility, existing `crc32()` native string-int lowering, and the
+  existing native rejection boundaries for the other helpers remain unchanged.
+  Focused proof covers the Rust
+  `string_algorithm_helpers_use_php_string_argument_boundary` regression, the
+  full string algorithm Rust file, direct CLI probes, selected public string
+  algorithm PHPT rows, build, fmt, and diff checks. Unsupported edges remain
+  exact invalid `__toString()` return diagnostics, broader binary fidelity
+  beyond represented runtime bytes, exact algorithm parity outside the current
+  bounded implementations, non-variable or indirect `similar_text()` percent
+  outputs, references/COW, and native lowering for the broadened
+  interpreter-only object/null operand paths.
+
 - Added a bounded `chunk_split()` declared string-operand boundary lane.
   Direct and string-valued dynamic interpreter calls now route argument #1
   `$string` and optional argument #3 `$separator` through the shared
