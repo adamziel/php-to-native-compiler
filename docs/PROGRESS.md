@@ -4,6 +4,29 @@
 
 Implemented:
 
+- Added a bounded `DateTimeZone` generic serialization metadata lane.
+  `serialize()` now emits PHP wire text for exact core `DateTimeZone` objects
+  whose current bounded `timezone_type` / `timezone` public state is valid,
+  and `unserialize()` rebuilds exact core `DateTimeZone` objects from matching
+  type-1 fixed-offset, type-2 abbreviation, and type-3 named timezone payloads
+  so `getName()` and existing timezone helpers can use the restored object.
+  Invalid `DateTimeZone` serialized state, including NUL-containing timezone
+  names, raises a catchable PHP-shaped `Error` with the current public
+  diagnostic. Existing scalar/array serialization, generic object
+  unserialization, DateTimeZone construction, metadata visibility, and native
+  lowering rejection remain unchanged. Focused proof covers the Rust
+  `datetimezone_serialize_roundtrips_bounded_metadata` regression, the full
+  DateTime Rust file, direct CLI probes, selected public PHPT rows
+  `DateTimeZone_serialize_type_1.phpt`,
+  `DateTimeZone_serialize_type_2.phpt`,
+  `DateTimeZone_serialize_type_3.phpt`, and
+  `DateTimeZone_serialize_errors.phpt`, build, fmt, and diff checks.
+  Unsupported edges remain DateTime/DateTimeImmutable serialization,
+  DateTimeZone subclasses and custom dynamic-property serialization,
+  inherited/custom serialization hooks, malformed object payload offset
+  parity, broader timezone database/history, references/COW, and native
+  lowering.
+
 - Added a bounded JSON validation/decode error-location lane. The interpreter
   now renders `json_validate()` / `json_decode()` syntax, state-mismatch,
   control-character, UTF-16, and depth parse diagnostics with character-based

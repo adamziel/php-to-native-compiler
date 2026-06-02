@@ -604,6 +604,40 @@ echo count($tran), "|", $tran[6]["ts"], "|", $tran[6]["abbr"], "\n";
 }
 
 #[test]
+fn datetimezone_serialize_roundtrips_bounded_metadata() {
+    let execution = run_source(
+        r#"<?php
+date_default_timezone_set("Europe/London");
+$fixed = date_create("2012-01-01 10:00 +1:00")->getTimezone();
+foreach (array($fixed, new DateTimeZone("EST"), new DateTimeZone("America/New_York")) as $tz) {
+    $serialized = serialize($tz);
+    $copy = unserialize($serialized);
+    echo $tz->getName(), "|", $serialized, "|", $copy->getName(), "\n";
+}
+$bad = 'O:12:"DateTimeZone":2:{s:13:"timezone_type";i:3;s:8:"timezone";s:17:"Ame' . "\0" . 'rica/New_York";}';
+try {
+    unserialize($bad);
+} catch (Throwable $e) {
+    echo get_class($e), ": ", $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "+01:00|O:12:\"DateTimeZone\":2:{s:13:\"timezone_type\";i:1;s:8:\"timezone\";s:6:\"+01:00\";}|+01:00\n",
+            "EST|O:12:\"DateTimeZone\":2:{s:13:\"timezone_type\";i:2;s:8:\"timezone\";s:3:\"EST\";}|EST\n",
+            "America/New_York|O:12:\"DateTimeZone\":2:{s:13:\"timezone_type\";i:3;s:8:\"timezone\";s:16:\"America/New_York\";}|America/New_York\n",
+            "Error: Invalid serialization data for DateTimeZone object\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn datetime_mutable_timezone_metadata_matches_basic_rows() {
     let execution = run_source(
         r#"<?php

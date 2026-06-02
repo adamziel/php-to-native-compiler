@@ -89576,11 +89576,22 @@ impl Interpreter {
         expect_arity("unserialize()", args, 1, span)?;
         let data = string_builtin_argument("unserialize()", "data", &args[0], span)?;
         let mut parser = PhpSerializedParser::new(&data);
-        let mut object_factory = |class_name: &str, properties: Vec<(String, Value)>| {
-            self.create_unserialized_object(class_name, properties, span)
-                .ok()
+        let mut object_error = None;
+        let parsed = {
+            let mut object_factory = |class_name: &str, properties: Vec<(String, Value)>| match self
+                .create_unserialized_object(class_name, properties, span)
+            {
+                Ok(value) => Some(value),
+                Err(error) => {
+                    if is_datetimezone_invalid_serialization_error(&error) {
+                        object_error = Some(error);
+                    }
+                    None
+                }
+            };
+            parser.parse_value_with_object_factory(&mut object_factory)
         };
-        match parser.parse_value_with_object_factory(&mut object_factory) {
+        match parsed {
             Some(value) if parser.is_finished() => Ok(value),
             Some(value) => {
                 self.emit_display_warning(
@@ -89594,6 +89605,9 @@ impl Interpreter {
                 Ok(value)
             }
             _ => {
+                if let Some(error) = object_error {
+                    return Err(error);
+                }
                 self.emit_display_warning(
                     &format!(
                         "unserialize(): Error at offset {} of {} bytes",
@@ -89636,13 +89650,60 @@ impl Interpreter {
             interface_names,
             object_id,
         );
-        for (name, value) in properties {
-            object
-                .write_dynamic_public_property(&name, value)
-                .map_err(|error| runtime_error(span, error))?;
+        if self.resolved_method_is_core_datetimezone(class_id) {
+            self.initialize_unserialized_datetimezone_object(&object, properties, span)?;
+        } else {
+            for (name, value) in properties {
+                object
+                    .write_dynamic_public_property(&name, value)
+                    .map_err(|error| runtime_error(span, error))?;
+            }
         }
         self.track_allocated_object(&object);
         Ok(Value::Object(object))
+    }
+
+    fn initialize_unserialized_datetimezone_object(
+        &self,
+        object: &PhpObject,
+        properties: Vec<(String, Value)>,
+        span: Span,
+    ) -> CompileResult<()> {
+        let mut timezone_type = None;
+        let mut timezone_name = None;
+        for (name, value) in properties {
+            match (name.as_str(), value) {
+                ("timezone_type", Value::Int(value)) => timezone_type = Some(value),
+                ("timezone", Value::String(value)) => timezone_name = Some(value),
+                _ => return Err(datetimezone_invalid_serialization_error(span)),
+            }
+        }
+
+        let Some(timezone_type) = timezone_type else {
+            return Err(datetimezone_invalid_serialization_error(span));
+        };
+        let Some(timezone_name) = timezone_name else {
+            return Err(datetimezone_invalid_serialization_error(span));
+        };
+        if timezone_name.contains('\0') {
+            return Err(datetimezone_invalid_serialization_error(span));
+        }
+
+        let Some((expected_type, canonical_name)) = bounded_timezone_object_parts(&timezone_name)
+        else {
+            return Err(datetimezone_invalid_serialization_error(span));
+        };
+        if timezone_type != expected_type {
+            return Err(datetimezone_invalid_serialization_error(span));
+        }
+
+        object
+            .write_public_property("timezone_type", Value::Int(timezone_type))
+            .map_err(|error| runtime_error(span, error))?;
+        object
+            .write_public_property("timezone", Value::String(canonical_name))
+            .map_err(|error| runtime_error(span, error))?;
+        Ok(())
     }
 
     fn call_user_func_builtin(&mut self, args: Vec<Value>, span: Span) -> CompileResult<Value> {
@@ -105768,6 +105829,24 @@ fn is_forbidden_dynamic_builtin_call_diagnostic(error: &Diagnostic) -> bool {
         .is_some()
 }
 
+const DATETIMEZONE_INVALID_SERIALIZATION_MESSAGE: &str =
+    "Invalid serialization data for DateTimeZone object";
+
+fn datetimezone_invalid_serialization_error(span: Span) -> Diagnostic {
+    runtime_error(
+        span,
+        RuntimeError::unsupported_call("unserialize()", DATETIMEZONE_INVALID_SERIALIZATION_MESSAGE),
+    )
+}
+
+fn is_datetimezone_invalid_serialization_error(error: &Diagnostic) -> bool {
+    error.phase == Phase::Runtime
+        && error.message
+            == format!(
+                "unsupported call unserialize(): {DATETIMEZONE_INVALID_SERIALIZATION_MESSAGE}"
+            )
+}
+
 fn catchable_php_error_message(error: &Diagnostic) -> Option<String> {
     catchable_php_error_class_and_message(error).map(|(_, message)| message)
 }
@@ -105787,6 +105866,13 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
 
     if let Some(thrown) = catchable_uncaught_throw_class_and_message(error) {
         return Some(thrown);
+    }
+
+    if is_datetimezone_invalid_serialization_error(error) {
+        return Some((
+            "Error",
+            DATETIMEZONE_INVALID_SERIALIZATION_MESSAGE.to_string(),
+        ));
     }
 
     if error.phase == Phase::Runtime
@@ -131799,8 +131885,39 @@ fn format_php_serialized_value(value: &Value, output: &mut String) -> Option<()>
             }
             output.push('}');
         }
-        Value::Object(_) | Value::Closure(_) | Value::Resource(_) => return None,
+        Value::Object(object) => format_php_serialized_datetimezone_object(object, output)?,
+        Value::Closure(_) | Value::Resource(_) => return None,
     }
+    Some(())
+}
+
+fn format_php_serialized_datetimezone_object(
+    object: &PhpObject,
+    output: &mut String,
+) -> Option<()> {
+    if !object.class_name().eq_ignore_ascii_case("DateTimeZone") {
+        return None;
+    }
+
+    let timezone_type = match object.read_public_property("timezone_type").ok()? {
+        Value::Int(value) => value,
+        _ => return None,
+    };
+    let timezone_name = match object.read_public_property("timezone").ok()? {
+        Value::String(value) => value,
+        _ => return None,
+    };
+    let (expected_type, canonical_name) = bounded_timezone_object_parts(&timezone_name)?;
+    if timezone_type != expected_type {
+        return None;
+    }
+
+    output.push_str("O:12:\"DateTimeZone\":2:{");
+    format_php_serialized_array_key(&ArrayKey::String("timezone_type".to_string()), output);
+    format_php_serialized_value(&Value::Int(timezone_type), output)?;
+    format_php_serialized_array_key(&ArrayKey::String("timezone".to_string()), output);
+    format_php_serialized_value(&Value::String(canonical_name), output)?;
+    output.push('}');
     Some(())
 }
 
@@ -140741,10 +140858,10 @@ fn bounded_timezone_object_parts(name: &str) -> Option<(i64, String)> {
         "UTC" => return Some((3, "UTC".to_string())),
         _ => {}
     }
-    if matches!(trimmed.as_bytes().first(), Some(b'+') | Some(b'-'))
-        && parse_timezone_offset_token(trimmed).is_some()
-    {
-        return Some((1, trimmed.to_string()));
+    if matches!(trimmed.as_bytes().first(), Some(b'+') | Some(b'-')) {
+        if let Some(offset) = parse_timezone_offset_token(trimmed) {
+            return Some((1, format_timezone_offset(offset, true)));
+        }
     }
     bounded_timezone_from_name(trimmed).map(|timezone| (3, timezone.name))
 }

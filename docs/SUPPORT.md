@@ -6052,7 +6052,11 @@
   string and scalar-string-compatible timezone identifiers, returns bounded
   `DateTimeZone` objects for supported named or fixed-offset identifiers, and
   emits a PHP-shaped warning plus `false` for unsupported or malformed
-  identifiers in the covered local CLI row. Full timezone database validation,
+  identifiers in the covered local CLI row. Exact core `DateTimeZone` objects
+  also round-trip through the generic `serialize()` / `unserialize()` subset
+  for supported fixed-offset, abbreviation, and named timezone metadata, with
+  invalid serialized state raising a catchable PHP-shaped `Error`. Full
+  timezone database validation,
   exact internal `DateTime` / `DateTimeZone` constructor diagnostics beyond
   the covered arity slice and scalar coercion/deprecation parity,
   `DateTimeImmutable`, broad `DateTimeInterface`
@@ -10105,14 +10109,17 @@
   UTF-8 replacement for the current scalar/array/object value model.
   `serialize()` emits PHP wire text for the current null/bool/int/float/string
   and ordered-array value subset, including uppercase `INF`, `-INF`, and `NAN`
-  spellings for non-finite floats. `unserialize()` accepts the matching
-  scalar/array payload subset, returns a valid parsed prefix with PHP-shaped
-  extra-data warnings, reports reached malformed-input parser offsets with
-  `of N bytes` text, and rejects signed serialized lengths.
-  Object/resource/closure serialization, custom serialization hooks,
-  non-UTF-8 binary string payloads, exact malformed-input offset parity beyond
-  the covered rows, full `serialize_precision` float parity, and native
-  lowering remain unsupported.
+  spellings for non-finite floats. Exact core `DateTimeZone` objects with
+  valid bounded metadata are the only current object serialization exception.
+  `unserialize()` accepts the matching scalar/array payload subset plus
+  supported exact core `DateTimeZone` payloads, returns a valid parsed prefix
+  with PHP-shaped extra-data warnings, reports reached malformed-input parser
+  offsets with `of N bytes` text, rejects signed serialized lengths, and
+  raises a catchable PHP-shaped `Error` for invalid `DateTimeZone` serialized
+  state. Other object/resource/closure serialization, custom serialization
+  hooks, non-UTF-8 binary string payloads, exact malformed-input offset parity
+  beyond the covered rows, full `serialize_precision` float parity, DateTime
+  object serialization, and native lowering remain unsupported.
   `strlen` accepts scalar/null string-convertible values and supported
   `__toString()` objects, and rejects arrays, resources, closures, and objects
   without supported `__toString()`. `count` accepts arrays only.
