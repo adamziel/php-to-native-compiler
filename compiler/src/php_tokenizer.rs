@@ -510,7 +510,16 @@ struct Scanner<'a> {
     line: i64,
     in_php: bool,
     last_significant_token: Option<i64>,
+    halt_compiler_state: Option<HaltCompilerState>,
+    halt_compiler_line: Option<i64>,
     tokens: Vec<PhpTokenizerToken>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HaltCompilerState {
+    AfterKeyword,
+    AfterOpenParen,
+    AfterCloseParen,
 }
 
 impl<'a> Scanner<'a> {
@@ -521,6 +530,8 @@ impl<'a> Scanner<'a> {
             line: 1,
             in_php: false,
             last_significant_token: None,
+            halt_compiler_state: None,
+            halt_compiler_line: None,
             tokens: Vec::new(),
         }
     }
@@ -581,6 +592,13 @@ impl<'a> Scanner<'a> {
 
         let byte = self.source[self.index];
         if is_php_whitespace(byte) {
+            if self.halt_compiler_payload_starts_here() {
+                let start = self.index;
+                self.index = self.source.len();
+                self.push_token(T_INLINE_HTML, start, self.index);
+                self.in_php = false;
+                return;
+            }
             let start = self.index;
             while self.peek().is_some_and(is_php_whitespace) {
                 self.index += 1;
@@ -649,7 +667,16 @@ impl<'a> Scanner<'a> {
 
         let start = self.index;
         self.index += 1;
+        let byte = self.source[start];
+        let completes_halt_compiler =
+            byte == b';' && self.halt_compiler_state == Some(HaltCompilerState::AfterCloseParen);
         self.push_symbol(start, self.index);
+        if completes_halt_compiler && self.index < self.source.len() {
+            let tail_start = self.index;
+            self.index = self.source.len();
+            self.push_token(T_INLINE_HTML, tail_start, self.index);
+            self.in_php = false;
+        }
     }
 
     fn next_open_tag_index(&self) -> Option<usize> {
@@ -1115,6 +1142,9 @@ impl<'a> Scanner<'a> {
         let line = self.line;
         let position = start as i64;
         self.line += byte_line_count(&text);
+        if let Some(symbol) = text.first().copied() {
+            self.note_halt_compiler_symbol(symbol);
+        }
         if let Some(symbol) = text.first() {
             self.last_significant_token = Some(*symbol as i64);
         }
@@ -1160,8 +1190,38 @@ impl<'a> Scanner<'a> {
                 | T_CLOSE_TAG
                 | T_OPEN_TAG_WITH_ECHO
         ) {
+            self.note_halt_compiler_token(id);
             self.last_significant_token = Some(id);
         }
+    }
+
+    fn note_halt_compiler_token(&mut self, id: i64) {
+        if id == T_HALT_COMPILER {
+            self.halt_compiler_state = Some(HaltCompilerState::AfterKeyword);
+            self.halt_compiler_line = Some(self.line);
+        } else if !matches!(id, T_INLINE_HTML | T_WHITESPACE | T_COMMENT | T_DOC_COMMENT) {
+            self.halt_compiler_state = None;
+        }
+    }
+
+    fn note_halt_compiler_symbol(&mut self, symbol: u8) {
+        self.halt_compiler_state = match (self.halt_compiler_state, symbol) {
+            (Some(HaltCompilerState::AfterKeyword), b'(') => {
+                Some(HaltCompilerState::AfterOpenParen)
+            }
+            (Some(HaltCompilerState::AfterOpenParen), b')') => {
+                Some(HaltCompilerState::AfterCloseParen)
+            }
+            (Some(HaltCompilerState::AfterCloseParen), b';') => None,
+            _ => None,
+        };
+    }
+
+    fn halt_compiler_payload_starts_here(&self) -> bool {
+        self.halt_compiler_state.is_none()
+            && self
+                .halt_compiler_line
+                .is_some_and(|line| self.line >= line.saturating_add(3))
     }
 }
 

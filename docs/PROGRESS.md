@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added a bounded tokenizer `__halt_compiler()` payload lane for the selected
+  `ext/tokenizer/tests/bug54089.phpt` surface. `token_get_all()` and
+  `PhpToken::tokenize()` now keep `T_HALT_COMPILER` lexical classification and
+  treat the source bytes after a completed `__halt_compiler();` token sequence,
+  including whitespace-separated `(`, `)`, and `;`, as one `T_INLINE_HTML`
+  payload token instead of continuing normal PHP tokenization. The focused
+  scanner state also preserves the reached multiline malformed-tail fallback
+  from the public row. Focused proof covers the Rust
+  `token_get_all_marks_halt_compiler_payload_as_inline_html` test, a direct
+  `phpc run` tokenizer probe, and the selected PHPT row
+  `ext/tokenizer/tests/bug54089.phpt`. Unsupported edges remain parser/runtime
+  execution of `__halt_compiler()`, exact malformed halt recovery outside the
+  covered tokenizer row, `TOKEN_PARSE` parse-error validation, complete
+  heredoc/nowdoc token parity, and native lowering.
+
 - Added a bounded SPL class-list diagnostics lane for selected
   `class_implements()` / `class_uses()` rows. The shared class-list helper now
   accepts objects or string class names, emits PHP-shaped warnings and returns

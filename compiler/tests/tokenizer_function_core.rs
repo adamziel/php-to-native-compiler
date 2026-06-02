@@ -200,6 +200,64 @@ foreach ($inputs as $code) {
 }
 
 #[test]
+fn token_get_all_marks_halt_compiler_payload_as_inline_html() {
+    let execution = run_source(
+        r#"<?php
+$codes = [
+    "<?php __halt_compiler();ABC",
+    "<?php __halt_compiler\n(\n)\n;ABC",
+    "<?php __halt_compiler\na\nb\nc d",
+];
+foreach ($codes as $code) {
+    echo "==\n";
+    foreach (token_get_all($code) as $token) {
+        if (is_array($token)) {
+            echo token_name($token[0]), ":", str_replace("\n", "\\n", $token[1]), ":", $token[2], "\n";
+        } else {
+            echo $token, "\n";
+        }
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "==\n",
+            "T_OPEN_TAG:<?php :1\n",
+            "T_HALT_COMPILER:__halt_compiler:1\n",
+            "(\n",
+            ")\n",
+            ";\n",
+            "T_INLINE_HTML:ABC:1\n",
+            "==\n",
+            "T_OPEN_TAG:<?php :1\n",
+            "T_HALT_COMPILER:__halt_compiler:1\n",
+            "T_WHITESPACE:\\n:1\n",
+            "(\n",
+            "T_WHITESPACE:\\n:2\n",
+            ")\n",
+            "T_WHITESPACE:\\n:3\n",
+            ";\n",
+            "T_INLINE_HTML:ABC:4\n",
+            "==\n",
+            "T_OPEN_TAG:<?php :1\n",
+            "T_HALT_COMPILER:__halt_compiler:1\n",
+            "T_WHITESPACE:\\n:1\n",
+            "T_STRING:a:2\n",
+            "T_WHITESPACE:\\n:2\n",
+            "T_STRING:b:3\n",
+            "T_WHITESPACE:\\n:3\n",
+            "T_STRING:c:4\n",
+            "T_INLINE_HTML: d:4\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn php_token_objects_support_constructor_methods_subclasses_and_ampersands() {
     let execution = run_source(
         r#"<?php

@@ -860,6 +860,12 @@ The lexer maintains both character and byte offsets as it advances. Prefix
 checks for PHP tags, heredoc terminators, and other byte-slice comparisons use
 the maintained byte offset so large real-world files do not repeatedly rescan
 the already-consumed character prefix.
+The tokenizer compatibility builtins use a separate byte scanner that preserves
+PHP token names, text, line numbers, and byte positions for the supported
+subset. That scanner has its own bounded `__halt_compiler()` stop-point state:
+after the keyword, optional whitespace, `(`, optional whitespace, `)`, optional
+whitespace, and `;`, all remaining bytes are represented as one
+`T_INLINE_HTML` payload token instead of continuing PHP lexical classification.
 When the lexer sees `?>`, it emits the intervening inline HTML up to the next
 PHP open tag as a token consumed by the parser into an echo statement. The
 current slice consumes one immediate newline after `?>`, matching PHP's common
