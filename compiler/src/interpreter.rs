@@ -116621,7 +116621,8 @@ impl Interpreter {
             ));
         }
 
-        let format = string_compare_argument_bytes("pack()", "format", &args[0], span)?;
+        let format =
+            self.php_string_argument_bytes_with_magic("pack()", 1, "format", &args[0], span)?;
         let items = parse_pack_format_items("pack()", &format, false, span)?;
         let mut output = Vec::new();
         let mut value_index = 1usize;
@@ -116707,10 +116708,12 @@ impl Interpreter {
             ));
         }
 
-        let format = string_compare_argument_bytes("unpack()", "format", &args[0], span)?;
-        let data = string_compare_argument_bytes("unpack()", "string", &args[1], span)?;
+        let format =
+            self.php_string_argument_bytes_with_magic("unpack()", 1, "format", &args[0], span)?;
+        let data =
+            self.php_string_argument_bytes_with_magic("unpack()", 2, "string", &args[1], span)?;
         let offset = match args.get(2) {
-            Some(value) => integer_argument_current_subset("unpack()", "offset", value, span)?,
+            Some(value) => php_internal_int_argument("unpack()", 3, "offset", value, span)?,
             None => 0,
         };
         if offset < 0 || offset as usize > data.len() {
@@ -117012,16 +117015,6 @@ fn parse_pack_format_items(
         };
 
         items.push(PackFormatItem { code, repeat, name });
-    }
-
-    if items.is_empty() {
-        return Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                function,
-                "empty pack/unpack formats are not implemented in the current subset",
-            ),
-        ));
     }
 
     Ok(items)

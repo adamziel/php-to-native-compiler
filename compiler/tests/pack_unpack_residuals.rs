@@ -170,3 +170,61 @@ try {
     assert!(execution.stdout.ends_with("Type E: too few arguments\n"));
     assert_eq!(execution.exit_code, 0);
 }
+
+#[test]
+fn pack_unpack_declared_operands_use_php_argument_boundaries() {
+    let execution = run_source(
+        r#"<?php
+class FormatValue {
+    public function __toString(): string {
+        return "H*";
+    }
+}
+class DataValue {
+    public function __toString(): string {
+        return "4142";
+    }
+}
+
+echo bin2hex(pack(new FormatValue, "4142")), "|";
+$unpacked = unpack(new FormatValue, new DataValue);
+echo $unpacked[1], "|";
+$call = "unpack";
+$offset = $call("H*", new DataValue, "1");
+echo $offset[1], "|";
+echo strlen(pack("", "unused")), ":", count(unpack("", "AB")), "|";
+
+set_error_handler(function($_errno, $message) {
+    echo $message, "|";
+    return true;
+});
+$empty = unpack("H*", null);
+echo count($empty), ":", $empty[1], "|";
+restore_error_handler();
+
+try {
+    pack([], "41");
+} catch (TypeError $e) {
+    echo $e->getMessage(), "|";
+}
+try {
+    unpack("H*", []);
+} catch (TypeError $e) {
+    echo $e->getMessage(), "|";
+}
+try {
+    unpack("H*", "AB", []);
+} catch (TypeError $e) {
+    echo $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "4142|34313432|313432|0:0|unpack(): Passing null to parameter #2 ($string) of type string is deprecated|1:|pack(): Argument #1 ($format) must be of type string, array given|unpack(): Argument #2 ($string) must be of type string, array given|unpack(): Argument #3 ($offset) must be of type int, array given"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}

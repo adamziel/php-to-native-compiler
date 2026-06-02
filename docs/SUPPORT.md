@@ -4038,15 +4038,24 @@
   support the bounded binary format subset used by the current string
   pack/unpack PHPT rows: hexadecimal `H`/`h`, padding `x`, cursor controls
   `X` and `@` for unpacking, space/NUL string fields `A`/`Z`, pack-side
-  signed-byte `c`, 32-bit little-endian integers `V`, native 32-bit integer aliases `l`/`i`/`I`,
-  64-bit integer forms `Q`/`J`/`P`/`q`, and float/double forms
-  `e`/`E`/`g`/`G`. Unpack names, repeated values, `*` repeaters for the
-  covered scalar formats, the PHP warning-and-ignore behavior for `unpack()`
-  cursor-control `X*`, offset validation, catchable pack-side too-few-value
-  `ValueError`s, and the invalid-format `ValueError` shape are covered. Broad
-  host-portable endian matrices, unpack-side byte formats, every PHP pack
-  format code, alignment codes, cursor-control star handling beyond the
-  covered `X*` row, references/copy-on-write, exact warning breadth beyond the
+  signed-byte `c`, 32-bit little-endian integers `V`, native 32-bit integer
+  aliases `l`/`i`/`I`, 64-bit integer forms `Q`/`J`/`P`/`q`, and
+  float/double forms `e`/`E`/`g`/`G`. The declared string operands
+  (`pack()` format plus `unpack()` format and data) route through the shared
+  PHP-shaped string boundary, so scalar values, `null`, and supported visible
+  `__toString()` objects reach the existing byte parser while arrays,
+  resources, closures, and non-stringable objects raise catchable string
+  `TypeError`s. `unpack()` offset uses the shared PHP-internal int boundary.
+  Empty formats return an empty packed string or empty unpacked array. Unpack
+  names, repeated values, `*` repeaters for the covered scalar formats, the
+  PHP warning-and-ignore behavior for `unpack()` cursor-control `X*`, offset
+  validation, catchable pack-side too-few-value `ValueError`s, and the
+  invalid-format `ValueError` shape are covered. Broad host-portable endian
+  matrices, unpack-side byte formats, every PHP pack format code, alignment
+  codes, cursor-control star handling beyond the covered `X*` row, exact
+  pack-side unused-argument warnings, PHP's warning/stringification behavior
+  for array values in variadic string pack fields, exact null/lossy offset
+  deprecations, references/copy-on-write, exact warning breadth beyond the
   covered rows, and native lowering remain unsupported.
   `parse_str($string, $result)` is supported only as a direct call with
   a direct result variable; it uses the bounded URL-encoded parser and current

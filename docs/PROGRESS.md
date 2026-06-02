@@ -4,6 +4,31 @@
 
 Implemented:
 
+- Added a bounded `pack()` / `unpack()` declared-operand string-boundary lane.
+  `pack()` now routes `$format` through the shared PHP-shaped string byte
+  boundary, and `unpack()` routes `$format` and `$string` through the same
+  boundary before entering the existing bounded binary format parser. Scalar
+  operands, `null`, and supported visible `__toString()` objects now reach the
+  covered `H`/`h`/`A`/`Z`/integer/float format behavior after conversion,
+  while arrays, resources, closures, and non-stringable objects raise
+  catchable PHP-shaped string `TypeError`s for the declared operands.
+  `unpack()` offset now uses the shared PHP-internal int boundary, so scalar
+  int-compatible values keep selecting the existing byte offset while arrays,
+  objects, closures, and resources raise catchable `TypeError`s. Empty
+  pack/unpack formats now return an empty packed string or empty unpacked
+  array instead of stopping at the previous subset diagnostic. Existing format
+  support, `unpack()` `X*` warning recovery, offset containment checks,
+  pack-side too-few-value `ValueError`s, metadata visibility, and
+  native-lowering rejection remain unchanged. Focused proof covers the
+  `pack_unpack_declared_operands_use_php_argument_boundaries` Rust regression,
+  the full `pack_unpack_residuals` Rust file, direct CLI probes, selected
+  public PHPT rows `pack_A.phpt` and `unpack_offset.phpt`, build, fmt, diff,
+  and native-lowering rejection checks. Unsupported edges remain exact
+  pack-side unused-argument warnings, PHP's warning/stringification behavior
+  for array values in variadic string pack fields, exact null/lossy offset
+  deprecations, exact invalid `__toString()` return diagnostics, broad format
+  code/endian/alignment matrices, references/COW, and native lowering.
+
 - Added a bounded unary byte string-helper argument-boundary lane.
   `strrev()`, `str_rot13()`, and `str_shuffle()` now route direct and
   string-valued dynamic interpreter operands through the shared PHP-shaped
