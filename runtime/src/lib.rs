@@ -33040,16 +33040,26 @@ impl PhpClassTable {
         let spl_file_object = classes
             .get_mut(spl_file_object_id)
             .expect("declared SplFileObject class id should resolve");
+        for constant in ["DROP_NEW_LINE", "READ_AHEAD", "SKIP_EMPTY", "READ_CSV"] {
+            spl_file_object
+                .add_constant(PhpClassConstantMetadata::new(constant, Visibility::Public))
+                .expect("SplFileObject core metadata should not duplicate constants");
+        }
         for method in [
             "__construct",
             "current",
             "eof",
             "fgets",
+            "fgetcsv",
+            "getCsvControl",
             "getCurrentLine",
+            "getFlags",
             "key",
             "next",
             "rewind",
             "seek",
+            "setCsvControl",
+            "setFlags",
             "valid",
         ] {
             spl_file_object

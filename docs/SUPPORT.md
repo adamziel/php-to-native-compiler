@@ -2673,9 +2673,16 @@
   by-value `foreach` through the `Iterator` surface. Lines retain their
   trailing newline when present, out-of-range non-negative `seek()` positions
   move to the invalid end cursor, and negative `seek()` raises the bounded
-  PHP-shaped `ValueError`. Non-local/user stream wrappers, write/append modes,
-  `SplTempFileObject`, `SplFileInfo` inheritance metadata, `setFlags()` /
-  `READ_AHEAD` / `DROP_NEW_LINE` / CSV behavior, binary or non-UTF-8 line
+  PHP-shaped `ValueError`. The local line state also supports the
+  `DROP_NEW_LINE`, `READ_AHEAD`, `SKIP_EMPTY`, and `READ_CSV` constants,
+  `setFlags()` / `getFlags()`, newline trimming for `current()` /
+  `getCurrentLine()` under `DROP_NEW_LINE`, `setCsvControl()` /
+  `getCsvControl()`, CSV row materialization for `current()` / foreach under
+  `READ_CSV`, and local-file `fgetcsv()` over the bounded CSV parser.
+  Non-local/user stream wrappers, write/append modes, `SplTempFileObject`,
+  `SplFileInfo` inheritance metadata, `fputcsv()` / `fwrite()` on
+  `SplFileObject`, full `READ_AHEAD` / `SKIP_EMPTY` side effects, broad CSV
+  multiline/deprecation/default-escape parity, binary or non-UTF-8 line
   storage, independent nested iterator cursors, serialization parity,
   references/COW, and native lowering remain unsupported.
 - SPL iterator helper functions `iterator_count()` and `iterator_to_array()`

@@ -4,6 +4,26 @@
 
 Implemented:
 
+- Added a bounded `SplFileObject` flags and CSV-control lane on the
+  interpreter path. Local UTF-8 `SplFileObject` instances now expose
+  `DROP_NEW_LINE`, `READ_AHEAD`, `SKIP_EMPTY`, and `READ_CSV` constants,
+  persist `setFlags()` / `getFlags()`, return newline-trimmed `current()` /
+  `getCurrentLine()` values under `DROP_NEW_LINE`, expose
+  `setCsvControl()` / `getCsvControl()`, and parse local-file CSV rows through
+  `current()` / foreach when `READ_CSV` is active and through `fgetcsv()`.
+  Focused proof covers the Rust
+  `spl_file_object_flags_and_csv_controls_use_local_line_state` regression,
+  core class metadata snapshots, the direct CLI fixture
+  `tests/fixtures/milestone2361/spl_file_object_flags_csv.php`, selected
+  public PHPT rows for `getFlags()`, `getCsvControl()`, `setCsvControl()`
+  validation, `READ_AHEAD` adjacency, and local-file `fgetcsv()` basics,
+  build, fmt, and diff checks. Unsupported edges remain `SplTempFileObject`,
+  write/append modes and `fputcsv()` / `fwrite()` on `SplFileObject`,
+  full `READ_AHEAD` / `SKIP_EMPTY` cursor side effects beyond the covered
+  rows, broad CSV multiline/deprecation/default-escape parity, `SplFileInfo`
+  inheritance metadata, binary/non-UTF-8 line storage, independent nested
+  iterator cursors, serialization parity, references/COW, and native lowering.
+
 - Added a bounded PHP 8.4+ error-mask diagnostics lane. `E_ALL` now uses the
   current PHP value that excludes removed `E_STRICT`, bare `E_STRICT` reads
   emit the PHP-shaped deprecation, and `error_reporting($error_level = null)`

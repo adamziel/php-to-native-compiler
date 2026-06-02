@@ -255,6 +255,9 @@ echo "ready\n";
         classes.lookup_class("SplStack").unwrap().parent_id(),
         Some(spl_doubly_linked_list.id())
     );
+    let spl_file_object = classes.lookup_class("SplFileObject").unwrap();
+    assert!(spl_file_object.constant("READ_CSV").is_some());
+    assert!(spl_file_object.method("setCsvControl").is_some());
 
     let class = classes.lookup_class("box").unwrap();
     assert_eq!(class.name(), "Box");
@@ -15941,6 +15944,77 @@ try {
     assert_eq!(
         execution.stdout,
         "<?php\n2://line 3\n//line 3\n3://line 4\nbool(false)\nbool(true)\n0=<?php\n1=//line 2\ncaught:SplFileObject::seek(): Argument #1 ($line) must be greater than or equal to 0\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn spl_file_object_flags_and_csv_controls_use_local_line_state() {
+    use std::fs;
+
+    let fixture_dir =
+        std::env::temp_dir().join(format!("phpc-spl-file-object-csv-{}", std::process::id()));
+    fs::create_dir_all(&fixture_dir).unwrap();
+    let fixture = fixture_dir.join("records.csv");
+    fs::write(&fixture, "'green apples'|10\n'yellow bananas'|20\n").unwrap();
+    let fixture_path = fixture.display().to_string().replace('\\', "\\\\");
+
+    let source = format!(
+        r#"<?php
+$file = new SplFileObject("{fixture_path}");
+$file->setFlags(SplFileObject::DROP_NEW_LINE);
+var_dump($file->getFlags());
+echo $file->current(), "|";
+var_dump($file->getCsvControl());
+$file->setFlags(SplFileObject::READ_CSV);
+$file->setCsvControl("|", "'", "");
+var_dump($file->getFlags());
+var_dump($file->getCsvControl());
+foreach ($file as $row) {{
+    echo $row[0], "=", $row[1], "\n";
+}}
+$file->rewind();
+var_dump($file->fgetcsv());
+try {{
+    $file->setCsvControl("||");
+}} catch (ValueError $e) {{
+    echo $e->getMessage(), "\n";
+}}
+"#
+    );
+
+    let execution = run_source(&source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        r#"int(1)
+'green apples'|10|array(3) {
+  [0]=>
+  string(1) ","
+  [1]=>
+  string(1) """
+  [2]=>
+  string(1) "\"
+}
+int(8)
+array(3) {
+  [0]=>
+  string(1) "|"
+  [1]=>
+  string(1) "'"
+  [2]=>
+  string(0) ""
+}
+green apples=10
+yellow bananas=20
+array(2) {
+  [0]=>
+  string(12) "green apples"
+  [1]=>
+  string(2) "10"
+}
+SplFileObject::setCsvControl(): Argument #1 ($separator) must be a single character
+"#
     );
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);

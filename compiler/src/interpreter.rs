@@ -54,6 +54,10 @@ const SPL_DLL_IT_MODE_DELETE: i64 = 1;
 const SPL_DLL_IT_MODE_LIFO: i64 = 2;
 const SPL_QUEUE_ITERATOR_MODE: i64 = 4;
 const SPL_STACK_ITERATOR_MODE: i64 = SPL_QUEUE_ITERATOR_MODE | SPL_DLL_IT_MODE_LIFO;
+const SPL_FILE_OBJECT_DROP_NEW_LINE: i64 = 1;
+const SPL_FILE_OBJECT_READ_AHEAD: i64 = 2;
+const SPL_FILE_OBJECT_SKIP_EMPTY: i64 = 4;
+const SPL_FILE_OBJECT_READ_CSV: i64 = 8;
 const ARRAY_OBJECT_STD_PROP_LIST: i64 = 1;
 const ARRAY_OBJECT_ARRAY_AS_PROPS: i64 = 2;
 const COMPACT_MAX_ARRAY_DEPTH: usize = 64;
@@ -658,10 +662,27 @@ impl SplDoublyLinkedListState {
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 struct SplFileObjectState {
     lines: Vec<String>,
     cursor: usize,
+    flags: i64,
+    csv_separator: char,
+    csv_enclosure: char,
+    csv_escape: Option<char>,
+}
+
+impl Default for SplFileObjectState {
+    fn default() -> Self {
+        Self {
+            lines: Vec::new(),
+            cursor: 0,
+            flags: 0,
+            csv_separator: ',',
+            csv_enclosure: '"',
+            csv_escape: Some('\\'),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -11484,6 +11505,18 @@ impl Interpreter {
             .is_some_and(|file_id| class_id == file_id)
     }
 
+    fn spl_file_object_method_parameter_index(method_name: &str, name: &str) -> Option<usize> {
+        match method_name.to_ascii_lowercase().as_str() {
+            "setcsvcontrol" | "fgetcsv" => match name {
+                "separator" | "delimiter" => Some(0),
+                "enclosure" => Some(1),
+                "escape" => Some(2),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
     fn resolved_method_is_core_mysqli(&self, class_id: ClassId) -> bool {
         self.classes
             .lookup_class_id("mysqli")
@@ -16552,6 +16585,102 @@ impl Interpreter {
         })
     }
 
+    fn evaluate_spl_file_object_method_arguments(
+        &mut self,
+        method_name: &str,
+        args: &[Expr],
+        _span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Vec<Value>> {
+        let csv_control_method = matches!(
+            method_name.to_ascii_lowercase().as_str(),
+            "setcsvcontrol" | "fgetcsv"
+        );
+        let uses_named_or_spread = args.iter().any(|arg| {
+            matches!(
+                arg,
+                Expr::NamedArgument { .. } | Expr::SpreadArgument { .. }
+            )
+        });
+        if !csv_control_method || !uses_named_or_spread {
+            return args
+                .iter()
+                .map(|arg| self.evaluate(arg, caller_scope))
+                .collect::<CompileResult<Vec<_>>>();
+        }
+
+        let mut values: Vec<Option<Value>> = vec![None, None, None];
+        let mut positional_index = 0_usize;
+        for arg in args {
+            match arg {
+                Expr::NamedArgument { name, expr, span } => {
+                    let Some(index) =
+                        Self::spl_file_object_method_parameter_index(method_name, name)
+                    else {
+                        return Err(runtime_error(
+                            *span,
+                            RuntimeError::unsupported_call(
+                                format!("SplFileObject::{method_name}()"),
+                                format!(
+                                    "named argument ${name} does not match a supported SplFileObject::{method_name}() parameter in the current subset"
+                                ),
+                            ),
+                        ));
+                    };
+                    if values[index].is_some() || index < positional_index {
+                        return Err(runtime_error(
+                            *span,
+                            RuntimeError::unsupported_call(
+                                format!("SplFileObject::{method_name}()"),
+                                format!("Named parameter ${name} overwrites previous argument"),
+                            ),
+                        ));
+                    }
+                    values[index] =
+                        Some(self.evaluate_by_value_argument_with_cow_source(expr, caller_scope)?);
+                }
+                Expr::SpreadArgument { span, .. } => {
+                    return Err(runtime_error(
+                        *span,
+                        RuntimeError::unsupported_call(
+                            format!("SplFileObject::{method_name}()"),
+                            format!(
+                                "argument unpacking is not implemented for SplFileObject::{method_name}() in the current subset"
+                            ),
+                        ),
+                    ));
+                }
+                expr => {
+                    if positional_index >= values.len() || values[positional_index].is_some() {
+                        return Err(runtime_error(
+                            expr.span(),
+                            RuntimeError::arity_mismatch(
+                                format!("SplFileObject::{method_name}()"),
+                                ArityExpectation::Between { min: 0, max: 3 },
+                                args.len(),
+                            ),
+                        ));
+                    }
+                    values[positional_index] =
+                        Some(self.evaluate_by_value_argument_with_cow_source(expr, caller_scope)?);
+                    positional_index += 1;
+                }
+            }
+        }
+
+        Ok(vec![
+            values[0]
+                .take()
+                .unwrap_or_else(|| Value::String(",".to_string())),
+            values[1]
+                .take()
+                .unwrap_or_else(|| Value::String("\"".to_string())),
+            values[2]
+                .take()
+                .unwrap_or_else(|| Value::String("\\".to_string())),
+        ])
+    }
+
     fn spl_file_object_state_mut(
         &mut self,
         object: &PhpObject,
@@ -16576,13 +16705,64 @@ impl Interpreter {
             .collect()
     }
 
-    fn spl_file_object_current_line(state: &SplFileObjectState) -> Value {
-        state
-            .lines
-            .get(state.cursor)
-            .cloned()
-            .map(Value::String)
-            .unwrap_or(Value::Bool(false))
+    fn spl_file_object_line_string(state: &SplFileObjectState, line: &str) -> String {
+        if state.flags & SPL_FILE_OBJECT_DROP_NEW_LINE != 0 {
+            csv_record_without_line_ending(line).to_string()
+        } else {
+            line.to_string()
+        }
+    }
+
+    fn spl_file_object_csv_array_from_line(
+        line: &str,
+        delimiter: char,
+        enclosure: char,
+        escape: Option<char>,
+    ) -> Value {
+        let fields = parse_bounded_csv_record(line, delimiter, enclosure, escape);
+        let mut array = PhpArray::new();
+        if fields.len() == 1
+            && fields[0].is_empty()
+            && csv_record_without_line_ending(line).is_empty()
+        {
+            array.insert(0_i64, Value::Null);
+        } else {
+            for (index, field) in fields.into_iter().enumerate() {
+                array.insert(index as i64, Value::String(field));
+            }
+        }
+        Value::Array(array)
+    }
+
+    fn spl_file_object_current_value(state: &SplFileObjectState) -> Value {
+        let Some(line) = state.lines.get(state.cursor) else {
+            return Value::Bool(false);
+        };
+        if state.flags & SPL_FILE_OBJECT_READ_CSV != 0 {
+            return Self::spl_file_object_csv_array_from_line(
+                line,
+                state.csv_separator,
+                state.csv_enclosure,
+                state.csv_escape,
+            );
+        }
+        Value::String(Self::spl_file_object_line_string(state, line))
+    }
+
+    fn spl_file_object_csv_control_array(state: &SplFileObjectState) -> Value {
+        let mut array = PhpArray::new();
+        array.insert(0_i64, Value::String(state.csv_separator.to_string()));
+        array.insert(1_i64, Value::String(state.csv_enclosure.to_string()));
+        array.insert(
+            2_i64,
+            Value::String(
+                state
+                    .csv_escape
+                    .map(|escape| escape.to_string())
+                    .unwrap_or_default(),
+            ),
+        );
+        Value::Array(array)
     }
 
     fn spl_file_object_bool_argument(
@@ -16745,6 +16925,7 @@ impl Interpreter {
             SplFileObjectState {
                 lines: Self::spl_file_object_split_lines(&contents),
                 cursor: 0,
+                ..SplFileObjectState::default()
             },
         );
         Ok(())
@@ -16765,16 +16946,145 @@ impl Interpreter {
             "current" | "getcurrentline" => {
                 expect_arity("SplFileObject::current", &args, 0, span)?;
                 let state = self.spl_file_object_state(&object, method_name, span)?;
-                Ok(Self::spl_file_object_current_line(state))
+                Ok(Self::spl_file_object_current_value(state))
             }
             "fgets" => {
                 expect_arity("SplFileObject::fgets", &args, 0, span)?;
                 let state = self.spl_file_object_state_mut(&object, method_name, span)?;
-                let line = Self::spl_file_object_current_line(state);
+                let line = state
+                    .lines
+                    .get(state.cursor)
+                    .cloned()
+                    .map(Value::String)
+                    .unwrap_or(Value::Bool(false));
                 if state.cursor < state.lines.len() {
                     state.cursor += 1;
                 }
                 Ok(line)
+            }
+            "fgetcsv" => {
+                if args.len() > 3 {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::arity_mismatch(
+                            "SplFileObject::fgetcsv()",
+                            ArityExpectation::Between { min: 0, max: 3 },
+                            args.len(),
+                        ),
+                    ));
+                }
+                let state_snapshot = self
+                    .spl_file_object_state(&object, method_name, span)?
+                    .clone();
+                let separator = match args.first() {
+                    Some(value) => csv_single_character_argument(
+                        "SplFileObject::fgetcsv()",
+                        "separator",
+                        Some(value),
+                        state_snapshot.csv_separator,
+                        false,
+                        span,
+                    )?
+                    .expect("non-empty separator has a character"),
+                    None => state_snapshot.csv_separator,
+                };
+                let enclosure = match args.get(1) {
+                    Some(value) => csv_single_character_argument(
+                        "SplFileObject::fgetcsv()",
+                        "enclosure",
+                        Some(value),
+                        state_snapshot.csv_enclosure,
+                        false,
+                        span,
+                    )?
+                    .expect("non-empty enclosure has a character"),
+                    None => state_snapshot.csv_enclosure,
+                };
+                let escape = match args.get(2) {
+                    Some(value) => csv_single_character_argument(
+                        "SplFileObject::fgetcsv()",
+                        "escape",
+                        Some(value),
+                        state_snapshot.csv_escape.unwrap_or('\\'),
+                        true,
+                        span,
+                    )?,
+                    None => state_snapshot.csv_escape,
+                };
+                let state = self.spl_file_object_state_mut(&object, method_name, span)?;
+                let Some(line) = state.lines.get(state.cursor).cloned() else {
+                    return Ok(Value::Bool(false));
+                };
+                state.cursor += 1;
+                Ok(Self::spl_file_object_csv_array_from_line(
+                    &line, separator, enclosure, escape,
+                ))
+            }
+            "getcsvcontrol" => {
+                expect_arity("SplFileObject::getCsvControl", &args, 0, span)?;
+                let state = self.spl_file_object_state(&object, method_name, span)?;
+                Ok(Self::spl_file_object_csv_control_array(state))
+            }
+            "getflags" => {
+                expect_arity("SplFileObject::getFlags", &args, 0, span)?;
+                let state = self.spl_file_object_state(&object, method_name, span)?;
+                Ok(Value::Int(state.flags))
+            }
+            "setcsvcontrol" => {
+                if args.len() > 3 {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::arity_mismatch(
+                            "SplFileObject::setCsvControl()",
+                            ArityExpectation::Between { min: 0, max: 3 },
+                            args.len(),
+                        ),
+                    ));
+                }
+                let separator = csv_single_character_argument(
+                    "SplFileObject::setCsvControl()",
+                    "separator",
+                    args.first(),
+                    ',',
+                    false,
+                    span,
+                )?
+                .expect("non-empty separator has a character");
+                let enclosure = csv_single_character_argument(
+                    "SplFileObject::setCsvControl()",
+                    "enclosure",
+                    args.get(1),
+                    '"',
+                    false,
+                    span,
+                )?
+                .expect("non-empty enclosure has a character");
+                let escape = csv_single_character_argument(
+                    "SplFileObject::setCsvControl()",
+                    "escape",
+                    args.get(2),
+                    '\\',
+                    true,
+                    span,
+                )?;
+                let state = self.spl_file_object_state_mut(&object, method_name, span)?;
+                state.csv_separator = separator;
+                state.csv_enclosure = enclosure;
+                state.csv_escape = escape;
+                Ok(Value::Null)
+            }
+            "setflags" => {
+                expect_arity("SplFileObject::setFlags", &args, 1, span)?;
+                let flags = php_internal_int_argument(
+                    "SplFileObject::setFlags()",
+                    1,
+                    "flags",
+                    &args[0],
+                    span,
+                )?;
+                let state = self.spl_file_object_state_mut(&object, method_name, span)?;
+                state.flags = flags;
+                Ok(Value::Null)
             }
             "key" => {
                 expect_arity("SplFileObject::key", &args, 0, span)?;
@@ -50041,10 +50351,12 @@ impl Interpreter {
         }
 
         if self.resolved_method_is_core_spl_file_object(class_id) {
-            let values = args
-                .iter()
-                .map(|arg| self.evaluate(arg, caller_scope))
-                .collect::<CompileResult<Vec<_>>>()?;
+            let values = self.evaluate_spl_file_object_method_arguments(
+                method_name,
+                args,
+                span,
+                caller_scope,
+            )?;
             let callable = format!("{}->{method_name}", object.class_name());
             let result = self.call_spl_file_object_method_with_values(
                 object,
@@ -103074,6 +103386,26 @@ fn seed_core_class_constant_runtime_tables(
             );
         }
     }
+    if let Some(spl_file_object_id) = classes.lookup_class_id("SplFileObject") {
+        for (name, value) in [
+            ("DROP_NEW_LINE", SPL_FILE_OBJECT_DROP_NEW_LINE),
+            ("READ_AHEAD", SPL_FILE_OBJECT_READ_AHEAD),
+            ("SKIP_EMPTY", SPL_FILE_OBJECT_SKIP_EMPTY),
+            ("READ_CSV", SPL_FILE_OBJECT_READ_CSV),
+        ] {
+            let span = Span::new(1, 1);
+            class_constants.insert(
+                (spl_file_object_id, name.to_string()),
+                ClassConstantDecl {
+                    name: name.to_string(),
+                    visibility: ClassVisibility::Public,
+                    value: Expr::Int(value, span),
+                    attributes: Vec::new(),
+                    span,
+                },
+            );
+        }
+    }
     for class_name in ["ArrayObject", "ArrayIterator"] {
         if let Some(class_id) = classes.lookup_class_id(class_name) {
             for (name, value) in [
@@ -109634,6 +109966,24 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
         ("str_getcsv()", "escape argument must contain exactly one character") => Some(
             "str_getcsv(): Argument #4 ($escape) must be empty or a single character".to_string(),
         ),
+        ("SplFileObject::setCsvControl()", "separator argument must contain exactly one character") => {
+            Some("SplFileObject::setCsvControl(): Argument #1 ($separator) must be a single character".to_string())
+        }
+        ("SplFileObject::setCsvControl()", "enclosure argument must contain exactly one character") => {
+            Some("SplFileObject::setCsvControl(): Argument #2 ($enclosure) must be a single character".to_string())
+        }
+        ("SplFileObject::setCsvControl()", "escape argument must contain exactly one character") => {
+            Some("SplFileObject::setCsvControl(): Argument #3 ($escape) must be empty or a single character".to_string())
+        }
+        ("SplFileObject::fgetcsv()", "separator argument must contain exactly one character") => {
+            Some("SplFileObject::fgetcsv(): Argument #1 ($separator) must be a single character".to_string())
+        }
+        ("SplFileObject::fgetcsv()", "enclosure argument must contain exactly one character") => {
+            Some("SplFileObject::fgetcsv(): Argument #2 ($enclosure) must be a single character".to_string())
+        }
+        ("SplFileObject::fgetcsv()", "escape argument must contain exactly one character") => {
+            Some("SplFileObject::fgetcsv(): Argument #3 ($escape) must be empty or a single character".to_string())
+        }
         (
             "pathinfo()",
             "Argument #2 ($flags) must be one of the PATHINFO_* constants"
