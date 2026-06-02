@@ -4,6 +4,17 @@
 
 Implemented:
 
+- Accepted checkpoint `423a03d4` as the current public PHPT score source after
+  the replacement full pinned php-src gate completed with zero
+  latest-published PASS regressions. The public-comparable score is now
+  `6194 / 20294 = 30.52%`, up from `6141 / 20294 = 30.26%` at checkpoint
+  `6ca895a9`. The accepted gate evidence is
+  `state/logs/phpt-full-current-score-20260602T211722Z-php-src-f97ff59-public-423a03d4-source-423a03d4`;
+  aggregate counts were `6194` passed, `12813` failed, `2758` skipped, `16`
+  xfailed, `549` borked, and `1` warned. The normalized PASS regression
+  comparison was `6190` current passes vs. `6137` baseline passes with `0`
+  regressions, and the invalid-proof-marker summary reported `0` hits.
+
 - Added a bounded magic-method return-type startup diagnostics lane on the
   interpreter path. Class, interface, and trait declarations now reject
   `__construct()` / `__destruct()` return declarations, enforce `void` return

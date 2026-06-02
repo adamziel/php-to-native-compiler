@@ -1,13 +1,13 @@
 # PHP Native Compiler PHPT Progress
 
-Updated: 2026-06-02 22:13 CEST
+Updated: 2026-06-02 23:29 CEST
 
 Primary/public branch: `origin/master`
 Latest accepted public-score source:
-`6ca895a9d64c532002630d66f741bba1b66835e3 fix: repair SplFileObject CSV escape regressions`
+`423a03d44bf95105103e7647aca2e34511164d74 fix: allow covariant set_state return types`
 
 Semantic source for current published score:
-`6ca895a9d64c532002630d66f741bba1b66835e3 fix: repair SplFileObject CSV escape regressions`
+`423a03d44bf95105103e7647aca2e34511164d74 fix: allow covariant set_state return types`
 
 Public PHPT metric:
 
@@ -16,20 +16,27 @@ Public PHPT metric:
 Pinned denominator: `20294` total pinned runnable php-src PHPTs. Raw runner
 denominators that exclude BORKED rows are not public progress.
 
-Current public score: **6141 / 20294 pinned runnable PHPTs = 30.26%**.
+Current public score: **6194 / 20294 pinned runnable PHPTs = 30.52%**.
 
 Latest pushed source checkpoint:
-`6ca895a9d64c532002630d66f741bba1b66835e3 fix: repair SplFileObject CSV escape regressions`
+`423a03d44bf95105103e7647aca2e34511164d74 fix: allow covariant set_state return types`
 
-The accepted source checkpoint chain through `6ca895a9` has been pushed to
+The accepted source checkpoint chain through `423a03d4` has been pushed to
 `origin/master` and is now reflected in the public score above. The current
-score gate converted 7 score-relevant post-`c307401c` source commits into a
-public PHPT movement of `6090 -> 6141` passed pinned rows, a net gain of `51`
+score gate converted 7 score-relevant post-`6ca895a9` source commits into a
+public PHPT movement of `6141 -> 6194` passed pinned rows, a net gain of `53`
 public PHPT passes, with zero latest-published PASS regressions.
 
-Accepted public gate: checkpoint `6ca895a9` completed the pinned full PHPT gate
-with `6141 / 20294 = 30.26%` and zero latest-published PASS regressions against
-the `c307401c` baseline. Full gate evidence is in
+Accepted public gate: checkpoint `423a03d4` completed the pinned full PHPT gate
+with `6194 / 20294 = 30.52%` and zero latest-published PASS regressions against
+the `6ca895a9` baseline. Full gate evidence is in
+`state/logs/phpt-full-current-score-20260602T211722Z-php-src-f97ff59-public-423a03d4-source-423a03d4`;
+the aggregate had `6194` passed rows, `6190` normalized current passes, and
+`0` PASS regressions. The invalid-proof-marker summary reported `0` hits.
+
+Previous accepted public gate: checkpoint `6ca895a9` completed the pinned full
+PHPT gate with `6141 / 20294 = 30.26%` and zero latest-published PASS
+regressions against the `c307401c` baseline. Full gate evidence is in
 `state/logs/phpt-full-current-score-20260602T200309Z-php-src-f97ff59-public-6ca895a9-source-6ca895a9`;
 the aggregate had `6141` passed rows, `6137` normalized current passes, and
 `0` PASS regressions. The invalid-proof-marker summary reported `0` hits.
@@ -89,10 +96,10 @@ stream/INI/array focused batch covering `bug71884.phpt`,
 the aggregate had `5513` passed rows, `5509` normalized current passes, and
 `0` PASS regressions.
 
-Current source-head note: no post-`6ca895a9` source checkpoint is reflected in
+Current source-head note: no post-`423a03d4` source checkpoint is reflected in
 the public score as of this update. The local supervisor notes below are
 historical pre-gate proof and are superseded for score accounting by the
-`6ca895a9` public gate.
+`423a03d4` public gate.
 
 Local source checkpoint note: checkpoint `1efcacf6` passed
 `tools/checkpoint.sh` for the next post-public focused source batch. It covers
