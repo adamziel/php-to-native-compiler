@@ -7596,7 +7596,9 @@
   `null` for missing values from shorter arrays, and return mapped values
   reindexed with integer keys starting at zero. User callbacks whose reached
   value parameters are declared by reference emit PHP-shaped value-given
-  warnings and then receive the helper-supplied values. These forms are
+  warnings and then receive the helper-supplied values. Non-array input
+  operands raise catchable PHP-shaped `TypeError`s, naming argument #2
+  `$array` and later variadic array operands by position. These forms are
   available through string-valued dynamic calls to `array_map`.
   `array_multisort($array, ...)` accepts direct interpreter calls with one or
   more scalar-valued arrays plus `SORT_ASC`, `SORT_DESC`, `SORT_REGULAR`,
@@ -10560,15 +10562,16 @@
   `null` for missing values from shorter arrays, and reindex mapped values
   from integer key zero. User callbacks whose reached value parameters are
   declared by reference emit PHP-shaped value-given warnings and then receive
-  the helper-supplied values.
+  the helper-supplied values. Non-array input operands raise catchable
+  PHP-shaped `TypeError`s, naming argument #2 `$array` and later variadic
+  array operands by position.
   Non-string/non-closure/non-array callback values fail with a stable
   diagnostic, unresolved callback names fail with the current
-  undefined-function diagnostic, and non-array input arrays fail with stable
-  diagnostics. First-class callables, unsupported dynamic callable shapes,
-  true callback-parameter aliasing back into helper-supplied values, broad
-  references, copy-on-write containers, exact native `TypeError` objects,
-  object handle identity preservation, resource values, and native lowering
-  are not implemented.
+  undefined-function diagnostic. First-class callables, unsupported dynamic
+  callable shapes, true callback-parameter aliasing back into helper-supplied
+  values, broad references, copy-on-write containers, exact native
+  `TypeError` objects, object handle identity preservation, resource values,
+  and native lowering are not implemented.
   `array_find($array, $callback)`, `array_find_key($array, $callback)`,
   `array_any($array, $callback)`, and `array_all($array, $callback)` accept an
   array plus callbacks that evaluate to string function names resolving to
@@ -11718,7 +11721,9 @@
   and native lowering
 - `array_map` callback forms outside string-valued user-function/
   callable-builtin names, closures, and supported public array-callable user
-  methods, first-class callables, true callback-parameter aliasing back into
+  methods, exact callback validation ordering when invalid callbacks are
+  combined with invalid input arrays, first-class callables, true
+  callback-parameter aliasing back into
   helper-supplied values, reference/copy-on-write behavior, object handle
   identity preservation, resource values, exact native `TypeError` objects,
   and native lowering

@@ -91940,11 +91940,7 @@ impl Interpreter {
                         span,
                         RuntimeError::unsupported_call(
                             "array_map()",
-                            format!(
-                                "Argument #{} ($array) must be of type array, {} given",
-                                index + 1,
-                                Self::php_type_error_actual_name(other)
-                            ),
+                            array_map_array_type_error_reason(index, other),
                         ),
                     ));
                 }
@@ -145508,6 +145504,23 @@ fn array_user_compare_array_type_error_reason(index: usize, value: &Value) -> St
             "Argument #{} must be of type array, {} given",
             index + 1,
             php_type_error_given(value)
+        )
+    }
+}
+
+fn array_map_array_type_error_reason(index: usize, value: &Value) -> String {
+    let given = match value {
+        Value::Bool(_) => "bool".to_string(),
+        Value::Object(object) => object.class_name().to_string(),
+        Value::Closure(_) => "Closure".to_string(),
+        other => other.type_name().to_string(),
+    };
+    if index == 1 {
+        format!("Argument #2 ($array) must be of type array, {given} given")
+    } else {
+        format!(
+            "Argument #{} must be of type array, {given} given",
+            index + 1
         )
     }
 }

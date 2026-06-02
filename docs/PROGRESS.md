@@ -4,6 +4,24 @@
 
 Implemented:
 
+- Added a bounded `array_map()` non-array operand diagnostics lane. Direct and
+  string-valued dynamic interpreter calls now raise catchable PHP-shaped
+  `TypeError`s for non-array input arrays while preserving the existing
+  null-callback identity/zip paths, callback mapping paths, by-reference
+  callback-parameter warnings, metadata visibility, and native-lowering
+  rejection. The operand boundary follows PHP's variadic array-argument
+  wording: argument #2 is named `$array`, later array operands are named only
+  by position, booleans report `bool`, closures report `Closure`, and objects
+  report their class name. Focused proof covers the `array_map` Rust
+  regression file, the updated third-operand runtime-error CLI snapshot,
+  direct runtime/native-boundary probes, selected public PHPT row
+  `array_map_variation10.phpt`, build, fmt, and diff checks. Unsupported edges
+  remain exact callback validation ordering when an invalid callback is
+  combined with invalid array operands, `__call` callback dispatch,
+  first-class callables, true callback-parameter aliasing back into
+  helper-supplied values, broader reference/COW graph parity, exact native
+  diagnostic object internals, and native lowering.
+
 - Added a bounded date constructor argument-count diagnostics lane.
   `DateTime::__construct()` now raises a catchable PHP-shaped
   `ArgumentCountError` when called with more than the supported two

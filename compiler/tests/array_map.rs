@@ -124,6 +124,35 @@ fn array_map_requires_array_argument() {
 }
 
 #[test]
+fn array_map_reports_php_type_errors_for_non_array_operands() {
+    let source = r#"<?php
+foreach ([42, false, null, new stdClass] as $value) {
+    try {
+        array_map(null, $value);
+    } catch (Throwable $e) {
+        echo $e->getMessage(), "\n";
+    }
+}
+
+$call = "array_map";
+foreach ([42, new stdClass] as $value) {
+    try {
+        $call("strlen", ["ok"], $value);
+    } catch (Throwable $e) {
+        echo $e->getMessage(), "\n";
+    }
+}
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "array_map(): Argument #2 ($array) must be of type array, int given\narray_map(): Argument #2 ($array) must be of type array, bool given\narray_map(): Argument #2 ($array) must be of type array, null given\narray_map(): Argument #2 ($array) must be of type array, stdClass given\narray_map(): Argument #3 must be of type array, int given\narray_map(): Argument #3 must be of type array, stdClass given\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn array_map_callback_requires_string_callable() {
     let stdout = fatal_stdout("<?php\n$items = [\"Ada\"];\necho array_map(42, $items);\n");
 
@@ -405,7 +434,7 @@ fn array_map_requires_third_array_argument() {
 
     assert!(
         stdout.contains(
-            "Fatal error: Uncaught TypeError: array_map(): Argument #3 ($array) must be of type array, int given"
+            "Fatal error: Uncaught TypeError: array_map(): Argument #3 must be of type array, int given"
         ),
         "{stdout}"
     );
@@ -419,7 +448,7 @@ fn array_map_requires_variadic_array_arguments() {
 
     assert!(
         stdout.contains(
-            "Fatal error: Uncaught TypeError: array_map(): Argument #5 ($array) must be of type array, int given"
+            "Fatal error: Uncaught TypeError: array_map(): Argument #5 must be of type array, int given"
         ),
         "{stdout}"
     );
