@@ -106381,6 +106381,16 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
 
         if let Some(message) = error
             .message
+            .strip_prefix("unsupported call filter_var_array(): ")
+            .filter(|message| {
+                message.starts_with("Argument #2 ($options) must be of type array|int, ")
+            })
+        {
+            return Some(("TypeError", message.to_string()));
+        }
+
+        if let Some(message) = error
+            .message
             .strip_prefix("unsupported call PhpToken::is(): ")
             .filter(|message| {
                 message
@@ -135983,8 +135993,8 @@ impl Interpreter {
                 RuntimeError::unsupported_call(
                     "filter_var_array()",
                     format!(
-                        "options must be int or array in the current subset, got {}",
-                        other.type_name()
+                        "Argument #2 ($options) must be of type array|int, {} given",
+                        php_type_error_given(other)
                     ),
                 ),
             )),
@@ -136192,7 +136202,8 @@ impl Interpreter {
                 .map(Value::Int)
                 .unwrap_or_else(|| filter_default_or_failure(options, flags))),
             PHP_FILTER_VALIDATE_FLOAT => {
-                let validated = filter_validate_float_with_options(&value, options, span)?;
+                let validated = filter_validate_float_with_options(&value, options, span)?
+                    .and_then(|value| filter_apply_float_options(value, options));
                 Ok(validated
                     .map(Value::Float)
                     .unwrap_or_else(|| filter_default_or_failure(options, flags)))
@@ -136267,6 +136278,9 @@ impl Interpreter {
     ) -> CompileResult<Value> {
         if options.flags & PHP_FILTER_REQUIRE_SCALAR != 0 && matches!(value, Value::Array(_)) {
             return Ok(Value::Bool(false));
+        }
+        if let Value::Array(array) = value {
+            return self.apply_filter_array(array, PHP_FILTER_CALLBACK, options, span);
         }
         let Some(callback) = options.options.as_ref() else {
             return Err(filter_callback_type_error(span));
@@ -136539,7 +136553,9 @@ fn filter_id_for_name(name: &str) -> Option<i64> {
 fn filter_id_from_value(value: Option<&Value>, default: i64) -> i64 {
     match value {
         Some(Value::Int(value)) => *value,
-        Some(Value::String(value)) => filter_id_for_name(value).unwrap_or(default),
+        Some(Value::String(value)) => filter_id_for_name(value)
+            .or_else(|| parse_php_internal_integer_string(value))
+            .unwrap_or(default),
         _ => default,
     }
 }
@@ -136571,12 +136587,30 @@ fn filter_descriptor_from_value(
                 options: FilterOptions::default(),
             })
         }
+        Value::String(filter) => {
+            let filter = filter_id_for_name(filter)
+                .or_else(|| parse_php_internal_integer_string(filter))
+                .unwrap_or(PHP_FILTER_DEFAULT);
+            if !filter_id_is_known(filter) {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        function,
+                        format!("Unknown filter with ID {filter}"),
+                    ),
+                ));
+            }
+            Ok(FilterDescriptor {
+                filter,
+                options: FilterOptions::default(),
+            })
+        }
         Value::Array(options) => {
             let filter = match options.get_cloned("filter") {
                 Some(Value::Int(filter)) => filter,
-                Some(Value::String(name)) => {
-                    filter_id_for_name(&name).unwrap_or(PHP_FILTER_DEFAULT)
-                }
+                Some(Value::String(name)) => filter_id_for_name(&name)
+                    .or_else(|| parse_php_internal_integer_string(&name))
+                    .unwrap_or(PHP_FILTER_DEFAULT),
                 Some(other) => {
                     return Err(runtime_error(
                         span,
@@ -136625,21 +136659,25 @@ fn filter_options_from_value(
     };
 
     match value {
-        Value::Int(flags) => Ok(FilterOptions {
-            flags: *flags,
-            ..FilterOptions::default()
-        }),
         Value::Array(options) => filter_options_from_array(options, function, span),
-        other => Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                function,
-                format!(
-                    "options must be int or array in the current subset, got {}",
-                    other.type_name()
-                ),
-            ),
-        )),
+        value => {
+            let Some(flags) = filter_option_coerced_int(value) else {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        function,
+                        format!(
+                            "options must be int or array in the current subset, got {}",
+                            value.type_name()
+                        ),
+                    ),
+                ));
+            };
+            Ok(FilterOptions {
+                flags,
+                ..FilterOptions::default()
+            })
+        }
     }
 }
 
@@ -136649,26 +136687,39 @@ fn filter_options_from_array(
     span: Span,
 ) -> CompileResult<FilterOptions> {
     let flags = match options.get_cloned("flags") {
-        Some(Value::Int(flags)) => flags,
-        Some(other) => {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    function,
-                    format!(
-                        "options flags must be int in the current subset, got {}",
-                        other.type_name()
+        Some(value) => match filter_option_coerced_int(&value) {
+            Some(flags) => flags,
+            None => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        function,
+                        format!(
+                            "options flags must be int in the current subset, got {}",
+                            value.type_name()
+                        ),
                     ),
-                ),
-            ));
-        }
+                ));
+            }
+        },
         None => 0,
     };
+    let nested_options = options.get_cloned("options");
+    let default = options
+        .get_cloned("default")
+        .or_else(|| match &nested_options {
+            Some(Value::Array(options)) => options.get_cloned("default"),
+            _ => None,
+        });
     Ok(FilterOptions {
         flags,
-        options: options.get_cloned("options"),
-        default: options.get_cloned("default"),
+        options: nested_options,
+        default,
     })
+}
+
+fn filter_option_coerced_int(value: &Value) -> Option<i64> {
+    php_internal_coerced_int(value)
 }
 
 fn filter_input_global_name(input_type: i64) -> Option<&'static str> {
@@ -136776,6 +136827,42 @@ fn filter_option_int(value: Value) -> Option<i64> {
     }
 }
 
+fn filter_apply_float_options(value: f64, options: &FilterOptions) -> Option<f64> {
+    let Some(Value::Array(options)) = options.options.as_ref() else {
+        return Some(value);
+    };
+    if let Some(min) = options
+        .get_cloned("min_range")
+        .and_then(filter_option_float)
+    {
+        if value < min {
+            return None;
+        }
+    }
+    if let Some(max) = options
+        .get_cloned("max_range")
+        .and_then(filter_option_float)
+    {
+        if value > max {
+            return None;
+        }
+    }
+    Some(value)
+}
+
+fn filter_option_float(value: Value) -> Option<f64> {
+    match value {
+        Value::Float(value) if value.is_finite() => Some(value),
+        Value::Int(value) => Some(value as f64),
+        Value::String(value) => value
+            .trim()
+            .parse::<f64>()
+            .ok()
+            .filter(|value| value.is_finite()),
+        _ => None,
+    }
+}
+
 fn filter_validate_float(value: &Value) -> Option<f64> {
     match value {
         Value::Float(value) if value.is_finite() => Some(*value),
@@ -136820,18 +136907,111 @@ fn filter_validate_float_with_options(
     if trimmed.is_empty() {
         return Ok(None);
     }
-    let normalized = if decimal != '.' {
-        if trimmed.contains('.') {
-            return Ok(None);
-        }
-        trimmed.replace(decimal, ".")
-    } else {
-        trimmed.to_string()
+    let Some(normalized) = filter_normalize_float_input(trimmed, decimal, options.flags) else {
+        return Ok(None);
     };
-    Ok(normalized
+    let Some(parsed) = normalized
         .parse::<f64>()
         .ok()
-        .filter(|value| value.is_finite()))
+        .filter(|value| value.is_finite())
+    else {
+        return Ok(None);
+    };
+    if parsed == 0.0 && filter_normalized_float_has_nonzero_mantissa(&normalized) {
+        return Ok(None);
+    }
+    Ok(Some(parsed))
+}
+
+fn filter_normalize_float_input(input: &str, decimal: char, flags: i64) -> Option<String> {
+    let exponent_index = input.find(['e', 'E']);
+    let (mantissa, exponent) = match exponent_index {
+        Some(index) => (&input[..index], Some(&input[index..])),
+        None => (input, None),
+    };
+    if let Some(exponent) = exponent {
+        let exponent_digits = exponent
+            .strip_prefix(['e', 'E'])?
+            .strip_prefix(['+', '-'])
+            .unwrap_or_else(|| &exponent[1..]);
+        if exponent_digits.is_empty() || !exponent_digits.chars().all(|ch| ch.is_ascii_digit()) {
+            return None;
+        }
+    }
+
+    let (sign, mantissa) = match mantissa.as_bytes().first().copied() {
+        Some(b'+' | b'-') => (&mantissa[..1], &mantissa[1..]),
+        _ => ("", mantissa),
+    };
+    if mantissa.is_empty() {
+        return None;
+    }
+
+    if decimal != '.' && mantissa.contains('.') {
+        return None;
+    }
+    let mut pieces = mantissa.split(decimal);
+    let whole = pieces.next().unwrap_or_default();
+    let fraction = pieces.next();
+    if pieces.next().is_some() {
+        return None;
+    }
+    if fraction.is_some_and(|fraction| fraction.contains(',')) {
+        return None;
+    }
+
+    let normalized_whole = if whole.contains(',') {
+        if decimal == ',' || flags & PHP_FILTER_FLAG_ALLOW_THOUSAND == 0 {
+            return None;
+        }
+        filter_normalize_thousand_groups(whole)?
+    } else {
+        whole.to_string()
+    };
+    if !normalized_whole.chars().all(|ch| ch.is_ascii_digit()) {
+        return None;
+    }
+    if fraction.is_some_and(|fraction| !fraction.chars().all(|ch| ch.is_ascii_digit())) {
+        return None;
+    }
+
+    let mut normalized = String::new();
+    normalized.push_str(sign);
+    normalized.push_str(&normalized_whole);
+    if let Some(fraction) = fraction {
+        normalized.push('.');
+        normalized.push_str(fraction);
+    }
+    if let Some(exponent) = exponent {
+        normalized.push_str(exponent);
+    }
+    Some(normalized)
+}
+
+fn filter_normalize_thousand_groups(whole: &str) -> Option<String> {
+    let mut groups = whole.split(',');
+    let first = groups.next()?;
+    if first.is_empty() || first.len() > 3 || !first.chars().all(|ch| ch.is_ascii_digit()) {
+        return None;
+    }
+    let mut normalized = first.to_string();
+    let mut saw_group = false;
+    for group in groups {
+        saw_group = true;
+        if group.len() != 3 || !group.chars().all(|ch| ch.is_ascii_digit()) {
+            return None;
+        }
+        normalized.push_str(group);
+    }
+    saw_group.then_some(normalized)
+}
+
+fn filter_normalized_float_has_nonzero_mantissa(value: &str) -> bool {
+    let mantissa = value
+        .split_once(['e', 'E'])
+        .map(|(mantissa, _)| mantissa)
+        .unwrap_or(value);
+    mantissa.chars().any(|ch| matches!(ch, '1'..='9'))
 }
 
 fn filter_validate_bool(value: &Value) -> Option<bool> {

@@ -4,6 +4,28 @@
 
 Implemented:
 
+- Added a bounded ext/filter option and float-validation lane. `filter_var()`
+  now accepts weak scalar `$options` flags without mutating caller arrays,
+  `filter_var()` / `filter_var_array()` descriptor arrays coerce string-valued
+  `filter` and `flags` entries through the current PHP-internal int boundary,
+  and nested `options["default"]` values are honored for validation failures.
+  `FILTER_VALIDATE_FLOAT` now covers strictly grouped
+  `FILTER_FLAG_ALLOW_THOUSAND` inputs, rejects finite underflow-to-zero
+  strings such as `1e-324`, applies bounded `min_range` / `max_range`, and
+  returns configured defaults for range failures. `FILTER_CALLBACK` now
+  recursively filters array values for the covered callback path without
+  mutating the caller input, and invalid `filter_var_array()` `$options`
+  operands now surface as catchable PHP-shaped `TypeError`s. Focused proof
+  covers the Rust
+  `filter_options_float_ranges_and_callback_arrays_match_php_boundaries`
+  regression, a CLI comparison fixture, selected public PHPT rows
+  `045.phpt`, `049.phpt`, `050.phpt`, `051.phpt`, `052.phpt`, and
+  `060.phpt`, build, fmt, and diff checks. Unsupported edges remain full
+  ext/filter descriptor warning ordering, complete option coercion and
+  diagnostics, locale-sensitive numeric parsing, broad URL/domain/IP/email
+  policy, object/resource coercions, references/COW beyond existing array-slot
+  paths, and native lowering.
+
 - Added a bounded output-buffer chunk/flag lane. `ob_start()` now accepts the
   supported `callback`, `chunk_size`, and `flags` arguments through the
   interpreter path, exposes output-handler constants, stores sanitized
