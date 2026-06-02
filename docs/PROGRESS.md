@@ -4,6 +4,32 @@
 
 Implemented:
 
+- Added a bounded class-constant visibility diagnostics lane on the interpreter
+  path. Class constants now carry invalid `static` / `abstract` modifier
+  metadata to startup diagnostics, protected/private class-constant access
+  raises catchable PHP `Error` messages, private parent constants are skipped
+  during inherited child lookups, reduced-visibility class-constant
+  redeclarations emit PHP-shaped startup fatals, and direct static method calls
+  reuse the source-aware call path so uncaught class-constant errors include the
+  expected user call frame. Focused proof covers the Rust
+  `class_constant_visibility_errors_are_catchable_php_errors`,
+  `private_parent_class_constants_are_not_inherited`, and
+  `class_constant_invalid_modifiers_and_visibility_reductions_are_startup_fatals`
+  regressions plus selected public PHPT rows
+  `tests/classes/constants_visibility_002.phpt`,
+  `tests/classes/constants_visibility_003.phpt`,
+  `tests/classes/constants_visibility_004.phpt`,
+  `tests/classes/constants_visibility_005.phpt`,
+  `tests/classes/constants_visibility_006.phpt`,
+  `tests/classes/constants_visibility_error_001.phpt`,
+  `tests/classes/constants_visibility_error_002.phpt`,
+  `tests/classes/constants_visibility_error_003.phpt`, and
+  `tests/classes/constants_visibility_error_004.phpt` at `9/9` PASS. Typed,
+  final, and multi-declarator class constants, native lowering, autoload
+  interaction, broader dynamic class-constant string names, references/COW, and
+  exact startup ordering across unrelated invalid declaration facets remain
+  unsupported.
+
 - Added a bounded PHP Throwable accessor/state lane on the interpreter path.
   Core `Exception`, `ErrorException`, and caught `Error`/`TypeError`-style
   objects now preserve and expose the covered `message`, `code`, `file`,

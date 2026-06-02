@@ -884,6 +884,8 @@ pub enum ClassMember {
 pub struct ClassConstantDecl {
     pub name: String,
     pub visibility: ClassVisibility,
+    pub is_static: bool,
+    pub is_abstract: bool,
     pub value: Expr,
     pub attributes: Vec<AttributeDecl>,
     pub span: Span,

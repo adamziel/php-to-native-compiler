@@ -1233,31 +1233,25 @@ fn unsupported_abstract_final_property_declarations_have_stable_parse_errors() {
 }
 
 #[test]
-fn unsupported_abstract_final_class_constant_declarations_have_stable_parse_errors() {
+fn unsupported_final_class_constant_declarations_have_stable_parse_errors() {
     let cases = [
-        (
-            "<?php\nclass Value {\n    abstract const ID = 1;\n}\n",
-            3,
-            5,
-            "unsupported abstract/final class constant declaration: abstract and final class constant modifiers are not implemented",
-        ),
         (
             "<?php\nclass Value {\n    final const ID = 1;\n}\n",
             3,
             5,
-            "unsupported abstract/final class constant declaration: abstract and final class constant modifiers are not implemented",
+            "unsupported final class constant declaration: final class constant modifiers are not implemented",
         ),
         (
             "<?php\nclass Value {\n    public final const ID = 1;\n}\n",
             3,
             12,
-            "unsupported abstract/final class constant declaration: abstract and final class constant modifiers are not implemented",
+            "unsupported final class constant declaration: final class constant modifiers are not implemented",
         ),
         (
             "<?php\nclass Value {\n    abstract final const ID = 1;\n}\n",
             3,
-            5,
-            "unsupported abstract/final class constant declaration: abstract and final class constant modifiers are not implemented",
+            14,
+            "unsupported final class constant declaration: final class constant modifiers are not implemented",
         ),
     ];
 
@@ -1413,7 +1407,7 @@ fn emit_ir_rejects_abstract_final_non_method_members_at_parse_boundary() {
     assert_eq!(const_error.phase, Phase::Parse);
     assert_eq!(
         const_error.message,
-        "unsupported abstract/final class constant declaration: abstract and final class constant modifiers are not implemented"
+        "unsupported final class constant declaration: final class constant modifiers are not implemented"
     );
 }
 

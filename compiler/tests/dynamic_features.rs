@@ -1643,7 +1643,7 @@ echo constant("SecretBox::SECRET");
     assert_eq!(private_error.column, 6);
     assert_eq!(
         private_error.message,
-        "unsupported call SecretBox::SECRET: private class constant is not visible from the current class context"
+        "Cannot access private constant SecretBox::SECRET"
     );
 }
 
@@ -1659,16 +1659,25 @@ echo constant("PHP_OS");
     assert_eq!(execution.stdout, "Linux");
     assert_eq!(execution.exit_code, 0);
 
-    let class_constant = runtime_error(
+    let class_constant = run_source(
         r#"<?php
 class Box {}
 echo constant("Box::MISSING");
 "#,
-    );
+    )
+    .unwrap();
 
-    assert_eq!(class_constant.line, 3);
-    assert_eq!(class_constant.column, 6);
-    assert_eq!(class_constant.message, "undefined constant Box::MISSING");
+    assert_eq!(
+        class_constant.stdout,
+        concat!(
+            "Fatal error: Uncaught Error: Undefined constant Box::MISSING in Command line code:3\n",
+            "Stack trace:\n",
+            "#0 {main}\n",
+            "  thrown in Command line code on line 3"
+        )
+    );
+    assert_eq!(class_constant.stderr, "");
+    assert_eq!(class_constant.exit_code, 255);
 }
 
 #[test]

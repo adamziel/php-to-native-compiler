@@ -801,6 +801,8 @@ impl Parser {
         Ok(ClassConstantDecl {
             name,
             visibility: ClassVisibility::Public,
+            is_static: false,
+            is_abstract: false,
             value,
             attributes,
             span: name_span,
@@ -1186,6 +1188,8 @@ impl Parser {
         Ok(ClassConstantDecl {
             name,
             visibility: ClassVisibility::Public,
+            is_static: false,
+            is_abstract: false,
             value,
             attributes,
             span: name_span,
@@ -1429,16 +1433,10 @@ impl Parser {
         if self.match_identifier("const") {
             self.pending_doc_comment = None;
             let const_span = self.previous().span;
-            if modifiers.is_static {
+            if modifiers.is_final {
                 return Err(self.error_at(
-                    const_span,
-                    "unsupported class constant declaration: static class constants are not implemented",
-                ));
-            }
-            if modifiers.is_abstract || modifiers.is_final {
-                return Err(self.error_at(
-                    modifiers.abstract_or_final_span().unwrap_or(const_span),
-                    unsupported_abstract_final_class_constant_message(),
+                    modifiers.final_span.unwrap_or(const_span),
+                    unsupported_final_class_constant_message(),
                 ));
             }
             if matches!(self.peek().kind, TokenKind::Identifier(_))
@@ -1460,6 +1458,8 @@ impl Parser {
                 constants.push(ClassMember::Constant(ClassConstantDecl {
                     name,
                     visibility: modifiers.visibility,
+                    is_static: modifiers.is_static,
+                    is_abstract: modifiers.is_abstract,
                     value,
                     attributes: attributes.clone(),
                     span: name_span,
@@ -9579,8 +9579,8 @@ fn unsupported_abstract_final_property_message() -> &'static str {
     "unsupported abstract/final property declaration: abstract and final property modifiers are not implemented"
 }
 
-fn unsupported_abstract_final_class_constant_message() -> &'static str {
-    "unsupported abstract/final class constant declaration: abstract and final class constant modifiers are not implemented"
+fn unsupported_final_class_constant_message() -> &'static str {
+    "unsupported final class constant declaration: final class constant modifiers are not implemented"
 }
 
 fn unsupported_readonly_class_member_modifier_message() -> &'static str {

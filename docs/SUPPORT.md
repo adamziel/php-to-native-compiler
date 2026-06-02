@@ -3342,7 +3342,12 @@
   constant-expression subset. `ClassName::CONST`, `self::CONST`, and
   `parent::CONST` resolve declared or inherited constants case-sensitively,
   enforce public/protected/private visibility in the current class context,
-  and return null, bool, int, float, string, or array values.
+  and return null, bool, int, float, string, or array values. Private parent
+  constants are not inherited through child lookups, protected/private external
+  access raises catchable PHP `Error` objects with `Cannot access ... constant`
+  messages, `static const` and `abstract const` class declarations emit
+  PHP-shaped startup fatals, and redeclaring an inherited class constant with
+  reduced visibility emits the PHP startup fatal for the reduced access level.
 - static property reads, direct writes, compound assignment, pre/post
   increment/decrement, `isset`, `empty`, `??`, `??=`, `unset(...)`, direct
   references, selected array-offset mutation, and selected array-offset
@@ -3502,7 +3507,9 @@
   string lookup also accepts declared class-constant names in the form
   `ClassName::CONST` or `\ClassName::CONST`: `defined($name)` reports true
   only for declared public class constants, and `constant($name)` resolves the
-  declared constant through the existing class-constant visibility checks.
+  declared constant through the existing class-constant visibility checks,
+  including catchable `Error` objects for protected/private class constants
+  reached from an invalid context.
 - bare reads of runtime-defined unqualified constants over the same current
   name/value subset; array constant values are cloned on lookup
 - namespace-qualified constant reads such as `App\VERSION` and
@@ -6942,7 +6949,7 @@
   legacy `var $property` declarations are treated as public untyped instance
   properties in the same metadata/runtime slot model as `public $property`;
   multiple property declarations, unsupported class
-  constant declaration forms such as typed, static, or multi-declarator class constants,
+  constant declaration forms such as typed, final, or multi-declarator class constants,
   malformed `clone` expressions, dynamic `instanceof` class operands,
   unsupported magic static receiver forms outside the current `static::class`,
   `static::method(...)`, and `static::$prop` slices,

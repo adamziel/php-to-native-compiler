@@ -59056,21 +59056,18 @@ impl Interpreter {
                     )?;
                 return Ok(returned_value);
             }
-            ensure_supported_function_metadata(function, span)?;
-            self.ensure_user_function_call_depth(function, span)?;
-
-            let (values, reference_bindings) =
-                self.evaluate_user_function_call_arguments(function, args, span, caller_scope)?;
-
-            return self.call_user_function_with_checked_values(
-                function,
-                values,
-                None,
-                Some(declaring_class_id),
-                Some(class_id),
-                reference_bindings,
-                Some(caller_scope),
-            );
+            return self
+                .call_source_aware_user_function_with_expr_args(
+                    function,
+                    args,
+                    span,
+                    caller_scope,
+                    None,
+                    Some(declaring_class_id),
+                    Some(class_id),
+                    Vec::new(),
+                )
+                .map(|(value, _)| value);
         }
 
         self.ensure_instance_method_visible(
@@ -60839,6 +60836,7 @@ impl Interpreter {
     }
 
     fn resolve_class_constant(&self, class_id: ClassId, constant: &str) -> ConstantResolution {
+        let origin_class_id = class_id;
         let mut current = Some(class_id);
         while let Some(current_id) = current {
             let class = self
@@ -60846,6 +60844,10 @@ impl Interpreter {
                 .get(current_id)
                 .expect("class id should resolve to class metadata");
             if let Some(metadata) = class.constant(constant) {
+                if current_id != origin_class_id && metadata.visibility() == Visibility::Private {
+                    current = class.parent_id();
+                    continue;
+                }
                 let constant_decl = self
                     .class_constants
                     .get(&(current_id, metadata.name().to_string()))
@@ -60989,19 +60991,11 @@ impl Interpreter {
             {
                 Ok(())
             }
-            Visibility::Private => Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    format!("{declaring_class_name}::{constant}"),
-                    "private class constant is not visible from the current class context",
-                ),
-            )),
-            Visibility::Protected => Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    format!("{declaring_class_name}::{constant}"),
-                    "protected class constant is not visible from the current class context",
-                ),
+            Visibility::Private | Visibility::Protected => Err(Diagnostic::new(
+                Phase::Runtime,
+                span.line,
+                span.column,
+                class_constant_visibility_error_message(declaring_class_name, constant, visibility),
             )),
         }
     }
@@ -103755,6 +103749,18 @@ fn magic_method_startup_diagnostics(
     }
 
     if !diagnostics.has_fatal() {
+        collect_class_constant_modifier_startup_diagnostics(&mut diagnostics, program, source_file);
+    }
+
+    if !diagnostics.has_fatal() {
+        collect_class_constant_inheritance_startup_diagnostics(
+            &mut diagnostics,
+            program,
+            source_file,
+        );
+    }
+
+    if !diagnostics.has_fatal() {
         collect_class_property_inheritance_startup_diagnostics(
             &mut diagnostics,
             program,
@@ -103843,6 +103849,81 @@ fn magic_method_startup_diagnostics(
     }
 
     diagnostics
+}
+
+fn collect_class_constant_modifier_startup_diagnostics(
+    diagnostics: &mut MagicMethodStartupDiagnostics,
+    program: &Program,
+    source_file: Option<&str>,
+) {
+    for stmt in &program.statements {
+        let Stmt::Class(class) = stmt else {
+            continue;
+        };
+        if class.is_nested {
+            continue;
+        }
+
+        for constant in class.members.iter().filter_map(|member| match member {
+            ClassMember::Constant(constant) => Some(constant),
+            _ => None,
+        }) {
+            if constant.is_static {
+                diagnostics.set_fatal(
+                    "Cannot use the static modifier on a class constant".to_string(),
+                    source_file,
+                    constant.span.line,
+                );
+                return;
+            }
+            if constant.is_abstract {
+                diagnostics.set_fatal(
+                    "Cannot use the abstract modifier on a class constant".to_string(),
+                    source_file,
+                    constant.span.line,
+                );
+                return;
+            }
+        }
+    }
+}
+
+fn collect_class_constant_inheritance_startup_diagnostics(
+    diagnostics: &mut MagicMethodStartupDiagnostics,
+    program: &Program,
+    source_file: Option<&str>,
+) {
+    let classes = top_level_class_startup_lookup(program);
+    for stmt in &program.statements {
+        let Stmt::Class(class) = stmt else {
+            continue;
+        };
+        if class.is_nested {
+            continue;
+        }
+
+        for constant in class.members.iter().filter_map(|member| match member {
+            ClassMember::Constant(constant) => Some(constant),
+            _ => None,
+        }) {
+            let Some((parent, parent_constant)) =
+                inherited_startup_class_constant(&classes, class, &constant.name)
+            else {
+                continue;
+            };
+            let Some(message) = inherited_class_constant_startup_diagnostic_message(
+                &class.name,
+                constant,
+                &parent.name,
+                &parent_constant,
+            ) else {
+                continue;
+            };
+
+            diagnostics.set_fatal(message, source_file, class.span.line);
+            return;
+        }
+    }
 }
 
 fn collect_attribute_unpack_startup_diagnostics(
@@ -106423,6 +106504,31 @@ fn inherited_startup_property<'a>(
     }
 }
 
+fn inherited_startup_class_constant<'a>(
+    classes: &HashMap<String, &'a ClassDecl>,
+    class: &ClassDecl,
+    constant_name: &str,
+) -> Option<(&'a ClassDecl, ClassConstantDecl)> {
+    let mut parent_name = class.parent.as_deref()?;
+    let mut visited = HashSet::new();
+
+    loop {
+        let key = startup_class_lookup_key(parent_name);
+        if !visited.insert(key.clone()) {
+            return None;
+        }
+
+        let parent = classes.get(&key).copied()?;
+        if let Some(constant) = class_startup_constant(parent, constant_name) {
+            if constant.visibility != ClassVisibility::Private {
+                return Some((parent, constant));
+            }
+        }
+
+        parent_name = parent.parent.as_deref()?;
+    }
+}
+
 fn class_startup_property(class: &ClassDecl, property_name: &str) -> Option<ClassPropertyDecl> {
     class
         .members
@@ -106438,6 +106544,13 @@ fn class_startup_property(class: &ClassDecl, property_name: &str) -> Option<Clas
                 .into_iter()
                 .find(|property| property.name == property_name)
         })
+}
+
+fn class_startup_constant(class: &ClassDecl, constant_name: &str) -> Option<ClassConstantDecl> {
+    class.members.iter().find_map(|member| match member {
+        ClassMember::Constant(constant) if constant.name == constant_name => Some(constant.clone()),
+        _ => None,
+    })
 }
 
 fn inherited_property_startup_diagnostic_message(
@@ -106487,6 +106600,33 @@ fn inherited_property_startup_diagnostic_message(
     }
 
     None
+}
+
+fn inherited_class_constant_startup_diagnostic_message(
+    class_name: &str,
+    constant: &ClassConstantDecl,
+    parent_name: &str,
+    parent_constant: &ClassConstantDecl,
+) -> Option<String> {
+    if class_property_visibility_rank(constant.visibility)
+        <= class_property_visibility_rank(parent_constant.visibility)
+    {
+        return None;
+    }
+
+    let suffix = if parent_constant.visibility == ClassVisibility::Protected {
+        " or weaker"
+    } else {
+        ""
+    };
+    Some(format!(
+        "Access level to {}::{} must be {} (as in class {}){}",
+        class_name,
+        constant.name,
+        class_property_visibility_name(parent_constant.visibility),
+        parent_name,
+        suffix
+    ))
 }
 
 fn class_property_type_text(property: &ClassPropertyDecl) -> Option<&str> {
@@ -107718,6 +107858,8 @@ fn seed_core_class_constant_runtime_tables(
             ClassConstantDecl {
                 name: name.to_string(),
                 visibility: ClassVisibility::Public,
+                is_static: false,
+                is_abstract: false,
                 value: Expr::Int(value, span),
                 attributes: Vec::new(),
                 span,
@@ -107747,6 +107889,8 @@ fn seed_core_class_constant_runtime_tables(
                 ClassConstantDecl {
                     name: name.to_string(),
                     visibility: ClassVisibility::Public,
+                    is_static: false,
+                    is_abstract: false,
                     value: Expr::Int(value, span),
                     attributes: Vec::new(),
                     span,
@@ -107763,6 +107907,8 @@ fn seed_core_class_constant_runtime_tables(
                     ClassConstantDecl {
                         name: name.to_string(),
                         visibility: ClassVisibility::Public,
+                        is_static: false,
+                        is_abstract: false,
                         value: Expr::String(value.to_string(), span),
                         attributes: Vec::new(),
                         span,
@@ -107784,6 +107930,8 @@ fn seed_core_class_constant_runtime_tables(
                 ClassConstantDecl {
                     name: name.to_string(),
                     visibility: ClassVisibility::Public,
+                    is_static: false,
+                    is_abstract: false,
                     value: Expr::Int(value, span),
                     attributes: Vec::new(),
                     span,
@@ -107804,6 +107952,8 @@ fn seed_core_class_constant_runtime_tables(
                 ClassConstantDecl {
                     name: name.to_string(),
                     visibility: ClassVisibility::Public,
+                    is_static: false,
+                    is_abstract: false,
                     value: Expr::Int(value, span),
                     attributes: Vec::new(),
                     span,
@@ -107823,6 +107973,8 @@ fn seed_core_class_constant_runtime_tables(
                     ClassConstantDecl {
                         name: name.to_string(),
                         visibility: ClassVisibility::Public,
+                        is_static: false,
+                        is_abstract: false,
                         value: Expr::Int(value, span),
                         attributes: Vec::new(),
                         span,
@@ -107847,6 +107999,8 @@ fn seed_core_class_constant_runtime_tables(
                 ClassConstantDecl {
                     name: name.to_string(),
                     visibility: ClassVisibility::Public,
+                    is_static: false,
+                    is_abstract: false,
                     value: Expr::Int(value, span),
                     attributes: Vec::new(),
                     span,
@@ -107869,6 +108023,8 @@ fn seed_core_class_constant_runtime_tables(
                 ClassConstantDecl {
                     name: name.to_string(),
                     visibility: ClassVisibility::Public,
+                    is_static: false,
+                    is_abstract: false,
                     value: Expr::Int(value, span),
                     attributes: Vec::new(),
                     span,
@@ -107898,6 +108054,8 @@ fn seed_core_class_constant_runtime_tables(
                 ClassConstantDecl {
                     name: name.to_string(),
                     visibility: ClassVisibility::Public,
+                    is_static: false,
+                    is_abstract: false,
                     value: Expr::Int(value, span),
                     attributes: Vec::new(),
                     span,
@@ -107918,6 +108076,8 @@ fn seed_core_class_constant_runtime_tables(
                 ClassConstantDecl {
                     name: name.to_string(),
                     visibility: ClassVisibility::Public,
+                    is_static: false,
+                    is_abstract: false,
                     value: Expr::Int(value, span),
                     attributes: Vec::new(),
                     span,
@@ -107943,6 +108103,8 @@ fn seed_core_class_constant_runtime_tables(
                 ClassConstantDecl {
                     name: name.to_string(),
                     visibility: ClassVisibility::Public,
+                    is_static: false,
+                    is_abstract: false,
                     value: Expr::Int(value, span),
                     attributes: Vec::new(),
                     span,
@@ -107957,6 +108119,8 @@ fn seed_core_class_constant_runtime_tables(
             ClassConstantDecl {
                 name: "IS_INSTANCEOF".to_string(),
                 visibility: ClassVisibility::Public,
+                is_static: false,
+                is_abstract: false,
                 value: Expr::Int(PHP_REFLECTION_ATTRIBUTE_IS_INSTANCEOF, span),
                 attributes: Vec::new(),
                 span,
@@ -113155,6 +113319,24 @@ fn catchable_php_error_message(error: &Diagnostic) -> Option<String> {
     catchable_php_error_class_and_message(error).map(|(_, message)| message)
 }
 
+fn class_constant_visibility_error_message(
+    class_name: &str,
+    constant_name: &str,
+    visibility: Visibility,
+) -> String {
+    match visibility {
+        Visibility::Private => {
+            format!("Cannot access private constant {class_name}::{constant_name}")
+        }
+        Visibility::Protected => {
+            format!("Cannot access protected constant {class_name}::{constant_name}")
+        }
+        Visibility::Public => {
+            format!("Cannot access public constant {class_name}::{constant_name}")
+        }
+    }
+}
+
 fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static str, String)> {
     if is_forbidden_dynamic_builtin_call_diagnostic(error) {
         return Some(("Error", error.message.clone()));
@@ -113279,6 +113461,22 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
     }
 
     if error.phase == Phase::Runtime {
+        if error.message.starts_with("Cannot access private constant ")
+            || error
+                .message
+                .starts_with("Cannot access protected constant ")
+        {
+            return Some(("Error", error.message.clone()));
+        }
+
+        if let Some(name) = error
+            .message
+            .strip_prefix("undefined constant ")
+            .filter(|name| name.contains("::"))
+        {
+            return Some(("Error", format!("Undefined constant {name}")));
+        }
+
         if let Some(message) = error.message.strip_prefix("ReflectionException: ") {
             return Some(("ReflectionException", message.to_string()));
         }

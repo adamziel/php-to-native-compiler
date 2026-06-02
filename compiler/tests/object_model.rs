@@ -10821,7 +10821,7 @@ class Child extends Base {}
 Child::missing();
 "#,
     );
-    assert_eq!(missing.message, "undefined constant Child::MISSING");
+    assert_eq!(missing.message, "Undefined constant Child::MISSING");
 
     let private_visibility = runtime_error(
         r#"<?php
@@ -10839,7 +10839,7 @@ Child::reveal();
     );
     assert_eq!(
         private_visibility.message,
-        "unsupported call Child::SECRET: private class constant is not visible from the current class context"
+        "Cannot access private constant Child::SECRET"
     );
 }
 
@@ -11964,7 +11964,7 @@ echo Root::NAME;
     );
     assert_eq!(
         visibility_error.message,
-        "unsupported call Root::NAME: protected class constant is not visible from the current class context"
+        "Cannot access protected constant Root::NAME"
     );
 
     let private_error = runtime_error(
@@ -11977,7 +11977,7 @@ echo Root::NAME;
     );
     assert_eq!(
         private_error.message,
-        "unsupported call Root::NAME: private class constant is not visible from the current class context"
+        "Cannot access private constant Root::NAME"
     );
 
     let undefined_class = runtime_error("<?php\necho Missing::VALUE;\n");
@@ -11991,7 +11991,112 @@ echo Root::MISSING;
     );
     assert_eq!(
         undefined_constant.message,
-        "undefined constant Root::MISSING"
+        "Undefined constant Root::MISSING"
+    );
+}
+
+#[test]
+fn class_constant_visibility_errors_are_catchable_php_errors() {
+    let execution = run_source(
+        r#"<?php
+class A {
+    protected const PROTECTED_NAME = "protected";
+    private const SECRET = "secret";
+
+    public static function dumpVisible() {
+        var_dump(self::PROTECTED_NAME);
+        var_dump(self::SECRET);
+    }
+}
+
+A::dumpVisible();
+try {
+    constant("A::PROTECTED_NAME");
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    echo A::SECRET;
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "string(9) \"protected\"\n",
+            "string(6) \"secret\"\n",
+            "Cannot access protected constant A::PROTECTED_NAME\n",
+            "Cannot access private constant A::SECRET\n"
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn private_parent_class_constants_are_not_inherited() {
+    let execution = run_source(
+        r#"<?php
+class A {
+    public const X = 1;
+    protected const Y = 2;
+    private const Z = 3;
+}
+class B extends A {
+    static public function checkConstants() {
+        var_dump(self::X);
+        var_dump(self::Y);
+        var_dump(self::Z);
+    }
+}
+
+B::checkConstants();
+"#,
+    )
+    .unwrap();
+
+    assert!(execution.stdout.starts_with(concat!(
+        "int(1)\n",
+        "int(2)\n",
+        "\n",
+        "Fatal error: Uncaught Error: Undefined constant B::Z in Command line code:11\n",
+        "Stack trace:\n",
+        "#0 Command line code(15): B::checkConstants()\n",
+        "#1 {main}\n",
+        "  thrown in Command line code on line 11"
+    )));
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 255);
+}
+
+#[test]
+fn class_constant_invalid_modifiers_and_visibility_reductions_are_startup_fatals() {
+    assert_php_startup_fatal(
+        "<?php\nclass A {\n    static const X = 1;\n}\n",
+        "constant-static.php",
+        3,
+        "Cannot use the static modifier on a class constant",
+    );
+    assert_php_startup_fatal(
+        "<?php\nclass A {\n    abstract const X = 1;\n}\n",
+        "constant-abstract.php",
+        3,
+        "Cannot use the abstract modifier on a class constant",
+    );
+    assert_php_startup_fatal(
+        "<?php\n\nclass A {\n    public const publicConst = 0;\n}\n\nclass B extends A {\n    protected const publicConst = 1;\n}\n",
+        "constant-public-reduced.php",
+        7,
+        "Access level to B::publicConst must be public (as in class A)",
+    );
+    assert_php_startup_fatal(
+        "<?php\n\nclass A {\n    protected const protectedConst = 0;\n}\n\nclass B extends A {\n    private const protectedConst = 1;\n}\n",
+        "constant-protected-reduced.php",
+        7,
+        "Access level to B::protectedConst must be protected (as in class A) or weaker",
     );
 }
 
@@ -15071,16 +15176,6 @@ class Box {
             3,
             19,
             "unsupported class constant declaration: typed class constants are not implemented",
-        ),
-        (
-            r#"<?php
-class Box {
-    public static const VERSION = 1;
-}
-"#,
-            3,
-            19,
-            "unsupported class constant declaration: static class constants are not implemented",
         ),
     ];
 

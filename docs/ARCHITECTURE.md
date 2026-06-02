@@ -3470,8 +3470,11 @@ declared class constants use the interpreter class metadata instead:
 `ClassName::CONST` and `\ClassName::CONST` are split at runtime,
 `defined(...)` reports true only for public declared or inherited constants,
 and `constant(...)` resolves through the same class-constant visibility checks
-as direct `ClassName::CONST`. Built-in error-level constants follow the
-current PHP 8.4+ mask surface where `E_ALL` excludes removed `E_STRICT`; bare
+as direct `ClassName::CONST`, including catchable `Error` objects for invalid
+protected/private access. Private parent class constants are skipped during
+child-class lookup, so child reads of a private parent constant resolve as the
+child's undefined constant. Built-in error-level constants follow the current
+PHP 8.4+ mask surface where `E_ALL` excludes removed `E_STRICT`; bare
 `E_STRICT` reads route through the normal display-deprecation path. This does
 not model bare namespace constant fallback reads, autoload-triggered class
 discovery, broader `self`/`parent`/`static` string names, host extension
@@ -4529,7 +4532,11 @@ nested calls.
 `static::class` resolves from the active called-class context in current
 instance and static method execution. Direct `ClassName::CONST`, `self::CONST`,
 `parent::CONST`, and late-bound `static::CONST` resolve declared or inherited
-class constants through runtime class metadata in the interpreter; typed
+class constants through runtime class metadata in the interpreter. Startup
+diagnostics reject invalid `static const` / `abstract const` class declarations
+and reduced-visibility redeclarations before execution; runtime reads enforce
+protected/private class-constant visibility as PHP `Error` surfaces and skip
+private parent constants during inherited lookup. Typed constants, final
 constants, multiple constants in one declaration, and broader dynamic
 class-constant string lookup beyond loaded `ClassName::CONST` names remain
 unsupported. Direct `ClassName::$prop`, `self::$prop`, `parent::$prop`,

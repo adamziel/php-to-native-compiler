@@ -28005,6 +28005,18 @@ impl RuntimeError {
         })
     }
 
+    pub fn class_constant_visibility(
+        class_name: impl Into<String>,
+        constant_name: impl Into<String>,
+        visibility: Visibility,
+    ) -> Self {
+        Self::from_kind(RuntimeErrorKind::ClassConstantVisibility {
+            class_name: class_name.into(),
+            constant_name: constant_name.into(),
+            visibility,
+        })
+    }
+
     pub fn uninitialized_typed_property(
         class_name: impl Into<String>,
         property_name: impl Into<String>,
@@ -28166,6 +28178,11 @@ pub enum RuntimeErrorKind {
     },
     InvalidPropertyAccess {
         reason: String,
+    },
+    ClassConstantVisibility {
+        class_name: String,
+        constant_name: String,
+        visibility: Visibility,
     },
     UninitializedTypedProperty {
         class_name: String,
@@ -28373,6 +28390,21 @@ fn format_runtime_error(kind: &RuntimeErrorKind) -> String {
         RuntimeErrorKind::InvalidPropertyAccess { reason } => {
             format!("invalid property access: {reason}")
         }
+        RuntimeErrorKind::ClassConstantVisibility {
+            class_name,
+            constant_name,
+            visibility,
+        } => match visibility {
+            Visibility::Private => {
+                format!("Cannot access private constant {class_name}::{constant_name}")
+            }
+            Visibility::Protected => {
+                format!("Cannot access protected constant {class_name}::{constant_name}")
+            }
+            Visibility::Public => {
+                format!("Cannot access public constant {class_name}::{constant_name}")
+            }
+        },
         RuntimeErrorKind::UninitializedTypedProperty {
             class_name,
             property_name,
@@ -35403,10 +35435,15 @@ impl NativeClassConstantTable {
         class_id: ClassId,
         constant_name: &str,
     ) -> Option<(ClassId, String, &'a PhpClassConstantMetadata)> {
+        let origin_class_id = class_id;
         let mut current = Some(class_id);
         while let Some(current_id) = current {
             let class = self.classes.get(current_id)?;
             if let Some(metadata) = class.constant(constant_name) {
+                if current_id != origin_class_id && metadata.visibility() == Visibility::Private {
+                    current = class.parent_id();
+                    continue;
+                }
                 return Some((current_id, class.name().to_string(), metadata));
             }
             current = class.parent_id();
@@ -35434,14 +35471,13 @@ fn ensure_class_constant_visible(
         {
             Ok(())
         }
-        Visibility::Private => Err(RuntimeError::unsupported_call(
-            format!("{declaring_class_name}::{constant_name}"),
-            "private class constant is not visible from the current class context",
-        )),
-        Visibility::Protected => Err(RuntimeError::unsupported_call(
-            format!("{declaring_class_name}::{constant_name}"),
-            "protected class constant is not visible from the current class context",
-        )),
+        Visibility::Private | Visibility::Protected => {
+            Err(RuntimeError::class_constant_visibility(
+                declaring_class_name,
+                constant_name,
+                visibility,
+            ))
+        }
     }
 }
 
@@ -81234,7 +81270,25 @@ mod tests {
         assert!(denied.is_null());
         assert_eq!(
             native_diagnostic_message_for_test(diagnostic),
-            "unsupported call BaseConst::SECRET: private class constant is not visible from the current class context"
+            "undefined constant ChildConst::SECRET"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        diagnostic = NativeDiagnosticHandle::null();
+
+        let denied = unsafe {
+            phpc_native_class_constant_read_class_with_diagnostic(
+                table,
+                base.as_ptr(),
+                base.len(),
+                secret.as_ptr(),
+                secret.len(),
+                &mut diagnostic,
+            )
+        };
+        assert!(denied.is_null());
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "Cannot access private constant BaseConst::SECRET"
         );
         unsafe { phpc_native_diagnostic_free(diagnostic) };
         unsafe { phpc_native_class_constant_table_free(table) };

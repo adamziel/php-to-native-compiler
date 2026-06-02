@@ -374,7 +374,8 @@ incorrect native code.
   interpolated runtime string names for `defined()`/`constant()`, bounded
   runtime string lookup of declared public class constants through
   `defined("ClassName::CONST")` and declared visible class constants through
-  `constant("ClassName::CONST")`, and
+  `constant("ClassName::CONST")` with PHP-shaped protected/private visibility
+  errors, and
   executable magic constants documented in the support matrix
 - statement-form `throw expr;` as a bounded exception boundary: guarded throws
   can parse and be skipped, while reached throws report a stable runtime
@@ -730,7 +731,7 @@ intersection property type checks, parenthesized DNF-shaped typed property
 declarations, exact PHP union scalar coercion preference rules, readonly
 property metadata and write-once enforcement, promoted
 constructor properties,
-typed or multi-declarator class constants, dynamic method names, dynamic
+typed, final, or multi-declarator class constants, dynamic method names, dynamic
 property creation outside `stdClass` and `wpdb`, non-public dynamic property
 access outside valid method visibility contexts,
 nullsafe object access `?->`, PHP 8 `match` expressions,
