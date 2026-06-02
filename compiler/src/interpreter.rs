@@ -17447,6 +17447,85 @@ impl Interpreter {
         Ok(())
     }
 
+    fn create_datetimezone_object_from_state(
+        &mut self,
+        class_id: ClassId,
+        state: &PhpArray,
+        span: Span,
+    ) -> CompileResult<PhpObject> {
+        let object_id = self.allocate_object_id();
+        let class = self
+            .classes
+            .get(class_id)
+            .expect("DateTimeZone class id should resolve");
+        let object = PhpObject::from_class_with_relationship_metadata_with_id(
+            class,
+            &[],
+            Vec::new(),
+            Vec::new(),
+            object_id,
+        );
+        self.assign_datetimezone_object_serialization_state(&object, state, span)?;
+        Ok(object)
+    }
+
+    fn call_datetimezone_set_state_static(
+        &mut self,
+        class_id: ClassId,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        expect_expr_arity("DateTimeZone::__set_state", args.len(), 1, span)?;
+        let state = self.evaluate(&args[0], caller_scope)?;
+        let Value::Array(state) = state else {
+            return Err(datetimezone_invalid_serialization_error(span));
+        };
+        let object = self.create_datetimezone_object_from_state(class_id, &state, span)?;
+        self.track_allocated_object(&object);
+        Ok(Value::Object(object))
+    }
+
+    fn assign_datetimezone_object_serialization_state(
+        &self,
+        object: &PhpObject,
+        state: &PhpArray,
+        span: Span,
+    ) -> CompileResult<()> {
+        let (timezone_type, timezone_name) = datetimezone_serialization_state(state, span)?;
+        object
+            .write_public_property("timezone_type", Value::Int(timezone_type))
+            .map_err(|error| runtime_error(span, error))?;
+        object
+            .write_public_property("timezone", Value::String(timezone_name))
+            .map_err(|error| runtime_error(span, error))?;
+        Ok(())
+    }
+
+    fn datetimezone_serialization_state_array(
+        object: &PhpObject,
+        span: Span,
+    ) -> CompileResult<PhpArray> {
+        let timezone_type = match object.read_public_property("timezone_type") {
+            Ok(Value::Int(value)) => value,
+            _ => return Err(datetimezone_invalid_serialization_error(span)),
+        };
+        let timezone_name = match object.read_public_property("timezone") {
+            Ok(Value::String(value)) => value,
+            _ => return Err(datetimezone_invalid_serialization_error(span)),
+        };
+        let Some(canonical_name) =
+            normalized_datetimezone_serialization_state(timezone_type, &timezone_name)
+        else {
+            return Err(datetimezone_invalid_serialization_error(span));
+        };
+
+        let mut state = PhpArray::new();
+        state.insert("timezone_type", Value::Int(timezone_type));
+        state.insert("timezone", Value::String(canonical_name));
+        Ok(state)
+    }
+
     fn datetimezone_name(
         object: &PhpObject,
         function: impl Into<String>,
@@ -17508,6 +17587,19 @@ impl Interpreter {
         match method_name.to_ascii_lowercase().as_str() {
             "__construct" => {
                 self.initialize_datetimezone_object(&object, args, span, caller_scope)?;
+                Ok(Value::Null)
+            }
+            "__serialize" => {
+                expect_expr_arity("DateTimeZone::__serialize", args.len(), 0, span)?;
+                Self::datetimezone_serialization_state_array(&object, span).map(Value::Array)
+            }
+            "__unserialize" => {
+                expect_expr_arity("DateTimeZone::__unserialize", args.len(), 1, span)?;
+                let state = self.evaluate(&args[0], caller_scope)?;
+                let Value::Array(state) = state else {
+                    return Err(datetimezone_invalid_serialization_error(span));
+                };
+                self.assign_datetimezone_object_serialization_state(&object, &state, span)?;
                 Ok(Value::Null)
             }
             "getname" => {
@@ -17862,6 +17954,24 @@ impl Interpreter {
         Ok(object)
     }
 
+    fn assign_datetime_object_serialization_state(
+        &mut self,
+        object: &PhpObject,
+        state: &PhpArray,
+        span: Span,
+    ) -> CompileResult<()> {
+        let date = bounded_datetime_state_string(state, "date", span)?;
+        let timestamp = bounded_datetime_timestamp_from_state_array(state, span)?;
+        let timezone = bounded_timezone_from_state_array(state, span)?;
+        self.assign_datetime_object_state(object, timestamp, timezone, span)?;
+        if date.contains('.') {
+            object
+                .write_public_property("date", Value::String(date))
+                .map_err(|error| runtime_error(span, error))?;
+        }
+        Ok(())
+    }
+
     fn call_datetime_set_state_static(
         &mut self,
         class_id: ClassId,
@@ -17872,20 +17982,14 @@ impl Interpreter {
         expect_expr_arity("DateTime::__set_state", args.len(), 1, span)?;
         let state = self.evaluate(&args[0], caller_scope)?;
         let Value::Array(state) = state else {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "DateTime::__set_state()",
-                    format!(
-                        "state argument must be array in the current subset, got {}",
-                        state.type_name()
-                    ),
-                ),
-            ));
+            return Err(datetime_invalid_serialization_error(span));
         };
-        let timestamp = bounded_datetime_timestamp_from_state_array(&state, span)?;
-        let timezone = bounded_timezone_from_state_array(&state, span)?;
-        let object = self.create_datetime_object_from_state(class_id, timestamp, timezone, span)?;
+        let object = self.create_datetime_object_from_state(
+            class_id,
+            bounded_datetime_timestamp_from_state_array(&state, span)?,
+            bounded_timezone_from_state_array(&state, span)?,
+            span,
+        )?;
         self.track_allocated_object(&object);
         Ok(Value::Object(object))
     }
@@ -54571,6 +54675,11 @@ impl Interpreter {
             expect_expr_arity("DateTimeZone::listAbbreviations", args.len(), 0, span)?;
             return Ok(Value::Array(bounded_timezone_abbreviations_array()));
         }
+        if self.resolved_method_is_core_datetimezone(class_id)
+            && method_name.eq_ignore_ascii_case("__set_state")
+        {
+            return self.call_datetimezone_set_state_static(class_id, args, span, caller_scope);
+        }
         if self.resolved_method_is_core_datetime(class_id)
             && method_name.eq_ignore_ascii_case("__set_state")
         {
@@ -90629,7 +90738,7 @@ impl Interpreter {
             {
                 Ok(value) => Some(value),
                 Err(error) => {
-                    if is_datetimezone_invalid_serialization_error(&error) {
+                    if is_date_object_invalid_serialization_error(&error) {
                         object_error = Some(error);
                     }
                     None
@@ -90698,6 +90807,8 @@ impl Interpreter {
         );
         if self.resolved_method_is_core_datetimezone(class_id) {
             self.initialize_unserialized_datetimezone_object(&object, properties, span)?;
+        } else if self.resolved_method_is_core_datetime(class_id) {
+            self.initialize_unserialized_datetime_object(&object, properties, span)?;
         } else {
             for (name, value) in properties {
                 object
@@ -90715,41 +90826,20 @@ impl Interpreter {
         properties: Vec<(String, Value)>,
         span: Span,
     ) -> CompileResult<()> {
-        let mut timezone_type = None;
-        let mut timezone_name = None;
-        for (name, value) in properties {
-            match (name.as_str(), value) {
-                ("timezone_type", Value::Int(value)) => timezone_type = Some(value),
-                ("timezone", Value::String(value)) => timezone_name = Some(value),
-                _ => return Err(datetimezone_invalid_serialization_error(span)),
-            }
-        }
+        let state =
+            datetimezone_serialization_state_array_from_properties(properties.into_iter(), span)?;
+        self.assign_datetimezone_object_serialization_state(object, &state, span)
+    }
 
-        let Some(timezone_type) = timezone_type else {
-            return Err(datetimezone_invalid_serialization_error(span));
-        };
-        let Some(timezone_name) = timezone_name else {
-            return Err(datetimezone_invalid_serialization_error(span));
-        };
-        if timezone_name.contains('\0') {
-            return Err(datetimezone_invalid_serialization_error(span));
-        }
-
-        let Some((expected_type, canonical_name)) = bounded_timezone_object_parts(&timezone_name)
-        else {
-            return Err(datetimezone_invalid_serialization_error(span));
-        };
-        if timezone_type != expected_type {
-            return Err(datetimezone_invalid_serialization_error(span));
-        }
-
-        object
-            .write_public_property("timezone_type", Value::Int(timezone_type))
-            .map_err(|error| runtime_error(span, error))?;
-        object
-            .write_public_property("timezone", Value::String(canonical_name))
-            .map_err(|error| runtime_error(span, error))?;
-        Ok(())
+    fn initialize_unserialized_datetime_object(
+        &mut self,
+        object: &PhpObject,
+        properties: Vec<(String, Value)>,
+        span: Span,
+    ) -> CompileResult<()> {
+        let state =
+            datetime_serialization_state_array_from_properties(properties.into_iter(), span)?;
+        self.assign_datetime_object_serialization_state(object, &state, span)
     }
 
     fn call_user_func_builtin(&mut self, args: Vec<Value>, span: Span) -> CompileResult<Value> {
@@ -107025,11 +107115,20 @@ fn is_forbidden_dynamic_builtin_call_diagnostic(error: &Diagnostic) -> bool {
 
 const DATETIMEZONE_INVALID_SERIALIZATION_MESSAGE: &str =
     "Invalid serialization data for DateTimeZone object";
+const DATETIME_INVALID_SERIALIZATION_MESSAGE: &str =
+    "Invalid serialization data for DateTime object";
 
 fn datetimezone_invalid_serialization_error(span: Span) -> Diagnostic {
     runtime_error(
         span,
         RuntimeError::unsupported_call("unserialize()", DATETIMEZONE_INVALID_SERIALIZATION_MESSAGE),
+    )
+}
+
+fn datetime_invalid_serialization_error(span: Span) -> Diagnostic {
+    runtime_error(
+        span,
+        RuntimeError::unsupported_call("unserialize()", DATETIME_INVALID_SERIALIZATION_MESSAGE),
     )
 }
 
@@ -107039,6 +107138,17 @@ fn is_datetimezone_invalid_serialization_error(error: &Diagnostic) -> bool {
             == format!(
                 "unsupported call unserialize(): {DATETIMEZONE_INVALID_SERIALIZATION_MESSAGE}"
             )
+}
+
+fn is_datetime_invalid_serialization_error(error: &Diagnostic) -> bool {
+    error.phase == Phase::Runtime
+        && error.message
+            == format!("unsupported call unserialize(): {DATETIME_INVALID_SERIALIZATION_MESSAGE}")
+}
+
+fn is_date_object_invalid_serialization_error(error: &Diagnostic) -> bool {
+    is_datetimezone_invalid_serialization_error(error)
+        || is_datetime_invalid_serialization_error(error)
 }
 
 fn catchable_php_error_message(error: &Diagnostic) -> Option<String> {
@@ -107067,6 +107177,10 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
             "Error",
             DATETIMEZONE_INVALID_SERIALIZATION_MESSAGE.to_string(),
         ));
+    }
+
+    if is_datetime_invalid_serialization_error(error) {
+        return Some(("Error", DATETIME_INVALID_SERIALIZATION_MESSAGE.to_string()));
     }
 
     if error.phase == Phase::Runtime
@@ -133119,10 +133233,15 @@ fn format_php_serialized_value(value: &Value, output: &mut String) -> Option<()>
             }
             output.push('}');
         }
-        Value::Object(object) => format_php_serialized_datetimezone_object(object, output)?,
+        Value::Object(object) => format_php_serialized_date_object(object, output)?,
         Value::Closure(_) | Value::Resource(_) => return None,
     }
     Some(())
+}
+
+fn format_php_serialized_date_object(object: &PhpObject, output: &mut String) -> Option<()> {
+    format_php_serialized_datetimezone_object(object, output)
+        .or_else(|| format_php_serialized_datetime_object(object, output))
 }
 
 fn format_php_serialized_datetimezone_object(
@@ -133141,12 +133260,43 @@ fn format_php_serialized_datetimezone_object(
         Value::String(value) => value,
         _ => return None,
     };
-    let (expected_type, canonical_name) = bounded_timezone_object_parts(&timezone_name)?;
-    if timezone_type != expected_type {
+    let canonical_name =
+        normalized_datetimezone_serialization_state(timezone_type, &timezone_name)?;
+
+    output.push_str("O:12:\"DateTimeZone\":2:{");
+    format_php_serialized_array_key(&ArrayKey::String("timezone_type".to_string()), output);
+    format_php_serialized_value(&Value::Int(timezone_type), output)?;
+    format_php_serialized_array_key(&ArrayKey::String("timezone".to_string()), output);
+    format_php_serialized_value(&Value::String(canonical_name), output)?;
+    output.push('}');
+    Some(())
+}
+
+fn format_php_serialized_datetime_object(object: &PhpObject, output: &mut String) -> Option<()> {
+    if !object.class_name().eq_ignore_ascii_case("DateTime") {
         return None;
     }
 
-    output.push_str("O:12:\"DateTimeZone\":2:{");
+    let date = match object.read_public_property("date").ok()? {
+        Value::String(value) => value,
+        _ => return None,
+    };
+    let timezone_type = match object.read_public_property("timezone_type").ok()? {
+        Value::Int(value) => value,
+        _ => return None,
+    };
+    let timezone_name = match object.read_public_property("timezone").ok()? {
+        Value::String(value) => value,
+        _ => return None,
+    };
+    let canonical_name =
+        normalized_datetimezone_serialization_state(timezone_type, &timezone_name)?;
+    let timezone = bounded_timezone_from_state_name(&canonical_name)?;
+    parse_bounded_datetime_state_date(&date, &timezone)?;
+
+    output.push_str("O:8:\"DateTime\":3:{");
+    format_php_serialized_array_key(&ArrayKey::String("date".to_string()), output);
+    format_php_serialized_value(&Value::String(date), output)?;
     format_php_serialized_array_key(&ArrayKey::String("timezone_type".to_string()), output);
     format_php_serialized_value(&Value::Int(timezone_type), output)?;
     format_php_serialized_array_key(&ArrayKey::String("timezone".to_string()), output);
@@ -142270,49 +142420,91 @@ fn bounded_timezone_object_parts(name: &str) -> Option<(i64, String)> {
     bounded_timezone_from_name(trimmed).map(|timezone| (3, timezone.name))
 }
 
+fn normalized_datetimezone_serialization_state(
+    timezone_type: i64,
+    timezone_name: &str,
+) -> Option<String> {
+    if timezone_name.contains('\0') {
+        return None;
+    }
+    let (expected_type, canonical_name) = bounded_timezone_object_parts(timezone_name)?;
+    if timezone_type != expected_type {
+        return None;
+    }
+    Some(canonical_name)
+}
+
+fn datetimezone_serialization_state(state: &PhpArray, span: Span) -> CompileResult<(i64, String)> {
+    let timezone_type = match state.get_cloned("timezone_type") {
+        Some(Value::Int(value)) => value,
+        _ => return Err(datetimezone_invalid_serialization_error(span)),
+    };
+    let timezone_name = match state.get_cloned("timezone") {
+        Some(Value::String(value)) => value,
+        _ => return Err(datetimezone_invalid_serialization_error(span)),
+    };
+    let Some(canonical_name) =
+        normalized_datetimezone_serialization_state(timezone_type, &timezone_name)
+    else {
+        return Err(datetimezone_invalid_serialization_error(span));
+    };
+    Ok((timezone_type, canonical_name))
+}
+
+fn datetimezone_serialization_state_array_from_properties<I>(
+    properties: I,
+    span: Span,
+) -> CompileResult<PhpArray>
+where
+    I: IntoIterator<Item = (String, Value)>,
+{
+    let mut state = PhpArray::new();
+    for (name, value) in properties {
+        match name.as_str() {
+            "timezone_type" | "timezone" => {
+                state.insert(name, value);
+            }
+            _ => return Err(datetimezone_invalid_serialization_error(span)),
+        }
+    }
+    let (timezone_type, timezone_name) = datetimezone_serialization_state(&state, span)?;
+    let mut canonical = PhpArray::new();
+    canonical.insert("timezone_type", Value::Int(timezone_type));
+    canonical.insert("timezone", Value::String(timezone_name));
+    Ok(canonical)
+}
+
+fn datetime_serialization_state_array_from_properties<I>(
+    properties: I,
+    span: Span,
+) -> CompileResult<PhpArray>
+where
+    I: IntoIterator<Item = (String, Value)>,
+{
+    let mut state = PhpArray::new();
+    for (name, value) in properties {
+        match name.as_str() {
+            "date" | "timezone_type" | "timezone" => {
+                state.insert(name, value);
+            }
+            _ => return Err(datetime_invalid_serialization_error(span)),
+        }
+    }
+    let _ = bounded_datetime_timestamp_from_state_array(&state, span)?;
+    Ok(state)
+}
+
 fn bounded_datetime_state_string(state: &PhpArray, key: &str, span: Span) -> CompileResult<String> {
     match state.get_cloned(key) {
         Some(Value::String(value)) => Ok(value),
-        Some(other) => Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                "DateTime::__set_state()",
-                format!(
-                    "state field {key:?} must be string in the current subset, got {}",
-                    other.type_name()
-                ),
-            ),
-        )),
-        None => Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                "DateTime::__set_state()",
-                format!("state field {key:?} is missing in the current subset"),
-            ),
-        )),
+        Some(_) | None => Err(datetime_invalid_serialization_error(span)),
     }
 }
 
 fn bounded_datetime_state_int(state: &PhpArray, key: &str, span: Span) -> CompileResult<i64> {
     match state.get_cloned(key) {
         Some(Value::Int(value)) => Ok(value),
-        Some(other) => Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                "DateTime::__set_state()",
-                format!(
-                    "state field {key:?} must be int in the current subset, got {}",
-                    other.type_name()
-                ),
-            ),
-        )),
-        None => Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                "DateTime::__set_state()",
-                format!("state field {key:?} is missing in the current subset"),
-            ),
-        )),
+        Some(_) | None => Err(datetime_invalid_serialization_error(span)),
     }
 }
 
@@ -142336,40 +142528,23 @@ fn bounded_timezone_from_state_array(
 ) -> CompileResult<BoundedTimezone> {
     let timezone_type = bounded_datetime_state_int(state, "timezone_type", span)?;
     if !matches!(timezone_type, 1..=3) {
-        return Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                "DateTime::__set_state()",
-                format!(
-                    "state field \"timezone_type\" value {timezone_type} is not implemented in the current subset"
-                ),
-            ),
-        ));
+        return Err(datetime_invalid_serialization_error(span));
     }
     let timezone_name = bounded_datetime_state_string(state, "timezone", span)?;
-    bounded_timezone_from_state_name(&timezone_name).ok_or_else(|| {
-        runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                "DateTime::__set_state()",
-                format!("timezone {timezone_name} is not implemented in the current subset"),
-            ),
-        )
-    })
+    let Some(canonical_name) =
+        normalized_datetimezone_serialization_state(timezone_type, &timezone_name)
+    else {
+        return Err(datetime_invalid_serialization_error(span));
+    };
+    bounded_timezone_from_state_name(&canonical_name)
+        .ok_or_else(|| datetime_invalid_serialization_error(span))
 }
 
 fn bounded_datetime_timestamp_from_state_array(state: &PhpArray, span: Span) -> CompileResult<i64> {
     let timezone = bounded_timezone_from_state_array(state, span)?;
     let date = bounded_datetime_state_string(state, "date", span)?;
-    parse_bounded_datetime_state_date(&date, &timezone).ok_or_else(|| {
-        runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                "DateTime::__set_state()",
-                format!("date state {date:?} is not implemented in the current subset"),
-            ),
-        )
-    })
+    parse_bounded_datetime_state_date(&date, &timezone)
+        .ok_or_else(|| datetime_invalid_serialization_error(span))
 }
 
 fn parse_bounded_datetime_state_date(date: &str, timezone: &BoundedTimezone) -> Option<i64> {

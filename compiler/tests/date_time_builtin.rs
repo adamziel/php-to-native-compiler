@@ -722,6 +722,58 @@ try {
 }
 
 #[test]
+fn date_object_serialization_state_helpers_validate_bounded_metadata() {
+    let execution = run_source(
+        r#"<?php
+date_default_timezone_set("Europe/London");
+$date = new DateTime("2005-07-14 22:30:41");
+$serialized = serialize($date);
+echo $serialized, "\n";
+$copy = unserialize($serialized);
+echo $copy->format("F j, Y, g:i a"), "\n";
+try {
+    DateTime::__set_state(array(
+        "date" => 2023.113,
+        "timezone_type" => 3,
+        "timezone" => "Europe/Kyiv",
+    ));
+} catch (Throwable $e) {
+    echo get_class($e), ": ", $e->getMessage(), "\n";
+}
+
+$tz = new DateTimeZone("CEST");
+$state = $tz->__serialize();
+echo $state["timezone_type"], "|", $state["timezone"], "\n";
+$tz->__unserialize(array("timezone_type" => 1, "timezone" => "+0130"));
+echo $tz->getName(), "\n";
+$copy = DateTimeZone::__set_state(array("timezone_type" => 3, "timezone" => "Europe/Kyiv"));
+echo $copy->getName(), "\n";
+try {
+    DateTimeZone::__set_state(array("timezone_type" => 4, "timezone" => "Europe/Kyiv"));
+} catch (Throwable $e) {
+    echo get_class($e), ": ", $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "O:8:\"DateTime\":3:{s:4:\"date\";s:26:\"2005-07-14 22:30:41.000000\";s:13:\"timezone_type\";i:3;s:8:\"timezone\";s:13:\"Europe/London\";}\n",
+            "July 14, 2005, 10:30 pm\n",
+            "Error: Invalid serialization data for DateTime object\n",
+            "2|CEST\n",
+            "+01:30\n",
+            "Europe/Kyiv\n",
+            "Error: Invalid serialization data for DateTimeZone object\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn datetime_mutable_timezone_metadata_matches_basic_rows() {
     let execution = run_source(
         r#"<?php

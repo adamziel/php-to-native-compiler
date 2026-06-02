@@ -4,6 +4,34 @@
 
 Implemented:
 
+- Added a bounded exact-core date object serialization-state lane. Generic
+  `serialize()` / `unserialize()` now round-trip exact core `DateTime` objects
+  whose public `date`, `timezone_type`, and `timezone` state matches the
+  existing bounded DateTime parser/timezone table, so restored objects can use
+  the current `format()` / timestamp runtime state. Invalid
+  `DateTime::__set_state()` state now raises the PHP-shaped catchable
+  `Error: Invalid serialization data for DateTime object` diagnostic.
+  `DateTimeZone` now exposes bounded `__serialize()`, `__unserialize()`, and
+  `__set_state()` over the same type-1 fixed-offset, type-2 abbreviation, and
+  type-3 named-timezone metadata already used by generic DateTimeZone
+  serialization, with invalid state raising the existing catchable PHP-shaped
+  `Error`. Existing scalar/array serialization, exact core `DateTimeZone`
+  generic serialization, mutable DateTime state mutation, metadata visibility,
+  DateTimeImmutable boundaries, and native-lowering rejection remain unchanged.
+  Focused proof covers the Rust
+  `date_object_serialization_state_helpers_validate_bounded_metadata`
+  regression, the full DateTime Rust file, direct CLI probes, selected public
+  PHPT rows `DateTime_serialize.phpt`,
+  `DateTime_set_state_exception.phpt`, `DateTimeZone_serialization.phpt`,
+  `DateTimeZone_set_state.phpt`, and
+  `DateTimeZone_set_state_exception.phpt`, build, fmt, and diff checks.
+  Unsupported edges remain DateTime manual `__serialize()` / `__unserialize()`
+  methods, DateTimeImmutable serialization/state methods, DateTime and
+  DateTimeZone subclasses with custom serialized properties, custom
+  serialization hooks, full malformed-payload offset parity, full timezone
+  database/history, non-zero DateTime microsecond method formatting beyond the
+  current public state, references/COW, and native lowering.
+
 - Added a bounded float-string-to-int deprecation diagnostics lane for
   `phpc run`. Lossy finite well-formed numeric strings such as `"1.5"` now
   emit PHP-shaped `Deprecated: Implicit conversion from float-string ... to int

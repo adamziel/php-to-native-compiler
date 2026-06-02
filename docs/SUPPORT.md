@@ -6088,7 +6088,10 @@
   and `DateTimeImmutable::__set_state()` reconstruct fresh bounded objects from
   the exported `date`, `timezone_type`, and `timezone` state fields produced by
   the current `var_export()` path for supported date strings and bounded
-  timezone identifiers. `DateTime::createFromImmutable()`,
+  timezone identifiers, with invalid mutable DateTime state raising a catchable
+  PHP-shaped `Error`. Exact core mutable `DateTime` objects also round-trip
+  through the generic `serialize()` / `unserialize()` subset for that bounded
+  state shape. `DateTime::createFromImmutable()`,
   `DateTime::createFromInterface()`, `DateTimeImmutable::createFromMutable()`,
   and `DateTimeImmutable::createFromInterface()` copy bounded timestamp/timezone
   state into the called mutable or immutable target class. `DateTime::format()`,
@@ -6109,15 +6112,19 @@
   identifiers in the covered local CLI row. Exact core `DateTimeZone` objects
   also round-trip through the generic `serialize()` / `unserialize()` subset
   for supported fixed-offset, abbreviation, and named timezone metadata, with
-  invalid serialized state raising a catchable PHP-shaped `Error`. Full
-  timezone database validation,
+  `DateTimeZone::__serialize()`, `DateTimeZone::__unserialize()`, and
+  `DateTimeZone::__set_state()` sharing the same bounded state validation and
+  invalid state raising a catchable PHP-shaped `Error`. Full timezone database
+  validation,
   exact internal `DateTime`, `DateTimeImmutable`, and `DateTimeZone`
   constructor diagnostics beyond the covered arity slice and scalar
   coercion/deprecation parity, broad `DateTimeInterface` reflection/runtime
   parity, all historical transition rules, timezone abbreviation and
   fixed-offset state identity beyond the covered named-zone rows, DateTime
   state arrays outside the bounded exported `date`/`timezone_type`/`timezone`
-  shape, exact invalid-modifier `DateMalformedStringException` behavior, exact
+  and `timezone_type`/`timezone` shapes, DateTime manual `__serialize()` /
+  `__unserialize()` methods, exact invalid-modifier
+  `DateMalformedStringException` behavior, exact
   diagnostics for constructor/timezone/state coercions outside the covered
   slices, weak scalar timestamp/date-part coercions for `idate()` / date
   formatting and setter helpers beyond bounded integers and `int|null`
@@ -10166,17 +10173,20 @@
   UTF-8 replacement for the current scalar/array/object value model.
   `serialize()` emits PHP wire text for the current null/bool/int/float/string
   and ordered-array value subset, including uppercase `INF`, `-INF`, and `NAN`
-  spellings for non-finite floats. Exact core `DateTimeZone` objects with
-  valid bounded metadata are the only current object serialization exception.
+  spellings for non-finite floats. Exact core `DateTime` and `DateTimeZone`
+  objects with valid bounded metadata are the current object serialization
+  exceptions.
   `unserialize()` accepts the matching scalar/array payload subset plus
-  supported exact core `DateTimeZone` payloads, returns a valid parsed prefix
-  with PHP-shaped extra-data warnings, reports reached malformed-input parser
-  offsets with `of N bytes` text, rejects signed serialized lengths, and
-  raises a catchable PHP-shaped `Error` for invalid `DateTimeZone` serialized
-  state. Other object/resource/closure serialization, custom serialization
-  hooks, non-UTF-8 binary string payloads, exact malformed-input offset parity
-  beyond the covered rows, full `serialize_precision` float parity, DateTime
-  object serialization, and native lowering remain unsupported.
+  supported exact core `DateTime` / `DateTimeZone` payloads, returns a valid
+  parsed prefix with PHP-shaped extra-data warnings, reports reached
+  malformed-input parser offsets with `of N bytes` text, rejects signed
+  serialized lengths, and raises a catchable PHP-shaped `Error` for invalid
+  DateTime or DateTimeZone serialized state. Other object/resource/closure
+  serialization, DateTime manual `__serialize()` / `__unserialize()`,
+  DateTimeImmutable serialization, custom serialization hooks, non-UTF-8
+  binary string payloads, exact malformed-input offset parity beyond the
+  covered rows, full `serialize_precision` float parity, and native lowering
+  remain unsupported.
   `strlen` accepts scalar/null string-convertible values and supported
   `__toString()` objects, and rejects arrays, resources, closures, and objects
   without supported `__toString()`. `count` accepts arrays only.
