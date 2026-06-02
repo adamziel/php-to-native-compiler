@@ -3446,6 +3446,12 @@ in this slice also emit the operation-specific follow-on open warning after an
 path/open_basedir/missing-file recovery part of that boundary and reject actual
 ownership changes on existing files until a native host ownership policy
 exists.
+`disk_free_space()`, `diskfreespace()`, and `disk_total_space()` use a bounded
+disk-space directory operand boundary layered on that same local-path policy:
+scalar/null and UTF-8 binary-string operands keep the existing conversion
+behavior, supported visible `__toString()` objects can provide the directory
+path, and arrays, closures, resources, or non-stringable objects stop with a
+catchable PHP-shaped `TypeError` before host `statvfs` lookup.
 `realpath()` is interpreter-only for one string local path. It uses the same
 process-path-then-repo-root relative path policy as the metadata builtins,
 returns a UTF-8 resolved host path for existing local paths, and returns

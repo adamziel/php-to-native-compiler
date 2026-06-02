@@ -12439,9 +12439,12 @@ Unsupported code should fail with an explicit parse, runtime, or codegen error.
   local path validation, open_basedir denial, and missing-file warning plus
   `false` recovery; changing ownership or group on existing files remains
   unsupported. `disk_free_space()`, its `diskfreespace()` alias, and
-  `disk_total_space()` expose host `statvfs` free/total byte counts as floats
-  for existing local files or directories, return `false` with a bounded warning
-  for missing paths, and reject null-byte directory names. Stream-wrapper
+  `disk_total_space()` accept scalar/null, UTF-8 binary-string, and supported
+  visible `__toString()` directory operands, expose host `statvfs` free/total
+  byte counts as floats for existing local files or directories, return
+  `false` with a bounded warning for missing paths, reject null-byte directory
+  names, and raise catchable PHP-shaped `TypeError`s for arrays, closures,
+  resources, or non-stringable objects. Stream-wrapper
   metadata paths and platform-specific ACL/owner name resolution remain
   unsupported.
 - Script-file metadata helpers in `phpc run`: `getlastmod()`, `getmyinode()`,

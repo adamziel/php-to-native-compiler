@@ -79165,11 +79165,7 @@ impl Interpreter {
         span: Span,
     ) -> CompileResult<Value> {
         expect_arity(function, args, 1, span)?;
-        let Some(path) =
-            self.filesystem_scalar_path_argument(function, "directory", &args[0], span)?
-        else {
-            return Ok(Value::Bool(false));
-        };
+        let path = self.disk_space_directory_argument(function, &args[0], span)?;
         if path.contains('\0') {
             return Err(runtime_error(
                 span,
@@ -79200,6 +79196,51 @@ impl Interpreter {
                 Ok(Value::Bool(false))
             }
         }
+    }
+
+    fn disk_space_directory_argument(
+        &mut self,
+        function: &str,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<String> {
+        match value {
+            Value::String(path) => Ok(path.clone()),
+            Value::BinaryString(bytes) => {
+                let path = tree_walk_binary_string_utf8(bytes, "directory", span)?;
+                Ok(path.to_string())
+            }
+            Value::Null | Value::Bool(_) | Value::Int(_) | Value::Float(_) => {
+                Ok(value.echo_string())
+            }
+            Value::Object(object) => {
+                if let Some(path) = self.object_to_string_with_magic(
+                    object.clone(),
+                    &format!("{function}()"),
+                    span,
+                )? {
+                    Ok(path)
+                } else {
+                    Err(Self::disk_space_directory_type_error(function, value, span))
+                }
+            }
+            Value::Array(_) | Value::Closure(_) | Value::Resource(_) => {
+                Err(Self::disk_space_directory_type_error(function, value, span))
+            }
+        }
+    }
+
+    fn disk_space_directory_type_error(function: &str, value: &Value, span: Span) -> Diagnostic {
+        runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                format!("{function}()"),
+                format!(
+                    "Argument #1 ($directory) must be of type string, {} given",
+                    php_type_error_given(value)
+                ),
+            ),
+        )
     }
 
     fn call_readlink(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {

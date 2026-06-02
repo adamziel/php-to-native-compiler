@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Added a bounded disk-space metadata stringable-directory lane.
+  `disk_free_space()`, its `diskfreespace()` alias, and
+  `disk_total_space()` now accept supported visible `__toString()` objects for
+  their `$directory` operands on direct and string-valued dynamic interpreter
+  calls. Existing scalar/null and UTF-8 binary-string path conversion,
+  host-local `statvfs` free/total byte reporting, null-byte `ValueError`s,
+  missing-path warning/`false` recovery, `open_basedir` denial, and native
+  lowering rejection remain unchanged. Arrays, closures, resources, and
+  non-stringable objects now raise catchable PHP-shaped `TypeError`s for the
+  directory operand. Focused proof covers the Rust
+  `disk_space_builtins_accept_stringable_directories_and_report_type_errors`
+  regression, a direct CLI fixture, and selected public disk-space PHPT guard
+  rows. Unsupported edges remain exact null/lossy scalar deprecation
+  diagnostics, exact invalid `__toString()` return diagnostics, broader
+  `statvfs` portability/ACL/quota semantics, non-UTF-8 paths, references/COW,
+  and native lowering.
+
 - Added a bounded `base64_decode()` strict-flag bool-boundary lane. Direct and
   string-valued dynamic interpreter calls now route optional `$strict` through
   the shared PHP-internal bool boundary, so scalar values keep selecting the

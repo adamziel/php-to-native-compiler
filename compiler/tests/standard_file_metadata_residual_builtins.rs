@@ -180,6 +180,58 @@ try {{
 }
 
 #[test]
+fn disk_space_builtins_accept_stringable_directories_and_report_type_errors() {
+    let fixture = TempFsFixture::new("disk-space-stringable");
+
+    let source = format!(
+        r#"<?php
+class DiskPath {{
+    private $path;
+    public function __construct($path) {{
+        $this->path = $path;
+    }}
+    public function __toString() {{
+        return $this->path;
+    }}
+}}
+class PlainDiskPath {{}}
+
+$dir = new DiskPath({dir});
+echo is_float(disk_free_space($dir)) ? "free-object" : "bad-free";
+echo "|";
+$alias = "diskfreespace";
+echo is_float($alias($dir)) ? "alias-object" : "bad-alias";
+echo "|";
+echo is_float(disk_total_space($dir)) ? "total-object" : "bad-total";
+try {{
+    disk_free_space(new PlainDiskPath());
+}} catch (TypeError $e) {{
+    echo "\n", $e->getMessage();
+}}
+try {{
+    disk_total_space([]);
+}} catch (TypeError $e) {{
+    echo "\n", $e->getMessage();
+}}
+"#,
+        dir = php_string(&fixture.root),
+    );
+
+    let execution = run_source(&source).unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "free-object|alias-object|total-object\n",
+            "disk_free_space(): Argument #1 ($directory) must be of type string, PlainDiskPath given\n",
+            "disk_total_space(): Argument #1 ($directory) must be of type string, array given",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn chmod_and_readability_predicates_cover_phpt_permission_variations() {
     let fixture = TempFsFixture::new("permission-predicates");
     let file = fixture.path("probe.txt");
