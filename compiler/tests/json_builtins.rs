@@ -70,6 +70,50 @@ var_dump(json_last_error(), json_last_error_msg());
 }
 
 #[test]
+fn json_encode_partial_output_replaces_nonfinite_floats_with_zero() {
+    let execution = run_source(
+        r#"<?php
+var_dump(json_encode(INF));
+var_dump(json_last_error(), json_last_error_msg());
+var_dump(json_encode(INF, JSON_PARTIAL_OUTPUT_ON_ERROR));
+var_dump(json_encode(-INF, JSON_PARTIAL_OUTPUT_ON_ERROR));
+var_dump(json_encode(NAN, JSON_PARTIAL_OUTPUT_ON_ERROR));
+var_dump(json_last_error(), json_last_error_msg());
+var_dump(json_encode([INF, -INF, NAN], JSON_PARTIAL_OUTPUT_ON_ERROR));
+$obj = new stdClass;
+$obj->x = INF;
+var_dump(json_encode($obj, JSON_PARTIAL_OUTPUT_ON_ERROR));
+var_dump(json_last_error(), json_last_error_msg());
+echo json_encode(["x" => INF], JSON_PARTIAL_OUTPUT_ON_ERROR | JSON_PRETTY_PRINT), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "bool(false)\n",
+            "int(7)\n",
+            "string(34) \"Inf and NaN cannot be JSON encoded\"\n",
+            "string(1) \"0\"\n",
+            "string(1) \"0\"\n",
+            "string(1) \"0\"\n",
+            "int(7)\n",
+            "string(34) \"Inf and NaN cannot be JSON encoded\"\n",
+            "string(7) \"[0,0,0]\"\n",
+            r#"string(7) "{"x":0}""#,
+            "\n",
+            "int(7)\n",
+            "string(34) \"Inf and NaN cannot be JSON encoded\"\n",
+            "{\n",
+            "    \"x\": 0\n",
+            "}\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn json_encode_flags_cover_core_string_and_shape_options() {
     let execution = run_source(
         r#"<?php

@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Added a bounded `json_encode()` partial non-finite float replacement lane for
+  the selected `inf_nan_error.phpt` surface. `JSON_PARTIAL_OUTPUT_ON_ERROR`
+  now preserves the `JSON_ERROR_INF_OR_NAN` last-error state while emitting
+  `0` for `INF`, `-INF`, and `NAN` values in scalar, nested array, and public
+  object-property positions instead of using the generic unsupported-value
+  `null` placeholder. Focused proof covers the Rust
+  `json_encode_partial_output_replaces_nonfinite_floats_with_zero` test, the
+  full `json_builtins` test file, direct fixture comparison for
+  `tests/fixtures/milestone2320/json_encode_partial_nonfinite.php`, native
+  boundary rejection, and the selected PHPT row
+  `ext/json/tests/inf_nan_error.phpt`. Unsupported edges remain full
+  `JsonSerializable` behavior, broad partial-output interaction parity beyond
+  current non-finite/unsupported/recursion/depth placeholders, exact exception
+  propagation for every serializer shape including `JSON_THROW_ON_ERROR`,
+  remaining json extension functions, complete UTF-8/UTF-16 diagnostics, and
+  native lowering.
+
 - Added a bounded `json_encode()` invalid UTF-8 flag lane for the selected
   `json_encode_invalid_utf8.phpt` surface. Binary PHP strings with malformed
   UTF-8 now honor `JSON_INVALID_UTF8_IGNORE` by dropping malformed encode

@@ -127565,6 +127565,13 @@ fn json_error_base_message(code: i64) -> &'static str {
     }
 }
 
+fn json_partial_output_placeholder(code: i64) -> &'static str {
+    match code {
+        PHP_JSON_ERROR_INF_OR_NAN => "0",
+        _ => "null",
+    }
+}
+
 fn json_error_message_at(code: i64, base: &str, position: usize) -> String {
     match code {
         PHP_JSON_ERROR_DEPTH
@@ -128113,7 +128120,7 @@ impl Interpreter {
     ) -> Result<String, i64> {
         state.record_error(code, json_error_base_message(code));
         if options.partial_output() {
-            Ok("null".to_string())
+            Ok(json_partial_output_placeholder(code).to_string())
         } else {
             Err(code)
         }
