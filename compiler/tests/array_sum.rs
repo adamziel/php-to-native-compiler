@@ -1,12 +1,6 @@
 use php_compiler::error::Phase;
 use php_compiler::{emit_ir_source, run_source};
 
-fn runtime_error(source: &str) -> php_compiler::error::Diagnostic {
-    let error = run_source(source).unwrap_err();
-    assert_eq!(error.phase, Phase::Runtime);
-    error
-}
-
 #[test]
 fn array_sum_accumulates_supported_scalar_values() {
     let source = r#"<?php
@@ -34,15 +28,45 @@ echo $call($mixed);
 }
 
 #[test]
-fn array_sum_requires_array_argument() {
-    let error = runtime_error("<?php\necho array_sum(42);\n");
+fn array_sum_non_arrays_raise_catchable_type_errors() {
+    let source = r#"<?php
+function check($label, $value) {
+    try {
+        var_dump(array_sum($value));
+    } catch (TypeError $e) {
+        echo $label, ": ", $e->getMessage(), "\n";
+    }
+}
 
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 6);
+check("null", null);
+check("int", 42);
+check("float", 1.25);
+check("string", "items");
+check("object", new stdClass());
+check("true", true);
+check("false", false);
+
+$call = "array_sum";
+try {
+    $call(42);
+} catch (TypeError $e) {
+    echo "dynamic: ", $e->getMessage();
+}
+"#;
+
+    let execution = run_source(source).unwrap();
     assert_eq!(
-        error.message,
-        "unsupported call array_sum(): argument must be array, got int"
+        execution.stdout,
+        "null: array_sum(): Argument #1 ($array) must be of type array, null given\n\
+int: array_sum(): Argument #1 ($array) must be of type array, int given\n\
+float: array_sum(): Argument #1 ($array) must be of type array, float given\n\
+string: array_sum(): Argument #1 ($array) must be of type array, string given\n\
+object: array_sum(): Argument #1 ($array) must be of type array, stdClass given\n\
+true: array_sum(): Argument #1 ($array) must be of type array, true given\n\
+false: array_sum(): Argument #1 ($array) must be of type array, false given\n\
+dynamic: array_sum(): Argument #1 ($array) must be of type array, int given"
     );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

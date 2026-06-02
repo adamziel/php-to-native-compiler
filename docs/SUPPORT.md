@@ -6325,11 +6325,10 @@
   non-array `array_flip` operands, unsupported non-int/string
   `array_flip` values, non-array `array_fill_keys` operands, unsupported
   non-null/bool/int/string/float `array_fill_keys` key values, non-array
-  `array_count_values` operands,
   unsupported non-int/string
-  `array_count_values` values, non-array `array_sum` operands, unsupported
-  non-numeric/non-scalar `array_sum` values, non-array `array_product`
-  operands, unsupported non-numeric/non-scalar `array_product` values,
+  `array_count_values` values, unsupported
+  non-numeric/non-scalar `array_sum` values, unsupported
+  non-numeric/non-scalar `array_product` values,
   non-array `array_reduce` operands, non-string or unresolved `array_reduce`
   callbacks, non-array `array_filter` operands, non-string non-null
   `array_filter` callbacks, invalid `array_filter` mode flags, non-array
@@ -7472,16 +7471,18 @@
   or strings, counts values in insertion order using the current array-key
   normalization rules for string values, stores integer counts as result
   values, and is available through string-valued dynamic function calls.
+  Non-array operands raise catchable PHP-shaped `TypeError`s.
   `array_sum($array)` accepts arrays whose values are `null`, booleans,
   integers, floats, or well-formed numeric strings under the current scalar
   numeric-coercion rules, accumulates as an integer until a float input or
   integer overflow promotes the result to float, returns integer zero for an
   empty array, and is available through string-valued dynamic function calls.
+  Non-array operands raise catchable PHP-shaped `TypeError`s.
   `array_product($array)` accepts the same current numeric scalar value subset,
   multiplies values in insertion order, accumulates as an integer until a float
   input or integer overflow promotes the result to float, returns integer one
   for an empty array, and is available through string-valued dynamic function
-  calls.
+  calls. Non-array operands raise catchable PHP-shaped `TypeError`s.
   `array_reduce($array, $callback)` and `array_reduce($array, $callback,
   $initial)` accept arrays and callbacks that evaluate to string function names
   resolving to current user functions or callable builtins, closures, or

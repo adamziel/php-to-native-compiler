@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Added a bounded array counting/numeric aggregation non-array diagnostics
+  lane. Direct and string-valued dynamic `array_count_values()`,
+  `array_sum()`, and `array_product()` interpreter calls now raise catchable
+  PHP-shaped `TypeError`s when argument #1 is not an array. Existing counting
+  of integer/string values, warning-and-skip behavior for unsupported
+  `array_count_values()` values, scalar numeric aggregation and warning
+  behavior for unsupported `array_sum()` / `array_product()` values, metadata
+  visibility, and native-lowering rejection remain unchanged. Focused proof
+  covers the Rust `array_count_values`, `array_sum`, `array_product`, and
+  runtime-error CLI regression suites plus the direct CLI fixture
+  `tests/fixtures/milestone2342/array_count_numeric_non_array_type_errors.php`.
+  Unsupported edges remain unsupported non-int/string count values,
+  unsupported non-numeric/non-scalar numeric aggregation values, exact warning
+  text beyond the current bounded rows, broader reference/COW graph parity,
+  object handle/resource parity, exact native object internals, and native
+  lowering.
+
 - Added a bounded mbstring encoding string-boundary lane for the existing
   scalar helper subset. Optional `$encoding` operands on `mb_strlen()`,
   `mb_substr()`, `mb_strcut()`, `mb_substr_count()`, `mb_strpos()`,
