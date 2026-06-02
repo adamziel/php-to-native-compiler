@@ -1797,6 +1797,40 @@ echo get_class(Box::__set_state([]));
 }
 
 #[test]
+fn set_state_return_type_accepts_object_covariance() {
+    let execution = run_source_with_source_file(
+        r#"<?php
+class Foo {
+    public static function __set_state(array $data): self {}
+}
+
+class Foo2 {
+    public static function __set_state(array $data): static {}
+}
+
+class Foo3 {
+    public static function __set_state(array $data): Foo3|Foo2 {}
+}
+
+class Bad {
+    public static function __set_state(array $data): Bad|bool {}
+}
+
+echo "unreached";
+"#,
+        "Zend/tests/magic_methods/magic_methods_021.php",
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "");
+    assert_eq!(
+        execution.stderr,
+        "Fatal error: Bad::__set_state(): Return type must be object when declared in Zend/tests/magic_methods/magic_methods_021.php on line 15"
+    );
+    assert_eq!(execution.exit_code, 255);
+}
+
+#[test]
 fn var_dump_uses_debug_info_array_properties() {
     let execution = run_source(
         r#"<?php

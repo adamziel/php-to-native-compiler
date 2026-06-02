@@ -2808,12 +2808,15 @@
   require `void` when declared; `__isset()` requires `bool`;
   `__toString()` requires `string`; `__debugInfo()` accepts `array`,
   `?array`, `array|null`, or `null|array`; `__serialize()` and `__sleep()`
-  require `array`; and `__set_state()` requires `object`. Exact ordering when
-  a magic method has multiple invalid signature facets and exact nullable
-  `__debugInfo()` deprecation text/order remain unsupported. Typed by-reference
-  parameters, `callable`, `iterable`, `self`, `parent`, `static`, `resource`,
-  `strict_types`, throw expressions, broader `never` implicit-return
-  diagnostics, and native lowering remain unsupported.
+  require `array`; and `__set_state()` accepts `object` plus object-compatible
+  class-name, `self`, `static`, union, or intersection declarations while still
+  rejecting scalar arms. Exact ordering when a magic method has multiple
+  invalid signature facets and exact nullable `__debugInfo()` deprecation
+  text/order remain unsupported. Typed by-reference parameters, `callable`,
+  `iterable`, broad `self` / `parent` / `static` behavior outside the covered
+  `__set_state()` covariance slice, `resource`, `strict_types`, throw
+  expressions, broader `never` implicit-return diagnostics, and native lowering
+  remain unsupported.
 - recursive user-function calls up to a fixed 64-frame user-function call-depth
   guard
 - `return`

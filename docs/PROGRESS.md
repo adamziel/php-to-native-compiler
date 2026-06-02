@@ -10,11 +10,14 @@ Implemented:
   declarations for `__clone()`, `__set()`, `__unset()`, `__unserialize()`,
   and `__wakeup()`, enforce `bool` for `__isset()`, `string` for
   `__toString()`, `array` / nullable-array forms for `__debugInfo()`, `array`
-  for `__serialize()` / `__sleep()`, and `object` for `__set_state()`.
+  for `__serialize()` / `__sleep()`, and object-compatible `object`,
+  class-name, `self`, `static`, union, or intersection declarations for
+  `__set_state()`.
   Focused proof covers the Rust
   `magic_method_return_type_contracts_emit_php_startup_fatals` and
-  `magic_method_return_type_contracts_accept_supported_declarations`
-  regressions plus selected public PHPT rows
+  `magic_method_return_type_contracts_accept_supported_declarations` /
+  `set_state_return_type_accepts_object_covariance` regressions plus selected
+  public PHPT rows `Zend/tests/magic_methods/magic_methods_021.phpt`,
   `Zend/tests/return_types/014.phpt`, `018.phpt`, `019.phpt`, `033.phpt`,
   `034.phpt`, `035.phpt`, `036.phpt`, `037.phpt`, `038.phpt`, and
   `039.phpt`. Unsupported edges remain exact ordering when one magic method

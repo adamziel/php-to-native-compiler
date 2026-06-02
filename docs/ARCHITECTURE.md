@@ -310,10 +310,12 @@ metadata for the existing body executor. A declaration-startup pass separately
 checks bounded magic-method return contracts for classes, interfaces, and
 traits: constructors and destructors reject any return declaration, selected
 magic methods require `void`, `bool`, `string`, `array` / nullable-array, or
-`object` exactly as PHP requires for the covered rows. Typed by-reference
-parameters, callable/iterable pseudo-types, `self`/`parent`/`static`, exact
-multi-error ordering, exact `TypeError` behavior, `strict_types`, and native
-lowering remain separate contracts.
+object-compatible `object`, class-name, `self`, `static`, union, or
+intersection declarations for `__set_state()` exactly as PHP requires for the
+covered rows. Typed by-reference parameters, callable/iterable pseudo-types,
+broad `self`/`parent`/`static` behavior outside that `__set_state()` slice,
+exact multi-error ordering, exact `TypeError` behavior, `strict_types`, and
+native lowering remain separate contracts.
 
 Non-direct holder expressions use the same identity model after evaluating the
 holder once into a temporary object root. The interpreter snapshots public

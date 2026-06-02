@@ -106538,7 +106538,7 @@ fn magic_method_return_type_accepts(type_text: &str, expected: MagicMethodReturn
         MagicMethodReturnType::NullableArray => {
             magic_method_return_type_is_nullable_array(type_text)
         }
-        MagicMethodReturnType::Object => magic_method_return_type_is_exact(type_text, "object"),
+        MagicMethodReturnType::Object => magic_method_return_type_is_object_compatible(type_text),
     }
 }
 
@@ -106575,6 +106575,46 @@ fn magic_method_return_type_is_nullable_array(type_text: &str) -> bool {
         }
     }
     has_array && has_null
+}
+
+fn magic_method_return_type_is_object_compatible(type_text: &str) -> bool {
+    let text = type_text.trim();
+    if text.starts_with('?') || text.is_empty() {
+        return false;
+    }
+
+    text.split('|').all(|union_part| {
+        let union_part = union_part.trim();
+        !union_part.is_empty()
+            && union_part
+                .split('&')
+                .all(magic_method_return_type_part_is_object_compatible)
+    })
+}
+
+fn magic_method_return_type_part_is_object_compatible(type_text: &str) -> bool {
+    let normalized = normalize_type_name(type_text).to_ascii_lowercase();
+    if normalized.is_empty() {
+        return false;
+    }
+
+    !matches!(
+        normalized.as_str(),
+        "array"
+            | "bool"
+            | "callable"
+            | "false"
+            | "float"
+            | "int"
+            | "iterable"
+            | "mixed"
+            | "never"
+            | "null"
+            | "resource"
+            | "string"
+            | "true"
+            | "void"
+    )
 }
 
 fn magic_method_visibility_warning(
