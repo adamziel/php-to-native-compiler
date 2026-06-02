@@ -5310,11 +5310,12 @@
   slice, locale/codepage details, null-byte behavior, array/object/resource
   coercions, exact PHP warnings/`TypeError` behavior, or native lowering.
   `dirname($path, $levels = 1)` accepts stringable paths and an optional
-  positive integer level count. It performs lexical Unix-style slash
+  PHP-internal int-compatible positive level count. It performs lexical
+  Unix-style slash
   parent-directory extraction for local paths used by the current WordPress
   bootstrap probes,
   saturating repeated parent extraction at `""`, `.`, or `/` and raising a
-  catchable `ValueError` for non-positive integer levels;
+  catchable `ValueError` for levels that coerce to a non-positive integer;
   it does not resolve the filesystem, symlinks, include paths, stream wrappers,
   Windows drive/UNC paths, locale/codepage details, or PHP's exact coercion and
   `ValueError` behavior.
@@ -12074,7 +12075,8 @@
   lowering beyond function-table introspection
 - `dirname()` path behavior outside the current lexical Unix-style local path
   subset, including Windows drive and UNC paths, stream wrappers, filesystem
-  canonicalization, symlink resolution, null-byte behavior, exact
+  canonicalization, symlink resolution, null-byte behavior, exact deprecation
+  warnings for null or lossy scalar level coercions, exact
   `ValueError`/`TypeError` diagnostics, and native lowering beyond
   function-table introspection
 - `basename()` path behavior outside the current lexical Unix-style local path

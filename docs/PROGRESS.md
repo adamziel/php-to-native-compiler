@@ -4,6 +4,24 @@
 
 Implemented:
 
+- Added a bounded `dirname()` weak-levels path metadata lane. `phpc run` now
+  routes the optional `$levels` argument through the shared PHP-internal int
+  boundary before the existing positive-level check, so booleans, finite
+  floats, numeric strings, and `null` reach the same lexical parent-directory
+  extraction or catchable non-positive `ValueError` path as integers, while
+  arrays, objects, closures, and resources raise catchable PHP-shaped `int`
+  `TypeError`s. Existing scalar/stringable path conversion, string-valued
+  dynamic calls, function/callability metadata, and native-lowering rejection
+  remain unchanged. Focused proof covers the Rust
+  `dirname_reports_current_argument_boundaries` regression, the full
+  `path_builtins` test file, a direct CLI probe, and selected public
+  `dirname` PHPT guard rows. Unsupported edges remain exact deprecation
+  warnings for null and lossy scalar level coercions, exact invalid
+  `__toString()` return diagnostics for path operands, Windows drive/UNC path
+  behavior, stream wrappers, filesystem canonicalization, symlink resolution,
+  null-byte policy beyond the current lexical path slice, references/COW, and
+  native lowering.
+
 - Added a bounded trim-family PHP-shaped string-argument boundary.
   `trim()`, `ltrim()`, `rtrim()`, and `chop()` now route their subject and
   optional `$characters` operands through the shared internal string boundary:

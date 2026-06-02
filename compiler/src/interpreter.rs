@@ -85981,27 +85981,18 @@ impl Interpreter {
                 let path = self.value_to_echo_string(args[0].clone(), span)?;
 
                 let levels = match args.get(1) {
-                    Some(Value::Int(levels)) if *levels >= 1 => *levels,
-                    Some(Value::Int(_)) => {
-                        return Err(runtime_error(
-                            span,
-                            RuntimeError::unsupported_call(
-                                "dirname()",
-                                "Argument #2 ($levels) must be greater than or equal to 1",
-                            ),
-                        ));
-                    }
-                    Some(other) => {
-                        return Err(runtime_error(
-                            span,
-                            RuntimeError::unsupported_call(
-                                "dirname()",
-                                format!(
-                                    "levels argument must be int in the current subset, got {}",
-                                    other.type_name()
+                    Some(value) => {
+                        let levels = php_internal_int_argument("dirname()", 2, "levels", value, span)?;
+                        if levels < 1 {
+                            return Err(runtime_error(
+                                span,
+                                RuntimeError::unsupported_call(
+                                    "dirname()",
+                                    "Argument #2 ($levels) must be greater than or equal to 1",
                                 ),
-                            ),
-                        ));
+                            ));
+                        }
+                        levels
                     }
                     None => 1,
                 };

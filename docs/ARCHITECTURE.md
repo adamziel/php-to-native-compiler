@@ -2665,10 +2665,14 @@ autoload-aware lookup, extension-loaded functions outside the documented
 table, dynamic callees, and runtime callable dispatch remain outside native
 lowering.
 `dirname()` is currently an interpreter-only path builtin for lexical
-Unix-style local paths. Native `function_exists("dirname")` and
-`is_callable("dirname")` use the known-function table, but direct native
-`dirname(...)` calls still reject under the function-call boundary until native
-path policy and string-return lowering are proven.
+Unix-style local paths. Its optional `$levels` operand uses the shared
+PHP-internal int boundary before the positive-level check, so supported scalar
+coercions reach the same lexical extraction path while non-coercible values
+raise catchable PHP-shaped type diagnostics. Native
+`function_exists("dirname")` and `is_callable("dirname")` use the known-function
+table, but direct native `dirname(...)` calls still reject under the
+function-call boundary until native path policy and string-return lowering are
+proven.
 `version_compare()` is likewise interpreter-only: `phpc run` supports a
 bounded numeric-component version grammar for WordPress bootstrap guards, while
 native `function_exists("version_compare")` can see the name through the known
