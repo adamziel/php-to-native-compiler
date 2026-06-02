@@ -73,10 +73,14 @@ and binds each visited property through a public object-property alias root.
 Loop writes therefore mutate the object's public properties, and the
 post-loop value variable remains routed to the last visited public property
 until `unset($value)`. By-value `foreach` over ordinary non-`Traversable`
-objects snapshots the initialized public property names and reads each
+objects snapshots initialized properties visible in the current method
+context, or initialized public properties outside a method, and reads each
 property value when that name is reached, matching the current PHP-observed
-behavior where a mutation to a later public property is visible when the loop
-arrives at that property. By-value `foreach` over bounded userland
+behavior where a mutation to a later visible property is observed when the
+loop arrives at that property. Visible non-public slots shadow same-name
+public/dynamic slots for this enumeration, and public property names that use
+PHP's mangled object property spelling are exposed with their unmangled key.
+By-value `foreach` over bounded userland
 `Iterator` objects dispatches public `rewind()`, `valid()`, `current()`,
 `key()`, and `next()` in PHP order through the existing method-call path;
 `IteratorAggregate::getIterator()` is bounded to returning one of those

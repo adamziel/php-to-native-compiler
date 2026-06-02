@@ -5334,6 +5334,112 @@ echo count($dynamic), "|", $dynamic["baseName"], "|", $dynamic["name"];
 }
 
 #[test]
+fn get_object_vars_uses_current_method_visibility_context() {
+    let source = r#"<?php
+class ParentBox {
+    private $name = "parent-name";
+    public $shared = "shared";
+
+    public function parentVars() {
+        $vars = get_object_vars($this);
+        echo "parent:";
+        foreach ($vars as $key => $value) {
+            echo $key, "=", $value, ";";
+        }
+        echo "\n";
+    }
+}
+
+class ChildBox extends ParentBox {
+    public $name = "child-name";
+    private $token = "child-token";
+
+    public function childVars() {
+        $vars = get_object_vars($this);
+        echo "child:";
+        foreach ($vars as $key => $value) {
+            echo $key, "=", $value, ";";
+        }
+        echo "\n";
+    }
+}
+
+$box = new ChildBox();
+$box->parentVars();
+$box->childVars();
+$vars = get_object_vars($box);
+echo "external:";
+foreach ($vars as $key => $value) {
+    echo $key, "=", $value, ";";
+}
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "parent:name=parent-name;shared=shared;\nchild:shared=shared;name=child-name;token=child-token;\nexternal:shared=shared;name=child-name;"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn allow_dynamic_properties_child_can_shadow_inherited_private_property() {
+    let source = r#"<?php
+class ParentSlot {
+    private $prop = "parent";
+
+    public function parentDump() {
+        echo "parent-foreach:";
+        foreach ($this as $key => $value) {
+            echo $key, "=", $value, ";";
+        }
+        echo "\n";
+
+        echo "parent-vars:";
+        foreach (get_object_vars($this) as $key => $value) {
+            echo $key, "=", $value, ";";
+        }
+        echo "\n";
+    }
+}
+
+#[AllowDynamicProperties]
+class ChildSlot extends ParentSlot {
+    public function childDump() {
+        echo "child-foreach:";
+        foreach ($this as $key => $value) {
+            echo $key, "=", $value, ";";
+        }
+        echo "\n";
+
+        echo "child-vars:";
+        foreach (get_object_vars($this) as $key => $value) {
+            echo $key, "=", $value, ";";
+        }
+        echo "\n";
+    }
+}
+
+$box = new ChildSlot();
+$box->prop = "dynamic";
+$box->parentDump();
+$box->childDump();
+
+echo "external:";
+foreach (get_object_vars($box) as $key => $value) {
+    echo $key, "=", $value, ";";
+}
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "parent-foreach:prop=parent;\nparent-vars:prop=parent;\nchild-foreach:prop=dynamic;\nchild-vars:prop=dynamic;\nexternal:prop=dynamic;"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn get_object_vars_requires_object_argument() {
     let target_error = runtime_error("<?php\nvar_dump(get_object_vars(42));\n");
 

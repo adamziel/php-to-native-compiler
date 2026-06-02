@@ -33462,6 +33462,7 @@ pub struct PhpClassMetadata {
     id: ClassId,
     name: String,
     parent_id: Option<ClassId>,
+    allows_dynamic_properties: bool,
     properties: Vec<PhpPropertyMetadata>,
     property_lookup: HashMap<String, usize>,
     interfaces: Vec<String>,
@@ -33478,6 +33479,7 @@ impl PhpClassMetadata {
             id,
             name,
             parent_id: None,
+            allows_dynamic_properties: false,
             properties: Vec::new(),
             property_lookup: HashMap::new(),
             interfaces: Vec::new(),
@@ -33499,6 +33501,14 @@ impl PhpClassMetadata {
 
     pub fn parent_id(&self) -> Option<ClassId> {
         self.parent_id
+    }
+
+    pub fn allows_dynamic_properties(&self) -> bool {
+        self.allows_dynamic_properties
+    }
+
+    pub fn set_allows_dynamic_properties(&mut self, value: bool) {
+        self.allows_dynamic_properties = value;
     }
 
     pub fn properties(&self) -> &[PhpPropertyMetadata] {
@@ -36707,6 +36717,7 @@ pub struct PhpObject {
     id: i64,
     class_id: ClassId,
     class_name: String,
+    allows_dynamic_properties: bool,
     ancestor_class_names: Vec<String>,
     interface_names: Vec<String>,
     properties: Rc<RefCell<Vec<ObjectProperty>>>,
@@ -36829,6 +36840,7 @@ impl PhpObject {
             id,
             class_id: class.id(),
             class_name: class.name().to_string(),
+            allows_dynamic_properties: class.allows_dynamic_properties(),
             ancestor_class_names,
             interface_names,
             properties: Rc::new(RefCell::new(properties)),
@@ -36902,11 +36914,33 @@ impl PhpObject {
         array
     }
 
+    pub fn initialized_visible_properties(
+        &self,
+        current_class_id: Option<ClassId>,
+        protected_class_ids: &[ClassId],
+    ) -> Vec<ObjectProperty> {
+        let properties = self.properties.borrow();
+        properties
+            .iter()
+            .filter(|property| {
+                property.is_initialized()
+                    && !property.is_unset()
+                    && property.is_visible_for_object_enumeration(
+                        &properties,
+                        current_class_id,
+                        protected_class_ids,
+                    )
+            })
+            .cloned()
+            .collect()
+    }
+
     pub fn shallow_clone_with_id(&self, id: i64) -> Self {
         Self {
             id,
             class_id: self.class_id,
             class_name: self.class_name.clone(),
+            allows_dynamic_properties: self.allows_dynamic_properties,
             ancestor_class_names: self.ancestor_class_names.clone(),
             interface_names: self.interface_names.clone(),
             properties: Rc::new(RefCell::new(self.properties.borrow().clone())),
@@ -37361,10 +37395,7 @@ impl PhpObject {
             return properties[index].reference_cell();
         }
 
-        if properties
-            .iter()
-            .any(|property| property.name == name && property.visibility != Visibility::Public)
-        {
+        if self.has_non_public_property_blocking_dynamic_public_shadow(&properties, name) {
             return Err(RuntimeError::unsupported_property_access(format!(
                 "non-public property {}::${} requires same-class method context in the current subset",
                 self.class_name, name
@@ -37411,10 +37442,7 @@ impl PhpObject {
             return Ok(());
         }
 
-        if properties
-            .iter()
-            .any(|property| property.name == name && property.visibility != Visibility::Public)
-        {
+        if self.has_non_public_property_blocking_dynamic_public_shadow(&properties, name) {
             return Err(RuntimeError::unsupported_property_access(format!(
                 "non-public property {}::${} requires same-class method context in the current subset",
                 self.class_name, name
@@ -37449,7 +37477,8 @@ impl PhpObject {
     }
 
     fn allows_dynamic_public_properties(&self) -> bool {
-        self.class_name.eq_ignore_ascii_case("stdClass")
+        self.allows_dynamic_properties
+            || self.class_name.eq_ignore_ascii_case("stdClass")
             || self.class_name.eq_ignore_ascii_case("wpdb")
             || self.is_instance_of_class_name("ArrayObject")
             || self.is_instance_of_class_name("ArrayIterator")
@@ -37792,10 +37821,7 @@ impl PhpObject {
             return Ok(Some(&mut properties[index]));
         }
 
-        if properties
-            .iter()
-            .any(|property| property.name == name && property.visibility != Visibility::Public)
-        {
+        if self.has_non_public_property_blocking_dynamic_public_shadow(properties, name) {
             return Err(RuntimeError::unsupported_property_access(format!(
                 "non-public property {}::${} requires same-class method context in the current subset",
                 self.class_name, name
@@ -37810,10 +37836,7 @@ impl PhpObject {
         properties: &'a [ObjectProperty],
         name: &str,
     ) -> RuntimeResult<Option<&'a ObjectProperty>> {
-        if properties
-            .iter()
-            .any(|property| property.name == name && property.visibility != Visibility::Public)
-        {
+        if self.has_non_public_property_blocking_dynamic_public_shadow(properties, name) {
             return Err(RuntimeError::unsupported_property_access(format!(
                 "non-public property {}::${} requires same-class method context in the current subset",
                 self.class_name, name
@@ -37828,10 +37851,7 @@ impl PhpObject {
         properties: &'a mut [ObjectProperty],
         name: &str,
     ) -> RuntimeResult<&'a mut ObjectProperty> {
-        if properties
-            .iter()
-            .any(|property| property.name == name && property.visibility != Visibility::Public)
-        {
+        if self.has_non_public_property_blocking_dynamic_public_shadow(properties, name) {
             return Err(RuntimeError::unsupported_property_access(format!(
                 "non-public property {}::${} requires same-class method context in the current subset",
                 self.class_name, name
@@ -37842,6 +37862,22 @@ impl PhpObject {
             self.class_name.clone(),
             name,
         ))
+    }
+
+    fn has_non_public_property_blocking_dynamic_public_shadow(
+        &self,
+        properties: &[ObjectProperty],
+        name: &str,
+    ) -> bool {
+        properties.iter().any(|property| {
+            property.name == name
+                && property.visibility != Visibility::Public
+                && self.non_public_property_blocks_dynamic_public_shadow(property)
+        })
+    }
+
+    fn non_public_property_blocks_dynamic_public_shadow(&self, property: &ObjectProperty) -> bool {
+        property.visibility != Visibility::Private || property.declaring_class_id == self.class_id
     }
 }
 
@@ -37966,6 +38002,14 @@ impl ObjectProperty {
         }
     }
 
+    pub fn object_iteration_name(&self) -> String {
+        if self.visibility != Visibility::Public {
+            return self.name.clone();
+        }
+
+        unmangle_public_object_iteration_name(&self.name).unwrap_or_else(|| self.name.clone())
+    }
+
     fn is_visible_in_context(
         &self,
         current_class_id: Option<ClassId>,
@@ -37976,6 +38020,25 @@ impl ObjectProperty {
             Visibility::Private => current_class_id == Some(self.declaring_class_id),
             Visibility::Protected => protected_class_ids.contains(&self.declaring_class_id),
         }
+    }
+
+    fn is_visible_for_object_enumeration(
+        &self,
+        properties: &[ObjectProperty],
+        current_class_id: Option<ClassId>,
+        protected_class_ids: &[ClassId],
+    ) -> bool {
+        if self.visibility != Visibility::Public {
+            return current_class_id.is_some()
+                && self.is_visible_in_context(current_class_id, protected_class_ids);
+        }
+
+        !properties.iter().any(|property| {
+            property.name == self.name
+                && property.visibility != Visibility::Public
+                && current_class_id.is_some()
+                && property.is_visible_in_context(current_class_id, protected_class_ids)
+        })
     }
 
     fn initialized_value_cloned(&self) -> RuntimeResult<Value> {
@@ -38075,6 +38138,12 @@ impl ObjectProperty {
             ObjectPropertyStorage::Value(_) => Ok(None),
         }
     }
+}
+
+fn unmangle_public_object_iteration_name(name: &str) -> Option<String> {
+    let rest = name.strip_prefix('\0')?;
+    let (_, property) = rest.split_once('\0')?;
+    Some(property.to_string())
 }
 
 struct ObjectComparisonProperty {

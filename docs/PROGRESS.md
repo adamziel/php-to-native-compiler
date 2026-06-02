@@ -4,6 +4,29 @@
 
 Implemented:
 
+- Added a bounded ordinary-object by-value `foreach` and
+  `get_object_vars()` visibility lane. Ordinary object by-value iteration now
+  enumerates initialized properties visible from the current method context,
+  hides public/dynamic same-name slots when a visible non-public declaration
+  owns that property name, unmangles public keys that use PHP's mangled object
+  property spelling, and reads each value when the loop reaches that property.
+  `get_object_vars()` uses the same current-context visible-property slice.
+  `#[AllowDynamicProperties]` is recorded on declared classes, inherited by
+  child classes, and lets covered public dynamic writes shadow inherited
+  private slots from outside the declaring class. Focused proof covers the
+  Rust `foreach_by_value_uses_visible_object_properties_in_current_context`,
+  `get_object_vars` object-model group, and
+  `allow_dynamic_properties_child_can_shadow_inherited_private_property`
+  regressions, the full `foreach` Rust file, direct CLI output, selected
+  public PHPT rows `bug33171.phpt`, `bug41929.phpt`, `foreach_018.phpt`,
+  `foreach_shadowed_property.phpt`, and
+  `foreach_shadowed_dyn_property.phpt`, build, fmt, and diff checks.
+  Unsupported edges remain by-reference non-public ordinary-object iteration,
+  magic object iteration, property hooks, namespace/import-aware
+  `AllowDynamicProperties` aliases, exact dynamic-property deprecation
+  diagnostics, broader object mutation/reference/COW parity, and native
+  lowering.
+
 - Added a bounded object-metadata diagnostics and array-to-string warning lane.
   `property_exists()` and `method_exists()` now raise catchable PHP-shaped
   `TypeError`s for non-object/non-string first operands and non-string

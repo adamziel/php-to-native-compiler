@@ -2462,10 +2462,14 @@
   `;` case/default separators, fallthrough, and `break;` to exit the switch
 - `foreach ($array as $value)` and `foreach ($array as $key => $value)` over
   ordered arrays. By-value `foreach` also executes over ordinary
-  non-`Traversable` objects by iterating initialized public property names in
-  object property order and reading each property value when the property is
-  reached, so earlier loop-body mutations to a later public property are
-  observed. By-value `foreach` over bounded userland `Iterator` objects calls
+  non-`Traversable` objects by iterating initialized properties visible in the
+  current method context, or initialized public properties outside a method,
+  in object property order and reading each property value when the property is
+  reached, so earlier loop-body mutations to a later visible property are
+  observed. Visible non-public slots shadow same-name public/dynamic slots for
+  this enumeration, and public property names that use PHP's mangled object
+  spelling are exposed with their unmangled property key. By-value `foreach`
+  over bounded userland `Iterator` objects calls
   public `rewind()`, `valid()`, `current()`, `key()`, and `next()` methods in
   PHP order, writes the key variable from `key()`, writes the value variable
   from `current()`, and observes iterator object mutations made by the loop
@@ -6403,8 +6407,9 @@
   child-to-parent declaration order for current object values or declared
   string class names, `get_class_vars` returns public declared and inherited
   property names with instance properties before static properties and `null`
-  values for declared string class names, `get_object_vars` returns public exact and
-  inherited instance property names with their current values in
+  values for declared string class names, `get_object_vars` returns
+  initialized properties visible in the current method context, or initialized
+  public properties outside a method, with their current values in
   parent-to-child slot order for current object values, `get_mangled_object_vars`
   returns inherited and exact-class public/protected/private instance slots
   with PHP-style mangled keys for current object values,
@@ -7382,9 +7387,10 @@
   `parent::method(...)` static method dispatch is supported for the current
   visible declared/inherited static-method subset.
   Dynamic instance property names are supported only for existing public slots
-  on current object values, public dynamic slots on `stdClass`, and public
-  dynamic slots on the WordPress `wpdb` compatibility class, using string or
-  integer property-name values. The parser accepts both
+  on current object values, public dynamic slots on `stdClass`, public dynamic
+  slots on the WordPress `wpdb` compatibility class, and public dynamic slots
+  on declared classes that carry or inherit `#[AllowDynamicProperties]`, using
+  string or integer property-name values. The parser accepts both
   `$object->$name` and braced `$object->{$expr}` forms in the current read and
   direct-variable-root write subset. Keyword-named direct properties are
   accepted after `->`; keyword method calls are still rejected with an explicit
@@ -7393,8 +7399,8 @@
   property hooks, dynamic property-name
   `isset`/`empty`/`??`/`??=`, compound assignment,
   increment/decrement, string interpolation, missing-property creation outside
-  `stdClass` and the bounded `wpdb` compatibility class, `#[AllowDynamicProperties]`
-  attribute semantics, and exact PHP dynamic-property notices/deprecations
+  classes that allow dynamic public properties, namespace/import-aware
+  `AllowDynamicProperties` aliases, and exact PHP dynamic-property notices/deprecations
   remain unsupported. Non-public
   property/constructor visibility context beyond the current slice, static
   storage beyond direct static property reads/writes, broader class constant

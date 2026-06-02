@@ -13931,23 +13931,30 @@ impl Interpreter {
         span: Span,
         scope: &mut SymbolTable,
     ) -> CompileResult<Flow> {
-        let property_names: Vec<String> = object
-            .properties()
+        let (current_class_id, protected_class_ids) = self.current_property_access_context();
+        let properties: Vec<(String, String)> = object
+            .initialized_visible_properties(current_class_id, &protected_class_ids)
             .into_iter()
-            .filter(|property| {
-                property.visibility() == Visibility::Public && property.is_initialized()
+            .map(|property| {
+                (
+                    property.name().to_string(),
+                    property.object_iteration_name(),
+                )
             })
-            .map(|property| property.name().to_string())
             .collect();
 
-        for property in property_names {
+        for (property, iteration_name) in properties {
             self.tick(span)?;
             if let Some(key) = key {
-                scope.write_static(key, Value::String(property.clone()));
+                scope.write_static(key, Value::String(iteration_name));
             }
             self.write_foreach_value_target(
                 value,
-                object.read_public_property(&property)?,
+                object.read_property_from_context(
+                    &property,
+                    current_class_id,
+                    &protected_class_ids,
+                )?,
                 span,
                 scope,
             )?;
@@ -14846,23 +14853,30 @@ impl Interpreter {
         span: Span,
         scope: &mut SymbolTable,
     ) -> CompileResult<ArrayCopyReturnBodyFlow> {
-        let property_names: Vec<String> = object
-            .properties()
+        let (current_class_id, protected_class_ids) = self.current_property_access_context();
+        let properties: Vec<(String, String)> = object
+            .initialized_visible_properties(current_class_id, &protected_class_ids)
             .into_iter()
-            .filter(|property| {
-                property.visibility() == Visibility::Public && property.is_initialized()
+            .map(|property| {
+                (
+                    property.name().to_string(),
+                    property.object_iteration_name(),
+                )
             })
-            .map(|property| property.name().to_string())
             .collect();
 
-        for property in property_names {
+        for (property, iteration_name) in properties {
             self.tick(span)?;
             if let Some(key) = key {
-                scope.write_static(key, Value::String(property.clone()));
+                scope.write_static(key, Value::String(iteration_name));
             }
             self.write_foreach_value_target(
                 value,
-                object.read_public_property(&property)?,
+                object.read_property_from_context(
+                    &property,
+                    current_class_id,
+                    &protected_class_ids,
+                )?,
                 span,
                 scope,
             )?;
@@ -19393,7 +19407,7 @@ impl Interpreter {
         for property in object.properties() {
             if property.visibility() == Visibility::Public && property.is_initialized() {
                 array.insert(
-                    ArrayKey::String(property.name().to_string()),
+                    ArrayKey::String(property.object_iteration_name()),
                     property.value_cloned(),
                 );
             }
@@ -74201,23 +74215,30 @@ impl Interpreter {
         span: Span,
         scope: &mut SymbolTable,
     ) -> CompileResult<ReferenceReturnBodyFlow> {
-        let property_names: Vec<String> = object
-            .properties()
+        let (current_class_id, protected_class_ids) = self.current_property_access_context();
+        let properties: Vec<(String, String)> = object
+            .initialized_visible_properties(current_class_id, &protected_class_ids)
             .into_iter()
-            .filter(|property| {
-                property.visibility() == Visibility::Public && property.is_initialized()
+            .map(|property| {
+                (
+                    property.name().to_string(),
+                    property.object_iteration_name(),
+                )
             })
-            .map(|property| property.name().to_string())
             .collect();
 
-        for property in property_names {
+        for (property, iteration_name) in properties {
             self.tick(span)?;
             if let Some(key) = key {
-                scope.write_static(key, Value::String(property.clone()));
+                scope.write_static(key, Value::String(iteration_name));
             }
             self.write_foreach_value_target(
                 value,
-                object.read_public_property(&property)?,
+                object.read_property_from_context(
+                    &property,
+                    current_class_id,
+                    &protected_class_ids,
+                )?,
                 span,
                 scope,
             )?;
@@ -90571,15 +90592,16 @@ impl Interpreter {
             },
             "get_object_vars" => match args.as_slice() {
                 [Value::Object(object)] => {
+                    let (current_class_id, protected_class_ids) =
+                        self.current_property_access_context();
                     let mut properties = PhpArray::new();
-                    for property in object.properties() {
-                        if property.visibility() == Visibility::Public && property.is_initialized()
-                        {
-                            properties.insert(
-                                ArrayKey::from(property.name()),
-                                property.value_cloned(),
-                            );
-                        }
+                    for property in
+                        object.initialized_visible_properties(current_class_id, &protected_class_ids)
+                    {
+                        properties.insert(
+                            ArrayKey::String(property.object_iteration_name()),
+                            property.value_cloned(),
+                        );
                     }
                     Ok(Value::Array(properties))
                 }
@@ -102559,6 +102581,17 @@ fn register_class_members(
             .set_parent(id, parent_id)
             .map_err(|error| runtime_error(class.span, error))?;
     }
+    let parent_allows_dynamic_properties = classes
+        .get(id)
+        .and_then(|metadata| metadata.parent_id())
+        .and_then(|parent_id| classes.get(parent_id))
+        .is_some_and(|parent| parent.allows_dynamic_properties());
+    let allows_dynamic_properties = attributes_include_allow_dynamic_properties(&class.attributes)
+        || parent_allows_dynamic_properties;
+    classes
+        .get_mut(id)
+        .expect("declared class id should resolve to class metadata")
+        .set_allows_dynamic_properties(allows_dynamic_properties);
     let interfaces = expanded_class_interface_names(interface_lookup, &class.interfaces);
     classes
         .set_interfaces(id, interfaces)
@@ -103090,6 +103123,17 @@ fn attributes_include_deprecated(attributes: &[AttributeDecl]) -> bool {
     attributes.iter().any(|attribute| {
         attribute.name.eq_ignore_ascii_case("Deprecated")
             || attribute.name.eq_ignore_ascii_case("\\Deprecated")
+    })
+}
+
+fn attributes_include_allow_dynamic_properties(attributes: &[AttributeDecl]) -> bool {
+    attributes.iter().any(|attribute| {
+        attribute
+            .name
+            .eq_ignore_ascii_case("AllowDynamicProperties")
+            || attribute
+                .name
+                .eq_ignore_ascii_case("\\AllowDynamicProperties")
     })
 }
 

@@ -1433,6 +1433,56 @@ echo "|", $iterator->pos;
 }
 
 #[test]
+fn foreach_by_value_uses_visible_object_properties_in_current_context() {
+    let execution = run_source(
+        r#"<?php
+class BaseBag {
+    private $hidden = "base-hidden";
+    public $shared = "shared";
+
+    public function fromBase() {
+        foreach ($this as $key => $value) {
+            echo "base:", $key, "=", $value, ";";
+        }
+    }
+}
+
+class ChildBag extends BaseBag {
+    public $hidden = "public-hidden";
+    private $child = "child";
+
+    public function fromChild() {
+        foreach ($this as $key => $value) {
+            echo "child:", $key, "=", $value, ";";
+            if ($key === "shared") {
+                $this->child = "mutated-child";
+            }
+        }
+    }
+}
+
+$bag = new ChildBag();
+$bag->fromBase();
+echo "\n";
+$bag->fromChild();
+echo "\n";
+
+$mangled = (object) array("\0A\0b" => 42, "\0*\0c" => 24);
+foreach ($mangled as $key => $value) {
+    echo $key, "=", $value, ";";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "base:hidden=base-hidden;base:shared=shared;\nchild:shared=shared;child:hidden=public-hidden;child:child=mutated-child;\nb=42;c=24;"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn foreach_by_value_iterator_current_public_property_bucket_preserves_reference_slots() {
     let execution = run_source(
         r#"<?php
