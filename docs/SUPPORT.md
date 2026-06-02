@@ -10246,7 +10246,16 @@
   `getDefaultValue()`, `isDefaultValueConstant()`,
   `getDefaultValueConstantName()`, `isPassedByReference()`,
   `canBePassedByValue()`, `isVariadic()`, and
-  `hasType()` over the current parsed function or method parameter metadata. The bounded
+  `hasType()` over the current parsed function or method parameter metadata.
+  For the bounded internal method slice, `DateTime::setTime()`,
+  `DateTimeImmutable::setTime()`, `DateTimeZone::getTransitions()`, and
+  `DateTimeZone::listIdentifiers()` expose PHP-shaped parameter names, types,
+  optional/default availability, default values, constant-default names, and
+  internal signature `__toString()` formatting. Parameters with no default
+  raise the current catchable `ReflectionException` internal-default
+  diagnostic for default-value inspection; non-constant defaults return
+  `null` from `getDefaultValueConstantName()`.
+  The bounded
   `ReflectionParameter::getType()` path returns `null` for untyped function or method
   parameters or a request-local `ReflectionNamedType` object for simple named
   parameter types. Bounded union and pure intersection parameter types now
@@ -12205,7 +12214,8 @@
   property hooks, default `new` parameter initializers, dynamic-property
   `ReflectionProperty` rows,
   extension/internal function/method/property/parameter metadata beyond
-  the named bounded internal `ReflectionFunction` targets, parameter and
+  the named bounded internal `ReflectionFunction` targets and bounded
+  DateTime/DateTimeZone internal-method parameter slice, parameter and
   property attributes, callable-object `ReflectionParameter` constructor
   targets, reflection invocation beyond declared
   user functions, user-class methods, and the named bounded internal function

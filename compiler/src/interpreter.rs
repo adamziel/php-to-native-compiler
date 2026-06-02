@@ -56069,15 +56069,9 @@ impl Interpreter {
             "getdefaultvalue" => {
                 expect_expr_arity("ReflectionParameter::getDefaultValue", args.len(), 0, span)?;
                 let Some(default) = state.parameter.default else {
-                    return Err(runtime_error(
+                    return Err(reflection_exception_error(
                         span,
-                        RuntimeError::unsupported_call(
-                            "ReflectionParameter::getDefaultValue",
-                            format!(
-                                "parameter ${} has no default value in the current subset",
-                                state.parameter.name
-                            ),
-                        ),
+                        "Internal error: Failed to retrieve the default value",
                     ));
                 };
                 let mut default_scope = SymbolTable::new();
@@ -56090,6 +56084,12 @@ impl Interpreter {
                     0,
                     span,
                 )?;
+                if state.parameter.default.is_none() {
+                    return Err(reflection_exception_error(
+                        span,
+                        "Internal error: Failed to retrieve the default value",
+                    ));
+                }
                 Ok(Value::Bool(state.parameter.default_constant_name.is_some()))
             }
             "getdefaultvalueconstantname" => {
@@ -56101,10 +56101,11 @@ impl Interpreter {
                 )?;
                 match state.parameter.default_constant_name {
                     Some(name) => Ok(Value::String(name)),
-                    None => Err(reflection_exception_error(
+                    None if state.parameter.default.is_none() => Err(reflection_exception_error(
                         span,
                         "Internal error: Failed to retrieve the default value",
                     )),
+                    None => Ok(Value::Null),
                 }
             }
             "ispassedbyreference" => {
@@ -56650,10 +56651,25 @@ impl Interpreter {
         } else {
             ""
         };
-        let default = if let Some(default) = state.parameter.default.as_ref() {
+        let default = if let Some(default_name) = state.parameter.default_constant_name.as_deref() {
+            format!(" = {default_name}")
+        } else if let Some(default) = state.parameter.default.as_ref() {
             let mut default_scope = SymbolTable::new();
             let default = self.evaluate(default, &mut default_scope)?;
-            format!(" = {}", reflection_value_export_short(&default))
+            let default = match (&state.declaring, &default) {
+                (ReflectionParameterDeclaring::Function(function), Value::Null)
+                    if function.is_internal =>
+                {
+                    "null".to_string()
+                }
+                (ReflectionParameterDeclaring::Method(method), Value::Null)
+                    if method.is_internal =>
+                {
+                    "null".to_string()
+                }
+                _ => reflection_value_export_short(&default),
+            };
+            format!(" = {default}")
         } else {
             String::new()
         };
@@ -109451,7 +109467,44 @@ fn reflection_internal_method_params(
             reflection_internal_param("property", "string"),
         ];
     }
+    if class_name.eq_ignore_ascii_case("DateTime") && method_name.eq_ignore_ascii_case("setTime") {
+        return reflection_internal_datetime_set_time_params();
+    }
+    if class_name.eq_ignore_ascii_case("DateTimeImmutable")
+        && method_name.eq_ignore_ascii_case("setTime")
+    {
+        return reflection_internal_datetime_set_time_params();
+    }
+    if class_name.eq_ignore_ascii_case("DateTimeZone")
+        && method_name.eq_ignore_ascii_case("getTransitions")
+    {
+        return vec![
+            reflection_internal_optional_global_constant_int_param("timestampBegin", "PHP_INT_MIN"),
+            reflection_internal_optional_int_param("timestampEnd", 2_147_483_647),
+        ];
+    }
+    if class_name.eq_ignore_ascii_case("DateTimeZone")
+        && method_name.eq_ignore_ascii_case("listIdentifiers")
+    {
+        return vec![
+            reflection_internal_optional_class_constant_int_param(
+                "timezoneGroup",
+                "DateTimeZone",
+                "ALL",
+            ),
+            reflection_internal_optional_null_param("countryCode", "?string"),
+        ];
+    }
     Vec::new()
+}
+
+fn reflection_internal_datetime_set_time_params() -> Vec<ReflectionParameterMetadata> {
+    vec![
+        reflection_internal_param("hour", "int"),
+        reflection_internal_param("minute", "int"),
+        reflection_internal_optional_int_param("second", 0),
+        reflection_internal_optional_int_param("microsecond", 0),
+    ]
 }
 
 fn reflection_internal_param(name: &str, type_decl: &str) -> ReflectionParameterMetadata {
@@ -109483,6 +109536,34 @@ fn reflection_internal_reference_value_ok_untyped_param(name: &str) -> Reflectio
 fn reflection_internal_optional_int_param(name: &str, default: i64) -> ReflectionParameterMetadata {
     let mut param = reflection_internal_param(name, "int");
     param.default = Some(Expr::Int(default, Span::new(0, 0)));
+    param
+}
+
+fn reflection_internal_optional_global_constant_int_param(
+    name: &str,
+    constant: &str,
+) -> ReflectionParameterMetadata {
+    let mut param = reflection_internal_param(name, "int");
+    param.default = Some(Expr::GlobalConstant {
+        name: constant.to_string(),
+        span: Span::new(0, 0),
+    });
+    param.default_constant_name = Some(constant.to_string());
+    param
+}
+
+fn reflection_internal_optional_class_constant_int_param(
+    name: &str,
+    class_name: &str,
+    constant: &str,
+) -> ReflectionParameterMetadata {
+    let mut param = reflection_internal_param(name, "int");
+    param.default = Some(Expr::ClassConstant {
+        class_name: class_name.to_string(),
+        constant: constant.to_string(),
+        span: Span::new(0, 0),
+    });
+    param.default_constant_name = Some(format!("{class_name}::{constant}"));
     param
 }
 

@@ -4,6 +4,27 @@
 
 Implemented:
 
+- Added a bounded internal DateTime reflection-parameter metadata lane on the
+  interpreter path. `ReflectionMethod::getParameters()` now exposes PHP-shaped
+  names, types, optional/default flags, default values, constant-default names,
+  and `__toString()` defaults for internal `DateTime::setTime()`,
+  `DateTimeImmutable::setTime()`, `DateTimeZone::getTransitions()`, and
+  `DateTimeZone::listIdentifiers()`. Default-inspection methods now raise the
+  catchable `ReflectionException` internal-default diagnostic for parameters
+  with no default and return `null` for non-constant defaults. Focused proof
+  covers the Rust `internal_datetime_parameter_defaults_reflect_php_metadata`
+  regression and selected public PHPT rows
+  `ext/reflection/tests/internal_parameter_default_value/ReflectionParameter_getDefaultValueConstantName_Internal.phpt`,
+  `ext/reflection/tests/internal_parameter_default_value/ReflectionParameter_getDefaultValue_Internal.phpt`,
+  `ext/reflection/tests/internal_parameter_default_value/ReflectionParameter_isDefaultValueAvailable_Internal.phpt`,
+  `ext/reflection/tests/internal_parameter_default_value/ReflectionParameter_isDefaultValueConstant_Internal.phpt`,
+  and
+  `ext/reflection/tests/internal_parameter_default_value/ReflectionParameter_toString_Internal.phpt`.
+  Unsupported edges remain broad internal method/function arginfo inventories,
+  parameter source-file/line/doc-comment metadata, invocation-time reference
+  binding and typed enforcement, exact ReflectionException stack traces,
+  references/COW, and native lowering.
+
 - Added bounded `DateTime` / `DateTimeImmutable` interval arithmetic on the
   interpreter path. Mutable `DateTime::add()` / `sub()` and procedural
   `date_add()` / `date_sub()` now mutate the receiver and return it, while

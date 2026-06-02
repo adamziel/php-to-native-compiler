@@ -4357,6 +4357,12 @@ parameter metadata, so the interpreter can answer names, positions, declaring
 class/function, optional/default availability and values, by-reference flags,
 `canBePassedByValue()`, variadic flags, default constant-name metadata,
 type-presence checks, nullability checks, and simple named type metadata.
+The same request-local parameter state carries a bounded internal DateTime
+method arginfo slice for `DateTime::setTime()`,
+`DateTimeImmutable::setTime()`, `DateTimeZone::getTransitions()`, and
+`DateTimeZone::listIdentifiers()`, including default constants such as
+`PHP_INT_MIN` and `DateTimeZone::ALL`; broader internal method inventories
+remain outside this metadata table.
 `ReflectionParameter::__construct()` can replace that request-local state on
 an existing object. `ReflectionParameter::getType()` now materializes a
 request-local `ReflectionNamedType` object for a single parsed named type, or a

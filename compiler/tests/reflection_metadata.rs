@@ -60,3 +60,97 @@ var_dump($rc->hasMethod(true));
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);
 }
+
+#[test]
+fn internal_datetime_parameter_defaults_reflect_php_metadata() {
+    let execution = run_source(
+        r#"<?php
+function show_default_values($method) {
+    foreach ($method->getParameters() as $parameter) {
+        try {
+            var_dump($parameter->getDefaultValue());
+        } catch (ReflectionException $exception) {
+            echo $exception->getMessage(), "\n";
+        }
+    }
+}
+
+function show_default_constant_names($method) {
+    foreach ($method->getParameters() as $parameter) {
+        try {
+            var_dump($parameter->getDefaultValueConstantName());
+        } catch (ReflectionException $exception) {
+            echo $exception->getMessage(), "\n";
+        }
+    }
+}
+
+function show_default_constant_flags($method) {
+    foreach ($method->getParameters() as $parameter) {
+        try {
+            var_dump($parameter->isDefaultValueConstant());
+        } catch (ReflectionException $exception) {
+            echo $exception->getMessage(), "\n";
+        }
+    }
+}
+
+$setTime = (new ReflectionClass("DateTime"))->getMethod("setTime");
+$transitions = (new ReflectionClass("DateTimeZone"))->getMethod("getTransitions");
+$identifiers = (new ReflectionClass("DateTimeZone"))->getMethod("listIdentifiers");
+
+show_default_values($setTime);
+echo "----------\n";
+show_default_constant_names($transitions);
+echo "----------\n";
+show_default_constant_names($identifiers);
+echo "----------\n";
+show_default_constant_flags($setTime);
+echo "----------\n";
+show_default_constant_flags($identifiers);
+echo "----------\n";
+foreach ($setTime->getParameters() as $parameter) {
+    echo $parameter, "\n";
+}
+echo "----------\n";
+foreach ($identifiers->getParameters() as $parameter) {
+    echo $parameter, "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "Internal error: Failed to retrieve the default value\n",
+            "Internal error: Failed to retrieve the default value\n",
+            "int(0)\n",
+            "int(0)\n",
+            "----------\n",
+            "string(11) \"PHP_INT_MIN\"\n",
+            "NULL\n",
+            "----------\n",
+            "string(17) \"DateTimeZone::ALL\"\n",
+            "NULL\n",
+            "----------\n",
+            "Internal error: Failed to retrieve the default value\n",
+            "Internal error: Failed to retrieve the default value\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "----------\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "----------\n",
+            "Parameter #0 [ <required> int $hour ]\n",
+            "Parameter #1 [ <required> int $minute ]\n",
+            "Parameter #2 [ <optional> int $second = 0 ]\n",
+            "Parameter #3 [ <optional> int $microsecond = 0 ]\n",
+            "----------\n",
+            "Parameter #0 [ <optional> int $timezoneGroup = DateTimeZone::ALL ]\n",
+            "Parameter #1 [ <optional> ?string $countryCode = null ]\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
