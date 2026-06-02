@@ -10162,9 +10162,11 @@
   `isTrait()`, `isInstantiable()`, `getParentClass()`,
   `getInterfaceNames()`, `getInterfaces()`, `getTraitNames()`, `getTraits()`,
   `hasMethod($name)`, `getConstructor()`, `getFileName()`,
-  `getStartLine()`, `getEndLine()`, and `getDocComment()` over the current
-  metadata tables. `hasMethod($name)` accepts scalar string-convertible names
-  in this bounded path. ReflectionClass objects expose the bounded public `name`
+  `getStartLine()`, `getEndLine()`, `getDocComment()`, `isAbstract()`,
+  `isFinal()`, `isReadOnly()`, `isCloneable()`, and `getModifiers()` over the
+  current metadata tables. `hasMethod($name)` accepts scalar
+  string-convertible names in this bounded path. ReflectionClass objects expose
+  the bounded public `name`
   property used by PHP's debug output and simple metadata reads. For declared
   user classes, interfaces, and traits loaded
   from a known CLI/fixture or include path, `getFileName()` returns that path,
@@ -10191,7 +10193,11 @@
   trait-body imports. It also accepts one int-like scalar modifier mask using
   the current `ReflectionMethod::IS_*` constants; a zero mask returns an empty
   array. Interfaces report empty trait metadata because interface trait use is
-  not a PHP construct.
+  not a PHP construct. `isCloneable()` reports false for non-class
+  reflections, abstract classes, classes whose resolved `__clone()` is
+  non-public or static, and the current uncloneable internal/reflection object
+  boundary. `isReadOnly()` currently returns false because readonly class
+  declarations are still outside the parser subset.
   `new ReflectionMethod($object_or_class, $method)` creates a bounded
   metadata object for methods declared in the current user class, interface,
   and trait tables, including inherited class methods and existing autoload
@@ -10353,14 +10359,25 @@
   `getValue()` with zero or one ignored object argument and `setValue($value)`
   or `setValue($object, $value)`, returning `null` after mutation. Non-public
   property value access, dynamic properties, exact `ReflectionException` and
-  `TypeError` text, property aliases/references/COW side effects, readonly or
-  property-hook behavior, and native lowering remain unsupported for
-  reflection property value access.
-  The current
-  `ReflectionMethod::IS_PUBLIC`, `IS_PROTECTED`, `IS_PRIVATE`, `IS_STATIC`,
-  `IS_FINAL`, and `IS_ABSTRACT` constants are available.
-  The current `ReflectionProperty::IS_PUBLIC`, `IS_PROTECTED`, `IS_PRIVATE`,
-  and `IS_STATIC` constants are available.
+  `TypeError` text, property aliases/references/COW side effects, readonly
+  property declarations, asymmetric visibility/property-hook behavior, and
+  native lowering remain unsupported for reflection property value access.
+  `Reflection::getModifierNames()` accepts int-like scalar masks and returns
+  PHP-ordered names for the currently supported reflection modifier bits:
+  `abstract`, `final`, `public`, `protected`, `private`, `static`,
+  `readonly`, `virtual`, `protected(set)`, and `private(set)`.
+  The current `ReflectionClass::IS_IMPLICIT_ABSTRACT`,
+  `IS_EXPLICIT_ABSTRACT`, `IS_FINAL`, and `IS_READONLY` constants are
+  available. The current `ReflectionMethod::IS_PUBLIC`, `IS_PROTECTED`,
+  `IS_PRIVATE`, `IS_STATIC`, `IS_FINAL`, and `IS_ABSTRACT` constants are
+  available. The current `ReflectionProperty::IS_PUBLIC`, `IS_PROTECTED`,
+  `IS_PRIVATE`, `IS_STATIC`, `IS_FINAL`, `IS_ABSTRACT`, `IS_READONLY`,
+  `IS_VIRTUAL`, `IS_PROTECTED_SET`, and `IS_PRIVATE_SET` constants are
+  available. The current `ReflectionClassConstant::IS_PUBLIC`,
+  `IS_PROTECTED`, `IS_PRIVATE`, and `IS_FINAL` constants are available.
+  Parser/runtime support for readonly class/property declarations and property
+  hooks/asymmetric visibility remains unsupported even where the compatibility
+  constants and modifier-name mapping exist.
   `get_declared_classes()` returns a zero-indexed array containing the current
   metadata-only core class seeds followed by the parsed program's declared
   class names in declaration order.

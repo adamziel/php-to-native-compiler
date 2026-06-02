@@ -176,6 +176,30 @@ Implemented:
   binding and typed enforcement, exact ReflectionException stack traces,
   references/COW, and native lowering.
 
+- Added a bounded Reflection modifier-name and class cloneability metadata
+  lane on the interpreter path. Core metadata now includes the `Reflection`
+  shell with static `getModifierNames()`, expanded `ReflectionClass`,
+  `ReflectionMethod`, `ReflectionProperty`, and `ReflectionClassConstant`
+  modifier constants, and PHP-ordered modifier-name arrays for the supported
+  bit masks. `ReflectionClass::isCloneable()` now reports false for traits,
+  interfaces, abstract classes, classes with non-public or static `__clone()`,
+  and the current uncloneable internal/reflection object boundary; cloning a
+  bounded Reflection object raises the PHP-shaped uncloneable-object `Error`.
+  Focused proof covers the Rust
+  `reflection_modifier_names_and_class_cloneability_metadata` regression,
+  runtime core-class metadata, and selected public PHPT rows
+  `ext/reflection/tests/018.phpt`,
+  `ext/reflection/tests/Reflection_getModifierNames_001.phpt`,
+  `ext/reflection/tests/ReflectionClass_getModifierNames_basic.phpt`,
+  `ext/reflection/tests/bug78895.phpt`,
+  `ext/reflection/tests/reflectionclass_for_traits.phpt`,
+  `ext/reflection/tests/ReflectionClass_isCloneable_002.phpt`, and
+  `ext/reflection/tests/ReflectionClass_CannotClone_basic.phpt`. Unsupported
+  edges remain parser/execution support for readonly class/property
+  declarations, property hooks and asymmetric visibility metadata, broad
+  internal object cloneability such as XML extension objects, exact reflection
+  object serialization/debug-info parity, references/COW, and native lowering.
+
 - Added bounded `DateTime` / `DateTimeImmutable` interval arithmetic on the
   interpreter path. Mutable `DateTime::add()` / `sub()` and procedural
   `date_add()` / `date_sub()` now mutate the receiver and return it, while

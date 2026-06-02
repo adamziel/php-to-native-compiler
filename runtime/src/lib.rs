@@ -32358,6 +32358,16 @@ impl PhpClassTable {
         reflection_class
             .add_property(PhpPropertyMetadata::instance("name", Visibility::Public))
             .expect("ReflectionClass core metadata should not duplicate properties");
+        for constant in [
+            "IS_IMPLICIT_ABSTRACT",
+            "IS_EXPLICIT_ABSTRACT",
+            "IS_FINAL",
+            "IS_READONLY",
+        ] {
+            reflection_class
+                .add_constant(PhpClassConstantMetadata::new(constant, Visibility::Public))
+                .expect("ReflectionClass core metadata should not duplicate constants");
+        }
         for method in [
             "__construct",
             "__toString",
@@ -32377,6 +32387,8 @@ impl PhpClassTable {
             "isTrait",
             "isAbstract",
             "isFinal",
+            "isReadOnly",
+            "isCloneable",
             "getModifiers",
             "isInstantiable",
             "isInstance",
@@ -32620,7 +32632,18 @@ impl PhpClassTable {
                 .add_property(PhpPropertyMetadata::instance(property, Visibility::Public))
                 .expect("ReflectionProperty core metadata should not duplicate properties");
         }
-        for constant in ["IS_PUBLIC", "IS_PROTECTED", "IS_PRIVATE", "IS_STATIC"] {
+        for constant in [
+            "IS_PUBLIC",
+            "IS_PROTECTED",
+            "IS_PRIVATE",
+            "IS_STATIC",
+            "IS_FINAL",
+            "IS_ABSTRACT",
+            "IS_READONLY",
+            "IS_VIRTUAL",
+            "IS_PROTECTED_SET",
+            "IS_PRIVATE_SET",
+        ] {
             reflection_property
                 .add_constant(PhpClassConstantMetadata::new(constant, Visibility::Public))
                 .expect("ReflectionProperty core metadata should not duplicate constants");
@@ -33514,6 +33537,17 @@ impl PhpClassTable {
                 .add_property(PhpPropertyMetadata::instance(property, Visibility::Public))
                 .expect("DOMDocumentType core metadata should not duplicate properties");
         }
+        let reflection_id = classes
+            .declare_class("Reflection")
+            .expect("core class table should contain DOMDocumentType before Reflection");
+        classes
+            .get_mut(reflection_id)
+            .expect("declared Reflection class id should resolve")
+            .add_method(PhpMethodMetadata::static_method(
+                "getModifierNames",
+                Visibility::Public,
+            ))
+            .expect("Reflection core metadata should not duplicate static methods");
         classes
     }
 
@@ -81350,6 +81384,7 @@ mod tests {
                 "DOMElement",
                 "DOMDocument",
                 "DOMDocumentType",
+                "Reflection",
             ]
         );
         let mut normalized_class_names = class_names
@@ -81680,6 +81715,9 @@ mod tests {
         assert!(reflection_class.method("getName").is_some());
         assert!(reflection_class.method("getInterfaces").is_some());
         assert!(reflection_class.method("hasMethod").is_some());
+        assert!(reflection_class.method("isCloneable").is_some());
+        assert!(reflection_class.method("isReadOnly").is_some());
+        assert!(reflection_class.constant("IS_READONLY").is_some());
         assert!(reflection_class.method("getAttributes").is_some());
 
         let reflection_object = classes.lookup_class("reflectionobject").unwrap();
@@ -81784,6 +81822,10 @@ mod tests {
             vec!["name", "class"]
         );
         assert!(reflection_property.constant("IS_PUBLIC").is_some());
+        assert!(reflection_property.constant("IS_READONLY").is_some());
+        assert!(reflection_property.constant("IS_VIRTUAL").is_some());
+        assert!(reflection_property.constant("IS_PROTECTED_SET").is_some());
+        assert!(reflection_property.constant("IS_PRIVATE_SET").is_some());
         assert!(reflection_property.method("getDefaultValue").is_some());
         assert!(reflection_property.method("getAttributes").is_some());
 
@@ -81854,6 +81896,15 @@ mod tests {
         assert_eq!(runtime_exception.parent_id(), Some(exception.id()));
         assert!(runtime_exception.properties().is_empty());
         assert!(runtime_exception.methods().is_empty());
+
+        let reflection = classes.lookup_class("reflection").unwrap();
+        assert_eq!(reflection.name(), "Reflection");
+        assert!(reflection.parent_id().is_none());
+        assert!(reflection.properties().is_empty());
+        assert!(reflection
+            .method("getModifierNames")
+            .expect("Reflection::getModifierNames should be registered")
+            .is_static());
     }
 
     #[test]

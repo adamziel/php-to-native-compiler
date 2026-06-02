@@ -154,3 +154,58 @@ foreach ($identifiers->getParameters() as $parameter) {
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);
 }
+
+#[test]
+fn reflection_modifier_names_and_class_cloneability_metadata() {
+    let execution = run_source(
+        r#"<?php
+echo implode(",", Reflection::getModifierNames(ReflectionMethod::IS_FINAL | ReflectionMethod::IS_PROTECTED)), "\n";
+echo implode(",", Reflection::getModifierNames(ReflectionProperty::IS_PUBLIC | ReflectionProperty::IS_STATIC | ReflectionProperty::IS_READONLY)), "\n";
+echo implode(",", Reflection::getModifierNames(ReflectionProperty::IS_VIRTUAL)), "\n";
+echo implode(",", Reflection::getModifierNames(ReflectionProperty::IS_PROTECTED_SET)), "\n";
+echo implode(",", Reflection::getModifierNames(ReflectionProperty::IS_PRIVATE_SET)), "\n";
+echo implode(",", Reflection::getModifierNames(ReflectionClass::IS_FINAL | ReflectionClass::IS_READONLY)), "\n";
+
+class PlainCloneable {}
+class PrivateClone {
+    private function __clone() {}
+}
+class ProtectedClone {
+    protected function __clone() {}
+}
+abstract class AbstractClone {}
+trait CloneTrait {}
+
+foreach (array('PlainCloneable', 'PrivateClone', 'ProtectedClone', 'AbstractClone', 'CloneTrait') as $class) {
+    echo (new ReflectionClass($class))->isCloneable() ? "1\n" : "0\n";
+}
+
+try {
+    clone new ReflectionClass('stdClass');
+} catch (Error $e) {
+    echo get_class($e), ": ", $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "final,protected\n",
+            "public,static,readonly\n",
+            "virtual\n",
+            "protected(set)\n",
+            "private(set)\n",
+            "final,readonly\n",
+            "1\n",
+            "0\n",
+            "0\n",
+            "0\n",
+            "0\n",
+            "Error: Trying to clone an uncloneable object of class ReflectionClass\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}

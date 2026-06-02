@@ -4248,7 +4248,8 @@ values and string names for the current declared class, interface, and trait
 tables, including the existing autoload callback path for string misses. The
 object stores request-local reflection state and dispatches the current
 `getName()`, `getShortName()`, `isInterface()`, `isTrait()`,
-`isInstantiable()`, `getParentClass()`, `getInterfaceNames()`,
+`isInstantiable()`, `isAbstract()`, `isFinal()`, `isReadOnly()`,
+`isCloneable()`, `getModifiers()`, `getParentClass()`, `getInterfaceNames()`,
 `getInterfaces()`, `hasMethod($name)`, `getFileName()`, `getStartLine()`,
 `getEndLine()`, and `getDocComment()` methods directly through the
 interpreter. ReflectionClass objects also materialize the bounded public
@@ -4262,7 +4263,11 @@ request-local reflection path now covers declared user-class properties:
 `hasProperty($name)`, `getProperty($name)`, and zero-argument
 `getProperties()` resolve current class metadata, include inherited public and
 protected properties, and exclude inherited private properties when reflecting
-a child class. This is metadata only.
+a child class. `isCloneable()` is computed from the reflected class kind,
+abstract-class set, resolved `__clone()` visibility/staticness, and the current
+uncloneable internal/reflection object list. `isReadOnly()` currently reports
+false because readonly class declarations are outside the parser subset. This
+is metadata only.
 `ReflectionMethod` uses the same core placeholder class plus request-local
 state pattern for declared user class, interface, and trait methods. The
 constructor accepts an object or class-like string plus a string method name,
@@ -4394,7 +4399,14 @@ intersection property types materialize request-local `ReflectionUnionType` or
 `ReflectionIntersectionType` objects whose `getTypes()` entries are
 `ReflectionNamedType` objects. Runtime typed-property enforcement reuses the
 current scalar coercion and class/interface relationship checks for those
-bounded property type shapes. Property file/line metadata, attributes and exact
+bounded property type shapes. `Reflection::getModifierNames()` is implemented
+as a deterministic bit-mask-to-name mapping over the compatibility modifier
+constants in the core class table, covering class, method, property, and class
+constant public/protected/private/static/final/abstract/readonly/virtual and
+asymmetric-set bits used by current public PHPT rows. Parser/runtime support
+for readonly class/property declarations, property hooks, and asymmetric
+visibility remains outside this metadata lane even though those constants and
+modifier names are available. Property file/line metadata, attributes and exact
 docblock association across unusual trivia, parenthesized DNF property types,
 exact PHP union scalar coercion preference rules, reference/COW interactions,
 and native lowering remain unsupported.

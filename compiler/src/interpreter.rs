@@ -59,6 +59,17 @@ const SPL_FILE_OBJECT_SKIP_EMPTY: i64 = 4;
 const SPL_FILE_OBJECT_READ_CSV: i64 = 8;
 const ARRAY_OBJECT_STD_PROP_LIST: i64 = 1;
 const ARRAY_OBJECT_ARRAY_AS_PROPS: i64 = 2;
+const REFLECTION_MODIFIER_PUBLIC: i64 = 1;
+const REFLECTION_MODIFIER_PROTECTED: i64 = 2;
+const REFLECTION_MODIFIER_PRIVATE: i64 = 4;
+const REFLECTION_MODIFIER_STATIC: i64 = 16;
+const REFLECTION_MODIFIER_FINAL: i64 = 32;
+const REFLECTION_MODIFIER_EXPLICIT_ABSTRACT: i64 = 64;
+const REFLECTION_MODIFIER_PROPERTY_READONLY: i64 = 128;
+const REFLECTION_MODIFIER_PROPERTY_VIRTUAL: i64 = 512;
+const REFLECTION_MODIFIER_PROPERTY_PROTECTED_SET: i64 = 2048;
+const REFLECTION_MODIFIER_PROPERTY_PRIVATE_SET: i64 = 4096;
+const REFLECTION_MODIFIER_CLASS_READONLY: i64 = 65536;
 const COMPACT_MAX_ARRAY_DEPTH: usize = 64;
 const PHP_EXTR_OVERWRITE: i64 = 0;
 const PHP_EXTR_SKIP: i64 = 1;
@@ -28207,12 +28218,17 @@ impl Interpreter {
             ));
         };
 
-        if object.class_name().eq_ignore_ascii_case("mysqli_driver") {
+        if object.class_name().eq_ignore_ascii_case("mysqli_driver")
+            || reflection_object_is_uncloneable_class(object.class_name())
+        {
             return Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
                     "clone",
-                    "Trying to clone an uncloneable object of class mysqli_driver",
+                    format!(
+                        "Trying to clone an uncloneable object of class {}",
+                        object.class_name()
+                    ),
                 ),
             ));
         }
@@ -53064,6 +53080,14 @@ impl Interpreter {
                 expect_expr_arity("ReflectionClass::isFinal", args.len(), 0, span)?;
                 Ok(Value::Bool(self.reflection_class_is_final(&state)))
             }
+            "isreadonly" => {
+                expect_expr_arity("ReflectionClass::isReadOnly", args.len(), 0, span)?;
+                Ok(Value::Bool(false))
+            }
+            "iscloneable" => {
+                expect_expr_arity("ReflectionClass::isCloneable", args.len(), 0, span)?;
+                Ok(Value::Bool(self.reflection_class_is_cloneable(&state)))
+            }
             "getmodifiers" => {
                 expect_expr_arity("ReflectionClass::getModifiers", args.len(), 0, span)?;
                 Ok(Value::Int(self.reflection_class_modifier_mask(&state)))
@@ -53500,12 +53524,31 @@ impl Interpreter {
     fn reflection_class_modifier_mask(&self, state: &ReflectionClassState) -> i64 {
         let mut mask = 0;
         if self.reflection_class_is_final(state) {
-            mask |= 32;
+            mask |= REFLECTION_MODIFIER_FINAL;
         }
         if self.reflection_class_is_abstract(state) {
-            mask |= 64;
+            mask |= REFLECTION_MODIFIER_EXPLICIT_ABSTRACT;
         }
         mask
+    }
+
+    fn reflection_class_is_cloneable(&self, state: &ReflectionClassState) -> bool {
+        let Some(class_id) = state.class_id else {
+            return false;
+        };
+        if state.kind != ReflectionClassKind::Class || self.abstract_classes.contains(&class_id) {
+            return false;
+        }
+        if reflection_object_is_uncloneable_class(&state.name)
+            || state.name.eq_ignore_ascii_case("mysqli_driver")
+        {
+            return false;
+        }
+        !self
+            .resolve_instance_method(class_id, "__clone")
+            .is_some_and(|(_, _, _, visibility, is_static)| {
+                is_static || visibility != Visibility::Public
+            })
     }
 
     fn reflection_class_matches_object(
@@ -58479,6 +58522,15 @@ impl Interpreter {
                 span,
                 caller_scope,
             );
+        }
+        if receiver_class_name.eq_ignore_ascii_case("Reflection")
+            && method_name.eq_ignore_ascii_case("getModifierNames")
+        {
+            expect_expr_arity("Reflection::getModifierNames", args.len(), 1, span)?;
+            let value = self.evaluate(&args[0], caller_scope)?;
+            let modifiers =
+                reflection_int_mask_argument("Reflection::getModifierNames", value, span)?;
+            return Ok(Value::Array(reflection_modifier_names_array(modifiers)));
         }
         if self.is_spl_fixed_array_class_id(class_id)
             && method_name.eq_ignore_ascii_case("fromArray")
@@ -106940,56 +106992,86 @@ fn seed_core_class_constant_runtime_tables(
             }
         }
     }
-    let Some(reflection_method_id) = classes.lookup_class_id("ReflectionMethod") else {
-        return;
-    };
-    for (name, value) in [
-        ("IS_PUBLIC", 1),
-        ("IS_PROTECTED", 2),
-        ("IS_PRIVATE", 4),
-        ("IS_STATIC", 16),
-        ("IS_FINAL", 32),
-        ("IS_ABSTRACT", 64),
-    ] {
-        let span = Span::new(1, 1);
-        class_constants.insert(
-            (reflection_method_id, name.to_string()),
-            ClassConstantDecl {
-                name: name.to_string(),
-                visibility: ClassVisibility::Public,
-                value: Expr::Int(value, span),
-                attributes: Vec::new(),
-                span,
-            },
-        );
+    if let Some(reflection_class_id) = classes.lookup_class_id("ReflectionClass") {
+        for (name, value) in [
+            ("IS_IMPLICIT_ABSTRACT", REFLECTION_MODIFIER_STATIC),
+            (
+                "IS_EXPLICIT_ABSTRACT",
+                REFLECTION_MODIFIER_EXPLICIT_ABSTRACT,
+            ),
+            ("IS_FINAL", REFLECTION_MODIFIER_FINAL),
+            ("IS_READONLY", REFLECTION_MODIFIER_CLASS_READONLY),
+        ] {
+            let span = Span::new(1, 1);
+            class_constants.insert(
+                (reflection_class_id, name.to_string()),
+                ClassConstantDecl {
+                    name: name.to_string(),
+                    visibility: ClassVisibility::Public,
+                    value: Expr::Int(value, span),
+                    attributes: Vec::new(),
+                    span,
+                },
+            );
+        }
     }
-    let Some(reflection_property_id) = classes.lookup_class_id("ReflectionProperty") else {
-        return;
-    };
-    for (name, value) in [
-        ("IS_PUBLIC", 1),
-        ("IS_PROTECTED", 2),
-        ("IS_PRIVATE", 4),
-        ("IS_STATIC", 16),
-    ] {
-        let span = Span::new(1, 1);
-        class_constants.insert(
-            (reflection_property_id, name.to_string()),
-            ClassConstantDecl {
-                name: name.to_string(),
-                visibility: ClassVisibility::Public,
-                value: Expr::Int(value, span),
-                attributes: Vec::new(),
-                span,
-            },
-        );
+    if let Some(reflection_method_id) = classes.lookup_class_id("ReflectionMethod") {
+        for (name, value) in [
+            ("IS_PUBLIC", REFLECTION_MODIFIER_PUBLIC),
+            ("IS_PROTECTED", REFLECTION_MODIFIER_PROTECTED),
+            ("IS_PRIVATE", REFLECTION_MODIFIER_PRIVATE),
+            ("IS_STATIC", REFLECTION_MODIFIER_STATIC),
+            ("IS_FINAL", REFLECTION_MODIFIER_FINAL),
+            ("IS_ABSTRACT", REFLECTION_MODIFIER_EXPLICIT_ABSTRACT),
+        ] {
+            let span = Span::new(1, 1);
+            class_constants.insert(
+                (reflection_method_id, name.to_string()),
+                ClassConstantDecl {
+                    name: name.to_string(),
+                    visibility: ClassVisibility::Public,
+                    value: Expr::Int(value, span),
+                    attributes: Vec::new(),
+                    span,
+                },
+            );
+        }
+    }
+    if let Some(reflection_property_id) = classes.lookup_class_id("ReflectionProperty") {
+        for (name, value) in [
+            ("IS_PUBLIC", REFLECTION_MODIFIER_PUBLIC),
+            ("IS_PROTECTED", REFLECTION_MODIFIER_PROTECTED),
+            ("IS_PRIVATE", REFLECTION_MODIFIER_PRIVATE),
+            ("IS_STATIC", REFLECTION_MODIFIER_STATIC),
+            ("IS_FINAL", REFLECTION_MODIFIER_FINAL),
+            ("IS_ABSTRACT", REFLECTION_MODIFIER_EXPLICIT_ABSTRACT),
+            ("IS_READONLY", REFLECTION_MODIFIER_PROPERTY_READONLY),
+            ("IS_VIRTUAL", REFLECTION_MODIFIER_PROPERTY_VIRTUAL),
+            (
+                "IS_PROTECTED_SET",
+                REFLECTION_MODIFIER_PROPERTY_PROTECTED_SET,
+            ),
+            ("IS_PRIVATE_SET", REFLECTION_MODIFIER_PROPERTY_PRIVATE_SET),
+        ] {
+            let span = Span::new(1, 1);
+            class_constants.insert(
+                (reflection_property_id, name.to_string()),
+                ClassConstantDecl {
+                    name: name.to_string(),
+                    visibility: ClassVisibility::Public,
+                    value: Expr::Int(value, span),
+                    attributes: Vec::new(),
+                    span,
+                },
+            );
+        }
     }
     if let Some(reflection_class_constant_id) = classes.lookup_class_id("ReflectionClassConstant") {
         for (name, value) in [
-            ("IS_PUBLIC", 1),
-            ("IS_PROTECTED", 2),
-            ("IS_PRIVATE", 4),
-            ("IS_FINAL", 32),
+            ("IS_PUBLIC", REFLECTION_MODIFIER_PUBLIC),
+            ("IS_PROTECTED", REFLECTION_MODIFIER_PROTECTED),
+            ("IS_PRIVATE", REFLECTION_MODIFIER_PRIVATE),
+            ("IS_FINAL", REFLECTION_MODIFIER_FINAL),
         ] {
             let span = Span::new(1, 1);
             class_constants.insert(
@@ -110147,18 +110229,18 @@ fn reflection_type_name_is_builtin(name: &str) -> bool {
 
 fn reflection_method_modifier_mask(method: &ReflectionMethodState) -> i64 {
     let mut mask = match method.visibility {
-        Visibility::Public => 1,
-        Visibility::Protected => 2,
-        Visibility::Private => 4,
+        Visibility::Public => REFLECTION_MODIFIER_PUBLIC,
+        Visibility::Protected => REFLECTION_MODIFIER_PROTECTED,
+        Visibility::Private => REFLECTION_MODIFIER_PRIVATE,
     };
     if method.is_static {
-        mask |= 16;
+        mask |= REFLECTION_MODIFIER_STATIC;
     }
     if method.is_final {
-        mask |= 32;
+        mask |= REFLECTION_MODIFIER_FINAL;
     }
     if method.is_abstract {
-        mask |= 64;
+        mask |= REFLECTION_MODIFIER_EXPLICIT_ABSTRACT;
     }
     mask
 }
@@ -110242,11 +110324,95 @@ fn reflection_scalar_string_argument(
     }
 }
 
+fn reflection_int_mask_argument(
+    function: &'static str,
+    value: Value,
+    span: Span,
+) -> CompileResult<i64> {
+    match value {
+        Value::Null => Ok(0),
+        Value::Bool(value) => Ok(i64::from(value)),
+        Value::Int(value) => Ok(value),
+        Value::Float(value) if value.is_finite() => Ok(value as i64),
+        Value::String(value) => parse_sprintf_numeric_string(&value)
+            .map(|value| value as i64)
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        format!("{function}()"),
+                        "modifier mask argument must be int-like scalar in the current subset",
+                    ),
+                )
+            }),
+        other => Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                format!("{function}()"),
+                format!(
+                    "modifier mask argument must be int-like scalar in the current subset, got {}",
+                    other.type_name()
+                ),
+            ),
+        )),
+    }
+}
+
+fn reflection_modifier_names_array(modifiers: i64) -> PhpArray {
+    let mut array = PhpArray::new();
+    for (bit, name) in [
+        (REFLECTION_MODIFIER_EXPLICIT_ABSTRACT, "abstract"),
+        (REFLECTION_MODIFIER_FINAL, "final"),
+        (REFLECTION_MODIFIER_PUBLIC, "public"),
+        (REFLECTION_MODIFIER_PROTECTED, "protected"),
+        (REFLECTION_MODIFIER_PRIVATE, "private"),
+        (REFLECTION_MODIFIER_STATIC, "static"),
+        (REFLECTION_MODIFIER_PROPERTY_READONLY, "readonly"),
+        (REFLECTION_MODIFIER_CLASS_READONLY, "readonly"),
+        (REFLECTION_MODIFIER_PROPERTY_VIRTUAL, "virtual"),
+        (REFLECTION_MODIFIER_PROPERTY_PROTECTED_SET, "protected(set)"),
+        (REFLECTION_MODIFIER_PROPERTY_PRIVATE_SET, "private(set)"),
+    ] {
+        if modifiers & bit != 0 {
+            let _ = array.append(Value::String(name.to_string()));
+        }
+    }
+    array
+}
+
+fn reflection_object_is_uncloneable_class(class_name: &str) -> bool {
+    matches!(
+        class_name.to_ascii_lowercase().as_str(),
+        "reflection"
+            | "reflectionfunctionabstract"
+            | "reflectionfunction"
+            | "reflectiongenerator"
+            | "reflectionparameter"
+            | "reflectiontype"
+            | "reflectionnamedtype"
+            | "reflectionuniontype"
+            | "reflectionintersectiontype"
+            | "reflectionmethod"
+            | "reflectionclass"
+            | "reflectionobject"
+            | "reflectionproperty"
+            | "reflectionclassconstant"
+            | "reflectionextension"
+            | "reflectionzendextension"
+            | "reflectionreference"
+            | "reflectionattribute"
+            | "reflectionenum"
+            | "reflectionenumunitcase"
+            | "reflectionenumbackedcase"
+            | "reflectionfiber"
+    )
+}
+
 fn reflection_class_constant_modifier_mask(constant: &ReflectionClassConstantState) -> i64 {
     match constant.visibility {
-        Visibility::Public => 1,
-        Visibility::Protected => 2,
-        Visibility::Private => 4,
+        Visibility::Public => REFLECTION_MODIFIER_PUBLIC,
+        Visibility::Protected => REFLECTION_MODIFIER_PROTECTED,
+        Visibility::Private => REFLECTION_MODIFIER_PRIVATE,
     }
 }
 
@@ -110293,12 +110459,12 @@ fn reflection_class_constant_filter_argument(value: Value, span: Span) -> Compil
 
 fn reflection_property_modifier_mask(property: &ReflectionPropertyState) -> i64 {
     let mut mask = match property.visibility {
-        Visibility::Public => 1,
-        Visibility::Protected => 2,
-        Visibility::Private => 4,
+        Visibility::Public => REFLECTION_MODIFIER_PUBLIC,
+        Visibility::Protected => REFLECTION_MODIFIER_PROTECTED,
+        Visibility::Private => REFLECTION_MODIFIER_PRIVATE,
     };
     if property.is_static {
-        mask |= 16;
+        mask |= REFLECTION_MODIFIER_STATIC;
     }
     mask
 }
