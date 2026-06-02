@@ -127457,6 +127457,71 @@ fn json_utf8_error_message_at(position: usize) -> String {
     )
 }
 
+#[derive(Clone, Copy)]
+enum JsonInvalidUtf8Repair {
+    Ignore,
+    Substitute,
+}
+
+fn json_repair_invalid_utf8_in_strings(
+    bytes: &[u8],
+    repair: JsonInvalidUtf8Repair,
+) -> Option<String> {
+    let mut output = String::with_capacity(bytes.len());
+    let mut index = 0;
+    let mut in_string = false;
+    let mut escaped = false;
+
+    while index < bytes.len() {
+        let byte = bytes[index];
+        if byte.is_ascii() {
+            output.push(byte as char);
+            if in_string {
+                if escaped {
+                    escaped = false;
+                } else if byte == b'\\' {
+                    escaped = true;
+                } else if byte == b'"' {
+                    in_string = false;
+                }
+            } else if byte == b'"' {
+                in_string = true;
+            }
+            index += 1;
+            continue;
+        }
+
+        match std::str::from_utf8(&bytes[index..]) {
+            Ok(valid) => {
+                output.push_str(valid);
+                return Some(output);
+            }
+            Err(error) if error.valid_up_to() > 0 => {
+                let valid = std::str::from_utf8(&bytes[index..index + error.valid_up_to()])
+                    .expect("valid_up_to prefix should be valid UTF-8");
+                let ch = valid
+                    .chars()
+                    .next()
+                    .expect("valid prefix should contain a character");
+                output.push(ch);
+                index += ch.len_utf8();
+            }
+            Err(_) if in_string => {
+                if matches!(repair, JsonInvalidUtf8Repair::Substitute) {
+                    output.push('\u{fffd}');
+                }
+                if escaped {
+                    escaped = false;
+                }
+                index += 1;
+            }
+            Err(_) => return None,
+        }
+    }
+
+    Some(output)
+}
+
 fn json_key_string(key: &ArrayKey) -> String {
     match key {
         ArrayKey::Int(value) => value.to_string(),
@@ -127827,6 +127892,19 @@ impl Interpreter {
             ));
         }
 
+        let flags = args
+            .get(3)
+            .map(|value| php_internal_int_argument("json_decode()", 4, "flags", value, span))
+            .transpose()?
+            .unwrap_or(0);
+        let utf8_repair = if flags & PHP_JSON_INVALID_UTF8_SUBSTITUTE != 0 {
+            Some(JsonInvalidUtf8Repair::Substitute)
+        } else if flags & PHP_JSON_INVALID_UTF8_IGNORE != 0 {
+            Some(JsonInvalidUtf8Repair::Ignore)
+        } else {
+            None
+        };
+
         let mut input = match &args[0] {
             Value::Null => {
                 self.emit_display_diagnostic(
@@ -127845,11 +127923,24 @@ impl Interpreter {
             Value::BinaryString(value) => match std::str::from_utf8(value) {
                 Ok(value) => value.to_string(),
                 Err(_) => {
-                    self.set_json_last_error(
-                        PHP_JSON_ERROR_UTF8,
-                        json_error_base_message(PHP_JSON_ERROR_UTF8).to_string(),
-                    );
-                    return Ok(Value::Null);
+                    if let Some(repair) = utf8_repair {
+                        match json_repair_invalid_utf8_in_strings(value, repair) {
+                            Some(value) => value,
+                            None => {
+                                self.set_json_last_error(
+                                    PHP_JSON_ERROR_UTF8,
+                                    json_error_base_message(PHP_JSON_ERROR_UTF8).to_string(),
+                                );
+                                return Ok(Value::Null);
+                            }
+                        }
+                    } else {
+                        self.set_json_last_error(
+                            PHP_JSON_ERROR_UTF8,
+                            json_error_base_message(PHP_JSON_ERROR_UTF8).to_string(),
+                        );
+                        return Ok(Value::Null);
+                    }
                 }
             },
             other => {
@@ -127883,11 +127974,6 @@ impl Interpreter {
         }
 
         let assoc_arg = args.get(1);
-        let flags = args
-            .get(3)
-            .map(|value| php_internal_int_argument("json_decode()", 4, "flags", value, span))
-            .transpose()?
-            .unwrap_or(0);
         let assoc = if flags & PHP_JSON_OBJECT_AS_ARRAY != 0 {
             true
         } else {

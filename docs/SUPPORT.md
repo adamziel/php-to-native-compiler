@@ -12149,13 +12149,17 @@ Unsupported code should fail with an explicit parse, runtime, or codegen error.
   associative decode mode, selected JSON constants, bigint-as-string decode,
   numeric-string encoding, unicode and hex string escaping, pretty-print
   formatting, partial output for unsupported values, validation depth and
-  `JSON_INVALID_UTF8_IGNORE` checks, catchable direct-call depth diagnostics
-  for `json_decode()` / `json_validate()`, catchable exact-arity diagnostics
-  for `json_last_error()` / `json_last_error_msg()`, and request-local
-  last-error state, bounded single-line decode error locations for
+  `JSON_INVALID_UTF8_IGNORE` checks, `json_decode()` invalid UTF-8 handling
+  for malformed byte units inside quoted JSON string tokens through
+  `JSON_INVALID_UTF8_IGNORE` and `JSON_INVALID_UTF8_SUBSTITUTE`, catchable
+  direct-call depth diagnostics for `json_decode()` / `json_validate()`,
+  catchable exact-arity diagnostics for `json_last_error()` /
+  `json_last_error_msg()`, and request-local last-error state, bounded
+  single-line decode error locations for
   depth/state/control/truncated-input failures, and catchable `ValueError`
   diagnostics for invalid decode depth. Full
   `JsonSerializable` parity, exact exception propagation for every serializer
-  shape, complete UTF-16/UTF-8 diagnostics, multi-line and non-ASCII
-  diagnostic-location parity, every JSON option interaction, remaining json
-  extension functions, and native lowering remain unsupported.
+  shape, exact escaped-string invalid-byte parity, complete UTF-16/UTF-8
+  diagnostics, multi-line and non-ASCII diagnostic-location parity, every JSON
+  option interaction, remaining json extension functions, and native lowering
+  remain unsupported.

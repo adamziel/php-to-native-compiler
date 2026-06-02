@@ -158,6 +158,62 @@ try {
 }
 
 #[test]
+fn json_decode_invalid_utf8_flags_repair_binary_string_tokens() {
+    let execution = run_source(
+        r#"<?php
+$one = "\"a\xb0b\"";
+var_dump(json_decode($one));
+var_dump(json_last_error(), json_last_error_msg());
+var_dump(json_decode($one, true, 512, JSON_INVALID_UTF8_IGNORE));
+var_dump(json_last_error(), json_last_error_msg());
+echo bin2hex(json_decode($one, true, 512, JSON_INVALID_UTF8_SUBSTITUTE)), "\n";
+var_dump(json_last_error(), json_last_error_msg());
+
+$overlong = "\"\x61\xf0\x80\x80\x41\"";
+echo bin2hex(json_decode($overlong, true, 512, JSON_INVALID_UTF8_SUBSTITUTE)), "\n";
+
+$array = json_decode("[\"\xc1\xc1\",\"a\"]", true, 512, JSON_INVALID_UTF8_IGNORE);
+var_dump($array);
+$substituted = json_decode("[\"\xc1\xc1\",\"a\"]", true, 512, JSON_INVALID_UTF8_SUBSTITUTE);
+echo bin2hex($substituted[0]), "|", bin2hex($substituted[1]), "\n";
+echo bin2hex(json_decode($one, true, 512, JSON_INVALID_UTF8_IGNORE | JSON_INVALID_UTF8_SUBSTITUTE)), "\n";
+
+$outside = "[" . "\xb0" . "]";
+var_dump(json_decode($outside, true, 512, JSON_INVALID_UTF8_IGNORE));
+echo json_last_error(), "|", json_last_error_msg();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "NULL\n",
+            "int(5)\n",
+            "string(56) \"Malformed UTF-8 characters, possibly incorrectly encoded\"\n",
+            "string(2) \"ab\"\n",
+            "int(0)\n",
+            "string(8) \"No error\"\n",
+            "61efbfbd62\n",
+            "int(0)\n",
+            "string(8) \"No error\"\n",
+            "61efbfbdefbfbdefbfbd41\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  string(0) \"\"\n",
+            "  [1]=>\n",
+            "  string(1) \"a\"\n",
+            "}\n",
+            "efbfbdefbfbd|61\n",
+            "61efbfbd62\n",
+            "NULL\n",
+            "5|Malformed UTF-8 characters, possibly incorrectly encoded",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn json_validate_tracks_state_depth_flags_and_utf8() {
     let execution = run_source(
         "<?php\n\

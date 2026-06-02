@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Added a bounded `json_decode()` invalid UTF-8 flag lane for the selected
+  `json_decode_invalid_utf8.phpt` surface. Binary JSON input with malformed
+  UTF-8 byte units inside quoted JSON string tokens now honors
+  `JSON_INVALID_UTF8_IGNORE` by dropping malformed units and
+  `JSON_INVALID_UTF8_SUBSTITUTE` by inserting `U+FFFD` before the existing JSON
+  parser runs; substitute wins when both invalid-UTF8 flags are supplied, and
+  malformed bytes outside quoted strings stay on the current `JSON_ERROR_UTF8`
+  null-result path. Focused proof covers the Rust
+  `json_decode_invalid_utf8_flags_repair_binary_string_tokens` test, the
+  direct `phpc run` fixture
+  `tests/fixtures/milestone2313/json_decode_invalid_utf8_flags.php`, and the
+  selected PHPT row `ext/json/tests/json_decode_invalid_utf8.phpt`.
+  Unsupported edges remain exact escaped-string invalid-byte parity, broad
+  UTF-8/UTF-16 diagnostic-location parity, `JSON_THROW_ON_ERROR`, full
+  `JsonSerializable` behavior, complete JSON option interaction parity,
+  remaining json extension functions, and native lowering.
+
 - Added a bounded `timezone_open()` warning/recovery lane for the selected
   `timezone_open_warning.phpt` surface. The interpreter now accepts string and
   scalar-string-compatible timezone identifiers for `timezone_open()`, returns
