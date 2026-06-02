@@ -306,10 +306,14 @@ floats to string semantics. Dispatch through covered
 magic/`ArrayAccess` helpers additionally accepts the standard PHP signatures
 for `__get`, `__set`, `__isset`, `__unset`, `__call`, `__callStatic`,
 `offsetGet`, `offsetSet`, `offsetExists`, and `offsetUnset` as syntax-only
-metadata for the existing body executor. Typed by-reference parameters,
-`void`/`never`, callable/iterable pseudo-types, `self`/`parent`/`static`,
-exact `TypeError` behavior, `strict_types`, and native lowering remain
-separate contracts.
+metadata for the existing body executor. A declaration-startup pass separately
+checks bounded magic-method return contracts for classes, interfaces, and
+traits: constructors and destructors reject any return declaration, selected
+magic methods require `void`, `bool`, `string`, `array` / nullable-array, or
+`object` exactly as PHP requires for the covered rows. Typed by-reference
+parameters, callable/iterable pseudo-types, `self`/`parent`/`static`, exact
+multi-error ordering, exact `TypeError` behavior, `strict_types`, and native
+lowering remain separate contracts.
 
 Non-direct holder expressions use the same identity model after evaluating the
 holder once into a temporary object root. The interpreter snapshots public

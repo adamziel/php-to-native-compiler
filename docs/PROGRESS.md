@@ -4,6 +4,24 @@
 
 Implemented:
 
+- Added a bounded magic-method return-type startup diagnostics lane on the
+  interpreter path. Class, interface, and trait declarations now reject
+  `__construct()` / `__destruct()` return declarations, enforce `void` return
+  declarations for `__clone()`, `__set()`, `__unset()`, `__unserialize()`,
+  and `__wakeup()`, enforce `bool` for `__isset()`, `string` for
+  `__toString()`, `array` / nullable-array forms for `__debugInfo()`, `array`
+  for `__serialize()` / `__sleep()`, and `object` for `__set_state()`.
+  Focused proof covers the Rust
+  `magic_method_return_type_contracts_emit_php_startup_fatals` and
+  `magic_method_return_type_contracts_accept_supported_declarations`
+  regressions plus selected public PHPT rows
+  `Zend/tests/return_types/014.phpt`, `018.phpt`, `019.phpt`, `033.phpt`,
+  `034.phpt`, `035.phpt`, `036.phpt`, `037.phpt`, `038.phpt`, and
+  `039.phpt`. Unsupported edges remain exact ordering when one magic method
+  has multiple invalid signature facets, `__debugInfo()` nullable-return
+  deprecation text/order beyond the bounded startup contract, callable/iterable
+  pseudo-type execution, references/COW, and native lowering.
+
 - Added a bounded RIPEMD and Tiger-3 hash execution lane on the interpreter
   path. `hash()`, `hash_file()`, `HashContext` streaming, HMAC contexts,
   `hash_hmac()`, `hash_hmac_file()`, `hash_pbkdf2()`, and `hash_hkdf()` now

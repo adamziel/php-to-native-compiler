@@ -103337,6 +103337,29 @@ struct MagicMethodSignatureContract {
     static_requirement: MagicMethodStaticRequirement,
 }
 
+#[derive(Clone, Copy)]
+enum MagicMethodReturnType {
+    Void,
+    Bool,
+    String,
+    Array,
+    NullableArray,
+    Object,
+}
+
+impl MagicMethodReturnType {
+    fn display(self) -> &'static str {
+        match self {
+            MagicMethodReturnType::Void => "void",
+            MagicMethodReturnType::Bool => "bool",
+            MagicMethodReturnType::String => "string",
+            MagicMethodReturnType::Array => "array",
+            MagicMethodReturnType::NullableArray => "?array",
+            MagicMethodReturnType::Object => "object",
+        }
+    }
+}
+
 #[derive(Default)]
 struct MagicMethodStartupDiagnostics {
     warnings: Vec<String>,
@@ -106394,6 +106417,9 @@ fn magic_method_signature_diagnostic(
     is_static: bool,
 ) -> Option<String> {
     let method_name = function.name.as_str();
+    if let Some(message) = magic_method_return_type_diagnostic(class_name, function) {
+        return Some(message);
+    }
     let contract = magic_method_signature_contract(method_name)?;
     if function.params.len() != contract.expected_arity
         || function.params.iter().any(|param| param.is_variadic)
@@ -106445,6 +106471,93 @@ fn magic_method_signature_diagnostic(
         }
     }
     None
+}
+
+fn magic_method_return_type_diagnostic(
+    class_name: &str,
+    function: &FunctionDecl,
+) -> Option<String> {
+    let return_type = function.return_type.as_ref()?;
+    let method_name = function.name.as_str();
+    let lookup_name = method_name.to_ascii_lowercase();
+
+    if lookup_name == "__construct" || lookup_name == "__destruct" {
+        return Some(format!(
+            "Method {class_name}::{method_name}() cannot declare a return type"
+        ));
+    }
+
+    let expected = magic_method_expected_return_type(&lookup_name)?;
+    if magic_method_return_type_accepts(&return_type.text, expected) {
+        return None;
+    }
+
+    Some(format!(
+        "{class_name}::{method_name}(): Return type must be {} when declared",
+        expected.display()
+    ))
+}
+
+fn magic_method_expected_return_type(method_name: &str) -> Option<MagicMethodReturnType> {
+    match method_name {
+        "__clone" | "__set" | "__unset" | "__unserialize" | "__wakeup" => {
+            Some(MagicMethodReturnType::Void)
+        }
+        "__isset" => Some(MagicMethodReturnType::Bool),
+        "__tostring" => Some(MagicMethodReturnType::String),
+        "__debuginfo" => Some(MagicMethodReturnType::NullableArray),
+        "__serialize" | "__sleep" => Some(MagicMethodReturnType::Array),
+        "__set_state" => Some(MagicMethodReturnType::Object),
+        _ => None,
+    }
+}
+
+fn magic_method_return_type_accepts(type_text: &str, expected: MagicMethodReturnType) -> bool {
+    match expected {
+        MagicMethodReturnType::Void => magic_method_return_type_is_exact(type_text, "void"),
+        MagicMethodReturnType::Bool => magic_method_return_type_is_exact(type_text, "bool"),
+        MagicMethodReturnType::String => magic_method_return_type_is_exact(type_text, "string"),
+        MagicMethodReturnType::Array => magic_method_return_type_is_exact(type_text, "array"),
+        MagicMethodReturnType::NullableArray => {
+            magic_method_return_type_is_nullable_array(type_text)
+        }
+        MagicMethodReturnType::Object => magic_method_return_type_is_exact(type_text, "object"),
+    }
+}
+
+fn magic_method_return_type_is_exact(type_text: &str, expected: &str) -> bool {
+    let text = type_text.trim();
+    !text.starts_with('?')
+        && !text.contains('|')
+        && !text.contains('&')
+        && normalize_type_name(text).eq_ignore_ascii_case(expected)
+}
+
+fn magic_method_return_type_is_nullable_array(type_text: &str) -> bool {
+    let text = type_text.trim();
+    if let Some(nullable) = text.strip_prefix('?') {
+        return !nullable.contains('|')
+            && !nullable.contains('&')
+            && normalize_type_name(nullable).eq_ignore_ascii_case("array");
+    }
+    if !text.contains('|') {
+        return magic_method_return_type_is_exact(text, "array");
+    }
+    if text.contains('&') {
+        return false;
+    }
+
+    let mut has_array = false;
+    let mut has_null = false;
+    for part in text.split('|') {
+        let normalized = normalize_type_name(part).to_ascii_lowercase();
+        match normalized.as_str() {
+            "array" if !has_array => has_array = true,
+            "null" if !has_null => has_null = true,
+            _ => return false,
+        }
+    }
+    has_array && has_null
 }
 
 fn magic_method_visibility_warning(

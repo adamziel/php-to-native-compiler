@@ -2801,7 +2801,16 @@
   subset report PHP-shaped `TypeError`
   messages. `void` return types reject value returns at declaration startup;
   `never` return types are accepted for bodies that throw before returning and
-  reject explicit value returns at declaration startup. Typed by-reference
+  reject explicit value returns at declaration startup. Class, interface, and
+  trait startup diagnostics enforce bounded magic-method return declarations:
+  `__construct()` and `__destruct()` cannot declare return types;
+  `__clone()`, `__set()`, `__unset()`, `__unserialize()`, and `__wakeup()`
+  require `void` when declared; `__isset()` requires `bool`;
+  `__toString()` requires `string`; `__debugInfo()` accepts `array`,
+  `?array`, `array|null`, or `null|array`; `__serialize()` and `__sleep()`
+  require `array`; and `__set_state()` requires `object`. Exact ordering when
+  a magic method has multiple invalid signature facets and exact nullable
+  `__debugInfo()` deprecation text/order remain unsupported. Typed by-reference
   parameters, `callable`, `iterable`, `self`, `parent`, `static`, `resource`,
   `strict_types`, throw expressions, broader `never` implicit-return
   diagnostics, and native lowering remain unsupported.

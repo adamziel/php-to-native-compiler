@@ -1700,6 +1700,103 @@ echo "reached";
 }
 
 #[test]
+fn magic_method_return_type_contracts_emit_php_startup_fatals() {
+    let cases = [
+        (
+            r#"<?php
+class Box {
+    function __construct(): Box {}
+}
+"#,
+            "Zend/tests/return_types/014.php",
+            "Fatal error: Method Box::__construct() cannot declare a return type in Zend/tests/return_types/014.php on line 3",
+        ),
+        (
+            r#"<?php
+class Box {
+    function __destruct(): Box {}
+}
+"#,
+            "Zend/tests/return_types/018.php",
+            "Fatal error: Method Box::__destruct() cannot declare a return type in Zend/tests/return_types/018.php on line 3",
+        ),
+        (
+            r#"<?php
+class Box {
+    function __clone(): Box {}
+}
+"#,
+            "Zend/tests/return_types/019.php",
+            "Fatal error: Box::__clone(): Return type must be void when declared in Zend/tests/return_types/019.php on line 3",
+        ),
+        (
+            r#"<?php
+class Box {
+    function __isset($name): \stdClass|bool {}
+}
+"#,
+            "Zend/tests/return_types/034.php",
+            "Fatal error: Box::__isset(): Return type must be bool when declared in Zend/tests/return_types/034.php on line 3",
+        ),
+        (
+            r#"<?php
+class Box {
+    public function __debugInfo(): bool {}
+}
+"#,
+            "Zend/tests/return_types/037.php",
+            "Fatal error: Box::__debugInfo(): Return type must be ?array when declared in Zend/tests/return_types/037.php on line 3",
+        ),
+        (
+            r#"<?php
+class Box {
+    public static function __set_state($properties): bool {}
+}
+"#,
+            "Zend/tests/return_types/044.php",
+            "Fatal error: Box::__set_state(): Return type must be object when declared in Zend/tests/return_types/044.php on line 3",
+        ),
+    ];
+
+    for (source, file, expected_stderr) in cases {
+        let execution = run_source_with_source_file(source, file).unwrap();
+        assert_eq!(execution.stdout, "", "{file}");
+        assert_eq!(execution.stderr, expected_stderr, "{file}");
+        assert_eq!(execution.exit_code, 255, "{file}");
+    }
+}
+
+#[test]
+fn magic_method_return_type_contracts_accept_supported_declarations() {
+    let execution = run_source(
+        r#"<?php
+class Box {
+    public function __construct() {}
+    public function __clone(): void {}
+    public function __set(string $name, mixed $value): void {}
+    public function __isset(string $name): bool { return false; }
+    public function __unset(string $name): void {}
+    public function __toString(): string { return "box"; }
+    public function __debugInfo(): array|null { return array("ok" => 1); }
+    public function __serialize(): array { return []; }
+    public function __unserialize(array $data): void {}
+    public function __sleep(): array { return []; }
+    public function __wakeup(): void {}
+    public static function __set_state(array $properties): object { return new Box(); }
+}
+
+echo new Box(), "|";
+echo get_class(Box::__set_state([]));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.stdout, "box|Box");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn var_dump_uses_debug_info_array_properties() {
     let execution = run_source(
         r#"<?php
