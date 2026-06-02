@@ -17801,18 +17801,8 @@ impl Interpreter {
             "format" => {
                 expect_expr_arity("DateTime::format", args.len(), 1, span)?;
                 let value = self.evaluate(&args[0], caller_scope)?;
-                let Value::String(format) = value else {
-                    return Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            "DateTime::format()",
-                            format!(
-                                "format argument must be string in the current subset, got {}",
-                                value.type_name()
-                            ),
-                        ),
-                    ));
-                };
+                let format =
+                    self.date_format_string_argument("DateTime::format()", 1, &value, span)?;
                 let state = self.date_time_objects.get(&object.id()).ok_or_else(|| {
                     runtime_error(
                         span,
@@ -18287,10 +18277,20 @@ impl Interpreter {
         self.assign_datetime_object_state(object, timestamp, timezone, span)
     }
 
-    fn call_date_format(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+    fn date_format_string_argument(
+        &mut self,
+        function: &'static str,
+        position: usize,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<String> {
+        self.php_string_argument_with_magic(function, position, "format", value, span)
+    }
+
+    fn call_date_format(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("date_format", args, 2, span)?;
         let object = self.datetime_object_argument("date_format()", args, 0, span)?;
-        let format = expect_date_format_arg("date_format()", &args[1], span)?;
+        let format = self.date_format_string_argument("date_format()", 2, &args[1], span)?;
         let state = self.date_time_objects.get(&object.id()).ok_or_else(|| {
             runtime_error(
                 span,
@@ -136421,7 +136421,7 @@ impl Interpreter {
         )))
     }
 
-    fn call_date(&self, args: &[Value], span: Span, utc: bool) -> CompileResult<Value> {
+    fn call_date(&mut self, args: &[Value], span: Span, utc: bool) -> CompileResult<Value> {
         let function = if utc { "gmdate()" } else { "date()" };
         if !(1..=2).contains(&args.len()) {
             return Err(runtime_error(
@@ -136434,7 +136434,7 @@ impl Interpreter {
             ));
         }
 
-        let format = expect_date_format_arg(function, &args[0], span)?;
+        let format = self.date_format_string_argument(function, 1, &args[0], span)?;
         let timestamp =
             optional_timestamp_arg(function, args.get(1), span)?.unwrap_or(self.request_time);
         let timezone = if utc {
@@ -136470,7 +136470,7 @@ impl Interpreter {
             span,
         )?;
 
-        let format = expect_date_format_arg(function, &args[0], span)?;
+        let format = self.date_format_string_argument(function, 1, &args[0], span)?;
         if format.is_empty() {
             return Ok(Value::Bool(false));
         }
@@ -136667,9 +136667,7 @@ impl Interpreter {
             ));
         }
 
-        let format = args[0]
-            .try_echo_string()
-            .map_err(|error| runtime_error(span, error))?;
+        let format = self.date_format_string_argument("idate()", 1, &args[0], span)?;
         if format.chars().count() != 1 {
             self.emit_display_warning("idate(): idate format is one char", span)?;
             return Ok(Value::Bool(false));
@@ -141102,22 +141100,6 @@ fn optional_timestamp_arg(
                 function,
                 format!(
                     "timestamp argument must be int or null in the current subset, got {}",
-                    other.type_name()
-                ),
-            ),
-        )),
-    }
-}
-
-fn expect_date_format_arg(function: &str, value: &Value, span: Span) -> CompileResult<String> {
-    match value {
-        Value::String(value) => Ok(value.clone()),
-        other => Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                function,
-                format!(
-                    "format argument must be string in the current subset, got {}",
                     other.type_name()
                 ),
             ),

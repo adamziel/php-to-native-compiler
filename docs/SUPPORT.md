@@ -5941,7 +5941,11 @@
   reconstructs a fresh bounded mutable `DateTime` object from the exported
   `date`, `timezone_type`, and `timezone` state fields produced by the current
   `var_export()` path for supported date strings and bounded timezone
-  identifiers.
+  identifiers. `DateTime::format()`, `date_format()`, `date()`, `gmdate()`,
+  `strftime()`, `gmstrftime()`, and `idate()` route `$format` through the
+  shared PHP-shaped string boundary for scalar conversion, `null` deprecation,
+  supported visible `__toString()` objects, and catchable PHP-shaped
+  `TypeError`s for arrays, resources, closures, or non-stringable objects.
   `DateTime` exposes the
   bounded date-format class constants matching the existing global `DATE_*`
   format constants, including PHP-shaped deprecation diagnostics for
@@ -5960,9 +5964,10 @@
   `DateMalformedStringException` behavior, exact diagnostics for
   constructor/timezone/state coercions outside the covered slices, weak scalar
   timestamp/date-part coercions for `idate()` / date formatting and setter
-  helpers beyond bounded integers and `int|null` timestamp slots, non-zero
-  DateTime microsecond mutation/formatting, and native lowering remain
-  unsupported.
+  helpers beyond bounded integers and `int|null` timestamp slots, exact invalid
+  `__toString()` return diagnostics for formatter formats, binary format
+  strings beyond represented runtime text, non-zero DateTime microsecond
+  mutation/formatting, and native lowering remain unsupported.
   `header($header, $replace = true, $response_code = 0)` accepts a string
   header line plus optional bool replacement flag and optional integer response
   code, records the raw header line in deterministic in-process CLI request

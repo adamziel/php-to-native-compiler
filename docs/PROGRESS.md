@@ -4,6 +4,24 @@
 
 Implemented:
 
+- Added a bounded date/time formatter string-argument boundary lane.
+  `DateTime::format()`, `date_format()`, `date()`, `gmdate()`,
+  `strftime()`, `gmstrftime()`, and `idate()` now route their `$format`
+  operands through the shared PHP-shaped string boundary: scalar values keep
+  the existing formatting behavior after conversion, `null` emits the
+  PHP-shaped deprecation before converting to `""`, supported visible
+  `__toString()` objects are accepted, and arrays, resources, closures, or
+  non-stringable objects raise catchable PHP-shaped `TypeError`s. Existing
+  bounded format token rendering, `strftime()` / `gmstrftime()` deprecation
+  diagnostics, timestamp handling, DateTime object state, metadata visibility,
+  and native-lowering rejection remain unchanged. Focused proof covers the
+  Rust `date_formatters_use_php_string_argument_boundary` regression,
+  focused formatter runtime probes, and selected public date formatter PHPT
+  rows. Unsupported edges remain exact invalid `__toString()` return
+  diagnostics, binary format strings beyond represented runtime text, full
+  timezone/DST history, DateTimeImmutable, DateInterval arithmetic,
+  references/COW, and native lowering.
+
 - Added a bounded reverse string-position offset coercion lane.
   `strrpos()` and `strripos()` now route optional `$offset` operands through
   the shared PHP-internal int boundary used by adjacent forward search helpers,

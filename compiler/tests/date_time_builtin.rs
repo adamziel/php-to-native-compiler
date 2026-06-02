@@ -297,6 +297,44 @@ var_dump(strtotime("mayy 2 2009"));
 }
 
 #[test]
+fn date_formatters_use_php_string_argument_boundary() {
+    let execution = run_source(
+        r#"<?php
+date_default_timezone_set("UTC");
+class YearFormat { public function __toString() { return "Y"; } }
+$date = new DateTime("2001-02-03 04:05:06", new DateTimeZone("UTC"));
+var_dump($date->format(123));
+var_dump(date_format($date, new YearFormat()));
+var_dump(date(new YearFormat(), 0));
+var_dump(gmdate(new YearFormat(), 0));
+var_dump(idate("Y", 0));
+var_dump(idate(123, 0));
+var_dump($date->format(null));
+try { date_format($date, array()); } catch (Throwable $e) { echo get_class($e), ": ", $e->getMessage(), "\n"; }
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "string(3) \"123\"\n",
+            "string(4) \"2001\"\n",
+            "string(4) \"1970\"\n",
+            "string(4) \"1970\"\n",
+            "int(1970)\n",
+            "\nWarning: idate(): idate format is one char in Command line code on line 10\n",
+            "bool(false)\n",
+            "\nDeprecated: DateTime::format(): Passing null to parameter #1 ($format) of type string is deprecated in Command line code on line 11\n",
+            "string(0) \"\"\n",
+            "TypeError: date_format(): Argument #2 ($format) must be of type string, array given\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn datetime_class_format_constants_alias_global_date_constants() {
     let execution = run_source(
         r#"<?php
