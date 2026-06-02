@@ -690,6 +690,7 @@ struct SplFileObjectState {
     csv_separator: char,
     csv_enclosure: char,
     csv_escape: Option<char>,
+    csv_escape_configured: bool,
 }
 
 impl Default for SplFileObjectState {
@@ -706,6 +707,7 @@ impl Default for SplFileObjectState {
             csv_separator: ',',
             csv_enclosure: '"',
             csv_escape: Some('\\'),
+            csv_escape_configured: false,
         }
     }
 }
@@ -18388,7 +18390,7 @@ impl Interpreter {
                     .expect("non-empty enclosure has a character"),
                     None => state_snapshot.csv_enclosure,
                 };
-                if args.get(2).is_none() {
+                if args.get(2).is_none() && !state_snapshot.csv_escape_configured {
                     self.emit_display_diagnostic(
                         "Deprecated",
                         PHP_E_DEPRECATED,
@@ -18445,14 +18447,6 @@ impl Interpreter {
                         ),
                     ));
                 }
-                if args.get(2).is_none() {
-                    self.emit_display_diagnostic(
-                        "Deprecated",
-                        PHP_E_DEPRECATED,
-                        "SplFileObject::setCsvControl(): the $escape parameter must be provided as its default value will change",
-                        span,
-                    )?;
-                }
                 let separator = csv_single_character_argument(
                     "SplFileObject::setCsvControl()",
                     "separator",
@@ -18479,10 +18473,20 @@ impl Interpreter {
                     true,
                     span,
                 )?;
+                let escape_configured = args.get(2).is_some();
+                if !escape_configured {
+                    self.emit_display_diagnostic(
+                        "Deprecated",
+                        PHP_E_DEPRECATED,
+                        "SplFileObject::setCsvControl(): the $escape parameter must be provided as its default value will change",
+                        span,
+                    )?;
+                }
                 let state = self.spl_file_object_state_mut(&object, method_name, span)?;
                 state.csv_separator = separator;
                 state.csv_enclosure = enclosure;
                 state.csv_escape = escape;
+                state.csv_escape_configured = escape_configured;
                 Ok(Value::Null)
             }
             "setflags" => {

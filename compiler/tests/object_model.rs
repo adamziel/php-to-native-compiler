@@ -16380,16 +16380,12 @@ array(3) {
 }
 green apples=10
 yellow bananas=20
-
-Deprecated: SplFileObject::fgetcsv(): the $escape parameter must be provided, as its default value will change, either explicitly or via SplFileObject::setCsvControl() in Command line code on line 15
 array(2) {
   [0]=>
   string(12) "green apples"
   [1]=>
   string(2) "10"
 }
-
-Deprecated: SplFileObject::setCsvControl(): the $escape parameter must be provided as its default value will change in Command line code on line 17
 SplFileObject::setCsvControl(): Argument #1 ($separator) must be a single character
 "#
     );

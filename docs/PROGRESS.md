@@ -56,7 +56,10 @@ Implemented:
 
 - Added a bounded `SplFileObject` CSV parameter semantics lane on the
   interpreter path. `SplFileObject::fgetcsv()` and `setCsvControl()` now emit
-  PHP-shaped default-escape deprecations when `$escape` is omitted,
+  PHP-shaped default-escape deprecations when `$escape` is omitted, while
+  `fgetcsv()` suppresses that deprecation after an escape has been explicitly
+  configured through `setCsvControl()` and `setCsvControl()` reports
+  separator/enclosure `ValueError`s before omitted-escape deprecations.
   `SplFileObject::fputcsv()` validates separator, enclosure, and escape through
   method-shaped `ValueError` diagnostics while preserving object CSV-control
   defaults for omitted method arguments, and `ReflectionMethod::getParameters()`
@@ -68,8 +71,13 @@ Implemented:
   `spl_file_object_flags_and_csv_controls_use_local_line_state`, and
   `spl_file_object_writable_modes_fwrite_and_fputcsv_use_local_stream_state`
   regressions plus selected public PHPT rows
+  `ext/spl/tests/SplFileObject/SplFileObject_fgetcsv_basic.phpt`,
+  `ext/spl/tests/SplFileObject/SplFileObject_fgetcsv_delimiter_basic.phpt`,
   `ext/spl/tests/SplFileObject/SplFileObject_fgetcsv_escape_default.phpt`,
+  `ext/spl/tests/SplFileObject/SplFileObject_setCsvControl_error001.phpt`,
+  `ext/spl/tests/SplFileObject/SplFileObject_setCsvControl_error002.phpt`,
   `ext/spl/tests/SplFileObject/SplFileObject_setCsvControl_variation001.phpt`,
+  `ext/spl/tests/SplFileObject/bug46569.phpt`,
   `ext/spl/tests/SplFileObject/bug60201.phpt`,
   `ext/spl/tests/SplFileObject/bug68479.phpt`,
   `ext/spl/tests/SplFileObject/SplFileObject_fputcsv_variation13.phpt`, and
