@@ -90038,6 +90038,25 @@ impl Interpreter {
                         span,
                     );
                 }
+                if matches!(context, "array_map()" | "array_filter()") {
+                    let this_object = if is_static {
+                        None
+                    } else {
+                        Some(object.clone())
+                    };
+                    let warning_function = format!("{class_name}::{resolved_method_name}");
+                    return self.call_value_callback_user_function_with_values(
+                        function,
+                        args,
+                        this_object,
+                        Some(class_id),
+                        Some(object.class_id()),
+                        Vec::new(),
+                        Some(&warning_function),
+                        span,
+                        context,
+                    );
+                }
                 ensure_user_function_arity_with_extra_policy(
                     function,
                     args.len(),
@@ -90153,6 +90172,21 @@ impl Interpreter {
                         Vec::new(),
                         Some(&warning_function),
                         span,
+                    );
+                }
+                if matches!(context, "array_map()" | "array_filter()") {
+                    let warning_function =
+                        format!("{declaring_class_name}::{resolved_method_name}");
+                    return self.call_value_callback_user_function_with_values(
+                        function,
+                        args,
+                        None,
+                        Some(declaring_class_id),
+                        Some(class_id),
+                        Vec::new(),
+                        Some(&warning_function),
+                        span,
+                        context,
                     );
                 }
                 ensure_user_function_arity_with_extra_policy(
@@ -91331,8 +91365,33 @@ impl Interpreter {
         warning_function: Option<&str>,
         span: Span,
     ) -> CompileResult<Value> {
+        self.call_value_callback_user_function_with_values(
+            function,
+            args,
+            this_object,
+            class_context,
+            called_class_context,
+            prebound_locals,
+            warning_function,
+            span,
+            "array_reduce()",
+        )
+    }
+
+    fn call_value_callback_user_function_with_values(
+        &mut self,
+        function: &FunctionDecl,
+        args: Vec<Value>,
+        this_object: Option<PhpObject>,
+        class_context: Option<ClassId>,
+        called_class_context: Option<ClassId>,
+        prebound_locals: Vec<PreboundLocal>,
+        warning_function: Option<&str>,
+        span: Span,
+        context: &str,
+    ) -> CompileResult<Value> {
         ensure_user_function_arity_with_extra_policy(function, args.len(), span, true)
-            .map_err(array_reduce_callback_diagnostic)?;
+            .map_err(|error| callback_context_diagnostic(context, error))?;
         ensure_supported_function_metadata(function, span)?;
         self.emit_value_callback_reference_parameter_warnings(
             function,
@@ -91534,11 +91593,7 @@ impl Interpreter {
                 .map_err(array_filter_callback_diagnostic),
             Callable::User(function) => {
                 let function = function.as_ref();
-                ensure_user_function_arity_with_extra_policy(function, args.len(), span, true)
-                    .map_err(array_filter_callback_diagnostic)?;
-                ensure_supported_function_signature(function, args.len(), span)?;
-                self.ensure_user_function_call_depth(function, span)?;
-                self.call_user_function_with_checked_values(
+                self.call_value_callback_user_function_with_values(
                     function,
                     args,
                     None,
@@ -91546,6 +91601,8 @@ impl Interpreter {
                     None,
                     Vec::new(),
                     None,
+                    span,
+                    "array_filter()",
                 )
             }
         }
@@ -91599,12 +91656,12 @@ impl Interpreter {
                 true,
                 "array_filter()",
             ),
-            Value::Closure(closure) => self.invoke_closure_value_with_extra_policy(
+            Value::Closure(closure) => self.call_value_callback_closure_with_values(
                 closure.clone(),
                 args,
                 span,
                 "array_filter()",
-                true,
+                Some("{closure}"),
             ),
             _ => Err(Self::invalid_callback_error(
                 "array_filter()",
@@ -91759,11 +91816,7 @@ impl Interpreter {
             Callable::Builtin(key) => self.call_builtin(&key, args, span),
             Callable::User(function) => {
                 let function = function.as_ref();
-                ensure_user_function_arity_with_extra_policy(function, args.len(), span, true)
-                    .map_err(array_map_callback_diagnostic)?;
-                ensure_supported_function_signature(function, args.len(), span)?;
-                self.ensure_user_function_call_depth(function, span)?;
-                self.call_user_function_with_checked_values(
+                self.call_value_callback_user_function_with_values(
                     function,
                     args,
                     None,
@@ -91771,9 +91824,48 @@ impl Interpreter {
                     None,
                     Vec::new(),
                     None,
+                    span,
+                    "array_map()",
                 )
             }
         }
+    }
+
+    fn call_value_callback_closure_with_values(
+        &mut self,
+        closure: PhpClosure,
+        args: Vec<Value>,
+        span: Span,
+        context: &str,
+        warning_function: Option<&str>,
+    ) -> CompileResult<Value> {
+        let function = self
+            .closure_functions
+            .get(&closure.id())
+            .cloned()
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        context,
+                        "closure body metadata is missing in the current subset",
+                    ),
+                )
+            })?;
+        let prebound_locals = self.closure_prebound_locals(&closure);
+        let (this_object, class_context, called_class_context) =
+            self.closure_call_context(&closure);
+        self.call_value_callback_user_function_with_values(
+            function.as_ref(),
+            args,
+            this_object,
+            class_context,
+            called_class_context,
+            prebound_locals,
+            warning_function,
+            span,
+            context,
+        )
     }
 
     fn call_user_array_sort_resolved_callable_with_values(
@@ -91981,12 +92073,12 @@ impl Interpreter {
             Value::Array(callback) => {
                 self.call_array_map_array_callable_with_values(callback, args, span)
             }
-            Value::Closure(closure) => self.invoke_closure_value_with_extra_policy(
+            Value::Closure(closure) => self.call_value_callback_closure_with_values(
                 closure.clone(),
                 args,
                 span,
                 "array_map()",
-                true,
+                Some("{closure}"),
             ),
             _ => Err(Self::invalid_callback_error(
                 "array_map()",
@@ -106005,6 +106097,7 @@ fn array_user_compare_callback_diagnostic(error: Diagnostic) -> Diagnostic {
 
 fn callback_context_diagnostic(context: &str, error: Diagnostic) -> Diagnostic {
     match context {
+        "array_reduce()" => array_reduce_callback_diagnostic(error),
         "array_map()" => array_map_callback_diagnostic(error),
         "array_filter()" => array_filter_callback_diagnostic(error),
         _ => error,

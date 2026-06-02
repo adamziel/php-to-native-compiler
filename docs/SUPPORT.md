@@ -7400,35 +7400,41 @@
   entries, and are available through string-valued dynamic function calls.
   `array_filter($array, $callback)` accepts callbacks that evaluate to string
   function names resolving to current user functions or callable builtins,
-  invokes the callback once per value in insertion order with the value as the
-  only argument, preserves keys whose callback result is truthy, accepts
-  explicit integer mode flag `0`, finite integral float mode flag `0.0`,
-  integral numeric string mode flag `"0"`, and boolean mode flag `false` for
-  the same value-only callback path, and is also available through
-  string-valued dynamic calls to `array_filter`.
+  closures, or supported public array-callable user methods, invokes the
+  callback once per value in insertion order with the value as the only
+  argument, preserves keys whose callback result is truthy, accepts explicit
+  integer mode flag `0`, finite integral float mode flag `0.0`, integral
+  numeric string mode flag `"0"`, and boolean mode flag `false` for the same
+  value-only callback path, and is also available through string-valued
+  dynamic calls to `array_filter`.
   `array_filter($array, $callback, 2)` plus finite integral float and integral
-  numeric string mode values that parse to `2` invoke the same string-valued
-  callback subset once per entry with the current integer or string key as the
+  numeric string mode values that parse to `2` invoke the same callback subset
+  once per entry with the current integer or string key as the
   only argument, preserving keys whose callback result is truthy.
   `array_filter($array, $callback, 1)` and `array_filter($array, $callback,
   true)`, plus finite integral float and integral numeric string mode values
   that parse to `1`, invoke that callback subset once per entry with the value
   and then the current integer or string key as arguments, preserving keys
-  whose callback result is truthy.
+  whose callback result is truthy. User callbacks whose reached value/key
+  parameters are declared by reference emit PHP-shaped value-given warnings
+  and then receive the helper-supplied values.
   `array_map(null, $array)` returns an identity copy of one input array while
   preserving integer/string keys and insertion order. `array_map(null,
   $array, ...)` with two or more input arrays returns a reindexed array of
   tuple arrays, zipping values from each input in insertion order up to the
   longest input and padding missing values with `null`.
   `array_map($callback, $array, ...)` accepts callbacks that evaluate to string
-  function names resolving to current user functions or callable builtins. The
-  one-array string-callback form invokes the callback once per value in
-  insertion order with the value as the only argument and preserves the
-  original integer/string keys. Multi-array string-callback forms invoke the
-  callback with one value from each input array in insertion-order lockstep up
-  to the longest input, supply `null` for missing values from shorter arrays,
-  and return mapped values reindexed with integer keys starting at zero. These
-  forms are available through string-valued dynamic calls to `array_map`.
+  function names resolving to current user functions or callable builtins,
+  closures, or supported public array-callable user methods. The one-array
+  callback form invokes the callback once per value in insertion order with
+  the value as the only argument and preserves the original integer/string
+  keys. Multi-array callback forms invoke the callback with one value from
+  each input array in insertion-order lockstep up to the longest input, supply
+  `null` for missing values from shorter arrays, and return mapped values
+  reindexed with integer keys starting at zero. User callbacks whose reached
+  value parameters are declared by reference emit PHP-shaped value-given
+  warnings and then receive the helper-supplied values. These forms are
+  available through string-valued dynamic calls to `array_map`.
   `array_multisort($array, ...)` accepts direct interpreter calls with one or
   more scalar-valued arrays plus `SORT_ASC`, `SORT_DESC`, `SORT_REGULAR`,
   `SORT_NUMERIC`, `SORT_STRING`, `SORT_NATURAL`, and
@@ -7484,15 +7490,14 @@
   `array_intersect_uassoc`, `array_diff_ukey`, `array_intersect_ukey`,
   `array_udiff_uassoc`, `array_uintersect_uassoc`, `array_unique`, `array_flip`,
   `array_fill_keys`, `array_count_values`, `array_sum`, `array_product`,
-  `array_reduce` in the current string-callback form with optional initial
-  values,
-  `array_filter` in the current no-callback, null-callback, value-only
-  string-callback, key-only string-callback, and value/key string-callback
-  forms, including explicit integer mode flags `0`, `1`, and `2`,
-  integer-string mode values that trim and parse to those integers, plus
-  boolean mode flags `false` and `true`,
+  `array_reduce` in the current string, closure, and public array-callable
+  callback forms with optional initial values,
+  `array_filter` in the current no-callback, null-callback, value-only,
+  key-only, and value/key callback forms, including explicit integer mode
+  flags `0`, `1`, and `2`, integer-string mode values that trim and parse to
+  those integers, plus boolean mode flags `false` and `true`,
   `array_map` in the current one-array null-callback identity form, variadic
-  null-callback zip form, and one-array and variadic string-callback forms,
+  null-callback zip form, and one-array and variadic callback forms,
   `in_array`, `array_search`, both current `foreach` array forms, direct
   array-offset `unset`, multiple supported `unset(...)` operands, `print_r`,
   and `var_dump` are implemented for this ordered value model. Array walkers
@@ -10278,25 +10283,27 @@
   dynamic function calls.
   `array_filter($array, $callback)` accepts callback expressions that evaluate
   to string function names resolving to current user functions or callable
-  builtins, invokes the callback with the value only, keeps entries whose
-  callback result is truthy, preserves original keys and insertion order,
-  accepts explicit integer mode flag `0`, finite integral float mode flag
-  `0.0`, integral numeric string mode flag `"0"`, and boolean mode flag
-  `false` for the same value-only callback path, and is available when
-  `array_filter` itself is called through a string-valued dynamic function
-  name. `array_filter($array, $callback, 2)` plus finite integral float and
-  integral numeric string modes that parse to `2` invoke that same
-  string-valued callback subset with each entry's current integer or string
-  key as the only argument and preserve original keys for entries whose
-  callback result is truthy. `array_filter($array, $callback, 1)`,
-  `array_filter($array, $callback, true)`, and finite integral float or
-  integral numeric string modes that parse to `1` invoke the same string-valued
-  callback subset with the value and then the current integer or string key as
-  arguments, preserving original keys for entries whose callback result is
-  truthy. Non-string
-  non-null callback values
-  fail with a stable diagnostic, and unresolved callback names fail with the
-  current undefined-function diagnostic. Exact uppercase
+  builtins, closures, or supported public array-callable user methods, invokes
+  the callback with the value only, keeps entries whose callback result is
+  truthy, preserves original keys and insertion order, accepts explicit
+  integer mode flag `0`, finite integral float mode flag `0.0`, integral
+  numeric string mode flag `"0"`, and boolean mode flag `false` for the same
+  value-only callback path, and is available when `array_filter` itself is
+  called through a string-valued dynamic function name.
+  `array_filter($array, $callback, 2)` plus finite integral float and integral
+  numeric string modes that parse to `2` invoke that same callback subset with
+  each entry's current integer or string key as the only argument and preserve
+  original keys for entries whose callback result is truthy.
+  `array_filter($array, $callback, 1)`, `array_filter($array, $callback,
+  true)`, and finite integral float or integral numeric string modes that
+  parse to `1` invoke the same callback subset with the value and then the
+  current integer or string key as arguments, preserving original keys for
+  entries whose callback result is truthy. User callbacks whose reached
+  value/key parameters are declared by reference emit PHP-shaped value-given
+  warnings and then receive the helper-supplied values. Non-string,
+  non-closure, non-array, non-null callback values fail with a stable
+  diagnostic, and unresolved callback names fail with the current
+  undefined-function diagnostic. Exact uppercase
   `ARRAY_FILTER_USE_KEY` and `ARRAY_FILTER_USE_BOTH` constants may be used as
   the mode argument and evaluate to the same current integer mode values as PHP.
   `constant("ARRAY_FILTER_USE_KEY")` and
@@ -10337,9 +10344,10 @@
   metadata, nested declarations, dynamic declaration values,
   references/copy-on-write behavior, and broader native lowering are not
   implemented.
-  Array/object callables, closures, first-class callables, method calls,
-  integer mode flags outside `0`, `1`, and `2`, non-int/non-bool mode
-  coercions such as string `"0"`, references,
+  First-class callables, unsupported dynamic callable shapes, true
+  callback-parameter aliasing back into helper-supplied values/keys, integer
+  mode flags outside `0`, `1`, and `2`, non-int/non-bool mode coercions
+  outside the documented integral scalar subset, broad references,
   copy-on-write containers, exact native `TypeError` objects, object handle
   identity preservation, resource values, and native lowering are not
   implemented.
@@ -10350,18 +10358,23 @@
   position, padding missing values from shorter arrays with `null`.
   `array_map($callback, $array, ...)` accepts callback expressions that
   evaluate to string function names resolving to current user functions or
-  callable builtins. The one-array string-callback form invokes the callback
-  with the value only and preserves original integer/string keys and insertion
-  order. Multi-array string-callback forms invoke the callback with one value
-  from each input array in insertion-order lockstep, follow PHP's longest array
-  behavior by supplying `null` for missing values from shorter arrays, and
-  reindex mapped values from integer key zero.
-  Non-string callback values fail with a stable diagnostic, unresolved callback
-  names fail with the current undefined-function diagnostic, and non-array
-  input arrays fail with stable diagnostics. Array/object callables, closures,
-  first-class callables, method calls, references, copy-on-write containers,
-  exact native `TypeError` objects, object handle identity preservation,
-  resource values, and native lowering are not implemented.
+  callable builtins, closures, or supported public array-callable user methods.
+  The one-array callback form invokes the callback with the value only and
+  preserves original integer/string keys and insertion order. Multi-array
+  callback forms invoke the callback with one value from each input array in
+  insertion-order lockstep, follow PHP's longest array behavior by supplying
+  `null` for missing values from shorter arrays, and reindex mapped values
+  from integer key zero. User callbacks whose reached value parameters are
+  declared by reference emit PHP-shaped value-given warnings and then receive
+  the helper-supplied values.
+  Non-string/non-closure/non-array callback values fail with a stable
+  diagnostic, unresolved callback names fail with the current
+  undefined-function diagnostic, and non-array input arrays fail with stable
+  diagnostics. First-class callables, unsupported dynamic callable shapes,
+  true callback-parameter aliasing back into helper-supplied values, broad
+  references, copy-on-write containers, exact native `TypeError` objects,
+  object handle identity preservation, resource values, and native lowering
+  are not implemented.
   `array_multisort($array, ...)` accepts direct interpreter calls with one or
   more scalar-valued arrays plus `SORT_ASC`, `SORT_DESC`, `SORT_REGULAR`,
   `SORT_NUMERIC`, `SORT_STRING`, `SORT_NATURAL`, and
@@ -11471,17 +11484,21 @@
   true callback-parameter aliasing back into helper-supplied values,
   reference/copy-on-write behavior, object handle identity preservation,
   resource values, exact native `TypeError` objects, and native lowering
-- `array_filter` callbacks outside `null` and string-valued
-  user-function/callable-builtin names, integer mode flags outside `0`, `1`,
-  and `2`, non-finite or non-integral float mode values, string mode coercions
-  outside the current trimmed integral numeric string subset, lossy mode
-  coercions such as `2.5` and `"2.5"`,
-  reference/copy-on-write behavior, object handle identity
-  preservation, resource values, exact native `TypeError` objects, and native
-  lowering
-- `array_map` array/object callables, closures, first-class callables, method
-  calls, reference/copy-on-write behavior, object handle identity preservation,
-  resource values, exact native `TypeError` objects, and native lowering
+- `array_filter` callback forms outside `null`, string-valued
+  user-function/callable-builtin names, closures, and supported public
+  array-callable user methods, true callback-parameter aliasing back into
+  helper-supplied values/keys, integer mode flags outside `0`, `1`, and `2`,
+  non-finite or non-integral float mode values, string mode coercions outside
+  the current trimmed integral numeric string subset, lossy mode coercions such
+  as `2.5` and `"2.5"`, reference/copy-on-write behavior, object handle
+  identity preservation, resource values, exact native `TypeError` objects,
+  and native lowering
+- `array_map` callback forms outside string-valued user-function/
+  callable-builtin names, closures, and supported public array-callable user
+  methods, first-class callables, true callback-parameter aliasing back into
+  helper-supplied values, reference/copy-on-write behavior, object handle
+  identity preservation, resource values, exact native `TypeError` objects,
+  and native lowering
 - `method_exists` method dispatch beyond current declared/inherited lookup,
   traits, interfaces, aliases/imports, namespace-aware names, visibility behavior
   beyond metadata reporting, exact native `TypeError` objects, object operands,

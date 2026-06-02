@@ -608,6 +608,74 @@ fn array_filter_rejects_lossy_float_mode_flags() {
 }
 
 #[test]
+fn array_filter_user_callbacks_with_reference_params_warn_and_receive_values() {
+    let execution = run_source(
+        r#"<?php
+$messages = [];
+set_error_handler(function($errno, $errstr) use (&$messages) {
+    $messages[] = $errstr;
+    return true;
+});
+
+function keep_ref(&$value) {
+    $value = "local-" . $value;
+    return true;
+}
+
+function keep_both_ref(&$value, &$key) {
+    return true;
+}
+
+$closure = function(&$key) {
+    return true;
+};
+
+class FilterHelper {
+    public static function stat(&$value) {
+        return true;
+    }
+
+    public function inst(&$value, &$key) {
+        return true;
+    }
+}
+
+$items = ["x" => "one", "empty" => ""];
+$filtered = array_filter($items, "keep_ref");
+print_r($filtered);
+print_r($items);
+
+$both = array_filter(["b" => "two"], "keep_both_ref", ARRAY_FILTER_USE_BOTH);
+$key_only = array_filter(["k" => "three"], $closure, ARRAY_FILTER_USE_KEY);
+$static = array_filter(["s" => "four"], ["FilterHelper", "stat"]);
+$instance = array_filter(["i" => "five"], [new FilterHelper(), "inst"], ARRAY_FILTER_USE_BOTH);
+echo count($both), "|", count($key_only), "|", count($static), "|", count($instance), "\n";
+
+foreach ($messages as $message) {
+    echo $message, "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "Array\n(\n    [x] => one\n    [empty] => \n)\n\
+Array\n(\n    [x] => one\n    [empty] => \n)\n\
+1|1|1|1\n\
+keep_ref(): Argument #1 ($value) must be passed by reference, value given\n\
+keep_ref(): Argument #1 ($value) must be passed by reference, value given\n\
+keep_both_ref(): Argument #1 ($value) must be passed by reference, value given\n\
+keep_both_ref(): Argument #2 ($key) must be passed by reference, value given\n\
+{closure}(): Argument #1 ($key) must be passed by reference, value given\n\
+FilterHelper::stat(): Argument #1 ($value) must be passed by reference, value given\n\
+FilterHelper::inst(): Argument #1 ($value) must be passed by reference, value given\n\
+FilterHelper::inst(): Argument #2 ($key) must be passed by reference, value given\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn emit_ir_rejects_array_filter_until_native_call_lowering_exists() {
     let error = emit_ir_source("<?php\necho array_filter([\"name\"]);\n").unwrap_err();
 

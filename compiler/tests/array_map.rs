@@ -437,6 +437,66 @@ fn array_map_variadic_callback_allows_extra_callback_arguments() {
 }
 
 #[test]
+fn array_map_user_callbacks_with_reference_params_warn_and_receive_values() {
+    let execution = run_source(
+        r#"<?php
+$messages = [];
+set_error_handler(function($errno, $errstr) use (&$messages) {
+    $messages[] = $errstr;
+    return true;
+});
+
+function map_ref(&$value) {
+    $value = "local-" . $value;
+    return $value;
+}
+
+$closure = function(&$value) {
+    return "closure-" . $value;
+};
+
+class MapHelper {
+    public static function stat(&$value) {
+        return "static-" . $value;
+    }
+
+    public function inst(&$value) {
+        return "instance-" . $value;
+    }
+}
+
+$items = ["x" => "one", "y" => "two"];
+$mapped = array_map("map_ref", $items);
+print_r($mapped);
+print_r($items);
+
+$closure_result = array_map($closure, ["c" => "three"]);
+$static_result = array_map(["MapHelper", "stat"], ["four"]);
+$instance_result = array_map([new MapHelper(), "inst"], ["five"]);
+echo $closure_result["c"], "|", $static_result[0], "|", $instance_result[0], "\n";
+
+foreach ($messages as $message) {
+    echo $message, "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "Array\n(\n    [x] => local-one\n    [y] => local-two\n)\n\
+Array\n(\n    [x] => one\n    [y] => two\n)\n\
+closure-three|static-four|instance-five\n\
+map_ref(): Argument #1 ($value) must be passed by reference, value given\n\
+map_ref(): Argument #1 ($value) must be passed by reference, value given\n\
+{closure}(): Argument #1 ($value) must be passed by reference, value given\n\
+MapHelper::stat(): Argument #1 ($value) must be passed by reference, value given\n\
+MapHelper::inst(): Argument #1 ($value) must be passed by reference, value given\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn emit_ir_rejects_array_map_until_native_call_lowering_exists() {
     let error = emit_ir_source("<?php\necho array_map(\"strlen\", [\"name\"]);\n").unwrap_err();
 

@@ -4,6 +4,24 @@
 
 Implemented:
 
+- Added a bounded `array_map()` / `array_filter()` by-reference
+  callback-parameter warning lane. String user-function callbacks, closure
+  callbacks, and supported public array-callable user methods whose reached
+  parameters are declared by reference now emit PHP-shaped `must be passed by
+  reference, value given` warnings for helper-supplied values/keys, then
+  execute with ordinary value arguments. Callback writes to those parameters
+  remain local to the callback frame, so source arrays and keys are not
+  aliased. Focused proof covers the Rust
+  `array_map_user_callbacks_with_reference_params_warn_and_receive_values`
+  and
+  `array_filter_user_callbacks_with_reference_params_warn_and_receive_values`
+  regressions plus the direct `phpc run` fixture
+  `tests/fixtures/milestone2324/array_map_filter_reference_params.php`.
+  Unsupported edges remain true callback-parameter aliasing back into
+  helper-supplied values/keys, first-class callable forms, unsupported dynamic
+  callable shapes, broad reference/COW graph parity, exact diagnostics for
+  every callback failure, and native lowering.
+
 - Added a bounded mutable `DateTime` setter lane. `phpc run` now supports
   `DateTime::setDate()`, `DateTime::setISODate()`, and `DateTime::setTime()`
   plus procedural aliases `date_date_set()`, `date_isodate_set()`, and
