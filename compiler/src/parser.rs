@@ -9363,6 +9363,10 @@ fn class_constant_keyword_name(kind: &TokenKind) -> Option<&'static str> {
     }
 }
 
+fn is_class_constant_name_token(kind: &TokenKind) -> bool {
+    matches!(kind, TokenKind::Identifier(_)) || class_constant_keyword_name(kind).is_some()
+}
+
 fn object_property_keyword_name(kind: &TokenKind) -> Option<&'static str> {
     keyword_identifier_name(kind)
 }
@@ -9832,6 +9836,11 @@ impl Parser {
 
     fn check_class_constant_type_declaration(&self) -> bool {
         match (&self.peek().kind, &self.peek_next().kind) {
+            (kind, TokenKind::Equal | TokenKind::Comma | TokenKind::Semicolon)
+                if is_class_constant_name_token(kind) =>
+            {
+                false
+            }
             (TokenKind::Question | TokenKind::Backslash | TokenKind::LParen, _) => true,
             (TokenKind::Static | TokenKind::Null | TokenKind::True | TokenKind::False, _) => true,
             (

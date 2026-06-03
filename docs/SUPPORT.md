@@ -3475,12 +3475,18 @@
   fatals. `ClassName::CONST`, `self::CONST`, and
   `parent::CONST` resolve declared or inherited constants case-sensitively,
   enforce public/protected/private visibility in the current class context,
-  and return null, bool, int, float, string, or array values. Private parent
+  and return null, bool, int, float, string, or array values. Direct
+  declarations and direct static fetches also accept the current
+  semi-reserved keyword-token name subset, such as `const STATIC = ...;` and
+  `Obj::STATIC`, through the same class-constant metadata path. Private parent
   constants are not inherited through child lookups, protected/private external
   access raises catchable PHP `Error` objects with `Cannot access ... constant`
   messages, `static const` and `abstract const` class declarations emit
   PHP-shaped startup fatals, and redeclaring an inherited class constant with
   reduced visibility emits the PHP startup fatal for the reduced access level.
+  Exact source-spelled reflection and string lookup for names that lex as
+  keyword tokens remains bounded to the parser's current canonical token
+  spelling.
 - static property reads, direct writes, compound assignment, pre/post
   increment/decrement, `isset`, `empty`, `??`, `??=`, `unset(...)`, direct
   references, selected array-offset mutation, and selected array-offset

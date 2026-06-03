@@ -11,6 +11,11 @@ class Obj {
           USE = 'use';
     const TRAIT = 'trait';
     const STATIC = 'static';
+    const ABSTRACT = 'abstract';
+    const FINAL = 'final';
+    const PUBLIC = 'public';
+    const PROTECTED = 'protected';
+    const PRIVATE = 'private';
 }
 
 echo Obj::DECLARE, "\n";
@@ -21,13 +26,18 @@ echo Obj::
     USE, "\n";
 echo Obj::TRAIT, "\n";
 echo Obj::STATIC, "\n";
+echo Obj::ABSTRACT, "\n";
+echo Obj::FINAL, "\n";
+echo Obj::PUBLIC, "\n";
+echo Obj::PROTECTED, "\n";
+echo Obj::PRIVATE, "\n";
 "#,
     )
     .unwrap();
 
     assert_eq!(
         execution.stdout,
-        "declare\nreturn\nfunction\nuse\nuse\ntrait\nstatic\n"
+        "declare\nreturn\nfunction\nuse\nuse\ntrait\nstatic\nabstract\nfinal\npublic\nprotected\nprivate\n"
     );
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);

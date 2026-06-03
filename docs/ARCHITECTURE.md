@@ -4739,16 +4739,22 @@ instance and static method execution. Direct `ClassName::CONST`, `self::CONST`,
 `parent::CONST`, and late-bound `static::CONST` resolve declared or inherited
 class constants through runtime class metadata in the interpreter. Startup
 diagnostics reject invalid `static const` / `abstract const` class declarations
-and reduced-visibility redeclarations before execution. Typed class constants
-carry parsed type metadata for the bounded startup lane: disallowed
+and reduced-visibility redeclarations before execution. The parser
+disambiguates semi-reserved keyword-token names in class-constant declaration
+positions before treating the same token family as possible typed constant
+declaration starts, so direct declarations such as `const STATIC = ...;` and
+matching direct static fetches reach runtime class metadata. Typed class
+constants carry parsed type metadata for the bounded startup lane: disallowed
 `callable`, `void`, and `never` types fatal before execution, and immediate
 literal defaults are checked against scalar/array/null/union declarations for
 the covered slice. Runtime reads enforce protected/private class-constant
 visibility as PHP `Error` surfaces and skip private parent constants during
 inherited lookup. Runtime-dependent typed class-constant expression
 validation, typed class-constant inheritance compatibility, typed interface
-and trait constants, final constants, and broader dynamic class-constant
-string lookup beyond loaded `ClassName::CONST` names remain unsupported.
+and trait constants, final constants, exact source-spelled reflection/string
+lookup for names that lex as keyword tokens, and broader dynamic
+class-constant string lookup beyond loaded `ClassName::CONST` names remain
+unsupported.
 Direct `ClassName::$prop`, `self::$prop`, `parent::$prop`,
 and late-bound `static::$prop` resolve untyped static properties through
 interpreter-owned class-level storage, initialize from the current

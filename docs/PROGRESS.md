@@ -1,5 +1,25 @@
 # Progress Log
 
+## 2026-06-04
+
+Implemented:
+
+- Repaired the latest-published PASS regression in
+  `Zend/tests/grammar/semi_reserved_005.phpt`. Class-constant declaration
+  parsing now treats the existing semi-reserved class-constant name token set
+  followed by `=`, `,`, or `;` as a constant name before considering typed
+  class-constant declaration syntax, so modifier-like names such as
+  `STATIC`, `ABSTRACT`, `FINAL`, `PUBLIC`, `PROTECTED`, and `PRIVATE` reach
+  the same runtime class-constant metadata and direct `::` lookup path as
+  ordinary names. Focused proof covers exact-current pre-patch selected PHPT
+  at `0/1` and post-patch selected PHPT at `1/1`, Rust parser/runtime
+  regression coverage, object-model class-constant coverage, build/fmt/diff
+  checks, production row-name leakage scan, and the latest-published non-date
+  PASS scout at `7/7`. Unsupported edges remain exact source-spelled
+  reflection/string lookup for class-constant names that lex as keyword
+  tokens, names reserved by PHP as non-semi-reserved tokens, references/COW,
+  and native lowering.
+
 ## 2026-06-03
 
 Implemented:
