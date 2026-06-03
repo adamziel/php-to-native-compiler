@@ -110891,6 +110891,13 @@ struct UnionTypePart {
     kind: UnionTypePartKind,
 }
 
+#[derive(Debug, Clone)]
+struct DnfUnionArm {
+    keys: Vec<String>,
+    display: String,
+    is_intersection: bool,
+}
+
 fn collect_static_parameter_type_startup_diagnostics(
     diagnostics: &mut MagicMethodStartupDiagnostics,
     program: &Program,
@@ -111395,8 +111402,9 @@ fn union_redundant_type_message(
         return None;
     }
 
-    let parts: Vec<UnionTypePart> = text
-        .split('|')
+    let union_parts = split_type_decl_top_level(text, '|');
+    let parts: Vec<UnionTypePart> = union_parts
+        .iter()
         .map(|part| union_type_part(part, scope))
         .collect();
 
@@ -111440,6 +111448,10 @@ fn union_redundant_type_message(
         }
     }
 
+    if let Some(message) = dnf_union_redundant_type_message(&union_parts, scope) {
+        return Some(message);
+    }
+
     let mut seen: Vec<&UnionTypePart> = Vec::new();
     for part in &parts {
         if seen.iter().any(|seen_part| seen_part.key == part.key) {
@@ -111451,6 +111463,74 @@ fn union_redundant_type_message(
         seen.push(part);
     }
     None
+}
+
+fn dnf_union_redundant_type_message(
+    union_parts: &[&str],
+    scope: TypeDeclarationScope<'_>,
+) -> Option<String> {
+    let arms: Vec<DnfUnionArm> = union_parts
+        .iter()
+        .map(|part| dnf_union_arm(part, scope))
+        .collect();
+
+    for (index, arm) in arms.iter().enumerate() {
+        for seen in &arms[..index] {
+            if arm.keys == seen.keys && (arm.is_intersection || seen.is_intersection) {
+                return Some(format!(
+                    "Type {} is redundant with type {}",
+                    arm.display, seen.display
+                ));
+            }
+            if dnf_arm_is_strict_superset(arm, seen) {
+                return Some(format!(
+                    "Type {} is redundant as it is more restrictive than type {}",
+                    arm.display, seen.display
+                ));
+            }
+            if dnf_arm_is_strict_superset(seen, arm) {
+                return Some(format!(
+                    "Type {} is redundant as it is more restrictive than type {}",
+                    seen.display, arm.display
+                ));
+            }
+        }
+    }
+
+    None
+}
+
+fn dnf_union_arm(part: &str, scope: TypeDeclarationScope<'_>) -> DnfUnionArm {
+    let text = strip_wrapping_type_parens(part.trim());
+    let members = split_type_decl_top_level(text, '&');
+    let is_intersection = members.len() > 1;
+    let mut display_parts = Vec::new();
+    let mut keys = Vec::new();
+
+    for member in members {
+        let type_part = union_type_part(member, scope);
+        display_parts.push(type_part.display);
+        keys.push(type_part.key);
+    }
+
+    keys.sort();
+    keys.dedup();
+
+    DnfUnionArm {
+        keys,
+        display: display_parts.join("&"),
+        is_intersection,
+    }
+}
+
+fn dnf_arm_is_strict_superset(candidate: &DnfUnionArm, subset: &DnfUnionArm) -> bool {
+    candidate.keys.len() > subset.keys.len()
+        && subset.keys.iter().all(|key| {
+            candidate
+                .keys
+                .iter()
+                .any(|candidate_key| candidate_key == key)
+        })
 }
 
 fn union_iterable_expanded_object_redundancy_display(parts: &[UnionTypePart]) -> String {
@@ -111872,11 +111952,12 @@ fn invalid_intersection_type_message(type_decl: &TypeDecl) -> Option<String> {
     if !type_decl.text.contains('&') {
         return None;
     }
-    type_decl
-        .text
-        .split('&')
+    let text = type_decl.text.trim();
+    split_type_decl_top_level(text, '&')
+        .into_iter()
         .find_map(invalid_intersection_type_display)
         .map(|display| format!("Type {display} cannot be part of an intersection type"))
+        .or_else(|| intersection_duplicate_type_message(text))
 }
 
 fn invalid_intersection_type_display(part: &str) -> Option<&'static str> {
@@ -111901,6 +111982,35 @@ fn invalid_intersection_type_display(part: &str) -> Option<&'static str> {
         "void" => Some("void"),
         _ => None,
     }
+}
+
+fn intersection_duplicate_type_message(type_decl: &str) -> Option<String> {
+    let text = strip_wrapping_type_parens(type_decl.trim());
+    if split_type_decl_top_level(text, '|').len() > 1 {
+        return None;
+    }
+    let parts = split_type_decl_top_level(text, '&');
+    if parts.len() <= 1 {
+        return None;
+    }
+
+    let no_scope = TypeDeclarationScope {
+        class_name: None,
+        parent_name: None,
+    };
+    let mut seen = Vec::new();
+    for part in parts {
+        let type_part = union_type_part(part, no_scope);
+        if type_part.kind != UnionTypePartKind::ClassLike {
+            continue;
+        }
+        if seen.iter().any(|key| key == &type_part.key) {
+            return Some(format!("Duplicate type {} is redundant", type_part.display));
+        }
+        seen.push(type_part.key);
+    }
+
+    None
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
