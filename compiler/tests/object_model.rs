@@ -7892,6 +7892,106 @@ try {
 }
 
 #[test]
+fn reflection_constructors_report_php_shaped_catchable_diagnostics() {
+    let execution = run_source(
+        r#"<?php
+class TestClass {
+    public function method($x) {}
+}
+
+try {
+    new ReflectionClass();
+} catch (TypeError $e) {
+    echo "class-arity|", $e->getMessage(), "\n";
+}
+
+set_error_handler(function ($errno, $message) {
+    echo "deprecated|", $message, "\n";
+    return true;
+}, E_DEPRECATED);
+try {
+    new ReflectionClass(null);
+} catch (ReflectionException $e) {
+    echo "class-null|", $e->getMessage(), "\n";
+}
+restore_error_handler();
+
+try {
+    new ReflectionClass(true);
+} catch (ReflectionException $e) {
+    echo "class-bool|", $e->getMessage(), "\n";
+}
+
+try {
+    new ReflectionClass([]);
+} catch (TypeError $e) {
+    echo "class-array|", $e->getMessage(), "\n";
+}
+
+try {
+    new ReflectionFunction([]);
+} catch (TypeError $e) {
+    echo "function-array|", $e->getMessage(), "\n";
+}
+
+try {
+    new ReflectionFunction("missing_function");
+} catch (ReflectionException $e) {
+    echo "function-missing|", $e->getMessage(), "\n";
+}
+
+try {
+    new ReflectionProperty();
+} catch (TypeError $e) {
+    echo "property-arity|", $e->getMessage(), "\n";
+}
+
+try {
+    new ReflectionProperty("MissingClass", "prop");
+} catch (ReflectionException $e) {
+    echo "property-class|", $e->getMessage(), "\n";
+}
+
+try {
+    new ReflectionProperty(5, "prop");
+} catch (ReflectionException $e) {
+    echo "property-scalar|", $e->getMessage(), "\n";
+}
+
+try {
+    new ReflectionParameter(array(TestClass::class, "method"), "missing");
+} catch (ReflectionException $e) {
+    echo "parameter-name|", $e->getMessage(), "\n";
+}
+
+try {
+    new ReflectionParameter(array(TestClass::class, "method"), -1);
+} catch (ValueError $e) {
+    echo "parameter-index|", $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "class-arity|ReflectionClass::__construct() expects exactly 1 argument, 0 given\n\
+deprecated|ReflectionClass::__construct(): Passing null to parameter #1 ($objectOrClass) of type object|string is deprecated\n\
+class-null|Class \"\" does not exist\n\
+class-bool|Class \"1\" does not exist\n\
+class-array|ReflectionClass::__construct(): Argument #1 ($objectOrClass) must be of type object|string, array given\n\
+function-array|ReflectionFunction::__construct(): Argument #1 ($function) must be of type Closure|string, array given\n\
+function-missing|Function missing_function() does not exist\n\
+property-arity|ReflectionProperty::__construct() expects exactly 2 arguments, 0 given\n\
+property-class|Class \"MissingClass\" does not exist\n\
+property-scalar|Class \"5\" does not exist\n\
+parameter-name|The parameter specified by its name could not be found\n\
+parameter-index|ReflectionParameter::__construct(): Argument #2 ($param) must be greater than or equal to 0\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reflection_method_and_parameter_report_bounded_compound_type_metadata() {
     let execution = run_source(
         r#"<?php

@@ -46979,17 +46979,36 @@ impl Interpreter {
         scope: &mut SymbolTable,
     ) -> CompileResult<Value> {
         if args.len() != 1 {
-            return Err(runtime_error(
+            return Err(reflection_constructor_exact_argument_count_error(
+                "ReflectionClass",
+                1,
+                args.len(),
                 span,
-                RuntimeError::arity_mismatch(
-                    "ReflectionClass::__construct()",
-                    ArityExpectation::Exactly(1),
-                    args.len(),
-                ),
             ));
         }
 
-        let target = self.evaluate(&args[0], scope)?;
+        let mut target = self.evaluate(&args[0], scope)?;
+        if matches!(target, Value::Null) {
+            self.emit_display_diagnostic(
+                "Deprecated",
+                PHP_E_DEPRECATED,
+                "ReflectionClass::__construct(): Passing null to parameter #1 ($objectOrClass) of type object|string is deprecated",
+                span,
+            )?;
+            target = Value::String(String::new());
+        }
+        if matches!(target, Value::Array(_)) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "ReflectionClass::__construct()",
+                    format!(
+                        "Argument #1 ($objectOrClass) must be of type object|string, {} given",
+                        php_type_error_given(&target)
+                    ),
+                ),
+            ));
+        }
         let state = self.resolve_reflection_class_target(&target, span)?;
         self.create_reflection_class_object(state, span)
     }
@@ -47183,69 +47202,10 @@ impl Interpreter {
                 })
             }
             Value::Closure(closure) => self.reflection_closure_class_state(closure.id(), span),
-            Value::String(name) => {
-                if !self.class_like_exists(name, AutoloadKind::Any) {
-                    self.run_autoload_callbacks(name, AutoloadKind::Any, span)?;
-                }
-                if let Some(class) = self.classes.lookup_class(name) {
-                    let metadata = self.class_source_metadata.get(&class.id());
-                    return Ok(ReflectionClassState {
-                        name: class.name().to_string(),
-                        kind: ReflectionClassKind::Class,
-                        class_id: Some(class.id()),
-                        closure_id: None,
-                        file_name: metadata.and_then(|metadata| metadata.file_name.clone()),
-                        start_line: metadata.map(|metadata| metadata.start_line).unwrap_or(0),
-                        end_line: metadata.map(|metadata| metadata.end_line).unwrap_or(0),
-                        doc_comment: metadata.and_then(|metadata| metadata.doc_comment.clone()),
-                        attributes: metadata
-                            .map(|metadata| metadata.attributes.clone())
-                            .unwrap_or_else(|| core_class_attributes_for_reflection(class.name())),
-                    });
-                }
-                if let Some(interface) = self.interface_lookup.get(&name.to_ascii_lowercase()) {
-                    let metadata = self
-                        .interface_source_metadata
-                        .get(&interface.name.to_ascii_lowercase());
-                    return Ok(ReflectionClassState {
-                        name: interface.name.clone(),
-                        kind: ReflectionClassKind::Interface,
-                        class_id: None,
-                        closure_id: None,
-                        file_name: metadata.and_then(|metadata| metadata.file_name.clone()),
-                        start_line: metadata.map(|metadata| metadata.start_line).unwrap_or(0),
-                        end_line: metadata.map(|metadata| metadata.end_line).unwrap_or(0),
-                        doc_comment: metadata.and_then(|metadata| metadata.doc_comment.clone()),
-                        attributes: metadata
-                            .map(|metadata| metadata.attributes.clone())
-                            .unwrap_or_default(),
-                    });
-                }
-                if let Some(trait_decl) = self.trait_lookup.get(&name.to_ascii_lowercase()) {
-                    let metadata = self
-                        .trait_source_metadata
-                        .get(&trait_decl.name.to_ascii_lowercase());
-                    return Ok(ReflectionClassState {
-                        name: trait_decl.name.clone(),
-                        kind: ReflectionClassKind::Trait,
-                        class_id: None,
-                        closure_id: None,
-                        file_name: metadata.and_then(|metadata| metadata.file_name.clone()),
-                        start_line: metadata.map(|metadata| metadata.start_line).unwrap_or(0),
-                        end_line: metadata.map(|metadata| metadata.end_line).unwrap_or(0),
-                        doc_comment: metadata.and_then(|metadata| metadata.doc_comment.clone()),
-                        attributes: metadata
-                            .map(|metadata| metadata.attributes.clone())
-                            .unwrap_or_default(),
-                    });
-                }
-                Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_object_instantiation(
-                        "ReflectionClass",
-                        format!("target {name} must name a declared class, interface, or trait"),
-                    ),
-                ))
+            Value::String(name) => self.resolve_reflection_class_named_target(name, span),
+            Value::Null | Value::Bool(_) | Value::Int(_) | Value::Float(_) => {
+                let name = target.echo_string();
+                self.resolve_reflection_class_named_target(&name, span)
             }
             other => Err(runtime_error(
                 span,
@@ -47260,6 +47220,72 @@ impl Interpreter {
         }
     }
 
+    fn resolve_reflection_class_named_target(
+        &mut self,
+        name: &str,
+        span: Span,
+    ) -> CompileResult<ReflectionClassState> {
+        if !self.class_like_exists(name, AutoloadKind::Any) {
+            self.run_autoload_callbacks(name, AutoloadKind::Any, span)?;
+        }
+        if let Some(class) = self.classes.lookup_class(name) {
+            let metadata = self.class_source_metadata.get(&class.id());
+            return Ok(ReflectionClassState {
+                name: class.name().to_string(),
+                kind: ReflectionClassKind::Class,
+                class_id: Some(class.id()),
+                closure_id: None,
+                file_name: metadata.and_then(|metadata| metadata.file_name.clone()),
+                start_line: metadata.map(|metadata| metadata.start_line).unwrap_or(0),
+                end_line: metadata.map(|metadata| metadata.end_line).unwrap_or(0),
+                doc_comment: metadata.and_then(|metadata| metadata.doc_comment.clone()),
+                attributes: metadata
+                    .map(|metadata| metadata.attributes.clone())
+                    .unwrap_or_else(|| core_class_attributes_for_reflection(class.name())),
+            });
+        }
+        if let Some(interface) = self.interface_lookup.get(&name.to_ascii_lowercase()) {
+            let metadata = self
+                .interface_source_metadata
+                .get(&interface.name.to_ascii_lowercase());
+            return Ok(ReflectionClassState {
+                name: interface.name.clone(),
+                kind: ReflectionClassKind::Interface,
+                class_id: None,
+                closure_id: None,
+                file_name: metadata.and_then(|metadata| metadata.file_name.clone()),
+                start_line: metadata.map(|metadata| metadata.start_line).unwrap_or(0),
+                end_line: metadata.map(|metadata| metadata.end_line).unwrap_or(0),
+                doc_comment: metadata.and_then(|metadata| metadata.doc_comment.clone()),
+                attributes: metadata
+                    .map(|metadata| metadata.attributes.clone())
+                    .unwrap_or_default(),
+            });
+        }
+        if let Some(trait_decl) = self.trait_lookup.get(&name.to_ascii_lowercase()) {
+            let metadata = self
+                .trait_source_metadata
+                .get(&trait_decl.name.to_ascii_lowercase());
+            return Ok(ReflectionClassState {
+                name: trait_decl.name.clone(),
+                kind: ReflectionClassKind::Trait,
+                class_id: None,
+                closure_id: None,
+                file_name: metadata.and_then(|metadata| metadata.file_name.clone()),
+                start_line: metadata.map(|metadata| metadata.start_line).unwrap_or(0),
+                end_line: metadata.map(|metadata| metadata.end_line).unwrap_or(0),
+                doc_comment: metadata.and_then(|metadata| metadata.doc_comment.clone()),
+                attributes: metadata
+                    .map(|metadata| metadata.attributes.clone())
+                    .unwrap_or_default(),
+            });
+        }
+        Err(reflection_exception_error(
+            span,
+            format!("Class \"{name}\" does not exist"),
+        ))
+    }
+
     fn instantiate_reflection_function(
         &mut self,
         args: &[Expr],
@@ -47267,13 +47293,11 @@ impl Interpreter {
         scope: &mut SymbolTable,
     ) -> CompileResult<Value> {
         if args.len() != 1 {
-            return Err(runtime_error(
+            return Err(reflection_constructor_exact_argument_count_error(
+                "ReflectionFunction",
+                1,
+                args.len(),
                 span,
-                RuntimeError::arity_mismatch(
-                    "ReflectionFunction::__construct()",
-                    ArityExpectation::Exactly(1),
-                    args.len(),
-                ),
             ));
         }
 
@@ -47305,11 +47329,11 @@ impl Interpreter {
             }
             return Err(runtime_error(
                 span,
-                RuntimeError::unsupported_object_instantiation(
-                    "ReflectionFunction",
+                RuntimeError::unsupported_call(
+                    "ReflectionFunction::__construct()",
                     format!(
-                        "target must be function string or closure in the current subset, got {}",
-                        target.type_name()
+                        "Argument #1 ($function) must be of type Closure|string, {} given",
+                        php_type_error_given(target)
                     ),
                 ),
             ));
@@ -47336,13 +47360,7 @@ impl Interpreter {
                 })
             }
             None => reflection_internal_function_state(name).ok_or_else(|| {
-                runtime_error(
-                    span,
-                    RuntimeError::unsupported_object_instantiation(
-                        "ReflectionFunction",
-                        format!("function {name} is not declared in the current subset"),
-                    ),
-                )
+                reflection_exception_error(span, format!("Function {name}() does not exist"))
             }),
         }
     }
@@ -47836,7 +47854,6 @@ impl Interpreter {
         span: Span,
     ) -> CompileResult<ReflectionParameterState> {
         let params = reflection_declaring_params(&declaring);
-        let declaring_name = reflection_declaring_name(&declaring);
         let position = match target {
             Value::Int(index) if *index >= 0 => usize::try_from(*index).map_err(|_| {
                 runtime_error(
@@ -47850,9 +47867,9 @@ impl Interpreter {
             Value::Int(_) => {
                 return Err(runtime_error(
                     span,
-                    RuntimeError::unsupported_object_instantiation(
-                        "ReflectionParameter",
-                        "integer parameter index must be non-negative in the current subset",
+                    RuntimeError::unsupported_call(
+                        "ReflectionParameter::__construct()",
+                        "ReflectionParameter::__construct(): Argument #2 ($param) must be greater than or equal to 0",
                     ),
                 ));
             }
@@ -47860,12 +47877,9 @@ impl Interpreter {
                 .iter()
                 .position(|param| param.name == *name)
                 .ok_or_else(|| {
-                    runtime_error(
+                    reflection_exception_error(
                         span,
-                        RuntimeError::unsupported_object_instantiation(
-                            "ReflectionParameter",
-                            format!("parameter {name} is not declared on {declaring_name}"),
-                        ),
+                        "The parameter specified by its name could not be found",
                     )
                 })?,
             other => {
@@ -47882,12 +47896,9 @@ impl Interpreter {
             }
         };
         let parameter = params.get(position).cloned().ok_or_else(|| {
-            runtime_error(
+            reflection_exception_error(
                 span,
-                RuntimeError::unsupported_object_instantiation(
-                    "ReflectionParameter",
-                    format!("parameter index {position} is not declared on {declaring_name}"),
-                ),
+                "The parameter specified by its offset could not be found",
             )
         })?;
         Ok(ReflectionParameterState {
@@ -47942,13 +47953,11 @@ impl Interpreter {
         scope: &mut SymbolTable,
     ) -> CompileResult<Value> {
         if args.len() != 2 {
-            return Err(runtime_error(
+            return Err(reflection_constructor_exact_argument_count_error(
+                "ReflectionProperty",
+                2,
+                args.len(),
                 span,
-                RuntimeError::arity_mismatch(
-                    "ReflectionProperty::__construct()",
-                    ArityExpectation::Exactly(2),
-                    args.len(),
-                ),
             ));
         }
 
@@ -118102,15 +118111,6 @@ fn reflection_declaring_params(
     }
 }
 
-fn reflection_declaring_name(declaring: &ReflectionParameterDeclaring) -> String {
-    match declaring {
-        ReflectionParameterDeclaring::Function(function) => format!("{}()", function.name),
-        ReflectionParameterDeclaring::Method(method) => {
-            format!("{}::{}()", method.declaring_class_name, method.name)
-        }
-    }
-}
-
 fn reflection_named_type_to_string(state: &ReflectionNamedTypeState) -> String {
     if state.allows_null
         && !state.name.eq_ignore_ascii_case("mixed")
@@ -122310,9 +122310,12 @@ fn reflection_constructor_argument_count_error_message(error: &Diagnostic) -> Op
         .split_once(": ")
         .map(|(_, message)| message)?;
     for (class_name, expected) in [
+        ("ReflectionClass", 1usize),
         ("ReflectionExtension", 1usize),
+        ("ReflectionFunction", 1usize),
         ("ReflectionZendExtension", 1usize),
         ("ReflectionParameter", 2usize),
+        ("ReflectionProperty", 2usize),
     ] {
         let prefix = format!("{class_name}::__construct() expects exactly {expected} argument");
         if message.starts_with(&prefix) && message.ends_with(" given") {
@@ -122605,6 +122608,10 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
             "Argument #1 ($name) must not be empty"
             | "\"samesite\" option must be \"Strict\", \"Lax\", \"None\", or \"\"",
         ) => Some(format!("{function}: {message}")),
+        (
+            "ReflectionParameter::__construct()",
+            "ReflectionParameter::__construct(): Argument #2 ($param) must be greater than or equal to 0",
+        ) => Some(message.to_string()),
         (
             "array_combine()",
             "Argument #1 ($keys) and argument #2 ($values) must have the same number of elements",
