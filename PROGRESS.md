@@ -1,6 +1,6 @@
 # PHP Native Compiler PHPT Progress
 
-Updated: 2026-06-03 14:24 CEST
+Updated: 2026-06-03 23:31 CEST
 
 Primary/public branch: `origin/master`
 Latest accepted public-score source:
@@ -19,16 +19,37 @@ denominators that exclude BORKED rows are not public progress.
 Current public score: **6628 / 20294 pinned runnable PHPTs = 32.66%**.
 
 Latest pushed source checkpoint:
-`062ebad1347120671eeca098e2a32ba3d7f5b7a1 fix: preserve object property introspection`
+`16559023bfba39e75b0d880fca0dccf0ce48ae29 fix: reflect static property writes`
 
 The accepted source checkpoint chain through `64d95b6d` has been pushed to
 `origin/master` and is now reflected in the public score above. The current
 score gate converted 10 score-relevant post-`f9927a95` source commits into a
 public PHPT movement of `6498 -> 6628` passed pinned rows, a net gain of `130`
-public PHPT passes, with zero latest-published PASS regressions. The newer
-`062ebad1` object-property introspection source checkpoint is pushed after the
-accepted score source and awaits the next full pinned gate before it can move
-the public metric.
+public PHPT passes, with zero latest-published PASS regressions.
+
+Unpublished source progress since the accepted public score source:
+
+- Current source head is `16559023bfba39e75b0d880fca0dccf0ce48ae29`
+  (`fix: reflect static property writes`), pushed to `origin/master`.
+- There are `46` commits after the accepted public-score source; `45` are
+  score-relevant, touching `35` score-relevant paths.
+- Integrated focused selected-PHPT proof since the latest accepted public gate
+  totals `240` selected rows across `45` integrated artifacts. These are local
+  source/staging facts, not a public score update.
+- The newest static reflection source packet moved selected PHPT
+  `0/5 -> 5/5` for
+  `ReflectionClass_getStaticPropertyValue_002.phpt`,
+  `ReflectionClass_setStaticPropertyValue_001.phpt`,
+  `ReflectionClass_setStaticPropertyValue_002.phpt`,
+  `ReflectionClass_setStaticPropertyValue_003.phpt`, and
+  `ReflectionProperty_typed_static.phpt`.
+- The latest completed full gate, on source `6617ba26`, measured a comparable
+  `6824 / 20294 = 33.63%`, but publication is blocked because that gate had
+  one latest-published PASS regression:
+  `php-src/ext/date/tests/date_diff.phpt`.
+- Disk headroom has been restored above the full-gate floor. The next public
+  score update requires a fresh pinned full PHPT gate on the current source
+  with zero latest-published PASS regressions.
 
 Accepted public gate: checkpoint `64d95b6d` completed the pinned full PHPT
 gate with `6628 / 20294 = 32.66%` and zero latest-published PASS regressions
