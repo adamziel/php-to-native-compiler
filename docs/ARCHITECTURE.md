@@ -349,10 +349,16 @@ traits: constructors and destructors reject any return declaration, selected
 magic methods require `void`, `bool`, `string`, `array` / nullable-array, or
 object-compatible `object`, class-name, `self`, `static`, union, or
 intersection declarations for `__set_state()` exactly as PHP requires for the
-covered rows. Typed by-reference parameters, callable/iterable pseudo-types,
-broad `self`/`parent`/`static` behavior outside that `__set_state()` slice,
-exact multi-error ordering, exact `TypeError` behavior, `strict_types`, and
-native lowering remain separate contracts.
+covered rows. By-value `callable` parameter and return declarations share the
+runtime callable validator for the current string callback, public
+array-callable method, and closure value subset, and signature compatibility
+treats `Closure` as a subtype of `callable`. Declared functions that fall off
+the end with a non-void return type now report the PHP-shaped `none returned`
+TypeError before nullable coercion can accept `null`. Typed by-reference
+parameters, `iterable` pseudo-types, broad `self`/`parent`/`static` behavior
+outside that `__set_state()` slice, exact multi-error ordering, exact
+`TypeError` behavior, `strict_types`, and native lowering remain separate
+contracts.
 
 Non-direct holder expressions use the same identity model after evaluating the
 holder once into a temporary object root. The interpreter snapshots public
@@ -3303,6 +3309,9 @@ and source line; output held only inside active output buffers does not. The
 interpreter-side `print_r()` array formatter traverses cloned slot values so
 reference-backed leaves created by supported by-reference foreach paths remain
 readable without exposing direct borrows from reference cells. Direct
+top-level closure `var_dump()` uses the interpreter's closure reflection and
+binding tables to render name/file/line metadata, captured static values, and
+bound `$this` for the current closure subset. Direct
 variable, direct array-offset, direct object-property, and direct
 object-property array-offset filename/line output arguments are written with
 `""`/`0` before output starts and the stamped file/line after it starts.
@@ -4571,7 +4580,9 @@ request-local `ReflectionNamedType` object for a single parsed named type, or a
 request-local `ReflectionUnionType`/`ReflectionIntersectionType` object for
 bounded union and pure intersection parameter types, and stores the copied
 type names, nullable flags, builtin flags, and `__toString()` rendering in the
-interpreter. Untyped parameters return `null`. It does not expose files, line
+interpreter. Deprecated `ReflectionParameter::isCallable()` emits the PHP
+8.0 deprecation and reports whether the current parsed parameter type contains
+`callable`. Untyped parameters return `null`. It does not expose files, line
 numbers, doc comments, extension/internal metadata beyond the named bounded
 internal-function slice, invocation-time reference binding, full callable-object
 constructor targets, deprecated `getClass()` behavior, DNF type objects,

@@ -192,6 +192,14 @@ try {
     echo $e->getMessage(), "\n";
 }
 
+function missing_nullable_callable(): ?callable {
+}
+try {
+    missing_nullable_callable();
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+
 function wrong_array(): array {
     return 1;
 }
@@ -218,7 +226,7 @@ try {
 
     assert_eq!(
         execution.stdout,
-        "missing_array(): Return value must be of type array, none returned\nwrong_array(): Return value must be of type array, int returned\nactual_return_type::make(): Return value must be of type expected_return_type, actual_return_type returned"
+        "missing_array(): Return value must be of type array, none returned\nmissing_nullable_callable(): Return value must be of type ?callable, none returned\nwrong_array(): Return value must be of type array, int returned\nactual_return_type::make(): Return value must be of type expected_return_type, actual_return_type returned"
     );
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);
@@ -555,6 +563,90 @@ echo $reflection->invoke("7");
 }
 
 #[test]
+fn callable_type_metadata_accepts_current_callable_values() {
+    let execution = run_source(
+        r#"<?php
+class Handler {
+    public static function handle() {}
+}
+
+function takes(callable $cb): string {
+    return is_callable($cb) ? "yes" : "no";
+}
+
+function gives(): callable {
+    return function () {};
+}
+
+function maybe(?callable $cb = null): string {
+    return $cb === null ? "null" : "callable";
+}
+
+function bad_callable(): callable {
+    return 1;
+}
+
+echo takes("strlen"), "|", takes(function () {}), "|", takes(["Handler", "handle"]), "|", takes(gives()), "|", maybe(), "\n";
+try {
+    takes(["Handler", "missing"]);
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    bad_callable();
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert!(execution.stdout.starts_with("yes|yes|yes|yes|null\n"));
+    assert!(execution
+        .stdout
+        .contains("takes(): Argument #1 ($cb) must be of type callable, array given"));
+    assert!(execution
+        .stdout
+        .contains("bad_callable(): Return value must be of type callable, int returned"));
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn closure_var_dump_reports_source_captures_and_bound_this() {
+    let execution = run_source_with_source_file(
+        r#"<?php
+class Box {
+    public function make(): callable {
+        $test = "one";
+        return function () use ($test) {
+            return $this;
+        };
+    }
+}
+
+var_dump((new Box())->make());
+"#,
+        "/tmp/closure-var-dump.php".to_string(),
+    )
+    .unwrap();
+
+    assert!(execution.stdout.contains("object(Closure)#"));
+    assert!(execution.stdout.contains(" (5) {\n"));
+    assert!(execution
+        .stdout
+        .contains("\"{closure:/tmp/closure-var-dump.php:5}\""));
+    assert!(execution
+        .stdout
+        .contains("string(25) \"/tmp/closure-var-dump.php\""));
+    assert!(execution.stdout.contains("  [\"line\"]=>\n  int(5)\n"));
+    assert!(execution.stdout.contains(
+        "  [\"static\"]=>\n  array(1) {\n    [\"test\"]=>\n    string(3) \"one\"\n  }\n"
+    ));
+    assert!(execution.stdout.contains("  [\"this\"]=>\n  object(Box)#"));
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn method_and_closure_type_metadata_share_call_frame_enforcement() {
     let execution = run_source(
         r#"<?php
@@ -643,7 +735,7 @@ echo needs_number([]);
     ));
     assert!(execution
         .stdout
-        .contains("#0 Command line code(2): needs_number()"));
+        .contains("#0 Command line code(2): needs_number(Array)"));
 }
 
 #[test]
@@ -899,8 +991,8 @@ echo function_exists("intersection_param"), "\n";
 }
 
 #[test]
-fn unsupported_function_type_metadata_still_rejects_invocation() {
-    let error = runtime_error(
+fn callable_function_type_metadata_rejects_non_callable_invocation() {
+    let execution = fatal_execution(
         r#"<?php
 function label(callable $value): string {
     return $value;
@@ -909,12 +1001,10 @@ echo label("Ada");
 "#,
     );
 
-    assert_eq!(error.line, 5);
-    assert_eq!(error.column, 6);
-    assert_eq!(
-        error.message,
-        "unsupported call label(): parameter and return type enforcement is not implemented"
-    );
+    assert!(execution
+        .stdout
+        .contains("label(): Argument #1 ($value) must be of type callable, string given"));
+    assert!(execution.stdout.contains(": label('Ada')"));
 }
 
 #[test]
@@ -9333,7 +9423,7 @@ echo $fn();
 }
 
 #[test]
-fn static_anonymous_closure_is_not_callable_in_current_runtime_subset() {
+fn static_anonymous_closure_is_callable_in_current_runtime_subset() {
     let execution = run_source(
         r#"<?php
 $fn = static function () {
@@ -9344,7 +9434,7 @@ echo is_callable($fn) ? "callable" : "not-callable";
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "not-callable");
+    assert_eq!(execution.stdout, "callable");
     assert_eq!(execution.exit_code, 0);
 }
 

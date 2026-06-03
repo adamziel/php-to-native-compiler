@@ -4,6 +4,34 @@
 
 Implemented:
 
+- Added a bounded by-value `callable` type diagnostics lane on the interpreter
+  path. User-function parameter and return declarations now accept current
+  callable values for string callbacks, supported public array-callable method
+  shapes, and closures; nullable callable returns that fall through report
+  PHP-shaped `none returned` TypeErrors; `Closure` is exposed as core
+  metadata and participates as a subtype of `callable` for signature variance;
+  deprecated `ReflectionParameter::isCallable()` emits the PHP 8.0 deprecation
+  and reports callable metadata; `is_callable()` treats closure values as
+  callable; top-level closure `var_dump()` renders name/file/line, captured
+  statics, and bound `$this`; and uncaught user-function argument TypeError
+  traces preserve captured argument summaries such as `Array`. Focused proof
+  covers exact-current pre-patch selected PHPT at `0/8` and post-patch
+  selected PHPT at `8/8` for
+  `Zend/tests/type_declarations/callable/callable_001.phpt`,
+  `Zend/tests/type_declarations/callable/callable_002.phpt`,
+  `Zend/tests/type_declarations/callable/callable_003.phpt`,
+  `Zend/tests/type_declarations/callable/callable_variance_closure.phpt`,
+  `Zend/tests/return_types/011.phpt`,
+  `Zend/tests/return_types/012.phpt`,
+  `Zend/tests/return_types/013.phpt`, and
+  `Zend/tests/typehints/or_null.phpt`; Rust callable/reflection/var_dump/
+  return-type/runtime metadata guards, build/fmt/diff checks, and pinned
+  wrapper proof. Unsupported edges remain by-reference callable declarations,
+  invokable-object callable declarations, callable typed properties, nested
+  closure `var_dump()` and exact closure recursion/reference display,
+  namespace/autoload/callable-object parity, references/COW, and native
+  lowering.
+
 - Repaired the latest-published PASS regressions in
   `tests/classes/type_hinting_005a.phpt` and
   `tests/classes/type_hinting_005c.phpt`. Inherited user-method parameter

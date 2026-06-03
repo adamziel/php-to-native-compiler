@@ -139,7 +139,7 @@ echo $call("local_name") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "1111111000\n1");
+    assert_eq!(execution.stdout, "1111111001\n1");
     assert_eq!(execution.exit_code, 0);
 }
 

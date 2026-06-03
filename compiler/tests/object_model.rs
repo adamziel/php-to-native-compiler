@@ -89,6 +89,7 @@ const CORE_CLASS_NAMES: &[&str] = &[
     "Reflection",
     "Deprecated",
     "Random\\IntervalBoundary",
+    "Closure",
     "Generator",
 ];
 const CORE_INTERFACE_NAMES: &[&str] = &[
@@ -7709,6 +7710,39 @@ line("direct", new ReflectionParameter(array(new Plugin(), "boot"), "count"), ""
     assert_eq!(
         execution.stdout,
         "hook|ReflectionNamedType|string|0011\ncount|ReflectionNamedType|int|1111\nplugin|ReflectionNamedType|Plugin|1101\nitems|ReflectionNamedType|array|1111\nraw|null|1\ndirect|ReflectionNamedType|int|1111"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reflection_parameter_is_callable_reports_deprecated_callable_metadata() {
+    let execution = run_source(
+        r#"<?php
+set_error_handler(function ($errno, $message) {
+    echo "deprecated:$message\n";
+    return true;
+});
+
+function reflects_callable(callable $cb, ?callable $maybe = null, string $name = "") {}
+
+function yn($value) {
+    return $value ? "1" : "0";
+}
+
+$params = (new ReflectionFunction("reflects_callable"))->getParameters();
+foreach ($params as $param) {
+    $isCallable = yn($param->isCallable());
+    echo $param->getName(), "|", $isCallable, "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "deprecated:Method ReflectionParameter::isCallable() is deprecated since 8.0, use ReflectionParameter::getType() instead\ncb|1\n\
+deprecated:Method ReflectionParameter::isCallable() is deprecated since 8.0, use ReflectionParameter::getType() instead\nmaybe|1\n\
+deprecated:Method ReflectionParameter::isCallable() is deprecated since 8.0, use ReflectionParameter::getType() instead\nname|0\n"
     );
     assert_eq!(execution.exit_code, 0);
 }

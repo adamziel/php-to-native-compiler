@@ -32632,6 +32632,7 @@ impl PhpClassTable {
             "isPassedByReference",
             "canBePassedByValue",
             "isVariadic",
+            "isCallable",
             "hasType",
             "getType",
             "allowsNull",
@@ -33769,6 +33770,9 @@ impl PhpClassTable {
             .expect("declared Random\\IntervalBoundary class id should resolve")
             .add_property(PhpPropertyMetadata::instance("name", Visibility::Public))
             .expect("Random\\IntervalBoundary core metadata should not duplicate properties");
+        classes
+            .declare_class("Closure")
+            .expect("core class table should contain Random\\IntervalBoundary before Closure");
         classes
     }
 
@@ -81885,6 +81889,7 @@ mod tests {
                 "Reflection",
                 "Deprecated",
                 "Random\\IntervalBoundary",
+                "Closure",
             ]
         );
         let mut normalized_class_names = class_names
@@ -82326,6 +82331,7 @@ mod tests {
             vec!["name"]
         );
         assert!(reflection_parameter.method("getDefaultValue").is_some());
+        assert!(reflection_parameter.method("isCallable").is_some());
         assert!(reflection_parameter.method("getType").is_some());
         assert!(reflection_parameter.method("getAttributes").is_some());
 
@@ -82494,6 +82500,12 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec!["name"]
         );
+
+        let closure = classes.lookup_class("closure").unwrap();
+        assert_eq!(closure.name(), "Closure");
+        assert!(closure.parent_id().is_none());
+        assert!(closure.properties().is_empty());
+        assert!(closure.methods().is_empty());
     }
 
     #[test]

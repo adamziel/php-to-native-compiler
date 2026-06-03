@@ -27053,7 +27053,17 @@ impl Interpreter {
         class_context: Option<ClassId>,
     ) -> String {
         if function.name == "{closure}" {
-            return function.name.clone();
+            let source_file = self.source_file.as_deref().unwrap_or("Command line code");
+            let closure_name = format!("{{closure:{source_file}:{}}}", function.span.line);
+            if let Some(object) = this_object {
+                return format!("{}->{closure_name}", object.class_name());
+            }
+            if let Some(class_id) = class_context {
+                if let Some(class) = self.classes.get(class_id) {
+                    return format!("{}::{closure_name}", class.name());
+                }
+            }
+            return closure_name;
         }
 
         if let Some(object) = this_object {
@@ -27113,9 +27123,15 @@ impl Interpreter {
             return;
         }
         let callable = call_argument_type_error_callable(error_message).unwrap_or("{main}");
+        let trace_callable = self
+            .pending_uncaught_call_frames
+            .last()
+            .filter(|frame| pending_frame_matches_call_argument_callable(frame, callable))
+            .map(|frame| format_call_trace_callable_with_args(callable, &frame.args))
+            .unwrap_or_else(|| callable.to_string());
         self.push_uncaught_fatal_separator();
         self.push_unbuffered_stdout_text(&format!(
-            "Fatal error: Uncaught {error_class_name}: {error_message}, called in {file}:{line}\nStack trace:\n#0 {file}({line}): {callable}\n#1 {{main}}\n  thrown in {file} on line {line}"
+            "Fatal error: Uncaught {error_class_name}: {error_message}, called in {file}:{line}\nStack trace:\n#0 {file}({line}): {trace_callable}\n#1 {{main}}\n  thrown in {file} on line {line}"
         ));
     }
 
@@ -59499,6 +59515,22 @@ impl Interpreter {
                 expect_expr_arity("ReflectionParameter::isVariadic", args.len(), 0, span)?;
                 Ok(Value::Bool(state.parameter.is_variadic))
             }
+            "iscallable" => {
+                expect_expr_arity("ReflectionParameter::isCallable", args.len(), 0, span)?;
+                self.emit_display_diagnostic(
+                    "Deprecated",
+                    PHP_E_DEPRECATED,
+                    "Method ReflectionParameter::isCallable() is deprecated since 8.0, use ReflectionParameter::getType() instead",
+                    span,
+                )?;
+                Ok(Value::Bool(
+                    state
+                        .parameter
+                        .type_decl
+                        .as_deref()
+                        .is_some_and(type_decl_contains_callable),
+                ))
+            }
             "hastype" => {
                 expect_expr_arity("ReflectionParameter::hasType", args.len(), 0, span)?;
                 Ok(Value::Bool(state.parameter.type_decl.is_some()))
@@ -67447,6 +67479,7 @@ impl Interpreter {
             }
             Value::Array(array) if syntax_only => is_array_callable_syntax_shape(array),
             Value::Array(array) => self.array_callable_is_callable(array),
+            Value::Closure(_) => true,
             _ => false,
         }
     }
@@ -86804,6 +86837,9 @@ impl Interpreter {
             function.span,
             &callable,
         )?;
+        if type_decl_contains_callable(&type_decl.text) && self.is_callable_value(&value, false) {
+            return Ok(value);
+        }
         let actual_type = Self::php_type_error_actual_name(&value);
         let expected_type = parameter_type_error_type_text(type_decl, param);
         self.emit_float_string_to_int_deprecation_for_type_decl(
@@ -86875,6 +86911,17 @@ impl Interpreter {
                 ))
             };
         }
+        if missing_return {
+            return Err(Diagnostic::new(
+                Phase::Runtime,
+                function.span.line,
+                function.span.column,
+                format!(
+                    "{callable}: Return value must be of type {}, none returned",
+                    type_decl.text
+                ),
+            ));
+        }
         if type_decl_is_exact(type_decl, "mixed") {
             return Ok(value);
         }
@@ -86905,6 +86952,15 @@ impl Interpreter {
         function: &FunctionDecl,
         class_context: Option<ClassId>,
     ) -> String {
+        if function.name == "{closure}" {
+            let callable = function_callable_name(function, self.source_file.as_deref());
+            if let Some(class_id) = class_context {
+                if let Some(class) = self.classes.get(class_id) {
+                    return format!("{}::{callable}", class.name());
+                }
+            }
+            return callable;
+        }
         if let Some(class_id) = class_context {
             if let Some(class) = self.classes.get(class_id) {
                 return format!("{}::{}()", class.name(), function.name);
@@ -86918,6 +86974,15 @@ impl Interpreter {
         function: &FunctionDecl,
         class_context: Option<ClassId>,
     ) -> String {
+        if function.name == "{closure}" {
+            let callable = function_callable_name(function, self.source_file.as_deref());
+            if let Some(class_id) = class_context {
+                if let Some(class) = self.classes.get(class_id) {
+                    return format!("{}::{callable}", class.name());
+                }
+            }
+            return callable;
+        }
         if let Some(class_id) = class_context {
             if let Some(class) = self.classes.get(class_id) {
                 return format!("{}::{}()", class.name(), function.name);
@@ -86954,6 +87019,9 @@ impl Interpreter {
             function.span,
             &callable,
         )?;
+        if type_decl_contains_callable(&type_decl.text) && self.is_callable_value(&value, false) {
+            return Ok(value);
+        }
         self.emit_float_string_to_int_deprecation_for_type_decl(
             &type_decl.text,
             &value,
@@ -93038,6 +93106,9 @@ impl Interpreter {
     }
 
     fn format_var_dump_bytes(&self, value: &Value, span: Span) -> CompileResult<Vec<u8>> {
+        if let Value::Closure(closure) = value {
+            return self.format_closure_var_dump_bytes(closure, 0, span);
+        }
         if let Value::Object(object) = value {
             if self.is_spl_object_storage_object(object) {
                 return self
@@ -93054,6 +93125,97 @@ impl Interpreter {
             self.php_serialize_precision(),
             |id| self.resource_type_label(id),
         )
+    }
+
+    fn format_closure_var_dump_bytes(
+        &self,
+        closure: &PhpClosure,
+        indent: usize,
+        span: Span,
+    ) -> CompileResult<Vec<u8>> {
+        let padding = "  ".repeat(indent);
+        let child_indent = indent + 1;
+        let resource_type = |id| self.resource_type_label(id);
+        let state = self.closure_reflection_functions.get(&closure.id());
+        let file = state
+            .and_then(|state| state.file_name.as_deref())
+            .or(self.source_file.as_deref())
+            .unwrap_or("Command line code");
+        let line = state
+            .map(|state| state.start_line)
+            .or_else(|| {
+                self.closure_functions
+                    .get(&closure.id())
+                    .map(|function| function.span.line)
+            })
+            .unwrap_or(span.line);
+        let name = format!("{{closure:{file}:{line}}}");
+        let mut property_count = 3;
+        if !closure.captures().is_empty() {
+            property_count += 1;
+        }
+        let bound_this = self
+            .closure_bound_contexts
+            .get(&closure.id())
+            .map(|context| context.this_object.clone());
+        if bound_this.is_some() {
+            property_count += 1;
+        }
+
+        let mut output = format!(
+            "{padding}object(Closure)#{} ({property_count}) {{\n",
+            closure.id()
+        );
+        output.push_str(&format!("{padding}  [\"name\"]=>\n"));
+        output.push_str(&format_var_dump_with_indent(
+            &Value::String(name),
+            child_indent,
+            span,
+            self.php_serialize_precision(),
+            &resource_type,
+        )?);
+        output.push_str(&format!("{padding}  [\"file\"]=>\n"));
+        output.push_str(&format_var_dump_with_indent(
+            &Value::String(file.to_string()),
+            child_indent,
+            span,
+            self.php_serialize_precision(),
+            &resource_type,
+        )?);
+        output.push_str(&format!("{padding}  [\"line\"]=>\n"));
+        output.push_str(&format_var_dump_with_indent(
+            &Value::Int(line as i64),
+            child_indent,
+            span,
+            self.php_serialize_precision(),
+            &resource_type,
+        )?);
+        if !closure.captures().is_empty() {
+            let mut captures = PhpArray::new();
+            for capture in closure.captures() {
+                captures.insert(capture.name(), capture.value());
+            }
+            output.push_str(&format!("{padding}  [\"static\"]=>\n"));
+            output.push_str(&format_var_dump_with_indent(
+                &Value::Array(captures),
+                child_indent,
+                span,
+                self.php_serialize_precision(),
+                &resource_type,
+            )?);
+        }
+        if let Some(this_object) = bound_this {
+            output.push_str(&format!("{padding}  [\"this\"]=>\n"));
+            output.push_str(&format_var_dump_with_indent(
+                &Value::Object(this_object),
+                child_indent,
+                span,
+                self.php_serialize_precision(),
+                &resource_type,
+            )?);
+        }
+        output.push_str(&format!("{padding}}}\n"));
+        Ok(output.into_bytes())
     }
 
     fn format_print_r_bytes(&self, value: &Value, span: Span) -> CompileResult<Vec<u8>> {
@@ -109416,6 +109578,10 @@ fn type_decl_contains_name(type_decl: &str, needle: &str) -> bool {
         .any(|part| type_decl_normalized_part(part).eq_ignore_ascii_case(needle))
 }
 
+fn type_decl_contains_callable(type_decl: &str) -> bool {
+    type_decl_contains_name(type_decl, "callable")
+}
+
 fn type_decl_normalized_part(part: &str) -> &str {
     let name = part.trim();
     let name = name.strip_prefix('?').unwrap_or(name);
@@ -118667,6 +118833,12 @@ fn type_name_is_subtype_of_with_context(
         return !normalized_builtin_signature_type(subtype.as_ref()).is_some_and(|ty| ty == "void");
     }
 
+    if normalized_builtin_signature_type(supertype.as_ref()).is_some_and(|ty| ty == "callable") {
+        return normalized_builtin_signature_type(subtype.as_ref())
+            .is_some_and(|ty| ty == "callable")
+            || subtype.eq_ignore_ascii_case("Closure");
+    }
+
     if normalized_builtin_signature_type(subtype.as_ref()).is_some_and(|ty| ty == "never") {
         return true;
     }
@@ -119162,6 +119334,23 @@ fn format_stack_trace_args(args: &[Value]) -> String {
         .map(format_stack_trace_arg)
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+fn pending_frame_matches_call_argument_callable(
+    frame: &PendingUncaughtCallFrame,
+    callable: &str,
+) -> bool {
+    let callable_name = callable.strip_suffix("()").unwrap_or(callable);
+    callable_name == frame.function_name
+        || (frame.function_name == "{closure}" && callable_name.starts_with("{closure:"))
+}
+
+fn format_call_trace_callable_with_args(callable: &str, args: &[Value]) -> String {
+    let args = format_stack_trace_args(args);
+    if let Some(callable) = callable.strip_suffix("()") {
+        return format!("{callable}({args})");
+    }
+    format!("{callable}({args})")
 }
 
 fn format_stack_trace_arg(value: &Value) -> String {
@@ -165616,7 +165805,7 @@ fn type_text_is_runtime_enforceable_for_call(text: &str) -> bool {
         .strip_prefix('\\')
         .unwrap_or(without_nullable)
         .to_ascii_lowercase();
-    !matches!(normalized.as_str(), "callable" | "iterable" | "resource")
+    !matches!(normalized.as_str(), "iterable" | "resource")
 }
 
 fn syntax_only_magic_array_access_type_metadata_is_supported(function: &FunctionDecl) -> bool {

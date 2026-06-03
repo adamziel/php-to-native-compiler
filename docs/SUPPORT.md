@@ -2886,13 +2886,17 @@
   text/order remain unsupported. The scalar subset observes file-scope
   `strict_types=1` for direct user-function and closure calls, rejecting weak
   scalar coercions while still allowing PHP's `int` to `float` widening; weak
-  exact `string` declarations accept supported `__toString()` objects, and
-  closure TypeError/arity messages include bounded file/line callable names.
-  Typed by-reference parameters, `callable`,
-  `iterable`, broad `self` / `parent` / `static` behavior outside the covered
-  `__set_state()` covariance slice, `resource`, strict-types behavior outside
-  the covered scalar call/return subset, throw expressions, broader `never`
-  implicit-return diagnostics, and native lowering remain unsupported.
+  exact `string` declarations accept supported `__toString()` objects, missing
+  declared returns report PHP-shaped `none returned` TypeErrors, and closure
+  TypeError/arity messages include bounded file/line callable names.
+  By-value `callable` declarations are runtime-enforced for current string
+  callbacks, supported public array-callable method shapes, and closures, and
+  `Closure` participates in callable signature variance. Typed by-reference
+  parameters, `iterable`, broad `self` / `parent` / `static` behavior outside
+  the covered `__set_state()` covariance slice, `resource`, strict-types
+  behavior outside the covered scalar/callable call-return subset, throw
+  expressions, broader `never` implicit-return diagnostics, invokable-object
+  callable declarations, and native lowering remain unsupported.
 - recursive user-function calls up to a fixed 64-frame user-function call-depth
   guard
 - `return`
@@ -3849,11 +3853,11 @@
   lane, aliases/reference edge cases, broader object/string magic failure
   parity, exact PHP diagnostics beyond the covered rows, and native lowering
   remain unsupported.
-  `is_callable($value)` supports the current string function-name and
-  static-method callable subset: it returns true for names that resolve to
-  current user functions, documented callable builtins, or a visible
-  `Class::method` static callable under the active method scope, and false for
-  missing names or non-string values.
+  `is_callable($value)` supports closure values plus the current string
+  function-name and static-method callable subset: it returns true for names
+  that resolve to current user functions, documented callable builtins, or a
+  visible `Class::method` static callable under the active method scope, and
+  false for missing names or non-string non-closure values.
   `is_callable($value, $syntax_only)` accepts boolean syntax-only flags; for
   string values, `true` reports callable syntax without resolving the name,
   while `false` uses the current function lookup path. Scalar non-string
@@ -8410,7 +8414,9 @@
   debug properties, encoded `"\0*\0name"` and `"\0Class\0name"` keys render as
   protected/private labels, `null` returns emit the bounded PHP deprecation and
   dump an empty object, and other returns stop with PHP's
-  `__debuginfo() must return an array` fatal. Recursive object dumps,
+  `__debuginfo() must return an array` fatal. Top-level closure `var_dump()`
+  renders the current closure name/file/line metadata plus captured static
+  values and bound `$this` when those are present. Recursive object dumps,
   `print_r()` / `var_export()` `__debugInfo()` participation, exact nullable
   `__debugInfo(): ?array` declaration deprecations, arbitrary non-public magic
   visibility diagnostics, references/COW, and native lowering remain
@@ -9810,9 +9816,10 @@
   scalar/null/non-iterable object values. Direct concrete
   `implements Traversable` is a stable runtime boundary until broader
   built-in engine interface inheritance semantics exist.
-  `is_callable($value)` supports the current string function-name subset: it
-  returns true for names that resolve to current user functions or documented
-  callable builtins, and false for missing names or non-string values.
+  `is_callable($value)` supports closure values and the current string
+  function-name subset: it returns true for closures and for names that
+  resolve to current user functions or documented callable builtins, and false
+  for missing names or non-string non-closure values.
   `is_callable($value, $syntax_only)` accepts boolean syntax-only flags; for
   string values, `true` reports callable syntax without resolving the name,
   while `false` uses the current function lookup path. Syntax-only array
@@ -10731,7 +10738,9 @@
   `isBuiltin()`, and `__toString()` for the current parsed type strings, and
   `ReflectionParameter::allowsNull()` reports untyped, nullable `?T`, `null`
   union member, `mixed`, and typed-default-`null` cases in the current function/method
-  parameter slice. Direct user instantiation of `ReflectionType`,
+  parameter slice. Deprecated `ReflectionParameter::isCallable()` emits the
+  PHP 8.0 deprecation and returns true when the parsed parameter type includes
+  `callable`. Direct user instantiation of `ReflectionType`,
   `ReflectionNamedType`, `ReflectionUnionType`, and
   `ReflectionIntersectionType` is rejected; these objects are only materialized
   by the supported reflection `getType()` and method `getReturnType()` paths.
