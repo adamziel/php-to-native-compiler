@@ -37,8 +37,9 @@ Unpublished source progress since the accepted public score source:
   current score gate uses docs-only checkpoint
   `28662f8a482521f65fcbdc1b415163afbf65efd9`; later progress-page-only commits
   do not change the semantic source under test.
-- There are `6` commits after the accepted public-score source; `2` are
-  score-relevant, touching `5` score-relevant paths.
+- At that score-gate checkpoint there are `6` commits after the accepted
+  public-score source; `2` are score-relevant, touching `5` score-relevant
+  paths.
 - Integrated focused selected-PHPT proof since the latest accepted public gate
   totals `34` selected rows across `2` integrated artifacts. These are local
   source/staging facts, not a public score update.
