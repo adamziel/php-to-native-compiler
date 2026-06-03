@@ -4,6 +4,28 @@
 
 Implemented:
 
+- Added a bounded intersection type diagnostics lane on the interpreter path.
+  Runtime parameter and typed-property errors now report PHP-shaped runtime
+  object class names instead of the generic `object` type for covered class,
+  interface, union, and pure-intersection declarations. Explicit `= null`
+  defaults on otherwise non-nullable typed parameters are accepted as
+  implicitly nullable on the call path, emit PHP's startup `Deprecated`
+  diagnostic, and render pure-intersection error types as `(A&B)|null`.
+  Caught direct user-function argument `TypeError`s also include the PHP-style
+  call-site suffix. Focused proof covers Rust
+  `object_model::intersection_type_diagnostics_use_php_actual_names_and_implicit_nullable_defaults`,
+  build/fmt/diff checks, and selected public PHPT rows
+  `Zend/tests/type_declarations/intersection_types/assigning_intersection_types.phpt`,
+  `Zend/tests/type_declarations/intersection_types/implicit_nullable_intersection_type.phpt`,
+  `Zend/tests/type_declarations/intersection_types/implicit_nullable_intersection_type_error.phpt`,
+  `Zend/tests/type_declarations/intersection_types/missing_interface_intersection_type.phpt`,
+  `Zend/tests/type_declarations/intersection_types/parameter.phpt`, and
+  `Zend/tests/type_declarations/intersection_types/typed_reference.phpt` at
+  `6/6` PASS. Unsupported edges remain parenthesized DNF types,
+  namespace/import-aware type canonicalization, full strict-types parity,
+  exact PHP error object internals, native lowering, and broad references/COW
+  beyond existing typed-property reference-cell paths.
+
 - Added a bounded `array_walk()` / `array_walk_recursive()` object-input and
   callback-validation lane on the interpreter path. Both helpers now accept
   ordinary object inputs through initialized PHP-mangled property slots,

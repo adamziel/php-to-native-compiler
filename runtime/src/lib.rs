@@ -31458,7 +31458,7 @@ impl PhpReferenceCell {
         let constraints = self.state.borrow().constraints.clone();
         let mut value = value;
         for constraint in constraints {
-            let actual = value.type_name();
+            let actual = php_type_error_actual_name(&value);
             value = coerce_property_value_with_object_type_resolver(
                 &constraint.type_decl,
                 value,
@@ -37674,7 +37674,7 @@ impl PhpObject {
             return Ok(value);
         };
 
-        let actual = value.type_name().to_string();
+        let actual = php_type_error_actual_name(&value);
         coerce_property_value_with_object_type_resolver(
             type_decl,
             value,
@@ -38777,7 +38777,7 @@ fn coerce_property_value_with_object_type_resolver_dyn(
             class_name,
             property_name,
             type_decl,
-            value.type_name(),
+            &php_type_error_actual_name(&value),
         ));
     }
 
@@ -38792,7 +38792,12 @@ fn coerce_property_value_with_object_type_resolver_dyn(
                 object_type_resolver,
             )
             .map_err(|_| {
-                typed_property_type_error(class_name, property_name, type_decl, value.type_name())
+                typed_property_type_error(
+                    class_name,
+                    property_name,
+                    type_decl,
+                    &php_type_error_actual_name(&value),
+                )
             })?;
         }
         return Ok(value);
@@ -38887,11 +38892,20 @@ fn coerce_property_value_with_object_type_resolver_dyn(
             class_name,
             property_name,
             type_decl,
-            value.type_name(),
+            &php_type_error_actual_name(&value),
         ));
     }
 
     Ok(value)
+}
+
+fn php_type_error_actual_name(value: &Value) -> String {
+    match value {
+        Value::Bool(true) => "true".to_string(),
+        Value::Bool(false) => "false".to_string(),
+        Value::Object(object) => object.class_name().to_string(),
+        other => other.type_name().to_string(),
+    }
 }
 
 fn weak_union_part_should_defer_to_string(part: &str, value: &Value) -> bool {

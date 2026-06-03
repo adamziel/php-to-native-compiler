@@ -15591,7 +15591,8 @@ impl Interpreter {
         catches: &[CatchClause],
         scope: &mut SymbolTable,
     ) -> CompileResult<Option<ArrayCopyReturnBodyFlow>> {
-        let Some((error_class_name, error_message)) = catchable_php_error_class_and_message(error)
+        let Some((error_class_name, error_message)) =
+            self.catchable_php_error_class_and_message_with_pending_call_site(error)
         else {
             return Ok(None);
         };
@@ -25715,7 +25716,8 @@ impl Interpreter {
         catches: &[CatchClause],
         scope: &mut SymbolTable,
     ) -> CompileResult<Option<Flow>> {
-        let Some((error_class_name, error_message)) = catchable_php_error_class_and_message(error)
+        let Some((error_class_name, error_message)) =
+            self.catchable_php_error_class_and_message_with_pending_call_site(error)
         else {
             return Ok(None);
         };
@@ -26169,6 +26171,46 @@ impl Interpreter {
 
     fn clear_pending_uncaught_call_frames(&mut self) {
         self.pending_uncaught_call_frames.clear();
+    }
+
+    fn catchable_php_error_class_and_message_with_pending_call_site(
+        &self,
+        error: &Diagnostic,
+    ) -> Option<(&'static str, String)> {
+        let (class_name, message) = catchable_php_error_class_and_message(error)?;
+        Some((
+            class_name,
+            self.append_pending_call_site_to_argument_type_error_message(error, &message),
+        ))
+    }
+
+    fn append_pending_call_site_to_argument_type_error_message(
+        &self,
+        error: &Diagnostic,
+        message: &str,
+    ) -> String {
+        if message.contains(", called in ") {
+            return message.to_string();
+        }
+        let Some(callable) = call_argument_type_error_callable(message) else {
+            return message.to_string();
+        };
+        let Some(frame) = self.pending_uncaught_call_frames.last() else {
+            return message.to_string();
+        };
+        if frame.function_line == frame.call_line {
+            return message.to_string();
+        }
+        let callable = callable.strip_suffix("()").unwrap_or(callable);
+        if callable != frame.function_name {
+            return message.to_string();
+        }
+        let file = self
+            .source_file
+            .clone()
+            .or_else(|| error.file.as_ref().map(|file| file.display().to_string()))
+            .unwrap_or_else(|| "Command line code".to_string());
+        format!("{message}, called in {file} on line {}", frame.call_line)
     }
 
     fn record_pending_uncaught_call_frame(
@@ -68731,11 +68773,12 @@ impl Interpreter {
         )
     }
 
-    fn php_type_error_actual_name(value: &Value) -> &'static str {
+    fn php_type_error_actual_name(value: &Value) -> String {
         match value {
-            Value::Bool(true) => "true",
-            Value::Bool(false) => "false",
-            other => other.type_name(),
+            Value::Bool(true) => "true".to_string(),
+            Value::Bool(false) => "false".to_string(),
+            Value::Object(object) => object.class_name().to_string(),
+            other => other.type_name().to_string(),
         }
     }
 
@@ -79987,7 +80030,8 @@ impl Interpreter {
         catches: &[CatchClause],
         scope: &mut SymbolTable,
     ) -> CompileResult<Option<ReferenceReturnBodyFlow>> {
-        let Some((error_class_name, error_message)) = catchable_php_error_class_and_message(error)
+        let Some((error_class_name, error_message)) =
+            self.catchable_php_error_class_and_message_with_pending_call_site(error)
         else {
             return Ok(None);
         };
@@ -84716,7 +84760,11 @@ impl Interpreter {
         if type_decl_is_exact(type_decl, "mixed") {
             return Ok(value);
         }
-        let actual_type = value.type_name();
+        if matches!(value, Value::Null) && parameter_accepts_implicit_null(param) {
+            return Ok(value);
+        }
+        let actual_type = Self::php_type_error_actual_name(&value);
+        let expected_type = parameter_type_error_type_text(type_decl, param);
         self.emit_float_string_to_int_deprecation_for_type_decl(
             &type_decl.text,
             &value,
@@ -84740,7 +84788,7 @@ impl Interpreter {
                         "Argument #{} (${}) must be of type {}, {actual_type} given",
                         param_index + 1,
                         param.name,
-                        type_decl.text
+                        expected_type
                     ),
                 ),
             )
@@ -105498,6 +105546,7 @@ impl MagicMethodReturnType {
 #[derive(Default)]
 struct MagicMethodStartupDiagnostics {
     warnings: Vec<String>,
+    display_outputs: Vec<String>,
     fatal: Option<String>,
 }
 
@@ -105509,6 +105558,16 @@ impl MagicMethodStartupDiagnostics {
             source_file,
             line,
         ));
+    }
+
+    fn push_deprecated(&mut self, message: String, source_file: Option<&str>, line: usize) {
+        self.display_outputs
+            .push(magic_method_startup_diagnostic_message(
+                "Deprecated",
+                message,
+                source_file,
+                line,
+            ));
     }
 
     fn set_fatal(&mut self, message: String, source_file: Option<&str>, line: usize) {
@@ -105526,20 +105585,39 @@ impl MagicMethodStartupDiagnostics {
 
     fn fatal_execution(&self) -> Option<Execution> {
         let fatal = self.fatal.as_ref()?;
+        let mut stdout = self.display_outputs.join("\n");
+        if !stdout.is_empty() {
+            stdout.push('\n');
+        }
         let mut stderr = self.warnings.join("\n");
         if !stderr.is_empty() {
             stderr.push('\n');
         }
         stderr.push_str(fatal);
+        let stdout_bytes = stdout.as_bytes().to_vec();
         Some(Execution {
-            stdout: String::new(),
-            stdout_bytes: Vec::new(),
+            stdout,
+            stdout_bytes,
             stderr,
             exit_code: 255,
         })
     }
 
     fn prepend_warnings_to_execution(self, execution: &mut Execution) {
+        if !self.display_outputs.is_empty() {
+            let old_stdout = std::mem::take(&mut execution.stdout);
+            let old_stdout_bytes = if execution.stdout_bytes.is_empty() {
+                old_stdout.as_bytes().to_vec()
+            } else {
+                std::mem::take(&mut execution.stdout_bytes)
+            };
+            let mut prefix = self.display_outputs.join("\n");
+            prefix.push('\n');
+            execution.stdout = prefix.clone();
+            execution.stdout.push_str(&old_stdout);
+            execution.stdout_bytes = prefix.as_bytes().to_vec();
+            execution.stdout_bytes.extend_from_slice(&old_stdout_bytes);
+        }
         if self.warnings.is_empty() {
             return;
         }
@@ -105708,6 +105786,14 @@ fn magic_method_startup_diagnostics(
     }
 
     if !diagnostics.has_fatal() {
+        collect_implicit_nullable_parameter_startup_diagnostics(
+            &mut diagnostics,
+            program,
+            source_file,
+        );
+    }
+
+    if !diagnostics.has_fatal() {
         collect_parameter_default_startup_diagnostics(&mut diagnostics, program, source_file);
     }
 
@@ -105752,6 +105838,80 @@ fn magic_method_startup_diagnostics(
     }
 
     diagnostics
+}
+
+fn collect_implicit_nullable_parameter_startup_diagnostics(
+    diagnostics: &mut MagicMethodStartupDiagnostics,
+    program: &Program,
+    source_file: Option<&str>,
+) {
+    for stmt in &program.statements {
+        match stmt {
+            Stmt::Function(function) if !function.is_nested => {
+                collect_function_implicit_nullable_parameter_startup_diagnostics(
+                    diagnostics,
+                    &function.name,
+                    function,
+                    source_file,
+                );
+            }
+            Stmt::Class(class) if !class.is_nested => {
+                for member in &class.members {
+                    let ClassMember::Method(method) = member else {
+                        continue;
+                    };
+                    collect_function_implicit_nullable_parameter_startup_diagnostics(
+                        diagnostics,
+                        &format!("{}::{}", class.name, method.function.name),
+                        &method.function,
+                        source_file,
+                    );
+                }
+            }
+            Stmt::Interface(interface) => {
+                for method in &interface.methods {
+                    collect_function_implicit_nullable_parameter_startup_diagnostics(
+                        diagnostics,
+                        &format!("{}::{}", interface.name, method.function.name),
+                        &method.function,
+                        source_file,
+                    );
+                }
+            }
+            Stmt::Trait(trait_decl) => {
+                for method in &trait_decl.methods {
+                    collect_function_implicit_nullable_parameter_startup_diagnostics(
+                        diagnostics,
+                        &format!("{}::{}", trait_decl.name, method.function.name),
+                        &method.function,
+                        source_file,
+                    );
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn collect_function_implicit_nullable_parameter_startup_diagnostics(
+    diagnostics: &mut MagicMethodStartupDiagnostics,
+    callable: &str,
+    function: &FunctionDecl,
+    source_file: Option<&str>,
+) {
+    for param in &function.params {
+        if !parameter_has_implicit_nullable_default(param) {
+            continue;
+        }
+        diagnostics.push_deprecated(
+            format!(
+                "{callable}(): Implicitly marking parameter ${} as nullable is deprecated, the explicit nullable type must be used instead",
+                param.name
+            ),
+            source_file,
+            param.span.line,
+        );
+    }
 }
 
 fn collect_class_constant_modifier_startup_diagnostics(
@@ -160777,6 +160937,41 @@ fn optional_type_is(type_text: Option<&str>, expected: &str) -> bool {
 
 fn type_decl_is_exact(decl: &TypeDecl, expected: &str) -> bool {
     decl.text.eq_ignore_ascii_case(expected)
+}
+
+fn parameter_accepts_implicit_null(param: &FunctionParam) -> bool {
+    matches!(param.default, Some(Expr::Null(_))) && param.type_decl.is_some()
+}
+
+fn parameter_has_implicit_nullable_default(param: &FunctionParam) -> bool {
+    let Some(type_decl) = param.type_decl.as_ref() else {
+        return false;
+    };
+    matches!(param.default, Some(Expr::Null(_))) && !type_decl_text_allows_null(&type_decl.text)
+}
+
+fn parameter_type_error_type_text(type_decl: &TypeDecl, param: &FunctionParam) -> String {
+    if !parameter_has_implicit_nullable_default(param) {
+        return type_decl.text.clone();
+    }
+    if type_decl.text.contains('&') && !type_decl.text.contains('|') {
+        return format!("({})|null", type_decl.text);
+    }
+    if !type_decl.text.contains('|') {
+        return format!("?{}", type_decl.text);
+    }
+    format!("{}|null", type_decl.text)
+}
+
+fn type_decl_text_allows_null(type_decl: &str) -> bool {
+    let text = type_decl.trim();
+    if text.starts_with('?') {
+        return true;
+    }
+    text.split('|').any(|part| {
+        let name = type_decl_normalized_part(part).to_ascii_lowercase();
+        matches!(name.as_str(), "null" | "mixed")
+    })
 }
 
 fn ensure_supported_reference_return_function_metadata(

@@ -10213,7 +10213,7 @@ $alias = $other;
     assert_eq!(error.column, 1);
     assert_eq!(
         error.message,
-        "Cannot assign object to reference held by property Registry::$instance of type HookLateAlias"
+        "Cannot assign OtherHook to reference held by property Registry::$instance of type HookLateAlias"
     );
 }
 
@@ -10284,7 +10284,7 @@ $registry->instance = new OtherHook();
     assert_eq!(write_error.column, 1);
     assert_eq!(
         write_error.message,
-        "Cannot assign object to property Registry::$instance of type Hook"
+        "Cannot assign OtherHook to property Registry::$instance of type Hook"
     );
 
     let static_write_error = runtime_error(
@@ -10299,7 +10299,7 @@ Registry::$shared = new OtherHook();
     assert_eq!(static_write_error.column, 1);
     assert_eq!(
         static_write_error.message,
-        "Cannot assign object to property Registry::$shared of type Hook"
+        "Cannot assign OtherHook to property Registry::$shared of type Hook"
     );
 }
 
@@ -10342,7 +10342,7 @@ $registry->instance = new OtherHook();
     assert_eq!(write_error.column, 1);
     assert_eq!(
         write_error.message,
-        "Cannot assign object to property Registry::$instance of type HookContract"
+        "Cannot assign OtherHook to property Registry::$instance of type HookContract"
     );
 
     let static_write_error = runtime_error(
@@ -10357,7 +10357,7 @@ Registry::$shared = new OtherHook();
     assert_eq!(static_write_error.column, 1);
     assert_eq!(
         static_write_error.message,
-        "Cannot assign object to property Registry::$shared of type HookContract"
+        "Cannot assign OtherHook to property Registry::$shared of type HookContract"
     );
 }
 
@@ -10411,7 +10411,7 @@ $registry->instance = new OtherHook();
     assert_eq!(write_error.column, 1);
     assert_eq!(
         write_error.message,
-        "Cannot assign object to property Registry::$instance of type HookAlias"
+        "Cannot assign OtherHook to property Registry::$instance of type HookAlias"
     );
 
     let static_write_error = runtime_error(
@@ -10427,7 +10427,7 @@ Registry::$shared = new OtherHook();
     assert_eq!(static_write_error.column, 1);
     assert_eq!(
         static_write_error.message,
-        "Cannot assign object to property Registry::$shared of type HookContractAlias"
+        "Cannot assign OtherHook to property Registry::$shared of type HookContractAlias"
     );
 }
 
@@ -10484,7 +10484,7 @@ $registry->instance = $other;
     assert_eq!(write_error.column, 1);
     assert_eq!(
         write_error.message,
-        "Cannot assign object to property Registry::$instance of type HookLateAlias"
+        "Cannot assign OtherHook to property Registry::$instance of type HookLateAlias"
     );
 }
 
@@ -10552,7 +10552,7 @@ $registry->union = new Bad();
     assert_eq!(union_error.column, 1);
     assert_eq!(
         union_error.message,
-        "Cannot assign object to property Registry::$union of type HookContract|OtherHook"
+        "Cannot assign Bad to property Registry::$union of type HookContract|OtherHook"
     );
 
     let intersection_error = runtime_error(
@@ -10569,8 +10569,48 @@ $registry->intersection = new Hook();
     assert_eq!(intersection_error.column, 1);
     assert_eq!(
         intersection_error.message,
-        "Cannot assign object to property Registry::$intersection of type HookContract&TaggedContract"
+        "Cannot assign Hook to property Registry::$intersection of type HookContract&TaggedContract"
     );
+}
+
+#[test]
+fn intersection_type_diagnostics_use_php_actual_names_and_implicit_nullable_defaults() {
+    let source_file = "Zend/tests/type_declarations/intersection_types/diagnostics.php";
+    let execution = run_source_with_source_file(
+        r#"<?php
+interface X {}
+interface Y {}
+interface Z {}
+class A implements X {}
+class B implements X, Y {}
+class C implements X, Y, Z {}
+class Box { public X&Y $both; public X&Z $xz; }
+function accepts(X&Y $value = null) { var_dump($value); }
+accepts(null);
+try { accepts(new A()); } catch (TypeError $e) { echo $e->getMessage(), "\n"; }
+$box = new Box();
+try { $box->both = new A(); } catch (TypeError $e) { echo $e->getMessage(), "\n"; }
+$ref = new C();
+$box->both =& $ref;
+$box->xz =& $ref;
+try { $ref = new B(); } catch (TypeError $e) { echo $e->getMessage(), "\n"; }
+"#,
+        source_file,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "Deprecated: accepts(): Implicitly marking parameter $value as nullable is deprecated, the explicit nullable type must be used instead in Zend/tests/type_declarations/intersection_types/diagnostics.php on line 9\n",
+            "NULL\n",
+            "accepts(): Argument #1 ($value) must be of type (X&Y)|null, A given, called in Zend/tests/type_declarations/intersection_types/diagnostics.php on line 11\n",
+            "Cannot assign A to property Box::$both of type X&Y\n",
+            "Cannot assign B to reference held by property Box::$xz of type X&Z\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

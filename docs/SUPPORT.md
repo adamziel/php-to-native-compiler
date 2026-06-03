@@ -2831,8 +2831,14 @@
   `int` parameters and returns. Weak `int|string` unions defer
   non-representable real floats to string semantics and emit PHP's `NAN`
   string-coercion warning when applicable. Return-type mismatches in this
-  subset report PHP-shaped `TypeError`
-  messages. `void` return types reject value returns at declaration startup;
+  subset report PHP-shaped `TypeError` messages. Parameter type mismatches in
+  this subset report PHP-shaped `TypeError` messages with runtime object class
+  names for object arguments and, for caught direct user-function calls, the
+  PHP-style call-site suffix. Parameters declared with a
+  non-nullable type and an explicit `= null` default are accepted as
+  implicitly nullable on the interpreter call path, emit PHP's startup
+  `Deprecated` diagnostic, and render pure-intersection error types as
+  `(A&B)|null`. `void` return types reject value returns at declaration startup;
   `never` return types are accepted for bodies that throw before returning and
   reject explicit value returns at declaration startup. Class, interface, and
   trait startup diagnostics enforce bounded magic-method return declarations:
@@ -7453,12 +7459,15 @@
   union property types, and bounded pure intersection property types,
   including objects whose runtime class extends the declared property type and
   objects whose runtime class or inherited parent class implements a declared
-  user-interface property type. Runtime object relationship metadata records
-  active `class_alias()` names for the object's class, ancestors, and
-  implemented declared interfaces at instantiation time. Declared instance and
-  static typed-property writes also consult the current class/interface alias
-  metadata at write time, so aliases registered after an object was
-  instantiated are accepted in the covered simple class/interface type subset;
+  user-interface property type. Incompatible object writes to typed
+  properties, and incompatible writes through covered typed-property reference
+  cells, report the runtime object's class name in the PHP-shaped `TypeError`
+  text instead of the generic `object` type. Runtime object relationship
+  metadata records active `class_alias()` names for the object's class,
+  ancestors, and implemented declared interfaces at instantiation time.
+  Declared instance and static typed-property writes also consult the current
+  class/interface alias metadata at write time, so aliases registered after an
+  object was instantiated are accepted in the covered simple class/interface type subset;
   weak scalar coercions are covered for writes to `int`, `float`, `bool`, and
   `string`, including numeric strings and bool/int/float/string conversions in
   the current scalar value model. Lossy finite real floats and float-shaped
