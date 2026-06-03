@@ -13,6 +13,7 @@ const LLVM_ENUM_REJECTION: &str = "LLVM enum lowering rejects enum declarations 
 const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
 const LLVM_FUNCTION_DECLARATION_REJECTION: &str = "LLVM user-function lowering rejects function declarations and return statements until native function symbol tables, stack-frame layout, default parameter binding, recursion guards, return-value flow, and exact native error behavior exist; phpc run handles current user-function declaration and return behavior";
 const LLVM_GLOBAL_CONSTANT_REJECTION: &str = "LLVM global-constant lowering rejects built-in constant values, runtime-defined constants, bare constant reads, top-level const declarations, define()/constant(), and unsupported defined() forms until native constant tables, source-order definitions, namespace-aware lookup, and exact native error behavior exist; phpc run handles current global constant behavior";
+const LLVM_ARITHMETIC_REJECTION: &str = "LLVM arithmetic lowering rejects unsupported binary arithmetic operators or operands until native PHP numeric coercion, division/modulo zero checks, modulo coercions, references/copy-on-write, and exact native error behavior exist; phpc run handles current arithmetic behavior";
 const LLVM_MATCH_REJECTION: &str = "LLVM match expression lowering rejects match expressions until native strict arm comparison, default/exhaustiveness handling, value evaluation order, references/copy-on-write, and exact native error behavior exist; phpc run handles current match expression behavior";
 const LLVM_NONLOCAL_UNSET_REJECTION: &str = "LLVM native array non-local unset lowering rejects object, dynamic-object, non-direct object, and static property unsets until non-local owner cells, magic __unset dispatch, typed/static property state, references/copy-on-write, and exact diagnostics share one unset owner contract; local variables and native array offset unsets use their shared native lvalue unset contracts";
 const LLVM_OBJECT_INSTANTIATION_REJECTION: &str = "LLVM object-instantiation lowering rejects new expressions and constructor dispatch until native object allocation, object handles, constructor calls, visibility checks, autoload/class lookup, references/copy-on-write, and exact native object-instantiation errors exist; phpc run handles current bounded new behavior";
@@ -452,30 +453,30 @@ fn emit_ir_rejects_match_expression_at_codegen_boundary() {
 }
 
 #[test]
-fn unsupported_exponentiation_syntax_has_stable_parse_errors() {
+fn non_bcmath_exponentiation_has_stable_runtime_boundaries() {
     let cases = [
         (
             "<?php\necho 2 ** 3;\n",
             2,
-            8,
-            "unsupported exponentiation operator: ** and **= are not implemented",
+            6,
+            "unsupported call operator **: non-BcMath\\Number exponentiation is not implemented in the current subset",
         ),
         (
             "<?php\n$value = 2;\n$value **= 3;\n",
             3,
-            8,
-            "unsupported exponentiation operator: ** and **= are not implemented",
+            1,
+            "unsupported call operator **=: non-BcMath\\Number exponentiation assignment is not implemented in the current subset",
         ),
         (
             "<?php\n$value = 2;\necho ($value **= 3);\n",
             3,
-            14,
-            "unsupported exponentiation operator: ** and **= are not implemented",
+            7,
+            "unsupported call operator **=: non-BcMath\\Number exponentiation assignment is not implemented in the current subset",
         ),
     ];
 
     for (source, line, column, message) in cases {
-        let error = parse_error(source);
+        let error = runtime_error(source);
         assert_eq!(error.line, line);
         assert_eq!(error.column, column);
         assert_eq!(error.message, message);
@@ -483,14 +484,11 @@ fn unsupported_exponentiation_syntax_has_stable_parse_errors() {
 }
 
 #[test]
-fn emit_ir_rejects_exponentiation_syntax_at_parse_boundary() {
+fn emit_ir_rejects_non_bcmath_exponentiation_at_codegen_boundary() {
     let error = php_compiler::emit_ir_source("<?php\necho 2 ** 3;\n").unwrap_err();
 
-    assert_eq!(error.phase, Phase::Parse);
-    assert_eq!(
-        error.message,
-        "unsupported exponentiation operator: ** and **= are not implemented"
-    );
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.message, LLVM_ARITHMETIC_REJECTION);
 }
 
 #[test]

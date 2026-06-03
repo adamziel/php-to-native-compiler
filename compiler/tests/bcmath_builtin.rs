@@ -236,6 +236,51 @@ try {
 }
 
 #[test]
+fn bcmath_number_pow_compound_and_incdec_operators_are_generalized() {
+    let execution = run_source(
+        r#"<?php
+$pow = (new BcMath\Number("3")) ** -2;
+echo $pow->value, "|", $pow->scale, "\n";
+$decimalPow = (new BcMath\Number("0.01")) ** new BcMath\Number("-1");
+echo $decimalPow->value, "|", $decimalPow->scale, "\n";
+try {
+    (new BcMath\Number("0")) ** -1;
+} catch (DivisionByZeroError $e) {
+    echo $e->getMessage(), "\n";
+}
+$num = new BcMath\Number("10");
+$old = $num;
+$num **= 3;
+echo $num, "|", $old, "\n";
+$num += "5";
+$num /= new BcMath\Number("30");
+echo $num->value, "|", $num->scale, "\n";
+$step = new BcMath\Number("0.01");
+$step++;
+echo $step->value, "|", $step->scale, "\n";
+$step--;
+echo $step->value, "|", $step->scale, "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "0.1111111111|10\n",
+            "100.00|2\n",
+            "Negative power of zero\n",
+            "1000|10\n",
+            "33.5|1\n",
+            "1.01|2\n",
+            "0.01|2\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn bcmath_number_readonly_properties_can_be_read_by_reference_as_values() {
     let execution = run_source(
         r#"<?php

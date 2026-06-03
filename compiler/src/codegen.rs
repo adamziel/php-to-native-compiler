@@ -2717,6 +2717,7 @@ fn native_value_binary_op_tag(op: BinaryOp) -> Option<&'static str> {
         | BinaryOp::Le
         | BinaryOp::Gt
         | BinaryOp::Ge
+        | BinaryOp::Pow
         | BinaryOp::Spaceship
         | BinaryOp::NullCoalesce => None,
     }
@@ -2746,6 +2747,7 @@ fn native_value_binary_op_tag_value(op: BinaryOp) -> Option<u8> {
         | BinaryOp::Le
         | BinaryOp::Gt
         | BinaryOp::Ge
+        | BinaryOp::Pow
         | BinaryOp::Spaceship
         | BinaryOp::NullCoalesce => None,
     }
@@ -2801,6 +2803,9 @@ fn native_array_lvalue_compound_binary_op_tag(op: CompoundAssignOp) -> &'static 
         CompoundAssignOp::Mul => "PHPC_NATIVE_VALUE_BINARY_MUL",
         CompoundAssignOp::Div => "PHPC_NATIVE_VALUE_BINARY_DIV",
         CompoundAssignOp::Mod => "PHPC_NATIVE_VALUE_BINARY_MOD",
+        CompoundAssignOp::Pow => {
+            unreachable!("native exponentiation compound assignment is rejected before lowering")
+        }
         CompoundAssignOp::Concat => "PHPC_NATIVE_VALUE_BINARY_CONCAT",
         CompoundAssignOp::BitwiseAnd => "PHPC_NATIVE_VALUE_BINARY_BITWISE_AND",
         CompoundAssignOp::BitwiseOr => "PHPC_NATIVE_VALUE_BINARY_BITWISE_OR",
@@ -2817,6 +2822,7 @@ fn compound_assignment_binary_op(op: CompoundAssignOp) -> BinaryOp {
         CompoundAssignOp::Mul => BinaryOp::Mul,
         CompoundAssignOp::Div => BinaryOp::Div,
         CompoundAssignOp::Mod => BinaryOp::Mod,
+        CompoundAssignOp::Pow => BinaryOp::Pow,
         CompoundAssignOp::Concat => BinaryOp::Concat,
         CompoundAssignOp::BitwiseAnd => BinaryOp::BitwiseAnd,
         CompoundAssignOp::BitwiseOr => BinaryOp::BitwiseOr,
@@ -3087,6 +3093,7 @@ fn native_value_comparison_op_tag(op: BinaryOp) -> Option<&'static str> {
         | BinaryOp::Mul
         | BinaryOp::Div
         | BinaryOp::Mod
+        | BinaryOp::Pow
         | BinaryOp::Concat
         | BinaryOp::NullCoalesce
         | BinaryOp::LogicalAnd
@@ -3116,6 +3123,7 @@ fn native_value_comparison_op_tag_value(op: BinaryOp) -> Option<u8> {
         | BinaryOp::Mul
         | BinaryOp::Div
         | BinaryOp::Mod
+        | BinaryOp::Pow
         | BinaryOp::Concat
         | BinaryOp::NullCoalesce
         | BinaryOp::LogicalAnd
@@ -3142,6 +3150,7 @@ fn native_value_non_strict_comparison_op_tag(op: BinaryOp) -> Option<&'static st
         | BinaryOp::Mul
         | BinaryOp::Div
         | BinaryOp::Mod
+        | BinaryOp::Pow
         | BinaryOp::Concat
         | BinaryOp::NullCoalesce
         | BinaryOp::LogicalAnd
@@ -13834,6 +13843,7 @@ impl LlvmGenerator {
                 self.emit_arithmetic_binary(left, op, right, span)
             }
             BinaryOp::Div => self.emit_division_binary(left, right, span),
+            BinaryOp::Pow => Err(self.unsupported(span, LLVM_ARITHMETIC_REJECTION)),
             BinaryOp::Concat => Err(self.unsupported(span, LLVM_CONCAT_REJECTION)),
             BinaryOp::Eq
             | BinaryOp::Ne
@@ -18394,6 +18404,7 @@ fn backend_binary_primitive_arithmetic_operation(
         BinaryOp::Mul => Some(PhpPrimitiveArithmeticOperation::Multiply),
         BinaryOp::Div
         | BinaryOp::Mod
+        | BinaryOp::Pow
         | BinaryOp::Concat
         | BinaryOp::Eq
         | BinaryOp::Ne
@@ -38423,6 +38434,9 @@ impl CGenerator {
             ForAction::CompoundAssign {
                 target, op, expr, ..
             } => {
+                if matches!(*op, CompoundAssignOp::Pow) {
+                    return Err(self.unsupported(span, ASSEMBLY_ARITHMETIC_REJECTION));
+                }
                 if let Some(operation) = native_assignment_target_call_operation(target) {
                     return Err(self.unsupported_call_operation(operation));
                 }
@@ -42098,6 +42112,9 @@ impl CGenerator {
                 expr,
                 span,
             } => {
+                if matches!(*op, CompoundAssignOp::Pow) {
+                    return Err(self.unsupported(*span, ASSEMBLY_ARITHMETIC_REJECTION));
+                }
                 if let Some(operation) = native_assignment_target_call_operation(target) {
                     return Err(self.unsupported_call_operation(operation));
                 }
@@ -43437,6 +43454,9 @@ impl CGenerator {
                 expr,
                 span,
             } => {
+                if matches!(*op, CompoundAssignOp::Pow) {
+                    return Err(self.unsupported(*span, ASSEMBLY_ARITHMETIC_REJECTION));
+                }
                 if let Some(operation) = native_assignment_target_call_operation(target) {
                     return Err(self.unsupported_call_operation(operation));
                 }
@@ -57739,6 +57759,7 @@ impl CGenerator {
                 self.emit_arithmetic_binary(left, op, right, span)
             }
             BinaryOp::Div => Err(self.unsupported(span, ASSEMBLY_DIVISION_REJECTION)),
+            BinaryOp::Pow => Err(self.unsupported(span, ASSEMBLY_ARITHMETIC_REJECTION)),
             BinaryOp::Concat => Err(self.unsupported(span, ASSEMBLY_CONCAT_REJECTION)),
             BinaryOp::Eq
             | BinaryOp::Ne
@@ -60835,6 +60856,9 @@ impl CGenerator {
                 expr,
                 span,
             } => {
+                if matches!(*op, CompoundAssignOp::Pow) {
+                    return Err(self.unsupported(*span, ASSEMBLY_ARITHMETIC_REJECTION));
+                }
                 if let Some(value) = self
                     .materialize_direct_variable_compound_assignment_result_for_target(
                         target,

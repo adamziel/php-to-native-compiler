@@ -4,6 +4,29 @@
 
 Implemented:
 
+- Added a bounded `BcMath\Number` operator lane on the interpreter path.
+  Exponentiation syntax now parses into AST nodes, non-BcMath `**`/`**=`
+  remains an explicit runtime/codegen boundary, and `BcMath\Number` binary
+  `+`, `-`, `*`, `/`, `%`, and `**` plus matching compound assignments dispatch
+  through the shared decimal model when either operand is a `BcMath\Number`.
+  Pre/post `++` and `--` on `BcMath\Number` add or subtract decimal one, and
+  unrooted BcMath operator temporaries release handles only after the live-root
+  scan proves no current scope/runtime state still owns them. Focused proof
+  covers accepted and blocked full-gate evidence marking the selected rows
+  failed, exact-current pre-patch selected PHPT at `0/16`, Rust
+  `bcmath_builtin`, Rust `syntax_boundaries` exponentiation, unsupported
+  syntax snapshot coverage, build/fmt/diff checks, and selected public PHPT
+  rows `ext/bcmath/tests/number/operators/add_int.phpt`, `add_string.phpt`,
+  `add_object.phpt`, `sub_int.phpt`, `sub_string.phpt`, `sub_object.phpt`,
+  `mul_int.phpt`, `mul_string.phpt`, `mul_object.phpt`, `pow_int.phpt`,
+  `pow_string.phpt`, `pow_object.phpt`, `pow_div_by_zero.phpt`,
+  `compound_assignment.phpt`, `increment.phpt`, and `decrement.phpt` at
+  `16/16` PASS after the patch. Unsupported edges remain generic non-BcMath
+  exponentiation semantics, exact invalid-operand diagnostic parity beyond the
+  current int/string/`BcMath\Number` operands, unbounded scales/exponents,
+  broad BcMath rounding policy, full object lifetime/destructor timing,
+  references/COW, and native lowering.
+
 - Repaired the latest-published PASS regression in
   `Zend/tests/gh20177.phpt`. `get_object_vars()` from a base-class method now
   keeps the initialized base-private property visible when a descendant

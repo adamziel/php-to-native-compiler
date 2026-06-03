@@ -6234,9 +6234,6 @@ impl Parser {
             if self.check_compound_assignment_operator() {
                 break;
             }
-            if self.check(|kind| matches!(kind, TokenKind::StarStar)) {
-                return Err(self.error_at(self.peek().span, unsupported_exponentiation_message()));
-            }
             let op = if self.match_token(|kind| matches!(kind, TokenKind::Star)) {
                 BinaryOp::Mul
             } else if self.match_token(|kind| matches!(kind, TokenKind::Slash)) {
@@ -6360,7 +6357,26 @@ impl Parser {
             });
         }
 
-        self.parse_postfix()
+        self.parse_exponentiation()
+    }
+
+    fn parse_exponentiation(&mut self) -> CompileResult<Expr> {
+        let expr = self.parse_postfix()?;
+        if self.check_compound_assignment_operator()
+            || !self.match_token(|kind| matches!(kind, TokenKind::StarStar))
+        {
+            return Ok(expr);
+        }
+
+        let right = self.parse_unary()?;
+        let right = self.complete_binary_rhs_assignment_expression(right)?;
+        let span = expr.span();
+        Ok(Expr::Binary {
+            left: Box::new(expr),
+            op: BinaryOp::Pow,
+            right: Box::new(right),
+            span,
+        })
     }
 
     fn current_cast_kind(&self) -> CompileResult<Option<CastKind>> {
@@ -8988,6 +9004,7 @@ impl Parser {
             TokenKind::Plus
                 | TokenKind::Minus
                 | TokenKind::Star
+                | TokenKind::StarStar
                 | TokenKind::Slash
                 | TokenKind::Percent
                 | TokenKind::Dot
@@ -9015,6 +9032,7 @@ impl Parser {
             TokenKind::Plus => CompoundAssignOp::Add,
             TokenKind::Minus => CompoundAssignOp::Sub,
             TokenKind::Star => CompoundAssignOp::Mul,
+            TokenKind::StarStar => CompoundAssignOp::Pow,
             TokenKind::Slash => CompoundAssignOp::Div,
             TokenKind::Percent => CompoundAssignOp::Mod,
             TokenKind::Dot => CompoundAssignOp::Concat,
@@ -9447,10 +9465,6 @@ fn unsupported_null_coalescing_message() -> &'static str {
 
 fn unsupported_nullsafe_object_operator_message() -> &'static str {
     "unsupported nullsafe object operator: ?-> property and method access is not implemented"
-}
-
-fn unsupported_exponentiation_message() -> &'static str {
-    "unsupported exponentiation operator: ** and **= are not implemented"
 }
 
 fn unsupported_null_coalescing_assignment_message() -> &'static str {

@@ -545,6 +545,7 @@ struct Interpreter {
     execution_steps: usize,
     call_depth: usize,
     next_object_id: i64,
+    reusable_object_ids: Vec<i64>,
     allocated_objects: Vec<PhpObject>,
     finalized_objects: HashSet<i64>,
     next_resource_id: i64,
@@ -11704,6 +11705,7 @@ impl Interpreter {
             execution_steps: 0,
             call_depth: 0,
             next_object_id: 1,
+            reusable_object_ids: Vec::new(),
             allocated_objects: Vec::new(),
             finalized_objects: HashSet::new(),
             next_resource_id: PHP_FIRST_USER_RESOURCE_ID,
@@ -28561,7 +28563,7 @@ impl Interpreter {
                         let right = self.evaluate(right, scope)?;
                         (left, right)
                     };
-                self.apply_binary(*op, left, right, *span)
+                self.apply_binary(*op, left, right, *span, scope)
             }
         }
     }
@@ -29555,6 +29557,11 @@ impl Interpreter {
     }
 
     fn allocate_object_id(&mut self) -> i64 {
+        if let Some(object_id) = self.reusable_object_ids.pop() {
+            self.finalized_objects.remove(&object_id);
+            return object_id;
+        }
+
         let object_id = self.next_object_id;
         self.next_object_id = self
             .next_object_id
@@ -29580,6 +29587,23 @@ impl Interpreter {
         &mut self,
         object: &PhpObject,
         scope: &SymbolTable,
+    ) -> CompileResult<()> {
+        self.retire_temporary_object_handle(object, scope, false)
+    }
+
+    fn retire_reusable_unrooted_temporary_object_handle(
+        &mut self,
+        object: &PhpObject,
+        scope: &SymbolTable,
+    ) -> CompileResult<()> {
+        self.retire_temporary_object_handle(object, scope, true)
+    }
+
+    fn retire_temporary_object_handle(
+        &mut self,
+        object: &PhpObject,
+        scope: &SymbolTable,
+        reuse_id: bool,
     ) -> CompileResult<()> {
         let object_id = object.id();
         if self.live_roots_contain_object_id(object_id, scope) {
@@ -29619,12 +29643,32 @@ impl Interpreter {
         self.hash_contexts.remove(&object_id);
         self.uri_rfc3986_empty_port_objects.remove(&object_id);
 
-        if self.next_object_id == object_id.saturating_add(1) {
+        if reuse_id {
+            self.finalized_objects.remove(&object_id);
+            if !self.reusable_object_ids.contains(&object_id) {
+                self.reusable_object_ids.push(object_id);
+            }
+        } else if self.next_object_id == object_id.saturating_add(1) {
             self.next_object_id = object_id;
             self.finalized_objects.remove(&object_id);
         }
 
         Ok(())
+    }
+
+    fn retire_released_bcmath_number_handle(
+        &mut self,
+        value: Value,
+        scope: &SymbolTable,
+    ) -> CompileResult<()> {
+        let Value::Object(object) = value else {
+            return Ok(());
+        };
+        if !object.class_name().eq_ignore_ascii_case("BcMath\\Number") {
+            return Ok(());
+        }
+
+        self.retire_reusable_unrooted_temporary_object_handle(&object, scope)
     }
 
     fn retire_json_encode_temporary_object_arguments(
@@ -37956,6 +38000,11 @@ impl Interpreter {
                     value
                 };
                 let target_is_alias = scope.is_array_offset_alias_name(name);
+                let released_value = if target_is_alias {
+                    None
+                } else {
+                    scope.read_storage_named(name)
+                };
                 let replaces_copied_array_provenance = scope.has_copied_array_provenance_path(name);
                 if replaces_copied_array_provenance {
                     scope.detach_copied_array_provenance_for_root(name);
@@ -38142,6 +38191,9 @@ impl Interpreter {
                     if let Some(source) = assigned_array_copy_source {
                         scope.record_public_object_property_array_copy_source(name, source);
                     }
+                }
+                if let Some(released_value) = released_value {
+                    self.retire_released_bcmath_number_handle(released_value, scope)?;
                 }
                 let array_literal_references_for_value = array_literal_references.clone();
                 for reference in array_literal_references {
@@ -43011,7 +43063,7 @@ impl Interpreter {
     ) -> CompileResult<Value> {
         let (place, left) = self.read_compound_assignment_left(target, span, scope)?;
         let right = self.evaluate(expr, scope)?;
-        let value = self.apply_compound_assignment_op(left, op, right, span)?;
+        let value = self.apply_compound_assignment_op(left, op, right, span, scope)?;
         self.write_compound_assignment_place(place, value.clone(), span, scope)?;
         Ok(value)
     }
@@ -43753,6 +43805,7 @@ impl Interpreter {
         op: CompoundAssignOp,
         right: Value,
         span: Span,
+        scope: &SymbolTable,
     ) -> CompileResult<Value> {
         if matches!(op, CompoundAssignOp::Concat) {
             let mut bytes = self.value_to_echo_bytes(left, span)?;
@@ -43762,12 +43815,35 @@ impl Interpreter {
 
         self.emit_float_string_to_int_compound_deprecations(op, &left, &right, span)?;
 
+        if let Some(binary_op) = Self::compound_assignment_bcmath_binary_op(op) {
+            if let Some(result) =
+                self.apply_bcmath_number_binary_operator(binary_op, &left, &right, span, scope)?
+            {
+                return Ok(result);
+            }
+        }
+
         let value = match op {
             CompoundAssignOp::Add => left.php_add(&right),
             CompoundAssignOp::Sub => left.php_sub(&right),
             CompoundAssignOp::Mul => left.php_mul(&right),
             CompoundAssignOp::Div => left.php_div(&right),
             CompoundAssignOp::Mod => left.php_mod(&right),
+            CompoundAssignOp::Pow => {
+                if let Some(result) = self.apply_bcmath_number_binary_operator(
+                    BinaryOp::Pow,
+                    &left,
+                    &right,
+                    span,
+                    scope,
+                )? {
+                    return Ok(result);
+                }
+                Err(RuntimeError::unsupported_call(
+                    "operator **=",
+                    "non-BcMath\\Number exponentiation assignment is not implemented in the current subset",
+                ))
+            }
             CompoundAssignOp::Concat => {
                 unreachable!("concatenation is handled before runtime helpers")
             }
@@ -43779,6 +43855,18 @@ impl Interpreter {
         };
 
         value.map_err(|error| runtime_error(span, error))
+    }
+
+    fn compound_assignment_bcmath_binary_op(op: CompoundAssignOp) -> Option<BinaryOp> {
+        match op {
+            CompoundAssignOp::Add => Some(BinaryOp::Add),
+            CompoundAssignOp::Sub => Some(BinaryOp::Sub),
+            CompoundAssignOp::Mul => Some(BinaryOp::Mul),
+            CompoundAssignOp::Div => Some(BinaryOp::Div),
+            CompoundAssignOp::Mod => Some(BinaryOp::Mod),
+            CompoundAssignOp::Pow => Some(BinaryOp::Pow),
+            _ => None,
+        }
     }
 
     fn emit_float_string_to_int_compound_deprecations(
@@ -44106,6 +44194,17 @@ impl Interpreter {
                 return Err(increment_decrement_type_error(op, "array", span));
             }
             (Value::Object(object), op) => {
+                if object.class_name().eq_ignore_ascii_case("BcMath\\Number") {
+                    let decimal = self.bcmath_number_object_decimal(&object, span)?;
+                    let one = BcDecimal::one();
+                    let updated = match op {
+                        IncrementDecrementOp::Increment => decimal.add(&one),
+                        IncrementDecrementOp::Decrement => decimal.sub(&one),
+                    };
+                    return self
+                        .bcmath_number_object(updated, None, span)
+                        .map(Value::Object);
+                }
                 return Err(increment_decrement_type_error(
                     op,
                     object.class_name(),
@@ -105366,6 +105465,7 @@ impl Interpreter {
         left: Value,
         right: Value,
         span: Span,
+        scope: &SymbolTable,
     ) -> CompileResult<Value> {
         if matches!(op, BinaryOp::Concat) {
             let mut bytes = self.value_to_echo_bytes(left, span)?;
@@ -105404,6 +105504,12 @@ impl Interpreter {
         }
 
         if let Some(result) =
+            self.apply_bcmath_number_binary_operator(op, &left, &right, span, scope)?
+        {
+            return Ok(result);
+        }
+
+        if let Some(result) =
             self.apply_leading_numeric_string_arithmetic(op, &left, &right, span)?
         {
             return Ok(result);
@@ -105425,6 +105531,10 @@ impl Interpreter {
             BinaryOp::Mul => left.php_mul(&right),
             BinaryOp::Div => left.php_div(&right),
             BinaryOp::Mod => left.php_mod(&right),
+            BinaryOp::Pow => Err(RuntimeError::unsupported_call(
+                "operator **",
+                "non-BcMath\\Number exponentiation is not implemented in the current subset",
+            )),
             BinaryOp::Concat => unreachable!("concatenation is handled before runtime helpers"),
             BinaryOp::Eq => left
                 .php_cmp_checked(&right, Comparison::Eq)
@@ -154691,9 +154801,217 @@ impl Interpreter {
                 )?
             }
             BcNumberBinaryOp::Mod => left.modulo(&right, span, function)?,
+            BcNumberBinaryOp::Pow => {
+                unreachable!("pow BcMath\\Number method uses call_bcmath_number_pow_method")
+            }
         };
         self.bcmath_number_object(result, explicit_scale, span)
             .map(Value::Object)
+    }
+
+    fn apply_bcmath_number_binary_operator(
+        &mut self,
+        op: BinaryOp,
+        left: &Value,
+        right: &Value,
+        span: Span,
+        scope: &SymbolTable,
+    ) -> CompileResult<Option<Value>> {
+        let operation = match op {
+            BinaryOp::Add => BcNumberBinaryOp::Add,
+            BinaryOp::Sub => BcNumberBinaryOp::Sub,
+            BinaryOp::Mul => BcNumberBinaryOp::Mul,
+            BinaryOp::Div => BcNumberBinaryOp::Div,
+            BinaryOp::Mod => BcNumberBinaryOp::Mod,
+            BinaryOp::Pow => BcNumberBinaryOp::Pow,
+            _ => return Ok(None),
+        };
+        if !Self::value_is_bcmath_number(left) && !Self::value_is_bcmath_number(right) {
+            return Ok(None);
+        }
+
+        let left_decimal =
+            self.bcmath_number_decimal_argument("BcMath\\Number operator", 1, "num1", left, span)?;
+        let right_decimal =
+            self.bcmath_number_decimal_argument("BcMath\\Number operator", 2, "num2", right, span)?;
+
+        let result = match operation {
+            BcNumberBinaryOp::Add => left_decimal.add(&right_decimal),
+            BcNumberBinaryOp::Sub => left_decimal.sub(&right_decimal),
+            BcNumberBinaryOp::Mul => left_decimal.mul(&right_decimal),
+            BcNumberBinaryOp::Div => {
+                if right_decimal.is_zero() {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call("BcMath\\Number::div()", "Division by zero"),
+                    ));
+                }
+                Self::bcmath_number_operator_div_result(&left_decimal, &right_decimal, span)?
+            }
+            BcNumberBinaryOp::Mod => {
+                left_decimal.modulo(&right_decimal, span, "BcMath\\Number::mod()")?
+            }
+            BcNumberBinaryOp::Pow => {
+                Self::bcmath_number_operator_pow_result(&left_decimal, &right_decimal, span)?
+            }
+        };
+
+        let object = self.bcmath_number_object(result, None, span)?;
+        self.retire_bcmath_number_operator_operand(left, scope)?;
+        self.retire_bcmath_number_operator_operand(right, scope)?;
+        Ok(Some(Value::Object(object)))
+    }
+
+    fn bcmath_number_operator_div_result(
+        left: &BcDecimal,
+        right: &BcDecimal,
+        span: Span,
+    ) -> CompileResult<BcDecimal> {
+        Self::bcmath_number_operator_div_result_with_min_scale(left, right, left.scale, span)
+    }
+
+    fn bcmath_number_operator_div_result_with_min_scale(
+        left: &BcDecimal,
+        right: &BcDecimal,
+        min_scale: usize,
+        span: Span,
+    ) -> CompileResult<BcDecimal> {
+        let max_scale = min_scale.checked_add(10).ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "BcMath\\Number operator",
+                    "computed division scale overflowed the current subset",
+                ),
+            )
+        })?;
+        if max_scale > 10_000 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "BcMath\\Number operator",
+                    "computed division scale above 10000 is not supported in the current subset",
+                ),
+            ));
+        }
+
+        for scale in min_scale..=max_scale {
+            let candidate = left.div(right, scale, span)?;
+            let product = candidate.mul(right);
+            if product.compare_at_scale(left, product.scale.max(left.scale)) == Ordering::Equal {
+                return Ok(candidate);
+            }
+        }
+
+        left.div(right, max_scale, span)
+    }
+
+    fn bcmath_number_operator_pow_result(
+        base: &BcDecimal,
+        exponent_decimal: &BcDecimal,
+        span: Span,
+    ) -> CompileResult<BcDecimal> {
+        let exponent = bcmath_integral_decimal_to_i64(
+            "BcMath\\Number::pow()",
+            2,
+            "exponent",
+            exponent_decimal,
+            span,
+        )?;
+        if exponent == 0 {
+            return Ok(BcDecimal::one());
+        }
+        if base.is_zero() {
+            if exponent < 0 {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "BcMath\\Number::pow()",
+                        "Negative power of zero",
+                    ),
+                ));
+            }
+            return Ok(BcDecimal::zero());
+        }
+        if base.is_integral_one_abs() {
+            return Ok(
+                BcDecimal::one().with_sign(base.negative && exponent.unsigned_abs() % 2 == 1)
+            );
+        }
+
+        let exponent_abs = exponent.unsigned_abs();
+        if exponent_abs > BCMATH_POW_EXPONENT_LIMIT {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "BcMath\\Number::pow()",
+                    format!(
+                        "absolute exponent above {BCMATH_POW_EXPONENT_LIMIT} is not supported in the current subset"
+                    ),
+                ),
+            ));
+        }
+
+        let powered = base.pow_u64(exponent_abs);
+        if exponent > 0 {
+            Self::bcmath_number_operator_positive_pow_scale(base, exponent_abs, span)?;
+            return Ok(powered);
+        }
+
+        Self::bcmath_number_operator_div_result_with_min_scale(
+            &BcDecimal::one(),
+            &powered,
+            base.scale,
+            span,
+        )
+    }
+
+    fn bcmath_number_operator_positive_pow_scale(
+        base: &BcDecimal,
+        exponent_abs: u64,
+        span: Span,
+    ) -> CompileResult<usize> {
+        let scale = base
+            .scale
+            .checked_mul(exponent_abs as usize)
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "BcMath\\Number::pow()",
+                        "computed scale overflowed the current subset",
+                    ),
+                )
+            })?;
+        if scale > 10_000 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "BcMath\\Number::pow()",
+                    "computed scale above 10000 is not supported in the current subset",
+                ),
+            ));
+        }
+        Ok(scale)
+    }
+
+    fn value_is_bcmath_number(value: &Value) -> bool {
+        matches!(value, Value::Object(object) if object.class_name().eq_ignore_ascii_case("BcMath\\Number"))
+    }
+
+    fn retire_bcmath_number_operator_operand(
+        &mut self,
+        value: &Value,
+        scope: &SymbolTable,
+    ) -> CompileResult<()> {
+        let Value::Object(object) = value else {
+            return Ok(());
+        };
+        if !object.class_name().eq_ignore_ascii_case("BcMath\\Number") {
+            return Ok(());
+        }
+
+        self.retire_reusable_unrooted_temporary_object_handle(object, scope)
     }
 
     fn call_bcmath_number_pow_method(
@@ -161827,6 +162145,7 @@ enum BcNumberBinaryOp {
     Mul,
     Div,
     Mod,
+    Pow,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -2606,6 +2606,16 @@ division semantics, runtime zero checks, and no misleading integer truncation.
 Dynamic, zero, or non-positive
 integer modulo divisors use a modulo-specific codegen rejection so this runtime
 check boundary stays distinct from generic unsupported arithmetic operands.
+The interpreter has a bounded BcMath `Number` arithmetic lane before ordinary
+scalar arithmetic helpers. When either operand is a `BcMath\Number`, binary
+`+`, `-`, `*`, `/`, `%`, and `**` plus matching compound assignments coerce the
+current int/string/Number operands through the BcMath decimal parser and
+materialize a fresh `BcMath\Number` result. Pre/post `++` and `--` on a
+`BcMath\Number` add or subtract decimal one while preserving the decimal scale.
+Division and negative powers use bounded scale search for the covered PHPT rows;
+unbounded scales/exponents, exact invalid-operand diagnostic parity, references
+and copy-on-write identity, full object lifetime timing, and native lowering
+remain outside this lane.
 Native lowering accepts string concatenation only when both operands are
 already lowerable strings in the straight-line subset, including ternary
 operands that prove one static string result, folding the result into a

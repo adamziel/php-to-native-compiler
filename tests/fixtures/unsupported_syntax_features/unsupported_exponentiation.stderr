@@ -1,2 +1,1 @@
-parse error at 2:8: unsupported exponentiation operator: ** and **= are not implemented
-
+runtime error at 2:6: unsupported call operator **: non-BcMath\Number exponentiation is not implemented in the current subset

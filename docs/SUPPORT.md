@@ -2427,7 +2427,8 @@
   branches over the documented direct-target subset
 - pre/post increment/decrement over direct variables, direct array/object
   offsets, direct object properties, and supported static properties includes
-  current int, float, null, and string values. String `++` follows PHP's
+  current int, float, null, string, and `BcMath\Number` values. String `++`
+  follows PHP's
   legacy terminal ASCII-alphanumeric run behavior, including numeric-string
   increment when the whole string is numeric; string `--` decrements numeric
   strings and leaves non-numeric strings unchanged. Integer values, including
@@ -6828,10 +6829,21 @@
   object, and resource operands.
   `deg2rad()` and `rad2deg()` use PHP's multiplication/division operation
   order for the covered PHPT precision-sensitive cases. Locale-sensitive
-  parsing, exact warnings for all
-  malformed numeric inputs, exponentiation operator syntax (`**`/`**=`), broad
-  libm/platform parity outside the covered rows, and native lowering remain
-  unsupported.
+  parsing, exact warnings for all malformed numeric inputs, general
+  exponentiation operator semantics outside the bounded BcMath `Number` lane,
+  broad libm/platform parity outside the covered rows, and native lowering
+  remain unsupported.
+  BcMath decimal helpers are interpreter-only. The supported runtime surface
+  includes the current `bcadd`/`bcsub`/`bcmul`/`bcdiv`/`bcmod`/`bcpow` helper
+  subset, current `BcMath\Number` methods, and binary `+`, `-`, `*`, `/`, `%`,
+  and `**` plus the matching compound assignments when either operand is a
+  `BcMath\Number`. The operator lane accepts the current int, string, and
+  `BcMath\Number` operands, returns a new `BcMath\Number`, preserves the covered
+  value/scale behavior for division and positive/negative powers, and supports
+  pre/post `++` and `--` on `BcMath\Number`. Generic non-BcMath
+  exponentiation, exact invalid-operand diagnostic parity beyond the covered
+  scalar/Number operands, unbounded scales/exponents, exact object lifetime
+  timing, references/copy-on-write, and native lowering remain unsupported.
   `extension_loaded($name)` accepts scalar/null string-compatible extension
   names and supported visible `__toString()` objects through a bounded
   PHP-internal string boundary, including PHP-shaped null-to-string
@@ -7077,8 +7089,11 @@
 - bounded `goto target;` statements and `target:` labels in the current
   statement runtime; labels in the active statement list can be reached from
   nested statements that propagate the jump outward
-- explicit parse diagnostics for unsupported exponentiation syntax: `**` and
-  `**=`
+- exponentiation syntax `**` and `**=` parses for the current expression and
+  compound-assignment lanes. Runtime execution is limited to the documented
+  BcMath `Number` operator subset; other operands fail at the current
+  non-BcMath exponentiation runtime boundary, and native lowering rejects the
+  operator.
 - explicit parse diagnostics for unsupported unparenthesized nested ternary
   expressions
 - explicit parse diagnostics for unsupported assignment-expression forms
@@ -11645,9 +11660,10 @@
   direct/nested array-offset operands, direct/dynamic object-property operands,
   nested object-property array-offset operands, and static-property diagnostic operands,
   comma-separated `for` header expression lists,
-  expression-form `do ... while`, expression-form `switch`, malformed
-  alternate switch bodies, and exponentiation syntax `**`/`**=` are rejected
-  with stable parse diagnostics; append-offset unset and complex mixed
+  expression-form `do ... while`, expression-form `switch`, and malformed
+  alternate switch bodies are rejected with stable parse diagnostics.
+  Exponentiation syntax `**`/`**=` parses but is limited to the documented
+  BcMath `Number` runtime lane; append-offset unset and complex mixed
   object/property/ArrayAccess unset operands are not implemented.
   Complex assignment lvalues outside the documented direct-variable,
   direct/nested array-offset, append/append-at-depth, direct object-property,
