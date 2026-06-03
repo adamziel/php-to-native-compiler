@@ -832,9 +832,6 @@ impl Parser {
 
         let type_decl = if self.check_unsupported_property_type_declaration() {
             let type_decl = self.parse_type_decl(unsupported_property_type_message())?;
-            if type_decl.text.contains('|') && type_decl.text.contains('&') {
-                return Err(self.error_at(type_decl.span, unsupported_dnf_type_message()));
-            }
             Some(type_decl)
         } else {
             None
@@ -1238,9 +1235,6 @@ impl Parser {
 
         let type_decl = if self.check_unsupported_property_type_declaration() {
             let type_decl = self.parse_type_decl(unsupported_property_type_message())?;
-            if type_decl.text.contains('|') && type_decl.text.contains('&') {
-                return Err(self.error_at(type_decl.span, unsupported_dnf_type_message()));
-            }
             Some(type_decl)
         } else {
             None
@@ -1532,9 +1526,6 @@ impl Parser {
                 return Err(self.error_at(hook_span, unsupported_property_hook_message()));
             }
             let type_decl = self.parse_type_decl(unsupported_property_type_message())?;
-            if type_decl.text.contains('|') && type_decl.text.contains('&') {
-                return Err(self.error_at(type_decl.span, unsupported_dnf_type_message()));
-            }
             let mut properties = Vec::new();
             loop {
                 if doc_comment.is_none() {

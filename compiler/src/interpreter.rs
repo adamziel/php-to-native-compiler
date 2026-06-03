@@ -1256,9 +1256,15 @@ struct ReflectionNamedTypeState {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+enum ReflectionTypeState {
+    Named(ReflectionNamedTypeState),
+    Compound(ReflectionCompoundTypeState),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct ReflectionCompoundTypeState {
     kind: ReflectionCompoundTypeKind,
-    types: Vec<ReflectionNamedTypeState>,
+    types: Vec<ReflectionTypeState>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -48593,6 +48599,21 @@ impl Interpreter {
         )))
     }
 
+    fn create_reflection_type_object(
+        &mut self,
+        state: ReflectionTypeState,
+        span: Span,
+    ) -> CompileResult<Value> {
+        match state {
+            ReflectionTypeState::Named(state) => {
+                self.create_reflection_named_type_object(state, span)
+            }
+            ReflectionTypeState::Compound(state) => {
+                self.create_reflection_compound_type_object(state, span)
+            }
+        }
+    }
+
     fn create_reflection_compound_type_object(
         &mut self,
         state: ReflectionCompoundTypeState,
@@ -55035,6 +55056,30 @@ impl Interpreter {
                     })?;
                 return Ok(Some(Value::String(reflection_named_type_to_string(&state))));
             }
+            if object
+                .class_name()
+                .eq_ignore_ascii_case("ReflectionUnionType")
+                || object
+                    .class_name()
+                    .eq_ignore_ascii_case("ReflectionIntersectionType")
+            {
+                let state = self
+                    .reflection_compound_types
+                    .get(&object.id())
+                    .cloned()
+                    .ok_or_else(|| {
+                        runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                format!("{}::__toString()", object.class_name()),
+                                "missing reflection compound type runtime metadata",
+                            ),
+                        )
+                    })?;
+                return Ok(Some(Value::String(reflection_compound_type_to_string(
+                    &state,
+                ))));
+            }
         }
 
         let function = self.method_function(class_id, &class_name, &resolved_method_name, span)?;
@@ -58715,12 +58760,14 @@ impl Interpreter {
                 let Some(type_decl) = state.return_type.as_deref() else {
                     return Ok(Value::Null);
                 };
+                let type_decl =
+                    reflection_type_decl_resolve_self(type_decl, &state.declaring_class_name);
                 if let Some(compound_state) =
-                    reflection_compound_type_state_from_type_decl(type_decl)
+                    reflection_compound_type_state_from_type_decl(&type_decl)
                 {
                     return self.create_reflection_compound_type_object(compound_state, span);
                 }
-                let Some(type_state) = reflection_named_type_state_from_type_decl(type_decl, None)
+                let Some(type_state) = reflection_named_type_state_from_type_decl(&type_decl, None)
                 else {
                     return Ok(Value::Null);
                 };
@@ -60080,13 +60127,24 @@ impl Interpreter {
                 let Some(type_decl) = state.parameter.type_decl.as_deref() else {
                     return Ok(Value::Null);
                 };
+                let implicit_nullable_type_decl;
+                let reflected_type_decl =
+                    if reflection_parameter_has_implicit_nullable_default(&state.parameter)
+                        && type_decl.contains('&')
+                    {
+                        implicit_nullable_type_decl =
+                            reflection_implicit_nullable_type_text(type_decl);
+                        implicit_nullable_type_decl.as_str()
+                    } else {
+                        type_decl
+                    };
                 if let Some(compound_state) =
-                    reflection_compound_type_state_from_type_decl(type_decl)
+                    reflection_compound_type_state_from_type_decl(reflected_type_decl)
                 {
                     return self.create_reflection_compound_type_object(compound_state, span);
                 }
                 let Some(type_state) = reflection_named_type_state_from_type_decl(
-                    type_decl,
+                    reflected_type_decl,
                     state.parameter.default.as_ref(),
                 ) else {
                     return Ok(Value::Null);
@@ -62119,12 +62177,20 @@ impl Interpreter {
             })?;
 
         match method_name.to_ascii_lowercase().as_str() {
+            "__tostring" => {
+                expect_expr_arity(
+                    &format!("{}::__toString", object.class_name()),
+                    args.len(),
+                    0,
+                    span,
+                )?;
+                Ok(Value::String(reflection_compound_type_to_string(&state)))
+            }
             "allowsnull" => {
                 expect_expr_arity("ReflectionType::allowsNull", args.len(), 0, span)?;
-                Ok(Value::Bool(
-                    state.kind == ReflectionCompoundTypeKind::Union
-                        && state.types.iter().any(|type_state| type_state.allows_null),
-                ))
+                Ok(Value::Bool(reflection_type_state_allows_null(
+                    &ReflectionTypeState::Compound(state),
+                )))
             }
             "gettypes" => {
                 expect_expr_arity(
@@ -62135,7 +62201,7 @@ impl Interpreter {
                 )?;
                 let mut types = PhpArray::new();
                 for type_state in state.types {
-                    let value = self.create_reflection_named_type_object(type_state, span)?;
+                    let value = self.create_reflection_type_object(type_state, span)?;
                     types
                         .append(value)
                         .map_err(|error| runtime_error(span, error))?;
@@ -107481,6 +107547,46 @@ impl Interpreter {
         context: &str,
         span: Span,
     ) -> CompileResult<Option<String>> {
+        if object
+            .class_name()
+            .eq_ignore_ascii_case("ReflectionNamedType")
+        {
+            let state = self
+                .reflection_named_types
+                .get(&object.id())
+                .ok_or_else(|| {
+                    runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            context,
+                            "missing ReflectionNamedType runtime metadata",
+                        ),
+                    )
+                })?;
+            return Ok(Some(reflection_named_type_to_string(state)));
+        }
+        if object
+            .class_name()
+            .eq_ignore_ascii_case("ReflectionUnionType")
+            || object
+                .class_name()
+                .eq_ignore_ascii_case("ReflectionIntersectionType")
+        {
+            let state = self
+                .reflection_compound_types
+                .get(&object.id())
+                .ok_or_else(|| {
+                    runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            context,
+                            "missing reflection compound type runtime metadata",
+                        ),
+                    )
+                })?;
+            return Ok(Some(reflection_compound_type_to_string(state)));
+        }
+
         let Some(value) =
             self.call_magic_instance_method_with_values(object, "__toString", Vec::new(), span)?
         else {
@@ -118998,14 +119104,59 @@ fn reflection_named_type_to_string(state: &ReflectionNamedTypeState) -> String {
     }
 }
 
+fn reflection_type_state_to_string(state: &ReflectionTypeState) -> String {
+    match state {
+        ReflectionTypeState::Named(state) => reflection_named_type_to_string(state),
+        ReflectionTypeState::Compound(state) => reflection_compound_type_to_string(state),
+    }
+}
+
+fn reflection_compound_type_to_string(state: &ReflectionCompoundTypeState) -> String {
+    let separator = match state.kind {
+        ReflectionCompoundTypeKind::Union => "|",
+        ReflectionCompoundTypeKind::Intersection => "&",
+    };
+    state
+        .types
+        .iter()
+        .map(|type_state| match (state.kind, type_state) {
+            (ReflectionCompoundTypeKind::Union, ReflectionTypeState::Compound(compound))
+                if compound.kind == ReflectionCompoundTypeKind::Intersection =>
+            {
+                format!("({})", reflection_compound_type_to_string(compound))
+            }
+            _ => reflection_type_state_to_string(type_state),
+        })
+        .collect::<Vec<_>>()
+        .join(separator)
+}
+
+fn reflection_type_state_allows_null(state: &ReflectionTypeState) -> bool {
+    match state {
+        ReflectionTypeState::Named(state) => state.allows_null,
+        ReflectionTypeState::Compound(state) => {
+            state.kind == ReflectionCompoundTypeKind::Union
+                && state.types.iter().any(reflection_type_state_allows_null)
+        }
+    }
+}
+
 fn reflection_named_type_state_from_type_decl(
     type_decl: &str,
     default: Option<&Expr>,
 ) -> Option<ReflectionNamedTypeState> {
+    let top_level_union = split_type_decl_top_level(type_decl.trim(), '|');
+    if top_level_union.len() > 1 {
+        return reflection_nullable_false_true_bc_type(&top_level_union);
+    }
     if type_decl.contains('|') || type_decl.contains('&') {
         return None;
     }
-    let name = type_decl.strip_prefix('?').unwrap_or(type_decl).to_string();
+    let name = type_decl
+        .trim()
+        .strip_prefix('?')
+        .unwrap_or(type_decl.trim())
+        .to_string();
     Some(ReflectionNamedTypeState {
         allows_null: reflection_parameter_allows_null(Some(type_decl), default),
         is_builtin: reflection_type_name_is_builtin(&name),
@@ -119013,23 +119164,184 @@ fn reflection_named_type_state_from_type_decl(
     })
 }
 
+fn reflection_type_state_from_type_decl(
+    type_decl: &str,
+    default: Option<&Expr>,
+) -> Option<ReflectionTypeState> {
+    if let Some(state) = reflection_compound_type_state_from_type_decl(type_decl) {
+        return Some(ReflectionTypeState::Compound(state));
+    }
+    reflection_named_type_state_from_type_decl(type_decl, default).map(ReflectionTypeState::Named)
+}
+
 fn reflection_compound_type_state_from_type_decl(
     type_decl: &str,
 ) -> Option<ReflectionCompoundTypeState> {
-    let (kind, separator) = if type_decl.contains('|') && !type_decl.contains('&') {
-        (ReflectionCompoundTypeKind::Union, '|')
-    } else if type_decl.contains('&') && !type_decl.contains('|') {
-        (ReflectionCompoundTypeKind::Intersection, '&')
-    } else {
-        return None;
-    };
-
-    let mut types = Vec::new();
-    for part in type_decl.split(separator) {
-        let type_state = reflection_named_type_state_from_type_decl(part.trim(), None)?;
-        types.push(type_state);
+    let text = type_decl.trim();
+    let text = strip_wrapping_type_parens(text);
+    let union_parts = split_type_decl_top_level(text, '|');
+    if union_parts.len() > 1 {
+        if reflection_nullable_false_true_bc_type(&union_parts).is_some() {
+            return None;
+        }
+        let mut types = Vec::new();
+        for part in union_parts {
+            let part = strip_wrapping_type_parens(part.trim());
+            if part.eq_ignore_ascii_case("iterable") {
+                types.push(ReflectionTypeState::Named(ReflectionNamedTypeState {
+                    name: "Traversable".to_string(),
+                    allows_null: false,
+                    is_builtin: false,
+                }));
+                types.push(ReflectionTypeState::Named(ReflectionNamedTypeState {
+                    name: "array".to_string(),
+                    allows_null: false,
+                    is_builtin: true,
+                }));
+                continue;
+            }
+            types.push(reflection_type_state_from_type_decl(part, None)?);
+        }
+        return Some(ReflectionCompoundTypeState {
+            kind: ReflectionCompoundTypeKind::Union,
+            types,
+        });
     }
-    Some(ReflectionCompoundTypeState { kind, types })
+
+    let intersection_parts = split_type_decl_top_level(text, '&');
+    if intersection_parts.len() > 1 {
+        let mut types = Vec::new();
+        for part in intersection_parts {
+            let type_state = reflection_named_type_state_from_type_decl(part.trim(), None)?;
+            types.push(ReflectionTypeState::Named(type_state));
+        }
+        Some(ReflectionCompoundTypeState {
+            kind: ReflectionCompoundTypeKind::Intersection,
+            types,
+        })
+    } else {
+        None
+    }
+}
+
+fn reflection_nullable_false_true_bc_type(parts: &[&str]) -> Option<ReflectionNamedTypeState> {
+    if parts.len() != 2 {
+        return None;
+    }
+    let mut has_null = false;
+    let mut false_or_true = None;
+    for part in parts {
+        let normalized =
+            normalize_type_name(strip_wrapping_type_parens(part.trim())).to_ascii_lowercase();
+        match normalized.as_str() {
+            "null" => has_null = true,
+            "false" | "true" => false_or_true = Some(normalized),
+            _ => return None,
+        }
+    }
+    if !has_null {
+        return None;
+    }
+    Some(ReflectionNamedTypeState {
+        name: false_or_true?,
+        allows_null: true,
+        is_builtin: true,
+    })
+}
+
+fn reflection_type_decl_resolve_self(type_decl: &str, class_name: &str) -> String {
+    let text = type_decl.trim();
+    if let Some(nullable) = text.strip_prefix('?') {
+        return format!(
+            "?{}",
+            reflection_type_decl_resolve_self(nullable.trim(), class_name)
+        );
+    }
+
+    let stripped = strip_wrapping_type_parens(text);
+    if stripped != text {
+        return format!(
+            "({})",
+            reflection_type_decl_resolve_self(stripped, class_name)
+        );
+    }
+
+    let union_parts = split_type_decl_top_level(text, '|');
+    if union_parts.len() > 1 {
+        return union_parts
+            .into_iter()
+            .map(|part| reflection_type_decl_resolve_self(part, class_name))
+            .collect::<Vec<_>>()
+            .join("|");
+    }
+
+    let intersection_parts = split_type_decl_top_level(text, '&');
+    if intersection_parts.len() > 1 {
+        return intersection_parts
+            .into_iter()
+            .map(|part| reflection_type_decl_resolve_self(part, class_name))
+            .collect::<Vec<_>>()
+            .join("&");
+    }
+
+    if normalize_type_name(text).eq_ignore_ascii_case("self") {
+        class_name.to_string()
+    } else {
+        text.to_string()
+    }
+}
+
+fn split_type_decl_top_level(text: &str, separator: char) -> Vec<&str> {
+    let mut parts = Vec::new();
+    let mut depth = 0usize;
+    let mut start = 0usize;
+    for (index, ch) in text.char_indices() {
+        match ch {
+            '(' => depth += 1,
+            ')' => depth = depth.saturating_sub(1),
+            ch if ch == separator && depth == 0 => {
+                parts.push(&text[start..index]);
+                start = index + ch.len_utf8();
+            }
+            _ => {}
+        }
+    }
+    parts.push(&text[start..]);
+    parts
+}
+
+fn strip_wrapping_type_parens(text: &str) -> &str {
+    let mut current = text.trim();
+    loop {
+        let Some(inner) = current
+            .strip_prefix('(')
+            .and_then(|value| value.strip_suffix(')'))
+        else {
+            return current;
+        };
+        if type_decl_outer_parens_wrap_all(current) {
+            current = inner.trim();
+        } else {
+            return current;
+        }
+    }
+}
+
+fn type_decl_outer_parens_wrap_all(text: &str) -> bool {
+    let mut depth = 0usize;
+    for (index, ch) in text.char_indices() {
+        match ch {
+            '(' => depth += 1,
+            ')' => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 && index < text.len() - 1 {
+                    return false;
+                }
+            }
+            _ => {}
+        }
+    }
+    depth == 0
 }
 
 fn reflection_parameter_allows_null(type_decl: Option<&str>, default: Option<&Expr>) -> bool {

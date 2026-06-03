@@ -39036,9 +39036,11 @@ fn coerce_property_value_with_object_type_resolver_dyn(
     strict_scalars: bool,
     object_type_resolver: &dyn Fn(&PhpObject, &str) -> bool,
 ) -> RuntimeResult<Value> {
-    if type_decl.contains('|') {
+    let type_decl = strip_wrapping_type_decl_parens(type_decl.trim());
+    let union_parts = split_type_decl_top_level(type_decl, '|');
+    if union_parts.len() > 1 {
         let union_accepts_string = type_decl_contains_name(type_decl, "string");
-        for part in type_decl.split('|') {
+        for part in &union_parts {
             if let Ok(value) = coerce_property_value_with_object_type_resolver_dyn(
                 part.trim(),
                 value.clone(),
@@ -39051,7 +39053,7 @@ fn coerce_property_value_with_object_type_resolver_dyn(
             }
         }
 
-        for part in type_decl.split('|') {
+        for part in &union_parts {
             if union_accepts_string && weak_union_part_should_defer_to_string(part, &value) {
                 continue;
             }
@@ -39074,8 +39076,9 @@ fn coerce_property_value_with_object_type_resolver_dyn(
         ));
     }
 
-    if type_decl.contains('&') {
-        for part in type_decl.split('&') {
+    let intersection_parts = split_type_decl_top_level(type_decl, '&');
+    if intersection_parts.len() > 1 {
+        for part in &intersection_parts {
             coerce_property_value_with_object_type_resolver_dyn(
                 part.trim(),
                 value.clone(),
@@ -39213,16 +39216,80 @@ fn weak_union_part_should_defer_to_string(part: &str, value: &Value) -> bool {
 }
 
 fn type_decl_contains_name(type_decl: &str, needle: &str) -> bool {
-    type_decl
-        .split(['|', '&'])
-        .any(|part| type_decl_part_matches(part, needle))
+    let type_decl = strip_wrapping_type_decl_parens(type_decl.trim());
+    let union_parts = split_type_decl_top_level(type_decl, '|');
+    if union_parts.len() > 1 {
+        return union_parts
+            .iter()
+            .any(|part| type_decl_contains_name(part, needle));
+    }
+    let intersection_parts = split_type_decl_top_level(type_decl, '&');
+    if intersection_parts.len() > 1 {
+        return intersection_parts
+            .iter()
+            .any(|part| type_decl_contains_name(part, needle));
+    }
+    type_decl_part_matches(type_decl, needle)
 }
 
 fn type_decl_part_matches(part: &str, needle: &str) -> bool {
-    let name = part.trim();
+    let name = strip_wrapping_type_decl_parens(part.trim());
     let name = name.strip_prefix('?').unwrap_or(name);
     let name = name.strip_prefix('\\').unwrap_or(name);
     name.eq_ignore_ascii_case(needle)
+}
+
+fn split_type_decl_top_level(text: &str, separator: char) -> Vec<&str> {
+    let mut parts = Vec::new();
+    let mut depth = 0usize;
+    let mut start = 0usize;
+    for (index, ch) in text.char_indices() {
+        match ch {
+            '(' => depth += 1,
+            ')' => depth = depth.saturating_sub(1),
+            ch if ch == separator && depth == 0 => {
+                parts.push(&text[start..index]);
+                start = index + ch.len_utf8();
+            }
+            _ => {}
+        }
+    }
+    parts.push(&text[start..]);
+    parts
+}
+
+fn strip_wrapping_type_decl_parens(text: &str) -> &str {
+    let mut current = text.trim();
+    loop {
+        let Some(inner) = current
+            .strip_prefix('(')
+            .and_then(|value| value.strip_suffix(')'))
+        else {
+            return current;
+        };
+        if type_decl_outer_parens_wrap_all(current) {
+            current = inner.trim();
+        } else {
+            return current;
+        }
+    }
+}
+
+fn type_decl_outer_parens_wrap_all(text: &str) -> bool {
+    let mut depth = 0usize;
+    for (index, ch) in text.char_indices() {
+        match ch {
+            '(' => depth += 1,
+            ')' => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 && index < text.len() - 1 {
+                    return false;
+                }
+            }
+            _ => {}
+        }
+    }
+    depth == 0
 }
 
 fn php_float_to_int_is_not_representable(value: f64) -> bool {

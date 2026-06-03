@@ -8049,6 +8049,66 @@ line("raw-return", (new ReflectionMethod(Plugin::class, "raw"))->getReturnType()
 }
 
 #[test]
+fn reflection_compound_types_stringify_and_expose_bounded_dnf_metadata() {
+    let execution = run_source(
+        r#"<?php
+interface X {}
+interface Y {}
+interface Z {}
+class Both implements X, Y {}
+
+function dnf_return(): (X&Y)|(Z&Traversable)|Countable {}
+function iterable_union(): X|iterable|bool {}
+function nullable_false(): null|false {}
+
+class Holder {
+    public (X&Y)|Countable $prop;
+}
+
+function yn($value) {
+    return $value ? "1" : "0";
+}
+
+function dump_type($label, $type) {
+    echo $label, "|", get_class($type), "|", (string) $type, "|", yn($type->allowsNull()), "\n";
+    foreach ($type->getTypes() as $part) {
+        echo "part|", get_class($part), "|", (string) $part, "|", yn($part->allowsNull()), "\n";
+    }
+}
+
+dump_type("dnf-return", (new ReflectionFunction("dnf_return"))->getReturnType());
+dump_type("dnf-property", (new ReflectionProperty(Holder::class, "prop"))->getType());
+$holder = new Holder();
+$holder->prop = new Both();
+echo "dnf-property-assign|", get_class($holder->prop), "\n";
+dump_type("iterable-return", (new ReflectionFunction("iterable_union"))->getReturnType());
+$nullable = (new ReflectionFunction("nullable_false"))->getReturnType();
+echo "nullable-false|", get_class($nullable), "|", (string) $nullable, "|", $nullable->getName(), "|", yn($nullable->allowsNull());
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "dnf-return|ReflectionUnionType|(X&Y)|(Z&Traversable)|Countable|0\n\
+part|ReflectionIntersectionType|X&Y|0\n\
+part|ReflectionIntersectionType|Z&Traversable|0\n\
+part|ReflectionNamedType|Countable|0\n\
+dnf-property|ReflectionUnionType|(X&Y)|Countable|0\n\
+part|ReflectionIntersectionType|X&Y|0\n\
+part|ReflectionNamedType|Countable|0\n\
+dnf-property-assign|Both\n\
+iterable-return|ReflectionUnionType|X|Traversable|array|bool|0\n\
+part|ReflectionNamedType|X|0\n\
+part|ReflectionNamedType|Traversable|0\n\
+part|ReflectionNamedType|array|0\n\
+part|ReflectionNamedType|bool|0\n\
+nullable-false|ReflectionNamedType|?false|false|1"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reflection_function_reports_bounded_user_function_metadata() {
     let execution = run_source(
         r#"<?php
