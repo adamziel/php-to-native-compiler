@@ -89995,6 +89995,19 @@ impl Interpreter {
         span: Span,
     ) -> CompileResult<Option<Vec<u8>>> {
         if let Value::Object(object) = value {
+            if let Some(state) = self.hash_contexts.get(&object.id()) {
+                let mut properties = PhpArray::new();
+                properties.insert(
+                    "algo",
+                    Value::String(php_hash_algorithm_name(state.algorithm).to_string()),
+                );
+                return self.format_debug_info_var_dump_bytes(
+                    object,
+                    Value::Array(properties),
+                    0,
+                    span,
+                );
+            }
             if let Some(debug_value) = self.call_debug_info_method(object.clone(), span)? {
                 return self.format_debug_info_var_dump_bytes(object, debug_value, 0, span);
             }
@@ -96515,6 +96528,14 @@ impl Interpreter {
         expect_arity("serialize()", args, 1, span)?;
         let mut output = String::new();
         if let Value::Object(object) = &args[0] {
+            if let Some(state) = self.hash_contexts.get(&object.id()) {
+                if let Some(message) = hash_context_serialize_error_message(state) {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call("serialize()", message),
+                    ));
+                }
+            }
             if self.is_spl_object_storage_object(object) {
                 self.format_php_serialized_spl_object_storage(object, &mut output, span)?;
                 return Ok(Value::String(output));
@@ -115312,6 +115333,10 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
             return Some((class_name, message));
         }
 
+        if let Some(message) = hash_context_php_exception_message(error) {
+            return Some(("Exception", message));
+        }
+
         if let Some(message) = hash_context_php_type_error_message(error) {
             return Some(("TypeError", message));
         }
@@ -116877,6 +116902,22 @@ fn stream_context_php_error_class_and_message(
         }
     }
 
+    None
+}
+
+fn hash_context_php_exception_message(error: &Diagnostic) -> Option<String> {
+    if error.phase != Phase::Runtime {
+        return None;
+    }
+    let message = error
+        .message
+        .strip_prefix("unsupported call serialize(): ")?;
+    if message == "HashContext with HASH_HMAC option cannot be serialized"
+        || (message.starts_with("HashContext for algorithm \"")
+            && message.ends_with("\" cannot be serialized"))
+    {
+        return Some(message.to_string());
+    }
     None
 }
 
@@ -145312,6 +145353,9 @@ enum PhpHashAlgorithm {
     Tiger128_3,
     Tiger160_3,
     Tiger192_3,
+    Tiger128_4,
+    Tiger160_4,
+    Tiger192_4,
     Snefru,
     Snefru256,
     Gost,
@@ -146262,6 +146306,19 @@ fn hash_context_invalid_error(function: &'static str, span: Span) -> Diagnostic 
     )
 }
 
+fn hash_context_serialize_error_message(state: &BoundedHashContextState) -> Option<String> {
+    if state.hmac_key.is_some() {
+        return Some("HashContext with HASH_HMAC option cannot be serialized".to_string());
+    }
+    if state.finalized {
+        return Some(format!(
+            "HashContext for algorithm \"{}\" cannot be serialized",
+            php_hash_algorithm_name(state.algorithm)
+        ));
+    }
+    None
+}
+
 fn php_hash_algorithm(name: &str) -> Option<PhpHashAlgorithm> {
     match name.to_ascii_lowercase().as_str() {
         "md2" => Some(PhpHashAlgorithm::Md2),
@@ -146286,6 +146343,9 @@ fn php_hash_algorithm(name: &str) -> Option<PhpHashAlgorithm> {
         "tiger128,3" => Some(PhpHashAlgorithm::Tiger128_3),
         "tiger160,3" => Some(PhpHashAlgorithm::Tiger160_3),
         "tiger192,3" => Some(PhpHashAlgorithm::Tiger192_3),
+        "tiger128,4" => Some(PhpHashAlgorithm::Tiger128_4),
+        "tiger160,4" => Some(PhpHashAlgorithm::Tiger160_4),
+        "tiger192,4" => Some(PhpHashAlgorithm::Tiger192_4),
         "snefru" => Some(PhpHashAlgorithm::Snefru),
         "snefru256" => Some(PhpHashAlgorithm::Snefru256),
         "gost" => Some(PhpHashAlgorithm::Gost),
@@ -146357,6 +146417,9 @@ fn php_hash_algorithm_name(algorithm: PhpHashAlgorithm) -> &'static str {
         PhpHashAlgorithm::Tiger128_3 => "tiger128,3",
         PhpHashAlgorithm::Tiger160_3 => "tiger160,3",
         PhpHashAlgorithm::Tiger192_3 => "tiger192,3",
+        PhpHashAlgorithm::Tiger128_4 => "tiger128,4",
+        PhpHashAlgorithm::Tiger160_4 => "tiger160,4",
+        PhpHashAlgorithm::Tiger192_4 => "tiger192,4",
         PhpHashAlgorithm::Snefru => "snefru",
         PhpHashAlgorithm::Snefru256 => "snefru256",
         PhpHashAlgorithm::Gost => "gost",
@@ -146464,6 +146527,9 @@ fn php_hash_digest_bytes_with_options(
         PhpHashAlgorithm::Tiger128_3 => Tiger::digest(bytes)[..16].to_vec(),
         PhpHashAlgorithm::Tiger160_3 => Tiger::digest(bytes)[..20].to_vec(),
         PhpHashAlgorithm::Tiger192_3 => Tiger::digest(bytes).to_vec(),
+        PhpHashAlgorithm::Tiger128_4 => legacy_hashes::tiger4_digest(bytes)[..16].to_vec(),
+        PhpHashAlgorithm::Tiger160_4 => legacy_hashes::tiger4_digest(bytes)[..20].to_vec(),
+        PhpHashAlgorithm::Tiger192_4 => legacy_hashes::tiger4_digest(bytes),
         PhpHashAlgorithm::Snefru | PhpHashAlgorithm::Snefru256 => {
             legacy_hashes::snefru256_digest(bytes)
         }
@@ -146564,6 +146630,9 @@ fn php_hash_hmac_block_size(algorithm: PhpHashAlgorithm) -> Option<usize> {
         | PhpHashAlgorithm::Tiger128_3
         | PhpHashAlgorithm::Tiger160_3
         | PhpHashAlgorithm::Tiger192_3
+        | PhpHashAlgorithm::Tiger128_4
+        | PhpHashAlgorithm::Tiger160_4
+        | PhpHashAlgorithm::Tiger192_4
         | PhpHashAlgorithm::Whirlpool => Some(64),
         PhpHashAlgorithm::Snefru
         | PhpHashAlgorithm::Snefru256

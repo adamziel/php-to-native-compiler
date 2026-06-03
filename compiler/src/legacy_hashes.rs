@@ -1,4 +1,4 @@
-use crate::legacy_hash_tables::SNEFRU_TABLES;
+use crate::legacy_hash_tables::{SNEFRU_TABLES, TIGER_TABLES};
 use gost94::{Digest as GostDigest, Gost94CryptoPro, Gost94Test};
 
 pub(crate) fn gost_digest(bytes: &[u8]) -> Vec<u8> {
@@ -7,6 +7,106 @@ pub(crate) fn gost_digest(bytes: &[u8]) -> Vec<u8> {
 
 pub(crate) fn gost_crypto_digest(bytes: &[u8]) -> Vec<u8> {
     Gost94CryptoPro::digest(bytes).to_vec()
+}
+
+pub(crate) fn tiger4_digest(bytes: &[u8]) -> Vec<u8> {
+    let mut state = [
+        0x0123_4567_89AB_CDEF,
+        0xFEDC_BA98_7654_3210,
+        0xF096_A5B4_C3B2_E187,
+    ];
+
+    for chunk in bytes.chunks_exact(64) {
+        tiger4_compress(&mut state, chunk.try_into().expect("64-byte chunk"));
+    }
+
+    let remainder = bytes.chunks_exact(64).remainder();
+    let bit_len = (bytes.len() as u64).wrapping_mul(8);
+    let mut block = [0u8; 64];
+    block[..remainder.len()].copy_from_slice(remainder);
+    block[remainder.len()] = 0x01;
+    if remainder.len() >= 56 {
+        tiger4_compress(&mut state, &block);
+        block = [0u8; 64];
+    }
+    block[56..].copy_from_slice(&bit_len.to_le_bytes());
+    tiger4_compress(&mut state, &block);
+
+    let mut digest = Vec::with_capacity(24);
+    for word in state {
+        digest.extend_from_slice(&word.to_le_bytes());
+    }
+    digest
+}
+
+fn tiger4_compress(state: &mut [u64; 3], raw_block: &[u8; 64]) {
+    let mut block = [0u64; 8];
+    for (word, chunk) in block.iter_mut().zip(raw_block.chunks_exact(8)) {
+        *word = u64::from_le_bytes(chunk.try_into().expect("8-byte chunk"));
+    }
+
+    let [mut a, mut b, mut c] = *state;
+    tiger_pass(&mut a, &mut b, &mut c, &block, 5);
+    tiger_key_schedule(&mut block);
+    tiger_pass(&mut c, &mut a, &mut b, &block, 7);
+    tiger_key_schedule(&mut block);
+    tiger_pass(&mut b, &mut c, &mut a, &block, 9);
+    tiger_key_schedule(&mut block);
+    tiger_pass(&mut a, &mut b, &mut c, &block, 9);
+
+    let tmp = a;
+    a = c;
+    c = b;
+    b = tmp;
+
+    state[0] ^= a;
+    state[1] = b.wrapping_sub(state[1]);
+    state[2] = c.wrapping_add(state[2]);
+}
+
+fn tiger_round(a: &mut u64, b: &mut u64, c: &mut u64, x: u64, mul: u8) {
+    *c ^= x;
+    let c_bytes = c.to_le_bytes();
+    let a_mix = TIGER_TABLES[0][usize::from(c_bytes[0])]
+        ^ TIGER_TABLES[1][usize::from(c_bytes[2])]
+        ^ TIGER_TABLES[2][usize::from(c_bytes[4])]
+        ^ TIGER_TABLES[3][usize::from(c_bytes[6])];
+    let b_mix = TIGER_TABLES[3][usize::from(c_bytes[1])]
+        ^ TIGER_TABLES[2][usize::from(c_bytes[3])]
+        ^ TIGER_TABLES[1][usize::from(c_bytes[5])]
+        ^ TIGER_TABLES[0][usize::from(c_bytes[7])];
+    *a = a.wrapping_sub(a_mix);
+    *b = b.wrapping_add(b_mix).wrapping_mul(u64::from(mul));
+}
+
+fn tiger_pass(a: &mut u64, b: &mut u64, c: &mut u64, block: &[u64; 8], mul: u8) {
+    tiger_round(a, b, c, block[0], mul);
+    tiger_round(b, c, a, block[1], mul);
+    tiger_round(c, a, b, block[2], mul);
+    tiger_round(a, b, c, block[3], mul);
+    tiger_round(b, c, a, block[4], mul);
+    tiger_round(c, a, b, block[5], mul);
+    tiger_round(a, b, c, block[6], mul);
+    tiger_round(b, c, a, block[7], mul);
+}
+
+fn tiger_key_schedule(block: &mut [u64; 8]) {
+    block[0] = block[0].wrapping_sub(block[7] ^ 0xA5A5_A5A5_A5A5_A5A5);
+    block[1] ^= block[0];
+    block[2] = block[2].wrapping_add(block[1]);
+    block[3] = block[3].wrapping_sub(block[2] ^ ((!block[1]) << 19));
+    block[4] ^= block[3];
+    block[5] = block[5].wrapping_add(block[4]);
+    block[6] = block[6].wrapping_sub(block[5] ^ ((!block[4]) >> 23));
+    block[7] ^= block[6];
+    block[0] = block[0].wrapping_add(block[7]);
+    block[1] = block[1].wrapping_sub(block[0] ^ ((!block[7]) << 19));
+    block[2] ^= block[1];
+    block[3] = block[3].wrapping_add(block[2]);
+    block[4] = block[4].wrapping_sub(block[3] ^ ((!block[2]) >> 23));
+    block[5] ^= block[4];
+    block[6] = block[6].wrapping_add(block[5]);
+    block[7] = block[7].wrapping_sub(block[6] ^ 0x0123_4567_89AB_CDEF);
 }
 
 pub(crate) fn snefru256_digest(bytes: &[u8]) -> Vec<u8> {

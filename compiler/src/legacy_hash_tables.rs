@@ -1,3 +1,33 @@
+// Copied from the RustCrypto tiger crate's php-src-derived Tiger table bytes.
+// The table is used by the bounded Tiger 4-pass interpreter digest implementation.
+const TIGER_TABLE_BYTES: &[u8; 8192] = include_bytes!("tiger_tables.bin");
+
+pub(crate) static TIGER_TABLES: [[u64; 256]; 4] = tiger_tables_from_le_bytes(TIGER_TABLE_BYTES);
+
+const fn tiger_tables_from_le_bytes(bytes: &[u8; 8192]) -> [[u64; 256]; 4] {
+    let mut tables = [[0u64; 256]; 4];
+    let mut table = 0;
+    while table < 4 {
+        let mut index = 0;
+        while index < 256 {
+            let offset = (table * 256 + index) * 8;
+            tables[table][index] = u64::from_le_bytes([
+                bytes[offset],
+                bytes[offset + 1],
+                bytes[offset + 2],
+                bytes[offset + 3],
+                bytes[offset + 4],
+                bytes[offset + 5],
+                bytes[offset + 6],
+                bytes[offset + 7],
+            ]);
+            index += 1;
+        }
+        table += 1;
+    }
+    tables
+}
+
 // Generated mechanically from php-src ext/hash/php_hash_snefru_tables.h.
 // The table is used by the bounded Snefru-256 interpreter digest implementation.
 pub(crate) const SNEFRU_TABLES: [[u32; 256]; 16] = [

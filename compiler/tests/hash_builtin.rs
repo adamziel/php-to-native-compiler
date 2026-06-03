@@ -66,14 +66,9 @@ echo strlen(uniqid(false, true)), ":", uniqid(false, true), "\n";
 
 #[test]
 fn hash_hmac_and_uniqid_reject_forms_outside_current_boundary() {
-    let algorithm = run_source("<?php\nhash_hmac('tiger128,4', 'data', 'key');\n").unwrap_err();
-    assert_eq!(algorithm.phase, Phase::Runtime);
-    assert_eq!(algorithm.line, 2);
-    assert_eq!(algorithm.column, 1);
-    assert_eq!(
-        algorithm.message,
-        "unsupported call hash_hmac(): algorithm tiger128,4 is not implemented in the current HMAC subset"
-    );
+    let tiger4 =
+        run_source("<?php\necho hash_hmac('tiger128,4', 'data', 'key'), \"\\n\";\n").unwrap();
+    assert_eq!(tiger4.stdout, "cc2c6d31a589cab47f09390df815fe0d\n");
 
     let raw = run_source(
         r#"<?php
@@ -505,14 +500,11 @@ ValueError:hash_init(): Argument #3 ($key) must not be empty when HMAC is reques
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);
 
-    let boundary = run_source("<?php\nhash_init('tiger128,4');\n").unwrap_err();
-    assert_eq!(boundary.phase, Phase::Runtime);
-    assert_eq!(boundary.line, 2);
-    assert_eq!(boundary.column, 1);
-    assert_eq!(
-        boundary.message,
-        "unsupported call hash_init(): algorithm tiger128,4 is not implemented in the current hash context subset"
-    );
+    let tiger4 = run_source(
+        "<?php\n$ctx = hash_init('tiger128,4'); echo $ctx instanceof HashContext ? 'ctx' : 'bad';\n",
+    )
+    .unwrap();
+    assert_eq!(tiger4.stdout, "ctx");
 }
 
 #[test]
@@ -755,6 +747,66 @@ Error:Call to private HashContext::__construct() from global scope\n"
 }
 
 #[test]
+fn hash_tiger4_and_hash_context_object_boundaries_cover_public_rows() {
+    let execution = run_source(
+        r#"<?php
+echo hash("tiger128,4", "I can't remember anything"), "\n";
+
+$ctx = hash_init("tiger192,4");
+hash_update($ctx, "I can't remember anything");
+$copy = hash_copy($ctx);
+echo hash_final($ctx), "|", hash_final($copy), "\n";
+
+$clone_source = hash_init("tiger160,4");
+hash_update($clone_source, "I can't remember anything");
+$clone = clone $clone_source;
+echo hash_final($clone_source), "|", hash_final($clone), "\n";
+
+$ikm = "input key material";
+echo bin2hex(hash_hkdf("tiger128,4", $ikm)), "\n";
+echo bin2hex(hash_hkdf("tiger160,4", $ikm)), "\n";
+echo bin2hex(hash_hkdf("tiger192,4", $ikm)), "\n";
+
+ob_start();
+var_dump(hash_init("sha256"));
+$dump = ob_get_clean();
+echo strpos($dump, "[\"algo\"]=>") !== false && strpos($dump, "sha256") !== false ? "debug\n" : "missing\n";
+
+$finalized = hash_init("md5");
+hash_final($finalized);
+try {
+    serialize($finalized);
+} catch (Exception $e) {
+    echo get_class($e), ":", $e->getMessage(), "\n";
+}
+
+$hmac = hash_init("md5", HASH_HMAC, "key");
+try {
+    serialize($hmac);
+} catch (Exception $e) {
+    echo get_class($e), ":", $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "a26ca3f58e74fb32ee44b099cb1b5122\n\
+a26ca3f58e74fb32ee44b099cb1b512203375900f30b741d|a26ca3f58e74fb32ee44b099cb1b512203375900f30b741d\n\
+a26ca3f58e74fb32ee44b099cb1b512203375900|a26ca3f58e74fb32ee44b099cb1b512203375900\n\
+8acf517ecf58cccbd65c1186d71e4116\n\
+cc0e33ee26700a2eb9a994bbb0e6cef29b429441\n\
+97fa02d42331321fdc05c7f8dbc756d751ca36ce1aee69b0\n\
+debug\n\
+Exception:HashContext for algorithm \"md5\" cannot be serialized\n\
+Exception:HashContext with HASH_HMAC option cannot be serialized\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn hash_hmac_file_context_pbkdf2_and_hkdf_cover_bounded_rows() {
     let path = temp_hash_path("hmac");
     fs::write(
@@ -911,15 +963,10 @@ ValueError:hash_pbkdf2(): Argument #5 ($length) must be greater than or equal to
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);
 
-    let boundary =
-        run_source("<?php\nhash_pbkdf2('tiger128,4', 'password', 'salt', 1);\n").unwrap_err();
-    assert_eq!(boundary.phase, Phase::Runtime);
-    assert_eq!(boundary.line, 2);
-    assert_eq!(boundary.column, 1);
-    assert_eq!(
-        boundary.message,
-        "unsupported call hash_pbkdf2(): algorithm tiger128,4 is not implemented in the current HMAC subset"
-    );
+    let tiger4 =
+        run_source("<?php\necho hash_pbkdf2('tiger128,4', 'password', 'salt', 1), \"\\n\";\n")
+            .unwrap();
+    assert_eq!(tiger4.stdout, "8c9e1558d6e0476302660260ea0c6266\n");
 }
 
 #[test]

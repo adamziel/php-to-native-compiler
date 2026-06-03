@@ -329,6 +329,27 @@ Implemented:
   deprecation text/order beyond the bounded startup contract, callable/iterable
   pseudo-type execution, references/COW, and native lowering.
 
+- Added a bounded Tiger 4-pass hash execution lane and HashContext object
+  boundary parity on the interpreter path. `hash()`, `hash_file()`,
+  `HashContext` streaming/copy/clone, HMAC contexts, `hash_hmac()`,
+  `hash_hmac_file()`, `hash_pbkdf2()`, and `hash_hkdf()` now execute
+  `tiger128,4`, `tiger160,4`, and `tiger192,4`. `HashContext` var-dump debug
+  info now exposes `algo`, and `serialize()` now rejects finalized contexts and
+  HMAC contexts with PHP-shaped catchable `Exception`s. Focused proof covers the
+  Rust `hash_tiger4_and_hash_context_object_boundaries_cover_public_rows`
+  regression, the full `hash_builtin` Rust test file, a `phpc run` CLI probe,
+  build/fmt checks, and 6/6 selected public PHPT rows:
+  `ext/hash/tests/hash_copy_001.phpt`, `ext/hash/tests/hash-clone.phpt`,
+  `ext/hash/tests/hash_hkdf_basic.phpt`,
+  `ext/hash/tests/HashContext_debugInfo.phpt`,
+  `ext/hash/tests/bug81714.phpt`, and
+  `ext/hash/tests/hash_serialize_002.phpt`. Unsupported edges remain full
+  `HashContext` serialize/unserialize format parity, HashContext
+  `__serialize()`/`__unserialize()`, sensitive-parameter trace parity, exact
+  stream-resource edge cases outside the bounded readable-stream subset,
+  xxHash unserialize memory-size parity, broader diagnostics, and native
+  lowering.
+
 - Added a bounded RIPEMD and Tiger-3 hash execution lane on the interpreter
   path. `hash()`, `hash_file()`, `HashContext` streaming, HMAC contexts,
   `hash_hmac()`, `hash_hmac_file()`, `hash_pbkdf2()`, and `hash_hkdf()` now
@@ -340,11 +361,10 @@ Implemented:
   selected public PHPT rows `ext/hash/tests/ripemd128.phpt`,
   `ext/hash/tests/ripemd160.phpt`, `ext/hash/tests/ripemd256.phpt`,
   `ext/hash/tests/ripemd320.phpt`, and `ext/hash/tests/tiger.phpt`.
-  Unsupported edges remain Tiger 4-pass variants, GOST, Snefru, HAVAL,
-  seeded/non-empty hash options arrays outside the separately documented
-  MurmurHash3/xxHash lane, broader hash object serialization/debug-info
-  parity, exact diagnostics, cryptographic/provider policy, and native
-  lowering.
+  Unsupported edges remain seeded/non-empty hash options arrays outside the
+  separately documented MurmurHash3/xxHash lane, full hash object
+  serialization parity, exact diagnostics, cryptographic/provider policy, and
+  native lowering.
 
 - Added a bounded MurmurHash3/xxHash hash-options lane on the interpreter path.
   `hash()`, `hash_file()`, and buffered `HashContext` finalization now compute

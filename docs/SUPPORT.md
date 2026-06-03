@@ -4443,9 +4443,10 @@
   `sha256`, `sha384`, `sha512/224`, `sha512/256`, `sha512`, `sha3-224`,
   `sha3-256`, `sha3-384`, `sha3-512`, `ripemd128`, `ripemd160`,
   `ripemd256`, `ripemd320`, `whirlpool`, `tiger128,3`, `tiger160,3`,
-  `tiger192,3`, `adler32`, `crc32`, `crc32b`, `crc32c`, `fnv132`,
-  `fnv1a32`, `fnv164`, `fnv1a64`, `joaat`, `murmur3a`, `murmur3c`,
-  `murmur3f`, `xxh32`, `xxh64`, `xxh3`, and `xxh128`,
+  `tiger192,3`, `tiger128,4`, `tiger160,4`, `tiger192,4`, `adler32`,
+  `crc32`, `crc32b`, `crc32c`, `fnv132`, `fnv1a32`, `fnv164`, `fnv1a64`,
+  `joaat`, `murmur3a`, `murmur3c`, `murmur3f`, `xxh32`, `xxh64`, `xxh3`,
+  and `xxh128`,
   returning lowercase hex output or raw binary-string output when the binary
   flag is truthy. The non-cryptographic MurmurHash3 and xxHash algorithms
   support PHP-shaped `seed` options for one-shot, file, and `HashContext`
@@ -4455,9 +4456,8 @@
   `secret` being supplied together or for short secrets.
   `hash_algos()` returns the PHP 8.2 algorithm metadata list used by the
   public hash PHPT rows, though execution remains bounded to the named
-  MD2/MD4/MD5/SHA-1/SHA-2/SHA-3/RIPEMD/Whirlpool/Tiger-3/checksum/
-  MurmurHash3/xxHash
-  algorithms.
+  MD2/MD4/MD5/SHA-1/SHA-2/SHA-3/RIPEMD/Whirlpool/Tiger-3/Tiger-4/
+  checksum/MurmurHash3/xxHash algorithms.
   `hash_file($algo, $filename, $binary = false, $options = [])` supports the
   same bounded execution algorithms over local paths and local `file://` URLs,
   returning lowercase hex, raw binary output, or `false` with a PHP-shaped
@@ -4466,8 +4466,9 @@
   metadata list used by the public hash PHPT row. `hash_hmac($algo, $data,
   $key, $binary = false)` supports scalar/null string-convertible data and key
   values for the bounded cryptographic MD2/MD4/MD5/SHA-1/SHA-2/SHA-3/
-  RIPEMD/Whirlpool/Tiger-3 execution set, returning lowercase hex output or
-  raw binary output when the binary flag is truthy. `hash_hmac_file($algo,
+  RIPEMD/Whirlpool/Tiger-3/Tiger-4/Snefru/GOST/HAVAL execution set, returning
+  lowercase hex output or raw binary output when the binary flag is truthy.
+  `hash_hmac_file($algo,
   $filename, $key, $binary = false)` applies the same HMAC subset to bounded
   local paths and local `file://` URLs, returning lowercase hex, raw binary
   output, or `false` with a PHP-shaped warning when the file cannot be opened.
@@ -4477,9 +4478,10 @@
   `HASH_HMAC` is exposed as the PHP HMAC-mode flag. `hash_init($algo, $flags,
   $key = "", $options = [])` supports non-HMAC `HashContext` allocation for
   the same bounded MD2/MD4/MD5/SHA-1/SHA-2/SHA-3/RIPEMD/Whirlpool/
-  Tiger-3/checksum/MurmurHash3/xxHash execution set and HMAC `HashContext`
-  allocation for the bounded cryptographic
-  MD2/MD4/MD5/SHA-1/SHA-2/SHA-3/RIPEMD/Whirlpool/Tiger-3 execution set. It
+  Tiger-3/Tiger-4/checksum/MurmurHash3/xxHash execution set and HMAC
+  `HashContext` allocation for the bounded cryptographic
+  MD2/MD4/MD5/SHA-1/SHA-2/SHA-3/RIPEMD/Whirlpool/Tiger-3/Tiger-4/Snefru/
+  GOST/HAVAL execution set. It
   keeps the bounded validation surface for unknown algorithm names, HMAC mode
   over known non-cryptographic algorithms, missing/empty HMAC keys, and the
   null-key deprecation; those validation failures raise PHP-shaped catchable
@@ -4489,7 +4491,9 @@
   context and returns lowercase hex or raw binary digest output, and
   `hash_copy($context)` clones a non-finalized buffered context. Finalized or
   otherwise invalid contexts raise PHP-shaped catchable `TypeError`s for the
-  direct covered calls.
+  direct covered calls. `HashContext` var-dump debug info exposes the `algo`
+  property for bounded contexts. `serialize()` rejects finalized contexts and
+  HMAC contexts with PHP-shaped catchable `Exception`s.
   `hash_update_file($context, $filename, $options = [])` appends bytes from
   bounded local paths/local `file://` URLs and returns `true` on success or
   `false` with a PHP-shaped warning when the file cannot be opened.
@@ -4510,13 +4514,14 @@
   string operands, constant-work same-length byte comparison, and PHP-shaped
   type diagnostics for non-string operands.
   Hash algorithms outside that bounded MD2/MD4/MD5/SHA-1/SHA-2/SHA-3/
-  RIPEMD/Whirlpool/Tiger-3/checksum/MurmurHash3/xxHash execution set,
+  RIPEMD/Whirlpool/Tiger-3/Tiger-4/checksum/MurmurHash3/xxHash execution set,
   HMAC/PBKDF2/HKDF execution for advertised cryptographic algorithms outside
-  the bounded MD2/MD4/MD5/SHA-1/SHA-2/SHA-3/RIPEMD/Whirlpool/Tiger-3 set such
-  as Tiger 4-pass, GOST, HAVAL, and Snefru, non-empty options arrays for
+  the bounded MD2/MD4/MD5/SHA-1/SHA-2/SHA-3/RIPEMD/Whirlpool/Tiger-3/Tiger-4/
+  Snefru/GOST/HAVAL set, non-empty options arrays for
   algorithms other than the documented MurmurHash3/xxHash `seed`/`secret`
-  options, `HashContext` serialization/debug-info parity, remote stream
-  wrappers, binary stream reads outside the UTF-8 stream subset, exact
+  options, full `HashContext` serialize/unserialize parity beyond the
+  documented finalized/HMAC rejection lane, remote stream wrappers, binary
+  stream reads outside the UTF-8 stream subset, exact
   time/entropy behavior, cryptographic guarantees for generated IDs,
   array/object/resource coercions outside the documented strict
   `hash_equals()` and xxHash secret conversion paths, broader exact
