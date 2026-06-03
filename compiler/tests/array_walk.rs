@@ -157,6 +157,35 @@ echo $data[0]["key2"], "|", $data2[0], "\n";
 }
 
 #[test]
+fn array_walk_direct_root_advances_duplicate_reference_slots_by_bucket_occurrence() {
+    let source = r#"<?php
+$value1 = 10;
+$value2 = -20;
+$value3 =& $value1;
+$value4 = 50;
+$input = array(&$value1, &$value2, -35, &$value3, 0, &$value4);
+$count = 0;
+
+array_walk($input, function ($value, $key) use (&$count) {
+    echo $key, ":", $value, "\n";
+    $count++;
+    if ($count > 8) {
+        echo "loop\n";
+        exit;
+    }
+});
+echo "count=", $count, "\n";
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "0:10\n1:-20\n2:-35\n3:10\n4:0\n5:50\ncount=6\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn array_walk_recursive_direct_root_stops_after_unsets_and_settype_scalar_replacement() {
     let source = r#"<?php
 $arr = [

@@ -4,6 +4,22 @@
 
 Implemented:
 
+- Repaired the latest-published PASS regression in
+  `ext/standard/tests/array/array_walk/array_walk_variation5.phpt`. The
+  direct-variable `array_walk()` cursor now distinguishes value-cell bucket
+  identities from reference-cell bucket identities and advances by occurrence
+  when multiple walked buckets share the same reference cell, so a by-value
+  callback over duplicate reference-backed slots no longer loops back to the
+  first alias bucket. Focused proof covers the active score-gate blocker row,
+  exact-current pre-patch selected PHPT at `0/1` with a 35s wrapper timeout,
+  post-patch selected PHPT at `1/1`, Rust `array_walk` regression coverage,
+  build/fmt/diff checks, and the selected score-gate blocker row only.
+  Unsupported edges remain fully disambiguating duplicate reference-backed
+  buckets after earlier same-reference buckets are removed during the same
+  walk, direct-offset root live mutation parity, array-root replacement with
+  object inputs, precise first-parameter reference detection for all
+  array-callable/magic forms, broad references/COW, and native lowering.
+
 - Added a bounded by-value `callable` type diagnostics lane on the interpreter
   path. User-function parameter and return declarations now accept current
   callable values for string callbacks, supported public array-callable method

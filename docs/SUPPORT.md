@@ -11407,7 +11407,10 @@
   written back to the walked slot. Direct-variable array roots are re-read
   between callbacks, so same-storage unsets, different-array root replacement,
   and scalar root replacement during recursive walking are visible to the
-  cursor. Temporary references created only for a by-reference callback are
+  cursor. When multiple walked buckets share one reference cell, cursor
+  advancement distinguishes reference-cell buckets from value-cell buckets and
+  advances by occurrence, so by-value callbacks do not revisit the first alias
+  bucket. Temporary references created only for a by-reference callback are
   demoted back to value slots when the walked slot was not a reference before
   dispatch. The string callback `settype` is supported through that
   first-reference callback path. `array_walk_recursive(...)` shares those forms
@@ -11416,8 +11419,10 @@
   before iteration. First-class callable forms, unsupported dynamic callable
   shapes, exact exception trace frames for callbacks, direct-offset root
   live-mutation parity, array-root replacement with objects, mutation of object
-  property sets during walking, broad reference/COW parity, exact native
-  `TypeError` internals, and native lowering are not implemented.
+  property sets during walking, fully disambiguating duplicate reference-backed
+  buckets after earlier same-reference buckets are removed during the same
+  walk, broad reference/COW parity, exact native `TypeError` internals, and
+  native lowering are not implemented.
   `array_find($array, $callback)`, `array_find_key($array, $callback)`,
   `array_any($array, $callback)`, and `array_all($array, $callback)` accept an
   array plus callbacks that evaluate to string function names resolving to

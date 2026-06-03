@@ -110,6 +110,12 @@ const PHP_OUTPUT_HANDLER_STARTED: i64 = 0x1000;
 const PHP_OUTPUT_HANDLER_DISABLED: i64 = 0x2000;
 const PHP_OUTPUT_HANDLER_PROCESSED: i64 = 0x4000;
 
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+enum ArrayWalkSlotIdentity {
+    Value(ArraySlotCellId),
+    Reference(PhpReferenceCellId),
+}
+
 fn is_standard_stream_resource_id(id: i64) -> bool {
     (1..PHP_FIRST_USER_RESOURCE_ID).contains(&id)
 }
@@ -103647,7 +103653,7 @@ impl Interpreter {
                 .expect("position checked against array entries")
                 .clone();
             let key = entry.key.clone();
-            let current_slot_id = entry.slot().cell_id();
+            let current_slot_id = Self::array_walk_slot_identity(entry.slot());
 
             if recursive {
                 let mut value = entry.value_cloned();
@@ -103666,7 +103672,7 @@ impl Interpreter {
                     {
                         if let Some(slot) = current_array
                             .get_slot_mut(key.clone())
-                            .filter(|slot| slot.cell_id() == current_slot_id)
+                            .filter(|slot| Self::array_walk_slot_identity(slot) == current_slot_id)
                         {
                             slot.set_value(value);
                             caller_scope.write_static(array_name, Value::Array(current_array));
@@ -103801,26 +103807,43 @@ impl Interpreter {
         )
     }
 
-    fn array_walk_slot_ids(array: &PhpArray) -> Vec<ArraySlotCellId> {
+    fn array_walk_slot_ids(array: &PhpArray) -> Vec<ArrayWalkSlotIdentity> {
         array
             .entries()
             .iter()
-            .map(|entry| entry.slot().cell_id())
+            .map(|entry| Self::array_walk_slot_identity(entry.slot()))
             .collect()
     }
 
+    fn array_walk_slot_identity(slot: &ArraySlot) -> ArrayWalkSlotIdentity {
+        if let Some(reference_id) = slot.reference_cell_id() {
+            ArrayWalkSlotIdentity::Reference(reference_id)
+        } else {
+            ArrayWalkSlotIdentity::Value(slot.cell_id())
+        }
+    }
+
     fn array_walk_next_position_after_mutation(
-        before_slot_ids: &[ArraySlotCellId],
-        current_slot_id: ArraySlotCellId,
+        before_slot_ids: &[ArrayWalkSlotIdentity],
+        current_slot_id: ArrayWalkSlotIdentity,
         current_position: usize,
         after: &PhpArray,
     ) -> usize {
         let after_slot_ids = Self::array_walk_slot_ids(after);
-        if let Some(position) = after_slot_ids
+        let current_occurrence = before_slot_ids
             .iter()
-            .position(|slot_id| *slot_id == current_slot_id)
-        {
-            return position + 1;
+            .take(current_position.saturating_add(1))
+            .filter(|slot_id| **slot_id == current_slot_id)
+            .count();
+        let mut seen_current = 0usize;
+        for (position, slot_id) in after_slot_ids.iter().enumerate() {
+            if *slot_id != current_slot_id {
+                continue;
+            }
+            seen_current += 1;
+            if seen_current == current_occurrence {
+                return position + 1;
+            }
         }
 
         let before_set = before_slot_ids.iter().copied().collect::<HashSet<_>>();

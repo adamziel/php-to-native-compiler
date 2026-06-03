@@ -3817,11 +3817,14 @@ boxed array/object/reference machinery needed to preserve walk-visible mutation.
 For direct-variable array roots, the interpreter re-reads the root between
 callbacks, keeps same-storage unsets visible to the cursor, restarts on
 different-array root replacement, and raises a catchable PHP-shaped `TypeError`
-when recursive walking observes a scalar root replacement. Temporary
+when recursive walking observes a scalar root replacement. Cursor identity
+distinguishes plain value-cell buckets from reference-cell buckets and advances
+by occurrence when multiple walked buckets share one reference cell. Temporary
 by-reference callback slots are demoted back to value slots when the slot was
 not a reference before callback dispatch. Direct-offset roots, array-root
-replacement with objects, precise array-callable/magic reference metadata, and
-full reference/COW parity remain outside this subset.
+replacement with objects, precise array-callable/magic reference metadata,
+fully disambiguating duplicate reference buckets after earlier same-reference
+bucket removals, and full reference/COW parity remain outside this subset.
 Direct `strlen($value)` calls fold only when `$value` is an already-lowerable
 known string operand, including tracked string expressions whose possible
 values have one uniform byte length. A selected-`clang` assembly snapshot
