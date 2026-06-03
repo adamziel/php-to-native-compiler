@@ -426,3 +426,53 @@ var_dump((new ReflectionFunction("local_proto_fn"))->getExtension());
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);
 }
+
+#[test]
+fn reflection_property_dynamic_instance_metadata_is_bounded() {
+    let execution = run_source(
+        r#"<?php
+#[AllowDynamicProperties]
+class Bag {
+    private $hidden;
+    public $declared;
+}
+
+$bag = new Bag();
+$bag->dynamic = "value";
+
+$dynamic = new ReflectionProperty($bag, "dynamic");
+echo $dynamic->getName(), "|", $dynamic->getMangledName(), "|";
+var_dump($dynamic->isDefault(), $dynamic->isDynamic(), $dynamic->hasDefaultValue());
+var_dump($dynamic->isReadable(null, $bag));
+unset($bag->dynamic);
+var_dump($dynamic->isReadable(null, $bag));
+var_dump($dynamic->isWritable(null, $bag));
+var_dump($dynamic->isWritable(null, null));
+
+$declared = new ReflectionProperty($bag, "declared");
+var_dump($declared->isDefault(), $declared->isDynamic());
+
+$hidden = new ReflectionProperty($bag, "hidden");
+var_dump($hidden->isWritable(null, $bag));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "dynamic|dynamic|bool(false)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}

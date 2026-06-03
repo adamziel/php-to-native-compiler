@@ -10773,11 +10773,17 @@
   class; inherited public properties and typed-property coercion reuse the
   current object-property write rules. Public static properties support
   `getValue()` with zero or one ignored object argument and `setValue($value)`
-  or `setValue($object, $value)`, returning `null` after mutation. Non-public
-  property value access, dynamic properties, exact `ReflectionException` and
-  `TypeError` text, property aliases/references/COW side effects, readonly
-  property declarations, asymmetric visibility/property-hook behavior, and
-  native lowering remain unsupported for reflection property value access.
+  or `setValue($object, $value)`, returning `null` after mutation. For
+  initialized public dynamic properties on object-backed reflection targets,
+  `new ReflectionProperty($object, $name)` reports bounded public dynamic
+  metadata, `isDynamic()`, `isReadable()`, `isWritable()`,
+  `hasDefaultValue()`, `getDefaultValue()`, and `getMangledName()` match the
+  covered public slots, and `setValue()` writes through the dynamic public
+  property path. Non-public property value access, uninitialized/unset or
+  non-public dynamic slots, exact `ReflectionException` and `TypeError` text,
+  property aliases/references/COW side effects, readonly property
+  declarations, asymmetric visibility/property-hook behavior, and native
+  lowering remain unsupported for reflection property value access.
   `Reflection::getModifierNames()` accepts int-like scalar masks and returns
   PHP-ordered names for the currently supported reflection modifier bits:
   `abstract`, `final`, `public`, `protected`, `private`, `static`,

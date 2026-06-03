@@ -4595,13 +4595,18 @@ the selected declaring class id/name, property name, visibility, static flag,
 directly preceding property doc-comment text, and optional property type
 metadata. The interpreter answers name, doc comment, declaring class,
 modifier-mask, visibility/static predicates, default-value availability and
-value, and `hasType()`/`getType()`. Simple named property types materialize
+value, `isDynamic()`, `isReadable()`, `isWritable()`, and
+`hasType()`/`getType()`. Simple named property types materialize
 the existing request-local `ReflectionNamedType` object. Bounded union and pure
 intersection property types materialize request-local `ReflectionUnionType` or
 `ReflectionIntersectionType` objects whose `getTypes()` entries are
 `ReflectionNamedType` objects. Runtime typed-property enforcement reuses the
 current scalar coercion and class/interface relationship checks for those
-bounded property type shapes. `Reflection::getModifierNames()` is implemented
+bounded property type shapes. Object-backed `new ReflectionProperty()` also
+falls back to initialized public dynamic slots after declared metadata and
+represents them as public, non-static, non-default dynamic instance
+properties; dynamic `setValue()` writes through the runtime dynamic
+public-property path. `Reflection::getModifierNames()` is implemented
 as a deterministic bit-mask-to-name mapping over the compatibility modifier
 constants in the core class table, covering class, method, property, and class
 constant public/protected/private/static/final/abstract/readonly/virtual and
@@ -4610,8 +4615,9 @@ for readonly class/property declarations, property hooks, and asymmetric
 visibility remains outside this metadata lane even though those constants and
 modifier names are available. Property file/line metadata, attributes and exact
 docblock association across unusual trivia, parenthesized DNF property types,
-exact PHP union scalar coercion preference rules, reference/COW interactions,
-and native lowering remain unsupported.
+uninitialized/unset/non-public dynamic slots, exact PHP union scalar coercion
+preference rules, reference/COW interactions, and native lowering remain
+unsupported.
 `ReflectionClass::getTraitNames()` and `getTraits()` read the direct trait-name
 list already stored on runtime class metadata by the trait-composition pass
 for user classes, and direct trait-body `use` declarations for user traits.

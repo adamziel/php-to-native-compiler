@@ -4,6 +4,27 @@
 
 Implemented:
 
+- Added a bounded dynamic-property `ReflectionProperty` lane on the
+  interpreter path. `new ReflectionProperty($object, $name)` now resolves
+  initialized public dynamic object properties after declared metadata,
+  reports them as public dynamic non-default instance properties, exposes
+  `isDynamic()`, `isReadable()`, and `isWritable()` for the covered slice,
+  emits PHP's no-default `getDefaultValue()` deprecation, and writes dynamic
+  public slots through `setValue()`. Focused proof covers exact-current
+  pre-patch selected PHPT at `0/7` and post-patch selected PHPT at `7/7` for
+  `ext/reflection/tests/ReflectionProperty_basic2.phpt`,
+  `ext/reflection/tests/ReflectionProperty_getDefaultValue.phpt`,
+  `ext/reflection/tests/ReflectionProperty_hasDefaultValue.phpt`,
+  `ext/reflection/tests/ReflectionProperty_isDynamic_basic.phpt`,
+  `ext/reflection/tests/ReflectionProperty_getMangledName_dynamic.phpt`,
+  `ext/reflection/tests/ReflectionProperty_isReadable_dynamic.phpt`, and
+  `ext/reflection/tests/ReflectionProperty_isWritable_dynamic.phpt`; Rust
+  reflection metadata coverage, build/fmt/diff checks, and pinned wrapper
+  proof. Unsupported edges remain uninitialized/unset/non-public dynamic
+  slots, lazy/hooked/asymmetric/readonly property shapes, exact dynamic
+  `getValue()` / `setValue()` parity beyond public object slots,
+  references/COW, and native lowering.
+
 - Repaired the latest-published PASS regression in
   `ext/standard/tests/array/array_walk/array_walk_variation5.phpt`. The
   direct-variable `array_walk()` cursor now distinguishes value-cell bucket

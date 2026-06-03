@@ -32742,6 +32742,8 @@ impl PhpClassTable {
             "hasType",
             "getType",
             "getAttributes",
+            "isReadable",
+            "isWritable",
         ] {
             reflection_property
                 .add_method(PhpMethodMetadata::instance(method, Visibility::Public))

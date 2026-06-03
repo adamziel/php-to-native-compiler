@@ -1143,6 +1143,7 @@ struct ReflectionPropertyState {
     doc_comment: Option<String>,
     visibility: Visibility,
     is_static: bool,
+    is_dynamic: bool,
     has_default: bool,
     type_decl: Option<String>,
     attributes: Vec<AttributeDecl>,
@@ -47849,9 +47850,68 @@ impl Interpreter {
                 ),
             ));
         };
-        let class = self.resolve_reflection_class_target(&target, span)?;
-        let state = self.resolve_reflection_property_target(&class, &property_name, span)?;
+        let state = match &target {
+            Value::Object(object) => {
+                self.resolve_reflection_property_target_for_object(object, &property_name, span)?
+            }
+            _ => {
+                let class = self.resolve_reflection_class_target(&target, span)?;
+                self.resolve_reflection_property_target(&class, &property_name, span)?
+            }
+        };
         self.create_reflection_property_object(state, span)
+    }
+
+    fn resolve_reflection_property_target_for_object(
+        &self,
+        object: &PhpObject,
+        property_name: &str,
+        span: Span,
+    ) -> CompileResult<ReflectionPropertyState> {
+        if let Some(state) = self.resolve_class_property_metadata(object.class_id(), property_name)
+        {
+            return Ok(state);
+        }
+        if let Some(state) = self.reflection_dynamic_object_property_state(object, property_name) {
+            return Ok(state);
+        }
+        Err(reflection_exception_error(
+            span,
+            format!(
+                "Property {}::${property_name} does not exist",
+                object.class_name()
+            ),
+        ))
+    }
+
+    fn reflection_dynamic_object_property_state(
+        &self,
+        object: &PhpObject,
+        property_name: &str,
+    ) -> Option<ReflectionPropertyState> {
+        object
+            .properties()
+            .into_iter()
+            .rev()
+            .find(|property| {
+                property.name() == property_name
+                    && property.visibility() == Visibility::Public
+                    && property.is_initialized()
+                    && !property.is_unset()
+            })
+            .map(|property| ReflectionPropertyState {
+                declaring_class_name: object.class_name().to_string(),
+                declaring_kind: ReflectionClassKind::Class,
+                declaring_class_id: Some(object.class_id()),
+                name: property.name().to_string(),
+                doc_comment: None,
+                visibility: Visibility::Public,
+                is_static: false,
+                is_dynamic: true,
+                has_default: false,
+                type_decl: None,
+                attributes: Vec::new(),
+            })
     }
 
     fn resolve_reflection_property_target(
@@ -56865,6 +56925,7 @@ impl Interpreter {
                         doc_comment: property.doc_comment,
                         visibility: runtime_visibility(property.visibility),
                         is_static: property.is_static,
+                        is_dynamic: false,
                         has_default: property.default.is_some(),
                         type_decl: property.type_decl.map(|decl| decl.text),
                         attributes: property.attributes,
@@ -57506,6 +57567,7 @@ impl Interpreter {
                             .and_then(|metadata| metadata.doc_comment.clone()),
                         visibility: property.visibility(),
                         is_static: property.is_static(),
+                        is_dynamic: false,
                         has_default: self
                             .reflection_property_metadata_has_default(class.id(), property),
                         type_decl: property.type_decl().map(str::to_string),
@@ -57545,6 +57607,7 @@ impl Interpreter {
                 doc_comment: property.doc_comment,
                 visibility: runtime_visibility(property.visibility),
                 is_static: property.is_static,
+                is_dynamic: false,
                 has_default: property.default.is_some(),
                 type_decl: property.type_decl.map(|decl| decl.text),
                 attributes: property.attributes,
@@ -57574,6 +57637,7 @@ impl Interpreter {
                     doc_comment: source_metadata.and_then(|metadata| metadata.doc_comment.clone()),
                     visibility: property.visibility(),
                     is_static: property.is_static(),
+                    is_dynamic: false,
                     has_default: self
                         .reflection_property_metadata_has_default(class.id(), property),
                     type_decl: property.type_decl().map(str::to_string),
@@ -59647,11 +59711,11 @@ impl Interpreter {
             }
             "isdefault" => {
                 expect_expr_arity("ReflectionProperty::isDefault", args.len(), 0, span)?;
-                Ok(Value::Bool(true))
+                Ok(Value::Bool(!state.is_dynamic))
             }
             "isdynamic" => {
                 expect_expr_arity("ReflectionProperty::isDynamic", args.len(), 0, span)?;
-                Ok(Value::Bool(false))
+                Ok(Value::Bool(state.is_dynamic))
             }
             "ispublic" => {
                 expect_expr_arity("ReflectionProperty::isPublic", args.len(), 0, span)?;
@@ -59675,6 +59739,14 @@ impl Interpreter {
             }
             "getdefaultvalue" => {
                 expect_expr_arity("ReflectionProperty::getDefaultValue", args.len(), 0, span)?;
+                if !state.has_default {
+                    self.emit_display_diagnostic(
+                        "Deprecated",
+                        PHP_E_DEPRECATED,
+                        "ReflectionProperty::getDefaultValue() for a property without a default value is deprecated, use ReflectionProperty::hasDefaultValue() to check if the default value exists",
+                        span,
+                    )?;
+                }
                 self.reflection_property_default_value(&state, span)
             }
             "hastype" => {
@@ -59706,6 +59778,26 @@ impl Interpreter {
             ),
             "getvalue" => self.reflection_property_get_value(&state, args, span, caller_scope),
             "setvalue" => self.reflection_property_set_value(&state, args, span, caller_scope),
+            "isreadable" => {
+                let target = self.reflection_property_access_probe_target(
+                    "ReflectionProperty::isReadable",
+                    args,
+                    span,
+                    caller_scope,
+                )?;
+                self.reflection_property_is_readable(&state, target, span)
+                    .map(Value::Bool)
+            }
+            "iswritable" => {
+                let target = self.reflection_property_access_probe_target(
+                    "ReflectionProperty::isWritable",
+                    args,
+                    span,
+                    caller_scope,
+                )?;
+                self.reflection_property_is_writable(&state, target, span)
+                    .map(Value::Bool)
+            }
             _ => Err(runtime_error(
                 span,
                 RuntimeError::undefined_function(format!("ReflectionProperty::{method_name}()")),
@@ -59895,10 +59987,151 @@ impl Interpreter {
         let target = self.evaluate(&args[0], caller_scope)?;
         let value = self.evaluate(&args[1], caller_scope)?;
         let object = self.reflection_property_instance_target(state, target, span)?;
-        object
-            .write_public_property(&state.name, value)
-            .map_err(|error| runtime_error(span, error))?;
+        let write_result = if state.is_dynamic {
+            object.write_dynamic_public_property(&state.name, value)
+        } else {
+            object.write_public_property(&state.name, value)
+        };
+        write_result.map_err(|error| runtime_error(span, error))?;
         Ok(Value::Null)
+    }
+
+    fn reflection_property_access_probe_target(
+        &mut self,
+        method_name: &str,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Option<PhpObject>> {
+        if args.len() > 2 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    format!("{method_name}()"),
+                    ArityExpectation::Between { min: 0, max: 2 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        if let Some(scope_expr) = args.first() {
+            match self.evaluate(scope_expr, caller_scope)? {
+                Value::Null => {}
+                Value::String(scope) => {
+                    if self.classes.lookup_class_id(&scope).is_none() {
+                        return Err(runtime_error(
+                            scope_expr.span(),
+                            RuntimeError::undefined_class(scope),
+                        ));
+                    }
+                }
+                other => {
+                    return Err(runtime_error(
+                        scope_expr.span(),
+                        RuntimeError::unsupported_call(
+                            method_name,
+                            format!(
+                                "scope argument must be string or null in the current subset, got {}",
+                                other.type_name()
+                            ),
+                        ),
+                    ));
+                }
+            }
+        }
+
+        let Some(object_expr) = args.get(1) else {
+            return Ok(None);
+        };
+        match self.evaluate(object_expr, caller_scope)? {
+            Value::Null => Ok(None),
+            Value::Object(object) => Ok(Some(object)),
+            other => Err(runtime_error(
+                object_expr.span(),
+                RuntimeError::unsupported_call(
+                    method_name,
+                    format!(
+                        "object argument must be object or null in the current subset, got {}",
+                        other.type_name()
+                    ),
+                ),
+            )),
+        }
+    }
+
+    fn reflection_property_is_readable(
+        &self,
+        state: &ReflectionPropertyState,
+        target: Option<PhpObject>,
+        span: Span,
+    ) -> CompileResult<bool> {
+        if state.is_static {
+            return Ok(state.visibility == Visibility::Public
+                && state.declaring_class_id.is_some_and(|class_id| {
+                    self.static_properties
+                        .contains_key(&(class_id, state.name.clone()))
+                }));
+        }
+
+        if state.visibility != Visibility::Public {
+            return Ok(false);
+        }
+
+        let Some(object) = target else {
+            return Ok(!state.is_dynamic);
+        };
+        if !object.is_instance_of_class_name(&state.declaring_class_name) {
+            return Ok(false);
+        }
+
+        if state.is_dynamic {
+            return Ok(self
+                .reflection_dynamic_object_property_state(&object, &state.name)
+                .is_some());
+        }
+
+        match object.read_public_property(&state.name) {
+            Ok(_) => Ok(true),
+            Err(error) if matches!(error.kind(), RuntimeErrorKind::UndefinedProperty { .. }) => {
+                Ok(false)
+            }
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    RuntimeErrorKind::UninitializedTypedProperty { .. }
+                ) =>
+            {
+                Ok(false)
+            }
+            Err(error) => Err(runtime_error(span, error)),
+        }
+    }
+
+    fn reflection_property_is_writable(
+        &self,
+        state: &ReflectionPropertyState,
+        target: Option<PhpObject>,
+        _span: Span,
+    ) -> CompileResult<bool> {
+        if state.is_dynamic {
+            return Ok(target
+                .map(|object| {
+                    object.is_instance_of_class_name(&state.declaring_class_name)
+                        && object.allows_dynamic_public_properties()
+                })
+                .unwrap_or(true));
+        }
+
+        if state.visibility != Visibility::Public {
+            return Ok(false);
+        }
+        if state.is_static {
+            return Ok(true);
+        }
+
+        Ok(target
+            .map(|object| object.is_instance_of_class_name(&state.declaring_class_name))
+            .unwrap_or(true))
     }
 
     fn ensure_reflection_property_public(
