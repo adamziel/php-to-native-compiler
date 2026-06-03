@@ -13485,14 +13485,10 @@ impl Interpreter {
                 self.array_objects.insert(object.id(), state);
                 Ok(())
             }
-            Value::Object(object) => object
-                .unset_property_from_context(
-                    &Self::array_object_key_to_property_name(key),
-                    None,
-                    &[],
-                )
-                .map(|_| ())
-                .map_err(|error| runtime_error(span, error)),
+            Value::Object(object) => {
+                object.unset_forced_public_property(&Self::array_object_key_to_property_name(key));
+                Ok(())
+            }
             other => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
@@ -29319,6 +29315,14 @@ impl Interpreter {
                     declared_class_name,
                     "PDO connections, drivers, statements, and host database state are not implemented in the current subset",
                 ),
+            ));
+        }
+        if declared_class_name.eq_ignore_ascii_case("Directory") {
+            return Err(Diagnostic::new(
+                Phase::Runtime,
+                span.line,
+                span.column,
+                "Cannot directly construct Directory, use dir() instead",
             ));
         }
         if declared_class_name.eq_ignore_ascii_case("Attribute") {
@@ -56038,6 +56042,51 @@ impl Interpreter {
                     .is_some_and(|class_id| !self.abstract_classes.contains(&class_id));
                 Ok(Value::Bool(instantiable))
             }
+            "newinstancewithoutconstructor" => {
+                expect_expr_arity(
+                    "ReflectionClass::newInstanceWithoutConstructor",
+                    args.len(),
+                    0,
+                    span,
+                )?;
+                let (ReflectionClassKind::Class, Some(class_id)) = (state.kind, state.class_id)
+                else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_object_instantiation(
+                            state.name,
+                            "only concrete classes can be instantiated without constructor",
+                        ),
+                    ));
+                };
+                if self.abstract_classes.contains(&class_id) {
+                    return Err(Diagnostic::new(
+                        Phase::Runtime,
+                        span.line,
+                        span.column,
+                        format!("Cannot instantiate abstract class {}", state.name),
+                    ));
+                }
+                let inherited_properties = self.inherited_instance_properties(class_id);
+                let mut ancestor_class_names = self.inherited_class_names(class_id);
+                ancestor_class_names.extend(self.class_alias_names(class_id));
+                let interface_names = self.class_implements_interface_names(class_id);
+                let object_id = self.allocate_object_id();
+                let class = self
+                    .classes
+                    .get(class_id)
+                    .expect("reflected class id should resolve");
+                let object = PhpObject::from_class_with_relationship_metadata_with_id(
+                    class,
+                    &inherited_properties,
+                    ancestor_class_names,
+                    interface_names,
+                    object_id,
+                );
+                self.apply_instance_property_defaults(&object, class_id, span)?;
+                self.track_allocated_object(&object);
+                Ok(Value::Object(object))
+            }
             "isinstance" => {
                 expect_expr_arity("ReflectionClass::isInstance", args.len(), 1, span)?;
                 let value = self.evaluate(&args[0], caller_scope)?;
@@ -57006,6 +57055,11 @@ impl Interpreter {
         span: Span,
     ) -> CompileResult<String> {
         if !self.reflection_class_is_user_defined(state) {
+            if state.kind == ReflectionClassKind::Class
+                && state.name.eq_ignore_ascii_case("Directory")
+            {
+                return Ok(directory_reflection_class_to_string().to_string());
+            }
             return Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
@@ -93418,19 +93472,37 @@ impl Interpreter {
             }
         };
         expect_expr_arity(&format!("Directory::{method_name}"), args.len(), 0, span)?;
-        let handle = object
-            .read_property_from_context("handle", None, &[])
-            .map_err(|error| runtime_error(span, error))?;
+        let handle = match object.read_property_from_context("handle", None, &[]) {
+            Ok(handle) => handle,
+            Err(_) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        format!("Directory::{method_name}()"),
+                        "Internal directory stream has been altered",
+                    ),
+                ));
+            }
+        };
         let Value::Resource(id) = handle else {
             return Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
                     format!("Directory::{method_name}()"),
-                    format!("Directory::{method_name}(): cannot use Directory resource after it has been closed"),
+                    "Internal directory stream has been altered",
                 ),
             ));
         };
         if !self.directories.contains_key(&id) {
+            if self.value_is_open_resource(&Value::Resource(id)) {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        format!("Directory::{method_name}()"),
+                        "Internal directory stream has been altered",
+                    ),
+                ));
+            }
             return Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
@@ -100209,6 +100281,15 @@ impl Interpreter {
         expect_arity("serialize()", args, 1, span)?;
         let mut output = String::new();
         if let Value::Object(object) = &args[0] {
+            if object.class_name().eq_ignore_ascii_case("Directory") {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "serialize()",
+                        "Serialization of 'Directory' is not allowed",
+                    ),
+                ));
+            }
             if let Some(state) = self.hash_contexts.get(&object.id()) {
                 if let Some(message) = hash_context_serialize_error_message(state) {
                     return Err(runtime_error(
@@ -112984,7 +113065,7 @@ fn seed_interpreter_generator_class(classes: &mut PhpClassTable) -> CompileResul
 }
 
 fn seed_core_final_class_markers(classes: &PhpClassTable, final_classes: &mut HashSet<ClassId>) {
-    for class_name in ["BcMath\\Number", "HashContext"] {
+    for class_name in ["BcMath\\Number", "Directory", "HashContext"] {
         if let Some(class_id) = classes.lookup_class_id(class_name) {
             final_classes.insert(class_id);
         }
@@ -118327,7 +118408,8 @@ fn reflection_modifier_names_array(modifiers: i64) -> PhpArray {
 fn reflection_object_is_uncloneable_class(class_name: &str) -> bool {
     matches!(
         class_name.to_ascii_lowercase().as_str(),
-        "reflection"
+        "directory"
+            | "reflection"
             | "reflectionfunctionabstract"
             | "reflectionfunction"
             | "reflectiongenerator"
@@ -118349,6 +118431,50 @@ fn reflection_object_is_uncloneable_class(class_name: &str) -> bool {
             | "reflectionenumunitcase"
             | "reflectionenumbackedcase"
             | "reflectionfiber"
+    )
+}
+
+fn directory_reflection_class_to_string() -> &'static str {
+    concat!(
+        "Class [ <internal:standard> final class Directory ] {\n",
+        "\n",
+        "  - Constants [0] {\n",
+        "  }\n",
+        "\n",
+        "  - Static properties [0] {\n",
+        "  }\n",
+        "\n",
+        "  - Static methods [0] {\n",
+        "  }\n",
+        "\n",
+        "  - Properties [2] {\n",
+        "    Property [ public protected(set) readonly string $path ]\n",
+        "    Property [ public protected(set) readonly mixed $handle ]\n",
+        "  }\n",
+        "\n",
+        "  - Methods [3] {\n",
+        "    Method [ <internal:standard> public method close ] {\n",
+        "\n",
+        "      - Parameters [0] {\n",
+        "      }\n",
+        "      - Return [ void ]\n",
+        "    }\n",
+        "\n",
+        "    Method [ <internal:standard> public method rewind ] {\n",
+        "\n",
+        "      - Parameters [0] {\n",
+        "      }\n",
+        "      - Return [ void ]\n",
+        "    }\n",
+        "\n",
+        "    Method [ <internal:standard> public method read ] {\n",
+        "\n",
+        "      - Parameters [0] {\n",
+        "      }\n",
+        "      - Return [ string|false ]\n",
+        "    }\n",
+        "  }\n",
+        "}\n",
     )
 }
 
@@ -121238,6 +121364,10 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
             return Some(("Error", error.message.clone()));
         }
 
+        if error.message == "Cannot directly construct Directory, use dir() instead" {
+            return Some(("Error", error.message.clone()));
+        }
+
         if error.message == "Invalid attribute flags specified"
             || error
                 .message
@@ -121314,6 +121444,18 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
 
         if error.message == "Using $this when not in object context" {
             return Some(("Error", error.message.clone()));
+        }
+
+        for prefix in [
+            "unsupported call Directory::read(): ",
+            "unsupported call Directory::rewind(): ",
+            "unsupported call Directory::close(): ",
+        ] {
+            if let Some(message) = error.message.strip_prefix(prefix) {
+                if message == "Internal directory stream has been altered" {
+                    return Some(("Error", message.to_string()));
+                }
+            }
         }
 
         for prefix in [
@@ -123108,7 +123250,8 @@ fn hash_context_php_exception_message(error: &Diagnostic) -> Option<String> {
     let message = error
         .message
         .strip_prefix("unsupported call serialize(): ")?;
-    if message == "HashContext with HASH_HMAC option cannot be serialized"
+    if message == "Serialization of 'Directory' is not allowed"
+        || message == "HashContext with HASH_HMAC option cannot be serialized"
         || (message.starts_with("HashContext for algorithm \"")
             && message.ends_with("\" cannot be serialized"))
     {
@@ -166904,17 +167047,26 @@ where
                 return Ok(output);
             }
             let properties = display_object_properties(value);
+            let initialized_property_count = properties
+                .iter()
+                .filter(|property| property.is_initialized())
+                .count();
             let mut output = format!(
                 "{padding}object({})#{} ({}) {{\n",
                 value.class_name(),
                 value.id(),
-                properties.len()
+                initialized_property_count
             );
             for property in properties {
                 output.push_str(&format!(
                     "{padding}  [{}]=>\n",
                     format_var_dump_object_property(&property)
                 ));
+                if !property.is_initialized() {
+                    let type_decl = property.type_decl().unwrap_or("mixed");
+                    output.push_str(&format!("{padding}  uninitialized({type_decl})\n"));
+                    continue;
+                }
                 let property_value = property.value_cloned();
                 let mut property_output = format_var_dump_with_indent(
                     &property_value,
@@ -166986,11 +167138,15 @@ where
                 return Ok(output.into_bytes());
             }
             let properties = display_object_properties(value);
+            let initialized_property_count = properties
+                .iter()
+                .filter(|property| property.is_initialized())
+                .count();
             let mut output = format!(
                 "{padding}object({})#{} ({}) {{\n",
                 value.class_name(),
                 value.id(),
-                properties.len()
+                initialized_property_count
             )
             .into_bytes();
             for property in properties {
@@ -167001,6 +167157,13 @@ where
                     )
                     .as_bytes(),
                 );
+                if !property.is_initialized() {
+                    let type_decl = property.type_decl().unwrap_or("mixed");
+                    output.extend_from_slice(
+                        format!("{padding}  uninitialized({type_decl})\n").as_bytes(),
+                    );
+                    continue;
+                }
                 let property_value = property.value_cloned();
                 let mut property_output = format_var_dump_bytes_with_indent(
                     &property_value,

@@ -32480,6 +32480,7 @@ impl PhpClassTable {
             "getStaticPropertyValue",
             "setStaticPropertyValue",
             "getDefaultProperties",
+            "newInstanceWithoutConstructor",
             "getAttributes",
         ] {
             reflection_class
@@ -32880,11 +32881,20 @@ impl PhpClassTable {
         let directory = classes
             .get_mut(directory_id)
             .expect("declared Directory class id should resolve");
-        for property in ["path", "handle"] {
-            directory
-                .add_property(PhpPropertyMetadata::instance(property, Visibility::Public))
-                .expect("Directory core metadata should not duplicate properties");
-        }
+        directory
+            .add_property(
+                PhpPropertyMetadata::instance("path", Visibility::Public)
+                    .with_type_decl(Some("string".to_string()))
+                    .readonly(),
+            )
+            .expect("Directory core metadata should not duplicate path property");
+        directory
+            .add_property(
+                PhpPropertyMetadata::instance("handle", Visibility::Public)
+                    .with_type_decl(Some("mixed".to_string()))
+                    .readonly(),
+            )
+            .expect("Directory core metadata should not duplicate handle property");
         for method in ["read", "rewind", "close"] {
             directory
                 .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
@@ -38092,6 +38102,15 @@ impl PhpObject {
             initialized: true,
             unset: false,
         });
+    }
+
+    pub fn unset_forced_public_property(&self, name: &str) {
+        let mut properties = self.properties.borrow_mut();
+        if let Some(index) = properties.iter().rposition(|property| {
+            property.name == name && property.visibility == Visibility::Public
+        }) {
+            properties[index].unset_value();
+        }
     }
 
     pub fn write_serialized_property(&self, mangled_name: &str, value: Value) -> RuntimeResult<()> {
