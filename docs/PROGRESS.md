@@ -4,6 +4,24 @@
 
 Implemented:
 
+- Added a bounded append-offset read fatal lane on the interpreter path.
+  Append-offset reads such as `$array[]`, `foreach ($array[] as $value)`,
+  `isset($array[])`, and supported instance property defaults now reach a
+  PHP-shaped fatal `Cannot use [] for reading` instead of earlier project
+  parse or unsupported-call diagnostics. Focused proof covers exact-current
+  pre-patch selected PHPT at `0/8` and post-patch selected PHPT at `8/8` for
+  `Zend/tests/array_append_reading_error.phpt`, `Zend/tests/bug70183.phpt`,
+  `Zend/tests/bug70912.phpt`, `Zend/tests/errmsg/errmsg_006.phpt`,
+  `Zend/tests/errmsg/errmsg_007.phpt`, `Zend/tests/foreach/bug41351.phpt`,
+  `Zend/tests/foreach/bug41351_2.phpt`, and
+  `Zend/tests/foreach/bug41351_3.phpt`; Rust
+  `append_offsets_raise_php_fatal_as_reads`, build/fmt/diff checks, and the
+  non-date latest-published PASS-regression scout at `7/7`. Unsupported edges
+  remain catchable `Error` behavior for runtime append reads, PHP's exact
+  uncaught stack shape after earlier by-reference append-argument output,
+  compile-time `eval()` failure timing for append reads in unexecuted method
+  bodies, references/COW, and native lowering.
+
 - Added a bounded directory path/handle diagnostics lane on the interpreter
   path. `scandir("")` now raises PHP's catchable empty-directory `ValueError`
   instead of treating the empty path as the current working directory, failed

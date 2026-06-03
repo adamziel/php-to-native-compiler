@@ -552,21 +552,19 @@ echo (($j - 7 + $y) = $a - 7);
 }
 
 #[test]
-fn append_offsets_remain_unsupported_as_reads() {
+fn append_offsets_raise_php_fatal_as_reads() {
     let cases = [
-        ("<?php\n$items = [];\necho $items[];\n", 3, 6),
-        ("<?php\n$items = [];\necho ($target = $items[]);\n", 3, 17),
+        "<?php\n$items = [];\necho $items[];\n",
+        "<?php\n$items = [];\necho ($target = $items[]);\n",
     ];
 
-    for (source, line, column) in cases {
-        let error = run_source(source).unwrap_err();
-        assert_eq!(error.phase, Phase::Parse);
-        assert_eq!(error.line, line);
-        assert_eq!(error.column, column);
+    for source in cases {
+        let execution = run_source(source).unwrap();
         assert_eq!(
-            error.message,
-            "cannot use [] for reading; append syntax is only supported in assignments"
+            execution.stdout,
+            "Fatal error: Cannot use [] for reading in Command line code on line 3"
         );
+        assert_eq!(execution.exit_code, 255);
     }
 }
 

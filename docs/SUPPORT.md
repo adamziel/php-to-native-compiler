@@ -1856,7 +1856,10 @@
   path index expressions left to right before the right-hand expression,
   materialize undefined, missing, or `null` array containers under the current
   no-reference/no-copy-on-write model, append to the final nested array, and
-  return the appended value. Direct object-property assignment expressions
+  return the appended value. Append-offset reads such as `$array[]`,
+  `foreach ($array[] as $value)`, and `isset($array[])` stop through a bounded
+  PHP-shaped fatal `Cannot use [] for reading`, including supported instance
+  property default evaluation. Direct object-property assignment expressions
   evaluate the right-hand expression, then write existing declared public
   property slots on direct object variables. Keyword-named direct properties
   such as `$object->public` and `$object->class` are accepted as property names
@@ -12033,7 +12036,15 @@
   append to direct array variables, materialize undefined or `null` target
   variables as arrays, and reject existing non-array targets with a stable
   runtime diagnostic; append offsets are not supported inside chained
-  assignment expressions.
+  assignment expressions. Append-offset reads such as `$array[]`,
+  `foreach ($array[] as $value)`, and `isset($array[])` are accepted by the
+  parser and stop through a bounded PHP-shaped fatal
+  `Cannot use [] for reading`; the same fatal is used when an append read is
+  reached while evaluating a supported instance property default. Catchable
+  `Error` behavior for append reads inside `try/catch`, PHP's uncaught stack
+  shape after earlier by-reference append-argument output, compile-time
+  `eval()` failure timing for append reads in unexecuted method bodies, and
+  native lowering remain unsupported.
   Direct object-property assignment expressions evaluate the right-hand
   expression before validating/writing the direct object-variable target,
   reject undefined or non-object targets and non-public properties with stable

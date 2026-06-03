@@ -997,6 +997,15 @@ whose value is an `ArrayAccess` object can dispatch single-key read/write,
 `isset`, `empty`, `??`, and `unset` operations through that contained object;
 deeper mixed object/property/ArrayAccess chains and other nested
 read-modify-write forms remain explicit boundaries.
+Append-offset reads remain invalid PHP, but the interpreter now carries them
+as AST expressions far enough for the runtime to emit a PHP-shaped
+`Cannot use [] for reading` fatal instead of a project parse diagnostic. The
+same runtime diagnostic is reused for expression reads, `foreach` iterable
+evaluation, `isset()` operands, and the current supported instance-property
+default evaluation path. Catchable `Error` behavior for runtime append reads,
+PHP's exact uncaught stack presentation after prior by-reference append
+argument output, compile-time `eval()` failure timing for append reads in
+unexecuted method bodies, and native lowering remain outside this boundary.
 Unset targets follow the same conservative pattern: direct variables,
 direct/nested array offsets, selected static-property diagnostics, and
 direct-object-property nested array offsets have explicit targets, while plain

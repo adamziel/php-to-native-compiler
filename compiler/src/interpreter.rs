@@ -144,6 +144,7 @@ const PHP_JSON_ERROR_INF_OR_NAN: i64 = 7;
 const PHP_JSON_ERROR_UNSUPPORTED_TYPE: i64 = 8;
 const PHP_JSON_ERROR_INVALID_PROPERTY_NAME: i64 = 9;
 const PHP_JSON_ERROR_UTF16: i64 = 10;
+const APPEND_OFFSET_READ_FATAL_MESSAGE: &str = "Cannot use [] for reading";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Execution {
@@ -206,6 +207,11 @@ fn run_program_with_optional_source_file(
         Ok(interpreter) => interpreter,
         Err(error) => {
             if let Some(execution) =
+                append_offset_read_startup_fatal_execution(&error, source_file.as_deref())
+            {
+                return Ok(execution);
+            }
+            if let Some(execution) =
                 php_token_final_constructor_override_execution(&error, source_file.as_deref())
             {
                 return Ok(execution);
@@ -254,6 +260,23 @@ fn class_registration_startup_fatal_execution(
     source_file: Option<&str>,
 ) -> Option<Execution> {
     let message = class_registration_startup_fatal_message(error)?;
+    let file = source_file
+        .map(str::to_string)
+        .or_else(|| error.file.as_ref().map(|file| file.display().to_string()))
+        .unwrap_or_else(|| "Command line code".to_string());
+    Some(Execution {
+        stdout: String::new(),
+        stdout_bytes: Vec::new(),
+        stderr: format!("Fatal error: {message} in {file} on line {}", error.line),
+        exit_code: 255,
+    })
+}
+
+fn append_offset_read_startup_fatal_execution(
+    error: &Diagnostic,
+    source_file: Option<&str>,
+) -> Option<Execution> {
+    let message = fatal_append_offset_read_message(error)?;
     let file = source_file
         .map(str::to_string)
         .or_else(|| error.file.as_ref().map(|file| file.display().to_string()))
@@ -24792,6 +24815,9 @@ impl Interpreter {
                 if let Some(message) = fatal_declare_error_message(&error) {
                     return self.fatal_runtime_message_execution(&error, &message);
                 }
+                if let Some(message) = fatal_append_offset_read_message(&error) {
+                    return self.fatal_runtime_message_execution(&error, &message);
+                }
                 if is_positional_argument_after_named_argument_error(&error) {
                     return self.fatal_runtime_message_execution(&error, &error.message);
                 }
@@ -28660,10 +28686,7 @@ impl Interpreter {
                 index,
                 span,
             } => self.evaluate_array_index(target, index, *span, scope),
-            Expr::AppendIndex { span, .. } => Err(runtime_error(
-                *span,
-                RuntimeError::unsupported_call("[]", "append offset reads are not implemented"),
-            )),
+            Expr::AppendIndex { span, .. } => Err(append_offset_read_error(*span)),
             Expr::Property {
                 target,
                 property,
@@ -103134,6 +103157,7 @@ impl Interpreter {
             Expr::LateStaticProperty { property, span } => {
                 self.is_late_static_property_set(property, *span)
             }
+            Expr::AppendIndex { span, .. } => Err(append_offset_read_error(*span)),
             _ => Err(runtime_error(
                 arg.span(),
                 RuntimeError::unsupported_call(
@@ -118410,6 +118434,13 @@ fn runtime_error(span: Span, error: RuntimeError) -> Diagnostic {
     Diagnostic::new(Phase::Runtime, span.line, span.column, error.message())
 }
 
+fn append_offset_read_error(span: Span) -> Diagnostic {
+    runtime_error(
+        span,
+        RuntimeError::unsupported_call("[]", APPEND_OFFSET_READ_FATAL_MESSAGE),
+    )
+}
+
 fn introspection_object_type_error(
     function_name: &'static str,
     parameter_name: &'static str,
@@ -120798,6 +120829,14 @@ fn fatal_declare_error_message(error: &Diagnostic) -> Option<String> {
     }
     let message = error.message.strip_prefix("unsupported call declare: ")?;
     (message == "strict_types declaration must not use block mode").then(|| message.to_string())
+}
+
+fn fatal_append_offset_read_message(error: &Diagnostic) -> Option<String> {
+    if error.phase != Phase::Runtime {
+        return None;
+    }
+    let message = error.message.strip_prefix("unsupported call []: ")?;
+    (message == APPEND_OFFSET_READ_FATAL_MESSAGE).then(|| message.to_string())
 }
 
 fn typed_property_reference_type_error_message(error: &Diagnostic) -> Option<String> {

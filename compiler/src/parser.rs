@@ -5697,7 +5697,7 @@ impl Parser {
     }
 
     fn parse_expression(&mut self) -> CompileResult<Expr> {
-        self.parse_expression_with_append_read(false)
+        self.parse_expression_with_append_read(true)
     }
 
     fn parse_expression_with_append_read(
@@ -5755,13 +5755,13 @@ impl Parser {
     }
 
     fn parse_assignment_expression(&mut self) -> CompileResult<Expr> {
-        self.parse_assignment_expression_with_options(true, false)
+        self.parse_assignment_expression_with_options(true, true)
     }
 
     fn parse_assignment_expression_without_unparenthesized_ternary(
         &mut self,
     ) -> CompileResult<Expr> {
-        self.parse_assignment_expression_with_options(false, false)
+        self.parse_assignment_expression_with_options(false, true)
     }
 
     fn parse_assignment_expression_with_options(
@@ -5787,12 +5787,6 @@ impl Parser {
             let span = target.span();
 
             let value = self.parse_non_assignment_expression_with_ternary(allow_ternary)?;
-            if let Some(span) = Self::find_append_index_span(&value) {
-                return Err(self.error_at(
-                    span,
-                    "cannot use [] for reading; append syntax is only supported in assignments",
-                ));
-            }
             if Self::expr_contains_assignment(&value)
                 || self.check(|kind| matches!(kind, TokenKind::Equal))
                 || (self.check(|kind| matches!(kind, TokenKind::QuestionQuestion))
@@ -5824,12 +5818,6 @@ impl Parser {
             let span = target.span();
 
             let value = self.parse_non_assignment_expression_with_ternary(allow_ternary)?;
-            if let Some(span) = Self::find_append_index_span(&value) {
-                return Err(self.error_at(
-                    span,
-                    "cannot use [] for reading; append syntax is only supported in assignments",
-                ));
-            }
             if Self::expr_contains_assignment(&value)
                 || self.check(|kind| matches!(kind, TokenKind::Equal))
                 || (self.check(|kind| matches!(kind, TokenKind::QuestionQuestion))
@@ -5867,13 +5855,7 @@ impl Parser {
             .map_err(|message| self.error_at(operator_span, message))?;
         let span = target.span();
 
-        let value = self.parse_assignment_expression_with_options(allow_ternary, false)?;
-        if let Some(span) = Self::find_append_index_span(&value) {
-            return Err(self.error_at(
-                span,
-                "cannot use [] for reading; append syntax is only supported in assignments",
-            ));
-        }
+        let value = self.parse_assignment_expression_with_options(allow_ternary, true)?;
         if matches!(target, AssignTarget::ArrayIndex { index: None, .. })
             && Self::expr_contains_assignment(&value)
         {
@@ -8004,6 +7986,9 @@ impl Parser {
     }
 
     fn ensure_supported_instance_property_default_expr(&self, expr: &Expr) -> CompileResult<()> {
+        if let Expr::AppendIndex { target, .. } = expr {
+            return self.ensure_supported_instance_property_default_expr(target);
+        }
         self.ensure_supported_const_declaration_expr(expr)
             .map_err(|_error| {
                 self.error_at(
