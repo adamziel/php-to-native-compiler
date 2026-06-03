@@ -3726,7 +3726,7 @@
   `implode`, `basename`, `dirname`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`,
   `file_put_contents`, `readfile`, `unlink`, `mkdir`, `rmdir`, `copy`, `rename`, `chdir`, `scandir`, `stat`, `lstat`, `fileperms`, `chmod`, `chown`, `chgrp`,
   `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_params`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `stream_context_set_params`, `fwrite`, `fscanf`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fflush`, `ftruncate`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`,
-  `disk_free_space`, `diskfreespace`, `disk_total_space`, `clearstatcache`, `realpath`, `realpath_cache_get`, `realpath_cache_size`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_writeable`, `is_executable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `set_exception_handler`, `restore_exception_handler`, `get_exception_handler`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_length`, `ob_list_handlers`, `ob_get_status`, `ob_get_clean`, `ob_get_flush`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `mb_http_output`, `mb_output_handler`, `date_default_timezone_set`,
+  `disk_free_space`, `diskfreespace`, `disk_total_space`, `clearstatcache`, `realpath`, `realpath_cache_get`, `realpath_cache_size`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_writeable`, `is_executable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `set_exception_handler`, `restore_exception_handler`, `get_exception_handler`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_length`, `ob_list_handlers`, `ob_get_status`, `ob_get_clean`, `ob_get_flush`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `flush`, `ob_implicit_flush`, `mb_http_output`, `mb_output_handler`, `date_default_timezone_set`,
   `version_compare`, `microtime`, `ini_get`, `ini_set`,
   `ini_parse_quantity`, `get_loaded_extensions`,
   `get_include_path`, `set_include_path`, `min`, `rand`, `mt_rand`,
@@ -3794,7 +3794,7 @@
   `mysqli_data_seek`, `mysqli_field_seek`, `mysqli_field_tell`, `mysqli_free_result`, `mysqli_more_results`,
   `mysqli_next_result`, `mysqli_store_result`, `mysqli_use_result`,
   `mysqli_reap_async_query`, `mysqli_poll`, `mysqli_report`, `mysqli_init`,
-  `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_length`, `ob_list_handlers`, `ob_get_status`, `ob_get_clean`, `ob_get_flush`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `mb_http_output`, `mb_output_handler`, `header`,
+  `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_length`, `ob_list_handlers`, `ob_get_status`, `ob_get_clean`, `ob_get_flush`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `flush`, `ob_implicit_flush`, `mb_http_output`, `mb_output_handler`, `header`,
   `header_remove`, `headers_list`, `headers_sent`, `http_response_code`,
   `setcookie`, `setrawcookie`,
   `session_start`, `session_status`, `session_cache_limiter`,
@@ -6350,28 +6350,31 @@
   non-null handler before shutdown callbacks, destructors, and final
   output-buffer flushing. Invalid handler registration reports the PHP-shaped
   catchable `TypeError` message for the covered callback forms.
-  Handler-thrown exceptions, invokable-object handlers, first-class callable
-  method closures, by-reference handler parameters, exact internal-function
-  stack frames, active-handler stack mutation edge cases, and native lowering
-  remain unsupported.
+  Handler-thrown exceptions, first-class callable method closures,
+  by-reference handler parameters, exact internal-function stack frames,
+  active-handler stack mutation edge cases, and native lowering remain
+  unsupported.
   `ob_start($callback = null, $chunk_size = 0, $flags =
   PHP_OUTPUT_HANDLER_STDFLAGS)` accepts no arguments, one supported output
-  handler callback (`null`, closure, string function/static-method callable, or
-  public array callable), or the bounded three-argument form. The chunk size is
-  coerced through the PHP-internal integer boundary, non-positive sizes defer
-  handling until explicit/final flushes, positive sizes automatically process
-  echo/print output once the innermost buffer reaches the threshold, and
-  handled output moving into a parent buffer can cascade that parent's
-  threshold check. User-supplied flags are sanitized to the supported
+  handler callback (`null`, closure, invokable object, string
+  function/static-method callable, or public array callable), or the bounded
+  three-argument form. The chunk size is coerced through the PHP-internal
+  integer boundary, non-positive sizes defer handling until explicit/final
+  flushes, positive sizes automatically process echo/print output once the
+  innermost buffer reaches the threshold, and handled output moving into a
+  parent buffer can cascade that parent's threshold check. Reported
+  `buffer_size` metadata uses the current PHP-shaped 16 KiB default for
+  zero-sized buffers and 4 KiB-rounded allocation buckets for positive chunk
+  sizes. User-supplied flags are sanitized to the supported
   cleanable/flushable/removable bits, and output-handler constants are exposed
   through the interpreter constant table. While a buffer is active,
   PHP-visible output from `echo`, `print`, `exit("...")`, `var_dump()`, and
   `print_r()` is appended to the innermost buffer instead of final stdout.
-  Invalid bounded `ob_start()` handlers, including non-string/non-array
-  callback operands, missing string functions, missing classes or methods,
-  malformed callback arrays, and non-static class-string method handlers, emit
-  the PHP-shaped warning plus `Failed to create buffer` notice, return
-  `false`, and leave the output-buffer stack unchanged.
+  Invalid bounded `ob_start()` handlers, including unsupported callback
+  operands, non-invokable objects, missing string functions, missing classes
+  or methods, malformed callback arrays, and non-static class-string method
+  handlers, emit the PHP-shaped warning plus `Failed to create buffer` notice,
+  return `false`, and leave the output-buffer stack unchanged.
   `ob_get_level()` accepts no arguments and returns the active buffer depth.
   `ob_get_contents()` accepts no arguments and returns the innermost active
   buffer contents without closing that buffer or running its handler, or
@@ -6379,8 +6382,10 @@
   returns the innermost active buffer byte length, or `false` when no buffer is
   active. `ob_list_handlers()` accepts no arguments and returns an ordered
   array containing `"default output handler"` or the bounded callback name for
-  each active buffer, from outermost to innermost, or an empty array when no
-  buffer is active. `ob_get_clean()` accepts no arguments and returns the raw
+  each active buffer, including `Class::__invoke` for invokable objects and
+  `{closure:file:line}` for closures, from outermost to innermost, or an empty
+  array when no buffer is active. `ob_get_clean()` accepts no arguments and
+  returns the raw
   innermost buffer contents; when flags allow clean and remove it pops the
   buffer, and when either capability is absent it emits bounded notices and
   leaves the buffer active. `ob_clean()` accepts no arguments, runs the
@@ -6429,12 +6434,15 @@
   outward through supported handlers to stdout. Exact handler status metadata
   beyond the bounded fields, automatic threshold checks for output-producing
   builtins outside the covered echo/print and handled-flush paths,
-  invokable-object output handlers, by-reference output handlers,
-  exact `ErrorException::__toString()` internal stack frames for
-  deprecation-converted handlers, handler reentrancy/nesting edge cases,
-  output-started interaction with headers, fatal-error cleanup, exact warning
-  behavior, and inline native lowering beyond the runtime ABI remain
-  unsupported.
+  by-reference output handlers, exact `ErrorException::__toString()` internal
+  stack frames for deprecation-converted handlers, handler reentrancy/nesting
+  edge cases, output-started interaction with headers, fatal-error cleanup,
+  exact warning behavior, and inline native lowering beyond the runtime ABI
+  remain unsupported. `flush()` accepts no arguments and is a bounded CLI/SAPI
+  no-op that does not flush user output buffers. `ob_implicit_flush($enable =
+  true)` accepts zero or one PHP-internal bool argument, records no additional
+  SAPI state in the current CLI interpreter, and returns `null`; exact SAPI
+  flush side effects remain unsupported.
   `date_default_timezone_set($timezoneId)` accepts one string argument, returns
   `true` for the bounded timezone identifiers used by the current date PHPT
   subset, updates `date_default_timezone_get()` and date/time formatting state,
@@ -9466,7 +9474,7 @@
   `is_scalar`, `is_numeric`, `is_countable`, `is_iterable`, `is_callable`,
   `function_exists`, `basename`, `dirname`, `extension_loaded`, `ob_start`,
   `ob_get_level`, `ob_get_contents`, `ob_get_length`, `ob_list_handlers`,
-  `ob_get_status`, `ob_get_clean`, `ob_get_flush`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `mysqli_connect`,
+  `ob_get_status`, `ob_get_clean`, `ob_get_flush`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `flush`, `ob_implicit_flush`, `mysqli_connect`,
   `mysqli_real_connect`, `mysqli_get_server_info`,
   `mysqli_get_server_version`, `mysqli_get_host_info`,
   `mysqli_get_client_info`, `mysqli_get_client_version`,
@@ -9499,7 +9507,7 @@
   `mysqli_get_warnings`,
   `mysqli_select_db`, `mysqli_real_escape_string`, `mysqli_escape_string`, `mysqli_store_result`,
   `mysqli_use_result`, `mysqli_reap_async_query`, `mysqli_poll`, `mysqli_report`,
-  `mysqli_init`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_length`, `ob_list_handlers`, `ob_get_status`, `ob_get_clean`, `ob_get_flush`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `header`,
+  `mysqli_init`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_length`, `ob_list_handlers`, `ob_get_status`, `ob_get_clean`, `ob_get_flush`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `flush`, `ob_implicit_flush`, `header`,
   `header_remove`, `headers_list`, `headers_sent`, `http_response_code`,
   `setcookie`, `setrawcookie`,
   `get_class`, `is_object`, `get_debug_type`,
@@ -9700,7 +9708,7 @@
   `str_starts_with`, `str_ends_with`, `strspn`, `strcspn`, `strpbrk`, `strpos`, `stripos`, `strrpos`, `strripos`, `strstr`, `strchr`, `stristr`, `strtok`, `substr`, `substr_replace`, `substr_compare`, `substr_count`, `similar_text`, `metaphone`, `str_replace`, `str_getcsv`, `parse_str`, `printf`, `fprintf`, `sprintf`, `vsprintf`, `vprintf`, `vfprintf`,
   `call_user_func`, `call_user_func_array`, `implode`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`,
   `file_put_contents`, `readfile`, `unlink`, `mkdir`, `rmdir`, `copy`, `rename`, `chdir`, `scandir`, `stat`, `lstat`, `fileperms`, `chmod`, `chown`, `chgrp`,
-  `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_params`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `stream_context_set_params`, `fwrite`, `fscanf`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fflush`, `ftruncate`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`, `disk_free_space`, `diskfreespace`, `disk_total_space`, `clearstatcache`, `realpath`, `realpath_cache_get`, `realpath_cache_size`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_executable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `set_exception_handler`, `restore_exception_handler`, `get_exception_handler`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_length`, `ob_list_handlers`, `ob_get_status`, `ob_get_clean`, `ob_get_flush`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `date_default_timezone_set`, `abs`, `number_format`, `microtime`, `ini_get`, `min`, `get_current_user`, `umask`, `isset`, `empty`, `count`,
+  `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_params`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `stream_context_set_params`, `fwrite`, `fscanf`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fflush`, `ftruncate`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`, `disk_free_space`, `diskfreespace`, `disk_total_space`, `clearstatcache`, `realpath`, `realpath_cache_get`, `realpath_cache_size`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_executable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `set_exception_handler`, `restore_exception_handler`, `get_exception_handler`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_length`, `ob_list_handlers`, `ob_get_status`, `ob_get_clean`, `ob_get_flush`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `flush`, `ob_implicit_flush`, `date_default_timezone_set`, `abs`, `number_format`, `microtime`, `ini_get`, `min`, `get_current_user`, `umask`, `isset`, `empty`, `count`,
   `define`, `constant`,
   `defined`, `array_key_exists`, `array_key_first`, `array_key_last`,
   `current`, `array_is_list`, `array_values`, `array_keys`, `array_reverse`,
@@ -9753,7 +9761,7 @@
   `mysqli_select_db`, `mysqli_real_escape_string`, `mysqli_escape_string`, `mysqli_store_result`,
   `mysqli_use_result`, `mysqli_report`, `mysqli_init`, `ob_start`,
   `ob_get_level`, `ob_get_contents`, `ob_get_length`, `ob_list_handlers`,
-  `ob_get_status`, `ob_get_clean`, `ob_get_flush`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `header`,
+  `ob_get_status`, `ob_get_clean`, `ob_get_flush`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `flush`, `ob_implicit_flush`, `header`,
   `header_remove`, `headers_list`, `headers_sent`, `http_response_code`,
   `setcookie`, `setrawcookie`, `assert`,
   `spl_autoload`, `spl_autoload_register`, `spl_autoload_functions`,
@@ -10068,7 +10076,8 @@
   still reject under the function-call boundary.
   `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_length`,
   `ob_list_handlers`, `ob_get_status`, `ob_get_clean`, `ob_get_flush`,
-  `ob_clean`, `ob_flush`, `ob_end_clean`, and `ob_end_flush` accept the same current
+  `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `flush`, and
+  `ob_implicit_flush` accept the same current
   output-buffer subset as the builtin section above; generated code routes
   direct calls through the output-buffer runtime ABI rather than inline-lowering
   the stack, while native function-table introspection recognizes the names.
@@ -13246,15 +13255,16 @@
   function-table introspection
 - `ob_start()`/`ob_get_level()`/`ob_get_contents()`/`ob_get_length()`/
   `ob_list_handlers()`/`ob_get_status()`/`ob_get_clean()`/`ob_get_flush()`/
-  `ob_clean()`/`ob_flush()`/`ob_end_clean()`/`ob_end_flush()` behavior beyond
-  the current interpreter-owned buffer stack and supported one-argument
-  `ob_start()` callback/chunk-size/flags lane: invokable-object output
-  handlers, by-reference output handlers, exact handler status metadata, exact
-  `ErrorException::__toString()` internal stack frames for
-  deprecation-converted handlers, broader handler reentrancy/nesting edge
-  cases, output-started/header interaction, fatal-error cleanup, exact
-  warnings beyond the documented no-active-buffer and produced-output
-  diagnostics, and native lowering beyond function-table introspection
+  `ob_clean()`/`ob_flush()`/`ob_end_clean()`/`ob_end_flush()`/`flush()`/
+  `ob_implicit_flush()` behavior beyond the current interpreter-owned buffer
+  stack, bounded CLI/SAPI no-op controls, and supported
+  `ob_start()` callback/chunk-size/flags lane: by-reference output handlers,
+  exact handler status metadata, exact `ErrorException::__toString()`
+  internal stack frames for deprecation-converted handlers, broader handler
+  reentrancy/nesting edge cases, output-started/header interaction,
+  fatal-error cleanup, exact warnings beyond the documented no-active-buffer
+  and produced-output diagnostics, SAPI flush side effects, and native
+  lowering beyond function-table introspection
 - `php_sapi_name()` behavior beyond the current no-argument deterministic
   `cli` result: host PHP SAPI discovery, web-server/CGI/FPM SAPI states,
   request-specific SAPI switching, exact diagnostics, and native lowering

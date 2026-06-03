@@ -1336,6 +1336,7 @@ struct OutputBuffer {
     handler: Option<Value>,
     handler_started: bool,
     chunk_size: usize,
+    buffer_size: usize,
     flags: i64,
     span: Span,
 }
@@ -93174,11 +93175,13 @@ impl Interpreter {
             Some(value) => php_internal_int_argument("ob_start()", 3, "flags", value, span)?,
             None => PHP_OUTPUT_HANDLER_STDFLAGS,
         } & PHP_OUTPUT_HANDLER_STDFLAGS;
+        let buffer_size = output_buffer_size_for_chunk_size(chunk_size);
         self.output_buffers.push(OutputBuffer {
             contents: Vec::new(),
             handler,
             handler_started: false,
             chunk_size,
+            buffer_size,
             flags,
             span,
         });
@@ -93190,6 +93193,7 @@ impl Interpreter {
             Value::Null | Value::Closure(_) => Ok(true),
             Value::String(name) => self.validate_ob_start_string_handler(name, span),
             Value::Array(callback) => self.validate_ob_start_array_handler(callback, span),
+            Value::Object(object) => self.validate_ob_start_invokable_object_handler(object, span),
             _ => self.reject_ob_start_handler("no array or string given", span),
         }
     }
@@ -93310,6 +93314,44 @@ impl Interpreter {
         Ok(true)
     }
 
+    fn validate_ob_start_invokable_object_handler(
+        &mut self,
+        object: &PhpObject,
+        span: Span,
+    ) -> CompileResult<bool> {
+        let receiver_class_name = self
+            .classes
+            .get(object.class_id())
+            .map(|class| class.name().to_string())
+            .unwrap_or_else(|| object.class_name().to_string());
+        let Some((_, declaring_class_name, resolved_method_name, visibility, is_static)) =
+            self.resolve_instance_method(object.class_id(), "__invoke")
+        else {
+            return self.reject_ob_start_handler(
+                format!("class {receiver_class_name} does not have a method \"__invoke\""),
+                span,
+            );
+        };
+        if visibility != Visibility::Public {
+            return self.reject_ob_start_handler(
+                format!(
+                    "cannot access {} method {declaring_class_name}::{resolved_method_name}()",
+                    visibility_name(visibility)
+                ),
+                span,
+            );
+        }
+        if is_static {
+            return self.reject_ob_start_handler(
+                format!(
+                    "static method {declaring_class_name}::{resolved_method_name}() cannot be called as an output handler object"
+                ),
+                span,
+            );
+        }
+        Ok(true)
+    }
+
     fn call_ob_get_level(&self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("ob_get_level", args, 0, span)?;
         Ok(Value::Int(self.output_buffers.len() as i64))
@@ -93355,7 +93397,8 @@ impl Interpreter {
 
     fn output_handler_value_name(&self, handler: &Value) -> String {
         match handler {
-            Value::Closure(_) => "Closure::__invoke".to_string(),
+            Value::Closure(closure) => self.closure_output_handler_name(closure),
+            Value::Object(object) => format!("{}::__invoke", object.class_name()),
             Value::String(name) => name.clone(),
             Value::Array(callback) => array_callable_parts(callback)
                 .map(|(target, method_name)| match target {
@@ -93366,6 +93409,18 @@ impl Interpreter {
                 .unwrap_or_else(|| "Array".to_string()),
             other => other.try_echo_string().unwrap_or_default(),
         }
+    }
+
+    fn closure_output_handler_name(&self, closure: &PhpClosure) -> String {
+        self.closure_reflection_functions
+            .get(&closure.id())
+            .and_then(|state| {
+                state
+                    .file_name
+                    .as_ref()
+                    .map(|file| format!("{{closure:{file}:{}}}", state.start_line))
+            })
+            .unwrap_or_else(|| "{closure}".to_string())
     }
 
     fn output_buffer_status(&self, index: usize, buffer: &OutputBuffer) -> Value {
@@ -93387,7 +93442,7 @@ impl Interpreter {
         status.insert("flags", Value::Int(flags));
         status.insert("level", Value::Int(index as i64));
         status.insert("chunk_size", Value::Int(buffer.chunk_size as i64));
-        status.insert("buffer_size", Value::Int(16384));
+        status.insert("buffer_size", Value::Int(buffer.buffer_size as i64));
         status.insert("buffer_used", Value::Int(buffer.contents.len() as i64));
         Value::Array(status)
     }
@@ -93755,6 +93810,28 @@ impl Interpreter {
         Ok(Value::Bool(true))
     }
 
+    fn call_flush(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("flush", args, 0, span)?;
+        Ok(Value::Null)
+    }
+
+    fn call_ob_implicit_flush(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if args.len() > 1 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "ob_implicit_flush()",
+                    ArityExpectation::Between { min: 0, max: 1 },
+                    args.len(),
+                ),
+            ));
+        }
+        if let Some(value) = args.first() {
+            php_internal_bool_argument("ob_implicit_flush()", 1, "enable", value, span)?;
+        }
+        Ok(Value::Null)
+    }
+
     fn output_buffer_handler_phase(started: bool, terminal_flag: i64) -> i64 {
         if started {
             terminal_flag
@@ -94048,6 +94125,20 @@ impl Interpreter {
                 "ob_start() output handler",
                 true,
             ),
+            Value::Object(object) => {
+                let callback_value =
+                    self.array_callable_value(Value::Object(object.clone()), "__invoke", span)?;
+                let Value::Array(callback) = callback_value else {
+                    unreachable!("array_callable_value returns a PHP array callback");
+                };
+                self.call_array_callable_with_values_with_context(
+                    &callback,
+                    args,
+                    span,
+                    true,
+                    "ob_start() output handler",
+                )
+            }
             other => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
@@ -98414,6 +98505,8 @@ impl Interpreter {
             "ob_flush" => self.call_ob_flush(&args, span),
             "ob_end_clean" => self.call_ob_end_clean(&args, span),
             "ob_end_flush" => self.call_ob_end_flush(&args, span),
+            "flush" => self.call_flush(&args, span),
+            "ob_implicit_flush" => self.call_ob_implicit_flush(&args, span),
             "header" => self.call_header(&args, span),
             "header_remove" => self.call_header_remove(&args, span),
             "headers_list" => self.call_headers_list(&args, span),
@@ -116125,6 +116218,11 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_optional_int_param("flags", PHP_OUTPUT_HANDLER_STDFLAGS),
             ],
         ),
+        "flush" => ("void", vec![]),
+        "ob_implicit_flush" => (
+            "void",
+            vec![reflection_internal_optional_bool_param("enable", true)],
+        ),
         "phpversion" => (
             "string|false",
             vec![reflection_internal_optional_null_param(
@@ -122316,6 +122414,8 @@ fn is_builtin(name: &str) -> bool {
             | "ob_flush"
             | "ob_end_clean"
             | "ob_end_flush"
+            | "flush"
+            | "ob_implicit_flush"
             | "header"
             | "header_remove"
             | "headers_list"
@@ -164896,6 +164996,21 @@ fn arity_expectation(required: usize, total: usize, variadic: bool) -> ArityExpe
 fn callable_name(name: &str) -> String {
     let name = name.trim_start_matches('\\');
     format!("{name}()")
+}
+
+fn output_buffer_size_for_chunk_size(chunk_size: usize) -> usize {
+    const DEFAULT_BUFFER_SIZE: usize = 16 * 1024;
+    const CHUNK_ALLOCATION_GRANULARITY: usize = 4 * 1024;
+
+    if chunk_size == 0 {
+        return DEFAULT_BUFFER_SIZE;
+    }
+
+    chunk_size
+        .max(CHUNK_ALLOCATION_GRANULARITY)
+        .saturating_add(CHUNK_ALLOCATION_GRANULARITY - 1)
+        / CHUNK_ALLOCATION_GRANULARITY
+        * CHUNK_ALLOCATION_GRANULARITY
 }
 
 fn function_callable_name(function: &FunctionDecl, source_file: Option<&str>) -> String {

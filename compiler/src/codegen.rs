@@ -67091,6 +67091,8 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "ob_flush",
     "ob_end_clean",
     "ob_end_flush",
+    "flush",
+    "ob_implicit_flush",
     "header",
     "header_remove",
     "headers_list",

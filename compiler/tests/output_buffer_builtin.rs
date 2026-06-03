@@ -239,6 +239,56 @@ echo "|final=" . count(ob_get_status(true));
 }
 
 #[test]
+fn output_buffer_flush_controls_and_handler_metadata_match_bounded_php_shape() {
+    let controls = run_source(
+        r#"<?php
+echo "before\n";
+var_dump(flush());
+ob_start();
+echo "hidden\n";
+ob_implicit_flush(true);
+flush();
+ob_end_clean();
+var_dump(ob_implicit_flush(false));
+echo "after";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(controls.stdout, "before\nNULL\nNULL\nafter");
+    assert_eq!(controls.stderr, "");
+    assert_eq!(controls.exit_code, 0);
+
+    let metadata = php_compiler::run_source_with_source_file(
+        r#"<?php
+class E {
+    public function __invoke($s) { return $s; }
+}
+ob_start(null, 1);
+ob_start(new E());
+ob_start(function ($s) { return $s; });
+$handlers = ob_list_handlers();
+$status = ob_get_status(true);
+while (ob_get_level()) {
+    ob_end_clean();
+}
+echo $handlers[0], "|", $handlers[1], "|", $handlers[2], "\n";
+echo $status[0]["buffer_size"], "|", $status[1]["name"], "|", $status[2]["name"];
+"#,
+        "output-handler.php",
+    )
+    .unwrap();
+
+    assert_eq!(
+        metadata.stdout,
+        "default output handler|E::__invoke|{closure:output-handler.php:7}\n\
+4096|E::__invoke|{closure:output-handler.php:7}"
+    );
+    assert_eq!(metadata.stderr, "");
+    assert_eq!(metadata.exit_code, 0);
+}
+
+#[test]
 fn ob_flush_and_ob_end_flush_move_nested_buffer_output_outward() {
     let execution = run_source(
         r#"<?php
@@ -473,7 +523,7 @@ echo "|reflection=" . $reflection->getNumberOfRequiredParameters() . "/" . $refl
 
     assert_eq!(
         execution.stdout,
-        "outer(inner[body])|rawInner=body|rawOuter=inner[body]|handlers=Closure::__invoke,Closure::__invoke|status=Closure::__invoke:1:113|reflection=0/3"
+        "outer(inner[body])|rawInner=body|rawOuter=inner[body]|handlers={closure},{closure}|status={closure}:1:113|reflection=0/3"
     );
     assert_eq!(execution.exit_code, 0);
 }

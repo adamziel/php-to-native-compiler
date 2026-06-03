@@ -4,6 +4,26 @@
 
 Implemented:
 
+- Added a bounded output-buffer metadata/control lane on the interpreter path.
+  `flush()` now behaves as a no-argument CLI/SAPI no-op that does not flush
+  user buffers, `ob_implicit_flush(bool $enable = true)` is registered with
+  reflection metadata and returns `null`, output-buffer status now reports
+  PHP-shaped buffer allocation buckets, public invokable objects are accepted
+  as output handlers through `__invoke`, and output handler names now include
+  `Class::__invoke` for invokable objects plus source-shaped closure names
+  where metadata is available. Focused proof covers exact-current pre-patch
+  selected PHPT at `0/5` and post-patch selected PHPT at `5/5` for
+  `tests/output/flush_basic_001.phpt`,
+  `tests/output/ob_implicit_flush_basic_001.phpt`,
+  `tests/output/ob_implicit_flush_basic_002.phpt`,
+  `tests/output/gh16135.phpt`, and `tests/output/ob_013.phpt`; Rust
+  `output_buffer_builtin` coverage at `29/29`, build/fmt/diff checks, and
+  the latest-published PASS-regression scout at `8/8`. Unsupported edges
+  remain catchable `TypeError` parity for incompatible internal output
+  handlers, broad SAPI flush behavior, exact output handler phase/lifetime
+  parity beyond the bounded handler slice, references/COW, and native
+  lowering.
+
 - Repaired the latest-published PASS regression in
   `ext/date/tests/date_diff.phpt`. The interpreter now keeps bounded
   `DateInterval` cached state authoritative on clean interval objects, marks
