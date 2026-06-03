@@ -4,6 +4,25 @@
 
 Implemented:
 
+- Added a bounded malformed `unserialize()` diagnostics lane on the interpreter
+  path. The serialized parser now preserves reached error offsets while
+  parsing malformed object/custom-object payloads, uses checked digit-by-digit
+  length/count parsing, guards unrealistic array/object/custom payload counts
+  before allocation, emits the reached insufficient-data warning for oversized
+  custom payloads, and parses bounded `R:` / `r:` reference tokens far enough
+  to report PHP-shaped malformed-input offsets without claiming full reference
+  reconstruction. Focused proof covers the Rust `serialize_builtin` target,
+  build/fmt/diff checks, and selected public PHPT rows
+  `ext/standard/tests/serialize/serialization_objects_018.phpt`,
+  `ext/standard/tests/serialize/bug68044.phpt`,
+  `ext/standard/tests/serialize/unserialize_large.phpt`,
+  `ext/standard/tests/serialize/bug75054.phpt`,
+  `ext/standard/tests/serialize/oss_fuzz_433303828.phpt`, and
+  `ext/standard/tests/serialize/unserialize_mem_leak.phpt`. Unsupported edges
+  remain true `Serializable`, `__serialize()` / `__unserialize()` hooks,
+  complete reference graph reconstruction, broader malformed-offset parity,
+  references/COW, and native lowering.
+
 - Added a bounded by-value `foreach` list-destructuring lane on the
   interpreter path. `foreach` value targets now accept nested positional
   `list(...)` / `[...]` targets, literal integer/string keyed list targets,

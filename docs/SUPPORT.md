@@ -10628,8 +10628,12 @@
   supported exact core `DateTime` / `DateTimeZone` payloads, returns a valid
   parsed prefix with PHP-shaped extra-data warnings, reports reached
   malformed-input parser offsets with `of N bytes` text, rejects signed
-  serialized lengths, and raises a catchable PHP-shaped `Error` for invalid
-  DateTime or DateTimeZone serialized state. Other object/resource/closure
+  serialized lengths, guards unrealistic array/object/custom payload counts
+  before allocation, emits bounded insufficient-data warnings for oversized
+  custom payloads, parses malformed custom-object and `R:` / `r:` reference
+  tokens far enough to report reached offsets, and raises a catchable
+  PHP-shaped `Error` for invalid DateTime or DateTimeZone serialized state.
+  Other object/resource/closure
   serialization, DateTime manual `__serialize()` / `__unserialize()`,
   DateTimeImmutable serialization, custom serialization hooks, non-UTF-8
   binary string payloads, exact malformed-input offset parity beyond the

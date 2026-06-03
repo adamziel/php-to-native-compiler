@@ -62,6 +62,43 @@ var_dump(unserialize('a:1:{i:0;R:-1;}'));
 }
 
 #[test]
+fn unserialize_malformed_custom_payloads_report_offsets_and_guard_sizes() {
+    let execution = run_source(
+        r#"<?php
+var_dump(unserialize('C:1:"A":3x{foo}'));
+var_dump(unserialize('C:1:"A":3:xfoo}'));
+var_dump(unserialize('C:1:"A":3:{foox'));
+var_dump(unserialize('C:1:"A":'));
+var_dump(unserialize('a:1000000000:{}'));
+var_dump(unserialize('O:1000000000:"":0:{}'));
+var_dump(unserialize('O:1:"X":1000000000:{}'));
+var_dump(unserialize('C:1:"X":1000000000:{}'));
+unserialize('O:2:"yy": ');
+unserialize('O:2:"yy":: ');
+unserialize('a:1:{i:0;R:1;}');
+unserialize('a:1:{i:0;r:1;}');
+"#,
+    )
+    .unwrap();
+
+    for offset in [8, 9, 10, 13, 14, 18, 20] {
+        assert!(
+            execution
+                .stdout
+                .contains(&format!("unserialize(): Error at offset {offset}")),
+            "{}",
+            execution.stdout
+        );
+    }
+    assert!(execution
+        .stdout
+        .contains("Insufficient data for unserializing - 1000000000 required, 1 present"));
+    assert_eq!(execution.stdout.matches("bool(false)\n").count(), 8);
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn serialize_unserialize_objects_and_allowed_classes_options() {
     let execution = run_source(
         r#"<?php

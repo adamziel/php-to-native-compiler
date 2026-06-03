@@ -96602,6 +96602,7 @@ impl Interpreter {
             };
             parser.parse_value_with_object_factory(&mut object_factory)
         };
+        let parser_warnings = parser.take_warnings();
         match parsed {
             Some(value) if parser.is_finished() => Ok(value),
             Some(value) => {
@@ -96619,10 +96620,13 @@ impl Interpreter {
                 if let Some(error) = object_error {
                     return Err(error);
                 }
+                for warning in parser_warnings {
+                    self.emit_display_warning(&warning, span)?;
+                }
                 self.emit_display_warning(
                     &format!(
                         "unserialize(): Error at offset {} of {} bytes",
-                        parser.position(),
+                        parser.error_position(),
                         parser.len()
                     ),
                     span,
@@ -141826,6 +141830,8 @@ fn validate_unserialize_allowed_class_name(name: &str, span: Span) -> CompileRes
 struct PhpSerializedParser<'a> {
     data: &'a [u8],
     position: usize,
+    error_position: Option<usize>,
+    warnings: Vec<String>,
 }
 
 impl<'a> PhpSerializedParser<'a> {
@@ -141833,6 +141839,8 @@ impl<'a> PhpSerializedParser<'a> {
         Self {
             data: data.as_bytes(),
             position: 0,
+            error_position: None,
+            warnings: Vec::new(),
         }
     }
 
@@ -141846,6 +141854,21 @@ impl<'a> PhpSerializedParser<'a> {
 
     fn position(&self) -> usize {
         self.position
+    }
+
+    fn error_position(&self) -> usize {
+        self.error_position.unwrap_or(self.position)
+    }
+
+    fn take_warnings(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.warnings)
+    }
+
+    fn fail_at<T>(&mut self, position: usize) -> Option<T> {
+        let position = position.min(self.data.len());
+        self.position = position;
+        self.error_position.get_or_insert(position);
+        None
     }
 
     fn take_until_byte(&mut self, needle: u8) -> Option<String> {
@@ -141862,8 +141885,8 @@ impl<'a> PhpSerializedParser<'a> {
     }
 
     fn expect_byte(&mut self, expected: u8) -> Option<()> {
-        if self.data.get(self.position).copied()? != expected {
-            return None;
+        if self.data.get(self.position).copied() != Some(expected) {
+            return self.fail_at(self.position);
         }
         self.position += 1;
         Some(())
@@ -141891,7 +141914,7 @@ impl<'a> PhpSerializedParser<'a> {
                 let value = match self.data.get(self.position).copied()? {
                     b'0' => false,
                     b'1' => true,
-                    _ => return None,
+                    _ => return self.fail_at(self.position),
                 };
                 self.position += 1;
                 self.expect_byte(b';')?;
@@ -141916,8 +141939,13 @@ impl<'a> PhpSerializedParser<'a> {
             b'a' => {
                 self.position += 1;
                 self.expect_byte(b':')?;
-                let len = self.parse_unsigned_usize_until_byte(b':', value_start)?;
+                let len = self
+                    .parse_unsigned_usize_until_byte_info(b':', value_start)?
+                    .value;
                 self.expect_byte(b'{')?;
+                if len > self.remaining_array_entry_capacity() {
+                    return self.fail_at(self.position);
+                }
                 let mut array = PhpArray::new();
                 for _ in 0..len {
                     let key = self.parse_array_key()?;
@@ -141929,15 +141957,18 @@ impl<'a> PhpSerializedParser<'a> {
             }
             b'O' => {
                 self.position += 1;
-                let class_name = self.parse_serialized_string_payload(value_start)?;
+                let class_name = self.parse_serialized_string_payload(value_start + 2)?;
                 self.expect_byte(b':')?;
-                let len = self.parse_unsigned_usize_until_byte(b':', value_start)?;
+                let len = self.parse_unsigned_usize_until_byte_info(b':', value_start)?;
+                if len.value > self.remaining_object_property_capacity() {
+                    return self.fail_at(len.delimiter_position);
+                }
                 self.expect_byte(b'{')?;
-                let mut properties = Vec::with_capacity(len);
-                for _ in 0..len {
+                let mut properties = Vec::with_capacity(len.value);
+                for _ in 0..len.value {
                     let key = self.parse_array_key()?;
                     let ArrayKey::String(name) = key else {
-                        return None;
+                        return self.fail_at(self.position);
                     };
                     let value = self.parse_value_with_object_factory(object_factory)?;
                     properties.push((name, value));
@@ -141945,7 +141976,10 @@ impl<'a> PhpSerializedParser<'a> {
                 self.expect_byte(b'}')?;
                 object_factory(&class_name, properties)
             }
-            _ => None,
+            b'C' => self.parse_custom_serialized_object(value_start),
+            b'R' => self.parse_reference_token(false),
+            b'r' => self.parse_reference_token(true),
+            _ => self.fail_at(self.position),
         }
     }
 
@@ -141964,7 +141998,7 @@ impl<'a> PhpSerializedParser<'a> {
                     self.parse_serialized_string(self.position - 1)?,
                 ))
             }
-            _ => None,
+            _ => self.fail_at(self.position),
         }
     }
 
@@ -141976,9 +142010,12 @@ impl<'a> PhpSerializedParser<'a> {
 
     fn parse_serialized_string_payload(&mut self, error_offset: usize) -> Option<String> {
         self.expect_byte(b':')?;
-        let len = self.parse_unsigned_usize_until_byte(b':', error_offset)?;
+        let len = self.parse_unsigned_usize_until_byte_info(b':', error_offset)?;
         self.expect_byte(b'"')?;
-        let end = self.position.checked_add(len)?;
+        let end = self.position.checked_add(len.value)?;
+        if len.overflow || end > self.data.len() {
+            return self.fail_at(error_offset);
+        }
         let bytes = self.data.get(self.position..end)?;
         self.position = end;
         self.expect_byte(b'"')?;
@@ -141991,19 +142028,98 @@ impl<'a> PhpSerializedParser<'a> {
         Some(value)
     }
 
-    fn parse_unsigned_usize_until_byte(
+    fn parse_unsigned_usize_until_byte_info(
         &mut self,
         delimiter: u8,
         error_offset: usize,
-    ) -> Option<usize> {
+    ) -> Option<ParsedSerializedUnsigned> {
         if matches!(self.data.get(self.position), Some(b'+' | b'-')) {
-            self.position = error_offset;
-            return None;
+            return self.fail_at(error_offset);
         }
-        let value = self.take_until_byte(delimiter)?;
-        self.expect_byte(delimiter)?;
-        value.parse::<usize>().ok()
+        let start = self.position;
+        let mut value = 0usize;
+        let mut overflow = false;
+        while let Some(byte) = self.data.get(self.position).copied() {
+            if !byte.is_ascii_digit() {
+                break;
+            }
+            let digit = (byte - b'0') as usize;
+            match value
+                .checked_mul(10)
+                .and_then(|value| value.checked_add(digit))
+            {
+                Some(next) => value = next,
+                None => {
+                    overflow = true;
+                    value = usize::MAX;
+                }
+            }
+            self.position += 1;
+        }
+        if self.position == start {
+            if self.data.get(self.position).copied() == Some(delimiter) {
+                return self.fail_at(self.position + 1);
+            }
+            return self.fail_at(start);
+        }
+        let delimiter_position = self.position;
+        if self.data.get(self.position).copied() != Some(delimiter) {
+            return self.fail_at(self.position);
+        }
+        self.position += 1;
+        Some(ParsedSerializedUnsigned {
+            value,
+            delimiter_position,
+            overflow,
+        })
     }
+
+    fn parse_custom_serialized_object(&mut self, value_start: usize) -> Option<Value> {
+        self.position += 1;
+        let _class_name = self.parse_serialized_string_payload(value_start + 2)?;
+        self.expect_byte(b':')?;
+        let payload_len = self.parse_unsigned_usize_until_byte_info(b':', value_start)?;
+        if payload_len.overflow {
+            self.warnings
+                .push("unserialize(): Integer overflow".to_string());
+        }
+        self.expect_byte(b'{')?;
+        let present = self.data.len().saturating_sub(self.position);
+        if payload_len.overflow || payload_len.value > present.saturating_sub(1) {
+            self.warnings.push(format!(
+                "Insufficient data for unserializing - {} required, {} present",
+                payload_len.value, present
+            ));
+            return self.fail_at(self.data.len().saturating_sub(1));
+        }
+        self.position += payload_len.value;
+        self.expect_byte(b'}')?;
+        self.fail_at(value_start)
+    }
+
+    fn parse_reference_token(&mut self, object_only: bool) -> Option<Value> {
+        self.position += 1;
+        self.expect_byte(b':')?;
+        let reference = self.parse_unsigned_usize_until_byte_info(b';', self.position - 2)?;
+        if object_only || reference.value != 1 {
+            return self.fail_at(reference.delimiter_position + 1);
+        }
+        Some(Value::Null)
+    }
+
+    fn remaining_array_entry_capacity(&self) -> usize {
+        self.data.len().saturating_sub(self.position) / 4
+    }
+
+    fn remaining_object_property_capacity(&self) -> usize {
+        self.data.len().saturating_sub(self.position) / 4
+    }
+}
+
+struct ParsedSerializedUnsigned {
+    value: usize,
+    delimiter_position: usize,
+    overflow: bool,
 }
 
 fn format_session_cookie_header(
