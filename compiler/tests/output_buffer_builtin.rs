@@ -375,6 +375,76 @@ echo "|ended=" . ($ended ? "true" : "false");
 }
 
 #[test]
+fn mb_output_handler_converts_utf8_to_euc_jp_for_matching_content_types() {
+    let execution = run_source(
+        r#"<?php
+$callable = function_exists("mb_output_handler") && is_callable("mb_output_handler") ? "callable" : "missing";
+mb_http_output("EUC-JP");
+$current = mb_http_output();
+
+header("Content-Type: text/html");
+ob_start();
+ob_start("mb_output_handler");
+echo "テスト";
+ob_end_flush();
+$html = bin2hex(ob_get_clean());
+
+header("Content-Type: text/plain");
+ob_start();
+ob_start("mb_output_handler");
+echo "テスト";
+ob_end_flush();
+$plain = bin2hex(ob_get_clean());
+
+header("Content-Type: application/xhtml+xml");
+ob_start();
+ob_start("mb_output_handler");
+echo "テスト";
+ob_end_flush();
+$xhtml = bin2hex(ob_get_clean());
+
+header("Content-Type: application/octet-stream");
+ob_start();
+ob_start("mb_output_handler");
+echo "テスト";
+ob_end_flush();
+$octet = bin2hex(ob_get_clean());
+
+ini_set("mbstring.http_output_conv_mimetypes", "html");
+header("Content-Type: text/plain");
+ob_start();
+ob_start("mb_output_handler");
+echo "テスト";
+ob_end_flush();
+$plain_filtered = bin2hex(ob_get_clean());
+
+header("Content-Type: application/xhtml+xml");
+ob_start();
+ob_start("mb_output_handler");
+echo "テスト";
+ob_end_flush();
+$xhtml_filtered = bin2hex(ob_get_clean());
+
+echo $callable, "|", $current, "\n";
+echo $html, "\n", $plain, "\n", $xhtml, "\n", $octet, "\n", $plain_filtered, "\n", $xhtml_filtered, "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "callable|EUC-JP\n\
+a5c6a5b9a5c8\n\
+a5c6a5b9a5c8\n\
+a5c6a5b9a5c8\n\
+e38386e382b9e38388\n\
+e38386e382b9e38388\n\
+a5c6a5b9a5c8\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn ob_start_closure_handlers_process_flushed_output_without_changing_raw_peeks() {
     let execution = run_source(
         r#"<?php

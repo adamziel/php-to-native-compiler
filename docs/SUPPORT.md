@@ -3662,14 +3662,15 @@
   `rtrim`, `strcmp`, `strcasecmp`, `strncmp`, `strncasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`, `strspn`, `strcspn`, `strpbrk`, `strpos`, `stripos`, `strrpos`, `strripos`, `strstr`, `strchr`, `stristr`, `strtok`, `substr`,
   `str_shuffle`, `wordwrap`, `str_word_count`, `strnatcmp`, `strnatcasecmp`,
   `mb_strlen`, `mb_substr`, `mb_strcut`, `mb_substr_count`, `mb_strpos`, `mb_stripos`, `mb_strrpos`, `mb_strripos`,
-  `mb_strtolower`, `mb_strtoupper`, `similar_text`,
+  `mb_strtolower`, `mb_strtoupper`, `mb_http_output`,
+  `mb_output_handler`, `similar_text`,
   `convert_uuencode`, `convert_uudecode`,
   `preg_match`, `preg_last_error`, `preg_quote`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `str_ireplace`, `substr_replace`, `substr_compare`, `substr_count`, `str_getcsv`, `parse_str`, `http_build_query`,
   `escapeshellarg`, `highlight_string`, `highlight_file`, `show_source`, `php_strip_whitespace`, `error_reporting`, `set_time_limit`, `usleep`, `ignore_user_abort`, `printf`, `fprintf`, `sprintf`, `vsprintf`, `vprintf`, `vfprintf`, `call_user_func`, `call_user_func_array`,
   `implode`, `basename`, `dirname`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`,
   `file_put_contents`, `readfile`, `unlink`, `mkdir`, `rmdir`, `copy`, `rename`, `chdir`, `scandir`, `stat`, `lstat`, `fileperms`, `chmod`, `chown`, `chgrp`,
   `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_params`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `stream_context_set_params`, `fwrite`, `fscanf`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fflush`, `ftruncate`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`,
-  `disk_free_space`, `diskfreespace`, `disk_total_space`, `clearstatcache`, `realpath`, `realpath_cache_get`, `realpath_cache_size`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_writeable`, `is_executable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `set_exception_handler`, `restore_exception_handler`, `get_exception_handler`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_length`, `ob_list_handlers`, `ob_get_status`, `ob_get_clean`, `ob_get_flush`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `date_default_timezone_set`,
+  `disk_free_space`, `diskfreespace`, `disk_total_space`, `clearstatcache`, `realpath`, `realpath_cache_get`, `realpath_cache_size`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_writeable`, `is_executable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `set_exception_handler`, `restore_exception_handler`, `get_exception_handler`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_length`, `ob_list_handlers`, `ob_get_status`, `ob_get_clean`, `ob_get_flush`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `mb_http_output`, `mb_output_handler`, `date_default_timezone_set`,
   `version_compare`, `microtime`, `ini_get`, `ini_set`,
   `ini_parse_quantity`, `get_loaded_extensions`,
   `get_include_path`, `set_include_path`, `min`, `rand`, `mt_rand`,
@@ -3736,7 +3737,7 @@
   `mysqli_data_seek`, `mysqli_field_seek`, `mysqli_field_tell`, `mysqli_free_result`, `mysqli_more_results`,
   `mysqli_next_result`, `mysqli_store_result`, `mysqli_use_result`,
   `mysqli_reap_async_query`, `mysqli_poll`, `mysqli_report`, `mysqli_init`,
-  `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_length`, `ob_list_handlers`, `ob_get_status`, `ob_get_clean`, `ob_get_flush`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `header`,
+  `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_length`, `ob_list_handlers`, `ob_get_status`, `ob_get_clean`, `ob_get_flush`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `mb_http_output`, `mb_output_handler`, `header`,
   `header_remove`, `headers_list`, `headers_sent`, `http_response_code`,
   `setcookie`, `setrawcookie`,
   `session_start`, `session_status`, `session_cache_limiter`,
@@ -3841,8 +3842,9 @@
   before option lookup. The registry currently covers WordPress-oriented
   options such as
   `memory_limit`, `max_execution_time`, `disable_functions`,
-  `mbstring.func_overload`, upload/mail/error-output defaults, and related
-  bootstrap settings. Host php.ini discovery, access-level enforcement,
+  `mbstring.func_overload`, `mbstring.http_output_conv_mimetypes`,
+  `output_encoding`, upload/mail/error-output defaults, and related bootstrap
+  settings. Host php.ini discovery, access-level enforcement,
   `ini_restore()`, `ini_get_all()`, SAPI differences, extension
   ownership/access metadata, exact option catalogs, broad coercions, exact
   diagnostics, and native lowering remain unsupported.
@@ -4407,9 +4409,19 @@
   `ini_set("internal_encoding", ...)` default encoding lookup, PHP-shaped
   unknown-encoding and out-of-range offset `ValueError`s, and supported
   visible `__toString()` objects for optional nullable `$encoding` operands.
+  `mb_http_output()` gets and sets the bounded request-local `output_encoding`
+  value for `pass`, `UTF-8`, and `EUC-JP`. `mb_output_handler()` is registered
+  as a callable output-buffer handler and preserves raw output-buffer bytes;
+  with `output_encoding=EUC-JP` it converts UTF-8 ASCII plus the Japanese
+  `テスト` scalars to EUC-JP only when the latest `Content-Type` matches the
+  current `mbstring.http_output_conv_mimetypes` list. The default mimetype
+  list covers `text/html`, `text/plain`, and `application/xhtml+xml`; setting
+  it to `html` limits conversion to `text/html` and
+  `application/xhtml+xml`.
   Arrays, closures, resources, and non-stringable objects passed as encoding
   operands raise catchable PHP-shaped `?string` `TypeError`s. Full
-  encoding conversion tables, mbstring API-owned internal encoding state,
+  encoding conversion tables, output conversions beyond the bounded
+  UTF-8-to-EUC-JP row lane, mbstring API-owned internal encoding state,
   normalization, invalid
   sequence policy, locale tailoring, and native lowering remain unsupported.
   Locale-aware word rules, Unicode word
@@ -9256,7 +9268,7 @@
   `base64_encode`, `base64_decode`,
   `pack`, `unpack`, `strtolower`, `strtoupper`, `str_increment`,
   `str_decrement`, `trim`, `ltrim`, `rtrim`, `strcmp`, `strcasecmp`, `strncmp`, `strncasecmp`,
-  `str_contains`, `str_starts_with`, `str_ends_with`, `strspn`, `strcspn`, `strpbrk`, `strpos`, `stripos`, `strrpos`, `strripos`, `strstr`, `strchr`, `stristr`, `strtok`, `substr`, `str_shuffle`, `wordwrap`, `str_word_count`, `strnatcmp`, `strnatcasecmp`, `mb_strlen`, `mb_strcut`, `mb_substr_count`, `mb_strpos`, `mb_stripos`, `mb_strrpos`, `mb_strripos`, `mb_strtolower`, `mb_strtoupper`, `similar_text`, `metaphone`, `convert_uuencode`, `convert_uudecode`, `substr_replace`, `substr_compare`, `substr_count`, `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `str_getcsv`, `error_reporting`,
+  `str_contains`, `str_starts_with`, `str_ends_with`, `strspn`, `strcspn`, `strpbrk`, `strpos`, `stripos`, `strrpos`, `strripos`, `strstr`, `strchr`, `stristr`, `strtok`, `substr`, `str_shuffle`, `wordwrap`, `str_word_count`, `strnatcmp`, `strnatcasecmp`, `mb_strlen`, `mb_strcut`, `mb_substr_count`, `mb_strpos`, `mb_stripos`, `mb_strrpos`, `mb_strripos`, `mb_strtolower`, `mb_strtoupper`, `mb_http_output`, `mb_output_handler`, `similar_text`, `metaphone`, `convert_uuencode`, `convert_uudecode`, `substr_replace`, `substr_compare`, `substr_count`, `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `str_getcsv`, `error_reporting`,
   `printf`, `fprintf`, `sprintf`, `vsprintf`, `vprintf`, `vfprintf`, `call_user_func`, `call_user_func_array`, `implode`, `basename`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`,
   `file_put_contents`, `readfile`, `unlink`, `mkdir`, `rmdir`, `copy`, `rename`, `chdir`, `scandir`, `stat`, `lstat`, `fileperms`, `chmod`, `chown`, `chgrp`,
   `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_params`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `stream_context_set_params`, `fwrite`, `fscanf`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fflush`, `ftruncate`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`, `disk_free_space`, `diskfreespace`, `disk_total_space`, `clearstatcache`, `realpath`, `realpath_cache_get`, `realpath_cache_size`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_executable`, `is_link`, `abs`,

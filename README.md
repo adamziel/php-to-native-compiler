@@ -1018,7 +1018,9 @@ direct `ob_start()` with no argument, one supported callback, or bounded
 bounded invalid handler callbacks, plus `ob_get_level()`/`ob_get_contents()`/
 `ob_get_length()`/`ob_list_handlers()`/`ob_get_status()`/`ob_get_clean()`/
 `ob_get_flush()`/`ob_clean()`/`ob_flush()`/`ob_end_clean()`/
-`ob_end_flush()` output-buffer calls,
+`ob_end_flush()` output-buffer calls, including the bounded callable
+`mb_output_handler()` lane for `output_encoding=EUC-JP` and matching
+`mbstring.http_output_conv_mimetypes` content types,
 direct `header()`/`header_remove()`/`headers_list()`/`headers_sent()`/
 `http_response_code()`/`setcookie()`/`setrawcookie()` response header-state calls, including
 interpreter-only `headers_sent()` output-started tracking, direct variable,

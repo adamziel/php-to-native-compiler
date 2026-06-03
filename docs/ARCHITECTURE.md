@@ -3064,7 +3064,9 @@ string allocation, and conversion diagnostics have a lowered runtime model.
 interpreter-only output-buffer boundaries for the current WordPress
 request/rendering path. The interpreter keeps a stack of buffers with optional
 supported `ob_start()` handler callbacks, bounded positive chunk thresholds,
-and sanitized cleanable/flushable/removable flags. PHP-visible echo/print
+and sanitized cleanable/flushable/removable flags. Buffer storage is raw bytes
+so handler-returned binary strings can be captured, moved into parent buffers,
+and returned through `ob_get_*()` without UTF-8 loss. PHP-visible echo/print
 output appends to the innermost active buffer and automatically processes that
 buffer when it reaches its chunk threshold; handled output moving into a parent
 buffer can cascade the same threshold check outward. `ob_get_contents()` peeks
@@ -3093,6 +3095,14 @@ handlers to stdout when execution completes or the bounded `exit()` path
 returns. Native function-table introspection recognizes the names, and
 generated code routes direct calls through the existing output-buffer runtime
 ABI rather than pretending to inline-lower the stack.
+The bounded mbstring output lane registers `mb_output_handler()` as a callable
+handler and `mb_http_output()` as the request-local `output_encoding` getter
+and setter for `pass`, `UTF-8`, and `EUC-JP`. `mb_output_handler()` converts
+UTF-8 ASCII plus the Japanese `テスト` scalars to EUC-JP only when the latest
+`Content-Type` matches `mbstring.http_output_conv_mimetypes`; unmatched
+mimetypes and `pass`/`UTF-8` output encoding preserve the input bytes. Full
+mbstring output conversion tables, stateful encodings, invalid-sequence
+policy, broader mimetype grammar, and native lowering remain unsupported.
 `register_shutdown_function()` is modeled as an interpreter-only request/SAPI
 shutdown queue. Registration evaluates and stores the callback plus extra
 arguments in request-local interpreter state. Normal completion and the

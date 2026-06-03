@@ -566,7 +566,7 @@ struct Interpreter {
     response_headers: Vec<String>,
     response_status_code: Option<i64>,
     output_buffers: Vec<OutputBuffer>,
-    output_handler_output_captures: Vec<String>,
+    output_handler_output_captures: Vec<Vec<u8>>,
     output_start: Option<OutputStart>,
     strict_types_stack: Vec<bool>,
     session_status: i64,
@@ -1258,7 +1258,7 @@ struct OutputStart {
 
 #[derive(Debug, Clone)]
 struct OutputBuffer {
-    contents: String,
+    contents: Vec<u8>,
     handler: Option<Value>,
     handler_started: bool,
     chunk_size: usize,
@@ -1268,7 +1268,7 @@ struct OutputBuffer {
 
 #[derive(Debug, Clone)]
 struct OutputHandlerResult {
-    output: String,
+    output: Vec<u8>,
     handler_name: Option<String>,
     produced_output: bool,
 }
@@ -23719,11 +23719,11 @@ impl Interpreter {
 
     fn append_output_bytes_at(&mut self, output: &[u8], span: Span) {
         if let Some(capture) = self.output_handler_output_captures.last_mut() {
-            capture.push_str(&String::from_utf8_lossy(output));
+            capture.extend_from_slice(output);
             return;
         }
         if let Some(buffer) = self.output_buffers.last_mut() {
-            buffer.contents.push_str(&String::from_utf8_lossy(output));
+            buffer.contents.extend_from_slice(output);
         } else {
             self.mark_output_bytes_started(output, Some(span));
             self.stdout.push_str(&String::from_utf8_lossy(output));
@@ -24492,11 +24492,11 @@ impl Interpreter {
 
     fn append_output_from(&mut self, output: &str, span: Option<Span>) {
         if let Some(capture) = self.output_handler_output_captures.last_mut() {
-            capture.push_str(output);
+            capture.extend_from_slice(output.as_bytes());
             return;
         }
         if let Some(buffer) = self.output_buffers.last_mut() {
-            buffer.contents.push_str(output);
+            buffer.contents.extend_from_slice(output.as_bytes());
         } else {
             self.mark_output_started(output, span);
             self.stdout.push_str(output);
@@ -24523,36 +24523,36 @@ impl Interpreter {
         Ok(())
     }
 
-    fn append_output_below_active_buffer_at(
+    fn append_output_bytes_below_active_buffer_at(
         &mut self,
-        output: &str,
+        output: &[u8],
         span: Span,
     ) -> CompileResult<()> {
         let Some(active_index) = self.output_buffers.len().checked_sub(1) else {
-            self.mark_output_started(output, Some(span));
-            self.stdout.push_str(output);
-            self.stdout_bytes.extend_from_slice(output.as_bytes());
+            self.mark_output_bytes_started(output, Some(span));
+            self.stdout.push_str(&String::from_utf8_lossy(output));
+            self.stdout_bytes.extend_from_slice(output);
             return Ok(());
         };
-        self.append_output_below_buffer_at_index(active_index, output, span)
+        self.append_output_bytes_below_buffer_at_index(active_index, output, span)
     }
 
-    fn append_output_below_buffer_at_index(
+    fn append_output_bytes_below_buffer_at_index(
         &mut self,
         buffer_index: usize,
-        output: &str,
+        output: &[u8],
         span: Span,
     ) -> CompileResult<()> {
         if buffer_index > 0 {
             let parent_index = buffer_index - 1;
             if let Some(parent) = self.output_buffers.get_mut(parent_index) {
-                parent.contents.push_str(output);
+                parent.contents.extend_from_slice(output);
                 self.maybe_flush_output_buffer_at_index_for_chunk(parent_index, span)?;
             }
         } else {
-            self.mark_output_started(output, Some(span));
-            self.stdout.push_str(output);
-            self.stdout_bytes.extend_from_slice(output.as_bytes());
+            self.mark_output_bytes_started(output, Some(span));
+            self.stdout.push_str(&String::from_utf8_lossy(output));
+            self.stdout_bytes.extend_from_slice(output);
         }
         Ok(())
     }
@@ -90804,7 +90804,7 @@ impl Interpreter {
             None => PHP_OUTPUT_HANDLER_STDFLAGS,
         } & PHP_OUTPUT_HANDLER_STDFLAGS;
         self.output_buffers.push(OutputBuffer {
-            contents: String::new(),
+            contents: Vec::new(),
             handler,
             handler_started: false,
             chunk_size,
@@ -90950,7 +90950,7 @@ impl Interpreter {
             .output_buffers
             .last()
             .map(|buffer| buffer.contents.clone())
-            .map(Value::String)
+            .map(interpreter_value_from_php_string_bytes)
             .unwrap_or(Value::Bool(false)))
     }
 
@@ -91175,13 +91175,13 @@ impl Interpreter {
             if !can_remove {
                 self.emit_output_buffer_active_notice("ob_get_clean()", "Failed to delete", span)?;
             }
-            return Ok(Value::String(raw_output));
+            return Ok(interpreter_value_from_php_string_bytes(raw_output));
         }
         let buffer = self
             .output_buffers
             .pop()
             .expect("active output buffer was checked before pop");
-        Ok(Value::String(buffer.contents))
+        Ok(interpreter_value_from_php_string_bytes(buffer.contents))
     }
 
     fn call_ob_get_flush(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -91204,7 +91204,7 @@ impl Interpreter {
             if !can_remove {
                 self.emit_output_buffer_active_notice("ob_get_flush()", "Failed to delete", span)?;
             }
-            return Ok(Value::String(raw_output));
+            return Ok(interpreter_value_from_php_string_bytes(raw_output));
         }
         let buffer = self
             .output_buffers
@@ -91224,7 +91224,7 @@ impl Interpreter {
             span,
         )?;
         self.maybe_flush_active_output_buffer_for_chunk(span)?;
-        Ok(Value::String(raw_output))
+        Ok(interpreter_value_from_php_string_bytes(raw_output))
     }
 
     fn call_ob_clean(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -91395,7 +91395,7 @@ impl Interpreter {
     fn apply_output_buffer_handler(
         &mut self,
         handler: Option<&Value>,
-        output: String,
+        output: Vec<u8>,
         phase: i64,
         span: Span,
     ) -> CompileResult<OutputHandlerResult> {
@@ -91407,10 +91407,13 @@ impl Interpreter {
             });
         };
         let handler_name = self.output_handler_value_name(handler);
-        self.output_handler_output_captures.push(String::new());
+        self.output_handler_output_captures.push(Vec::new());
         let value = self.call_output_buffer_handler_value(
             handler,
-            vec![Value::String(output.clone()), Value::Int(phase)],
+            vec![
+                interpreter_value_from_php_string_bytes(output.clone()),
+                Value::Int(phase),
+            ],
             span,
         );
         let produced_output = self
@@ -91423,7 +91426,7 @@ impl Interpreter {
             output
         } else {
             value
-                .try_echo_string()
+                .try_echo_bytes()
                 .map_err(|error| runtime_error(span, error))?
         };
         Ok(OutputHandlerResult {
@@ -91505,7 +91508,7 @@ impl Interpreter {
             OutputHandlerAppendTarget::Discard => OutputHandlerAppendTarget::Stdout,
             other => other,
         };
-        self.append_output_handler_result_to_target(&output, diagnostic_target, span)
+        self.append_output_handler_result_to_target(output.as_bytes(), diagnostic_target, span)
     }
 
     fn append_output_handler_result(
@@ -91543,20 +91546,20 @@ impl Interpreter {
 
     fn append_output_handler_result_to_target(
         &mut self,
-        output: &str,
+        output: &[u8],
         target: OutputHandlerAppendTarget,
         span: Span,
     ) -> CompileResult<()> {
         match target {
             OutputHandlerAppendTarget::Stdout => {
-                self.append_output_at(output, span);
+                self.append_output_bytes_at(output, span);
                 Ok(())
             }
             OutputHandlerAppendTarget::BelowActiveBuffer => {
-                self.append_output_below_active_buffer_at(output, span)
+                self.append_output_bytes_below_active_buffer_at(output, span)
             }
             OutputHandlerAppendTarget::BelowBufferIndex(index) => {
-                self.append_output_below_buffer_at_index(index, output, span)
+                self.append_output_bytes_below_buffer_at_index(index, output, span)
             }
             OutputHandlerAppendTarget::Discard => Ok(()),
         }
@@ -91565,7 +91568,7 @@ impl Interpreter {
     fn apply_and_discard_output_buffer_handler(
         &mut self,
         handler: Option<&Value>,
-        output: String,
+        output: Vec<u8>,
         phase: i64,
         function: &str,
         span: Span,
@@ -91590,7 +91593,7 @@ impl Interpreter {
         &mut self,
         buffer_index: usize,
         handler: Option<&Value>,
-        output: String,
+        output: Vec<u8>,
         phase: i64,
         span: Span,
     ) -> CompileResult<OutputHandlerResult> {
@@ -93289,6 +93292,8 @@ impl Interpreter {
                 true,
                 span,
             ),
+            "mb_http_output" => call_mb_http_output(self, &args, span),
+            "mb_output_handler" => call_mb_output_handler(self, &args, span),
             "str_split" => call_str_split(&args, span),
             "addslashes" => self.call_addslashes(&args, span),
             "stripslashes" => self.call_stripslashes(&args, span),
@@ -112089,6 +112094,19 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_optional_null_param("encoding", "?string"),
             ],
         ),
+        "mb_http_output" => (
+            "string|bool",
+            vec![reflection_internal_optional_null_param(
+                "encoding", "?string",
+            )],
+        ),
+        "mb_output_handler" => (
+            "string",
+            vec![
+                reflection_internal_param("string", "string"),
+                reflection_internal_optional_int_param("status", 0),
+            ],
+        ),
         "str_split" => (
             "array",
             vec![
@@ -117211,6 +117229,11 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
         {
             Some(format!("{function}: {message}"))
         }
+        ("mb_http_output()", message)
+            if message.starts_with("Argument #1 ($encoding) must be a valid encoding, ") =>
+        {
+            Some(format!("{function}: {message}"))
+        }
         ("mb_substr()", message)
             if message.starts_with("Argument #4 ($encoding) must be a valid encoding, ") =>
         {
@@ -117998,6 +118021,8 @@ fn is_builtin(name: &str) -> bool {
             | "mb_strripos"
             | "mb_strtolower"
             | "mb_strtoupper"
+            | "mb_http_output"
+            | "mb_output_handler"
             | "str_split"
             | "range"
             | "addslashes"
@@ -132948,6 +132973,185 @@ fn mb_scalar_encoding(
             ),
         )
     })
+}
+
+fn mb_output_encoding_canonical(name: &str) -> Option<&'static str> {
+    let normalized = name
+        .chars()
+        .filter(|ch| ch.is_ascii_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect::<String>();
+    match normalized.as_str() {
+        "" | "pass" => Some("pass"),
+        "utf8" => Some("UTF-8"),
+        "eucjp" | "eucjpwin" => Some("EUC-JP"),
+        _ => None,
+    }
+}
+
+fn call_mb_http_output(
+    interpreter: &mut Interpreter,
+    args: &[Value],
+    span: Span,
+) -> CompileResult<Value> {
+    if args.len() > 1 {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "mb_http_output()",
+                ArityExpectation::Between { min: 0, max: 1 },
+                args.len(),
+            ),
+        ));
+    }
+
+    let Some(value) = args.first() else {
+        let current = interpreter
+            .ini_value("output_encoding")
+            .and_then(|value| mb_output_encoding_canonical(&value))
+            .unwrap_or("pass");
+        return Ok(Value::String(current.to_string()));
+    };
+
+    if matches!(value, Value::Null) {
+        interpreter.emit_display_diagnostic(
+            "Deprecated",
+            PHP_E_DEPRECATED,
+            "mb_http_output(): Passing null to parameter #1 ($encoding) of type string is deprecated",
+            span,
+        )?;
+    }
+
+    let encoding = interpreter.php_string_argument_with_magic_type(
+        "mb_http_output()",
+        1,
+        "encoding",
+        "string",
+        false,
+        value,
+        span,
+    )?;
+    let Some(canonical) = mb_output_encoding_canonical(&encoding) else {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "mb_http_output()",
+                format!("Argument #1 ($encoding) must be a valid encoding, \"{encoding}\" given"),
+            ),
+        ));
+    };
+    interpreter
+        .ini_values
+        .insert("output_encoding".to_string(), canonical.to_string());
+    Ok(Value::Bool(true))
+}
+
+fn call_mb_output_handler(
+    interpreter: &mut Interpreter,
+    args: &[Value],
+    span: Span,
+) -> CompileResult<Value> {
+    if !(1..=2).contains(&args.len()) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "mb_output_handler()",
+                ArityExpectation::Between { min: 1, max: 2 },
+                args.len(),
+            ),
+        ));
+    }
+
+    let input = interpreter.php_string_argument_bytes_with_magic(
+        "mb_output_handler()",
+        1,
+        "string",
+        &args[0],
+        span,
+    )?;
+    if let Some(status) = args.get(1) {
+        php_internal_int_argument("mb_output_handler()", 2, "status", status, span)?;
+    }
+
+    let output_encoding = interpreter
+        .ini_value("output_encoding")
+        .and_then(|value| mb_output_encoding_canonical(&value))
+        .unwrap_or("pass");
+    if output_encoding == "pass" || !mb_output_mimetype_should_convert(interpreter) {
+        return Ok(interpreter_value_from_php_string_bytes(input));
+    }
+
+    let output = match output_encoding {
+        "EUC-JP" => mb_utf8_to_euc_jp_bounded(&input).unwrap_or(input),
+        "UTF-8" => input,
+        _ => input,
+    };
+    Ok(interpreter_value_from_php_string_bytes(output))
+}
+
+fn mb_output_mimetype_should_convert(interpreter: &Interpreter) -> bool {
+    let Some(content_type) = mb_current_content_type(interpreter) else {
+        return true;
+    };
+    let pattern = interpreter
+        .ini_value("mbstring.http_output_conv_mimetypes")
+        .unwrap_or_else(|| "text/html,text/plain,application/xhtml+xml".to_string());
+    let tokens = pattern
+        .split(|ch: char| ch == ',' || ch == ';' || ch == '|' || ch.is_whitespace())
+        .filter(|token| !token.is_empty());
+    tokens.into_iter().any(|token| {
+        let token = token.to_ascii_lowercase();
+        match token.as_str() {
+            "html" => content_type == "text/html" || content_type == "application/xhtml+xml",
+            "text" => content_type.starts_with("text/"),
+            "plain" => content_type == "text/plain",
+            "application" => content_type.starts_with("application/"),
+            "xhtml" => content_type == "application/xhtml+xml",
+            _ => {
+                content_type == token
+                    || (token.ends_with("/*")
+                        && content_type.starts_with(token.trim_end_matches('*')))
+            }
+        }
+    })
+}
+
+fn mb_current_content_type(interpreter: &Interpreter) -> Option<String> {
+    interpreter
+        .response_headers
+        .iter()
+        .rev()
+        .find_map(|header| {
+            let (name, value) = header.split_once(':')?;
+            if !name.trim().eq_ignore_ascii_case("content-type") {
+                return None;
+            }
+            let content_type = value
+                .split(';')
+                .next()
+                .unwrap_or(value)
+                .trim()
+                .to_ascii_lowercase();
+            (!content_type.is_empty()).then_some(content_type)
+        })
+}
+
+fn mb_utf8_to_euc_jp_bounded(input: &[u8]) -> Option<Vec<u8>> {
+    let input = std::str::from_utf8(input).ok()?;
+    let mut output = Vec::with_capacity(input.len());
+    for ch in input.chars() {
+        if ch.is_ascii() {
+            output.push(ch as u8);
+            continue;
+        }
+        match ch {
+            'ス' => output.extend_from_slice(&[0xa5, 0xb9]),
+            'テ' => output.extend_from_slice(&[0xa5, 0xc6]),
+            'ト' => output.extend_from_slice(&[0xa5, 0xc8]),
+            _ => return None,
+        }
+    }
+    Some(output)
 }
 
 fn mb_utf8_lossy(bytes: Vec<u8>) -> String {
@@ -156492,10 +156696,12 @@ const COMPAT_INI_DIRECTIVES: &[&str] = &[
     "mail.add_x_header",
     "max_execution_time",
     "mbstring.func_overload",
+    "mbstring.http_output_conv_mimetypes",
     "memory_limit",
     "mysqli.default_port",
     "mysqlnd.collect_statistics",
     "open_basedir",
+    "output_encoding",
     "output_handler",
     "pcre.backtrack_limit",
     "pcre.recursion_limit",
@@ -157277,10 +157483,12 @@ fn compat_ini_value(normalized_name: &str) -> Option<&'static str> {
         "mail.add_x_header" => Some("0"),
         "max_execution_time" => Some("30"),
         "mbstring.func_overload" => Some("0"),
+        "mbstring.http_output_conv_mimetypes" => Some("text/html,text/plain,application/xhtml+xml"),
         "memory_limit" => Some("128M"),
         "mysqli.default_port" => Some("3306"),
         "mysqlnd.collect_statistics" => Some("1"),
         "open_basedir" => Some(""),
+        "output_encoding" => Some(""),
         "output_handler" => Some(""),
         "pcre.backtrack_limit" => Some("1000000"),
         "pcre.recursion_limit" => Some("100000"),

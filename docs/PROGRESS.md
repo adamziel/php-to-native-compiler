@@ -46579,6 +46579,28 @@ Next:
 
 Next:
 
+- Added a focused mbstring output-buffer lane for the public
+  `ext/mbstring/tests/mb_output_handler_pattern-01.phpt` through
+  `mb_output_handler_pattern-10.phpt` rows. Output buffers now retain raw bytes
+  internally, `mb_output_handler()` is callable from `ob_start()`, and
+  `mb_http_output()` manages the bounded request-local `output_encoding`
+  setting for `pass`, `UTF-8`, and `EUC-JP`.
+- With `output_encoding=EUC-JP`, `mb_output_handler()` converts UTF-8 ASCII
+  plus the Japanese `テスト` scalars to EUC-JP when the latest `Content-Type`
+  matches `mbstring.http_output_conv_mimetypes`; unmatched content types and
+  `pass`/`UTF-8` output encoding preserve the input bytes.
+- Full mbstring conversion tables, output encodings beyond the bounded
+  `pass`/`UTF-8`/`EUC-JP` lane, invalid-sequence policy, broader mimetype
+  grammar, and native lowering remain unsupported.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/home/claude/supervised-php-compiler/state/tmp/phpc-target-output-meta-94857 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 cargo test -q -p phpc --test output_buffer_builtin -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/home/claude/supervised-php-compiler/state/tmp/phpc-target-output-meta-94857 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo build -q -p phpc --bin phpc`;
+  and the pinned wrapper run for
+  `ext/mbstring/tests/mb_output_handler_pattern-01.phpt` through
+  `mb_output_handler_pattern-10.phpt` passed 10/10.
+
+Next:
+
 - Added Milestone 612, parser-lane unsupported `instanceof` expression
   boundary coverage. `$object instanceof ClassName` and uppercase
   `INSTANCEOF` now have pinned parser diagnostics, an `emit_ir_source(...)`
