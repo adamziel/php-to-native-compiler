@@ -764,6 +764,16 @@ struct PendingUncaughtCallFrame {
     args: Vec<Value>,
 }
 
+#[derive(Debug, Clone)]
+struct NoDiscardWarningTarget {
+    callable_kind: &'static str,
+    callable_name: String,
+    attribute: Option<AttributeDecl>,
+    strict_types: bool,
+    function_span: Span,
+    message_override: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum ForeachArrayRoot {
     Static {
@@ -27810,36 +27820,325 @@ impl Interpreter {
 
         let value = self.evaluate(expr, scope)?;
         self.finalize_released_value(Some(value), scope)?;
-        self.emit_no_discard_warning_for_expr(expr)
+        self.emit_no_discard_warning_for_expr(expr, scope)
     }
 
-    fn emit_no_discard_warning_for_expr(&mut self, expr: &Expr) -> CompileResult<()> {
-        let Expr::Call { name, span, .. } = expr else {
-            return Ok(());
-        };
-        let Some(Callable::User(function)) = self.lookup_direct_function_call(name) else {
-            return Ok(());
-        };
-        let Some(attribute) = function
-            .attributes
-            .iter()
-            .find(|attribute| attribute_name_is_no_discard(attribute))
-        else {
+    fn emit_no_discard_warning_for_expr(
+        &mut self,
+        expr: &Expr,
+        scope: &SymbolTable,
+    ) -> CompileResult<()> {
+        let Some(target) = self.no_discard_warning_target_for_expr(expr, scope) else {
             return Ok(());
         };
 
-        let message =
-            self.no_discard_attribute_message(attribute, function.strict_types, function.span)?;
+        let message = match target.message_override {
+            Some(message) => Some(message),
+            None => target
+                .attribute
+                .as_ref()
+                .map(|attribute| {
+                    self.no_discard_attribute_message(
+                        attribute,
+                        target.strict_types,
+                        target.function_span,
+                    )
+                })
+                .transpose()?
+                .flatten(),
+        };
         let mut diagnostic = format!(
-            "The return value of function {}() should either be used or intentionally ignored by casting it as (void)",
-            function.name
+            "The return value of {} {}() should either be used or intentionally ignored by casting it as (void)",
+            target.callable_kind, target.callable_name
         );
         if let Some(message) = message.filter(|value| !value.is_empty()) {
             diagnostic.push_str(", ");
             diagnostic.push_str(&message);
         }
 
-        self.emit_display_warning(diagnostic, *span)
+        self.emit_display_diagnostic("Warning", PHP_E_USER_WARNING, diagnostic, expr.span())
+    }
+
+    fn no_discard_warning_target_for_expr(
+        &self,
+        expr: &Expr,
+        scope: &SymbolTable,
+    ) -> Option<NoDiscardWarningTarget> {
+        match expr {
+            Expr::Call { name, args, .. } => {
+                let key = name.trim_start_matches('\\').to_ascii_lowercase();
+                if key == "call_user_func" {
+                    return args.first().and_then(|arg| {
+                        self.no_discard_warning_target_for_callback_expr(arg, scope)
+                    });
+                }
+
+                match self.lookup_direct_function_call(name) {
+                    Some(Callable::User(function)) => self.no_discard_warning_target_for_function(
+                        function.as_ref(),
+                        "function",
+                        function.name.clone(),
+                    ),
+                    _ => None,
+                }
+            }
+            Expr::DynamicCall { callee, .. } => self
+                .callable_value_from_no_discard_expr(callee, scope)
+                .and_then(|value| self.no_discard_warning_target_for_callable_value(&value)),
+            Expr::MethodCall { target, method, .. } => self
+                .object_value_from_no_discard_expr(target, scope)
+                .and_then(|object| {
+                    self.no_discard_warning_target_for_object_method(&object, method)
+                }),
+            Expr::StaticMethodCall {
+                class_name, method, ..
+            } => self.no_discard_warning_target_for_static_method(class_name, method),
+            Expr::ObjectStaticMethodCall { target, method, .. } => self
+                .callable_value_from_no_discard_expr(target, scope)
+                .and_then(|value| {
+                    self.no_discard_warning_target_for_static_method_value(&value, method)
+                }),
+            Expr::SelfMethodCall { method, .. } => self
+                .class_context
+                .last()
+                .and_then(|class_id| self.classes.get(*class_id))
+                .and_then(|class| {
+                    self.no_discard_warning_target_for_static_method(class.name(), method)
+                }),
+            Expr::LateStaticMethodCall { method, .. } => self
+                .called_class_context
+                .last()
+                .or_else(|| self.class_context.last())
+                .and_then(|class_id| self.classes.get(*class_id))
+                .and_then(|class| {
+                    self.no_discard_warning_target_for_static_method(class.name(), method)
+                }),
+            _ => None,
+        }
+    }
+
+    fn no_discard_warning_target_for_callback_expr(
+        &self,
+        expr: &Expr,
+        scope: &SymbolTable,
+    ) -> Option<NoDiscardWarningTarget> {
+        if let Some(value) = self.callable_value_from_no_discard_expr(expr, scope) {
+            return self.no_discard_warning_target_for_callable_value(&value);
+        }
+
+        let Expr::Array { items, .. } = expr else {
+            return None;
+        };
+        let [first, second] = items.as_slice() else {
+            return None;
+        };
+        if first.key.is_some() || second.key.is_some() || first.by_reference || second.by_reference
+        {
+            return None;
+        }
+        let target = self.callable_value_from_no_discard_expr(&first.value, scope)?;
+        let method = Self::literal_string_expr_value(&second.value)?;
+        self.no_discard_warning_target_for_array_callable_parts(&target, &method)
+    }
+
+    fn callable_value_from_no_discard_expr(
+        &self,
+        expr: &Expr,
+        scope: &SymbolTable,
+    ) -> Option<Value> {
+        match expr {
+            Expr::Variable(name, _) => scope.read_named(name),
+            Expr::String(_, _) => Self::literal_string_expr_value(expr).map(Value::String),
+            _ => None,
+        }
+    }
+
+    fn object_value_from_no_discard_expr(
+        &self,
+        expr: &Expr,
+        scope: &SymbolTable,
+    ) -> Option<PhpObject> {
+        match self.callable_value_from_no_discard_expr(expr, scope)? {
+            Value::Object(object) => Some(object),
+            _ => None,
+        }
+    }
+
+    fn literal_string_expr_value(expr: &Expr) -> Option<String> {
+        let Expr::String(value, _) = expr else {
+            return None;
+        };
+        match php_string_literal_value(value) {
+            Value::String(value) => Some(value),
+            Value::BinaryString(bytes) => Some(String::from_utf8_lossy(&bytes).into_owned()),
+            _ => None,
+        }
+    }
+
+    fn no_discard_warning_target_for_callable_value(
+        &self,
+        value: &Value,
+    ) -> Option<NoDiscardWarningTarget> {
+        match value {
+            Value::String(name) => {
+                if let Some((class_name, method)) = static_method_callable_string(name) {
+                    return self.no_discard_warning_target_for_static_method(class_name, method);
+                }
+                match self.lookup_function(name) {
+                    Some(Callable::User(function)) => self.no_discard_warning_target_for_function(
+                        function.as_ref(),
+                        "function",
+                        function.name.clone(),
+                    ),
+                    _ => None,
+                }
+            }
+            Value::Closure(closure) => self.no_discard_warning_target_for_closure(closure),
+            Value::Array(callback) => {
+                let (target, method) = array_callable_parts(callback)?;
+                self.no_discard_warning_target_for_array_callable_parts(target, method)
+            }
+            _ => None,
+        }
+    }
+
+    fn no_discard_warning_target_for_array_callable_parts(
+        &self,
+        target: &Value,
+        method: &str,
+    ) -> Option<NoDiscardWarningTarget> {
+        match target {
+            Value::Object(object) => {
+                self.no_discard_warning_target_for_object_method(object, method)
+            }
+            Value::String(class_name) => {
+                self.no_discard_warning_target_for_static_method(class_name, method)
+            }
+            _ => None,
+        }
+    }
+
+    fn no_discard_warning_target_for_function(
+        &self,
+        function: &FunctionDecl,
+        callable_kind: &'static str,
+        callable_name: String,
+    ) -> Option<NoDiscardWarningTarget> {
+        let attribute = function
+            .attributes
+            .iter()
+            .find(|attribute| attribute_name_is_no_discard(attribute))
+            .cloned()?;
+        Some(NoDiscardWarningTarget {
+            callable_kind,
+            callable_name,
+            attribute: Some(attribute),
+            strict_types: function.strict_types,
+            function_span: function.span,
+            message_override: None,
+        })
+    }
+
+    fn no_discard_warning_target_for_closure(
+        &self,
+        closure: &PhpClosure,
+    ) -> Option<NoDiscardWarningTarget> {
+        let function = self.closure_functions.get(&closure.id())?;
+        let attribute = function
+            .attributes
+            .iter()
+            .find(|attribute| attribute_name_is_no_discard(attribute))
+            .cloned()?;
+        let file = self
+            .closure_reflection_functions
+            .get(&closure.id())
+            .and_then(|state| state.file_name.as_deref())
+            .or(self.source_file.as_deref())
+            .unwrap_or("Command line code");
+        let line = self
+            .closure_reflection_functions
+            .get(&closure.id())
+            .map(|state| state.start_line)
+            .unwrap_or(function.span.line);
+        Some(NoDiscardWarningTarget {
+            callable_kind: "function",
+            callable_name: format!("{{closure:{file}:{line}}}"),
+            attribute: Some(attribute),
+            strict_types: function.strict_types,
+            function_span: function.span,
+            message_override: None,
+        })
+    }
+
+    fn no_discard_warning_target_for_object_method(
+        &self,
+        object: &PhpObject,
+        method_name: &str,
+    ) -> Option<NoDiscardWarningTarget> {
+        if object.is_instance_of_class_name("DateTimeImmutable")
+            && method_name.eq_ignore_ascii_case("setTimestamp")
+        {
+            return Some(NoDiscardWarningTarget {
+                callable_kind: "method",
+                callable_name: "DateTimeImmutable::setTimestamp".to_string(),
+                attribute: None,
+                strict_types: false,
+                function_span: Span::new(0, 0),
+                message_override: Some(
+                    "as DateTimeImmutable::setTimestamp() does not modify the object itself"
+                        .to_string(),
+                ),
+            });
+        }
+
+        let (class_id, class_name, resolved_method_name, _, _) =
+            self.resolve_instance_method_for_current_object_scope(object.class_id(), method_name)?;
+        let function = self
+            .methods
+            .get(&(class_id, resolved_method_name.to_ascii_lowercase()))?;
+        self.no_discard_warning_target_for_function(
+            function.as_ref(),
+            "method",
+            format!("{class_name}::{resolved_method_name}"),
+        )
+    }
+
+    fn no_discard_warning_target_for_static_method_value(
+        &self,
+        value: &Value,
+        method_name: &str,
+    ) -> Option<NoDiscardWarningTarget> {
+        match value {
+            Value::Object(object) => {
+                self.no_discard_warning_target_for_static_method(object.class_name(), method_name)
+            }
+            Value::String(class_name) => {
+                self.no_discard_warning_target_for_static_method(class_name, method_name)
+            }
+            _ => None,
+        }
+    }
+
+    fn no_discard_warning_target_for_static_method(
+        &self,
+        class_name: &str,
+        method_name: &str,
+    ) -> Option<NoDiscardWarningTarget> {
+        let class_id = self.classes.lookup_class_id(class_name)?;
+        let (declaring_class_id, declaring_class_name, resolved_method_name, _, is_static) =
+            self.resolve_instance_method(class_id, method_name)?;
+        if !is_static {
+            return None;
+        }
+        let function = self.methods.get(&(
+            declaring_class_id,
+            resolved_method_name.to_ascii_lowercase(),
+        ))?;
+        self.no_discard_warning_target_for_function(
+            function.as_ref(),
+            "method",
+            format!("{declaring_class_name}::{resolved_method_name}"),
+        )
     }
 
     fn execute_file_include(
@@ -29890,6 +30189,9 @@ impl Interpreter {
         if declared_class_name.eq_ignore_ascii_case("Deprecated") {
             return self.instantiate_core_deprecated(args, span, scope);
         }
+        if declared_class_name.eq_ignore_ascii_case("NoDiscard") {
+            return self.instantiate_core_no_discard(args, span, scope);
+        }
         if self
             .enum_lookup
             .contains_key(&declared_class_name.to_ascii_lowercase())
@@ -30539,6 +30841,35 @@ impl Interpreter {
             .map_err(|error| runtime_error(span, error))?;
         object
             .write_public_property("since", optional_string_value(since.as_deref()))
+            .map_err(|error| runtime_error(span, error))?;
+        self.track_allocated_object(&object);
+        Ok(Value::Object(object))
+    }
+
+    fn instantiate_core_no_discard(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        let message = self.no_discard_attribute_message_from_exprs(
+            args,
+            self.current_strict_types(),
+            span,
+            scope,
+        )?;
+        let class_id = self
+            .classes
+            .lookup_class_id("NoDiscard")
+            .ok_or_else(|| runtime_error(span, RuntimeError::undefined_class("NoDiscard")))?;
+        let object_id = self.allocate_object_id();
+        let class = self
+            .classes
+            .get(class_id)
+            .expect("core NoDiscard class id should resolve");
+        let object = PhpObject::from_class_with_id(class, object_id);
+        object
+            .write_public_property("message", optional_string_value(message.as_deref()))
             .map_err(|error| runtime_error(span, error))?;
         self.track_allocated_object(&object);
         Ok(Value::Object(object))
@@ -40250,6 +40581,11 @@ impl Interpreter {
                     self.current_property_access_context();
                 match scope.read_static(object, *span)? {
                     Value::Object(object_value) => {
+                        if object_value.class_name().eq_ignore_ascii_case("NoDiscard")
+                            && property.eq_ignore_ascii_case("message")
+                        {
+                            return Err(Self::no_discard_readonly_message_property_error(*span));
+                        }
                         let boundary = scope.object_property_holder_storage_boundary(
                             object,
                             &object_value,
@@ -56227,6 +56563,11 @@ impl Interpreter {
                 .call_datetimeimmutable_method(object, method_name, args, span, caller_scope)
                 .map(|value| (value, None));
         }
+        if object.class_name().eq_ignore_ascii_case("NoDiscard") {
+            return self
+                .call_no_discard_method(method_name, args, span, caller_scope)
+                .map(|value| (value, None));
+        }
         if object.is_instance_of_class_name("ReflectionClass") {
             return self
                 .call_reflection_class_method(object, method_name, args, span, caller_scope)
@@ -56690,6 +57031,57 @@ impl Interpreter {
                 RuntimeError::undefined_function(format!("Error::{method_name}()")),
             )),
         }
+    }
+
+    fn call_no_discard_method(
+        &mut self,
+        method_name: &str,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        match method_name.to_ascii_lowercase().as_str() {
+            "__construct" => {
+                let mut trace_args = Vec::new();
+                let result = self.no_discard_attribute_message_from_exprs_inner(
+                    args,
+                    self.current_strict_types(),
+                    &mut trace_args,
+                    caller_scope,
+                );
+                if let Err(error) = &result {
+                    self.record_pending_uncaught_internal_call_frame(
+                        "NoDiscard->__construct",
+                        span,
+                        &trace_args,
+                        error,
+                    );
+                }
+                result?;
+
+                let error = Self::no_discard_readonly_message_property_error(span);
+                self.record_pending_uncaught_internal_call_frame(
+                    "NoDiscard->__construct",
+                    span,
+                    &trace_args,
+                    &error,
+                );
+                Err(error)
+            }
+            _ => Err(runtime_error(
+                span,
+                RuntimeError::undefined_function(format!("NoDiscard::{method_name}()")),
+            )),
+        }
+    }
+
+    fn no_discard_readonly_message_property_error(span: Span) -> Diagnostic {
+        runtime_error(
+            span,
+            RuntimeError::unsupported_property_access(
+                "Cannot modify readonly property NoDiscard::$message",
+            ),
+        )
     }
 
     fn call_reflection_class_method(
@@ -85216,6 +85608,30 @@ impl Interpreter {
         caller_scope: &mut SymbolTable,
         allow_reference_return_array_bindings: bool,
     ) -> CompileResult<CallFrameArgumentBindings> {
+        if args
+            .iter()
+            .any(|arg| matches!(arg, Expr::NamedArgument { .. }))
+            && function.params.iter().all(|param| !param.by_reference)
+        {
+            let (values, argument_keys) = self.evaluate_positional_array_spread_call_values(
+                function,
+                &callable_name(&function.name),
+                args,
+                span,
+                caller_scope,
+            )?;
+            let by_value_array_copy_bindings =
+                Self::by_value_array_copy_bindings_for_call(function, args);
+
+            return Ok(CallFrameArgumentBindings {
+                values,
+                argument_keys,
+                reference_bindings: Vec::new(),
+                array_copy_source_bindings: Vec::new(),
+                by_value_array_copy_bindings,
+            });
+        }
+
         let (values, reference_bindings, array_copy_source_bindings) = self
             .evaluate_user_function_call_arguments_with_options_and_array_copy_sources(
                 function,
@@ -110912,6 +111328,10 @@ fn magic_method_startup_diagnostics(
     }
 
     if !diagnostics.has_fatal() {
+        collect_no_discard_startup_diagnostics(&mut diagnostics, program, source_file);
+    }
+
+    if !diagnostics.has_fatal() {
         collect_class_constant_modifier_startup_diagnostics(&mut diagnostics, program, source_file);
     }
 
@@ -111672,6 +112092,119 @@ fn function_attribute_target_error(function: &FunctionDecl) -> Option<(String, u
             )
         })
     })
+}
+
+fn collect_no_discard_startup_diagnostics(
+    diagnostics: &mut MagicMethodStartupDiagnostics,
+    program: &Program,
+    source_file: Option<&str>,
+) {
+    for stmt in &program.statements {
+        match stmt {
+            Stmt::Function(function) if !function.is_nested => {
+                if let Some((message, line)) = no_discard_function_startup_error(function) {
+                    diagnostics.set_fatal(message, source_file, line);
+                    return;
+                }
+            }
+            Stmt::Class(class) if !class.is_nested => {
+                for member in &class.members {
+                    let ClassMember::Method(method) = member else {
+                        continue;
+                    };
+                    if let Some((message, line)) =
+                        no_discard_method_startup_error(&class.name, method)
+                    {
+                        diagnostics.set_fatal(message, source_file, line);
+                        return;
+                    }
+                }
+            }
+            Stmt::Interface(interface) => {
+                for method in &interface.methods {
+                    if let Some((message, line)) = no_discard_function_startup_error_with_attrs(
+                        &method.function,
+                        &method.attributes,
+                    ) {
+                        diagnostics.set_fatal(message, source_file, line);
+                        return;
+                    }
+                }
+            }
+            Stmt::Trait(trait_decl) => {
+                for method in &trait_decl.methods {
+                    if let Some((message, line)) =
+                        no_discard_method_startup_error(&trait_decl.name, method)
+                    {
+                        diagnostics.set_fatal(message, source_file, line);
+                        return;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn no_discard_method_startup_error(
+    class_name: &str,
+    method: &ClassMethodDecl,
+) -> Option<(String, usize)> {
+    if !attributes_have_no_discard(&method.attributes)
+        && !attributes_have_no_discard(&method.function.attributes)
+    {
+        return None;
+    }
+
+    if method.function.name.eq_ignore_ascii_case("__construct")
+        || method.function.name.eq_ignore_ascii_case("__clone")
+    {
+        return Some((
+            format!(
+                "Method {class_name}::{} cannot be #[\\NoDiscard]",
+                method.function.name
+            ),
+            method.function.span.line,
+        ));
+    }
+
+    no_discard_function_startup_error_with_attrs(&method.function, &method.attributes)
+}
+
+fn no_discard_function_startup_error(function: &FunctionDecl) -> Option<(String, usize)> {
+    no_discard_function_startup_error_with_attrs(function, &[])
+}
+
+fn no_discard_function_startup_error_with_attrs(
+    function: &FunctionDecl,
+    extra_attributes: &[AttributeDecl],
+) -> Option<(String, usize)> {
+    if !attributes_have_no_discard(&function.attributes)
+        && !attributes_have_no_discard(extra_attributes)
+    {
+        return None;
+    }
+
+    let return_type = function.return_type.as_ref()?.text.trim();
+    if return_type.eq_ignore_ascii_case("void") {
+        return Some((
+            "A void function does not return a value, but #[\\NoDiscard] requires a return value"
+                .to_string(),
+            function.span.line,
+        ));
+    }
+    if return_type.eq_ignore_ascii_case("never") {
+        return Some((
+            "A never returning function does not return a value, but #[\\NoDiscard] requires a return value"
+                .to_string(),
+            function.span.line,
+        ));
+    }
+    None
+}
+
+fn attributes_have_no_discard(attributes: &[AttributeDecl]) -> bool {
+    attributes.iter().any(attribute_name_is_no_discard)
 }
 
 fn attribute_display_name(name: &str) -> &str {
@@ -122922,6 +123455,12 @@ fn core_class_attributes_for_reflection(name: &str) -> Vec<AttributeDecl> {
         return vec![AttributeDecl::new(
             "Attribute".to_string(),
             Some("(Attribute::TARGET_ALL)".to_string()),
+        )];
+    }
+    if name.eq_ignore_ascii_case("NoDiscard") {
+        return vec![AttributeDecl::new(
+            "Attribute".to_string(),
+            Some("(Attribute::TARGET_FUNCTION | Attribute::TARGET_METHOD)".to_string()),
         )];
     }
     Vec::new()

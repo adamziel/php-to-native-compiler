@@ -4887,6 +4887,11 @@ stored on the relevant runtime metadata records and exposed through the bounded
 `ReflectionAttribute` surface. Validation is intentionally targeted at the
 selected builtin/core cases already exercised by public PHPT rows, including
 selected target-mask, repeatability, and constructor-argument diagnostics.
+The interpreter also resolves bounded unused-result `NoDiscard` diagnostics at
+discard sites for direct user callables, supported `call_user_func()`
+callbacks, closure values, and the current native
+`DateTimeImmutable::setTimestamp()` case; magic-call pre-emission, arbitrary
+callback effect analysis, and native lowering remain outside this boundary.
 Namespace/import alias expansion for attribute names, broad delayed validation,
 many member/parameter target combinations, references/copy-on-write behavior,
 and native lowering remain outside this boundary. Ordinary `#` comments remain

@@ -7302,12 +7302,19 @@
   in method attributes; and weak scalar-to-string coercion for covered message
   arguments. Supported strict scalar, array, and bounded
   `Random\IntervalBoundary` enum-case message failures report PHP-shaped
-  `Deprecated::__construct()` fatal `TypeError` stack traces. Direct unused
-  calls to user functions annotated with `#[NoDiscard]` /
+  `Deprecated::__construct()` fatal `TypeError` stack traces. Discarded calls
+  that resolve to user functions, instance/static methods, trait-composed
+  methods, closures, first-class function values, and supported
+  `call_user_func()` string/array callbacks annotated with `#[NoDiscard]` /
   `#[\NoDiscard]` validate/coerce the supported `?string $message`
-  constructor argument before emitting the unused-return diagnostic, including
-  PHP-shaped constructor `TypeError` traces for strict scalar, array, and
-  bounded `Random\IntervalBoundary` enum-case failures. Direct built-in target
+  constructor argument before emitting the `E_USER_WARNING` unused-return
+  diagnostic, including PHP-shaped constructor `TypeError` traces for strict
+  scalar, array, and bounded `Random\IntervalBoundary` enum-case failures.
+  Discarded `DateTimeImmutable::setTimestamp()` emits the bounded native
+  NoDiscard warning. The core `NoDiscard` class is seeded with a readonly
+  public `message` property and constructor behavior for the covered
+  direct-construction paths. `#[NoDiscard]` on `void`/`never` functions and
+  `__construct`/`__clone` methods is rejected at startup. Direct built-in target
   validation covers `#[Attribute]` /
   `#[\Attribute]` on top-level functions, abstract classes, interfaces,
   traits, enums, and top-level constants plus `#[AllowDynamicProperties]` /
@@ -7331,11 +7338,13 @@
   `AllowDynamicProperties` diagnostics, deprecations on
   classes/interfaces/traits/enums/class constants/properties and deprecated
   constant read diagnostics, exact
-  exception-handler diagnostic call-site rendering, `NoDiscard` targets beyond
-  direct user-function unused calls, broader core enum APIs/reflection/cases,
-  references/copy-on-write, and native lowering remain unsupported; ordinary
-  `#` comments, including `# [` with whitespace before the bracket, remain
-  comments
+  exception-handler diagnostic call-site rendering, NoDiscard warning
+  pre-emission for magic `__call`/`__callStatic`/`__invoke` targets, arbitrary
+  dynamic callback expression resolution, broader native-method NoDiscard
+  metadata, full readonly property semantics, broader core enum
+  APIs/reflection/cases, references/copy-on-write, and native lowering remain
+  unsupported; ordinary `#` comments, including `# [` with whitespace before
+  the bracket, remain comments
 
 ## Partially Supported
 

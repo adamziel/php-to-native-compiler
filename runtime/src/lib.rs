@@ -33889,9 +33889,24 @@ impl PhpClassTable {
                 Visibility::Public,
             ))
             .expect("Deprecated core metadata should not duplicate methods");
+        let no_discard_id = classes
+            .declare_class("NoDiscard")
+            .expect("core class table should contain Deprecated before NoDiscard");
+        let no_discard = classes
+            .get_mut(no_discard_id)
+            .expect("declared NoDiscard class id should resolve");
+        no_discard
+            .add_property(PhpPropertyMetadata::instance("message", Visibility::Public))
+            .expect("NoDiscard core metadata should not duplicate properties");
+        no_discard
+            .add_method(PhpMethodMetadata::instance(
+                "__construct",
+                Visibility::Public,
+            ))
+            .expect("NoDiscard core metadata should not duplicate methods");
         let random_interval_boundary_id = classes
             .declare_class("Random\\IntervalBoundary")
-            .expect("core class table should contain Deprecated before Random\\IntervalBoundary");
+            .expect("core class table should contain NoDiscard before Random\\IntervalBoundary");
         classes
             .get_mut(random_interval_boundary_id)
             .expect("declared Random\\IntervalBoundary class id should resolve")
@@ -82098,7 +82113,9 @@ mod tests {
                 "ReflectionZendExtension",
                 "DateMalformedStringException",
                 "DateMalformedIntervalStringException",
+                "DateMalformedPeriodStringException",
                 "DateInterval",
+                "DatePeriod",
                 "DateTime",
                 "DateTimeImmutable",
                 "DOMException",
@@ -82110,6 +82127,7 @@ mod tests {
                 "ErrorException",
                 "Reflection",
                 "Deprecated",
+                "NoDiscard",
                 "Random\\IntervalBoundary",
                 "Closure",
             ]

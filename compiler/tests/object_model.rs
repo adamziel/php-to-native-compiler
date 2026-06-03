@@ -89,6 +89,7 @@ const CORE_CLASS_NAMES: &[&str] = &[
     "ErrorException",
     "Reflection",
     "Deprecated",
+    "NoDiscard",
     "Random\\IntervalBoundary",
     "Closure",
     "Generator",
@@ -8541,6 +8542,130 @@ enum_message_bad();
         .contains("Deprecated->__construct(Random\\IntervalBoundary::ClosedOpen)"));
     assert_eq!(enum_case.stderr, "");
     assert_eq!(enum_case.exit_code, 255);
+}
+
+#[test]
+fn nodiscard_unused_return_warnings_cover_callables_and_native_method() {
+    let execution = run_source_with_source_file(
+        r#"<?php
+set_error_handler(function ($errno, $errstr) {
+    echo "handled|$errno|$errstr\n";
+});
+
+#[NoDiscard("must use")]
+function f(...$args): int {
+    return 1;
+}
+
+class C {
+    #[NoDiscard]
+    public function m(): int {
+        return 2;
+    }
+
+    #[NoDiscard]
+    public static function s(): int {
+        return 3;
+    }
+}
+
+$closure = #[NoDiscard] function (): int {
+    return 4;
+};
+
+f(1, named: 2);
+call_user_func("f");
+$ff = f(...);
+$ff();
+
+$c = new C();
+$c->m();
+C::s();
+call_user_func([$c, "m"]);
+$closure();
+
+$date = new DateTimeImmutable("now");
+$date->setTimestamp(0);
+"#,
+        "/tmp/nodiscard_unused_callables.php",
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout.matches("handled|512|").count(), 8);
+    assert!(execution
+        .stdout
+        .contains("handled|512|The return value of function f()"));
+    assert!(execution.stdout.contains(", must use"));
+    assert!(execution
+        .stdout
+        .contains("handled|512|The return value of method C::m()"));
+    assert!(execution
+        .stdout
+        .contains("handled|512|The return value of method C::s()"));
+    assert!(execution.stdout.contains(
+        "handled|512|The return value of function {closure:/tmp/nodiscard_unused_callables.php:"
+    ));
+    assert!(execution.stdout.contains(
+        "handled|512|The return value of method DateTimeImmutable::setTimestamp() should either be used or intentionally ignored by casting it as (void), as DateTimeImmutable::setTimestamp() does not modify the object itself"
+    ));
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn nodiscard_core_class_readonly_and_startup_diagnostics() {
+    let readonly = run_source_with_source_file(
+        r#"<?php
+$d = new NoDiscard("foo");
+$d->message = "bar";
+"#,
+        "/tmp/nodiscard_readonly.php",
+    )
+    .unwrap();
+
+    assert!(readonly.stdout.contains(
+        "Fatal error: Uncaught Error: Cannot modify readonly property NoDiscard::$message in /tmp/nodiscard_readonly.php:"
+    ));
+    assert_eq!(readonly.stderr, "");
+    assert_eq!(readonly.exit_code, 255);
+
+    let constructor = run_source_with_source_file(
+        r#"<?php
+$d = new NoDiscard("foo");
+$d->__construct("bar");
+"#,
+        "/tmp/nodiscard_readonly_constructor.php",
+    )
+    .unwrap();
+
+    assert!(constructor.stdout.contains(
+        "Fatal error: Uncaught Error: Cannot modify readonly property NoDiscard::$message in /tmp/nodiscard_readonly_constructor.php:"
+    ));
+    assert!(constructor.stdout.contains("NoDiscard->__construct('bar')"));
+    assert_eq!(constructor.stderr, "");
+    assert_eq!(constructor.exit_code, 255);
+
+    assert_php_startup_fatal(
+        r#"<?php
+#[NoDiscard]
+function test(): void {
+}
+"#,
+        "Command line code",
+        3,
+        "A void function does not return a value, but #[\\NoDiscard] requires a return value",
+    );
+    assert_php_startup_fatal(
+        r#"<?php
+class C {
+    #[NoDiscard]
+    public function __clone() {}
+}
+"#,
+        "Command line code",
+        4,
+        "Method C::__clone cannot be #[\\NoDiscard]",
+    );
 }
 
 #[test]
