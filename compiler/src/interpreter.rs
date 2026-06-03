@@ -30448,13 +30448,12 @@ impl Interpreter {
             Value::Array(array) => {
                 self.call_array_callable_with_values(&array, callback.args, callback.span)
             }
-            Value::Closure(_) => Err(runtime_error(
+            Value::Closure(closure) => self.invoke_closure_value(
+                closure,
+                callback.args,
                 callback.span,
-                RuntimeError::unsupported_call(
-                    "register_shutdown_function()",
-                    "closure shutdown callback invocation is not implemented",
-                ),
-            )),
+                "register_shutdown_function()",
+            ),
             other => Err(runtime_error(
                 callback.span,
                 RuntimeError::unsupported_call(
@@ -100603,7 +100602,14 @@ impl Interpreter {
                     "callback must be a valid callable in the current subset",
                 ),
             )),
-            Value::Closure(_) => Ok(Value::Null),
+            Value::Closure(_) => {
+                self.shutdown_callbacks.push(ShutdownCallback {
+                    callback: args[0].clone(),
+                    args: args[1..].to_vec(),
+                    span,
+                });
+                Ok(Value::Null)
+            }
             other => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(

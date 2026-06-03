@@ -4,6 +4,25 @@
 
 Implemented:
 
+- Added a bounded shutdown closure callback lane on the interpreter path.
+  `register_shutdown_function()` now queues closure callbacks instead of
+  accepting them as registration-only no-ops, and shutdown execution dispatches
+  those closures through the existing closure invocation path so captures,
+  bound `$this`, by-value extra arguments, and callbacks appended while the
+  shutdown queue is draining are preserved. Focused proof covers exact-current
+  pre-patch selected PHPT at `0/5` and post-patch selected PHPT at `5/5` for
+  `ext/standard/tests/general_functions/closures_001.phpt`,
+  `Zend/tests/bug78396.phpt`, `Zend/tests/exceptions/gh13446_1.phpt`,
+  `Zend/tests/exceptions/gh13446_3.phpt`, and
+  `Zend/tests/exceptions/gh13446_4.phpt`; Rust `shutdown_function_builtin`
+  coverage at `6/6`, build/fmt/diff checks, and the latest-published
+  PASS-regression scout at `8/8`. Unsupported edges remain by-reference
+  shutdown callback arguments, invokable-object shutdown callbacks,
+  private/protected method callbacks, exceptions thrown from shutdown
+  callbacks, exact fatal-output newline/stack formatting before shutdown
+  output, broader fatal-error/shutdown context and destructor/finally ordering,
+  references/COW, and native lowering.
+
 - Added a bounded output-buffer metadata/control lane on the interpreter path.
   `flush()` now behaves as a no-argument CLI/SAPI no-op that does not flush
   user buffers, `ob_implicit_flush(bool $enable = true)` is registered with

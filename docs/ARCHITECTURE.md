@@ -3164,15 +3164,16 @@ mbstring output conversion tables, stateful encodings, invalid-sequence
 policy, broader mimetype grammar, and native lowering remain unsupported.
 `register_shutdown_function()` is modeled as an interpreter-only request/SAPI
 shutdown queue. Registration evaluates and stores the callback plus extra
-arguments in request-local interpreter state. Normal completion and the
-bounded `exit()` path drain supported string user/builtin callbacks and public
-object/static array callables in registration order before object destructors
-and final output-buffer flushing; callbacks registered while the queue is
-draining are appended and reached later in the same shutdown pass. Closure
-callbacks remain a registration-only boundary because current closure values
-store capture metadata but not executable closure bodies. The model does not
-claim PHP's full fatal-error, finally, destructor, by-reference argument,
-invokable-object, or native shutdown semantics.
+arguments in request-local interpreter state. Normal completion, the bounded
+`exit()` path, and covered uncaught fatal paths drain supported string
+user/builtin callbacks, public object/static array callables, and closure
+callbacks in registration order before object destructors and final
+output-buffer flushing; callbacks registered while the queue is draining are
+appended and reached later in the same shutdown pass. Closure callbacks use the
+existing closure invocation path, so captures, bound `$this`, and by-value
+extra arguments are preserved. The model does not claim PHP's full
+fatal-error, finally, destructor, by-reference argument, invokable-object,
+shutdown-thrown exception, or native shutdown semantics.
 `header()` is an interpreter-only web/SAPI boundary for the current WordPress
 bootstrap/request path. It validates the current string/bool/int argument
 shape, records the raw header line in deterministic in-process CLI request

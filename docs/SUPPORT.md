@@ -6311,15 +6311,16 @@
   `register_shutdown_function($callback, ...$args)` accepts a currently valid
   string callable, object/static array callable, or closure plus optional
   already-evaluated extra arguments and returns `null`. Registered string
-  user/builtin callbacks and public object/static array callables execute
-  during normal shutdown and after the bounded `exit()` path, before object
+  user/builtin callbacks, public object/static array callables, and closure
+  callbacks execute during normal shutdown, after the bounded `exit()` path,
+  and after the covered uncaught-throw/error fatal paths, before object
   destructors and final output-buffer flushing. Extra arguments are delivered
-  by value, and callbacks registered by an executing shutdown callback are
-  appended to the same request-local shutdown queue. Closure callbacks remain
-  registration-only because closure values do not yet carry executable bodies
-  in the interpreter. By-reference callback arguments, invokable-object
-  callbacks, private/protected method callbacks, exact fatal-error/shutdown
-  context, finally/destructor edge ordering beyond the covered callback-before-
+  by value, closure callbacks keep their captured variables and bound `$this`,
+  and callbacks registered by an executing shutdown callback are appended to
+  the same request-local shutdown queue. By-reference callback arguments,
+  invokable-object callbacks, private/protected method callbacks, exceptions
+  thrown from shutdown callbacks, exact fatal-error/shutdown context,
+  finally/destructor edge ordering beyond the covered callback-before-
   destructor slice, exact diagnostics, and native lowering remain unsupported.
   `set_error_handler($callback, $error_levels = E_ALL)` accepts a currently
   valid string callable, object/static array callable, or closure plus an
