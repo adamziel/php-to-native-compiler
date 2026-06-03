@@ -62,6 +62,87 @@ var_dump($rc->hasMethod(true));
 }
 
 #[test]
+fn reflection_class_relationship_methods_report_php_metadata_errors() {
+    let execution = run_source(
+        r#"<?php
+interface I1 {}
+class A implements I1 {}
+class B extends A {}
+interface I2 extends I1 {}
+class C implements I2 {}
+
+$refs = array(
+    "A" => new ReflectionClass("A"),
+    "B" => new ReflectionClass("B"),
+    "C" => new ReflectionClass("C"),
+    "I1" => new ReflectionClass("I1"),
+    "I2" => new ReflectionClass("I2"),
+);
+
+function yn($value) {
+    return $value ? "1" : "0";
+}
+
+echo "impl|", yn($refs["A"]->implementsInterface($refs["I1"]));
+echo yn($refs["B"]->implementsInterface("I1"));
+echo yn($refs["C"]->implementsInterface("I1"));
+echo yn($refs["C"]->implementsInterface("I2"));
+echo yn($refs["I2"]->implementsInterface($refs["I1"]));
+echo yn($refs["I1"]->implementsInterface("I1")), "\n";
+
+foreach (array("A", "Missing", 2) as $target) {
+    try {
+        $refs["A"]->implementsInterface($target);
+    } catch (ReflectionException $e) {
+        echo "impl-error|", $e->getMessage(), "\n";
+    }
+}
+
+try {
+    $refs["A"]->implementsInterface();
+} catch (ArgumentCountError $e) {
+    echo "impl-arity|", $e->getMessage(), "\n";
+}
+
+echo "sub|", yn($refs["B"]->isSubclassOf($refs["A"]));
+echo yn($refs["A"]->isSubclassOf($refs["B"])), "\n";
+
+foreach (array("Missing", 2) as $target) {
+    try {
+        $refs["A"]->isSubclassOf($target);
+    } catch (ReflectionException $e) {
+        echo "sub-error|", $e->getMessage(), "\n";
+    }
+}
+
+try {
+    $refs["A"]->isSubclassOf("A", "B");
+} catch (ArgumentCountError $e) {
+    echo "sub-arity|", $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "impl|111111\n",
+            "impl-error|A is not an interface\n",
+            "impl-error|Interface \"Missing\" does not exist\n",
+            "impl-error|Interface \"2\" does not exist\n",
+            "impl-arity|ReflectionClass::implementsInterface() expects exactly 1 argument, 0 given\n",
+            "sub|10\n",
+            "sub-error|Class \"Missing\" does not exist\n",
+            "sub-error|Class \"2\" does not exist\n",
+            "sub-arity|ReflectionClass::isSubclassOf() expects exactly 1 argument, 2 given\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn internal_datetime_parameter_defaults_reflect_php_metadata() {
     let execution = run_source(
         r#"<?php

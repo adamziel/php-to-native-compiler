@@ -32459,6 +32459,7 @@ impl PhpClassTable {
             "isInstantiable",
             "isInstance",
             "isSubclassOf",
+            "implementsInterface",
             "isIterable",
             "isIterateable",
             "getParentClass",

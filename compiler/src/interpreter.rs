@@ -1085,6 +1085,11 @@ enum ReflectionClassKind {
     Trait,
 }
 
+enum ReflectionClassCompareArgument {
+    Reflected(ReflectionClassState),
+    Name(String),
+}
+
 #[derive(Debug, Clone)]
 struct ClassLikeSourceMetadata {
     file_name: Option<String>,
@@ -56379,10 +56384,43 @@ impl Interpreter {
             "issubclassof" => {
                 expect_expr_arity("ReflectionClass::isSubclassOf", args.len(), 1, span)?;
                 let value = self.evaluate(&args[0], caller_scope)?;
-                let target = self.resolve_reflection_class_compare_target(value, span)?;
+                let target =
+                    match self.resolve_reflection_class_subclass_target(value.clone(), span) {
+                        Ok(target) => target,
+                        Err(error) => {
+                            self.record_pending_uncaught_internal_call_frame(
+                                "ReflectionClass->isSubclassOf",
+                                span,
+                                &[value],
+                                &error,
+                            );
+                            return Err(error);
+                        }
+                    };
                 Ok(Value::Bool(
                     self.reflection_class_is_subclass_of(&state, &target),
                 ))
+            }
+            "implementsinterface" => {
+                expect_expr_arity("ReflectionClass::implementsInterface", args.len(), 1, span)?;
+                let value = self.evaluate(&args[0], caller_scope)?;
+                let target =
+                    match self.resolve_reflection_class_interface_target(value.clone(), span) {
+                        Ok(target) => target,
+                        Err(error) => {
+                            self.record_pending_uncaught_internal_call_frame(
+                                "ReflectionClass->implementsInterface",
+                                span,
+                                &[value],
+                                &error,
+                            );
+                            return Err(error);
+                        }
+                    };
+                Ok(Value::Bool(self.reflection_class_implements_interface(
+                    &state,
+                    &target.name,
+                )))
             }
             "isiterable" | "isiterateable" => {
                 let method = if method_name.eq_ignore_ascii_case("isIterable") {
@@ -56821,38 +56859,145 @@ impl Interpreter {
         }
     }
 
-    fn resolve_reflection_class_compare_target(
-        &self,
+    fn resolve_reflection_class_compare_argument(
+        &mut self,
         value: Value,
+        method: &'static str,
+        parameter: &'static str,
+        expected_type: &'static str,
         span: Span,
-    ) -> CompileResult<ReflectionClassState> {
+    ) -> CompileResult<ReflectionClassCompareArgument> {
         match value {
-            Value::Object(object) if object.is_instance_of_class_name("ReflectionClass") => {
-                self.reflection_classes
-                    .get(&object.id())
-                    .cloned()
-                    .ok_or_else(|| {
+            Value::Object(object) if object.is_instance_of_class_name("ReflectionClass") => self
+                .reflection_classes
+                .get(&object.id())
+                .cloned()
+                .map(ReflectionClassCompareArgument::Reflected)
+                .ok_or_else(|| {
+                    runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            method,
+                            "missing ReflectionClass runtime metadata",
+                        ),
+                    )
+                }),
+            Value::Null => {
+                self.emit_display_diagnostic(
+                    "Deprecated",
+                    PHP_E_DEPRECATED,
+                    format!(
+                        "{method}: Passing null to parameter #1 (${parameter}) of type {expected_type} is deprecated"
+                    ),
+                    span,
+                )?;
+                Ok(ReflectionClassCompareArgument::Name(String::new()))
+            }
+            other => {
+                let Some(bytes) = other.php_scalar_string_bytes() else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            method,
+                            format!(
+                                "Argument #1 (${parameter}) must be of type {expected_type}, {} given",
+                                php_type_error_given(&other)
+                            ),
+                        ),
+                    ));
+                };
+                String::from_utf8(bytes)
+                    .map(ReflectionClassCompareArgument::Name)
+                    .map_err(|_| {
                         runtime_error(
                             span,
                             RuntimeError::unsupported_call(
-                                "ReflectionClass comparison",
-                                "missing ReflectionClass runtime metadata",
+                                method,
+                                format!(
+                                    "Argument #1 (${parameter}) must be valid UTF-8 in the current subset"
+                                ),
                             ),
                         )
                     })
             }
-            Value::String(name) => self.resolve_reflection_class_name_without_autoload(&name, span),
-            other => Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "ReflectionClass comparison",
-                    format!(
-                        "target must be ReflectionClass/ReflectionObject object or class-like string in the current subset, got {}",
-                        other.type_name()
-                    ),
-                ),
-            )),
         }
+    }
+
+    fn resolve_reflection_class_subclass_target(
+        &mut self,
+        value: Value,
+        span: Span,
+    ) -> CompileResult<ReflectionClassState> {
+        match self.resolve_reflection_class_compare_argument(
+            value,
+            "ReflectionClass::isSubclassOf()",
+            "class",
+            "ReflectionClass|string",
+            span,
+        )? {
+            ReflectionClassCompareArgument::Reflected(state) => Ok(state),
+            ReflectionClassCompareArgument::Name(name) => self
+                .reflection_class_state_for_name_without_autoload(&name)
+                .ok_or_else(|| {
+                    reflection_exception_error(span, format!("Class \"{name}\" does not exist"))
+                }),
+        }
+    }
+
+    fn resolve_reflection_class_interface_target(
+        &mut self,
+        value: Value,
+        span: Span,
+    ) -> CompileResult<ReflectionClassState> {
+        let target = match self.resolve_reflection_class_compare_argument(
+            value,
+            "ReflectionClass::implementsInterface()",
+            "interface",
+            "ReflectionClass|string",
+            span,
+        )? {
+            ReflectionClassCompareArgument::Reflected(state) => state,
+            ReflectionClassCompareArgument::Name(name) => self
+                .reflection_class_state_for_name_without_autoload(&name)
+                .ok_or_else(|| {
+                    reflection_exception_error(span, format!("Interface \"{name}\" does not exist"))
+                })?,
+        };
+        if target.kind != ReflectionClassKind::Interface {
+            return Err(reflection_exception_error(
+                span,
+                format!("{} is not an interface", target.name),
+            ));
+        }
+        Ok(target)
+    }
+
+    fn reflection_class_state_for_name_without_autoload(
+        &self,
+        name: &str,
+    ) -> Option<ReflectionClassState> {
+        if let Some(class) = self.classes.lookup_class(name) {
+            return Some(self.reflection_class_state_for(
+                class.name().to_string(),
+                ReflectionClassKind::Class,
+                Some(class.id()),
+            ));
+        }
+        if let Some(interface) = self.interface_lookup.get(&name.to_ascii_lowercase()) {
+            return Some(self.reflection_class_state_for(
+                interface.name.clone(),
+                ReflectionClassKind::Interface,
+                None,
+            ));
+        }
+        if let Some(trait_decl) = self.trait_lookup.get(&name.to_ascii_lowercase()) {
+            return Some(self.reflection_class_state_for(
+                trait_decl.name.clone(),
+                ReflectionClassKind::Trait,
+                None,
+            ));
+        }
+        None
     }
 
     fn resolve_reflection_class_name_without_autoload(
@@ -56860,34 +57005,33 @@ impl Interpreter {
         name: &str,
         span: Span,
     ) -> CompileResult<ReflectionClassState> {
-        if let Some(class) = self.classes.lookup_class(name) {
-            return Ok(self.reflection_class_state_for(
-                class.name().to_string(),
-                ReflectionClassKind::Class,
-                Some(class.id()),
-            ));
+        self.reflection_class_state_for_name_without_autoload(name)
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "ReflectionClass comparison",
+                        format!("target {name} must name a declared class, interface, or trait"),
+                    ),
+                )
+            })
+    }
+
+    fn reflection_class_implements_interface(
+        &self,
+        subject: &ReflectionClassState,
+        interface_name: &str,
+    ) -> bool {
+        match subject.kind {
+            ReflectionClassKind::Class => subject.class_id.is_some_and(|class_id| {
+                self.class_implements_or_matches_core_interface(class_id, interface_name)
+            }),
+            ReflectionClassKind::Interface => {
+                subject.name.eq_ignore_ascii_case(interface_name)
+                    || self.interface_extends_interface(&subject.name, interface_name)
+            }
+            ReflectionClassKind::Trait => false,
         }
-        if let Some(interface) = self.interface_lookup.get(&name.to_ascii_lowercase()) {
-            return Ok(self.reflection_class_state_for(
-                interface.name.clone(),
-                ReflectionClassKind::Interface,
-                None,
-            ));
-        }
-        if let Some(trait_decl) = self.trait_lookup.get(&name.to_ascii_lowercase()) {
-            return Ok(self.reflection_class_state_for(
-                trait_decl.name.clone(),
-                ReflectionClassKind::Trait,
-                None,
-            ));
-        }
-        Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                "ReflectionClass comparison",
-                format!("target {name} must name a declared class, interface, or trait"),
-            ),
-        ))
     }
 
     fn reflection_class_is_subclass_of(
@@ -122684,6 +122828,10 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
         return Some(("ArgumentCountError", message));
     }
 
+    if let Some(message) = reflection_class_relationship_argument_count_error_message(error) {
+        return Some(("ArgumentCountError", message));
+    }
+
     if let Some(message) = reflection_method_invoke_argument_count_error_message(error) {
         return Some(("TypeError", message));
     }
@@ -123821,6 +123969,34 @@ fn user_function_too_few_arguments_message(error: &Diagnostic) -> Option<String>
     Some(format!(
         "Too few arguments to function {callable}, {actual} passed in {source} on line {} and exactly {expected} expected",
         error.line
+    ))
+}
+
+fn reflection_class_relationship_argument_count_error_message(
+    error: &Diagnostic,
+) -> Option<String> {
+    if error.phase != Phase::Runtime {
+        return None;
+    }
+
+    let rest = error.message.strip_prefix("arity mismatch for ")?;
+    let (callable, expectation) = rest.split_once(": expected ")?;
+    if !matches!(
+        callable,
+        "ReflectionClass::isSubclassOf()" | "ReflectionClass::implementsInterface()"
+    ) {
+        return None;
+    }
+    let (expected, actual) = expectation.split_once(" argument(s), got ")?;
+    let expected = expected.parse::<usize>().ok()?;
+    let actual = actual.parse::<usize>().ok()?;
+    let noun = if expected == 1 {
+        "argument"
+    } else {
+        "arguments"
+    };
+    Some(format!(
+        "{callable} expects exactly {expected} {noun}, {actual} given"
     ))
 }
 
