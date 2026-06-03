@@ -137,11 +137,15 @@ wrapper subclasses share the normal object method path.
 Core `SplFileInfo` instances are modeled as bounded local-path states:
 construction records the path without statting it, and covered metadata getters
 share the existing local filesystem metadata helpers while raising SPL-shaped
-`RuntimeException`s for unavailable stat data. Core `SplFileObject` instances
-are modeled as bounded local-file cursor states with optional local stream
-resources; covered CSV controls, default-escape diagnostics, method-shaped CSV
-argument errors, and internal CSV method reflection metadata are handled on that
-interpreter object state.
+`RuntimeException`s for unavailable stat data. The same state also records the
+current `setFileClass()` / `setInfoClass()` selections so `openFile()`,
+`getFileInfo()`, and `getPathInfo()` can allocate bounded SPL objects through
+the existing object metadata path, while `getExtension()` remains a pure
+basename operation. Core `SplFileObject` instances are modeled as bounded
+local-file cursor states with optional local stream resources; covered CSV
+controls, default-escape diagnostics, method-shaped CSV argument errors, and
+internal CSV method reflection metadata are handled on that interpreter object
+state.
 Bounded non-direct named and dynamic property holder expressions in
 by-reference `foreach`, such as `$holders["bag"]->items["child"]`,
 `$holders["bag"]->{$name}["child"]`, method-context

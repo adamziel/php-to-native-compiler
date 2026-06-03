@@ -2705,17 +2705,23 @@
   during detach/unset, serialization parity, reference/COW mutation of stored
   info values, and native lowering remain unsupported.
 - SPL `SplFileInfo` has a bounded local metadata runtime model for
-  `__construct()`, `getGroup()`, `getInode()`, `getOwner()`, and `getPerms()`.
+  `__construct()`, `getExtension()`, `getFileInfo()`, `getGroup()`,
+  `getInode()`, `getOwner()`, `getPathInfo()`, `getPerms()`, `openFile()`,
+  `setFileClass()`, and `setInfoClass()`.
   Construction records the provided path without opening or statting it.
   Covered metadata getters resolve local paths through the same bounded
   local-path, open_basedir, and stat-cache policy as the adjacent `filegroup()`,
   `fileinode()`, `fileowner()`, and `fileperms()` helpers, return host-local
   integer metadata for existing files, and raise the bounded SPL
   `RuntimeException` shape when stat metadata is unavailable.
-  Broad `SplFileInfo` path/name/type methods, `SplFileObject` inheritance over
-  `SplFileInfo`, DirectoryIterator inherited metadata, link-target-specific
-  metadata, non-local/user stream wrappers, exact open_basedir warning parity,
-  serialization parity, references/COW, and native lowering remain unsupported.
+  `setFileClass()` and `setInfoClass()` validate selected classes against
+  `SplFileObject` and `SplFileInfo` respectively; `openFile()`,
+  `getFileInfo()`, and `getPathInfo()` create bounded SPL objects using the
+  selected class state without invoking selected-class constructor side
+  effects. Broad `SplFileInfo` path/name/type methods, DirectoryIterator
+  inherited metadata, link-target-specific metadata, non-local/user stream
+  wrappers, exact open_basedir warning parity, serialization parity,
+  references/COW, and native lowering remain unsupported.
 - SPL `SplFileObject` has a bounded local UTF-8 line-cursor runtime model for
   construction from local paths and local `file://` URLs in supported local
   stream modes, plus `current()`, `getCurrentLine()`, `fgets()`,

@@ -274,8 +274,14 @@ echo "ready\n";
     assert!(spl_file_object.constant("READ_CSV").is_some());
     assert!(spl_file_object.method("setCsvControl").is_some());
     let spl_file_info = classes.lookup_class("SplFileInfo").unwrap();
+    assert!(spl_file_info.method("getExtension").is_some());
+    assert!(spl_file_info.method("getFileInfo").is_some());
     assert!(spl_file_info.method("getOwner").is_some());
+    assert!(spl_file_info.method("getPathInfo").is_some());
     assert!(spl_file_info.method("getPerms").is_some());
+    assert!(spl_file_info.method("openFile").is_some());
+    assert!(spl_file_info.method("setFileClass").is_some());
+    assert!(spl_file_info.method("setInfoClass").is_some());
 
     let class = classes.lookup_class("box").unwrap();
     assert_eq!(class.name(), "Box");
@@ -17059,6 +17065,59 @@ try {{
             "group\ninode\nowner\nperms\nSplFileInfo::getOwner(): stat failed for {}\n",
             missing.display()
         )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn spl_file_info_path_and_class_selection_methods() {
+    use std::fs;
+
+    let fixture_dir =
+        std::env::temp_dir().join(format!("phpc-spl-file-info-classes-{}", std::process::id()));
+    fs::create_dir_all(&fixture_dir).unwrap();
+    let fixture = fixture_dir.join("sample.ext");
+    fs::write(&fixture, "sample\n").unwrap();
+    let fixture_path = fixture.display().to_string().replace('\\', "\\\\");
+
+    let source = format!(
+        r#"<?php
+class MyFileObject extends SplFileObject {{}}
+class MyInfoObject extends SplFileInfo {{}}
+
+$info = new SplFileInfo("{fixture_path}");
+echo $info->getExtension(), "\n";
+$info->setFileClass("MyFileObject");
+echo get_class($info->openFile()), "\n";
+$info->setFileClass("SplFileObject");
+echo get_class($info->openFile()), "\n";
+
+$info->setInfoClass("MyInfoObject");
+echo get_class($info->getFileInfo()), "\n";
+echo get_class($info->getPathInfo()), "\n";
+$info->setInfoClass("SplFileInfo");
+echo get_class($info->getFileInfo()), "\n";
+echo get_class($info->getPathInfo()), "\n";
+
+try {{
+    $info->setFileClass("stdClass");
+}} catch (TypeError $e) {{
+    echo $e->getMessage(), "\n";
+}}
+
+try {{
+    $info->setInfoClass("stdClass");
+}} catch (TypeError $e) {{
+    echo $e->getMessage(), "\n";
+}}
+"#
+    );
+
+    let execution = run_source(&source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "ext\nMyFileObject\nSplFileObject\nMyInfoObject\nMyInfoObject\nSplFileInfo\nSplFileInfo\nSplFileInfo::setFileClass(): Argument #1 ($class) must be a class name derived from SplFileObject, stdClass given\nSplFileInfo::setInfoClass(): Argument #1 ($class) must be a class name derived from SplFileInfo, stdClass given\n"
     );
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);

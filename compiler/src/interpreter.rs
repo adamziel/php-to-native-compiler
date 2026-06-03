@@ -857,9 +857,21 @@ impl SplDoublyLinkedListState {
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 struct SplFileInfoState {
     path: String,
+    file_class: String,
+    info_class: String,
+}
+
+impl Default for SplFileInfoState {
+    fn default() -> Self {
+        Self {
+            path: String::new(),
+            file_class: "SplFileObject".to_string(),
+            info_class: "SplFileInfo".to_string(),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -18099,6 +18111,198 @@ impl Interpreter {
         Ok(metadata)
     }
 
+    fn spl_file_info_class_argument(
+        &self,
+        function: &str,
+        parameter_name: &'static str,
+        base_class: &'static str,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<String> {
+        let class_name = match value {
+            Value::String(class_name) => class_name,
+            Value::BinaryString(bytes) => {
+                let class_name = tree_walk_binary_string_utf8(bytes, parameter_name, span)?;
+                let normalized = class_name.strip_prefix('\\').unwrap_or(class_name);
+                let valid = self
+                    .classes
+                    .lookup_class_id(normalized)
+                    .is_some_and(|class_id| {
+                        self.classes
+                            .lookup_class_id(base_class)
+                            .is_some_and(|base_id| {
+                                class_id == base_id
+                                    || self.classes.is_subclass_of(class_id, base_id)
+                            })
+                    });
+                if valid {
+                    return Ok(normalized.to_string());
+                }
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        format!("{function}()"),
+                        format!(
+                            "{function}(): Argument #1 (${parameter_name}) must be a class name derived from {base_class}, {class_name} given"
+                        ),
+                    ),
+                ));
+            }
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        format!("{function}()"),
+                        format!(
+                            "{function}(): Argument #1 (${parameter_name}) must be of type string, {} given",
+                            php_type_error_given(other)
+                        ),
+                    ),
+                ));
+            }
+        };
+        let normalized = class_name.strip_prefix('\\').unwrap_or(class_name);
+        let valid = self
+            .classes
+            .lookup_class_id(normalized)
+            .is_some_and(|class_id| {
+                self.classes
+                    .lookup_class_id(base_class)
+                    .is_some_and(|base_id| {
+                        class_id == base_id || self.classes.is_subclass_of(class_id, base_id)
+                    })
+            });
+        if valid {
+            return Ok(normalized.to_string());
+        }
+
+        Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                format!("{function}()"),
+                format!(
+                    "{function}(): Argument #1 (${parameter_name}) must be a class name derived from {base_class}, {class_name} given"
+                ),
+            ),
+        ))
+    }
+
+    fn spl_file_info_path_extension(path: &str) -> String {
+        let basename = path
+            .rsplit(|ch| ch == '/' || ch == '\\')
+            .next()
+            .unwrap_or(path);
+        if basename == "." || basename == ".." {
+            return String::new();
+        }
+        basename
+            .rsplit_once('.')
+            .map(|(_, extension)| extension.to_string())
+            .unwrap_or_default()
+    }
+
+    fn spl_file_info_parent_path(path: &str) -> String {
+        let parent = Path::new(path).parent();
+        parent
+            .and_then(|parent| {
+                let parent = parent.to_string_lossy();
+                if parent.is_empty() {
+                    None
+                } else {
+                    Some(parent.to_string())
+                }
+            })
+            .unwrap_or_else(|| ".".to_string())
+    }
+
+    fn create_spl_file_info_object_for_class(
+        &mut self,
+        class_name: &str,
+        path: String,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let class_id = self
+            .classes
+            .lookup_class_id(class_name)
+            .ok_or_else(|| runtime_error(span, RuntimeError::undefined_class(class_name)))?;
+        if !self.is_spl_file_info_class_id(class_id) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "SplFileInfo",
+                    format!("class must be SplFileInfo or a subclass, {class_name} given"),
+                ),
+            ));
+        }
+        let object_id = self.allocate_object_id();
+        let class = self
+            .classes
+            .get(class_id)
+            .expect("SplFileInfo class id should resolve to class metadata");
+        let inherited_properties = self.inherited_instance_properties(class_id);
+        let mut ancestor_class_names = self.inherited_class_names(class_id);
+        ancestor_class_names.extend(self.class_alias_names(class_id));
+        let interface_names = self.class_implements_interface_names(class_id);
+        let object = PhpObject::from_class_with_relationship_metadata_with_id(
+            class,
+            &inherited_properties,
+            ancestor_class_names,
+            interface_names,
+            object_id,
+        );
+        self.apply_instance_property_defaults(&object, class_id, span)?;
+        self.spl_file_infos.insert(
+            object.id(),
+            SplFileInfoState {
+                path,
+                ..SplFileInfoState::default()
+            },
+        );
+        self.track_allocated_object(&object);
+        Ok(Value::Object(object))
+    }
+
+    fn create_spl_file_object_for_class(
+        &mut self,
+        class_name: &str,
+        constructor_args: Vec<Value>,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let class_id = self
+            .classes
+            .lookup_class_id(class_name)
+            .ok_or_else(|| runtime_error(span, RuntimeError::undefined_class(class_name)))?;
+        if !self.is_spl_file_object_class_id(class_id) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "SplFileObject",
+                    format!("class must be SplFileObject or a subclass, {class_name} given"),
+                ),
+            ));
+        }
+        let object_id = self.allocate_object_id();
+        let class = self
+            .classes
+            .get(class_id)
+            .expect("SplFileObject class id should resolve to class metadata");
+        let inherited_properties = self.inherited_instance_properties(class_id);
+        let mut ancestor_class_names = self.inherited_class_names(class_id);
+        ancestor_class_names.extend(self.class_alias_names(class_id));
+        let interface_names = self.class_implements_interface_names(class_id);
+        let object = PhpObject::from_class_with_relationship_metadata_with_id(
+            class,
+            &inherited_properties,
+            ancestor_class_names,
+            interface_names,
+            object_id,
+        );
+        self.apply_instance_property_defaults(&object, class_id, span)?;
+        self.initialize_spl_file_object(&object, &constructor_args, span)?;
+        self.track_allocated_object(&object);
+        Ok(Value::Object(object))
+    }
+
     fn call_spl_file_info_method_with_values(
         &mut self,
         object: PhpObject,
@@ -18134,6 +18338,114 @@ impl Interpreter {
                 expect_arity("SplFileInfo::getPerms", &args, 0, span)?;
                 let metadata = self.spl_file_info_metadata(&object, method_name, span)?;
                 Ok(Value::Int(filesystem_mode_bits(&metadata)))
+            }
+            "getextension" => {
+                expect_arity("SplFileInfo::getExtension", &args, 0, span)?;
+                let path = self
+                    .spl_file_info_state(&object, method_name, span)?
+                    .path
+                    .clone();
+                Ok(Value::String(Self::spl_file_info_path_extension(&path)))
+            }
+            "setfileclass" => {
+                expect_arity("SplFileInfo::setFileClass", &args, 1, span)?;
+                let class_name = self.spl_file_info_class_argument(
+                    "SplFileInfo::setFileClass",
+                    "class",
+                    "SplFileObject",
+                    &args[0],
+                    span,
+                )?;
+                self.spl_file_info_state_mut(&object, method_name, span)?
+                    .file_class = class_name;
+                Ok(Value::Null)
+            }
+            "setinfoclass" => {
+                expect_arity("SplFileInfo::setInfoClass", &args, 1, span)?;
+                let class_name = self.spl_file_info_class_argument(
+                    "SplFileInfo::setInfoClass",
+                    "class",
+                    "SplFileInfo",
+                    &args[0],
+                    span,
+                )?;
+                self.spl_file_info_state_mut(&object, method_name, span)?
+                    .info_class = class_name;
+                Ok(Value::Null)
+            }
+            "getfileinfo" => {
+                if args.len() > 1 {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::arity_mismatch(
+                            "SplFileInfo::getFileInfo",
+                            ArityExpectation::Between { min: 0, max: 1 },
+                            args.len(),
+                        ),
+                    ));
+                }
+                let state = self
+                    .spl_file_info_state(&object, method_name, span)?
+                    .clone();
+                let class_name = if let Some(value) = args.first() {
+                    self.spl_file_info_class_argument(
+                        "SplFileInfo::getFileInfo",
+                        "class",
+                        "SplFileInfo",
+                        value,
+                        span,
+                    )?
+                } else {
+                    state.info_class
+                };
+                self.create_spl_file_info_object_for_class(&class_name, state.path, span)
+            }
+            "getpathinfo" => {
+                if args.len() > 1 {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::arity_mismatch(
+                            "SplFileInfo::getPathInfo",
+                            ArityExpectation::Between { min: 0, max: 1 },
+                            args.len(),
+                        ),
+                    ));
+                }
+                let state = self
+                    .spl_file_info_state(&object, method_name, span)?
+                    .clone();
+                let class_name = if let Some(value) = args.first() {
+                    self.spl_file_info_class_argument(
+                        "SplFileInfo::getPathInfo",
+                        "class",
+                        "SplFileInfo",
+                        value,
+                        span,
+                    )?
+                } else {
+                    state.info_class
+                };
+                let parent_path = Self::spl_file_info_parent_path(&state.path);
+                self.create_spl_file_info_object_for_class(&class_name, parent_path, span)
+            }
+            "openfile" => {
+                if args.len() > 3 {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::arity_mismatch(
+                            "SplFileInfo::openFile",
+                            ArityExpectation::Between { min: 0, max: 3 },
+                            args.len(),
+                        ),
+                    ));
+                }
+                let state = self
+                    .spl_file_info_state(&object, method_name, span)?
+                    .clone();
+                let mut constructor_args = Vec::with_capacity(args.len() + 1);
+                constructor_args.push(Value::String(state.path));
+                constructor_args.extend(args);
+                self.create_spl_file_object_for_class(&state.file_class, constructor_args, span)
             }
             _ => Err(runtime_error(
                 span,
@@ -116356,7 +116668,10 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
             if message.contains("stat failed for ") {
                 return Some(("RuntimeException", message));
             }
-            if message.contains(" must be of type ") {
+            if message.contains(" must be of type ")
+                || message.contains(" must be a class name derived from SplFileInfo")
+                || message.contains(" must be a class name derived from SplFileObject")
+            {
                 return Some(("TypeError", message));
             }
         }

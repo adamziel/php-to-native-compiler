@@ -33158,10 +33158,16 @@ impl PhpClassTable {
             .expect("declared SplFileInfo class id should resolve");
         for method in [
             "__construct",
+            "getExtension",
+            "getFileInfo",
             "getGroup",
             "getInode",
             "getOwner",
+            "getPathInfo",
             "getPerms",
+            "openFile",
+            "setFileClass",
+            "setInfoClass",
         ] {
             spl_file_info
                 .add_method(PhpMethodMetadata::instance(method, Visibility::Public))

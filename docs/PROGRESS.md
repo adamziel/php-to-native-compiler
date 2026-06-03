@@ -25,6 +25,24 @@ Implemented:
   destructuring value targets, exact compile-time fatal ordering outside this
   slice, native lowering, and broader references/COW.
 
+- Added a bounded `SplFileInfo` path/class-selection lane on the interpreter
+  path. `SplFileInfo` state now tracks `setFileClass()` and `setInfoClass()`
+  selections, validates selected classes against the relevant SPL base class,
+  supports `getExtension()`, `getFileInfo()`, `getPathInfo()`, and `openFile()`
+  over the existing local `SplFileInfo` / `SplFileObject` object states, and
+  maps invalid selected classes to catchable SPL-shaped `TypeError`s. Focused
+  proof covers Rust `object_model` `spl_file_info` tests, build/fmt checks,
+  and selected public PHPT rows
+  `ext/spl/tests/SplFileInfo_getExtension_basic.phpt`,
+  `ext/spl/tests/SplFileInfo_setFileClass_basic.phpt`,
+  `ext/spl/tests/SplFileInfo_setFileClass_error.phpt`,
+  `ext/spl/tests/SplFileInfo_setInfoClass_basic.phpt`, and
+  `ext/spl/tests/SplFileInfo_setInfoClass_error.phpt` at `5/5` PASS.
+  Unsupported edges remain broad `SplFileInfo` path/name/type methods,
+  selected-class constructor side effects, DirectoryIterator inherited
+  metadata, link-target-specific behavior, remote wrappers, references/COW,
+  and native lowering.
+
 - Repaired a mixed-return inheritance PASS regression on the interpreter
   metadata path. The bounded signature subtype relation now treats `mixed` as
   a top type for return values while excluding `void`, so a child method with
