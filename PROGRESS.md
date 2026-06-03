@@ -1,13 +1,13 @@
 # PHP Native Compiler PHPT Progress
 
-Updated: 2026-06-03 12:21 CEST
+Updated: 2026-06-03 14:24 CEST
 
 Primary/public branch: `origin/master`
 Latest accepted public-score source:
-`f9927a958262689d064ac55753304b26733352bf fix: reject void mixed return overrides`
+`64d95b6d3dda2152d54ae7c63b09d13fcce1862a fix: keep date diff regression fast`
 
 Semantic source for current published score:
-`f9927a958262689d064ac55753304b26733352bf fix: reject void mixed return overrides`
+`64d95b6d3dda2152d54ae7c63b09d13fcce1862a fix: keep date diff regression fast`
 
 Public PHPT metric:
 
@@ -16,21 +16,28 @@ Public PHPT metric:
 Pinned denominator: `20294` total pinned runnable php-src PHPTs. Raw runner
 denominators that exclude BORKED rows are not public progress.
 
-Current public score: **6498 / 20294 pinned runnable PHPTs = 32.02%**.
+Current public score: **6628 / 20294 pinned runnable PHPTs = 32.66%**.
 
 Latest pushed source checkpoint:
-`59519d992c16bb2f352a79bf3c555c07bfdf8590 fix: support mb output handler conversion`
+`062ebad1347120671eeca098e2a32ba3d7f5b7a1 fix: preserve object property introspection`
 
-The accepted source checkpoint chain through `f9927a95` has been pushed to
+The accepted source checkpoint chain through `64d95b6d` has been pushed to
 `origin/master` and is now reflected in the public score above. The current
-score gate converted 11 score-relevant post-`d22bef26` source commits into a
-public PHPT movement of `6396 -> 6498` passed pinned rows, a net gain of `102`
+score gate converted 10 score-relevant post-`f9927a95` source commits into a
+public PHPT movement of `6498 -> 6628` passed pinned rows, a net gain of `130`
 public PHPT passes, with zero latest-published PASS regressions. The newer
-`59519d99` mbstring output-handler source checkpoint is pushed after the
+`062ebad1` object-property introspection source checkpoint is pushed after the
 accepted score source and awaits the next full pinned gate before it can move
 the public metric.
 
-Accepted public gate: checkpoint `f9927a95` completed the pinned full PHPT gate
+Accepted public gate: checkpoint `64d95b6d` completed the pinned full PHPT
+gate with `6628 / 20294 = 32.66%` and zero latest-published PASS regressions
+against the `f9927a95` baseline. Full gate evidence is in
+`state/logs/phpt-full-current-score-20260603T121455Z-php-src-f97ff59-public-64d95b6d-source-64d95b6d`;
+the aggregate had `6628` passed rows, `6624` normalized current passes, and
+`0` PASS regressions. The invalid-proof-marker summary reported `0` hits.
+
+Previous accepted public gate: checkpoint `f9927a95` completed the pinned full PHPT gate
 with `6498 / 20294 = 32.02%` and zero latest-published PASS regressions against
 the `d22bef26` baseline. Full gate evidence is in
 `state/logs/phpt-full-current-score-20260603T101148Z-php-src-f97ff59-public-f9927a95-source-f9927a95`;
