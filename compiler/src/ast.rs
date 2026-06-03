@@ -545,7 +545,10 @@ pub enum ForeachValueTarget {
         span: Span,
     },
     List {
-        items: Vec<Option<ForeachValueTarget>>,
+        items: Vec<ForeachListItem>,
+        span: Span,
+    },
+    InvalidListKey {
         span: Span,
     },
     Property {
@@ -564,7 +567,10 @@ impl ForeachValueTarget {
     pub fn variable_name(&self) -> Option<&str> {
         match self {
             Self::Variable { name, .. } => Some(name),
-            Self::List { .. } | Self::Property { .. } | Self::DynamicProperty { .. } => None,
+            Self::List { .. }
+            | Self::InvalidListKey { .. }
+            | Self::Property { .. }
+            | Self::DynamicProperty { .. } => None,
         }
     }
 
@@ -572,10 +578,23 @@ impl ForeachValueTarget {
         match self {
             Self::Variable { span, .. }
             | Self::List { span, .. }
+            | Self::InvalidListKey { span }
             | Self::Property { span, .. }
             | Self::DynamicProperty { span, .. } => *span,
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ForeachListItem {
+    pub key: Option<ForeachListKey>,
+    pub target: Option<ForeachValueTarget>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ForeachListKey {
+    Int(i64),
+    String(String),
 }
 
 #[derive(Debug, Clone, PartialEq)]

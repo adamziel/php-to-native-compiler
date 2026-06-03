@@ -2491,8 +2491,15 @@
   remain detached. `foreach` over `null`, including an undefined direct
   variable that resolves to `null` for this statement, emits a PHP-style
   warning and skips the loop. Empty statement loop bodies such as
-  `foreach ($items as $value);` parse as no-op bodies. Other non-array/
-  non-object iterables still use the current bounded runtime error.
+  `foreach ($items as $value);` parse as no-op bodies. By-value loop value
+  targets also cover bounded `list(...)` / `[...]` destructuring: positional
+  slots with skips, nested lists, literal integer or string keyed list slots,
+  direct variables, and direct object-property targets. Missing offsets and
+  `null` destructured values assign `null`; scalar values emit PHP-style
+  `Cannot use ... as array` warnings and assign `null` to reached nested
+  targets. Empty list targets and list targets used as the foreach key emit
+  the bounded PHP fatal messages. Other non-array/non-object iterables still
+  use the current bounded runtime error.
   By-reference
   value forms over a direct array variable, such
   as `foreach ($array as &$value)` and
@@ -2604,7 +2611,8 @@
   non-string-keyed `$GLOBALS` roots, reference-return iterables that return
   properties, array offsets, expressions, or nested-control-flow returns,
   callback forms outside the bounded `call_user_func_array()` slice, magic
-  `__callStatic` return sources, foreach destructuring,
+  `__callStatic` return sources, by-reference foreach destructuring, dynamic
+  or non-literal keyed destructuring, ArrayAccess/object destructuring sources,
   array/object/ArrayAccess offset loop variables, nested-offset loop values,
   and native lowering remain unsupported.
 - SPL `ArrayObject` and `ArrayIterator` have a bounded runtime storage model
@@ -6904,7 +6912,8 @@
   object-property, nested object-property array-offset, and static-property
   diagnostic statement subset
 - explicit parse diagnostics for unsupported `foreach` key-by-reference forms,
-  destructuring loop targets, and expression-position `foreach`
+  by-reference or broader destructuring loop targets outside the bounded
+  by-value list slice, and expression-position `foreach`
 - explicit parse diagnostics for unsupported expression-position `for` and
   comma-separated `for` header expression lists
 - explicit parse diagnostics for unsupported expression-position `do ... while`
@@ -8102,7 +8111,10 @@
   insertion order over a snapshot of the current entries and writes the current
   value to the direct loop variable in the active scope. `foreach ($array as
   $key => $value)` additionally writes the current integer or string key as an
-  `int` or `string` value to the direct key loop variable. Bounded
+  `int` or `string` value to the direct key loop variable. By-value
+  `list(...)` / `[...]` loop value destructuring covers positional and nested
+  targets, literal integer/string keyed targets, scalar warning-and-null
+  fallback, empty-list fatals, and list-as-key fatals. Bounded
   by-reference value iteration is supported for the direct, nested, and
   direct object-property array roots documented above, but it still does not
   provide full PHP reference containers or copy-on-write. Missing key reads
@@ -11438,8 +11450,9 @@
   nested/complex `empty(...)` array offset operands, native
   `isset($array[$key])` lowering, `$array[]` as a read expression, string
   offset access, by-reference `foreach`, object iteration, destructuring loop
-  targets, array destructuring assignments with keyed, nested, reference,
-  expression-position, or non-variable target semantics,
+  targets outside the bounded by-value list slice, array destructuring
+  assignments with keyed, nested, reference, expression-position, or
+  non-variable target semantics,
   references, copy-on-write containers, and
   object/resource keys are not implemented. The current `foreach` array forms
   snapshot array entries at loop start and do not claim PHP's full
@@ -11648,7 +11661,8 @@
   complex mixed object/property/ArrayAccess operands;
   these fail with stable parse diagnostics
 - executable by-reference `foreach`, object iteration, destructuring loop
-  targets, key-by-reference loop variables, and expression-form `foreach`
+  targets outside the bounded by-value list slice, key-by-reference loop
+  variables, and expression-form `foreach`
 - comma-separated `for` initializer, condition, or increment expression lists;
   only zero or one expression or assignment is supported in each header slot
 - expression-form `for`; `for` is only supported as a statement

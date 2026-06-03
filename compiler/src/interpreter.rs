@@ -40,11 +40,11 @@ use xxhash_rust::{
 use crate::ast::{
     ArrayItem, AssignTarget, AttributeDecl, BinaryOp, CastKind, CatchClause, ClassConstantDecl,
     ClassDecl, ClassMember, ClassMethodDecl, ClassPropertyDecl, ClassVisibility, ClosureCapture,
-    CompoundAssignOp, EnumDecl, Expr, ForAction, ForeachValueTarget, FunctionDecl, FunctionParam,
-    IncrementDecrementOp, IncrementDecrementPosition, InterfaceDecl, InterfaceMethodDecl,
-    InterpolatedAccessSegment, InterpolatedArrayKey, InterpolatedStringPart, MatchArm,
-    NewClassName, Program, ReferenceSource, Span, StaticLocalDeclarator, Stmt, SwitchCase,
-    TraitDecl, TraitUseDecl, TypeDecl, UnaryOp, UnsetTarget,
+    CompoundAssignOp, EnumDecl, Expr, ForAction, ForeachListKey, ForeachValueTarget, FunctionDecl,
+    FunctionParam, IncrementDecrementOp, IncrementDecrementPosition, InterfaceDecl,
+    InterfaceMethodDecl, InterpolatedAccessSegment, InterpolatedArrayKey, InterpolatedStringPart,
+    MatchArm, NewClassName, Program, ReferenceSource, Span, StaticLocalDeclarator, Stmt,
+    SwitchCase, TraitDecl, TraitUseDecl, TypeDecl, UnaryOp, UnsetTarget,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 use crate::legacy_hashes;
@@ -2526,12 +2526,13 @@ fn collect_deprecated_dollar_brace_interpolation_foreach_value_target_spans(
     match target {
         ForeachValueTarget::Variable { .. } | ForeachValueTarget::Property { .. } => {}
         ForeachValueTarget::List { items, .. } => {
-            for item in items.iter().flatten() {
+            for item in items.iter().filter_map(|item| item.target.as_ref()) {
                 collect_deprecated_dollar_brace_interpolation_foreach_value_target_spans(
                     item, spans,
                 );
             }
         }
+        ForeachValueTarget::InvalidListKey { .. } => {}
         ForeachValueTarget::DynamicProperty { property, .. } => {
             collect_deprecated_dollar_brace_interpolation_expr_spans(property, spans);
         }
@@ -14382,30 +14383,32 @@ impl Interpreter {
             }
             ForeachValueTarget::List { items, span } => {
                 let array = match assigned_value {
-                    Value::Array(array) => array,
+                    Value::Array(array) => Some(array),
+                    Value::Null => None,
                     other => {
-                        return Err(runtime_error(
+                        self.emit_display_warning(
+                            format!("Cannot use {} as array", other.type_name()),
                             *span,
-                            RuntimeError::unsupported_call(
-                                "foreach destructuring",
-                                format!("value must be array, got {}", other.type_name()),
-                            ),
-                        ));
+                        )?;
+                        None
                     }
                 };
 
                 for (index, item) in items.iter().enumerate() {
-                    let Some(item) = item else {
+                    let Some(target) = item.target.as_ref() else {
                         continue;
                     };
+                    let key = Self::foreach_list_item_key(item.key.as_ref(), index);
                     let element = array
-                        .get_cloned(ArrayKey::Int(index as i64))
+                        .as_ref()
+                        .and_then(|array| array.get_cloned(key))
                         .unwrap_or(Value::Null);
-                    self.write_foreach_value_target(item, element, *span, scope)?;
+                    self.write_foreach_value_target(target, element, *span, scope)?;
                 }
 
                 Ok(())
             }
+            ForeachValueTarget::InvalidListKey { .. } => Ok(()),
             ForeachValueTarget::Property {
                 object, property, ..
             } => self.write_foreach_object_property_target(
@@ -14427,6 +14430,32 @@ impl Interpreter {
                     scope,
                 )
             }
+        }
+    }
+
+    fn foreach_list_item_key(key: Option<&ForeachListKey>, positional_index: usize) -> ArrayKey {
+        match key {
+            Some(ForeachListKey::Int(value)) => ArrayKey::Int(*value),
+            Some(ForeachListKey::String(value)) => ArrayKey::String(value.clone()),
+            None => ArrayKey::Int(positional_index as i64),
+        }
+    }
+
+    fn foreach_value_target_fatal(target: &ForeachValueTarget) -> Option<(&'static str, Span)> {
+        match target {
+            ForeachValueTarget::InvalidListKey { span } => {
+                Some(("Cannot use list as key element", *span))
+            }
+            ForeachValueTarget::List { items, span } if items.is_empty() => {
+                Some(("Cannot use empty list", *span))
+            }
+            ForeachValueTarget::List { items, .. } => items
+                .iter()
+                .filter_map(|item| item.target.as_ref())
+                .find_map(Self::foreach_value_target_fatal),
+            ForeachValueTarget::Variable { .. }
+            | ForeachValueTarget::Property { .. }
+            | ForeachValueTarget::DynamicProperty { .. } => None,
         }
     }
 
@@ -14480,6 +14509,7 @@ impl Interpreter {
                     "by-reference destructuring loop targets are not implemented",
                 ),
             )),
+            ForeachValueTarget::InvalidListKey { .. } => Ok(()),
             ForeachValueTarget::Property {
                 object, property, ..
             } => {
@@ -23596,6 +23626,19 @@ impl Interpreter {
         self.exit_signal = Some(255);
     }
 
+    fn emit_simple_fatal(&mut self, message: &str, span: Span) {
+        let file = self
+            .source_file
+            .clone()
+            .unwrap_or_else(|| "Command line code".to_string());
+        self.push_uncaught_fatal_separator();
+        self.push_unbuffered_stdout_text(&format!(
+            "Fatal error: {message} in {file} on line {}",
+            span.line
+        ));
+        self.exit_signal = Some(255);
+    }
+
     fn emit_display_warning(&mut self, message: impl AsRef<str>, span: Span) -> CompileResult<()> {
         self.emit_display_diagnostic("Warning", PHP_E_WARNING, message, span)
     }
@@ -24571,6 +24614,10 @@ impl Interpreter {
                 body,
                 span,
             } => {
+                if let Some((message, fatal_span)) = Self::foreach_value_target_fatal(value) {
+                    self.emit_simple_fatal(message, fatal_span);
+                    return Ok(Flow::Exit(255));
+                }
                 if *by_reference {
                     let root = self.by_reference_foreach_root(iterable, scope, *span)?;
                     Self::read_foreach_root_array(&root, scope, *span)?;

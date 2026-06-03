@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Added a bounded by-value `foreach` list-destructuring lane on the
+  interpreter path. `foreach` value targets now accept nested positional
+  `list(...)` / `[...]` targets, literal integer/string keyed list targets,
+  scalar `Cannot use ... as array` warning-plus-`null` recovery, and the
+  simple PHP fatal messages for empty list targets and lists used as foreach
+  keys. Focused proof covers the Rust `foreach_destructuring` target,
+  build/fmt/diff checks, and selected public PHPT rows
+  `Zend/tests/foreach/foreach_list_001.phpt`,
+  `Zend/tests/foreach/foreach_list_002.phpt`,
+  `Zend/tests/foreach/foreach_list_003.phpt`,
+  `Zend/tests/foreach/foreach_list_004.phpt`, and
+  `Zend/tests/foreach/foreach_list_keyed.phpt`. Unsupported edges remain
+  by-reference list destructuring, non-literal keyed list targets,
+  ArrayAccess/object destructuring sources, full compile-time fatal ordering,
+  native lowering, and references/COW beyond the existing by-value foreach
+  value model.
+
 - Accepted checkpoint `d22bef26` as the current public PHPT score source after
   the replacement full pinned php-src gate completed with zero
   latest-published PASS regressions. The public-comparable score is now

@@ -4,11 +4,11 @@ use crate::ast::{
     ArrayItem, AssignTarget, AttributeDecl, BinaryOp, CastKind, CatchClause, CatchType,
     ClassConstantDecl, ClassDecl, ClassMember, ClassMethodDecl, ClassPropertyDecl, ClassVisibility,
     ClosureCapture, CompoundAssignOp, ConstDeclarator, EnumCaseDecl, EnumDecl, Expr, ForAction,
-    ForeachValueTarget, FunctionDecl, FunctionParam, IncrementDecrementOp,
-    IncrementDecrementPosition, InterfaceDecl, InterfaceMethodDecl, MatchArm, NewClassName,
-    Program, ReferenceSource, Span, StaticLocalDeclarator, Stmt, SwitchCase, TraitDecl,
-    TraitMethodAliasDecl, TraitMethodPrecedenceDecl, TraitMethodVisibilityDecl, TraitUseDecl,
-    TypeDecl, UnaryOp, UnsetTarget, UseImport, UseImportKind,
+    ForeachListItem, ForeachListKey, ForeachValueTarget, FunctionDecl, FunctionParam,
+    IncrementDecrementOp, IncrementDecrementPosition, InterfaceDecl, InterfaceMethodDecl, MatchArm,
+    NewClassName, Program, ReferenceSource, Span, StaticLocalDeclarator, Stmt, SwitchCase,
+    TraitDecl, TraitMethodAliasDecl, TraitMethodPrecedenceDecl, TraitMethodVisibilityDecl,
+    TraitUseDecl, TypeDecl, UnaryOp, UnsetTarget, UseImport, UseImportKind,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 use crate::lexer::{tokenize, AttributeToken, Token, TokenKind};
@@ -2542,12 +2542,35 @@ impl Parser {
         }
         let (first_variable, first_variable_span) =
             if self.check_foreach_destructuring_target_start() {
-                let value = self.parse_foreach_value_target()?;
+                let first_target = self.parse_foreach_value_target()?;
                 if self.match_token(|kind| matches!(kind, TokenKind::FatArrow)) {
-                    return Err(
-                        self.error_at(value.span(), unsupported_foreach_destructuring_message())
-                    );
+                    let value_by_reference =
+                        self.match_token(|kind| matches!(kind, TokenKind::Ampersand));
+                    if value_by_reference && self.check_foreach_destructuring_target_start() {
+                        return Err(self.error_at(
+                            self.peek().span,
+                            unsupported_foreach_destructuring_message(),
+                        ));
+                    }
+                    let _value = self.parse_foreach_value_target()?;
+                    self.consume_keyword(
+                        TokenKind::RParen,
+                        "expected ')' after foreach value variable",
+                    )?;
+                    let body = self.parse_block_or_statement()?;
+
+                    return Ok(Stmt::Foreach {
+                        iterable,
+                        key: None,
+                        value: ForeachValueTarget::InvalidListKey {
+                            span: first_target.span(),
+                        },
+                        by_reference: false,
+                        body,
+                        span,
+                    });
                 }
+                let value = first_target;
                 self.consume_keyword(
                     TokenKind::RParen,
                     "expected ')' after foreach value variable",
@@ -2638,13 +2661,17 @@ impl Parser {
         let mut items = Vec::new();
 
         if self.check(|kind| same_token_kind(kind, &closing_token)) {
-            return Err(self.error_at(span, unsupported_foreach_destructuring_message()));
+            self.advance();
+            return Ok(ForeachValueTarget::List { items, span });
         }
 
         loop {
             match self.peek().kind.clone() {
                 TokenKind::Comma => {
-                    items.push(None);
+                    items.push(ForeachListItem {
+                        key: None,
+                        target: None,
+                    });
                     self.advance();
                     if self.check(|kind| same_token_kind(kind, &closing_token)) {
                         break;
@@ -2662,19 +2689,64 @@ impl Parser {
                             unsupported_foreach_destructuring_message(),
                         ));
                     }
-                    items.push(Some(item));
+                    items.push(ForeachListItem {
+                        key: None,
+                        target: Some(item),
+                    });
                 }
-                TokenKind::Ampersand | TokenKind::LBracket => {
+                TokenKind::Int(value)
+                    if matches!(
+                        self.tokens.get(self.current + 1).map(|token| &token.kind),
+                        Some(TokenKind::FatArrow)
+                    ) =>
+                {
+                    self.advance();
+                    self.consume_keyword(
+                        TokenKind::FatArrow,
+                        "expected '=>' in foreach list target",
+                    )?;
+                    let item = self.parse_foreach_value_target()?;
+                    items.push(ForeachListItem {
+                        key: Some(ForeachListKey::Int(value)),
+                        target: Some(item),
+                    });
+                }
+                TokenKind::StringLiteral(value)
+                    if matches!(
+                        self.tokens.get(self.current + 1).map(|token| &token.kind),
+                        Some(TokenKind::FatArrow)
+                    ) =>
+                {
+                    self.advance();
+                    self.consume_keyword(
+                        TokenKind::FatArrow,
+                        "expected '=>' in foreach list target",
+                    )?;
+                    let item = self.parse_foreach_value_target()?;
+                    items.push(ForeachListItem {
+                        key: Some(ForeachListKey::String(value)),
+                        target: Some(item),
+                    });
+                }
+                TokenKind::LBracket => {
+                    let item = self.parse_foreach_value_target()?;
+                    items.push(ForeachListItem {
+                        key: None,
+                        target: Some(item),
+                    });
+                }
+                TokenKind::Ampersand => {
                     return Err(self.error_at(
                         self.peek().span,
                         unsupported_foreach_destructuring_message(),
                     ));
                 }
                 TokenKind::Identifier(name) if name.eq_ignore_ascii_case("list") => {
-                    return Err(self.error_at(
-                        self.peek().span,
-                        unsupported_foreach_destructuring_message(),
-                    ));
+                    let item = self.parse_foreach_value_target()?;
+                    items.push(ForeachListItem {
+                        key: None,
+                        target: Some(item),
+                    });
                 }
                 _ => {
                     return Err(self.error_at(
@@ -2690,10 +2762,6 @@ impl Parser {
             if self.check(|kind| same_token_kind(kind, &closing_token)) {
                 break;
             }
-        }
-
-        if items.iter().all(Option::is_none) {
-            return Err(self.error_at(span, unsupported_foreach_destructuring_message()));
         }
 
         let message = if same_token_kind(&closing_token, &TokenKind::RParen) {
