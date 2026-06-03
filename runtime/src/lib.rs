@@ -33121,6 +33121,8 @@ impl PhpClassTable {
             .expect("declared SplObjectStorage class id should resolve");
         for method in [
             "__construct",
+            "__serialize",
+            "__unserialize",
             "attach",
             "detach",
             "contains",
@@ -33140,6 +33142,8 @@ impl PhpClassTable {
             "addAll",
             "removeAll",
             "removeAllExcept",
+            "serialize",
+            "unserialize",
             "seek",
         ] {
             spl_object_storage
@@ -37865,6 +37869,50 @@ impl PhpObject {
             unset: false,
         });
         Ok(())
+    }
+
+    pub fn write_serialized_property(&self, mangled_name: &str, value: Value) -> RuntimeResult<()> {
+        let mut properties = self.properties.borrow_mut();
+        let (visibility, declaring_class_name, name) =
+            if let Some(rest) = mangled_name.strip_prefix("\0*\0") {
+                (Visibility::Protected, None, rest)
+            } else if let Some(rest) = mangled_name.strip_prefix('\0') {
+                let Some((declaring_class_name, name)) = rest.split_once('\0') else {
+                    return Err(RuntimeError::unsupported_property_access(format!(
+                        "invalid serialized property name for {}",
+                        self.class_name
+                    )));
+                };
+                (Visibility::Private, Some(declaring_class_name), name)
+            } else {
+                (Visibility::Public, None, mangled_name)
+            };
+
+        if let Some(index) = properties.iter().rposition(|property| {
+            property.name == name
+                && property.visibility == visibility
+                && declaring_class_name
+                    .map(|class_name| property.declaring_class_name == class_name)
+                    .unwrap_or(true)
+        }) {
+            properties[index].ensure_writable()?;
+            let value = coerce_typed_property_value(&properties[index], value)?;
+            properties[index].set_value(value);
+            properties[index].initialized = true;
+            properties[index].unset = false;
+            return Ok(());
+        }
+
+        if visibility != Visibility::Public {
+            return Err(RuntimeError::unsupported_property_access(format!(
+                "serialized non-public property {}::${} is not declared in the current subset",
+                declaring_class_name.unwrap_or(&self.class_name),
+                name
+            )));
+        }
+
+        drop(properties);
+        self.write_dynamic_public_property(name, value)
     }
 
     fn allows_dynamic_public_properties(&self) -> bool {

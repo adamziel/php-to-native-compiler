@@ -809,6 +809,8 @@ struct SplObjectStorageEntry {
     info: Value,
 }
 
+const SPL_OBJECT_STORAGE_SERIALIZED_STORAGE_KEY: &str = "\0SplObjectStorage\0storage";
+
 #[derive(Debug, Clone, Default)]
 struct SplFixedArrayState {
     values: Vec<Value>,
@@ -18933,6 +18935,127 @@ impl Interpreter {
         Self::spl_object_storage_remove_with_cursor_key_mode(state, hash, false);
     }
 
+    fn spl_object_storage_flat_array_from_state(state: &SplObjectStorageState) -> PhpArray {
+        let mut array = PhpArray::new();
+        for entry in &state.entries {
+            array.insert(
+                ArrayKey::Int(array.len() as i64),
+                Value::Object(entry.object.clone()),
+            );
+            array.insert(ArrayKey::Int(array.len() as i64), entry.info.clone());
+        }
+        array
+    }
+
+    fn spl_object_storage_entries_from_flat_array(
+        &mut self,
+        storage: PhpObject,
+        array: &PhpArray,
+        method_name: &str,
+        span: Span,
+    ) -> CompileResult<Vec<SplObjectStorageEntry>> {
+        if array.len() % 2 != 0 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("SplObjectStorage::{method_name}()"),
+                    "serialized storage entry array must contain object/info pairs",
+                ),
+            ));
+        }
+
+        let mut entries = Vec::with_capacity(array.len() / 2);
+        let mut pending_object = None;
+        for (index, entry) in array.entries().iter().enumerate() {
+            if index % 2 == 0 {
+                let Value::Object(object) = entry.value() else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("SplObjectStorage::{method_name}()"),
+                            format!(
+                                "serialized storage object entry must be object, {} given",
+                                entry.value().type_name()
+                            ),
+                        ),
+                    ));
+                };
+                pending_object = Some(object.clone());
+                continue;
+            }
+
+            let object = pending_object
+                .take()
+                .expect("even entry should set pending storage object");
+            let hash =
+                self.spl_object_storage_hash_for_object(storage.clone(), object.clone(), span)?;
+            entries.push(SplObjectStorageEntry {
+                hash,
+                object,
+                info: entry.value_cloned(),
+            });
+        }
+
+        Ok(entries)
+    }
+
+    fn replace_spl_object_storage_entries_from_array(
+        &mut self,
+        object: PhpObject,
+        array: &PhpArray,
+        method_name: &str,
+        span: Span,
+    ) -> CompileResult<()> {
+        self.ensure_spl_object_storage_not_hashing(method_name, span)?;
+        let entries = self.spl_object_storage_entries_from_flat_array(
+            object.clone(),
+            array,
+            method_name,
+            span,
+        )?;
+        self.spl_object_storages.insert(
+            object.id(),
+            SplObjectStorageState {
+                entries,
+                cursor: 0,
+                cursor_key: 0,
+            },
+        );
+        Ok(())
+    }
+
+    fn spl_object_storage_serialized_properties_array(object: &PhpObject) -> PhpArray {
+        let mut properties = PhpArray::new();
+        for property in object
+            .properties()
+            .into_iter()
+            .filter(|property| property.is_initialized() && !property.is_unset())
+        {
+            properties.insert(
+                ArrayKey::String(property.mangled_name()),
+                property.value_cloned(),
+            );
+        }
+        properties
+    }
+
+    fn apply_spl_object_storage_serialized_properties(
+        &self,
+        object: &PhpObject,
+        properties: &PhpArray,
+        span: Span,
+    ) -> CompileResult<()> {
+        for entry in properties.entries() {
+            let ArrayKey::String(name) = &entry.key else {
+                continue;
+            };
+            object
+                .write_serialized_property(name, entry.value_cloned())
+                .map_err(|error| runtime_error(span, error))?;
+        }
+        Ok(())
+    }
+
     fn spl_object_storage_remove_preserving_cursor_key(
         state: &mut SplObjectStorageState,
         hash: &str,
@@ -19081,6 +19204,57 @@ impl Interpreter {
         match method_name.to_ascii_lowercase().as_str() {
             "__construct" => {
                 expect_arity("SplObjectStorage::__construct", &args, 0, span)?;
+                Ok(Value::Null)
+            }
+            "__serialize" => {
+                expect_arity("SplObjectStorage::__serialize", &args, 0, span)?;
+                let state = self.spl_object_storage_state(&object, method_name, span)?;
+                let mut result = PhpArray::new();
+                result.insert(
+                    ArrayKey::Int(0),
+                    Value::Array(Self::spl_object_storage_flat_array_from_state(state)),
+                );
+                result.insert(
+                    ArrayKey::Int(1),
+                    Value::Array(Self::spl_object_storage_serialized_properties_array(
+                        &object,
+                    )),
+                );
+                Ok(Value::Array(result))
+            }
+            "__unserialize" => {
+                expect_arity("SplObjectStorage::__unserialize", &args, 1, span)?;
+                let Some(Value::Array(data)) = args.first() else {
+                    let given = args
+                        .first()
+                        .map(php_type_error_given)
+                        .unwrap_or_else(|| "none".to_string());
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "SplObjectStorage::__unserialize()",
+                            format!("Argument #1 ($data) must be of type array, {given} given"),
+                        ),
+                    ));
+                };
+                let Some(Value::Array(entries)) = data.get(ArrayKey::Int(0)) else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "SplObjectStorage::__unserialize()",
+                            "Argument #1 ($data) must contain a storage entry array",
+                        ),
+                    ));
+                };
+                self.replace_spl_object_storage_entries_from_array(
+                    object.clone(),
+                    entries,
+                    "__unserialize",
+                    span,
+                )?;
+                if let Some(Value::Array(properties)) = data.get(ArrayKey::Int(1)) {
+                    self.apply_spl_object_storage_serialized_properties(&object, properties, span)?;
+                }
                 Ok(Value::Null)
             }
             "attach" | "offsetset" => {
@@ -19310,6 +19484,63 @@ impl Interpreter {
                 }
                 state.cursor_key = state.cursor;
                 Ok(Value::Null)
+            }
+            "serialize" => {
+                expect_arity("SplObjectStorage::serialize", &args, 0, span)?;
+                let state = self.spl_object_storage_state(&object, method_name, span)?;
+                let mut output = String::new();
+                format_php_serialized_value(
+                    &Value::Array(Self::spl_object_storage_flat_array_from_state(state)),
+                    &mut output,
+                )
+                .ok_or_else(|| {
+                    runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "SplObjectStorage::serialize()",
+                            "storage entries require serializable object/info values in the current subset",
+                        ),
+                    )
+                })?;
+                Ok(Value::String(output))
+            }
+            "unserialize" => {
+                expect_arity("SplObjectStorage::unserialize", &args, 1, span)?;
+                let data = string_builtin_argument(
+                    "SplObjectStorage::unserialize()",
+                    "data",
+                    &args[0],
+                    span,
+                )?;
+                if data.is_empty() {
+                    self.spl_object_storages
+                        .insert(object.id(), SplObjectStorageState::default());
+                    return Ok(Value::Null);
+                }
+                let mut parser = PhpSerializedParser::new(&data);
+                let parsed = parser.parse_value();
+                match parsed {
+                    Some(Value::Array(entries)) if parser.is_finished() => {
+                        self.replace_spl_object_storage_entries_from_array(
+                            object.clone(),
+                            &entries,
+                            "unserialize",
+                            span,
+                        )?;
+                        Ok(Value::Null)
+                    }
+                    _ => Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "SplObjectStorage::unserialize()",
+                            format!(
+                                "Error at offset {} of {} bytes",
+                                parser.position(),
+                                parser.len()
+                            ),
+                        ),
+                    )),
+                }
             }
             "seek" => {
                 expect_arity("SplObjectStorage::seek", &args, 1, span)?;
@@ -96217,6 +96448,12 @@ impl Interpreter {
     fn call_serialize_builtin(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("serialize()", args, 1, span)?;
         let mut output = String::new();
+        if let Value::Object(object) = &args[0] {
+            if self.is_spl_object_storage_object(object) {
+                self.format_php_serialized_spl_object_storage(object, &mut output, span)?;
+                return Ok(Value::String(output));
+            }
+        }
         format_php_serialized_value(&args[0], &mut output).ok_or_else(|| {
             runtime_error(
                 span,
@@ -96230,6 +96467,56 @@ impl Interpreter {
             )
         })?;
         Ok(Value::String(output))
+    }
+
+    fn format_php_serialized_spl_object_storage(
+        &self,
+        object: &PhpObject,
+        output: &mut String,
+        span: Span,
+    ) -> CompileResult<()> {
+        let state = self.spl_object_storage_state(object, "serialize", span)?;
+        let properties: Vec<_> = object
+            .properties()
+            .into_iter()
+            .filter(|property| property.is_initialized() && !property.is_unset())
+            .collect();
+        let class_name = object.class_name();
+        output.push_str("O:");
+        output.push_str(&class_name.len().to_string());
+        output.push_str(":\"");
+        output.push_str(class_name);
+        output.push_str("\":");
+        output.push_str(&(properties.len() + 1).to_string());
+        output.push_str(":{");
+        format_php_serialized_array_key(
+            &ArrayKey::String(SPL_OBJECT_STORAGE_SERIALIZED_STORAGE_KEY.to_string()),
+            output,
+        );
+        let storage = Self::spl_object_storage_flat_array_from_state(state);
+        format_php_serialized_value(&Value::Array(storage), output).ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "serialize()",
+                    "SplObjectStorage entries require serializable object/info values in the current subset",
+                ),
+            )
+        })?;
+        for property in properties {
+            format_php_serialized_array_key(&ArrayKey::String(property.mangled_name()), output);
+            format_php_serialized_value(&property.value_cloned(), output).ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "serialize()",
+                        "SplObjectStorage properties require serializable values in the current subset",
+                    ),
+                )
+            })?;
+        }
+        output.push('}');
+        Ok(())
     }
 
     fn call_unserialize_builtin(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -96421,10 +96708,12 @@ impl Interpreter {
             self.initialize_unserialized_datetime_object(&object, properties, span)?;
         } else if self.is_datetimeimmutable_class_id(class_id) {
             self.initialize_unserialized_datetimeimmutable_object(&object, properties, span)?;
+        } else if self.is_spl_object_storage_class_id(class_id) {
+            self.initialize_unserialized_spl_object_storage_object(&object, properties, span)?;
         } else {
             for (name, value) in properties {
                 object
-                    .write_dynamic_public_property(&name, value)
+                    .write_serialized_property(&name, value)
                     .map_err(|error| runtime_error(span, error))?;
             }
         }
@@ -96476,6 +96765,47 @@ impl Interpreter {
         }
         self.track_allocated_object(&object);
         Ok(Value::Object(object))
+    }
+
+    fn initialize_unserialized_spl_object_storage_object(
+        &mut self,
+        object: &PhpObject,
+        properties: Vec<(String, Value)>,
+        span: Span,
+    ) -> CompileResult<()> {
+        self.spl_object_storages
+            .insert(object.id(), SplObjectStorageState::default());
+        let mut restored_storage = false;
+        for (name, value) in properties {
+            if name == SPL_OBJECT_STORAGE_SERIALIZED_STORAGE_KEY {
+                let Value::Array(entries) = value else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "unserialize()",
+                            "SplObjectStorage serialized storage field must be an array",
+                        ),
+                    ));
+                };
+                self.replace_spl_object_storage_entries_from_array(
+                    object.clone(),
+                    &entries,
+                    "unserialize",
+                    span,
+                )?;
+                restored_storage = true;
+                continue;
+            }
+
+            object
+                .write_serialized_property(&name, value)
+                .map_err(|error| runtime_error(span, error))?;
+        }
+        if !restored_storage {
+            self.spl_object_storages
+                .insert(object.id(), SplObjectStorageState::default());
+        }
+        Ok(())
     }
 
     fn initialize_unserialized_datetimezone_object(
@@ -114805,6 +115135,14 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
 
         if error.message == "unsupported call SplObjectStorage::offsetGet(): Object not found" {
             return Some(("UnexpectedValueException", "Object not found".to_string()));
+        }
+
+        if let Some(message) = error
+            .message
+            .strip_prefix("unsupported call SplObjectStorage::unserialize(): ")
+            .filter(|message| message.starts_with("Error at offset "))
+        {
+            return Some(("UnexpectedValueException", message.to_string()));
         }
 
         if let Some(message) = error

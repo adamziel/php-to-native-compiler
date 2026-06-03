@@ -16019,6 +16019,55 @@ echo "method:", $method->key(), ":", $method->current()->name, "\n";
 }
 
 #[test]
+fn spl_object_storage_serializes_and_restores_entries_and_properties() {
+    let source = r#"<?php
+class SerializedStorage extends SplObjectStorage {
+    public $label = "bag";
+    protected $flag = "p";
+    private $secret = "s";
+
+    public function props(): string {
+        return $this->label . ":" . $this->flag . ":" . $this->secret;
+    }
+}
+
+$storage = new SerializedStorage();
+$object = new stdClass();
+$object->name = "a";
+$storage[$object] = "info";
+
+$copy = unserialize(serialize($storage));
+echo count($copy), "\n";
+echo $copy->props(), "\n";
+foreach ($copy as $stored) {
+    echo $stored->name, "=", $copy[$stored], "\n";
+}
+
+$direct = new SplObjectStorage();
+$info = 1;
+$stored = new stdClass();
+$direct->__unserialize([[$stored, &$info], []]);
+$info = 9;
+var_dump($direct[$stored]);
+
+try {
+    $bad = new SplObjectStorage();
+    $bad->unserialize("not-storage");
+} catch (UnexpectedValueException $e) {
+    echo $e::class, ":", $e->getMessage(), "\n";
+}
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "1\nbag:p:s\na=info\nint(1)\nUnexpectedValueException:Error at offset 0 of 11 bytes\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn iterator_helpers_materialize_arrays_and_bounded_iterators() {
     let source = r#"<?php
 $array = array("a" => 1, "b" => 2, 5 => 3);
