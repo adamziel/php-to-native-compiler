@@ -142743,14 +142743,18 @@ impl<'a> PhpSerializedParser<'a> {
             }
             b'O' => {
                 self.position += 1;
-                let class_name = self.parse_serialized_string_payload(value_start + 2)?;
+                let class_name = self.parse_serialized_string_payload_with_sign_error(
+                    value_start + 2,
+                    value_start,
+                )?;
                 self.expect_byte(b':')?;
                 let len = self.parse_unsigned_usize_until_byte_info(b':', value_start)?;
-                if len.value > self.remaining_object_property_capacity() {
+                if len.value > self.data.len() {
                     return self.fail_at(len.delimiter_position);
                 }
                 self.expect_byte(b'{')?;
-                let mut properties = Vec::with_capacity(len.value);
+                let mut properties =
+                    Vec::with_capacity(len.value.min(self.remaining_object_property_capacity()));
                 for _ in 0..len.value {
                     let key = self.parse_array_key()?;
                     let ArrayKey::String(name) = key else {
@@ -142795,8 +142799,17 @@ impl<'a> PhpSerializedParser<'a> {
     }
 
     fn parse_serialized_string_payload(&mut self, error_offset: usize) -> Option<String> {
+        self.parse_serialized_string_payload_with_sign_error(error_offset, error_offset)
+    }
+
+    fn parse_serialized_string_payload_with_sign_error(
+        &mut self,
+        error_offset: usize,
+        sign_error_offset: usize,
+    ) -> Option<String> {
         self.expect_byte(b':')?;
-        let len = self.parse_unsigned_usize_until_byte_info(b':', error_offset)?;
+        let len =
+            self.parse_unsigned_usize_until_byte_info_with_sign_error(b':', sign_error_offset)?;
         self.expect_byte(b'"')?;
         let end = self.position.checked_add(len.value)?;
         if len.overflow || end > self.data.len() {
@@ -142819,8 +142832,16 @@ impl<'a> PhpSerializedParser<'a> {
         delimiter: u8,
         error_offset: usize,
     ) -> Option<ParsedSerializedUnsigned> {
+        self.parse_unsigned_usize_until_byte_info_with_sign_error(delimiter, error_offset)
+    }
+
+    fn parse_unsigned_usize_until_byte_info_with_sign_error(
+        &mut self,
+        delimiter: u8,
+        sign_error_offset: usize,
+    ) -> Option<ParsedSerializedUnsigned> {
         if matches!(self.data.get(self.position), Some(b'+' | b'-')) {
-            return self.fail_at(error_offset);
+            return self.fail_at(sign_error_offset);
         }
         let start = self.position;
         let mut value = 0usize;
@@ -142862,7 +142883,8 @@ impl<'a> PhpSerializedParser<'a> {
 
     fn parse_custom_serialized_object(&mut self, value_start: usize) -> Option<Value> {
         self.position += 1;
-        let _class_name = self.parse_serialized_string_payload(value_start + 2)?;
+        let _class_name =
+            self.parse_serialized_string_payload_with_sign_error(value_start + 2, value_start)?;
         self.expect_byte(b':')?;
         let payload_len = self.parse_unsigned_usize_until_byte_info(b':', value_start)?;
         if payload_len.overflow {

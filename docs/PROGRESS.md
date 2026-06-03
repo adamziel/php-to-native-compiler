@@ -4,6 +4,18 @@
 
 Implemented:
 
+- Repaired two full-gate `unserialize()` PASS regressions in the interpreter
+  parser. Object and custom-object class-name lengths now report signed-length
+  errors at the serialized value start, and oversized object property counts
+  are rejected without large allocation while truncated object payloads preserve
+  the reached parser offset. Focused proof covers the Rust `serialize_builtin`
+  target, build/fmt/diff checks, and selected latest-published PASS-regression
+  PHPT rows `ext/standard/tests/serialize/bug73052.phpt` and
+  `ext/standard/tests/serialize/invalid_signs_in_lengths.phpt`. Unsupported
+  edges remain true `Serializable`, `__serialize()` / `__unserialize()` hooks,
+  complete reference graph reconstruction, broader malformed-offset parity,
+  references/COW, and native lowering.
+
 - Added a bounded pure-intersection variance lane on the interpreter metadata
   path. Startup and runtime signature checks now understand simple
   union/intersection subtype relationships for declared classes/interfaces,

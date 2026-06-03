@@ -37,6 +37,10 @@ fn unserialize_rejects_signed_lengths_and_reports_parser_offset() {
         r#"<?php
 var_dump(unserialize('s:+1:"x";'));
 var_dump(unserialize('a:-0:{}'));
+var_dump(unserialize('O:+8:"stdClass":0:{}'));
+var_dump(unserialize('O:-8:"stdClass":0:{}'));
+var_dump(unserialize('C:+11:"ArrayObject":0:{}'));
+var_dump(unserialize('C:-11:"ArrayObject":0:{}'));
 var_dump(unserialize('a:1:{i:0;r:+1;}'));
 var_dump(unserialize('a:1:{i:0;R:-1;}'));
 "#,
@@ -49,6 +53,20 @@ var_dump(unserialize('a:1:{i:0;R:-1;}'));
     assert!(execution
         .stdout
         .contains("Warning: unserialize(): Error at offset 0 of 7 bytes"));
+    assert_eq!(
+        execution
+            .stdout
+            .matches("Warning: unserialize(): Error at offset 0 of 20 bytes")
+            .count(),
+        2
+    );
+    assert_eq!(
+        execution
+            .stdout
+            .matches("Warning: unserialize(): Error at offset 0 of 24 bytes")
+            .count(),
+        2
+    );
     assert!(
         execution
             .stdout
@@ -56,7 +74,24 @@ var_dump(unserialize('a:1:{i:0;R:-1;}'));
             .count()
             >= 2
     );
-    assert_eq!(execution.stdout.matches("bool(false)\n").count(), 4);
+    assert_eq!(execution.stdout.matches("bool(false)\n").count(), 8);
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn unserialize_truncated_object_properties_report_reached_offset() {
+    let execution = run_source(
+        r#"<?php
+var_dump(unserialize('O:3:"obj":1:{'));
+"#,
+    )
+    .unwrap();
+
+    assert!(execution
+        .stdout
+        .contains("Warning: unserialize(): Error at offset 13 of 13 bytes"));
+    assert_eq!(execution.stdout.matches("bool(false)\n").count(), 1);
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);
 }
