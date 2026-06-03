@@ -178,6 +178,36 @@ var_dump(unserialize(serialize(new D), ["allowed_classes" => ["foo"]]));
 }
 
 #[test]
+fn serialize_unserialize_preserves_base_private_shadowed_by_child_protected() {
+    let execution = run_source(
+        r#"<?php
+class Base {
+    private $id;
+    public function __construct($id) {
+        $this->id = $id;
+    }
+}
+class Derived extends Base {
+    protected $id;
+    public function __construct($id) {
+        parent::__construct($id + 20);
+        $this->id = $id;
+    }
+}
+$a = new Derived(44);
+$u = unserialize(serialize($a));
+print_r($u);
+"#,
+    )
+    .unwrap();
+
+    assert!(execution.stdout.contains("[id:Base:private] => 64"));
+    assert!(execution.stdout.contains("[id:protected] => 44"));
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn unserialize_allowed_classes_validation_and_stringable_values() {
     let execution = run_source(
         r#"<?php

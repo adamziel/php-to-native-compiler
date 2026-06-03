@@ -38366,11 +38366,17 @@ impl PhpObject {
         current_class_id: Option<ClassId>,
         protected_class_ids: &[ClassId],
     ) -> RuntimeResult<Option<&'a ObjectProperty>> {
-        if current_class_id.is_some() {
+        if let Some(current_class_id) = current_class_id {
+            if let Some(index) =
+                Self::current_private_property_index(properties, name, current_class_id)
+            {
+                return Ok(Some(&properties[index]));
+            }
+
             if let Some(property) = properties.iter().rev().find(|property| {
                 property.name == name
                     && property.visibility != Visibility::Public
-                    && property.is_visible_in_context(current_class_id, protected_class_ids)
+                    && property.is_visible_in_context(Some(current_class_id), protected_class_ids)
             }) {
                 return Ok(Some(property));
             }
@@ -38386,11 +38392,17 @@ impl PhpObject {
         current_class_id: Option<ClassId>,
         protected_class_ids: &[ClassId],
     ) -> RuntimeResult<&'a mut ObjectProperty> {
-        if current_class_id.is_some() {
+        if let Some(current_class_id) = current_class_id {
+            if let Some(index) =
+                Self::current_private_property_index(properties, name, current_class_id)
+            {
+                return Ok(&mut properties[index]);
+            }
+
             if let Some(index) = properties.iter().rposition(|property| {
                 property.name == name
                     && property.visibility != Visibility::Public
-                    && property.is_visible_in_context(current_class_id, protected_class_ids)
+                    && property.is_visible_in_context(Some(current_class_id), protected_class_ids)
             }) {
                 return Ok(&mut properties[index]);
             }
@@ -38406,11 +38418,17 @@ impl PhpObject {
         current_class_id: Option<ClassId>,
         protected_class_ids: &[ClassId],
     ) -> RuntimeResult<Option<&'a mut ObjectProperty>> {
-        if current_class_id.is_some() {
+        if let Some(current_class_id) = current_class_id {
+            if let Some(index) =
+                Self::current_private_property_index(properties, name, current_class_id)
+            {
+                return Ok(Some(&mut properties[index]));
+            }
+
             if let Some(index) = properties.iter().rposition(|property| {
                 property.name == name
                     && property.visibility != Visibility::Public
-                    && property.is_visible_in_context(current_class_id, protected_class_ids)
+                    && property.is_visible_in_context(Some(current_class_id), protected_class_ids)
             }) {
                 return Ok(Some(&mut properties[index]));
             }
@@ -38430,6 +38448,18 @@ impl PhpObject {
         }
 
         Ok(None)
+    }
+
+    fn current_private_property_index(
+        properties: &[ObjectProperty],
+        name: &str,
+        current_class_id: ClassId,
+    ) -> Option<usize> {
+        properties.iter().rposition(|property| {
+            property.name == name
+                && property.visibility == Visibility::Private
+                && property.declaring_class_id == current_class_id
+        })
     }
 
     fn unsupported_non_public_property<'a>(
@@ -83930,6 +83960,52 @@ mod tests {
         assert_eq!(properties[0].mangled_name(), "id");
         assert_eq!(properties[1].mangled_name(), "\0*\0payload");
         assert_eq!(properties[2].mangled_name(), "\0Packet\0secret");
+    }
+
+    #[test]
+    fn context_property_access_prefers_current_private_over_visible_child_protected() {
+        let base_id = ClassId(901);
+        let derived_id = ClassId(902);
+        let base_id_property = PhpPropertyMetadata::instance("id", Visibility::Private);
+        let inherited = [PhpObjectPropertyInitializer::new(
+            base_id,
+            "Base",
+            base_id_property,
+        )];
+        let mut derived = PhpClassMetadata::new(derived_id, "Derived".to_string());
+        derived
+            .add_property(PhpPropertyMetadata::instance("id", Visibility::Protected))
+            .unwrap();
+
+        let object = PhpObject::from_class_with_inherited_metadata_with_id(
+            &derived,
+            &inherited,
+            vec!["Base".to_string()],
+            1,
+        );
+
+        object
+            .write_property_from_context(
+                "id",
+                Value::Int(64),
+                Some(base_id),
+                &[base_id, derived_id],
+            )
+            .unwrap();
+        object
+            .write_property_from_context(
+                "id",
+                Value::Int(44),
+                Some(derived_id),
+                &[derived_id, base_id],
+            )
+            .unwrap();
+
+        let properties = object.properties();
+        assert_eq!(properties[0].mangled_name(), "\0Base\0id");
+        assert_eq!(properties[0].value_cloned(), Value::Int(64));
+        assert_eq!(properties[1].mangled_name(), "\0*\0id");
+        assert_eq!(properties[1].value_cloned(), Value::Int(44));
     }
 
     #[test]

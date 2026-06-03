@@ -4,6 +4,19 @@
 
 Implemented:
 
+- Repaired the latest-published PASS regression in
+  `ext/standard/tests/serialize/bug76300.phpt`. Runtime class-context
+  property lookup now prefers the current class's own private property slot
+  before falling back to another visible non-public slot with the same PHP
+  name, preserving distinct base-private and child-protected properties across
+  serialize/unserialize. Focused proof covers the accepted public PASS
+  baseline for the row, the blocked `a7c69ff1` gate listing it as a
+  latest-published PASS regression, exact-current pre-patch selected PHPT at
+  `0/1`, post-patch selected PHPT at `1/1`, Rust runtime and serialize
+  guards, build/fmt/diff checks, and source push. Unsupported edges remain
+  broader magic/property-hook parity, references/COW, native lowering, and
+  complete object serialization identity parity.
+
 - Repaired the latest-published PASS regressions in
   `ext/spl/tests/ArrayObject/arrayObject_magicMethods2.phpt` and
   `ext/spl/tests/bug61326.phpt`. Direct dynamic-property creation on core
