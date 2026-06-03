@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Added a bounded `array_walk()` / `array_walk_recursive()` object-input and
+  callback-validation lane on the interpreter path. Both helpers now accept
+  ordinary object inputs through initialized PHP-mangled property slots,
+  preserve by-reference callback writeback to walked object properties, and
+  report catchable PHP-shaped callback `TypeError`s for invalid string
+  callbacks before walking. Focused proof covers the Rust `array_walk` target,
+  build/fmt/diff checks, and selected public PHPT rows
+  `ext/standard/tests/array/array_walk/array_walk_object1.phpt`,
+  `ext/standard/tests/array/array_walk/array_walk_objects.phpt`,
+  `ext/standard/tests/array/array_walk/array_walk_variation8.phpt`,
+  `ext/standard/tests/array/array_walk/array_walk_recursive_object1.phpt`,
+  `ext/standard/tests/array/array_walk/array_walk_recursive_variation8.phpt`,
+  and `ext/standard/tests/array/array_walk/array_walk_rec_objects.phpt` at
+  `6/6` PASS. Unsupported edges remain first-class callable forms, exact
+  exception trace frames, object-property-set mutation during walking,
+  broad references/COW, and native lowering.
+
 - Added a bounded `foreach` complex target lane on the interpreter path.
   By-value key and value targets now share the recursive target writer for
   direct variables, direct object properties, magic `__set()` properties,

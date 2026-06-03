@@ -62628,7 +62628,14 @@ impl Interpreter {
         } else {
             "valid callback"
         };
-        let argument_number = if context == "array_filter()" { 2 } else { 1 };
+        let argument_number = if matches!(
+            context,
+            "array_filter()" | "array_walk()" | "array_walk_recursive()"
+        ) {
+            2
+        } else {
+            1
+        };
         Diagnostic::new(
             Phase::Runtime,
             span.line,
@@ -100915,6 +100922,7 @@ impl Interpreter {
         }
 
         let callback = self.evaluate_by_value_argument_with_cow_source(&args[1], caller_scope)?;
+        self.validate_array_walk_callback(&callback, callable, span)?;
         let userdata = if let Some(arg) = args.get(2) {
             Some(self.evaluate_by_value_argument_with_cow_source(arg, caller_scope)?)
         } else {
@@ -100997,18 +101005,72 @@ impl Interpreter {
         callable: &str,
         span: Span,
     ) -> CompileResult<()> {
-        let type_name = array_value.type_name();
-        let Value::Array(array) = array_value else {
-            return Err(runtime_error(
+        match array_value {
+            Value::Array(array) => {
+                self.walk_array_with_callback(array, callback, userdata, recursive, callable, span)
+            }
+            Value::Object(object) => {
+                let mut array = object.initialized_mangled_properties_array();
+                self.walk_array_with_callback(
+                    &mut array, callback, userdata, recursive, callable, span,
+                )?;
+                for entry in array.entries() {
+                    let ArrayKey::String(name) = &entry.key else {
+                        continue;
+                    };
+                    object
+                        .write_serialized_property(name, entry.value_cloned())
+                        .map_err(|error| runtime_error(span, error))?;
+                }
+                Ok(())
+            }
+            _ => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
                     callable,
-                    format!("argument must be array, got {type_name}"),
+                    format!(
+                        "Argument #1 ($array) must be of type array, {} given",
+                        php_type_error_given(array_value)
+                    ),
                 ),
-            ));
-        };
+            )),
+        }
+    }
 
-        self.walk_array_with_callback(array, callback, userdata, recursive, callable, span)
+    fn validate_array_walk_callback(
+        &self,
+        callback: &Value,
+        callable: &str,
+        span: Span,
+    ) -> CompileResult<()> {
+        match callback {
+            Value::String(callback_name) => {
+                if static_method_callable_string(callback_name).is_some()
+                    || self.lookup_function(callback_name).is_some()
+                {
+                    Ok(())
+                } else {
+                    Err(Self::invalid_callback_error(
+                        callable,
+                        format!("function \"{callback_name}\" not found or invalid function name"),
+                        span,
+                    ))
+                }
+            }
+            Value::Array(callback) => {
+                if callback.entries().len() == 2 {
+                    Ok(())
+                } else {
+                    Err(Self::invalid_array_callback_error(callable, callback, span))
+                }
+            }
+            Value::Closure(_) => Ok(()),
+            other => Err(Self::invalid_callback_error(
+                callable,
+                format!("{} is not a valid callback", php_type_error_given(other)),
+                span,
+            )),
+        }
     }
 
     fn walk_array_with_callback(

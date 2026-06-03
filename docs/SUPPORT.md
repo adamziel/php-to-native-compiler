@@ -3701,7 +3701,8 @@
   `array_uintersect_uassoc`, `array_flip`, `array_change_key_case`,
   `array_column`, `array_fill_keys`, `array_count_values`, `array_sum`,
   `array_product`, `array_reduce`, `array_filter`, `array_map`,
-  `array_find`, `array_find_key`, `array_any`, `array_all`,
+  `array_walk`, `array_walk_recursive`, `array_find`, `array_find_key`,
+  `array_any`, `array_all`,
   `array_push`, `array_unshift`, `array_shift`, `array_pop`, `array_splice`, `next`, `ksort`,
   `in_array`, `array_search`, `gettype`, `settype`, `is_null`, `is_bool`, `is_int`, `is_integer`,
   `is_long`, `is_float`, `is_double`, `is_string`, `is_array`, `is_scalar`,
@@ -8143,6 +8144,16 @@
   operands raise catchable PHP-shaped `TypeError`s, naming argument #2
   `$array` and later variadic array operands by position. These forms are
   available through string-valued dynamic calls to `array_map`.
+  Direct `array_walk($array, $callback)` and
+  `array_walk($array, $callback, $userdata)` accept arrays and ordinary
+  objects. Object inputs are walked as initialized PHP-mangled property entries
+  so private and protected properties use the same key spellings as
+  object-to-array casts. The same callback subset as `array_map()` is used, and
+  user callbacks whose first value parameter is by-reference receive the live
+  walked slot; updates are written back to array entries or object properties.
+  `array_walk_recursive(...)` shares those forms and recursively descends into
+  array values. Invalid string callbacks such as language constructs raise
+  catchable PHP-shaped callback `TypeError`s before iteration.
   `array_multisort($array, ...)` accepts direct interpreter calls with one or
   more scalar-valued arrays plus `SORT_ASC`, `SORT_DESC`, `SORT_REGULAR`,
   `SORT_NUMERIC`, `SORT_STRING`, `SORT_NATURAL`, and
@@ -8212,6 +8223,8 @@
   those integers, plus boolean mode flags `false` and `true`,
   `array_map` in the current one-array null-callback identity form, variadic
   null-callback zip form, and one-array and variadic callback forms,
+  `array_walk` and `array_walk_recursive` in the current direct array/object
+  input and callback forms,
   `in_array`, `array_search`, both current `foreach` array forms, direct
   array-offset `unset`, multiple supported `unset(...)` operands, `print_r`,
   and `var_dump` are implemented for this ordered value model. Array walkers
@@ -9296,7 +9309,8 @@
   `array_diff_ukey`, `array_intersect_ukey`, `array_udiff_uassoc`,
   `array_uintersect_uassoc`, `array_unique`, `array_flip`, `array_fill_keys`, `array_count_values`,
   `array_sum`, `array_product`, `array_reduce`, `array_filter`, `array_map`,
-  `array_push`, `array_unshift`, `array_shift`, `array_pop`, `array_splice`, `ksort`, `in_array`, `array_search`, `rand`, `uniqid`, `getmypid`, `hash`, `hash_algos`, `hash_hmac`, `md5`, `md5_file`, `gettype`, `is_null`, `is_bool`, `is_int`,
+  `array_walk`, `array_walk_recursive`, `array_push`, `array_unshift`,
+  `array_shift`, `array_pop`, `array_splice`, `ksort`, `in_array`, `array_search`, `rand`, `uniqid`, `getmypid`, `hash`, `hash_algos`, `hash_hmac`, `md5`, `md5_file`, `gettype`, `is_null`, `is_bool`, `is_int`,
   `is_integer`, `is_long`, `is_float`, `is_double`, `is_string`, `is_array`,
   `is_scalar`, `is_numeric`, `is_countable`, `is_iterable`, `is_callable`,
   `function_exists`, `basename`, `dirname`, `extension_loaded`, `ob_start`,
@@ -9546,7 +9560,8 @@
   `array_diff_ukey`, `array_intersect_ukey`, `array_udiff_uassoc`,
   `array_uintersect_uassoc`, `array_unique`, `array_flip`, `array_fill_keys`,
   `array_count_values`, `array_sum`, `array_product`, `array_reduce`,
-  `array_filter`, `array_map`, `array_push`, `array_unshift`, `array_shift`, `array_pop`, `array_splice`, `next`, `ksort`, `in_array`,
+  `array_filter`, `array_map`, `array_walk`, `array_walk_recursive`,
+  `array_push`, `array_unshift`, `array_shift`, `array_pop`, `array_splice`, `next`, `ksort`, `in_array`,
   `array_search`, `gettype`,
   `is_null`, `is_bool`, `is_int`, `is_integer`, `is_long`, `is_float`,
   `is_double`, `is_string`, `is_array`, `is_scalar`, `is_numeric`,
@@ -11191,6 +11206,17 @@
   values, broad references, copy-on-write containers, exact native
   `TypeError` objects, object handle identity preservation, resource values,
   and native lowering are not implemented.
+  `array_walk($array, $callback)` and `array_walk($array, $callback,
+  $userdata)` accept direct array and ordinary object inputs. Object inputs use
+  initialized PHP-mangled property keys, including private/protected property
+  names, and callback updates to a by-reference first value parameter are
+  written back to the walked slot. `array_walk_recursive(...)` shares those
+  forms and recursively descends through array values. Invalid string
+  callbacks such as language constructs raise catchable PHP-shaped callback
+  `TypeError`s before iteration. First-class callable forms, unsupported
+  dynamic callable shapes, exact exception trace frames for callbacks, mutation
+  of object property sets during walking, broad reference/COW parity, exact
+  native `TypeError` internals, and native lowering are not implemented.
   `array_find($array, $callback)`, `array_find_key($array, $callback)`,
   `array_any($array, $callback)`, and `array_all($array, $callback)` accept an
   array plus callbacks that evaluate to string function names resolving to
@@ -11293,8 +11319,9 @@
   `array_intersect_ukey`, `array_udiff_uassoc`, `array_uintersect_uassoc`,
   `array_unique`, `array_flip`,
   `array_fill_keys`, `array_count_values`, `array_sum`, `array_product`,
-  `array_reduce`, `array_filter`, `array_map`, `array_find`, `array_find_key`,
-  `array_any`, `array_all`, `in_array`, `array_search`, and
+  `array_reduce`, `array_filter`, `array_map`, `array_walk`,
+  `array_walk_recursive`, `array_find`, `array_find_key`, `array_any`,
+  `array_all`, `in_array`, `array_search`, and
   both current `foreach` array forms follow the current by-value model; PHP
   references and copy-on-write containers beyond the covered dereferenced
   query-helper reads and direct `array_chunk()` value slots, object handle
@@ -11336,7 +11363,11 @@
   mode coercions outside the current int/bool/finite-integral-float/integral
   numeric string subset, and `array_map`
   callback forms outside current null-callback and string-valued function-name
-  forms, and `array_find` family callback forms outside the current
+  forms, `array_walk` and `array_walk_recursive` first-class callable and
+  unsupported dynamic callable shapes, exact exception trace frames for
+  callbacks, mutation of object property sets during walking, broad
+  reference/copy-on-write parity, exact native `TypeError` internals, and
+  native lowering, and `array_find` family callback forms outside the current
   string/closure/public array-callable subset are not implemented.
   Because `isset` and `empty` are modeled as special static forms, they are not
   available through dynamic function lookup. PHP's complete warning behavior is
@@ -12361,6 +12392,10 @@
   helper-supplied values, reference/copy-on-write behavior, object handle
   identity preservation, resource values, exact native `TypeError` objects,
   and native lowering
+- `array_walk`/`array_walk_recursive` first-class callables, unsupported
+  dynamic callable shapes, exact exception trace frames for callbacks, mutation
+  of object property sets during walking, broad reference/copy-on-write parity,
+  exact native `TypeError` internals, and native lowering
 - `method_exists` method dispatch beyond current declared/inherited lookup,
   traits, interfaces, aliases/imports, namespace-aware names, visibility behavior
   beyond metadata reporting, exact native `TypeError` objects, object operands,

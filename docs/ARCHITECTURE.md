@@ -3740,13 +3740,18 @@ while direct native `is_link(...)` calls still reject under the generic
 function-call boundary.
 The table includes interpreter-only array builtins such as
 `array_change_key_case`, `array_column`, `array_is_list`, `array_rand`,
-`array_product`, `array_reduce`, `array_filter`, and `array_splice`; direct calls to those
-builtins still reject under the array-lowering boundary. `array_rand()` is
+`array_product`, `array_reduce`, `array_filter`, and `array_splice`; direct
+calls to those builtins still reject under the array-lowering boundary.
+`array_rand()` is
 modeled in the interpreter as a deterministic first-key or first-N-key
 selection so PHPTs that accept any valid key can run without introducing a
 runtime RNG contract. PHP RNG state, seeded distribution, MT_RAND_PHP
 compatibility, reference/copy-on-write edge cases, and native lowering remain
 outside that boundary.
+The interpreter path also keeps `array_walk()` and `array_walk_recursive()` as
+boxed runtime helpers over direct array/object inputs with PHP-mangled object
+property keys. They remain outside native lowering until generated code has the
+boxed array/object/reference machinery needed to preserve walk-visible mutation.
 Direct `strlen($value)` calls fold only when `$value` is an already-lowerable
 known string operand, including tracked string expressions whose possible
 values have one uniform byte length. A selected-`clang` assembly snapshot
