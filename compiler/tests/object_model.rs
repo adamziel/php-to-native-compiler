@@ -13023,6 +13023,63 @@ try {
 }
 
 #[test]
+fn typed_class_constants_report_bounded_startup_diagnostics() {
+    let cases = [
+        (
+            r#"<?php
+class A {
+    public const string CONST1 = 1;
+}
+"#,
+            "Cannot use int as value for class constant A::CONST1 of type string",
+            3,
+        ),
+        (
+            r#"<?php
+class Test {
+    public const int X = 1, Y = "foo";
+}
+"#,
+            "Cannot use string as value for class constant Test::Y of type int",
+            3,
+        ),
+        (
+            r#"<?php
+class A {
+    public const callable CONST1 = 1;
+}
+"#,
+            "Class constant A::CONST1 cannot have type callable",
+            3,
+        ),
+        (
+            r#"<?php
+class A {
+    public const void CONST1 = 1;
+}
+"#,
+            "Class constant A::CONST1 cannot have type void",
+            3,
+        ),
+        (
+            r#"<?php
+class A {
+    public const never CONST1 = 1;
+}
+"#,
+            "Class constant A::CONST1 cannot have type never",
+            3,
+        ),
+    ];
+
+    for (source, message, line) in cases {
+        let error = runtime_error(source);
+        assert_eq!(error.message, message);
+        assert_eq!(error.line, line);
+    }
+}
+
+#[test]
 fn private_parent_class_constants_are_not_inherited() {
     let execution = run_source(
         r#"<?php
@@ -16450,16 +16507,6 @@ class Box {
             4,
             9,
             "unsupported trait use adaptation: unqualified insteadof adaptations are not implemented",
-        ),
-        (
-            r#"<?php
-class Box {
-    private const string NAME = "box";
-}
-"#,
-            3,
-            19,
-            "unsupported class constant declaration: typed class constants are not implemented",
         ),
     ];
 

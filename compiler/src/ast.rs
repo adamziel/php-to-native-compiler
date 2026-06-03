@@ -933,6 +933,7 @@ pub struct ClassConstantDecl {
     pub visibility: ClassVisibility,
     pub is_static: bool,
     pub is_abstract: bool,
+    pub type_decl: Option<TypeDecl>,
     pub value: Expr,
     pub attributes: Vec<AttributeDecl>,
     pub span: Span,

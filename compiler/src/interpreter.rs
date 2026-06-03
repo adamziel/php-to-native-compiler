@@ -109530,6 +109530,10 @@ fn magic_method_startup_diagnostics(
     }
 
     if !diagnostics.has_fatal() {
+        collect_typed_class_constant_startup_diagnostics(&mut diagnostics, program, source_file);
+    }
+
+    if !diagnostics.has_fatal() {
         collect_class_constant_inheritance_startup_diagnostics(
             &mut diagnostics,
             program,
@@ -109880,6 +109884,78 @@ fn collect_class_constant_modifier_startup_diagnostics(
                 return;
             }
         }
+    }
+}
+
+fn collect_typed_class_constant_startup_diagnostics(
+    diagnostics: &mut MagicMethodStartupDiagnostics,
+    program: &Program,
+    source_file: Option<&str>,
+) {
+    for stmt in &program.statements {
+        let Stmt::Class(class) = stmt else {
+            continue;
+        };
+        if class.is_nested {
+            continue;
+        }
+
+        for constant in class.members.iter().filter_map(|member| match member {
+            ClassMember::Constant(constant) => Some(constant),
+            _ => None,
+        }) {
+            if let Some((message, line)) =
+                typed_class_constant_startup_diagnostic(&class.name, constant)
+            {
+                diagnostics.set_fatal(message, source_file, line);
+                return;
+            }
+        }
+    }
+}
+
+fn typed_class_constant_startup_diagnostic(
+    class_name: &str,
+    constant: &ClassConstantDecl,
+) -> Option<(String, usize)> {
+    let type_decl = constant.type_decl.as_ref()?;
+    if let Some(display) = disallowed_class_constant_type_name(&type_decl.text) {
+        return Some((
+            format!(
+                "Class constant {class_name}::{} cannot have type {display}",
+                constant.name
+            ),
+            constant.span.line,
+        ));
+    }
+
+    let literal = typed_property_default_literal(&constant.value)?;
+    if typed_property_default_literal_matches_type(literal.kind, &type_decl.text) {
+        return None;
+    }
+
+    Some((
+        format!(
+            "Cannot use {} as value for class constant {class_name}::{} of type {}",
+            literal.display, constant.name, type_decl.text
+        ),
+        constant.span.line,
+    ))
+}
+
+fn disallowed_class_constant_type_name(type_decl: &str) -> Option<&'static str> {
+    type_decl
+        .split(['|', '&'])
+        .find_map(disallowed_class_constant_type_part)
+}
+
+fn disallowed_class_constant_type_part(type_part: &str) -> Option<&'static str> {
+    let name = normalize_type_name(type_part);
+    match name.to_ascii_lowercase().as_str() {
+        "callable" => Some("callable"),
+        "void" => Some("void"),
+        "never" => Some("never"),
+        _ => None,
     }
 }
 
@@ -114761,6 +114837,7 @@ fn seed_core_class_constant_runtime_tables(
                 visibility: ClassVisibility::Public,
                 is_static: false,
                 is_abstract: false,
+                type_decl: None,
                 value: Expr::Int(value, span),
                 attributes: Vec::new(),
                 span,
@@ -114792,6 +114869,7 @@ fn seed_core_class_constant_runtime_tables(
                     visibility: ClassVisibility::Public,
                     is_static: false,
                     is_abstract: false,
+                    type_decl: None,
                     value: Expr::Int(value, span),
                     attributes: Vec::new(),
                     span,
@@ -114810,6 +114888,7 @@ fn seed_core_class_constant_runtime_tables(
                         visibility: ClassVisibility::Public,
                         is_static: false,
                         is_abstract: false,
+                        type_decl: None,
                         value: Expr::String(value.to_string(), span),
                         attributes: Vec::new(),
                         span,
@@ -114833,6 +114912,7 @@ fn seed_core_class_constant_runtime_tables(
                     visibility: ClassVisibility::Public,
                     is_static: false,
                     is_abstract: false,
+                    type_decl: None,
                     value: Expr::Int(value, span),
                     attributes: Vec::new(),
                     span,
@@ -114855,6 +114935,7 @@ fn seed_core_class_constant_runtime_tables(
                     visibility: ClassVisibility::Public,
                     is_static: false,
                     is_abstract: false,
+                    type_decl: None,
                     value: Expr::Int(value, span),
                     attributes: Vec::new(),
                     span,
@@ -114876,6 +114957,7 @@ fn seed_core_class_constant_runtime_tables(
                         visibility: ClassVisibility::Public,
                         is_static: false,
                         is_abstract: false,
+                        type_decl: None,
                         value: Expr::Int(value, span),
                         attributes: Vec::new(),
                         span,
@@ -114902,6 +114984,7 @@ fn seed_core_class_constant_runtime_tables(
                     visibility: ClassVisibility::Public,
                     is_static: false,
                     is_abstract: false,
+                    type_decl: None,
                     value: Expr::Int(value, span),
                     attributes: Vec::new(),
                     span,
@@ -114926,6 +115009,7 @@ fn seed_core_class_constant_runtime_tables(
                     visibility: ClassVisibility::Public,
                     is_static: false,
                     is_abstract: false,
+                    type_decl: None,
                     value: Expr::Int(value, span),
                     attributes: Vec::new(),
                     span,
@@ -114957,6 +115041,7 @@ fn seed_core_class_constant_runtime_tables(
                     visibility: ClassVisibility::Public,
                     is_static: false,
                     is_abstract: false,
+                    type_decl: None,
                     value: Expr::Int(value, span),
                     attributes: Vec::new(),
                     span,
@@ -114979,6 +115064,7 @@ fn seed_core_class_constant_runtime_tables(
                     visibility: ClassVisibility::Public,
                     is_static: false,
                     is_abstract: false,
+                    type_decl: None,
                     value: Expr::Int(value, span),
                     attributes: Vec::new(),
                     span,
@@ -115006,6 +115092,7 @@ fn seed_core_class_constant_runtime_tables(
                     visibility: ClassVisibility::Public,
                     is_static: false,
                     is_abstract: false,
+                    type_decl: None,
                     value: Expr::Int(value, span),
                     attributes: Vec::new(),
                     span,
@@ -115022,6 +115109,7 @@ fn seed_core_class_constant_runtime_tables(
                 visibility: ClassVisibility::Public,
                 is_static: false,
                 is_abstract: false,
+                type_decl: None,
                 value: Expr::Int(PHP_REFLECTION_ATTRIBUTE_IS_INSTANCEOF, span),
                 attributes: Vec::new(),
                 span,

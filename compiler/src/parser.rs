@@ -807,6 +807,7 @@ impl Parser {
             visibility: ClassVisibility::Public,
             is_static: false,
             is_abstract: false,
+            type_decl: None,
             value,
             attributes,
             span: name_span,
@@ -1194,6 +1195,7 @@ impl Parser {
             visibility: ClassVisibility::Public,
             is_static: false,
             is_abstract: false,
+            type_decl: None,
             value,
             attributes,
             span: name_span,
@@ -1443,14 +1445,11 @@ impl Parser {
                     unsupported_final_class_constant_message(),
                 ));
             }
-            if matches!(self.peek().kind, TokenKind::Identifier(_))
-                && matches!(self.peek_next().kind, TokenKind::Identifier(_))
-            {
-                return Err(self.error_at(
-                    self.peek().span,
-                    "unsupported class constant declaration: typed class constants are not implemented",
-                ));
-            }
+            let type_decl = if self.check_class_constant_type_declaration() {
+                Some(self.parse_type_decl(unsupported_class_constant_type_message())?)
+            } else {
+                None
+            };
             let mut constants = Vec::new();
             loop {
                 let (name, name_span) = self.consume_class_constant_name_with_span(
@@ -1464,6 +1463,7 @@ impl Parser {
                     visibility: modifiers.visibility,
                     is_static: modifiers.is_static,
                     is_abstract: modifiers.is_abstract,
+                    type_decl: type_decl.clone(),
                     value,
                     attributes: attributes.clone(),
                     span: name_span,
@@ -9383,6 +9383,10 @@ fn unsupported_property_type_message() -> &'static str {
     "unsupported property type declaration: property type metadata supports only simple named property types in the current subset"
 }
 
+fn unsupported_class_constant_type_message() -> &'static str {
+    "unsupported class constant type declaration: expected class constant type name"
+}
+
 fn unsupported_readonly_property_message() -> &'static str {
     "unsupported readonly property declaration: readonly property metadata, initialization rules, write-once enforcement, reflection, and native lowering are not implemented"
 }
@@ -9789,6 +9793,19 @@ impl Parser {
             }
         }
         false
+    }
+
+    fn check_class_constant_type_declaration(&self) -> bool {
+        match (&self.peek().kind, &self.peek_next().kind) {
+            (TokenKind::Question | TokenKind::Backslash | TokenKind::LParen, _) => true,
+            (TokenKind::Static | TokenKind::Null | TokenKind::True | TokenKind::False, _) => true,
+            (
+                TokenKind::Identifier(_),
+                TokenKind::Equal | TokenKind::Comma | TokenKind::Semicolon,
+            ) => false,
+            (TokenKind::Identifier(_), _) => true,
+            _ => false,
+        }
     }
 
     fn match_trait_visibility_adaptation(&mut self) -> Option<ClassVisibility> {

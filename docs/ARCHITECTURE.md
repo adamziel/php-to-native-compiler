@@ -4198,8 +4198,8 @@ Constant names that are lexed as language keywords or
 literals cannot be read bare, and case-insensitive legacy constants, extension
 constants, namespace-qualified constants, nested or namespace-aware `const`
 declarations, dynamic `const` values, class constants through
-`constant(...)`/unsupported `defined(...)` forms, typed and multi-declarator
-class constants, `static::CONST`, references/copy-on-write for constant values,
+`constant(...)`/unsupported `defined(...)` forms, typed class constants beyond
+the bounded literal-startup lane, `static::CONST`, references/copy-on-write for constant values,
 and broader constant lowering are still outside the implemented constant
 subset. Namespace-qualified and leading-backslash fully-qualified constant
 reads stop at dedicated parse diagnostics until namespace-aware constant-table
@@ -4732,12 +4732,17 @@ instance and static method execution. Direct `ClassName::CONST`, `self::CONST`,
 `parent::CONST`, and late-bound `static::CONST` resolve declared or inherited
 class constants through runtime class metadata in the interpreter. Startup
 diagnostics reject invalid `static const` / `abstract const` class declarations
-and reduced-visibility redeclarations before execution; runtime reads enforce
-protected/private class-constant visibility as PHP `Error` surfaces and skip
-private parent constants during inherited lookup. Typed constants, final
-constants, multiple constants in one declaration, and broader dynamic
-class-constant string lookup beyond loaded `ClassName::CONST` names remain
-unsupported. Direct `ClassName::$prop`, `self::$prop`, `parent::$prop`,
+and reduced-visibility redeclarations before execution. Typed class constants
+carry parsed type metadata for the bounded startup lane: disallowed
+`callable`, `void`, and `never` types fatal before execution, and immediate
+literal defaults are checked against scalar/array/null/union declarations for
+the covered slice. Runtime reads enforce protected/private class-constant
+visibility as PHP `Error` surfaces and skip private parent constants during
+inherited lookup. Runtime-dependent typed class-constant expression
+validation, typed class-constant inheritance compatibility, typed interface
+and trait constants, final constants, and broader dynamic class-constant
+string lookup beyond loaded `ClassName::CONST` names remain unsupported.
+Direct `ClassName::$prop`, `self::$prop`, `parent::$prop`,
 and late-bound `static::$prop` resolve untyped static properties through
 interpreter-owned class-level storage, initialize from the current
 constant-expression default subset or `null`, and support direct reads/writes,

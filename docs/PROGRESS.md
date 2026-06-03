@@ -4,6 +4,25 @@
 
 Implemented:
 
+- Added a bounded typed class-constant startup diagnostics lane on the
+  interpreter path. Class constants now retain optional parsed type metadata,
+  comma-separated typed class constant declarations share the declaration type,
+  disallowed `callable`, `void`, and `never` class-constant types emit
+  PHP-shaped startup fatals, and immediate literal defaults are checked
+  against the declared scalar/array/null/union subset without weak coercion.
+  Focused proof covers exact-current pre-patch selected PHPT at `0/5` and
+  post-patch selected PHPT at `5/5` for
+  `Zend/tests/type_declarations/typed_class_constants_multiple_constants.phpt`,
+  `Zend/tests/type_declarations/typed_class_constants_type_error1.phpt`,
+  `Zend/tests/type_declarations/typed_class_constants_type_error4.phpt`,
+  `Zend/tests/type_declarations/typed_class_constants_type_error5.phpt`, and
+  `Zend/tests/type_declarations/typed_class_constants_type_error6.phpt`; Rust
+  object-model coverage, build/fmt/diff checks, and pinned wrapper proof.
+  Unsupported edges remain runtime-dependent typed class-constant expression
+  validation, typed class-constant inheritance compatibility, typed interface
+  and trait constants, `ReflectionClassConstant::getType()` metadata, final
+  class constants, references/COW, and native lowering.
+
 - Added a bounded DateTime parser/format-token lane on the interpreter path.
   `date_parse()` now returns PHP-shaped metadata arrays for the selected
   numeric date/time forms and malformed numeric timezone diagnostics;

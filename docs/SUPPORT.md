@@ -3467,7 +3467,12 @@
   for `static::` and `get_called_class()`.
 - class constants declared as `const NAME = value;` or
   `public|protected|private const NAME = value;` with values from the current
-  constant-expression subset. `ClassName::CONST`, `self::CONST`, and
+  constant-expression subset. A bounded typed class-constant parser/startup
+  lane accepts `public|protected|private const Type NAME = literal;` and
+  comma-separated class constants sharing one type; immediate literal defaults
+  are checked against the declared scalar/array/null/union subset, and
+  `callable`, `void`, and `never` class-constant types emit PHP-shaped startup
+  fatals. `ClassName::CONST`, `self::CONST`, and
   `parent::CONST` resolve declared or inherited constants case-sensitively,
   enforce public/protected/private visibility in the current class context,
   and return null, bool, int, float, string, or array values. Private parent
@@ -7210,7 +7215,8 @@
   legacy `var $property` declarations are treated as public untyped instance
   properties in the same metadata/runtime slot model as `public $property`;
   multiple property declarations, unsupported class
-  constant declaration forms such as typed, final, or multi-declarator class constants,
+  constant declaration forms such as final class constants and typed
+  class-constant runtime expression or inheritance checks,
   malformed `clone` expressions, dynamic `instanceof` class operands,
   unsupported magic static receiver forms outside the current `static::class`,
   `static::method(...)`, and `static::$prop` slices,
@@ -11967,7 +11973,8 @@
   DNF-shaped typed property declarations,
   non-constant instance property defaults, multiple properties in
   one declaration, per-property defaults in multi-property declarations,
-  typed/static/multi-declarator class constants, typed static properties,
+  typed class constants beyond the bounded literal-startup lane,
+  static/interface/trait/final class constants, typed static properties,
   storage-removing static-property unset,
   and anonymous classes
 - object receiver class constants, `$object::class`, and broader `static::`
