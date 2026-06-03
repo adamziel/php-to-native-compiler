@@ -1,6 +1,6 @@
 # PHP Native Compiler PHPT Progress
 
-Updated: 2026-06-04 01:09 CEST
+Updated: 2026-06-04 01:20 CEST
 
 Primary/public branch: `origin/master`
 Latest accepted public-score source:
@@ -19,7 +19,7 @@ denominators that exclude BORKED rows are not public progress.
 Current public score: **7015 / 20294 pinned runnable PHPTs = 34.57%**.
 
 Latest pushed source checkpoint:
-`627ff63ed439bfca5cb3e42a74a3d6f2d718aa3b fix: report forbidden enum members`
+`8e5f532140dcf399144e257b9a231a5db5c2f015 fix: add bounded DatePeriod metadata`
 
 The accepted source checkpoint chain through `fd09b997` has been pushed to
 `origin/master` and is now reflected in the public score above. The completed
@@ -29,17 +29,15 @@ passes, with zero latest-published PASS regressions.
 
 Unpublished source progress since the accepted public score source:
 
-- Current source head is `627ff63ed439bfca5cb3e42a74a3d6f2d718aa3b`
-  (`fix: report forbidden enum members`), pushed to `origin/master`.
-  The current branch head also includes the docs-only score publication commit
-  `b2914aff8cf1f25f507386bec4a877b0ac002725`.
-- There are `2` commits after the accepted public-score source; `1` is
-  score-relevant, touching `4` score-relevant paths.
+- Current source head is `8e5f532140dcf399144e257b9a231a5db5c2f015`
+  (`fix: add bounded DatePeriod metadata`), pushed to `origin/master`.
+- There are `5` commits after the accepted public-score source; `2` are
+  score-relevant, touching `5` score-relevant paths.
 - Integrated focused selected-PHPT proof since the latest accepted public gate
-  totals `16` selected rows across `1` integrated artifact. These are local
+  totals `34` selected rows across `2` integrated artifacts. These are local
   source/staging facts, not a public score update.
-- The newest enum forbidden-member diagnostics source packet moved selected
-  PHPT `0/16 -> 16/16` for
+- The enum forbidden-member diagnostics source packet moved selected PHPT
+  `0/16 -> 16/16` for
   `Zend/tests/enum/__clone.phpt`, `__get.phpt`, `__isset.phpt`,
   `__serialize.phpt`, `__set.phpt`, `__set_state.phpt`, `__sleep.phpt`,
   `__toString.phpt`, `__unserialize.phpt`, `__unset.phpt`, `__wakeup.phpt`,
@@ -47,11 +45,18 @@ Unpublished source progress since the accepted public score source:
   `no-properties.phpt`, and `no-static-properties.phpt`. It also preserved the
   repaired `Zend/tests/grammar/semi_reserved_005.phpt` row and a seven-row
   latest-published PASS scout.
-- A post-`627ff63` full pinned PHPT gate is now running on branch head
+- The DatePeriod metadata/state packet moved selected PHPT `0/18 -> 18/18`
+  for the selected DatePeriod constructor, property, serialization,
+  `__set_state`, ISO-string, and bad-format rows. It also preserved
+  `date_diff.phpt`, `semi_reserved_005.phpt`, and a latest-published PASS
+  scout.
+- The post-enum full pinned PHPT gate on branch head
   `b2914aff8cf1f25f507386bec4a877b0ac002725`:
-  `phpt-full-current-score-20260603T230358Z-php-src-f97ff59-public-b2914aff-source-b2914aff`.
-  It is currently `RUNNING / SHARDED-PHPT`; publication waits for a final
-  aggregate with zero latest-published PASS regressions.
+  `phpt-full-current-score-20260603T230358Z-php-src-f97ff59-public-b2914aff-source-b2914aff`
+  completed with blocked comparable evidence `7030 / 20294 = 34.64%`, but
+  publication is blocked by one latest-published PASS regression:
+  `php-src/Zend/tests/bug60598.phpt`. The DatePeriod packet is not included in
+  that blocked gate and remains staged for the next score-conversion attempt.
 
 Accepted public gate: checkpoint `fd09b997` completed the pinned full PHPT
 gate with `7015 / 20294 = 34.57%` and zero latest-published PASS regressions
