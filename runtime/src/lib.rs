@@ -32788,8 +32788,34 @@ impl PhpClassTable {
                 .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
                 .expect("ReflectionClassConstant core metadata should not duplicate methods");
         }
+        let reflection_constant_id = classes.declare_class("ReflectionConstant").expect(
+            "core class table should contain ReflectionClassConstant before ReflectionConstant",
+        );
+        let reflection_constant = classes
+            .get_mut(reflection_constant_id)
+            .expect("declared ReflectionConstant class id should resolve");
+        reflection_constant
+            .add_property(PhpPropertyMetadata::instance("name", Visibility::Public))
+            .expect("ReflectionConstant core metadata should not duplicate properties");
+        for method in [
+            "__construct",
+            "getName",
+            "getValue",
+            "isDeprecated",
+            "getAttributes",
+            "getExtensionName",
+            "getExtension",
+            "getFileName",
+            "inNamespace",
+            "getNamespaceName",
+            "getShortName",
+        ] {
+            reflection_constant
+                .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("ReflectionConstant core metadata should not duplicate methods");
+        }
         let reflection_attribute_id = classes.declare_class("ReflectionAttribute").expect(
-            "core class table should contain ReflectionClassConstant before ReflectionAttribute",
+            "core class table should contain ReflectionConstant before ReflectionAttribute",
         );
         let reflection_attribute = classes
             .get_mut(reflection_attribute_id)
@@ -81878,6 +81904,7 @@ mod tests {
                 "ReflectionIntersectionType",
                 "ReflectionProperty",
                 "ReflectionClassConstant",
+                "ReflectionConstant",
                 "ReflectionAttribute",
                 "TypeError",
                 "ArgumentCountError",
@@ -82444,9 +82471,25 @@ mod tests {
         assert!(reflection_class_constant.method("getValue").is_some());
         assert!(reflection_class_constant.method("getAttributes").is_some());
 
+        let reflection_constant = classes.lookup_class("reflectionconstant").unwrap();
+        assert_eq!(reflection_constant.name(), "ReflectionConstant");
+        assert_eq!(reflection_constant.id().index(), 41);
+        assert!(reflection_constant.parent_id().is_none());
+        assert_eq!(
+            reflection_constant
+                .properties()
+                .iter()
+                .map(PhpPropertyMetadata::name)
+                .collect::<Vec<_>>(),
+            vec!["name"]
+        );
+        assert!(reflection_constant.method("getValue").is_some());
+        assert!(reflection_constant.method("getAttributes").is_some());
+        assert!(reflection_constant.method("getExtensionName").is_some());
+
         let reflection_attribute = classes.lookup_class("reflectionattribute").unwrap();
         assert_eq!(reflection_attribute.name(), "ReflectionAttribute");
-        assert_eq!(reflection_attribute.id().index(), 41);
+        assert_eq!(reflection_attribute.id().index(), 42);
         assert!(reflection_attribute.parent_id().is_none());
         assert_eq!(
             reflection_attribute
@@ -82463,29 +82506,29 @@ mod tests {
 
         let type_error = classes.lookup_class("typeerror").unwrap();
         assert_eq!(type_error.name(), "TypeError");
-        assert_eq!(type_error.id().index(), 42);
+        assert_eq!(type_error.id().index(), 43);
         assert_eq!(type_error.parent_id(), Some(error.id()));
         assert!(type_error.properties().is_empty());
 
         let argument_count_error = classes.lookup_class("argumentcounterror").unwrap();
         assert_eq!(argument_count_error.name(), "ArgumentCountError");
-        assert_eq!(argument_count_error.id().index(), 43);
+        assert_eq!(argument_count_error.id().index(), 44);
         assert_eq!(argument_count_error.parent_id(), Some(type_error.id()));
         assert!(argument_count_error.properties().is_empty());
 
         let value_error = classes.lookup_class("valueerror").unwrap();
         assert_eq!(value_error.name(), "ValueError");
-        assert_eq!(value_error.id().index(), 44);
+        assert_eq!(value_error.id().index(), 45);
         assert_eq!(value_error.parent_id(), Some(error.id()));
 
         let arithmetic_error = classes.lookup_class("arithmeticerror").unwrap();
         assert_eq!(arithmetic_error.name(), "ArithmeticError");
-        assert_eq!(arithmetic_error.id().index(), 45);
+        assert_eq!(arithmetic_error.id().index(), 46);
         assert_eq!(arithmetic_error.parent_id(), Some(error.id()));
 
         let division_by_zero_error = classes.lookup_class("divisionbyzeroerror").unwrap();
         assert_eq!(division_by_zero_error.name(), "DivisionByZeroError");
-        assert_eq!(division_by_zero_error.id().index(), 46);
+        assert_eq!(division_by_zero_error.id().index(), 47);
         assert_eq!(
             division_by_zero_error.parent_id(),
             Some(arithmetic_error.id())
@@ -82493,7 +82536,7 @@ mod tests {
 
         let runtime_exception = classes.lookup_class("runtimeexception").unwrap();
         assert_eq!(runtime_exception.name(), "RuntimeException");
-        assert_eq!(runtime_exception.id().index(), 47);
+        assert_eq!(runtime_exception.id().index(), 48);
         assert_eq!(runtime_exception.parent_id(), Some(exception.id()));
         assert!(runtime_exception.properties().is_empty());
         assert!(runtime_exception.methods().is_empty());
@@ -82536,7 +82579,7 @@ mod tests {
         assert_eq!(closure.name(), "Closure");
         assert!(closure.parent_id().is_none());
         assert!(closure.properties().is_empty());
-        assert!(closure.methods().is_empty());
+        assert!(closure.method("__invoke").is_some());
     }
 
     #[test]

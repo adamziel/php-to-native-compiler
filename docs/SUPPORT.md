@@ -10820,6 +10820,22 @@
   `IS_VIRTUAL`, `IS_PROTECTED_SET`, and `IS_PRIVATE_SET` constants are
   available. The current `ReflectionClassConstant::IS_PUBLIC`,
   `IS_PROTECTED`, `IS_PRIVATE`, and `IS_FINAL` constants are available.
+  `new ReflectionConstant($name)` reflects supported global constants from the
+  current builtin/runtime constant table. It exposes the public `name` property,
+  `__construct()` reinitialization, `getName()`, `getValue()`,
+  `getAttributes()`, `isDeprecated()`, `getExtensionName()`, `getExtension()`,
+  `getFileName()`, `inNamespace()`, `getNamespaceName()`, and
+  `getShortName()` for that bounded slice. Runtime constants created by
+  `define()` and top-level `const` declarations loaded from a known source file
+  report that source path through `getFileName()`; builtin constants return
+  false. User constants return false/null extension ownership, while current
+  builtin constants report registry ownership where known, Core fallback
+  ownership for other builtin names, and json ownership for the current
+  `JSON_*` builtin constant slice. Attribute arrays are currently empty unless
+  future constant-attribute metadata is added; userland `#[Deprecated] const`
+  metadata, bracketed namespace parser rows, broad extension constant catalogs,
+  exact invalid-input diagnostics for every constructor shape, and native
+  lowering remain unsupported.
   Parser/runtime support for readonly class/property declarations and property
   hooks/asymmetric visibility remains unsupported even where the compatibility
   constants and modifier-name mapping exist.

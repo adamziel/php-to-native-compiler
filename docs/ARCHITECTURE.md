@@ -4095,7 +4095,10 @@ Dynamic PHP features will be implemented as runtime fallback zones:
   `const NAME = value;` declarations define unqualified constants at statement
   execution time over the current constant-expression and scalar/array value
   subset, including references to previously defined unqualified constants and
-  the current built-in constant slice
+  the current built-in constant slice. The interpreter constant table also
+  carries a small metadata side table for runtime/user constants, currently used
+  by `ReflectionConstant` to report source-file provenance while keeping builtin
+  constants as file-less extension-owned values.
 
 String-valued dynamic function lookup and the narrow local `require path;` /
 `require_once path;` / `include path;` / `include_once path;` statement slice
@@ -4664,6 +4667,12 @@ reads are intercepted in the interpreter and mapped to catchable
 entity/notation maps remain outside this path. Exact extension inventories,
 broad host class ownership, dynamic modules, extension version policy, and
 native lowering remain out of scope.
+`ReflectionConstant` uses the global constant table plus builtin constant value
+helpers to materialize request-local objects. Runtime/user constants expose
+stored declaration-file metadata and no extension owner; builtin constants
+expose file-less Core/json or registered-extension ownership for the current
+bounded slice. Constant attributes and deprecation metadata are not yet recorded
+in the global constant metadata table.
 `get_called_class()` is a zero-argument runtime builtin that reads the
 interpreter's called-class context in current instance and static method calls;
 outside method or static class context it fails with a stable unsupported-call

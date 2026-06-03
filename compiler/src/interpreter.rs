@@ -541,6 +541,7 @@ struct Interpreter {
     reflection_parameters: HashMap<i64, ReflectionParameterState>,
     reflection_properties: HashMap<i64, ReflectionPropertyState>,
     reflection_class_constants: HashMap<i64, ReflectionClassConstantState>,
+    reflection_constants: HashMap<i64, ReflectionConstantState>,
     reflection_attributes: HashMap<i64, ReflectionAttributeState>,
     reflection_extensions: HashMap<i64, ReflectionExtensionState>,
     reflection_zend_extensions: HashMap<i64, ReflectionZendExtensionState>,
@@ -1178,6 +1179,15 @@ impl ReflectionClassConstantState {
             attributes: resolved.attributes,
         }
     }
+}
+
+#[derive(Debug, Clone)]
+struct ReflectionConstantState {
+    name: String,
+    value: Value,
+    extension_name: Option<String>,
+    file_name: Option<String>,
+    attributes: Vec<AttributeDecl>,
 }
 
 #[derive(Debug, Clone)]
@@ -11498,6 +11508,13 @@ enum ArrayLiteralReferenceElement {
 #[derive(Debug, Clone, Default)]
 struct ConstantTable {
     values: HashMap<String, Value>,
+    metadata: HashMap<String, RuntimeConstantMetadata>,
+}
+
+#[derive(Debug, Clone, Default)]
+struct RuntimeConstantMetadata {
+    file_name: Option<String>,
+    attributes: Vec<AttributeDecl>,
 }
 
 impl ConstantTable {
@@ -11505,7 +11522,12 @@ impl ConstantTable {
         Self::default()
     }
 
-    fn define(&mut self, name: &str, value: Value) -> RuntimeResult<()> {
+    fn define_with_metadata(
+        &mut self,
+        name: &str,
+        value: Value,
+        metadata: RuntimeConstantMetadata,
+    ) -> RuntimeResult<()> {
         let canonical_name = normalize_runtime_constant_lookup_name(name).unwrap_or(name);
         if builtin_global_constant_value(canonical_name).is_some()
             || self.values.contains_key(canonical_name)
@@ -11514,6 +11536,7 @@ impl ConstantTable {
         }
 
         self.values.insert(canonical_name.to_string(), value);
+        self.metadata.insert(canonical_name.to_string(), metadata);
         Ok(())
     }
 
@@ -11530,6 +11553,11 @@ impl ConstantTable {
             self.values.contains_key(canonical_name)
                 || builtin_global_constant_value(canonical_name).is_some()
         })
+    }
+
+    fn metadata(&self, name: &str) -> Option<&RuntimeConstantMetadata> {
+        let canonical_name = normalize_runtime_constant_lookup_name(name)?;
+        self.metadata.get(canonical_name)
     }
 }
 
@@ -11826,6 +11854,7 @@ impl Interpreter {
             reflection_parameters: HashMap::new(),
             reflection_properties: HashMap::new(),
             reflection_class_constants: HashMap::new(),
+            reflection_constants: HashMap::new(),
             reflection_attributes: HashMap::new(),
             reflection_extensions: HashMap::new(),
             reflection_zend_extensions: HashMap::new(),
@@ -28707,7 +28736,14 @@ impl Interpreter {
             ));
         }
         self.constants
-            .define(name, value)
+            .define_with_metadata(
+                name,
+                value,
+                RuntimeConstantMetadata {
+                    file_name: self.source_file.clone(),
+                    attributes: Vec::new(),
+                },
+            )
             .map_err(|error| runtime_error(span, error))
     }
 
@@ -29377,6 +29413,9 @@ impl Interpreter {
         }
         if declared_class_name.eq_ignore_ascii_case("ReflectionClassConstant") {
             return self.instantiate_reflection_class_constant(args, span, scope);
+        }
+        if declared_class_name.eq_ignore_ascii_case("ReflectionConstant") {
+            return self.instantiate_reflection_constant(args, span, scope);
         }
         if declared_class_name.eq_ignore_ascii_case("ReflectionAttribute") {
             return Err(runtime_error(
@@ -30155,6 +30194,7 @@ impl Interpreter {
         self.reflection_parameters.remove(&object_id);
         self.reflection_properties.remove(&object_id);
         self.reflection_class_constants.remove(&object_id);
+        self.reflection_constants.remove(&object_id);
         self.reflection_attributes.remove(&object_id);
         self.reflection_extensions.remove(&object_id);
         self.reflection_zend_extensions.remove(&object_id);
@@ -48196,6 +48236,115 @@ impl Interpreter {
         Ok(Value::Object(object))
     }
 
+    fn instantiate_reflection_constant(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        let state = self.reflection_constant_state_from_constructor_args(args, span, scope)?;
+        self.create_reflection_constant_object(state, span)
+    }
+
+    fn reflection_constant_state_from_constructor_args(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<ReflectionConstantState> {
+        if args.len() != 1 {
+            return Err(reflection_constructor_argument_count_error(
+                "ReflectionConstant",
+                args.len(),
+                span,
+            ));
+        }
+        let value = self.evaluate(&args[0], scope)?;
+        let name = reflection_constructor_name_argument("ReflectionConstant", value, span)?;
+        self.reflection_constant_state_for_name(&name, span)
+    }
+
+    fn reflection_constant_state_for_name(
+        &self,
+        name: &str,
+        span: Span,
+    ) -> CompileResult<ReflectionConstantState> {
+        let Some(canonical_name) = normalize_runtime_constant_lookup_name(name) else {
+            return Err(reflection_exception_error(
+                span,
+                format!("Constant \"{name}\" does not exist"),
+            ));
+        };
+
+        if let Some(value) = self.constants.values.get(canonical_name) {
+            let metadata = self
+                .constants
+                .metadata(canonical_name)
+                .cloned()
+                .unwrap_or_default();
+            return Ok(ReflectionConstantState {
+                name: canonical_name.to_string(),
+                value: value.clone(),
+                extension_name: None,
+                file_name: metadata.file_name,
+                attributes: metadata.attributes,
+            });
+        }
+
+        if let Some(value) = builtin_global_constant_value(canonical_name) {
+            return Ok(ReflectionConstantState {
+                name: canonical_name.to_string(),
+                value,
+                extension_name: reflection_extension_name_for_global_constant(canonical_name)
+                    .map(str::to_string),
+                file_name: None,
+                attributes: Vec::new(),
+            });
+        }
+
+        Err(reflection_exception_error(
+            span,
+            format!("Constant \"{name}\" does not exist"),
+        ))
+    }
+
+    fn create_reflection_constant_object(
+        &mut self,
+        state: ReflectionConstantState,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let class_id = self
+            .classes
+            .lookup_class_id("ReflectionConstant")
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::undefined_class("ReflectionConstant core placeholder"),
+                )
+            })?;
+        let object_id = self.allocate_object_id();
+        let class = self
+            .classes
+            .get(class_id)
+            .expect("core ReflectionConstant class id should resolve");
+        let object = PhpObject::from_class_with_id(class, object_id);
+        self.assign_reflection_constant_state(&object, state, span)?;
+        Ok(Value::Object(object))
+    }
+
+    fn assign_reflection_constant_state(
+        &mut self,
+        object: &PhpObject,
+        state: ReflectionConstantState,
+        span: Span,
+    ) -> CompileResult<()> {
+        object
+            .write_public_property("name", Value::String(state.name.clone()))
+            .map_err(|error| runtime_error(span, error))?;
+        self.reflection_constants.insert(object.id(), state);
+        Ok(())
+    }
+
     fn create_reflection_attribute_object(
         &mut self,
         state: ReflectionAttributeState,
@@ -55483,6 +55632,14 @@ impl Interpreter {
         }
         if object
             .class_name()
+            .eq_ignore_ascii_case("ReflectionConstant")
+        {
+            return self
+                .call_reflection_constant_method(object, method_name, args, span, caller_scope)
+                .map(|value| (value, None));
+        }
+        if object
+            .class_name()
             .eq_ignore_ascii_case("ReflectionAttribute")
         {
             return self
@@ -60153,6 +60310,99 @@ impl Interpreter {
                 RuntimeError::undefined_function(format!(
                     "ReflectionClassConstant::{method_name}()"
                 )),
+            )),
+        }
+    }
+
+    fn call_reflection_constant_method(
+        &mut self,
+        object: PhpObject,
+        method_name: &str,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        let state = self
+            .reflection_constants
+            .get(&object.id())
+            .cloned()
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        format!("ReflectionConstant::{method_name}()"),
+                        "missing ReflectionConstant runtime metadata",
+                    ),
+                )
+            })?;
+
+        match method_name.to_ascii_lowercase().as_str() {
+            "__construct" => {
+                let state =
+                    self.reflection_constant_state_from_constructor_args(args, span, caller_scope)?;
+                self.assign_reflection_constant_state(&object, state, span)?;
+                Ok(Value::Null)
+            }
+            "getname" => {
+                expect_expr_arity("ReflectionConstant::getName", args.len(), 0, span)?;
+                Ok(Value::String(state.name))
+            }
+            "getvalue" => {
+                expect_expr_arity("ReflectionConstant::getValue", args.len(), 0, span)?;
+                Ok(state.value)
+            }
+            "isdeprecated" => {
+                expect_expr_arity("ReflectionConstant::isDeprecated", args.len(), 0, span)?;
+                Ok(Value::Bool(attributes_include_deprecated(
+                    &state.attributes,
+                )))
+            }
+            "getattributes" => self.call_reflection_get_attributes(
+                &state.attributes,
+                PHP_ATTRIBUTE_TARGET_CONSTANT,
+                args,
+                span,
+                caller_scope,
+            ),
+            "getextensionname" => {
+                expect_expr_arity("ReflectionConstant::getExtensionName", args.len(), 0, span)?;
+                Ok(state
+                    .extension_name
+                    .map(Value::String)
+                    .unwrap_or(Value::Bool(false)))
+            }
+            "getextension" => {
+                expect_expr_arity("ReflectionConstant::getExtension", args.len(), 0, span)?;
+                match state.extension_name {
+                    Some(name) => self.create_reflection_extension_object(
+                        ReflectionExtensionState { name },
+                        span,
+                    ),
+                    None => Ok(Value::Null),
+                }
+            }
+            "getfilename" => {
+                expect_expr_arity("ReflectionConstant::getFileName", args.len(), 0, span)?;
+                Ok(state
+                    .file_name
+                    .map(Value::String)
+                    .unwrap_or(Value::Bool(false)))
+            }
+            "innamespace" => {
+                expect_expr_arity("ReflectionConstant::inNamespace", args.len(), 0, span)?;
+                Ok(Value::Bool(reflection_name_in_namespace(&state.name)))
+            }
+            "getnamespacename" => {
+                expect_expr_arity("ReflectionConstant::getNamespaceName", args.len(), 0, span)?;
+                Ok(Value::String(reflection_name_namespace_name(&state.name)))
+            }
+            "getshortname" => {
+                expect_expr_arity("ReflectionConstant::getShortName", args.len(), 0, span)?;
+                Ok(Value::String(reflection_name_short_name(&state.name)))
+            }
+            _ => Err(runtime_error(
+                span,
+                RuntimeError::undefined_function(format!("ReflectionConstant::{method_name}()")),
             )),
         }
     }
@@ -96575,7 +96825,14 @@ impl Interpreter {
                 }
 
                 self.constants
-                    .define(&name, args[1].clone())
+                    .define_with_metadata(
+                        &name,
+                        args[1].clone(),
+                        RuntimeConstantMetadata {
+                            file_name: self.source_file.clone(),
+                            attributes: Vec::new(),
+                        },
+                    )
                     .map_err(|error| runtime_error(span, error))?;
                 Ok(Value::Bool(true))
             }
@@ -120204,6 +120461,7 @@ const REFLECTION_EXTENSION_REFLECTION_CLASSES: &[&str] = &[
     "ReflectionClass",
     "ReflectionObject",
     "ReflectionProperty",
+    "ReflectionConstant",
     "ReflectionClassConstant",
     "ReflectionExtension",
     "ReflectionZendExtension",
@@ -120308,6 +120566,26 @@ fn reflection_extension_name_for_class_name(class_name: &str) -> Option<&'static
                 .any(|candidate| candidate.eq_ignore_ascii_case(class_name))
         })
         .map(|metadata| metadata.name)
+}
+
+fn reflection_extension_name_for_global_constant(name: &str) -> Option<&'static str> {
+    REFLECTION_EXTENSION_REGISTRY_NAMES
+        .iter()
+        .filter_map(|extension_name| reflection_extension_metadata(extension_name))
+        .find(|metadata| {
+            metadata
+                .constant_names
+                .iter()
+                .any(|candidate| candidate.eq_ignore_ascii_case(name))
+        })
+        .map(|metadata| metadata.name)
+        .or_else(|| name.starts_with("JSON_").then_some("json"))
+        .or_else(|| is_mysqli_global_constant_name(name).then_some("mysqli"))
+        .or_else(|| {
+            builtin_global_constant_value(name)
+                .is_some()
+                .then_some("Core")
+        })
 }
 
 fn reflection_extension_class_names_array(state: &ReflectionExtensionState) -> PhpArray {
@@ -125280,6 +125558,7 @@ fn reflection_get_attributes_callable_name(target: i64) -> &'static str {
         PHP_ATTRIBUTE_TARGET_PROPERTY => "ReflectionProperty::getAttributes()",
         PHP_ATTRIBUTE_TARGET_CLASS_CONSTANT => "ReflectionClassConstant::getAttributes()",
         PHP_ATTRIBUTE_TARGET_PARAMETER => "ReflectionParameter::getAttributes()",
+        PHP_ATTRIBUTE_TARGET_CONSTANT => "ReflectionConstant::getAttributes()",
         _ => "Reflection::getAttributes()",
     }
 }

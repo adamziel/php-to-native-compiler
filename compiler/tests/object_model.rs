@@ -47,6 +47,7 @@ const CORE_CLASS_NAMES: &[&str] = &[
     "ReflectionIntersectionType",
     "ReflectionProperty",
     "ReflectionClassConstant",
+    "ReflectionConstant",
     "ReflectionAttribute",
     "TypeError",
     "ArgumentCountError",
@@ -9156,6 +9157,64 @@ line("CURRENT");
         execution.stdout,
         "LEGACY|Packet|LEGACY|1\nCURRENT|Packet|CURRENT|0\n"
     );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reflection_constant_exposes_global_constant_metadata() {
+    let execution = run_source_with_source_file(
+        r#"<?php
+define("RT_CONST", 42);
+const CT_CONST = 43;
+
+function file_or_false($value) {
+    return $value === false ? "false" : $value;
+}
+
+function extension_or_false($value) {
+    return $value === false ? "false" : $value;
+}
+
+function line($label, $constant) {
+    echo $label, "|", $constant->name, "|", $constant->getName(), "|", $constant->getValue(), "|", count($constant->getAttributes()), "|", ($constant->isDeprecated() ? "1" : "0"), "|", file_or_false($constant->getFileName()), "|", extension_or_false($constant->getExtensionName()), "\n";
+}
+
+line("runtime", new ReflectionConstant("RT_CONST"));
+line("compile", new ReflectionConstant("CT_CONST"));
+
+$php = new ReflectionConstant("PHP_VERSION");
+echo "php|", $php->getExtensionName(), "|", file_or_false($php->getFileName()), "\n";
+
+$json = new ReflectionConstant("JSON_ERROR_NONE");
+$extension = $json->getExtension();
+echo "json|", $json->getExtensionName(), "|", get_class($extension), "|", $extension->name, "\n";
+
+try {
+    new ReflectionConstant("NO_SUCH_CONST");
+} catch (ReflectionException $e) {
+    echo "missing|", $e->getMessage(), "\n";
+}
+
+$reinit = new ReflectionConstant("RT_CONST");
+$reinit->__construct("CT_CONST");
+echo "reinit|", $reinit->name, "|", $reinit->getValue(), "\n";
+"#,
+        "/tmp/reflection_constant_meta.php",
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "runtime|RT_CONST|RT_CONST|42|0|0|/tmp/reflection_constant_meta.php|false\n",
+            "compile|CT_CONST|CT_CONST|43|0|0|/tmp/reflection_constant_meta.php|false\n",
+            "php|Core|false\n",
+            "json|json|ReflectionExtension|json\n",
+            "missing|Constant \"NO_SUCH_CONST\" does not exist\n",
+            "reinit|CT_CONST|43\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);
 }
 

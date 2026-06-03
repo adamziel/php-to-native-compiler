@@ -4,6 +4,30 @@
 
 Implemented:
 
+- Added a bounded global `ReflectionConstant` lane on the interpreter path.
+  Runtime/user constants and current builtin global constants can now be
+  reflected by name; reflected objects expose the public `name` property,
+  constructor reinitialization, `getName()`, `getValue()`, `getAttributes()`,
+  `isDeprecated()`, `getExtensionName()`, `getExtension()`, `getFileName()`,
+  and namespace-name helpers for the covered slice. Runtime `define()` and
+  top-level `const` declarations now retain source-file metadata so
+  `ReflectionConstant::getFileName()` reports user constants and builtin
+  constants return false; builtin extension ownership covers the current
+  registry constants plus Core/json fallback names. Focused proof covers
+  exact-current pre-patch selected PHPT at `0/6` and post-patch selected PHPT
+  at `6/6` for
+  `ext/reflection/tests/ReflectionConstant_double_construct.phpt`,
+  `ext/reflection/tests/ReflectionConstant_getAttributes_empty.phpt`,
+  `ext/reflection/tests/ReflectionConstant_getExtensionName.phpt`,
+  `ext/reflection/tests/ReflectionConstant_getExtension.phpt`,
+  `ext/reflection/tests/ReflectionConstant_getFileName.phpt`, and
+  `ext/reflection/tests/ReflectionConstant_inexistent.phpt`; Rust
+  object-model/runtime metadata coverage, build/fmt checks, and pinned wrapper
+  proof. Unsupported edges remain global constant attributes/deprecation
+  metadata beyond empty attribute arrays, bracketed namespace parser rows,
+  broad extension constant ownership/inventories, exact constructor diagnostics
+  for every invalid input shape, references/COW, and native lowering.
+
 - Added a bounded PHP-shaped `ReflectionMethod` construction/invocation
   diagnostics lane on the interpreter path. `new ReflectionMethod()` now
   reports catchable constructor arity errors, the one-string
